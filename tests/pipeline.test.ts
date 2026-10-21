@@ -177,6 +177,37 @@ test('deleting a discovered model cleans its generated companion, and deleting t
   assert.equal(Object.keys(inventory.files).some((f) => f.startsWith('sdk/')), true);
 });
 
+test('the companion of a shared alias is a recorded output of the app in models.output, and deleting the alias removes it', async (t: TestContext) => {
+  // protects: P-12 done check 1: a shared companion is in outputs.json and a stale one is removed
+  const outer = createFixtureProject(t, 'golem-pipeline-shared-');
+  linkProjectPackages(outer, Object.fromEntries(['golem', 'golem-model'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)])));
+  const write = (file: string, text: string): void => {
+    fs.mkdirSync(path.dirname(path.join(outer, file)), { recursive: true });
+    fs.writeFileSync(path.join(outer, file), text);
+  };
+  write('shared/package.json', '{"name":"@acme/shared","type":"module"}');
+  write('shared/customer.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCustomer = IModel<{ name: string }>;\n");
+  write('app/package.json', '{"name":"shared-app","type":"module"}');
+  write('app/golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  write('app/tsconfig.json', JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
+  write('app/src/use.ts', 'export {};\n');
+  const config = path.join(outer, 'app/golem.yaml');
+  const companion = path.join(outer, 'app/src/generated/models/@acme/shared/customer.model.generated.ts');
+  const recorded = (): string[] => Object.keys((JSON.parse(fs.readFileSync(path.join(outer, 'app/.golem/outputs.json'), 'utf8')) as { files: Record<string, unknown> }).files);
+
+  await runPipeline(config);
+
+  assert.equal(fs.existsSync(companion), true);
+  assert.deepEqual(recorded().filter((file) => file.includes('customer.model.generated')), ['src/generated/models/@acme/shared/customer.model.generated.ts']);
+
+  fs.unlinkSync(path.join(outer, 'shared/customer.model.ts'));
+  await assert.rejects(runPipeline(config, { check: true }), /stale/);
+  await runPipeline(config);
+
+  assert.equal(fs.existsSync(companion), false);
+  assert.deepEqual(recorded().filter((file) => file.includes('customer.model.generated')), []);
+});
+
 test('an unreferenced OpenAPI document does not regenerate model companions', async (t: TestContext) => {
   const { root, config } = fixture(t);
   const other = path.join(root, 'other.json');

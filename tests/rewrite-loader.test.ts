@@ -270,6 +270,32 @@ test('the Node loader runs app A over the plain types of a shared folder', async
   assert.match(outcome.rejected ?? '', /Model validation failed/);
 });
 
+test('parse of a shared alias runs under the Node loader with no import of its companion, and the codec is registered', async (t) => {
+  // protects: P-12 done check 6: a serde call on a shared alias loads the companion the app generated in models.output
+  const { root: outer } = createModelProject(t, { prefix: 'golem-loader-shared-', name: 'loader-shared', linkTypescript: true, packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') } });
+  const app = path.join(outer, 'app');
+  write(outer, 'shared/package.json', JSON.stringify({ name: '@acme/shared', type: 'module' }));
+  write(outer, 'shared/customer.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nimport type { MinLength } from '@exprtlabs/golem/tags';\nexport type TCustomer = IModel<{ name: string & MinLength<3> }>;\n");
+  write(app, 'package.json', JSON.stringify({ name: 'shared-app', private: true, type: 'module' }));
+  write(app, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: true\nmodels:\n  root: .\n');
+  write(app, 'tsconfig.json', JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true, allowImportingTsExtensions: true }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
+  write(app, 'src/main.ts', `import { parse } from '${SERDE}';
+import type { TCustomer } from '../../shared/customer.model.ts';
+
+let rejected: string | null = null;
+try { parse<TCustomer>('{"name":"Al"}'); } catch (error) { rejected = (error as Error).message; }
+console.log(JSON.stringify({ accepted: parse<TCustomer>('{"name":"Ann"}'), rejected }));
+`);
+  await runPipeline(path.join(app, 'golem.yaml'));
+
+  const result = await run(app, 'src/main.ts');
+
+  assert.equal(result.code, 0, result.stderr);
+  const { accepted, rejected } = JSON.parse(result.stdout.split('\n')[0]!) as { accepted: unknown; rejected: string };
+  assert.deepEqual(accepted, { name: 'Ann' });
+  assert.match(rejected, /Model validation failed/);
+});
+
 /** A CommonJS file with a rewrite site: the import the rewrite adds cannot run in CommonJS. */
 const CJS_CALL = `import { parse } from '${SERDE}';\nimport type { TMoney } from './money.model.ts';\nconst text: string = '{}';\nexport const money = parse<TMoney>(text);\n`;
 const CJS_PLAIN = "const count: number = 7;\nconsole.log('cjs ran', count, typeof require);\n";

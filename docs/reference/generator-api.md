@@ -125,6 +125,7 @@ console.log(result.artifacts[0]?.path); // /absolute/app/api/payments.yaml
 | `info` | Yes | — | OpenAPI `info` object. |
 | `profile` | Yes | — | `GolemProfile`. |
 | `exact` | No | `true` | Default for the `exact` option of a model that sets none. `golem.yaml` passes its root `exact`. |
+| `models` | No | omitted | The `models` job of the same `golem.yaml`: `root`, `directory` and `output` as absolute paths, and optional `suffixes`. With it, a shared model of the app, or a class that extends the generated base class of one, matches its model. `golem.yaml` passes it. |
 | `sources` | No | `*.controller.ts` below `<root>/src` | Non-empty list of controller files. |
 | `openapiVersion` | No | `'3.2.0'` | `'3.2.0'` or `'3.1.2'`. |
 | `servers`, `securitySchemes`, `tags`, `globalPrefix`, `uriVersioning` | No | omitted | Same as the [controller job keys](/reference/config#controller-jobs). |
@@ -214,7 +215,7 @@ console.log(apiVersion, result.artifacts.length);
 | `root` | Yes | — | Existing TypeScript project directory. |
 | `profile` | Yes | — | `GolemProfile`. |
 | `exact` | No | `true` | Default for the `exact` option of a model that sets none. `golem.yaml` passes its root `exact`. |
-| `output` | No | `<root>/src/generated/models` | Directory for files shared by all models of the job. |
+| `output` | No | `<root>/src/generated/models` | Directory for files shared by all models of the job, and for the generated files of shared model files. |
 | `sources` | No | `*.model.ts` and `*.models.ts` below `<root>/src` | Model files. |
 | `manifestInputs` | No | `[]` | SDK `model-manifest.json` files whose models your declarations use. |
 | `onInput` | No | omitted | Called with each path before it is read or checked. |
@@ -224,7 +225,7 @@ console.log(apiVersion, result.artifacts.length);
 | --- | --- | --- |
 | `discoverModelSources` | `(root?, onInput?): string[]` | Model files below `<root>/src`, sorted. |
 | `generatedFilename` | `(source: string): string` | The generated file path: `task.model.ts` → `task.model.generated.ts`, `.models.ts` → `.models.generated.ts`. |
-| `isModelSource` | `(filename: string): boolean` | Whether the name ends in `.model.ts` or `.models.ts` and is not a generated file. |
+| `isModelSource` | `(filename: string): boolean` | Whether the name ends in `.ts`, `.mts` or `.cts`, a declaration file such as `customer.model.d.ts` included, and is not a generated file. |
 | `discoverModelManifests` | `(root?, onInput?): string[]` | [`@exprtlabs/golem/manifest`](/reference/runtime-api#manifest) re-export. |
 
 ## Apply results

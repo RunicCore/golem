@@ -28,15 +28,15 @@ function project(t: TestContext, files: readonly string[] = []): string {
 type ProgramScan = ReturnType<RewriteScanner['scanProgram']>;
 
 /** The scanner's answer for every file of the project's own program. */
-function scan(root: string): ProgramScan {
-  return withScanner(root, (scanner) => scanner.scanProgram());
+function scan(root: string, nest = false): ProgramScan {
+  return withScanner(root, (scanner) => scanner.scanProgram(), nest);
 }
 
 /** Run `use` against a scanner of the project's own program, which closes with it. */
-function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T): T {
+function withScanner<T>(root: string, use: (scanner: RewriteScanner) => T, nest = false): T {
   const info = createProjectProgram(root, undefined, undefined, path.join(root, 'tsconfig.json'));
   using program = info.program;
-  return use(new RewriteScanner({ root, directory: root, modelsRoot: root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS), nest: false }));
+  return use(new RewriteScanner({ root, directory: root, modelsRoot: root, program, checker: program.getTypeChecker(), codecKeysFile: path.join(root, CODEC_KEYS), nest }));
 }
 
 function scanned(result: ProgramScan, file: string): FileScanResult {
@@ -175,6 +175,22 @@ test('a call on a model named only as a type imports the generated module that r
   assert.ok(code.includes("import type { TMoney } from './payment.model.js';"), 'the type-only import stays as the user wrote it');
 });
 
+test('a project reached through a folder link loads the generated module that registers the codec of its own model', (t) => {
+  // protects: T-197 final review: own models regressed when the program spells files by the link and the codec keys by the real path
+  const root = project(t, ['load-codec.ts']);
+  const link = `${root}-link`;
+  fs.symlinkSync(root, link, 'dir');
+  t.after(() => fs.rmSync(link, { force: true }));
+
+  const result = scan(link);
+
+  assert.deepEqual(result.diagnostics, []);
+  assert.deepEqual(result.files.get('src/load-codec.ts')?.imports, [
+    { from: './payment.model.generated.js', names: [] },
+    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+  ]);
+});
+
 test('a class imported only as a type is constructed through an aliased value import of its module', (t) => {
   const root = project(t, ['type-only.ts', 'ledger.model.ts', 'ledger.model.generated.ts']);
   const result = scan(root);
@@ -214,6 +230,43 @@ test('a model class registers once, several classes of one model register under 
   assert.deepEqual(result.files.get('src/ledger.model.ts')?.imports, [{ from: '@exprtlabs/golem/serde', names: ['registerIModelClass'] }]);
   assert.equal(result.files.get('src/registered.model.ts'), undefined, 'the plain statement exists');
   assert.equal(result.files.get('src/rewritten.model.ts'), undefined, 'the aliased statement exists');
+});
+
+test('classes of one model in several files register under <id>#<class>, and the model has no default class', (t) => {
+  // protects: T-195 review: the default class of a model never depends on which file loads last
+  const root = project(t);
+  for (const name of ['A', 'B']) fs.writeFileSync(path.join(root, `src/${name.toLowerCase()}.ts`), `import { TPaymentBaseModel } from './payment.model.generated.js';\nexport class ${name} extends TPaymentBaseModel {}\n`);
+
+  const result = scan(root);
+
+  assert.deepEqual(result.diagnostics, []);
+  assertLines(rewritten(root, result, 'payment.model.ts'), ['__golem_registerIModelClass("TPayment_22222222#Payment", Payment);']);
+  assertLines(rewritten(root, result, 'a.ts'), ['__golem_registerIModelClass("TPayment_22222222#A", A);']);
+  assertLines(rewritten(root, result, 'b.ts'), ['__golem_registerIModelClass("TPayment_22222222#B", B);']);
+});
+
+test('a @Body() class that reaches the generated base through another class gets the codec of its model', (t) => {
+  // protects: T-195 review: a chain class was a model in the document and had no codec at run time
+  const root = project(t);
+  fs.writeFileSync(path.join(root, 'src/rush.controller.ts'), 'import type { Payment } from \'./payment.model.js\';\nexport class RushPayment extends Payment {}\ndeclare const Body: () => ParameterDecorator;\nexport class RushController {\n  create(@Body() input: RushPayment): void {}\n}\n');
+
+  const result = scan(root, true);
+
+  assert.deepEqual(result.diagnostics, []);
+  assert.ok(rewritten(root, result, 'rush.controller.ts').includes('@__golem_nestModelCodec("TPayment_22222222") input: RushPayment'));
+});
+
+test('a @Body() model that is a default export says to export the class by name', (t) => {
+  // protects: T-195 review: "run golem generate" never fixes a default export, so the message names the fix
+  const root = project(t, ['default-class.model.ts', 'default-class.model.generated.ts']);
+  fs.writeFileSync(path.join(root, 'src/default.controller.ts'), 'import type DefaultClass from \'./default-class.model.js\';\ndeclare const Body: () => ParameterDecorator;\nexport class DefaultController {\n  create(@Body() input: DefaultClass): void {}\n}\n');
+
+  const { diagnostics } = scan(root, true);
+
+  assert.deepEqual(diagnostics.map(({ code, message }) => ({ code, message })), [{
+    code: 'RUNM1071',
+    message: '@Body() type DefaultClass is the default export of its file, which has no codec id; golem generate cannot add one. Export the class by name (export class DefaultClass) and import it by name.',
+  }]);
 });
 
 /** Install a one-model SDK as `node_modules/sdk`; returns its directory. */
@@ -498,32 +551,8 @@ function appBesideForeignModels(t: TestContext, site: string): { readonly app: s
   };
 }
 
-test('golem check reports a serde call on a model of a folder outside the root with its own golem.yaml, as outside the root', async (t) => {
-  const { app, shared, config } = appBesideForeignModels(t, `import { parse } from '@exprtlabs/golem/serde';
-import type { TMoney } from '../../shared/src/money.model.js';
-export const money = parse<TMoney>('{}');
-`);
-  await runPipeline(config);
-  await assert.rejects(
-    runPipeline(config, { check: true }),
-    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:3:22): ${path.join(shared, 'src/money.model.ts')}#TMoney is outside the models root ${app}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type TMoney = IObject<...>\` over a plain type.` },
-  );
-});
-
-test('golem check reports a serde call on a model outside the models root, with the model and the root', async (t) => {
-  const { app, shared, config } = appBesideForeignModels(t, `import { parse } from '@exprtlabs/golem/serde';
-import type { TMoney } from '../../shared/src/money.model.js';
-export const money = parse<TMoney>('{}');
-`);
-  fs.rmSync(path.join(shared, 'golem.yaml'));
-  await runPipeline(config);
-  await assert.rejects(
-    runPipeline(config, { check: true }),
-    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:3:22): ${path.join(shared, 'src/money.model.ts')}#TMoney is outside the models root ${app}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type TMoney = IObject<...>\` over a plain type.` },
-  );
-});
-
-test('golem check reports a serde call on a model of an installed package, with the model and the way to declare it in the app', async (t) => {
+test('golem check reports a serde call on a model of an installed package whose file has no model suffix, with the model and the suffix', async (t) => {
+  // protects: R-20 RUNM1074 keeps one reason in golem check: the model file has no model suffix
   const { declaration, config } = appBesideForeignModels(t, `import { stringify } from '@exprtlabs/golem/serde';
 import type { TPkgMoney } from '@acme/money';
 declare const money: TPkgMoney;
@@ -532,7 +561,7 @@ export const text = stringify<TPkgMoney>(money);
   await runPipeline(config);
   await assert.rejects(
     runPipeline(config, { check: true }),
-    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:4:21): ${declaration}#TPkgMoney is a model in an installed package. Golem does not generate models in node_modules. Declare the model in your own source, for example \`type TPkgMoney = IObject<...>\` over the package's plain type.` },
+    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:4:21): ${declaration}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
   );
 });
 
@@ -572,18 +601,19 @@ declare const text: string;
 export const money = parse<TMoney>(text);
 `);
   fs.writeFileSync(path.join(outer, 'shared/payment.model.ts'), `import { TPaymentBaseModel } from '../app/src/payment.model.generated.js';
-export class Payment extends TPaymentBaseModel {}
+export class SharedPayment extends TPaymentBaseModel {}
 `);
   fs.writeFileSync(path.join(outer, 'shared/plain.ts'), "export const plain = 1;\n");
   // Keys are exact paths from the tsconfig directory, so the class outside the root has a key of its own.
   const keysFile = path.join(root, CODEC_KEYS);
   const table: { version: number; keys: Record<string, string> } = JSON.parse(fs.readFileSync(keysFile, 'utf8'));
-  fs.writeFileSync(keysFile, JSON.stringify({ ...table, keys: { ...table.keys, '../shared/payment.model.ts#Payment': 'TPayment_22222222' } }));
+  fs.writeFileSync(keysFile, JSON.stringify({ ...table, keys: { ...table.keys, '../shared/payment.model.ts#SharedPayment': 'TPayment_22222222' } }));
   const { diagnostics, files } = scan(root);
   const xBefore = fs.readFileSync(path.join(outer, 'shared/x.ts'), 'utf8');
   const classBefore = fs.readFileSync(path.join(outer, 'shared/payment.model.ts'), 'utf8');
   const money = 'export const money = __golem_requireObjectCodec("TMoney_11111111").parse(text);';
-  const registration = '__golem_registerIModelClass("TPayment_22222222", Payment);';
+  // The app's own Payment is a second class of the model, so each registers under its own key.
+  const registration = '__golem_registerIModelClass("TPayment_22222222#SharedPayment", SharedPayment);';
   const outsideCode = (file: string, before: string, from: ProgramScan['files']): string => applyRewrites(before, from.get(file)!).code;
   assert.deepEqual(diagnostics, []);
   assert.deepEqual([...files.keys()], ['../shared/payment.model.ts', '../shared/x.ts', 'src/payment.model.ts']);

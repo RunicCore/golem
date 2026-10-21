@@ -15,6 +15,8 @@ export interface ModelSpecification {
   readonly emitClass: boolean;
   /** Override of the generation-profile validation flag; undefined inherits. */
   readonly validation?: boolean;
+  /** The generated companion of the model's file, when it is not beside the file: a shared file's, in `models.output`. */
+  readonly companionFile?: string;
 }
 
 /** Analysis context for a field contract, including controller DTOs. */
@@ -58,6 +60,8 @@ export function collectSpecifications(
   program: ts.Program,
   sources: readonly string[],
   exact = true,
+  /** The companion path of a model file; omitted means beside the file. */
+  companionOf?: (filename: string) => string,
 ): CollectedSpecifications {
   const checker = program.getTypeChecker();
   const specifications: ModelSpecification[] = [];
@@ -92,6 +96,7 @@ export function collectSpecifications(
         allowAny: readOptionalBooleanOption(checker, optionsNode, 'allowAny'),
         emitClass: declarationKind === 'IModel',
         validation: readOptionalBooleanOption(checker, optionsNode, 'validation'),
+        ...(companionOf ? { companionFile: companionOf(filename) } : {}),
       });
     }
   }

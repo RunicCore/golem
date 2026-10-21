@@ -7,8 +7,11 @@ import {
   canonicalFilename,
   createContractAnalysis,
   createProgram,
+  loadModelManifests,
+  modelBoundary,
   retainedProgramSession,
   projectWatchInputs,
+  type ModelBoundary,
 } from '@exprtlabs/golem/type-analysis';
 import { schemaForDescriptor } from '@exprtlabs/golem/schema';
 import type {
@@ -54,6 +57,7 @@ function validateContext(context: TsToOpenApiContext): {
   readonly openapiVersion: '3.2.0' | '3.1.2';
   readonly profile: ResolvedGolemProfile;
   readonly exact?: boolean;
+  readonly boundary?: ModelBoundary;
   readonly onInput?: InputObserver;
 } {
   if (!context || typeof context !== 'object' || Array.isArray(context)) {
@@ -86,7 +90,13 @@ function validateContext(context: TsToOpenApiContext): {
       if (new Set(resolved).size !== resolved.length) throw new TypeError('context.sources must not contain duplicates.');
       return [...resolved].sort();
     })();
-  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, profile, exact: context.exact, onInput: context.onInput };
+  const models = context.models;
+  const boundary = models && modelBoundary(
+    assertAbsolute(models.root, 'context.models.root'),
+    models.suffixes,
+    { directory: assertAbsolute(models.directory, 'context.models.directory'), output: assertAbsolute(models.output, 'context.models.output') },
+  );
+  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, profile, exact: context.exact, ...(boundary ? { boundary } : {}), onInput: context.onInput };
 }
 
 function asGolemDiagnostic(value: TsToOpenApiDiagnostic): GolemDiagnostic {
@@ -226,6 +236,8 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     root: normalized.root,
     allowAny: normalized.profile.allowAny,
     exact: normalized.exact,
+    // With the models job known, the manifests the program advertises decide which model files are SDK files, as they do for that job.
+    ...(normalized.boundary ? { boundary: normalized.boundary, manifests: loadModelManifests(normalized.root, programInfo, [], normalized.profile, observe) } : {}),
   });
   const schemaDiagnostics: TsToOpenApiDiagnostic[] = [];
   const schemaDiagnosticKeys = new Set<string>();

@@ -30,7 +30,7 @@ import { descriptorBuilder, propertyType } from '@exprtlabs/golem/type-analysis'
 import {
   canonicalFilename,
   commonDirectory,
-  generatedFilename,
+  companionOfSpecification,
   portableRelativeFilename,
   projectFilesImportedBy,
 } from '@exprtlabs/golem/type-analysis';
@@ -771,6 +771,8 @@ interface JobAnalysis {
   readonly executableMemo: ExecutableValidationMemo;
   /** The files each file imports or re-exports, by canonical filename; filled as the import graphs are read. */
   readonly directImports: Map<string, readonly string[]>;
+  /** The job's model-file suffixes: a model file of a shared package is read through an import. */
+  readonly suffixes: readonly string[] | undefined;
   readonly compilerOptions: ts.CompilerOptions;
   /** The parsed file of a canonical filename, when the program holds it. */
   readonly sourceFileOf: (filename: string) => ts.SourceFile | undefined;
@@ -833,6 +835,7 @@ export function createJobAnalysis(
     sources: modelSources,
     executableMemo: createExecutableValidationMemo(),
     directImports: new Map(),
+    suffixes: boundary?.suffixes,
     compilerOptions: compilerOptions ?? { moduleResolution: ts.ModuleResolutionKind.NodeNext },
     sourceFileOf: sourceFileOf ?? ((filename) => specifications
       .find((specification) => canonicalFilename(specification.sourceFile.fileName) === filename)?.sourceFile),
@@ -844,7 +847,7 @@ function directImports(job: JobAnalysis, file: ts.SourceFile): readonly string[]
   const key = canonicalFilename(file.fileName);
   const known = job.directImports.get(key);
   if (known) return known;
-  const imports = projectFilesImportedBy(file, job.compilerOptions);
+  const imports = projectFilesImportedBy(file, job.compilerOptions, job.suffixes);
   job.directImports.set(key, imports);
   return imports;
 }
@@ -1518,14 +1521,14 @@ export function emitSource(
   }
   lines.push(
     // A sibling companion registers the codecs this module references by id.
-    ...[...new Set(graph.siblings.map((item) => sourceImportPath(generatedFilename(item.sourceFile.fileName), output)))]
+    ...[...new Set(graph.siblings.map((item) => sourceImportPath(companionOfSpecification(item), output)))]
       .sort()
       .map((path) => `import ${JSON.stringify(path)};`),
-    ...localImports.map((item) => `import { ${item.name}BaseModel, type ${item.name}JSON, type ${item.name}Init } from ${JSON.stringify(sourceImportPath(generatedFilename(item.sourceFile.fileName), output))};`),
+    ...localImports.map((item) => `import { ${item.name}BaseModel, type ${item.name}JSON, type ${item.name}Init } from ${JSON.stringify(sourceImportPath(companionOfSpecification(item), output))};`),
     ...siblingObjects.map((item) => {
       const codecId = siblingObjectCodecId(item.name);
       const helpers = (['decode', 'init', 'encode'] as const).map((kind) => objectHelperExportName(kind, codecId));
-      return `import { type ${item.name}Fields, type ${item.name}JSON, type ${item.name}Init, ${helpers.join(', ')} } from ${JSON.stringify(sourceImportPath(generatedFilename(item.sourceFile.fileName), output))};`;
+      return `import { type ${item.name}Fields, type ${item.name}JSON, type ${item.name}Init, ${helpers.join(', ')} } from ${JSON.stringify(sourceImportPath(companionOfSpecification(item), output))};`;
     }),
     ...localImports
       .filter((item) => !cyclicSiblings?.has(item.name))
@@ -1778,7 +1781,7 @@ export function emitSource(
     const name = wireStringifyExportName(node.codecId);
     const sibling = node.siblingCodec ? graph.siblings.find((item) => item.name === node.name) : undefined;
     return sibling && codecRuntime.includes(name)
-      ? [`import { ${name} } from ${JSON.stringify(sourceImportPath(generatedFilename(sibling.sourceFile.fileName), output))};`]
+      ? [`import { ${name} } from ${JSON.stringify(sourceImportPath(companionOfSpecification(sibling), output))};`]
       : [];
   });
   lines.splice(1, 0, ...siblingWireImports);

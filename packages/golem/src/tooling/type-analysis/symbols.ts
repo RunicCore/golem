@@ -1,7 +1,7 @@
-import { relative } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import * as ts from '../typescript-ns.js';
-import { canonicalPath } from '../generator-api.js';
-import { canonicalFilename, generatedFilename, isOutside, type ModelBoundary } from './project.js';
+import { DEFAULT_MODEL_SUFFIXES, canonicalPath } from '../generator-api.js';
+import { canonicalFilename, generatedFilename, isModelFileName, type ModelBoundary } from './project.js';
 import type { ModelSpecification } from './models.js';
 
 /** A located model-analysis error with its RUNM code. */
@@ -58,26 +58,14 @@ export function modelDeclarationKind(checker: ts.TypeChecker, node: ts.TypeNode)
 /**
  * Why golem cannot generate `declaration`, an IModel or IObject alias that no model of this job declares, or undefined when
  * the declaration has no such reason: a type that is only nested without a name, for one. A model is `file#export`, with the
- * real path of the file. The reasons, in order: the model is in `node_modules`, another models job below the root owns it,
- * the file is outside the models root. Without a boundary (an analysis that has no models job, such as the controllers
- * analysis) only the `node_modules` reason applies.
+ * real path of the file. The one reason: the file name has no model suffix, so golem does not read the file as a model file.
+ * Without a boundary (an analysis that has no models job, such as the controllers analysis) the default suffixes apply.
  */
-export function foreignModelReason(declaration: ts.TypeAliasDeclaration, boundary: ModelBoundary | undefined): string | undefined {
+export function foreignModelReason(declaration: ts.TypeAliasDeclaration, boundary: Pick<ModelBoundary, 'suffixes'> | undefined): string | undefined {
   const filename = canonicalPath(declaration.getSourceFile().fileName);
-  const name = declaration.name.text;
-  const model = `${filename}#${name}`;
-  const insideRoot = boundary !== undefined && !isOutside(boundary.root, filename);
-  if ((boundary !== undefined && insideRoot ? relative(boundary.root, filename) : filename).split(/[\\/]/).includes('node_modules')) {
-    return `${model} is a model in an installed package. Golem does not generate models in node_modules. Declare the model in your own source, for example \`type ${name} = IObject<...>\` over the package's plain type.`;
-  }
-  if (boundary === undefined) return undefined;
-  const yaml = boundary.anotherModelsJobOf(filename);
-  if (yaml !== undefined) {
-    return `${model} belongs to the models job of ${yaml}. That job generates it for its own folder, so this app cannot use it as a model.`;
-  }
-  return !insideRoot
-    ? `${model} is outside the models root ${boundary.root}. Golem does not generate models outside the root of the app. Declare the model in your own source, for example \`type ${name} = IObject<...>\` over a plain type.`
-    : undefined;
+  const suffixes = boundary?.suffixes ?? DEFAULT_MODEL_SUFFIXES;
+  if (isModelFileName({ suffixes }, filename)) return undefined;
+  return `${filename}#${declaration.name.text} is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in ${suffixes.join(' or ')}. Move the model into such a file.`;
 }
 
 /** The alias that declares the model the type reference names, when it is written as `type Name = IModel<...>` or `IObject<...>`. */
@@ -85,6 +73,11 @@ export function declaredModelAlias(reference: ts.TypeReferenceNode): ts.TypeAlia
   return ts.isTypeAliasDeclaration(reference.parent) && reference.parent.type === reference ? reference.parent : undefined;
 }
 
+
+/** The generated companion of a model: beside its file, or where the job put a shared file's. */
+export function companionOfSpecification(specification: ModelSpecification): string {
+  return specification.companionFile ?? generatedFilename(specification.sourceFile.fileName);
+}
 
 /** Identify a model class through its generated base import, including first generation. */
 export function modelSpecificationForClass(
@@ -97,13 +90,23 @@ export function modelSpecificationForClass(
   const declaration = resolveSymbol(checker, type.getSymbol())?.declarations?.find(ts.isClassDeclaration);
   if (!declaration || seen.has(declaration)) return undefined;
   seen.add(declaration);
-  const expected = new Set(specifications.map(specification => canonicalFilename(generatedFilename(specification.sourceFile.fileName))));
+  const expected = new Set(specifications.map(specification => canonicalFilename(companionOfSpecification(specification))));
   const match = (filename: string, name: string | undefined): ModelSpecification | undefined => specifications.find(specification =>
-    canonicalFilename(generatedFilename(specification.sourceFile.fileName)) === canonicalFilename(filename)
+    canonicalFilename(companionOfSpecification(specification)) === canonicalFilename(filename)
       && name === `${specification.name}BaseModel`);
-  const host: ts.ModuleResolutionHost = {
-    ...ts.sys,
-    fileExists: filename => expected.has(canonicalFilename(filename)) || ts.sys.fileExists(filename),
+  // Module resolution finds only a file whose folder exists, and the folder of a shared companion in `models.output` is made when
+  // the models job writes it: the expected companions exist for every import form (relative, `paths`, `#imports`).
+  const expectedFolders = new Set([...expected].flatMap((filename) => {
+    const folders: string[] = [];
+    for (let folder = dirname(filename); !folders.includes(folder); folder = dirname(folder)) folders.push(folder);
+    return folders;
+  }));
+  // The system carries `directoryExists`, which the compiler's resolution reads and the golem-owned host type leaves out.
+  const system = ts.sys as ts.ModuleResolutionHost & { directoryExists?(directory: string): boolean };
+  const host = {
+    ...system,
+    fileExists: (filename: string) => expected.has(canonicalFilename(filename)) || system.fileExists(filename),
+    directoryExists: (directory: string) => expectedFolders.has(canonicalFilename(directory)) || system.directoryExists?.(directory) === true,
   };
   for (const heritage of declaration.heritageClauses ?? []) {
     if (heritage.token !== ts.SyntaxKind.ExtendsKeyword) continue;
@@ -118,8 +121,9 @@ export function modelSpecificationForClass(
         if (!ts.isImportSpecifier(alias)) continue;
         const statement = alias.parent.parent.parent;
         if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier)) continue;
-        const module = ts.resolveModuleName(statement.moduleSpecifier.text, statement.getSourceFile().fileName, compilerOptions, host).resolvedModule;
-        const specification = module && match(module.resolvedFileName, (alias.propertyName ?? alias.name).text);
+        const importer = statement.getSourceFile().fileName;
+        const resolved = ts.resolveModuleName(statement.moduleSpecifier.text, importer, compilerOptions, host).resolvedModule?.resolvedFileName;
+        const specification = resolved && match(resolved, (alias.propertyName ?? alias.name).text);
         if (specification) return specification;
       }
       const inherited = modelSpecificationForClass(checker, checker.getTypeAtLocation(base), specifications, compilerOptions, seen);

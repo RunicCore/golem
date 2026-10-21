@@ -2,13 +2,13 @@ import * as path from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { collectSpecifications, type ModelSpecification, type TypeAnalysisContext } from './models.js';
 import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
-import { isGeneratedCompanion } from './project.js';
+import { byRealPath, companionFilename, includedModelSources, isGeneratedCompanion, type ModelBoundary } from './project.js';
 import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
 import { canonicalDescriptorKey } from '../schema.js';
 import { deduplicateProjections } from './graph.js';
 import { linkedClassNames, modelSpecificationForClass } from './symbols.js';
-import type { ManifestIndex } from './provenance.js';
+import { manifestModelOfSymbol, type ManifestIndex } from './provenance.js';
 import { codecPublicId, createSchemaGraph, internDescriptors } from '../schema-graph.js';
 
 export interface ContractAnalysis {
@@ -27,13 +27,28 @@ export interface ContractAnalysis {
 /** Shared source interpretation for controller contracts; it never loads application modules. */
 export function createContractAnalysis(
   program: ts.Program,
-  options: { readonly root: string; readonly allowAny?: boolean; readonly exact?: boolean },
+  options: {
+    readonly root: string;
+    readonly allowAny?: boolean;
+    readonly exact?: boolean;
+    /** The models job of the app: a shared model's generated file is where that job writes it. Without it every generated file is beside its model file. */
+    readonly boundary?: ModelBoundary;
+    /** The model manifests of the program, as the models job reads them: a model a manifest lists has the codec id of its manifest entry. */
+    readonly manifests?: ManifestIndex;
+  },
 ): ContractAnalysis {
   const checker = program.getTypeChecker();
-  const sources = program.getSourceFiles().filter(source => !source.isDeclarationFile
+  const ownSources = program.getSourceFiles().filter(source => !source.isDeclarationFile
     && !source.fileName.replace(/\\/g, '/').includes('/node_modules/')
     && !isGeneratedCompanion(source.fileName)).map(source => source.fileName);
-  const { specifications } = collectSpecifications(program, sources, options.exact);
+  // With the models job known, a model file of an installed package or a declaration file is a shared model file of the app, as it is for that job.
+  const sharedSources = options.boundary === undefined ? [] : includedModelSources(
+    program.getSourceFiles().filter(source => !program.isSourceFileDefaultLibrary(source)).map(source => source.fileName),
+    options.boundary.suffixes,
+  );
+  // A file has one name: TypeScript's own spelling and the normalized one of a shared file are the same file.
+  const sources = byRealPath([...ownSources, ...sharedSources]);
+  const { specifications } = collectSpecifications(program, sources, options.exact, options.boundary && ((file) => companionFilename(options.boundary, file)));
   const emptyManifests: ManifestIndex = {
     byId: new Map(), byProvenance: new Map(), files: [], localFiles: [], validationSchemaClosure: [], runtimeExports: () => new Set(), externalModelForType: () => undefined,
   };
@@ -43,7 +58,8 @@ export function createContractAnalysis(
     return [specification, linked.length === 1 ? linked[0]! : specification.name] as const;
   }));
   // OpenAPI describes the full contract even when runtime validation is omitted.
-  const buildDescribe = (nameFor?: (specification: ModelSpecification) => string) => descriptorBuilder(checker, specifications, emptyManifests, true, options.allowAny ?? false, options.root, program.getCompilerOptions(), false, nameFor);
+  // The document describes an SDK model by its type; only the codec ids see it as the manifest reference the models job hashes.
+  const buildDescribe = (nameFor?: (specification: ModelSpecification) => string, manifests: ManifestIndex = emptyManifests) => descriptorBuilder(checker, specifications, manifests, true, options.allowAny ?? false, options.root, program.getCompilerOptions(), false, nameFor);
   const describeAll = (builder: ReturnType<typeof buildDescribe>): Map<ModelSpecification, ModelConversionDescriptor> => new Map(
     specifications.map((specification) => [specification, builder(specification.fieldsType, specification, undefined, specification.fieldsNode)] as const),
   );
@@ -57,8 +73,8 @@ export function createContractAnalysis(
     describe = buildDescribe(componentName);
     described = describeAll(describe);
   }
-  // Codec ids hash descriptors named by alias, as the generated companions do; the document uses component names.
-  const describeForIds = buildDescribe();
+  // Codec ids hash descriptors named by alias and nesting an SDK model by its manifest, as the generated companions do; the document uses component names.
+  const describeForIds = buildDescribe(undefined, options.manifests);
   const describedForIds = describeAll(describeForIds);
   const internGraph = createSchemaGraph();
   internDescriptors(internGraph, [
@@ -76,7 +92,10 @@ export function createContractAnalysis(
     const idDescriptor = describedForIds.get(specification);
     if (!descriptor || !idDescriptor) continue;
     const node = internGraph.nodeFor(idDescriptor, specification.name, specification.emitClass);
-    const publicId = node?.codecId ?? codecPublicId(specification.name, idDescriptor, undefined, { source: 'typescript', constructs: specification.emitClass });
+    // An SDK model keeps the id its manifest gives it, which is the id a build rewrite stamps; the document still describes its type.
+    const alias = checker.getSymbolAtLocation(specification.declaration.name);
+    const publicId = (alias && options.manifests && manifestModelOfSymbol(options.manifests.byProvenance, alias)?.codecId)
+      || node?.codecId || codecPublicId(specification.name, idDescriptor, undefined, { source: 'typescript', constructs: specification.emitClass });
     codecBySpec.set(specification, publicId);
     const name = componentName(specification);
     codecIds[publicId] = publicId;

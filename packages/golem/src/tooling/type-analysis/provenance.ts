@@ -10,7 +10,7 @@ import type {
   ModelManifest,
   ModelManifestEntry,
 } from '../model-manifest.js';
-import type { GolemProfile, InputObserver } from '../generator-api.js';
+import { canonicalPath, type GolemProfile, type InputObserver } from '../generator-api.js';
 import type { CodecSchemaClosureEntry } from '../validation-plan.js';
 import { canonicalFilename, effectiveConfigPath } from './project.js';
 import type { ProgramInfo } from './project.js';
@@ -192,6 +192,34 @@ export function advertisedModelManifests(program: ts.Program, onInput?: InputObs
   return advertised;
 }
 
+/** The manifest entry that lists a declaration of `symbol`. A published package ships `.d.ts` for the `.ts` file its manifest names. */
+export function manifestModelOfSymbol(
+  byProvenance: ReadonlyMap<string, ResolvedModelManifestEntry>,
+  symbol: ts.Symbol,
+): ResolvedModelManifestEntry | undefined {
+  for (const declaration of symbol.declarations ?? []) {
+    const file = canonicalFilename(declaration.getSourceFile().fileName);
+    const model = byProvenance.get(`${file}\0${symbol.getName()}`)
+      ?? byProvenance.get(`${file.replace(/\.d\.([cm]?ts)$/, '.$1')}\0${symbol.getName()}`);
+    if (model) return model;
+  }
+  return undefined;
+}
+
+/**
+ * The real files that a model manifest lists as the declaration of an SDK model. A job uses the SDK's generated code for them.
+ * A published package ships `x.model.d.ts` for the `x.model.ts` its manifest names, so both forms count.
+ */
+export function sdkModelFiles(manifestIndex: ManifestIndex): ReadonlySet<string> {
+  const files = new Set<string>();
+  for (const key of manifestIndex.byProvenance.keys()) {
+    const module = canonicalPath(key.slice(0, key.indexOf('\0')));
+    files.add(module);
+    files.add(module.replace(/(?<!\.d)\.([cm]?)ts$/, '.d.$1ts'));
+  }
+  return files;
+}
+
 export function loadModelManifests(
   root: string,
   info: ProgramInfo,
@@ -267,15 +295,9 @@ export function loadModelManifests(
     validationSchemaClosure,
     runtimeExports: (model) => exportsById.get(model.id) ?? new Set(),
     externalModelForType(type: ts.Type): ResolvedModelManifestEntry | undefined {
-      const symbols = [type.aliasSymbol, type.getSymbol?.()].filter(
-        (symbol): symbol is ts.Symbol => symbol !== undefined,
-      );
-      for (const symbol of symbols) {
-        for (const declaration of symbol.declarations ?? []) {
-          const key = `${canonicalFilename(declaration.getSourceFile().fileName)}\0${symbol.getName()}`;
-          const model = byProvenance.get(key);
-          if (model) return model;
-        }
+      for (const symbol of [type.aliasSymbol, type.getSymbol?.()]) {
+        const model = symbol && manifestModelOfSymbol(byProvenance, symbol);
+        if (model) return model;
       }
       return undefined;
     },

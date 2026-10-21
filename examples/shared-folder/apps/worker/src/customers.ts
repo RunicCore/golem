@@ -1,15 +1,18 @@
+// #region worker-use
 import { parse, stringify } from '@exprtlabs/golem/serde';
-import type { TWorkerCustomer } from './customer.model.js';
-import './customer.model.generated.js'; // registers the customer codec
+import type { TCustomer } from '../shared/customer.model.js';
+import './generated/models/shared/customer.model.generated.js'; // registers the customer codec
 
-export function readCustomer(text: string): TWorkerCustomer {
-  return parse<TWorkerCustomer>(text);
+// The worker uses the same shared model with its own profile: validation is off.
+export function readCustomer(text: string): TCustomer {
+  return parse<TCustomer>(text);
+}
+// #endregion worker-use
+
+export function readCustomerChecked(text: string): TCustomer {
+  return parse<TCustomer>(text, { validate: true });
 }
 
-export function readCustomerChecked(text: string): TWorkerCustomer {
-  return parse<TWorkerCustomer>(text, { validate: true });
-}
-
-export function writeCustomer(customer: TWorkerCustomer): string {
-  return stringify<TWorkerCustomer>(customer);
+export function writeCustomer(customer: TCustomer): string {
+  return stringify<TCustomer>(customer);
 }

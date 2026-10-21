@@ -4,7 +4,7 @@ import * as ts from '../typescript-ns.js';
 import { declaredModelAlias, diagnostic, foreignModelReason, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
 import { isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
-import { commonDirectory, canonicalFilename, type ModelBoundary } from './project.js';
+import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { compareText } from '../generator-api.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey } from '../schema.js';
@@ -131,6 +131,8 @@ function classValueReference(
   context: TypeAnalysisContext,
   node: ts.Node,
   identityRoot: string,
+  /** The generated file that imports the class: the companion of the model's file. */
+  importer: string,
 ): { typeName: string; typeImport?: { exportName: string; module: string; specifier?: string } } {
   // The class's own symbol, never a local alias such as `type Bytes = Uint8Array & TSerde<…>`,
   // which the model file need not export.
@@ -168,7 +170,7 @@ function classValueReference(
     throw diagnostic(context.sourceFile, node, '1063', `Class ${typeName} is not exported from ${path.relative(path.dirname(context.sourceFile.fileName), sourceFile.fileName)}, so generated code cannot import it. Export it.`);
   }
   const module = canonicalFilename(sourceFile.fileName);
-  const resolved = packageSpecifier(module, context.sourceFile.fileName, identityRoot);
+  const resolved = packageSpecifier(module, importer, identityRoot);
   if (resolved.kind === 'unexported') {
     throw diagnostic(context.sourceFile, node, '1060', `Class ${typeName} is in package ${resolved.packageName}, but no "exports" entry reaches ${module}. Export that file from the package.`);
   }
@@ -552,6 +554,18 @@ export function descriptorBuilder(
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
   ));
+  // The companion of a source file reads the filesystem, so each source file's is computed once.
+  // A model's companion is where its imports are written, so every job names a TSerde or TValidation function from the same file.
+  const companions = new Map<string, string>(specifications.flatMap((specification) =>
+    specification.companionFile === undefined ? [] : [[specification.sourceFile.fileName, specification.companionFile] as const]));
+  const companionOf = (sourceFile: string): string => {
+    let companion = companions.get(sourceFile);
+    if (companion === undefined) {
+      companion = companionFilename(boundary, sourceFile);
+      companions.set(sourceFile, companion);
+    }
+    return companion;
+  };
   const structuralModels = new Map<ts.Type, ModelSpecification | undefined>();
   const structuralModel = (type: ts.Type): ModelSpecification | undefined => {
     if (structuralModels.has(type)) return structuralModels.get(type);
@@ -591,6 +605,7 @@ export function descriptorBuilder(
       checker,
       sourceFile: context.sourceFile,
       identityRoot: stableIdentityRoot,
+      importer: companionOf(context.sourceFile.fileName),
       ...(modelSources ? { isModelSource: (filename: string) => modelSources.has(filename) } : {}),
       diagnostic: (tagNode: ts.Node, code: string, message: string) =>
         diagnostic(context.sourceFile, tagNode, code, message),
@@ -653,7 +668,7 @@ export function descriptorBuilder(
       return withMetadata({ kind: 'class-value', typeName: 'bigint' } as ModelConversionDescriptor, metadata);
     }
     if (metadata.serde && isClassValueType(checker, type)) {
-      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot) } as ModelConversionDescriptor, metadata);
+      return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot, companionOf(context.sourceFile.fileName)) } as ModelConversionDescriptor, metadata);
     }
 
     const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications);

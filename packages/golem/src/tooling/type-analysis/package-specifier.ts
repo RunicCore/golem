@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { canonicalPath } from '../generator-api.js';
-import { isOutside } from './project.js';
+import { isOutside } from './path-identity.js';
 
 type PackageSpecifierResult =
   | { readonly kind: 'same-package' }

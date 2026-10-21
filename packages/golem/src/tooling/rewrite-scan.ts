@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { GolemDiagnosticSeverity, isRecord } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, isRecord } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
 import { CODEC_KEY_FILE, operationCodecRegistryPath } from './generated-paths.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { readModelManifest } from './model-manifest.js';
-import { createProjectProgram, canonicalFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
+import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
 import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { advertisedModelManifests } from './type-analysis/provenance.js';
 import { fieldProvenance } from './type-analysis/projections.js';
@@ -16,10 +16,14 @@ import { declaredModelAlias, foreignModelReason, modelDeclarationKind, resolveSy
 interface ScanInput {
   /** Absolute project root; file paths in results are relative to it. */
   readonly root: string;
-  /** The directory of the golem.yaml. A model that the models job of another golem.yaml covers is not this project's. */
+  /** The directory of the golem.yaml: where the search for a shared model file's package folder stops. */
   readonly directory: string;
-  /** `models.root` of the project's models job: a model whose real path is outside it is not this project's. */
+  /** `models.root` of the project's models job. */
   readonly modelsRoot: string;
+  /** The `suffixes` of the models job: a model is declared in a file whose name ends in one of them. Defaults to the golem default. */
+  readonly suffixes?: readonly string[] | undefined;
+  /** `models.output` of the project's models job: the generated file of a shared model is there. Without it every companion is beside its model file. */
+  readonly output?: string | undefined;
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   /** The project's `.golem/codec-keys.json`, which the program does not hold; a missing file holds no keys. */
@@ -59,7 +63,7 @@ const CODE_RESERVED_PREFIX = 'RUNM1068';
 const CODE_IMPORT_CLASH = 'RUNM1069';
 const CODE_NEST_NO_CODEC = 'RUNM1071';
 const CODE_NEST_REGISTRY = 'RUNM1072';
-/** A model that golem does not generate for this project: it is in an installed package, outside the models root, or another golem.yaml's models job generates it. */
+/** A model that golem does not generate for this project: its file name has no model suffix. */
 const CODE_FOREIGN_MODEL = 'RUNM1074';
 
 /** The serde functions a type argument turns into a codec call, and the runtime method each becomes. */
@@ -113,15 +117,31 @@ class CodecKeys {
   private readonly byDeclaration = new Map<string, Map<string, Set<string>>>();
   /** Each `<file name>#<name>` tail's ids, with the files that give each; only old key tables feed it. */
   private readonly byTail = new Map<string, Map<string, Set<string>>>();
-  /** The generated module that registers each codec id, where a key file or a manifest says which. */
-  private readonly modules = new Map<string, string>();
+  /** The generated module that registers each codec id, where a manifest says which. */
+  private readonly manifestModules = new Map<string, string>();
+  /** The key file's declarations of each codec id, in file order: the model file of one is where the generated module that registers the id is looked up. */
+  private readonly keyDeclarations = new Map<string, string[]>();
+  /** The key file's entries by model name: a class that extends `<Name>BaseModel` is a class of the model with that name whose companion declares the base. */
+  private readonly keysByName = new Map<string, { readonly declaration: string; readonly id: string; readonly table: string }[]>();
+  /** The companion of each model file of a key, found on first use: a scan asks for few of them. */
+  private readonly companions = new Map<string, string | undefined>();
+  /** The generated companions of the program by real path, built when a companion is not found under its real path (a project reached through a folder link). */
+  private companionsByRealPath: Map<string, string> | undefined;
 
-  constructor(private readonly program: ts.Program, private readonly checker: ts.TypeChecker, private readonly root: string, codecKeysFile: string) {
+  /** The real path of the tsconfig's directory: a key is a file's real path from it, as `golem generate` writes it. */
+  private readonly base: string;
+  private readonly keysByFile = new Map<string, string>();
+
+  constructor(private readonly program: ts.Program, private readonly checker: ts.TypeChecker, private readonly root: string, codecKeysFile: string, private readonly boundary: ModelBoundary) {
+    this.base = canonicalPath(root);
     const table = portable(root, codecKeysFile);
     for (const [declaration, id] of Object.entries(readCodecKeysFile(codecKeysFile))) {
       if (declaration.lastIndexOf('#') > 0 && id !== '') {
-        this.add(declaration.replace(/\\/g, '/'), id, table);
-        this.addModule(id, this.companionOf(path.resolve(root, declaration.slice(0, declaration.lastIndexOf('#')))));
+        const key = declaration.replace(/\\/g, '/');
+        this.add(key, id, table);
+        this.keyDeclarations.set(id, [...(this.keyDeclarations.get(id) ?? []), key]);
+        const name = key.slice(key.lastIndexOf('#') + 1);
+        this.keysByName.set(name, [...(this.keysByName.get(name) ?? []), { declaration: key, id, table }]);
       }
     }
     this.addManifests();
@@ -148,9 +168,9 @@ class CodecKeys {
         if (model.codecId === undefined) continue;
         for (const { module, export: exportName } of [model.generated, model.type, ...(model.type.aliases ?? [])]) {
           const symbol = declarationsOf(manifestFile, module, exportName);
-          this.addModule(model.codecId, this.program.getSourceFile(canonicalFilename(path.resolve(path.dirname(manifestFile), model.generated.module)))?.fileName);
+          this.addManifestModule(model.codecId, this.program.getSourceFile(canonicalFilename(path.resolve(path.dirname(manifestFile), model.generated.module)))?.fileName);
           for (const declaration of symbol?.declarations ?? []) {
-            this.add(`${portable(this.root, declaration.getSourceFile().fileName)}#${symbol!.name}`, model.codecId, table);
+            this.add(`${this.keyOf(declaration.getSourceFile().fileName)}#${symbol!.name}`, model.codecId, table);
           }
         }
       }
@@ -166,7 +186,7 @@ class CodecKeys {
     for (const file of this.program.getSourceFiles()) {
       if (path.basename(file.fileName) !== CODEC_KEY_FILE || !file.text.includes(OPENAPI_KEYS_MARKER)) continue;
       const table = portable(this.root, file.fileName);
-      const directory = portable(this.root, path.dirname(file.fileName));
+      const directory = this.keyOf(path.dirname(file.fileName));
       const visit = (node: ts.Node): void => {
         if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.initializer)
           && (ts.isStringLiteral(node.name) || ts.isIdentifier(node.name))) {
@@ -184,19 +204,47 @@ class CodecKeys {
     }
   }
 
-  /** The generated companion of a model file, `x.model.generated.ts` for `x.model.ts`, when the program holds it. */
-  private companionOf(modelFile: string): string | undefined {
-    const extension = /\.[cm]?ts$/.exec(modelFile)?.[0];
-    return extension === undefined ? undefined : this.program.getSourceFile(canonicalFilename(`${modelFile.slice(0, -extension.length)}.generated${extension}`))?.fileName;
+  /** The file's real path from the tsconfig's directory, with forward slashes: a file reached through a folder link has one key. */
+  private keyOf(filename: string): string {
+    let key = this.keysByFile.get(filename);
+    if (key === undefined) this.keysByFile.set(filename, key = portable(this.base, canonicalPath(filename)));
+    return key;
   }
 
-  private addModule(id: string, module: string | undefined): void {
-    if (module !== undefined && !this.modules.has(id)) this.modules.set(id, module);
+  /**
+   * The program's own name for the generated companion of the model file a key names, when the program holds it: beside an own file, in
+   * `models.output` for a shared one. A key is a real path, and a program reached through a folder link spells its files by the link.
+   */
+  private companionOf(declaration: string): string | undefined {
+    const modelFile = path.resolve(this.base, declaration.slice(0, declaration.lastIndexOf('#')));
+    if (!this.companions.has(modelFile)) {
+      let companion: string | undefined;
+      if (/\.[cm]?ts$/.test(modelFile)) {
+        const real = companionFilename(this.boundary, modelFile);
+        companion = this.program.getSourceFile(canonicalFilename(real))?.fileName ?? this.programCompanions().get(canonicalPath(real));
+      }
+      this.companions.set(modelFile, companion);
+    }
+    return this.companions.get(modelFile);
   }
 
-  /** The absolute file of the generated module that registers the codec, or undefined when no key file or manifest names it. */
+  private programCompanions(): ReadonlyMap<string, string> {
+    return this.companionsByRealPath ??= new Map(this.program.getSourceFiles()
+      .filter((file) => isGeneratedCompanion(file.fileName))
+      .map((file) => [canonicalPath(file.fileName), file.fileName] as const));
+  }
+
+  private addManifestModule(id: string, module: string | undefined): void {
+    if (module !== undefined && !this.manifestModules.has(id)) this.manifestModules.set(id, module);
+  }
+
+  /** The absolute file of the generated module that registers the codec, or undefined when no key file or manifest names it. A key file wins over a manifest. */
   moduleOf(id: string): string | undefined {
-    return this.modules.get(id);
+    for (const declaration of this.keyDeclarations.get(id) ?? []) {
+      const companion = this.companionOf(declaration);
+      if (companion !== undefined) return companion;
+    }
+    return this.manifestModules.get(id);
   }
 
   /** `byFileName` also lets a declaration of another path with the same file name and name resolve: only for old key tables, whose paths have no known base. */
@@ -219,7 +267,7 @@ class CodecKeys {
    */
   idFor(filename: string, name: string, dependencies: Set<string>): string {
     if (name === '') return '';
-    const relative = portable(this.root, filename);
+    const relative = this.keyOf(filename);
     const exact = this.byDeclaration.get(`${relative}#${name}`);
     if (exact !== undefined) {
       // Two sources that give one declaration different ids give it none: the call reports it instead of choosing.
@@ -233,6 +281,18 @@ class CodecKeys {
     const [[id, tables]] = [...ids];
     for (const table of tables) dependencies.add(table);
     return id;
+  }
+
+  /** The id of the model whose generated base class `base` is, from the key file of this project. */
+  idForBase(base: GeneratedBase, dependencies: Set<string>): string {
+    // The last key whose companion declares the base wins.
+    const file = canonicalFilename(base.file);
+    const found = (this.keysByName.get(base.name.slice(0, -BASE_MODEL_SUFFIX.length)) ?? []).filter(({ declaration }) => {
+      const companion = this.companionOf(declaration);
+      return companion !== undefined && canonicalFilename(companion) === file;
+    }).at(-1);
+    if (found !== undefined) dependencies.add(found.table);
+    return found?.id ?? '';
   }
 
   idForSymbol(symbol: ts.Symbol, dependencies: Set<string>): string {
@@ -289,20 +349,92 @@ function serdeTypeName(typeNode: ts.TypeNode): ts.EntityName | undefined {
   return undefined;
 }
 
-/** The generated model module that declares `YBaseModel` in `class X extends YBaseModel`; `Mixin(YBaseModel)` and any other base have none. */
-function generatedBaseFile(checker: ts.TypeChecker, declaration: ts.ClassDeclaration): string | undefined {
-  for (const base of (declaration.heritageClauses ?? [])
+/** The generated base class a model class extends: its name, and the generated module that declares it. */
+interface GeneratedBase {
+  readonly file: string;
+  readonly name: string;
+}
+
+/** The classes `declaration` extends by name; `Mixin(YBaseModel)` and any other base expression have none. */
+function extendedClasses(checker: ts.TypeChecker, declaration: ts.ClassDeclaration): ts.Symbol[] {
+  return (declaration.heritageClauses ?? [])
     .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
-    .flatMap((clause) => clause.types)) {
-    const expression = unwrapParentheses(base.expression);
-    if (!ts.isIdentifier(expression) && !ts.isPropertyAccessExpression(expression)) continue;
-    const symbol = resolvedSymbolAt(checker, expression);
-    if (symbol === undefined || (symbol.flags & ts.SymbolFlags.Class) === 0 || !symbol.name.endsWith(BASE_MODEL_SUFFIX)) continue;
+    .flatMap((clause) => clause.types)
+    .flatMap((base) => {
+      const expression = unwrapParentheses(base.expression);
+      const symbol = ts.isIdentifier(expression) || ts.isPropertyAccessExpression(expression) ? resolvedSymbolAt(checker, expression) : undefined;
+      return symbol !== undefined && (symbol.flags & ts.SymbolFlags.Class) !== 0 ? [symbol] : [];
+    });
+}
+
+/** The generated model module that declares `YBaseModel` in `class X extends YBaseModel`. */
+function generatedBase(checker: ts.TypeChecker, declaration: ts.ClassDeclaration): GeneratedBase | undefined {
+  for (const symbol of extendedClasses(checker, declaration)) {
+    if (!symbol.name.endsWith(BASE_MODEL_SUFFIX)) continue;
     const generated = (symbol.declarations ?? []).find((candidate) => ts.isClassDeclaration(candidate)
       && GENERATED_MODEL_MODULE.test(candidate.getSourceFile().fileName));
-    if (generated) return generated.getSourceFile().fileName;
+    if (generated) return { file: generated.getSourceFile().fileName, name: symbol.name };
   }
   return undefined;
+}
+
+/** As `generatedBase`, also through the classes between: `class C extends A` where `A extends YBaseModel`. */
+function generatedBaseThrough(checker: ts.TypeChecker, declaration: ts.ClassDeclaration, seen = new Set<ts.ClassDeclaration>()): GeneratedBase | undefined {
+  if (seen.has(declaration)) return undefined;
+  seen.add(declaration);
+  const direct = generatedBase(checker, declaration);
+  if (direct !== undefined) return direct;
+  for (const symbol of extendedClasses(checker, declaration)) {
+    for (const candidate of symbol.declarations ?? []) {
+      const found = ts.isClassDeclaration(candidate) ? generatedBaseThrough(checker, candidate, seen) : undefined;
+      if (found !== undefined) return found;
+    }
+  }
+  return undefined;
+}
+
+/** The id of the model whose generated base `declaration` extends, directly or through other classes, wherever the class is written: a shared model's class is the app's own. A default export has none. */
+function idOfBaseOf(checker: ts.TypeChecker, keys: CodecKeys, declaration: ts.ClassDeclaration, dependencies: Set<string>): string {
+  const isDefault = declaration.name !== undefined && checker.getSymbolAtLocation(declaration.name)?.name === 'default';
+  const base = isDefault ? undefined : generatedBaseThrough(checker, declaration);
+  return base === undefined ? '' : keys.idForBase(base, dependencies);
+}
+
+/** The codec id of a symbol: its own key, or, for a class, the id of the model whose generated base it extends. */
+function codecIdOf(checker: ts.TypeChecker, keys: CodecKeys, symbol: ts.Symbol, dependencies: Set<string>): string {
+  const own = keys.idForSymbol(symbol, dependencies);
+  if (own !== '') return own;
+  for (const declaration of symbol.declarations ?? []) {
+    const id = ts.isClassDeclaration(declaration) ? idOfBaseOf(checker, keys, declaration, dependencies) : '';
+    if (id !== '') return id;
+  }
+  return '';
+}
+
+/** The model a class registers for: its id from its own key or from the generated base it extends directly. A subclass of such a class registers for nothing. */
+function registeredModelOf(
+  input: { readonly checker: ts.TypeChecker; readonly keys: CodecKeys },
+  file: ts.SourceFile,
+  node: ts.ClassDeclaration & { readonly name: ts.Identifier },
+  dependencies: Set<string>,
+): { readonly id: string; readonly base: GeneratedBase } | undefined {
+  const base = generatedBase(input.checker, node);
+  const id = base === undefined ? '' : input.keys.idFor(file.fileName, node.name.text, dependencies) || idOfBaseOf(input.checker, input.keys, node, dependencies);
+  return base !== undefined && id !== '' ? { id, base } : undefined;
+}
+
+/** How many classes register for each model across `files`: with several, none is the default and each registers under `<id>#<class>`. */
+function countModelClasses(input: { readonly checker: ts.TypeChecker; readonly keys: CodecKeys }, files: readonly ts.SourceFile[]): ReadonlyMap<string, number> {
+  const counts = new Map<string, number>();
+  const visit = (file: ts.SourceFile, node: ts.Node): void => {
+    if (ts.isClassDeclaration(node) && node.name) {
+      const found = registeredModelOf(input, file, node as ts.ClassDeclaration & { readonly name: ts.Identifier }, new Set());
+      if (found !== undefined) counts.set(found.id, (counts.get(found.id) ?? 0) + 1);
+    }
+    ts.forEachChild(node, (child) => { visit(file, child); return undefined; });
+  };
+  for (const file of files) visit(file, file);
+  return counts;
 }
 
 function insertion(at: number, text: string): RewriteEdit {
@@ -371,7 +503,7 @@ function isGolemModel(checker: ts.TypeChecker, symbol: ts.Symbol, seen = new Set
   if (seen.has(symbol)) return false;
   seen.add(symbol);
   return (symbol.declarations ?? []).some((declaration) => {
-    if (ts.isClassDeclaration(declaration)) return generatedBaseFile(checker, declaration) !== undefined;
+    if (ts.isClassDeclaration(declaration)) return generatedBaseThrough(checker, declaration) !== undefined;
     if (!ts.isTypeAliasDeclaration(declaration)) return false;
     if (modelDeclarationKind(checker, declaration.type) !== undefined) return true;
     const target = ts.isTypeReferenceNode(declaration.type) ? resolvedSymbolAt(checker, declaration.type.typeName) : undefined;
@@ -390,6 +522,8 @@ interface NestBinding {
   readonly array: boolean;
   /** The type name of the model, when it has one. */
   readonly name?: ts.EntityName;
+  /** The model is a class that is the default export of its file, which golem cannot key. */
+  readonly defaultExport?: boolean;
 }
 
 function nestBinding(
@@ -406,7 +540,7 @@ function nestBinding(
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
   if (!symbol) return { ...unbound, golemModel: modelDeclarationKind(checker, model) !== undefined };
-  return { ...unbound, id: keys.idForSymbol(symbol, dependencies), golemModel: isGolemModel(checker, symbol), name };
+  return { ...unbound, id: codecIdOf(checker, keys, symbol, dependencies), golemModel: isGolemModel(checker, symbol), name, defaultExport: symbol.name === 'default' };
 }
 
 // One file
@@ -567,7 +701,7 @@ function constructOptionEdits(file: ts.SourceFile, call: ts.CallExpression, targ
 }
 
 function scanFile(
-  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly nest: boolean; readonly boundary: ModelBoundary },
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly nest: boolean; readonly boundary: ModelBoundary; readonly modelClasses: () => ReadonlyMap<string, number> },
   file: ts.SourceFile,
 ): FileScan {
   const { root, checker, keys, nest, boundary } = input;
@@ -587,7 +721,7 @@ function scanFile(
       return;
     }
     const symbol = resolvedSymbolAt(checker, typeName);
-    const id = symbol ? keys.idForSymbol(symbol, scan.dependencies) : '';
+    const id = symbol ? codecIdOf(checker, keys, symbol, scan.dependencies) : '';
     if (id === '') {
       const model = fieldProvenance(checker, call.typeArguments[0], []).anonymous;
       const alias = model && declaredModelAlias(model);
@@ -619,10 +753,12 @@ function scanFile(
     const names = decoratorNames(parameter);
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR)) return;
-    const { id, primitive, golemModel, label, array, name } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
+    const { id, primitive, golemModel, label, array, name, defaultExport } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
     if (primitive) return;
     if (id === '') {
-      if (golemModel) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NO_CODEC, `@${decorator}() type ${label} has no unique codec id; run golem generate`));
+      if (golemModel) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NO_CODEC, defaultExport
+        ? `@${decorator}() type ${label} is the default export of its file, which has no codec id; golem generate cannot add one. Export the class by name (export class ${label}) and import it by name.`
+        : `@${decorator}() type ${label} has no unique codec id; run golem generate`));
       return;
     }
     scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_CODEC_DECORATOR}(${JSON.stringify(id)}${array ? ', true' : ''}) `));
@@ -650,20 +786,18 @@ function scanFile(
     else if (nest && ts.isMethodDeclaration(node)) visitMethod(node);
     if (ts.isCallExpression(node)) visitCall(node);
     else if (ts.isClassDeclaration(node) && node.name) {
-      const base = generatedBaseFile(checker, node);
-      const id = base === undefined ? '' : keys.idFor(file.fileName, node.name.text, scan.dependencies);
-      if (base !== undefined && id !== '') {
-        classes.push({ name: node.name.text, id, end: node.end });
-        scan.dependencies.add(portable(root, base));
+      const found = registeredModelOf({ checker, keys }, file, node as ts.ClassDeclaration & { readonly name: ts.Identifier }, scan.dependencies);
+      if (found !== undefined) {
+        classes.push({ name: node.name.text, id: found.id, end: node.end });
+        scan.dependencies.add(portable(root, found.base.file));
       }
     } else if (ts.isIdentifier(node) && !reserved && node.text.startsWith(REWRITE_IMPORT_PREFIX)) reserved = node;
     ts.forEachChild(node, (child) => { visit(child); return undefined; });
   };
   visit(file);
 
-  // One class registers as its model's class; with several, each registers as <id>#<class> and the model has no default.
-  const linked = new Map<string, number>();
-  for (const { id } of classes) linked.set(id, (linked.get(id) ?? 0) + 1);
+  // One class registers as its model's class; with several, in this file or in others, each registers as <id>#<class> and the model has no default.
+  const linked = classes.length > 0 ? input.modelClasses() : new Map<string, number>();
   for (const { name, id, end } of classes) {
     const key = (linked.get(id) ?? 0) > 1 ? `${id}#${name}` : id;
     const statement = `registerIModelClass(${JSON.stringify(key)}, ${name});`;
@@ -730,14 +864,15 @@ export class RewriteScanner {
   private readonly nest: boolean;
   private readonly keys: CodecKeys;
   private readonly boundary: ModelBoundary;
+  private modelClassCounts: ReadonlyMap<string, number> | undefined;
 
   constructor(input: ScanInput) {
     this.root = input.root;
-    this.boundary = modelBoundary(input.modelsRoot, input.directory);
+    this.boundary = modelBoundary(input.modelsRoot, input.suffixes, input.output === undefined ? undefined : { directory: input.directory, output: input.output });
     this.program = input.program;
     this.checker = input.checker;
     this.nest = input.nest;
-    this.keys = new CodecKeys(input.program, input.checker, input.root, input.codecKeysFile);
+    this.keys = new CodecKeys(input.program, input.checker, input.root, input.codecKeysFile, this.boundary);
   }
 
   private candidate(file: ts.SourceFile): boolean {
@@ -748,8 +883,16 @@ export class RewriteScanner {
       && path.basename(file.fileName) !== CODEC_KEY_FILE;
   }
 
+  /**
+   * The model classes of every candidate file of the program: a class registers by how many classes its model has in all of them.
+   * A model class names its generated `<Name>BaseModel`, so only a file whose text has that suffix is walked: each edit makes a new scanner.
+   */
+  private modelClasses(): ReadonlyMap<string, number> {
+    return this.modelClassCounts ??= countModelClasses({ checker: this.checker, keys: this.keys }, this.program.getSourceFiles().filter((file) => this.candidate(file) && file.text.includes(BASE_MODEL_SUFFIX)));
+  }
+
   private scan(file: ts.SourceFile): FileScanResult {
-    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest, boundary: this.boundary }, file));
+    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest, boundary: this.boundary, modelClasses: () => this.modelClasses() }, file));
   }
 
   /**
@@ -823,6 +966,10 @@ interface ProjectScanInput {
   readonly directory: string;
   /** `models.root` of the project's models job. */
   readonly modelsRoot: string;
+  /** The `suffixes` of the models job. Defaults to the golem default. */
+  readonly suffixes?: readonly string[] | undefined;
+  /** `models.output` of the project's models job. */
+  readonly output?: string | undefined;
   /** The tsconfig whose files are scanned, from the golem.yaml; its directory is what the file paths are relative to. */
   readonly configFile: string;
   readonly nest: boolean;
@@ -835,9 +982,9 @@ interface ProjectScanInput {
 
 /** Open the project's program and ask the scanner about its sources: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
-  const { root, directory, modelsRoot, configFile, nest, codecKeysFile, session, sessionOwner } = input;
+  const { root, directory, modelsRoot, suffixes, output, configFile, nest, codecKeysFile, session, sessionOwner } = input;
   const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
-  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, program, checker: program.getTypeChecker(), nest, codecKeysFile }).scanProgram();
+  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, suffixes, output, program, checker: program.getTypeChecker(), nest, codecKeysFile }).scanProgram();
   return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
 }
