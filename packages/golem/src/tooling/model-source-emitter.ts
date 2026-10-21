@@ -1,9 +1,7 @@
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 export {
-  emitCodecRegistration,
   emitCodecRuntime,
   emitGraphStringify,
-  emitParseFunction,
   emitStringifyFunction,
   fillFunctionName,
   fromWireFunctionName,

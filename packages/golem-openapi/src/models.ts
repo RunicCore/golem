@@ -1429,10 +1429,8 @@ function schemaGraphView(
   }
   return {
     nodes,
-    operations: new Map(),
     intern: graph.intern.bind(graph),
     nodeFor: graph.nodeFor.bind(graph),
-    addOperation: graph.addOperation.bind(graph),
     seal: () => undefined,
     topo: () => graph.topo().flatMap((node) => {
       const emitted = nodes.get(node.id);

@@ -632,12 +632,6 @@ export function emitStringifyFunction(
   return !ctx.wireIdentity && !delegates && reachesNode(node.descriptor, node.id, ctx) ? guardEncodeCycle(source) : source;
 }
 
-export function emitParseFunction(node: SchemaNode): string {
-  const parse = parseFunctionName(node.id);
-  const fromWire = fromWireFunctionName(node.id);
-  return `function ${parse}(text: string, options?: ${SERDE_OPTIONS}): unknown {\n  return ${fromWire}(parseJson(text), options);\n}\n`;
-}
-
 export function emitGraphStringify(graph: SchemaGraph, serde?: StringifySerdeResolver): string {
   return graph.topo().map((node) => emitStringifyFunction(node, graph, serde)).join('\n');
 }
@@ -2057,8 +2051,4 @@ function withModuleConstants(runtime: string): string {
     ...(runtime.includes(CHECKED_CONSTANT) ? [`const ${CHECKED_CONSTANT} = Object.freeze({ validate: false, [${CHECKED_KEY}]: true });`] : []),
   ];
   return constants.length ? `${constants.join('\n')}\n\n${runtime}` : runtime;
-}
-
-export function emitCodecRegistration(node: SchemaNode, graph: SchemaGraph): string {
-  return withModuleConstants(emitNodeRuntime(node, { graph, serde: undefined, issueSource: 'TypeScript' }, true));
 }

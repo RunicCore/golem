@@ -15,7 +15,7 @@ import {
 } from './schema.js';
 import { compareText } from './generator-api.js';
 
-export type SchemaNodeKind = 'object' | 'array' | 'tuple' | 'union' | 'intersection' | 'scalar' | 'reference' | 'operation';
+export type SchemaNodeKind = 'object' | 'array' | 'tuple' | 'union' | 'intersection' | 'scalar' | 'reference';
 
 export interface SchemaNode {
   readonly id: string;
@@ -61,17 +61,8 @@ export function serdeWireDescriptor(descriptor: ModelTypeDescriptor): ModelTypeD
   return serde.wireDescriptor ?? serde.wire;
 }
 
-export interface OperationNode {
-  readonly id: string;
-  readonly method: string;
-  readonly path: string;
-  readonly inputId?: string;
-  readonly outputId?: string;
-}
-
 export interface SchemaGraph {
   readonly nodes: ReadonlyMap<string, SchemaNode>;
-  readonly operations: ReadonlyMap<string, OperationNode>;
   intern(
     descriptor: ModelTypeDescriptor,
     name?: string,
@@ -83,7 +74,6 @@ export interface SchemaGraph {
    * for a name and shape; without it, either matches.
    */
   nodeFor(descriptor: ModelTypeDescriptor, name?: string, constructs?: boolean): SchemaNode | undefined;
-  addOperation(operation: OperationNode): void;
   seal(): void;
   topo(): readonly SchemaNode[];
 }
@@ -504,7 +494,6 @@ export function createSchemaGraph(
   options: SchemaGraphOptions = {},
 ): SchemaGraph {
   const nodes = new Map<string, SchemaNode>();
-  const operations = new Map<string, OperationNode>();
   const byKey = new Map<string, string>();
   const byName = new Map<string, string>();
   // Interned nodes by the exact name they were interned under; short names can be ambiguous, these are not.
@@ -854,12 +843,8 @@ export function createSchemaGraph(
 
   return {
     nodes,
-    operations,
     intern,
     nodeFor,
-    addOperation(operation) {
-      operations.set(operation.id, operation);
-    },
     seal,
     topo() {
       const visiting = new Set<string>();
