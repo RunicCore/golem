@@ -1,3 +1,5 @@
+import { conversionError } from './conversion-error.js';
+import { LibErrorKind } from './errors.js';
 import { MODEL_FIELDS_KEY } from './schema-keywords.js';
 
 /**
@@ -36,7 +38,7 @@ export function instanceFields(value: object): readonly string[] | undefined {
  * `value` as data to write: the value itself, or a copy in which every golem model instance, at any depth in arrays and
  * objects, keeps only the own keys that its model declares. An own key outside them is program state, which no codec
  * writes. A value with no model instance inside is returned as it is, and so is an object with its own JSON form (a
- * date, which has a `toJSON` method, or a typed array). A value that holds itself is left for the JSON writer to refuse.
+ * date, which has a `toJSON` method, or a typed array). A value that holds itself throws a `Serialization` error, which is not caused by input.
  */
 export function withoutInstanceState<Value>(value: Value): Value {
   if (value === null || typeof value !== 'object') return value;
@@ -44,7 +46,7 @@ export function withoutInstanceState<Value>(value: Value): Value {
 }
 
 function withoutInstanceStateAt(value: object, ancestors: Set<object>): object {
-  if (ancestors.has(value)) return value;
+  if (ancestors.has(value)) throw conversionError(LibErrorKind.Serialization, 'Cyclic values cannot be encoded.');
   if (Array.isArray(value)) {
     ancestors.add(value);
     let copy: unknown[] | undefined;

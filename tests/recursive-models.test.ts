@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
@@ -60,5 +61,72 @@ for (const [label, profile] of profiles) {
     }
     const generated = fs.readFileSync(path.join(root, 'src/tree.model.generated.ts'), 'utf8');
     assert.ok(generated.length < 400_000, `recursive models do not expand inline (${generated.length} bytes)`);
+  });
+}
+
+const cycleSources = {
+  'chain.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TLinkBaseModel, TBagBaseModel, THolderBaseModel } from './chain.model.generated.js';
+export type TLink = IModel<{ name: string; child?: TLink }>;
+export type TBag = IModel<{ data: unknown }, { allowAny: true }>;
+export type THolder = IModel<{ link: TLink }>;
+export class Holder extends THolderBaseModel {}
+export class Link extends TLinkBaseModel {}
+export class Bag extends TBagBaseModel {}
+`,
+};
+
+for (const [label, profile] of profiles) {
+  test(`encoding a cyclic value throws a Serialization LibError, and shared or deep values still encode (${label})`, async (t: TestContext) => {
+    // protects: T-165 stringify and toWireFormat of a cyclic value throw a LibError
+    const { root, sourceRoot } = createModelProject(t, {
+      prefix: 'golem-encode-cycle-', linkTypescript: true,
+    });
+    writeModelSources(sourceRoot, cycleSources);
+    writeModelGolemYaml(root, profile);
+    await buildModelProject(root);
+    const codecs = await import(pathToFileURL(path.join(root, 'build/chain.model.generated.js')).href) as Codecs;
+
+    const selfLink: { name: string; child?: unknown } = { name: 'a' };
+    selfLink.child = selfLink;
+    const farLink = { name: 'a', child: { name: 'b', child: { name: 'c' } as { name: string; child?: unknown } } };
+    farLink.child.child.child = farLink;
+    const cyclicData: Record<string, unknown> = { at: 1 };
+    cyclicData.back = cyclicData;
+    const cyclicList: unknown[] = [{ ok: true }];
+    cyclicList.push(cyclicList);
+
+    const isSerializationError = (error: unknown): boolean =>
+      error instanceof LibError && error.kind === LibErrorKind.Serialization && error.causedByInput === false;
+    const encoders: readonly (readonly [string, Codec])[] = [
+      ['stringifyTLink', codecs.stringifyTLink], ['toWireFormatTLink', codecs.toWireFormatTLink],
+      ['stringifyTBag', codecs.stringifyTBag], ['toWireFormatTBag', codecs.toWireFormatTBag],
+      ['stringifyTHolder', codecs.stringifyTHolder], ['toWireFormatTHolder', codecs.toWireFormatTHolder],
+    ];
+    const cyclicInputs: readonly (readonly [string, unknown])[] = [
+      ['stringifyTLink', selfLink], ['toWireFormatTLink', selfLink],
+      ['stringifyTLink', farLink], ['toWireFormatTLink', farLink],
+      ['stringifyTHolder', { link: selfLink }], ['toWireFormatTHolder', { link: selfLink }],
+      ['stringifyTBag', { data: cyclicData }], ['toWireFormatTBag', { data: cyclicData }],
+      ['stringifyTBag', { data: cyclicList }], ['toWireFormatTBag', { data: cyclicList }],
+    ];
+    for (const [name, input] of cyclicInputs) {
+      const encode = encoders.find(([encoder]) => encoder === name)![1];
+      assert.throws(() => encode(input), isSerializationError, `${name} throws a Serialization LibError on a cycle`);
+    }
+
+    // A value reached twice without a cycle, and a long chain, encode.
+    const shared = { name: 's' };
+    const dag = { name: 'a', child: { name: 'b', child: shared } };
+    assert.equal(codecs.stringifyTLink(dag), JSON.stringify(dag));
+    const sharedData = { n: 1 };
+    const dagBag = { data: { left: sharedData, right: sharedData, list: [sharedData, sharedData] } };
+    assert.equal(codecs.stringifyTHolder({ link: dag }), JSON.stringify({ link: dag }));
+    assert.equal(codecs.stringifyTBag(dagBag), JSON.stringify(dagBag));
+    assert.deepEqual(json(codecs.toWireFormatTBag(dagBag)), dagBag);
+    let chain: { name: string; child?: unknown } = { name: 'n0' };
+    for (let index = 1; index < 300; index += 1) chain = { name: `n${index}`, child: chain };
+    assert.equal(codecs.stringifyTLink(chain), JSON.stringify(chain));
+    assert.deepEqual(json(codecs.toWireFormatTLink(chain)), json(chain));
   });
 }

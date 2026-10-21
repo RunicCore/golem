@@ -623,7 +623,8 @@ export function emitStringifyFunction(
       '',
     ].join('\n');
   }
-  return source;
+  const delegates = node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference';
+  return !ctx.wireIdentity && !delegates && reachesNode(node.descriptor, node.id, ctx) ? guardEncodeCycle(source) : source;
 }
 
 export function emitParseFunction(node: SchemaNode): string {
@@ -822,6 +823,23 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
   }
 }
 
+/** The descriptors a value of `descriptor` holds directly; a model or reference is followed through its node. */
+function heldDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDescriptor[] {
+  switch (descriptor.kind) {
+    case 'array':
+      return [descriptor.item];
+    case 'tuple':
+      return [...descriptor.items, ...(descriptor.rest !== undefined ? [descriptor.rest.item] : [])];
+    case 'union':
+    case 'intersection':
+      return descriptor.variants;
+    case 'object':
+      return [...Object.values(descriptor.properties), ...(typeof descriptor.additionalProperties === 'object' ? [descriptor.additionalProperties] : [])];
+    default:
+      return [];
+  }
+}
+
 /** Whether decoding `descriptor` can reach the model node `id` again, so a cyclic input would recurse. */
 function reachesNode(
   descriptor: ModelTypeDescriptor,
@@ -829,30 +847,36 @@ function reachesNode(
   ctx: EmitCtx,
   seen: Set<string> = new Set(),
 ): boolean {
-  switch (descriptor.kind) {
-    case 'array':
-      return reachesNode(descriptor.item, id, ctx, seen);
-    case 'tuple':
-      return descriptor.items.some((item) => reachesNode(item, id, ctx, seen))
-        || (descriptor.rest !== undefined && reachesNode(descriptor.rest.item, id, ctx, seen));
-    case 'union':
-    case 'intersection':
-      return descriptor.variants.some((variant) => reachesNode(variant, id, ctx, seen));
-    case 'object':
-      return Object.values(descriptor.properties).some((property) => reachesNode(property, id, ctx, seen))
-        || (typeof descriptor.additionalProperties === 'object' && reachesNode(descriptor.additionalProperties, id, ctx, seen));
-    case 'reference':
-    case 'generated-model': {
-      const node = ctx.graph.nodeFor(descriptor);
-      if (!node) return false;
-      if (node.id === id) return true;
-      if (seen.has(node.id)) return false;
-      seen.add(node.id);
-      return reachesNode(node.descriptor, id, ctx, seen);
-    }
-    default:
-      return false;
+  if (descriptor.kind === 'reference' || descriptor.kind === 'generated-model') {
+    const node = ctx.graph.nodeFor(descriptor);
+    if (!node) return false;
+    if (node.id === id) return true;
+    if (seen.has(node.id)) return false;
+    seen.add(node.id);
+    return reachesNode(node.descriptor, id, ctx, seen);
   }
+  return heldDescriptors(descriptor).some((held) => reachesNode(held, id, ctx, seen));
+}
+
+/** Whether `descriptor` reaches a recursive model node, so a cyclic value under it would run a validator or encoder forever. */
+function reachesRecursion(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<string> = new Set()): boolean {
+  if (descriptor.kind === 'reference' || descriptor.kind === 'generated-model') {
+    const node = ctx.graph.nodeFor(descriptor);
+    if (!node || seen.has(node.id)) return false;
+    seen.add(node.id);
+    return reachesNode(node.descriptor, node.id, ctx) || reachesRecursion(node.descriptor, ctx, seen);
+  }
+  return heldDescriptors(descriptor).some((held) => reachesRecursion(held, ctx, seen));
+}
+
+/**
+ * Wraps the body of a generated encoder function of `value` so that a value already being written is a cycle.
+ * Only a recursive model's encoders carry it; the other encoders keep their speed.
+ */
+function guardEncodeCycle(source: string): string {
+  const bodyStart = source.indexOf('{\n') + 2;
+  const bodyEnd = source.lastIndexOf('}');
+  return `${source.slice(0, bodyStart)}  beginEncode(value);\n  try {\n${source.slice(bodyStart, bodyEnd)}  } finally {\n    endEncode(value);\n  }\n}\n`;
 }
 
 function emitInternedObjectDecode(
@@ -1717,6 +1741,9 @@ function emitNodeRuntime(
       ? resolveObjectDescriptor(node.descriptor, ctx)
       : undefined;
   const emitsValidatedWire = validationEnabled && !node.sameSchema;
+  // A validator and an encoder walk a cyclic value under a recursive model until the stack ends.
+  const reachesCycle = reachesRecursion(node.descriptor, ctx);
+  const recursiveNode = reachesNode(node.descriptor, node.id, ctx);
   const encodedStringifyContext: EmitCtx = { ...ctx, inlineLocals: new Set() };
   const encodedWireContext: EmitCtx = { ...ctx, inlineLocals: new Set() };
   const encodedExpr = objectDescriptor
@@ -1741,6 +1768,7 @@ function emitNodeRuntime(
     ...(emitsValidatedWire ? inlineLocalDeclarations(encodedStringifyContext) : []),
     ...(validationEnabled ? [
       '  if (validates) {',
+      ...(reachesCycle ? ['    assertAcyclicEncodeInput(value);'] : []),
       `    ${assertName}(value, options);`,
       ...(emitsValidatedWire ? [
         `    const wire = ${encodedExpr};`,
@@ -1824,7 +1852,7 @@ function emitNodeRuntime(
 
   // The wire encoding without validation: nested trusted calls and the validating wrapper both run it.
   const toWireCore = `${toWire}Core`;
-  const toWireCoreLines = [
+  const toWireCoreSource = [
     `function ${toWireCore}(value: ${fieldsType ?? 'unknown'}): ${wireType ?? 'unknown'} {`,
     ...(objectDescriptor ? ['  const record = value as Record<string, unknown>;'] : []),
     ...inlineLocalDeclarations(encodedWireContext),
@@ -1832,13 +1860,15 @@ function emitNodeRuntime(
     wireType ? `  return wire as ${wireType};` : '  return wire;',
     '}',
     '',
-  ];
+  ].join('\n');
+  const toWireCoreLines = [recursiveNode ? guardEncodeCycle(toWireCoreSource) : toWireCoreSource];
   const toWireLines = [
     ...toWireCoreLines,
     `${exported}function ${toWire}(value: ${fieldsType ?? 'unknown'}, options?: ${SERDE_OPTIONS}): ${wireType ?? 'unknown'} {`,
     emitSerdeValidates(validationEnabled),
     ...(validationEnabled ? [
       '  if (validates) {',
+      ...(reachesCycle ? ['    assertAcyclicEncodeInput(value);'] : []),
       `    ${assertName}(value, options);`,
       '  }',
     ] : []),
