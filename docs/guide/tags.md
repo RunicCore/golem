@@ -45,7 +45,7 @@ Give a combination of tags a type alias and use the alias as the field type. A t
 
 - Length and item limits must be nonnegative integers; `MultipleOf` must be positive.
 - The generator rejects malformed patterns and validation constraints attached to incompatible types.
-- `Format` validates only names known by the installed validation engine; an unknown format name is an annotation.
+- `Format` checks only the names that golem implements. An unknown `Format` name stops generation, unless you set `unknownFormats: warn` in [golem.yaml](/reference/config#root-keys).
 
 ## Object and array validation constraints
 

@@ -43,11 +43,11 @@ Generation runs on TypeScript 6.0+ or 7.x, chosen from the `typescript` installe
 
 ## Validation
 
-- **Breaking:** Ajv is removed. Remove `ajv` and `ajv-formats` from your dependencies. The `@exprtlabs/golem/ajv` and `@exprtlabs/golem/ajv-tooling` subpaths, `OpenApiAjvOptions` and the engine functions are gone, and `ajvStandalone` is now an unknown key in `golem.yaml`. golem checks `byte`, `json-pointer` and `relative-json-pointer`; `uri-template`, `url`, `iso-time` and `iso-date-time` now warn and are not checked. Regenerate every SDK from an older release, or remove it ([Migrating to 1.0](/migrating#validation)).
+- **Breaking:** Ajv is removed. Remove `ajv` and `ajv-formats` from your dependencies. The `@exprtlabs/golem/ajv` and `@exprtlabs/golem/ajv-tooling` subpaths, `OpenApiAjvOptions` and the engine functions are gone, and `ajvStandalone` is now an unknown key in `golem.yaml`. golem checks `byte`, `json-pointer` and `relative-json-pointer`; `uri-template`, `url`, `iso-time` and `iso-date-time` are not checked. Regenerate every SDK from an older release, or remove it ([Migrating to 1.0](/migrating#validation)).
 - **Breaking:** issue codes describe the kind of failure, such as `tooSmall`, `literal` and `unknownKey`, with typed fields and new default messages ([mapping](/migrating#issues)). `IssueCode` is a string-union type, no longer an enum, and the HTTP 400 body of a NestJS application carries the new issue shape.
 - **Breaking:** `NestModelInterceptor` throws a `TypeError`, and Nest answers HTTP 500, for a `@Body()` or `@Query()` parameter that is not an `IModel` or `IObject`, whole or one field. A one-field parameter with a model type now converts that field, and HTTP 400 answers a missing or invalid field. An array `@Body()` of models now converts item by item (it answered HTTP 400 for every valid request), and `nestModelCodec(id, array?)` takes an optional `array` argument ([Migrating to 1.0](/migrating#runtime)).
 - **Breaking:** validators are generated TypeScript files, `ValidationRuleResult` takes `{ message }`, `ModelValidationContext` is `{ resolve }`, and the client's `operationValidators` overrides are `Validator` functions ([Migrating to 1.0](/migrating#validation)).
-- `golem.yaml` gains `unknownFormats: warn | error` ([configuration](/reference/config#root-keys)).
+- **Breaking:** `golem.yaml` gains `unknownFormats: error | warn`, and the default `error` stops generation on a schema `format` that golem does not check. Set `unknownFormats: warn` to report it as a warning and skip its check ([configuration](/reference/config#root-keys)).
 
 ## golem build and the rewrite hosts
 

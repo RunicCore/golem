@@ -280,7 +280,7 @@ export const REPRESENTATION_BOUNDARIES = [
   'TypeScript does not provide exact unevaluated-property semantics across composition; generated runtime validation enforces them when validation is enabled.',
   'Callbacks and webhooks are inbound contracts only: they are generated as types, and your app implements the handlers.',
   'Response Link Objects are metadata only; evaluating runtime expressions remains application-owned.',
-  'A schema format that golem does not implement is skipped with a warning, or fails generation when unknownFormats is error.',
+  'A schema format that golem does not implement stops generation, or is skipped with a warning when unknownFormats is warn.',
   'OpenAPI 3.1 does not define the itemSchema stream surface used by this generator. Streams need OpenAPI 3.2.',
 ] as const;
 
@@ -363,7 +363,7 @@ export const CAPABILITY_RECORDS: readonly CapabilityRecord[] = [
   ...recordsFor({
     capability: 'generated-runtime-validation',
     surface: 'runtime',
-    limitations: ['Validation is emitted and used only for profiles with validation enabled. A schema format that golem does not implement is skipped with a warning, or fails generation when unknownFormats is error.'],
+    limitations: ['Validation is emitted and used only for profiles with validation enabled. A schema format that golem does not implement stops generation, or is skipped with a warning when unknownFormats is warn.'],
     evidenceIds: [
       'upstream-native-codecs',
       'conformance-content-parameter-validation',

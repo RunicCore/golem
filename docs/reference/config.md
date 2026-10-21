@@ -24,7 +24,7 @@ It records what it writes in an [inventory](/guide/watch#generated-files-and-the
 | `validation` | boolean | No | `true` | Generate runtime validation metadata and checks. Named `IObject` / `IModel` `{ validation: true or false }` overrides this per declaration. |
 | `allowAny` | boolean | No | `false` | Permit fields typed `any` or `unknown` in models. Without it, such a field fails with [`RUNM1011`](/reference/diagnostics#runm1011). An `IObject` or `IModel` can opt in with `IObject<F, { allowAny: true }>`, or tighten this policy explicitly. |
 | `exact` | boolean | No | `true` | Reject extra properties in models. `false` admits keys that a model does not list. An `IObject` or `IModel` can override it with `IObject<F, { exact: false }>`. |
-| `unknownFormats` | `warn` or `error` | No | `warn` | What generation does with a schema `format` that golem does not check. `warn` reports [`VALIDATE_UNKNOWN_FORMAT`](/reference/diagnostics#validate-unknown-format) and does not check that format; `error` stops generation. |
+| `unknownFormats` | `warn` or `error` | No | `error` | What generation does with a schema `format` that golem does not check. `error` stops generation with [`VALIDATE_UNKNOWN_FORMAT`](/reference/diagnostics#validate-unknown-format); `warn` reports it and does not check that format. |
 | `generators` | array of generator jobs | No | — | A non-empty list of [jobs from installed packages](#generator-jobs). |
 | `controllers` | array of controller jobs | No | — | A non-empty list of controller-to-OpenAPI jobs. |
 | `openapi` | array of OpenAPI jobs | No | — | A non-empty list of OpenAPI SDK jobs. |
@@ -36,7 +36,7 @@ mobx: false
 validation: true
 allowAny: false
 exact: true
-unknownFormats: warn
+unknownFormats: error
 openapi:
   - input: api.yaml
     output: sdk
@@ -59,7 +59,7 @@ outputs are rejected.
 
 Custom predicates and serde bindings must be exported functions that the generator can import. An unresolved binding or imported schema stops generation with a diagnostic.
 
-A `format` is checked only when golem implements it: `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `byte`, `json-pointer`, `relative-json-pointer`, `int32`, `int64`, `float` and `double`. The OpenAPI formats `password` and `binary` are known and check nothing. Set `unknownFormats: error` to fail generation on any other format instead of skipping its check.
+A `format` is checked only when golem implements it: `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `byte`, `json-pointer`, `relative-json-pointer`, `int32`, `int64`, `float` and `double`. The OpenAPI formats `password` and `binary` are known and check nothing. Any other format stops generation. Set `unknownFormats: warn` to report it as a warning and skip its check.
 
 Disabling validation does not disable conversion guards, codecs, JSON
 representability checks or generation diagnostics.
