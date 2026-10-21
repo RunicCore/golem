@@ -161,7 +161,7 @@ async function buildState(t: TestContext, mobx: boolean) {
   await buildModelProject(root);
   const models = await import(`${pathToFileURL(path.join(root, 'build/state.model.js')).href}?mobx=${mobx}`);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
-  return { Task: models.Task as new (values?: object) => object, Board: models.Board as new (values?: object) => object, task: codec('TTask'), small: codec('TSmall'), board: codec('TBoard'), Bag: models.Bag as new (values?: object) => object, bag: codec('TBag'), Tally: models.Tally as new (values?: object) => object, tally: codec('TTally'), Empty: models.Empty as new (values?: object) => object, empty: codec('TEmpty'), Free: models.Free as new (values?: object) => object, free: codec('TFree'), Note: models.Note as new (values?: object) => object, note: codec('TNote') };
+  return { Task: models.Task as new (values?: object) => object, Board: models.Board as new (values?: object) => object, task: codec('TTask'), small: codec('TSmall'), board: codec('TBoard'), Bag: models.Bag as new (values?: object) => object, bag: codec('TBag'), Tally: models.Tally as new (values?: object) => object, tally: codec('TTally'), Empty: models.Empty as new (values?: object) => object, empty: codec('TEmpty'), Free: models.Free as new (values?: object) => object, free: codec('TFree'), Stamps: models.Stamps as new (values?: object) => object, stamps: codec('TStamps'), Note: models.Note as new (values?: object) => object, note: codec('TNote') };
 }
 
 for (const mobx of [false, true]) {
@@ -229,4 +229,24 @@ test('the class-level encode of a model writes no program state of an instance i
   const task = Object.assign(new TaskModel({ title: 't' }), { cache: new Map<string, string>(), hits: 3 });
   assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: { list: [task] } })), { title: 'n', data: { list: [{ title: 't' }] } });
   assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: task })), { title: 'n', data: { title: 't' } });
+});
+
+test('parse with construct keeps the extra keys of a dynamic map, converts them, and stringify writes them back', async (t) => {
+  // protects: bug T-163 parse with construct dropped the extra keys of a model with a dynamic map
+  const { Bag, bag, Stamps, stamps } = await buildState(t, false);
+  const parsed = bag.parse('{"id":"a","extra":1}', { construct: Bag }) as { id: string; extra: number };
+  assert.ok(parsed instanceof Bag);
+  assert.deepEqual({ ...parsed }, { id: 'a', extra: 1 });
+  assert.equal(bag.stringify(parsed), '{"id":"a","extra":1}');
+  assert.deepEqual(encodeGeneratedModel(parsed), { id: 'a', extra: 1 });
+  assert.deepEqual({ ...(bag.parse('{"id":"a","extra":1}') as object) }, { id: 'a', extra: 1 }, 'without construct');
+
+  const text = '{"first":"2020-01-01T00:00:00.000Z","later":"2021-02-03T04:05:06.000Z"}';
+  const dated = stamps.parse(text, { construct: Stamps }) as { first: Date; later: Date };
+  assert.ok(dated instanceof Stamps);
+  assert.ok(dated.later instanceof Date, 'an extra value takes the conversion of the map value');
+  assert.equal(dated.later.toISOString(), '2021-02-03T04:05:06.000Z');
+  assert.equal(stamps.stringify(dated), text);
+  assert.deepEqual(encodeGeneratedModel(dated), JSON.parse(text));
+  assert.equal(stamps.stringify(new Stamps({ first: new Date(0), later: new Date(1000) })), '{"first":"1970-01-01T00:00:00.000Z","later":"1970-01-01T00:00:01.000Z"}', 'the constructor keeps and converts extra keys');
 });
