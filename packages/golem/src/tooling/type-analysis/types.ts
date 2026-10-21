@@ -897,13 +897,31 @@ export function descriptorBuilder(
       // would invoke the legacy setter for an own `__proto__` key.
       const properties: Record<string, ModelConversionDescriptor> = Object.create(null);
       const required: string[] = [];
-      for (const property of checker.getPropertiesOfType(type)) {
-        const name = property.getName();
+      // The type a projection picks from (`Customer` in `Pick<Customer, 'name'>`). On the first run the generated base of an app
+      // class is not written yet, so the checker sees none of the members the base declares; the model of the class is known from
+      // its base import, and it declares them.
+      const projectedSource = projection && isPropertyMapping(type) ? type.aliasTypeArguments?.[0] : undefined;
+      const sourceObject = projectedSource && (projectedSource.flags & ts.TypeFlags.Object) !== 0 ? projectedSource : undefined;
+      const sourceModel = sourceObject && modelSpecificationForClass(checker, sourceObject, specifications, compilerOptions);
+      for (const mapped of checker.getPropertiesOfType(type)) {
+        const name = mapped.getName();
+        const absentFromSource = sourceObject !== undefined && !sourceObject.getProperty(name);
+        const inherited = absentFromSource ? sourceModel?.fieldsType.getProperty(name) : undefined;
+        const property = inherited ?? mapped;
         const isMethod = (property.flags & ts.SymbolFlags.Method) !== 0
           || property.declarations?.some(declaration => ts.isMethodDeclaration(declaration) || ts.isMethodSignature(declaration)) === true;
         if (!context.schemaData && !isMethod) assertSupportedModelFieldName(name);
         if (context.dto && isMethod) continue;
         const valueType = propertyType(checker, property, context.declaration);
+        // A member the source type lacks makes the checker's picked type `unknown`; the field is not typed unknown, so `allowAny` is no fix.
+        if (absentFromSource && !inherited && !context.schemaData && (valueType.flags & ts.TypeFlags.Unknown) !== 0 && !(context.allowAny ?? allowAny)) {
+          throw diagnostic(
+            context.sourceFile,
+            node ?? context.declaration,
+            '1058',
+            `Field "${name}" is picked from ${checker.typeToString(sourceObject!)}, which has no member "${name}". Fix the key, or the import of the type that declares it.`,
+          );
+        }
         if (valueType.getCallSignatures().length > 0) {
           if (!validationEnabled) {
             properties[name] = { kind: 'unknown' };

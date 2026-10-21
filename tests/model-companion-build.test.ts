@@ -125,3 +125,23 @@ test('two models that name each other through their app classes build, and each 
   assert.ok(loaded.customer.orders[0] instanceof loaded.Order);
   assert.ok(loaded.order.customer instanceof loaded.Customer);
 });
+
+test('a field typed with a projection of an app class builds on the first run, keeps an optional picked member optional, and a second build writes the same files', async t => {
+  // protects: T-211 a projection of an app class (Pick<Customer, 'name'>) in a model field generates on the first run
+  const { root, sourceRoot } = companionModelProject(t, 'model-class-pick');
+  const imodel = "import type { IModel } from '@exprtlabs/golem/model';\n";
+  writeModelSources(sourceRoot, {
+    'customer.model.ts': `${imodel}export type TCustomer = IModel<{ name: string; age?: number }>;\n`,
+    'customer.ts': "import { TCustomerBaseModel } from './customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n",
+    'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; summary: Pick<Customer, 'name' | 'age'> }>;\n`,
+    'use.ts': "import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"summary\":{\"name\":\"Ada\"}}');\nexport const text = stringify<TOrder>(order);\n",
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const firstFiles = generatedModelFiles(root);
+  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { order: { id: string; summary: { name: string } }; text: string };
+  assert.deepEqual({ ...loaded.order.summary }, { name: 'Ada' });
+  assert.equal(loaded.text, '{"id":"o1","summary":{"name":"Ada"}}');
+  await buildModelProject(root);
+  assert.deepEqual(generatedModelFiles(root), firstFiles);
+});
