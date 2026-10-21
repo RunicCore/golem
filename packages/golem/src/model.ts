@@ -139,8 +139,9 @@ export type ModelTypeDescriptor = ModelTypeMetadata & (
       readonly required: readonly string[];
       readonly additionalProperties: boolean | ModelTypeDescriptor;
       /**
-       * The schema states `additionalProperties: true`: the object declares its extra keys as data, so JSON writers
-       * keep them. An object that is open only by default declares none, and writers keep its declared fields only.
+       * The schema or an `AdditionalProperties` tag states the extra keys: the object declares them as data, so JSON
+       * writers keep them. With an object `additionalProperties`, the generated type has no index signature. An object
+       * that is open only by default declares none, and writers keep its declared fields only.
        */
       readonly additionalPropertiesDeclared?: true;
     }

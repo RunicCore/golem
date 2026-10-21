@@ -484,9 +484,14 @@ function indexValueNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined 
   return undefined;
 }
 
+/**
+ * What an `AdditionalProperties<V>` tag says about the other keys: `false` when none is allowed, the descriptor of V
+ * when they are values of type V (converted like the values of an index signature), `true` when V is `unknown` or `any`
+ * (the values are copied as they are), and `undefined` when the object has no such tag.
+ */
 function additionalPropertiesFromTags(
   constraints: readonly ModelConstraint[],
-): boolean | undefined {
+): boolean | ModelConversionDescriptor | undefined {
   const additional = constraints.find((constraint) => constraint.kind === 'additionalProperties');
   if (!additional || additional.kind !== 'additionalProperties') return undefined;
   const schema = additional.schema;
@@ -494,6 +499,7 @@ function additionalPropertiesFromTags(
   if (typeof schema === 'object' && schema !== null && 'kind' in schema) {
     const kind = (schema as { readonly kind: string }).kind;
     if (kind === 'never' || kind === 'undefined') return false;
+    if (kind !== 'unknown' && kind !== 'any') return schema as ModelConversionDescriptor;
   }
   return true;
 }
@@ -926,7 +932,7 @@ export function descriptorBuilder(
         if ((property.flags & ts.SymbolFlags.Optional) === 0) required.push(name);
       }
       const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
-      const taggedAdditional = additionalPropertiesFromTags(metadata.constraints);
+      const taggedAdditional = indexType ? undefined : additionalPropertiesFromTags(metadata.constraints);
       const descriptor = withMetadata({
         kind: 'object',
         ...(projection ? { projection: true as const } : {}),
@@ -939,7 +945,7 @@ export function descriptorBuilder(
             ? taggedAdditional
             : !context.exact,
         // Only an explicit tag that admits extra keys declares them as data; `exact: false` leaves an object open by default.
-        ...(!indexType && taggedAdditional === true ? { additionalPropertiesDeclared: true as const } : {}),
+        ...(taggedAdditional !== undefined && taggedAdditional !== false ? { additionalPropertiesDeclared: true as const } : {}),
       }, metadata);
       if (projectionName) {
         const existing = projections.get(projectionName);

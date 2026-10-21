@@ -279,7 +279,7 @@ async function buildLoose(t: TestContext) {
   const models = await import(pathToFileURL(path.join(root, 'build/loose.model.js')).href);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
   type Make = new (values?: object) => object;
-  return { Loose: models.Loose as Make, LooseNote: models.LooseNote as Make, Open: models.Open as Make, Shape: models.Shape as Make, loose: codec('TLoose'), note: codec('TLooseNote'), open: codec('TOpen'), shape: codec('TShape') };
+  return { Loose: models.Loose as Make, LooseNote: models.LooseNote as Make, Open: models.Open as Make, Shape: models.Shape as Make, Stamped: models.Stamped as Make, loose: codec('TLoose'), note: codec('TLooseNote'), open: codec('TOpen'), shape: codec('TShape'), stamped: codec('TStamped') };
 }
 
 test('a loose model instance inside an unknown field writes no program state', async (t) => {
@@ -312,4 +312,18 @@ test('an explicit additionalProperties tag on a TS model writes its extra keys, 
   const shaped = new Shape({ tagged: { known: 'k', extra: 1 }, plain: { known: 'k', extra: 1 } } as object);
   assert.equal(shape.stringify(shaped), '{"tagged":{"known":"k","extra":1},"plain":{"known":"k"}}', 'a field with the tag and a field without it');
   assert.deepEqual(shape.toWireFormat(shaped), { tagged: { known: 'k', extra: 1 }, plain: { known: 'k' } });
+});
+
+test('an AdditionalProperties tag with a value type converts the extra values like an index signature', async (t) => {
+  // protects: bug T-192 the extra values of an AdditionalProperties<Date> tag were copied as they are, so an extra ISO string stayed a string
+  const { Stamped, stamped } = await buildLoose(t);
+  const text = '{"id":"a","at":"2021-02-03T04:05:06.000Z"}';
+  const parsed = stamped.parse(text, { construct: Stamped }) as { at: Date };
+  assert.ok(parsed instanceof Stamped);
+  assert.ok(parsed.at instanceof Date, 'an extra value takes the conversion of the tag type');
+  assert.equal(parsed.at.toISOString(), '2021-02-03T04:05:06.000Z');
+  assert.equal(stamped.stringify(parsed), text);
+  assert.deepEqual(stamped.toWireFormat(parsed), JSON.parse(text));
+  assert.deepEqual(encodeGeneratedModel(parsed), JSON.parse(text), 'the class-level encode');
+  assert.equal(stamped.stringify(Object.assign(new Stamped({ id: 'a' }), { at: new Date(0) })), '{"id":"a","at":"1970-01-01T00:00:00.000Z"}');
 });
