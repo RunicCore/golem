@@ -56,7 +56,7 @@ The plugins and the loader open your project from `golem.yaml`: the `config` opt
 npm install --save-dev typescript@~7.0.2
 ```
 
-`golem.yaml` names the project the build uses with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. Ignore the generated files and `.golem/` together, or commit the generated files with `.golem/outputs.json` and `.golem/codec-keys.json`. Always ignore `.golem/jobs.json` and `.golem/build/` ([what to commit](/reference/generated-files#gitignore)):
+`golem.yaml` names the project the build uses with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. Ignore the generated files and `.golem/` ([ignore generated files](/reference/generated-files#gitignore)):
 
 ```text
 .golem/

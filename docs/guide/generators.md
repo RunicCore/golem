@@ -24,7 +24,7 @@ Your package version does not need to match golem's.
 
 ## Check what it writes
 
-The generator writes `payment-events.model.ts` into the `output` directory, and the models job then writes `payment-events.model.generated.ts` beside it. Both are generated files: ignore them with the others ([what to commit](/reference/generated-files#gitignore)). The example's `.gitignore` lists the first file by path.
+The generator writes `payment-events.model.ts` into the `output` directory, and the models job then writes `payment-events.model.generated.ts` beside it. Both are generated files: ignore them with the others ([ignore generated files](/reference/generated-files#gitignore)). The example's `.gitignore` lists the first file by path.
 
 ## Use the generated models
 

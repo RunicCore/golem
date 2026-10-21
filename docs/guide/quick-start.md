@@ -55,7 +55,7 @@ npx golem generate
 Generated configured outputs.
 ```
 
-You get `src/task.model.generated.ts` beside the declaration, with the generated class `TTaskBaseModel` and the `TTaskFields` type. Shared files go to `models.output` (default `src/generated/models/`). Golem also keeps its state in `.golem/`. Add the generated files and `.golem/` to `.gitignore`, or commit the generated files with `.golem/outputs.json` and `.golem/codec-keys.json` ([what to commit](/reference/generated-files#gitignore)):
+You get `src/task.model.generated.ts` beside the declaration, with the generated class `TTaskBaseModel` and the `TTaskFields` type. Shared files go to `models.output` (default `src/generated/models/`). Golem also keeps its state in `.golem/`. Add the generated files and `.golem/` to `.gitignore` ([ignore generated files](/reference/generated-files#gitignore)):
 
 ```text
 .golem/

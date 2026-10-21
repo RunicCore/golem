@@ -30,7 +30,7 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 | Command | What it does |
 | --- | --- |
 | `generate` | Writes all outputs and the inventory. A job whose inputs and options did not change since its last run, and whose outputs exist, is skipped. |
-| `check` | Generates the expected artifact set in memory and fails when files are missing, stale, conflicting or obsolete inventoried outputs remain. It reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run, and checks that the Nest codecs agree with the generated registry. It does not write files. |
+| `check` | Generates the expected artifact set in memory and fails when files are missing, stale, conflicting or obsolete inventoried outputs remain. It reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run, and checks that the Nest codecs agree with the generated registry. With no generation record, it stops with one message that tells you to run `generate` or `build` first. It does not write files. |
 | `watch` | Generates once, then reruns affected jobs when observed configuration, API, model, TypeScript or manifest inputs change. |
 | `exec -- <command> [args...]` | Generates once, starts the child command only after generation succeeds, and forwards its exit status and signals. |
 | `exec --watch -- <command> [args...]` | Does the same and keeps the generator watching until the child exits. |
@@ -63,7 +63,7 @@ The build starts from `golem.yaml`: the one in the working directory, or the one
 
 `-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`, and it must lie in the directory of the tsconfig that `golem.yaml` names; any other location is an error. With `--watch` the build repeats when a source, tsconfig or `golem.yaml` changes: it generates first, so editing a model source regenerates its file and rebuilds once. The models job reads every source of the project, so editing any other source runs it again before the rebuild. A job that reads no changed input, such as a generator that reads only the models, does not run. Deleting `outDir` while it runs starts one build that writes it again.
 
-A build never edits your source files. It writes the generated files `golem.yaml` configures, the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten and the import paths changed. Two tsconfig files in one directory never share that state. Always ignore `.golem/build/` and `.golem/jobs.json`. Ignore the generated files and the rest of `.golem/` together, or commit the generated files with `.golem/outputs.json` and `.golem/codec-keys.json` ([what to commit](/reference/generated-files#gitignore)). Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
+A build never edits your source files. It writes the generated files `golem.yaml` configures, the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten and the import paths changed. Two tsconfig files in one directory never share that state. Ignore the generated files and `.golem/` ([ignore generated files](/reference/generated-files#gitignore)). Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
 
 ### Import paths
 
@@ -147,7 +147,8 @@ npx golem exec --watch -- npm run dev
 ```
 
 `check` is suitable for CI because it leaves generated files, the inventory
-and their modification times untouched. Use `exec` to start your app only
+and their modification times untouched. It needs generated files, so run
+`golem build` or `golem generate` first. Use `exec` to start your app only
 after the first successful generation.
 
 ## Runtime and imports

@@ -80,8 +80,8 @@ console.log(toWireFormat<Task>(task));
 Run it: `npx golem build && node .build/src/main.js`. `golem build` compiles
 your project the way `tsc -p` does and rewrites `parse<T>()` on the way; it
 generates first, so `golem generate` is for your editor. Ignore the generated
-files with `.golem/`, `*.generated.ts` and `src/generated/` in `.gitignore`, or
-commit them with `.golem/outputs.json` and `.golem/codec-keys.json`. Full setup: [Quick start](docs/guide/quick-start.md).
+files: put `.golem/`, `*.generated.ts` and `src/generated/` in `.gitignore`.
+Full setup: [Quick start](docs/guide/quick-start.md).
 
 ## More
 

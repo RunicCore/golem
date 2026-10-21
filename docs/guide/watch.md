@@ -9,7 +9,7 @@ npx golem watch
 ```
 
 - `golem exec --watch -- <command>` generates before starting a child process.
-- `golem check` reports stale output without writing.
+- `golem check` reports stale output without writing. It needs generated files, so run `golem generate` or `golem build` first.
 - `golem build` generates first, then compiles ([build](/reference/cli#build)).
 
 `golem generate` and `golem watch` write generated code for your editor and your bundler. They do not rewrite your calls. `golem build`, the bundler plugins and the Node loader do that, and each scans your files itself ([TypeScript setup](/guide/install#typescript-setup)).
@@ -47,12 +47,11 @@ npx --no-install golem check
 `--no-install` makes `npx` fail when the project doesn't install golem, instead of fetching the unrelated `golem` package from npm ([Install](/guide/install#packages-per-generator)).
 
 `check` exits with code 1 when a generated file is missing, stale or
-unrecorded, and writes nothing. It also reports each `parse<T>()` call that no host can rewrite, with its file and line and what to run. A project that commits its generated files runs `check` in CI, and commits `.golem/outputs.json` and `.golem/codec-keys.json` with them so the check knows which paths belong to
-each job. A project that ignores its generated files runs `golem generate` or `golem build` in CI instead ([what to commit](/reference/generated-files#gitignore)).
+unrecorded, and writes nothing. It also reports each `parse<T>()` call that no host can rewrite, with its file and line and what to run. `check` needs generated files, so CI runs `golem build` or `golem generate` first ([ignore generated files](/reference/generated-files#gitignore)). When golem has not generated yet, or the `.golem/` folder is gone, `check` stops with one message that tells you to run `golem generate` or `golem build` first.
 
 ## Generated files and the inventory
 
-Generation skips a job whose inputs, options and generator code did not change since its last run, when its outputs exist. `.golem/jobs.json` keeps what each job read; do not commit it. Generation replaces the files it generated before. Put custom behavior in your classes or application code; do not edit `*.generated.ts` files.
+Generation skips a job whose inputs, options and generator code did not change since its last run, when its outputs exist. `.golem/jobs.json` keeps what each job read. Generation replaces the files it generated before. Put custom behavior in your classes or application code; do not edit `*.generated.ts` files.
 
 `.golem/outputs.json` lists the files written by each job, so the CLI
 can delete files it generated earlier that are no longer produced. Identical
