@@ -279,7 +279,7 @@ async function buildLoose(t: TestContext) {
   const models = await import(pathToFileURL(path.join(root, 'build/loose.model.js')).href);
   const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
   type Make = new (values?: object) => object;
-  return { Loose: models.Loose as Make, LooseNote: models.LooseNote as Make, loose: codec('TLoose'), note: codec('TLooseNote') };
+  return { Loose: models.Loose as Make, LooseNote: models.LooseNote as Make, Open: models.Open as Make, Shape: models.Shape as Make, loose: codec('TLoose'), note: codec('TLooseNote'), open: codec('TOpen'), shape: codec('TShape') };
 }
 
 test('a loose model instance inside an unknown field writes no program state', async (t) => {
@@ -293,4 +293,23 @@ test('a loose model instance inside an unknown field writes no program state', a
   assert.deepEqual(note.toWireFormat(value, { validate: false }), written, 'validation off');
   assert.equal(note.stringify(value, { validate: false }), JSON.stringify(written), 'validation off');
   assert.deepEqual(encodeGeneratedModel(value), written, 'the class-level encode');
+});
+
+test('an explicit additionalProperties tag on a TS model writes its extra keys, and a loose model writes its declared fields only', async (t) => {
+  // protects: bug T-192 stringify and toWireFormat wrote the declared fields only for a TS model with an explicit additionalProperties true
+  const { Loose, Open, Shape, loose, open, shape } = await buildLoose(t);
+  const opened = Object.assign(new Open({ id: 'a' }), { extra: 1 });
+  assert.equal(open.stringify(opened), '{"id":"a","extra":1}');
+  assert.deepEqual(open.toWireFormat(opened), { id: 'a', extra: 1 });
+  assert.deepEqual(encodeGeneratedModel(opened), { id: 'a', extra: 1 }, 'the class-level encode');
+  const parsed = open.parse('{"id":"a","extra":1}', { construct: Open });
+  assert.ok(parsed instanceof Open);
+  assert.deepEqual({ ...parsed }, { id: 'a', extra: 1 }, 'parse with construct keeps the extra key');
+  const closed = Object.assign(new Loose({ id: 'a' }), { extra: 1 });
+  assert.equal(loose.stringify(closed), '{"id":"a"}');
+  assert.deepEqual(loose.toWireFormat(closed), { id: 'a' });
+  assert.deepEqual(encodeGeneratedModel(closed), { id: 'a' }, 'the class-level encode');
+  const shaped = new Shape({ tagged: { known: 'k', extra: 1 }, plain: { known: 'k', extra: 1 } } as object);
+  assert.equal(shape.stringify(shaped), '{"tagged":{"known":"k","extra":1},"plain":{"known":"k"}}', 'a field with the tag and a field without it');
+  assert.deepEqual(shape.toWireFormat(shaped), { tagged: { known: 'k', extra: 1 }, plain: { known: 'k' } });
 });
