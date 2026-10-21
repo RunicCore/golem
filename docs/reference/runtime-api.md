@@ -274,7 +274,7 @@ export function responseBody(value: unknown): unknown {
 
 Both throw `LibError` for missing generated metadata or cyclic input. With a known type, use [`toWireFormat<T>`](#serde) and `fromWireFormat<T>`, which also validate.
 
-Used by generated code: `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelTupleItems`, `defineModelProperty`, `requireModelObject`, `assertAcyclicValue`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
+Used by generated code: `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelTupleItems`, `defineModelProperty`, `requireModelObject`, `assertAcyclicValue`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
 
 ## `@exprtlabs/golem/tags` {#tags}
 
@@ -386,7 +386,7 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 
 Types: `AllowGetterOptions`, `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`; `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
-Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `resolveModelValidationContextValidator`, `assertModelValue`, `isValidModelValue`, `parseJson`, `serdeValidates`, `validationUnavailable` and the `stringifyJson*` writers.
+Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `resolveModelValidationContextValidator`, `assertModelValue`, `isValidModelValue`, `parseJson`, `serdeValidates`, `validationUnavailable`, `withoutInstanceState` and the `stringifyJson*` writers.
 
 Also exported: `validationFailure(issues)` throws `LibError` `Validation` with the issues. `serdeFailFast(options)` returns `false` only when `failFast` is `false`. `resolveGeneratedModelSchemaRefs(schema, plane)` replaces the model `$ref` placeholders in a schema with registered schema ids.
 
