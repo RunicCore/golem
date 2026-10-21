@@ -28,7 +28,7 @@ import type { SchemaGraph } from '@exprtlabs/golem/schema-graph';
 import type { ModelSpecification } from '@exprtlabs/golem/type-analysis';
 import { collectSpecifications } from '@exprtlabs/golem/type-analysis';
 import { discoverModelManifests } from '@exprtlabs/golem/manifest';
-import { loadModelManifests } from '@exprtlabs/golem/type-analysis';
+import { loadModelManifests, sdkModelFiles } from '@exprtlabs/golem/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/type-analysis';
 import {
   assertAbsolute,
@@ -169,20 +169,6 @@ function byRealPath(files: readonly string[]): string[] {
     if (!byReal.has(real) || file === real) byReal.set(real, file);
   }
   return [...byReal.values()];
-}
-
-/**
- * The real files that a model manifest lists as the declaration of an SDK model. A job uses the SDK's generated code for them.
- * A published package ships `x.model.d.ts` for the `x.model.ts` its manifest names, so both forms count.
- */
-function sdkModelFiles(manifestIndex: ManifestIndex): ReadonlySet<string> {
-  const files = new Set<string>();
-  for (const key of manifestIndex.byProvenance.keys()) {
-    const module = canonicalPath(key.slice(0, key.indexOf('\0')));
-    files.add(module);
-    files.add(module.replace(/(?<!\.d)\.([cm]?)ts$/, '.d.$1ts'));
-  }
-  return files;
 }
 
 function referencedManifestFiles(

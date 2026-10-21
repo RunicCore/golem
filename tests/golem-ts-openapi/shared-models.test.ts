@@ -102,6 +102,40 @@ test('an alias in the .model.d.ts file of an installed package in a controller s
   await runPipeline(config, { check: true });
 });
 
+/** The SDK package `@acme/sdk`: `money.model.d.ts` holds `TMoney`, which its manifest lists as the SDK model `sdk:money`. */
+const SDK_PACKAGE: Readonly<Record<string, string>> = {
+  'package.json': JSON.stringify({ name: '@acme/sdk', version: '1.0.0', type: 'module', exports: { './money.model': { types: './money.model.d.ts' } } }),
+  'money.model.d.ts': "/* @golem-model-manifest ./model-manifest.json */\nimport type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string }>;\n",
+  'models.ts': 'export class MoneyModel {}\n',
+  'model-manifest.json': JSON.stringify({
+    profile: { mobx: false, validation: true, allowAny: false },
+    models: [{ id: 'sdk:money', codecId: 'Money_0a1b2c3d', allowAny: false, type: { module: './money.model.d.ts', export: 'TMoney' }, generated: { module: './models.ts', export: 'MoneyModel' } }],
+  }),
+};
+
+for (const place of ['installed', 'linked'] as const) {
+  test(`a controller that uses the SDK model of a manifest in an SDK package that is ${place} gets the codec id of the manifest in the codecs and in both Nest marks`, async (t) => {
+    // protects: T-195 review: an SDK model keeps its manifest codec id in the controllers analysis (R-20 an SDK keeps working)
+    const { app, config } = appWithSharedModel(t, sharedModel('IObject'), { 'src/customers.controller.ts': controller('TMoney', '@acme/sdk/money.model') }, true);
+    const outer = path.dirname(app);
+    const sdk = place === 'installed' ? path.join(outer, 'node_modules/@acme/sdk') : path.join(outer, 'sdk-src');
+    writeGeneratedArtifacts(Object.entries(SDK_PACKAGE).map(([relative, content]) => ({ path: path.join(sdk, relative), content })));
+    if (place === 'linked') fs.symlinkSync('../../sdk-src', path.join(outer, 'node_modules/@acme/sdk'), 'dir');
+
+    await runPipeline(config);
+
+    const id = JSON.stringify('Money_0a1b2c3d');
+    assert.ok(readText(app, 'src/generated/operation-codecs.ts').includes(id), readText(app, 'src/generated/operation-codecs.ts'));
+    assert.doesNotMatch(readText(app, 'src/generated/operation-codecs.ts'), /TMoney_[0-9a-f]{8}/);
+    const code = rewrittenController(app);
+    assert.ok(code.includes(`@__golem_nestModelCodec(${id}) input: TMoney`), code);
+    assert.ok(code.includes(`@__golem_nestModelReturn(${id})`), code);
+    const document = readJson(app, 'generated/api.json');
+    assert.deepEqual(document.paths['/customers'].post.requestBody.content['application/json'].schema, { $ref: '#/components/schemas/TMoney' });
+    assert.deepEqual(document.components.schemas.TMoney, { type: 'object', properties: { currency: { type: 'string' } }, required: ['currency'], additionalProperties: false });
+  });
+}
+
 test('a controller that returns an app class extending the generated base of a shared IModel is matched to the model: the document and the return mark use it', async (t) => {
   // protects: T-195 the controllers analysis finds a shared companion in models.output, as the models job writes it
   const { app, config } = appWithSharedModel(t, sharedModel('IModel'), {

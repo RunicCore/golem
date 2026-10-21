@@ -7,6 +7,7 @@ import {
   canonicalFilename,
   createContractAnalysis,
   createProgram,
+  loadModelManifests,
   modelBoundary,
   retainedProgramSession,
   projectWatchInputs,
@@ -235,7 +236,8 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     root: normalized.root,
     allowAny: normalized.profile.allowAny,
     exact: normalized.exact,
-    ...(normalized.boundary ? { boundary: normalized.boundary } : {}),
+    // With the models job known, the manifests the program advertises decide which model files are SDK files, as they do for that job.
+    ...(normalized.boundary ? { boundary: normalized.boundary, manifests: loadModelManifests(normalized.root, programInfo, [], normalized.profile, observe) } : {}),
   });
   const schemaDiagnostics: TsToOpenApiDiagnostic[] = [];
   const schemaDiagnosticKeys = new Set<string>();

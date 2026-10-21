@@ -8,7 +8,7 @@ import { fieldProvenance } from './projections.js';
 import { canonicalDescriptorKey } from '../schema.js';
 import { deduplicateProjections } from './graph.js';
 import { linkedClassNames, modelSpecificationForClass } from './symbols.js';
-import type { ManifestIndex } from './provenance.js';
+import { manifestModelOfSymbol, type ManifestIndex } from './provenance.js';
 import { codecPublicId, createSchemaGraph, internDescriptors } from '../schema-graph.js';
 
 export interface ContractAnalysis {
@@ -33,6 +33,8 @@ export function createContractAnalysis(
     readonly exact?: boolean;
     /** The models job of the app: a shared model's generated file is where that job writes it. Without it every generated file is beside its model file. */
     readonly boundary?: ModelBoundary;
+    /** The model manifests of the program, as the models job reads them: a model a manifest lists has the codec id of its manifest entry. */
+    readonly manifests?: ManifestIndex;
   },
 ): ContractAnalysis {
   const checker = program.getTypeChecker();
@@ -88,7 +90,10 @@ export function createContractAnalysis(
     const idDescriptor = describedForIds.get(specification);
     if (!descriptor || !idDescriptor) continue;
     const node = internGraph.nodeFor(idDescriptor, specification.name, specification.emitClass);
-    const publicId = node?.codecId ?? codecPublicId(specification.name, idDescriptor, undefined, { source: 'typescript', constructs: specification.emitClass });
+    // An SDK model keeps the id its manifest gives it, which is the id a build rewrite stamps; the document still describes its type.
+    const alias = checker.getSymbolAtLocation(specification.declaration.name);
+    const publicId = (alias && options.manifests && manifestModelOfSymbol(options.manifests.byProvenance, alias)?.codecId)
+      || node?.codecId || codecPublicId(specification.name, idDescriptor, undefined, { source: 'typescript', constructs: specification.emitClass });
     codecBySpec.set(specification, publicId);
     const name = componentName(specification);
     codecIds[publicId] = publicId;
