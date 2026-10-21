@@ -130,6 +130,7 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
     profile: { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' },
     models: [{
       id: 'fixture:money',
+      codecId: 'Money_0a1b2c3d',
       allowAny: false,
       type: { module: './types.ts', export: 'Money' },
       generated: { module: './models.ts', export: 'MoneyModel' },
@@ -281,6 +282,7 @@ test('manifest validation shares one compiler across 5 and 50 generated model mo
       const names = manifestScaleNames({ index });
       return {
         id: `scale:item:${index}`,
+        codecId: `${names.item}_${index.toString(16).padStart(8, '0')}`,
         allowAny: false,
         type: { module: './types.ts', export: names.item },
         generated: { module: `./models/${names.item}.ts`, export: names.generatedClass },

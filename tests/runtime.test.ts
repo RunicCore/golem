@@ -315,6 +315,7 @@ test('model manifests validate profile and keep identity independent of profile'
     profile: { mobx: false, validation: true, allowAny: false },
     models: [{
       id: 'fixture:payment',
+      codecId: 'Payment_a1b2c3d4',
       allowAny: false,
       type: { module: './types.ts', export: 'Payment' },
       generated: { module: './models.ts', export: 'PaymentModel' },

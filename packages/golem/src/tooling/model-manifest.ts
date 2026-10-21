@@ -13,8 +13,8 @@ export interface ModelManifestProvenance {
 
 export interface ModelManifestEntry {
   readonly id: string;
-  /** The runtime codec id a rewrite stamps for this model. Manifests written before it existed have none. */
-  readonly codecId?: string;
+  /** The runtime codec id a rewrite stamps for this model. */
+  readonly codecId: string;
   readonly allowAny: boolean;
   readonly type: ModelManifestProvenance;
   readonly generated: { readonly module: string; readonly export: string };
@@ -143,6 +143,9 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
       || (model.codecId !== undefined && (typeof model.codecId !== 'string' || !model.codecId))
     ) {
       throw new Error(`Invalid model entry in ${filename}.`);
+    }
+    if (model.codecId === undefined) {
+      throw new Error(`Invalid model manifest ${filename}: model entry ${model.type.export} has no codecId. Regenerate the SDK with this golem version.`);
     }
   }
   return manifest as ModelManifest;

@@ -37,6 +37,7 @@ function writeManifest(
     } : {}),
     models: [{
       id: 'fixture:money',
+      codecId: 'fixture:money',
       allowAny: false,
       type: { module: typeModule, export: 'Money' },
       generated: { module: generatedModule, export: generatedExport },

@@ -33,7 +33,7 @@ test('model manifest entries carry no top-level additionalProperties; field desc
   }
 });
 
-test('every model manifest entry carries the codec id a rewrite stamps, and validation accepts manifests with or without it', async t => {
+test('every model manifest entry carries the codec id a rewrite stamps, and validation refuses a manifest without it and says to regenerate', async t => {
   const output = path.join(createFixtureProject(t, 'golem-manifest-codec-'), 'sdk');
   const result = await generateMaterializedSdk(document, { output, name: 'Manifest', profile: { mobx: false, validation: true } });
   const manifest = JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
@@ -45,7 +45,7 @@ test('every model manifest entry carries the codec id a rewrite stamps, and vali
 
   assert.doesNotThrow(() => validateModelManifest(manifest));
   const older = { ...manifest, models: manifest.models.map(({ codecId: _codecId, ...entry }) => entry) };
-  assert.doesNotThrow(() => validateModelManifest(older));
+  assert.throws(() => validateModelManifest(older, 'sdk/model-manifest.json'), new RegExp(`Invalid model manifest sdk/model-manifest\\.json: model entry ${manifest.models[0]!.type.export} has no codecId\\. Regenerate the SDK with this golem version\\.`));
   const empty = { ...manifest, models: manifest.models.map(entry => ({ ...entry, codecId: '' })) };
   assert.throws(() => validateModelManifest(empty), /Invalid model entry/);
 });

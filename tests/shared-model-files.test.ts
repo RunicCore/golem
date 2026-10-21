@@ -411,7 +411,7 @@ function writeSdkPackage(directory: string, typeModule: string, money = 'export 
     'models.ts': 'export class MoneyModel {}\nexport function stringifysdk_money(value: object, _options?: object): string { return JSON.stringify(value); }\nexport function toWireFormatsdk_money(value: unknown, _options?: object): unknown { return value; }\n',
     'model-manifest.json': JSON.stringify({
       profile: { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' },
-      models: [{ id: 'sdk:money', allowAny: false, type: { module: typeModule, export: 'Money' }, generated: { module: './models.ts', export: 'MoneyModel' } }],
+      models: [{ id: 'sdk:money', codecId: 'Money_0a1b2c3d', allowAny: false, type: { module: typeModule, export: 'Money' }, generated: { module: './models.ts', export: 'MoneyModel' } }],
     }),
   });
 }

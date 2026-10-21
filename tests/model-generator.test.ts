@@ -202,6 +202,7 @@ test('rejects unsupported and duplicate model manifests', (t: TestContext) => {
   const second = path.join(root, 'second-model-manifest.json');
   const model = {
     id: 'fixture:money',
+    codecId: 'Money_0a1b2c3d',
     allowAny: false,
     type: { module: './types.ts', export: 'Money' },
     generated: { module: './models.ts', export: 'MoneyModel' },
