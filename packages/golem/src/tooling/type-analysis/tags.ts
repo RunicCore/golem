@@ -532,56 +532,54 @@ function dependentRequiredMap(
   return result;
 }
 
+const TAG_NAMES: ReadonlySet<string> = new Set([
+  'TValidation',
+  'TSerde',
+  'Integer',
+  'Minimum',
+  'Maximum',
+  'Min',
+  'Max',
+  'ExclusiveMinimum',
+  'ExclusiveMaximum',
+  'ExclusiveMin',
+  'ExclusiveMax',
+  'MultipleOf',
+  'MinLength',
+  'MaxLength',
+  'Pattern',
+  'Format',
+  'MinItems',
+  'MaxItems',
+  'UniqueItems',
+  'MinProperties',
+  'MaxProperties',
+  'MinProps',
+  'MaxProps',
+  'Contains',
+  'MinContains',
+  'MaxContains',
+  'PropertyNames',
+  'PatternProperties',
+  'AdditionalProperties',
+  'UnevaluatedProperties',
+  'DependentRequired',
+  'DependentSchemas',
+  'OneOf',
+  'Not',
+  'IfThenElse',
+]);
+
 function tagReferenceName(
   context: TagAnalysisContext,
   node: ts.TypeReferenceNode,
 ): string | undefined {
-  const text = node.typeName.getText();
-  const name = ts.isIdentifier(node.typeName)
-    ? node.typeName.text
-    : node.typeName.right.text;
   const symbolAtNode = context.checker.getSymbolAtLocation(node.typeName);
   if (!isGolemTagSymbol(context.checker, symbolAtNode)) return undefined;
   const symbol = targetSymbol(context.checker, symbolAtNode);
+  // The meaning comes from the tag the reference resolves to; the name written at the use site is the importer's choice.
   const symbolName = symbol?.getName();
-  const names = new Set([text, name, symbolName].filter((value): value is string => Boolean(value)));
-  return [...names].find((candidate) => new Set([
-    'TValidation',
-    'TSerde',
-    'Integer',
-    'Minimum',
-    'Maximum',
-    'Min',
-    'Max',
-    'ExclusiveMinimum',
-    'ExclusiveMaximum',
-    'ExclusiveMin',
-    'ExclusiveMax',
-    'MultipleOf',
-    'MinLength',
-    'MaxLength',
-    'Pattern',
-    'Format',
-    'MinItems',
-    'MaxItems',
-    'UniqueItems',
-    'MinProperties',
-    'MaxProperties',
-    'MinProps',
-    'MaxProps',
-    'Contains',
-    'MinContains',
-    'MaxContains',
-    'PropertyNames',
-    'PatternProperties',
-    'AdditionalProperties',
-    'UnevaluatedProperties',
-    'DependentRequired',
-    'DependentSchemas',
-    'OneOf',
-    'Not',
-    'IfThenElse',
-  ]).has(candidate));
+  return symbolName !== undefined && TAG_NAMES.has(symbolName) ? symbolName : undefined;
 }
 
 function dependsOnAliasParameter(context: TagAnalysisContext, node: ts.Node): boolean {

@@ -88,3 +88,15 @@ for (const item of [
     assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), error => { assert.match(String(error), item.expected); return true; });
   });
 }
+
+for (const item of [
+  { name: 'MinLength imported as Min', imports: tsSource`import type { MinLength as Min } from '@exprtlabs/golem/tags';`, field: tsSource`value: string & Min<3>`, values: ['abc', 'ab'], expected: [true, false] },
+  { name: 'Minimum imported as Min', imports: tsSource`import type { Minimum as Min } from '@exprtlabs/golem/tags';`, field: tsSource`value: number & Min<3>`, values: [3, 2], expected: [true, false] },
+  { name: "the tags' own Min", imports: tsSource`import type { Min } from '@exprtlabs/golem/tags';`, field: tsSource`value: number & Min<3>`, values: [3, 2], expected: [true, false] },
+  { name: "the tags' own Max imported as Cap", imports: tsSource`import type { Max as Cap } from '@exprtlabs/golem/tags';`, field: tsSource`value: number & Cap<3>`, values: [3, 4], expected: [true, false] },
+] as const) {
+  test(`tag import alias keeps the tag's meaning: ${item.name}`, async t => {
+    // protects: F-51 a tag takes its meaning from the tag type, not from the local name
+    assert.deepEqual(await validity(t, item.imports, item.field, item.values), item.expected);
+  });
+}
