@@ -1,7 +1,7 @@
 import type { ControllerRoute } from './nest/types.js';
 import type { GolemArtifact } from '@exprtlabs/golem/generator-api';
 
-export interface OperationCodecMap {
+interface OperationCodecMap {
   readonly input: Readonly<Record<string, string>>;
   readonly output: Readonly<Record<string, string>>;
   readonly query: Readonly<Record<string, string>>;
@@ -16,7 +16,7 @@ function methodKey(route: ControllerRoute): string {
   return `${route.controller}.${route.methodName}`;
 }
 
-export function collectOperationCodecs(routes: readonly ControllerRoute[]): OperationCodecMap {
+function collectOperationCodecs(routes: readonly ControllerRoute[]): OperationCodecMap {
   const input: Record<string, string> = {};
   const output: Record<string, string> = {};
   const query: Record<string, string> = {};

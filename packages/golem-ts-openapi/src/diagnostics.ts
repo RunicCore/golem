@@ -2,13 +2,11 @@ import type * as ts from '@exprtlabs/golem/ts';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 
 export { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
-export type DiagnosticSeverity = GolemDiagnosticSeverity;
 
 /** Stable provider diagnostic identifiers consumed by the shared CLI. */
 export enum TsToOpenApiDiagnosticCode {
   NoExportedControllers = 'NEST1001',
   NoControllerSources = 'NEST1002',
-  UnsupportedType = 'NEST1004',
   UnsupportedNestParameter = 'NEST1101',
   UnrepresentableNestParameter = 'NEST1102',
   NamedBodyParameter = 'NEST1103',
@@ -46,7 +44,6 @@ export enum TsToOpenApiDiagnosticCode {
   DuplicateParameter = 'NEST1312',
   UnsupportedRoutePath = 'NEST1207',
   UnsupportedRouteExpression = 'RUNT2101',
-  UnboundRouteExpression = 'RUNT2105',
   RouteResultTooLarge = 'RUNT2106',
 }
 
@@ -89,7 +86,7 @@ export function diagnostic(
   };
 }
 
-export function formatDiagnostic(value: TsToOpenApiDiagnostic): string {
+function formatDiagnostic(value: TsToOpenApiDiagnostic): string {
   const location = value.file
     ? `${value.file}${value.line === undefined ? '' : `:${value.line}:${value.column ?? 1}`}: `
     : '';

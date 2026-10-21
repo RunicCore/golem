@@ -20,7 +20,7 @@ export type StaticValueResult =
  */
 export type StaticIntrinsic = (call: ts.CallExpression) => StaticValueResult | undefined;
 
-export interface StaticValueOptions {
+interface StaticValueOptions {
   /** Called for every declaration whose initializer contributes to the value. */
   readonly onDeclaration?: (declaration: ts.Declaration) => void;
   readonly intrinsic?: StaticIntrinsic;

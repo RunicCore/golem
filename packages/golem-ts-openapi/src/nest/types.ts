@@ -13,7 +13,7 @@ export const NEST_HTTP_METHODS = [
 ] as const;
 
 export type NestHttpMethod = typeof NEST_HTTP_METHODS[number];
-export type ParameterLocation = 'path' | 'query' | 'header' | 'cookie' | 'querystring';
+type ParameterLocation = 'path' | 'query' | 'header' | 'cookie' | 'querystring';
 
 export interface TypeReference {
   readonly type: ts.Type;
@@ -34,13 +34,11 @@ export interface DecoratorInfo {
 }
 
 export interface ControllerParameter {
-  readonly index: number;
   readonly node: ts.Node;
   readonly type: TypeReference;
   readonly location?: ParameterLocation | 'body';
   readonly name?: string;
   readonly required: boolean;
-  readonly decorators: readonly DecoratorInfo[];
 }
 
 export interface RequestBodyDescription {
@@ -69,13 +67,11 @@ export interface ResponseDescription {
 
 export interface ControllerRoute {
   readonly controller: string;
-  readonly controllerClass: ts.ClassDeclaration;
   readonly methodName: string;
   readonly method: ts.MethodDeclaration;
   readonly sourceFile: ts.SourceFile;
   readonly httpMethod: NestHttpMethod;
   readonly path: string;
-  readonly version?: string;
   readonly operationId: string;
   readonly summary?: string;
   readonly description?: string;
@@ -89,13 +85,6 @@ export interface ControllerRoute {
   readonly produces?: readonly string[];
   readonly security?: readonly Record<string, string[]>[];
   readonly deprecated?: boolean;
-}
-
-export interface AnalyzedController {
-  readonly name: string;
-  readonly classDeclaration: ts.ClassDeclaration;
-  readonly sourceFile: ts.SourceFile;
-  readonly routes: readonly ControllerRoute[];
 }
 
 export interface NestAnalysisContext {
@@ -116,6 +105,5 @@ export interface NestAnalysisContext {
 }
 
 export interface ControllerAnalysisResult {
-  readonly controllers: readonly AnalyzedController[];
   readonly routes: readonly ControllerRoute[];
 }

@@ -2,7 +2,7 @@ import path from 'node:path';
 import * as ts from '@exprtlabs/golem/ts';
 import { resolveSymbol } from '@exprtlabs/golem/type-analysis';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from '../diagnostics.js';
-import { bindExpressionSource, type RouteEvaluationOptions } from './dependencies.js';
+import type { RouteEvaluationOptions } from './dependencies.js';
 import { evaluateStaticValue, isTypeScriptLibFile, singleReturnExpression, unwrapExpression as unwrap } from './static-value.js';
 
 type StringBinding = { readonly kind: 'string'; readonly value: string };
@@ -284,7 +284,7 @@ export function foldRouteExpression(
   program: ts.Program,
   options: RouteEvaluationOptions = {},
 ): string | string[] {
-  const sourceFile = bindExpressionSource(expression, program);
+  const sourceFile = expression.getSourceFile();
   try {
     return fold(expression, { bindings: new Map(), container: undefined }, {
       checker: program.getTypeChecker(),

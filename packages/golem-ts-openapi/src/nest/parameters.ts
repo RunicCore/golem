@@ -167,9 +167,7 @@ function flattenParameter(
   context: NestAnalysisContext,
   parameter: ts.ParameterDeclaration,
   parameterType: TypeReference,
-  index: number,
   location: Exclude<ControllerParameter['location'], 'body' | undefined>,
-  decorators: readonly DecoratorInfo[],
 ): readonly ControllerParameter[] {
   // Keep the declaration-site type (including an optional `| undefined`) unless an inherited generic was instantiated.
   const type = parameterType.node ? context.checker.getTypeAtLocation(parameter) : parameterType.type;
@@ -189,13 +187,11 @@ function flattenParameter(
   }
   if (location === 'query' && context.openapiVersion === '3.2.0') {
     return [{
-      index,
       node: parameter,
       type: parameterType,
       location: 'querystring',
       name: ts.isIdentifier(parameter.name) ? parameter.name.text : 'query',
       required: !isOptionalParameter(parameter, type),
-      decorators,
     } satisfies ControllerParameter];
   }
   if (location === 'query' && hasWholeObjectContract(context, parameter, type)) {
@@ -206,13 +202,11 @@ function flattenParameter(
     const declaration = property.valueDeclaration ?? property.declarations?.[0];
     const propertyNode = parameterPropertyTypeNode(property);
     return {
-      index,
       node: parameter,
       type: typeReference(context.checker, declaration ?? parameter, propertyNode),
       location,
       name: property.name,
       required: !(property.flags & ts.SymbolFlags.Optional) && !containsUndefined(propertyType),
-      decorators,
     } satisfies ControllerParameter;
   });
 }
@@ -309,12 +303,10 @@ export function parseParameters(
         throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, '@Body("field") is not flattened implicitly; declare an explicit request-body contract.'));
       }
       body = {
-        index,
         node: parameter,
         type: parameterType,
         location: 'body',
         required,
-        decorators,
       };
       return;
     }
@@ -323,17 +315,15 @@ export function parseParameters(
         throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `Named @${location.location} parameter ${name} must be primitive or a primitive array; use a whole @Query() object in OpenAPI 3.2 or an explicit supported contract.`));
       }
       parameters.push({
-        index,
         node: parameter,
         type: parameterType,
         location: location.location,
         name,
         required: location.location === 'path' ? true : required,
-        decorators,
       });
       return;
     }
-    parameters.push(...flattenParameter(context, parameter, parameterType, index, location.location, decorators));
+    parameters.push(...flattenParameter(context, parameter, parameterType, location.location));
   });
   const methodDecorators = decoratorsOf(context.checker, method);
   const classDecorators = classParameterDecorators(context.checker, method, controllerClass);
@@ -355,14 +345,12 @@ export function parseParameters(
         sourceFile: method.getSourceFile(),
       } satisfies TypeReference;
       (location === 'header' && inherited.includes(decorator) ? classHeaders : parameters).push({
-        index: method.parameters.length + parameters.length + classHeaders.length,
         node: method,
         type,
         location,
         name,
         // @nestjs/swagger defaults @ApiQuery and @ApiParam to required; @ApiHeader passes `required` through.
         required: location === 'header' ? options.boolean('required') === true : options.boolean('required') !== false,
-        decorators: [decorator],
       });
     }
   }

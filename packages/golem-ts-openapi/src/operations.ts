@@ -28,7 +28,7 @@ export interface OperationBuildContext {
   readonly resolveSchemaReference?: (reference: string) => OpenApiSchema | undefined;
 }
 
-export interface OperationBuildResult {
+interface OperationBuildResult {
   readonly paths: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 }
 
