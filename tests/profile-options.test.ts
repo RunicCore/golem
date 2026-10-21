@@ -147,6 +147,37 @@ export type TPayload = IModel<{ opaque: unknown & Format<'domain-specific'> }>;
   assertModelArtifactRoles(root, source, generate({ root, sources: [source], profile: profile({ allowAny: true }) }), true);
 });
 
+test('a pick of a member its source type lacks is not advised as allowAny, and a picked member really typed unknown still is', (t: TestContext) => {
+  // protects: T-211 RUNM1011 points to allowAny only for a field typed any or unknown (F-176)
+  const { root, source } = modelProject(t);
+  const picked = (key: string): string => `import type { IModel } from '@exprtlabs/golem/model';
+interface Source { a: string; loose: unknown }
+export type TPayload = IModel<{ view: Pick<Source, '${key}'> }>;
+`;
+  fs.writeFileSync(source, picked('b'));
+  assert.throws(() => generate({ root, sources: [source], profile: profile() }), (error: unknown) => {
+    assert.match(String(error), /Field "b" is picked from Source, which has no member "b"/);
+    assert.doesNotMatch(String(error), /allowAny/);
+    return true;
+  });
+  fs.writeFileSync(source, picked('loose'));
+  assert.throws(() => generate({ root, sources: [source], profile: profile() }), /RUNM1011.*contains unknown.*allowAny/);
+});
+
+test('a pick of a key an index signature holds is a field typed unknown, so allowAny is advised', (t: TestContext) => {
+  // protects: T-212 RUNM1011 for a Pick from an index-signature type, not RUNM1058 (found in T-211)
+  const { root, source } = modelProject(t);
+  fs.writeFileSync(source, `import type { IModel } from '@exprtlabs/golem/model';
+type Source = { [key: string]: unknown };
+export type TPayload = IModel<{ view: Pick<Source, 'b'> }>;
+`);
+  assert.throws(() => generate({ root, sources: [source], profile: profile() }), (error: unknown) => {
+    assert.match(String(error), /RUNM1011.*contains unknown.*allowAny/);
+    assert.doesNotMatch(String(error), /RUNM1058/);
+    return true;
+  });
+});
+
 test('a tag argument typed unknown passes by default, and a tag argument typed any is still rejected', (t: TestContext) => {
   const { root, source } = modelProject(t);
   const tagged = (argument: string): string => tsSource`import type { IModel } from '@exprtlabs/golem/model';

@@ -270,3 +270,85 @@ export class Loose extends TLooseBaseModel {
   assert.deepEqual({ ...parsed }, { id: 'a' });
   assert.equal(codec.stringify(new Loose({ id: 'a', extra: 1 } as object)), '{"id":"a"}');
 });
+
+async function buildLoose(t: TestContext) {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-loose-state-', name: 'model-loose-state', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'loose.model.ts'), readFixture('models/model-instance-state/loose-state/loose.model.ts'));
+  writeModelGolemYaml(root, { mobx: false, validation: true, exact: false });
+  await buildModelProject(root);
+  const models = await import(pathToFileURL(path.join(root, 'build/loose.model.js')).href);
+  const codec = (name: string) => requireObjectCodec(generatedCodecIdFromRoot(root, name));
+  type Make = new (values?: object) => object;
+  return { Loose: models.Loose as Make, LooseNote: models.LooseNote as Make, Open: models.Open as Make, Shape: models.Shape as Make, Stamped: models.Stamped as Make, loose: codec('TLoose'), note: codec('TLooseNote'), open: codec('TOpen'), shape: codec('TShape'), stamped: codec('TStamped') };
+}
+
+test('a loose model instance inside an unknown field writes no program state', async (t) => {
+  // protects: bug T-191 a loose (exact: false) model registered an open map, so the program state of its instance was written inside an unknown value
+  const { Loose, LooseNote, note } = await buildLoose(t);
+  const inner = Object.assign(new Loose({ id: 'a' }), { cache: new Map<string, string>(), hits: 3 });
+  const value = new LooseNote({ title: 'n', data: { list: [inner], direct: inner } });
+  const written = { title: 'n', data: { list: [{ id: 'a' }], direct: { id: 'a' } } };
+  assert.deepEqual(note.toWireFormat(value), written);
+  assert.equal(note.stringify(value), JSON.stringify(written));
+  assert.deepEqual(note.toWireFormat(value, { validate: false }), written, 'validation off');
+  assert.equal(note.stringify(value, { validate: false }), JSON.stringify(written), 'validation off');
+  assert.deepEqual(encodeGeneratedModel(value), written, 'the class-level encode');
+});
+
+test('an explicit additionalProperties tag on a TS model writes its extra keys, and a loose model writes its declared fields only', async (t) => {
+  // protects: bug T-192 stringify and toWireFormat wrote the declared fields only for a TS model with an explicit additionalProperties true
+  const { Loose, Open, Shape, loose, open, shape } = await buildLoose(t);
+  const opened = Object.assign(new Open({ id: 'a' }), { extra: 1 });
+  assert.equal(open.stringify(opened), '{"id":"a","extra":1}');
+  assert.deepEqual(open.toWireFormat(opened), { id: 'a', extra: 1 });
+  assert.deepEqual(encodeGeneratedModel(opened), { id: 'a', extra: 1 }, 'the class-level encode');
+  const parsed = open.parse('{"id":"a","extra":1}', { construct: Open });
+  assert.ok(parsed instanceof Open);
+  assert.deepEqual({ ...parsed }, { id: 'a', extra: 1 }, 'parse with construct keeps the extra key');
+  const closed = Object.assign(new Loose({ id: 'a' }), { extra: 1 });
+  assert.equal(loose.stringify(closed), '{"id":"a"}');
+  assert.deepEqual(loose.toWireFormat(closed), { id: 'a' });
+  assert.deepEqual(encodeGeneratedModel(closed), { id: 'a' }, 'the class-level encode');
+  const shaped = new Shape({ tagged: { known: 'k', extra: 1 }, plain: { known: 'k', extra: 1 } } as object);
+  assert.equal(shape.stringify(shaped), '{"tagged":{"known":"k","extra":1},"plain":{"known":"k"}}', 'a field with the tag and a field without it');
+  assert.deepEqual(shape.toWireFormat(shaped), { tagged: { known: 'k', extra: 1 }, plain: { known: 'k' } });
+});
+
+test('an AdditionalProperties tag with a value type converts the extra values like an index signature', async (t) => {
+  // protects: bug T-192 the extra values of an AdditionalProperties<Date> tag were copied as they are, so an extra ISO string stayed a string
+  const { Stamped, stamped } = await buildLoose(t);
+  const text = '{"id":"a","at":"2021-02-03T04:05:06.000Z"}';
+  const parsed = stamped.parse(text, { construct: Stamped }) as { at: Date };
+  assert.ok(parsed instanceof Stamped);
+  assert.ok(parsed.at instanceof Date, 'an extra value takes the conversion of the tag type');
+  assert.equal(parsed.at.toISOString(), '2021-02-03T04:05:06.000Z');
+  assert.equal(stamped.stringify(parsed), text);
+  assert.deepEqual(stamped.toWireFormat(parsed), JSON.parse(text));
+  assert.deepEqual(encodeGeneratedModel(parsed), JSON.parse(text), 'the class-level encode');
+  assert.equal(stamped.stringify(Object.assign(new Stamped({ id: 'a' }), { at: new Date(0) })), '{"id":"a","at":"1970-01-01T00:00:00.000Z"}');
+});
+
+test('an AdditionalProperties tag on a projection field keeps its extra keys in the constructor, the class-level encode and the wire form', async (t) => {
+  // protects: bug T-192 a projection (Pick<Source, 'id'> & AdditionalProperties<unknown>) dropped the extra keys of its value
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-projection-extras-', name: 'model-projection-extras', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'view.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import type { AdditionalProperties } from '@exprtlabs/golem/tags';
+import { TViewBaseModel, type TViewFields } from './view.model.generated.js';
+type Source = { id: string; name: string };
+export type TView = IModel<{ view: Pick<Source, 'id'> & AdditionalProperties<unknown> }>;
+export class View extends TViewBaseModel {
+  constructor(values: Partial<TViewFields> = {}) { super(values); }
+}
+`);
+  writeModelGolemYaml(root, { mobx: false, validation: true, exact: false });
+  await buildModelProject(root);
+  const { View } = await import(pathToFileURL(path.join(root, 'build/view.model.js')).href) as { View: new (values?: object) => object };
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TView'));
+  const written = { view: { id: 'a', extra: 1 } };
+  const instance = new View(written);
+  assert.deepEqual({ ...(instance as { view: object }).view }, written.view, 'the constructor keeps the extra key');
+  assert.deepEqual(encodeGeneratedModel(instance), written, 'the class-level encode');
+  assert.equal(codec.stringify(instance), JSON.stringify(written));
+  assert.deepEqual(codec.toWireFormat(instance), written);
+  assert.deepEqual({ ...(codec.parse(JSON.stringify(written), { construct: View }) as { view: object }).view }, written.view, 'parse with construct');
+});

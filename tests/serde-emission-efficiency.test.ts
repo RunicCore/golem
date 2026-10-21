@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { generateModels } from '#openapi/models';
 import { writeSdk } from '#openapi/generator';
@@ -358,4 +359,57 @@ export class Note extends TNoteBaseModel {}
   assert.deepEqual(keys({ title: 't', body: undefined, pinned: true }), ['title', 'pinned'], 'an undefined optional field is omitted');
   assert.deepEqual(keys({ pinned: false, body: 'b', title: 't' }), ['title', 'body', 'pinned'], 'declaration order, not initializer order');
   assert.deepEqual(encodeGeneratedModel(new Note({ title: 't', body: 'b', pinned: false }) as never), { title: 't', body: 'b', pinned: false });
+});
+
+test('a map whose values need no conversion is written by the native JSON writer, and a map of dates still converts', async (t) => {
+  // protects: T-202 a zero-field map of plain values stringifies with JSON.stringify, not the per-key extras loop
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'maps.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TDirectoryBaseModel, TShelfBaseModel, TStampsBaseModel } from './maps.model.generated.js';
+export type TDirectory = IModel<{ [key: string]: string }>;
+export type TShelf = IModel<{ id: string; names: { [key: string]: string } }>;
+export type TStamps = IModel<{ [key: string]: Date }>;
+export class Directory extends TDirectoryBaseModel {}
+export class Shelf extends TShelfBaseModel {}
+export class Stamps extends TStampsBaseModel {}
+`);
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  await buildModelProject(value.root);
+  const generated = modelArtifact(generatedModelFiles(value.root), 'maps');
+  const stringifyDirectory = functionBody(generated, 'stringifyTDirectory');
+  assert.match(stringifyDirectory, /return stringifyJsonScalar\(value as never\);/, 'the plain map takes the native writer');
+  assert.doesNotMatch(stringifyDirectory, /Object\.keys/, 'no per-key loop');
+  assert.doesNotMatch(functionBody(generated, 'stringifyTShelf'), /Object\.(keys|entries|fromEntries)/, 'a plain map field takes the native writer too');
+
+  const codecs = await import(pathToFileURL(path.join(value.root, 'build/maps.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
+  const { Directory } = await import(pathToFileURL(path.join(value.root, 'build/maps.model.js')).href) as { Directory: new () => object };
+  const names = { zeta: 'z', alpha: 'a', 2: 'two', 1: 'one', skipped: undefined, empty: '' };
+  const instance = Object.assign(new Directory(), names);
+  assert.equal(codecs.stringifyTDirectory(instance), JSON.stringify(names), 'extra keys and their order are kept');
+  assert.equal(codecs.stringifyTDirectory(instance), '{"1":"one","2":"two","zeta":"z","alpha":"a","empty":""}');
+  assert.deepEqual(codecs.toWireFormatTDirectory(instance), JSON.parse(codecs.stringifyTDirectory(instance) as string), 'toWireFormat agrees with stringify');
+  assert.equal(codecs.stringifyTShelf({ id: 's', names }), JSON.stringify({ id: 's', names }));
+
+  const stamps = { first: new Date('2024-01-01T00:00:00.000Z'), second: new Date('2024-02-02T00:00:00.000Z') };
+  assert.equal(codecs.stringifyTStamps(stamps), '{"first":"2024-01-01T00:00:00.000Z","second":"2024-02-02T00:00:00.000Z"}');
+  assert.deepEqual(codecs.toWireFormatTStamps(stamps), { first: '2024-01-01T00:00:00.000Z', second: '2024-02-02T00:00:00.000Z' });
+});
+
+test('a map of numbers throws on a non-finite value with validation off, as a number field does', async (t) => {
+  // protects: T-212 a non-finite number in a plain map is a Serialization LibError, not null (found in T-202)
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'counts.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TCountsBaseModel, TSeriesBaseModel } from './counts.model.generated.js';
+export type TCounts = IModel<{ [key: string]: number }>;
+export type TSeries = IModel<{ [key: string]: number[] }>;
+export class Counts extends TCountsBaseModel {}
+export class Series extends TSeriesBaseModel {}
+`);
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  await buildModelProject(value.root);
+  const codecs = await import(pathToFileURL(path.join(value.root, 'build/counts.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
+  const isSerializationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Serialization;
+  assert.equal(codecs.stringifyTCounts({ a: 1, b: -0.5 }), '{"a":1,"b":-0.5}');
+  assert.throws(() => codecs.stringifyTCounts({ a: NaN }), isSerializationError);
+  assert.throws(() => codecs.stringifyTSeries({ a: [1, Infinity] }), isSerializationError);
 });

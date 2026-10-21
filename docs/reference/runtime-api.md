@@ -57,7 +57,9 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 
 Generation writes `task.model.generated.ts` with `TTaskBaseModel`, `TTaskFields` (field types), `TTaskJSON` (JSON shape) and `TTaskInit` (constructor values). The `TTaskBaseModel` constructor copies the values it receives and does not validate, so an incomplete draft is valid state.
 
-Used by generated code: `registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelFields`, `GeneratedModelConstructor`, `GeneratedModelResult`, `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile`, `GeneratedModelValidatorEnhancer`, `ModelConstraint`, `ModelTypeMetadata`, `ModelTypeDescriptor`, `UnionDiscriminator`, `DiscriminatorValue`, `ConstraintSchemaValue` and the `generatedModel*Brand` symbols.
+Used by generated code: `registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelConstructor`, `ModelInit` and the `generatedModel*Brand` symbols.
+
+Also exported types: `GeneratedModelFields<Model>` is the field types of a generated model. `GeneratedModelResult<Constructor>` is the instance type of a generated class. `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile` and `GeneratedModelValidatorEnhancer` describe the metadata that `registerGeneratedModel` stores for a class. `ModelTypeMetadata`, `ModelTypeDescriptor`, `ModelConstraint`, `ConstraintSchemaValue`, `UnionDiscriminator` and `DiscriminatorValue` describe the type information that generation records for a field.
 
 ## `@exprtlabs/golem/validation` {#validation}
 
@@ -103,7 +105,9 @@ function getValidator<Fields extends object, Owner extends object>(
 
 Types for these members: `ModelValidationRules`, `ValidationRule`, `ValidationRuleResult`, `ValidationMessages`, `ValidationMessage`, `ValidationMessageKey`, `FieldValidationMessage`, `ExternalFieldError`, `ValidationMode`, `Issue` and `IssuePath`.
 
-Used by generated code: `runValidation` and, in operation modules, `operationValidators` (resolves an operation's input and response validators once per client), `validateOperationInput` and `responseCheck` (the response check `ClientRuntime.readResponse` runs on each decoded body or stream item).
+Used by generated code, in operation modules: `operationValidators` (resolves an operation's input and response validators once per client), `validateOperationInput` and `responseCheck` (the response check `ClientRuntime.readResponse` runs on each decoded body or stream item).
+
+Also exported: `runValidation(validator, value, all = true)` runs a `Validator` and returns a `Promise` of a `ValidationResult`. It throws `TypeError` when the validator does not return an array.
 
 ### Runtime validators {#runtime-validators}
 
@@ -274,7 +278,9 @@ export function responseBody(value: unknown): unknown {
 
 Both throw `LibError` for missing generated metadata or cyclic input. With a known type, use [`toWireFormat<T>`](#serde) and `fromWireFormat<T>`, which also validate.
 
-Used by generated code: `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelTupleItems`, `defineModelProperty`, `requireModelObject`, `assertAcyclicValue`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
+Used by generated code: `encodeGeneratedModel`, `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelTupleItems`, `defineModelProperty`, `requireModelObject`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
+
+Also exported: `assertAcyclicValue(value, kind?)` throws `LibError` when `value` holds a cycle. Shared references are allowed. `kind` is `LibErrorKind.Serialization` or `LibErrorKind.Deserialization` (the default).
 
 ## `@exprtlabs/golem/tags` {#tags}
 
@@ -386,9 +392,9 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 
 Types: `AllowGetterOptions`, `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`; `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
-Used by generated code: `createObjectCodec`, `registerObjectCodec`, `getObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `getIModelClass`, `requireIModelClass`, `findCodecIdForConstructor`, `resolveModelValidationContextValidator`, `assertModelValue`, `isValidModelValue`, `parseJson`, `serdeValidates`, `validationUnavailable`, `withoutInstanceState` and the `stringifyJson*` writers.
+Used by generated code: `createObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `requireIModelClass`, `assertModelValue`, `isValidModelValue`, `parseJson`, `serdeValidates`, `validationUnavailable`, `withoutInstanceState` and the `stringifyJson*` writers.
 
-Also exported: `validationFailure(issues)` throws `LibError` `Validation` with the issues. `serdeFailFast(options)` returns `false` only when `failFast` is `false`. `resolveGeneratedModelSchemaRefs(schema, plane)` replaces the model `$ref` placeholders in a schema with registered schema ids.
+Also exported: `registerObjectCodec(codec)` stores an `ObjectCodec` under its id. `getObjectCodec(id)` returns the codec for an id, or `undefined`. `getIModelClass(name)` returns the registered `IModel` class for a name, or `undefined`. `findCodecIdForConstructor(constructor)` returns the id that the codec of a generated class is registered under, or `undefined`. `resolveModelValidationContextValidator(context, reference, mode)` returns the `Validator` that a `ModelValidationContext` gives for a reference, and caches it per context. `validationFailure(issues)` throws `LibError` `Validation` with the issues. `serdeFailFast(options)` returns `false` only when `failFast` is `false`. `resolveGeneratedModelSchemaRefs(schema, plane)` replaces the model `$ref` placeholders in a schema with registered schema ids.
 
 ## `@exprtlabs/golem/nest` {#nest}
 

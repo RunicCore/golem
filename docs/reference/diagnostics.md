@@ -170,7 +170,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1003
 
-**Unsupported TypeScript type.** A model or field type isn't one of the shapes this generator can convert — none of the recognized primitive, literal, array, tuple, object, or union forms. **Fix:** Replace it with a supported shape, such as a plain object, array, primitive, or named model reference.
+**Unsupported TypeScript type.** A model or field type isn't one of the shapes this generator can convert — none of the recognized primitive, literal, array, tuple, object, or union forms. A type alias that contains itself through arrays, tuples, or unions, with no model between, also gives this code. The message names the alias and the field. **Fix:** Replace it with a supported shape, such as a plain object, array, primitive, or named model reference. A recursive shape works only through an `IObject` or `IModel`, so change the shape to pass through one, for example `type TNode = IObject<{ value: string; children: TNode[] }>`.
 
 ### RUNM1004
 
@@ -266,7 +266,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1058
 
-**Unresolved contract type.** A field's type resolves to TypeScript's internal error type because its declaration or import couldn't be resolved. **Fix:** Fix the declaration or import before generating.
+**Unresolved contract type.** A field has TypeScript's internal error type, because golem could not resolve a declaration or an import. Golem also reports this code when a `Pick` names a member that its source type does not declare. Golem also reports this code when a mapped type that you wrote, such as `{ [K in keyof Customer]: Customer[K] }`, maps over a model class. Golem reads no members of the class in that type. **Fix:** Fix the declaration, the import, or the key, then generate again. For a mapped type over a model class, use `Pick`, `Omit`, `Partial`, `Required`, or `Readonly`, or name the keys.
 
 ### RUNM1059
 

@@ -2,14 +2,28 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { adapterSpec, BENCH_ADAPTERS, BENCH_OPERATIONS, PAYLOADS, operationSpec, payloadSpec, timedCases, type AdapterId, type ProjectKind } from './cases.js';
+import { adapterSpec, BENCH_ADAPTERS, BENCH_OPERATIONS, PAYLOADS, operationSpec, payloadSpec, timedCases, type AdapterId, type AdapterSpec, type ProjectKind } from './cases.js';
 import { prepareProjects, root } from './project.js';
 import type { BenchmarkResults } from './results-schema.js';
 import { buildResults, environment, gitState, packageVersions, writeFilesTogether, type MeasuredCase, type Settings } from './results.js';
 import { parseWorkerOutput, type WorkerJob, type WorkerOutput } from './worker-protocol.js';
 
 export const DEFAULT_SETTINGS: Settings = { warmupMs: 120, batchMs: 90, batches: 4, rounds: 2 };
-export interface RunOptions { readonly settings: Settings; readonly outputFile: string; readonly rawFile: string; readonly log?: (line: string) => void }
+/** `adapters` names the adapters to run; it defaults to every adapter in `BENCH_ADAPTERS`. */
+export interface RunOptions { readonly settings: Settings; readonly outputFile: string; readonly rawFile: string; readonly adapters?: readonly AdapterId[]; readonly log?: (line: string) => void }
+
+/** A bad command line or option value. The caller fixes it; `main` prints it without a stack trace. */
+class BenchmarkUsageError extends Error {}
+
+/** The adapters to run, in `BENCH_ADAPTERS` order. A name that no adapter has, or an empty list, is a usage error. */
+function selectAdapters(requested?: readonly string[]): readonly AdapterSpec[] {
+  if (requested === undefined) return BENCH_ADAPTERS;
+  const valid = BENCH_ADAPTERS.map(a => a.id).join(', ');
+  if (requested.length === 0) throw new BenchmarkUsageError(`No adapter named. Valid adapters: ${valid}`);
+  const unknown = requested.filter(name => !BENCH_ADAPTERS.some(a => a.id === name));
+  if (unknown.length > 0) throw new BenchmarkUsageError(`Unknown adapter ${unknown.map(name => `"${name}"`).join(', ')}. Valid adapters: ${valid}`);
+  return BENCH_ADAPTERS.filter(a => requested.includes(a.id));
+}
 
 function runWorker(modulePath: string, fixtureAdapter: string, job: WorkerJob): WorkerOutput {
   const workerPath = fileURLToPath(new URL('./worker.js', import.meta.url));
@@ -52,6 +66,8 @@ function measureAdapter(id: AdapterId, projects: Record<ProjectKind, string>, se
 
 export function runBenchmark(options: RunOptions): BenchmarkResults {
   const log = options.log ?? ((line: string) => process.stderr.write(`${line}\n`));
+  // Checked before the projects compile, so a bad name fails at once.
+  const adapters = selectAdapters(options.adapters);
   mkdirSync(path.join(root, '.cache'), { recursive: true });
   const directory = mkdtempSync(path.join(root, '.cache/benchmark-work-'));
   try {
@@ -59,12 +75,12 @@ export function runBenchmark(options: RunOptions): BenchmarkResults {
     const projects = prepareProjects(directory);
     const { batches, rounds } = options.settings;
     if (!(rounds >= 1) || !Number.isInteger(batches / rounds)) throw new Error(`settings.batches (${batches}) must split evenly across settings.rounds (${rounds})`);
-    for (const adapter of BENCH_ADAPTERS) {
+    for (const adapter of adapters) {
       log(`Verifying ${adapter.id}`);
       verifyAdapter(adapter.id, projects, options.settings);
     }
     const byCase = new Map<string, MeasuredCase>();
-    for (const [round, order] of adapterRounds(BENCH_ADAPTERS.map(a => a.id), rounds).entries()) {
+    for (const [round, order] of adapterRounds(adapters.map(a => a.id), rounds).entries()) {
       for (const id of order) {
         log(`Measuring ${id} (round ${round + 1} of ${rounds})`);
         for (const result of measureAdapter(id, projects, options.settings)) {
@@ -78,7 +94,7 @@ export function runBenchmark(options: RunOptions): BenchmarkResults {
     // Everything below runs only after every worker succeeded.
     const results = buildResults({
       measured, settings: options.settings, environment: environment(), git: gitState(root),
-      packages: packageVersions(root), measuredAt: new Date().toISOString(),
+      packages: packageVersions(root), measuredAt: new Date().toISOString(), adapters: adapters.map(a => a.id),
     });
     writeFilesTogether([
       [options.rawFile, () => JSON.stringify({ settings: options.settings, measured }, null, 2) + '\n'],
@@ -99,10 +115,32 @@ function summaryTable(results: BenchmarkResults): string {
   return lines.join('\n');
 }
 
-export function main(): void {
+/** Reads `--adapters a,b` or `--adapters=a,b`. Any other argument is a usage error. */
+function parseAdapters(args: readonly string[]): readonly AdapterId[] | undefined {
+  let names: string | undefined;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--adapters') names = args[++i] ?? '';
+    else if (arg.startsWith('--adapters=')) names = arg.slice('--adapters='.length);
+    else throw new BenchmarkUsageError(`Unknown argument "${arg}". Usage: npm run bench -- [--adapters <id>,<id>]`);
+  }
+  return names === undefined ? undefined : selectAdapters(names.split(',').filter(name => name !== '')).map(a => a.id);
+}
+
+export function main(args: readonly string[] = process.argv.slice(2)): void {
   const started = Date.now();
-  const outputFile = path.join(root, 'docs/public/benchmarks/results.json');
-  const results = runBenchmark({ settings: DEFAULT_SETTINGS, outputFile, rawFile: path.join(root, '.cache/benchmark/raw.json') });
+  let adapters: readonly AdapterId[] | undefined;
+  try {
+    adapters = parseAdapters(args);
+  } catch (error) {
+    if (!(error instanceof BenchmarkUsageError)) throw error;
+    process.stderr.write(`${error.message}\n`);
+    process.exitCode = 2;
+    return;
+  }
+  // A run of some adapters must not replace the published results of all of them.
+  const outputFile = path.join(root, adapters ? '.cache/benchmark/results.json' : 'docs/public/benchmarks/results.json');
+  const results = runBenchmark({ settings: DEFAULT_SETTINGS, outputFile, rawFile: path.join(root, '.cache/benchmark/raw.json'), adapters });
   process.stdout.write(`${summaryTable(results)}\n\nWrote ${path.relative(root, outputFile)} in ${Math.round((Date.now() - started) / 1000)} s\n`);
 }
 

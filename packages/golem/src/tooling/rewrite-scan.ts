@@ -885,10 +885,10 @@ export class RewriteScanner {
 
   /**
    * The model classes of every candidate file of the program: a class registers by how many classes its model has in all of them.
-   * A model class names its generated `<Name>BaseModel`, so only a file whose text has that suffix is walked: each edit makes a new scanner.
+   * A model class extends a base, which a renamed re-export may rename, so only a file whose text has both `class` and `extends` is walked: `extends` alone is in almost every file (generics, interfaces), and each edit makes a new scanner.
    */
   private modelClasses(): ReadonlyMap<string, number> {
-    return this.modelClassCounts ??= countModelClasses({ checker: this.checker, keys: this.keys }, this.program.getSourceFiles().filter((file) => this.candidate(file) && file.text.includes(BASE_MODEL_SUFFIX)));
+    return this.modelClassCounts ??= countModelClasses({ checker: this.checker, keys: this.keys }, this.program.getSourceFiles().filter((file) => this.candidate(file) && file.text.includes('class') && file.text.includes('extends')));
   }
 
   private scan(file: ts.SourceFile): FileScanResult {

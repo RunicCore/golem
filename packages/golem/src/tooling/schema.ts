@@ -413,10 +413,11 @@ function residualSchema(value: unknown, plane: ResidualPlane, state: SchemaAssem
       return nothing();
     case 'object': {
       const properties = isRecord(value.properties) ? value.properties : {};
+      const additional = isRecord(value.additionalProperties) ? child(value.additionalProperties) : true;
+      // A property that needs no check stays listed while another schema judges the other names, or that schema would judge it.
       const kept = Object.keys(properties).sort()
         .map((name) => [name, child(properties[name])] as const)
-        .filter(([, schema]) => schema !== true);
-      const additional = isRecord(value.additionalProperties) ? child(value.additionalProperties) : true;
+        .filter(([, schema]) => schema !== true || additional !== true);
       if (kept.length === 0 && additional === true) return nothing();
       return wrap({
         ...(kept.length ? { properties: Object.fromEntries(kept) } : {}),

@@ -550,6 +550,7 @@ function projectDescriptor(
         additionalProperties: typeof descriptor.additionalProperties === 'object'
           ? projectDescriptor(descriptor.additionalProperties, validationEnabled, wire, retainPredicates, definitions)
           : descriptor.additionalProperties,
+        ...(descriptor.additionalPropertiesDeclared ? { additionalPropertiesDeclared: true as const } : {}),
       };
       break;
     // `typeImport` is an absolute path used only while emitting imports; generated data keeps the name.
@@ -640,7 +641,8 @@ function descriptorType(
         const optional = descriptor.required.includes(name) ? '' : '?';
         return `${descriptor.readonlyProperties?.includes(name) ? "readonly " : ""}${propertyName(name)}${optional}: ${descriptorType(item, mode, localNames, externalNames, classNames)}`;
       });
-      if (typeof descriptor.additionalProperties === 'object') properties.push(`[key: string]: ${descriptorType(descriptor.additionalProperties, mode, localNames, externalNames, classNames)}`);
+      // The values of an additionalProperties tag have no index signature: the authored type has none.
+      if (typeof descriptor.additionalProperties === 'object' && !descriptor.additionalPropertiesDeclared) properties.push(`[key: string]: ${descriptorType(descriptor.additionalProperties, mode, localNames, externalNames, classNames)}`);
       return `{ ${properties.join('; ')} }`;
     }
   }
@@ -1446,11 +1448,18 @@ export function emitSource(
       init.unshift(`    ${presentKeysSource('values', initCaptures, initType)}`);
     }
     // A model with a dynamic map (an index signature) keeps the keys outside its fields as data: the constructor and
-    // encode copy them, and decode converts them, each by the conversion of the map value. A default-open model has no
-    // map and writes its declared fields only.
+    // encode copy them, and decode converts them, each by the conversion of the map value. An additionalProperties tag
+    // does the same with the value type V of the tag, or keeps the values as they are when V is unknown or any, and the
+    // generated types have no index signature for it. A default-open model has no map and writes its declared fields only.
     const mapDefinition = definitions[specification.name];
-    if (mapDefinition?.kind === 'object' && typeof mapDefinition.additionalProperties === 'object') {
-      const mapValue = mapDefinition.additionalProperties;
+    const mapSchema = mapDefinition?.kind === 'object' ? mapDefinition.additionalProperties : undefined;
+    const declaredMap = mapDefinition?.kind === 'object' && mapDefinition.additionalPropertiesDeclared === true;
+    const typedMap = typeof mapSchema === 'object' && !declaredMap;
+    const mapValue: ModelConversionDescriptor | undefined = typeof mapSchema === 'object' ? mapSchema
+      : declaredMap ? { kind: 'unknown' } : undefined;
+    if (mapValue) {
+      const fieldsValue = typedMap ? `${specification.name}Fields[string]` : 'unknown';
+      const initValue = typedMap ? `${specification.name}Init[string]` : 'unknown';
       const known = `__knownKeys_${specification.name}`;
       helpers.push(`const ${known}: ReadonlySet<string> = new Set<string>([${fields.map((field) => JSON.stringify(field.getName())).join(', ')}]);`);
       const serde = {
@@ -1458,13 +1467,13 @@ export function emitSource(
         serialize: (id: string, value: string) => serdeExpression(id, 'serialize', value),
       };
       const decodeMapValue = wrapRootConversion(helpers, specification.name, 'deserialize', 'key', 'value', (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), 'unknown');
-      const encodeMapValue = wrapRootConversion(helpers, specification.name, 'serialize', 'key', 'value', (value) => emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value }), `${specification.name}Fields[string]`);
+      const encodeMapValue = wrapRootConversion(helpers, specification.name, 'serialize', 'key', 'value', (value) => emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value }), fieldsValue);
       const initMapValue = emitModelFromInit(mapValue, 'value', resolveFromAny);
       if (decodeMapValue !== 'value') {
         decode.push(`  for (const key of Object.keys(result)) if (!${known}.has(key)) { const value = result[key]; if (value !== undefined) defineModelProperty(result, key, ${decodeMapValue}); }`);
       }
-      init.push(`    for (const key of Object.keys(values)) if (!${known}.has(key)) { const value = (values as Record<string, ${specification.name}Init[string]>)[key]; if (value !== undefined) defineModelProperty(this, key, ${initMapValue}); }`);
-      encode.push(`  for (const key of Object.keys(model)) if (!${known}.has(key)) { const value = (model as unknown as Record<string, ${specification.name}Fields[string]>)[key]; if (value !== undefined) defineModelProperty(result, key, ${encodeMapValue}); }`);
+      init.push(`    for (const key of Object.keys(values)) if (!${known}.has(key)) { const value = (values as Record<string, ${initValue}>)[key]; if (value !== undefined) defineModelProperty(this, key, ${initMapValue}); }`);
+      encode.push(`  for (const key of Object.keys(model)) if (!${known}.has(key)) { const value = (model as unknown as Record<string, ${fieldsValue}>)[key]; if (value !== undefined) defineModelProperty(result, key, ${encodeMapValue}); }`);
     }
     rootFieldExpressions.set(specification.name, { helpers, encode, decode, init });
   }
@@ -1698,8 +1707,9 @@ export function emitSource(
       `  codecId: ${JSON.stringify(schemaGraph.nodeFor(definition, specification.name)?.codecId ?? specification.name)},`,
       `  profile: { validation: ${(specification.validation ?? profile.validation) ? 'true' : 'false'} },`,
       ...(observesValidator(specification) ? ['  enhanceValidator: enhanceValidatorWithMobX,'] : []),
-      // A model with a dynamic map has no program state: the keys outside its fields are data.
-      ...(definition.kind === 'object' && definition.additionalProperties ? ['  additionalProperties: true,'] : []),
+      // A model with a dynamic map, or an explicit additionalProperties true, has no program state: the keys outside its
+      // fields are data. A default-open model declares none, so its other own keys are program state.
+      ...(definition.kind === 'object' && (typeof definition.additionalProperties === 'object' || definition.additionalPropertiesDeclared) ? ['  additionalProperties: true,'] : []),
       '});',
       '',
       `registerIModelClass(${JSON.stringify(

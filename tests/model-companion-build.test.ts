@@ -125,3 +125,71 @@ test('two models that name each other through their app classes build, and each 
   assert.ok(loaded.customer.orders[0] instanceof loaded.Order);
   assert.ok(loaded.order.customer instanceof loaded.Customer);
 });
+
+test('a field typed with a projection of an app class builds on the first run, keeps an optional picked member optional, and a second build writes the same files', async t => {
+  // protects: T-211 a projection of an app class (Pick<Customer, 'name'>) in a model field generates on the first run
+  const { root, sourceRoot } = companionModelProject(t, 'model-class-pick');
+  const imodel = "import type { IModel } from '@exprtlabs/golem/model';\n";
+  writeModelSources(sourceRoot, {
+    'customer.model.ts': `${imodel}export type TCustomer = IModel<{ name: string; age?: number }>;\n`,
+    'customer.ts': "import { TCustomerBaseModel } from './customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n",
+    'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; summary: Pick<Customer, 'name' | 'age'> }>;\n`,
+    'use.ts': "import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"summary\":{\"name\":\"Ada\"}}');\nexport const text = stringify<TOrder>(order);\n",
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const firstFiles = generatedModelFiles(root);
+  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { order: { id: string; summary: { name: string } }; text: string };
+  assert.deepEqual({ ...loaded.order.summary }, { name: 'Ada' });
+  assert.equal(loaded.text, '{"id":"o1","summary":{"name":"Ada"}}');
+  await buildModelProject(root);
+  assert.deepEqual(generatedModelFiles(root), firstFiles);
+});
+
+for (const row of [
+  { projection: 'Partial<Customer>', fields: '{ name?: string | undefined; age?: number | undefined }', json: '{"name":"Ada"}' },
+  { projection: "Omit<Customer, 'age'>", fields: '{ name: string }', json: '{"name":"Ada"}' },
+  { projection: 'Required<Customer>', fields: '{ name: string; age: number }', json: '{"name":"Ada","age":36}' },
+  { projection: 'Readonly<Customer>', fields: '{ readonly name: string; readonly age: number }', json: '{"name":"Ada","age":36}' },
+  { projection: "{ [K in 'name']: Customer[K] }", fields: '{ name: string }', json: '{"name":"Ada"}' },
+] as const) {
+  test(`${row.projection} of an app class builds on the first run with the model fields and no brand key, and a second build writes the same files`, async t => {
+    // protects: T-211 every projection of an app class gives the fields of its model on the first and the second run, never a generated brand key
+    const { root, sourceRoot } = companionModelProject(t, 'model-class-utility');
+    const imodel = "import type { IModel } from '@exprtlabs/golem/model';\n";
+    writeModelSources(sourceRoot, {
+      'customer.model.ts': `${imodel}export type TCustomer = IModel<{ name: string; age: number }>;\n`,
+      'customer.ts': "import { TCustomerBaseModel } from './customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n",
+      'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; summary: ${row.projection} }>;\n`,
+      'use.ts': `import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{"id":"o1","summary":${row.json}}');\nexport const text = stringify<TOrder>(order);\n`,
+    });
+    writeModelGolemYaml(root, { mobx: false, validation: true });
+    await buildModelProject(root);
+    const firstFiles = generatedModelFiles(root);
+    const companion = firstFiles.find(file => file.path.endsWith('order.model.generated.ts'))?.content ?? '';
+    assert.equal(companion.match(/type TOrderSummaryFields = (.*);$/m)?.[1], row.fields);
+    assert.doesNotMatch(companion, /Brand@/);
+    const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { text: string };
+    assert.equal(loaded.text, `{"id":"o1","summary":${row.json}}`);
+    await buildModelProject(root);
+    assert.deepEqual(generatedModelFiles(root), firstFiles);
+  });
+}
+
+for (const row of [
+  { label: 'a utility that the user wrote', before: 'type MyPartial<T> = { [K in keyof T]?: T[K] };\n', projection: 'MyPartial<Customer>' },
+  { label: 'an inline mapped type over keyof', before: '', projection: '{ [K in keyof Customer]: Customer[K] }' },
+] as const) {
+  test(`a field typed by ${row.label} over an app class stops the build with a diagnostic, not a field with no members`, async t => {
+    // protects: T-211 a mapped type over keyof of an app class gives RUNM1058, not an empty field type
+    const { root, sourceRoot } = companionModelProject(t, 'model-class-keyof');
+    const imodel = "import type { IModel } from '@exprtlabs/golem/model';\n";
+    writeModelSources(sourceRoot, {
+      'customer.model.ts': `${imodel}export type TCustomer = IModel<{ name: string; age: number }>;\n`,
+      'customer.ts': "import { TCustomerBaseModel } from './customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n",
+      'order.model.ts': `${imodel}import type { Customer } from './customer.js';\n${row.before}export type TOrder = IModel<{ id: string; summary: ${row.projection} }>;\n`,
+    });
+    writeModelGolemYaml(root, { mobx: false, validation: true });
+    await assert.rejects(buildModelProject(root), /RUNM1058: Field "summary" of TOrder maps over Customer, and golem finds no members in it\. Use Pick, Omit, Partial, Required or Readonly, or name the keys in the mapped type\./);
+  });
+}

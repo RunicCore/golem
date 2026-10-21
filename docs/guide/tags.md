@@ -55,7 +55,8 @@ Schema-valued tags describe another TypeScript contract:
 
 - `Contains<T>` counts matching elements; `MinContains` and `MaxContains` bound the count.
 - `DependentRequired<{ remindOn: ['dueOn'] }>` requires `dueOn` whenever `remindOn` is present, so the rejected subscription above fails; in general it requires the listed keys when its trigger key is present; `DependentSchemas` checks the whole object in that situation.
-- `PropertyNames`, `PatternProperties`, `AdditionalProperties`, `UnevaluatedProperties` and `UnevaluatedItems` check keys or values without adding TypeScript index signatures.
+- `PropertyNames`, `PatternProperties`, `UnevaluatedProperties` and `UnevaluatedItems` check keys or values without adding TypeScript index signatures.
+- `AdditionalProperties<V>` makes each other key of the object a value of type `V`. `parse`, `stringify` and `toWireFormat` convert and write those keys by `V`, as they do for an index signature. `AdditionalProperties<unknown>` keeps the values as they are. `AdditionalProperties<never>` allows no other key.
 - `OneOf<[A, B]>`, `Not<T>` and `IfThenElse` choose or reject schema branches; none changes assignability or selects a converter.
 
 ## Add a custom field rule

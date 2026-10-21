@@ -76,8 +76,8 @@ export interface CodecRuntimeOptions {
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
   readonly siblingRecursion?: ReadonlyMap<string, boolean>;
-  /** Export the wire stringify of every public codec (`wireStringifyExportName`), for other generated modules to import. */
-  readonly exportWireStringify?: boolean;
+  /** Export the wire stringify of every public codec, or of those the function accepts (`wireStringifyExportName`), for other generated modules to import. */
+  readonly exportWireStringify?: boolean | ((node: SchemaNode) => boolean);
   /** Export anonymous codecs' functions: OpenAPI group modules import them from each other. Model companions keep them private. */
   readonly exportAnonymousCodecs?: boolean;
   /** Codecs whose functions stay module-private, such as a model job's derived projections. */
@@ -106,7 +106,7 @@ interface EmitCtx {
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
   readonly siblingRecursion?: ReadonlyMap<string, boolean>;
-  readonly exportWireStringify?: boolean;
+  readonly exportWireStringify?: boolean | ((node: SchemaNode) => boolean);
   readonly exportAnonymousCodecs?: boolean;
   readonly privateCodec?: (node: SchemaNode) => boolean;
   /** Nodes being inlined into the current wire stringify, to reject unbounded expansion. */
@@ -304,6 +304,32 @@ function inlineLocalDeclarations(ctx: EmitCtx): string[] {
   return [...(ctx.inlineLocals ?? [])].map((name) => `  let ${name}: unknown;`);
 }
 
+/**
+ * The wire write of a recursive model met again inside its own inline write. A model of another module has its wire
+ * stringify imported; one with no encoded value under it writes as the model does; any other has no function to call.
+ */
+function emitRecursiveWireCall(named: SchemaNode, expression: string, ctx: EmitCtx): string {
+  if (ctx.siblingWireCodecIds?.has(named.codecId)) return `${wireStringifyExportName(named.codecId)}(${expression} as never)`;
+  if (named.sameSchema && !reachesEncodedValue(named.descriptor, ctx)) return nestedStringifyCall(named.id, expression, ctx);
+  throw new Error(named.validationEnabled === false
+    ? `Recursive model ${named.name} has validation turned off, so its wire form has no function to write it; turn validation on for it.`
+    : `Internal error: recursive model ${named.name} reached its wire write with no function to call.`);
+}
+
+/** Whether a value under `descriptor` holds one a codec encodes (a date, a serde type, a model of another module or one with its own wire form). */
+function reachesEncodedValue(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'graph'>, seen: Set<string> = new Set()): boolean {
+  const tags = serdeTags(descriptor);
+  if (tags.serde || tags.date || descriptor.kind === 'date' || descriptor.kind === 'generated-model') return true;
+  if (descriptor.kind === 'reference') {
+    const node = ctx.graph.nodeFor(descriptor);
+    if (!node || !node.sameSchema || node.descriptor.kind === 'reference') return true;
+    if (seen.has(node.id)) return false;
+    seen.add(node.id);
+    return reachesEncodedValue(node.descriptor, ctx, seen);
+  }
+  return heldDescriptors(descriptor).some((held) => reachesEncodedValue(held, ctx, seen));
+}
+
 function emitValue(
   descriptor: ModelTypeDescriptor,
   expression: string,
@@ -341,9 +367,7 @@ function emitValue(
       // Call the node's own wire stringify: inlining would repeat the child for
       // every path to it and never terminate for a recursive model.
       if (ctx.wireStringifyIds?.has(named.id)) return `${stringifyFunctionName(named.id)}Wire(${expression} as never)`;
-      if (ctx.wireInlining?.has(named.id)) {
-        throw new Error(`Recursive model ${named.name} has no wire stringify function to call; enable validation for it.`);
-      }
+      if (ctx.wireInlining?.has(named.id)) return emitRecursiveWireCall(named, expression, ctx);
       return emitObjectInline(named.descriptor, expression, { ...ctx, wireInlining: new Set([...(ctx.wireInlining ?? []), named.id]) });
     }
     return nestedStringifyCall(named.id, expression, ctx);
@@ -484,6 +508,7 @@ function emitObjectInline(
   const hasExtras = typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
   // An object with no declared field writes `{}`, unless it declares its other names as data.
   if (properties.length === 0 && !hasExtras) return "'{}'";
+  if (isPlainDataMap(descriptor)) return `stringifyJsonScalar(${expression} as never)`;
   if (hasExtras) {
     // The other names are data: the encoded record keeps them, and a wire value is already encoded.
     return `stringifyJsonScalar(${ctx.wireIdentity ? expression : emitEncodedRecord(descriptor, expression, ctx)} as never)`;
@@ -507,6 +532,24 @@ function stringifyParameters(value: string, ctx: EmitCtx): string {
   return ctx.withoutOptions ? value : `${value}, ${STRINGIFY_OPTIONS}`;
 }
 
+/**
+ * Whether the object is a map with no declared field whose values are plain data (non-numeric scalars, or lists of
+ * them). The keys of a map are data, and plain values hold no model instance and need no conversion, so the native
+ * JSON writer writes the value as the encoder would. A number stays out: the native writer turns NaN into null, where
+ * the encoder throws on a non-finite number.
+ */
+function isPlainDataMap(descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>): boolean {
+  const isPlainData = (value: ModelTypeDescriptor): boolean => {
+    if (descriptorNeedsConversion(value)) return false;
+    if (value.kind === 'array') return isPlainData(value.item);
+    if (value.kind === 'union') return value.variants.every(isPlainData);
+    return value.kind !== 'number' && isScalarishDescriptor(value);
+  };
+  return Object.keys(descriptor.properties).length === 0
+    && typeof descriptor.additionalProperties === 'object'
+    && isPlainData(descriptor.additionalProperties);
+}
+
 function emitObjectStringify(
   fn: string,
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
@@ -519,6 +562,9 @@ function emitObjectStringify(
     : descriptor.additionalPropertiesDeclared ? { kind: 'unknown' as const } : undefined;
   if (properties.length === 0 && !additional) {
     return `function ${fn}(${stringifyParameters('_value: Record<string, unknown>', ctx)}): string {\n  return '{}';\n}\n`;
+  }
+  if (isPlainDataMap(descriptor)) {
+    return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
   }
   if (!additional && properties.every(([name]) => required.has(name))) {
     const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
@@ -879,6 +925,12 @@ function reachesRecursion(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'g
 export function reachesRecursiveNode(graph: SchemaGraph, node: SchemaNode, siblingRecursion?: ReadonlyMap<string, boolean>): boolean {
   return node.descriptor.kind !== 'reference' && node.descriptor.kind !== 'generated-model'
     && reachesRecursion(node.descriptor, { graph, siblingRecursion });
+}
+
+/** Whether the model `node` reaches itself, so another module that writes it in place meets it again. */
+export function reachesItself(graph: SchemaGraph, node: SchemaNode): boolean {
+  return node.descriptor.kind !== 'reference' && node.descriptor.kind !== 'generated-model'
+    && reachesNode(node.descriptor, node.id, { graph });
 }
 
 /**
@@ -1775,7 +1827,7 @@ function emitNodeRuntime(
     : emitEncodeValue(node.descriptor, '(value as never)', encodedWireContext);
   const wireStringifySrc = emitsValidatedWire
     ? `${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true })
-      .replace(`function ${stringifyName}(`, `function ${stringifyName}Wire(`)}${ctx.exportWireStringify === true && exported !== ''
+      .replace(`function ${stringifyName}(`, `function ${stringifyName}Wire(`)}${exported !== '' && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true)
       ? `export { ${stringifyName}Wire as ${wireStringifyExportName(node.codecId)} };\n`
       : ''}`
     : '';

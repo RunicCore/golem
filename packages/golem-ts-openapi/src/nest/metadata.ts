@@ -284,6 +284,28 @@ function objectOptions(
   return new DecoratorOptions(reader, label, entries);
 }
 
+/**
+ * The header options of `@ApiHeaders(list)`. An array literal reads each element
+ * in place; any other constant must read as a static array of static records.
+ */
+export function headerOptionsList(reader: MetadataReader, info: DecoratorInfo): readonly DecoratorOptions[] {
+  const label = `@${info.name ?? 'decorator'}`;
+  const code = TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata;
+  const argument = callArguments(info)[0];
+  const literal = argument && unwrapExpression(argument);
+  if (literal && ts.isArrayLiteralExpression(literal)) {
+    return literal.elements.map(element => objectOptions(reader, element, label, code));
+  }
+  const node = argument ?? info.decorator;
+  const list = argument && readStatic(reader, argument, `${label}() options`, code);
+  if (!isStaticArray(list) || !list.every(item => isStaticRecord(item))) {
+    return metadataError(node, code, `${label}() options must be a static array of header options.`);
+  }
+  return list.map(item => new DecoratorOptions(reader, label, new Map<string, OptionEntry>(
+    Object.entries(item as { readonly [key: string]: StaticValue }).map(([key, value]) => [key, { kind: 'value', value, node }]),
+  )));
+}
+
 /** The options object passed as a decorator's argument (the first by default). */
 export function decoratorOptions(
   reader: MetadataReader,

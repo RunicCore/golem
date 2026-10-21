@@ -383,3 +383,54 @@ export class ThingsController extends BaseController {
     ['path', 'id', 'class id', true],
   ]);
 });
+
+test('writes one header parameter for each @ApiHeaders entry at class and method level, as @ApiHeader does', async t => {
+  // protects: T-198 @ApiHeaders is a list of @ApiHeader options
+  const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiHeader, ApiHeaders } from '@nestjs/swagger';
+
+@ApiHeaders([
+  { name: 'X-Tenant', required: true, description: 'Tenant', schema: { type: 'string', format: 'uuid' } },
+  { name: 'X-Trace' },
+])
+@Controller('listed')
+export class ListedController {
+  @Get()
+  @ApiHeaders([{ name: 'X-Lang', required: false, description: 'Language' }, { name: 'X-Debug', required: true }])
+  list(): void {}
+}
+
+const COMMON = [
+  { name: 'X-Tenant', required: true, description: 'Tenant', schema: { type: 'string', format: 'uuid' } },
+  { name: 'X-Trace' },
+] as const;
+
+@ApiHeaders(COMMON)
+@Controller('constant')
+export class ConstantController {
+  @Get()
+  @ApiHeaders([{ name: 'X-Lang', required: false, description: 'Language' }, { name: 'X-Debug', required: true }])
+  list(): void {}
+}
+
+@ApiHeader({ name: 'X-Tenant', required: true, description: 'Tenant', schema: { type: 'string', format: 'uuid' } })
+@ApiHeader({ name: 'X-Trace' })
+@Controller('single')
+export class SingleController {
+  @Get()
+  @ApiHeader({ name: 'X-Lang', required: false, description: 'Language' })
+  @ApiHeader({ name: 'X-Debug', required: true })
+  list(): void {}
+}
+`);
+  const document = documentOf(await generateAt(root));
+  const listed = document.paths['/listed']?.get?.parameters;
+  assert.deepEqual(listed?.map(item => [item.in, item.name, item.description, item.required]), [
+    ['header', 'X-Tenant', 'Tenant', true],
+    ['header', 'X-Trace', undefined, false],
+    ['header', 'X-Lang', 'Language', false],
+    ['header', 'X-Debug', undefined, true],
+  ]);
+  assert.deepEqual(listed, document.paths['/single']?.get?.parameters);
+  assert.deepEqual(listed, document.paths['/constant']?.get?.parameters);
+});
