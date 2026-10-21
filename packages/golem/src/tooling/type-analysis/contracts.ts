@@ -58,7 +58,8 @@ export function createContractAnalysis(
     return [specification, linked.length === 1 ? linked[0]! : specification.name] as const;
   }));
   // OpenAPI describes the full contract even when runtime validation is omitted.
-  const buildDescribe = (nameFor?: (specification: ModelSpecification) => string) => descriptorBuilder(checker, specifications, emptyManifests, true, options.allowAny ?? false, options.root, program.getCompilerOptions(), false, nameFor);
+  // The document describes an SDK model by its type; only the codec ids see it as the manifest reference the models job hashes.
+  const buildDescribe = (nameFor?: (specification: ModelSpecification) => string, manifests: ManifestIndex = emptyManifests) => descriptorBuilder(checker, specifications, manifests, true, options.allowAny ?? false, options.root, program.getCompilerOptions(), false, nameFor);
   const describeAll = (builder: ReturnType<typeof buildDescribe>): Map<ModelSpecification, ModelConversionDescriptor> => new Map(
     specifications.map((specification) => [specification, builder(specification.fieldsType, specification, undefined, specification.fieldsNode)] as const),
   );
@@ -72,8 +73,8 @@ export function createContractAnalysis(
     describe = buildDescribe(componentName);
     described = describeAll(describe);
   }
-  // Codec ids hash descriptors named by alias, as the generated companions do; the document uses component names.
-  const describeForIds = buildDescribe();
+  // Codec ids hash descriptors named by alias and nesting an SDK model by its manifest, as the generated companions do; the document uses component names.
+  const describeForIds = buildDescribe(undefined, options.manifests);
   const describedForIds = describeAll(describeForIds);
   const internGraph = createSchemaGraph();
   internDescriptors(internGraph, [
