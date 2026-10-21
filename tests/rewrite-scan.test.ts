@@ -245,6 +245,19 @@ test('classes of one model in several files register under <id>#<class>, and the
   assertLines(rewritten(root, result, 'b.ts'), ['__golem_registerIModelClass("TPayment_22222222#B", B);']);
 });
 
+test('a class that reaches the generated base through a renamed re-export counts as a class of its model', (t) => {
+  // protects: T-207 a class whose file never names the BaseModel was left out of the model's class count
+  const root = project(t);
+  fs.writeFileSync(path.join(root, 'src/base.ts'), "export { TPaymentBaseModel as PaymentBase } from './payment.model.generated.js';\n");
+  fs.writeFileSync(path.join(root, 'src/a.ts'), "import { PaymentBase } from './base.js';\nexport class A extends PaymentBase {}\n");
+
+  const result = scan(root);
+
+  assert.deepEqual(result.diagnostics, []);
+  assertLines(rewritten(root, result, 'payment.model.ts'), ['__golem_registerIModelClass("TPayment_22222222#Payment", Payment);']);
+  assertLines(rewritten(root, result, 'a.ts'), ['__golem_registerIModelClass("TPayment_22222222#A", A);']);
+});
+
 test('a @Body() class that reaches the generated base through another class gets the codec of its model', (t) => {
   // protects: T-195 review: a chain class was a model in the document and had no codec at run time
   const root = project(t);
