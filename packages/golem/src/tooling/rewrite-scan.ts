@@ -117,10 +117,16 @@ class CodecKeys {
   private readonly byDeclaration = new Map<string, Map<string, Set<string>>>();
   /** Each `<file name>#<name>` tail's ids, with the files that give each; only old key tables feed it. */
   private readonly byTail = new Map<string, Map<string, Set<string>>>();
-  /** The generated module that registers each codec id, where a key file or a manifest says which. */
-  private readonly modules = new Map<string, string>();
-  /** The id of each generated base class of a key file's model, by `<companion file>#<Name>BaseModel`: a class in any file that extends the base is a class of that model. */
-  private readonly bases = new Map<string, { readonly id: string; readonly table: string }>();
+  /** The generated module that registers each codec id, where a manifest says which. */
+  private readonly manifestModules = new Map<string, string>();
+  /** The key file's declarations of each codec id, in file order: the model file of one is where the generated module that registers the id is looked up. */
+  private readonly keyDeclarations = new Map<string, string[]>();
+  /** The key file's entries by model name: a class that extends `<Name>BaseModel` is a class of the model with that name whose companion declares the base. */
+  private readonly keysByName = new Map<string, { readonly declaration: string; readonly id: string; readonly table: string }[]>();
+  /** The companion of each model file of a key, found on first use: a scan asks for few of them. */
+  private readonly companions = new Map<string, string | undefined>();
+  /** The generated companions of the program by real path, built when a companion is not found under its real path (a project reached through a folder link). */
+  private companionsByRealPath: Map<string, string> | undefined;
 
   /** The real path of the tsconfig's directory: a key is a file's real path from it, as `golem generate` writes it. */
   private readonly base: string;
@@ -131,10 +137,11 @@ class CodecKeys {
     const table = portable(root, codecKeysFile);
     for (const [declaration, id] of Object.entries(readCodecKeysFile(codecKeysFile))) {
       if (declaration.lastIndexOf('#') > 0 && id !== '') {
-        this.add(declaration.replace(/\\/g, '/'), id, table);
-        const companion = this.companionOf(path.resolve(this.base, declaration.slice(0, declaration.lastIndexOf('#'))));
-        this.addModule(id, companion);
-        if (companion !== undefined) this.bases.set(`${canonicalFilename(companion)}#${declaration.slice(declaration.lastIndexOf('#') + 1)}${BASE_MODEL_SUFFIX}`, { id, table });
+        const key = declaration.replace(/\\/g, '/');
+        this.add(key, id, table);
+        this.keyDeclarations.set(id, [...(this.keyDeclarations.get(id) ?? []), key]);
+        const name = key.slice(key.lastIndexOf('#') + 1);
+        this.keysByName.set(name, [...(this.keysByName.get(name) ?? []), { declaration: key, id, table }]);
       }
     }
     this.addManifests();
@@ -161,7 +168,7 @@ class CodecKeys {
         if (model.codecId === undefined) continue;
         for (const { module, export: exportName } of [model.generated, model.type, ...(model.type.aliases ?? [])]) {
           const symbol = declarationsOf(manifestFile, module, exportName);
-          this.addModule(model.codecId, this.program.getSourceFile(canonicalFilename(path.resolve(path.dirname(manifestFile), model.generated.module)))?.fileName);
+          this.addManifestModule(model.codecId, this.program.getSourceFile(canonicalFilename(path.resolve(path.dirname(manifestFile), model.generated.module)))?.fileName);
           for (const declaration of symbol?.declarations ?? []) {
             this.add(`${this.keyOf(declaration.getSourceFile().fileName)}#${symbol!.name}`, model.codecId, table);
           }
@@ -204,18 +211,40 @@ class CodecKeys {
     return key;
   }
 
-  /** The generated companion of a model file, when the program holds it: beside an own file, in `models.output` for a shared one. */
-  private companionOf(modelFile: string): string | undefined {
-    return /\.[cm]?ts$/.test(modelFile) ? this.program.getSourceFile(canonicalFilename(companionFilename(this.boundary, modelFile)))?.fileName : undefined;
+  /**
+   * The program's own name for the generated companion of the model file a key names, when the program holds it: beside an own file, in
+   * `models.output` for a shared one. A key is a real path, and a program reached through a folder link spells its files by the link.
+   */
+  private companionOf(declaration: string): string | undefined {
+    const modelFile = path.resolve(this.base, declaration.slice(0, declaration.lastIndexOf('#')));
+    if (!this.companions.has(modelFile)) {
+      let companion: string | undefined;
+      if (/\.[cm]?ts$/.test(modelFile)) {
+        const real = companionFilename(this.boundary, modelFile);
+        companion = this.program.getSourceFile(canonicalFilename(real))?.fileName ?? this.programCompanions().get(canonicalPath(real));
+      }
+      this.companions.set(modelFile, companion);
+    }
+    return this.companions.get(modelFile);
   }
 
-  private addModule(id: string, module: string | undefined): void {
-    if (module !== undefined && !this.modules.has(id)) this.modules.set(id, module);
+  private programCompanions(): ReadonlyMap<string, string> {
+    return this.companionsByRealPath ??= new Map(this.program.getSourceFiles()
+      .filter((file) => isGeneratedCompanion(file.fileName))
+      .map((file) => [canonicalPath(file.fileName), file.fileName] as const));
   }
 
-  /** The absolute file of the generated module that registers the codec, or undefined when no key file or manifest names it. */
+  private addManifestModule(id: string, module: string | undefined): void {
+    if (module !== undefined && !this.manifestModules.has(id)) this.manifestModules.set(id, module);
+  }
+
+  /** The absolute file of the generated module that registers the codec, or undefined when no key file or manifest names it. A key file wins over a manifest. */
   moduleOf(id: string): string | undefined {
-    return this.modules.get(id);
+    for (const declaration of this.keyDeclarations.get(id) ?? []) {
+      const companion = this.companionOf(declaration);
+      if (companion !== undefined) return companion;
+    }
+    return this.manifestModules.get(id);
   }
 
   /** `byFileName` also lets a declaration of another path with the same file name and name resolve: only for old key tables, whose paths have no known base. */
@@ -256,7 +285,12 @@ class CodecKeys {
 
   /** The id of the model whose generated base class `base` is, from the key file of this project. */
   idForBase(base: GeneratedBase, dependencies: Set<string>): string {
-    const found = this.bases.get(`${canonicalFilename(base.file)}#${base.name}`);
+    // The last key whose companion declares the base wins.
+    const file = canonicalFilename(base.file);
+    const found = (this.keysByName.get(base.name.slice(0, -BASE_MODEL_SUFFIX.length)) ?? []).filter(({ declaration }) => {
+      const companion = this.companionOf(declaration);
+      return companion !== undefined && canonicalFilename(companion) === file;
+    }).at(-1);
     if (found !== undefined) dependencies.add(found.table);
     return found?.id ?? '';
   }
@@ -849,9 +883,12 @@ export class RewriteScanner {
       && path.basename(file.fileName) !== CODEC_KEY_FILE;
   }
 
-  /** The model classes of every candidate file of the program: a class registers by how many classes its model has in all of them. */
+  /**
+   * The model classes of every candidate file of the program: a class registers by how many classes its model has in all of them.
+   * A model class names its generated `<Name>BaseModel`, so only a file whose text has that suffix is walked: each edit makes a new scanner.
+   */
   private modelClasses(): ReadonlyMap<string, number> {
-    return this.modelClassCounts ??= countModelClasses({ checker: this.checker, keys: this.keys }, this.program.getSourceFiles().filter((file) => this.candidate(file)));
+    return this.modelClassCounts ??= countModelClasses({ checker: this.checker, keys: this.keys }, this.program.getSourceFiles().filter((file) => this.candidate(file) && file.text.includes(BASE_MODEL_SUFFIX)));
   }
 
   private scan(file: ts.SourceFile): FileScanResult {

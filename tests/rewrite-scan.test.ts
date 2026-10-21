@@ -175,6 +175,22 @@ test('a call on a model named only as a type imports the generated module that r
   assert.ok(code.includes("import type { TMoney } from './payment.model.js';"), 'the type-only import stays as the user wrote it');
 });
 
+test('a project reached through a folder link loads the generated module that registers the codec of its own model', (t) => {
+  // protects: T-197 final review: own models regressed when the program spells files by the link and the codec keys by the real path
+  const root = project(t, ['load-codec.ts']);
+  const link = `${root}-link`;
+  fs.symlinkSync(root, link, 'dir');
+  t.after(() => fs.rmSync(link, { force: true }));
+
+  const result = scan(link);
+
+  assert.deepEqual(result.diagnostics, []);
+  assert.deepEqual(result.files.get('src/load-codec.ts')?.imports, [
+    { from: './payment.model.generated.js', names: [] },
+    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+  ]);
+});
+
 test('a class imported only as a type is constructed through an aliased value import of its module', (t) => {
   const root = project(t, ['type-only.ts', 'ledger.model.ts', 'ledger.model.generated.ts']);
   const result = scan(root);
