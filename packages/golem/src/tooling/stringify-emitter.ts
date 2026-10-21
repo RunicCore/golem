@@ -304,6 +304,32 @@ function inlineLocalDeclarations(ctx: EmitCtx): string[] {
   return [...(ctx.inlineLocals ?? [])].map((name) => `  let ${name}: unknown;`);
 }
 
+/**
+ * The wire write of a recursive model met again inside its own inline write. A model of another module has its wire
+ * stringify imported; one with no encoded value under it writes as the model does; any other has no function to call.
+ */
+function emitRecursiveWireCall(named: SchemaNode, expression: string, ctx: EmitCtx): string {
+  if (ctx.siblingWireCodecIds?.has(named.codecId)) return `${wireStringifyExportName(named.codecId)}(${expression} as never)`;
+  if (named.sameSchema && !reachesEncodedValue(named.descriptor, ctx)) return nestedStringifyCall(named.id, expression, ctx);
+  throw new Error(named.validationEnabled === false
+    ? `Recursive model ${named.name} has validation turned off, so its wire form has no function to write it; turn validation on for it.`
+    : `Internal error: recursive model ${named.name} reached its wire write with no function to call.`);
+}
+
+/** Whether a value under `descriptor` holds one a codec encodes (a date, a serde type, a model of another module or one with its own wire form). */
+function reachesEncodedValue(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'graph'>, seen: Set<string> = new Set()): boolean {
+  const tags = serdeTags(descriptor);
+  if (tags.serde || tags.date || descriptor.kind === 'date' || descriptor.kind === 'generated-model') return true;
+  if (descriptor.kind === 'reference') {
+    const node = ctx.graph.nodeFor(descriptor);
+    if (!node || !node.sameSchema || node.descriptor.kind === 'reference') return true;
+    if (seen.has(node.id)) return false;
+    seen.add(node.id);
+    return reachesEncodedValue(node.descriptor, ctx, seen);
+  }
+  return heldDescriptors(descriptor).some((held) => reachesEncodedValue(held, ctx, seen));
+}
+
 function emitValue(
   descriptor: ModelTypeDescriptor,
   expression: string,
@@ -341,9 +367,7 @@ function emitValue(
       // Call the node's own wire stringify: inlining would repeat the child for
       // every path to it and never terminate for a recursive model.
       if (ctx.wireStringifyIds?.has(named.id)) return `${stringifyFunctionName(named.id)}Wire(${expression} as never)`;
-      if (ctx.wireInlining?.has(named.id)) {
-        throw new Error(`Recursive model ${named.name} has no wire stringify function to call; enable validation for it.`);
-      }
+      if (ctx.wireInlining?.has(named.id)) return emitRecursiveWireCall(named, expression, ctx);
       return emitObjectInline(named.descriptor, expression, { ...ctx, wireInlining: new Set([...(ctx.wireInlining ?? []), named.id]) });
     }
     return nestedStringifyCall(named.id, expression, ctx);
