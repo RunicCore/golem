@@ -130,3 +130,39 @@ for (const [label, profile] of profiles) {
     assert.deepEqual(json(codecs.toWireFormatTLink(chain)), json(chain));
   });
 }
+
+const crossFileSources = {
+  'chain.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TChainBaseModel } from './chain.model.generated.js';
+export type TChain = IModel<{ name: string; next?: TChain }>;
+export class Chain extends TChainBaseModel {}
+`,
+  'owner.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { TChain } from './chain.model.js';
+import { TOwnerBaseModel } from './owner.model.generated.js';
+export type TOwner = IModel<{ chain: TChain }>;
+export class Owner extends TOwnerBaseModel {}
+`,
+};
+
+for (const [label, profile] of profiles) {
+  test(`a model that holds a recursive model of another file throws a Serialization LibError on a cycle (${label})`, async (t: TestContext) => {
+    // protects: T-165 the parent of a cross-file recursive child still checks for a cycle before its validator runs
+    const { root, sourceRoot } = createModelProject(t, {
+      prefix: 'golem-encode-cycle-files-', linkTypescript: true,
+    });
+    writeModelSources(sourceRoot, crossFileSources);
+    writeModelGolemYaml(root, profile);
+    await buildModelProject(root);
+    const owner = await import(pathToFileURL(path.join(root, 'build/owner.model.generated.js')).href) as Codecs;
+
+    const chain: { name: string; next?: unknown } = { name: 'a' };
+    chain.next = chain;
+    for (const encode of [owner.stringifyTOwner, owner.toWireFormatTOwner]) {
+      assert.throws(() => encode({ chain }), (error: unknown) =>
+        error instanceof LibError && error.kind === LibErrorKind.Serialization && error.causedByInput === false);
+    }
+    const acyclic = { chain: { name: 'a', next: { name: 'b' } } };
+    assert.equal(owner.stringifyTOwner(acyclic), JSON.stringify(acyclic));
+  });
+}

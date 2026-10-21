@@ -7,6 +7,7 @@ export {
   emitStringifyFunction,
   fillFunctionName,
   fromWireFunctionName,
+  isRecursiveNode,
   parseFunctionName,
   stringifyFunctionName,
   wireStringifyExportName,

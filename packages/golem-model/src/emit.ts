@@ -1096,6 +1096,8 @@ export interface AppOutputs {
 export interface SiblingCodecOptions {
   /** Sibling codecs whose companion exports a wire stringify. */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
+  /** Whether each sibling codec's model is recursive, by codec id. */
+  readonly siblingRecursion?: ReadonlyMap<string, boolean>;
   /**
    * Siblings whose sources import this one back. Their classes resolve by
    * codec id at decode time: importing the handwritten class would evaluate a
@@ -1122,7 +1124,7 @@ export function emitSource(
   siblingCodecs: SiblingCodecOptions = {},
   appOutputs: AppOutputs = {},
 ): string | undefined {
-  const { siblingWireCodecIds, cyclicSiblings } = siblingCodecs;
+  const { siblingWireCodecIds, siblingRecursion, cyclicSiblings } = siblingCodecs;
   const graph = preparedGraph ?? analyzeSourceGraph(source, output, checker, specifications, manifestIndex, profile, identityRoot);
   if (!graph) return undefined;
   const { definitions, externalIds, externalNames, registry } = graph;
@@ -1766,6 +1768,7 @@ export function emitSource(
       // A derived projection (an Omit, Pick or alias of a model) is not a model the user declared; other files reach it by codec id.
       privateCodec: (node) => Object.hasOwn(definitions, node.name) && !localNames.has(node.name),
       ...(siblingWireCodecIds ? { siblingWireCodecIds } : {}),
+      ...(siblingRecursion ? { siblingRecursion } : {}),
       exportWireStringify: true,
     },
   );

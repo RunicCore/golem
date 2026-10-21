@@ -74,6 +74,8 @@ export interface CodecRuntimeOptions {
   readonly fieldsType?: (node: SchemaNode) => string | undefined;
   /** Codec ids of sibling models that register a separate wire schema (`${id}#wire`). */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
+  /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
+  readonly siblingRecursion?: ReadonlyMap<string, boolean>;
   /** Export the wire stringify of every public codec (`wireStringifyExportName`), for other generated modules to import. */
   readonly exportWireStringify?: boolean;
   /** Export anonymous codecs' functions: OpenAPI group modules import them from each other. Model companions keep them private. */
@@ -102,6 +104,8 @@ interface EmitCtx {
   readonly wireStringifyIds?: ReadonlySet<string>;
   /** Sibling codecs whose companion exports a wire stringify (`wireStringifyExportName`). */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
+  /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
+  readonly siblingRecursion?: ReadonlyMap<string, boolean>;
   readonly exportWireStringify?: boolean;
   readonly exportAnonymousCodecs?: boolean;
   readonly privateCodec?: (node: SchemaNode) => boolean;
@@ -594,6 +598,7 @@ export function emitStringifyFunction(
     lenientRoot: extra?.lenientRoot,
     wireStringifyIds: extra?.wireStringifyIds,
     siblingWireCodecIds: extra?.siblingWireCodecIds,
+    siblingRecursion: extra?.siblingRecursion,
     localCoreIds: extra?.localCoreIds,
     strictCoreIds: extra?.strictCoreIds,
     trustedOptions: extra?.trustedOptions,
@@ -844,7 +849,7 @@ function heldDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDes
 function reachesNode(
   descriptor: ModelTypeDescriptor,
   id: string,
-  ctx: EmitCtx,
+  ctx: Pick<EmitCtx, 'graph'>,
   seen: Set<string> = new Set(),
 ): boolean {
   if (descriptor.kind === 'reference' || descriptor.kind === 'generated-model') {
@@ -858,12 +863,20 @@ function reachesNode(
   return heldDescriptors(descriptor).some((held) => reachesNode(held, id, ctx, seen));
 }
 
+/** Whether the model `node` of `graph` reaches itself again. A placeholder of a model in another module does not. */
+export function isRecursiveNode(graph: SchemaGraph, node: SchemaNode): boolean {
+  return node.descriptor.kind !== 'reference' && node.descriptor.kind !== 'generated-model' && reachesNode(node.descriptor, node.id, { graph });
+}
+
 /** Whether `descriptor` reaches a recursive model node, so a cyclic value under it would run a validator or encoder forever. */
 function reachesRecursion(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<string> = new Set()): boolean {
   if (descriptor.kind === 'reference' || descriptor.kind === 'generated-model') {
     const node = ctx.graph.nodeFor(descriptor);
     if (!node || seen.has(node.id)) return false;
     seen.add(node.id);
+    // A model of another module is a node whose descriptor is the reference itself. It guards its own encoders; the
+    // job knows whether it is recursive.
+    if (node.descriptor.kind === 'reference' || node.descriptor.kind === 'generated-model') return ctx.siblingRecursion?.get(node.codecId) ?? true;
     return reachesNode(node.descriptor, node.id, ctx) || reachesRecursion(node.descriptor, ctx, seen);
   }
   return heldDescriptors(descriptor).some((held) => reachesRecursion(held, ctx, seen));
@@ -2009,6 +2022,7 @@ export function emitCodecRuntime(
     strictCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && node.sameSchema).map((node) => node.id)),
     trustedOptions: TRUSTED_CONSTANT,
     siblingWireCodecIds: options.siblingWireCodecIds,
+    siblingRecursion: options.siblingRecursion,
     exportWireStringify: options.exportWireStringify,
     validatorName: options.validatorName,
     fastCheckName: options.fastCheckName,
