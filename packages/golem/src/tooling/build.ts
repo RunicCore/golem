@@ -20,7 +20,7 @@ import * as ts from './typescript-ns.js';
 import { resolveTypeScript } from './typescript-version.js';
 import { signature } from './watch.js';
 
-export interface BuildOptions {
+interface BuildOptions {
   /**
    * Another build config of the same project: a tsconfig file, or a directory that holds `tsconfig.json`, as `tsc -p` takes it.
    * It lives in the directory of the golem.yaml's tsconfig. Without it the build is that tsconfig.
@@ -178,7 +178,7 @@ function runTsc(cli: string, cwd: string, args: readonly string[], forward: bool
  * The options the build's decisions depend on, as the compiler resolves them from the tsconfig and the forwarded arguments. The
  * path options are whether they are set: the staged copy handles their values itself.
  */
-export interface EffectiveOptions {
+interface EffectiveOptions {
   readonly declaration: boolean;
   readonly noEmitOnError: boolean;
   readonly outDir: boolean;

@@ -441,7 +441,6 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   const watchInputs = new Set(projectWatchInputs(
     programInfo,
     programInfo.program,
-    normalized.root,
     sources,
     [],
   ));

@@ -12,7 +12,7 @@ import { advertisedModelManifests } from './type-analysis/provenance.js';
 import { fieldProvenance } from './type-analysis/projections.js';
 import { declaredModelAlias, foreignModelReason, modelDeclarationKind, resolveSymbol } from './type-analysis/symbols.js';
 
-export interface ScanInput {
+interface ScanInput {
   /** Absolute project root; file paths in results are relative to it. */
   readonly root: string;
   /** The directory of the golem.yaml. A model that the models job of another golem.yaml covers is not this project's. */
@@ -28,7 +28,7 @@ export interface ScanInput {
 }
 
 /** A `@Body()` or `@Query()` parameter that the scan stamps with `nestModelCodec(id)`. */
-export interface NestCodecSite {
+interface NestCodecSite {
   /** Root-relative file. */
   readonly file: string;
   readonly line: number;

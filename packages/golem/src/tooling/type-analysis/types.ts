@@ -18,7 +18,6 @@ import {
   analyzeNode,
   isAmbientOrGlobalSymbol,
   isDateType,
-  mergeTagMetadata,
   publicExportName,
   type ModelConstraint,
   type SerdeBinding,
@@ -669,7 +668,7 @@ export function descriptorBuilder(
       for (const original of provenance.models) {
         const whole = analyzeNode({ ...tagContext, sourceFile: original.sourceFile }, original.fieldsType, original.fieldsNode).metadata;
         if (whole.serde || whole.validations.length || whole.constraints.length) {
-          throw diagnostic(context.sourceFile, node ?? context.declaration, '1055', `Projection of ${original.aliasName} would discard whole-object constraints or serialization. Declare an explicit projected contract.`);
+          throw diagnostic(context.sourceFile, node ?? context.declaration, '1055', `Projection of ${original.name} would discard whole-object constraints or serialization. Declare an explicit projected contract.`);
         }
       }
     }
@@ -943,11 +942,4 @@ export function descriptorBuilder(
     );
   };
   return Object.assign(describe, { projections });
-}
-
-export function mergeDescriptorMetadata(
-  descriptor: ModelConversionDescriptor,
-  ...metadata: readonly TagMetadata[]
-): ModelConversionDescriptor {
-  return withMetadata(descriptor, mergeTagMetadata(...metadata));
 }

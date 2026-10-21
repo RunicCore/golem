@@ -123,12 +123,12 @@ export class GeneratorSessionResources implements Disposable {
  * (`1.0.0-rc` or `1.0.0-rc.2` → `rc`), or `latest` for a stable version.
  * Generator packages are published in lockstep under the same tag.
  */
-export function golemDistTag(version: string = golemVersion()): string {
+function golemDistTag(version: string = golemVersion()): string {
   const prerelease = /^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/.exec(version)?.[1];
   return prerelease ?? 'latest';
 }
 
-export function golemVersion(): string {
+function golemVersion(): string {
   // dist/tooling/pipeline.js → package.json of @exprtlabs/golem.
   const manifest: unknown = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
   if (!isRecord(manifest) || typeof manifest.version !== 'string') throw new Error('@exprtlabs/golem package.json has no version.');

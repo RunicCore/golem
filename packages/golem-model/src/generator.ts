@@ -146,7 +146,7 @@ const SESSION_OWNER = '@exprtlabs/golem-model';
 
 /** A job without model files still watches the project, so a model file added later is seen. */
 function emptyResult(info: ProgramInfo, program: ts.Program, root: string): GolemModelResult {
-  const watchInputs = projectWatchInputs(info, program, root, [], discoverModelManifests(root));
+  const watchInputs = projectWatchInputs(info, program, [], discoverModelManifests(root));
   return { artifacts: [], manifestPaths: [], watchInputs };
 }
 
@@ -512,7 +512,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     return {
       artifacts: [],
       manifestPaths: [],
-      watchInputs: projectWatchInputs(programInfo, programInfo.program, normalized.root, sources, referencedManifestFiles(graphs, manifestIndex)),
+      watchInputs: projectWatchInputs(programInfo, programInfo.program, sources, referencedManifestFiles(graphs, manifestIndex)),
       diagnostics: validatorDiagnostics,
     };
   }
@@ -578,7 +578,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
     watchInputs: projectWatchInputs(
       programInfo,
       prospective,
-      normalized.root,
       sources,
       referencedManifestFiles(graphs, manifestIndex),
     ),

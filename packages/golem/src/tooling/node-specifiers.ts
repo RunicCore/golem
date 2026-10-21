@@ -7,7 +7,7 @@ import { readManifest } from './type-analysis/package-specifier.js';
 import type { RewriteEdit } from './rewrite.js';
 
 /** Pass one object for all the files of a build: it also keys what the build reads from the disk (package roots and files), so each is read once. */
-export interface NodeSpecifierOptions {
+interface NodeSpecifierOptions {
   /** The program's compiler options: `paths` and `jsx` decide the new text. */
   readonly compilerOptions: ts.CompilerOptions;
   /** The absolute file names of the program's project sources (`projectSources` of rewrite-scan.ts). The checker alone cannot tell a project source from a package file. */

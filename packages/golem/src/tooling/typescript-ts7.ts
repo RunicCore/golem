@@ -79,12 +79,6 @@ export const CheckFlags = { Readonly: 1 << 3, Mapped: 1 << 18 } as const;
 export type Type = CompatType;
 export type Symbol = CompatSymbol;
 export type Signature = CompatSignature;
-export type GenericType = CompatType;
-export type TypeReference = CompatType;
-export type ObjectType = CompatType;
-export type InterfaceType = CompatType;
-export type StringLiteralType = CompatType & { readonly value: string };
-export type NumberLiteralType = CompatType & { readonly value: number };
 export type { CompilerOptions };
 
 export const isParameter = ast.isParameterDeclaration;
@@ -147,7 +141,7 @@ export interface ResolvedModule {
   readonly isExternalLibraryImport?: boolean;
 }
 
-export interface CompatType {
+interface CompatType {
   readonly flags: TypeFlags;
   readonly objectFlags: ObjectFlags;
   readonly value?: string | number | boolean | bigint;
@@ -173,7 +167,7 @@ export interface CompatType {
   getTarget(): CompatType;
 }
 
-export interface CompatSymbol {
+interface CompatSymbol {
   readonly flags: number;
   /** Checker-internal `CheckFlags` bits; see `readonlyPropertyNames`. */
   readonly checkFlags: number;
@@ -183,7 +177,7 @@ export interface CompatSymbol {
   readonly declarations: readonly Node[];
 }
 
-export interface CompatSignature {
+interface CompatSignature {
   readonly parameters: readonly CompatSymbol[];
   readonly declaration?: Node;
   getParameters(): readonly CompatSymbol[];
@@ -621,7 +615,6 @@ function canonical(filename: string): string {
 export const sys: ModuleResolutionHost & {
   useCaseSensitiveFileNames: boolean;
   getCurrentDirectory(): string;
-  readDirectory(root: string, extensions?: readonly string[], excludes?: readonly string[], includes?: readonly string[], depth?: number): string[];
 } = {
   useCaseSensitiveFileNames: process.platform !== 'win32',
   getCurrentDirectory: () => process.cwd(),
@@ -656,25 +649,6 @@ export const sys: ModuleResolutionHost & {
     } catch {
       return filename;
     }
-  },
-  readDirectory(root) {
-    const found: string[] = [];
-    const visit = (directory: string): void => {
-      let entries;
-      try {
-        entries = readdirSync(directory, { withFileTypes: true });
-      } catch {
-        return;
-      }
-      for (const entry of entries) {
-        if (entry.name === 'node_modules' || entry.name.startsWith('.')) continue;
-        const filename = join(directory, entry.name);
-        if (entry.isDirectory()) visit(filename);
-        else found.push(filename);
-      }
-    };
-    visit(root);
-    return found;
   },
 };
 

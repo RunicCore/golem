@@ -3,7 +3,7 @@ import path from 'node:path';
 import { canonicalPath } from '../generator-api.js';
 import { isOutside } from './project.js';
 
-export type PackageSpecifierResult =
+type PackageSpecifierResult =
   | { readonly kind: 'same-package' }
   | { readonly kind: 'package'; readonly specifier: string }
   | { readonly kind: 'unexported'; readonly packageName: string; readonly packageRoot: string };
