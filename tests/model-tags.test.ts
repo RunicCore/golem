@@ -386,3 +386,20 @@ export function noDigits(value: string): boolean | string { return !/\\d/.test(v
   const predicatesReordered = generated(tsSource`string & MinLength<2> & MaxLength<4> & Pattern<'^[a-z0-9 ]+$'> & TValidation<typeof noDigits> & TValidation<typeof notBlank>`);
   assert.deepEqual(predicatesReordered, forward);
 });
+
+for (const item of [
+  { name: 'a module interface named Date keeps its own fields', declaration: tsSource`interface Date { label: string }`, wire: { when: { label: 'launch' } }, isDate: false },
+  { name: 'the global Date is a date', declaration: tsSource``, wire: { when: '2025-01-02T03:04:05.000Z' }, isDate: true },
+] as const) {
+  test(`${item.name}`, async t => {
+    // protects: F-31 only the global Date is read as a date; a user type named Date keeps its shape
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: item.declaration, fields: tsSource`when: Date` }).text);
+    writeModelGolemYaml(root, { mobx: false, validation: true });
+    await buildModelProject(root);
+    const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+    const model = decodeGeneratedModel(A, item.wire);
+    assert.equal(model.when instanceof Date, item.isDate);
+    assert.deepEqual(encodeGeneratedModel(model), item.wire);
+  });
+}

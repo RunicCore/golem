@@ -962,9 +962,27 @@ function metadataFromType(
   return EMPTY;
 }
 
+function isUserValueDeclaration(declaration: ts.Node | undefined): boolean {
+  const file = declaration?.getSourceFile?.();
+  return file !== undefined && file.isDeclarationFile === false;
+}
+
+/** Whether `symbol` is declared by a library or ambient declaration file, not by the user's own source. */
+export function isAmbientOrGlobalSymbol(symbol: ts.Symbol | undefined): boolean {
+  if (!symbol) return true;
+  const declarations = symbol.declarations ?? [];
+  if (isUserValueDeclaration(symbol.valueDeclaration) || declarations.some(isUserValueDeclaration)) {
+    return false;
+  }
+  return true;
+}
+
 export function isDateType(checker: ts.TypeChecker, type: ts.Type): boolean {
   const symbol = type.getSymbol?.() ?? type.aliasSymbol;
-  return symbol?.getName() === 'Date' || checker.typeToString(type) === 'Date';
+  if (!symbol) return checker.typeToString(type) === 'Date';
+  // Only the global Date is a date: a class or interface the user declares under that name keeps its own shape.
+  const name = symbol.getName();
+  return name === 'Date' && isAmbientOrGlobalSymbol(symbol);
 }
 
 function emptyBase(node: ts.TypeNode): TagReadResult {
