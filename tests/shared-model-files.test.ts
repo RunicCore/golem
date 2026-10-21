@@ -183,6 +183,16 @@ test('two apps with different profiles each write the companion of a shared alia
   assert.doesNotMatch(companion(worker), /models\.validators\.generated/);
 });
 
+test('a field typed with an app class of a shared model generates and imports the shared companion', (t: TestContext) => {
+  // protects: T-205 a field typed with a class of a shared model generates
+  const order = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Customer } from './customer.js';\nexport type TOrder = IModel<{ customer: Customer }>;\n";
+  const app = appWithShared(sharedFolder(t), 'web', false, { 'src/order.model.ts': order, 'src/customer.ts': SHARED_CUSTOMER_BASE });
+
+  const { artifacts } = generate({ root: app, profile: PROFILE });
+
+  assert.match(artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'))?.content ?? '', /import \{ TCustomerBaseModel, .* \} from "\.\/generated\/models\/@acme\/shared\/customer\.model\.generated\.js";/);
+});
+
 test('on the first run an app class that imports the shared base through a paths alias is the class of the shared model', (t: TestContext) => {
   // protects: T-197 final review: module resolution of an expected companion works for any import form, not only a relative one
   const outer = sharedFolder(t);

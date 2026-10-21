@@ -70,3 +70,23 @@ test('golem build rewrites nested model serde calls and preserves class construc
   assert.deepEqual({ ...wired }, { title: 'wire', value: 8 });
   assert.ok(wired instanceof loaded.Item);
 });
+
+test('a field typed with an app class from its own file builds, parses and writes that class, and a second build writes the same files', async t => {
+  // protects: T-205 a model field typed with a class that extends a generated base generates
+  const { root, sourceRoot } = companionModelProject(t, 'model-class-field');
+  const imodel = "import type { IModel } from '@exprtlabs/golem/model';\n";
+  writeModelSources(sourceRoot, {
+    'customer.model.ts': `${imodel}export type TCustomer = IModel<{ name: string }>;\n`,
+    'customer.ts': "import { TCustomerBaseModel } from './customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n",
+    'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; customer: Customer }>;\n`,
+    'use.ts': "import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\"}}');\nexport const text = stringify<TOrder>(order);\n",
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const firstFiles = generatedModelFiles(root);
+  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { Customer: new () => object; order: { customer: object }; text: string };
+  assert.ok(loaded.order.customer instanceof loaded.Customer);
+  assert.equal(loaded.text, '{"id":"o1","customer":{"name":"Ada"}}');
+  await buildModelProject(root);
+  assert.deepEqual(generatedModelFiles(root), firstFiles);
+});

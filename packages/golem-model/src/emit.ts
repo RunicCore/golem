@@ -674,22 +674,25 @@ function fieldDescriptors(
 function descriptorReferences(
   descriptor: ModelConversionDescriptor,
   found = new Set<string>(),
+  /** Collect only the references that name a class the app wrote (a field typed `Customer`, not `TCustomer`). */
+  throughClass = false,
 ): Set<string> {
   const wire = richDescriptor(descriptor).serde?.wireDescriptor;
-  if (wire) descriptorReferences(wire, found);
+  if (wire) descriptorReferences(wire, found, throughClass);
   for (const constraint of richDescriptor(descriptor).constraints ?? []) {
-    forEachConstraintSchema(constraint, (nested) => descriptorReferences(nested, found));
+    forEachConstraintSchema(constraint, (nested) => descriptorReferences(nested, found, throughClass));
   }
-  if (descriptor.kind === 'reference') found.add(descriptor.name);
-  else if (descriptor.kind === 'array') descriptorReferences(descriptor.item, found);
+  if (descriptor.kind === 'reference') {
+    if (!throughClass || descriptor.construct) found.add(descriptor.name);
+  } else if (descriptor.kind === 'array') descriptorReferences(descriptor.item, found, throughClass);
   else if (descriptor.kind === 'tuple') {
-    descriptor.items.forEach((item) => descriptorReferences(item, found));
-    if (descriptor.rest) descriptorReferences(descriptor.rest.item, found);
+    descriptor.items.forEach((item) => descriptorReferences(item, found, throughClass));
+    if (descriptor.rest) descriptorReferences(descriptor.rest.item, found, throughClass);
   } else if (descriptor.kind === 'union' || descriptor.kind === 'intersection') {
-    descriptor.variants.forEach((item) => descriptorReferences(item, found));
+    descriptor.variants.forEach((item) => descriptorReferences(item, found, throughClass));
   } else if (descriptor.kind === 'object') {
-    Object.values(descriptor.properties).forEach((item) => descriptorReferences(item, found));
-    if (typeof descriptor.additionalProperties === 'object') descriptorReferences(descriptor.additionalProperties, found);
+    Object.values(descriptor.properties).forEach((item) => descriptorReferences(item, found, throughClass));
+    if (typeof descriptor.additionalProperties === 'object') descriptorReferences(descriptor.additionalProperties, found, throughClass);
   }
   return found;
 }
@@ -897,9 +900,11 @@ export function analyzeSourceGraph(
   // A model of another file this source imports is emitted by that file's companion. The import graph is the source's
   // own, so the companion is the same in every app that generates it.
   const imported = importedFiles(job, local[0].sourceFile);
+  // A field typed with an app class reaches its model through the class's generated base, and that class file need not import the model file.
+  const classModels = new Set<string>();
   const isSibling = (specification: ModelSpecification): boolean => {
     const owner = canonicalFilename(specification.sourceFile.fileName);
-    return owner !== canonicalSource && imported.has(owner);
+    return owner !== canonicalSource && (imported.has(owner) || classModels.has(specification.name));
   };
   const byName = new Map<string, ModelSpecification[]>();
   for (const specification of specifications) {
@@ -934,6 +939,7 @@ export function analyzeSourceGraph(
       siblings.add(specification);
       continue;
     }
+    descriptorReferences(descriptor, classModels, true);
     collectReferences(descriptor, specification, byName, emitted, pending);
     collectProjections(descriptor, specification);
   }
