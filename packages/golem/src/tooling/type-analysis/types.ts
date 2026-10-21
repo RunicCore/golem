@@ -555,7 +555,9 @@ export function descriptorBuilder(
     specifications.map((specification) => specification.sourceFile.fileName),
   ));
   // The companion of a source file reads the filesystem, so each source file's is computed once.
-  const companions = new Map<string, string>();
+  // A model's companion is where its imports are written, so every job names a TSerde or TValidation function from the same file.
+  const companions = new Map<string, string>(specifications.flatMap((specification) =>
+    specification.companionFile === undefined ? [] : [[specification.sourceFile.fileName, specification.companionFile] as const]));
   const companionOf = (sourceFile: string): string => {
     let companion = companions.get(sourceFile);
     if (companion === undefined) {

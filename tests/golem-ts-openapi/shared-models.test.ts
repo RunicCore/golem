@@ -226,3 +226,28 @@ test('at run time the @Body() of a shared alias is parsed with the codec of the 
     await application.close();
   }
 });
+
+test('a shared alias with a TSerde field has one codec id in the codecs of the controllers job, the codec keys of the models job and both Nest marks', async (t) => {
+  // protects: T-197 final review: the TSerde importer is the companion of the model in both jobs, so the hashed function id is the same
+  const model = "import type { IObject } from '@exprtlabs/golem/model';\nimport type { TSerde } from '@exprtlabs/golem/tags';\nimport type { encodeCount, decodeCount } from './rules.js';\nexport type TCustomer = IObject<{ visits: number & TSerde<typeof encodeCount, typeof decodeCount> }>;\n";
+  const { app, config } = appWithSharedModel(t, model, { 'src/customers.controller.ts': controller('TCustomer', '@acme/shared/customer.model') }, true);
+  const outer = path.dirname(app);
+  // The shared package is a linked workspace package with an exports map, as a monorepo keeps it.
+  fs.rmSync(path.join(outer, 'node_modules/@acme/shared'), { recursive: true });
+  writeGeneratedArtifacts([
+    { path: path.join(outer, 'shared/package.json'), content: JSON.stringify({ name: '@acme/shared', private: true, type: 'module', exports: { './customer.model': { types: './customer.model.ts' }, './rules': { types: './rules.ts', default: './rules.js' } } }) },
+    { path: path.join(outer, 'shared/customer.model.ts'), content: model },
+    { path: path.join(outer, 'shared/rules.ts'), content: 'export function encodeCount(value: number): string { return String(value); }\nexport function decodeCount(value: string): number { return Number(value); }\n' },
+  ]);
+  fs.symlinkSync('../../shared', path.join(outer, 'node_modules/@acme/shared'), 'dir');
+
+  await runPipeline(config);
+
+  const id = codecKey(app, '../shared/customer.model.ts#TCustomer');
+  assert.match(id, /^TCustomer_[0-9a-f]{8}$/);
+  const registry = readText(app, 'src/generated/operation-codecs.ts');
+  assert.deepEqual([...new Set(registry.match(/TCustomer_[0-9a-f]{8}/g))], [id], registry);
+  const code = rewrittenController(app);
+  assert.ok(code.includes(`@__golem_nestModelCodec(${JSON.stringify(id)}) input: TCustomer`), code);
+  assert.ok(code.includes(`@__golem_nestModelReturn(${JSON.stringify(id)})`), code);
+});
