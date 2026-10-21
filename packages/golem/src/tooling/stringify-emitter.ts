@@ -1613,7 +1613,7 @@ function emitEncodedRecord(
   // keeps them as they are. Any other object writes its listed names only.
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
   const extras = additional || descriptor.additionalPropertiesDeclared
-    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([key, extra]) => extra !== undefined${fields.length === 0 ? '' : ` && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)`}).map(([key, extra]) => [key, ${emitEncodeValue(additional ?? { kind: 'unknown' }, 'extra', ctx)}]))`]
+    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([${fields.length === 0 ? '' : 'key'}, extra]) => extra !== undefined${fields.length === 0 ? '' : ` && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)`}).map(([key, extra]) => [key, ${emitEncodeValue(additional ?? { kind: 'unknown' }, 'extra', ctx)}]))`]
     : [];
   const entries = [...extras, ...values.map(([name, value]) => value.startsWith('...')
     ? value
@@ -1865,9 +1865,11 @@ function emitNodeRuntime(
 
   // The wire encoding without validation: nested trusted calls and the validating wrapper both run it.
   const toWireCore = `${toWire}Core`;
+  // A model with no field and no extra names writes `{}` and reads nothing from the value.
+  const readsRecord = objectDescriptor !== undefined && encodedRecordExpr !== '{}';
   const toWireCoreSource = [
-    `function ${toWireCore}(value: ${fieldsType ?? 'unknown'}): ${wireType ?? 'unknown'} {`,
-    ...(objectDescriptor ? ['  const record = value as Record<string, unknown>;'] : []),
+    `function ${toWireCore}(${readsRecord || !objectDescriptor ? 'value' : '_value'}: ${fieldsType ?? 'unknown'}): ${wireType ?? 'unknown'} {`,
+    ...(readsRecord ? ['  const record = value as Record<string, unknown>;'] : []),
     ...inlineLocalDeclarations(encodedWireContext),
     `  const wire = ${encodedRecordExpr};`,
     wireType ? `  return wire as ${wireType};` : '  return wire;',
