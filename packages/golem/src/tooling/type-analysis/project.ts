@@ -91,10 +91,17 @@ export interface ModelBoundary {
   readonly root: string;
   /** The file-name endings that make a file a model file. */
   readonly suffixes: readonly string[];
+  /** Where the companion of a shared file goes. Without it every companion is beside its model file. */
+  readonly companions?: {
+    /** The real path of the directory of the golem.yaml: the search for a shared file's package folder stops there. */
+    readonly directory: string;
+    /** `models.output`. */
+    readonly output: string;
+  };
 }
 
-export function modelBoundary(modelsRoot: string, suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES): ModelBoundary {
-  return { root: canonicalPath(modelsRoot), suffixes };
+export function modelBoundary(modelsRoot: string, suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES, companions?: { readonly directory: string; readonly output: string }): ModelBoundary {
+  return { root: canonicalPath(modelsRoot), suffixes, ...(companions ? { companions: { directory: canonicalPath(companions.directory), output: canonicalFilename(companions.output) } } : {}) };
 }
 
 /** Whether `filename` is a model file by name. */
@@ -154,7 +161,7 @@ function declaresModelsJob(golemYaml: string, onInput?: InputObserver): boolean 
 }
 
 /** The folder that holds a shared model file's package, or undefined for a file in the folder of the app's own golem.yaml, or above. */
-function packageFolderOf(filename: string, appDirectory: string): string | undefined {
+export function packageFolderOf(filename: string, appDirectory: string): string | undefined {
   const app = canonicalPath(appDirectory);
   let top: string | undefined;
   for (let directory = dirname(canonicalPath(filename)); directory !== app && !app.startsWith(`${directory}${sep}`); directory = dirname(directory)) {
@@ -163,6 +170,45 @@ function packageFolderOf(filename: string, appDirectory: string): string | undef
     if (dirname(directory) === directory) break;
   }
   return top;
+}
+
+/** The name of the package that holds a shared model file: the `name` of the package folder's package.json, else the folder's name. */
+function packageNameOf(packageFolder: string): string {
+  let name: unknown;
+  try {
+    name = (JSON.parse(readFileSync(join(packageFolder, 'package.json'), 'utf8')) as { name?: unknown }).name;
+  } catch {
+    // No readable package.json: the folder's name names the package.
+  }
+  return typeof name === 'string' && name !== '' ? name : basename(packageFolder);
+}
+
+/**
+ * The generated companion of a model file. An own file's is beside it: `.generated` before its final extension. A shared file's
+ * is in `models.output`: `<package name>/<path of the file in its package folder>`, with `.d` dropped from a declaration file.
+ * Two shared files can give one path: `assertDistinctCompanions` stops the job.
+ */
+export function companionFilename(boundary: ModelBoundary | undefined, modelFile: string): string {
+  if (boundary?.companions === undefined || isOwnModelFile(boundary, modelFile)) return generatedFilename(modelFile);
+  const real = canonicalPath(modelFile);
+  const packageFolder = packageFolderOf(real, boundary.companions.directory) ?? dirname(real);
+  const inPackage = relative(packageFolder, real).replace(/\\/g, '/').replace(/\.d\.([cm]?ts)$/, '.$1');
+  return generatedFilename(join(boundary.companions.output, packageNameOf(packageFolder), inPackage));
+}
+
+export const CODE_COMPANION_PATH_CLASH = 'RUNM1078';
+
+/** Stops generation when two shared model files get one companion path: both would write the same file. */
+export function assertDistinctCompanions(boundary: ModelBoundary, modelFiles: readonly string[]): void {
+  const owners = new Map<string, string>();
+  for (const file of modelFiles.map(canonicalPath).sort()) {
+    const companion = companionFilename(boundary, file);
+    const other = owners.get(companion);
+    if (other !== undefined && other !== file) {
+      throw new Error(`${CODE_COMPANION_PATH_CLASH}: the shared model files ${other} and ${file} have one generated file, ${companion}. Rename one of them, or move it into another package folder.`);
+    }
+    owners.set(companion, file);
+  }
 }
 
 /** The companion forms a generator could leave beside a model file: the source form, and the emitted `.js` and `.d.ts` forms. */
@@ -475,7 +521,8 @@ export function projectWatchInputs(
   manifestPaths: readonly string[],
 ): string[] {
   const inputs = new Set<string>([
-    ...sources,
+    // An installed package's model file is no watch input: a new install needs a new `golem generate`.
+    ...sources.filter((source) => !canonicalFilename(source).split(sep).includes('node_modules')),
     ...manifestPaths,
     ...(info.configPath ? [info.configPath] : []),
     ...info.projectFiles,

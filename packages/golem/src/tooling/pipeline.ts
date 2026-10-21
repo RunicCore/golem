@@ -566,6 +566,8 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       root,
       directory: config.directory,
       modelsRoot: modelsRootOf(config),
+      suffixes: job?.kind === 'models' ? job.options.suffixes : undefined,
+      output: job?.kind === 'models' ? job.options.output : undefined,
       configFile: config.tsconfig,
       nest,
       codecKeysFile: codecKeysPath(config.directory),

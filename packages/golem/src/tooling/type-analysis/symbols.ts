@@ -73,6 +73,11 @@ export function declaredModelAlias(reference: ts.TypeReferenceNode): ts.TypeAlia
 }
 
 
+/** The generated companion of a model: beside its file, or where the job put a shared file's. */
+export function companionOfSpecification(specification: ModelSpecification): string {
+  return specification.companionFile ?? generatedFilename(specification.sourceFile.fileName);
+}
+
 /** Identify a model class through its generated base import, including first generation. */
 export function modelSpecificationForClass(
   checker: ts.TypeChecker,
@@ -84,9 +89,9 @@ export function modelSpecificationForClass(
   const declaration = resolveSymbol(checker, type.getSymbol())?.declarations?.find(ts.isClassDeclaration);
   if (!declaration || seen.has(declaration)) return undefined;
   seen.add(declaration);
-  const expected = new Set(specifications.map(specification => canonicalFilename(generatedFilename(specification.sourceFile.fileName))));
+  const expected = new Set(specifications.map(specification => canonicalFilename(companionOfSpecification(specification))));
   const match = (filename: string, name: string | undefined): ModelSpecification | undefined => specifications.find(specification =>
-    canonicalFilename(generatedFilename(specification.sourceFile.fileName)) === canonicalFilename(filename)
+    canonicalFilename(companionOfSpecification(specification)) === canonicalFilename(filename)
       && name === `${specification.name}BaseModel`);
   const host: ts.ModuleResolutionHost = {
     ...ts.sys,

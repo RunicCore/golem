@@ -1,13 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { GolemDiagnosticSeverity, isRecord } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, isRecord } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
 import { CODEC_KEY_FILE, operationCodecRegistryPath } from './generated-paths.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { readModelManifest } from './model-manifest.js';
-import { createProjectProgram, canonicalFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
+import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
 import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { advertisedModelManifests } from './type-analysis/provenance.js';
 import { fieldProvenance } from './type-analysis/projections.js';
@@ -16,12 +16,14 @@ import { declaredModelAlias, foreignModelReason, modelDeclarationKind, resolveSy
 interface ScanInput {
   /** Absolute project root; file paths in results are relative to it. */
   readonly root: string;
-  /** The directory of the golem.yaml. */
+  /** The directory of the golem.yaml: where the search for a shared model file's package folder stops. */
   readonly directory: string;
   /** `models.root` of the project's models job. */
   readonly modelsRoot: string;
   /** The `suffixes` of the models job: a model is declared in a file whose name ends in one of them. Defaults to the golem default. */
-  readonly suffixes?: readonly string[];
+  readonly suffixes?: readonly string[] | undefined;
+  /** `models.output` of the project's models job: the generated file of a shared model is there. Without it every companion is beside its model file. */
+  readonly output?: string | undefined;
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   /** The project's `.golem/codec-keys.json`, which the program does not hold; a missing file holds no keys. */
@@ -118,12 +120,17 @@ class CodecKeys {
   /** The generated module that registers each codec id, where a key file or a manifest says which. */
   private readonly modules = new Map<string, string>();
 
-  constructor(private readonly program: ts.Program, private readonly checker: ts.TypeChecker, private readonly root: string, codecKeysFile: string) {
+  /** The real path of the tsconfig's directory: a key is a file's real path from it, as `golem generate` writes it. */
+  private readonly base: string;
+  private readonly keysByFile = new Map<string, string>();
+
+  constructor(private readonly program: ts.Program, private readonly checker: ts.TypeChecker, private readonly root: string, codecKeysFile: string, private readonly boundary: ModelBoundary) {
+    this.base = canonicalPath(root);
     const table = portable(root, codecKeysFile);
     for (const [declaration, id] of Object.entries(readCodecKeysFile(codecKeysFile))) {
       if (declaration.lastIndexOf('#') > 0 && id !== '') {
         this.add(declaration.replace(/\\/g, '/'), id, table);
-        this.addModule(id, this.companionOf(path.resolve(root, declaration.slice(0, declaration.lastIndexOf('#')))));
+        this.addModule(id, this.companionOf(path.resolve(this.base, declaration.slice(0, declaration.lastIndexOf('#')))));
       }
     }
     this.addManifests();
@@ -152,7 +159,7 @@ class CodecKeys {
           const symbol = declarationsOf(manifestFile, module, exportName);
           this.addModule(model.codecId, this.program.getSourceFile(canonicalFilename(path.resolve(path.dirname(manifestFile), model.generated.module)))?.fileName);
           for (const declaration of symbol?.declarations ?? []) {
-            this.add(`${portable(this.root, declaration.getSourceFile().fileName)}#${symbol!.name}`, model.codecId, table);
+            this.add(`${this.keyOf(declaration.getSourceFile().fileName)}#${symbol!.name}`, model.codecId, table);
           }
         }
       }
@@ -168,7 +175,7 @@ class CodecKeys {
     for (const file of this.program.getSourceFiles()) {
       if (path.basename(file.fileName) !== CODEC_KEY_FILE || !file.text.includes(OPENAPI_KEYS_MARKER)) continue;
       const table = portable(this.root, file.fileName);
-      const directory = portable(this.root, path.dirname(file.fileName));
+      const directory = this.keyOf(path.dirname(file.fileName));
       const visit = (node: ts.Node): void => {
         if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.initializer)
           && (ts.isStringLiteral(node.name) || ts.isIdentifier(node.name))) {
@@ -186,10 +193,16 @@ class CodecKeys {
     }
   }
 
-  /** The generated companion of a model file, `x.model.generated.ts` for `x.model.ts`, when the program holds it. */
+  /** The file's real path from the tsconfig's directory, with forward slashes: a file reached through a folder link has one key. */
+  private keyOf(filename: string): string {
+    let key = this.keysByFile.get(filename);
+    if (key === undefined) this.keysByFile.set(filename, key = portable(this.base, canonicalPath(filename)));
+    return key;
+  }
+
+  /** The generated companion of a model file, when the program holds it: beside an own file, in `models.output` for a shared one. */
   private companionOf(modelFile: string): string | undefined {
-    const extension = /\.[cm]?ts$/.exec(modelFile)?.[0];
-    return extension === undefined ? undefined : this.program.getSourceFile(canonicalFilename(`${modelFile.slice(0, -extension.length)}.generated${extension}`))?.fileName;
+    return /\.[cm]?ts$/.test(modelFile) ? this.program.getSourceFile(canonicalFilename(companionFilename(this.boundary, modelFile)))?.fileName : undefined;
   }
 
   private addModule(id: string, module: string | undefined): void {
@@ -221,7 +234,7 @@ class CodecKeys {
    */
   idFor(filename: string, name: string, dependencies: Set<string>): string {
     if (name === '') return '';
-    const relative = portable(this.root, filename);
+    const relative = this.keyOf(filename);
     const exact = this.byDeclaration.get(`${relative}#${name}`);
     if (exact !== undefined) {
       // Two sources that give one declaration different ids give it none: the call reports it instead of choosing.
@@ -735,11 +748,11 @@ export class RewriteScanner {
 
   constructor(input: ScanInput) {
     this.root = input.root;
-    this.boundary = modelBoundary(input.modelsRoot, input.suffixes);
+    this.boundary = modelBoundary(input.modelsRoot, input.suffixes, input.output === undefined ? undefined : { directory: input.directory, output: input.output });
     this.program = input.program;
     this.checker = input.checker;
     this.nest = input.nest;
-    this.keys = new CodecKeys(input.program, input.checker, input.root, input.codecKeysFile);
+    this.keys = new CodecKeys(input.program, input.checker, input.root, input.codecKeysFile, this.boundary);
   }
 
   private candidate(file: ts.SourceFile): boolean {
@@ -826,7 +839,9 @@ interface ProjectScanInput {
   /** `models.root` of the project's models job. */
   readonly modelsRoot: string;
   /** The `suffixes` of the models job. Defaults to the golem default. */
-  readonly suffixes?: readonly string[];
+  readonly suffixes?: readonly string[] | undefined;
+  /** `models.output` of the project's models job. */
+  readonly output?: string | undefined;
   /** The tsconfig whose files are scanned, from the golem.yaml; its directory is what the file paths are relative to. */
   readonly configFile: string;
   readonly nest: boolean;
@@ -839,9 +854,9 @@ interface ProjectScanInput {
 
 /** Open the project's program and ask the scanner about its sources: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
-  const { root, directory, modelsRoot, suffixes, configFile, nest, codecKeysFile, session, sessionOwner } = input;
+  const { root, directory, modelsRoot, suffixes, output, configFile, nest, codecKeysFile, session, sessionOwner } = input;
   const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
-  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, ...(suffixes ? { suffixes } : {}), program, checker: program.getTypeChecker(), nest, codecKeysFile }).scanProgram();
+  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, suffixes, output, program, checker: program.getTypeChecker(), nest, codecKeysFile }).scanProgram();
   return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
 }

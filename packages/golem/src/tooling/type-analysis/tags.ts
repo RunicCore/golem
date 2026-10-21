@@ -51,6 +51,8 @@ export interface TagAnalysisContext {
   readonly sourceFile: ts.SourceFile;
   /** Absolute project root used to keep emitted binding IDs relocatable. */
   readonly identityRoot: string;
+  /** The generated file that imports what the tags name: the companion of the model's file. Defaults to the model's file. */
+  readonly importer?: string;
   /** Whether a file is a model source of the job, so it has a generated companion. */
   readonly isModelSource?: (filename: string) => boolean;
   readonly diagnostic: (node: ts.Node, code: string, message: string) => Error;
@@ -251,7 +253,7 @@ function valueBindingForSymbol(
       `${kind} function must be exported so generated code can call it.`,
     );
   }
-  const resolved = packageSpecifier(canonicalFilename(sourceFile.fileName), context.sourceFile.fileName, context.identityRoot);
+  const resolved = packageSpecifier(canonicalFilename(sourceFile.fileName), context.importer ?? context.sourceFile.fileName, context.identityRoot);
   if (resolved.kind !== 'package' && context.isModelSource?.(canonicalFilename(sourceFile.fileName))) {
     // The shared generated module imports this function; from a model file that would close a cycle with the
     // file's generated companion, which breaks start-up whenever the companion loads first.

@@ -4,11 +4,13 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { fileURLToPath } from 'node:url';
 
-import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
+import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
 import { writeModelSources } from './model-project.js';
 import { literal, tsSource, type SourceFragment } from './source-template.js';
 import { createJobAnalysis } from '#model/emit';
 import { generate } from '#model/generator';
+import { applyRewrites } from '#golem/rewrite';
+import { scanProject } from '#golem/rewrite-scan';
 import { collectSpecifications, createProgram, isOwnModelFile, loadModelManifests, modelBoundary } from '@exprtlabs/golem/type-analysis';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
@@ -139,4 +141,111 @@ test('a generated file beside a shared model file gives one warning each, and ge
 
   assert.deepEqual(result.diagnostics?.map(({ code, file }) => ({ code, file })), ['d.ts', 'js', 'ts'].map((form) => ({ code: 'RUNM1076', file: path.join(shared, `customer.model.generated.${form}`) })));
   assert.ok(result.artifacts.some((artifact) => artifact.path === path.join(root, 'src/order.model.generated.ts')));
+});
+
+/** `outer/shared` (package `@acme/shared`, `customer.model.ts`) and an app `outer/<name>` that includes the shared folder, with the given source files. */
+function appWithShared(outer: string, name: string, validation: boolean, files: Readonly<Record<string, string>>, include = ['src/**/*.ts', '../shared/**/*.ts']): string {
+  const root = path.join(outer, name);
+  writeModelSources(root, {
+    'package.json': JSON.stringify({ name, private: true, type: 'module' }),
+    'tsconfig.json': JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include }),
+    ...files,
+  });
+  return fs.realpathSync(root);
+}
+
+const SHARED_CUSTOMER_BASE = "import { TCustomerBaseModel } from './generated/models/@acme/shared/customer.model.generated.js';\nexport class Customer extends TCustomerBaseModel {}\n";
+const SHARED_ORDER = (from: string): string => `import type { IModel } from '@exprtlabs/golem/model';\nimport type { TCustomer } from '${from}';\nexport type TOrder = IModel<{ customer: TCustomer }>;\n`;
+
+function sharedFolder(t: TestContext): string {
+  const outer = createFixtureProject(t, 'golem-shared-apps-');
+  linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  writeModelSources(path.join(outer, 'shared'), { 'package.json': JSON.stringify({ name: '@acme/shared', private: true, type: 'module' }), 'customer.model.ts': CUSTOMER });
+  return outer;
+}
+
+test('two apps with different profiles each write the companion of a shared alias in their own models.output, and the shared folder keeps only its author files', (t: TestContext) => {
+  // protects: P-12 done checks 1 and 2: a shared alias works in two apps, each app owns its companion
+  const outer = sharedFolder(t);
+  const web = appWithShared(outer, 'web', true, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'), 'src/customer.ts': SHARED_CUSTOMER_BASE });
+  const worker = appWithShared(outer, 'worker', false, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'), 'src/customer.ts': SHARED_CUSTOMER_BASE });
+
+  for (const [root, validation] of [[web, true], [worker, false]] as const) {
+    writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation } }).artifacts);
+  }
+
+  assert.deepEqual(fs.readdirSync(path.join(outer, 'shared')).sort(), ['customer.model.ts', 'package.json']);
+  const companion = (root: string): string => fs.readFileSync(path.join(root, 'src/generated/models/@acme/shared/customer.model.generated.ts'), 'utf8');
+  assert.match(companion(web), /export abstract class TCustomerBaseModel/);
+  assert.match(companion(web), /models\.validators\.generated/);
+  assert.match(companion(worker), /export abstract class TCustomerBaseModel/);
+  assert.doesNotMatch(companion(worker), /models\.validators\.generated/);
+});
+
+test('an app with no model file of its own generates the companion of the shared alias its program holds', (t: TestContext) => {
+  // protects: P-12 done check 1: an app that uses only shared aliases gets its companions
+  const outer = sharedFolder(t);
+  const app = appWithShared(outer, 'solo', false, { 'src/use.ts': "import type { TCustomer } from '../../shared/customer.model.js';\nexport type Used = TCustomer;\n" });
+
+  const { artifacts } = generate({ root: app, profile: PROFILE });
+
+  assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/customer.model.generated.ts')));
+});
+
+test('two shared model files with one companion path stop generation with an error that names both', (t: TestContext) => {
+  // protects: P-12 done check 3: a companion path clash is an error
+  const outer = sharedFolder(t);
+  for (const folder of ['one', 'two']) {
+    writeModelSources(path.join(outer, folder), { 'package.json': JSON.stringify({ name: '@acme/twin', private: true }), 'twin.model.ts': PLAIN_ORDER });
+  }
+  const app = appWithShared(outer, 'web', false, { 'src/a.ts': 'export {};\n' }, ['src/**/*.ts', '../one/**/*.ts', '../two/**/*.ts']);
+
+  assert.throws(() => generate({ root: app, profile: PROFILE }), new RegExp(`^Error: RUNM1078: the shared model files ${path.join(outer, 'one/twin.model.ts')} and ${path.join(outer, 'two/twin.model.ts')} have one generated file`.replace(/^Error: /, '')));
+});
+
+test('an alias in an installed package generates like a shared-folder alias, and its companion imports the package by name', (t: TestContext) => {
+  // protects: P-12 done check 2: an installed package is a shared package
+  const outer = createFixtureProject(t, 'golem-shared-installed-');
+  linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  installSharedDeclarations(outer);
+  const app = appWithShared(outer, 'web', false, { 'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model') }, ['src/**/*.ts']);
+
+  const { artifacts } = generate({ root: app, profile: PROFILE });
+
+  const companion = artifacts.find((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/customer.model.generated.ts'));
+  assert.match(companion?.content ?? '', /from "@acme\/shared\/codecs";/);
+});
+
+test('a shared file reached through a folder link has one codec key, and the rewrite finds its codec id and companion', (t: TestContext) => {
+  // protects: P-12 done check 6: the writer and the reader of the codec key use one real path
+  const outer = sharedFolder(t);
+  const app = appWithShared(outer, 'web', false, {
+    'src/order.model.ts': SHARED_ORDER('./linked/customer.model.js'),
+    'src/use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TCustomer } from './linked/customer.model.js';\nexport const customer = parse<TCustomer>('{}');\n",
+  }, ['src/**/*.ts']);
+  fs.symlinkSync('../../shared', path.join(app, 'src/linked'), 'dir');
+  writeGeneratedArtifacts(generate({ root: app, profile: PROFILE }).artifacts);
+  const keys: { keys: Record<string, string> } = JSON.parse(fs.readFileSync(path.join(app, '.golem/codec-keys.json'), 'utf8'));
+  const id = keys.keys['../shared/customer.model.ts#TCustomer'];
+  assert.match(id ?? '', /^TCustomer_[0-9a-f]{8}$/);
+
+  const scan = scanProject({ root: app, directory: app, modelsRoot: app, output: path.join(app, 'src/generated/models'), configFile: path.join(app, 'tsconfig.json'), nest: false, codecKeysFile: path.join(app, '.golem/codec-keys.json') });
+
+  assert.deepEqual(scan.diagnostics, []);
+  const code = applyRewrites(fs.readFileSync(path.join(app, 'src/use.ts'), 'utf8'), scan.files.get('src/use.ts')!).code;
+  assert.ok(code.includes(`__golem_requireObjectCodec("${id}").parse('{}')`), code);
+  assert.ok(code.includes("import './generated/models/@acme/shared/customer.model.generated.js';"), code);
+});
+
+test('a shared model file of the program is a watch input, and a model file of node_modules is not', (t: TestContext) => {
+  // protects: P-12 watch regenerates when a shared model file changes and does not watch node_modules
+  const outer = sharedFolder(t);
+  const folder = appWithShared(outer, 'web', false, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js') });
+  installSharedDeclarations(outer);
+  const installed = appWithShared(outer, 'lib', false, { 'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model') }, ['src/**/*.ts']);
+
+  const inputs = (root: string): readonly string[] => generate({ root, profile: PROFILE }).watchInputs ?? [];
+
+  assert.ok(inputs(folder).includes(path.join(fs.realpathSync(outer), 'shared/customer.model.ts')));
+  assert.deepEqual(inputs(installed).filter((file) => file.includes('node_modules')), []);
 });
