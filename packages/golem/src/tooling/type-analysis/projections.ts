@@ -1,12 +1,15 @@
 import * as ts from '../typescript-ns.js';
 import type { ModelSpecification } from './models.js';
 import { resolveSymbol, isModelDeclarationReference } from './symbols.js';
+import { manifestModelOfSymbol, type ResolvedModelManifestEntry } from './provenance.js';
 
 interface Provenance {
   readonly models: readonly ModelSpecification[];
   readonly projection: boolean;
   /** The first IModel or IObject reference reached that no model specification declares. */
   readonly anonymous: ts.TypeReferenceNode | undefined;
+  /** The SDK model that a reference to a type alias listed in a model manifest reaches. A union or intersection reaches none. */
+  readonly external?: ResolvedModelManifestEntry | undefined;
 }
 
 /** Follow authored symbols and instantiated arguments; structural equality never establishes identity. */
@@ -14,17 +17,18 @@ export function fieldProvenance(
   checker: ts.TypeChecker,
   node: ts.TypeNode | undefined,
   specifications: readonly ModelSpecification[],
+  manifests?: ReadonlyMap<string, ResolvedModelManifestEntry>,
 ): Provenance {
   const walk = (current: ts.TypeNode | undefined, substitutions = new Map<ts.Symbol, ts.TypeNode>(), seen = new Set<ts.Node>()): Provenance => {
     const empty: Provenance = { models: [], projection: false, anonymous: undefined };
     if (!current || seen.has(current)) return empty;
     const next = new Set(seen).add(current);
     if (ts.isParenthesizedTypeNode(current)) return walk(current.type, substitutions, next);
-    if (ts.isTypeOperatorNode(current)) return walk(current.type, substitutions, next);
-    if (ts.isIndexedAccessTypeNode(current)) return walk(current.objectType, substitutions, next);
+    if (ts.isTypeOperatorNode(current)) return { ...walk(current.type, substitutions, next), external: undefined };
+    if (ts.isIndexedAccessTypeNode(current)) return { ...walk(current.objectType, substitutions, next), external: undefined };
     if (ts.isMappedTypeNode(current)) {
       const source = walk(current.typeParameter.constraint, substitutions, next);
-      return { ...source, projection: true };
+      return { ...source, projection: true, external: undefined };
     }
     if (ts.isUnionTypeNode(current) || ts.isIntersectionTypeNode(current)) {
       const members = current.types.map(member => walk(member, substitutions, next));
@@ -43,6 +47,8 @@ export function fieldProvenance(
     if (replacement) return walk(replacement, substitutions, next);
     const declaration = symbol.declarations?.find(ts.isTypeAliasDeclaration);
     if (!declaration) return empty;
+    const external = manifests && manifestModelOfSymbol(manifests, symbol);
+    if (external) return { ...empty, external };
     const direct = specifications.find(specification => specification.declaration === declaration);
     if (direct) return { ...empty, models: [direct] };
     const environment = new Map(substitutions);

@@ -333,10 +333,10 @@ test('a generated .d.ts beside the .model.d.ts file of an installed package give
 const SDK_ORDER = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Money } from '@acme/sdk/money.model';\nexport type TOrder = IModel<{ total: Money }>;\n";
 
 /** An SDK package at `directory`: `money.model.d.ts` holds the SDK type `Money` and an alias, and advertises the manifest, which names `Money` by `typeModule`. */
-function writeSdkPackage(directory: string, typeModule: string): void {
+function writeSdkPackage(directory: string, typeModule: string, money = 'export interface Money { currency: string }'): void {
   writeModelSources(directory, {
     'package.json': JSON.stringify({ name: '@acme/sdk', version: '1.0.0', type: 'module', exports: { './money.model': { types: './money.model.d.ts' } } }),
-    'money.model.d.ts': "/* @golem-model-manifest ./model-manifest.json */\nimport type { IObject } from '@exprtlabs/golem/model';\nexport interface Money { currency: string }\nexport type Extra = IObject<{ note: string }>;\n",
+    'money.model.d.ts': `/* @golem-model-manifest ./model-manifest.json */\nimport type { IObject } from '@exprtlabs/golem/model';\n${money}\nexport type Extra = IObject<{ note: string }>;\n`,
     'money.model.generated.d.ts': 'export {};\n',
     'models.ts': 'export class MoneyModel {}\nexport function stringifysdk_money(value: object, _options?: object): string { return JSON.stringify(value); }\nexport function toWireFormatsdk_money(value: unknown, _options?: object): unknown { return value; }\n',
     'model-manifest.json': JSON.stringify({
@@ -347,15 +347,15 @@ function writeSdkPackage(directory: string, typeModule: string): void {
 }
 
 /** An app that nests the SDK type of `@acme/sdk`, which `place` installs or links. */
-function appWithSdk(t: TestContext, place: 'installed' | 'linked', typeModule: string): string {
+function appWithSdk(t: TestContext, place: 'installed' | 'linked', typeModule: string, money?: string, order = SDK_ORDER): string {
   const outer = createFixtureProject(t, 'golem-shared-sdk-');
   linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   if (place === 'linked') {
-    writeSdkPackage(path.join(outer, 'sdk-src'), typeModule);
+    writeSdkPackage(path.join(outer, 'sdk-src'), typeModule, money);
     fs.mkdirSync(path.join(outer, 'node_modules/@acme'), { recursive: true });
     fs.symlinkSync('../../sdk-src', path.join(outer, 'node_modules/@acme/sdk'), 'dir');
-  } else writeSdkPackage(path.join(outer, 'node_modules/@acme/sdk'), typeModule);
-  return appWithShared(outer, 'web', false, { 'src/order.model.ts': SDK_ORDER }, ['src/**/*.ts']);
+  } else writeSdkPackage(path.join(outer, 'node_modules/@acme/sdk'), typeModule, money);
+  return appWithShared(outer, 'web', false, { 'src/order.model.ts': order }, ['src/**/*.ts']);
 }
 
 for (const place of ['installed', 'linked'] as const) {
@@ -370,6 +370,31 @@ for (const place of ['installed', 'linked'] as const) {
     assert.match(artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'))?.content ?? '', /MoneyModel/);
   });
 }
+
+for (const place of ['installed', 'linked'] as const) {
+  test(`an app model nests an SDK model written as an IObject alias in an SDK package that is ${place}: the companion uses the SDK codec of the manifest`, (t: TestContext) => {
+    // protects: T-206 an SDK IObject alias nested in an app model generates (RUNM1053 judged the alias anonymous before the manifest was read)
+    const nested = "import type { IObject } from '@exprtlabs/golem/model';\nimport type { Money } from '@acme/sdk/money.model';\nexport type TOrder = IObject<{ id: string; total: Money }>;\n";
+    const app = appWithSdk(t, place, './money.model.d.ts', "export type Money = IObject<{ currency: string }>;", nested);
+
+    const { artifacts, diagnostics } = generate({ root: app, profile: PROFILE });
+
+    assert.equal(diagnostics, undefined);
+    assert.deepEqual(artifacts.map((artifact) => path.relative(app, artifact.path)).filter((file) => file.includes('@acme')), []);
+    const companion = artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'))?.content ?? '';
+    assert.match(companion, /stringifysdk_money/);
+    assert.match(companion, /toWireFormatsdk_money/);
+    assert.doesNotMatch(companion, /currency/);
+  });
+}
+
+test('an anonymous IObject nested in an app model still stops generation with RUNM1053 when an SDK alias sits beside it', (t: TestContext) => {
+  // protects: T-206 the manifest lookup before the anonymous check does not let a true anonymous nested model pass
+  const nested = "import type { IObject } from '@exprtlabs/golem/model';\nimport type { Money } from '@acme/sdk/money.model';\nexport type TOrder = IObject<{ total: Money; note: IObject<{ text: string }> }>;\n";
+  const app = appWithSdk(t, 'installed', './money.model.d.ts', "export type Money = IObject<{ currency: string }>;", nested);
+
+  assert.throws(() => generate({ root: app, profile: PROFILE }), /RUNM1053.*named, exported declaration/);
+});
 
 test('a .model.d.ts file of an installed package whose manifest names the .ts file is an SDK file: no warning, no companion of its own', (t: TestContext) => {
   // protects: R-20 an SDK keeps working: a published package ships .d.ts for the .ts file its manifest names

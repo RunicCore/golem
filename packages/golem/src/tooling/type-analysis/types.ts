@@ -671,7 +671,7 @@ export function descriptorBuilder(
       return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot, companionOf(context.sourceFile.fileName)) } as ModelConversionDescriptor, metadata);
     }
 
-    const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications);
+    const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications, manifestIndex.byProvenance);
     if (provenance.anonymous) {
       const alias = declaredModelAlias(provenance.anonymous);
       const foreign = alias ? foreignModelReason(alias, boundary) : undefined;
@@ -715,7 +715,8 @@ export function descriptorBuilder(
         ...(classMatch ? { construct: true as const, ...(type.getSymbol()?.getName() ? { className: type.getSymbol()!.getName() } : {}) } : {}),
       }, metadata);
     }
-    const externalModel = manifestIndex.externalModelForType(type);
+    // An SDK interface names its model by its type; an SDK IObject alias names it by the alias the field's type node reaches.
+    const externalModel = provenance.external ?? manifestIndex.externalModelForType(type);
     if (externalModel) return withMetadata({ kind: 'generated-model', id: externalModel.id }, metadata);
     if (type.flags & ts.TypeFlags.Any) {
       if (!allowUnresolved && isErrorAny(type)) throw diagnostic(context.sourceFile, node ?? context.declaration, '1058', 'A contract type could not be resolved. Fix its declaration or import before generating OpenAPI.');

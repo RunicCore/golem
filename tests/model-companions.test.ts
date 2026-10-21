@@ -195,6 +195,26 @@ test('public generation compiles and executes conversion and rest tuple behavior
   await command(root, process.execPath, [verifier]);
 });
 
+test('an app model that nests an SDK model written as an IObject alias uses the SDK class: parse and stringify round-trip', async (t) => {
+  // protects: T-206 an SDK IObject alias nested in an app model generates (RUNM1053 judged the alias anonymous before the manifest was read)
+  const { root, sourceRoot } = modelProject(t);
+  const sdk = path.join(sourceRoot, 'sdk');
+  fs.mkdirSync(sdk, { recursive: true });
+  fs.writeFileSync(path.join(sdk, 'types.ts'), "/* @golem-model-manifest ./model-manifest.json */\nimport type { IObject } from '@exprtlabs/golem/model';\nexport type Money = IObject<{ currency: string; amount: number }>;\n");
+  fs.writeFileSync(path.join(sdk, 'models.ts'), readFixture('models/model-companions/public-generation-compiles-and-executes-conversion-and-rest-tuple-behavior/models.ts'));
+  writeManifest(path.join(sdk, 'model-manifest.json'), './models.ts', 'MoneyModel', './types.ts', { mobx: false, validation: true });
+  writeModelSources(sourceRoot, {
+    'order.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { Money } from './sdk/types.js';
+export type TOrder = IObject<{ id: string; money: Money }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const verifier = copyFixtureFile(root, 'models/model-companions/verify-sdk-alias.mjs', 'verify-sdk-alias.mjs');
+  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TOrder')]);
+});
+
 test('re-exported IModel and IObject symbols preserve class versus plain-object generation', async () => {
   const { root, sourceRoot, artifacts } = await trustedProject();
   const sourceFile = path.join(sourceRoot, 'provenance.model.ts');
