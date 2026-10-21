@@ -266,7 +266,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1058
 
-**Unresolved contract type.** A field's type resolves to TypeScript's internal error type because its declaration or import couldn't be resolved. **Fix:** Fix the declaration or import before generating.
+**Unresolved contract type.** A field has TypeScript's internal error type, because golem could not resolve a declaration or an import. Golem also reports this code when a `Pick` names a member that its source type does not declare. **Fix:** Fix the declaration, the import, or the key, then generate again.
 
 ### RUNM1059
 
