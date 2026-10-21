@@ -388,7 +388,7 @@ async function responseObject(
   route: ControllerRoute,
   response: ResponseDescription,
 ): Promise<Record<string, unknown>> {
-  const result: Record<string, unknown> = { description: response.description || 'Success' };
+  const result: Record<string, unknown> = { description: response.description ?? '' };
   if (response.headers) result.headers = response.headers;
   const specialResponseType = response.type ?? response.declaredType;
   const specialResponse = specialResponseType

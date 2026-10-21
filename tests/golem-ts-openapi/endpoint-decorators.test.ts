@@ -322,3 +322,30 @@ export class FlagsController {
   assert.deepEqual(responseOf(document, '/flags/boolean', 'get', '200').content?.['application/json']?.schema, { type: 'boolean' });
   assert.deepEqual(responseOf(document, '/flags/optional', 'get', '200').content?.['application/json']?.schema, { type: 'boolean' });
 });
+
+test('gives a Swagger response without a description an empty description, not Success', async (t: TestContext) => {
+  // protects: T-175 a 404 with no description is not described as Success
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiNotFoundResponse, ApiOkResponse, ApiResponse } from '@nestjs/swagger';
+
+@Controller('described')
+export class DescribedController {
+  @Get('bare')
+  @ApiNotFoundResponse()
+  bare(): void {}
+
+  @Get('named')
+  @ApiResponse({ status: 404, description: 'Gone' })
+  @ApiOkResponse({ description: 'Found' })
+  named(): void {}
+
+  @Get('plain')
+  plain(): void {}
+}
+`);
+  const document = documentOf(await generateDocument(root, 'Described'));
+  assert.equal(responseOf(document, '/described/bare', 'get', '404').description, '');
+  assert.equal(responseOf(document, '/described/named', 'get', '404').description, 'Gone');
+  assert.equal(responseOf(document, '/described/named', 'get', '200').description, 'Found');
+  assert.equal(responseOf(document, '/described/plain', 'get', '200').description, 'Success');
+});
