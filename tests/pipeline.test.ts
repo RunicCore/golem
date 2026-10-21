@@ -468,6 +468,37 @@ export function generate(context) {
   assert.match(fs.readFileSync(first, 'utf8'), /A$/, 'its output matches the reverted input');
 });
 
+test('a clean clone runs an OpenAPI job on the document that an earlier generator writes, and still rejects an input nothing produces', async (t: TestContext) => {
+  // protects: T-168 a job that reads an earlier job's output builds on a clean clone
+  const root = createFixtureProject(t, 'golem-pipeline-produced-input-');
+  linkProjectPackages(root, Object.fromEntries(['golem', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)])));
+  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"produced-input-fixture","type":"module"}');
+  copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
+  copyFixtureFile(root, 'packed/profile/api.json', 'spec-source.json');
+  const provider = path.join(root, 'node_modules/@fixture/spec');
+  fs.mkdirSync(provider, { recursive: true });
+  fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ name: '@fixture/spec', version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
+  fs.writeFileSync(path.join(provider, 'index.js'), `import fs from 'node:fs';
+import path from 'node:path';
+export const apiVersion = 1;
+export function generate(context) {
+  const source = path.join(context.directory, 'spec-source.json');
+  context.onInput(source);
+  const document = { ...JSON.parse(fs.readFileSync(source, 'utf8')), 'x-generator': '@fixture/spec' };
+  return { apiVersion: 1, artifacts: [{ path: path.join(context.output, 'api.json'), content: JSON.stringify(document) }], manifestPaths: [], watchInputs: [source] };
+}
+`);
+  const config = path.join(root, 'golem.yaml');
+  const yaml = (input: string): string => ['version: 1', 'generators:', "  - package: '@fixture/spec'", '    output: gen', 'openapi:', `  - input: ${input}`, '    output: sdk', '    name: Profile', ''].join('\n');
+  fs.writeFileSync(config, yaml('gen/api.json'));
+  assert.equal(fs.existsSync(path.join(root, 'gen/api.json')), false);
+  assert.deepEqual([...(await runPipeline(config)).ran], ['generator:gen', 'openapi:sdk']);
+  assert.equal(fs.existsSync(path.join(root, 'sdk/index.ts')), true);
+
+  fs.writeFileSync(config, yaml('elsewhere/api.json'));
+  await assert.rejects(runPipeline(config), /OpenAPI input does not exist: .*elsewhere[\\/]api\.json/);
+});
+
 /**
  * A project whose models job has its root in `pkg/`, a folder without a tsconfig.json. The tsconfig one folder up holds the
  * options the model source needs: a `paths` alias and bundler module resolution, which allows the extensionless import.
