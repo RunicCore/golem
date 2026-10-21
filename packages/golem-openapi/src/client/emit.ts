@@ -115,7 +115,7 @@ function literalType(value: unknown): string {
   return 'unknown';
 }
 
-export interface GeneratedClientModules {
+interface GeneratedClientModules {
   readonly client: string;
   /** Module paths are relative to the generated package root. */
   readonly operations: ReadonlyMap<string, string>;
@@ -545,7 +545,7 @@ ${metadata}
 type OperationValidationBundle = ReturnType<typeof buildOperationValidationSchemaBundle>;
 
 /** What the SDK's validators module compiles for the operations. */
-export interface OperationValidationSchemas {
+interface OperationValidationSchemas {
   /** The validation schema bundle of each operation, by operation name. */
   readonly bundles: ReadonlyMap<string, OperationValidationBundle>;
   /** The roots and resources of each operation, for `compileSdkValidators`. */

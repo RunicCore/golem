@@ -198,7 +198,6 @@ function descriptorExternalIds(
 
 function assertGeneratedNames(
   specifications: readonly ModelSpecification[],
-  profile: GolemProfile,
   externalIds: readonly string[],
   manifestIndex: ManifestIndex,
 ): Map<string, string> {
@@ -336,7 +335,7 @@ export interface TagSchema {
   readonly schema: Readonly<Record<string, unknown>>;
 }
 
-export interface TagSchemaCompilation {
+interface TagSchemaCompilation {
   readonly id: string;
   readonly schema: Readonly<Record<string, unknown>>;
   /** Metadata lookup keys that may share this compiled validator. */
@@ -764,7 +763,7 @@ export interface SourceModelGraph {
 const executableMemos = new WeakMap<object, ExecutableValidationMemo>();
 
 /** One job's type analysis: every model is described once, shared by all companions. */
-export interface JobAnalysis {
+interface JobAnalysis {
   readonly describe: ReturnType<typeof descriptorBuilder>;
   readonly described: Map<ModelSpecification, ModelConversionDescriptor>;
   /** Canonical filenames of the job's model sources. */
@@ -943,7 +942,7 @@ export function analyzeSourceGraph(
     (found, descriptor) => descriptorExternalIds(descriptor, found),
     new Set<string>(),
   )].sort();
-  const externalNames = assertGeneratedNames([...emitted], profile, externalIds, manifestIndex);
+  const externalNames = assertGeneratedNames([...emitted], externalIds, manifestIndex);
   const registry: BindingRegistry = { validations: new Map(), serde: new Map() };
   Object.values(owned).forEach((descriptor) => visitDescriptor(descriptor, registry));
   const ownedSpecifications = [...emitted].filter((specification) => !siblings.has(specification));
@@ -987,7 +986,7 @@ export function analyzeSourceGraph(
   };
 }
 
-export interface SourceSchemaGraphOptions {
+interface SourceSchemaGraphOptions {
   /** Job-fixed codec ids by model name, for this source's models and its siblings. */
   readonly codecIds?: ReadonlyMap<string, string>;
   /** Models emitted by another companion of the job. */
@@ -996,6 +995,8 @@ export interface SourceSchemaGraphOptions {
   readonly defaultValidation?: boolean;
   /** Codec ids and aliases of models emitted elsewhere that publish residual schemas. */
   readonly externalResidualIds?: { readonly modelOnly: ReadonlySet<string>; readonly wireOnly: ReadonlySet<string> };
+  /** Codec ids and aliases of models emitted elsewhere that publish a `#wire` schema. */
+  readonly externalWireIds?: ReadonlySet<string>;
 }
 
 export function internSourceDefinitions(
@@ -1006,6 +1007,7 @@ export function internSourceDefinitions(
   const schemaGraph = createSchemaGraph({}, {
     ...(options.codecIds ? { codecIds: options.codecIds } : {}),
     ...(options.externalResidualIds ? { externalResidualIds: options.externalResidualIds } : {}),
+    ...(options.externalWireIds ? { externalWireIds: options.externalWireIds } : {}),
   });
   const siblings = new Set(options.siblings ?? []);
   const interned = new Set<string>();
@@ -1079,7 +1081,7 @@ export function validatorImports(
 }
 
 /** What the app generated beside its model files, which a model file reads. */
-export interface AppOutputs {
+interface AppOutputs {
   /**
    * The generated validators module, the name it exports each root under and the name of each root's fast check (see
    * `PlanValidators.exports` and `fastExports`); set when the app validates.
@@ -1090,9 +1092,11 @@ export interface AppOutputs {
 }
 
 /** How this companion relates to the companions of the files its source imports. */
-export interface SiblingCodecOptions {
+interface SiblingCodecOptions {
   /** Sibling codecs whose companion exports a wire stringify. */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
+  /** Whether each sibling codec's model is recursive, by codec id. */
+  readonly siblingRecursion?: ReadonlyMap<string, boolean>;
   /**
    * Siblings whose sources import this one back. Their classes resolve by
    * codec id at decode time: importing the handwritten class would evaluate a
@@ -1102,7 +1106,7 @@ export interface SiblingCodecOptions {
 }
 
 /** Export name of an object-only model's conversion helper, keyed by codec id. */
-export function objectHelperExportName(kind: 'decode' | 'init' | 'encode', codecId: string): string {
+function objectHelperExportName(kind: 'decode' | 'init' | 'encode', codecId: string): string {
   return `__golem${kind[0].toUpperCase()}${kind.slice(1)}_${codecId.replace(/[^A-Za-z0-9_$]/g, '_')}`;
 }
 
@@ -1119,7 +1123,7 @@ export function emitSource(
   siblingCodecs: SiblingCodecOptions = {},
   appOutputs: AppOutputs = {},
 ): string | undefined {
-  const { siblingWireCodecIds, cyclicSiblings } = siblingCodecs;
+  const { siblingWireCodecIds, siblingRecursion, cyclicSiblings } = siblingCodecs;
   const graph = preparedGraph ?? analyzeSourceGraph(source, output, checker, specifications, manifestIndex, profile, identityRoot);
   if (!graph) return undefined;
   const { definitions, externalIds, externalNames, registry } = graph;
@@ -1363,6 +1367,11 @@ export function emitSource(
     readonly decode: readonly string[];
     readonly init: readonly string[];
   }>();
+  const resolveToJsonAny = (id: string): ToJsonModelResolver => projectionNames.has(id) ? resolveProjection(id)
+    : siblingObjectNames.has(id) ? resolveSiblingObject(id)
+    : localNames.has(id)
+      ? { className: `${id}BaseModel`, discriminators: discriminators(id), encode: (value: string) => `encodeGeneratedModel(${value})` }
+      : resolveToJsonModel(externalNames, id);
   for (const { specification, fields, descriptors } of localEmissions) {
     const helpers: string[] = [];
     const encode = fields.map((field) => {
@@ -1373,11 +1382,7 @@ export function emitSource(
       const emitEncode = (value: string): string => emitModelToJSON(
         descriptor,
         value,
-        (id) => projectionNames.has(id) ? resolveProjection(id)
-          : siblingObjectNames.has(id) ? resolveSiblingObject(id)
-          : localNames.has(id)
-            ? { className: `${id}BaseModel`, discriminators: discriminators(id), encode: (value: string) => `encodeGeneratedModel(${value})` }
-            : resolveToJsonModel(externalNames, id),
+        resolveToJsonAny,
         {
           deserialize: (_id, value) => value,
           serialize: (id, value) => serdeExpression(id, 'serialize', value),
@@ -1429,6 +1434,27 @@ export function emitSource(
       const initType = (local: string): string => `${local}: ${specification.name}Init[${JSON.stringify(initCaptures.find(([, name]) => name === local)?.[0])}]`;
       init.unshift(`    ${presentKeysSource('values', initCaptures, initType)}`);
     }
+    // A model with a dynamic map (an index signature) keeps the keys outside its fields as data: the constructor and
+    // encode copy them, and decode converts them, each by the conversion of the map value. A default-open model has no
+    // map and writes its declared fields only.
+    const mapDefinition = definitions[specification.name];
+    if (mapDefinition?.kind === 'object' && typeof mapDefinition.additionalProperties === 'object') {
+      const mapValue = mapDefinition.additionalProperties;
+      const known = `__knownKeys_${specification.name}`;
+      helpers.push(`const ${known}: ReadonlySet<string> = new Set<string>([${fields.map((field) => JSON.stringify(field.getName())).join(', ')}]);`);
+      const serde = {
+        deserialize: (id: string, value: string) => serdeExpression(id, 'deserialize', value),
+        serialize: (id: string, value: string) => serdeExpression(id, 'serialize', value),
+      };
+      const decodeMapValue = wrapRootConversion(helpers, specification.name, 'deserialize', 'key', 'value', (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), 'unknown');
+      const encodeMapValue = wrapRootConversion(helpers, specification.name, 'serialize', 'key', 'value', (value) => emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value }), `${specification.name}Fields[string]`);
+      const initMapValue = emitModelFromInit(mapValue, 'value', resolveFromAny);
+      if (decodeMapValue !== 'value') {
+        decode.push(`  for (const key of Object.keys(result)) if (!${known}.has(key)) { const value = result[key]; if (value !== undefined) defineModelProperty(result, key, ${decodeMapValue}); }`);
+      }
+      init.push(`    for (const key of Object.keys(values)) if (!${known}.has(key)) { const value = (values as Record<string, ${specification.name}Init[string]>)[key]; if (value !== undefined) defineModelProperty(this, key, ${initMapValue}); }`);
+      encode.push(`  for (const key of Object.keys(model)) if (!${known}.has(key)) { const value = (model as unknown as Record<string, ${specification.name}Fields[string]>)[key]; if (value !== undefined) defineModelProperty(result, key, ${encodeMapValue}); }`);
+    }
     rootFieldExpressions.set(specification.name, { helpers, encode, decode, init });
   }
   const hasDate = Object.values(definitions).some((descriptor) => {
@@ -1460,12 +1486,15 @@ export function emitSource(
   conversionHelpers.add('define');
   conversionHelpers.add('field');
   const conversionImports = [
+    'assertAcyclicEncodeInput',
     'assertPropertyAcyclic',
     'assertWireAcyclic',
     'beginDecode',
+    'beginEncode',
     'decodeCheckedInput',
     'decodeDetachedInput',
     'endDecode',
+    'endEncode',
     ...(needsGeneratedDecode ? ['decodeGeneratedModelTrusted'] : []),
     ...(needsGeneratedEncode ? ['encodeGeneratedModel'] : []),
     ...(conversionHelpers.has('field') ? ['convertModelField', 'convertModelItems', 'convertModelTupleItems'] : []),
@@ -1481,7 +1510,7 @@ export function emitSource(
   }
   if (hasDate) lines.push("import { deserializeDate, serializeDate } from '@exprtlabs/golem/conversion';");
   lines.push(...classValueImports);
-  lines.push("import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, withoutInstanceState, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
+  lines.push("import { assertModelValue, createObjectCodec, isValidModelValue, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationUnavailable, withoutInstanceState, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';");
   // A class model registers the MobX validator hook when the app validates it and uses MobX.
   const observesValidator = (specification: ModelSpecification): boolean => profile.mobx && (specification.validation ?? profile.validation);
   if (localEmissions.some(({ specification }) => specification.emitClass && observesValidator(specification))) {
@@ -1618,7 +1647,7 @@ export function emitSource(
         return `  declare ${definition.kind === "object" && definition.readonlyProperties?.includes(field.getName()) ? "readonly " : ""}${propertyName(field.getName())}${optional}: ${fieldsName}[${JSON.stringify(field.getName())}];`;
       }),
       '',
-      `  public constructor(${fields.length ? 'values' : '_values'}: ${specification.name}Init = {}) {`,
+      `  public constructor(${initFields.length ? 'values' : '_values'}: ${specification.name}Init = {}) {`,
       ...initFields,
       '  }',
       '',
@@ -1656,7 +1685,7 @@ export function emitSource(
       `    encode: encode${specification.name}Model,`,
       '  },',
       `  codecId: ${JSON.stringify(schemaGraph.nodeFor(definition, specification.name)?.codecId ?? specification.name)},`,
-      `  profile: { validation: ${(specification.validation ?? profile.validation) ? 'true' : 'false'}, mobx: ${profile.mobx ? 'true' : 'false'} },`,
+      `  profile: { validation: ${(specification.validation ?? profile.validation) ? 'true' : 'false'} },`,
       ...(observesValidator(specification) ? ['  enhanceValidator: enhanceValidatorWithMobX,'] : []),
       // A model with a dynamic map has no program state: the keys outside its fields are data.
       ...(definition.kind === 'object' && definition.additionalProperties ? ['  additionalProperties: true,'] : []),
@@ -1738,6 +1767,7 @@ export function emitSource(
       // A derived projection (an Omit, Pick or alias of a model) is not a model the user declared; other files reach it by codec id.
       privateCodec: (node) => Object.hasOwn(definitions, node.name) && !localNames.has(node.name),
       ...(siblingWireCodecIds ? { siblingWireCodecIds } : {}),
+      ...(siblingRecursion ? { siblingRecursion } : {}),
       exportWireStringify: true,
     },
   );

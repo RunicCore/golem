@@ -532,56 +532,54 @@ function dependentRequiredMap(
   return result;
 }
 
+const TAG_NAMES: ReadonlySet<string> = new Set([
+  'TValidation',
+  'TSerde',
+  'Integer',
+  'Minimum',
+  'Maximum',
+  'Min',
+  'Max',
+  'ExclusiveMinimum',
+  'ExclusiveMaximum',
+  'ExclusiveMin',
+  'ExclusiveMax',
+  'MultipleOf',
+  'MinLength',
+  'MaxLength',
+  'Pattern',
+  'Format',
+  'MinItems',
+  'MaxItems',
+  'UniqueItems',
+  'MinProperties',
+  'MaxProperties',
+  'MinProps',
+  'MaxProps',
+  'Contains',
+  'MinContains',
+  'MaxContains',
+  'PropertyNames',
+  'PatternProperties',
+  'AdditionalProperties',
+  'UnevaluatedProperties',
+  'DependentRequired',
+  'DependentSchemas',
+  'OneOf',
+  'Not',
+  'IfThenElse',
+]);
+
 function tagReferenceName(
   context: TagAnalysisContext,
   node: ts.TypeReferenceNode,
 ): string | undefined {
-  const text = node.typeName.getText();
-  const name = ts.isIdentifier(node.typeName)
-    ? node.typeName.text
-    : node.typeName.right.text;
   const symbolAtNode = context.checker.getSymbolAtLocation(node.typeName);
   if (!isGolemTagSymbol(context.checker, symbolAtNode)) return undefined;
   const symbol = targetSymbol(context.checker, symbolAtNode);
+  // The meaning comes from the tag the reference resolves to; the name written at the use site is the importer's choice.
   const symbolName = symbol?.getName();
-  const names = new Set([text, name, symbolName].filter((value): value is string => Boolean(value)));
-  return [...names].find((candidate) => new Set([
-    'TValidation',
-    'TSerde',
-    'Integer',
-    'Minimum',
-    'Maximum',
-    'Min',
-    'Max',
-    'ExclusiveMinimum',
-    'ExclusiveMaximum',
-    'ExclusiveMin',
-    'ExclusiveMax',
-    'MultipleOf',
-    'MinLength',
-    'MaxLength',
-    'Pattern',
-    'Format',
-    'MinItems',
-    'MaxItems',
-    'UniqueItems',
-    'MinProperties',
-    'MaxProperties',
-    'MinProps',
-    'MaxProps',
-    'Contains',
-    'MinContains',
-    'MaxContains',
-    'PropertyNames',
-    'PatternProperties',
-    'AdditionalProperties',
-    'UnevaluatedProperties',
-    'DependentRequired',
-    'DependentSchemas',
-    'OneOf',
-    'Not',
-    'IfThenElse',
-  ]).has(candidate));
+  return symbolName !== undefined && TAG_NAMES.has(symbolName) ? symbolName : undefined;
 }
 
 function dependsOnAliasParameter(context: TagAnalysisContext, node: ts.Node): boolean {
@@ -964,9 +962,22 @@ function metadataFromType(
   return EMPTY;
 }
 
+/**
+ * Whether a library or an ambient declaration file declares `symbol`. A `declare global` block in the user's source
+ * augments such a symbol and does not change that; a type that only the user's own source declares is not one.
+ */
+export function isAmbientOrGlobalSymbol(symbol: ts.Symbol | undefined): boolean {
+  if (!symbol) return true;
+  const declarations = symbol.declarations ?? [];
+  return declarations.length === 0 || declarations.some((declaration) => declaration.getSourceFile().isDeclarationFile);
+}
+
 export function isDateType(checker: ts.TypeChecker, type: ts.Type): boolean {
   const symbol = type.getSymbol?.() ?? type.aliasSymbol;
-  return symbol?.getName() === 'Date' || checker.typeToString(type) === 'Date';
+  if (!symbol) return checker.typeToString(type) === 'Date';
+  // Only the global Date is a date: a class or interface the user declares under that name keeps its own shape.
+  const name = symbol.getName();
+  return name === 'Date' && isAmbientOrGlobalSymbol(symbol);
 }
 
 function emptyBase(node: ts.TypeNode): TagReadResult {
@@ -1042,8 +1053,4 @@ export function analyzeNode(
     return { baseNode: result.baseNode ?? node, metadata: { ...metadata, date: true } };
   }
   return { baseNode: result.baseNode, metadata };
-}
-
-export function mergeTagMetadata(...metadata: readonly TagMetadata[]): TagMetadata {
-  return metadata.reduce(mergeMetadata, EMPTY);
 }

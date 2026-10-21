@@ -11,6 +11,7 @@ import type {
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
 import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
+import { reachesRecursiveNode } from '@exprtlabs/golem/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
 import {
   analyzeSourceGraph,
@@ -145,7 +146,7 @@ const SESSION_OWNER = '@exprtlabs/golem-model';
 
 /** A job without model files still watches the project, so a model file added later is seen. */
 function emptyResult(info: ProgramInfo, program: ts.Program, root: string): GolemModelResult {
-  const watchInputs = projectWatchInputs(info, program, root, [], discoverModelManifests(root));
+  const watchInputs = projectWatchInputs(info, program, [], discoverModelManifests(root));
   return { artifacts: [], manifestPaths: [], watchInputs };
 }
 
@@ -174,6 +175,7 @@ interface SourceSchemaGraph {
   readonly graph: SourceModelGraph;
   readonly schemaGraph: SchemaGraph;
   readonly siblingWireCodecIds: ReadonlySet<string>;
+  readonly siblingRecursion: ReadonlyMap<string, boolean>;
   /** Siblings declared by sources in the same import cycle as this one. */
   readonly cyclicSiblings: ReadonlySet<string>;
 }
@@ -232,12 +234,19 @@ function internJobSchemaGraphs(
 ): SourceSchemaGraph[] {
   const codecIds = new Map<ModelSpecification, string>();
   const wireSchemas = new Set<string>();
+  // Every codec emitted elsewhere that publishes a `#wire` schema: the companions above and the manifests below.
+  const wirePlanes = new Set<string>();
+  // Whether each model reaches a recursive model: those emitted by this job, and those of an SDK manifest that publishes
+  // it. A model with no entry counts as recursive.
+  const recursion = new Map<string, boolean>();
   // Models emitted elsewhere (SDK manifests, earlier companions) that publish residual schemas.
   const residualIds = { modelOnly: new Set<string>(), wireOnly: new Set<string>() };
   for (const entry of closure) {
     const names = [entry.codecId, ...(entry.aliases ?? [])];
     if (entry.modelOnlySchema !== undefined) names.forEach((name) => residualIds.modelOnly.add(name));
     if (entry.wireOnlySchema !== undefined) names.forEach((name) => residualIds.wireOnly.add(name));
+    if (entry.wireSchema !== undefined) names.forEach((name) => wirePlanes.add(name));
+    if (entry.recursive !== undefined) names.forEach((name) => recursion.set(name, entry.recursive ?? true));
   }
   const byGraph = new Map<SourceModelGraph, SourceSchemaGraph>();
   const idsFor = (graph: SourceModelGraph, own: ReadonlyMap<string, string>): Map<string, string> => new Map([
@@ -254,7 +263,11 @@ function internJobSchemaGraphs(
       const node = descriptor ? schemaGraph.nodeFor(descriptor, specification.name) : undefined;
       if (!node) continue;
       codecIds.set(specification, node.codecId);
-      if (!node.sameSchema) wireSchemas.add(node.codecId);
+      recursion.set(node.codecId, reachesRecursiveNode(schemaGraph, node, recursion));
+      if (!node.sameSchema) {
+        wireSchemas.add(node.codecId);
+        wirePlanes.add(node.codecId);
+      }
       for (const name of [node.codecId, specification.name]) {
         if (node.modelOnlyJsonSchema !== undefined) residualIds.modelOnly.add(name);
         if (node.wireOnlyJsonSchema !== undefined) residualIds.wireOnly.add(name);
@@ -270,9 +283,10 @@ function internJobSchemaGraphs(
         siblings: graph.siblings,
         defaultValidation,
         externalResidualIds: residualIds,
+        externalWireIds: wirePlanes,
       });
       record(graph, schemaGraph);
-      byGraph.set(graph, { graph, schemaGraph, siblingWireCodecIds: wireSchemas, cyclicSiblings: new Set() });
+      byGraph.set(graph, { graph, schemaGraph, siblingWireCodecIds: wireSchemas, siblingRecursion: recursion, cyclicSiblings: new Set() });
       continue;
     }
     // Sources that reference each other share one id assignment for their models.
@@ -303,6 +317,7 @@ function internJobSchemaGraphs(
       siblings: outside,
       defaultValidation,
       externalResidualIds: residualIds,
+      externalWireIds: wirePlanes,
     });
     for (const graph of component) record(graph, shared);
     for (const graph of component) {
@@ -317,12 +332,13 @@ function internJobSchemaGraphs(
         siblings: graph.siblings,
         defaultValidation,
         externalResidualIds: residualIds,
+        externalWireIds: wirePlanes,
       });
       const cyclicSiblings = new Set(graph.siblings
         .filter((sibling) => component.some((member) => member !== graph
           && member.emitted.includes(sibling) && !member.siblings.includes(sibling)))
         .map((sibling) => sibling.name));
-      byGraph.set(graph, { graph, schemaGraph, siblingWireCodecIds: wireSchemas, cyclicSiblings });
+      byGraph.set(graph, { graph, schemaGraph, siblingWireCodecIds: wireSchemas, siblingRecursion: recursion, cyclicSiblings });
     }
   }
   return graphs.flatMap((graph) => {
@@ -498,7 +514,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     return {
       artifacts: [],
       manifestPaths: [],
-      watchInputs: projectWatchInputs(programInfo, programInfo.program, normalized.root, sources, referencedManifestFiles(graphs, manifestIndex)),
+      watchInputs: projectWatchInputs(programInfo, programInfo.program, sources, referencedManifestFiles(graphs, manifestIndex)),
       diagnostics: validatorDiagnostics,
     };
   }
@@ -509,7 +525,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   if (validators) {
     artifacts.push({ path: validatorsOutput, content: validators.source });
   }
-  for (const { graph, schemaGraph, siblingWireCodecIds, cyclicSiblings } of graphSchemaPairs) {
+  for (const { graph, schemaGraph, siblingWireCodecIds, siblingRecursion, cyclicSiblings } of graphSchemaPairs) {
     const { source, output } = graph;
     const content = emitSource(
       source,
@@ -521,7 +537,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       normalized.root,
       graph,
       schemaGraph,
-      { siblingWireCodecIds, cyclicSiblings },
+      { siblingWireCodecIds, siblingRecursion, cyclicSiblings },
       {
         ...(planSchemas ? { planSchemas } : {}),
         ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports } } : {}),
@@ -564,7 +580,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
     watchInputs: projectWatchInputs(
       programInfo,
       prospective,
-      normalized.root,
       sources,
       referencedManifestFiles(graphs, manifestIndex),
     ),

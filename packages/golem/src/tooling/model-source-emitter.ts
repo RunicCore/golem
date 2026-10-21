@@ -1,13 +1,12 @@
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 export {
-  emitCodecRegistration,
   emitCodecRuntime,
   emitGraphStringify,
-  emitParseFunction,
   emitStringifyFunction,
   fillFunctionName,
   fromWireFunctionName,
   parseFunctionName,
+  reachesRecursiveNode,
   stringifyFunctionName,
   wireStringifyExportName,
   toWireFunctionName,
@@ -502,13 +501,40 @@ export function emitModelFromJSON(
   return emitNested(descriptor, expression, 'fromJSON', resolveModel, resolveSerde);
 }
 
+/** Whether a value of `descriptor` can hold a value of `unknown` or `any` type, which can hold a model instance at any depth. */
+function holdsUnknown(descriptor: ModelConversionDescriptor): boolean {
+  if (metadata(descriptor).serde) return false;
+  switch (descriptor.kind) {
+    case 'unknown':
+    case 'any':
+      return true;
+    case 'array':
+      return holdsUnknown(descriptor.item);
+    case 'tuple':
+      return descriptor.items.some(holdsUnknown) || (descriptor.rest !== undefined && holdsUnknown(descriptor.rest.item));
+    case 'union':
+    case 'intersection':
+      return descriptor.variants.some(holdsUnknown);
+    case 'object':
+      return Object.values(descriptor.properties).some(holdsUnknown)
+        || (typeof descriptor.additionalProperties === 'object' && holdsUnknown(descriptor.additionalProperties));
+    default:
+      return false;
+  }
+}
+
+/**
+ * The class-level encode of a model value. A value that can hold an `unknown` or `any` value is written without the
+ * program state of a model instance inside it, as stringify and toWireFormat write it.
+ */
 export function emitModelToJSON(
   descriptor: ModelConversionDescriptor,
   expression: string,
   resolveModel: (id: string) => ToJsonModelResolver,
   resolveSerde?: SerdeResolver,
 ): string {
-  return emitNested(descriptor, expression, 'toJSON', resolveModel, resolveSerde);
+  const converted = emitNested(descriptor, expression, 'toJSON', resolveModel, resolveSerde);
+  return holdsUnknown(descriptor) ? `withoutInstanceState(${converted})` : converted;
 }
 
 /** Emit nested construction of domain models from partial model initializers. */

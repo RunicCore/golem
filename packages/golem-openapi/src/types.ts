@@ -9,21 +9,20 @@ import {
   type NormalizedOperation,
   type NormalizedResponse,
   type OpenApiMediaType,
-  type OpenApiSchema,
 } from './normalize.js';
 import { manifestMarker } from '@exprtlabs/golem/manifest';
 import { generatedBanner } from './package-info.js';
 import { ComponentNameScope } from './origin.js';
 import { projectSchema, collectCanonicalResources, nextSchemaBase, resolveSchemaTarget, schemaDocumentBase, schemaTargetIdentity, type ResolvedSchemaTarget, type ResourceIndex } from './schema-projection.js';
 
-export type TextSchemaKind = 'string' | 'unknown' | 'non-string' | 'ambiguous';
+type TextSchemaKind = 'string' | 'unknown' | 'non-string' | 'ambiguous';
 
-export interface TextSchemaClassification {
+interface TextSchemaClassification {
   readonly kind: TextSchemaKind;
   readonly schemaType: string;
 }
 
-export interface TextCodecRequirement {
+interface TextCodecRequirement {
   readonly option: 'bodyEncoders' | 'responseDecoders';
   readonly schemaType: string;
 }
@@ -202,7 +201,7 @@ function classifyTextSchemaNode(
   }
 }
 
-export function classifyTextSchema(schema: unknown, document: unknown): TextSchemaClassification {
+function classifyTextSchema(schema: unknown, document: unknown): TextSchemaClassification {
   return classifyTextSchemaNode(schema, {
     document,
     resources: collectCanonicalResources(document),
@@ -722,7 +721,7 @@ function responseBodyType(response: NormalizedResponse, context: SchemaTypeConte
   return unionType(types);
 }
 
-export function mediaBodyType(media: OpenApiMediaType, context: SchemaTypeContext = {}): string {
+function mediaBodyType(media: OpenApiMediaType, context: SchemaTypeContext = {}): string {
   if (media.itemSchemaPresent) {
     return `AsyncIterable<${schemaType(media.itemSchema, context)}>`;
   }

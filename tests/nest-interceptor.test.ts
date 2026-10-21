@@ -402,12 +402,12 @@ test('Nest return metadata cache is per controller and handler and codec lookup 
   const lateResponse = adapterResponse('express', lateProbe);
   const lateInterceptor = new NestModelInterceptor();
   const unregistered = { id: 'late' };
-  assert.equal(await firstValueFrom(interceptResponse(
+  assert.throws(() => interceptResponse(
     lateInterceptor,
     lateResponse,
     [unregistered],
     { klass: LateController, handler: lateHandler },
-  )), unregistered);
+  ), TypeError);
   markerCodec(lateId);
   assert.equal(await firstValueFrom(interceptResponse(
     lateInterceptor,
@@ -1023,6 +1023,54 @@ test('NestModelInterceptor answers 200 with the declared fields of a returned mo
     const list = await fetch(`${base}/state/list`);
     assert.equal(list.status, 200);
     assert.deepEqual(await list.json(), [{ title: 'b' }, { title: 'c', done: false }]);
+  } finally {
+    await application.close();
+  }
+});
+
+test('NestModelInterceptor answers 500 for a marked return with no codec and passes an unmarked return through', async () => {
+  // protects: bug T-166 a marked return whose codec never loaded was sent as plain Nest JSON
+  const id = 'NeverLoaded_cccccccc';
+  let markedRuns = 0;
+  class UnloadedController {
+    marked() { markedRuns += 1; return { secret: 'raw' }; }
+    plain() { return { note: 'raw' }; }
+  }
+  Controller('unloaded')(UnloadedController);
+  for (const name of ['marked', 'plain'] as const) {
+    const descriptor = Object.getOwnPropertyDescriptor(UnloadedController.prototype, name);
+    assert.ok(descriptor);
+    Get(name)(UnloadedController.prototype, name, descriptor);
+  }
+  nestModelReturn(id)(UnloadedController.prototype, 'marked', Object.getOwnPropertyDescriptor(UnloadedController.prototype, 'marked')!);
+  class AppModule {}
+  Module({ controllers: [UnloadedController] })(AppModule);
+  const errors: string[] = [];
+  const logger = {
+    log() {},
+    warn() {},
+    debug() {},
+    verbose() {},
+    error(message: unknown, ...rest: unknown[]) {
+      errors.push([message, ...rest].map((part) => part instanceof Error ? `${part.name}: ${part.message}` : String(part)).join(' '));
+    },
+  };
+  const application = await NestFactory.create(AppModule, { logger });
+  application.useGlobalInterceptors(new NestModelInterceptor());
+  await application.listen(0, '127.0.0.1');
+  try {
+    const base = await application.getUrl();
+    const plain = await fetch(`${base}/unloaded/plain`);
+    assert.equal(plain.status, 200);
+    assert.deepEqual(await plain.json(), { note: 'raw' });
+    const marked = await fetch(`${base}/unloaded/marked`);
+    assert.equal(marked.status, 500);
+    assert.doesNotMatch(await marked.text(), /secret/);
+    assert.equal(markedRuns, 0, 'the handler does not run when its return codec is missing');
+    // Nest reports an unhandled error after the response settles; let it flush.
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    assert.equal(errors.length, 1, errors.join('\n'));
+    assert.match(errors[0] ?? '', /^TypeError: golem fault: the build marked the return of UnloadedController\.marked with model "NeverLoaded_cccccccc", but the generated module of that model did not load/);
   } finally {
     await application.close();
   }

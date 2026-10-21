@@ -28,7 +28,7 @@ export interface OperationBuildContext {
   readonly resolveSchemaReference?: (reference: string) => OpenApiSchema | undefined;
 }
 
-export interface OperationBuildResult {
+interface OperationBuildResult {
   readonly paths: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
 }
 
@@ -117,9 +117,10 @@ function primitiveResponseSchema(checker: ts.TypeChecker, type: ts.Type): OpenAp
   if (type.isUnion()) {
     const members = type.types.filter(item => (item.flags & ts.TypeFlags.Undefined) === 0);
     const schemas = members.map(member => primitiveResponseSchema(checker, member));
-    return schemas.every((item): item is OpenApiSchema => item !== undefined)
-      ? schemas.length === 1 ? schemas[0] : { anyOf: schemas }
-      : undefined;
+    if (!schemas.every((item): item is OpenApiSchema => item !== undefined)) return undefined;
+    // `true | false` is one boolean schema, not two.
+    const distinct = [...new Map(schemas.map(item => [JSON.stringify(item), item])).values()];
+    return distinct.length === 1 ? distinct[0] : { anyOf: distinct };
   }
   if (checker.isArrayType(type)) {
     const item = checker.getTypeArguments(type as ts.TypeReference)[0];
@@ -387,7 +388,7 @@ async function responseObject(
   route: ControllerRoute,
   response: ResponseDescription,
 ): Promise<Record<string, unknown>> {
-  const result: Record<string, unknown> = { description: response.description || 'Success' };
+  const result: Record<string, unknown> = { description: response.description ?? '' };
   if (response.headers) result.headers = response.headers;
   const specialResponseType = response.type ?? response.declaredType;
   const specialResponse = specialResponseType

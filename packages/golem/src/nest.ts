@@ -532,7 +532,7 @@ export class NestModelInterceptor implements NestInterceptor {
             const id = codecIdFromMetatype(metatype);
             throw new TypeError(id === undefined
               ? `NestModelInterceptor needs an IModel or IObject type for ${where}. Declare the input as an IModel or IObject, or write your own interceptor.`
-              : `NestModelInterceptor found no registered codec "${id}" for ${where}. Import the model module as a value, so its codec registers before the controller class loads.`);
+              : `golem fault: NestModelInterceptor found no registered codec "${id}" for ${where}. The rewrite loads the generated module of the model, and that module did not load. Run golem generate and rewrite the file again.`);
           }
           const construct = boundConstruct(metatype);
           const array = boundArray(metatype);
@@ -582,8 +582,15 @@ export class NestModelInterceptor implements NestInterceptor {
       httpError(error);
     }
     const declared = this.returnMetadata(klass, handler);
-    const codec = declared ? getObjectCodec(declared.id) : undefined;
-    if (!declared || !codec) return next.handle();
+    // A return without the golem mark stays plain Nest JSON.
+    if (!declared) return next.handle();
+    const codec = getObjectCodec(declared.id);
+    if (!codec) {
+      // The build marked this return, so a missing codec is a golem fault, not a controller declaration: Nest answers 500 before the handler runs.
+      throw new TypeError(
+        `golem fault: the build marked the return of ${klass.name}.${handler.name} with model "${declared.id}", but the generated module of that model did not load, so its codec is not registered.`,
+      );
+    }
     const response = context.switchToHttp().getResponse<HttpResponse>();
     const source = next.handle();
     const project = this.modelProjectionFactory(response, codec, declared.array);

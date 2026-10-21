@@ -3,7 +3,7 @@ import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModul
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
 import { instanceFieldsSource, presentKeysSource, presentValueSource } from '../../presence.js';
 
-export interface EmitOptions {
+interface EmitOptions {
   /** The module specifier the generated file imports its runtime helpers from. */
   readonly runtimeModule: string;
   /** Types each exported validator as a `Validator`, for a TypeScript file. */
@@ -12,7 +12,7 @@ export interface EmitOptions {
   readonly fastPath?: boolean | ReadonlySet<string>;
 }
 
-export interface EmitResult {
+interface EmitResult {
   readonly source: string;
   /** The name each root's fast check is exported under, by root name; only roots that have one. */
   readonly fastExports: ReadonlyMap<string, string>;
@@ -430,7 +430,7 @@ const FULL_VALIDATOR: WriterMode = {
     for (const line of presence.setup) writer.line(line);
     const keys = writer.fresh('keys');
     if (reads.all) writer.line(`const ${keys} = ${writer.state.localHelper('definedKeys')}(${value});`);
-    if (check.minProperties === undefined && check.maxProperties === undefined) return { presence, count: `${keys}.length`, ...(reads.all ? { keys } : {}) };
+    if (check.minProperties === undefined && check.maxProperties === undefined) return { presence, ...(reads.all ? { keys } : {}) };
     // The program state of a model instance does not count.
     const count = writer.fresh('count');
     const key = writer.fresh('key');

@@ -127,8 +127,8 @@ export type TOpted = IModel<{ at: Date }, { validation: true }>;
   const content = (name: string): string => artifacts.find((artifact) => artifact.path.endsWith(name))?.content ?? '';
   assert.match(content('opted.model.generated.ts'), /import \{ [^}]*validate_TOpted_\w+[^}]* \} from "[^"]*models\.validators\.generated\.js";/);
   assert.doesNotMatch(content('plain.model.generated.ts'), /models\.validators\.generated/);
-  assert.match(content('plain.model.generated.ts'), /profile: \{ validation: false, mobx: false \}/);
-  assert.match(content('opted.model.generated.ts'), /profile: \{ validation: true, mobx: false \}/);
+  assert.match(content('plain.model.generated.ts'), /profile: \{ validation: false \}/);
+  assert.match(content('opted.model.generated.ts'), /profile: \{ validation: true \}/);
 });
 
 const cycleSources = {

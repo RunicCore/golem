@@ -3,6 +3,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 
@@ -37,7 +38,16 @@ const document = {
       Holder: { type: 'object', required: ['base'], properties: { base: ref('Base') } },
       Tree: { type: 'object', required: ['label'], properties: { label: { type: 'string' }, child: ref('Tree') } },
       Open: { type: 'object', additionalProperties: true, required: ['id'], properties: { id: { type: 'string' } } },
+      // Objects that declare no field: closed, open only by default, and open by an explicit additionalProperties true.
+      EmptyClosed: { type: 'object', additionalProperties: false },
+      EmptyDefault: { type: 'object', properties: {} },
+      EmptyOpen: { type: 'object', additionalProperties: true },
+      // A field of unknown type, and a composed root with a model in a field.
+      Note: { type: 'object', required: ['title'], properties: { title: { type: 'string' }, data: {} } },
+      Lead: { allOf: [{ type: 'object', required: ['lead'], properties: { lead: ref('Base') } }, { oneOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] }] },
       Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
+      // A plain field and a converted one (date-time), to read through the constructor, decode and encode.
+      Stamped: { type: 'object', properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } } },
     },
   },
 };
@@ -168,4 +178,101 @@ test('options a user passes with a checked key still take the lenient path', asy
   const { models } = await validatedSdk();
   const stringifyItem = models.stringifyItem as (value: unknown, options?: object) => string;
   assert.equal(stringifyItem({ serverId: 's' }, { validate: false, checked: true }), '{"serverId":"s"}', 'the missing name is left out');
+});
+
+const programState = () => ({ cache: new Map<string, string>(), hits: 3 });
+
+for (const [name, root, keeps] of [['closed', 'EmptyClosed', false], ['open only by default', 'EmptyDefault', false], ['open by an explicit additionalProperties true', 'EmptyOpen', true]] as const) {
+  test(`an object with no declared field and ${name} writes the same in stringify and toWireFormat`, async () => {
+    // protects: bug T-158 toWireFormat of a model with no declared field returned the instance with its program state; stringify wrote {}
+    const { output, models } = await validatedSdk();
+    const Model = models[`${root}Model`] as Model;
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(output, root));
+    // An instance of a model with an explicit additionalProperties true has no program state: its own keys are data.
+    const state = Object.assign(new Model({}), keeps ? { extra: 'x' } : programState());
+    const wire = codec.toWireFormat(state);
+    assert.deepEqual(wire, keeps ? { extra: 'x' } : {}, 'program state is never written');
+    assert.notEqual(wire, state, 'the wire value is not the instance');
+    assert.equal(codec.stringify(state), keeps ? '{"extra":"x"}' : '{}');
+    const plain = { extra: 'x' };
+    assert.deepEqual(codec.toWireFormat(plain), keeps ? { extra: 'x' } : {}, 'a plain value');
+    assert.equal(codec.stringify(plain), keeps ? '{"extra":"x"}' : '{}', 'a plain value');
+  });
+}
+
+for (const validation of [true, false]) {
+  test(`a model instance at any depth in an unknown field writes no program state (validation ${validation ? 'on' : 'off'})`, async () => {
+    // protects: bug T-164 only the top value of an unknown field lost its program state; an instance inside an array or object kept it
+    const { output, models } = await (validation ? validatedSdk : unvalidatedSdk)();
+    const [Base, EmptyOpen] = [models.BaseModel, models.EmptyOpenModel] as Model[];
+    const note = requireObjectCodec(generatedCodecIdFromRoot(output, 'Note'));
+    const task = () => Object.assign(new Base({ name: 't' }), programState());
+    const cases: readonly [string, unknown, unknown][] = [
+      ['an array', [task()], [{ name: 't' }]],
+      ['a nested plain object', { inner: { list: [1, task()] } }, { inner: { list: [1, { name: 't' }] } }],
+      ['an instance', task(), { name: 't' }],
+      ['a value with no model instance', { a: [1, { b: null }], c: 'x', d: [] }, { a: [1, { b: null }], c: 'x', d: [] }],
+      ['a scalar', 'text', 'text'],
+    ];
+    for (const [label, data, expected] of cases) {
+      const value = { title: 'n', data };
+      assert.deepEqual(note.toWireFormat(value), { title: 'n', data: expected }, `toWireFormat of ${label}`);
+      assert.equal(note.stringify(value), JSON.stringify({ title: 'n', data: expected }), `stringify of ${label}`);
+    }
+    const open = codec('EmptyOpen');
+    const extra = Object.assign(new EmptyOpen({}), { extra: task() });
+    assert.deepEqual(open.toWireFormat(extra), { extra: { name: 't' } }, 'an extra key of an explicit additionalProperties true');
+    assert.equal(open.stringify(extra), '{"extra":{"name":"t"}}');
+
+    function codec(root: string) { return requireObjectCodec(generatedCodecIdFromRoot(output, root)); }
+  });
+}
+
+test('a model instance in a field of a composed root writes no program state', async () => {
+  // protects: bug T-157 a composed root with a member that is no object wrote an instance of a field as it was
+  const { output, models } = await unvalidatedSdk();
+  const Base = models.BaseModel as Model;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Lead'));
+  const value = { lead: Object.assign(new Base({ name: 'n' }), programState()), a: 'x' };
+  assert.deepEqual(codec.toWireFormat(value), { lead: { name: 'n' }, a: 'x' });
+  assert.equal(codec.stringify(value), '{"lead":{"name":"n"},"a":"x"}');
+});
+
+test('the class-level encode of an SDK model writes no program state of an instance inside its unknown field', async () => {
+  // protects: bug T-164 a model nested as a field of another model is encoded by the class-level encode, which kept the state of an instance in its unknown field
+  const { models } = await validatedSdk();
+  const [Base, Note] = [models.BaseModel, models.NoteModel] as Model[];
+  const task = Object.assign(new Base({ name: 't' }), programState());
+  assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: { list: [task] } })), { title: 'n', data: { list: [{ name: 't' }] } });
+  assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: task })), { title: 'n', data: { name: 't' } });
+});
+
+test('an SDK model constructor, decode and encode count only own enumerable keys, and a constructor or encode getter runs once', async () => {
+  // protects: bug T-162 the constructor copied an inherited value (values["name"] !== undefined), against the own-key rule of presence.ts
+  const { models } = await validatedSdk();
+  const Stamped = models.StampedModel as new (values?: object) => { name?: string; at?: Date };
+  const instance = (values: object) => new Stamped(values);
+  const inherited = () => Object.create({ name: 'x', at: '2024-01-02T03:04:05.000Z' }) as object;
+  const counted = (key: string, value: unknown) => {
+    const reads = { count: 0 };
+    const own = Object.defineProperty({}, key, { enumerable: true, get() { reads.count += 1; return value; } });
+    return { own, reads };
+  };
+
+  assert.deepEqual({ ...instance(inherited()) }, {}, 'the constructor leaves an inherited value out');
+  assert.equal(instance({ name: 'x' }).name, 'x', 'the constructor copies an own value');
+  const ctorGetter = counted('name', 'x');
+  assert.equal(instance(ctorGetter.own).name, 'x');
+  assert.equal(ctorGetter.reads.count, 1, 'the constructor reads an own getter once');
+
+  assert.deepEqual({ ...decodeGeneratedModel(Stamped, inherited()) }, {}, 'decode leaves an inherited value out');
+  assert.deepEqual({ ...decodeGeneratedModel(Stamped, { at: '2024-01-02T03:04:05.000Z' }) }, { at: new Date('2024-01-02T03:04:05.000Z') }, 'decode converts an own value');
+
+  const prototype = Object.assign(new Stamped(), { name: 'x', at: new Date('2024-01-02T03:04:05.000Z') });
+  assert.deepEqual(encodeGeneratedModel(Object.create(prototype)), {}, 'encode leaves an inherited value out');
+  assert.deepEqual(encodeGeneratedModel(instance({ at: new Date('2024-01-02T03:04:05.000Z') })), { at: '2024-01-02T03:04:05.000Z' }, 'encode writes an own value');
+  let encodeReads = 0;
+  const encodeGetter = Object.defineProperty(new Stamped(), 'at', { enumerable: true, get() { encodeReads += 1; return new Date('2024-01-02T03:04:05.000Z'); } });
+  assert.deepEqual(encodeGeneratedModel(encodeGetter), { at: '2024-01-02T03:04:05.000Z' });
+  assert.equal(encodeReads, 1, 'encode reads an own getter once');
 });

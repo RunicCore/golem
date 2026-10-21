@@ -142,7 +142,7 @@ function patternError(source: string): string | undefined {
   }
 }
 
-export interface LoweringResult {
+interface LoweringResult {
   readonly module: IrModule;
   readonly diagnostics: readonly GolemDiagnostic[];
 }

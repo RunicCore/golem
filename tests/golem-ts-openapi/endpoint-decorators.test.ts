@@ -301,3 +301,51 @@ import { ApiResponse } from '@nestjs/swagger';
     (error: unknown) => String(error).includes('NEST1309') && String(error).includes('ApiWidgetResponse'),
   );
 });
+
+test('writes a boolean response as one schema', async (t: TestContext) => {
+  // protects: T-174 a boolean response is one schema, not an anyOf of two
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+
+@Controller('flags')
+export class FlagsController {
+  @Get('boolean')
+  @ApiOkResponse({ type: Boolean })
+  flag(): boolean { return true; }
+
+  @Get('optional')
+  @ApiOkResponse({ type: Boolean })
+  optional(): boolean | undefined { return undefined; }
+}
+`);
+  const document = documentOf(await generateDocument(root, 'Flags'));
+  assert.deepEqual(responseOf(document, '/flags/boolean', 'get', '200').content?.['application/json']?.schema, { type: 'boolean' });
+  assert.deepEqual(responseOf(document, '/flags/optional', 'get', '200').content?.['application/json']?.schema, { type: 'boolean' });
+});
+
+test('gives a Swagger response without a description an empty description, not Success', async (t: TestContext) => {
+  // protects: T-175 a 404 with no description is not described as Success
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiNotFoundResponse, ApiOkResponse, ApiResponse } from '@nestjs/swagger';
+
+@Controller('described')
+export class DescribedController {
+  @Get('bare')
+  @ApiNotFoundResponse()
+  bare(): void {}
+
+  @Get('named')
+  @ApiResponse({ status: 404, description: 'Gone' })
+  @ApiOkResponse({ description: 'Found' })
+  named(): void {}
+
+  @Get('plain')
+  plain(): void {}
+}
+`);
+  const document = documentOf(await generateDocument(root, 'Described'));
+  assert.equal(responseOf(document, '/described/bare', 'get', '404').description, '');
+  assert.equal(responseOf(document, '/described/named', 'get', '404').description, 'Gone');
+  assert.equal(responseOf(document, '/described/named', 'get', '200').description, 'Found');
+  assert.equal(responseOf(document, '/described/plain', 'get', '200').description, 'Success');
+});

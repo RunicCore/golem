@@ -32,7 +32,7 @@ export function displayLocation(uri: string, pointer: string, rootDirectory: str
 }
 
 /** A piece of an error message and the bundled-document pointer it names. */
-export interface MessageOrigin {
+interface MessageOrigin {
   readonly text: string;
   readonly pointer: string;
 }

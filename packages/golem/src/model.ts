@@ -268,9 +268,6 @@ export interface GeneratedModelConversion<Model extends object = object, Wire = 
 
 export interface GeneratedModelProfile {
   readonly validation: boolean;
-  readonly mobx?: boolean;
-  readonly allowAny?: boolean;
-  readonly unknownFormats?: 'warn' | 'error';
 }
 
 /**
@@ -397,11 +394,10 @@ export function findGeneratedModelDefinitionForConstructor(
 export function findGeneratedModelDefinition(
   model: object,
 ): RegisteredGeneratedModelDefinition | undefined {
-  // Resolve from the actual prototype chain.  A handwritten own `constructor`
-  // field must never be able to redirect an instance to another contract.
-  // A caller may pass the generated prototype itself, so inspect that object
-  // before walking to its parent prototype.
-  return readGeneratedModelDefinition(model) ?? readGeneratedModelDefinition(Object.getPrototypeOf(model));
+  // Resolve from the actual prototype chain, which the property read walks.  A
+  // handwritten own `constructor` field must never be able to redirect an
+  // instance to another contract.  A caller may pass the generated prototype itself.
+  return readGeneratedModelDefinition(model);
 }
 
 function readGeneratedModelDefinition(value: unknown): RegisteredGeneratedModelDefinition | undefined {

@@ -8,7 +8,9 @@ import {
   emitModelToJSON,
   emitCodecRuntime,
   fillFunctionName,
+  presentKeysSource,
   pruneGeneratedImports,
+  reachesRecursiveNode,
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
   type ModelDiscriminators,
@@ -95,7 +97,7 @@ interface ModelResolveEnv {
   readonly selections?: DiscriminatorSelections;
 }
 
-export interface OpenApiModelAnalysis {
+interface OpenApiModelAnalysis {
   readonly definitions: ReadonlyMap<string, ModelDefinition>;
   readonly ordered: readonly ModelDefinition[];
   readonly schemaGraph: SchemaGraph;
@@ -607,7 +609,7 @@ function modelConversionDescriptor(
 }
 
 /** An allOf that no object satisfies, or whose members convert one value in two ways: generation stops with its code. */
-export class CompositionError extends Error {
+class CompositionError extends Error {
   constructor(readonly code: string, message: string) {
     super(`${code}: ${message}`);
   }
@@ -830,9 +832,19 @@ function modelPropertyAccess(name: string): string {
   return `[${JSON.stringify(name)}]`;
 }
 
-function modelPropertyCondition(target: string, name: string): string {
-  const access = `${target}${modelPropertyAccess(name)}`;
-  return `${access} !== undefined`;
+/**
+ * The local that holds one field's present value. `presentKeysSource` fills it in one own-key pass, so an inherited value
+ * never counts and a getter runs once.
+ */
+function modelPresentLocal(index: number): string {
+  return `__golemValue${index}`;
+}
+
+/** The statement that reads the captured fields of `target`; empty when no field is captured. */
+function modelPresentRead(indent: string, target: string, captures: readonly (readonly [name: string, type: string])[]): string[] {
+  if (captures.length === 0) return [];
+  const types = new Map(captures.map(([, type], index) => [modelPresentLocal(index), type]));
+  return [`${indent}${presentKeysSource(target, captures.map(([name], index) => [name, modelPresentLocal(index)] as const), local => `${local}: ${types.get(local)} | undefined`)}`];
 }
 
 function modelPropertyAssignment(target: string, name: string, value: string): string {
@@ -1270,7 +1282,7 @@ function modelClassDescriptor(
   };
 }
 
-export function internOpenApiSchemaGraph(
+function internOpenApiSchemaGraph(
   document: unknown,
   ordered: readonly ModelDefinition[],
   definitions: ReadonlyMap<string, ModelDefinition>,
@@ -1389,6 +1401,7 @@ function openApiValidationSchemaClosure(
       ...(node.sameSchema ? {} : { wireSchema: asJsonSchema(compact(node.jsonSchema, true)) }),
       ...(node.modelOnlyJsonSchema === undefined ? {} : { modelOnlySchema: asJsonSchema(compact(node.modelOnlyJsonSchema, false)) }),
       ...(node.wireOnlyJsonSchema === undefined ? {} : { wireOnlySchema: asJsonSchema(compact(node.wireOnlyJsonSchema, true)) }),
+      recursive: reachesRecursiveNode(schemaGraph, node),
       aliases: [...new Set([
         node.id,
         node.name,
@@ -1418,10 +1431,8 @@ function schemaGraphView(
   }
   return {
     nodes,
-    operations: new Map(),
     intern: graph.intern.bind(graph),
     nodeFor: graph.nodeFor.bind(graph),
-    addOperation: graph.addOperation.bind(graph),
     seal: () => undefined,
     topo: () => graph.topo().flatMap((node) => {
       const emitted = nodes.get(node.id);
@@ -1548,8 +1559,6 @@ export function generateOpenApiModelArtifacts(
   profile: OpenApiGenerationProfile,
   analysis: OpenApiModelAnalysis,
   helpers: {
-    readonly copyAdditionalProperties?: boolean;
-    readonly objectFromJSON?: boolean;
     readonly locate?: OriginLocator | undefined;
     /**
      * Compiles the SDK's validators module from the validation plan of every model and returns the name it exports
@@ -1733,7 +1742,7 @@ export function generateOpenApiModelArtifacts(
     const modelModule = generateModels(document, profile, {
       ...helpers,
       copyAdditionalProperties: groupDefinitions.some((definition) => Boolean(definition.additionalProperties)),
-      objectFromJSON: group.models.size === 0 ? false : helpers.objectFromJSON,
+      objectFromJSON: group.models.size > 0,
       analysis,
       onlyNames: group.models,
       graphNodeIds: localIds,
@@ -1885,7 +1894,7 @@ export function generateModels(
     ...(profile.validation && profile.mobx ? ["import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';"] : []),
     `import { registerGeneratedModel, type ModelInit, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand${ordered.some(definition => definition.isUnion) ? ", type generatedModelResultBrand" : ""}${emitCopy ? ", findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor" : ""} } from '@exprtlabs/golem/model';`,
     `import { assertPropertyAcyclic, assertWireAcyclic, beginDecode, convertModelField, convertModelItems, convertModelTupleItems, decodeCheckedInput, decodeDetachedInput, endDecode, decodeGeneratedModelTrusted, defineModelProperty, encodeGeneratedModel${usesDate ? ", deserializeDate, serializeDate" : ""} } from '@exprtlabs/golem/conversion';`,
-    "import { assertModelValue, createObjectCodec, isValidModelValue, modelValueIssues, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, resolveGeneratedModelSchemaRefs, serdeFailFast, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationFailure, validationUnavailable, withoutInstanceState, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
+    "import { assertModelValue, createObjectCodec, isValidModelValue, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationUnavailable, withoutInstanceState, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
     ...(profile.mobx ? [
       "import { asGenObservable } from '@exprtlabs/golem/mobx';",
     ] : []),
@@ -1944,25 +1953,28 @@ export function generateModels(
     const declarations = fields.map(([name, schema]) =>
       modelFieldDeclaration(name, schema, definition.required.has(name), definitions, fieldEnv),
     );
-    const assignments = fields.map(([name, schema]) =>
-      `    if (${modelPropertyCondition('values', name)}) ${modelPropertyAssignment('this', name, `(${modelInitExpression(schema, `values${modelPropertyAccess(name)}`, definitions, fieldEnv, definition.schemaName)}) as ${modelFieldType(schema, definitions, fieldEnv)}`)}`,
-    );
+    const assignments = [
+      ...modelPresentRead('    ', 'values', fields.map(([name]) => [name, `${typeName}Init[${JSON.stringify(name)}]`] as const)),
+      ...fields.map(([name, schema], index) =>
+        `    if (${modelPresentLocal(index)} !== undefined) ${modelPropertyAssignment('this', name, `(${modelInitExpression(schema, modelPresentLocal(index), definitions, fieldEnv, definition.schemaName)}) as ${modelFieldType(schema, definitions, fieldEnv)}`)}`),
+    ];
     const fieldHelpers: string[] = [];
     const fieldHelperName = (direction: 'encode' | 'decode') => (index: number): string => {
       const helper = `convert${typeName}Field${index}${direction === 'encode' ? 'Encode' : 'Decode'}`;
       moduleScope.claim(helper, `internal field converter for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
       return helper;
     };
-    const jsonProperties = fields.map(([name, schema]) => {
-      const input = `model${modelPropertyAccess(name)}`;
+    const jsonProperties = fields.map(([name, schema], index) => {
+      const input = modelPresentLocal(index);
       const converted = rootFieldConversion(
         fieldHelpers, fieldHelperName('encode'), 'serialize', name, input,
         (value) => modelToJSONExpression(schema, value, definitions, fieldEnv, definition.schemaName),
         // The guard on the property excludes an undefined value before the conversion runs.
         `Exclude<${className}${modelPropertyAccess(name)}, undefined>`,
       );
-      return `  if (${modelPropertyCondition('model', name)}) ${modelPropertyAssignment('result', name, converted)}`;
+      return `  if (${input} !== undefined) ${modelPropertyAssignment('result', name, converted)}`;
     });
+    const jsonRead = modelPresentRead('  ', 'model', fields.map(([name]) => [name, `${className}${modelPropertyAccess(name)}`] as const));
     const allProperties = modelSchemaProperties(fieldEnv, definition.rawSchema);
     const allFieldNames = [...allProperties.keys()];
     const fieldNames = allFieldNames.map(name => JSON.stringify(name)).join(', ');
@@ -1972,8 +1984,10 @@ export function generateModels(
       const expression = emit(definition.additionalProperties, 'value', definitions, fieldEnv, definition.schemaName);
       return expression === 'value' ? '' : `, (value) => ${expression}`;
     };
-    const decodeLines = [...allProperties].flatMap(([name, schema]) => {
-      const expression = `value${modelPropertyAccess(name)}`;
+    const decodeCaptures: (readonly [name: string, type: string])[] = [];
+    const decodeConversions: string[] = [];
+    for (const [name, schema] of allProperties) {
+      const expression = modelPresentLocal(decodeCaptures.length);
       const rootConverted = rootFieldConversion(
         fieldHelpers, fieldHelperName('decode'), 'deserialize', name, expression,
         (input) => modelFromJSONExpression(schema, input, definitions, fieldEnv, definition.schemaName),
@@ -1983,10 +1997,12 @@ export function generateModels(
       // the initializer copy as-is for fields with no wire conversion and
       // only replace values that must become model instances or pass through
       // a codec.  The constructor remains the sole model-instance writer.
-      return rootConverted === expression
-        ? []
-        : [`  if (${modelPropertyCondition('value', name)}) ${modelPropertyAssignment('result', name, rootConverted)}`];
-    });
+      if (rootConverted === expression) continue;
+      decodeCaptures.push([name, 'unknown']);
+      decodeConversions.push(`  if (${expression} !== undefined) ${modelPropertyAssignment('result', name, rootConverted)}`);
+    }
+    // Read the own copy in `result`, so a getter of the input runs once, in the spread.
+    const decodeLines = [...modelPresentRead('  ', 'result', decodeCaptures), ...decodeConversions];
     const additionalFrom = additionalConverter('from');
     const identityDeserialize = decodeLines.length === 0 && additionalFrom === '';
     output.push(
@@ -2056,6 +2072,7 @@ export function generateModels(
       '',
       `${helpers.moduleFile ? 'export ' : ''}function encode${typeName}(model: ${className}): Types.${typeName} {`,
       baseClass ? `  const result: Record<string, unknown> = { ...encode${definition.baseName}(model) };` : '  const result: Record<string, unknown> = {};',
+      ...jsonRead,
       ...jsonProperties,
       ...(additionalPropertyType
         ? [`  if (findGeneratedModelDefinition(model) === findGeneratedModelDefinitionForConstructor(${className})) copyAdditionalProperties(result, model, [${fieldNames}]${additionalConverter('to')});`]
@@ -2069,7 +2086,7 @@ export function generateModels(
         `  fields: [${allFieldNames.map((name) => JSON.stringify(name)).join(', ')}] as const,`,
         `  conversion: { decode: decode${typeName}, encode: encode${typeName} },`,
         `  codecId: ${JSON.stringify(codecIdFor(definition.name))},`,
-        `  profile: ${JSON.stringify(profile)},`,
+        `  profile: { validation: ${profile.validation} },`,
         ...(profile.validation && profile.mobx ? ['  enhanceValidator: enhanceValidatorWithMobX,'] : []),
         ...(additionalPropertyType ? ['  additionalProperties: true,'] : []),
         '});',
@@ -2136,7 +2153,7 @@ export function generateModels(
   // Only import converter helpers actually used by this model graph. A converter passed to `convertModelField` is referenced, not called.
   const sourceBody = source.replace(/^import \{[^\n]+\} from '@exprtlabs\/golem\/conversion';\n/m, '');
   const conversionImports = [
-    'assertAcyclicValue', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'decodeCheckedInput', 'decodeDetachedInput', 'endDecode', 'convertModelField', 'convertModelItems', 'convertModelTupleItems', 'decodeGeneratedModel', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'encodeGeneratedModel', 'deserializeDate', 'serializeDate', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'jsonWithDiscriminator', 'requireModelObject',
+    'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'decodeCheckedInput', 'decodeDetachedInput', 'endDecode', 'endEncode', 'convertModelField', 'convertModelItems', 'convertModelTupleItems', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'encodeGeneratedModel', 'deserializeDate', 'serializeDate', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'jsonWithDiscriminator', 'requireModelObject',
   ].filter(name => new RegExp(`\\b${name}\\b`).test(sourceBody));
   // `dates: temporal` fields call their codecs from `@exprtlabs/golem/temporal`; import exactly those used.
   const temporalImports = [...new Set(source.match(/\b(?:de)?serializeTemporal[A-Za-z]+(?=\()/g) ?? [])].sort();

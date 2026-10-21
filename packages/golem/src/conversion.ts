@@ -1,4 +1,4 @@
-import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type IssuePath } from './errors.js';
+import { LibError, LibErrorKind, type IssuePath } from './errors.js';
 import { activeConversionPath, conversionError } from './conversion-error.js';
 import {
   findGeneratedModelDefinition,
@@ -205,6 +205,32 @@ export function assertPropertyAcyclic(owner: object, field: string | number, val
   if (detachedInputDepth > 0 || value === null || typeof value !== 'object') return value;
   walkConversionInput(value, LibErrorKind.Deserialization, new Set([owner]), [...activeConversionPath, field]);
   return value;
+}
+
+/**
+ * Generated encoders of a model that reaches a recursive model call this before their validator runs: a validator walks
+ * a cyclic value until the stack ends. Shared references are allowed.
+ */
+export function assertAcyclicEncodeInput(value: unknown): void {
+  assertAcyclicValue(value, LibErrorKind.Serialization);
+}
+
+/** Objects a generated recursive encoder is writing; an object already in it is a cycle. */
+const activeEncodeValues = new Set<object>();
+
+/**
+ * A generated encoder of a recursive model registers the value it writes and rejects one that is already being
+ * written, so each level costs one set operation. The cycle is a server-side value, so the error is not caused by
+ * input. Call `endEncode` in a `finally`.
+ */
+export function beginEncode(value: unknown): void {
+  if (value === null || typeof value !== 'object') return;
+  if (activeEncodeValues.has(value)) throw conversionError(LibErrorKind.Serialization, 'Cyclic values cannot be encoded.');
+  activeEncodeValues.add(value);
+}
+
+export function endEncode(value: unknown): void {
+  if (value !== null && typeof value === 'object') activeEncodeValues.delete(value);
 }
 
 /** `assertAcyclicValue` for generated decoders: nothing is checked over parsed JSON text. */

@@ -1,7 +1,6 @@
 import type * as ts from '@exprtlabs/golem/ts';
 import {
   assertRouteResultSize,
-  bindExpressionSource,
   isLiteralRouteExpression,
   validateRouteEvaluationOptions,
   type RouteEvaluationOptions,
@@ -20,10 +19,9 @@ export async function evaluateRouteExpression(
   options: RouteEvaluationOptions = {},
 ): Promise<string | string[]> {
   const { maxResultBytes } = validateRouteEvaluationOptions(options);
-  const sourceFile = bindExpressionSource(expression, program);
-  options.onInput?.(sourceFile.fileName);
+  options.onInput?.(expression.getSourceFile().fileName);
   const literal = isLiteralRouteExpression(expression);
   const value = literal ?? foldRouteExpression(expression, program, options);
-  assertRouteResultSize(value, maxResultBytes, expression, program);
+  assertRouteResultSize(value, maxResultBytes, expression);
   return value;
 }

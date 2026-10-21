@@ -118,7 +118,7 @@ function localReferenceEscapes(rootDirectory: string, candidate: string): boolea
   return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
 }
 
-export interface ReferenceLoadOptions extends ReferenceResolutionOptions {
+interface ReferenceLoadOptions extends ReferenceResolutionOptions {
   /** Leave remote references unresolved instead of fetching them (input collection). */
   readonly skipRemote?: boolean;
 }
@@ -133,7 +133,7 @@ export interface ReferenceTarget {
  * What holds a reference value: a `$ref` or `$dynamicRef` keyword, a
  * discriminator `mapping` value, or a discriminator `defaultMapping`.
  */
-export type ReferenceKeyword = '$ref' | '$dynamicRef' | 'mapping' | 'defaultMapping';
+type ReferenceKeyword = '$ref' | '$dynamicRef' | 'mapping' | 'defaultMapping';
 
 export interface ReferenceSite {
   readonly documentUri: string;
@@ -154,7 +154,7 @@ export interface ReferenceSite {
   readonly preserve: boolean;
 }
 
-export interface LoadedDocument {
+interface LoadedDocument {
   readonly uri: string;
   readonly document: unknown;
 }

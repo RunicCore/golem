@@ -22,7 +22,6 @@ import { schemaType } from './types.js';
 
 export type { InputObserver, OpenApiContext } from '@exprtlabs/golem/generator-api';
 export type { OpenApiGenerationProfile } from './profile.js';
-export type { OpenApiArtifact } from './emit.js';
 
 export interface OpenApiGenerationContext extends OpenApiContext {}
 

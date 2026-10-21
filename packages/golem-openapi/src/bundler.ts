@@ -5,7 +5,7 @@ import { displayLocation, displayUri } from './origin.js';
 import type { ReferenceGraph, ReferenceSite, ReferenceTarget } from './reference-loader.js';
 import type { OpenApiComponentKind } from './schema-projection.js';
 
-export interface SourceOrigin {
+interface SourceOrigin {
   readonly uri: string;
   readonly pointer: string;
 }

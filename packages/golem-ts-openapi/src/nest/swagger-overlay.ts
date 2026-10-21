@@ -26,7 +26,7 @@ import { decoratorOptions, type DecoratorOptions, type MetadataReader } from './
 import { NEST_SWAGGER, decoratorsOf } from './symbols.js';
 import type { TypeReference } from './types.js';
 
-export interface DtoSchemaOptions extends SchemaMergeOptions {
+interface DtoSchemaOptions extends SchemaMergeOptions {
   readonly isAuthoritativeType?: (type: ts.Type, node: ts.Node | undefined) => boolean;
   /** Receives non-fatal findings, such as a Swagger `type` this adapter does not model. */
   readonly onWarning?: (warning: TsToOpenApiDiagnostic) => void;

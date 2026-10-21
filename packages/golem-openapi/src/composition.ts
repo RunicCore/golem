@@ -35,7 +35,7 @@ const COMPOSITION_UNSATISFIABLE = 'OPENAPI_COMPOSITION_UNSATISFIABLE';
 export const COMPOSITION_PROPERTY_NEVER = 'OPENAPI_COMPOSITION_PROPERTY_NEVER';
 
 /** A schema in the scope it is read in. */
-export interface ScopedSchema<S> {
+interface ScopedSchema<S> {
   readonly schema: unknown;
   readonly scope: S;
 }
@@ -56,7 +56,7 @@ export interface CompositionReader<S> {
  * A name that no value can hold, and whether a closed part (`additionalProperties: false`) rejects it. `closer` names that
  * part when it is the schema's own (its own keywords or an inline allOf member); a `$ref` base leaves it undefined.
  */
-export interface NeverName {
+interface NeverName {
   readonly name: string;
   readonly closed: boolean;
   readonly closer?: string;

@@ -371,10 +371,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     const inputs = job.kind === 'openapi' ? [job.options.input] : job.kind === 'generator' ? [] : job.options.sources ?? [];
     for (const input of inputs) {
       for (const [producerIndex, producer] of jobs.entries()) {
-        const output = producer.options.output;
-        if (!output) continue;
-        const owns = producer.kind === 'controllers' ? input === output : contains(output, input);
-        if (owns && producerIndex >= index) throw new Error(`Generated input dependency cycle: ${job.id} reads ${input} from ${producer.id}.`);
+        if (producesInput(producer, input) && producerIndex >= index) throw new Error(`Generated input dependency cycle: ${job.id} reads ${input} from ${producer.id}.`);
       }
     }
   }
@@ -387,11 +384,17 @@ export function modelsRootOf(config: Pick<GolemConfig, 'directory' | 'jobs'>): s
   return job === undefined ? config.directory : job.options.root;
 }
 
+/** Whether the job writes `input`: the controllers job its one output file, any other job the files under its output directory. */
+function producesInput(producer: GolemJob, input: string): boolean {
+  const output = producer.options.output;
+  if (!output) return false;
+  return producer.kind === 'controllers' ? canonicalPath(input) === canonicalPath(output) : contains(canonicalPath(output), canonicalPath(input));
+}
+
 export function validateConfigInputs(config: GolemConfig): void {
-  const controllerOutputs = new Set(config.jobs
-    .filter((job): job is Extract<GolemJob, { kind: 'controllers' }> => job.kind === 'controllers')
-    .map(job => canonicalPath(job.options.output)));
-  for (const job of config.jobs) {
+  // An input that an earlier job writes is absent on a clean clone until that job runs. The cycle check keeps a producer before its reader.
+  const producedBefore = (index: number, input: string): boolean => config.jobs.slice(0, index).some(producer => producesInput(producer, input));
+  for (const [index, job] of config.jobs.entries()) {
     if (job.kind === 'controllers') {
       existing(job.options.root, 'directory', 'controllers.root');
       for (const source of job.options.sources ?? []) existing(source, 'file', 'controller source');
@@ -399,12 +402,10 @@ export function validateConfigInputs(config: GolemConfig): void {
         throw new Error(`controllers.output must be a file: ${job.options.output}`);
       }
     } else if (job.kind === 'openapi') {
-      // A controller job is the declared upstream producer for its exact OAS file.
-      // It is intentionally allowed to be absent until the controller runs.
-      if (!controllerOutputs.has(canonicalPath(job.options.input))) existing(job.options.input, 'file', 'OpenAPI input');
+      if (!producedBefore(index, job.options.input)) existing(job.options.input, 'file', 'OpenAPI input');
     } else if (job.kind === 'models') {
       existing(job.options.root, 'directory', 'models.root');
-      for (const source of job.options.sources ?? []) existing(source, 'file', 'model source');
+      for (const source of job.options.sources ?? []) if (!producedBefore(index, source)) existing(source, 'file', 'model source');
     }
   }
 }

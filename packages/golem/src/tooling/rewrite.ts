@@ -14,7 +14,8 @@ export interface RewriteEdit {
 /**
  * A module and the names `applyRewrites` imports from it. Each name is imported
  * under the alias `__golem_<name>`, so edit text refers to `__golem_<name>(...)`
- * and cannot clash with, or depend on, the file's own imports.
+ * and cannot clash with, or depend on, the file's own imports. An entry with no
+ * names is a side-effect import: it loads the module and binds nothing.
  */
 export interface RewriteImport {
   readonly from: string;
@@ -91,11 +92,11 @@ function quote(from: string): string {
 function importEdits(text: string, imports: readonly RewriteImport[]): RewriteEdit[] {
   const at = importInsertOffset(text);
   const lineBreakBefore = at === 0 || '\r\n\u2028\u2029'.includes(text.charAt(at - 1));
-  return imports.filter(({ names }) => names.length > 0).map(({ from, names }, position) => ({
+  return imports.map(({ from, names }, position) => ({
     start: at,
     end: at,
     expect: '',
-    text: `${position === 0 && !lineBreakBefore ? '\n' : ''}import { ${names.map((name) => `${name} as ${REWRITE_IMPORT_PREFIX}${name}`).join(', ')} } from ${quote(from)};\n`,
+    text: `${position === 0 && !lineBreakBefore ? '\n' : ''}import ${names.length === 0 ? '' : `{ ${names.map((name) => `${name} as ${REWRITE_IMPORT_PREFIX}${name}`).join(', ')} } from `}${quote(from)};\n`,
   }));
 }
 

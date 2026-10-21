@@ -47,10 +47,6 @@ export interface GolemHostOptions {
 }
 
 export interface RewriteProject {
-  /** Directory of the yaml's tsconfig. */
-  readonly root: string;
-  /** The golem.yaml of the project. */
-  readonly configFile: string;
   /** The codec key file the yaml's models job writes, whether or not it exists yet: what a host watches after a failed rewrite so that `golem generate` brings it back. */
   readonly expectedGenerated: readonly string[];
   /**
@@ -218,8 +214,6 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   }
   let closed = false;
   return {
-    root: project.root,
-    configFile: project.configFile,
     expectedGenerated: project.expectedGenerated,
     rewrite: (filename, text) => project.rewrite(filename, text),
     changed: (filenames) => { project.changed(filenames); },

@@ -123,12 +123,12 @@ export class GeneratorSessionResources implements Disposable {
  * (`1.0.0-rc` or `1.0.0-rc.2` → `rc`), or `latest` for a stable version.
  * Generator packages are published in lockstep under the same tag.
  */
-export function golemDistTag(version: string = golemVersion()): string {
+function golemDistTag(version: string = golemVersion()): string {
   const prerelease = /^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/.exec(version)?.[1];
   return prerelease ?? 'latest';
 }
 
-export function golemVersion(): string {
+function golemVersion(): string {
   // dist/tooling/pipeline.js → package.json of @exprtlabs/golem.
   const manifest: unknown = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
   if (!isRecord(manifest) || typeof manifest.version !== 'string') throw new Error('@exprtlabs/golem package.json has no version.');
@@ -546,6 +546,8 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     options.onOwned?.(result.artifacts.map(artifact => artifact.path));
     if (!cached) {
       applyJob(config, inventory, job, result.artifacts, Boolean(options.check));
+      // The job's record and its written output change together: a later job's failure leaves a record that matches the files.
+      if (!options.check) saveJobRecords(config, nextRecords);
       for (const output of [...previousOutputs, ...result.artifacts.map(artifact => artifact.path)]) ranOutputs.add(output);
     }
     for (const input of result.watchInputs) observe(input, job.kind, job.id);
@@ -579,7 +581,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     const disagreements = nest ? rewriteScan.checkNestCodecs(controllerRoots, scanned) : [];
     if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements));
   }
-  // Records are saved last, and only by a run that writes: `check` writes nothing.
+  // The last save drops the records of removed jobs, which a run where every job is current has not saved. `check` writes nothing.
   if (!options.check) saveJobRecords(config, nextRecords);
   for (const output of owned) inputs.delete(output);
   session.retainUsed(new Set(config.jobs.map((job) => job.id)), used);

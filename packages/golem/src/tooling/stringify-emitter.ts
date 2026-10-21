@@ -74,6 +74,8 @@ export interface CodecRuntimeOptions {
   readonly fieldsType?: (node: SchemaNode) => string | undefined;
   /** Codec ids of sibling models that register a separate wire schema (`${id}#wire`). */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
+  /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
+  readonly siblingRecursion?: ReadonlyMap<string, boolean>;
   /** Export the wire stringify of every public codec (`wireStringifyExportName`), for other generated modules to import. */
   readonly exportWireStringify?: boolean;
   /** Export anonymous codecs' functions: OpenAPI group modules import them from each other. Model companions keep them private. */
@@ -102,6 +104,8 @@ interface EmitCtx {
   readonly wireStringifyIds?: ReadonlySet<string>;
   /** Sibling codecs whose companion exports a wire stringify (`wireStringifyExportName`). */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
+  /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
+  readonly siblingRecursion?: ReadonlyMap<string, boolean>;
   readonly exportWireStringify?: boolean;
   readonly exportAnonymousCodecs?: boolean;
   readonly privateCodec?: (node: SchemaNode) => boolean;
@@ -477,11 +481,10 @@ function emitObjectInline(
 ): string {
   const required = new Set(descriptor.required);
   const properties = Object.entries(descriptor.properties);
-  if (properties.length === 0) {
-    if (descriptor.additionalProperties === false) return "'{}'";
-    return `stringifyJsonScalar(${expression} as never)`;
-  }
-  if (typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared) {
+  const hasExtras = typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
+  // An object with no declared field writes `{}`, unless it declares its other names as data.
+  if (properties.length === 0 && !hasExtras) return "'{}'";
+  if (hasExtras) {
     // The other names are data: the encoded record keeps them, and a wire value is already encoded.
     return `stringifyJsonScalar(${ctx.wireIdentity ? expression : emitEncodedRecord(descriptor, expression, ctx)} as never)`;
   }
@@ -511,15 +514,12 @@ function emitObjectStringify(
 ): string {
   const required = new Set(descriptor.required);
   const properties = Object.entries(descriptor.properties);
-  if (properties.length === 0) {
-    if (descriptor.additionalProperties === false) {
-      return `function ${fn}(${stringifyParameters('_value: Record<string, unknown>', ctx)}): string {\n  return '{}';\n}\n`;
-    }
-    return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
-  }
   const additional = typeof descriptor.additionalProperties === 'object'
     ? descriptor.additionalProperties
     : descriptor.additionalPropertiesDeclared ? { kind: 'unknown' as const } : undefined;
+  if (properties.length === 0 && !additional) {
+    return `function ${fn}(${stringifyParameters('_value: Record<string, unknown>', ctx)}): string {\n  return '{}';\n}\n`;
+  }
   if (!additional && properties.every(([name]) => required.has(name))) {
     const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
     return [
@@ -567,7 +567,7 @@ function emitObjectStringify(
     // `additionalProperties: true` makes them data of unknown type.
     lines.push(
       '  for (const key of Object.keys(value)) {',
-      `    if (${JSON.stringify(properties.map(([name]) => name))}.includes(key)) continue;`,
+      ...(properties.length === 0 ? [] : [`    if (${JSON.stringify(properties.map(([name]) => name))}.includes(key)) continue;`]),
       '    const __golemExtra = value[key];',
       '    if (__golemExtra === undefined) continue;',
       '    if (sep) out += ",";',
@@ -598,6 +598,7 @@ export function emitStringifyFunction(
     lenientRoot: extra?.lenientRoot,
     wireStringifyIds: extra?.wireStringifyIds,
     siblingWireCodecIds: extra?.siblingWireCodecIds,
+    siblingRecursion: extra?.siblingRecursion,
     localCoreIds: extra?.localCoreIds,
     strictCoreIds: extra?.strictCoreIds,
     trustedOptions: extra?.trustedOptions,
@@ -627,13 +628,9 @@ export function emitStringifyFunction(
       '',
     ].join('\n');
   }
-  return source;
-}
-
-export function emitParseFunction(node: SchemaNode): string {
-  const parse = parseFunctionName(node.id);
-  const fromWire = fromWireFunctionName(node.id);
-  return `function ${parse}(text: string, options?: ${SERDE_OPTIONS}): unknown {\n  return ${fromWire}(parseJson(text), options);\n}\n`;
+  const delegates = node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference';
+  const startsLevel = !passesValueOn(node.descriptor, root !== undefined);
+  return !ctx.wireIdentity && !delegates && startsLevel && reachesNode(node.descriptor, node.id, ctx) ? guardEncodeCycle(source) : source;
 }
 
 export function emitGraphStringify(graph: SchemaGraph, serde?: StringifySerdeResolver): string {
@@ -826,37 +823,81 @@ function sharesInput(descriptor: ModelTypeDescriptor, ctx: EmitCtx, seen: Set<Mo
   }
 }
 
+/** The descriptors a value of `descriptor` holds directly; a model or reference is followed through its node. */
+function heldDescriptors(descriptor: ModelTypeDescriptor): readonly ModelTypeDescriptor[] {
+  switch (descriptor.kind) {
+    case 'array':
+      return [descriptor.item];
+    case 'tuple':
+      return [...descriptor.items, ...(descriptor.rest !== undefined ? [descriptor.rest.item] : [])];
+    case 'union':
+    case 'intersection':
+      return descriptor.variants;
+    case 'object':
+      return [...Object.values(descriptor.properties), ...(typeof descriptor.additionalProperties === 'object' ? [descriptor.additionalProperties] : [])];
+    default:
+      return [];
+  }
+}
+
 /** Whether decoding `descriptor` can reach the model node `id` again, so a cyclic input would recurse. */
 function reachesNode(
   descriptor: ModelTypeDescriptor,
   id: string,
-  ctx: EmitCtx,
+  ctx: Pick<EmitCtx, 'graph'>,
   seen: Set<string> = new Set(),
 ): boolean {
-  switch (descriptor.kind) {
-    case 'array':
-      return reachesNode(descriptor.item, id, ctx, seen);
-    case 'tuple':
-      return descriptor.items.some((item) => reachesNode(item, id, ctx, seen))
-        || (descriptor.rest !== undefined && reachesNode(descriptor.rest.item, id, ctx, seen));
-    case 'union':
-    case 'intersection':
-      return descriptor.variants.some((variant) => reachesNode(variant, id, ctx, seen));
-    case 'object':
-      return Object.values(descriptor.properties).some((property) => reachesNode(property, id, ctx, seen))
-        || (typeof descriptor.additionalProperties === 'object' && reachesNode(descriptor.additionalProperties, id, ctx, seen));
-    case 'reference':
-    case 'generated-model': {
-      const node = ctx.graph.nodeFor(descriptor);
-      if (!node) return false;
-      if (node.id === id) return true;
-      if (seen.has(node.id)) return false;
-      seen.add(node.id);
-      return reachesNode(node.descriptor, id, ctx, seen);
-    }
-    default:
-      return false;
+  if (descriptor.kind === 'reference' || descriptor.kind === 'generated-model') {
+    const node = ctx.graph.nodeFor(descriptor);
+    if (!node) return false;
+    if (node.id === id) return true;
+    if (seen.has(node.id)) return false;
+    seen.add(node.id);
+    return reachesNode(node.descriptor, id, ctx, seen);
   }
+  return heldDescriptors(descriptor).some((held) => reachesNode(held, id, ctx, seen));
+}
+
+/** Whether `descriptor` reaches a recursive model node, so a cyclic value under it would run a validator or encoder forever. */
+function reachesRecursion(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx, 'graph' | 'siblingRecursion'>, seen: Set<string> = new Set()): boolean {
+  if (descriptor.kind === 'reference' || descriptor.kind === 'generated-model') {
+    const node = ctx.graph.nodeFor(descriptor);
+    if (!node || seen.has(node.id)) return false;
+    seen.add(node.id);
+    // A model of another module is a node whose descriptor is the reference itself. It guards its own encoders; the
+    // job knows whether it is recursive.
+    if (node.descriptor.kind === 'reference' || node.descriptor.kind === 'generated-model') return ctx.siblingRecursion?.get(node.codecId) ?? true;
+    return reachesNode(node.descriptor, node.id, ctx) || reachesRecursion(node.descriptor, ctx, seen);
+  }
+  return heldDescriptors(descriptor).some((held) => reachesRecursion(held, ctx, seen));
+}
+
+/**
+ * Whether the model `node` reaches a recursive model (itself or another). A manifest publishes it, so a job that holds
+ * the model knows whether its value needs the cycle walk before a validator.
+ */
+export function reachesRecursiveNode(graph: SchemaGraph, node: SchemaNode, siblingRecursion?: ReadonlyMap<string, boolean>): boolean {
+  return node.descriptor.kind !== 'reference' && node.descriptor.kind !== 'generated-model'
+    && reachesRecursion(node.descriptor, { graph, siblingRecursion });
+}
+
+/**
+ * Whether the encoder of `descriptor` hands the same value to another encoder: a union picks a variant, and an
+ * intersection that is not one merged object writes its parts. Only an encoder that starts a new level (an object,
+ * array or tuple) guards the value; a guard here would meet the variant's guard on the same value and report a cycle.
+ */
+function passesValueOn(descriptor: ModelTypeDescriptor, writesMergedObject: boolean): boolean {
+  return descriptor.kind === 'union' || (descriptor.kind === 'intersection' && !writesMergedObject);
+}
+
+/**
+ * Wraps the body of a generated encoder function of `value` so that a value already being written is a cycle.
+ * Only a recursive model's encoders carry it; the other encoders keep their speed.
+ */
+function guardEncodeCycle(source: string): string {
+  const bodyStart = source.indexOf('{\n') + 2;
+  const bodyEnd = source.lastIndexOf('}');
+  return `${source.slice(0, bodyStart)}  beginEncode(value);\n  try {\n${source.slice(bodyStart, bodyEnd)}  } finally {\n    endEncode(value);\n  }\n}\n`;
 }
 
 function emitInternedObjectDecode(
@@ -1547,6 +1588,8 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   }
   // An intersection with a member that is no object is written as it is, without the program state of a model instance.
   if (descriptor.kind === 'intersection') return `withoutInstanceState(${expression})`;
+  // A value of unknown type can hold a model instance at any depth.
+  if (descriptor.kind === 'unknown' || descriptor.kind === 'any') return `withoutInstanceState(${expression})`;
   return expression;
 }
 
@@ -1556,10 +1599,6 @@ function emitEncodedRecord(
   ctx: EmitCtx,
 ): string {
   const fields = Object.entries(descriptor.properties);
-  if (fields.length === 0) {
-    if (descriptor.additionalProperties !== false) return `{ ...${asRecord(expression)} }`;
-    return expression;
-  }
   const required = new Set(descriptor.required);
   const values = fields.map(([name, property], index) => {
     const read = access(expression, name);
@@ -1582,11 +1621,12 @@ function emitEncodedRecord(
   // keeps them as they are. Any other object writes its listed names only.
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
   const extras = additional || descriptor.additionalPropertiesDeclared
-    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([key, extra]) => extra !== undefined && !${JSON.stringify(fields.map(([name]) => name))}.includes(key))${additional ? `.map(([key, extra]) => [key, ${emitEncodeValue(additional, 'extra', ctx)}])` : ''})`]
+    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([${fields.length === 0 ? '' : 'key'}, extra]) => extra !== undefined${fields.length === 0 ? '' : ` && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)`}).map(([key, extra]) => [key, ${emitEncodeValue(additional ?? { kind: 'unknown' }, 'extra', ctx)}]))`]
     : [];
-  const record = `{ ${[...extras, ...values.map(([name, value]) => value.startsWith('...')
+  const entries = [...extras, ...values.map(([name, value]) => value.startsWith('...')
     ? value
-    : `[${JSON.stringify(name)}]: ${value}`)].join(', ')} }`;
+    : `[${JSON.stringify(name)}]: ${value}`)];
+  const record = entries.length === 0 ? '{}' : `{ ${entries.join(', ')} }`;
   // Inline nested records can receive a getter expression from their parent.
   // Bind that object only when its expression would otherwise be evaluated
   // more than once; ordinary top-level `value`/`record` paths stay direct.
@@ -1722,6 +1762,9 @@ function emitNodeRuntime(
       ? resolveObjectDescriptor(node.descriptor, ctx)
       : undefined;
   const emitsValidatedWire = validationEnabled && !node.sameSchema;
+  // A validator and an encoder walk a cyclic value under a recursive model until the stack ends.
+  const reachesCycle = reachesRecursion(node.descriptor, ctx);
+  const recursiveNode = reachesNode(node.descriptor, node.id, ctx) && !passesValueOn(node.descriptor, objectDescriptor !== undefined);
   const encodedStringifyContext: EmitCtx = { ...ctx, inlineLocals: new Set() };
   const encodedWireContext: EmitCtx = { ...ctx, inlineLocals: new Set() };
   const encodedExpr = objectDescriptor
@@ -1746,6 +1789,7 @@ function emitNodeRuntime(
     ...(emitsValidatedWire ? inlineLocalDeclarations(encodedStringifyContext) : []),
     ...(validationEnabled ? [
       '  if (validates) {',
+      ...(reachesCycle ? ['    assertAcyclicEncodeInput(value);'] : []),
       `    ${assertName}(value, options);`,
       ...(emitsValidatedWire ? [
         `    const wire = ${encodedExpr};`,
@@ -1829,21 +1873,25 @@ function emitNodeRuntime(
 
   // The wire encoding without validation: nested trusted calls and the validating wrapper both run it.
   const toWireCore = `${toWire}Core`;
-  const toWireCoreLines = [
-    `function ${toWireCore}(value: ${fieldsType ?? 'unknown'}): ${wireType ?? 'unknown'} {`,
-    ...(objectDescriptor ? ['  const record = value as Record<string, unknown>;'] : []),
+  // A model with no field and no extra names writes `{}` and reads nothing from the value.
+  const readsRecord = objectDescriptor !== undefined && encodedRecordExpr !== '{}';
+  const toWireCoreSource = [
+    `function ${toWireCore}(${readsRecord || !objectDescriptor ? 'value' : '_value'}: ${fieldsType ?? 'unknown'}): ${wireType ?? 'unknown'} {`,
+    ...(readsRecord ? ['  const record = value as Record<string, unknown>;'] : []),
     ...inlineLocalDeclarations(encodedWireContext),
     `  const wire = ${encodedRecordExpr};`,
     wireType ? `  return wire as ${wireType};` : '  return wire;',
     '}',
     '',
-  ];
+  ].join('\n');
+  const toWireCoreLines = [recursiveNode ? guardEncodeCycle(toWireCoreSource) : toWireCoreSource];
   const toWireLines = [
     ...toWireCoreLines,
     `${exported}function ${toWire}(value: ${fieldsType ?? 'unknown'}, options?: ${SERDE_OPTIONS}): ${wireType ?? 'unknown'} {`,
     emitSerdeValidates(validationEnabled),
     ...(validationEnabled ? [
       '  if (validates) {',
+      ...(reachesCycle ? ['    assertAcyclicEncodeInput(value);'] : []),
       `    ${assertName}(value, options);`,
       '  }',
     ] : []),
@@ -1984,6 +2032,7 @@ export function emitCodecRuntime(
     strictCoreIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && node.sameSchema).map((node) => node.id)),
     trustedOptions: TRUSTED_CONSTANT,
     siblingWireCodecIds: options.siblingWireCodecIds,
+    siblingRecursion: options.siblingRecursion,
     exportWireStringify: options.exportWireStringify,
     validatorName: options.validatorName,
     fastCheckName: options.fastCheckName,
@@ -2016,8 +2065,4 @@ function withModuleConstants(runtime: string): string {
     ...(runtime.includes(CHECKED_CONSTANT) ? [`const ${CHECKED_CONSTANT} = Object.freeze({ validate: false, [${CHECKED_KEY}]: true });`] : []),
   ];
   return constants.length ? `${constants.join('\n')}\n\n${runtime}` : runtime;
-}
-
-export function emitCodecRegistration(node: SchemaNode, graph: SchemaGraph): string {
-  return withModuleConstants(emitNodeRuntime(node, { graph, serde: undefined, issueSource: 'TypeScript' }, true));
 }

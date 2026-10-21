@@ -424,13 +424,13 @@ test('a model file records the profile of the app and imports the MobX hook only
   const paymentOf = (profile: { readonly mobx: boolean; readonly validation: boolean }): string =>
     generate({ root, profile }).artifacts.find(artifact => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
   const plain = paymentOf({ mobx: false, validation: false });
-  assert.match(plain, /profile: \{ validation: false, mobx: false \},/);
+  assert.match(plain, /profile: \{ validation: false \},/);
   assert.doesNotMatch(plain, /mobx-validation|enhanceValidator/);
   const observed = paymentOf({ mobx: true, validation: false });
-  assert.match(observed, /profile: \{ validation: false, mobx: true \},/);
+  assert.match(observed, /profile: \{ validation: false \},/);
   assert.doesNotMatch(observed, /mobx-validation|enhanceValidator/);
   const validating = paymentOf({ mobx: true, validation: true });
-  assert.match(validating, /profile: \{ validation: true, mobx: true \},\n  enhanceValidator: enhanceValidatorWithMobX,/);
+  assert.match(validating, /profile: \{ validation: true \},\n  enhanceValidator: enhanceValidatorWithMobX,/);
   assert.match(validating, /import \{ enhanceValidatorWithMobX \} from '@exprtlabs\/golem\/mobx-validation';/);
 });
 
@@ -505,7 +505,8 @@ test('a companion imports only the validators of its own models and the companio
   const payment = result.artifacts.find(artifact => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
   const imports = payment.split('\n').filter(line => line.startsWith('import '));
   assert.deepEqual(imports, [
-    'import { is_TPayment_c98a45aa, validate_TPayment_c98a45aa } from "./generated/models/models.validators.generated.js";',
+    'import { is_TPayment_c98a45aa, is_TPayment_c98a45aa_model_only, is_TPayment_c98a45aa_wire, is_TPayment_c98a45aa_wire_only, validate_TPayment_c98a45aa, validate_TPayment_c98a45aa_model_only, validate_TPayment_c98a45aa_wire, validate_TPayment_c98a45aa_wire_only } from "./generated/models/models.validators.generated.js";',
+    'import { __golemStringifyWire_TMoney_a7a327f3 } from "./money.model.generated.js";',
     "import { registerGeneratedModel, type GeneratedModel, type GeneratedModelConstructor, type generatedModelWireBrand, type generatedModelFieldsBrand } from '@exprtlabs/golem/model';",
     "import { decodeCheckedInput, decodeDetachedInput, convertModelField, defineModelProperty, requireModelObject } from '@exprtlabs/golem/conversion';",
     "import { assertModelValue, createObjectCodec, isValidModelValue, parseJson, registerIModelClass, requireObjectCodec, serdeValidates, stringifyJsonString, IssueRepresentation, IssueSource, type SerdeOptions as __GolemSerdeOptions, type ValidateOptions as __GolemValidateOptions } from '@exprtlabs/golem/serde';",
@@ -514,6 +515,12 @@ test('a companion imports only the validators of its own models and the companio
     'import { type TMoneyFields, type TMoneyJSON, type TMoneyInit, __golemDecode_TMoney_a7a327f3, __golemInit_TMoney_a7a327f3, __golemEncode_TMoney_a7a327f3 } from "./money.model.generated.js";',
   ]);
   assert.doesNotMatch(payment, /models\.generated|model-manifest/);
+  // TMoney has a Date, so TPayment has its own wire and residual checks, and every name imported for them is used.
+  for (const name of ['is_TPayment_c98a45aa_model_only', 'is_TPayment_c98a45aa_wire', 'is_TPayment_c98a45aa_wire_only', 'validate_TPayment_c98a45aa_model_only', 'validate_TPayment_c98a45aa_wire', 'validate_TPayment_c98a45aa_wire_only', '__golemStringifyWire_TMoney_a7a327f3']) {
+    assert.ok(payment.split(name).length > 2, `${name} is used beyond its import`);
+  }
+  // A cross-file child that is not recursive adds no cycle walk to its parent.
+  assert.doesNotMatch(payment, /assertAcyclicEncodeInput|beginEncode/);
 });
 
 /** A model file with no alias: it extends the class of a companion that the project's own SDK generated. */

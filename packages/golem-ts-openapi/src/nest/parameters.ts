@@ -6,6 +6,7 @@ import {
 } from '../diagnostics.js';
 import {
   authoritativeTypeReference,
+  classHierarchyBaseToDerived,
   containsUndefined,
   controllerMethodSignature,
   controllerParameterType,
@@ -39,6 +40,26 @@ const SWAGGER_PARAMETER_LOCATIONS: readonly (readonly [string, 'query' | 'path' 
  */
 export function parameterOverrideKey(location: string, name: string): string {
   return `${location === 'querystring' ? 'query' : location}:${name}`;
+}
+
+/**
+ * The class-level Swagger parameter decorators of a route, base class first.
+ * `@nestjs/swagger` merges `@ApiHeader` from the whole constructor chain into
+ * every route, and applies `@ApiQuery` and `@ApiParam` only to the methods
+ * that the decorated class itself declares.
+ */
+export function classParameterDecorators(
+  checker: ts.TypeChecker,
+  method: ts.MethodDeclaration,
+  controllerClass: ts.ClassLikeDeclaration,
+): readonly DecoratorInfo[] {
+  const headers = classHierarchyBaseToDerived(checker, controllerClass)
+    .flatMap(declaration => hasAnyDecorator(decoratorsOf(checker, declaration), ['ApiHeader'], NEST_SWAGGER));
+  const declaring = method.parent;
+  const own = ts.isClassLike(declaring)
+    ? hasAnyDecorator(decoratorsOf(checker, declaring), ['ApiQuery', 'ApiParam'], NEST_SWAGGER)
+    : [];
+  return [...headers, ...own];
 }
 
 export function parseParameterOverride(
@@ -146,9 +167,7 @@ function flattenParameter(
   context: NestAnalysisContext,
   parameter: ts.ParameterDeclaration,
   parameterType: TypeReference,
-  index: number,
   location: Exclude<ControllerParameter['location'], 'body' | undefined>,
-  decorators: readonly DecoratorInfo[],
 ): readonly ControllerParameter[] {
   // Keep the declaration-site type (including an optional `| undefined`) unless an inherited generic was instantiated.
   const type = parameterType.node ? context.checker.getTypeAtLocation(parameter) : parameterType.type;
@@ -168,13 +187,11 @@ function flattenParameter(
   }
   if (location === 'query' && context.openapiVersion === '3.2.0') {
     return [{
-      index,
       node: parameter,
       type: parameterType,
       location: 'querystring',
       name: ts.isIdentifier(parameter.name) ? parameter.name.text : 'query',
       required: !isOptionalParameter(parameter, type),
-      decorators,
     } satisfies ControllerParameter];
   }
   if (location === 'query' && hasWholeObjectContract(context, parameter, type)) {
@@ -185,13 +202,11 @@ function flattenParameter(
     const declaration = property.valueDeclaration ?? property.declarations?.[0];
     const propertyNode = parameterPropertyTypeNode(property);
     return {
-      index,
       node: parameter,
       type: typeReference(context.checker, declaration ?? parameter, propertyNode),
       location,
       name: property.name,
       required: !(property.flags & ts.SymbolFlags.Optional) && !containsUndefined(propertyType),
-      decorators,
     } satisfies ControllerParameter;
   });
 }
@@ -288,12 +303,10 @@ export function parseParameters(
         throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, '@Body("field") is not flattened implicitly; declare an explicit request-body contract.'));
       }
       body = {
-        index,
         node: parameter,
         type: parameterType,
         location: 'body',
         required,
-        decorators,
       };
       return;
     }
@@ -302,24 +315,27 @@ export function parseParameters(
         throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `Named @${location.location} parameter ${name} must be primitive or a primitive array; use a whole @Query() object in OpenAPI 3.2 or an explicit supported contract.`));
       }
       parameters.push({
-        index,
         node: parameter,
         type: parameterType,
         location: location.location,
         name,
         required: location.location === 'path' ? true : required,
-        decorators,
       });
       return;
     }
-    parameters.push(...flattenParameter(context, parameter, parameterType, index, location.location, decorators));
+    parameters.push(...flattenParameter(context, parameter, parameterType, location.location));
   });
   const methodDecorators = decoratorsOf(context.checker, method);
+  const classDecorators = classParameterDecorators(context.checker, method, controllerClass);
+  // `@nestjs/swagger` puts class-level headers before the route's own parameters.
+  const classHeaders: ControllerParameter[] = [];
   for (const [decoratorName, location] of SWAGGER_PARAMETER_LOCATIONS) {
-    for (const decorator of hasAnyDecorator(methodDecorators, [decoratorName], NEST_SWAGGER)) {
+    const inherited = [...hasAnyDecorator(classDecorators, [decoratorName], NEST_SWAGGER)].reverse();
+    // A method's declaration wins over its class's, and a derived class's over its base's.
+    for (const decorator of [...hasAnyDecorator(methodDecorators, [decoratorName], NEST_SWAGGER), ...inherited]) {
       const options = decoratorOptions(context, decorator);
       const name = options.string('name');
-      if (!name || parameters.some(parameter => parameter.name === name
+      if (!name || [...parameters, ...classHeaders].some(parameter => parameter.name === name
         && parameterOverrideKey(String(parameter.location), name) === parameterOverrideKey(location, name))) continue;
       // In OpenAPI 3.2 a query DTO field is documented inside the querystring schema, as 3.1 documents its flattened parameter.
       if (location === 'query' && parameters.some(parameter => querystringHasProperty(context, parameter, name))) continue;
@@ -328,18 +344,17 @@ export function parseParameters(
         type: context.checker.getStringType(),
         sourceFile: method.getSourceFile(),
       } satisfies TypeReference;
-      parameters.push({
-        index: method.parameters.length + parameters.length,
+      (location === 'header' && inherited.includes(decorator) ? classHeaders : parameters).push({
         node: method,
         type,
         location,
         name,
         // @nestjs/swagger defaults @ApiQuery and @ApiParam to required; @ApiHeader passes `required` through.
         required: location === 'header' ? options.boolean('required') === true : options.boolean('required') !== false,
-        decorators: [decorator],
       });
     }
   }
-  assertDistinctParameters(context, parameters);
-  return { parameters, ...(body ? { body } : {}), ...(manualResponse ? { manualResponse } : {}) };
+  const allParameters = [...classHeaders.reverse(), ...parameters];
+  assertDistinctParameters(context, allParameters);
+  return { parameters: allParameters, ...(body ? { body } : {}), ...(manualResponse ? { manualResponse } : {}) };
 }

@@ -8,11 +8,12 @@ import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { readModelManifest } from './model-manifest.js';
 import { createProjectProgram, canonicalFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
+import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { advertisedModelManifests } from './type-analysis/provenance.js';
 import { fieldProvenance } from './type-analysis/projections.js';
 import { declaredModelAlias, foreignModelReason, modelDeclarationKind, resolveSymbol } from './type-analysis/symbols.js';
 
-export interface ScanInput {
+interface ScanInput {
   /** Absolute project root; file paths in results are relative to it. */
   readonly root: string;
   /** The directory of the golem.yaml. A model that the models job of another golem.yaml covers is not this project's. */
@@ -28,7 +29,7 @@ export interface ScanInput {
 }
 
 /** A `@Body()` or `@Query()` parameter that the scan stamps with `nestModelCodec(id)`. */
-export interface NestCodecSite {
+interface NestCodecSite {
   /** Root-relative file. */
   readonly file: string;
   readonly line: number;
@@ -112,11 +113,16 @@ class CodecKeys {
   private readonly byDeclaration = new Map<string, Map<string, Set<string>>>();
   /** Each `<file name>#<name>` tail's ids, with the files that give each; only old key tables feed it. */
   private readonly byTail = new Map<string, Map<string, Set<string>>>();
+  /** The generated module that registers each codec id, where a key file or a manifest says which. */
+  private readonly modules = new Map<string, string>();
 
   constructor(private readonly program: ts.Program, private readonly checker: ts.TypeChecker, private readonly root: string, codecKeysFile: string) {
     const table = portable(root, codecKeysFile);
     for (const [declaration, id] of Object.entries(readCodecKeysFile(codecKeysFile))) {
-      if (declaration.lastIndexOf('#') > 0 && id !== '') this.add(declaration.replace(/\\/g, '/'), id, table);
+      if (declaration.lastIndexOf('#') > 0 && id !== '') {
+        this.add(declaration.replace(/\\/g, '/'), id, table);
+        this.addModule(id, this.companionOf(path.resolve(root, declaration.slice(0, declaration.lastIndexOf('#')))));
+      }
     }
     this.addManifests();
     this.addProgramTables();
@@ -142,6 +148,7 @@ class CodecKeys {
         if (model.codecId === undefined) continue;
         for (const { module, export: exportName } of [model.generated, model.type, ...(model.type.aliases ?? [])]) {
           const symbol = declarationsOf(manifestFile, module, exportName);
+          this.addModule(model.codecId, this.program.getSourceFile(canonicalFilename(path.resolve(path.dirname(manifestFile), model.generated.module)))?.fileName);
           for (const declaration of symbol?.declarations ?? []) {
             this.add(`${portable(this.root, declaration.getSourceFile().fileName)}#${symbol!.name}`, model.codecId, table);
           }
@@ -175,6 +182,21 @@ class CodecKeys {
       };
       visit(file);
     }
+  }
+
+  /** The generated companion of a model file, `x.model.generated.ts` for `x.model.ts`, when the program holds it. */
+  private companionOf(modelFile: string): string | undefined {
+    const extension = /\.[cm]?ts$/.exec(modelFile)?.[0];
+    return extension === undefined ? undefined : this.program.getSourceFile(canonicalFilename(`${modelFile.slice(0, -extension.length)}.generated${extension}`))?.fileName;
+  }
+
+  private addModule(id: string, module: string | undefined): void {
+    if (module !== undefined && !this.modules.has(id)) this.modules.set(id, module);
+  }
+
+  /** The absolute file of the generated module that registers the codec, or undefined when no key file or manifest names it. */
+  moduleOf(id: string): string | undefined {
+    return this.modules.get(id);
   }
 
   /** `byFileName` also lets a declaration of another path with the same file name and name resolve: only for old key tables, whose paths have no known base. */
@@ -366,6 +388,8 @@ interface NestBinding {
   readonly label: string;
   /** The type is an array of the model. */
   readonly array: boolean;
+  /** The type name of the model, when it has one. */
+  readonly name?: ts.EntityName;
 }
 
 function nestBinding(
@@ -382,7 +406,7 @@ function nestBinding(
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
   if (!symbol) return { ...unbound, golemModel: modelDeclarationKind(checker, model) !== undefined };
-  return { ...unbound, id: keys.idForSymbol(symbol, dependencies), golemModel: isGolemModel(checker, symbol) };
+  return { ...unbound, id: keys.idForSymbol(symbol, dependencies), golemModel: isGolemModel(checker, symbol), name };
 }
 
 // One file
@@ -391,6 +415,8 @@ interface FileScan {
   readonly edits: RewriteEdit[];
   /** Imported name to its module; one module per name, because the applier imports each name once. */
   readonly imports: Map<string, string>;
+  /** Modules the file loads for their side effects: the generated modules that register the codecs its edits name. */
+  readonly loads: Set<string>;
   readonly diagnostics: GolemDiagnostic[];
   readonly nestSites: NestCodecSite[];
   /** Root-relative key tables and generated model modules the edits were resolved from. */
@@ -412,6 +438,46 @@ function importOf(
     return;
   }
   scan.imports.set(name, from);
+}
+
+/** The module text of the import that binds the leftmost name of a type, as the file spells it. */
+function importSpecifierOf(checker: ts.TypeChecker, name: ts.EntityName): string | undefined {
+  for (const declaration of checker.getSymbolAtLocation(entityNameSegments(name)[0]!)?.declarations ?? []) {
+    let node: ts.Node = declaration;
+    while (!ts.isImportDeclaration(node) && !ts.isSourceFile(node)) node = node.parent;
+    if (ts.isImportDeclaration(node) && ts.isStringLiteralLike(node.moduleSpecifier)) return node.moduleSpecifier.text;
+  }
+  return undefined;
+}
+
+/** The spelling of a project source's module from `from`: relative, with the extension of its emitted file, as Node, the bundlers and tsc all resolve it. */
+function relativeSpecifier(from: string, target: string): string {
+  const emitted = target.replace(/\.ts$/, '.js').replace(/\.mts$/, '.mjs').replace(/\.cts$/, '.cjs');
+  const relative = path.relative(path.dirname(from), emitted).split(path.sep).join('/');
+  return relative.startsWith('../') ? relative : `./${relative}`;
+}
+
+/**
+ * A rewrite that names a codec id also loads the module that registers it: TypeScript drops an import that the file uses only as a
+ * type, so without this the codec never registers. A project companion is loaded by its own path, and an installed SDK's generated
+ * module by the package name and the subpath that reaches it. The module the file imports the type from is only the last resort: it
+ * may re-export the type and compile to an empty import.
+ */
+function loadCodecModule(
+  scan: FileScan,
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile },
+  id: string,
+  typeName: ts.EntityName | undefined,
+): void {
+  const { root, checker, keys, file } = input;
+  const module = keys.moduleOf(id);
+  if (module === file.fileName) return;
+  const project = module !== undefined && !module.split(/[\\/]/).includes('node_modules') && !/\.d\.[cm]?ts$/.test(module);
+  const installed = module === undefined || project ? undefined : packageSpecifier(module, file.fileName, root);
+  const specifier = project ? relativeSpecifier(file.fileName, module)
+    : installed?.kind === 'package' ? installed.specifier
+      : typeName && importSpecifierOf(checker, typeName);
+  if (specifier) scan.loads.add(specifier);
 }
 
 /** The module and exported name of a type-only import that binds the name; undefined for any other binding. */
@@ -446,25 +512,58 @@ function constructTarget(
   if (!symbol || (symbol.flags & ts.SymbolFlags.Class) === 0) return undefined;
   const local = name.getText(input.file);
   if (/[\r\n]/.test(local)) return undefined;
-  if (ts.isIdentifier(name)) {
-    const typeOnly = (input.checker.getSymbolAtLocation(name)?.declarations ?? [])
-      .map(typeOnlyImportOf).find((found) => found !== undefined);
-    if (typeOnly) {
-      importOf(scan, input.root, input.file, name, typeOnly.exported, typeOnly.from);
-      return `${REWRITE_IMPORT_PREFIX}${typeOnly.exported}`;
-    }
+  const segments = entityNameSegments(name);
+  const root = segments[0]!;
+  const declarations = input.checker.getSymbolAtLocation(root)?.declarations ?? [];
+  const typeOnly = declarations.map(typeOnlyImportOf).find((found) => found !== undefined);
+  if (typeOnly) {
+    // `Payment`, or `m.Payment` where `import type { m }` binds a namespace: the import is aliased and keeps the rest of the path.
+    importOf(scan, input.root, input.file, name, typeOnly.exported, typeOnly.from);
+    return [`${REWRITE_IMPORT_PREFIX}${typeOnly.exported}`, ...segments.slice(1).map((segment) => segment.text)].join('.');
+  }
+  const module = declarations.map(typeOnlyNamespaceImportOf).find((found) => found !== undefined);
+  if (module && segments.length > 1) {
+    // `m.Payment` where `import type * as m` binds the module: the member is imported on its own, as `Payment` is above.
+    const member = segments[1]!.text;
+    importOf(scan, input.root, input.file, name, member, module);
+    return [`${REWRITE_IMPORT_PREFIX}${member}`, ...segments.slice(2).map((segment) => segment.text)].join('.');
   }
   return local;
 }
 
-function constructOptionEdits(text: string, file: ts.SourceFile, call: ts.CallExpression, target: string): RewriteEdit[] {
+/** The identifiers of a name, left to right. */
+function entityNameSegments(name: ts.EntityName): ts.Identifier[] {
+  return ts.isIdentifier(name) ? [name] : [...entityNameSegments(name.left), name.right];
+}
+
+/** The module of a type-only `import type * as ns from '…'` that binds the namespace; undefined for any other binding. */
+function typeOnlyNamespaceImportOf(declaration: ts.Node): string | undefined {
+  const clause = declaration.parent;
+  if (!ts.isNamespaceImport(declaration) || !ts.isImportClause(clause) || !ts.isImportDeclaration(clause.parent)) return undefined;
+  const { moduleSpecifier } = clause.parent;
+  const typeOnly = clause.isTypeOnly === true || clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
+  return typeOnly && ts.isStringLiteralLike(moduleSpecifier) ? moduleSpecifier.text : undefined;
+}
+
+/** Whether a property name is `construct`, written plain, quoted or as a computed string. */
+function namesConstruct(name: ts.PropertyName): boolean {
+  if (ts.isComputedPropertyName(name)) return ts.isStringLiteralLike(name.expression) && name.expression.text === 'construct';
+  return (ts.isIdentifier(name) || ts.isStringLiteralLike(name)) && name.text === 'construct';
+}
+
+function constructOptionEdits(file: ts.SourceFile, call: ts.CallExpression, target: string): RewriteEdit[] {
   const [first, second] = call.arguments;
   if (!first) return [];
   if (!second) return [insertion(first.end, `, { construct: ${target} }`)];
+  let options: ts.Expression = second;
+  while (ts.isParenthesizedExpression(options)) options = options.expression;
+  const given = ts.isObjectLiteralExpression(options)
+    && options.properties.some((property) => !ts.isSpreadAssignment(property) && namesConstruct(property.name));
+  if (given) return [];
   const start = second.getStart(file);
-  if (text.slice(start, second.end).includes('construct:')) return [];
+  // The options spread last, so a `construct` that the user's options hold, in a variable or a spread, wins over the default class.
   // Boundary insertions keep serde calls nested in the options independent edits.
-  return [insertion(start, '{ ...'), insertion(second.end, `, construct: ${target} }`)];
+  return [insertion(start, `{ construct: ${target}, ...`), insertion(second.end, ' }')];
 }
 
 function scanFile(
@@ -473,7 +572,7 @@ function scanFile(
 ): FileScan {
   const { root, checker, keys, nest, boundary } = input;
   const text = file.text;
-  const scan: FileScan = { edits: [], imports: new Map(), diagnostics: [], nestSites: [], dependencies: new Set() };
+  const scan: FileScan = { edits: [], imports: new Map(), loads: new Set(), diagnostics: [], nestSites: [], dependencies: new Set() };
   const classes: { readonly name: string; readonly id: string; readonly end: number }[] = [];
   let reserved: ts.Identifier | undefined;
 
@@ -508,9 +607,10 @@ function scanFile(
       text: `${REWRITE_IMPORT_PREFIX}requireObjectCodec(${JSON.stringify(id)}).${method}(`,
     });
     importOf(scan, root, file, call, 'requireObjectCodec', SERDE_MODULE);
+    loadCodecModule(scan, { root, checker, keys, file }, id, typeName);
     if (method === 'parse' || method === 'fromWireFormat') {
       const target = constructTarget(scan, { root, checker, file }, typeName);
-      if (target !== undefined) scan.edits.push(...constructOptionEdits(text, file, call, target));
+      if (target !== undefined) scan.edits.push(...constructOptionEdits(file, call, target));
     }
   };
 
@@ -519,7 +619,7 @@ function scanFile(
     const names = decoratorNames(parameter);
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR)) return;
-    const { id, primitive, golemModel, label, array } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
+    const { id, primitive, golemModel, label, array, name } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
     if (primitive) return;
     if (id === '') {
       if (golemModel) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NO_CODEC, `@${decorator}() type ${label} has no unique codec id; run golem generate`));
@@ -527,6 +627,7 @@ function scanFile(
     }
     scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_CODEC_DECORATOR}(${JSON.stringify(id)}${array ? ', true' : ''}) `));
     importOf(scan, root, file, parameter, NEST_CODEC_DECORATOR, NEST_MODULE);
+    loadCodecModule(scan, { root, checker, keys, file }, id, name);
     const { line, character } = file.getLineAndCharacterOfPosition(parameter.type.getStart(file));
     scan.nestSites.push({ file: portable(root, file.fileName), line: line + 1, column: character + 1, decorator, label, id });
   };
@@ -537,10 +638,11 @@ function scanFile(
     if (!method.type || !method.body || !ts.isClassLike(method.parent)) return;
     const returned = nestModelType(method.type, true);
     if (!returned || hasDecorator(decoratorNames(method), NEST_RETURN_DECORATOR)) return;
-    const { id, primitive } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, returned.model);
+    const { id, primitive, name } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, returned.model);
     if (primitive || id === '') return;
     scan.edits.push(insertion(method.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_RETURN_DECORATOR}(${JSON.stringify(id)}${returned.array ? ', true' : ''}) `));
     importOf(scan, root, file, method, NEST_RETURN_DECORATOR, NEST_MODULE);
+    loadCodecModule(scan, { root, checker, keys, file }, id, name);
   };
 
   const visit = (node: ts.Node): void => {
@@ -597,6 +699,7 @@ export interface FileScanResult extends FileRewrite {
 function resultOf(scan: FileScan): FileScanResult {
   const byModule = new Map<string, string[]>();
   for (const [name, from] of scan.imports) byModule.set(from, [...(byModule.get(from) ?? []), name]);
+  for (const from of scan.loads) if (!byModule.has(from)) byModule.set(from, []);
   const imports: RewriteImport[] = [...byModule]
     .sort(([left], [right]) => compareText(left, right))
     .map(([from, names]) => ({ from, names: names.sort(compareText) }));

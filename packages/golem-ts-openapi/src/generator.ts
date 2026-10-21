@@ -377,7 +377,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     globalPrefix: context.globalPrefix,
     uriVersioning: context.uriVersioning,
   });
-  const documentResult = await buildDocument({
+  const builtDocument = await buildDocument({
     checker,
     program: programInfo.program,
     openapiVersion: normalized.openapiVersion,
@@ -389,8 +389,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     ...(context.tags ? { tags: context.tags } : {}),
     routes: analysis.routes,
   });
-  const documentComponents = objectRecord(documentResult.document.components);
-  const documentSchemas = objectRecord(documentComponents?.schemas) ?? {};
+  const documentComponents = objectRecord(builtDocument.components);
   // A class named by getSchemaPath() may reuse an existing component only when it is that component's contract.
   const assertComponentIdentity = (name: string, reference: TypeReference): void => {
     const described = contractAnalysis.describe(reference.type, reference.sourceNode ?? reference.sourceFile);
@@ -408,7 +407,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     added = false;
     for (const [name, reference] of schemaComponents) {
       if (name in registeredSchemas) continue;
-      if (documentSchemas[name] !== undefined || contractAnalysis.definitions[name] !== undefined) {
+      if (contractAnalysis.definitions[name] !== undefined) {
         assertComponentIdentity(name, reference);
         continue;
       }
@@ -418,19 +417,19 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   }
   const withComponents = (schemas: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => (
     Object.keys(schemas).length === 0
-      ? documentResult.document
-      : { ...documentResult.document, components: { ...(documentComponents ?? {}), schemas } }
+      ? builtDocument
+      : { ...builtDocument, components: { ...(documentComponents ?? {}), schemas } }
   );
   for (const [name, schema] of enumComponents) {
-    if (documentSchemas[name] === undefined && !(name in registeredSchemas)) registeredSchemas[name] = schema;
+    if (!(name in registeredSchemas)) registeredSchemas[name] = schema;
   }
-  const registeredDocument = withComponents({ ...documentSchemas, ...registeredSchemas });
+  const registeredDocument = withComponents(registeredSchemas);
   const generatedSchemas = reachableGeneratedSchemas(
     registeredDocument,
     contractAnalysis.definitions,
     schemaOptions,
   );
-  const finalDocument = withComponents({ ...documentSchemas, ...registeredSchemas, ...generatedSchemas });
+  const finalDocument = withComponents({ ...registeredSchemas, ...generatedSchemas });
   assertResolvedLocalReferences(finalDocument);
   const content = serializeForOutput(finalDocument, normalized.output);
   const artifact: GolemArtifact = { path: normalized.output, content };
@@ -441,7 +440,6 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   const watchInputs = new Set(projectWatchInputs(
     programInfo,
     programInfo.program,
-    normalized.root,
     sources,
     [],
   ));

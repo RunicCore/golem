@@ -13,7 +13,7 @@ import {
 } from './sequence-conversion.js';
 
 export type ObjectTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'object' }>;
-export type ArrayTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'array' }>;
+type ArrayTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'array' }>;
 export type UnionTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'union' }>;
 
 export const OBJECT_UNION_DISCRIMINATOR_ERROR =
@@ -137,7 +137,7 @@ export function discriminatorMatch(access: string, values: readonly Discriminato
 }
 
 /** One dispatched variant: its tag values, optional model class and conversion. */
-export interface DispatchBranch {
+interface DispatchBranch {
   readonly values: readonly DiscriminatorValue[];
   /** Instances of this class select the branch before any tag test. */
   readonly className?: string;
@@ -225,7 +225,7 @@ export function emitDispatch(options: DispatchOptions): string {
 }
 
 /** The variants of a `scalar | scalar[]` or `scalar | [T, ...]` union: its one sequence, and the scalar variants beside it. */
-export interface ScalarOrArray {
+interface ScalarOrArray {
   readonly sequence: ArrayTypeDescriptor | TupleConversionDescriptor;
   readonly scalars: readonly ModelTypeDescriptor[];
 }

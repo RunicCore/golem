@@ -70,7 +70,7 @@ export function typeReference(
   };
 }
 
-export function typeReferenceFromExpression(
+function typeReferenceFromExpression(
   checker: ts.TypeChecker,
   expression: ts.Expression,
 ): TypeReference | undefined {
@@ -279,7 +279,7 @@ export function isPrimitive(type: ts.Type): boolean {
   )) !== 0;
 }
 
-export function arrayElementType(checker: ts.TypeChecker, type: ts.Type): ts.Type | undefined {
+function arrayElementType(checker: ts.TypeChecker, type: ts.Type): ts.Type | undefined {
   if (checker.isArrayType(type) || checker.isTupleType(type)) return checker.getTypeArguments(type as ts.TypeReference)[0];
   return undefined;
 }
@@ -353,7 +353,7 @@ function descriptorRecord(value: unknown): Record<string, unknown> | undefined {
     : undefined;
 }
 
-export function queryObjectDescriptor(
+function queryObjectDescriptor(
   context: NestAnalysisContext,
   parameter: ts.ParameterDeclaration,
   type: ts.Type,

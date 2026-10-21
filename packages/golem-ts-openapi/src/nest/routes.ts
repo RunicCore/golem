@@ -11,10 +11,9 @@ import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpr
 import { callStringValues, decoratorOptions, parseSecurity, parseTags, readBoolean, type MetadataReader } from './metadata.js';
 import { resolveValueSymbol, unwrapExpression } from '../evaluation/static-value.js';
 import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, propertyInitializer, staticObject } from './symbols.js';
-import { parseParameters, parseParameterOverride } from './parameters.js';
+import { classParameterDecorators, parseParameters, parseParameterOverride } from './parameters.js';
 import { assertManualResponseContract, parseRequestBody, parseResponses } from './responses.js';
 import type {
-  AnalyzedController,
   ControllerAnalysisResult,
   ControllerRoute,
   DecoratorInfo,
@@ -43,7 +42,7 @@ const REQUEST_METHODS: Readonly<Record<number, NestHttpMethod>> = {
 /** More optional path segments than this would emit 2^n operations for one method. */
 const MAX_OPTIONAL_SEGMENTS = 4;
 
-export interface UriVersioning {
+interface UriVersioning {
   readonly enabled: boolean;
   readonly prefix: string;
   readonly defaultVersions: readonly string[];
@@ -60,7 +59,7 @@ function normalizeSegment(value: string): string {
   return value.trim().replace(/^\/+|\/+$/g, '');
 }
 
-export function joinRoutePath(...parts: readonly (string | undefined)[]): string {
+function joinRoutePath(...parts: readonly (string | undefined)[]): string {
   const segments = parts
     .filter((part): part is string => part !== undefined && part !== '')
     .flatMap(part => part.split('/').map(normalizeSegment).filter(Boolean));
@@ -314,7 +313,6 @@ function parseOperation(
 }
 
 function versionExpressions(
-  checker: ts.TypeChecker,
   decorators: readonly DecoratorInfo[],
 ): readonly ts.Expression[] {
   const decorator = hasDecorator(decorators, 'Version', NEST_COMMON);
@@ -351,13 +349,13 @@ async function analyzeController(
   classDeclaration: ts.ClassDeclaration,
   globalPrefix: string | undefined,
   uriVersioning: UriVersioning,
-): Promise<AnalyzedController> {
+): Promise<readonly ControllerRoute[]> {
   const classDecorators = decoratorsOf(context.checker, classDeclaration);
   const controllerPath = classControllerPath(context.checker, classDeclaration);
   const classExpansion = expandOptionalSegments(await evaluateStringValues(controllerPath.path, context, ['']), classDeclaration);
   const classPaths = classExpansion.paths;
   const classVersionValues = await versionValues(
-    controllerPath.version ? [controllerPath.version] : versionExpressions(context.checker, classDecorators),
+    controllerPath.version ? [controllerPath.version] : versionExpressions(classDecorators),
     context,
   );
   // @nestjs/swagger class tags and security accumulate along the constructor chain, base first.
@@ -378,7 +376,7 @@ async function analyzeController(
     const optionalNames = new Set([...classExpansion.optionalNames, ...routeExpansion.optionalNames]);
     const operation = parseOperation(context, method);
     const parameterResult = parseParameters(context, method, classDeclaration);
-    const methodVersions = await versionValues(versionExpressions(context.checker, decorators), context);
+    const methodVersions = await versionValues(versionExpressions(decorators), context);
     const versions = methodVersions.length > 0 ? methodVersions : classVersionValues.length > 0 ? classVersionValues : uriVersioning.defaultVersions.length > 0 ? uriVersioning.defaultVersions : [''];
     const normalizedVersions = versions.length > 0 ? versions : [''];
     const effectiveVersions = uriVersioning.enabled
@@ -395,7 +393,10 @@ async function analyzeController(
     const apiBody = parsedBody && parameterResult.body
       ? { ...parsedBody, declaredType: parameterResult.body.type }
       : parsedBody;
-    const parameterOverrides = parseParameterOverride(context, decorators);
+    const parameterOverrides = {
+      ...parseParameterOverride(context, classParameterDecorators(context.checker, method, classDeclaration)),
+      ...parseParameterOverride(context, decorators),
+    };
     const pathExpansion = routePaths.length > 1 || classPaths.length > 1;
     const versionExpansion = effectiveVersions.length > 1;
     const operationBase = operation.operationId ?? `${controllerName}_${method.name.getText()}`;
@@ -425,13 +426,11 @@ async function analyzeController(
           || !optionalNames.has(String(parameter.name)));
         routes.push({
           controller: controllerName,
-          controllerClass: classDeclaration,
           methodName: method.name.getText(),
           method,
           sourceFile: method.getSourceFile(),
           httpMethod: selected.method,
           path: routePath,
-          ...(version ? { version } : {}),
           operationId,
           ...(operation.summary ? { summary: operation.summary } : {}),
           ...(operation.description ? { description: operation.description } : {}),
@@ -451,23 +450,29 @@ async function analyzeController(
       }
     }
   }
-  return {
-    name: controllerName,
-    classDeclaration,
-    sourceFile: classDeclaration.getSourceFile(),
-    routes,
-  };
+  return routes;
+}
+
+/**
+ * Nest Swagger stores the argument of `@ApiExcludeController(disable = true)`
+ * and skips the controller when the first stored value (the decorator nearest
+ * the class) is true.
+ */
+function apiExcludeController(reader: MetadataReader, decorators: readonly DecoratorInfo[]): boolean {
+  const nearest = hasAnyDecorator(decorators, ['ApiExcludeController'], NEST_SWAGGER).at(-1);
+  if (!nearest) return false;
+  return readBoolean(reader, callArguments(nearest)[0], '@ApiExcludeController()', TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator) ?? true;
 }
 
 function exportedControllerClasses(
-  checker: ts.TypeChecker,
+  context: NestAnalysisContext,
   sourceFile: ts.SourceFile,
 ): readonly ts.ClassDeclaration[] {
   const controllers: ts.ClassDeclaration[] = [];
   for (const statement of sourceFile.statements) {
     if (!ts.isClassDeclaration(statement) || !exportClass(statement)) continue;
-    const decorators = decoratorsOf(checker, statement);
-    if (hasDecorator(decorators, 'ApiExcludeController', NEST_SWAGGER)) continue;
+    const decorators = decoratorsOf(context.checker, statement);
+    if (apiExcludeController(context, decorators)) continue;
     if (hasDecorator(decorators, 'Controller', NEST_COMMON)) controllers.push(statement);
   }
   return controllers;
@@ -478,24 +483,24 @@ export async function analyzeControllers(
   options: { readonly globalPrefix?: string; readonly uriVersioning?: unknown } = {},
 ): Promise<ControllerAnalysisResult> {
   const uriVersioning = parseUriVersioning(options.uriVersioning);
-  const controllers: AnalyzedController[] = [];
+  const routes: ControllerRoute[] = [];
+  let controllerCount = 0;
   for (const filename of context.sources) {
     const sourceFile = context.program.getSourceFile(filename);
     if (!sourceFile) {
       throw new Error(`Could not load controller source: ${filename}`);
     }
-    for (const declaration of exportedControllerClasses(context.checker, sourceFile)) {
-      const controller = await analyzeController(context, declaration, options.globalPrefix, uriVersioning);
-      controllers.push(controller);
+    for (const declaration of exportedControllerClasses(context, sourceFile)) {
+      routes.push(...await analyzeController(context, declaration, options.globalPrefix, uriVersioning));
+      controllerCount += 1;
     }
   }
-  if (controllers.length === 0) {
+  if (controllerCount === 0) {
     throw new TsToOpenApiError({
       severity: GolemDiagnosticSeverity.Error,
       code: TsToOpenApiDiagnosticCode.NoExportedControllers,
       message: 'No exported @Controller classes were found in the configured sources.',
     });
   }
-  const routes = controllers.flatMap(controller => controller.routes);
-  return { controllers, routes };
+  return { routes };
 }

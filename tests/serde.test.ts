@@ -384,12 +384,12 @@ test('fromWireFormat copies identity arrays and tuples instead of aliasing the i
   assert.deepEqual(encoded.ip, wire.ip);
 });
 
-test('a codec that is not registered names the generated file beside the model file', () => {
+test('a codec that is not registered is a golem fault that names its id and model', () => {
+  // protects: R-18 the rewrite loads each codec module, so a missing codec is golem's fault, not advice to the user
   assert.throws(() => requireObjectCodec('TOrder_0badc0de'), (error: unknown) => {
     assert.ok(error instanceof LibError);
     assert.equal(error.kind, LibErrorKind.ValidationUnavailable);
-    assert.match(error.message, /the `\.generated\.js` file beside the model file \(such as `order\.entity\.generated\.js` for `order\.entity\.ts`\)/);
-    assert.match(error.message, /Import that generated file, or a value from its model file/);
+    assert.match(error.message, /^golem fault: the IObject codec "TOrder_0badc0de" for model TOrder is not registered\./);
     return true;
   });
 });

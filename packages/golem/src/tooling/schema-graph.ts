@@ -15,7 +15,7 @@ import {
 } from './schema.js';
 import { compareText } from './generator-api.js';
 
-export type SchemaNodeKind = 'object' | 'array' | 'tuple' | 'union' | 'intersection' | 'scalar' | 'reference' | 'operation';
+export type SchemaNodeKind = 'object' | 'array' | 'tuple' | 'union' | 'intersection' | 'scalar' | 'reference';
 
 export interface SchemaNode {
   readonly id: string;
@@ -61,17 +61,8 @@ export function serdeWireDescriptor(descriptor: ModelTypeDescriptor): ModelTypeD
   return serde.wireDescriptor ?? serde.wire;
 }
 
-export interface OperationNode {
-  readonly id: string;
-  readonly method: string;
-  readonly path: string;
-  readonly inputId?: string;
-  readonly outputId?: string;
-}
-
 export interface SchemaGraph {
   readonly nodes: ReadonlyMap<string, SchemaNode>;
-  readonly operations: ReadonlyMap<string, OperationNode>;
   intern(
     descriptor: ModelTypeDescriptor,
     name?: string,
@@ -83,7 +74,6 @@ export interface SchemaGraph {
    * for a name and shape; without it, either matches.
    */
   nodeFor(descriptor: ModelTypeDescriptor, name?: string, constructs?: boolean): SchemaNode | undefined;
-  addOperation(operation: OperationNode): void;
   seal(): void;
   topo(): readonly SchemaNode[];
 }
@@ -102,6 +92,11 @@ export interface SchemaGraphOptions {
    * SDK manifests) that publish `#model-only` / `#wire-only` schemas.
    */
   readonly externalResidualIds?: { readonly modelOnly: ReadonlySet<string>; readonly wireOnly: ReadonlySet<string> };
+  /**
+   * Codec ids and aliases of models emitted elsewhere that publish a `#wire` schema. A model that
+   * reaches one is not `sameSchema`: its own wire check must read that model's wire form.
+   */
+  readonly externalWireIds?: ReadonlySet<string>;
 }
 
 function nodeKind(descriptor: ModelTypeDescriptor): SchemaNodeKind {
@@ -499,7 +494,6 @@ export function createSchemaGraph(
   options: SchemaGraphOptions = {},
 ): SchemaGraph {
   const nodes = new Map<string, SchemaNode>();
-  const operations = new Map<string, OperationNode>();
   const byKey = new Map<string, string>();
   const byName = new Map<string, string>();
   // Interned nodes by the exact name they were interned under; short names can be ambiguous, these are not.
@@ -778,6 +772,28 @@ export function createSchemaGraph(
         sameSchema: canonicalSchemaKey(jsonSchema) === canonicalSchemaKey(modelJsonSchema),
       });
     }
+    // A reference to another module's codec reads the same in both planes, so the comparison above
+    // cannot see that codec's wire form: a node that reaches a codec with a `#wire` schema has its own.
+    const externalWireIds = options.externalWireIds;
+    if (externalWireIds !== undefined && externalWireIds.size > 0) {
+      const publishesWire = (node: SchemaNode): boolean => [
+        node.codecId, node.name, node.id, ...(node.descriptor.kind === 'generated-model' ? [node.descriptor.id] : []),
+      ].some((alias) => externalWireIds.has(alias));
+      const reachesWire = (node: SchemaNode, seen: Set<string>): boolean => {
+        if (node.validationEnabled === false || seen.has(node.id)) return false;
+        seen.add(node.id);
+        if (node.kind === 'reference' && publishesWire(node)) return true;
+        return node.edges.some((edge) => {
+          const target = nodes.get(edge);
+          return target !== undefined && reachesWire(target, seen);
+        });
+      };
+      for (const [id, node] of nodes) {
+        if (node.sameSchema && !node.siblingCodec && node.kind !== 'reference' && reachesWire(node, new Set())) {
+          nodes.set(id, { ...node, sameSchema: false });
+        }
+      }
+    }
     // Residual schemas: iterate to a fixed point so a reference (recursive ones
     // included) points at a residual schema only when that model has one.
     const residualIds = {
@@ -827,12 +843,8 @@ export function createSchemaGraph(
 
   return {
     nodes,
-    operations,
     intern,
     nodeFor,
-    addOperation(operation) {
-      operations.set(operation.id, operation);
-    },
     seal,
     topo() {
       const visiting = new Set<string>();

@@ -393,7 +393,6 @@ export function formatDiagnostics(
 export function projectWatchInputs(
   info: ProgramInfo,
   program: ts.Program,
-  root: string,
   sources: readonly string[],
   manifestPaths: readonly string[],
 ): string[] {

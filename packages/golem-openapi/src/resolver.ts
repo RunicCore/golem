@@ -7,7 +7,7 @@ import { loadReferenceGraph, type ReferenceResolutionOptions } from './reference
 
 export { readLimitedBody, type ReferenceResolutionOptions } from './reference-loader.js';
 
-export interface LoadedOpenApiInput {
+interface LoadedOpenApiInput {
   readonly document: unknown;
   /** Local files the document depends on; generation watches them. */
   readonly localInputs: readonly string[];

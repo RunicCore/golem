@@ -3,8 +3,8 @@ import path from 'node:path';
 
 export interface CodecPackageOptions {
   readonly name: string;
-  /** `exports` map written verbatim into package.json. */
-  readonly exports: Readonly<Record<string, unknown>>;
+  /** `exports` map written verbatim into package.json; leave it out for a package with no `exports` field. */
+  readonly exports?: Readonly<Record<string, unknown>>;
   /** Files relative to the package root, written verbatim. */
   readonly files: Readonly<Record<string, string>>;
 }

@@ -103,6 +103,62 @@ test('a validating model project runs when its sources and its companions are im
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { good: true, bad: false });
 });
 
+test('a construct option the call passes wins over the rewrite default, given as shorthand or inside a variable', async (t) => {
+  // protects: T-170 the user's own class is built, not the class in the type argument
+  const root = await project(t, 'loader-construct-option');
+  write(root, 'src/main.ts', [
+    `import { parse } from '${SERDE}';`,
+    "import { Payment } from './money.model.ts';",
+    'class Sub extends Payment {}',
+    'const construct = Sub;',
+    'const options = { construct };',
+    "const text = JSON.stringify({ id: '1', amount: { currency: 'USD', value: '1' }, note: 'n' });",
+    'const plain = parse<Payment>(text);',
+    'console.log(JSON.stringify({',
+    '  plain: plain.constructor === Payment,',
+    '  shorthand: parse<Payment>(text, { construct }) instanceof Sub,',
+    '  variable: parse<Payment>(text, options) instanceof Sub,',
+    '  other: parse<Payment>(text, { validate: false }).constructor === Payment,',
+    '}));',
+    '',
+  ].join('\n'));
+  const result = await run(root, 'src/main.ts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { plain: true, shorthand: true, variable: true, other: true });
+});
+
+test('a parse call whose class comes through a type-only namespace import runs', async (t) => {
+  // protects: T-171 the erased namespace import must not be named at run time
+  const root = await project(t, 'loader-type-only-namespace');
+  write(root, 'src/main.ts', [
+    `import { parse } from '${SERDE}';`,
+    "import type * as models from './money.model.ts';",
+    "import './money.model.ts';",
+    "const text = JSON.stringify({ id: '1', amount: { currency: 'USD', value: '1' }, note: 'n' });",
+    'const payment = parse<models.Payment>(text);',
+    "console.log(JSON.stringify({ id: payment.id, built: payment.constructor.name }));",
+    '',
+  ].join('\n'));
+  const result = await run(root, 'src/main.ts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { id: '1', built: 'Payment' });
+});
+
+test('a model named only as a type in a parse call has its codec registered with no import of its module', async (t) => {
+  // protects: T-190 the erased type import must not leave the codec unregistered
+  const root = await project(t, 'loader-codec-module');
+  write(root, 'src/main.ts', [
+    `import { parse, stringify } from '${SERDE}';`,
+    "import type { TMoney } from './money.model.ts';",
+    "const money = parse<TMoney>(stringify<TMoney>({ currency: 'USD', value: '1' }));",
+    'console.log(JSON.stringify(money));',
+    '',
+  ].join('\n'));
+  const result = await run(root, 'src/main.ts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { currency: 'USD', value: '1' });
+});
+
 test('a stack trace through a rewritten file names its original line', async (t) => {
   const root = await project(t, 'loader-source-map');
   const result = await run(root, 'src/main.ts');
@@ -293,6 +349,77 @@ test('a Nest controller with a @Body() model parameter carries nestModelCodec me
   const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { stamped: true, parsed: { id: '1', note: 'hello' } });
+});
+
+/** A Nest project whose controller names the model only as a type; `main` runs with no import of the model module. */
+async function nestCodecProject(t: TestContext, controller: string, main: string): Promise<string> {
+  const root = createControllerFixture(t, {
+    prefix: 'golem-loader-nest-codec-',
+    links: 'workspace',
+    tsconfig: {
+      compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, experimentalDecorators: true, skipLibCheck: true, noEmit: true, allowImportingTsExtensions: true },
+      include: ['src/**/*.ts'],
+    },
+    files: {
+      'golem.yaml': MODELS_YAML,
+      'src/payment.model.ts': readFixture('controllers/nest-plugin/project/payment.model.ts').replace('.generated.js', '.generated.ts'),
+      'src/payments.controller.ts': controller,
+      'src/main.ts': main,
+      'decorator-hook.mjs': DECORATOR_HOOK,
+      'decorator-register.mjs': DECORATOR_REGISTER,
+    },
+  });
+  await runPipeline(path.join(root, 'golem.yaml'));
+  write(root, 'golem.yaml', `${MODELS_YAML}controllers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n`);
+  return root;
+}
+
+test('a @Body() IObject alias named only as a type has its codec registered with no import of its module', async (t) => {
+  // protects: T-190 the erased type import must not leave the codec of nestModelCodec unregistered
+  const root = await nestCodecProject(t, [
+    "import { Body, Controller, Post } from '@nestjs/common';",
+    "import type { TPaymentInput } from './payment.model.ts';",
+    "@Controller('payments')",
+    'export class PaymentsController {',
+    '  @Post()',
+    '  create(@Body() input: TPaymentInput): number { return input.note.length; }',
+    '}',
+    '',
+  ].join('\n'), [
+    "import 'reflect-metadata';",
+    "import { objectCodecFromMetatype } from '@exprtlabs/golem/nest';",
+    "import { PaymentsController } from './payments.controller.ts';",
+    "const types = Reflect.getMetadata('design:paramtypes', PaymentsController.prototype, 'create') as unknown[];",
+    "const codec = objectCodecFromMetatype<{ note: string }>(types[0]);",
+    "console.log(JSON.stringify({ stamped: codec !== undefined, parsed: codec?.parse('{\"note\":\"hello\"}') }));",
+    '',
+  ].join('\n'));
+  const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { stamped: true, parsed: { note: 'hello' } });
+});
+
+test('a model named only in an async Promise return has its codec registered with no import of its module', async (t) => {
+  // protects: T-190 the erased type import must not leave the codec of nestModelReturn unregistered
+  const root = await nestCodecProject(t, [
+    "import { Controller, Get } from '@nestjs/common';",
+    "import type { TPayment } from './payment.model.ts';",
+    "@Controller('payments')",
+    'export class PaymentsController {',
+    '  @Get()',
+    "  async read(): Promise<TPayment> { return { id: '1', note: 'n' }; }",
+    '}',
+    '',
+  ].join('\n'), [
+    "import 'reflect-metadata';",
+    "import { getObjectCodec } from '@exprtlabs/golem/serde';",
+    "import './payments.controller.ts';",
+    "console.log(JSON.stringify({ registered: getObjectCodec('TPayment') !== undefined }));",
+    '',
+  ].join('\n'));
+  const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { registered: true });
 });
 
 test('files under node_modules, .tsx files, other schemes and non-TypeScript files pass through without opening a project', async (t) => {

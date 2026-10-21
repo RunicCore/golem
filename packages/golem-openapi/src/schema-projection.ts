@@ -39,7 +39,7 @@ const SCHEMA_ARRAY_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as cons
 export const DATA_KEYWORDS: ReadonlySet<string> = new Set(['examples', 'example', 'default', 'enum', 'const']);
 const DOCUMENT_BASE = 'urn:golem:openapi:document';
 
-export interface CanonicalResource {
+interface CanonicalResource {
   readonly canonical: string;
   readonly hasId: boolean;
   readonly pointer: string | null;
@@ -52,13 +52,13 @@ export interface ResourceIndex {
 }
 
 /** A JSON Schema `$id` declared by two different schemas; pointers are plain JSON Pointers to the `$id` keywords. */
-export interface DuplicateSchemaId {
+interface DuplicateSchemaId {
   readonly canonical: string;
   readonly pointer: string;
   readonly firstPointer: string;
 }
 
-export interface ProjectionContext {
+interface ProjectionContext {
   readonly document: unknown;
   readonly direction: SchemaDirection;
   readonly extraExcluded?: ReadonlySet<string>;
@@ -497,7 +497,7 @@ export type OpenApiComponentKind =
   | 'securitySchemes'
   | 'mediaTypes';
 
-export const OPENAPI_COMPONENT_KINDS: readonly OpenApiComponentKind[] = [
+const OPENAPI_COMPONENT_KINDS: readonly OpenApiComponentKind[] = [
   'schemas', 'parameters', 'headers', 'requestBodies', 'responses', 'pathItems',
   'examples', 'links', 'callbacks', 'securitySchemes', 'mediaTypes',
 ];
@@ -956,7 +956,7 @@ function propertyHasExclusion(schema: unknown, context: ProjectionContext): bool
   return walk(schema);
 }
 
-export function collectExcludedPropertyNames(
+function collectExcludedPropertyNames(
   schema: unknown,
   context: ProjectionContext,
 ): Set<string> {
@@ -1194,11 +1194,11 @@ function rewriteProjectedSchema(schema: unknown, context: RewriteContext): unkno
   return next;
 }
 
-export function projectionResourceId(rootId: string, direction: SchemaDirection): string {
+function projectionResourceId(rootId: string, direction: SchemaDirection): string {
   return `${rootId}:${direction}`;
 }
 
-export interface RuntimeProjectionBundle {
+interface RuntimeProjectionBundle {
   readonly inputResourceId: string;
   readonly outputResourceId: string;
   readonly inputResource: Record<string, unknown>;

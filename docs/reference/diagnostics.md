@@ -14,10 +14,6 @@ An error prints its code, location when known, and message, then stops generatio
 
 **No controller sources.** No `*.controller.ts` file exists under `src`, and `context.sources` was not provided. **Fix:** Add a `*.controller.ts` file, or pass `context.sources` explicitly.
 
-### NEST1004
-
-**Unsupported type.** A controller type resolves to something the schema converter can't represent, such as a function or a class-instance value rather than plain data. **Fix:** Replace it with a plain object, array, or primitive shape.
-
 ### NEST1101
 
 **Unsupported Nest parameter.** A parameter decorator injects Nest-specific runtime state that has no OpenAPI mapping — `@UploadedFile()`, `@UploadedFiles()`, `@RawBody()`, `@HostParam()` — or `@Res()`/`@Response()` is used without the setup OpenAPI needs: non-inline options, or no explicit Swagger success response. **Fix:** Remove the decorator and describe the value through a supported parameter or body, or for `@Res()` write `{ passthrough: true }` inline or add an explicit Swagger success response.
@@ -278,7 +274,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1060
 
-**Codec not exported by its package.** A `TSerde` or `TValidation` function, or a `TSerde` class, lives in another package, and no `exports` entry in that package's `package.json` reaches its file. The message names the function, the package and the file. **Fix:** Add an `exports` entry for that file to the package.
+**Codec not exported by its package.** A `TSerde` or `TValidation` function, or a `TSerde` class, lives in another package, and the `exports` field in that package's `package.json` has no entry that reaches its file. The message names the function, the package and the file. **Fix:** Add an `exports` entry for that file to the package.
 
 ### RUNM1061
 

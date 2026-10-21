@@ -49,17 +49,13 @@ The generated file puts `.generated` before the final extension of its source: `
 
 Your class holds methods, getters, defaults and extra constructor state. The base constructor assigns the supplied values, so call `super(values)` before you read a field. With [MobX](/guide/mobx) on, call `asGenObservable(this)` right after `super(values)`.
 
-`toWireFormat` emits declared fields only. Getters and other state on your class stay on the instance. A key on an instance that its own model does not declare is program state: codecs never report it as an unknown key and never write it to JSON. Declared keys are judged as always, and input from JSON or a request stays exact.
+`toWireFormat` emits declared fields only. Getters and other state on your class stay on the instance. A key on an instance that its own model does not declare is program state: codecs never report it as an unknown key and never write it to JSON. This holds at any depth inside an `unknown` or `any` field. Declared keys are judged as always, and input from JSON or a request stays exact.
 
-## Load the generated class before parse
+## Type-only model files
 
-A file that exports only types compiles to an empty module: TypeScript erases the type-only export, so nothing runs when another module imports it. Importing `task.model.ts` loads its generated file, because that file also imports the value `TTaskBaseModel`. A file that exports nothing but `export type TLabel = IObject<{ text: string }>` does not: add `import './label.model.generated.js';` beside the type-only import before calling `parse`, `stringify`, `validate` or a wire-format function on `TLabel`.
+A file that exports only types, such as `export type TLabel = IObject<{ text: string }>`, needs no import of its generated file. The build that rewrites your calls ([`golem build`](/reference/cli#build), the Vite or esbuild plugin, or the Node loader) loads the generated file of each model that a `parse`, `stringify`, `validate` or wire-format call names. It does the same for each model of a Nest `@Body()` or `@Query()` parameter and of a handler return, so a model named only as a type works.
 
-Skip that import and the call throws a `LibError` of kind `validation_unavailable`:
-
-```
-IObject codec "<id>" for model <model> is not registered. The generated file that registers it, the `.generated.js` file beside the model file (such as `order.entity.generated.js` for `order.entity.ts`), has not been loaded; a type-only import such as `import type { T<model> }` does not load it. Import that generated file, or a value from its model file, before calling parse, stringify, validate or the wire-format functions.
-```
+A codec that is still missing at run time throws an error that starts with `golem fault`. Run `golem generate`, then build again.
 
 ## Read and write JSON
 

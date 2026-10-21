@@ -18,7 +18,7 @@ export interface OpenApiProblem {
   readonly relatedPointer?: string;
 }
 
-export const MAX_REPORTED_PROBLEMS = 20;
+const MAX_REPORTED_PROBLEMS = 20;
 
 interface OpenApiValidators {
   readonly documents: Readonly<Record<OpenApiLine, Validator>>;
@@ -73,7 +73,7 @@ function issueProblem(ruleId: string, issue: SchemaIssue, basePointer: string): 
   return { ruleId, message, pointer: `${basePointer}${path.map((token) => `/${escapePointerToken(String(token))}`).join('')}` };
 }
 
-export function uniqueProblems(problems: readonly OpenApiProblem[]): OpenApiProblem[] {
+function uniqueProblems(problems: readonly OpenApiProblem[]): OpenApiProblem[] {
   const seen = new Set<string>();
   return problems.filter((problem) => {
     const key = `${problem.ruleId}\u0000${problem.pointer}\u0000${problem.message}\u0000${problem.relatedPointer ?? ''}`;

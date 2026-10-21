@@ -8,13 +8,13 @@ export interface IrType {
 }
 
 /** `const` and `enum`: the value must equal one of `values` (JSON Schema equality). */
-export interface IrLiteral {
+interface IrLiteral {
   readonly kind: 'literal';
   readonly values: readonly unknown[];
 }
 
 /** `format` for a format the runtime checks. */
-export interface IrFormat {
+interface IrFormat {
   readonly kind: 'format';
   readonly format: string;
 }
@@ -64,7 +64,7 @@ export interface IrArray {
   readonly uniqueItems: boolean;
 }
 
-export interface IrProperty {
+interface IrProperty {
   readonly key: string;
   readonly schema: IrSchema;
 }
@@ -82,7 +82,7 @@ export interface IrPatternProperty {
 }
 
 /** `dependentRequired`: when `trigger` is present, every key in `keys` must be too. */
-export interface IrDependentRequired {
+interface IrDependentRequired {
   readonly trigger: string;
   readonly keys: readonly string[];
 }
@@ -106,13 +106,13 @@ export interface IrObject {
 }
 
 /** A reference: the value must pass the shared function `fn`; its issues are reported as they are. */
-export interface IrCall {
+interface IrCall {
   readonly kind: 'call';
   readonly fn: number;
 }
 
 /** `allOf`: every branch applies to the value; the issues of all failing branches are reported. */
-export interface IrAllOf {
+interface IrAllOf {
   readonly kind: 'allOf';
   readonly branches: readonly IrSchema[];
 }
@@ -138,7 +138,7 @@ export interface IrUnion {
 }
 
 /** `if`, `then` and `else`: `then` or `else` applies, by whether `if` passes; the issues of `if` are not reported. */
-export interface IrConditional {
+interface IrConditional {
   readonly kind: 'conditional';
   readonly if: number;
   readonly then?: number;
@@ -146,31 +146,31 @@ export interface IrConditional {
 }
 
 /** `dependentSchemas`: when `trigger` is present, the whole object must pass `fn`. */
-export interface IrDependentSchemas {
+interface IrDependentSchemas {
   readonly kind: 'dependentSchemas';
   readonly entries: readonly { readonly trigger: string; readonly fn: number }[];
 }
 
 /** `unevaluatedProperties`: each key no applicator evaluated must pass `schema` (`never` for `false`). Runs after every other check. */
-export interface IrUnevaluatedProperties {
+interface IrUnevaluatedProperties {
   readonly kind: 'unevaluatedProperties';
   readonly schema: IrSchema;
 }
 
 /** `unevaluatedItems`: each item no applicator evaluated must pass `schema`; `never` gives one `tooBig` issue. Runs after every other check. */
-export interface IrUnevaluatedItems {
+interface IrUnevaluatedItems {
   readonly kind: 'unevaluatedItems';
   readonly schema: IrSchema;
 }
 
 /** `not`: the function `fn` must not match. */
-export interface IrNot {
+interface IrNot {
   readonly kind: 'not';
   readonly fn: number;
 }
 
 /** `golemModelDate`: the value must be a `Date` that holds a valid time. */
-export interface IrDate {
+interface IrDate {
   readonly kind: 'date';
 }
 
@@ -230,7 +230,7 @@ export interface IrFunction {
   readonly receives: boolean;
 }
 
-export interface IrExport {
+interface IrExport {
   /** The root name, verbatim. */
   readonly name: string;
   readonly fn: number;

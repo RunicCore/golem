@@ -19,7 +19,7 @@ import {
   type ResourceIndex,
 } from './schema-projection.js';
 
-export const ALWAYS_ARTIFACTS = ['types.ts', 'index.ts', 'model-manifest.json'] as const;
+const ALWAYS_ARTIFACTS = ['types.ts', 'index.ts', 'model-manifest.json'] as const;
 
 export type ArtifactFile =
   | typeof ALWAYS_ARTIFACTS[number]
@@ -29,7 +29,7 @@ export type ArtifactFile =
   | 'inbound.ts'
   | 'links.ts';
 
-export type ClientHelperName =
+type ClientHelperName =
   | 'constructor' | 'baseUrl' | 'fetchImpl' | 'defaultHeaders' | 'url'
   | 'matchesStatus' | 'selectResponse' | 'mediaRank' | 'httpResponse' | 'readResponse'
   | 'formValue' | 'encode' | 'entries' | 'serializePath' | 'serializeSimple' | 'serializeHeaderSimple'
@@ -41,7 +41,7 @@ export type ClientHelperName =
   | 'auth' | 'authValue' | 'applySecurity' | 'applyAuthScheme' | 'securitySchemes' | 'mutualTls'
   | 'bodyEncoders' | 'responseDecoders' | 'parameterSerializers' | 'responseHeaderDecoders' | 'streamDecoders';
 
-export interface ClientSurfaces {
+interface ClientSurfaces {
   readonly bodyEncoders: boolean;
   readonly responseDecoders: boolean;
   readonly parameterSerializers: boolean;
@@ -51,7 +51,7 @@ export interface ClientSurfaces {
   readonly mutualTls: boolean;
 }
 
-export interface StreamPlan {
+interface StreamPlan {
   readonly ndjson: boolean;
   readonly jsonSeq: boolean;
   readonly sse: boolean;
@@ -68,8 +68,6 @@ export interface EmissionPlan {
   readonly hasLinks: boolean;
   readonly typesUsesInputSchemas: boolean;
   readonly typesUsesOutputSchemas: boolean;
-  readonly copyAdditionalProperties: boolean;
-  readonly objectFromJSON: boolean;
   readonly clientSurfaces: ClientSurfaces;
   readonly streams: StreamPlan;
   readonly helpers: ReadonlySet<ClientHelperName>;
@@ -295,8 +293,6 @@ export function buildEmissionPlan(
     && allOperations.some((operation) => operationUsesComponentRef(operation, 'input', componentRefEnv));
   const typesUsesOutputSchemas = hasComponentSchemas
     && allOperations.some((operation) => operationUsesComponentRef(operation, 'output', componentRefEnv));
-  const copyAdditionalProperties = ordered.some((definition) => definition.additionalProperties);
-  const objectFromJSON = hasModels;
   const requestContent = outbound.flatMap((operation) => operation.requestContent);
   const responseContent = outbound.flatMap((operation) =>
     operation.responses.flatMap((response) => [...response.content]),
@@ -367,8 +363,6 @@ export function buildEmissionPlan(
     hasLinks: links,
     typesUsesInputSchemas,
     typesUsesOutputSchemas,
-    copyAdditionalProperties,
-    objectFromJSON,
     clientSurfaces,
     streams,
     referencedAuthSchemes: authSchemes,

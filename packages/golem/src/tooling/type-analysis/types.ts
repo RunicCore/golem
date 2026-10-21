@@ -16,8 +16,8 @@ import type { ManifestIndex } from './provenance.js';
 import type { ModelSpecification, TypeAnalysisContext } from './models.js';
 import {
   analyzeNode,
+  isAmbientOrGlobalSymbol,
   isDateType,
-  mergeTagMetadata,
   publicExportName,
   type ModelConstraint,
   type SerdeBinding,
@@ -45,20 +45,6 @@ type InternalTagMetadata = Omit<TagMetadata, 'serde'> & {
 };
 
 export type RichModelConversionDescriptor = ModelConversionDescriptor & ModelDescriptorMetadata;
-
-function isUserValueDeclaration(declaration: ts.Node | undefined): boolean {
-  const file = declaration?.getSourceFile?.();
-  return file !== undefined && file.isDeclarationFile === false;
-}
-
-function isAmbientOrGlobalSymbol(symbol: ts.Symbol | undefined): boolean {
-  if (!symbol) return true;
-  const declarations = symbol.declarations ?? [];
-  if (isUserValueDeclaration(symbol.valueDeclaration) || declarations.some(isUserValueDeclaration)) {
-    return false;
-  }
-  return true;
-}
 
 function primitiveConstructorDescriptor(type: ts.Type): ModelConversionDescriptor | undefined {
   const symbol = type.getSymbol() ?? type.aliasSymbol;
@@ -682,7 +668,7 @@ export function descriptorBuilder(
       for (const original of provenance.models) {
         const whole = analyzeNode({ ...tagContext, sourceFile: original.sourceFile }, original.fieldsType, original.fieldsNode).metadata;
         if (whole.serde || whole.validations.length || whole.constraints.length) {
-          throw diagnostic(context.sourceFile, node ?? context.declaration, '1055', `Projection of ${original.aliasName} would discard whole-object constraints or serialization. Declare an explicit projected contract.`);
+          throw diagnostic(context.sourceFile, node ?? context.declaration, '1055', `Projection of ${original.name} would discard whole-object constraints or serialization. Declare an explicit projected contract.`);
         }
       }
     }
@@ -956,11 +942,4 @@ export function descriptorBuilder(
     );
   };
   return Object.assign(describe, { projections });
-}
-
-export function mergeDescriptorMetadata(
-  descriptor: ModelConversionDescriptor,
-  ...metadata: readonly TagMetadata[]
-): ModelConversionDescriptor {
-  return withMetadata(descriptor, mergeTagMetadata(...metadata));
 }

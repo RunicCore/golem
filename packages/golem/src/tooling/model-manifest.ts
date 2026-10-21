@@ -115,6 +115,7 @@ function isClosureEntry(value: unknown): value is CodecSchemaClosureEntry {
     && (typeof value.modelSchema === 'boolean' || isRecord(value.modelSchema)) && isSchemaData(value.modelSchema)
     && [value.wireSchema, value.modelOnlySchema, value.wireOnlySchema].every((schema) =>
       schema === undefined || ((typeof schema === 'boolean' || isRecord(schema)) && isSchemaData(schema)))
+    && (value.recursive === undefined || typeof value.recursive === 'boolean')
     && (value.aliases === undefined || (Array.isArray(value.aliases) && value.aliases.every(alias => typeof alias === 'string' && alias.length > 0)));
 }
 

@@ -2,7 +2,7 @@ import { realpathSync } from 'node:fs';
 import { resolveTypeScript } from './typescript-version.js';
 
 /** The TypeScript install a process loads, as `resolveTypeScript` describes it. */
-export type SelectedTypeScript = ReturnType<typeof resolveTypeScript>;
+type SelectedTypeScript = ReturnType<typeof resolveTypeScript>;
 
 /** What the choice came from: the user's override, the project a host asked for, or the working directory. */
 type SelectionSource = 'GOLEM_TYPESCRIPT_ROOT' | 'request' | 'cwd';

@@ -27,6 +27,7 @@ interface OpenApiMediaType {
 interface OpenApiParameter {
   readonly in?: string;
   readonly name?: string;
+  readonly description?: string;
   readonly required?: boolean;
   readonly schema?: OpenApiSchemaValue;
 }
@@ -344,4 +345,41 @@ test('emits an explicit getSchemaPath() response as references only and honors e
   const feature = objectSchema(document, components.FeatureDto);
   assert.deepEqual(feature.properties?.kind, { $ref: '#/components/schemas/Kind' });
   assert.equal(property(document, feature, 'votes').type, 'integer');
+});
+
+test('applies class-level @ApiHeader, @ApiQuery and @ApiParam to every route and lets a method override them', async t => {
+  // protects: T-173 class-level Swagger parameter decorators reach each route
+  const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiHeader, ApiParam, ApiQuery } from '@nestjs/swagger';
+
+@ApiHeader({ name: 'X-Base' })
+class BaseController {}
+
+@ApiHeader({ name: 'X-Tenant', required: true })
+@ApiQuery({ name: 'lang', description: 'class lang' })
+@ApiParam({ name: 'id', description: 'class id' })
+@Controller('things')
+export class ThingsController extends BaseController {
+  @Get(':id')
+  @ApiQuery({ name: 'lang', description: 'method lang', required: false })
+  list(): void {}
+
+  @Get('other/:id')
+  other(): void {}
+}
+`);
+  const document = documentOf(await generateAt(root));
+  const view = (route: string): readonly unknown[] => document.paths[route]?.get?.parameters?.map(item => [item.in, item.name, item.description, item.required]) ?? [];
+  assert.deepEqual(view('/things/{id}'), [
+    ['header', 'X-Base', undefined, false],
+    ['header', 'X-Tenant', undefined, true],
+    ['query', 'lang', 'method lang', false],
+    ['path', 'id', 'class id', true],
+  ]);
+  assert.deepEqual(view('/things/other/{id}'), [
+    ['header', 'X-Base', undefined, false],
+    ['header', 'X-Tenant', undefined, true],
+    ['query', 'lang', 'class lang', true],
+    ['path', 'id', 'class id', true],
+  ]);
 });

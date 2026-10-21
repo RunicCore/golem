@@ -497,3 +497,32 @@ export class ${name} {
   assert.equal(operationOf(document, '/cats', 'get').operationId, 'CatsController_list');
   assert.equal(document.paths['/dogs'], undefined, 'a file without a configured suffix is not a controller source');
 });
+
+test('documents a controller with @ApiExcludeController(false) and skips one with @ApiExcludeController()', async (t: TestContext) => {
+  // protects: T-172 Swagger skips a controller only when ApiExcludeController is true
+  const source = `import { Controller, Get } from '@nestjs/common';
+import { ApiExcludeController } from '@nestjs/swagger';
+
+@ApiExcludeController(false)
+@Controller('shown')
+export class ShownController {
+  @Get()
+  list(): void {}
+}
+
+@ApiExcludeController()
+@Controller('hidden')
+export class HiddenController {
+  @Get()
+  list(): void {}
+}
+`;
+  const root = createControllerFixture(t, { prefix: 'golem-ts-openapi-exclude-controller-', source });
+  const document = documentOf(await generate({
+    root,
+    output: path.join(root, 'openapi.json'),
+    info: { title: 'Exclude controller', version: '1' },
+    profile: { mobx: false, validation: false },
+  }));
+  assert.deepEqual(Object.keys(document.paths), ['/shown']);
+});

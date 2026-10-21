@@ -30,7 +30,7 @@ Give a combination of tags a type alias and use the alias as the field type. A t
 - The argument must be a literal where you use the alias. `Varchar<number>` fails with [RUNM1043](/reference/diagnostics#runm1043).
 - An alias can hold one tag of each kind that depends on a type parameter ([RUNM1062](/reference/diagnostics#runm1062)).
 - `TSerde` and `TValidation` inside an alias take `typeof` an exported function, not a type parameter ([RUNM1061](/reference/diagnostics#runm1061)).
-- An alias or codec can come from an installed package. The generated file imports the codec through the package's `exports` ([RUNM1060](/reference/diagnostics#runm1060)).
+- An alias or codec can come from an installed package. The generated file imports the codec through the package's `exports`, or by its path inside the package when the package has no `exports` field ([RUNM1060](/reference/diagnostics#runm1060)).
 
 ## Built-in validation constraints
 

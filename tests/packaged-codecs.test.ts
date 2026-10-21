@@ -201,6 +201,19 @@ test('RUNM1060 when no export reaches the codec', t => {
   });
 });
 
+test('a package with no exports field hosts a codec at its package-relative path', async t => {
+  // protects: F-52 a TSerde function in a package with no exports field is importable by deep path, as Node allows
+  const { root, sourceRoot } = project(t);
+  writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', files: COUNT_DIST_FILES });
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { PkgCount } from '@fixture/pg/dist/tags.js';`, fields: tsSource`count: PkgCount` }).text);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const generated = fs.readFileSync(path.join(root, MODEL_FILE), 'utf8');
+  assert.match(generated, /import \{ encodeCount as \w+ \} from "@fixture\/pg\/dist\/codecs\.js"/);
+  const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+  assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, { count: '42' })), { count: '42' });
+});
+
 test('exports without a types condition reach the declaration file beside each target', async t => {
   const { root, sourceRoot } = project(t);
   writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: { './codecs': './dist/codecs.js', './tags': './dist/tags.js' }, files: COUNT_DIST_FILES });

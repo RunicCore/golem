@@ -25,7 +25,7 @@ You declare data in one of two ways. An `IObject` is a field declaration whose v
 2. Golem turns those types into JSON Schema: the full model and JSON schemas, plus the smaller checks that run after conversion.
 3. Golem compiles the schemas into validators, written as TypeScript beside the generated code.
 4. Golem writes the generated class, its JSON conversion and its types beside your file.
-5. `golem build`, the Vite or esbuild plugin, or the Node loader rewrites `parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` calls to that generated conversion when you build or load your code.
+5. `golem build`, the Vite or esbuild plugin, or the Node loader rewrites `parse<T>`, `stringify<T>`, `fromWireFormat<T>`, `toWireFormat<T>`, `validate<T>` and `assertValue<T>` calls to that generated conversion when you build or load your code.
 
 For an OpenAPI 3.1 or 3.2 document, Golem resolves its `$ref`s across local files (and allowed HTTPS hosts), checks it against the official OpenAPI schema and the specification's cross-field rules, then runs the same schema and validator steps. For NestJS, Golem reads controllers and their types without starting the app and writes an OpenAPI document.
 
@@ -41,6 +41,6 @@ You need Node.js 22.15 or newer and TypeScript 6 or 7 ([requirements](/guide/ins
 
 **Do I need NestJS?** No; each generator installs on its own.
 
-**Can I compile with `tsc`?** Generated classes and `validateInstance` work, but `parse<T>`, `stringify<T>`, `fromWireFormat<T>` and `toWireFormat<T>` need a build that rewrites them (`golem build`, the Vite or esbuild plugin, or the Node loader); without one they throw at runtime.
+**Can I compile with `tsc`?** Generated classes and `validateInstance` work, but `parse<T>`, `stringify<T>`, `fromWireFormat<T>`, `toWireFormat<T>`, `validate<T>` and `assertValue<T>` need a build that rewrites them (`golem build`, the Vite or esbuild plugin, or the Node loader); without one they throw at runtime.
 
 **Which TypeScript?** The generators read your types with the TypeScript 6 or 7 type checker installed in your project, and write the same files on both.

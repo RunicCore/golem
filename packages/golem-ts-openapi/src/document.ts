@@ -9,7 +9,7 @@ import {
 import type { ControllerRoute } from './nest/types.js';
 import { compareCodeUnits } from './compare.js';
 
-export interface OpenApiDocumentContext extends OperationBuildContext {
+interface OpenApiDocumentContext extends OperationBuildContext {
   readonly openapiVersion?: '3.2.0' | '3.1.2';
   readonly info: Readonly<Record<string, unknown>>;
   readonly servers?: readonly Readonly<Record<string, unknown>>[];
@@ -17,11 +17,6 @@ export interface OpenApiDocumentContext extends OperationBuildContext {
   readonly tags?: readonly Readonly<Record<string, unknown>>[];
   readonly routes: readonly ControllerRoute[];
   readonly schemaResolver?: SchemaResolver;
-}
-
-export interface OpenApiDocumentResult {
-  readonly document: Readonly<Record<string, unknown>>;
-  readonly content: string;
 }
 
 function stable(value: unknown): unknown {
@@ -310,7 +305,7 @@ function validateSecurityRequirements(
 
 export async function buildDocument(
   context: OpenApiDocumentContext,
-): Promise<OpenApiDocumentResult> {
+): Promise<Readonly<Record<string, unknown>>> {
   const openapi = context.openapiVersion ?? '3.2.0';
   if (openapi !== '3.2.0' && openapi !== '3.1.2') {
     throw new TsToOpenApiError({
@@ -343,14 +338,10 @@ export async function buildDocument(
   if (configuredSecuritySchemes && Object.keys(configuredSecuritySchemes).length > 0) {
     document.components = { securitySchemes: configuredSecuritySchemes };
   }
-  const canonical = stable(document) as Readonly<Record<string, unknown>>;
-  return {
-    document: canonical,
-    content: serializeDocument(canonical, 'json'),
-  };
+  return stable(document) as Readonly<Record<string, unknown>>;
 }
 
-export function serializeDocument(
+function serializeDocument(
   document: Readonly<Record<string, unknown>>,
   format: 'json' | 'yaml' = 'json',
 ): string {

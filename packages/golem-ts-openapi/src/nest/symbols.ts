@@ -63,7 +63,7 @@ export function nestPackageOf(
   return undefined;
 }
 
-export function decoratorInfo(
+function decoratorInfo(
   checker: ts.TypeChecker,
   decorator: ts.Decorator,
 ): DecoratorInfo {
@@ -92,7 +92,7 @@ export function callArguments(info: DecoratorInfo): readonly ts.Expression[] {
   return info.call?.arguments ? [...info.call.arguments] : [];
 }
 
-export function objectLiteralProperty(
+function objectLiteralProperty(
   node: ts.ObjectLiteralExpression | undefined,
   name: string,
 ): ts.ObjectLiteralElementLike | undefined {

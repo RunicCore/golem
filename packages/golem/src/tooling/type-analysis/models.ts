@@ -1,13 +1,10 @@
-import { diagnostic, modelDeclarationKind, propertyType } from './symbols.js';
+import { diagnostic, modelDeclarationKind } from './symbols.js';
 import * as ts from '../typescript-ns.js';
-import type { ModelConversionDescriptor } from './types.js';
-import type { ManifestIndex } from './provenance.js';
 import { descriptorBuilder } from './types.js';
 
 export interface ModelSpecification {
   readonly sourceFile: ts.SourceFile;
   readonly declaration: ts.TypeAliasDeclaration;
-  readonly aliasName: string;
   readonly name: string;
   readonly fieldsNode: ts.TypeNode;
   readonly fieldsType: ts.Type;
@@ -88,7 +85,6 @@ export function collectSpecifications(
       specifications.push({
         sourceFile,
         declaration: statement,
-        aliasName: statement.name.text,
         name: statement.name.text,
         fieldsNode,
         fieldsType,
@@ -117,10 +113,3 @@ export function collectSpecifications(
 }
 
 export { descriptorBuilder };
-
-export type DescriptorBuilder = (
-  type: ts.Type,
-  context: ModelSpecification,
-  seen?: ReadonlySet<ts.Type>,
-  node?: ts.TypeNode,
-) => ModelConversionDescriptor;

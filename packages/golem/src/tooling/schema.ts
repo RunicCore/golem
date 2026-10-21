@@ -887,13 +887,7 @@ function mergeContextualSchema(
       continue;
     }
     if (canonicalSchemaKey(existing) === canonicalSchemaKey(value)) continue;
-    if (keyword === 'type') {
-      if (existing === 'number' && value === 'integer') {
-        result[keyword] = value;
-        continue;
-      }
-      return undefined;
-    }
+    if (keyword === 'type') return undefined;
     if (lowerBoundKeywords.has(keyword)
       && typeof existing === 'number' && typeof value === 'number') {
       result[keyword] = Math.max(existing, value);

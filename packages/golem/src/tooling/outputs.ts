@@ -352,7 +352,7 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
   return drift;
 }
 
-export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false): string[] {
+export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false): void {
   assertInventoryPath(config);
   if (!Array.isArray(artifacts)) throw new Error(`${job.package} returned invalid artifacts.`);
   const expected = new Map<string, ExpectedArtifact>();
@@ -412,7 +412,6 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     }
     saveInventory(config, inventory);
   }
-  return [...expected.values()].map(artifact => artifact.filename);
 }
 
 export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, check = false): void {
@@ -428,7 +427,7 @@ export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, che
   }
   if (check && retired.length) throw new Error(`Generated outputs belong to removed jobs:\n${retired.map(([key]) => `  ${key}`).join('\n')}`);
   if (!check && retired.length) {
-    for (const [key, entry] of retired) {
+    for (const [key] of retired) {
       const filename = inventoryPath(config, key);
       if (readFile(filename) !== undefined) fs.unlinkSync(filename);
       delete inventory.files[key];
