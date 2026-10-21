@@ -582,8 +582,15 @@ export class NestModelInterceptor implements NestInterceptor {
       httpError(error);
     }
     const declared = this.returnMetadata(klass, handler);
-    const codec = declared ? getObjectCodec(declared.id) : undefined;
-    if (!declared || !codec) return next.handle();
+    // A return without the golem mark stays plain Nest JSON.
+    if (!declared) return next.handle();
+    const codec = getObjectCodec(declared.id);
+    if (!codec) {
+      // The build marked this return, so a missing codec is a golem fault, not a controller declaration: Nest answers 500 before the handler runs.
+      throw new TypeError(
+        `golem fault: the build marked the return of ${klass.name}.${handler.name} with model "${declared.id}", but the generated module of that model did not load, so its codec is not registered.`,
+      );
+    }
     const response = context.switchToHttp().getResponse<HttpResponse>();
     const source = next.handle();
     const project = this.modelProjectionFactory(response, codec, declared.array);
