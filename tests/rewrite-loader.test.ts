@@ -127,6 +127,23 @@ test('a construct option the call passes wins over the rewrite default, given as
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { plain: true, shorthand: true, variable: true, other: true });
 });
 
+test('a parse call whose class comes through a type-only namespace import runs', async (t) => {
+  // protects: T-171 the erased namespace import must not be named at run time
+  const root = await project(t, 'loader-type-only-namespace');
+  write(root, 'src/main.ts', [
+    `import { parse } from '${SERDE}';`,
+    "import type * as models from './money.model.ts';",
+    "import './money.model.ts';",
+    "const text = JSON.stringify({ id: '1', amount: { currency: 'USD', value: '1' }, note: 'n' });",
+    'const payment = parse<models.Payment>(text);',
+    "console.log(JSON.stringify({ id: payment.id, built: payment.constructor.name }));",
+    '',
+  ].join('\n'));
+  const result = await run(root, 'src/main.ts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { id: '1', built: 'Payment' });
+});
+
 test('a stack trace through a rewritten file names its original line', async (t) => {
   const root = await project(t, 'loader-source-map');
   const result = await run(root, 'src/main.ts');

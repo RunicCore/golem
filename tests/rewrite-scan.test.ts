@@ -131,6 +131,26 @@ test('a construct option the user wrote is kept, and options held in a variable 
   ]);
 });
 
+test('a class named through a type-only namespace import is constructed through a value import of its member', (t) => {
+  // protects: T-171 a type-only namespace import is erased, so the rewrite must import the class itself
+  const root = project(t, ['type-only-namespace.ts', 'ledger.model.ts', 'ledger.model.generated.ts']);
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  assert.deepEqual(result.files.get('src/type-only-namespace.ts')?.imports, [
+    { from: './ledger.model.js', names: ['Ledger'] },
+    { from: './payment.model.js', names: ['Payment'] },
+    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+  ]);
+  const code = rewritten(root, result, 'type-only-namespace.ts');
+  assertLines(code, [
+    "import { Payment as __golem_Payment } from './payment.model.js';",
+    'export const payment = __golem_requireObjectCodec("TPayment_22222222").parse(text, { construct: __golem_Payment });',
+    'export const options = __golem_requireObjectCodec("TPayment_22222222").parse(text, { construct: __golem_Payment, ...{ validate: false } });',
+    'export const book = __golem_requireObjectCodec("TLedger_33333333").parse(text, { construct: __golem_Ledger });',
+  ]);
+  assert.ok(code.includes("import type * as models from './payment.model.js';"), 'the type-only import stays as the user wrote it');
+});
+
 test('a class imported only as a type is constructed through an aliased value import of its module', (t) => {
   const root = project(t, ['type-only.ts', 'ledger.model.ts', 'ledger.model.generated.ts']);
   const result = scan(root);

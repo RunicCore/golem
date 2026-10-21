@@ -446,15 +446,39 @@ function constructTarget(
   if (!symbol || (symbol.flags & ts.SymbolFlags.Class) === 0) return undefined;
   const local = name.getText(input.file);
   if (/[\r\n]/.test(local)) return undefined;
-  if (ts.isIdentifier(name)) {
-    const typeOnly = (input.checker.getSymbolAtLocation(name)?.declarations ?? [])
-      .map(typeOnlyImportOf).find((found) => found !== undefined);
-    if (typeOnly) {
-      importOf(scan, input.root, input.file, name, typeOnly.exported, typeOnly.from);
-      return `${REWRITE_IMPORT_PREFIX}${typeOnly.exported}`;
-    }
+  const segments = entityNameSegments(name);
+  const root = segments[0]!;
+  const declarations = input.checker.getSymbolAtLocation(root)?.declarations ?? [];
+  const typeOnly = declarations.map(typeOnlyImportOf).find((found) => found !== undefined);
+  if (typeOnly) {
+    // `Payment`, or `m.Payment` where `import type { m }` binds a namespace: the import is aliased and keeps the rest of the path.
+    importOf(scan, input.root, input.file, name, typeOnly.exported, typeOnly.from);
+    return [`${REWRITE_IMPORT_PREFIX}${typeOnly.exported}`, ...segments.slice(1).map((segment) => segment.text)].join('.');
+  }
+  const module = declarations.map(typeOnlyNamespaceImportOf).find((found) => found !== undefined);
+  if (module && segments.length > 1) {
+    // `m.Payment` where `import type * as m` binds the module: the member is imported on its own, as `Payment` is above.
+    const member = segments[1]!.text;
+    importOf(scan, input.root, input.file, name, member, module);
+    return [`${REWRITE_IMPORT_PREFIX}${member}`, ...segments.slice(2).map((segment) => segment.text)].join('.');
   }
   return local;
+}
+
+/** The identifiers of a name, left to right. The compiler shim types a qualified name's `right` only, so the left part is its first child. */
+function entityNameSegments(name: ts.EntityName): ts.Identifier[] {
+  if (ts.isIdentifier(name)) return [name];
+  const left = ts.forEachChild(name, (child) => child) as ts.EntityName;
+  return [...entityNameSegments(left), name.right];
+}
+
+/** The module of a type-only `import type * as ns from '…'` that binds the namespace; undefined for any other binding. */
+function typeOnlyNamespaceImportOf(declaration: ts.Node): string | undefined {
+  const clause = declaration.parent;
+  if (!ts.isNamespaceImport(declaration) || !ts.isImportClause(clause) || !ts.isImportDeclaration(clause.parent)) return undefined;
+  const { moduleSpecifier } = clause.parent;
+  const typeOnly = clause.isTypeOnly === true || clause.phaseModifier === ts.SyntaxKind.TypeKeyword;
+  return typeOnly && ts.isStringLiteralLike(moduleSpecifier) ? moduleSpecifier.text : undefined;
 }
 
 /** Whether a property name is `construct`, written plain, quoted or as a computed string. */
