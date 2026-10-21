@@ -106,7 +106,7 @@ test('a misspelled tsconfig path reports that the file does not exist, not the t
   for (const load of [loadConfig, resolveConfig]) assert.throws(() => load(filename), /tsconfig does not exist: .*tsconfg\.json/);
 });
 
-test('a models or controllers job root must lie inside the directory of the yaml tsconfig, and other outputs may be anywhere', (t: TestContext) => {
+test('a models or controllers job root must lie inside the directory of the yaml tsconfig', (t: TestContext) => {
   const controllers = 'controllers:\n  - root: other\n    output: api.json\n    info: { title: Api, version: "1" }\n';
   const layouts = [
     // The tsconfig key puts the project directory below the job root.
@@ -129,12 +129,37 @@ test('a models or controllers job root must lie inside the directory of the yaml
     });
   }
 
-  // A root inside the directory is fine, and so is an openapi output outside it.
-  const inside = fixture(t, 'version: 1\ntsconfig: app/tsconfig.json\nopenapi:\n  - input: api.yaml\n    output: sdk\nmodels:\n  root: app/nested\n');
+  // A root inside the directory is fine.
+  const inside = fixture(t, 'version: 1\ntsconfig: app/tsconfig.json\nopenapi:\n  - input: api.yaml\n    output: app/sdk\nmodels:\n  root: app/nested\n');
   fs.mkdirSync(path.join(inside.root, 'app/nested'), { recursive: true });
   fs.writeFileSync(path.join(inside.root, 'app/tsconfig.json'), '{}');
   assert.equal(loadConfig(inside.filename).jobs.length, 2);
 });
+
+const outputsOutside = (output: string): string => `controllers:\n  - root: .\n    output: ${output}\n    info: { title: Api, version: "1" }\n`;
+
+// protects: F-42 output paths stay inside the tsconfig directory (T-182)
+for (const [name, yaml, id, output] of [
+  ['a models output', 'models:\n  root: .\n  output: ../outside', 'models:.', 'outside'],
+  ['a generator output', 'generators:\n  - package: acme-generator\n    output: ../outside', 'generator:../outside', 'outside'],
+  ['an openapi output', 'openapi:\n  - input: ../api.yaml\n    output: ../outside', 'openapi:../outside', 'outside'],
+  ['a controllers output', outputsOutside('../outside/api.json'), 'controllers:../outside/api.json', 'outside/api.json'],
+  ['a models output behind a link to a folder', 'models:\n  root: .\n  output: linked/models', 'models:.', 'outside/models'],
+] as const) {
+  test(`${name} outside the tsconfig directory stops loading and writes nothing`, (t: TestContext) => {
+    const { root } = fixture(t, '');
+    fs.mkdirSync(path.join(root, 'project'));
+    fs.mkdirSync(path.join(root, 'outside'));
+    fs.symlinkSync(path.join(root, 'outside'), path.join(root, 'project/linked'), 'dir');
+    const filename = path.join(root, 'project/golem.yaml');
+    fs.writeFileSync(filename, `version: 1\n${yaml}\n`);
+    assert.throws(() => loadConfig(filename), (error: Error) => {
+      assert.equal(error.message, `Job ${id}: output ${path.join(root, output)} is outside the tsconfig directory ${path.join(root, 'project')}. Move it inside.`);
+      return true;
+    });
+    assert.deepEqual(fs.readdirSync(path.join(root, 'outside')), []);
+  });
+}
 
 test('the yaml tsconfig must be the tsconfig a models or controllers job finds from its root', (t: TestContext) => {
   const message = (yaml: string, config: string, found: string, job: string, root: string, declared: boolean): string => (

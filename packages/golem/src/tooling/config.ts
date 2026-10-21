@@ -187,7 +187,7 @@ export function jobTsconfigDiagnostics(config: GolemConfig, job: GolemJob): read
 /**
  * One golem.yaml serves one tsconfig. The rewrite scan and the build read the tsconfig the yaml names, while the models and
  * controllers analysis still reads the one it finds from its job root, so a job must lie inside the yaml tsconfig's directory
- * and find that same file.
+ * and find that same file. Every output lies inside that directory too, so golem writes and deletes nowhere else.
  */
 function assertJobsMatchTsconfig(configFile: string, tsconfig: string, declared: boolean, jobs: readonly GolemJob[]): void {
   const directory = path.dirname(tsconfig);
@@ -203,6 +203,13 @@ function assertJobsMatchTsconfig(configFile: string, tsconfig: string, declared:
           ? "A non-default tsconfig: that differs from the job's own tsconfig is not supported yet; name the file the job finds."
           : "A default tsconfig.json that differs from the job's own tsconfig is not supported yet; name the file the job finds with tsconfig:."),
       );
+    }
+  }
+  for (const job of jobs) {
+    // The outputs are real paths already, so an output that leaves through a link shows as the place it reaches.
+    const { output } = job.options;
+    if (output !== undefined && !contains(directory, output)) {
+      throw new Error(`Job ${job.id}: output ${output} is outside the tsconfig directory ${directory}. Move it inside.`);
     }
   }
 }

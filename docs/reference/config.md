@@ -19,7 +19,7 @@ It records what it writes in an [inventory](/guide/watch#generated-files-and-the
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `version` | literal `1` | Yes | — | Configuration format version. |
-| `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml`. The file must exist when you set the key. One tsconfig belongs to one `golem.yaml`: the `root` of a `models` or `controllers` job must lie inside its directory, and each job must find that same file as the nearest `tsconfig.json` from its `root` upward. A `tsconfig` that names another file is not supported yet. |
+| `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml`. The file must exist when you set the key. One tsconfig belongs to one `golem.yaml`: the `root` of a `models` or `controllers` job must lie inside its directory, and each job must find that same file as the nearest `tsconfig.json` from its `root` upward. The `output` of every job must also lie inside that directory, or loading `golem.yaml` fails. A `tsconfig` that names another file is not supported yet. |
 | `mobx` | boolean | No | `false` | Generate MobX observability hooks. |
 | `validation` | boolean | No | `true` | Generate runtime validation metadata and checks. Named `IObject` / `IModel` `{ validation: true or false }` overrides this per declaration. |
 | `allowAny` | boolean | No | `false` | Permit fields typed `any` or `unknown` in models. Without it, such a field fails with [`RUNM1011`](/reference/diagnostics#runm1011). An `IObject` or `IModel` can opt in with `IObject<F, { allowAny: true }>`, or tighten this policy explicitly. |
