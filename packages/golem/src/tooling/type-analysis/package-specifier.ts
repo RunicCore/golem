@@ -91,6 +91,19 @@ function resolveSubpath(map: Readonly<Record<string, unknown>>, subpath: string)
   return best ? resolveTarget(map[best.key], best.capture) : undefined;
 }
 
+/** The exports field as a map of subpath keys: a string, an array or a condition object with no `.` key is the entry of `.`. */
+function subpathMap(exportsField: unknown): Record<string, unknown> {
+  return typeof exportsField === 'string' || Array.isArray(exportsField)
+    || (exportsField && typeof exportsField === 'object' && !Object.keys(exportsField).some((key) => key.startsWith('.')))
+    ? { '.': exportsField }
+    : (exportsField as Record<string, unknown> | undefined) ?? {};
+}
+
+/** The `./`-relative file that the `exports` field of a package names for `subpath` (`.` or `./x`): `null` when excluded, `undefined` when no entry applies. */
+export function resolveExportsSubpath(exportsField: unknown, subpath: string): string | null | undefined {
+  return resolveSubpath(subpathMap(exportsField), subpath);
+}
+
 /** Every string target in one exports entry, whatever condition holds it, in object order. */
 function targetStrings(entry: unknown): string[] {
   if (typeof entry === 'string') return [entry];
@@ -113,10 +126,7 @@ function exportCandidates(relativeFile: string): readonly string[] {
  * lands on the file again.
  */
 function subpathFor(exportsField: unknown, relativeFile: string): string | undefined {
-  const map: Record<string, unknown> = typeof exportsField === 'string' || Array.isArray(exportsField)
-    || (exportsField && typeof exportsField === 'object' && !Object.keys(exportsField).some((key) => key.startsWith('.')))
-    ? { '.': exportsField }
-    : (exportsField as Record<string, unknown> | undefined) ?? {};
+  const map = subpathMap(exportsField);
   const candidates = exportCandidates(relativeFile);
   for (const [key, entry] of Object.entries(map)) {
     for (const target of targetStrings(entry)) {

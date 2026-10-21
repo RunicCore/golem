@@ -31,6 +31,7 @@ import {
 } from 'node:path';
 import * as ast from 'typescript/unstable/ast';
 import { matchStarPattern } from './star-pattern.js';
+import { resolveExportsSubpath } from './type-analysis/package-specifier.js';
 import {
   API,
   Checker,
@@ -917,11 +918,39 @@ function resolveImportMap(
   }
 }
 
+/** The file the `exports` map of the nearest `node_modules/<package>` names for the subpath, by the conditions of type-analysis (`types`, `import`, `node`, `default`), as the real resolver reads it. */
+function resolveExportsMap(moduleName: string, containingFile: string, host: ModuleResolutionHost): string | undefined {
+  const segments = moduleName.split('/');
+  const nameLength = moduleName.startsWith('@') ? 2 : 1;
+  const packageName = segments.slice(0, nameLength).join('/');
+  const subpath = ['.', ...segments.slice(nameLength)].join('/');
+  let current = dirname(containingFile);
+  for (;;) {
+    const packageRoot = join(current, 'node_modules', packageName);
+    const manifest = join(packageRoot, 'package.json');
+    if (host.fileExists(manifest)) {
+      let exportsField: unknown;
+      try {
+        exportsField = (JSON.parse(host.readFile(manifest) ?? '{}') as { exports?: unknown } | null)?.exports;
+      } catch {
+        return undefined;
+      }
+      const target = exportsField === undefined ? undefined : resolveExportsSubpath(exportsField, subpath);
+      return target ? firstExisting(host, sourceCandidates(join(packageRoot, target))) : undefined;
+    }
+    const parent = dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
 function resolvePackage(moduleName: string, containingFile: string, host: ModuleResolutionHost): string | undefined {
   if (moduleName.startsWith('#')) {
     const mapped = resolveImportMap(moduleName, containingFile, host);
     if (mapped) return mapped;
   }
+  const exported = resolveExportsMap(moduleName, containingFile, host);
+  if (exported) return exported;
   try {
     const require = createRequire(containingFile);
     const resolved = require.resolve(moduleName);
