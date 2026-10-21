@@ -533,13 +533,18 @@ function stringifyParameters(value: string, ctx: EmitCtx): string {
 }
 
 /**
- * Whether the object is a map with no declared field whose values are plain data (scalars, or lists of them). The keys
- * of a map are data, and plain values hold no model instance and need no conversion, so the native JSON writer writes
- * the value as the encoder would.
+ * Whether the object is a map with no declared field whose values are plain data (non-numeric scalars, or lists of
+ * them). The keys of a map are data, and plain values hold no model instance and need no conversion, so the native
+ * JSON writer writes the value as the encoder would. A number stays out: the native writer turns NaN into null, where
+ * the encoder throws on a non-finite number.
  */
 function isPlainDataMap(descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>): boolean {
-  const isPlainData = (value: ModelTypeDescriptor): boolean =>
-    !descriptorNeedsConversion(value) && (isScalarishDescriptor(value) || (value.kind === 'array' && isPlainData(value.item)));
+  const isPlainData = (value: ModelTypeDescriptor): boolean => {
+    if (descriptorNeedsConversion(value)) return false;
+    if (value.kind === 'array') return isPlainData(value.item);
+    if (value.kind === 'union') return value.variants.every(isPlainData);
+    return value.kind !== 'number' && isScalarishDescriptor(value);
+  };
   return Object.keys(descriptor.properties).length === 0
     && typeof descriptor.additionalProperties === 'object'
     && isPlainData(descriptor.additionalProperties);

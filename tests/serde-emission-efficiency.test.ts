@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { generateModels } from '#openapi/models';
 import { writeSdk } from '#openapi/generator';
@@ -392,4 +393,23 @@ export class Stamps extends TStampsBaseModel {}
   const stamps = { first: new Date('2024-01-01T00:00:00.000Z'), second: new Date('2024-02-02T00:00:00.000Z') };
   assert.equal(codecs.stringifyTStamps(stamps), '{"first":"2024-01-01T00:00:00.000Z","second":"2024-02-02T00:00:00.000Z"}');
   assert.deepEqual(codecs.toWireFormatTStamps(stamps), { first: '2024-01-01T00:00:00.000Z', second: '2024-02-02T00:00:00.000Z' });
+});
+
+test('a map of numbers throws on a non-finite value with validation off, as a number field does', async (t) => {
+  // protects: T-212 a non-finite number in a plain map is a Serialization LibError, not null (found in T-202)
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'counts.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TCountsBaseModel, TSeriesBaseModel } from './counts.model.generated.js';
+export type TCounts = IModel<{ [key: string]: number }>;
+export type TSeries = IModel<{ [key: string]: number[] }>;
+export class Counts extends TCountsBaseModel {}
+export class Series extends TSeriesBaseModel {}
+`);
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  await buildModelProject(value.root);
+  const codecs = await import(pathToFileURL(path.join(value.root, 'build/counts.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
+  const isSerializationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Serialization;
+  assert.equal(codecs.stringifyTCounts({ a: 1, b: -0.5 }), '{"a":1,"b":-0.5}');
+  assert.throws(() => codecs.stringifyTCounts({ a: NaN }), isSerializationError);
+  assert.throws(() => codecs.stringifyTSeries({ a: [1, Infinity] }), isSerializationError);
 });
