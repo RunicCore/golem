@@ -471,7 +471,7 @@ test('generation is deterministic', async (t) => {
   const manifestText = fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8');
   const manifest = requireRecord(JSON.parse(manifestText), 'manifest');
   assert.equal(Object.hasOwn(manifest, 'manifestVersion'), false);
-  assert.deepEqual(manifest.profile, { mobx: true, validation: true, allowAny: false, unknownFormats: 'warn' });
+  assert.deepEqual(manifest.profile, { mobx: true, validation: true, allowAny: false, unknownFormats: 'error' });
   const source = requireRecord(manifest.source, 'source');
   assert.equal(source.dialect, requireRecord(document, 'document').openapi);
   assert.match(String(source.digest), /^[a-f0-9]{64}$/);

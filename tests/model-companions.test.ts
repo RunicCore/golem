@@ -27,7 +27,7 @@ function writeManifest(
   profile: { readonly mobx: boolean; readonly validation: boolean } = { mobx: false, validation: false },
 ): void {
   fs.writeFileSync(filename, JSON.stringify({
-    profile: { ...profile, allowAny: false },
+    profile: { ...profile, allowAny: false, unknownFormats: 'error' },
     // A validating model that references this one compiles its schema into its own validators.
     ...(profile.validation ? {
       validationSchemaClosure: [{

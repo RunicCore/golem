@@ -8,6 +8,7 @@ import { ClientRuntime } from '@exprtlabs/golem/client';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { operationValidators, type OperationRuntimeValidators } from '@exprtlabs/golem/validation';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject } from '../fixture-project.js';
 import { compileGeneratedSdk, isGeneratedClientClass, writeGeneratedSdk, type GeneratedClientClass } from './helpers.js';
@@ -305,4 +306,28 @@ test('a format golem does not check is reported at the component key, however th
   const warnings = (result.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT');
   assert.ok(warnings.length > 0);
   for (const warning of warnings) assert.ok(warning.path?.startsWith('#/components/schemas/pet-item'), JSON.stringify(warning));
+});
+
+test('an OpenAPI format golem does not check stops generation by default, and unknownFormats: warn warns and writes the files', () => {
+  // protects: T-33 unknownFormats defaults to error; warn is the opt-out
+  const document = {
+    openapi: '3.1.0', info: { title: 'Ledger', version: '1' },
+    components: { schemas: { Amount: { type: 'string', format: 'money' } } },
+    paths: { '/credit': { post: {
+      operationId: 'credit',
+      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Amount' } } } },
+      responses: { 200: { description: 'ok' } },
+    } } },
+  };
+  const output = path.join(tmpdir(), 'golem-unknown-format-default');
+  const stopped = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true } });
+  assert.deepEqual(stopped.artifacts, []);
+  assert.deepEqual(
+    (stopped.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT').map(entry => entry.severity),
+    [GolemDiagnosticSeverity.Error],
+  );
+  assert.match((stopped.diagnostics ?? [])[0]?.message ?? '', /the format "money" is not implemented, so golem cannot check it\./);
+  const warned = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
+  assert.ok(warned.artifacts.length > 0);
+  assert.ok((warned.diagnostics ?? []).some(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT' && entry.severity === GolemDiagnosticSeverity.Warning));
 });

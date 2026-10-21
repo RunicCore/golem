@@ -148,8 +148,22 @@ test('rejects missing sources and profile-mismatched manifests before emitting a
   fs.writeFileSync(manifest, JSON.stringify({ profile: { ...profile, allowAny: true }, models: [] }));
   assert.throws(() => generate({ root, sources: [source], profile, manifestInputs: [manifest] }), /profile mismatch/);
   assert.equal(fs.existsSync(path.join(sourceRoot, 'x.model.generated.ts')), false);
-  fs.writeFileSync(manifest, JSON.stringify({ profile: { ...profile, unknownFormats: 'error' }, models: [] }));
-  assert.throws(() => generate({ root, sources: [source], profile, manifestInputs: [manifest] }), /profile mismatch.*unknownFormats: warn/);
+  fs.writeFileSync(manifest, JSON.stringify({ profile: { ...profile, unknownFormats: 'warn' }, models: [] }));
+  assert.throws(() => generate({ root, sources: [source], profile, manifestInputs: [manifest] }), /profile mismatch.*unknownFormats: error/);
+  assert.equal(fs.existsSync(path.join(sourceRoot, 'x.model.generated.ts')), false);
+});
+
+test('an SDK manifest with no unknownFormats record is a profile mismatch that says to regenerate', (t: TestContext) => {
+  // protects: T-33 a manifest written before unknownFormats defaulted to error is not a match
+  const { root, sourceRoot } = project(t);
+  const manifest = path.join(root, 'external-model-manifest.json');
+  const source = copyFixtureFile(root, 'models/model-generator/api-profiles/src/payment.model.ts', 'src/x.model.ts');
+  const profile = { mobx: false, validation: true, allowAny: false };
+  fs.writeFileSync(manifest, JSON.stringify({ profile, models: [] }));
+  assert.throws(
+    () => generate({ root, sources: [source], profile, manifestInputs: [manifest] }),
+    /profile mismatch.*unknownFormats: error.*Regenerate the SDK manifest with the same profile/,
+  );
   assert.equal(fs.existsSync(path.join(sourceRoot, 'x.model.generated.ts')), false);
 });
 
@@ -193,7 +207,7 @@ test('rejects unsupported and duplicate model manifests', (t: TestContext) => {
     generated: { module: './models.ts', export: 'MoneyModel' },
   };
   const manifest = (profile: { mobx: boolean; validation: boolean }) => ({
-    profile: { ...profile, allowAny: false },
+    profile: { ...profile, allowAny: false, unknownFormats: 'error' },
     models: [model],
   });
   fs.writeFileSync(first, JSON.stringify({ ...manifest({ mobx: false, validation: false }), manifestVersion: 99 }));

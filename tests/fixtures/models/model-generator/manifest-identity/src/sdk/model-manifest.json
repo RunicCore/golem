@@ -1,5 +1,5 @@
 {
-  "profile": { "mobx": false, "validation": false, "allowAny": false },
+  "profile": { "mobx": false, "validation": false, "allowAny": false, "unknownFormats": "error" },
   "generator": { "name": "@exprtlabs/golem-openapi", "version": 1 },
   "models": [{
     "id": "fixture:money",

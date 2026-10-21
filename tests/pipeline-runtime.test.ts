@@ -113,7 +113,7 @@ function modelWatchFixture(t: TestContext): ModelWatchFixture {
 function writeExternalManifest(fixture: ModelWatchFixture): void {
   copyFixtureFile(fixture.root, 'pipeline/model-watch/models.ts', 'src/external/models.ts');
   fs.writeFileSync(fixture.manifest, JSON.stringify({
-    profile: { mobx: false, validation: false, allowAny: false },
+    profile: { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' },
     models: [{
       id: 'fixture:money',
       allowAny: false,

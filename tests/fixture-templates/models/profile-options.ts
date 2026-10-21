@@ -23,7 +23,7 @@ export function taggedProfilePayloadSource(options: {
   return tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import type { Format, MinLength, TValidation } from '@exprtlabs/golem/tags';
 import { validText } from './validators.js';
-export type TPayload = IModel<{ nested: { text: string & TValidation<typeof validText>; payload: any & MinLength<3>; opaque: unknown & Format<'domain-specific'> } }, ${options.modelOptions}>;
+export type TPayload = IModel<{ nested: { text: string & TValidation<typeof validText>; payload: any & MinLength<3>; opaque: unknown & Format<'uuid'> } }, ${options.modelOptions}>;
 import { TPayloadBaseModel, type TPayloadFields } from './payload.model.generated.js';
 export class Payload extends TPayloadBaseModel {
   constructor(values: Partial<TPayloadFields> = {}) { super(values); }

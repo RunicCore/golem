@@ -1,6 +1,7 @@
 import { readFixture } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -19,6 +20,7 @@ import { createSchemaGraph } from '@exprtlabs/golem/schema-graph';
 import { workspace } from './support/process.js';
 import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 import type { ModelValidationContext } from '@exprtlabs/golem/model';
+import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compileSchema, compileValidationPlan } from './support/compiled-validators.js';
@@ -437,7 +439,8 @@ test('a project with validation off generates when one model opts in, and the sh
   );
 });
 
-test('unknownFormats: error makes generation fail with VALIDATE_UNKNOWN_FORMAT', async t => {
+test('a model format golem does not check stops generation by default, and unknownFormats: warn warns and writes the files', async t => {
+  // protects: T-33 unknownFormats defaults to error; warn is the opt-out
   const value = fixture(t);
   writeFileSync(path.join(value.sourceRoot, 'contact.model.ts'), [
     "import type { IModel } from '@exprtlabs/golem/model';",
@@ -447,12 +450,15 @@ test('unknownFormats: error makes generation fail with VALIDATE_UNKNOWN_FORMAT',
   ].join('\n'));
   writeModelGolemYaml(value.root, { mobx: false, validation: true });
   const config = path.join(value.root, 'golem.yaml');
-  // The default warns and writes the validators; the format is not checked.
-  await runPipeline(config);
-  assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')));
-  writeFileSync(config, `${readFileSync(config, 'utf8')}unknownFormats: error\n`);
   // The error names the model, and no error is dropped: the field type's own schema reports it too.
-  await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT: model TContact: the format "phone-number" is not implemented/);
+  await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT: model TContact: the format "phone-number" is not implemented, so golem cannot check it\./);
+  assert.equal(existsSync(path.join(value.root, '.golem/outputs.json')), false);
+  writeFileSync(config, `${readFileSync(config, 'utf8')}unknownFormats: warn\n`);
+  const state = await runPipeline(config);
+  const warnings = [...state.results.values()].flatMap(result => result.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT');
+  assert.deepEqual(warnings.map(entry => entry.severity), [GolemDiagnosticSeverity.Warning]);
+  assert.match(warnings[0]?.message ?? '', /the format "phone-number" is not implemented and is not checked/);
+  assert.ok(generatedModelFiles(value.root).some(item => item.path.endsWith('/models.validators.generated.ts')));
 });
 
 test('a field type that only a model without validation holds still fails generation when its format is unknown', async t => {
@@ -466,7 +472,6 @@ test('a field type that only a model without validation holds still fails genera
   ].join('\n'));
   writeModelGolemYaml(value.root, { mobx: false, validation: true });
   const config = path.join(value.root, 'golem.yaml');
-  writeFileSync(config, `${readFileSync(config, 'utf8')}unknownFormats: error\n`);
   await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT: a model field type: the format "phone-number" is not implemented/);
 });
 

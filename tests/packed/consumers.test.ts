@@ -64,7 +64,7 @@ for (const profile of [
     await cli(root, ['generate']);
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8'));
     assert.equal(Object.hasOwn(manifest, 'manifestVersion'), false);
-    assert.deepEqual(manifest.profile, { ...profile, allowAny: false, unknownFormats: 'warn' });
+    assert.deepEqual(manifest.profile, { ...profile, allowAny: false, unknownFormats: 'error' });
     const packedVersion = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/golem/package.json'), 'utf8')).version;
     assert.deepEqual(manifest.runtime, { name: '@exprtlabs/golem', minimumVersion: packedVersion });
     copyFixtureFile(root, profile.mobx ? 'packed/profile-mobx-after-generation/cart.model.ts' : 'packed/profile-after-generation/cart.model.ts', 'src/cart.model.ts');
@@ -168,7 +168,7 @@ test('packed model and SDK validators work without code generation from strings'
   await cli(root, ['generate']);
   await cli(root, ['check']);
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8'));
-  assert.deepEqual(manifest.profile, { mobx: false, validation: true, allowAny: false, unknownFormats: 'warn' });
+  assert.deepEqual(manifest.profile, { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' });
   const generatedText = [...filesUnder(path.join(root, 'sdk')), path.join(root, 'src/cart.model.generated.ts')]
     .filter(filename => filename.endsWith('.ts')).map(filename => fs.readFileSync(filename, 'utf8')).join('\n');
   assert.doesNotMatch(generatedText, /asGenObservable|ModelAnnotations|@exprtlabs\/golem\/mobx/);

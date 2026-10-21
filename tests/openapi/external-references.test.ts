@@ -259,7 +259,7 @@ test('a format golem does not check is reported at the file and pointer that dec
       '/debit': { post: { operationId: 'debit', requestBody: { required: true, content: { 'application/json': { schema: money } } }, responses: { 200: { description: 'ok' } } } },
     },
   });
-  const result = await generate({ input, output: path.join(directory, 'sdk'), name: 'Ledger', profile: { mobx: false, validation: true } });
+  const result = await generate({ input, output: path.join(directory, 'sdk'), name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
   const warnings = result.diagnostics?.filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT') ?? [];
   // The operation validators name the exact pointer; the model names the component, which is the whole file.
   assert.deepEqual(warnings.map(entry => [entry.file, entry.path]).sort(), [

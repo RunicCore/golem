@@ -185,7 +185,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   const validators: { compiled?: PlanValidators } = {};
   const validatorOptions = {
     owner: '@exprtlabs/golem-openapi',
-    unknownFormats: profile.unknownFormats ?? 'warn',
+    unknownFormats: profile.unknownFormats,
     documentName: 'the OpenAPI document',
     ...(operationValidation ? { locate: operationValidation.locate } : {}),
   } as const;

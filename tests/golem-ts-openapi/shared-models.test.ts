@@ -110,7 +110,7 @@ const SDK_PACKAGE: Readonly<Record<string, string>> = {
   'money.model.d.ts': "/* @golem-model-manifest ./model-manifest.json */\nimport type { IObject } from '@exprtlabs/golem/model';\nexport type TMoney = IObject<{ currency: string }>;\n",
   'models.ts': 'export class MoneyModel {}\n',
   'model-manifest.json': JSON.stringify({
-    profile: { mobx: false, validation: true, allowAny: false },
+    profile: { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' },
     models: [{ id: 'sdk:money', codecId: 'Money_0a1b2c3d', allowAny: false, type: { module: './money.model.d.ts', export: 'TMoney' }, generated: { module: './models.ts', export: 'MoneyModel' } }],
   }),
 };

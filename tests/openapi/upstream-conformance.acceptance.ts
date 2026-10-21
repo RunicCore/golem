@@ -400,7 +400,8 @@ test('typed upstream corpus cases generate, strict-compile, and execute every ac
         input: filename,
         output,
         name: `Upstream${fixtureIndex}`,
-        profile,
+        // Third-party documents carry formats golem does not check, such as the uspto `uriref`.
+        profile: { ...profile, unknownFormats: 'warn' },
       });
       assert.equal(fs.existsSync(output), false, `${fixture.path} ${profileId} generation remains pure`);
       materializeGeneratedSdk(result.artifacts, output);

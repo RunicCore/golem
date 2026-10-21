@@ -1,9 +1,9 @@
-import type { GolemProfile } from '@exprtlabs/golem/generator-api';
+import type { GolemProfile, ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import { resolveProfile } from '@exprtlabs/golem/generator-api';
 
 export interface OpenApiGenerationProfile extends GolemProfile {}
 
-export function requireProfile(profile: GolemProfile | undefined): OpenApiGenerationProfile {
+export function requireProfile(profile: GolemProfile | undefined): ResolvedGolemProfile {
   if (profile === undefined || profile === null) {
     throw new TypeError('profile is required');
   }

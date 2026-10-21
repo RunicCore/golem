@@ -141,7 +141,7 @@ test('a tagged unknown field is rejected by default and allowed by allowAny, as 
   const { root, source } = modelProject(t);
   fs.writeFileSync(source, tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import type { Format } from '@exprtlabs/golem/tags';
-export type TPayload = IModel<{ opaque: unknown & Format<'domain-specific'> }>;
+export type TPayload = IModel<{ opaque: unknown & Format<'uuid'> }>;
 `.text);
   assert.throws(() => generate({ root, sources: [source], profile: profile() }), /RUNM1011.*contains unknown/);
   assertModelArtifactRoles(root, source, generate({ root, sources: [source], profile: profile({ allowAny: true }) }), true);

@@ -9,7 +9,7 @@ import type {
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/validation-plan';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/generated-paths';
 import { reachesRecursiveNode } from '@exprtlabs/golem/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/schema-graph';
@@ -92,7 +92,7 @@ interface NormalizedContext {
   readonly output: string;
   readonly sources: readonly string[] | undefined;
   readonly suffixes: readonly string[];
-  readonly profile: GolemModelProfile;
+  readonly profile: ResolvedGolemProfile;
   readonly exact: boolean | undefined;
   readonly manifestInputs: readonly string[];
   readonly onInput?: InputObserver;
@@ -533,7 +533,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const validators = validationPlan && validationPlan.references.length > 0
     ? compilePlanValidators(validationPlan, {
       owner: '@exprtlabs/golem-model',
-      unknownFormats: normalized.profile.unknownFormats ?? 'warn',
+      unknownFormats: normalized.profile.unknownFormats,
       validations: validatorImports(graphs, normalized.profile, validatorsOutput),
       documentName: 'the model schemas',
       locate: (resource) => resource.startsWith('golem:model-tag:') ? { where: FIELD_TYPE_PLACE } : undefined,

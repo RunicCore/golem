@@ -330,13 +330,13 @@ test('model manifests validate profile and keep identity independent of profile'
     mobx: false,
     validation: true,
     allowAny: false,
-    unknownFormats: 'warn',
+    unknownFormats: 'error',
   });
   assert.throws(
     () => manifest.validateModelManifest({ ...base, profile: { mobx: true } }),
     /profile must include mobx, validation and allowAny booleans/,
   );
-  assert.equal(manifest.modelManifestProfile({ ...base, profile: { ...base.profile, unknownFormats: 'error' } }).unknownFormats, 'error');
+  assert.equal(manifest.modelManifestProfile({ ...base, profile: { ...base.profile, unknownFormats: 'warn' } }).unknownFormats, 'warn');
   assert.throws(
     () => manifest.validateModelManifest({ ...base, profile: { ...base.profile, unknownFormats: 'strict' } }),
     /unknownFormats must be "warn" or "error"/,

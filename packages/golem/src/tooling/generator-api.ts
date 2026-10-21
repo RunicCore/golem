@@ -22,7 +22,7 @@ export interface GolemProfile {
   readonly mobx: boolean;
   readonly validation: boolean;
   readonly allowAny?: boolean;
-  /** What a schema format that golem does not implement does: `warn` (default) skips its check, `error` fails generation. */
+  /** What a schema format that golem does not implement does: `error` (default) fails generation, `warn` skips its check. */
   readonly unknownFormats?: 'warn' | 'error';
 }
 
@@ -72,7 +72,7 @@ export function resolveProfile(profile: GolemProfile): ResolvedGolemProfile {
   const resolved: ResolvedGolemProfile = {
     ...profile,
     allowAny: profile.allowAny ?? false,
-    unknownFormats: profile.unknownFormats ?? 'warn',
+    unknownFormats: profile.unknownFormats ?? 'error',
   };
   return Object.freeze(resolved);
 }
