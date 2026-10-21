@@ -142,6 +142,15 @@ function subpathFor(exportsField: unknown, relativeFile: string): string | undef
   return undefined;
 }
 
+/** Whether Node, resolving `name` from `consumerRoot`, finds the package at `packageRoot`: the nearest `node_modules/<name>` decides. */
+function installedAt(consumerRoot: string, name: string, packageRoot: string): boolean {
+  for (let dir = consumerRoot; ; dir = path.dirname(dir)) {
+    const candidate = path.join(dir, 'node_modules', name);
+    if (fs.existsSync(path.join(candidate, 'package.json'))) return canonicalPath(candidate) === canonicalPath(packageRoot);
+    if (path.dirname(dir) === dir) return false;
+  }
+}
+
 /**
  * How code in `fromFile` imports `file`: relatively when the file's package is the consumer's own, or by the owning
  * package's name plus the `exports` subpath that reaches `file`. The owner is the nearest package.json with a name. It
@@ -154,6 +163,13 @@ export function packageSpecifier(file: string, fromFile: string, consumerRoot: s
   const consumer = nearestManifest(fromFile);
   if (!owner || owner.root === consumer?.root || !isOutside(canonicalPath(owner.root), canonicalPath(consumerRoot))) return { kind: 'same-package' };
   const relativeFile = path.relative(owner.root, file).replace(/\\/g, '/');
+  if (owner.exports === undefined || owner.exports === null) {
+    // Without an `exports` field Node serves every file by its path, so the runtime file's path is the subpath. That
+    // holds only where the package name resolves to this folder; a named folder that nothing installs has no import path.
+    return installedAt(consumerRoot, owner.name, owner.root)
+      ? { kind: 'package', specifier: `${owner.name}/${exportCandidates(relativeFile).at(-1)}` }
+      : { kind: 'unexported', packageName: owner.name, packageRoot: owner.root };
+  }
   const subpath = subpathFor(owner.exports, relativeFile);
   if (subpath === undefined) return { kind: 'unexported', packageName: owner.name, packageRoot: owner.root };
   return { kind: 'package', specifier: subpath === '.' ? owner.name : `${owner.name}/${subpath.replace(/^\.\//, '')}` };
