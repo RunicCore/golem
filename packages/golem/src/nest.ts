@@ -532,7 +532,7 @@ export class NestModelInterceptor implements NestInterceptor {
             const id = codecIdFromMetatype(metatype);
             throw new TypeError(id === undefined
               ? `NestModelInterceptor needs an IModel or IObject type for ${where}. Declare the input as an IModel or IObject, or write your own interceptor.`
-              : `NestModelInterceptor found no registered codec "${id}" for ${where}. Import the model module as a value, so its codec registers before the controller class loads.`);
+              : `golem fault: NestModelInterceptor found no registered codec "${id}" for ${where}. The rewrite loads the generated module of the model, and that module did not load. Run golem generate and rewrite the file again.`);
           }
           const construct = boundConstruct(metatype);
           const array = boundArray(metatype);

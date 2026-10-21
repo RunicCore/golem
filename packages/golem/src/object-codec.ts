@@ -222,10 +222,8 @@ export function requireObjectCodec<T = unknown>(id: string): ObjectCodec<T> {
     const model = hash > 0 && HASHED_CODEC_SUFFIX.test(id.slice(hash + 1)) ? id.slice(0, hash) : id;
     throw new LibError(
       LibErrorKind.ValidationUnavailable,
-      `IObject codec ${JSON.stringify(id)} for model ${model} is not registered. `
-      + `The generated file that registers it, the \`.generated.js\` file beside the model file (such as \`order.entity.generated.js\` for \`order.entity.ts\`), has not been loaded; `
-      + `a type-only import such as \`import type { ${model} }\` does not load it. `
-      + `Import that generated file, or a value from its model file, before calling parse, stringify, validate or the wire-format functions.`,
+      `golem fault: the IObject codec ${JSON.stringify(id)} for model ${model} is not registered. `
+      + `The rewrite loads the generated module that registers a codec wherever it names one, and that module did not load. Run golem generate and rewrite the file again.`,
     );
   }
   return codec;

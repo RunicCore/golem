@@ -63,13 +63,15 @@ function position(source: string, needle: string): { line: number; column: numbe
 }
 
 const SERDE = "import { requireObjectCodec as __golem_requireObjectCodec } from '@exprtlabs/golem/serde';";
+/** The load of the module that registers the payment codecs, added for any call on a payment model. */
+const PAYMENT_MODULE = "import './payment.model.generated.js';";
 
 test('each serde call with a type argument becomes a call on its codec', (t) => {
   const root = project(t, ['calls.ts']);
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
   const code = rewritten(root, result, 'calls.ts');
-  assert.equal(code.split('\n')[0], SERDE);
+  assert.deepEqual(code.split('\n').slice(0, 2), [PAYMENT_MODULE, SERDE]);
   assertLines(code, [
     'export const written = __golem_requireObjectCodec("TMoney_11111111").stringify(money);',
     'export const parsed = __golem_requireObjectCodec("TMoney_11111111").parse(text);',
@@ -78,7 +80,10 @@ test('each serde call with a type argument becomes a call on its codec', (t) => 
     'export const wire = __golem_requireObjectCodec("TMoney_11111111").toWireFormat(money);',
     'export const read = __golem_requireObjectCodec("TMoney_11111111").fromWireFormat(text);',
   ]);
-  assert.deepEqual(result.files.get('src/calls.ts')?.imports, [{ from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] }]);
+  assert.deepEqual(result.files.get('src/calls.ts')?.imports, [
+    { from: './payment.model.generated.js', names: [] },
+    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+  ]);
 });
 
 test('a callee reached through an alias, a namespace or a re-export is rewritten, any other callee is not', (t) => {
@@ -109,7 +114,10 @@ test('parse and fromWireFormat of a class construct it, and options that name co
     `export const plain = ${parse}(text);`,
     `export const nested = ${parse}(text, { construct: Payment, ...{ validate: ${parse}(text) === undefined } });`,
   ]);
-  assert.deepEqual(result.files.get('src/construct.ts')?.imports, [{ from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] }]);
+  assert.deepEqual(result.files.get('src/construct.ts')?.imports, [
+    { from: './payment.model.generated.js', names: [] },
+    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+  ]);
 });
 
 test('a construct option the user wrote is kept, and options held in a variable or a spread are spread after the default class', (t) => {
@@ -137,7 +145,9 @@ test('a class named through a type-only namespace import is constructed through 
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
   assert.deepEqual(result.files.get('src/type-only-namespace.ts')?.imports, [
+    { from: './ledger.model.generated.js', names: [] },
     { from: './ledger.model.js', names: ['Ledger'] },
+    { from: './payment.model.generated.js', names: [] },
     { from: './payment.model.js', names: ['Payment'] },
     { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
   ]);
@@ -151,12 +161,28 @@ test('a class named through a type-only namespace import is constructed through 
   assert.ok(code.includes("import type * as models from './payment.model.js';"), 'the type-only import stays as the user wrote it');
 });
 
+test('a call on a model named only as a type imports the generated module that registers its codec, once', (t) => {
+  // protects: T-190 / R-18 the rewrite names a codec id, so it also loads the module that registers it
+  const root = project(t, ['load-codec.ts']);
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  assert.deepEqual(result.files.get('src/load-codec.ts')?.imports, [
+    { from: './payment.model.generated.js', names: [] },
+    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+  ]);
+  const code = rewritten(root, result, 'load-codec.ts');
+  assert.equal(code.split('\n').filter((line) => line === "import './payment.model.generated.js';").length, 1);
+  assert.ok(code.includes("import type { TMoney } from './payment.model.js';"), 'the type-only import stays as the user wrote it');
+});
+
 test('a class imported only as a type is constructed through an aliased value import of its module', (t) => {
   const root = project(t, ['type-only.ts', 'ledger.model.ts', 'ledger.model.generated.ts']);
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
   assert.deepEqual(result.files.get('src/type-only.ts')?.imports, [
+    { from: './ledger.model.generated.js', names: [] },
     { from: './ledger.model.js', names: ['Ledger'] },
+    { from: './payment.model.generated.js', names: [] },
     { from: './payment.model.js', names: ['Payment'] },
     { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
   ]);
@@ -233,6 +259,26 @@ test('a type from an installed SDK resolves through the codec id of its manifest
   ]);
   assert.deepEqual(scanned(result, 'use-sdk.ts').dependencies, ['node_modules/sdk/model-manifest.json'], 'the manifest is what the edit was resolved from');
   assert.deepEqual([...result.files.keys()].filter((file) => file.includes('node_modules')), [], 'installed packages are not rewritten');
+});
+
+test('a call on a type of an installed SDK loads the SDK through the module the type is imported from', (t) => {
+  // protects: T-190 / R-18 an SDK model has no companion in the project, so the file's own import of the SDK is what loads it
+  const root = project(t);
+  installSdk(root);
+  fs.writeFileSync(path.join(root, 'src/write-sdk.ts'), [
+    "import { stringify } from '@exprtlabs/golem/serde';",
+    "import type { MoneyModel } from 'sdk';",
+    'declare const money: MoneyModel;',
+    'export const text = stringify<MoneyModel>(money);',
+    '',
+  ].join('\n'));
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  assert.deepEqual(scanned(result, 'write-sdk.ts').imports, [
+    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+    { from: 'sdk', names: [] },
+  ]);
+  assert.ok(rewritten(root, result, 'write-sdk.ts').split('\n').includes("import 'sdk';"));
 });
 
 test('an SDK generated before manifests held codec ids still resolves through its key table', (t) => {
@@ -662,8 +708,8 @@ test('a file with a byte order mark, CRLF line ends and Vietnamese text is scann
   assert.deepEqual(entry.edits.map(({ start, end, expect }) => ({ start, end, expect })), [{ start: text.indexOf(call), end: text.indexOf(call) + call.length, expect: call }]);
 
   const applied = applyRewrites(raw, entry);
-  assert.equal(applied.code.startsWith(`\uFEFF${SERDE}\n`), true, 'the mark stays first');
-  assert.equal(applied.code, `\uFEFF${SERDE}\n${text.replace(call, '__golem_requireObjectCodec("TMoney_11111111").parse(')}`);
+  assert.equal(applied.code.startsWith(`\uFEFF${PAYMENT_MODULE}\n${SERDE}\n`), true, 'the mark stays first');
+  assert.equal(applied.code, `\uFEFF${PAYMENT_MODULE}\n${SERDE}\n${text.replace(call, '__golem_requireObjectCodec("TMoney_11111111").parse(')}`);
   assert.equal(applyRewrites(text, entry).code, applied.code.slice(1), 'the text without the mark gives the same code without it');
 
   // The rewritten call resolves, through the map, to the original line and column of the call.
@@ -693,7 +739,7 @@ export const next = 1;
   const entry = scanned(result, 'line-comment.ts');
   assert.deepEqual(entry.edits.map(({ expect }) => expect), ['parse<TMoney> // keep the codec\n  (']);
   const applied = applyRewrites(source, entry);
-  assert.equal(applied.code, `${SERDE}\n${source.replace('parse<TMoney> // keep the codec\n  (', '__golem_requireObjectCodec("TMoney_11111111").parse(')}`);
+  assert.equal(applied.code, `${PAYMENT_MODULE}\n${SERDE}\n${source.replace('parse<TMoney> // keep the codec\n  (', '__golem_requireObjectCodec("TMoney_11111111").parse(')}`);
   // The line after the collapsed call still resolves to its own original line.
   const generated = applied.code.split('\n');
   const line = generated.findIndex((each) => each.startsWith('export const next'));
