@@ -136,6 +136,13 @@ export const COST_CASES: readonly CaseSpec[] = ALL_PAYLOADS.flatMap(payload => C
     .map(mode => ({ payload: payload.id, operation, adapter: pair[mode], support: 'full' }) satisfies CaseSpec)
     .filter(c => !COMPARE_CASES.some(k => k.payload === c.payload && k.operation === c.operation && k.adapter === c.adapter)))));
 
+/**
+ * The cases that time invalid input: the reading operations of IModel with validation on (PO4), on one broken variant of each payload.
+ * The first broken variant of the verify step is the fixed choice. The invalid path has no rank and no stop rule (F-250).
+ */
+export const INVALID_CASES: readonly CaseSpec[] = ALL_PAYLOADS.flatMap(payload =>
+  (['parse', 'decode', 'validate'] as const).map(operation => ({ payload: payload.id, operation, adapter: VALIDATION_COLUMNS.imodel.on, support: 'full' }) satisfies CaseSpec));
+
 /** The control times native JSON on the compare table's payloads; the spread of these numbers is the run's noise band. */
 export const CONTROL_ID = 'control' satisfies AdapterId;
 export const CONTROL_CASES: readonly CaseSpec[] = PAYLOADS.flatMap(payload =>

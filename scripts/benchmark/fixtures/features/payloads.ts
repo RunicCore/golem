@@ -147,15 +147,18 @@ export function assertSerdeModel(name: SerdeDensity, model: unknown): void {
   assert.ok(lines.every(line => line.due instanceof Date));
 }
 
-/** A copy of the serde wire value with one converting field broken, for each kind of conversion. */
+/**
+ * A copy of the serde wire value with one converting field broken, for each kind of conversion. The first one converts and then fails a rule
+ * (the permission bits lack the read bit), so a draft model can be built from it; the invalid timing uses it.
+ */
 export function serdeInvalidWires(name: SerdeDensity): readonly Record<string, unknown>[] {
   const wire = serdeWire(name);
   const broken = (change: Record<string, unknown>): Record<string, unknown> => ({ ...structuredClone(wire), ...change });
   const line = (change: Record<string, unknown>): Record<string, unknown> => broken({ lines: wire.lines.map((item, index) => index === 0 ? { ...item, ...change } : item) });
   return [
+    broken({ perms: name === 'serde-many' ? '0x2' : 2 }),
     broken({ price: name === 'serde-many' ? '12.5' : -1 }),
     broken({ code: name === 'serde-many' ? 'zz' : 0 }),
-    broken({ perms: name === 'serde-many' ? '0x2' : 2 }),
     broken({ active: 'maybe' }),
     broken({ created: 'not a date' }),
     broken({ window: ['not a date', stamps[2]] }),

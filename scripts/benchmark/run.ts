@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { loadavg } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { adapterSpec, BENCH_ADAPTERS, BENCH_OPERATIONS, ALL_PAYLOADS, CASES, CONTROL_ID, COST_OPERATIONS, PAYLOADS, operationSpec, payloadSpec, timedCases, type AdapterId, type AdapterSpec, type CaseSpec, type PayloadId, type PayloadSpec, type ProjectKind } from './cases.js';
+import { adapterSpec, BENCH_ADAPTERS, BENCH_OPERATIONS, ALL_PAYLOADS, CASES, CONTROL_ID, COST_OPERATIONS, INVALID_CASES, PAYLOADS, operationSpec, payloadSpec, timedCases, type AdapterId, type AdapterSpec, type CaseSpec, type PayloadId, type PayloadSpec, type ProjectKind } from './cases.js';
 import { prepareProjects, root } from './project.js';
 import type { BenchmarkResults } from './results-schema.js';
 import { buildResults, environment, gitState, packageVersions, summarize, writeFilesTogether, type MeasuredCase, type Settings } from './results.js';
@@ -60,8 +60,13 @@ function casesOf(id: AdapterId, payloads: ReadonlySet<PayloadId>): readonly Case
   return timedCases().filter(c => c.adapter === id && payloads.has(c.payload));
 }
 
+/** The cases that time invalid input for one adapter on the selected payloads. They run in a process of their own (R5). */
+function invalidCasesOf(id: AdapterId, payloads: ReadonlySet<PayloadId>): readonly CaseSpec[] {
+  return INVALID_CASES.filter(c => c.adapter === id && payloads.has(c.payload));
+}
+
 function adapterJob(id: AdapterId, mode: WorkerJob['mode'], settings: Settings, payloads: ReadonlySet<PayloadId>): WorkerJob {
-  const mine = casesOf(id, payloads);
+  const mine = mode === 'invalid' ? invalidCasesOf(id, payloads) : casesOf(id, payloads);
   return { mode, settings: { ...settings, batches: settings.batches / settings.rounds }, cases: mine.map(c => ({ fixture: payloadSpec(c.payload).fixture, operation: operationSpec(c.operation).fixtureOperation })) };
 }
 
@@ -71,16 +76,18 @@ function verifyAdapter(id: AdapterId, projects: Record<ProjectKind, string>, set
   runWorker(projects[adapter.project], adapter.fixtureAdapter, adapterJob(id, 'verify', settings, payloads));
 }
 
-function measureAdapter(id: AdapterId, projects: Record<ProjectKind, string>, settings: Settings, payloads: ReadonlySet<PayloadId>): MeasuredCase[] {
+/** Times the valid input of one adapter, or with `invalid` its invalid input; either way in a process that times nothing else. */
+function measureAdapter(id: AdapterId, projects: Record<ProjectKind, string>, settings: Settings, payloads: ReadonlySet<PayloadId>, invalid = false): MeasuredCase[] {
   const adapter = adapterSpec(id);
-  const mine = casesOf(id, payloads);
-  const output = runWorker(projects[adapter.project], adapter.fixtureAdapter, adapterJob(id, 'measure', settings, payloads));
+  const mine = invalid ? invalidCasesOf(id, payloads) : casesOf(id, payloads);
+  if (mine.length === 0) return [];
+  const output = runWorker(projects[adapter.project], adapter.fixtureAdapter, adapterJob(id, invalid ? 'invalid' : 'measure', settings, payloads));
   return mine.map(c => {
     const fixture = payloadSpec(c.payload).fixture;
     const operation = operationSpec(c.operation).fixtureOperation;
     const found = output.cases.find(r => r.fixture === fixture && r.operation === operation);
     if (!found) throw new Error(`${id}: worker returned no result for ${c.payload}/${c.operation}`);
-    return { payload: c.payload, operation: c.operation, adapter: id, payloadBytes: found.payloadBytes, samples: found.samples };
+    return { payload: c.payload, operation: c.operation, adapter: id, payloadBytes: found.payloadBytes, samples: found.samples, ...(invalid ? { invalid: true as const } : {}) };
   });
 }
 
@@ -117,10 +124,13 @@ export function runBenchmark(options: RunOptions): BenchmarkRun {
     for (const [round, order] of adapterRounds(adapters.map(a => a.id), rounds).entries()) {
       for (const id of order) {
         log(`Measuring ${id} (round ${round + 1} of ${rounds})`);
-        for (const result of measureAdapter(id, projects, options.settings, payloadsOf(id))) {
-          const key = `${result.payload}/${result.operation}/${result.adapter}`;
-          const previous = byCase.get(key);
-          byCase.set(key, previous ? { ...previous, samples: [...previous.samples, ...result.samples] } : result);
+        for (const invalid of [false, true]) {
+          if (invalid) log(`Measuring ${id} on invalid input (round ${round + 1} of ${rounds})`);
+          for (const result of measureAdapter(id, projects, options.settings, payloadsOf(id), invalid)) {
+            const key = `${result.payload}/${result.operation}/${result.adapter}${result.invalid ? '/invalid' : ''}`;
+            const previous = byCase.get(key);
+            byCase.set(key, previous ? { ...previous, samples: [...previous.samples, ...result.samples] } : result);
+          }
         }
       }
     }

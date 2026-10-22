@@ -19,12 +19,12 @@ test('the cost table divides validation on by validation off and IModel by IObje
   assert.deepEqual(row(results, 'simple', 'parse'), {
     payload: 'simple', operation: 'parse',
     imodelOff: ops(200), imodelOn: ops(100), imodelOnOverOff: ratio(0.5),
-    iobjectOff: ops(80), iobjectOn: ops(40), iobjectOnOverOff: ratio(0.5), imodelOverIobject: ratio(2.5), serdeManyOverNone: { kind: 'not-applicable' },
+    iobjectOff: ops(80), iobjectOn: ops(40), iobjectOnOverOff: ratio(0.5), imodelOverIobject: ratio(2.5), serdeManyOverNone: { kind: 'not-applicable' }, invalidOverValid: { kind: 'not-run' },
   });
   assert.deepEqual(row(results, 'simple', 'decode'), {
     payload: 'simple', operation: 'decode',
     imodelOff: ops(90), imodelOn: ops(45), imodelOnOverOff: ratio(0.5),
-    iobjectOff: { kind: 'not-run' }, iobjectOn: { kind: 'not-run' }, iobjectOnOverOff: { kind: 'not-run' }, imodelOverIobject: { kind: 'not-run' }, serdeManyOverNone: { kind: 'not-applicable' },
+    iobjectOff: { kind: 'not-run' }, iobjectOn: { kind: 'not-run' }, iobjectOnOverOff: { kind: 'not-run' }, imodelOverIobject: { kind: 'not-run' }, serdeManyOverNone: { kind: 'not-applicable' }, invalidOverValid: { kind: 'not-run' },
   });
 });
 
@@ -34,7 +34,7 @@ test('the cost table shows validate off and both on/off ratios as not applicable
   assert.deepEqual(row(results, 'nested', 'validate'), {
     payload: 'nested', operation: 'validate',
     imodelOff: { kind: 'not-applicable' }, imodelOn: ops(100), imodelOnOverOff: { kind: 'not-applicable' },
-    iobjectOff: { kind: 'not-applicable' }, iobjectOn: ops(50), iobjectOnOverOff: { kind: 'not-applicable' }, imodelOverIobject: ratio(2), serdeManyOverNone: { kind: 'not-applicable' },
+    iobjectOff: { kind: 'not-applicable' }, iobjectOn: ops(50), iobjectOnOverOff: { kind: 'not-applicable' }, imodelOverIobject: ratio(2), serdeManyOverNone: { kind: 'not-applicable' }, invalidOverValid: { kind: 'not-run' },
   });
 });
 
@@ -112,4 +112,21 @@ test('the compare table marks the cells of a library that does less work', () =>
   const cell = table.groups[0].rows[0].cells[0].cell;
   assert.deepEqual(cell, { kind: 'ops', value: 100, rank: 1, mark: 'does not reject unknown properties' });
   assert.equal(table.band, undefined);
+});
+
+// protects: T-242 the invalid/valid column divides the invalid timing by the valid one for the reading operations only
+test('the cost table divides invalid input by valid input for parse, decode and validate, and shows not applicable for stringify and encode', () => {
+  const results = {
+    cases: [timed('simple', 'parse', 'golem-validated', 100), timed('simple', 'stringify', 'golem-validated', 100), timed('simple', 'validate', 'golem-validated', 80)],
+    cost: { cases: [timed('simple', 'decode', 'golem-validated', 200), timed('simple', 'encode', 'golem-validated', 300)] },
+    invalid: { cases: [timed('simple', 'parse', 'golem-validated', 25), timed('simple', 'decode', 'golem-validated', 50), timed('simple', 'validate', 'golem-validated', 80)] },
+  };
+  assert.deepEqual(costTable(results).map(r => [r.operation, r.invalidOverValid]), [
+    ['parse', ratio(0.25)],
+    ['stringify', { kind: 'not-applicable' }],
+    ['decode', ratio(0.25)],
+    ['encode', { kind: 'not-applicable' }],
+    ['validate', ratio(1)],
+  ]);
+  assert.deepEqual(costTable({ ...results, invalid: undefined }).map(r => r.invalidOverValid.kind), ['not-run', 'not-applicable', 'not-run', 'not-applicable', 'not-run']);
 });

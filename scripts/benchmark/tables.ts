@@ -27,6 +27,11 @@ export interface CostRow {
   readonly imodelOverIobject: CostCell;
   /** On the serde-many rows: serde-many divided by serde-none for the same operation, IModel with validation on (PO4). Not applicable on every other row. */
   readonly serdeManyOverNone: CostCell;
+  /**
+   * The reading operations (parse, decode, validate) on one broken variant, divided by the same operation on valid input,
+   * IModel with validation on (PO4). Not applicable for stringify and encode. It has no rank and no stop rule (F-250).
+   */
+  readonly invalidOverValid: CostCell;
 }
 
 type Medians = ReadonlyMap<string, number>;
@@ -41,8 +46,10 @@ function ratio(compared: CostCell, reference: CostCell): CostCell {
  * The validation columns of the cost table, one row for each payload and operation that has a timing, in table order.
  * It reads the compare timings and the cost timings together, so each case is timed once and a ratio is never stored.
  */
-export function costTable(results: Pick<BenchmarkResults, 'cases' | 'cost'>): readonly CostRow[] {
+export function costTable(results: Pick<BenchmarkResults, 'cases' | 'cost' | 'invalid'>): readonly CostRow[] {
   const medians: Medians = new Map([...results.cases, ...(results.cost?.cases ?? [])]
+    .flatMap(c => c.opsPerSec ? [[`${c.payload}/${c.operation}/${c.adapter}`, c.opsPerSec.median] as const] : []));
+  const invalidMedians: Medians = new Map((results.invalid?.cases ?? [])
     .flatMap(c => c.opsPerSec ? [[`${c.payload}/${c.operation}/${c.adapter}`, c.opsPerSec.median] as const] : []));
   const rows: CostRow[] = [];
   for (const payload of ALL_PAYLOADS) {
@@ -58,9 +65,15 @@ export function costTable(results: Pick<BenchmarkResults, 'cases' | 'cost'>): re
       const imodelOn = cell(VALIDATION_COLUMNS.imodel.on);
       const iobjectOff = cell(VALIDATION_COLUMNS.iobject.off, true);
       const iobjectOn = cell(VALIDATION_COLUMNS.iobject.on);
+      const invalidRatio = (): CostCell => {
+        if (!['parse', 'decode', 'validate'].includes(operation)) return { kind: 'not-applicable' };
+        const invalid = invalidMedians.get(`${payload.id}/${operation}/${VALIDATION_COLUMNS.imodel.on}`);
+        return invalid === undefined ? { kind: 'not-run' } : ratio({ kind: 'ops', value: invalid }, imodelOn);
+      };
       const row: CostRow = {
         payload: payload.id, operation, imodelOff, imodelOn, imodelOnOverOff: ratio(imodelOn, imodelOff),
         iobjectOff, iobjectOn, iobjectOnOverOff: ratio(iobjectOn, iobjectOff), imodelOverIobject: ratio(imodelOn, iobjectOn),
+        invalidOverValid: invalidRatio(),
         serdeManyOverNone: payload.id === 'serde-many' ? ratio(imodelOn, timing('serde-none', VALIDATION_COLUMNS.imodel.on)) : { kind: 'not-applicable' },
       };
       if ([imodelOff, imodelOn, iobjectOff, iobjectOn].some(c => c.kind === 'ops')) rows.push(row);
@@ -80,11 +93,11 @@ function text(cell: CostCell): string {
 
 /** The cost table's validation columns as console text. */
 export function formatCostTable(rows: readonly CostRow[]): string {
-  const widths = [14, 10, 12, 12, 8, 12, 12, 8, 14, 15];
+  const widths = [14, 10, 12, 12, 8, 12, 12, 8, 14, 15, 13];
   const line = (cells: readonly string[]): string => cells.map((c, i) => i < 2 ? c.padEnd(widths[i]) : c.padStart(widths[i])).join(' ');
   return [
-    line(['', '', 'IModel off', 'IModel on', 'on/off', 'IObject off', 'IObject on', 'on/off', 'IModel/IObject', 'serde many/none']),
-    ...rows.map(r => line([r.payload, r.operation, ...[r.imodelOff, r.imodelOn, r.imodelOnOverOff, r.iobjectOff, r.iobjectOn, r.iobjectOnOverOff, r.imodelOverIobject, r.serdeManyOverNone].map(text)])),
+    line(['', '', 'IModel off', 'IModel on', 'on/off', 'IObject off', 'IObject on', 'on/off', 'IModel/IObject', 'serde many/none', 'invalid/valid']),
+    ...rows.map(r => line([r.payload, r.operation, ...[r.imodelOff, r.imodelOn, r.imodelOnOverOff, r.iobjectOff, r.iobjectOn, r.iobjectOnOverOff, r.imodelOverIobject, r.serdeManyOverNone, r.invalidOverValid].map(text)])),
   ].join('\n');
 }
 

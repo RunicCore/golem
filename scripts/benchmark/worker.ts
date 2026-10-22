@@ -24,8 +24,8 @@ interface Runnable { readonly fixture: ComparisonFixture; readonly key: string; 
 const runnables: Runnable[] = job.cases.map(c => {
   const fixture = fixtures.find(f => f.name === c.fixture);
   if (!fixture) throw new Error(`${fixtureAdapter}: fixture ${c.fixture} not provided`);
-  const run = fixture.operations[c.operation];
-  if (!run) throw new Error(`${fixtureAdapter}: ${c.fixture} has no ${c.operation}`);
+  const run = (job.mode === 'invalid' ? fixture.invalidOperations : fixture.operations)?.[c.operation];
+  if (!run) throw new Error(`${fixtureAdapter}: ${c.fixture} has no ${job.mode === 'invalid' ? 'invalid ' : ''}${c.operation}`);
   return { fixture, key: `${c.fixture}/${c.operation}`, operation: c.operation, run };
 });
 
@@ -41,6 +41,8 @@ async function verifyCalls(): Promise<void> {
     const value = await call(item);
     const consumed = item.fixture.consume(value);
     assert.ok(Number.isFinite(consumed) && consumed > 0, `Unconsumed result: ${fixtureAdapter}/${item.key}`);
+    // An invalid call returns a number once the input was rejected; the valid-result checks below do not apply.
+    if (job.mode === 'invalid') continue;
     if (item.operation === 'validate') assert.equal(value, true, `Validate rejected a valid fixture: ${fixtureAdapter}/${item.key}`);
     if (item.operation === 'text-to-model' && parsesToPlainObject) {
       assert.equal(Object.getPrototypeOf(value), Object.prototype, `Parse did not return a plain object: ${fixtureAdapter}/${item.key}`);

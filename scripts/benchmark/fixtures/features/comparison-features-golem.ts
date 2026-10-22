@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/serde';
-import type { Adapter, ComparisonFixture } from './fixture-contract.js';
+import { rejects, rejectsValidate, type Adapter, type ComparisonFixture } from './fixture-contract.js';
 import { Checkout, CheckoutPlain, LineItem, SerdeMany, SerdeManyLine, SerdeNone, SerdeNoneLine } from './features.model.js';
 import './sdk/index.js';
 import { assertFeatureWire, assertSerdeModel, checkoutInput, checkoutPlainInput, checkoutPlainInvalidWires, featureComparison, serdeComparison, serdeInput, serdeInvalidWires, type SerdeDensity } from './payloads.js';
@@ -42,6 +42,20 @@ function checkConverted(model: object): void {
   assert.equal(Object.hasOwn(model, 'memo'), false);
 }
 
+/**
+ * The invalid-input calls of a validating build on one broken wire value (the first broken variant of the verify step):
+ * decode and parse must throw, and validate of the same value built without validation must say no. Timed in a process of its own (R5).
+ */
+function invalidOperationsOf(codec: ReturnType<typeof requireObjectCodec>, construct: new (values?: never) => object, wire: unknown): ComparisonFixture['invalidOperations'] {
+  const text = JSON.stringify(wire);
+  const draft = codec.fromWireFormat(wire, options(false, construct));
+  return {
+    'object-to-model': rejects(() => codec.fromWireFormat(wire, options(true, construct))),
+    'text-to-model': rejects(() => codec.parse(text, options(true, construct))),
+    validate: rejectsValidate(() => codec.validate(draft)),
+  };
+}
+
 const validationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
 
 /** The checkout without conversion, as a class model: dates stay strings, and the class instance holds the wire values. */
@@ -66,7 +80,7 @@ function checkoutPlainFixture(validation: boolean): ComparisonFixture {
     } : {}),
   };
   // #endregion checkout-plain-calls
-  return featureComparison(input.name, input.payload, timed, async () => {
+  const fixture = featureComparison(input.name, input.payload, timed, async () => {
     const original = structuredClone(input.payload);
     const fromObject = checkout.fromWireFormat(input.payload, decodeOptions);
     const fromText = checkout.parse(input.text, decodeOptions);
@@ -84,6 +98,7 @@ function checkoutPlainFixture(validation: boolean): ComparisonFixture {
       assert.throws(() => checkout.parse(JSON.stringify(wire), decodeOptions), validationError);
     }
   });
+  return validation ? { ...fixture, invalidOperations: invalidOperationsOf(checkout, CheckoutPlain, checkoutPlainInvalidWires().broken[0]) } : fixture;
 }
 
 /** The serde payloads of the golem cost table, as class models. A converting field must round-trip exactly; a validating mode rejects a broken field of each kind. */
@@ -95,7 +110,7 @@ function serdeFixtures(validation: boolean): readonly ComparisonFixture[] {
     const decodeOptions = options(validation, construct);
     const encodeOptions = options(validation);
     const model = codec.fromWireFormat(input.payload, decodeOptions);
-    return serdeComparison(name, input.payload, {
+    const fixture = serdeComparison(name, input.payload, {
       'object-to-model': () => codec.fromWireFormat(input.payload, decodeOptions),
       'model-to-object': () => codec.toWireFormat(model as never, encodeOptions),
       'text-to-model': () => codec.parse(input.text, decodeOptions),
@@ -123,6 +138,7 @@ function serdeFixtures(validation: boolean): readonly ComparisonFixture[] {
         assert.throws(() => codec.parse(JSON.stringify(invalid), decodeOptions), validationError);
       }
     });
+    return validation ? { ...fixture, invalidOperations: invalidOperationsOf(codec, construct, serdeInvalidWires(name)[0]) } : fixture;
   });
 }
 
@@ -137,7 +153,7 @@ export async function createGolemFeatureFixtures(adapter: Adapter): Promise<read
   const decode = (): object => checkout.fromWireFormat(input.payload, decodeOptions) as object;
   const decodeText = (text: string, checked = validation): object => checkout.parse(text, options(checked, Checkout)) as object;
   const model = decode();
-  return [...serdeFixtures(validation), checkoutPlainFixture(validation), featureComparison(input.name, input.payload, {
+  const fixture = featureComparison(input.name, input.payload, {
     'object-to-model': decode,
     'model-to-object': () => checkout.toWireFormat(model as never, encodeOptions),
     'text-to-model': () => checkout.parse(input.text, decodeOptions),
@@ -167,5 +183,9 @@ export async function createGolemFeatureFixtures(adapter: Adapter): Promise<read
     assert.throws(() => codec().fromWireFormat(invalid, options(true, Checkout)));
     assert.throws(() => decodeText(JSON.stringify(invalid), true));
     assert.throws(() => codec().parse(JSON.stringify({ ...original, code: 'zz' })));
-  })];
+  });
+  // The broken variant of the verify step: the reserved currency.
+  const invalidWire = { ...structuredClone(input.payload), money: { amount: 12, currency: 'XXX' } };
+  return [...serdeFixtures(validation), checkoutPlainFixture(validation), validation ? { ...fixture, invalidOperations: invalidOperationsOf(checkout, Checkout, invalidWire) } : fixture];
+
 }

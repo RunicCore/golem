@@ -10,7 +10,8 @@ export interface ResultCase {
 }
 
 export interface BenchmarkResults {
-  readonly schema: 2;
+  /** 3 requires `cost`, `noise` and `invalid`. A file of schema 2 (measured before them) still passes `isBenchmarkResults`, so the page keeps working until a full run writes schema 3. */
+  readonly schema: 2 | 3;
   readonly measuredAt: string;
   readonly git: { readonly sha: string; readonly dirty: boolean };
   readonly environment: { readonly node: string; readonly os: string; readonly arch: string; readonly cpu: string; readonly cpus: number };
@@ -24,10 +25,15 @@ export interface BenchmarkResults {
   readonly cases: readonly ResultCase[];
   /**
    * The timings that only the golem cost table needs, in the same shape as `cases` (operations `decode` and `encode`
-   * included). The cost table is derived from `cases` and `cost.cases` together (`tables.ts`). Absent when no cost case ran.
+   * included). The cost table is derived from `cases` and `cost.cases` together (`tables.ts`). Required from schema 3.
    */
   readonly cost?: { readonly cases: readonly ResultCase[] };
-  /** The noise of the run: the host load average (1, 5 and 15 minutes) at the start and the end, and the control's spread (`controlSpread` in results.ts). Absent in files measured before the control. */
+  /**
+   * The timings of invalid input (parse, decode and validate of IModel with validation on), each taken in a process of its own.
+   * The cost table divides them by the valid timings. Required from schema 3.
+   */
+  readonly invalid?: { readonly cases: readonly ResultCase[] };
+  /** The noise of the run: the host load average (1, 5 and 15 minutes) at the start and the end, and the control's spread (`controlSpread` in results.ts). Required from schema 3. */
   readonly noise?: { readonly loadAverage: { readonly start: readonly number[]; readonly end: readonly number[] }; readonly controlSpread: number };
 }
 
@@ -69,12 +75,15 @@ function hasMetadata(value: Record<string, unknown>): boolean {
 
 /** Structural check used by the docs page and bench:compare before trusting a file. */
 export function isBenchmarkResults(value: unknown): value is BenchmarkResults {
-  if (!isObject(value) || value.schema !== 2 || !hasMetadata(value)) return false;
+  if (!isObject(value) || (value.schema !== 2 && value.schema !== 3) || !hasMetadata(value)) return false;
+  if (value.schema === 3 && (value.cost === undefined || value.noise === undefined || value.invalid === undefined)) return false;
   if (!Array.isArray(value.groups) || !Array.isArray(value.payloads) || !Array.isArray(value.operations) || !Array.isArray(value.adapters) || !Array.isArray(value.cases)) return false;
   if (!value.groups.every(g => isObject(g) && isString(g.id) && isString(g.label) && isString(g.description))) return false;
   const groupIds = new Set(value.groups.map(g => (g as { id: string }).id));
   if (!value.adapters.every(a => isObject(a) && isString(a.group) && groupIds.has(a.group))) return false;
   if (value.noise !== undefined && !isNoise(value.noise)) return false;
-  if (value.cost !== undefined && !(isObject(value.cost) && Array.isArray(value.cost.cases) && value.cost.cases.every(isResultCase))) return false;
+  for (const section of [value.cost, value.invalid]) {
+    if (section !== undefined && !(isObject(section) && Array.isArray(section.cases) && section.cases.every(isResultCase))) return false;
+  }
   return value.cases.every(isResultCase);
 }

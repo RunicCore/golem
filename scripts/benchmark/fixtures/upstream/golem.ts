@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/serde';
-import type { Adapter, ComparisonFixture } from './fixture-contract.js';
+import { rejects, rejectsValidate, type Adapter, type ComparisonFixture } from './fixture-contract.js';
 import {
   Account,
   Channel,
@@ -250,6 +250,19 @@ async function verify(input: FixtureInput, validation: boolean, model: GolemMode
   assert.throws(() => encode(invalidModel, true));
 }
 
+function invalidOperationsOf(input: FixtureInput): ComparisonFixture['invalidOperations'] {
+  const codec = requireObjectCodec(codecId(input));
+  const construct = constructFor(input);
+  const wire = invalidVariants(input)[0];
+  const text = JSON.stringify(wire);
+  const draft = codec.fromWireFormat(wire, { validate: false as const, construct });
+  return {
+    'object-to-model': rejects(() => codec.fromWireFormat(wire, { construct })),
+    'text-to-model': rejects(() => codec.parse(text, { construct })),
+    validate: rejectsValidate(() => codec.validate(draft)),
+  };
+}
+
 export async function createGolemFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
   const features = await createGolemFeatureFixtures(adapter);
   const validation = validationFor(adapter);
@@ -285,6 +298,8 @@ export async function createGolemFixtures(adapter: Adapter): Promise<readonly Co
         } : {}),
       },
   // #endregion calls
+      // The first broken variant of the verify step, timed in a process of its own (R5): decode and parse must throw, validate must say no.
+      ...(validation ? { invalidOperations: invalidOperationsOf(input) } : {}),
       consume: consumeValue,
       verify: () => verify(input, validation, model),
     });
