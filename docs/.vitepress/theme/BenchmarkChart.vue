@@ -217,7 +217,7 @@ async function onViewKey(event: KeyboardEvent, index: number): Promise<void> {
 .bench-explain { font-size: 14px; margin: 12px 0 8px; }
 .bench-explain :deep(p) { margin: 0; }
 /* The table scrolls inside its own frame, so the page never scrolls sideways. */
-.bench-frame { overflow-x: auto; max-width: 100%; margin: 8px 0 0; }
+.bench-frame { position: relative; overflow-x: auto; max-width: 100%; margin: 8px 0 0; }
 .bench-table { display: table; width: 100%; min-width: 640px; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; margin: 0; }
 .bench-table th, .bench-table td { border: 0; border-bottom: 1px solid var(--vp-c-divider); padding: 8px 10px; background: none; }
 .bench-table thead th { color: var(--vp-c-text-2); font-weight: 500; font-size: 13px; text-align: right; vertical-align: bottom; }

@@ -71,7 +71,7 @@ const blocks = computed(() => [...new Set(rows.value.map(r => r.payload))].map(p
 
 <style scoped>
 /* The table scrolls inside its own frame, so the page never scrolls sideways. */
-.cost-frame { overflow-x: auto; max-width: 100%; margin: 8px 0 0; }
+.cost-frame { position: relative; overflow-x: auto; max-width: 100%; margin: 8px 0 0; }
 .cost-frame:focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: 2px; }
 .cost-table { display: table; width: 100%; min-width: 960px; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; margin: 0; }
 .cost-table th, .cost-table td { border: 0; border-bottom: 1px solid var(--vp-c-divider); padding: 8px 10px; background: none; }
