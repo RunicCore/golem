@@ -222,6 +222,12 @@ export function parseRunArguments(args: readonly string[]): { readonly adapters?
   };
 }
 
+/** A run of some adapters or payloads must not replace the published results of all of them: it writes under `.cache`. */
+export function outputFileOf(selection: ReturnType<typeof parseRunArguments>): string {
+  const filtered = selection.adapters !== undefined || selection.payloads !== undefined;
+  return path.join(root, filtered ? '.cache/benchmark/results.json' : 'docs/public/benchmarks/results.json');
+}
+
 export function main(args: readonly string[] = process.argv.slice(2)): void {
   const started = Date.now();
   let selection: ReturnType<typeof parseRunArguments>;
@@ -233,9 +239,7 @@ export function main(args: readonly string[] = process.argv.slice(2)): void {
     process.exitCode = 2;
     return;
   }
-  // A run of some adapters or payloads must not replace the published results of all of them.
-  const filtered = selection.adapters !== undefined || selection.payloads !== undefined;
-  const outputFile = path.join(root, filtered ? '.cache/benchmark/results.json' : 'docs/public/benchmarks/results.json');
+  const outputFile = outputFileOf(selection);
   try {
     const { results, measured } = runBenchmark({ settings: DEFAULT_SETTINGS, outputFile, rawFile: path.join(root, '.cache/benchmark/raw.json'), ...selection });
     process.stdout.write(`${summaryTable(measured, selection.adapters, selection.payloads)}\n\n${compareSection(results)}${costSection(results)}${noiseLine(results)}\n\nWrote ${path.relative(root, outputFile)} in ${Math.round((Date.now() - started) / 1000)} s\n`);

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ResultCase } from '../scripts/benchmark/results-schema.js';
-import { compareTable, costTable, rankSpeeds, releaseBand, releaseVerdict } from '../scripts/benchmark/tables.js';
+import { compareTable, costTable, formatCompareTable, rankSpeeds, releaseBand, releaseVerdict } from '../scripts/benchmark/tables.js';
 
 const timed = (payload: string, operation: string, adapter: string, median: number): ResultCase =>
   ({ payload, operation, adapter, support: 'full', opsPerSec: { median, min: median, max: median } });
@@ -38,6 +38,7 @@ test('the cost table shows validate off and both on/off ratios as not applicable
   });
 });
 
+// protects: T-235 a row exists only for a pair that a run timed
 test('the cost table has no row for a payload or operation that no run timed', () => {
   const results = { cases: [timed('simple', 'parse', 'golem', 200)] };
   assert.deepEqual(costTable(results).map(r => `${r.payload}/${r.operation}`), ['simple/parse']);
@@ -114,6 +115,26 @@ test('the compare table marks the cells of a library that does less work', () =>
   assert.equal(table.band, undefined);
 });
 
+// protects: T-239 the console gives each reason that a library does less work its own symbol and footnote
+test('the console compare table marks two different reasons with two symbols, and a repeated reason with the same one', () => {
+  const ops = (value: number, mark?: string) => ({ kind: 'ops' as const, value, rank: 1, ...(mark ? { mark } : {}) });
+  const table = {
+    band: undefined,
+    groups: [{
+      id: 'plain' as const, label: 'Plain',
+      summary: (['typia', 'zod'] as const).map(adapter => ({ adapter, label: adapter, score: 1, rows: 2, of: 2 })),
+      rows: [
+        { payload: 'simple', operation: 'parse', cells: [{ adapter: 'typia' as const, cell: ops(300, 'skips unknown keys') }, { adapter: 'zod' as const, cell: ops(200, 'skips dates') }] },
+        { payload: 'simple', operation: 'stringify', cells: [{ adapter: 'typia' as const, cell: ops(100, 'skips unknown keys') }, { adapter: 'zod' as const, cell: ops(90) }] },
+      ],
+    }],
+  };
+  const text = formatCompareTable(table, new Map());
+  assert.match(text, /300 #1\*\s+200 #1\u2020/);
+  assert.match(text, /100 #1\*\s+90 #1\n/);
+  assert.match(text, /\* skips unknown keys\n\n\u2020 skips dates/);
+});
+
 // protects: T-242 the invalid/valid column divides the invalid timing by the valid one for the reading operations only
 test('the cost table divides invalid input by valid input for parse, decode and validate, and shows not applicable for stringify and encode', () => {
   const results = {
@@ -144,23 +165,27 @@ test('the release verdict stops when a case runs below the base by more than the
   assert.deepEqual(verdict.rows.map(r => [r.key, r.slower]), [['simple/parse/golem', false], ['simple/decode/golem', true]]);
 });
 
+// protects: T-243 a drop in one half of the rounds is noise, not a stop
 test('the release verdict passes a drop that shows in one half only', () => {
   const verdict = releaseVerdict([release('simple/parse/golem', 70, 100), release('simple/encode/golem', 100, 70)], 0.1);
   assert.equal(verdict.verdict, 'pass');
   assert.deepEqual(verdict.failing, []);
 });
 
+// protects: T-243 the band edge: inside it and any gain pass, beyond it stops
 test('the release verdict passes a drop inside the band, any gain, and a ratio exactly at one minus the band', () => {
   assert.equal(releaseVerdict([release('a/b/golem', 95), release('a/c/golem', 50), release('a/d/golem', 300)], 0.5).verdict, 'pass');
   assert.equal(releaseVerdict([release('a/b/golem', 49.9)], 0.5).verdict, 'stop');
 });
 
+// protects: T-243 the release check's per-adapter means
 test('the release verdict gives the geometric mean of each adapter over the session and in each half', () => {
   const { means } = releaseVerdict([release('p/parse/golem', 50, 100), release('p/encode/golem', 200, 100), release('p/parse/golem-validated', 100)], 0.9);
   const fixed = (value: number): string => value.toFixed(3);
   assert.deepEqual(means.map(m => [m.adapter, fixed(m.ratio), m.halfRatios.map(fixed)]), [['golem', '1.061', ['1.000', '1.000']], ['golem-validated', '1.000', ['1.000', '1.000']]]);
 });
 
+// protects: T-243 the release check never passes on no data or a bad band
 test('the release verdict refuses to pass a check that compared nothing or has no usable band', () => {
   assert.throws(() => releaseVerdict([], 0.1), /no case was timed on both sides/);
   assert.throws(() => releaseVerdict([release('a/b/golem', 100)], Number.NaN), /noise band is NaN/);

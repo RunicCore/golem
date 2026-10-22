@@ -188,17 +188,20 @@ export function compareTable(results: Pick<BenchmarkResults, 'cases' | 'adapters
   return { band, groups };
 }
 
+const LESS_WORK_SYMBOLS = ['*', '\u2020', '\u2021', '\u00a7'];
+
 /** Table 1 as console text: one block per group, a rank after each speed, a mark after a cell that does less work, and the summary. */
 export function formatCompareTable(table: ReturnType<typeof compareTable>, labels: ReadonlyMap<string, string>): string {
-  const marks = new Map<string, string>();
+  // Each reason takes the next symbol, as the page does.
+  const symbols = new Map<string, string>();
   const blocks = table.groups.map(group => {
     const libraries = group.summary.map(s => s.adapter);
     const speed = (cell: CompareCell | undefined): string => {
       if (cell === undefined) return 'no check';
       if (cell.kind === 'not-supported') return 'no conversion';
       if (cell.kind === 'not-run') return '-';
-      const mark = cell.mark ? '*' : '';
-      if (cell.mark) marks.set(mark, cell.mark);
+      if (cell.mark && !symbols.has(cell.mark)) symbols.set(cell.mark, LESS_WORK_SYMBOLS[symbols.size % LESS_WORK_SYMBOLS.length]);
+      const mark = cell.mark ? symbols.get(cell.mark) : '';
       return `${Math.round(cell.value).toLocaleString('en-US')} #${cell.rank}${mark}`;
     };
     const widths = [14, 10, ...libraries.map(id => Math.max((labels.get(id) ?? id).length, 18))];
@@ -210,7 +213,7 @@ export function formatCompareTable(table: ReturnType<typeof compareTable>, label
       line(['summary', 'score', ...group.summary.map(s => s.score === undefined ? '-' : `${s.score.toFixed(2)} (${s.rows} of ${s.of})`)]),
     ].join('\n');
   });
-  const notes = [...marks.values()].map(reason => `* ${reason}`);
+  const notes = [...symbols].map(([reason, symbol]) => `${symbol} ${reason}`);
   const ties = table.band === undefined
     ? 'No noise band in these results: ranks have no ties.'
     : `Libraries within ${(table.band * 100).toFixed(1)}% of the fastest of a run (the control's spread) tie and share its rank.`;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { parseReleaseArguments } from '../scripts/benchmark/release-check.js';
-import { BenchmarkUsageError, parseRunArguments } from '../scripts/benchmark/run.js';
+import { BenchmarkUsageError, outputFileOf, parseRunArguments } from '../scripts/benchmark/run.js';
 
 // protects: T-234 --payloads filter beside --adapters, usage error for an unknown id
 test('the benchmark runs the adapters and payloads it is given, in table order', () => {
@@ -13,11 +13,19 @@ test('the benchmark runs the adapters and payloads it is given, in table order',
   assert.deepEqual(parseRunArguments([]), {});
 });
 
+// protects: T-234 a usage error names the payloads that exist
 test('the benchmark refuses a payload no case has, and names the payloads it has', () => {
   assert.throws(() => parseRunArguments(['--payloads', 'simple,bogus']),
     (error: unknown) => error instanceof BenchmarkUsageError && error.message.startsWith('Unknown payload "bogus". Valid payloads: simple, nested, array, checkout'));
   assert.throws(() => parseRunArguments(['--payloads=']),
     (error: unknown) => error instanceof BenchmarkUsageError && error.message.startsWith('No payload named. Valid payloads: simple, nested, array, checkout'));
+});
+
+// protects: T-234 a filtered run never overwrites the published results
+test('a run with no filter writes the published results, and a run with any filter writes under .cache', () => {
+  assert.match(outputFileOf({}), /docs\/public\/benchmarks\/results\.json$/);
+  assert.match(outputFileOf({ adapters: ['golem'] }), /\.cache\/benchmark\/results\.json$/);
+  assert.match(outputFileOf({ payloads: ['simple'] }), /\.cache\/benchmark\/results\.json$/);
 });
 
 // protects: T-243 the release check needs a base ref and times golem adapters only

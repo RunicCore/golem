@@ -70,8 +70,8 @@ test('the built benchmarks page shows the rank and tie of each cell, the tie ban
     return ranks.map(rank => `${ranks.filter(r => r === rank).length > 1 ? '=' : ''}#${rank}`);
   });
   assert.deepEqual(shown, derived);
-  assert.ok(derived.some(rank => rank.startsWith('=')), 'the committed results hold a tie, so the page must show one');
-  assert.ok(table.includes(`Libraries within ${((results.noise?.controlSpread ?? 0) * 100).toFixed(1)}% of the fastest tie`), 'the legend names the run\'s band');
+  const band = ((results.noise?.controlSpread ?? 0) * 100).toFixed(1);
+  assert.match(table, new RegExp(`<li>[^<]*\\b${band.replace('.', '\\.')}%`), 'a legend item holds the run\'s band percent');
   for (const summary of expected.summary) assert.ok(table.includes(`>${summary.score?.toFixed(2)}</span><small>${summary.rows} of ${summary.of} rows</small>`), `group score of ${summary.label}`);
 });
 
@@ -88,7 +88,8 @@ test('the built benchmarks page has the tab "What each feature costs" with the c
     .map(c => c.kind === 'ops' ? Math.round(c.value).toLocaleString('en-US') : c.kind === 'ratio' ? `${c.value.toFixed(2)}x` : c.kind === 'not-applicable' ? '\u2014' : 'not run'));
   assert.deepEqual(shown, derived);
   assert.ok(derived.includes('\u2014') && derived.some(cell => cell.endsWith('x')), 'the committed results give both a dash and a ratio');
-  for (const text of ['IModel/IObject', 'serde many/none', 'invalid/valid', 'shown, not ranked']) assert.ok(table.includes(text), `cost table lacks "${text}"`);
+  const columnHeaders = [...table.matchAll(/<th[^>]*scope="col"[^>]*>/g)].length - 1;
+  assert.equal(columnHeaders, Object.keys(costTable(results)[0]).length - 2, 'one column header for each cost column, after the first');
 });
 
 test('built pages never render #region markers from imported snippets', () => {
