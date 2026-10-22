@@ -348,6 +348,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Serde function used as a value or as an optional call.** A `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` with type arguments is not the callee of a plain call. Examples are `const decode = parse<TPayment>`, `texts.map(parse<TPayment>)` and `parse?.<TPayment>(text)`. Golem rewrites a call only, so this code stays as you wrote it and throws when it runs. The message names the function, the form, and the position. `golem build`, `golem check` and every host report it. **Fix:** Call the function directly with its type arguments, such as `parse<TPayment>(text)`. To pass it as a value, write an arrow function: `texts.map((text) => parse<TPayment>(text))`.
 
+### RUNM1080
+
+**Object union with no literal tag.** A model field is a union of objects that golem must convert (a variant holds a `Date`, a `TSerde` value or a model), and the variants have no required literal tag that picks one variant from the JSON. Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. **Fix:** Give each variant a required field with a literal type that differs between variants, such as `kind: 'cat'` and `kind: 'dog'`. A tag may be a union of literals when the values do not overlap.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.
@@ -411,6 +415,10 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 ### OPENAPI_OPERATION_RENAMED
 
 **Operation renamed.** The generated operation name is a JavaScript reserved word or an existing client member name (such as `constructor`), so the generator appends its allocator's suffix to make it distinct. This is a warning: generation continues, but the operation's exported name no longer matches its `operationId` or inferred name. **Fix:** Give the operation an `operationId` that isn't a JavaScript reserved word or client member name, if you need the two to match exactly.
+
+### OPENAPI_UNION_DISCRIMINATOR_MISSING
+
+**Object union with no literal tag.** A `oneOf`/`anyOf` of objects needs a conversion (a variant holds a `date-time` string, or a model), and no property tells the variants apart: the union has no `discriminator`, and the variants have no required `const` or single-value `enum` property that differs between variants. Generation does not try the variants in turn, so it stops. The message names the schema, where it sits in the document, and lists the variants. **Fix:** Add a required `const` or `enum` property with a different value to each variant, or add a `discriminator` (`propertyName` and `mapping`) to the `oneOf`/`anyOf` and make each variant a component schema that carries that property.
 
 ### OPENAPI_UNION_SHARED_VARIANT
 

@@ -421,3 +421,38 @@ test('discriminator-less object unions name the schema and suggest a discriminat
     /schema "PetPlain".*discriminator/s,
   );
 });
+
+/** Two object variants that each hold a date-time, so the union needs a conversion and has no tag to pick a variant by. */
+function untaggedVariants(): Record<string, unknown>[] {
+  const born = { type: 'string', format: 'date-time' };
+  const object = (properties: Record<string, unknown>) => ({ type: 'object', required: Object.keys(properties), properties });
+  return [object({ name: { type: 'string' }, born }), object({ bark: { type: 'boolean' }, born })];
+}
+
+const untaggedUnions: readonly { readonly shape: string; readonly schemas: Record<string, unknown>; readonly error: RegExp }[] = [
+  {
+    shape: 'a field that refers to a component oneOf',
+    schemas: { Pet: { oneOf: untaggedVariants() }, Owner: { type: 'object', properties: { pet: { $ref: '#/components/schemas/Pet' } } } },
+    error: /schema "Owner"[^:]*: OPENAPI_UNION_DISCRIMINATOR_MISSING: Object union conversions require a unique, required literal discriminator\. The variants are \{ name, born \} \| \{ bark, born \}\. Give each variant a required const or enum tag/,
+  },
+  {
+    shape: 'a field that holds an inline oneOf',
+    schemas: { Owner: { type: 'object', properties: { pet: { oneOf: untaggedVariants() } } } },
+    error: /schema "Owner"[^:]*: OPENAPI_UNION_DISCRIMINATOR_MISSING: Object union conversions require a unique, required literal discriminator\. The variants are \{ name, born \} \| \{ bark, born \}\. Give each variant a required const or enum tag/,
+  },
+];
+
+for (const { shape, schemas, error } of untaggedUnions) {
+  test(`${shape} with no literal tag stops generation with OPENAPI_UNION_DISCRIMINATOR_MISSING`, async t => {
+    // protects: T-232 coded diagnostic for an untagged object union (golem-openapi path)
+    for (const validation of [false, true]) {
+      const output = path.join(createFixtureProject(t, 'golem-openapi-untagged-'), 'sdk');
+      const document = { openapi: '3.1.0', info: { title: 'Untagged', version: '1' }, paths: {}, components: { schemas } };
+      await assert.rejects(
+        () => generateMaterializedSdk(document, { output, name: 'Untagged', profile: { mobx: false, validation } }),
+        error,
+        `validation=${validation}`,
+      );
+    }
+  });
+}

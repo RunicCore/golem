@@ -59,3 +59,16 @@ test('union members are emitted in canonical order whichever order the checker c
   assert.ok(fromA.some(line => /\blink\b/.test(line)), 'the model-reference union must be among the compared aliases');
   assert.deepEqual(fromA, fieldLines('b'));
 });
+
+test('an object union with no literal tag stops generation with RUNM1080, the model file and the fix', t => {
+  // protects: T-232 coded diagnostic for an untagged object union (golem-model path)
+  for (const validation of [false, true]) {
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-untagged-union-', name: 'untagged-union' });
+    writeFileSync(path.join(sourceRoot, 'pets.model.ts'), readFixture('models/untagged-union/pets.model.ts'));
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation } }),
+      /pets\.model\.ts RUNM1080: Object union conversions require a unique, required literal discriminator\. The variants are \{ bark, born \} \| \{ name, born \}\. Give each variant a required literal tag, such as `kind: 'cat'`/,
+      `validation=${validation}`,
+    );
+  }
+});

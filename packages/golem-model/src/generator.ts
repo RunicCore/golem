@@ -11,7 +11,7 @@ import type {
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
-import { reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
+import { ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
 import {
   analyzeSourceGraph,
@@ -364,6 +364,18 @@ function isOrphanCompanion(companion: string, suffixes: readonly string[]): bool
   return source !== companion && suffixPattern(suffixes).test(basename(source)) && !existsSync(source);
 }
 
+const CODE_UNION_DISCRIMINATOR_MISSING = 'RUNM1080';
+
+/** An object union with no literal tag stops generation with its code, the model file and the fix. */
+function withUnionDiscriminatorCode(source: string, emit: () => string | undefined): string | undefined {
+  try {
+    return emit();
+  } catch (thrown) {
+    if (!(thrown instanceof ObjectUnionDiscriminatorError)) throw thrown;
+    throw new Error(`${source} ${CODE_UNION_DISCRIMINATOR_MISSING}: ${thrown.message} Give each variant a required literal tag, such as \`kind: 'cat'\`, so that golem can pick the variant from the JSON.`, { cause: thrown });
+  }
+}
+
 /** Names a field type's own schema, which is compiled apart from the model that holds the field. */
 const FIELD_TYPE_PLACE = 'a model field type';
 
@@ -558,7 +570,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   }
   for (const { graph, schemaGraph, siblingWireCodecIds, siblingRecursion, cyclicSiblings } of graphSchemaPairs) {
     const { source, output } = graph;
-    const content = emitSource(
+    const content = withUnionDiscriminatorCode(source, () => emitSource(
       source,
       output,
       checker,
@@ -573,7 +585,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
         ...(planSchemas ? { planSchemas } : {}),
         ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports } } : {}),
       },
-    );
+    ));
     if (content !== undefined) artifacts.push({ path: output, content });
   }
   // The keys name each source by its path from the tsconfig's directory, which is the root a rewrite resolves files from.

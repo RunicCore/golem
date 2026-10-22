@@ -1,6 +1,7 @@
 import {
   descriptorNeedsConversion,
   CompositionConflictError,
+  ObjectUnionDiscriminatorError,
   emitModelFromJSON,
   FIELD_CONVERSION_INPUT,
   singleCallConverter,
@@ -931,11 +932,14 @@ function aliasNodeId(alias: RecursiveAlias): string {
   return alias.nodeId;
 }
 
-/** A conversion conflict that an emitter finds carries the resolver's code. */
+const UNION_DISCRIMINATOR_MISSING = 'OPENAPI_UNION_DISCRIMINATOR_MISSING';
+const UNION_DISCRIMINATOR_FIX = 'Give each variant a required const or enum tag, or declare a discriminator (propertyName and mapping) on the oneOf/anyOf whose variants are components that carry the tag.';
+
+/** A conversion conflict, or a union with no literal tag, that an emitter finds carries its OpenAPI code. */
 function codedConflict(thrown: unknown): unknown {
-  return thrown instanceof CompositionConflictError
-    ? new CompositionError(COMPOSITION_CONVERSION_CONFLICT, conflictMessage(thrown.reason))
-    : thrown;
+  if (thrown instanceof CompositionConflictError) return new CompositionError(COMPOSITION_CONVERSION_CONFLICT, conflictMessage(thrown.reason));
+  if (thrown instanceof ObjectUnionDiscriminatorError) return new CompositionError(UNION_DISCRIMINATOR_MISSING, `${thrown.message} ${UNION_DISCRIMINATOR_FIX}`);
+  return thrown;
 }
 
 /** Where the schemas of a component sit: its name, and the bundled component an error names. */
@@ -946,13 +950,13 @@ function componentSite(name: string): CompositionSite {
   };
 }
 
-/** A conversion conflict of the model path carries its code and names the component, or the inline schema, it converts. */
+/** A conversion error of the model path carries its code and names the component, or the inline schema, it converts. */
 function withConflictCode(owner: string | CompositionSite, emit: () => string): string {
   try {
     return emit();
   } catch (thrown) {
-    if (!(thrown instanceof CompositionConflictError)) throw thrown;
-    const coded = new CompositionError(COMPOSITION_CONVERSION_CONFLICT, conflictMessage(thrown.reason));
+    const coded = codedConflict(thrown);
+    if (!(coded instanceof CompositionError)) throw thrown;
     const site = typeof owner === 'string' ? componentSite(owner) : owner;
     const where = site.where('');
     throw new LocatedError(`${where}: ${coded.message}`, site.origins(where), { cause: coded });
@@ -2107,7 +2111,7 @@ function unionConversion(
     const message = error instanceof Error ? error.message : String(error);
     const named = `schema ${JSON.stringify(definition.schemaName)}`;
     throw new LocatedError(
-      `${named}: ${message} Declare an OpenAPI discriminator (propertyName and mapping) on the oneOf/anyOf, or give each variant a required const tag.`,
+      `${named}: ${message}${thrown instanceof ObjectUnionDiscriminatorError ? '' : ' Declare an OpenAPI discriminator (propertyName and mapping) on the oneOf/anyOf, or give each variant a required const tag.'}`,
       [componentOrigin('schemas', definition.schemaName, named)],
       { cause: error },
     );
@@ -2142,7 +2146,7 @@ function emitSchemaCodecRuntime(
     if (!failing) throw error;
     const definition = definitions.get(failing.name);
     const schemaName = definition?.schemaName ?? failing.name;
-    const advice = /union/i.test(message)
+    const advice = /union/i.test(message) && !(thrown instanceof ObjectUnionDiscriminatorError)
       ? ' Declare an OpenAPI discriminator (propertyName and mapping) on the oneOf/anyOf, or give each object variant a required const tag.'
       : '';
     const named = `schema ${JSON.stringify(schemaName)}`;
