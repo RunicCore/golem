@@ -445,11 +445,18 @@ function stringifyParameters(value: string, ctx: EmitCtx): string {
   return ctx.withoutOptions ? value : `${value}, ${STRINGIFY_OPTIONS}`;
 }
 
+/** The schema of the values of a map with no declared field, or undefined for any other object. */
+function fieldlessMapValues(descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>): ModelTypeDescriptor | undefined {
+  return Object.keys(descriptor.properties).length === 0 && typeof descriptor.additionalProperties === 'object'
+    ? descriptor.additionalProperties
+    : undefined;
+}
+
 /**
  * Whether the object is a map with no declared field whose values are plain data (non-numeric scalars, or lists of
  * them). The keys of a map are data, and plain values hold no model instance and need no conversion, so the native
  * JSON writer writes the value as the encoder would. A number stays out: the native writer turns NaN into null, where
- * the encoder throws on a non-finite number.
+ * the encoder throws on a non-finite number. A map of numbers has its own writer, `isNumberMap`.
  */
 function isPlainDataMap(descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>): boolean {
   const isPlainData = (value: ModelTypeDescriptor): boolean => {
@@ -458,9 +465,17 @@ function isPlainDataMap(descriptor: Extract<ModelTypeDescriptor, { kind: 'object
     if (value.kind === 'union') return value.variants.every(isPlainData);
     return value.kind !== 'number' && isScalarishDescriptor(value);
   };
-  return Object.keys(descriptor.properties).length === 0
-    && typeof descriptor.additionalProperties === 'object'
-    && isPlainData(descriptor.additionalProperties);
+  const values = fieldlessMapValues(descriptor);
+  return values !== undefined && isPlainData(values);
+}
+
+/**
+ * Whether the object is a map with no declared field whose values are plain numbers. It is written by a finite check
+ * of each value, which throws on NaN and Infinity as the per-entry writer does, and then by the native JSON writer.
+ */
+function isNumberMap(descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>): boolean {
+  const values = fieldlessMapValues(descriptor);
+  return values !== undefined && values.kind === 'number' && !descriptorNeedsConversion(values);
 }
 
 /**
@@ -528,6 +543,17 @@ function emitObjectStringify(
   }
   if (isPlainDataMap(descriptor)) {
     return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
+  }
+  if (isNumberMap(descriptor)) {
+    return [
+      `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
+      '  for (const entry of Object.values(value)) {',
+      '    if (entry !== undefined) stringifyJsonNumber(entry as number);',
+      '  }',
+      '  return JSON.stringify(value);',
+      '}',
+      '',
+    ].join('\n');
   }
   if (!additional && properties.every(([name]) => required.has(name))) {
     const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
