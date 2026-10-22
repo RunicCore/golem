@@ -398,6 +398,32 @@ test('vite serve: retargeting an alias that a module parses through transforms i
   assert.doesNotMatch(code, new RegExp(`"${moneyId}"`));
 });
 
+test('vite serve: retargeting an alias or an export * that a module reaches through a barrel transforms it again with the new codec id', async (t) => {
+  // protects: T-10 an export * barrel between a module and its alias must not leave the old codec id
+  const root = await generatedProject(t, 'vite-barrel');
+  write(root, 'src/alias.ts', "export type { TMoney as TAlias } from './money.model.js';\n");
+  write(root, 'src/other.ts', "export type { TTag as TAlias } from './money.model.js';\n");
+  write(root, 'src/barrel.ts', "export * from './alias.js';\n");
+  write(root, 'src/use-barrel.ts', `import { parse } from '${SERDE}';\nimport type { TAlias } from './barrel.js';\n\nexport const value = parse<TAlias>('{}');\n`);
+  const server = await serve(t, root);
+  const idsIn = async (): Promise<string> => (await server.transformRequest('/src/use-barrel.ts'))?.code ?? '';
+  const changed = (file: string): void => { server.watcher.emit('change', path.join(root, file)); };
+  const moneyId = codecId(root, 'TMoney');
+  const tagId = codecId(root, 'TTag');
+
+  assert.match(await idsIn(), new RegExp(`"${moneyId}"`));
+  write(root, 'src/alias.ts', "export type { TTag as TAlias } from './money.model.js';\n");
+  changed('src/alias.ts');
+  assert.match(await idsIn(), new RegExp(`"${tagId}"`));
+
+  write(root, 'src/alias.ts', "export type { TMoney as TAlias } from './money.model.js';\n");
+  changed('src/alias.ts');
+  assert.match(await idsIn(), new RegExp(`"${moneyId}"`));
+  write(root, 'src/barrel.ts', "export * from './other.js';\n");
+  changed('src/barrel.ts');
+  assert.match(await idsIn(), new RegExp(`"${tagId}"`));
+});
+
 test('vite serve: a module whose model had no generated code transforms again once golem generate has written it', async (t) => {
   const root = await generatedProject(t, 'vite-recover', { generate: false });
   const server = await serve(t, root);

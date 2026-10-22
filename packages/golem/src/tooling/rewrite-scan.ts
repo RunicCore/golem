@@ -271,30 +271,54 @@ function resolvedSymbolAt(checker: ts.TypeChecker, node: ts.Node): ts.Symbol | u
   return resolveSymbol(checker, symbolAt(checker, node));
 }
 
-/** The symbol one import or export specifier names in the module it names, or undefined when it names none (a local `export { X }`, a default or namespace import). */
-function immediateTarget(checker: ts.TypeChecker, declaration: ts.Node): ts.Symbol | undefined {
+/** The module one import or export specifier names, and the symbol it names there; the symbol is undefined for a local `export { X }`, a default or namespace import, and a name the checker does not find. */
+function immediateTarget(checker: ts.TypeChecker, declaration: ts.Node): { readonly module?: ts.Symbol; readonly target?: ts.Symbol } {
   const statement = ts.isImportSpecifier(declaration) ? declaration.parent.parent.parent : ts.isExportSpecifier(declaration) ? declaration.parent.parent : undefined;
   const specifier = statement && (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) ? statement.moduleSpecifier : undefined;
   const module = specifier && ts.isStringLiteralLike(specifier) ? checker.getSymbolAtLocation(specifier) : undefined;
   const name = (ts.isImportSpecifier(declaration) || ts.isExportSpecifier(declaration) ? declaration.propertyName ?? declaration.name : undefined)?.text;
-  return module && checker.getExportsOfModule(module).find((exported) => exported.name === name);
+  return { module, target: module && checker.getExportsOfModule(module).find((exported) => exported.name === name) };
+}
+
+/** The modules a module re-exports whole with `export * from`, followed through further barrels. */
+function starTargets(checker: ts.TypeChecker, module: ts.Symbol, seen = new Set<ts.Symbol>()): ts.Symbol[] {
+  if (seen.has(module)) return [];
+  seen.add(module);
+  const found: ts.Symbol[] = [];
+  for (const file of (module.declarations ?? []).filter(ts.isSourceFile)) {
+    for (const statement of file.statements) {
+      const specifier = ts.isExportDeclaration(statement) && !statement.exportClause ? statement.moduleSpecifier : undefined;
+      const target = specifier && ts.isStringLiteralLike(specifier) ? checker.getSymbolAtLocation(specifier) : undefined;
+      if (target) found.push(target, ...starTargets(checker, target, seen));
+    }
+  }
+  return found;
 }
 
 /**
  * Adds to `dependencies` the files that a name passes through, one import or export specifier at a time, before it reaches its declaration.
  * `resolveSymbol` jumps to the declaration, so a file that only re-exports the name is not seen: retargeting it changes the codec id with no edit to the key table.
+ * A module that re-exports the name is a file it passes through. When the checker finds no export of that name in the module, every module it re-exports with `export *` counts too.
  */
 function addAliasChainFiles(checker: ts.TypeChecker, input: { readonly root: string; readonly from: ts.SourceFile; readonly dependencies: Set<string> }, name: ts.Node): void {
+  const add = (file: ts.SourceFile): void => {
+    // An installed package is not edited in a dev session; its manifest names what a rewrite depends on.
+    if (file !== input.from && !file.fileName.split(/[\\/]/).includes('node_modules')) input.dependencies.add(portable(input.root, file.fileName));
+  };
   const seen = new Set<ts.Symbol>();
   let symbol = symbolAt(checker, name);
   while (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0 && !seen.has(symbol)) {
     seen.add(symbol);
     const declaration = symbol.declarations?.[0];
     if (!declaration) return;
-    const file = declaration.getSourceFile();
-    // An installed package is not edited in a dev session; its manifest names what a rewrite depends on.
-    if (file !== input.from && !file.fileName.split(/[\\/]/).includes('node_modules')) input.dependencies.add(portable(input.root, file.fileName));
-    symbol = immediateTarget(checker, declaration);
+    add(declaration.getSourceFile());
+    const { module, target } = immediateTarget(checker, declaration);
+    const declaredIn = target?.declarations?.[0]?.getSourceFile();
+    const moduleFiles = (module?.declarations ?? []).map((moduleDeclaration) => moduleDeclaration.getSourceFile());
+    // The module only declares the name itself when the target is declared in it; any other module re-exports the name.
+    if (!moduleFiles.includes(declaredIn as ts.SourceFile)) for (const file of moduleFiles) add(file);
+    if (module && !target) for (const reached of starTargets(checker, module)) for (const file of reached.declarations ?? []) add(file.getSourceFile());
+    symbol = target;
   }
 }
 
