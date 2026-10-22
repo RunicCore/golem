@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { arch, cpus, platform } from 'node:os';
 import path from 'node:path';
-import { BENCH_ADAPTERS, BENCH_OPERATIONS, COMPARE_CASES, GROUPS, PAYLOADS, REPOSITORY_BLOB_URL, type AdapterId, type OperationId, type PayloadId } from './cases.js';
+import { BENCH_ADAPTERS, BENCH_OPERATIONS, COMPARE_CASES, COST_CASES, GROUPS, PAYLOADS, REPOSITORY_BLOB_URL, type AdapterId, type CaseSpec, type OperationId, type PayloadId } from './cases.js';
 import type { BenchmarkResults, OpsPerSec, ResultCase } from './results-schema.js';
 
 export interface BatchSample { readonly iterations: number; readonly elapsedMs: number }
@@ -45,14 +45,16 @@ export function buildResults(input: BuildInput): BenchmarkResults {
   const ran = new Set<AdapterId>(input.adapters ?? BENCH_ADAPTERS.map(a => a.id));
   const ranPayloads = new Set<PayloadId>(input.payloads ?? PAYLOADS.map(p => p.id));
   const partial = ran.size < BENCH_ADAPTERS.length || ranPayloads.size < PAYLOADS.length;
-  // The results hold the compare table only; the timings of the cost table stay in the raw file until a results format carries them.
-  const cases: ResultCase[] = COMPARE_CASES.filter(c => ran.has(c.adapter) && ranPayloads.has(c.payload)).map(c => {
+  const resultCase = (c: CaseSpec): ResultCase => {
     const base = { payload: c.payload, operation: c.operation, adapter: c.adapter, support: c.support, ...(c.note ? { note: c.note } : {}) };
     if (c.support === 'none') return base;
     const measured = byKey.get(`${c.payload}/${c.operation}/${c.adapter}`);
     if (!measured) throw new Error(`Benchmark is missing measurement ${c.payload}/${c.operation}/${c.adapter}`);
     return { ...base, opsPerSec: summarize(measured.samples) };
-  });
+  };
+  const timedHere = (c: CaseSpec): boolean => ran.has(c.adapter) && ranPayloads.has(c.payload);
+  const cases = COMPARE_CASES.filter(timedHere).map(resultCase);
+  const cost = COST_CASES.filter(timedHere).map(resultCase);
   const bytes = (id: PayloadId): number => {
     const found = input.measured.find(m => m.payload === id);
     if (!found) throw new Error(`Benchmark is missing measurement for payload ${id}`);
@@ -70,6 +72,7 @@ export function buildResults(input: BuildInput): BenchmarkResults {
     operations: BENCH_OPERATIONS.map(o => ({ id: o.id, label: o.label, description: o.description })),
     adapters: BENCH_ADAPTERS.flatMap(a => a.group !== null && ran.has(a.id) ? [{ id: a.id, group: a.group, label: a.label, library: a.library, checked: a.checked, sourceUrl: `${REPOSITORY_BLOB_URL}/${a.sourceFile}` }] : []),
     cases,
+    ...(cost.length > 0 ? { cost: { cases: cost } } : {}),
   };
 }
 

@@ -22,6 +22,11 @@ export interface BenchmarkResults {
   readonly operations: readonly { readonly id: 'parse' | 'stringify' | 'validate'; readonly label: string; readonly description: string }[];
   readonly adapters: readonly { readonly id: string; readonly group: string; readonly label: string; readonly library: string; readonly checked: boolean; readonly sourceUrl: string }[];
   readonly cases: readonly ResultCase[];
+  /**
+   * The timings that only the golem cost table needs, in the same shape as `cases` (operations `decode` and `encode`
+   * included). The cost table is derived from `cases` and `cost.cases` together (`tables.ts`). Absent when no cost case ran.
+   */
+  readonly cost?: { readonly cases: readonly ResultCase[] };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -34,6 +39,14 @@ function isOps(value: unknown): value is OpsPerSec {
 
 const isString = (value: unknown): value is string => typeof value === 'string';
 const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+function isResultCase(c: unknown): boolean {
+  return isObject(c)
+    && typeof c.payload === 'string' && typeof c.operation === 'string' && typeof c.adapter === 'string'
+    && (c.support === 'full' || c.support === 'none')
+    && (c.support === 'full' || typeof c.note === 'string')
+    && (c.support === 'none' ? c.opsPerSec === undefined : isOps(c.opsPerSec));
+}
 
 function hasMetadata(value: Record<string, unknown>): boolean {
   const { git, environment: env, packages, settings } = value;
@@ -51,9 +64,6 @@ export function isBenchmarkResults(value: unknown): value is BenchmarkResults {
   if (!value.groups.every(g => isObject(g) && isString(g.id) && isString(g.label) && isString(g.description))) return false;
   const groupIds = new Set(value.groups.map(g => (g as { id: string }).id));
   if (!value.adapters.every(a => isObject(a) && isString(a.group) && groupIds.has(a.group))) return false;
-  return value.cases.every(c => isObject(c)
-    && typeof c.payload === 'string' && typeof c.operation === 'string' && typeof c.adapter === 'string'
-    && (c.support === 'full' || c.support === 'none')
-    && (c.support === 'full' || typeof c.note === 'string')
-    && (c.support === 'none' ? c.opsPerSec === undefined : isOps(c.opsPerSec)));
+  if (value.cost !== undefined && !(isObject(value.cost) && Array.isArray(value.cost.cases) && value.cost.cases.every(isResultCase))) return false;
+  return value.cases.every(isResultCase);
 }

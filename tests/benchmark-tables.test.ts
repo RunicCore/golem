@@ -1,0 +1,44 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import type { ResultCase } from '../scripts/benchmark/results-schema.js';
+import { costTable } from '../scripts/benchmark/tables.js';
+
+const timed = (payload: string, operation: string, adapter: string, median: number): ResultCase =>
+  ({ payload, operation, adapter, support: 'full', opsPerSec: { median, min: median, max: median } });
+const row = (results: Parameters<typeof costTable>[0], payload: string, operation: string) =>
+  costTable(results).find(r => r.payload === payload && r.operation === operation);
+const ops = (value: number) => ({ kind: 'ops', value });
+const ratio = (value: number) => ({ kind: 'ratio', value });
+
+// protects: T-235 each ratio cell of the validation columns, read from compare and cost timings together
+test('the cost table divides validation on by validation off and IModel by IObject, from both timing lists', () => {
+  const results = {
+    cases: [timed('simple', 'parse', 'golem', 200), timed('simple', 'parse', 'golem-validated', 100), timed('simple', 'parse', 'golem-object', 40)],
+    cost: { cases: [timed('simple', 'parse', 'golem-object-off', 80), timed('simple', 'decode', 'golem', 90), timed('simple', 'decode', 'golem-validated', 45)] },
+  };
+  assert.deepEqual(row(results, 'simple', 'parse'), {
+    payload: 'simple', operation: 'parse',
+    imodelOff: ops(200), imodelOn: ops(100), imodelOnOverOff: ratio(0.5),
+    iobjectOff: ops(80), iobjectOn: ops(40), iobjectOnOverOff: ratio(0.5), imodelOverIobject: ratio(2.5),
+  });
+  assert.deepEqual(row(results, 'simple', 'decode'), {
+    payload: 'simple', operation: 'decode',
+    imodelOff: ops(90), imodelOn: ops(45), imodelOnOverOff: ratio(0.5),
+    iobjectOff: { kind: 'not-run' }, iobjectOn: { kind: 'not-run' }, iobjectOnOverOff: { kind: 'not-run' }, imodelOverIobject: { kind: 'not-run' },
+  });
+});
+
+// protects: T-235 validate has no off mode
+test('the cost table shows validate off and both on/off ratios as not applicable, and still divides IModel by IObject', () => {
+  const results = { cases: [timed('nested', 'validate', 'golem-validated', 100), timed('nested', 'validate', 'golem-object', 50)] };
+  assert.deepEqual(row(results, 'nested', 'validate'), {
+    payload: 'nested', operation: 'validate',
+    imodelOff: { kind: 'not-applicable' }, imodelOn: ops(100), imodelOnOverOff: { kind: 'not-applicable' },
+    iobjectOff: { kind: 'not-applicable' }, iobjectOn: ops(50), iobjectOnOverOff: { kind: 'not-applicable' }, imodelOverIobject: ratio(2),
+  });
+});
+
+test('the cost table has no row for a payload or operation that no run timed', () => {
+  const results = { cases: [timed('simple', 'parse', 'golem', 200)] };
+  assert.deepEqual(costTable(results).map(r => `${r.payload}/${r.operation}`), ['simple/parse']);
+});

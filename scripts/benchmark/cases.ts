@@ -100,13 +100,26 @@ function buildCases(): readonly CaseSpec[] {
 export const COMPARE_CASES: readonly CaseSpec[] = buildCases();
 
 /**
- * The cases only the cost table times: IObject decode and encode with validation on and off, and parse and stringify
- * with validation off (the compare table times them with validation on).
+ * The adapters of the cost table's validation columns. "Off" is a build with validation off, "on" a build with
+ * validation on; the IModel pair is the class model, the IObject pair the plain-object codec.
  */
-const COST_CASES: readonly CaseSpec[] = PAYLOADS.flatMap(payload => [
-  ...(['decode', 'encode'] as const).map(operation => ({ payload: payload.id, operation, adapter: 'golem-object', support: 'full' } satisfies CaseSpec)),
-  ...(['parse', 'stringify', 'decode', 'encode'] as const).map(operation => ({ payload: payload.id, operation, adapter: 'golem-object-off', support: 'full' } satisfies CaseSpec)),
-]);
+export const VALIDATION_COLUMNS = {
+  imodel: { off: 'golem', on: 'golem-validated' },
+  iobject: { off: 'golem-object-off', on: 'golem-object' },
+} as const satisfies Record<string, Record<'off' | 'on', AdapterId>>;
+
+/** The operations of a cost table row, in row order. */
+export const COST_ROW_OPERATIONS: readonly OperationId[] = ['parse', 'stringify', 'decode', 'encode', 'validate'];
+
+/**
+ * The cases only the cost table times: every cost row of the four adapters that the compare table does not time already.
+ * Validate has no "off" mode: a build with validation off has nothing to call.
+ */
+export const COST_CASES: readonly CaseSpec[] = PAYLOADS.flatMap(payload => COST_ROW_OPERATIONS.flatMap(operation =>
+  Object.values(VALIDATION_COLUMNS).flatMap(pair => (['off', 'on'] as const)
+    .filter(mode => operation !== 'validate' || mode === 'on')
+    .map(mode => ({ payload: payload.id, operation, adapter: pair[mode], support: 'full' }) satisfies CaseSpec)
+    .filter(c => !COMPARE_CASES.some(k => k.payload === c.payload && k.operation === c.operation && k.adapter === c.adapter)))));
 
 /** Every case a run can time. */
 export const CASES: readonly CaseSpec[] = [...COMPARE_CASES, ...COST_CASES];

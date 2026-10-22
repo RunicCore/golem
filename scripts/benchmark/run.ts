@@ -6,6 +6,7 @@ import { adapterSpec, BENCH_ADAPTERS, BENCH_OPERATIONS, CASES, COST_OPERATIONS, 
 import { prepareProjects, root } from './project.js';
 import type { BenchmarkResults } from './results-schema.js';
 import { buildResults, environment, gitState, packageVersions, summarize, writeFilesTogether, type MeasuredCase, type Settings } from './results.js';
+import { costTable, formatCostTable } from './tables.js';
 import { parseWorkerOutput, type WorkerJob, type WorkerOutput } from './worker-protocol.js';
 
 export const DEFAULT_SETTINGS: Settings = { warmupMs: 120, batchMs: 90, batches: 4, rounds: 2 };
@@ -185,8 +186,8 @@ export function main(args: readonly string[] = process.argv.slice(2)): void {
   const filtered = selection.adapters !== undefined || selection.payloads !== undefined;
   const outputFile = path.join(root, filtered ? '.cache/benchmark/results.json' : 'docs/public/benchmarks/results.json');
   try {
-    const { measured } = runBenchmark({ settings: DEFAULT_SETTINGS, outputFile, rawFile: path.join(root, '.cache/benchmark/raw.json'), ...selection });
-    process.stdout.write(`${summaryTable(measured, selection.adapters, selection.payloads)}\n\nWrote ${path.relative(root, outputFile)} in ${Math.round((Date.now() - started) / 1000)} s\n`);
+    const { results, measured } = runBenchmark({ settings: DEFAULT_SETTINGS, outputFile, rawFile: path.join(root, '.cache/benchmark/raw.json'), ...selection });
+    process.stdout.write(`${summaryTable(measured, selection.adapters, selection.payloads)}\n\nWhat validation costs (median ops/s; on/off divides the build with validation on by the build with validation off):\n${formatCostTable(costTable(results))}\n\nWrote ${path.relative(root, outputFile)} in ${Math.round((Date.now() - started) / 1000)} s\n`);
   } catch (error) {
     if (!(error instanceof BenchmarkUsageError)) throw error;
     process.stderr.write(`${error.message}\n`);
