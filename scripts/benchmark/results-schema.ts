@@ -27,6 +27,8 @@ export interface BenchmarkResults {
    * included). The cost table is derived from `cases` and `cost.cases` together (`tables.ts`). Absent when no cost case ran.
    */
   readonly cost?: { readonly cases: readonly ResultCase[] };
+  /** The noise of the run: the host load average (1, 5 and 15 minutes) at the start and the end, and the control's spread (`controlSpread` in results.ts). Absent in files measured before the control. */
+  readonly noise?: { readonly loadAverage: { readonly start: readonly number[]; readonly end: readonly number[] }; readonly controlSpread: number };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -48,6 +50,14 @@ function isResultCase(c: unknown): boolean {
     && (c.support === 'none' ? c.opsPerSec === undefined : isOps(c.opsPerSec));
 }
 
+function isLoad(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 3 && value.every(isCount);
+}
+
+function isNoise(value: unknown): boolean {
+  return isObject(value) && isCount(value.controlSpread) && isObject(value.loadAverage) && isLoad(value.loadAverage.start) && isLoad(value.loadAverage.end);
+}
+
 function hasMetadata(value: Record<string, unknown>): boolean {
   const { git, environment: env, packages, settings } = value;
   return isString(value.measuredAt)
@@ -64,6 +74,7 @@ export function isBenchmarkResults(value: unknown): value is BenchmarkResults {
   if (!value.groups.every(g => isObject(g) && isString(g.id) && isString(g.label) && isString(g.description))) return false;
   const groupIds = new Set(value.groups.map(g => (g as { id: string }).id));
   if (!value.adapters.every(a => isObject(a) && isString(a.group) && groupIds.has(a.group))) return false;
+  if (value.noise !== undefined && !isNoise(value.noise)) return false;
   if (value.cost !== undefined && !(isObject(value.cost) && Array.isArray(value.cost.cases) && value.cost.cases.every(isResultCase))) return false;
   return value.cases.every(isResultCase);
 }

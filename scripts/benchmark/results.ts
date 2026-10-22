@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { arch, cpus, platform } from 'node:os';
 import path from 'node:path';
-import { ALL_PAYLOADS, BENCH_ADAPTERS, BENCH_OPERATIONS, COMPARE_CASES, COST_CASES, GROUPS, PAYLOADS, REPOSITORY_BLOB_URL, type AdapterId, type CaseSpec, type OperationId, type PayloadId } from './cases.js';
+import { ALL_PAYLOADS, BENCH_ADAPTERS, BENCH_OPERATIONS, COMPARE_CASES, CONTROL_ID, COST_CASES, GROUPS, PAYLOADS, REPOSITORY_BLOB_URL, type AdapterId, type CaseSpec, type OperationId, type PayloadId } from './cases.js';
 import type { BenchmarkResults, OpsPerSec, ResultCase } from './results-schema.js';
 
 export interface BatchSample { readonly iterations: number; readonly elapsedMs: number }
@@ -20,6 +20,8 @@ export interface BuildInput {
   readonly adapters?: readonly AdapterId[];
   /** The payloads that ran; the default is every payload. Cases and payloads of the results cover only these. */
   readonly payloads?: readonly PayloadId[];
+  /** The host load average at the start and the end of the run. With it, and with control timings in `measured`, the results carry the noise band. */
+  readonly loadAverage?: { readonly start: readonly number[]; readonly end: readonly number[] };
 }
 
 export const PACKAGE_NAMES = ['@exprtlabs/golem', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', 'typescript', 'typia', 'class-transformer', 'class-validator', 'zod', 'ajv'] as const;
@@ -40,6 +42,17 @@ export function summarize(samples: readonly BatchSample[]): OpsPerSec {
   return { median, min: values[0], max: values[values.length - 1] };
 }
 
+/**
+ * The spread of one case: the range of its batch speeds (max - min) over their median.
+ * The control's spread is the median of this over its cases, so one odd case does not set the noise band.
+ */
+export function controlSpread(control: readonly Pick<MeasuredCase, 'samples'>[]): number {
+  if (control.length === 0) throw new Error('Cannot take the control spread: no control case');
+  const spreads = control.map(c => { const { median, min, max } = summarize(c.samples); return (max - min) / median; }).sort((a, b) => a - b);
+  const middle = spreads.length >> 1;
+  return spreads.length % 2 ? spreads[middle] : (spreads[middle - 1] + spreads[middle]) / 2;
+}
+
 export function buildResults(input: BuildInput): BenchmarkResults {
   const byKey = new Map(input.measured.map(m => [`${m.payload}/${m.operation}/${m.adapter}`, m]));
   const ran = new Set<AdapterId>(input.adapters ?? BENCH_ADAPTERS.map(a => a.id));
@@ -55,6 +68,8 @@ export function buildResults(input: BuildInput): BenchmarkResults {
   const timedHere = (c: CaseSpec): boolean => ran.has(c.adapter) && ranPayloads.has(c.payload);
   const cases = COMPARE_CASES.filter(timedHere).map(resultCase);
   const cost = COST_CASES.filter(timedHere).map(resultCase);
+  const control = input.measured.filter(m => m.adapter === CONTROL_ID);
+  const noise = input.loadAverage && control.length > 0 ? { noise: { loadAverage: input.loadAverage, controlSpread: controlSpread(control) } } : {};
   const bytes = (id: PayloadId): number => {
     const found = input.measured.find(m => m.payload === id);
     if (!found) throw new Error(`Benchmark is missing measurement for payload ${id}`);
@@ -68,11 +83,12 @@ export function buildResults(input: BuildInput): BenchmarkResults {
     packages: input.packages,
     settings: input.settings,
     groups: GROUPS.map(g => ({ id: g.id, label: g.label, description: g.description })),
-    payloads: PAYLOADS.filter(p => !partial || input.measured.some(m => m.payload === p.id)).map(p => ({ id: p.id, label: p.label, bytes: bytes(p.id), description: p.description, sourceUrl: `${REPOSITORY_BLOB_URL}/${p.sourceFile}` })),
+    payloads: PAYLOADS.filter(p => ranPayloads.has(p.id) && (!partial || input.measured.some(m => m.payload === p.id))).map(p => ({ id: p.id, label: p.label, bytes: bytes(p.id), description: p.description, sourceUrl: `${REPOSITORY_BLOB_URL}/${p.sourceFile}` })),
     operations: BENCH_OPERATIONS.map(o => ({ id: o.id, label: o.label, description: o.description })),
     adapters: BENCH_ADAPTERS.flatMap(a => a.group !== null && ran.has(a.id) ? [{ id: a.id, group: a.group, label: a.label, library: a.library, checked: a.checked, sourceUrl: `${REPOSITORY_BLOB_URL}/${a.sourceFile}` }] : []),
     cases,
     ...(cost.length > 0 ? { cost: { cases: cost } } : {}),
+    ...noise,
   };
 }
 

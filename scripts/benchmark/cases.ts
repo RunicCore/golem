@@ -11,7 +11,7 @@ export type CompareOperationId = 'parse' | 'stringify' | 'validate';
 /** The operations that only the golem cost table times: value to and from a plain object, with no JSON text. */
 export type CostOperationId = 'decode' | 'encode';
 export type OperationId = CompareOperationId | CostOperationId;
-export type AdapterId = 'golem' | 'golem-validated' | 'golem-object' | 'golem-object-off' | 'class-transformer' | 'class-validator' | 'typia' | 'zod' | 'ajv';
+export type AdapterId = 'golem' | 'golem-validated' | 'golem-object' | 'golem-object-off' | 'control' | 'class-transformer' | 'class-validator' | 'typia' | 'zod' | 'ajv';
 export type GroupId = 'plain' | 'classes' | 'validated-classes';
 export type Support = 'full' | 'none';
 export type ProjectKind = 'plain' | 'validating';
@@ -80,6 +80,7 @@ export const GROUPS: readonly GroupSpec[] = [
 export const BENCH_ADAPTERS: readonly AdapterSpec[] = [
   { id: 'golem-object', fixtureAdapter: 'golem-object', project: 'validating', group: 'plain', label: 'Golem (IObject)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem-object.ts` },
   { id: 'golem-object-off', fixtureAdapter: 'golem-object-off', project: 'plain', group: null, plainObjects: true, label: 'Golem (IObject, validation off)', library: '@exprtlabs/golem', checked: false, sourceFile: `${F}/golem-object.ts` },
+  { id: 'control', fixtureAdapter: 'control', project: 'plain', group: null, plainObjects: true, label: 'Native JSON (control)', library: 'JSON', checked: false, sourceFile: `${F}/control.ts` },
   { id: 'typia', fixtureAdapter: 'typia', project: 'plain', group: 'plain', label: 'Typia', library: 'typia', checked: true, sourceFile: `${F}/typia.ts` },
   { id: 'zod', fixtureAdapter: 'zod', project: 'plain', group: 'plain', label: 'Zod', library: 'zod', checked: true, sourceFile: `${F}/zod.ts` },
   { id: 'ajv', fixtureAdapter: 'ajv', project: 'plain', group: 'plain', label: 'Ajv', library: 'ajv', checked: true, sourceFile: `${F}/ajv.ts` },
@@ -133,8 +134,13 @@ export const COST_CASES: readonly CaseSpec[] = ALL_PAYLOADS.flatMap(payload => C
     .map(mode => ({ payload: payload.id, operation, adapter: pair[mode], support: 'full' }) satisfies CaseSpec)
     .filter(c => !COMPARE_CASES.some(k => k.payload === c.payload && k.operation === c.operation && k.adapter === c.adapter)))));
 
+/** The control times native JSON on the compare table's payloads; the spread of these numbers is the run's noise band. */
+export const CONTROL_ID = 'control' satisfies AdapterId;
+export const CONTROL_CASES: readonly CaseSpec[] = PAYLOADS.flatMap(payload =>
+  (['parse', 'stringify'] as const).map(operation => ({ payload: payload.id, operation, adapter: CONTROL_ID, support: 'full' }) satisfies CaseSpec));
+
 /** Every case a run can time. */
-export const CASES: readonly CaseSpec[] = [...COMPARE_CASES, ...COST_CASES];
+export const CASES: readonly CaseSpec[] = [...COMPARE_CASES, ...COST_CASES, ...CONTROL_CASES];
 
 export function timedCases(): readonly CaseSpec[] {
   return CASES.filter(c => c.support !== 'none');

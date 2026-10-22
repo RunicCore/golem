@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildResults, type MeasuredCase } from '../scripts/benchmark/results.js';
+import { buildResults, controlSpread, type MeasuredCase } from '../scripts/benchmark/results.js';
 import { isBenchmarkResults } from '../scripts/benchmark/results-schema.js';
 
 const sample = [{ iterations: 1000, elapsedMs: 10 }];
@@ -37,4 +37,30 @@ test('the serde payloads are timed into the cost section and stay out of the com
   assert.deepEqual(results.cost?.cases.map(c => `${c.payload}/${c.operation}`), ['serde-many/parse', 'serde-many/stringify', 'serde-many/decode', 'serde-many/encode']);
   assert.deepEqual(results.payloads, []);
   assert.equal(isBenchmarkResults(results), true);
+});
+
+const speeds = (...opsPerSec: number[]) => ({ samples: opsPerSec.map(iterations => ({ iterations, elapsedMs: 1000 })) });
+
+// protects: T-238 the control's spread is the median over its cases of (max - min) / median
+test('the control spread is the median over the control cases of range over median speed', () => {
+  // Case spreads: (110 - 90) / 100 = 0.2, 0, and (150 - 100) / 100 = 0.5.
+  assert.equal(controlSpread([speeds(100, 110, 90), speeds(200, 200, 200), speeds(100, 150, 100)]), 0.2);
+  // Two cases: the mean of the two middle spreads.
+  assert.equal(controlSpread([speeds(100, 110, 90), speeds(100, 100, 100)]), 0.1);
+  assert.throws(() => controlSpread([]), /no control case/);
+});
+
+// protects: T-238 every run stores the host load and the control's noise band, in schema 2
+test('the results carry the host load and the control spread, and the schema accepts files with and without them', () => {
+  const loadAverage = { start: [1.5, 1, 0.5], end: [2, 1.5, 1] };
+  const control = (operation: MeasuredCase['operation'], ...opsPerSec: number[]): MeasuredCase =>
+    ({ payload: 'simple', operation, adapter: 'control', payloadBytes: 100, ...speeds(...opsPerSec) });
+  const base = input(['parse', 'stringify', 'decode', 'encode']);
+  const results = buildResults({ ...base, measured: [...base.measured, control('parse', 100, 110, 90), control('stringify', 200, 200, 200)], loadAverage });
+  assert.deepEqual(results.noise, { loadAverage, controlSpread: 0.1 });
+  assert.equal(isBenchmarkResults(results), true);
+  assert.equal(isBenchmarkResults({ ...results, noise: undefined }), true);
+  assert.equal(isBenchmarkResults({ ...results, noise: { ...results.noise, loadAverage: { start: [1, 1], end: loadAverage.end } } }), false);
+  assert.equal(isBenchmarkResults({ ...results, noise: { loadAverage, controlSpread: -1 } }), false);
+  assert.equal(buildResults({ ...base, loadAverage }).noise, undefined, 'a run with no control timing has no noise band');
 });

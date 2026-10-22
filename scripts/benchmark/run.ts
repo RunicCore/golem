@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { loadavg } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { adapterSpec, BENCH_ADAPTERS, BENCH_OPERATIONS, ALL_PAYLOADS, CASES, COST_OPERATIONS, operationSpec, payloadSpec, timedCases, type AdapterId, type AdapterSpec, type CaseSpec, type PayloadId, type PayloadSpec, type ProjectKind } from './cases.js';
+import { adapterSpec, BENCH_ADAPTERS, BENCH_OPERATIONS, ALL_PAYLOADS, CASES, CONTROL_ID, COST_OPERATIONS, PAYLOADS, operationSpec, payloadSpec, timedCases, type AdapterId, type AdapterSpec, type CaseSpec, type PayloadId, type PayloadSpec, type ProjectKind } from './cases.js';
 import { prepareProjects, root } from './project.js';
 import type { BenchmarkResults } from './results-schema.js';
 import { buildResults, environment, gitState, packageVersions, summarize, writeFilesTogether, type MeasuredCase, type Settings } from './results.js';
@@ -92,9 +93,15 @@ export function runBenchmark(options: RunOptions): BenchmarkRun {
   const selected = selectAdapters(options.adapters);
   const payloadIds = selectPayloads(options.payloads).map(p => p.id);
   const payloads: ReadonlySet<PayloadId> = new Set(payloadIds);
+  // The control runs in every run, so every run has a noise band: on the selected payloads of the compare table, or on all of them when none is selected.
+  const compareSelected = PAYLOADS.filter(p => payloads.has(p.id)).map(p => p.id);
+  const controlPayloads: ReadonlySet<PayloadId> = new Set(compareSelected.length > 0 ? compareSelected : PAYLOADS.map(p => p.id));
+  const payloadsOf = (id: AdapterId): ReadonlySet<PayloadId> => id === CONTROL_ID ? controlPayloads : payloads;
   // An adapter with no timed case on the selected payloads, such as Typia on the checkout, has nothing to run.
-  const adapters = selected.filter(a => casesOf(a.id, payloads).length > 0);
-  if (adapters.length === 0) throw new BenchmarkUsageError(`No timed case for adapter ${selected.map(a => `"${a.id}"`).join(', ')} on payload ${payloadIds.map(id => `"${id}"`).join(', ')}`);
+  const requested = selected.filter(a => casesOf(a.id, payloadsOf(a.id)).length > 0);
+  if (requested.length === 0) throw new BenchmarkUsageError(`No timed case for adapter ${selected.map(a => `"${a.id}"`).join(', ')} on payload ${payloadIds.map(id => `"${id}"`).join(', ')}`);
+  const adapters = requested.some(a => a.id === CONTROL_ID) ? requested : [...requested, adapterSpec(CONTROL_ID)];
+  const loadStart = loadavg();
   mkdirSync(path.join(root, '.cache'), { recursive: true });
   const directory = mkdtempSync(path.join(root, '.cache/benchmark-work-'));
   try {
@@ -104,13 +111,13 @@ export function runBenchmark(options: RunOptions): BenchmarkRun {
     if (!(rounds >= 1) || !Number.isInteger(batches / rounds)) throw new Error(`settings.batches (${batches}) must split evenly across settings.rounds (${rounds})`);
     for (const adapter of adapters) {
       log(`Verifying ${adapter.id}`);
-      verifyAdapter(adapter.id, projects, options.settings, payloads);
+      verifyAdapter(adapter.id, projects, options.settings, payloadsOf(adapter.id));
     }
     const byCase = new Map<string, MeasuredCase>();
     for (const [round, order] of adapterRounds(adapters.map(a => a.id), rounds).entries()) {
       for (const id of order) {
         log(`Measuring ${id} (round ${round + 1} of ${rounds})`);
-        for (const result of measureAdapter(id, projects, options.settings, payloads)) {
+        for (const result of measureAdapter(id, projects, options.settings, payloadsOf(id))) {
           const key = `${result.payload}/${result.operation}/${result.adapter}`;
           const previous = byCase.get(key);
           byCase.set(key, previous ? { ...previous, samples: [...previous.samples, ...result.samples] } : result);
@@ -118,10 +125,11 @@ export function runBenchmark(options: RunOptions): BenchmarkRun {
       }
     }
     const measured = [...byCase.values()];
+    const loadEnd = loadavg();
     // Everything below runs only after every worker succeeded.
     const results = buildResults({
       measured, settings: options.settings, environment: environment(), git: gitState(root),
-      packages: packageVersions(root), measuredAt: new Date().toISOString(), adapters: selected.map(a => a.id), payloads: payloadIds,
+      packages: packageVersions(root), measuredAt: new Date().toISOString(), adapters: selected.map(a => a.id), payloads: payloadIds, loadAverage: { start: loadStart, end: loadEnd },
     });
     writeFilesTogether([
       [options.rawFile, () => JSON.stringify({ settings: options.settings, measured }, null, 2) + '\n'],
@@ -146,6 +154,20 @@ function summaryTable(measured: readonly MeasuredCase[], adapters: readonly Adap
     }
   }
   return lines.join('\n');
+}
+
+/** The cost table with its heading, or nothing when the run timed no cost row. */
+function costSection(results: BenchmarkResults): string {
+  const rows = costTable(results);
+  return rows.length === 0 ? '' : `What validation costs (median ops/s; on/off divides the build with validation on by the build with validation off):\n${formatCostTable(rows)}\n\n`;
+}
+
+/** The noise of the run in one line: the host load and the control's spread. */
+function noiseLine(results: BenchmarkResults): string {
+  const { noise } = results;
+  if (!noise) return 'Noise: no control timing in this run';
+  const load = (values: readonly number[]): string => values.map(v => v.toFixed(2)).join(' ');
+  return `Noise: host load average (1, 5, 15 min) ${load(noise.loadAverage.start)} at the start, ${load(noise.loadAverage.end)} at the end; control spread ${(noise.controlSpread * 100).toFixed(1)}%`;
 }
 
 const USAGE = 'Usage: npm run bench -- [--adapters <id>,<id>] [--payloads <id>,<id>]';
@@ -187,7 +209,7 @@ export function main(args: readonly string[] = process.argv.slice(2)): void {
   const outputFile = path.join(root, filtered ? '.cache/benchmark/results.json' : 'docs/public/benchmarks/results.json');
   try {
     const { results, measured } = runBenchmark({ settings: DEFAULT_SETTINGS, outputFile, rawFile: path.join(root, '.cache/benchmark/raw.json'), ...selection });
-    process.stdout.write(`${summaryTable(measured, selection.adapters, selection.payloads)}\n\nWhat validation costs (median ops/s; on/off divides the build with validation on by the build with validation off):\n${formatCostTable(costTable(results))}\n\nWrote ${path.relative(root, outputFile)} in ${Math.round((Date.now() - started) / 1000)} s\n`);
+    process.stdout.write(`${summaryTable(measured, selection.adapters, selection.payloads)}\n\n${costSection(results)}${noiseLine(results)}\n\nWrote ${path.relative(root, outputFile)} in ${Math.round((Date.now() - started) / 1000)} s\n`);
   } catch (error) {
     if (!(error instanceof BenchmarkUsageError)) throw error;
     process.stderr.write(`${error.message}\n`);
