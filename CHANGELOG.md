@@ -16,6 +16,7 @@ in the sections below.
 - A type alias that refers to itself now works in any shape: a union, an array, a tuple or a record. `type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }` is a valid field type. Golem generates one function for the alias. [`RUNM1003`](docs/reference/diagnostics.md#runm1003) no longer reports a recursive alias, and [`RUNM1056`](docs/reference/diagnostics.md#runm1056) now means a cycle that golem cannot name.
 - A union of scalars, one array and one object converts and validates without a tag.
 - `golem-ts-openapi` writes a controller response that has a recursive alias type as one component that refers to itself.
+- `golem-openapi` generates a component schema that refers to itself through `$ref`, also when it is not an object, instead of stopping with an error. A model field of it has the type `Types.<Name>`. See [Recursive schemas](docs/reference/openapi-support.md#recursive-schemas).
 
 ## 1.0.0
 

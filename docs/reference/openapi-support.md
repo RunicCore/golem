@@ -27,6 +27,14 @@ An operation name that is a JavaScript reserved word receives a `_` suffix (`ope
 
 A security scheme named `constructor` keeps that name on the generated `auth` option; it is not renamed. TypeScript requires `constructor: undefined` when supplying an `auth` object that omits that credential, for example `auth: { bearerAuth: 'token', constructor: undefined }`. This avoids a conflict with JavaScript's inherited constructor property while leaving the credential unavailable.
 
+## Recursive schemas
+
+A component schema that refers to itself through `$ref` generates, also when it is not an object. For example, a `JsonValue` component that is a `oneOf` of scalars, an array of `JsonValue` and an object with `additionalProperties` of `JsonValue` becomes the type `JsonValue`. A model field of that component has the type `Types.JsonValue`.
+
+A recursive component that holds a `date-time` value or a model has a second type for the models. In the model, the value is a `Date` or a model instance at each level. On the wire, it is the string or the plain object. The client converts between the two for you.
+
+A component that does not refer to itself stays part of each field that uses it.
+
 ## References between files
 
 A discriminator `mapping` value inside a referenced file must be a pointer such as `#/components/schemas/Dog`, or the name of a root alias. A bare name in another file names a root component, so generation fails when the root declares none by that name and reports the mapping and its file.
