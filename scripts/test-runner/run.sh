@@ -28,16 +28,12 @@ if [ -f "$rules" ]; then
 fi
 mkdir -p "$root/.cache/test-results"
 tty=(); [ -t 1 ] && tty=(-t)
-# The load of the machine, which the container's own line does not show. `uptime` prints the three averages on macOS and Linux alike.
-host_load() { echo "load (host) $(uptime | sed -e 's/.*load averages*: *//' -e 's/,//g')"; }
-host_load
-status=0
-docker run --rm --init ${tty[@]+"${tty[@]}"} ${network[@]+"${network[@]}"} \
+# The load of the machine at the start of the run, which the container's own line does not show. `uptime` prints the three averages on macOS and Linux alike.
+echo "load (host) $(uptime | sed -e 's/.*load averages*: *//' -e 's/,//g')"
+exec docker run --rm --init ${tty[@]+"${tty[@]}"} ${network[@]+"${network[@]}"} \
   --label org.exprtlabs.golem-test=1 \
   -e TINI_KILL_PROCESS_GROUP=1 \
   -v "$root:/src:ro" -v "$volume:/cache" -v "$root/.cache/test-results:/results" \
   -e PUBLIC_CONTENT_DENIED_TEXT -e PUBLIC_CONTENT_REQUIRE_DENIED_TEXT \
   -e GOLEM_TYPESCRIPT_ROOT \
-  "$tag" "$tier" "$@" || status=$?
-host_load
-exit "$status"
+  "$tag" "$tier" "$@"
