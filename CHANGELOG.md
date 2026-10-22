@@ -18,6 +18,21 @@ in the sections below.
 - `ModelInit` accepts a value of a type that holds itself through an array, such as `JsonValue`, and no longer stops the compiler with "Type instantiation is excessively deep". A tuple keeps its exact shape.
 - `golem-ts-openapi` writes a controller response that has a recursive alias type as one component that refers to itself.
 - `golem-openapi` generates a component schema that refers to itself through `$ref`, also when it is not an object, instead of stopping with an error. A model field of it has the type `Types.<Name>`. See [Recursive schemas](docs/reference/openapi-support.md#recursive-schemas).
+- A model over a mapped, conditional or `Pick` type keeps the `TSerde` conversion of a field. Before, the field lost it.
+- A union of objects with no literal tag stops generation with [`RUNM1080`](docs/reference/diagnostics.md#runm1080) when a variant holds a `Date`, a `TSerde` value or a model. The message names the model file and lists the variants. Give each variant a required field with a literal type, such as `kind: 'cat'`.
+- `fromWireFormat` of a cyclic value with validation on throws a `LibError` of kind `deserialization`, not a stack overflow.
+- The fast check `is_<Name>` of an object type with no named properties is faster, and `stringify` of a map of numbers, such as `{ [key: string]: number }`, is faster. The results are the same.
+
+### OpenAPI
+
+- A `oneOf` or `anyOf` of objects that needs a conversion, and has no `discriminator` and no required `const` or single-value `enum` property that differs between variants, stops generation with [`OPENAPI_UNION_DISCRIMINATOR_MISSING`](docs/reference/diagnostics.md#openapi-union-discriminator-missing). The message names the schema and lists the variants. Add the property to each variant, or add a `discriminator`.
+- An `allOf` whose members declare types with no common value, such as `allOf: [{ type: string }, { type: number }]`, stops generation with [`OPENAPI_COMPOSITION_UNSATISFIABLE`](docs/reference/diagnostics.md#openapi-composition-unsatisfiable). Before, it generated code. Give the members a type that they share.
+
+### Generation
+
+- `golem build` writes the import paths that Node loads in declaration files (`.d.ts`) too, as it does in JavaScript.
+- A `@Body()` or `@Query()` parameter that `NestModelInterceptor` rejects stops `golem build` and `golem check` with [`RUNM1081`](docs/reference/diagnostics.md#runm1081). This holds for a whole parameter and for one field, such as `@Body('name')`. If your own interceptor handles these parameters, set `nonModelInputs: warn` in `golem.yaml`; the diagnostic is then a warning.
+- On TypeScript 7, a package subpath that the `exports` map of its package hides does not resolve, as on TypeScript 6.
 
 ## 1.0.0
 
