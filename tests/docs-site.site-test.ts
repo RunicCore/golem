@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { compareTable } from '../scripts/benchmark/tables.js';
+import { compareTable, costTable } from '../scripts/benchmark/tables.js';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const docs = path.join(root, 'docs');
@@ -73,6 +73,22 @@ test('the built benchmarks page shows the rank and tie of each cell, the tie ban
   assert.ok(derived.some(rank => rank.startsWith('=')), 'the committed results hold a tie, so the page must show one');
   assert.ok(table.includes(`Libraries within ${((results.noise?.controlSpread ?? 0) * 100).toFixed(1)}% of the fastest tie`), 'the legend names the run\'s band');
   for (const summary of expected.summary) assert.ok(table.includes(`>${summary.score?.toFixed(2)}</span><small>${summary.rows} of ${summary.of} rows</small>`), `group score of ${summary.label}`);
+});
+
+// protects: T-246 the cost tab shows the cost table's cells, ratios and dashes in the order of its columns
+test('the built benchmarks page has the tab "What each feature costs" with the cost table of the results', () => {
+  assert.ok(existsSync(benchmarksHtml), 'run npm run docs:build first');
+  const html = readFileSync(benchmarksHtml, 'utf8').replace(/ data-v-[0-9a-f]+/g, '');
+  const results = JSON.parse(readFileSync(path.join(docs, 'public/benchmarks/results.json'), 'utf8')) as Parameters<typeof costTable>[0];
+  assert.match(html, /role="tab"[^>]*>What each feature costs<\/button>/);
+  const start = html.indexOf('<table class="cost-table"');
+  const table = html.slice(start, html.indexOf('</table>', start));
+  const shown = [...table.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map(m => m[1].replace(/<span class="visually-hidden">.*?<\/span>/g, '').replace(/<[^>]*>/g, ''));
+  const derived = costTable(results).flatMap(r => [r.imodelOff, r.imodelOn, r.imodelOnOverOff, r.iobjectOff, r.iobjectOn, r.iobjectOnOverOff, r.imodelOverIobject, r.serdeManyOverNone, r.invalidOverValid]
+    .map(c => c.kind === 'ops' ? Math.round(c.value).toLocaleString('en-US') : c.kind === 'ratio' ? `${c.value.toFixed(2)}x` : c.kind === 'not-applicable' ? '\u2014' : 'not run'));
+  assert.deepEqual(shown, derived);
+  assert.ok(derived.includes('\u2014') && derived.some(cell => cell.endsWith('x')), 'the committed results give both a dash and a ratio');
+  for (const text of ['IModel/IObject', 'serde many/none', 'invalid/valid', 'shown, not ranked']) assert.ok(table.includes(text), `cost table lacks "${text}"`);
 });
 
 test('built pages never render #region markers from imported snippets', () => {

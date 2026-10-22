@@ -4,6 +4,7 @@ import raw from '../../public/benchmarks/results.json';
 import { isBenchmarkResults } from '../../../scripts/benchmark/results-schema.js';
 import { BENCH_SERIES_COUNT, GROUPS } from '../../../scripts/benchmark/cases.js';
 import { compareTable } from '../../../scripts/benchmark/tables.js';
+import BenchmarkCostTable from './BenchmarkCostTable.vue';
 
 const data = isBenchmarkResults(raw) ? raw : undefined;
 // An empty placeholder means nothing is published yet; anything else that fails the check is a broken file.
@@ -18,6 +19,10 @@ const codePayloadId = ref(payloads[0]?.id ?? '');
 const operationText = (operation: { id: string; description: string }): string =>
   GROUPS.find(g => g.id === groupId.value)?.operationDescriptions[operation.id as 'parse'] ?? operation.description;
 const tabs = ref<HTMLButtonElement[]>([]);
+// The page holds two tables: the compare table (Table 1, with a tab for each group) and the golem cost table (Table 2).
+const views = [{ id: 'compare', label: 'Compare libraries' }, { id: 'cost', label: 'What each feature costs' }] as const;
+const viewId = ref<(typeof views)[number]['id']>('compare');
+const viewTabs = ref<HTMLButtonElement[]>([]);
 
 const adapterLabel = (id: string) => data?.adapters.find(a => a.id === id)?.label ?? id;
 const adapterUrl = (id: string) => data?.adapters.find(a => a.id === id)?.sourceUrl;
@@ -90,23 +95,42 @@ const measuredOn = computed(() => {
   return `Measured ${date} · Node ${e.node} · ${e.cpu} · ${e.os}/${e.arch} · ${sha} · median ops/s of ${data.settings.batches} batches`;
 });
 
-// Tabs follow the WAI-ARIA pattern: arrow keys, Home and End move between groups.
-async function onTabKey(event: KeyboardEvent, index: number): Promise<void> {
-  const last = groups.length - 1;
+// Tabs follow the WAI-ARIA pattern: arrow keys, Home and End move between the tabs of one list.
+function targetTab(event: KeyboardEvent, index: number, count: number): number | undefined {
+  const last = count - 1;
   const next = event.key === 'ArrowRight' ? (index === last ? 0 : index + 1)
     : event.key === 'ArrowLeft' ? (index === 0 ? last : index - 1)
       : event.key === 'Home' ? 0 : event.key === 'End' ? last : undefined;
+  if (next !== undefined) event.preventDefault();
+  return next;
+}
+
+async function onTabKey(event: KeyboardEvent, index: number): Promise<void> {
+  const next = targetTab(event, index, groups.length);
   if (next === undefined) return;
-  event.preventDefault();
   groupId.value = groups[next].id;
   await nextTick();
   tabs.value[next]?.focus();
+}
+
+async function onViewKey(event: KeyboardEvent, index: number): Promise<void> {
+  const next = targetTab(event, index, views.length);
+  if (next === undefined) return;
+  viewId.value = views[next].id;
+  await nextTick();
+  viewTabs.value[next]?.focus();
 }
 </script>
 
 <template>
   <div v-if="data" class="bench">
     <p class="bench-meta">{{ measuredOn }}</p>
+    <div class="bench-views" role="tablist" aria-label="Table">
+      <button v-for="(view, index) in views" :id="`bench-view-${view.id}`" :key="view.id" ref="viewTabs" role="tab" type="button"
+        :aria-selected="view.id === viewId" :aria-controls="`bench-view-panel-${view.id}`" :tabindex="view.id === viewId ? 0 : -1"
+        :class="{ on: view.id === viewId }" @click="viewId = view.id" @keydown="onViewKey($event, index)">{{ view.label }}</button>
+    </div>
+    <div id="bench-view-panel-compare" v-show="viewId === 'compare'" role="tabpanel" aria-labelledby="bench-view-compare">
     <div class="bench-tabs" role="tablist" aria-label="Comparison group">
       <button v-for="(group, index) in groups" :id="`bench-tab-${group.id}`" :key="group.id" ref="tabs" role="tab" type="button"
         :aria-selected="group.id === groupId" aria-controls="bench-panel" :tabindex="group.id === groupId ? 0 : -1"
@@ -172,6 +196,10 @@ async function onTabKey(event: KeyboardEvent, index: number): Promise<void> {
     <ul class="bench-payloads">
       <li v-for="p in payloads" :key="p.id"><strong>{{ p.label }}</strong> ({{ bytes(p.bytes) }}): {{ p.description }} <a :href="p.sourceUrl">Source</a></li>
     </ul>
+    </div>
+    <div id="bench-view-panel-cost" v-show="viewId === 'cost'" role="tabpanel" aria-labelledby="bench-view-cost">
+      <BenchmarkCostTable :results="data" />
+    </div>
   </div>
   <p v-else-if="published" class="bench-missing">The published results file is not a valid results file. Run <code>npm run bench</code> to replace it.</p>
   <p v-else class="bench-missing">No benchmark results are published yet. Run <code>npm run bench</code>.</p>
@@ -179,10 +207,13 @@ async function onTabKey(event: KeyboardEvent, index: number): Promise<void> {
 
 <style scoped>
 .bench-meta { color: var(--vp-c-text-2); font-size: 13px; margin: 8px 0 16px; }
+.bench-views { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.bench-views button { border: 1px solid var(--vp-c-divider); border-radius: 6px; padding: 6px 14px; font-size: 14px; color: var(--vp-c-text-2); }
+.bench-views button.on { border-color: var(--vp-c-brand-1); color: var(--vp-c-text-1); font-weight: 600; }
 .bench-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--vp-c-divider); }
 .bench-tabs button { padding: 8px 12px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--vp-c-text-2); font-size: 14px; }
 .bench-tabs button.on { color: var(--vp-c-text-1); border-color: var(--vp-c-brand-1); font-weight: 600; }
-.bench-tabs button:focus-visible, .bench-chips button:focus-visible, .bench-frame:focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: 2px; }
+.bench-views button:focus-visible, .bench-tabs button:focus-visible, .bench-chips button:focus-visible, .bench-frame:focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: 2px; }
 .bench-explain { font-size: 14px; margin: 12px 0 8px; }
 .bench-explain :deep(p) { margin: 0; }
 /* The table scrolls inside its own frame, so the page never scrolls sideways. */
