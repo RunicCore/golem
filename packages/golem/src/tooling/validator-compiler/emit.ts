@@ -120,8 +120,8 @@ const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
   // The JSON view: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes it. A
   // model's optional field may be set to `undefined` and JSON has no such value.
   definedKeys: 'const definedKeys = value => Object.keys(value).filter(key => value[key] !== undefined);',
-  // The failure of a fast check whose key test left the values unread: it reads them as the full validator does, then fails.
-  readAll: 'function readAll(value, keys) { for (const key of keys) value[key]; return false; }',
+  // The failure of a fast check whose key test left the values unread reads them as the full validator does, then fails.
+  readAll: 'function readAll(value, keys) { for (const key of keys) value[key]; }',
   isPresent: 'const isPresent = (value, key) => Object.prototype.propertyIsEnumerable.call(value, key) && value[key] !== undefined;',
   isObject: "const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);",
   // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFieldsSource`).
@@ -345,8 +345,9 @@ interface KeyTest {
   /** A local that is true when the key test met a key that `additionalProperties: false` forbids; the test runs after `required`. */
   readonly unknown?: string;
   /**
-   * Set when the key test left the own values unread: the statement that a failing check writes instead of `return false`.
-   * It reads every value first (spec 7.3), and the passes over the key list read each value before they skip a key.
+   * Set when the key test left the own values unread: the statement that a failing check runs before it fails as it
+   * would without this object. It reads every value first (spec 7.3), and the passes over the key list read each value
+   * before they skip a key.
    */
   readonly failure?: string;
 }
@@ -512,7 +513,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   // A pass with no case, no count, no unknown key and no captured key only reads the values. The passes over the key
   // list read them all too, and a failure of theirs reads the rest first (`failure`), so the pass is left out.
   if (list !== undefined && cases.length === 0 && count === undefined && unknown === undefined && unnamed.length === 0) {
-    return { presence, keys: list, undefinedToo: true, failure: `return ${writer.state.localHelper('readAll')}(${value}, ${list});` };
+    return { presence, keys: list, undefinedToo: true, failure: `${writer.state.localHelper('readAll')}(${value}, ${list});` };
   }
   const item = writer.fresh('item');
   writer.open(`for (const ${key} of ${list ?? `Object.keys(${value})`})`);
@@ -1063,7 +1064,11 @@ class FunctionWriter {
     if (unknown !== undefined) this.failWhen(unknown);
     // The passes below fail only after the values are read, which the key test left to them.
     const outer = this.mode;
-    if (failure !== undefined) this.mode = { ...outer, fail: { ...outer.fail, issue: () => [failure], fail: () => failure } };
+    // A failure of the passes reads this object's values, then fails as the enclosing object does, which reads its own.
+    if (failure !== undefined) {
+      const chained = `{ ${failure} ${outer.fail.fail()} }`;
+      this.mode = { ...outer, fail: { ...outer.fail, issue: () => [chained], fail: () => chained } };
+    }
     if (check.additional && visitsAdditional && keys !== undefined && unknown === undefined) {
       const additional = check.additional;
       const key = this.fresh('key');

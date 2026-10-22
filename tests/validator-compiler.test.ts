@@ -1245,6 +1245,8 @@ const NO_NAMED_PROPERTIES = [
   { name: 'additionalProperties schema beside propertyNames', schema: { propertyNames: { maxLength: 2 }, additionalProperties: { type: 'integer' } }, late: 'zz', lateValue: 1, valid: { a: 1 }, invalid: { a: 'x' }, issues: [{ path: ['a'], code: 'type', expected: ['integer'] }] },
   { name: 'patternProperties', schema: { patternProperties: { '^x': { type: 'integer' } } }, late: 'x9', lateValue: 1, valid: { xa: 1 }, invalid: { xa: 'x' }, issues: [{ path: ['xa'], code: 'type', expected: ['integer'] }] },
   { name: 'propertyNames', schema: { propertyNames: { maxLength: 2 } }, late: 'zz', lateValue: 1, valid: { ab: 1 }, invalid: { abc: 1 }, issues: [{ path: [], code: 'invalidKey', key: 'abc' }] },
+  // An inner failure reads the inner values, then the outer failure reads the values of the outer object.
+  { name: 'additionalProperties schema inside additionalProperties schema', schema: { additionalProperties: { additionalProperties: { type: 'integer' } } }, late: 'zz', lateValue: { c: 1 }, valid: { a: { b: 1 } }, invalid: { a: { b: 'x' } }, issues: [{ path: ['a', 'b'], code: 'type', expected: ['integer'] }] },
   // The pass stays for these: a count, an unknown-key flag or a captured key does real work.
   { name: 'additionalProperties false', schema: { additionalProperties: false }, late: 'zz', lateValue: undefined, valid: {}, invalid: { a: 1 }, issues: [{ path: ['a'], code: 'unknownKey', key: 'a' }] },
   { name: 'maxProperties beside additionalProperties schema', schema: { maxProperties: 2, additionalProperties: { type: 'integer' } }, late: 'zz', lateValue: 1, valid: { a: 1 }, invalid: { a: 'x', b: 1 }, issues: [{ path: [], code: 'tooBig', measure: 'properties', limit: 2, inclusive: true }, { path: ['a'], code: 'type', expected: ['integer'] }] },
@@ -1252,18 +1254,17 @@ const NO_NAMED_PROPERTIES = [
 ];
 
 for (const row of NO_NAMED_PROPERTIES) {
-  test(`${row.name}: the fast check gives the verdict, the issues and the reads of the full validator`, async () => {
-    // protects: T-255 the fast check of an object with no named property keeps the full validator's verdict and reads
-    const { byRoot: { root: validate }, fastByRoot: { root: isValid } } = await compileValidatorModule({ roots: { root: row.schema }, fastPath: true });
-    const reads: string[] = [];
-    const withLate = (base: object): object => Object.defineProperty({ ...base }, row.late, { enumerable: true, get: () => { reads.push(row.late); return row.lateValue; } });
-    const expected = [{ value: withLate(row.valid), issues: [] }, { value: withLate(row.invalid), issues: row.issues }];
-    for (const { value, issues } of expected) {
+  for (const [state, base, issues] of [['valid', row.valid, []], ['invalid', row.invalid, row.issues]] as const) {
+    test(`${row.name}, ${state} value: the fast check gives the verdict, the issues and the reads of the full validator`, async () => {
+      // protects: T-255 the fast check of an object with no named property keeps the full validator's verdict and reads
+      const { byRoot: { root: validate }, fastByRoot: { root: isValid } } = await compileValidatorModule({ roots: { root: row.schema }, fastPath: true });
+      const reads: string[] = [];
+      const value = Object.defineProperty({ ...base }, row.late, { enumerable: true, get: () => { reads.push(row.late); return row.lateValue; } });
       assert.deepEqual(validate(value, true), issues);
       assert.deepEqual(validate(value, false), issues.slice(0, 1));
       reads.length = 0;
       assert.equal(isValid(value), issues.length === 0);
       assert.ok(reads.includes(row.late), 'the fast check read the last key');
-    }
-  });
+    });
+  }
 }
