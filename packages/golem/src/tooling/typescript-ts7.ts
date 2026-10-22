@@ -11,7 +11,6 @@ export * from 'typescript/unstable/ast';
 
 import { ChildProcess } from 'node:child_process';
 import {
-  existsSync,
   lstatSync,
   readdirSync,
   readFileSync,
@@ -628,7 +627,8 @@ export const sys: ModuleResolutionHost & {
 } = {
   useCaseSensitiveFileNames: process.platform !== 'win32',
   getCurrentDirectory: () => process.cwd(),
-  fileExists: (filename) => existsSync(filename),
+  // Like the TypeScript 6 system: a file, so a folder named like a module is no module.
+  fileExists: (filename) => statSync(filename, { throwIfNoEntry: false })?.isFile() === true,
   readFile: (filename) => {
     try {
       // Like the TypeScript 6 system, return the text without a leading U+FEFF, so a JSON file that starts with one parses.

@@ -30,6 +30,20 @@ test('a relative specifier with a dot in its name resolves to the source that be
   assert.equal(resolve('./user.other'), undefined);
 });
 
+test('a folder is no module file: a folder named like a source is skipped, and a paths alias does not resolve to a folder', t => {
+  // protects: T-181 the TypeScript 7 system answers fileExists as the TypeScript 6 system does, true for files only
+  const root = createFixtureProject(t, 'golem-folder-not-file-');
+  const main = path.join(root, 'main.ts');
+  fs.mkdirSync(path.join(root, 'src/models'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'src/util.ts'));
+  fs.writeFileSync(path.join(root, 'src/models/index.ts'), 'export const value = 1;\n');
+  const options = { baseUrl: root, paths: { '@app/*': ['src/*'] } };
+  const resolve = (specifier: string): string | undefined => ts.resolveModuleName(specifier, main, options, ts.sys).resolvedModule?.resolvedFileName;
+  assert.equal(ts.sys.fileExists(path.join(root, 'src/models')), false);
+  assert.equal(resolve('./src/util'), undefined);
+  assert.notEqual(resolve('@app/models'), path.join(root, 'src/models'));
+});
+
 for (const [place, specifier, manifest] of [
   ['a # import reads the package.json above the importer', '#helper', 'package.json'],
   ['a package name reads the package.json of the installed package', 'dep/helper', 'node_modules/dep/package.json'],
