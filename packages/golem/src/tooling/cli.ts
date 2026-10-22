@@ -3,6 +3,7 @@ import path from 'node:path';
 import { resolveConfig } from './config.js';
 import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
+import { requestTypeScriptRoot } from './typescript-selection.js';
 import { watchPipeline } from './watch.js';
 export { providersFor, runPipeline } from './pipeline.js';
 export { watchPipeline } from './watch.js';
@@ -99,9 +100,7 @@ export async function main(argv = process.argv.slice(2)) {
     return;
   }
   // The project's TypeScript is the one beside its tsconfig, wherever the command runs from; the seam reads this when it first loads.
-  // An `exec` child does not inherit a root golem chose for itself.
-  const { GOLEM_TYPESCRIPT_ROOT: userTypeScriptRoot, ...childEnvironment } = process.env;
-  process.env.GOLEM_TYPESCRIPT_ROOT ??= tsconfigDirectory(options.config ?? 'golem.yaml');
+  requestTypeScriptRoot(tsconfigDirectory(options.config ?? 'golem.yaml'), { lazy: true });
   if (options.action === 'build') {
     const controller = new AbortController();
     let signalled: number | undefined;
@@ -129,7 +128,7 @@ export async function main(argv = process.argv.slice(2)) {
   const stop = watchSession === undefined ? () => {} : watchPipeline(state, undefined, watchSession);
   if (options.action === 'exec') {
     await new Promise<void>((resolve, reject) => {
-      const child = spawn(options.command[0], options.command.slice(1), { stdio: 'inherit', shell: process.platform === 'win32', env: userTypeScriptRoot === undefined ? childEnvironment : process.env });
+      const child = spawn(options.command[0], options.command.slice(1), { stdio: 'inherit', shell: process.platform === 'win32' });
       const handlers = new Map<NodeJS.Signals, () => void>();
       for (const signal of ['SIGINT', 'SIGTERM'] as const) {
         const handler = () => { stop(); child.kill(signal); };

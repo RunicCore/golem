@@ -17,7 +17,7 @@ import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.
 import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
-import { resolveTypeScript } from './typescript-version.js';
+import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
 import { signature } from './watch.js';
 
 interface BuildOptions {
@@ -149,13 +149,10 @@ function rebasePaths(paths: Readonly<Record<string, readonly string[]>>, base: s
   return Object.fromEntries(Object.entries(paths).map(([pattern, targets]) => [pattern, targets.map((target) => posix(path.resolve(base, target)))]));
 }
 
-/** The compiler CLI of the TypeScript the seam loaded: a different install would check with one compiler and emit with another. */
+/** The compiler CLI of the TypeScript the seam loaded: a project on a different install would check with one compiler and emit with another. */
 function compilerCli(root: string): string {
-  const selected = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? root);
-  if (selected.version !== ts.typescriptVersion) {
-    throw new Error(`golem build would run TypeScript ${selected.version} from ${selected.packageDir}, but golem loaded TypeScript ${ts.typescriptVersion}; run golem from the project directory.`);
-  }
-  return path.join(selected.packageDir, 'bin', 'tsc');
+  requestTypeScriptRoot(root);
+  return path.join(selectedTypeScript().packageDir, 'bin', 'tsc');
 }
 
 interface TscResult { readonly code: number; readonly stdout: string; readonly stderr: string }

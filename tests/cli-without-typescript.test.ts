@@ -97,7 +97,7 @@ test('the TypeScript of the directory of the tsconfig golem.yaml names is the on
   assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.x; found 5\.9\.0 at .*app/);
 });
 
-test('an exec child inherits GOLEM_TYPESCRIPT_ROOT only when the user set it, not the root golem chose', async () => {
+test('an exec child gets GOLEM_TYPESCRIPT_ROOT only when the user set it', async () => {
   const root = project({ 'golem.yaml': GENERATOR_ONLY, 'tsconfig.json': '{}' });
   const config = path.join(root, 'golem.yaml');
   const exec = (env: NodeJS.ProcessEnv) => command(root, process.execPath, [binary, 'exec', '--config', config, '--', process.execPath, '-e', 'process.exit(process.env.GOLEM_TYPESCRIPT_ROOT === undefined ? 0 : 1)'], { allowFailure: true, env });
