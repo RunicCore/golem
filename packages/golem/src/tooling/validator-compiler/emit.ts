@@ -902,30 +902,30 @@ class FunctionWriter {
     this.guarded(`if (Array.isArray(${value}))`, ['array'], types, () => {
       this.limitLeaves('items', `${value}.length`, check.minItems, check.maxItems);
       if (check.closed) this.leaf({ fails: `${value}.length > ${check.prefixItems.length}`, issue: limitFields('tooBig', 'items', check.prefixItems.length, true) });
-      // The JSON view of an item: an `undefined` item is `null` below, and a hole is no JSON value.
-      const hole = this.fresh('x');
-      this.open(`for (let ${hole} = 0; ${hole} < ${value}.length; ${hole}++)`);
-      this.atChild(hole, () => this.leaf({ fails: `!(${hole} in ${value})`, issue: `code: 'type', expected: ${JSON.stringify(JSON_TYPE_NAMES)}` }));
-      this.close();
       if (check.prefixItems.length > 0) this.mark(record => `${record}.prefix = Math.max(${record}.prefix, Math.min(${value}.length, ${check.prefixItems.length}));`);
+      // The JSON view of an item: an `undefined` item is `null`, and a hole is no JSON value (one `type` issue; its schema is skipped).
       check.prefixItems.forEach((schema, position) => {
-        if (schema.kind === 'always') return;
         this.open(`if (${value}.length > ${position})`);
-        const item = this.fresh('item');
-        this.line(`const ${item} = ${value}[${position}] ?? null;`);
-        this.atChild(String(position), () => this.schema(schema, item));
+        this.unlessHole(String(position), value, () => {
+          if (schema.kind === 'always') return;
+          const item = this.fresh('item');
+          this.line(`const ${item} = ${value}[${position}] ?? null;`);
+          this.atChild(String(position), () => this.schema(schema, item));
+        });
         this.close();
       });
       if (check.items !== undefined || check.closed) this.mark(record => `${record}.allItems = true;`);
-      if (check.items !== undefined && check.items.kind !== 'always') {
-        const index = this.fresh('x');
+      // The loop over the items checks for holes too, so a valid array is walked once; an array check with no such loop gets one.
+      const index = this.fresh('x');
+      const items = check.items !== undefined && check.items.kind !== 'always' ? check.items : undefined;
+      this.open(`for (let ${index} = ${check.prefixItems.length}; ${index} < ${value}.length; ${index}++)`);
+      this.unlessHole(index, value, () => {
+        if (items === undefined) return;
         const item = this.fresh('item');
-        const items = check.items;
-        this.open(`for (let ${index} = ${check.prefixItems.length}; ${index} < ${value}.length; ${index}++)`);
         this.line(`const ${item} = ${value}[${index}] ?? null;`);
         this.atChild(index, () => this.schema(items, item));
-        this.close();
-      }
+      });
+      this.close();
       if (check.contains !== undefined) this.containsCheck(check.contains, value);
       if (check.uniqueItems) {
         const first = this.fresh('x');
@@ -944,6 +944,15 @@ class FunctionWriter {
         this.close();
       }
     }, true);
+  }
+
+  /** The `type` issue of a hole at `index`; `body` runs for an item that is there. */
+  private unlessHole(index: string, value: string, body: () => void): void {
+    this.atChild(index, () => this.leaf({ fails: `!(${index} in ${value})`, issue: `code: 'type', expected: ${JSON.stringify(JSON_TYPE_NAMES)}` }));
+    if (this.mode.fail.leaves) return body();
+    this.open(`if (${index} in ${value})`);
+    body();
+    this.close();
   }
 
   /** Counts the items that pass `contains`; the count must lie between its limits, and each match counts as evaluated. */

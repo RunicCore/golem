@@ -354,6 +354,8 @@ test('a hole in an array is a type issue at its index', async () => {
   const expected = ['null', 'boolean', 'number', 'string', 'array', 'object'];
   await assertIssues({ type: 'array' }, ['a', , 'b'], [{ path: [1], code: 'type', expected }]);
   await assertIssues({ items: { type: ['string', 'null'] } }, [, 'a'], [{ path: [0], code: 'type', expected }]);
+  await assertIssues({ items: { type: 'string' } }, ['a', , 'b'], [{ path: [1], code: 'type', expected }]);
+  await assertIssues({ prefixItems: [{ type: 'string' }] }, [, 'b'], [{ path: [0], code: 'type', expected }]);
 });
 
 test('allOf reports the issues of every failing branch', async () => {
