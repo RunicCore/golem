@@ -217,21 +217,21 @@ function access(expression: string, name: string): string {
 }
 
 /**
- * The read of a declared field by the JSON view: the field is present when it is an own enumerable key, as
- * `JSON.stringify` judges it, so an inherited or non-enumerable field reads as `undefined`. `object` is read twice, so
- * it is a bound name (`bindObject`).
+ * Whether the object of `node` is a nested value that the application set, not a model that golem builds (a class has
+ * own enumerable declared fields). Its declared fields are read by the JSON view. A wire value is already encoded.
  */
-function presentRead(object: string, name: string): string {
-  return `(${presentValueSource(object, JSON.stringify(name), access(object, name))})`;
+function nestedValue(node: SchemaNode, ctx: EmitCtx): boolean {
+  return !node.emitClass && !ctx.wireIdentity;
 }
 
-/** `build` over a name for the object that `expression` yields, evaluated once: a local when `expression` is no name. */
-function bindObject(expression: string, ctx: EmitCtx, build: (object: string) => string): string {
-  if (/^[A-Za-z_$][\w$]*$/.test(expression)) return build(expression);
-  const local = allocateInlineLocal(ctx, '__golemRecord');
-  return local
-    ? `(${local} = ${expression}, ${build(local)})`
-    : `((__golemRecord) => (${build('__golemRecord')}))(${expression})`;
+/**
+ * A call of a function over `object` that reads the `names` by the JSON view in one Object.keys pass, into the locals
+ * `__golemPresent0`, `__golemPresent1`, ... for `statement` to use. The pass costs less than a `propertyIsEnumerable` call
+ * for each field (measured).
+ */
+function withPresentFields(object: string, names: readonly string[], statement: string): string {
+  const capture = names.length === 0 ? '' : `${presentKeysSource('__golemRecord', names.map((name, index) => [name, `__golemPresent${index}`] as const), local => `${local}: unknown`)} `;
+  return `((__golemRecord: Record<string, unknown>) => { ${capture}${statement} })(${asRecord(object)})`;
 }
 
 function emitJsonLiteral(value: unknown): string {
@@ -268,6 +268,7 @@ function emitRequiredObjectConcat(
   properties: ReadonlyArray<readonly [string, ModelTypeDescriptor]>,
   readOf: (name: string, index: number) => string,
   ctx: EmitCtx,
+  snapshot = true,
 ): string {
   const chunks = properties.map(([name, property], index) => emitInlineObjectField(
     name,
@@ -277,6 +278,7 @@ function emitRequiredObjectConcat(
     index,
     index > 0,
     ctx,
+    snapshot,
   ));
   return `${chunks.join(' + ')} + '}'`;
 }
@@ -301,9 +303,11 @@ function emitInlineObjectField(
   index: number,
   leadingComma: boolean,
   ctx: EmitCtx,
+  snapshot = true,
 ): string {
   const value = emitValue(property, read, ctx);
-  const repeated = occurrenceCount(value, read) + (required ? 0 : 1) > 1;
+  // A read that is a local already is a snapshot.
+  const repeated = snapshot && occurrenceCount(value, read) + (required ? 0 : 1) > 1;
   if (!repeated) {
     const member = `${memberPrefix(name, leadingComma)} + ${value}`;
     return required ? member : `(${read} !== undefined ? ${member} : '')`;
@@ -530,14 +534,15 @@ function emitObjectInline(
     // The other names are data: the encoded record keeps them, and a wire value is already encoded.
     return `stringifyJsonScalar(${ctx.wireIdentity ? expression : emitEncodedRecord(descriptor, expression, ctx)} as never)`;
   }
-  // A wire value is already encoded, so its own keys are the JSON view.
-  const write = (object: string): string => {
-    const readOf = (name: string): string => ctx.wireIdentity ? access(object, name) : presentRead(object, name);
-    if (properties.every(([name]) => required.has(name))) return `'{' + ${emitRequiredObjectConcat(properties, readOf, ctx)}`;
-    const parts = properties.map(([name, property], index) => emitInlineObjectField(name, property, required.has(name), readOf(name), index, false, ctx));
-    return `'{' + [${parts.join(', ')}].filter(Boolean).join(',') + '}'`;
-  };
-  return ctx.wireIdentity ? write(expression) : bindObject(expression, ctx, write);
+  // A wire value is already encoded, so its own keys are the JSON view. Any other object is read by one Object.keys pass
+  // into locals, inside a function that takes the object.
+  const present = (index: number): string => `__golemPresent${index}`;
+  const readOf = (name: string, index: number): string => ctx.wireIdentity ? access(expression, name) : present(index);
+  const snapshot = ctx.wireIdentity === true;
+  const body = properties.every(([name]) => required.has(name))
+    ? `'{' + ${emitRequiredObjectConcat(properties, readOf, ctx, snapshot)}`
+    : `'{' + [${properties.map(([name, property], index) => emitInlineObjectField(name, property, required.has(name), readOf(name, index), index, false, ctx, snapshot)).join(', ')}].filter(Boolean).join(',') + '}'`;
+  return ctx.wireIdentity ? body : withPresentFields(expression, properties.map(([name]) => name), `return ${body};`);
 }
 
 function stringifyParameters(value: string, ctx: EmitCtx): string {
@@ -566,6 +571,7 @@ function emitObjectStringify(
   fn: string,
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   ctx: EmitCtx,
+  jsonView: boolean,
 ): string {
   const required = new Set(descriptor.required);
   const properties = Object.entries(descriptor.properties);
@@ -578,14 +584,15 @@ function emitObjectStringify(
   if (isPlainDataMap(descriptor)) {
     return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
   }
-  // A wire value is already encoded, so its own keys are the JSON view. Any other value is read by one Object.keys pass.
+  // A model that golem builds, and a wire value, have own enumerable declared fields. A nested object is any value that
+  // the application set: its declared fields are read by the JSON view, in one Object.keys pass.
   const present = (index: number): string => `__golemPresent${index}`;
-  const captured = ctx.wireIdentity || properties.length === 0
+  const captured = !jsonView || properties.length === 0
     ? []
     : [`  ${presentKeysSource('value', properties.map(([name], index) => [name, present(index)] as const), local => `${local}: unknown`)}`];
-  const readOf = (name: string, index: number): string => ctx.wireIdentity ? access('value', name) : present(index);
+  const readOf = (name: string, index: number): string => jsonView ? present(index) : access('value', name);
   if (!additional && properties.every(([name]) => required.has(name))) {
-    const concatenated = emitRequiredObjectConcat(properties, readOf, ctx);
+    const concatenated = emitRequiredObjectConcat(properties, readOf, ctx, !jsonView);
     return [
       `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
       ...inlineLocalDeclarations(ctx),
@@ -604,7 +611,7 @@ function emitObjectStringify(
     const read = readOf(name, index);
     const value = emitValue(property, read, ctx);
     const local = `__golemValue${index}`;
-    const needsSnapshot = ctx.wireIdentity && occurrenceCount(value, read) + (required.has(name) ? 0 : 1) > 1;
+    const needsSnapshot = !jsonView && occurrenceCount(value, read) + (required.has(name) ? 0 : 1) > 1;
     const valueExpr = needsSnapshot ? value.replaceAll(read, local) : value;
     const fieldExpr = needsSnapshot ? local : read;
     const key = JSON.stringify(`${JSON.stringify(name)}:`);
@@ -680,7 +687,7 @@ export function emitStringifyFunction(
     ? resolveObjectDescriptor(node.descriptor, ctx)
     : undefined;
   const root = node.descriptor.kind === 'object' ? node.descriptor : merged;
-  if (root) source = emitObjectStringify(fn, ctx.lenientRoot ? { ...root, required: [] } : root, ctx);
+  if (root) source = emitObjectStringify(fn, ctx.lenientRoot ? { ...root, required: [] } : root, ctx, nestedValue(node, ctx));
   else if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') {
     source = `function ${fn}(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {\n  return requireObjectCodec(${JSON.stringify(node.codecId)}).stringify(value as never, options);\n}\n`;
   } else {
@@ -1664,45 +1671,52 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   return expression;
 }
 
+/**
+ * The encoded record of an object. The root of an encode is a value that golem built, whose declared fields are own and
+ * enumerable, so it is read directly. A nested object is any value that the application set, and its declared fields
+ * are read by the JSON view (`withPresentFields`).
+ */
 function emitEncodedRecord(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   expression: string,
   ctx: EmitCtx,
+  root = false,
 ): string {
   const fields = Object.entries(descriptor.properties);
+  const required = new Set(descriptor.required);
+  const readOf = (name: string, index: number): string => root ? access(expression, name) : `__golemPresent${index}`;
+  const values = fields.map(([name, property], index) => {
+    const read = readOf(name, index);
+    const value = emitEncodeValue(property, read, ctx);
+    // An optional field whose value is undefined is omitted, as stringify and JSON.stringify do.
+    if (!required.has(name) && !value.startsWith('...')) {
+      if (!root) return [name, `...(${read} !== undefined ? { [${JSON.stringify(name)}]: ${value} } : undefined)`] as const;
+      const local = allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`;
+      const entry = `(${local} !== undefined ? { [${JSON.stringify(name)}]: ${value.replaceAll(read, local)} } : undefined)`;
+      return [name, ctx.inlineLocals ? `...(${local} = ${read}, ${entry})` : `...((${local}) => ${entry})(${read})`] as const;
+    }
+    if (!root || occurrenceCount(value, read) <= 1) return [name, value] as const;
+    const local = allocateInlineLocal(ctx, '__golemField');
+    if (!local) {
+      const fallbackLocal = `__golemField${index}`;
+      return [name, `((${fallbackLocal}) => ${value.replaceAll(read, fallbackLocal)})(${read})`] as const;
+    }
+    return [name, `(${local} = ${read}, ${value.replaceAll(read, local)})`] as const;
+  });
+  // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
+  // keeps them as they are. Any other object writes its listed names only.
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
-  const hasExtras = additional !== undefined || descriptor.additionalPropertiesDeclared === true;
-  const write = (object: string): string => {
-    const required = new Set(descriptor.required);
-    const values = fields.map(([name, property], index) => {
-      const read = presentRead(object, name);
-      const value = emitEncodeValue(property, read, ctx);
-      // An optional field whose value is undefined is omitted, as stringify and JSON.stringify do.
-      if (!required.has(name) && !value.startsWith('...')) {
-        const local = allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`;
-        const entry = `(${local} !== undefined ? { [${JSON.stringify(name)}]: ${value.replaceAll(read, local)} } : undefined)`;
-        return [name, ctx.inlineLocals ? `...(${local} = ${read}, ${entry})` : `...((${local}) => ${entry})(${read})`] as const;
-      }
-      if (occurrenceCount(value, read) <= 1) return [name, value] as const;
-      const local = allocateInlineLocal(ctx, '__golemField');
-      if (!local) {
-        const fallbackLocal = `__golemField${index}`;
-        return [name, `((${fallbackLocal}) => ${value.replaceAll(read, fallbackLocal)})(${read})`] as const;
-      }
-      return [name, `(${local} = ${read}, ${value.replaceAll(read, local)})`] as const;
-    });
-    // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
-    // keeps them as they are. Any other object writes its listed names only.
-    const extras = hasExtras
-      ? [`...Object.fromEntries(Object.entries(${asRecord(object)}).filter(([${fields.length === 0 ? '' : 'key'}, extra]) => extra !== undefined${fields.length === 0 ? '' : ` && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)`}).map(([key, extra]) => [key, ${emitEncodeValue(additional ?? { kind: 'unknown' }, 'extra', ctx)}]))`]
-      : [];
-    const entries = [...extras, ...values.map(([name, value]) => value.startsWith('...')
-      ? value
-      : `[${JSON.stringify(name)}]: ${value}`)];
-    return entries.length === 0 ? '{}' : `{ ${entries.join(', ')} }`;
-  };
-  // The object is read once into a name, so a nested record does not repeat the read of its parent.
-  return fields.length === 0 && !hasExtras ? '{}' : bindObject(expression, ctx, write);
+  const object = root ? expression : '__golemRecord';
+  const extras = additional || descriptor.additionalPropertiesDeclared
+    ? [`...Object.fromEntries(Object.entries(${asRecord(object)}).filter(([${fields.length === 0 ? '' : 'key'}, extra]) => extra !== undefined${fields.length === 0 ? '' : ` && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)`}).map(([key, extra]) => [key, ${emitEncodeValue(additional ?? { kind: 'unknown' }, 'extra', ctx)}]))`]
+    : [];
+  const entries = [...extras, ...values.map(([name, value]) => value.startsWith('...')
+    ? value
+    : `[${JSON.stringify(name)}]: ${value}`)];
+  const record = entries.length === 0 ? '{}' : `{ ${entries.join(', ')} }`;
+  return root || entries.length === 0
+    ? record
+    : withPresentFields(expression, fields.map(([name]) => name), `return ${record};`);
 }
 
 function allocateInlineLocal(
@@ -1835,10 +1849,10 @@ function emitNodeRuntime(
   const encodedStringifyContext: EmitCtx = { ...ctx, inlineLocals: new Set() };
   const encodedWireContext: EmitCtx = { ...ctx, inlineLocals: new Set() };
   const encodedExpr = objectDescriptor
-    ? emitEncodedRecord(objectDescriptor, 'value', encodedStringifyContext)
+    ? emitEncodedRecord(objectDescriptor, 'value', encodedStringifyContext, !nestedValue(node, ctx))
     : emitEncodeValue(node.descriptor, '(value as never)', encodedStringifyContext);
   const encodedRecordExpr = objectDescriptor
-    ? emitEncodedRecord(objectDescriptor, 'record', encodedWireContext)
+    ? emitEncodedRecord(objectDescriptor, 'record', encodedWireContext, !nestedValue(node, ctx))
     : emitEncodeValue(node.descriptor, '(value as never)', encodedWireContext);
   const wireStringifySrc = emitsValidatedWire
     ? `${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true })
