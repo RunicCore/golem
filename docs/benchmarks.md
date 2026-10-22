@@ -15,7 +15,7 @@ The page has two tabs.
 <BenchmarkChart>
 <template #plain>
 
-Each library turns JSON into plain objects, checks every rule and rejects unknown properties. Golem uses an [`IObject` declaration](/guide/models#iobject-or-imodel) and also converts dates and [`TSerde` fields](/guide/tags#convert-a-field-to-a-different-json-value); Typia and [Ajv](https://ajv.js.org) check every rule but do not convert values, so they can't run the Checkout payload; all four run Checkout, no conversion, where dates stay strings and Ajv checks the date-time format with an expression. Ajv is an outside library, here for comparison. It compiles a JSON Schema to a function, and the timed calls pair that function with `JSON.parse` and `JSON.stringify`.
+Each library turns JSON into plain objects, checks every rule and rejects unknown properties. Golem uses an [`IObject` declaration](/guide/models#iobject-or-imodel) and also converts dates and [`TSerde` fields](/guide/tags#convert-a-field-to-a-different-json-value); Typia and [Ajv](https://ajv.js.org) check every rule but do not convert values, so they cannot run the Checkout payload; all four run Checkout, no conversion, where dates stay strings and Ajv checks the date-time format with an expression. Ajv is an outside library, here for comparison. It compiles a JSON Schema to a function, and the timed calls pair that function with `JSON.parse` and `JSON.stringify`.
 
 </template>
 <template #classes>
@@ -443,3 +443,5 @@ The base is a branch, a tag or a commit. The command exports the base into `.cac
 The noise band comes from the control on both sides. A valid-path case is slower when this checkout is below the base by more than the band in both halves of the rounds. One slower case stops the release. Invalid input is shown and has no verdict.
 
 The exit code is 0 when no case is slower, 1 when a case is slower, and 2 when the call is wrong (for example, a missing or unknown base). The command writes the full result to `.cache/benchmark/release.json`. It changes nothing else in the repository.
+
+A check of one adapter on one payload takes about 30 seconds. A full check takes about 5 minutes on an Apple M4. The first check of a base also builds it, and later checks of the same commit reuse that build.
