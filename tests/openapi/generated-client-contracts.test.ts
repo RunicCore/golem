@@ -15,7 +15,6 @@ import {
   isGeneratedClientClass,
   requireRecord,
   documentBase,
-  materializeGeneratedSdk,
   writeOpenApiDocument,
   type GeneratedClientClass,
   type OpenApiGenerationProfile,
@@ -421,6 +420,47 @@ function contractDocument(): Record<string, unknown> {
               description: 'ok',
               headers: headerContract,
               content: { 'application/json': { schema: { type: 'object' } } },
+            },
+          },
+        },
+      },
+      '/xml': {
+        get: {
+          operationId: 'getXml',
+          responses: {
+            200: {
+              description: 'ok',
+              content: {
+                'application/xml': {
+                  schema: {
+                    type: 'object',
+                    required: ['value'],
+                    properties: { value: { type: 'string' } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      '/pdf': {
+        get: {
+          operationId: 'getPdf',
+          responses: {
+            200: {
+              description: 'file',
+              content: { 'application/pdf': {} },
+            },
+          },
+        },
+      },
+      '/zip': {
+        get: {
+          operationId: 'getZip',
+          responses: {
+            200: {
+              description: 'file',
+              content: { 'application/zip': {} },
             },
           },
         },
@@ -917,101 +957,11 @@ test('response header decoding strips only SP/HTAB around list tokens and keeps 
     }),
   });
   await assert.rejects(() => nbsp.readHeaders().execute({}), /Invalid boolean response header/);
-});
 
-test('unsupported HTTP Digest authentication fails generation without Bearer fallback', async (t) => {
-  const directory = createFixtureProject(t, 'golem-openapi-r15-');
-  const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
-    paths: {
-      '/secure': {
-        get: {
-          operationId: 'secure',
-          security: [{ digest: [] }, { apiKey: [] }],
-          responses: { 200: { description: 'ok' } },
-        },
-      },
-    },
-    components: {
-      securitySchemes: {
-        digest: { type: 'http', scheme: 'Digest' },
-        apiKey: { type: 'apiKey', in: 'header', name: 'X-Key' },
-        bearer: { type: 'http', scheme: 'bearer' },
-      },
-    },
-  }));
-  await assert.rejects(
-    () => generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } }),
-    /unsupported HTTP authentication scheme "Digest"/,
-  );
-});
-
-test('XML object responses require runtime decoders with and without validation, including PDF/ZIP blobs', async (t) => {
-  // mobx does not reach the response codec path, so the validation axis is the only profile difference.
+  // XML object responses and PDF/ZIP blobs need runtime decoders. mobx does not reach the response codec path, so the validation axis is the only profile difference.
   for (const profile of validationProfiles) {
-    const directory = createFixtureProject(t, 'golem-openapi-r16-');
-    const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
-      paths: {
-        '/xml': {
-          get: {
-            operationId: 'getXml',
-            responses: {
-              200: {
-                description: 'ok',
-                content: {
-                  'application/xml': {
-                    schema: {
-                      type: 'object',
-                      required: ['value'],
-                      properties: { value: { type: 'string' } },
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        '/pdf': {
-          get: {
-            operationId: 'getPdf',
-            responses: {
-              200: {
-                description: 'file',
-                content: { 'application/pdf': {} },
-              },
-            },
-          },
-        },
-        '/zip': {
-          get: {
-            operationId: 'getZip',
-            responses: {
-              200: {
-                description: 'file',
-                content: { 'application/zip': {} },
-              },
-            },
-          },
-        },
-      },
-    }));
-    const result = await generate({
-      input,
-      output: path.join(directory, 'sdk'),
-      name: 'MediaCodec',
-      profile,
-    });
-    const output = path.join(directory, 'sdk');
-    materializeGeneratedSdk(result.artifacts, output);
-    compileGeneratedSdk(output);
-    const compiled = requireRecord(
-      await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-      'MediaCodec client',
-    );
-    assert.equal(isGeneratedClientClass(compiled.MediaCodecClient), true);
-    if (!isGeneratedClientClass(compiled.MediaCodecClient)) throw new TypeError('MediaCodecClient');
-    const MediaCodecClient = compiled.MediaCodecClient;
-
-    const missing = new MediaCodecClient({
+    const MediaClient = await loadContractClient(profile);
+    const missing = new MediaClient({
       baseUrl: 'https://api.example',
       fetchImpl: async () => new Response('<value>raw</value>', {
         status: 200,
@@ -1020,7 +970,7 @@ test('XML object responses require runtime decoders with and without validation,
     });
     await assert.rejects(() => missing.getXml().execute({}), /No response decoder configured/);
 
-    const decoded = new MediaCodecClient({
+    const decoded = new MediaClient({
       baseUrl: 'https://api.example',
       responseDecoders: {
         'application/xml': async (response: Response) => ({
@@ -1055,4 +1005,30 @@ test('XML object responses require runtime decoders with and without validation,
     assert.ok(zip.body instanceof Blob);
     assert.deepEqual([...new Uint8Array(await zip.body.arrayBuffer())], [4, 5]);
   }
+});
+
+test('unsupported HTTP Digest authentication fails generation without Bearer fallback', async (t) => {
+  const directory = createFixtureProject(t, 'golem-openapi-r15-');
+  const input = writeOpenApiDocument(directory, documentBase('3.1.0', {
+    paths: {
+      '/secure': {
+        get: {
+          operationId: 'secure',
+          security: [{ digest: [] }, { apiKey: [] }],
+          responses: { 200: { description: 'ok' } },
+        },
+      },
+    },
+    components: {
+      securitySchemes: {
+        digest: { type: 'http', scheme: 'Digest' },
+        apiKey: { type: 'apiKey', in: 'header', name: 'X-Key' },
+        bearer: { type: 'http', scheme: 'bearer' },
+      },
+    },
+  }));
+  await assert.rejects(
+    () => generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } }),
+    /unsupported HTTP authentication scheme "Digest"/,
+  );
 });

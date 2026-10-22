@@ -409,8 +409,8 @@ async function assertNestedDateInheritedAndDictionaryConversions(
   });
 }
 
-test('checked model serde validates wire before construction, converts nested nullable values once, and preserves typed HTTP errors', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-model-serde-runtime-'), 'sdk');
+test('generated nested Date, inherited, and dictionary conversions work in a standalone SDK', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-openapi-model-serde-aot-'), 'sdk');
   await generateMaterializedSdk(modelSerdeDocument(), {
     output,
     name: 'ModelSerde',
@@ -422,10 +422,9 @@ test('checked model serde validates wire before construction, converts nested nu
     strict: true,
     skipLibCheck: true,
   });
-
   const models = requireRecord(
     await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated models',
+    'standalone generated models',
   );
   assert.equal(typeof models.ChildModel, 'function');
   assert.equal(typeof models.EventModel, 'function');
@@ -539,21 +538,6 @@ test('checked model serde validates wire before construction, converts nested nu
     headers: {},
   });
 
-  await assertNestedDateInheritedAndDictionaryConversions(models, 'JIT');
-});
-
-test('generated nested Date, inherited, and dictionary conversions work in a standalone SDK', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-model-serde-aot-'), 'sdk');
-  await generateMaterializedSdk(modelSerdeDocument(), {
-    output,
-    name: 'ModelSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  compileStandaloneModelSerdeSdk(output);
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'standalone generated models',
-  );
   await assertNestedDateInheritedAndDictionaryConversions(models, 'standalone');
 });
 
