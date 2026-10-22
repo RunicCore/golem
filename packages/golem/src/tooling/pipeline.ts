@@ -566,6 +566,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
       output: job?.kind === 'models' ? job.options.output : undefined,
       configFile: config.tsconfig,
       nest,
+      nonModelInputs: config.nonModelInputs,
       codecKeysFile: codecKeysPath(config.directory),
       // Without a job there is no compiler to borrow; the scan opens its own and closes it when idle.
       ...(job && keys ? {
@@ -576,6 +577,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     });
     const errors = scanned.diagnostics.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
     if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors));
+    writeWarnings(scanned.diagnostics);
     const disagreements = nest ? rewriteScan.checkNestCodecs(controllerRoots, scanned) : [];
     if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements));
   }

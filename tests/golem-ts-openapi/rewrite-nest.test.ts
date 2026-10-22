@@ -37,10 +37,10 @@ function paymentsProject(t: TestContext, extra: Readonly<Record<string, string>>
   });
 }
 
-const notAModel = (decorator: string, type: string): string => `@${decorator}() type ${type} is not a golem model, and NestModelInterceptor answers HTTP 500 for it. Declare the parameter as a golem model (IModel or IObject), or bind one field of a model type such as @${decorator}('field').`;
+const notAModel = (decorator: string, type: string, mode: 'error' | 'warn' = 'error'): string => `${type} is not a golem model, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. Declare the input as a golem model (IModel or IObject), or bind one field of a model type. ${mode === 'warn' ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.' : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.'}`;
 
-function scan(root: string, nest = true): ProgramScan {
-  return scanProject({ root, directory: root, modelsRoot: root, configFile: path.join(root, 'tsconfig.json'), nest, codecKeysFile: path.join(root, '.golem/codec-keys.json') });
+function scan(root: string, nest = true, nonModelInputs?: 'error' | 'warn'): ProgramScan {
+  return scanProject({ root, directory: root, modelsRoot: root, configFile: path.join(root, 'tsconfig.json'), nest, nonModelInputs, codecKeysFile: path.join(root, '.golem/codec-keys.json') });
 }
 
 function rewritten(root: string, result: ProgramScan, relative: string): string {
@@ -125,16 +125,16 @@ test('a primitive @Body() and a type that is not a golem model are not rewritten
   });
   for (const [root, type] of [[primitive, 'string'], [plain, 'Payment']] as const) {
     const result = scan(root);
-    assert.deepEqual(result.diagnostics.map(({ code, file, message }) => ({ code, file, message })), [
-      { code: 'RUNM1081', file: 'src/notes.controller.ts', message: notAModel('Body', type) },
+    assert.deepEqual(result.diagnostics.map(({ code, severity, file, message }) => ({ code, severity, file, message })), [
+      { code: 'RUNM1081', severity: 'error', file: 'src/notes.controller.ts', message: notAModel('Body', type) },
     ]);
     assert.equal(result.files.get('src/notes.controller.ts'), undefined);
     assert.deepEqual(result.nestCodecSites.filter(site => site.file === 'src/notes.controller.ts'), []);
   }
 });
 
-test('a whole @Body() or @Query() that is not a golem model stops with RUNM1081 and its position; a model and a named field build', (t) => {
-  // protects: T-258 R-13 a whole non-model input fails at build, not at the first request
+test('a @Body() or @Query() parameter that is not a golem model, whole or one field, gets RUNM1081 with its position, an error by default and a warning with nonModelInputs: warn; a model and a model field are silent', (t) => {
+  // protects: T-258 R-13 a body or query input the interceptor rejects is reported at build
   const root = paymentsProject(t, {
     'src/plain.controller.ts': [
       "import { Body, Controller, Post, Query } from '@nestjs/common';",
@@ -146,15 +146,17 @@ test('a whole @Body() or @Query() that is not a golem model stops with RUNM1081 
       '  @Post() query(@Query() filter: { page: number }): number { return 1; }',
       '  @Post() nested(@Body() inputs: TPaymentInput[][]): number { return 1; }',
       '  @Post() model(@Body() input: TPaymentInput): number { return 1; }',
+      "  @Post() modelField(@Body('input') input: TPaymentInput): number { return 1; }",
       "  @Post() field(@Body('note') note: string, @Query('page') page: number): number { return 1; }",
       '}',
     ].join('\n'),
   });
-  assert.deepEqual(scan(root).diagnostics.map(({ code, file, line, column, message }) => ({ code, file, line, column, message })), [
-    { code: 'RUNM1081', file: 'src/plain.controller.ts', line: 6, column: 32, message: notAModel('Body', 'PlainInput') },
-    { code: 'RUNM1081', file: 'src/plain.controller.ts', line: 7, column: 34, message: notAModel('Query', '{ page: number }') },
-    { code: 'RUNM1081', file: 'src/plain.controller.ts', line: 8, column: 34, message: notAModel('Body', 'TPaymentInput[][]') },
-  ]);
+  const sites = [['Body', 'PlainInput', 6, 32], ['Query', '{ page: number }', 7, 34], ['Body', 'TPaymentInput[][]', 8, 34], ['Body', 'string', 11, 37], ['Query', 'number', 11, 66]] as const;
+  for (const mode of ['error', 'warn'] as const) {
+    const severity = mode === 'warn' ? 'warning' : 'error';
+    assert.deepEqual(scan(root, true, mode).diagnostics.map(({ code, severity, file, line, column, message }) => ({ code, severity, file, line, column, message })),
+      sites.map(([decorator, type, line, column]) => ({ code: 'RUNM1081', severity, file: 'src/plain.controller.ts', line, column, message: notAModel(decorator, type, mode) })));
+  }
 });
 
 test('two Payment contracts keep distinct ids in their controllers', (t) => {
@@ -321,8 +323,9 @@ test('the operation-codec check has nothing to compare when the project has no n
   assert.deepEqual(checkNestCodecs(root, scan(root, false)), [], 'no registry is needed when nest is off');
 });
 
-test('a controllers job turns nest on, and golem check fails a parameter the generated operations do not hold', async (t) => {
-  const root = createControllerFixture(t, {
+/** A project whose golem.yaml has a controllers job over the payments controller, so the scan runs with nest on. */
+function controllersJobProject(t: TestContext): string {
+  return createControllerFixture(t, {
     prefix: 'golem-rewrite-nest-pipeline-',
     links: 'workspace',
     files: {
@@ -344,6 +347,10 @@ test('a controllers job turns nest on, and golem check fails a parameter the gen
       ].join('\n'),
     },
   });
+}
+
+test('a controllers job turns nest on, and golem check fails a parameter the generated operations do not hold', async (t) => {
+  const root = controllersJobProject(t);
   const config = path.join(root, 'golem.yaml');
   await runPipeline(config);
   await runPipeline(config, { check: true });
@@ -352,4 +359,29 @@ test('a controllers job turns nest on, and golem check fails a parameter the gen
   fs.writeFileSync(path.join(root, 'src/helper.controller.ts'), readFixture(`${CHECKS}/helper.controller.ts`));
   await runPipeline(config);
   await assert.rejects(runPipeline(config, { check: true }), /RUNM1072 \(src\/helper\.controller\.ts:4:\d+\): @Query\(\) type TPaymentFilter disagrees with generated operation keys/);
+});
+
+test('golem check stops on a body or query parameter that is no model, and nonModelInputs: warn reports it and continues', async (t) => {
+  // protects: T-258 R-13 the user's choice: error by default, a golem.yaml setting makes it a warning
+  const root = controllersJobProject(t);
+  const config = path.join(root, 'golem.yaml');
+  await runPipeline(config);
+  fs.writeFileSync(path.join(root, 'src/note.controller.ts'), [
+    "import { Body, Controller, Post, Query } from '@nestjs/common';",
+    'interface Note { text: string }',
+    "@Controller('notes')",
+    'export class NoteController {',
+    "  @Post() create(@Body() note: Note, @Query('page') page: number): number { return page; }",
+    '}',
+  ].join('\n'));
+  await assert.rejects(runPipeline(config, { check: true }), (error: Error) => error.message.includes(`RUNM1081 (src/note.controller.ts:5:32): ${notAModel('Body', 'Note')}`) && error.message.includes(`RUNM1081 (src/note.controller.ts:5:59): ${notAModel('Query', 'number')}`));
+
+  fs.writeFileSync(config, `nonModelInputs: warn\n${fs.readFileSync(config, 'utf8')}`);
+  const written: string[] = [];
+  t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array) => { written.push(String(chunk)); return true; });
+  await runPipeline(config, { check: true });
+  assert.deepEqual(written.filter(line => line.startsWith('RUNM1081')), [
+    `RUNM1081 (src/note.controller.ts:5:32): ${notAModel('Body', 'Note', 'warn')}\n`,
+    `RUNM1081 (src/note.controller.ts:5:59): ${notAModel('Query', 'number', 'warn')}\n`,
+  ]);
 });

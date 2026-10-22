@@ -103,7 +103,7 @@ class ScanningProject {
     this.program?.close();
     this.program = program;
     const models = this.config.jobs.find((job) => job.kind === 'models');
-    this.scanner = new this.compiler.RewriteScanner({ root: this.root, directory: this.config.directory, modelsRoot: modelsRootOf(this.config), suffixes: models?.options.suffixes, output: models?.options.output, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nest: this.nest });
+    this.scanner = new this.compiler.RewriteScanner({ root: this.root, directory: this.config.directory, modelsRoot: modelsRootOf(this.config), suffixes: models?.options.suffixes, output: models?.options.output, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nest: this.nest, nonModelInputs: this.config.nonModelInputs });
     this.stale = false;
   }
 

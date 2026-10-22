@@ -30,6 +30,8 @@ interface ScanInput {
   readonly codecKeysFile: string;
   /** The project has NestJS controllers: `@Body()` and `@Query()` parameters and method returns of a model get codec decorators. */
   readonly nest: boolean;
+  /** What a `@Body()` or `@Query()` parameter that is no golem model is: an `error` (the default) or a `warn`ing. */
+  readonly nonModelInputs?: 'error' | 'warn' | undefined;
 }
 
 /** A `@Body()` or `@Query()` parameter that the scan stamps with `nestModelCodec(id)`. */
@@ -66,7 +68,7 @@ const CODE_NEST_REGISTRY = 'RUNM1072';
 const CODE_FOREIGN_MODEL = 'RUNM1074';
 /** A serde function with type arguments that no call rewrite reaches: `parse<T>` as a value, or `parse?.<T>(...)`. */
 const CODE_NOT_A_CALL = 'RUNM1079';
-/** A whole `@Body()` or `@Query()` whose type is no golem model, which `NestModelInterceptor` rejects on each request. */
+/** A `@Body()` or `@Query()` parameter, whole or one field, whose type is no golem model, which `NestModelInterceptor` rejects on each request. An error unless `nonModelInputs: warn` is set. */
 const CODE_NEST_NOT_A_MODEL = 'RUNM1081';
 
 /** The serde functions a type argument turns into a codec call, and the runtime method each becomes. */
@@ -447,9 +449,9 @@ function insertion(at: number, text: string): RewriteEdit {
   return { start: at, end: at, expect: '', text };
 }
 
-function locate(root: string, file: ts.SourceFile, node: ts.Node, code: string, message: string): GolemDiagnostic {
+function locate(root: string, file: ts.SourceFile, node: ts.Node, code: string, message: string, severity = GolemDiagnosticSeverity.Error): GolemDiagnostic {
   const { line, character } = file.getLineAndCharacterOfPosition(node.getStart(file));
-  return { code, severity: GolemDiagnosticSeverity.Error, message, file: portable(root, file.fileName), line: line + 1, column: character + 1 };
+  return { code, severity, message, file: portable(root, file.fileName), line: line + 1, column: character + 1 };
 }
 
 // NestJS codec metadata
@@ -494,15 +496,6 @@ function decoratorName(decorator: ts.Decorator): string | undefined {
 
 function decoratorNames(node: ts.Node): readonly string[] {
   return (ts.getDecorators(node) ?? []).flatMap((decorator) => decoratorName(decorator) ?? []);
-}
-
-/** Whether a `@Body()` or `@Query()` reads the whole input. Nest names a field only by a first argument that is a non-empty string; a pipe in that place leaves the input whole. */
-function readsWholeInput(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration, name: string): boolean {
-  const decorator = ts.getDecorators(parameter)?.find((each) => decoratorName(each) === name);
-  const first = decorator && ts.isCallExpression(decorator.expression) ? decorator.expression.arguments[0] : undefined;
-  if (!first) return true;
-  if (ts.isStringLiteralLike(first)) return first.text === '';
-  return (checker.getTypeAtLocation(first).flags & ts.TypeFlags.StringLike) === 0;
 }
 
 /** Whether the node carries the decorator, written plainly or as the aliased import an earlier rewrite added. */
@@ -717,10 +710,10 @@ function constructOptionEdits(file: ts.SourceFile, call: ts.CallExpression, targ
 }
 
 function scanFile(
-  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly nest: boolean; readonly boundary: ModelBoundary; readonly modelClasses: () => ReadonlyMap<string, number> },
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly nest: boolean; readonly nonModelInputs: 'error' | 'warn'; readonly boundary: ModelBoundary; readonly modelClasses: () => ReadonlyMap<string, number> },
   file: ts.SourceFile,
 ): FileScan {
-  const { root, checker, keys, nest, boundary } = input;
+  const { root, checker, keys, nest, nonModelInputs, boundary } = input;
   const text = file.text;
   const scan: FileScan = { edits: [], imports: new Map(), loads: new Set(), diagnostics: [], nestSites: [], dependencies: new Set() };
   const classes: { readonly name: string; readonly id: string; readonly end: number }[] = [];
@@ -787,8 +780,11 @@ function scanFile(
       if (golemModel) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NO_CODEC, defaultExport
         ? `@${decorator}() type ${label} is the default export of its file, which has no codec id; golem generate cannot add one. Export the class by name (export class ${label}) and import it by name.`
         : `@${decorator}() type ${label} has no unique codec id; run golem generate`));
-      else if (readsWholeInput(checker, parameter, decorator)) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NOT_A_MODEL,
-        `@${decorator}() type ${label} is not a golem model, and NestModelInterceptor answers HTTP 500 for it. Declare the parameter as a golem model (IModel or IObject), or bind one field of a model type such as @${decorator}('field').`));
+      else scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NOT_A_MODEL,
+        `${label} is not a golem model, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. Declare the input as a golem model (IModel or IObject), or bind one field of a model type. ${nonModelInputs === 'warn'
+          ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.'
+          : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.'}`,
+        nonModelInputs === 'warn' ? GolemDiagnosticSeverity.Warning : GolemDiagnosticSeverity.Error));
       return;
     }
     scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_CODEC_DECORATOR}(${JSON.stringify(id)}${array ? ', true' : ''}) `));
@@ -893,6 +889,7 @@ export class RewriteScanner {
   private readonly program: ts.Program;
   private readonly checker: ts.TypeChecker;
   private readonly nest: boolean;
+  private readonly nonModelInputs: 'error' | 'warn';
   private readonly keys: CodecKeys;
   private readonly boundary: ModelBoundary;
   private modelClassCounts: ReadonlyMap<string, number> | undefined;
@@ -903,6 +900,7 @@ export class RewriteScanner {
     this.program = input.program;
     this.checker = input.checker;
     this.nest = input.nest;
+    this.nonModelInputs = input.nonModelInputs ?? 'error';
     this.keys = new CodecKeys(input.program, input.checker, input.root, input.codecKeysFile, this.boundary);
   }
 
@@ -922,7 +920,7 @@ export class RewriteScanner {
   }
 
   private scan(file: ts.SourceFile): FileScanResult {
-    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest, boundary: this.boundary, modelClasses: () => this.modelClasses() }, file));
+    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest, nonModelInputs: this.nonModelInputs, boundary: this.boundary, modelClasses: () => this.modelClasses() }, file));
   }
 
   /**
@@ -1003,6 +1001,7 @@ interface ProjectScanInput {
   /** The tsconfig whose files are scanned, from the golem.yaml; its directory is what the file paths are relative to. */
   readonly configFile: string;
   readonly nest: boolean;
+  readonly nonModelInputs?: 'error' | 'warn' | undefined;
   /** The yaml's `.golem/codec-keys.json`. */
   readonly codecKeysFile: string;
   /** The session and owner of the job that reads this project, so one compiler serves its generation and this scan; the session is kept under `root`. */
@@ -1012,9 +1011,9 @@ interface ProjectScanInput {
 
 /** Open the project's program and ask the scanner about its sources: what `golem check` reports. Writes nothing. */
 export function scanProject(input: ProjectScanInput): ProgramScan {
-  const { root, directory, modelsRoot, suffixes, output, configFile, nest, codecKeysFile, session, sessionOwner } = input;
+  const { root, directory, modelsRoot, suffixes, output, configFile, nest, nonModelInputs, codecKeysFile, session, sessionOwner } = input;
   const info = createProjectProgram(root, undefined, sessionOwner === undefined ? undefined : retainedProgramSession(session, sessionOwner, root), configFile);
   using program = info.program;
-  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, suffixes, output, program, checker: program.getTypeChecker(), nest, codecKeysFile }).scanProgram();
+  const { files, diagnostics } = new RewriteScanner({ root: path.dirname(configFile), directory, modelsRoot, suffixes, output, program, checker: program.getTypeChecker(), nest, nonModelInputs, codecKeysFile }).scanProgram();
   return { files, diagnostics, nestCodecSites: [...files.values()].flatMap((file) => file.nestCodecSites) };
 }

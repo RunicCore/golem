@@ -84,7 +84,7 @@ The [`controllers` job](/guide/nestjs#configure-and-generate) rejects `@Body('fi
 
 A one-field model in `@Query('address')` reads a nested query key such as `address[street]=Main`. The app needs a nested query parser for that, for example Express `query parser` set to `extended`.
 
-To take plain types, declare the input as an `IModel` or `IObject`, or write your own interceptor.
+To take plain types, declare the input as an `IModel` or `IObject`, or write your own interceptor and set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys), so `golem build` and `golem check` report [`RUNM1081`](/reference/diagnostics#runm1081) as a warning instead of an error.
 
 The interceptor converts HTTP handlers only. A handler of another context, such as RPC, passes through unchanged.
 
