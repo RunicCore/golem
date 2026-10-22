@@ -66,6 +66,8 @@ const CODE_NEST_REGISTRY = 'RUNM1072';
 const CODE_FOREIGN_MODEL = 'RUNM1074';
 /** A serde function with type arguments that no call rewrite reaches: `parse<T>` as a value, or `parse?.<T>(...)`. */
 const CODE_NOT_A_CALL = 'RUNM1079';
+/** A whole `@Body()` or `@Query()` whose type is no golem model, which `NestModelInterceptor` rejects on each request. */
+const CODE_NEST_NOT_A_MODEL = 'RUNM1081';
 
 /** The serde functions a type argument turns into a codec call, and the runtime method each becomes. */
 const SERDE_METHODS: ReadonlyMap<string, string> = new Map([
@@ -494,6 +496,15 @@ function decoratorNames(node: ts.Node): readonly string[] {
   return (ts.getDecorators(node) ?? []).flatMap((decorator) => decoratorName(decorator) ?? []);
 }
 
+/** Whether a `@Body()` or `@Query()` reads the whole input. Nest names a field only by a first argument that is a non-empty string; a pipe in that place leaves the input whole. */
+function readsWholeInput(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration, name: string): boolean {
+  const decorator = ts.getDecorators(parameter)?.find((each) => decoratorName(each) === name);
+  const first = decorator && ts.isCallExpression(decorator.expression) ? decorator.expression.arguments[0] : undefined;
+  if (!first) return true;
+  if (ts.isStringLiteralLike(first)) return first.text === '';
+  return (checker.getTypeAtLocation(first).flags & ts.TypeFlags.StringLike) === 0;
+}
+
 /** Whether the node carries the decorator, written plainly or as the aliased import an earlier rewrite added. */
 function hasDecorator(names: readonly string[], name: string): boolean {
   return names.includes(name) || names.includes(`${REWRITE_IMPORT_PREFIX}${name}`);
@@ -771,12 +782,13 @@ function scanFile(
     const names = decoratorNames(parameter);
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR)) return;
-    const { id, primitive, golemModel, label, array, name, defaultExport } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies }, parameter.type);
-    if (primitive) return;
+    const { id, golemModel, label, array, name, defaultExport } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies }, parameter.type);
     if (id === '') {
       if (golemModel) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NO_CODEC, defaultExport
         ? `@${decorator}() type ${label} is the default export of its file, which has no codec id; golem generate cannot add one. Export the class by name (export class ${label}) and import it by name.`
         : `@${decorator}() type ${label} has no unique codec id; run golem generate`));
+      else if (readsWholeInput(checker, parameter, decorator)) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NOT_A_MODEL,
+        `@${decorator}() type ${label} is not a golem model, and NestModelInterceptor answers HTTP 500 for it. Declare the parameter as a golem model (IModel or IObject), or bind one field of a model type such as @${decorator}('field').`));
       return;
     }
     scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_CODEC_DECORATOR}(${JSON.stringify(id)}${array ? ', true' : ''}) `));

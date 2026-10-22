@@ -352,6 +352,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Object union with no literal tag.** A model field is a union of objects that golem must convert (a variant holds a `Date`, a `TSerde` value or a model), and the variants have no required literal tag that picks one variant from the JSON. Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. **Fix:** Give each variant a required field with a literal type that differs between variants, such as `kind: 'cat'` and `kind: 'dog'`. A tag may be a union of literals when the values do not overlap.
 
+### RUNM1081
+
+**Whole `@Body()` or `@Query()` that is not a model.** A `@Body()` or `@Query()` parameter that reads the whole input has a type that is no `IModel` or `IObject` and no class that extends a generated model class: a plain interface, a plain class, an inline object type, a primitive, a union, or an array of arrays. [`NestModelInterceptor`](/guide/nestjs-in-depth#nestmodelinterceptor) throws on such a parameter and Nest answers HTTP 500, so `golem build`, `golem check` and every host stop and report it before a request arrives. A parameter that names one field, such as `@Body('name')`, is not reported. The message shows the decorator and the type, such as `@Body() type NoteInput is not a golem model, and NestModelInterceptor answers HTTP 500 for it`, and the position of the type. **Fix:** Declare the parameter as an `IModel` or `IObject`, or bind one field whose type is a model, such as `@Body('note')`.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.

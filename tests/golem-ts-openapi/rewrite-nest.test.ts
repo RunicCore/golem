@@ -37,6 +37,8 @@ function paymentsProject(t: TestContext, extra: Readonly<Record<string, string>>
   });
 }
 
+const notAModel = (decorator: string, type: string): string => `@${decorator}() type ${type} is not a golem model, and NestModelInterceptor answers HTTP 500 for it. Declare the parameter as a golem model (IModel or IObject), or bind one field of a model type such as @${decorator}('field').`;
+
 function scan(root: string, nest = true): ProgramScan {
   return scanProject({ root, directory: root, modelsRoot: root, configFile: path.join(root, 'tsconfig.json'), nest, codecKeysFile: path.join(root, '.golem/codec-keys.json') });
 }
@@ -121,12 +123,38 @@ test('a primitive @Body() and a type that is not a golem model are not rewritten
   const plain = paymentsProject(t, {
     'src/notes.controller.ts': readFixture(`${PLUGIN}/rewrite-skips-a-body-type-no-model-table-names/notes.controller.ts`),
   });
-  for (const root of [primitive, plain]) {
+  for (const [root, type] of [[primitive, 'string'], [plain, 'Payment']] as const) {
     const result = scan(root);
-    assert.deepEqual(result.diagnostics, []);
+    assert.deepEqual(result.diagnostics.map(({ code, file, message }) => ({ code, file, message })), [
+      { code: 'RUNM1081', file: 'src/notes.controller.ts', message: notAModel('Body', type) },
+    ]);
     assert.equal(result.files.get('src/notes.controller.ts'), undefined);
     assert.deepEqual(result.nestCodecSites.filter(site => site.file === 'src/notes.controller.ts'), []);
   }
+});
+
+test('a whole @Body() or @Query() that is not a golem model stops with RUNM1081 and its position; a model and a named field build', (t) => {
+  // protects: T-258 R-13 a whole non-model input fails at build, not at the first request
+  const root = paymentsProject(t, {
+    'src/plain.controller.ts': [
+      "import { Body, Controller, Post, Query } from '@nestjs/common';",
+      "import type { TPaymentInput } from './payment.model.js';",
+      'class PlainInput { note = ""; }',
+      "@Controller('plain')",
+      'export class PlainController {',
+      '  @Post() plain(@Body() input: PlainInput): number { return 1; }',
+      '  @Post() query(@Query() filter: { page: number }): number { return 1; }',
+      '  @Post() nested(@Body() inputs: TPaymentInput[][]): number { return 1; }',
+      '  @Post() model(@Body() input: TPaymentInput): number { return 1; }',
+      "  @Post() field(@Body('note') note: string, @Query('page') page: number): number { return 1; }",
+      '}',
+    ].join('\n'),
+  });
+  assert.deepEqual(scan(root).diagnostics.map(({ code, file, line, column, message }) => ({ code, file, line, column, message })), [
+    { code: 'RUNM1081', file: 'src/plain.controller.ts', line: 6, column: 32, message: notAModel('Body', 'PlainInput') },
+    { code: 'RUNM1081', file: 'src/plain.controller.ts', line: 7, column: 34, message: notAModel('Query', '{ page: number }') },
+    { code: 'RUNM1081', file: 'src/plain.controller.ts', line: 8, column: 34, message: notAModel('Body', 'TPaymentInput[][]') },
+  ]);
 });
 
 test('two Payment contracts keep distinct ids in their controllers', (t) => {
@@ -216,7 +244,8 @@ test('a parameter decorator reached through a namespace import is stamped', (t) 
 test('Array<T> and Promise<T[]> returns record an array, and an Array<T> or readonly T[] body takes the element codec', (t) => {
   const root = paymentsProject(t, { 'src/arrays.controller.ts': readFixture(`${FORMS}/arrays.controller.ts`) });
   const result = scan(root);
-  assert.deepEqual(result.diagnostics, []);
+  // An array of arrays has no one element codec, so it is left unstamped and stops as a non-model.
+  assert.deepEqual(result.diagnostics.map(({ code, message }) => ({ code, message })), [{ code: 'RUNM1081', message: notAModel('Body', 'TPaymentInput[][]') }]);
   const payment = idOf(root, 'TPayment');
   const input = idOf(root, 'TPaymentInput');
   const code = rewritten(root, result, 'src/arrays.controller.ts');
@@ -225,7 +254,6 @@ test('Array<T> and Promise<T[]> returns record an array, and an Array<T> or read
     `  @__golem_nestModelReturn("${payment}", true) @Get('promised')`,
     `  batch(@Body() @__golem_nestModelCodec("${input}", true) inputs: Array<TPaymentInput>): number { return inputs.length; }`,
     `  readonlyBatch(@Body() @__golem_nestModelCodec("${input}", true) inputs: readonly TPaymentInput[]): number { return inputs.length; }`,
-    // An array of arrays has no one element codec, so it is left unstamped.
     '  nestedBatch(@Body() inputs: TPaymentInput[][]): number { return inputs.length; }',
   ]);
   assert.equal(code.match(/__golem_nestModelReturn\(/g)?.length, 2);
