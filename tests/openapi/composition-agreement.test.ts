@@ -1008,11 +1008,16 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     error: /schema "Visit" at #\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: .*model beside a union.*plain object schemas/,
     document: visitDocument({ m: { allOf: [ref('Base'), { oneOf: [object({ kind: { const: 'a' } }), object({ kind: { const: 'b' } })] }, { oneOf: [object({ mode: { const: 'x' } }), object({ mode: { const: 'y' } })] }] } }, { Base: object({ id: text }, { required: ['id'] }) }),
   },
-  // The model path finds this conflict: the members are not objects, so the resolver keeps them.
+  // protects: T-120 members that admit no common value stop as unsatisfiable, not as a conversion conflict
   {
-    shape: 'members that convert the value to a Date and to a model',
-    error: /schema "Visit" at #\/components\/schemas\/Visit(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: The allOf members convert one value in two ways \(two parts convert it differently\)/,
+    shape: 'members that give the value a Date and a model',
+    error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*string.*object/,
     document: visitDocument({ m: { allOf: [dateTime, ref('M')] } }, { M: object({ n: text }) }),
+  },
+  {
+    shape: 'members that give the value a string and a number',
+    error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*string.*number/,
+    document: visitDocument({ m: { allOf: [text, { type: 'number' }] } }),
   },
   {
     shape: 'members that give a required property a model and a string',
@@ -1039,13 +1044,13 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     ),
   },
   {
-    shape: 'an inline request body whose members convert the value to a Date and to a model',
-    error: /schema of request body application\/json of operation "postVisit" at #(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
+    shape: 'an inline request body whose members give the value a Date and a model',
+    error: /schema of request body application\/json of operation "postVisit" at #\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*string.*object/,
     document: operationDocument({ requestBody: inlineBody(dateTimeAndModel) }),
   },
   {
-    shape: 'an inline response body whose members convert the value to a Date and to a model',
-    error: /schema of 200 response application\/json of operation "postVisit" at #(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
+    shape: 'an inline response body whose members give the value a Date and a model',
+    error: /schema of 200 response application\/json of operation "postVisit" at #\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*string.*object/,
     document: operationDocument({ responses: { 200: { description: 'ok', content: { 'application/json': { schema: inlineObject(dateTimeAndModel) } } } } }),
   },
 ];

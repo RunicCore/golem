@@ -400,6 +400,8 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 
 **allOf that no object satisfies.** A required property of an `allOf` cannot hold a value, for the reasons that [OPENAPI_COMPOSITION_PROPERTY_NEVER](#openapi-composition-property-never) gives, so the schema accepts no object. Generation stops. The message names each such property, its cause and the fix. **Fix:** Apply the fix of OPENAPI_COMPOSITION_PROPERTY_NEVER to each property that the message names.
 
+**allOf members with no common type.** The members of an `allOf` declare JSON types that share no value, such as `type: string` (also `format: date-time`) beside a `$ref` to an object schema, or `type: string` beside `type: number`. An `integer` member and a `number` member share the integers. No value satisfies the schema. Generation stops. A member that declares no `type` makes no claim. The message names each member that declares a type. **Fix:** Give the members a type that they share, or remove the member that does not fit.
+
 ### OPENAPI_DISCRIMINATOR_IMPLICIT_VALUE
 
 **Implicit discriminator value.** A discriminated-union variant has no explicit `discriminator.mapping` entry, so it's selected by its raw component name — which differs from the generated model name. This is a warning: generation continues, and decoding still works using the raw component name as the implicit value. **Fix:** Add an explicit `mapping` entry if the wire value should differ from the raw component name.

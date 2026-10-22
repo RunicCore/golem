@@ -117,6 +117,8 @@ export function resolveComposition<S>(
   position: 'field' | 'definition',
 ): Composition<S> {
   try {
+    const disjoint = disjointMemberTypes(schema, scope, reader);
+    if (disjoint) return unsatisfiableTypes(disjoint);
     return resolveObjects(schema, scope, reader, position);
   } catch (error) {
     if (error instanceof ExpansionCycle) return { kind: 'members' };
@@ -355,6 +357,67 @@ function unsatisfiable(names: readonly NeverName[]): Composition<never> {
     kind: 'rejected',
     code: COMPOSITION_UNSATISFIABLE,
     message: `No object satisfies this allOf: ${names.map((never) => `the required property ${JSON.stringify(never.name)} ${neverReason(never)}`).join(' ')}`,
+  };
+}
+
+/** An allOf member that declares a JSON `type`, with its index in the allOf. */
+interface TypedMember {
+  readonly index: number;
+  readonly types: readonly string[];
+}
+
+/**
+ * JSON Schema AND over `type`: the declared types of the allOf members, `$ref` members read through their component. Returns
+ * the typed members when no JSON value has a type that all of them admit; undefined otherwise. A member that declares no
+ * `type` (properties only, `oneOf`, `const`) makes no claim here.
+ */
+function disjointMemberTypes<S>(schema: unknown, scope: S, reader: CompositionReader<S>): readonly TypedMember[] | undefined {
+  if (!isJsonObject(schema) || !Array.isArray(schema.allOf)) return undefined;
+  const nested = reader.nested(schema, scope);
+  const typed = schema.allOf.flatMap((member, index): TypedMember[] => {
+    const types = declaredTypes(member, nested, reader, new Set());
+    return types.length ? [{ index, types }] : [];
+  });
+  let common: readonly string[] | undefined;
+  for (const { types } of typed) {
+    common = common === undefined ? types : commonTypes(common, types);
+    if (common.length === 0) return typed;
+  }
+  return undefined;
+}
+
+/** The `type` list that a member declares itself, or through the `$ref` it names; empty when it declares none. */
+function declaredTypes<S>(schema: unknown, scope: S, reader: CompositionReader<S>, visiting: Set<unknown>): readonly string[] {
+  if (!isJsonObject(schema) || visiting.has(schema)) return [];
+  const own = effectiveSchemaTypes(schema);
+  if (own.length) return own;
+  const reference = reader.reference(schema, scope);
+  if (!reference) return [];
+  visiting.add(schema);
+  const types = declaredTypes(reference.referenced, reference.scope, reader, visiting);
+  visiting.delete(schema);
+  return types;
+}
+
+/** The JSON types that both lists admit: an integer is a number, so the two give `integer`. */
+function commonTypes(left: readonly string[], right: readonly string[]): string[] {
+  const shared = new Set<string>();
+  for (const a of left) {
+    for (const b of right) {
+      if (a === b) shared.add(a);
+      else if ((a === 'integer' && b === 'number') || (a === 'number' && b === 'integer')) shared.add('integer');
+    }
+  }
+  return [...shared];
+}
+
+function unsatisfiableTypes(members: readonly TypedMember[]): Composition<never> {
+  const declared = members.map(({ index, types }) => `allOf member ${index} admits only ${types.join(' or ')}`).join(', ');
+  return {
+    kind: 'rejected',
+    code: COMPOSITION_UNSATISFIABLE,
+    message: `No value satisfies this allOf: its members declare types with no common value (${declared}). `
+      + 'Give the members a type that they share, or remove the member that does not fit.',
   };
 }
 
