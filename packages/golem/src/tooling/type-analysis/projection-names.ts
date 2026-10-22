@@ -84,7 +84,7 @@ function readable(
  * parameters, not declared in a `.d.ts` file (so lib aliases such as `Record` never name),
  * and a name that survives the same identifier check as keys. `TBilling` stays `TBilling`.
  */
-function aliasProjectionName(declaration: ts.TypeAliasDeclaration): string | undefined {
+export function aliasProjectionName(declaration: ts.TypeAliasDeclaration): string | undefined {
   if (declaration.typeParameters?.length || declaration.getSourceFile().isDeclarationFile) return undefined;
   return pascalIdentifier(declaration.name.text);
 }

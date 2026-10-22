@@ -247,6 +247,25 @@ export function scalarOrArray(
   return { sequence: sequences[0], scalars };
 }
 
+/** The variants of a `scalar | T[] | object` union: its one sequence, its one object or model, and the scalar variants beside them. */
+interface ScalarArrayObject extends ScalarOrArray {
+  readonly object: ModelTypeDescriptor;
+}
+
+/**
+ * A union of scalar variants, one array or tuple, and one object or model: the shape of a JSON value. The value tells
+ * the three apart without a tag: `Array.isArray`, then a non-null object, then a scalar.
+ */
+export function scalarArrayObject(
+  present: readonly ModelTypeDescriptor[],
+): ScalarArrayObject | undefined {
+  const objects = present.filter((variant) =>
+    variant.kind === 'object' || variant.kind === 'reference' || variant.kind === 'generated-model');
+  if (objects.length !== 1) return undefined;
+  const pair = scalarOrArray(present.filter((variant) => variant !== objects[0]));
+  return pair ? { ...pair, object: objects[0] } : undefined;
+}
+
 /**
  * The sequence branch of a scalar-or-array union, converted by item and with no guard: the union tests
  * `Array.isArray` once. A tuple converts each position as it does outside the union.
@@ -347,6 +366,20 @@ export function emitUnionConversion(
     const scalar = scalarVariant ? conversion.convert(scalarVariant) : plain;
     const mapped = emitSequenceBranch(sequence, expression, conversion.items);
     return conversion.joinSequence?.(mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
+  }
+  const jsonValue = scalarArrayObject(present);
+  if (jsonValue) {
+    const { sequence, scalars, object } = jsonValue;
+    const scalarVariant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
+    const scalar = scalarVariant ? conversion.convert(scalarVariant) : plain;
+    const converted = conversion.convert(object);
+    const mapped = emitSequenceBranch(sequence, expression, conversion.items);
+    const rest = converted === plain && scalar === plain
+      ? plain
+      : json
+        ? `(${objectValueExpression(expression)} ? ${converted} : ${scalar})`
+        : `${objectValueExpression(expression)} ? (${converted}) : ${scalar}`;
+    return conversion.joinSequence?.(mapped, rest) ?? emitScalarOrArrayConversion(expression, mapped, rest);
   }
   const tagged = conversion.tagged();
   if (tagged !== undefined) return tagged;

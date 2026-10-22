@@ -444,7 +444,7 @@ function rewriteToRefs(
     const node = lookup(descriptor) ?? lookup(asReference(named));
     // A nullable object is a union node (object, null) that emits a class. Its reference keeps its two planes when the
     // field widens the reference with null; a bare reference to it keeps reading the component as the codec id.
-    if (node && (node.descriptor.kind === 'object' || (nullWidened && node.descriptor.kind === 'union' && node.emitClass) || node.siblingCodec)) {
+    if (node && (node.descriptor.kind === 'object' || (descriptor.kind === 'reference' && descriptor.projection) || (nullWidened && node.descriptor.kind === 'union' && node.emitClass) || node.siblingCodec)) {
       // Keep named references for conversion/construct. Parent schemas
       // inline an opaque object when the child did not emit a codec.
       rewritten = namedReference(node, descriptor);
