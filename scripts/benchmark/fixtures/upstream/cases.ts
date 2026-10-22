@@ -13,6 +13,7 @@ export async function createComparisonFixtures(adapter: Adapter): Promise<readon
     case 'golem-validated':
       return createGolemFixtures(adapter);
     case 'golem-object':
+    case 'golem-object-off':
       return createGolemObjectFixtures(adapter);
     case 'class-transformer':
       return createClassTransformerFixtures(adapter);

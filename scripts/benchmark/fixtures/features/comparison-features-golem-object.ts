@@ -8,21 +8,29 @@ import './sdk/index.js';
 import { assertFeatureWire, checkoutInput, featureComparison } from './payloads.js';
 
 export async function createGolemObjectFeatureFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
-  if (adapter !== 'golem-object') throw new TypeError(`Unsupported Golem IObject adapter: ${adapter}`);
+  if (adapter !== 'golem-object' && adapter !== 'golem-object-off') throw new TypeError(`Unsupported Golem IObject adapter: ${adapter}`);
+  const validation = adapter === 'golem-object';
   const input = checkoutInput();
   // #region calls
   // Resolve the codec once, as the other libraries' fixtures do; timed calls do only the conversion.
   const checkout = requireObjectCodec<TJsonCheckout>('TJsonCheckout');
   const model = checkout.parse(input.text);
-  return [featureComparison(input.name, input.payload, {
+  const timed = {
     'text-to-model': () => checkout.parse(input.text),
     'model-to-text': () => checkout.stringify(model),
     validate: () => {
       if (!checkout.validate(model)) throw new Error('IObject validate rejected a valid fixture');
       return true;
     },
+  };
   // #endregion calls
-  }, async () => {
+  const conversions = {
+    'object-to-model': () => checkout.fromWireFormat(input.payload),
+    'model-to-object': () => checkout.toWireFormat(model),
+  };
+  // A build with validation off has no validators to call, so it has no validate.
+  const operations = validation ? { ...timed, ...conversions } : { 'text-to-model': timed['text-to-model'], 'model-to-text': timed['model-to-text'], ...conversions };
+  return [featureComparison(input.name, input.payload, operations, async () => {
     const original = structuredClone(input.payload);
     const fromText = checkout.parse(input.text);
     assert.equal(Object.getPrototypeOf(fromText), Object.prototype);
@@ -31,6 +39,15 @@ export async function createGolemObjectFeatureFixtures(adapter: Adapter): Promis
     assert.ok(fromText.channel.kind === 'hold' && fromText.channel.until instanceof Date);
     assert.equal(checkout.stringify(fromText), input.text, 'adapter output must retain the compact JSON representation');
     assertFeatureWire(checkout.toWireFormat(fromText), original);
+    const decoded = checkout.fromWireFormat(input.payload);
+    assert.ok(decoded.when instanceof Date);
+    assert.equal(decoded.code, 255);
+    assertFeatureWire(checkout.toWireFormat(decoded), original);
+    // A build with validation off has no validators: only the valid paths are checked.
+    if (!validation) {
+      assert.deepEqual(input.payload, original);
+      return;
+    }
     const invalid = { ...structuredClone(original), money: { amount: 12, currency: 'XXX' } };
     const validationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
     assert.throws(() => checkout.parse(JSON.stringify(invalid)), validationError);

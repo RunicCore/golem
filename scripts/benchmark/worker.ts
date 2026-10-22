@@ -11,9 +11,10 @@ if (!modulePath || !fixtureAdapter || !jobText) throw new Error('Usage: worker.j
 const job = parseWorkerJob(jobText);
 const isAdapter = (value: string): value is Adapter => (ADAPTERS as readonly string[]).includes(value);
 if (!isAdapter(fixtureAdapter)) throw new Error(`Unknown fixture adapter: ${fixtureAdapter}`);
-// The 'plain' group parses to plain objects (an IObject declaration, or a peer library's plain-object mode);
-// other groups produce class instances, so this check applies only there.
-const parsesToPlainObject = BENCH_ADAPTERS.find(a => a.fixtureAdapter === fixtureAdapter)?.group === 'plain';
+// The 'plain' group parses to plain objects (an IObject declaration, or a peer library's plain-object mode), and so
+// does an adapter marked `plainObjects`; other groups produce class instances, so this check applies only there.
+const adapterSpec = BENCH_ADAPTERS.find(a => a.fixtureAdapter === fixtureAdapter);
+const parsesToPlainObject = adapterSpec?.group === 'plain' || adapterSpec?.plainObjects === true;
 const suite: ComparisonModule = await import(pathToFileURL(modulePath).href);
 const wanted = new Set(job.cases.map(c => c.fixture));
 const fixtures = (await suite.createComparisonFixtures(fixtureAdapter)).filter(f => wanted.has(f.name));

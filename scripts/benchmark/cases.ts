@@ -6,21 +6,29 @@ export const BENCH_SERIES_COUNT = 4;
 export const REPOSITORY_BLOB_URL = 'https://github.com/RunicCore/golem/blob/master';
 
 export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout';
-export type OperationId = 'parse' | 'stringify' | 'validate';
-export type AdapterId = 'golem' | 'golem-validated' | 'golem-object' | 'class-transformer' | 'class-validator' | 'typia' | 'zod' | 'ajv';
+/** The operations of the compare table. */
+export type CompareOperationId = 'parse' | 'stringify' | 'validate';
+/** The operations that only the golem cost table times: value to and from a plain object, with no JSON text. */
+export type CostOperationId = 'decode' | 'encode';
+export type OperationId = CompareOperationId | CostOperationId;
+export type AdapterId = 'golem' | 'golem-validated' | 'golem-object' | 'golem-object-off' | 'class-transformer' | 'class-validator' | 'typia' | 'zod' | 'ajv';
 export type GroupId = 'plain' | 'classes' | 'validated-classes';
 export type Support = 'full' | 'none';
 export type ProjectKind = 'plain' | 'validating';
 
 export interface PayloadSpec { readonly id: PayloadId; readonly fixture: string; readonly label: string; readonly description: string; readonly sourceFile: string }
-export interface OperationSpec { readonly id: OperationId; readonly fixtureOperation: Operation; readonly label: string; readonly description: string }
+export interface OperationSpec<Id extends OperationId = OperationId> { readonly id: Id; readonly fixtureOperation: Operation; readonly label: string; readonly description: string }
 export interface GroupSpec {
   readonly id: GroupId; readonly label: string; readonly description: string;
-  readonly operations: Readonly<Record<OperationId, readonly AdapterId[]>>;
+  readonly operations: Readonly<Record<CompareOperationId, readonly AdapterId[]>>;
   /** What each operation does in this group, shown beside the operation name. */
-  readonly operationDescriptions: Readonly<Partial<Record<OperationId, string>>>;
+  readonly operationDescriptions: Readonly<Partial<Record<CompareOperationId, string>>>;
 }
-export interface AdapterSpec { readonly id: AdapterId; readonly fixtureAdapter: Adapter; readonly project: ProjectKind; readonly group: GroupId; readonly label: string; readonly library: string; readonly checked: boolean; readonly sourceFile: string }
+/**
+ * `group` is the compare group of the adapter; an adapter with no group is in no compare table and only the cost table times it.
+ * `plainObjects` marks a groupless adapter whose parse returns plain objects (the adapters of the `plain` group do already).
+ */
+export interface AdapterSpec { readonly id: AdapterId; readonly fixtureAdapter: Adapter; readonly project: ProjectKind; readonly group: GroupId | null; readonly plainObjects?: true; readonly label: string; readonly library: string; readonly checked: boolean; readonly sourceFile: string }
 export interface CaseSpec { readonly payload: PayloadId; readonly operation: OperationId; readonly adapter: AdapterId; readonly support: Support; readonly note?: string }
 
 export const PAYLOADS: readonly PayloadSpec[] = [
@@ -30,10 +38,16 @@ export const PAYLOADS: readonly PayloadSpec[] = [
   { id: 'checkout', fixture: 'sdk-extend', label: 'Checkout', description: 'Money from a generated SDK type, hex code, dates, nested line items, flags, a union and optional fields, with value conversion.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
 ];
 
-export const BENCH_OPERATIONS: readonly OperationSpec[] = [
+export const BENCH_OPERATIONS: readonly OperationSpec<CompareOperationId>[] = [
   { id: 'parse', fixtureOperation: 'text-to-model', label: 'Parse', description: 'JSON text to the library\'s model value.' },
   { id: 'stringify', fixtureOperation: 'model-to-text', label: 'Stringify', description: 'Model value to JSON text.' },
   { id: 'validate', fixtureOperation: 'validate', label: 'Validate', description: 'Check an already-decoded value.' },
+];
+
+/** Timed for the cost table only, beside the compare operations. */
+export const COST_OPERATIONS: readonly OperationSpec<CostOperationId>[] = [
+  { id: 'decode', fixtureOperation: 'object-to-model', label: 'Decode', description: 'A plain wire object to the model value.' },
+  { id: 'encode', fixtureOperation: 'model-to-object', label: 'Encode', description: 'Model value to a plain wire object.' },
 ];
 
 const F = 'scripts/benchmark/fixtures/upstream';
@@ -53,6 +67,7 @@ export const GROUPS: readonly GroupSpec[] = [
 
 export const BENCH_ADAPTERS: readonly AdapterSpec[] = [
   { id: 'golem-object', fixtureAdapter: 'golem-object', project: 'validating', group: 'plain', label: 'Golem (IObject)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem-object.ts` },
+  { id: 'golem-object-off', fixtureAdapter: 'golem-object-off', project: 'plain', group: null, plainObjects: true, label: 'Golem (IObject, validation off)', library: '@exprtlabs/golem', checked: false, sourceFile: `${F}/golem-object.ts` },
   { id: 'typia', fixtureAdapter: 'typia', project: 'plain', group: 'plain', label: 'Typia', library: 'typia', checked: true, sourceFile: `${F}/typia.ts` },
   { id: 'zod', fixtureAdapter: 'zod', project: 'plain', group: 'plain', label: 'Zod', library: 'zod', checked: true, sourceFile: `${F}/zod.ts` },
   { id: 'ajv', fixtureAdapter: 'ajv', project: 'plain', group: 'plain', label: 'Ajv', library: 'ajv', checked: true, sourceFile: `${F}/ajv.ts` },
@@ -81,7 +96,20 @@ function buildCases(): readonly CaseSpec[] {
   return cases;
 }
 
-export const CASES: readonly CaseSpec[] = buildCases();
+/** The cases of the compare table, in table order. */
+export const COMPARE_CASES: readonly CaseSpec[] = buildCases();
+
+/**
+ * The cases only the cost table times: IObject decode and encode with validation on and off, and parse and stringify
+ * with validation off (the compare table times them with validation on).
+ */
+const COST_CASES: readonly CaseSpec[] = PAYLOADS.flatMap(payload => [
+  ...(['decode', 'encode'] as const).map(operation => ({ payload: payload.id, operation, adapter: 'golem-object', support: 'full' } satisfies CaseSpec)),
+  ...(['parse', 'stringify', 'decode', 'encode'] as const).map(operation => ({ payload: payload.id, operation, adapter: 'golem-object-off', support: 'full' } satisfies CaseSpec)),
+]);
+
+/** Every case a run can time. */
+export const CASES: readonly CaseSpec[] = [...COMPARE_CASES, ...COST_CASES];
 
 export function timedCases(): readonly CaseSpec[] {
   return CASES.filter(c => c.support !== 'none');
@@ -94,7 +122,7 @@ export function payloadSpec(id: PayloadId): PayloadSpec {
 }
 
 export function operationSpec(id: OperationId): OperationSpec {
-  const found = BENCH_OPERATIONS.find(o => o.id === id);
+  const found = [...BENCH_OPERATIONS, ...COST_OPERATIONS].find(o => o.id === id);
   if (!found) throw new Error(`Unknown operation: ${id}`);
   return found;
 }

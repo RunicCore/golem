@@ -17,11 +17,17 @@ function codecId(input: FixtureInput): string {
 const isPlainObject = (value: unknown): boolean => typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype;
 const validationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
 
-function verify(input: FixtureInput, codec: ObjectCodec<unknown>): void {
+function verify(input: FixtureInput, codec: ObjectCodec<unknown>, validation: boolean): void {
   const fromText = codec.parse(input.text);
   assert.ok(isPlainObject(fromText), 'IObject parse returns a plain object');
   assert.deepEqual(fromText, input.payload);
   assertValidText(codec.stringify(fromText as never), input.text);
+  const decoded = codec.fromWireFormat(input.payload);
+  assert.deepEqual(decoded, input.payload);
+  assert.notEqual(decoded, input.payload, 'decode returns a new object');
+  assert.deepEqual(codec.toWireFormat(decoded as never), input.payload);
+  // A build with validation off has no validators: only the valid paths are checked.
+  if (!validation) return;
   assert.equal(codec.validate(fromText), true);
   const invalid = [...invalidVariants(input), ...[invalidIpLength(input), missingNullable(input)].filter(value => value !== undefined)];
   for (const value of invalid) {
@@ -45,27 +51,34 @@ function verify(input: FixtureInput, codec: ObjectCodec<unknown>): void {
 }
 
 export async function createGolemObjectFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
-  if (adapter !== 'golem-object') throw new TypeError(`Unsupported Golem IObject adapter: ${adapter}`);
+  if (adapter !== 'golem-object' && adapter !== 'golem-object-off') throw new TypeError(`Unsupported Golem IObject adapter: ${adapter}`);
+  const validation = adapter === 'golem-object';
   const fixtures: ComparisonFixture[] = [...await createGolemObjectFeatureFixtures(adapter)];
   for (const input of createFixtureInputs()) {
     // Resolve the codec once, as the other libraries' fixtures do; timed calls do only the conversion.
     // #region calls
     const codec = requireObjectCodec(codecId(input));
     const model = codec.parse(input.text);
+    const timed = {
+      'text-to-model': () => codec.parse(input.text),
+      'model-to-text': () => codec.stringify(model as never),
+      validate: () => {
+        if (!codec.validate(model)) throw new Error('IObject validate rejected a valid fixture');
+        return true;
+      },
+    };
+    // #endregion calls
+    const conversions = {
+      'object-to-model': () => codec.fromWireFormat(input.payload),
+      'model-to-object': () => codec.toWireFormat(model as never),
+    };
     fixtures.push({
       name: input.name,
       payload: input.payload,
-      operations: {
-        'text-to-model': () => codec.parse(input.text),
-        'model-to-text': () => codec.stringify(model as never),
-        validate: () => {
-          if (!codec.validate(model)) throw new Error('IObject validate rejected a valid fixture');
-          return true;
-        },
-      },
-    // #endregion calls
+      // A build with validation off has no validators to call, so it has no validate.
+      operations: validation ? { ...timed, ...conversions } : { 'text-to-model': timed['text-to-model'], 'model-to-text': timed['model-to-text'], ...conversions },
       consume: consumeValue,
-      verify: async () => verify(input, codec),
+      verify: async () => verify(input, codec, validation),
     });
   }
   return fixtures;

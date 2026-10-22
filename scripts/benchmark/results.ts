@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { arch, cpus, platform } from 'node:os';
 import path from 'node:path';
-import { BENCH_ADAPTERS, BENCH_OPERATIONS, CASES, GROUPS, PAYLOADS, REPOSITORY_BLOB_URL, type AdapterId, type OperationId, type PayloadId } from './cases.js';
+import { BENCH_ADAPTERS, BENCH_OPERATIONS, COMPARE_CASES, GROUPS, PAYLOADS, REPOSITORY_BLOB_URL, type AdapterId, type OperationId, type PayloadId } from './cases.js';
 import type { BenchmarkResults, OpsPerSec, ResultCase } from './results-schema.js';
 
 export interface BatchSample { readonly iterations: number; readonly elapsedMs: number }
@@ -18,6 +18,8 @@ export interface BuildInput {
   readonly measuredAt: string;
   /** The adapters that ran; the default is every adapter. Cases, payloads and adapters of the results cover only these. */
   readonly adapters?: readonly AdapterId[];
+  /** The payloads that ran; the default is every payload. Cases and payloads of the results cover only these. */
+  readonly payloads?: readonly PayloadId[];
 }
 
 export const PACKAGE_NAMES = ['@exprtlabs/golem', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', 'typescript', 'typia', 'class-transformer', 'class-validator', 'zod', 'ajv'] as const;
@@ -41,8 +43,10 @@ export function summarize(samples: readonly BatchSample[]): OpsPerSec {
 export function buildResults(input: BuildInput): BenchmarkResults {
   const byKey = new Map(input.measured.map(m => [`${m.payload}/${m.operation}/${m.adapter}`, m]));
   const ran = new Set<AdapterId>(input.adapters ?? BENCH_ADAPTERS.map(a => a.id));
-  const partial = ran.size < BENCH_ADAPTERS.length;
-  const cases: ResultCase[] = CASES.filter(c => ran.has(c.adapter)).map(c => {
+  const ranPayloads = new Set<PayloadId>(input.payloads ?? PAYLOADS.map(p => p.id));
+  const partial = ran.size < BENCH_ADAPTERS.length || ranPayloads.size < PAYLOADS.length;
+  // The results hold the compare table only; the timings of the cost table stay in the raw file until a results format carries them.
+  const cases: ResultCase[] = COMPARE_CASES.filter(c => ran.has(c.adapter) && ranPayloads.has(c.payload)).map(c => {
     const base = { payload: c.payload, operation: c.operation, adapter: c.adapter, support: c.support, ...(c.note ? { note: c.note } : {}) };
     if (c.support === 'none') return base;
     const measured = byKey.get(`${c.payload}/${c.operation}/${c.adapter}`);
@@ -64,7 +68,7 @@ export function buildResults(input: BuildInput): BenchmarkResults {
     groups: GROUPS.map(g => ({ id: g.id, label: g.label, description: g.description })),
     payloads: PAYLOADS.filter(p => !partial || input.measured.some(m => m.payload === p.id)).map(p => ({ id: p.id, label: p.label, bytes: bytes(p.id), description: p.description, sourceUrl: `${REPOSITORY_BLOB_URL}/${p.sourceFile}` })),
     operations: BENCH_OPERATIONS.map(o => ({ id: o.id, label: o.label, description: o.description })),
-    adapters: BENCH_ADAPTERS.filter(a => ran.has(a.id)).map(a => ({ id: a.id, group: a.group, label: a.label, library: a.library, checked: a.checked, sourceUrl: `${REPOSITORY_BLOB_URL}/${a.sourceFile}` })),
+    adapters: BENCH_ADAPTERS.flatMap(a => a.group !== null && ran.has(a.id) ? [{ id: a.id, group: a.group, label: a.label, library: a.library, checked: a.checked, sourceUrl: `${REPOSITORY_BLOB_URL}/${a.sourceFile}` }] : []),
     cases,
   };
 }
