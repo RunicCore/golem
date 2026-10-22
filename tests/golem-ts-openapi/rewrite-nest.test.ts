@@ -115,49 +115,48 @@ test('a decorator that is already present, plain, through a namespace or aliased
   assert.equal(result.files.get('src/aliased.controller.ts'), undefined);
 });
 
-test('a primitive @Body() and a type that is not a golem model are not rewritten, even when a model of the same name has keys', (t) => {
-  const primitive = paymentsProject(t, {
-    'src/notes.controller.ts': readFixture(`${PLUGIN}/rewrite-skips-a-primitive-body/notes.controller.ts`),
-  });
-  // The key table names a `Payment` model; this controller's `Payment` is a plain interface of its own file.
-  const plain = paymentsProject(t, {
-    'src/notes.controller.ts': readFixture(`${PLUGIN}/rewrite-skips-a-body-type-no-model-table-names/notes.controller.ts`),
-  });
-  for (const [root, type] of [[primitive, 'string'], [plain, 'Payment']] as const) {
+// The key table names a `Payment` model; the `Payment` of the second controller is a plain interface of its own file.
+for (const { name, fixture, type } of [
+  { name: 'a primitive @Body()', fixture: 'rewrite-skips-a-primitive-body', type: 'string' },
+  { name: 'a @Body() type that is not a golem model, even when a model of the same name has keys', fixture: 'rewrite-skips-a-body-type-no-model-table-names', type: 'Payment' },
+]) {
+  test(`${name} is not rewritten and gets RUNM1081`, (t) => {
+    // protects: T-258 R-13 a body type the interceptor rejects is reported, and its controller is not rewritten
+    const root = paymentsProject(t, { 'src/notes.controller.ts': readFixture(`${PLUGIN}/${fixture}/notes.controller.ts`) });
     const result = scan(root);
     assert.deepEqual(result.diagnostics.map(({ code, severity, file, message }) => ({ code, severity, file, message })), [
       { code: 'RUNM1081', severity: 'error', file: 'src/notes.controller.ts', message: notAModel('Body', type) },
     ]);
     assert.equal(result.files.get('src/notes.controller.ts'), undefined);
     assert.deepEqual(result.nestCodecSites.filter(site => site.file === 'src/notes.controller.ts'), []);
-  }
-});
-
-test('a @Body() or @Query() parameter that is not a golem model, whole or one field, gets RUNM1081 with its position, an error by default and a warning with nonModelInputs: warn; a model and a model field are silent', (t) => {
-  // protects: T-258 R-13 a body or query input the interceptor rejects is reported at build
-  const root = paymentsProject(t, {
-    'src/plain.controller.ts': [
-      "import { Body, Controller, Post, Query } from '@nestjs/common';",
-      "import type { TPaymentInput } from './payment.model.js';",
-      'class PlainInput { note = ""; }',
-      "@Controller('plain')",
-      'export class PlainController {',
-      '  @Post() plain(@Body() input: PlainInput): number { return 1; }',
-      '  @Post() query(@Query() filter: { page: number }): number { return 1; }',
-      '  @Post() nested(@Body() inputs: TPaymentInput[][]): number { return 1; }',
-      '  @Post() model(@Body() input: TPaymentInput): number { return 1; }',
-      "  @Post() modelField(@Body('input') input: TPaymentInput): number { return 1; }",
-      "  @Post() field(@Body('note') note: string, @Query('page') page: number): number { return 1; }",
-      '}',
-    ].join('\n'),
   });
-  const sites = [['Body', 'PlainInput', 6, 32], ['Query', '{ page: number }', 7, 34], ['Body', 'TPaymentInput[][]', 8, 34], ['Body', 'string', 11, 37], ['Query', 'number', 11, 66]] as const;
-  for (const mode of ['error', 'warn'] as const) {
+}
+
+const PLAIN_CONTROLLER = [
+  "import { Body, Controller, Post, Query } from '@nestjs/common';",
+  "import type { TPaymentInput } from './payment.model.js';",
+  'class PlainInput { note = ""; }',
+  "@Controller('plain')",
+  'export class PlainController {',
+  '  @Post() plain(@Body() input: PlainInput): number { return 1; }',
+  '  @Post() query(@Query() filter: { page: number }): number { return 1; }',
+  '  @Post() nested(@Body() inputs: TPaymentInput[][]): number { return 1; }',
+  '  @Post() model(@Body() input: TPaymentInput): number { return 1; }',
+  "  @Post() modelField(@Body('input') input: TPaymentInput): number { return 1; }",
+  "  @Post() field(@Body('note') note: string, @Query('page') page: number): number { return 1; }",
+  '}',
+].join('\n');
+
+for (const mode of ['error', 'warn'] as const) {
+  test(`a @Body() or @Query() parameter that is not a golem model, whole or one field, gets RUNM1081 with its position, ${mode === 'warn' ? 'a warning with nonModelInputs: warn' : 'an error by default'}; a model and a model field are silent`, (t) => {
+    // protects: T-258 R-13 a body or query input the interceptor rejects is reported at build
+    const root = paymentsProject(t, { 'src/plain.controller.ts': PLAIN_CONTROLLER });
     const severity = mode === 'warn' ? 'warning' : 'error';
+    const sites = [['Body', 'PlainInput', 6, 32], ['Query', '{ page: number }', 7, 34], ['Body', 'TPaymentInput[][]', 8, 34], ['Body', 'string', 11, 37], ['Query', 'number', 11, 66]] as const;
     assert.deepEqual(scan(root, true, mode).diagnostics.map(({ code, severity, file, line, column, message }) => ({ code, severity, file, line, column, message })),
       sites.map(([decorator, type, line, column]) => ({ code: 'RUNM1081', severity, file: 'src/plain.controller.ts', line, column, message: notAModel(decorator, type, mode) })));
-  }
-});
+  });
+}
 
 test('two Payment contracts keep distinct ids in their controllers', (t) => {
   const root = project(t, {

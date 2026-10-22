@@ -443,16 +443,15 @@ const untaggedUnions: readonly { readonly shape: string; readonly schemas: Recor
 ];
 
 for (const { shape, schemas, error } of untaggedUnions) {
-  test(`${shape} with no literal tag stops generation with OPENAPI_UNION_DISCRIMINATOR_MISSING`, async t => {
-    // protects: T-232 coded diagnostic for an untagged object union (golem-openapi path)
-    for (const validation of [false, true]) {
+  for (const validation of [false, true]) {
+    test(`${shape} with no literal tag stops generation with OPENAPI_UNION_DISCRIMINATOR_MISSING, with validation ${validation ? 'on' : 'off'}`, async t => {
+      // protects: T-232 coded diagnostic for an untagged object union (golem-openapi path)
       const output = path.join(createFixtureProject(t, 'golem-openapi-untagged-'), 'sdk');
       const document = { openapi: '3.1.0', info: { title: 'Untagged', version: '1' }, paths: {}, components: { schemas } };
       await assert.rejects(
         () => generateMaterializedSdk(document, { output, name: 'Untagged', profile: { mobx: false, validation } }),
         error,
-        `validation=${validation}`,
       );
-    }
-  });
+    });
+  }
 }
