@@ -983,15 +983,15 @@ function emitInternedObjectDecode(
 }
 
 /**
- * The base of each model in the graph: the node of a model that extends another is an intersection that holds the base
- * model, so a derived model narrows its base when two parts declare one name (a covariant override).
+ * The bases of each model in the graph: the node of a model that extends others is an intersection that holds the base
+ * models, so a derived model narrows each base when two parts declare one name (a covariant override).
  */
 function graphModelBases(graph: SchemaGraph): ModelBases {
   return {
-    baseOf(name) {
+    basesOf(name) {
       const descriptor = graph.nodeFor({ kind: 'reference', name })?.descriptor;
-      if (descriptor?.kind !== 'intersection') return undefined;
-      return descriptor.variants.map(modelName).find((base) => base !== undefined);
+      if (descriptor?.kind !== 'intersection') return [];
+      return descriptor.variants.map(modelName).filter((base): base is string => base !== undefined);
     },
   };
 }

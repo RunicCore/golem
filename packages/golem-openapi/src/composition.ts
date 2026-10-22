@@ -48,8 +48,8 @@ export interface CompositionReader<S> {
   nested(schema: unknown, scope: S): S;
   /** The schema's descriptor; undefined when the schema is being resolved on this path (it refers back to itself). */
   descriptor(schema: unknown, scope: S): ModelTypeDescriptor | undefined;
-  /** The generated model that the model `id` extends, so a derived model narrows its base in one slot. */
-  baseOf(id: string): string | undefined;
+  /** The generated models that the model `id` extends, so a derived model narrows each base in one slot. */
+  basesOf(id: string): readonly string[];
 }
 
 /**

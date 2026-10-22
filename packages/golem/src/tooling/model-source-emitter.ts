@@ -70,8 +70,8 @@ export type ModelDiscriminators = Readonly<Record<string, DiscriminatorValue | r
 export interface FromJsonModelResolver {
   readonly className: string;
   readonly discriminators?: ModelDiscriminators;
-  /** The model that this model extends, so a derived model narrows its base where both judge one property. */
-  readonly base?: string;
+  /** The models that this model extends, so a derived model narrows its bases where they judge one property. */
+  readonly bases?: readonly string[];
   /** Internal generated-model wire decoder expression. */
   readonly decode: (value: string) => string;
   /** Construct a domain model from a nested model initializer. */
@@ -81,8 +81,8 @@ export interface FromJsonModelResolver {
 export interface ToJsonModelResolver {
   readonly className: string;
   readonly discriminators?: ModelDiscriminators;
-  /** The model that this model extends, so a derived model narrows its base where both judge one property. */
-  readonly base?: string;
+  /** The models that this model extends, so a derived model narrows its bases where they judge one property. */
+  readonly bases?: readonly string[];
   /** Internal generated-model wire encoder expression. */
   readonly encode?: (value: string) => string;
 }
@@ -285,7 +285,7 @@ function emitNested(
         : expression;
   }
   if (descriptor.kind === 'intersection') {
-    const bases: ModelBases = { baseOf: (id) => resolveModel(id).base };
+    const bases: ModelBases = { basesOf: (id) => resolveModel(id).bases ?? [] };
     const merged = descriptor.variants.every(variant => !metadata(variant).serde) ? requireComposedObject(descriptor.variants, bases) : undefined;
     if (merged) return emitNested(merged, expression, direction, resolveModel, resolveSerde);
     // A scalar intersection converts by its one converting part.

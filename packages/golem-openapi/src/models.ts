@@ -70,7 +70,10 @@ interface ModelDefinition {
   readonly schemaName: string;
   readonly schema: unknown;
   readonly rawSchema: unknown;
+  /** The model that the generated class extends: the first model `$ref` of the allOf. */
   baseName: string | null;
+  /** The other models the allOf refers to; their fields are in `properties`, and a slot narrows each of them. */
+  otherBaseNames: readonly string[];
   properties: Map<string, unknown>;
   additionalProperties: unknown;
   required: Set<string>;
@@ -254,15 +257,17 @@ function isModelSchema(env: ModelResolveEnv, schema: unknown, visiting = new Set
   return false;
 }
 
-function modelBaseSchemaName(schema: unknown, env: ModelResolveEnv): string | null {
+/** The component schemas that the allOf refers to, in order. */
+function modelBaseSchemaNames(schema: unknown, env: ModelResolveEnv): string[] {
   const record = asRecord(schema);
   const nested = withSchemaBase(env, schema);
   const candidates = Array.isArray(record.allOf) ? record.allOf : [schema];
-  for (const candidate of candidates) {
-    const name = directComponentSchemaRef(candidate, nested);
-    if (name) return name;
-  }
-  return null;
+  return candidates.flatMap((candidate) => directComponentSchemaRef(candidate, nested) ?? []);
+}
+
+/** Every model that the definition extends, its class base and the other refs of its allOf. */
+function modelBases(definition: ModelDefinition | undefined): readonly string[] {
+  return definition ? [...(definition.baseName ? [definition.baseName] : []), ...definition.otherBaseNames] : [];
 }
 
 function modelAdditionalProperties(
@@ -634,7 +639,7 @@ function compositionReader(
     },
     nested: (schema, env) => withSchemaBase(env, schema),
     descriptor: (schema, env) => seen.has(schema) ? undefined : modelConversionDescriptor(schema, definitions, env, direction, seen),
-    baseOf: (id) => definitions.get(id)?.baseName ?? undefined,
+    basesOf: (id) => modelBases(definitions.get(id)),
   };
 }
 
@@ -721,7 +726,7 @@ function modelDiscriminators(definition: ModelDefinition | undefined): ModelDisc
 /** How generated conversion code decodes and constructs a referenced model. */
 function modelResolver(reference: string, definitions: ReadonlyMap<string, ModelDefinition>): FromJsonModelResolver {
   const discriminators = modelDiscriminators(definitions.get(reference));
-  const base = definitions.get(reference)?.baseName;
+  const bases = modelBases(definitions.get(reference));
   return {
     className: `${reference}Model`,
     decode: (value) => `decodeGeneratedModelTrusted(${reference}Model, ${value})`,
@@ -729,7 +734,7 @@ function modelResolver(reference: string, definitions: ReadonlyMap<string, Model
       ? `initialize${reference}(${value})`
       : `new ${reference}Model(${value} as ${reference}Init)`,
     ...(discriminators ? { discriminators } : {}),
-    ...(base ? { base } : {}),
+    ...(bases.length ? { bases } : {}),
   };
 }
 
@@ -789,8 +794,8 @@ function modelToJSONExpression(
     modelConversionDescriptor(schema, definitions, env, 'to'),
     expression,
     (reference) => {
-      const base = definitions.get(reference)?.baseName;
-      return { className: `${reference}Model`, encode: value => `encodeGeneratedModel(${value})`, ...(base ? { base } : {}) };
+      const bases = modelBases(definitions.get(reference));
+      return { className: `${reference}Model`, encode: value => `encodeGeneratedModel(${value})`, ...(bases.length ? { bases } : {}) };
     },
     TEMPORAL_SERDE,
   ));
@@ -1019,6 +1024,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
       schema,
       rawSchema,
       baseName: null,
+      otherBaseNames: [],
       properties: new Map(),
       additionalProperties: null,
       required: new Set(),
@@ -1026,10 +1032,11 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
   }
 
   for (const definition of definitions.values()) {
-    const requestedBase = modelBaseSchemaName(definition.rawSchema, env);
+    const [requestedBase, ...others] = modelBaseSchemaNames(definition.rawSchema, env);
     definition.baseName = requestedBase && definitions.has(requestedBase) && requestedBase !== definition.name
       ? requestedBase
       : null;
+    definition.otherBaseNames = others.filter((name) => definitions.has(name) && name !== definition.name && name !== definition.baseName);
     definition.properties = modelSchemaProperties(env, definition.rawSchema, definition.baseName);
     for (const propertyName of definition.properties.keys()) assertSupportedModelFieldName(propertyName);
     definition.additionalProperties = modelAdditionalProperties(
@@ -1094,6 +1101,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
       schema: rawSchema,
       rawSchema,
       baseName: commonBase,
+      otherBaseNames: [],
       properties: new Map(),
       additionalProperties: null,
       required: new Set(),

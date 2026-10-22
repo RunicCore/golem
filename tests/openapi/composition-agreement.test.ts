@@ -507,6 +507,23 @@ const rows: readonly Row[] = [
     }],
     rejected: [{ pet: { name: 'n', lives: 'x' } }],
   },
+  {
+    shape: 'a derived component narrows an inherited model property to a model with two base refs',
+    fixture: 'covariant-two-bases',
+    root: 'Derived',
+    document: componentDocument('Derived', {
+      Pet: object({ name: text }, { required: ['name'] }),
+      Named: object({ nick: text }),
+      Cat: { allOf: [ref('Pet'), ref('Named'), object({ lives: { type: 'integer' } })] },
+      Base: object({ named: ref('Named') }),
+      Derived: { allOf: [ref('Base'), object({ named: ref('Cat') })] },
+    }),
+    accepted: [{
+      wire: { named: { name: 'n', nick: 'k', lives: 9 } },
+      model: ({ CatModel }) => ({ named: construct(CatModel, { name: 'n', nick: 'k', lives: 9 }) }),
+    }],
+    rejected: [{ named: { name: 'n', lives: 'x' } }],
+  },
   // Arrays and tuples that convert alike combine by their items, so items that differ in null or required names agree.
   {
     shape: 'a derived component narrows an inherited array of nullable date-times to date-times',

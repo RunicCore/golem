@@ -93,14 +93,15 @@ export function composeObjects<C>(parts: readonly ObjectPart<C>[], slot: SlotRul
 const NEVER: ModelTypeDescriptor = { kind: 'never' };
 
 /**
- * The base of each model, so a derived model narrows its base in one slot (a covariant override). A model is named by the
- * `id` of a generated-model descriptor or the `name` of a reference descriptor, as the caller's descriptors name it.
+ * The bases of each model (every `$ref` of its allOf), so a derived model narrows each of its bases in one slot (a covariant
+ * override). A model is named by the `id` of a generated-model descriptor or the `name` of a reference descriptor, as the
+ * caller's descriptors name it.
  */
 export interface ModelBases {
-  baseOf(id: string): string | undefined;
+  basesOf(id: string): readonly string[];
 }
 
-const NO_BASES: ModelBases = { baseOf: () => undefined };
+const NO_BASES: ModelBases = { basesOf: () => [] };
 
 /**
  * The slot rule of descriptors: the codec, the model path and the OpenAPI resolver pick a property's descriptor with it.
@@ -231,7 +232,7 @@ function admits(child: ModelTypeDescriptor, variant: ModelTypeDescriptor): boole
 }
 
 /**
- * A covariant override: a child whose model's base chain holds another child's model narrows it, so the most derived model
+ * A covariant override: a child whose model's base graph holds another child's model narrows it, so the most derived model
  * decides (`Pet` and `Cat`, where `Cat` extends `Pet`, give `Cat`); arrays of them combine by their items. The narrowed child's
  * constraints join the child that narrows it. Undefined when no child narrows another.
  */
@@ -249,9 +250,12 @@ function narrowsModel(derived: ModelTypeDescriptor, base: ModelTypeDescriptor, m
   const baseId = modelName(base);
   if (derivedId === undefined || baseId === undefined) return false;
   const seen = new Set<string>();
-  for (let id = models.baseOf(derivedId); id !== undefined && !seen.has(id); id = models.baseOf(id)) {
+  const pending = [...models.basesOf(derivedId)];
+  for (let id = pending.pop(); id !== undefined; id = pending.pop()) {
     if (id === baseId) return true;
+    if (seen.has(id)) continue;
     seen.add(id);
+    pending.push(...models.basesOf(id));
   }
   return false;
 }
