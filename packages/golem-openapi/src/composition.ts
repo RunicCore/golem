@@ -86,9 +86,16 @@ export type Composition<S> =
    * with `unevaluatedProperties: false` keeps that model the same way.
    */
   | { readonly kind: 'inherits'; readonly descriptor: ModelTypeDescriptor; readonly never: readonly NeverName[] }
+  /**
+   * An allOf with a union member (`allOf [X, { oneOf: [A, B] }]`) is a union of objects: `X AND A` or `X AND B`, each
+   * resolved as an object composition. The caller builds a union of the merged objects.
+   */
+  | { readonly kind: 'variants'; readonly variants: readonly ObjectComposition<S>[]; readonly never: readonly NeverName[] }
   /** Not an object composition: a scalar, sequence, oneOf or constraint-only allOf; the caller keeps its own reading. */
   | { readonly kind: 'members' }
   | { readonly kind: 'rejected'; readonly code: string; readonly message: string };
+
+export type ObjectComposition<S> = Extract<Composition<S>, { readonly kind: 'object' }>;
 
 /** An allOf member that converts nothing: it adds constraints, or nothing at all (`{ description }`, `{}`). */
 export function isConstraintOnlyPart(part: ModelTypeDescriptor): boolean {
@@ -125,6 +132,10 @@ function resolveObjects<S>(
   const deciding = members.filter(({ descriptor }) => !isConstraintOnlyPart(descriptor));
   if (deciding.length === 0) return { kind: 'members' };
   const constraints = members.flatMap(({ descriptor }) => isConstraintOnlyPart(descriptor) ? descriptor.constraints ?? [] : []);
+  if (position === 'field') {
+    const distributed = distributeUnion(schema, scope, nested, reader);
+    if (distributed) return distributed;
+  }
   const rule = slotRule(reader);
   const ownPart = ownObjectPart(schema, scope, reader);
   const [only] = deciding;
@@ -184,6 +195,34 @@ function resolveObjects<S>(
 }
 
 /**
+ * The schema's one inline union member, spread over its variants: each variant replaces the union in the allOf and the result
+ * resolves as an object. A rejected variant stops generation; a variant that is no object leaves the schema to its members.
+ */
+function distributeUnion<S>(
+  schema: Readonly<Record<string, unknown>>,
+  scope: S,
+  nested: S,
+  reader: CompositionReader<S>,
+): Composition<S> | undefined {
+  const members = Array.isArray(schema.allOf) ? schema.allOf : [];
+  const unions = members.flatMap((member, index) =>
+    isJsonObject(member) && !reader.reference(member, nested) && (Array.isArray(member.oneOf) || Array.isArray(member.anyOf)) ? [index] : []);
+  const [index, another] = unions;
+  const union = index === undefined ? undefined : members[index];
+  if (another !== undefined || !isJsonObject(union)) return undefined;
+  const variants = Array.isArray(union.oneOf) ? union.oneOf : Array.isArray(union.anyOf) ? union.anyOf : [];
+  const objects: ObjectComposition<S>[] = [];
+  for (const variant of variants) {
+    const composed = resolveObjects({ ...schema, allOf: members.map((member, at) => at === index ? variant : member) }, scope, reader, 'field');
+    if (composed.kind === 'rejected') return composed;
+    if (composed.kind !== 'object') return undefined;
+    objects.push(composed);
+  }
+  const never = new Map(objects.flatMap((object) => object.never).map((name) => [name.name, name]));
+  return objects.length > 1 ? { kind: 'variants', variants: objects, never: [...never.values()] } : objects[0];
+}
+
+/**
  * One model reference at field position stays the model. With `unevaluatedProperties: false` and an open model, the names
  * that the model lists are the only evaluated names, so they become a `propertyNames` constraint on the model.
  */
@@ -203,7 +242,7 @@ function loneReference<S>(
 
 /** The names of a composition that no value can hold; the caller warns about each. */
 export function neverNames<S>(composition: Composition<S>): readonly NeverName[] {
-  return composition.kind === 'inherits' || composition.kind === 'object' ? composition.never : [];
+  return composition.kind === 'inherits' || composition.kind === 'object' || composition.kind === 'variants' ? composition.never : [];
 }
 
 /** Why a name holds no value, and the fix: the two-step fix for a closed member, one schema for disjoint types. */

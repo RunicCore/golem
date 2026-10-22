@@ -327,6 +327,9 @@ function modelFieldType(
   // then oneOf and anyOf.
   const composition = isJsonObject(schema) ? fieldComposition(schema, definitions, env, 'from', seen) : undefined;
   if (composition?.kind === 'object') return objectCompositionType(composition, definitions, seen);
+  if (composition?.kind === 'variants') {
+    return composition.variants.map((variant) => `(${objectCompositionType(variant, definitions, seen)})`).join(' | ');
+  }
   const allOfMembers = isJsonObject(schema) && hasAllOfMembers(schema)
     ? schema.allOf.map((item) => ({ item, descriptor: modelConversionDescriptor(item, definitions, nested, 'from', seen) }))
     : [];
@@ -516,6 +519,7 @@ function modelConversionDescriptor(
     const composition = resolvedComposition(schema, definitions, env, direction, seen, position);
     if (composition.kind === 'object') return objectCompositionDescriptor(composition);
     if (composition.kind === 'inherits') return composition.descriptor;
+    if (composition.kind === 'variants') return { kind: 'union', variants: composition.variants.map(objectCompositionDescriptor) };
     const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
     // Deciding members win. Members that only constrain, or restate an array without converting it, leave the schema's own
     // array, oneOf, anyOf and properties keywords to convert the field; the constraints join that descriptor.
