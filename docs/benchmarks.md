@@ -6,6 +6,12 @@ Compare how fast Golem's generated code parses, stringifies and validates next t
 Benchmarks are for reference purposes only.
 :::
 
+The page has two tabs.
+
+**Compare libraries** puts Golem next to libraries that do the same job, and ranks them in each row. Libraries are ranked inside their own group only. Two groups do different jobs (for example, one checks values and the other does not), so a rank never compares libraries of two groups.
+
+**What each feature costs** compares Golem with itself: validation on and off, `IModel` and `IObject`, many converted fields and none, and invalid input and valid input.
+
 <BenchmarkChart>
 <template #plain>
 
@@ -372,7 +378,41 @@ They were measured at commit c7513ad. To measure them on your machine, run `npm 
 
 ## What is measured
 
-Every library gets the same JSON payload. Before timing, each library must turn its parsed value back into the original JSON, and the libraries that validate must reject invalid variants of it. Those checks run in a separate process, so every library is timed on valid input only. A validator runs slower after it has rejected differently shaped input: V8 re-optimises a validator's generated function for the new object shapes. typia shows the same effect. Each library is timed in its own process, in two rounds with the library order reversed in the second. In each round a case is warmed up for 120 ms, then timed in two batches of 90 ms; the table shows the median of the four batches. The run is short, so read the ratios between libraries and not the absolute numbers. A library that can't do a case says why instead of showing a number.
+A case is one payload, one operation and one library. The tables show the median speed of a case in operations per second. The payloads Simple object, Nested object and Large array have no converting fields. Checkout converts a few fields (money, a hex code and dates). Checkout, no conversion converts none. The cost tab adds Serde none and Serde many. They have the same 21 fields, and in Serde many every field converts.
+
+The run is short, so read the ratios between libraries in one run and not the absolute numbers. Do not compare numbers from two machines or from two runs.
+
+### Fairness rules
+
+1. **The same job in a group.** A group holds only libraries that do the same job. A library that does less work in a case keeps its number, with a mark and a note on that cell. For example, class-validator does not reject unknown properties.
+2. **The same JSON text.** Every library gets the same JSON text for a case and parses it in its own way. No library gets a value that was decoded for it.
+3. **Proof before timing.** Each library must turn its parsed value back into the original JSON. A library that validates must reject each invalid variant of the payload. A library that fails gets no number. These checks run in a separate process.
+4. **The documented best setup.** Each library runs in the setup that its own documentation shows. For example, Typia runs through its transform build step, and Ajv compiles each schema once. No library gets tuning that its documentation does not show.
+5. **One process for each library, valid input only.** Each library is timed in its own process, on valid input only. A validator runs slower after it has rejected differently shaped input, because V8 optimizes its generated function again for the new object shapes. The cost tab times invalid input in a separate process.
+6. **A rotated order.** The run has two rounds, and the library order reverses in the second round. The order of the cases rotates for each batch. In each round a case is warmed up for 120 ms and then timed in two batches of 90 ms, so the table shows the median of four batches.
+7. **Every result is consumed.** A checksum reads each result, so the engine cannot remove the timed call.
+8. **The noise is recorded.** Each case stores its minimum, median and maximum. Each run stores the host load and the spread of a control. The control is native `JSON.parse` and `JSON.stringify`, timed in its own process.
+9. **Releases compare in one session.** The release check compares two checkouts in one session, with their runs interleaved and with the control. A ratio between two separate days is not evidence.
+10. **A reason, not a number.** A library that cannot do a case shows the reason. For example, Typia checks every rule but does not convert values.
+
+### Ranks and ties
+
+A rank orders the libraries of one group in one row. A row is one payload and one operation, and the score of a library is its median speed. Rank 1 is the fastest. There is no rank across groups, and no claim that one library is the fastest overall.
+
+Libraries tie when they are inside the noise band of the run. The band is the spread of the control in that run, and the legend under the table shows it. A library ties the fastest library of its row when it is within the band of that library. Tied libraries share a rank, and a tied cell shows `=#` before the rank. The next rank is skipped, so two libraries at rank 1 are followed by rank 3.
+
+The group score of a library is the geometric mean of its speed divided by the speed of the fastest library, over the rows that every library of the group can run. The fastest library of a row scores 1.00 in that row. The table shows the score with "n of m rows": n rows count, out of m rows in the group. A row where a library cannot run the case does not count.
+
+### What each feature costs
+
+Each ratio on the second tab divides one speed by another speed, for the same operation on the same payload. A ratio below 1.00x means that the first speed is lower.
+
+- **on/off** divides the speed with validation on by the speed with validation off. It is shown for `IModel` and for `IObject`. Off is a build with validation off. Validate has no off mode.
+- **IModel/IObject** divides the `IModel` speed by the `IObject` speed, with validation on in both.
+- **serde many/none** divides the speed on Serde many by the speed on Serde none, with validation on. It is shown on the Serde many rows only.
+- **invalid/valid** divides the speed on one invalid value by the speed on a valid value, with validation on. It is shown for parse, decode and validate. It is shown, not ranked: Golem makes the path of a valid value fast, and the path of an invalid value builds the error and can be slower.
+
+A dash means that the pair does not apply. "Not run" means that the run did not time the pair. No cell on this tab has a rank. The tab has no release column. The release check below writes its result to a file and not to this page.
 
 ## Run it yourself
 
@@ -380,18 +420,26 @@ Every library gets the same JSON payload. Before timing, each library must turn 
 npm run bench
 ```
 
-It takes about one minute and rewrites `docs/public/benchmarks/results.json`.
+It takes about 2.5 minutes (145 seconds on an Apple M4) and rewrites `docs/public/benchmarks/results.json` with both tables. Stop other work on the machine first. The run stores the host load and the spread of the control with the numbers.
 
-To run only some libraries, name them with `--adapters`:
-
-```bash
-npm run bench -- --adapters golem-object,zod
-```
-
-The adapters are `golem-object`, `typia`, `zod`, `ajv`, `golem`, `class-transformer`, `golem-validated` and `class-validator`. A name that is not in this list stops the run before it starts, and the message lists the valid names. A run with `--adapters` writes `.cache/benchmark/results.json` and leaves the page's results unchanged.
-
-To compare two runs:
+To run only some libraries or payloads, name them with `--adapters` and `--payloads`:
 
 ```bash
-npm run bench:compare -- before.json after.json
+npm run bench -- --adapters golem-object,zod --payloads simple,nested
 ```
+
+The adapters are `golem-object`, `golem-object-off`, `control`, `typia`, `zod`, `ajv`, `golem`, `class-transformer`, `golem-validated` and `class-validator`. `golem-object-off` is `IObject` built with validation off, and it feeds the cost tab. `control` is native JSON, and it sets the noise band. Neither is a column of the compare tab. The payloads are `simple`, `nested`, `array`, `checkout`, `checkout-plain`, `serde-none` and `serde-many`. A name that is not in these lists stops the run before it starts, with exit code 2, and the message lists the valid names. A run with `--adapters` or `--payloads` writes `.cache/benchmark/results.json` and leaves the results of the page unchanged.
+
+### Check a release
+
+Before you cut a release, compare this checkout with an earlier one:
+
+```bash
+npm run bench:release -- --base <git ref>
+```
+
+The base is a branch, a tag or a commit. The command exports the base into `.cache/benchmark/release` and builds it there. Then it times both sides in one session, in alternating rounds, with the control on both sides. It times Golem only, so `--adapters` accepts `golem-object`, `golem-object-off`, `golem` and `golem-validated`, and `--payloads` accepts the payloads above.
+
+The noise band comes from the control on both sides. A valid-path case is slower when this checkout is below the base by more than the band in both halves of the rounds. One slower case stops the release. Invalid input is shown and has no verdict.
+
+The exit code is 0 when no case is slower, 1 when a case is slower, and 2 when the call is wrong (for example, a missing or unknown base). The command writes the full result to `.cache/benchmark/release.json`. It changes nothing else in the repository.
