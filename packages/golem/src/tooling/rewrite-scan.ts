@@ -271,6 +271,33 @@ function resolvedSymbolAt(checker: ts.TypeChecker, node: ts.Node): ts.Symbol | u
   return resolveSymbol(checker, symbolAt(checker, node));
 }
 
+/** The symbol one import or export specifier names in the module it names, or undefined when it names none (a local `export { X }`, a default or namespace import). */
+function immediateTarget(checker: ts.TypeChecker, declaration: ts.Node): ts.Symbol | undefined {
+  const statement = ts.isImportSpecifier(declaration) ? declaration.parent.parent.parent : ts.isExportSpecifier(declaration) ? declaration.parent.parent : undefined;
+  const specifier = statement && (ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) ? statement.moduleSpecifier : undefined;
+  const module = specifier && ts.isStringLiteralLike(specifier) ? checker.getSymbolAtLocation(specifier) : undefined;
+  const name = (ts.isImportSpecifier(declaration) || ts.isExportSpecifier(declaration) ? declaration.propertyName ?? declaration.name : undefined)?.text;
+  return module && checker.getExportsOfModule(module).find((exported) => exported.name === name);
+}
+
+/**
+ * Adds to `dependencies` the files that a name passes through, one import or export specifier at a time, before it reaches its declaration.
+ * `resolveSymbol` jumps to the declaration, so a file that only re-exports the name is not seen: retargeting it changes the codec id with no edit to the key table.
+ */
+function addAliasChainFiles(checker: ts.TypeChecker, input: { readonly root: string; readonly from: ts.SourceFile; readonly dependencies: Set<string> }, name: ts.Node): void {
+  const seen = new Set<ts.Symbol>();
+  let symbol = symbolAt(checker, name);
+  while (symbol && (symbol.flags & ts.SymbolFlags.Alias) !== 0 && !seen.has(symbol)) {
+    seen.add(symbol);
+    const declaration = symbol.declarations?.[0];
+    if (!declaration) return;
+    const file = declaration.getSourceFile();
+    // An installed package is not edited in a dev session; its manifest names what a rewrite depends on.
+    if (file !== input.from && !file.fileName.split(/[\\/]/).includes('node_modules')) input.dependencies.add(portable(input.root, file.fileName));
+    symbol = immediateTarget(checker, declaration);
+  }
+}
+
 function unwrapParentheses(node: ts.Expression): ts.Expression {
   while (ts.isParenthesizedExpression(node)) node = node.expression;
   return node;
@@ -480,10 +507,10 @@ interface NestBinding {
 }
 
 function nestBinding(
-  input: { readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile; readonly dependencies: Set<string> },
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile; readonly dependencies: Set<string> },
   typeNode: ts.TypeNode,
 ): NestBinding {
-  const { checker, keys, file, dependencies } = input;
+  const { root, checker, keys, file, dependencies } = input;
   const walked = nestModelType(typeNode, false);
   const model = walked?.model;
   const unbound = { id: '', primitive: false, golemModel: false, label: (model ?? typeNode).getText(file), array: walked?.array ?? false };
@@ -492,6 +519,7 @@ function nestBinding(
   if (NEST_PRIMITIVE_TYPES.has(label.slice(label.lastIndexOf('.') + 1))) return { ...unbound, primitive: true };
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
+  if (name) addAliasChainFiles(checker, { root, from: file, dependencies }, name);
   if (!symbol) return { ...unbound, golemModel: modelDeclarationKind(checker, model) !== undefined };
   return { ...unbound, id: codecIdOf(checker, keys, symbol, dependencies), golemModel: isGolemModel(checker, symbol), name, defaultExport: symbol.name === 'default' };
 }
@@ -686,6 +714,7 @@ function scanFile(
       return;
     }
     const symbol = resolvedSymbolAt(checker, typeName);
+    addAliasChainFiles(checker, { root, from: file, dependencies: scan.dependencies }, typeName);
     const id = symbol ? codecIdOf(checker, keys, symbol, scan.dependencies) : '';
     if (id === '') {
       const model = fieldProvenance(checker, call.typeArguments[0], []).anonymous;
@@ -718,7 +747,7 @@ function scanFile(
     const names = decoratorNames(parameter);
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR)) return;
-    const { id, primitive, golemModel, label, array, name, defaultExport } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, parameter.type);
+    const { id, primitive, golemModel, label, array, name, defaultExport } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies }, parameter.type);
     if (primitive) return;
     if (id === '') {
       if (golemModel) scan.diagnostics.push(locate(root, file, parameter.type, CODE_NEST_NO_CODEC, defaultExport
@@ -739,7 +768,7 @@ function scanFile(
     if (!method.type || !method.body || !ts.isClassLike(method.parent)) return;
     const returned = nestModelType(method.type, true);
     if (!returned || hasDecorator(decoratorNames(method), NEST_RETURN_DECORATOR)) return;
-    const { id, primitive, name } = nestBinding({ checker, keys, file, dependencies: scan.dependencies }, returned.model);
+    const { id, primitive, name } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies }, returned.model);
     if (primitive || id === '') return;
     scan.edits.push(insertion(method.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_RETURN_DECORATOR}(${JSON.stringify(id)}${returned.array ? ', true' : ''}) `));
     importOf(scan, root, file, method, NEST_RETURN_DECORATOR, NEST_MODULE);

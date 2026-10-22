@@ -380,6 +380,24 @@ test('vite serve: regenerating a model transforms again the module that used it,
   assert.equal(reloads(), 1);
 });
 
+test('vite serve: retargeting an alias that a module parses through transforms it again with the new codec id', async (t) => {
+  // protects: T-10 a type-only edit in a file the module reaches only by type must not leave the old codec id
+  const root = await generatedProject(t, 'vite-alias');
+  write(root, 'src/alias.ts', "export type { TMoney as TAlias } from './money.model.js';\n");
+  write(root, 'src/use-alias.ts', `import { parse } from '${SERDE}';\nimport type { TAlias } from './alias.js';\n\nexport const value = parse<TAlias>('{}');\n`);
+  const server = await serve(t, root);
+  const moneyId = codecId(root, 'TMoney');
+  const tagId = codecId(root, 'TTag');
+
+  assert.match((await server.transformRequest('/src/use-alias.ts'))?.code ?? '', new RegExp(`"${moneyId}"`));
+  write(root, 'src/alias.ts', "export type { TTag as TAlias } from './money.model.js';\n");
+  server.watcher.emit('change', path.join(root, 'src/alias.ts'));
+  assert.equal(server.moduleGraph.getModuleById(path.join(root, 'src/use-alias.ts'))?.transformResult, null);
+  const code = (await server.transformRequest('/src/use-alias.ts'))?.code ?? '';
+  assert.match(code, new RegExp(`"${tagId}"`));
+  assert.doesNotMatch(code, new RegExp(`"${moneyId}"`));
+});
+
 test('vite serve: a module whose model had no generated code transforms again once golem generate has written it', async (t) => {
   const root = await generatedProject(t, 'vite-recover', { generate: false });
   const server = await serve(t, root);

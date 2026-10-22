@@ -345,6 +345,7 @@ export interface NamedExports extends Node {
 }
 export interface ExportSpecifier extends Node {
   readonly kind: KindOf<'ExportSpecifier'>;
+  readonly propertyName?: Identifier;
   readonly name: Identifier;
 }
 export interface NamespaceExport extends Node {
