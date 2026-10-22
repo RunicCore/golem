@@ -6,7 +6,9 @@ import {
   assertAbsolute,
   canonicalFilename,
   createContractAnalysis,
+  createModelStubProgram,
   createProgram,
+  discoverModelSources,
   loadModelManifests,
   modelBoundary,
   retainedProgramSession,
@@ -224,12 +226,12 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     observe(source);
     if (!existsSync(source) || !statSync(source).isFile()) throw new Error(`Controller source does not exist: ${source}`);
   }
-  const programInfo = createProgram(
-    sources,
-    normalized.root,
-    observe,
-    retainedProgramSession(context.session, '@exprtlabs/golem-ts-openapi', normalized.root),
-  );
+  const session = retainedProgramSession(context.session, '@exprtlabs/golem-ts-openapi', normalized.root);
+  // With the models job known, a generated base class is a stub of its model, as in that job's program: the generated file on
+  // disk is missing on the first run and stale until the models job rewrites it, which runs after this job.
+  const programInfo = normalized.boundary
+    ? createModelStubProgram(sources, normalized.root, normalized.boundary, discoverModelSources(normalized.boundary.root, undefined, normalized.boundary.suffixes), observe, session)
+    : createProgram(sources, normalized.root, observe, session);
   using program = programInfo.program;
   const checker = program.getTypeChecker();
   const contractAnalysis = createContractAnalysis(program, {
