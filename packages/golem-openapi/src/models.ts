@@ -51,7 +51,7 @@ import {
   type CompositionReader,
   type SlotChild,
 } from './composition.js';
-import { effectiveSchemaTypes, resolveLocal, type OpenApiSchema } from './normalize.js';
+import { effectiveSchemaTypes, parameterSchema, resolveLocal, type NormalizedOperation, type OpenApiSchema } from './normalize.js';
 import { generatedBanner, GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
@@ -745,15 +745,24 @@ function codedConflict(thrown: unknown): unknown {
     : thrown;
 }
 
-/** A conversion conflict of the model path carries its code and names the component whose field it converts. */
-function withConflictCode(owner: string, emit: () => string): string {
+/** Where the schemas of a component sit: its name, and the bundled component an error names. */
+function componentSite(name: string): CompositionSite {
+  return {
+    where: (pointer) => `schema ${JSON.stringify(name)} at #/components/schemas/${escapeJsonPointerToken(name)}${pointer}`,
+    origins: (where) => [componentOrigin('schemas', name, where)],
+  };
+}
+
+/** A conversion conflict of the model path carries its code and names the component, or the inline schema, it converts. */
+function withConflictCode(owner: string | CompositionSite, emit: () => string): string {
   try {
     return emit();
   } catch (thrown) {
     if (!(thrown instanceof CompositionConflictError)) throw thrown;
     const coded = new CompositionError(COMPOSITION_CONVERSION_CONFLICT, conflictMessage(thrown.reason));
-    const where = `schema ${JSON.stringify(owner)} at #/components/schemas/${escapeJsonPointerToken(owner)}`;
-    throw new LocatedError(`${where}: ${coded.message}`, [componentOrigin('schemas', owner, where)], { cause: coded });
+    const site = typeof owner === 'string' ? componentSite(owner) : owner;
+    const where = site.where('');
+    throw new LocatedError(`${where}: ${coded.message}`, site.origins(where), { cause: coded });
   }
 }
 
@@ -762,7 +771,7 @@ function modelFromJSONExpression(
   expression: string,
   definitions: ReadonlyMap<string, ModelDefinition>,
   env: ModelResolveEnv,
-  owner: string,
+  owner: string | CompositionSite,
 ): string {
   return withConflictCode(owner, () => emitModelFromJSON(
     modelConversionDescriptor(schema, definitions, env, 'from'),
@@ -777,7 +786,7 @@ function modelInitExpression(
   expression: string,
   definitions: ReadonlyMap<string, ModelDefinition>,
   env: ModelResolveEnv,
-  owner: string,
+  owner: string | CompositionSite,
 ): string {
   const descriptor = modelConversionDescriptor(schema, definitions, env, 'from');
   return withConflictCode(owner, () => emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions)));
@@ -788,7 +797,7 @@ function modelToJSONExpression(
   expression: string,
   definitions: ReadonlyMap<string, ModelDefinition>,
   env: ModelResolveEnv,
-  owner: string,
+  owner: string | CompositionSite,
 ): string {
   return withConflictCode(owner, () => emitModelToJSON(
     modelConversionDescriptor(schema, definitions, env, 'to'),
@@ -952,14 +961,22 @@ function exactComponentTarget(schema: unknown, env: ModelResolveEnv): ExactCompo
   return reference ? resolveExactComponent(reference, base, env.resources, env.document) : null;
 }
 
+/** Where a checked schema sits, for the error that names it. */
+interface CompositionSite {
+  /** The place of `pointer`, a JSON Pointer inside the schema. */
+  where(pointer: string): string;
+  /** The bundled components that the place names, so the error can append where each came from. */
+  origins(where: string): readonly ReturnType<typeof componentOrigin>[];
+}
+
 /**
  * Stops generation for an allOf that no object satisfies or that converts one property differently, and warns about each
- * property that no value can hold. Reads every schema inside the component, so the error names the schema's pointer. Such
+ * property that no value can hold. Reads every schema inside the root, so the error names the schema's pointer. Such
  * a property of a model component becomes `never`, so its class field passes the value through. A component that is not
  * a model (an array or a union) is read at field position, as the schemas that refer to it read it.
  */
 function checkComposition(
-  schemaName: string,
+  site: CompositionSite,
   rawSchema: unknown,
   definition: ModelDefinition | undefined,
   definitions: ReadonlyMap<string, ModelDefinition>,
@@ -967,17 +984,16 @@ function checkComposition(
   resources: ResourceIndex | undefined,
   warn: (code: string, message: string) => void,
 ): void {
-  const named = `schema ${JSON.stringify(schemaName)}`;
   const visit = (schema: unknown, scope: ModelResolveEnv, position: 'field' | 'definition', pointer: string): void => {
     if (!isJsonObject(schema) || directComponentSchemaRef(schema, withSchemaBase(scope, schema))) return;
-    const where = `${named} at #/components/schemas/${escapeJsonPointerToken(schemaName)}${pointer}`;
+    const where = site.where(pointer);
     if (hasAllOfMembers(schema)) {
       let composition: Composition<ModelResolveEnv>;
       try {
         composition = resolvedComposition(schema, definitions, scope, 'to', new Set([schema]), position);
       } catch (error) {
         if (!(error instanceof CompositionError)) throw error;
-        throw new LocatedError(`${where}: ${error.message}`, [componentOrigin('schemas', schemaName, where)], { cause: error });
+        throw new LocatedError(`${where}: ${error.message}`, site.origins(where), { cause: error });
       }
       for (const never of neverNames(composition)) {
         warn(COMPOSITION_PROPERTY_NEVER, `Property ${JSON.stringify(never.name)} of ${where} ${neverReason(never)}`);
@@ -995,6 +1011,58 @@ function checkComposition(
     }
   };
   visit(rawSchema, modelEnv(document, undefined, undefined, resources), definition ? 'definition' : 'field', '');
+}
+
+/** Whether the schema or a schema inside it has an allOf; a `$ref` target is a component and is read as one. */
+function containsAllOf(value: unknown, seen = new Set<unknown>()): boolean {
+  if (typeof value !== 'object' || value === null || seen.has(value)) return false;
+  seen.add(value);
+  if (!Array.isArray(value) && 'allOf' in value) return true;
+  return Object.values(value).some((child) => containsAllOf(child, seen));
+}
+
+/**
+ * An inline schema of an operation (a parameter, a request body, a response or one of its headers) reads its allOf as
+ * a component does: the same resolver stops generation with the same code, and warns about each name no value can hold.
+ */
+export function checkOperationCompositions(
+  operations: readonly NormalizedOperation[],
+  analysis: Pick<OpenApiModelAnalysis, 'definitions' | 'resources'>,
+  document: unknown,
+): GolemDiagnostic[] {
+  const diagnostics: GolemDiagnostic[] = [];
+  const warn = (code: string, message: string): void => {
+    diagnostics.push({ code, severity: GolemDiagnosticSeverity.Warning, message });
+  };
+  const env = modelEnv(document, undefined, undefined, analysis.resources);
+  const check = (schema: unknown, place: string, direction: 'from' | 'to'): void => {
+    const site: CompositionSite = { where: (pointer) => `${place} at #${pointer}`, origins: () => [] };
+    checkComposition(site, schema, undefined, analysis.definitions, document, analysis.resources, warn);
+    // Members that are not objects convert in the model path; no component reads an inline schema there, so convert it once.
+    if (!containsAllOf(schema)) return;
+    const convert = direction === 'from' ? modelFromJSONExpression : modelToJSONExpression;
+    convert(schema, 'value', analysis.definitions, env, site);
+  };
+  for (const operation of operations) {
+    const owner = `of operation ${JSON.stringify(operation.name)}`;
+    for (const parameter of operation.parameters) {
+      check(parameterSchema(parameter), `schema of ${parameter.in} parameter ${JSON.stringify(parameter.name)} ${owner}`, 'to');
+    }
+    for (const media of operation.requestContent) {
+      check(media.schema, `schema of request body ${media.contentType} ${owner}`, 'to');
+      check(media.itemSchema, `item schema of request body ${media.contentType} ${owner}`, 'to');
+    }
+    for (const response of operation.responses) {
+      for (const media of response.content) {
+        check(media.schema, `schema of ${response.status} response ${media.contentType} ${owner}`, 'from');
+        check(media.itemSchema, `item schema of ${response.status} response ${media.contentType} ${owner}`, 'from');
+      }
+      for (const [name, header] of objectEntries(response.headers)) {
+        check(parameterSchema(resolveLocal(document, header)), `schema of ${response.status} response header ${JSON.stringify(name)} ${owner}`, 'from');
+      }
+    }
+  }
+  return diagnostics;
 }
 
 /** One JSON Pointer token. */
@@ -1072,7 +1140,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
   for (const [rawName, rawSchema] of objectEntries(schemas)) {
     const definition = definitions.get(identifier(rawName));
     const model = definition?.schemaName === rawName ? definition : undefined;
-    checkComposition(rawName, model ? model.rawSchema : rawSchema, model, definitions, document, resources, warn);
+    checkComposition(componentSite(rawName), model ? model.rawSchema : rawSchema, model, definitions, document, resources, warn);
   }
 
   // Union models are decided against declared inheritance only, so the result

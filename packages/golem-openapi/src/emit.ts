@@ -14,6 +14,7 @@ import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
 import {
   analyzeOpenApiModels,
+  checkOperationCompositions,
   generateModelManifest,
   generateOpenApiModelArtifacts,
   type OpenApiDates,
@@ -166,6 +167,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   const output = path.resolve(options.output);
   const plan = buildEmissionPlan(document, ir, profile);
   const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date');
+  const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
   const schemaData = profile.validation && plan.hasOutboundOperations
     ? buildSchemaData(document, ir)
     : undefined;
@@ -237,7 +239,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   files.set('index.ts', generateIndex(profile, plan, modelReexports));
   assertUniquePublicExports(files);
   assertPortableFilenames(files.keys());
-  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...modelDiagnostics]) };
+  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
 }
 
 /**

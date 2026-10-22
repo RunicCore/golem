@@ -775,6 +775,27 @@ for (const row of rows) {
   }
 }
 
+const dateTimeAndModel = { allOf: [dateTime, ref('Thing')] };
+const inlineObject = (m: Record<string, unknown>): Record<string, unknown> => object({ m }, { required: ['m'] });
+const inlineBody = (m: Record<string, unknown>): Record<string, unknown> => ({
+  required: true,
+  content: { 'application/json': { schema: inlineObject(m) } },
+});
+
+/** One POST operation with inline bodies: the document of `operation` replaces the default request body and response. */
+function operationDocument(operation: Record<string, unknown>): Record<string, unknown> {
+  return {
+    openapi: '3.1.0',
+    info: { title: 'Composition', version: '1' },
+    paths: {
+      '/visits': {
+        post: { operationId: 'postVisit', responses: { 204: { description: 'none' } }, ...operation },
+      },
+    },
+    components: { schemas: { Thing: object({ n: text }) } },
+  };
+}
+
 /**
  * Shapes that stop generation: no object satisfies them, or two members convert one value in two ways. The error names
  * its code, the schema pointer and the fix.
@@ -843,6 +864,16 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
       { e: { type: 'array', items: { allOf: [object({ x: dateTime }), object({ x: ref('M') })] } } },
       { M: object({ n: text }) },
     ),
+  },
+  {
+    shape: 'an inline request body whose members convert the value to a Date and to a model',
+    error: /schema of request body application\/json of operation "postVisit" at #(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
+    document: operationDocument({ requestBody: inlineBody(dateTimeAndModel) }),
+  },
+  {
+    shape: 'an inline response body whose members convert the value to a Date and to a model',
+    error: /schema of 200 response application\/json of operation "postVisit" at #(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
+    document: operationDocument({ responses: { 200: { description: 'ok', content: { 'application/json': { schema: inlineObject(dateTimeAndModel) } } } } }),
   },
 ];
 
