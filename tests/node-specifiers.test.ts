@@ -34,6 +34,11 @@ test('a side-effect import of a script file, which has no module symbol, gets th
   assert.equal((await edited('src/main.ts')).specifiers.get('./setup'), './setup.js');
 });
 
+test('a side-effect import through a paths alias of a script file gets the relative path of the emitted file', async () => {
+  // protects: T-146 a paths alias to a script file gets a Node-loadable path
+  assert.equal((await edited('src/main.ts')).specifiers.get('@lib/boot'), './lib/boot.js');
+});
+
 test('relative folder import gets /index and the emitted extension, also with a trailing slash', async () => {
   const { specifiers } = (await edited('src/main.ts'));
   assert.equal(specifiers.get('./dir'), './dir/index.js');

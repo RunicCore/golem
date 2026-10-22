@@ -146,20 +146,43 @@ function packageSpecifier(specifier: string, file: string, options: NodeSpecifie
 
 const EXTENSIONLESS = ['.ts', '.tsx', '.js', '.jsx'];
 
+/** The paths that a `paths` alias maps `specifier` to: the targets of its exact key, else of the key with the longest prefix, against the base of the `paths`. */
+function aliasPaths(specifier: string, compilerOptions: ts.CompilerOptions): string[] {
+  const { paths } = compilerOptions;
+  const base = compilerOptions.baseUrl ?? compilerOptions.pathsBasePath;
+  if (!isRecord(paths) || typeof base !== 'string') return [];
+  let best: { readonly star: string; readonly prefix: number; readonly targets: unknown } | undefined;
+  for (const [pattern, targets] of Object.entries(paths)) {
+    const star = matchStarPattern(pattern, specifier);
+    const prefix = pattern.indexOf('*') < 0 ? Infinity : pattern.indexOf('*');
+    if (star !== undefined && (!best || prefix > best.prefix)) best = { star, prefix, targets };
+  }
+  if (!best || !Array.isArray(best.targets)) return [];
+  const { star, targets } = best;
+  return targets.map((target) => path.posix.resolve(base, String(target).replace('*', star)));
+}
+
 /**
- * The project source that a relative specifier names when the checker gives it no module symbol: a script file (no import or
- * export, so a side-effect import of it has no symbol). The names that TypeScript tries, in its order.
+ * The project source that a specifier names when the checker gives it no module symbol: a script file (no import or export, so a
+ * side-effect import of it has no symbol). A relative specifier names a path; a `paths` alias names the paths of its targets.
+ * The names that TypeScript tries, in its order.
  */
 function scriptTarget(specifier: string, file: string, options: NodeSpecifierOptions): string | undefined {
-  if (!isRelative(specifier)) return undefined;
-  const p = path.posix.resolve(path.posix.dirname(file), specifier.replace(/\/+$/, '') || specifier);
-  const names = [p, ...EXTENSIONLESS.map((extension) => `${p}${extension}`), ...EXTENSIONLESS.map((extension) => `${p}/index${extension}`)];
-  return names.find((name) => options.projectSources.has(name) && !name.endsWith('.d.ts'));
+  const candidates = isRelative(specifier)
+    ? [path.posix.resolve(path.posix.dirname(file), specifier.replace(/\/+$/, '') || specifier)]
+    : aliasPaths(specifier, options.compilerOptions);
+  for (const p of candidates) {
+    const names = [p, ...EXTENSIONLESS.map((extension) => `${p}${extension}`), ...EXTENSIONLESS.map((extension) => `${p}/index${extension}`)];
+    const found = names.find((name) => options.projectSources.has(name) && !name.endsWith('.d.ts'));
+    if (found) return found;
+  }
+  return undefined;
 }
 
 /**
  * The new text of one specifier, or undefined when it stays. A specifier that the checker cannot resolve stays, with one exception:
- * a relative specifier with no module symbol (a side-effect import of a script file) takes the new text of the project source it names.
+ * a specifier with no module symbol (a side-effect import of a script file) takes the new text of the project source it names,
+ * also through a `paths` alias.
  * It throws only when a package.json that a deep path needs is not a JSON object: `readManifest` names the file.
  */
 function newSpecifier(literal: ts.StringLiteral, file: ts.SourceFile, checker: ts.TypeChecker, options: NodeSpecifierOptions): string | undefined {
