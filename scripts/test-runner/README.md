@@ -57,7 +57,8 @@ A step starts its files longest first, so one slow file does not start last and 
 
 Results land in `.cache/test-results/`: one TAP file for each test step, and `<tier>-timings.json`. The runner writes the timings file when a step starts and again when it ends, so a run that the ceiling stops keeps every finished step. Its fields:
 
-- `timings`: one entry for each finished step, with `label`, `seconds`, `status` and `file_seconds`.
+- `timings`: one entry for each finished step, with `label`, `seconds`, `status`, `load_start`, `load_end` and `file_seconds`.
+- `load_start` and `load_end`: the 1, 5 and 15 minute load averages when the step began and ended, also printed on the step's start and end lines as `load (container kernel)`. `run.sh` prints `load (host)` once, at the start of the run, before the container starts. The container line shows the load of the container's kernel only (on Docker Desktop, the Linux VM); the host line shows the machine, including processes outside Docker. Read both before you take a ceiling hit for a regression.
 - `file_seconds`: the seconds of each test file, keyed by source path (`tests/serde.test.ts`), summed over the steps. A file that the TypeScript 6 lane reruns counts both runs. The entries in `timings` hold the seconds of each step alone; steps that run beside each other overlap, so their seconds add up to more than the total.
 - `running`: the steps that were running at the last write. It is absent when every step ended.
 

@@ -28,6 +28,8 @@ if [ -f "$rules" ]; then
 fi
 mkdir -p "$root/.cache/test-results"
 tty=(); [ -t 1 ] && tty=(-t)
+# The load of the machine at the start of the run, which the container's own line does not show. `uptime` prints the three averages on macOS and Linux alike.
+echo "load (host) $(uptime | sed -e 's/.*load averages*: *//' -e 's/,//g')"
 exec docker run --rm --init ${tty[@]+"${tty[@]}"} ${network[@]+"${network[@]}"} \
   --label org.exprtlabs.golem-test=1 \
   -e TINI_KILL_PROCESS_GROUP=1 \
