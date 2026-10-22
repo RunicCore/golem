@@ -319,6 +319,12 @@ test('union member positions follow the authored order', async t => {
   const shapes = variantShapes(document.components.schemas, 'TOrderEither');
   assert.ok(shapes.TOrderEither1?.includes('b'));
   assert.ok(shapes.TOrderEither2?.includes('a'));
+
+  const aliasedSource = eitherController('TEither | null')
+    .replace('export type TOrder', 'type TEither = (TMerchant & { a: string }) | (TMoney & { b: string });\nexport type TOrder');
+  const aliased = variantShapes((await documentOf(t, aliasedSource, SPLIT_MODELS)).components.schemas, 'TOrderEither');
+  assert.ok(aliased.TOrderEither1?.includes('a'), 'a union written as an alias plus null: member 1 is the first authored member');
+  assert.ok(aliased.TOrderEither2?.includes('b'), 'a union written as an alias plus null: member 2 is the second authored member');
 });
 
 test('the discriminant is chosen by sorted property name, not by declaration order', async t => {
@@ -357,16 +363,4 @@ export class RefundsController { @Post() create(@Body() input: { merchant: TMerc
 `;
   const names = Object.keys((await documentOf(t, source)).components.schemas);
   for (const expected of ['PaymentsCreateBodyMerchantLoose', 'RefundsCreateBodyMerchantLoose']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
-});
-
-test('a union written as an alias plus null follows the authored member order', async t => {
-  const source = `import { Body, Controller, Post } from '@nestjs/common';
-${MODELS}
-type TEither = (TMerchant & { a: string }) | (TMoney & { b: string });
-export type TOrder = IModel<{ either: TEither | null }>;
-@Controller('orders') export class OrderController { @Post() save(@Body() body: TOrder): TOrder { return body; } }
-`;
-  const shapes = variantShapes((await documentOf(t, source)).components.schemas, 'TOrderEither');
-  assert.ok(shapes.TOrderEither1?.includes('a'), 'member 1 is the first authored member');
-  assert.ok(shapes.TOrderEither2?.includes('b'), 'member 2 is the second authored member');
 });
