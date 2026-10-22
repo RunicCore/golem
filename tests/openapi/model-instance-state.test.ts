@@ -45,6 +45,10 @@ const document = {
       // A field of unknown type, and a composed root with a model in a field.
       Note: { type: 'object', required: ['title'], properties: { title: { type: 'string' }, data: {} } },
       Lead: { allOf: [{ type: 'object', required: ['lead'], properties: { lead: ref('Base') } }, { oneOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] }] },
+      // Composed roots: open by an explicit additionalProperties true on a member or on the root, and open only by default.
+      ComposedOpenInline: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { additionalProperties: true }] },
+      ComposedOpenRoot: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { type: 'object', properties: { tag: { type: 'string' } } }], additionalProperties: true },
+      ComposedDefault: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { type: 'object', properties: { tag: { type: 'string' } } }] },
       Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
       // A plain field and a converted one (date-time), to read through the constructor, decode and encode.
       Stamped: { type: 'object', properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } } },
@@ -179,6 +183,26 @@ test('options a user passes with a checked key still take the lenient path', asy
   const stringifyItem = models.stringifyItem as (value: unknown, options?: object) => string;
   assert.equal(stringifyItem({ serverId: 's' }, { validate: false, checked: true }), '{"serverId":"s"}', 'the missing name is left out');
 });
+
+for (const [name, root, required, keeps] of [
+  ['a member with additionalProperties true', 'ComposedOpenInline', { id: 'a' }, true],
+  ['additionalProperties true on the root', 'ComposedOpenRoot', { id: 'a' }, true],
+  ['no additionalProperties', 'ComposedDefault', { id: 'a' }, false],
+] as const) {
+  test(`a composed root with ${name} ${keeps ? 'keeps' : 'drops'} its extra keys in stringify and toWireFormat`, async () => {
+    // protects: bug T-159 a composed root did not carry additionalPropertiesDeclared, so an explicit additionalProperties true lost its extra keys (F-200)
+    const { output, models } = await validatedSdk();
+    const Model = models[`${root}Model`] as Model;
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(output, root));
+    const plain = { ...required, extra: 'x' };
+    const written = keeps ? plain : required;
+    assert.deepEqual(codec.toWireFormat(plain), written, 'a plain value');
+    assert.equal(codec.stringify(plain), JSON.stringify(written), 'a plain value');
+    const instance = Object.assign(new Model(required), { extra: 'x' });
+    assert.deepEqual(codec.toWireFormat(instance), written, 'a model instance');
+    assert.equal(codec.stringify(instance), JSON.stringify(written), 'a model instance');
+  });
+}
 
 const programState = () => ({ cache: new Map<string, string>(), hits: 3 });
 

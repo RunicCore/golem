@@ -75,6 +75,8 @@ export type Composition<S> =
     readonly required: readonly string[];
     readonly extra: ObjectExtra<SlotChild<S>>;
     readonly nullable: boolean;
+    /** Some part says `additionalProperties: true` itself, as a plain object does: the object then writes its extra keys. */
+    readonly declaredOpen: boolean;
     readonly constraints: readonly ModelConstraint[];
     readonly never: readonly NeverName[];
   }
@@ -175,6 +177,7 @@ function resolveObjects<S>(
     required: composed.required,
     extra,
     nullable: admitsNull(schema, scope, reader, new Set()),
+    declaredOpen: declaresOpen(schema, nested, reader, new Set()),
     constraints,
     never,
   };
@@ -374,6 +377,21 @@ function unevaluatedExtra<S>(schema: Readonly<Record<string, unknown>>, scope: S
   if (unevaluated === false) return { mode: 'closed' };
   if (isJsonObject(unevaluated)) return { mode: 'values', child: leaf(unevaluated, scope, reader) };
   return { mode: 'open' };
+}
+
+/** Whether the schema, or an allOf member or a `$ref` it reaches, sets `additionalProperties: true` itself. */
+function declaresOpen<S>(schema: unknown, scope: S, reader: CompositionReader<S>, visiting: Set<unknown>): boolean {
+  if (!isJsonObject(schema) || visiting.has(schema)) return false;
+  if (schema.additionalProperties === true) return true;
+  const reference = reader.reference(schema, scope);
+  if (reference) {
+    visiting.add(schema);
+    const declared = declaresOpen(reference.referenced, reference.scope, reader, visiting);
+    visiting.delete(schema);
+    return declared;
+  }
+  const nested = reader.nested(schema, scope);
+  return (Array.isArray(schema.allOf) ? schema.allOf : []).some((member) => declaresOpen(member, nested, reader, visiting));
 }
 
 /** JSON Schema AND: null passes when every part that declares a `type` admits it, and at least one part declares one. */

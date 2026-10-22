@@ -675,6 +675,7 @@ function objectCompositionDescriptor(composition: ObjectComposition): ModelTypeD
     properties: Object.fromEntries(Object.entries(composition.slots).map(([name, child]) => [name, child.descriptor])),
     required: composition.required,
     additionalProperties: extra.mode === 'values' ? extra.child.descriptor : extra.mode === 'open',
+    ...(extra.mode === 'open' && composition.declaredOpen ? { additionalPropertiesDeclared: true as const } : {}),
     ...(composition.constraints.length ? { constraints: composition.constraints } : {}),
   };
   return composition.nullable ? { kind: 'union', variants: [object, { kind: 'null' }] } : object;
