@@ -10,6 +10,7 @@ import { statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
 import { selectedTypeScript } from './typescript-selection.js';
+import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
 
 // The classic compiler's own objects. This build compiles against TypeScript 7, whose main export carries no classic
@@ -280,7 +281,7 @@ export const {
   sys,
 } = classic;
 
-/** The classic resolver takes the mode after its cache and redirect arguments. */
+/** The classic resolver takes the mode after its cache and redirect arguments. It reads a package.json that is not JSON as `{}`; golem names the file instead. */
 export function resolveModuleName(
   moduleName: string,
   containingFile: string,
@@ -288,6 +289,7 @@ export function resolveModuleName(
   host: Golem.ModuleResolutionHost,
   resolutionMode?: Golem.ModuleKind,
 ): { resolvedModule?: Golem.ResolvedModule } {
+  assertPackageManifestsParse(moduleName, containingFile);
   return classic.resolveModuleName(moduleName, containingFile, compilerOptions, host, undefined, undefined, resolutionMode);
 }
 

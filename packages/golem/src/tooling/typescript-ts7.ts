@@ -31,7 +31,7 @@ import {
 } from 'node:path';
 import * as ast from 'typescript/unstable/ast';
 import { matchStarPattern } from './star-pattern.js';
-import { resolveExportsSubpath } from './type-analysis/package-specifier.js';
+import { assertPackageManifestsParse, parseManifest, resolveExportsSubpath } from './type-analysis/package-specifier.js';
 import {
   API,
   Checker,
@@ -894,30 +894,21 @@ function resolveImportMap(
     const manifest = join(current, 'package.json');
     if (host.fileExists(manifest)) {
       const text = host.readFile(manifest);
-      if (text) {
-        try {
-          const parsed: unknown = JSON.parse(text);
-          const imports = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-            ? (parsed as { imports?: unknown }).imports
-            : undefined;
-          if (imports && typeof imports === 'object' && !Array.isArray(imports)) {
-            const record = imports as Record<string, unknown>;
-            const exact = importMapTarget(record[moduleName]);
-            if (typeof exact === 'string') {
-              const resolved = resolveRelative(exact, manifest, host);
-              if (resolved) return resolved;
-            }
-            for (const [pattern, target] of Object.entries(record)) {
-              const star = matchStarPattern(pattern, moduleName);
-              if (star === undefined) continue;
-              const mapped = importMapTarget(target);
-              if (typeof mapped !== 'string') continue;
-              const resolved = resolveRelative(applyStar(mapped, star), manifest, host);
-              if (resolved) return resolved;
-            }
-          }
-        } catch {
-          // Keep walking toward the workspace root.
+      const imports = text ? parseManifest(manifest, text).imports : undefined;
+      if (imports && typeof imports === 'object' && !Array.isArray(imports)) {
+        const record = imports as Record<string, unknown>;
+        const exact = importMapTarget(record[moduleName]);
+        if (typeof exact === 'string') {
+          const resolved = resolveRelative(exact, manifest, host);
+          if (resolved) return resolved;
+        }
+        for (const [pattern, target] of Object.entries(record)) {
+          const star = matchStarPattern(pattern, moduleName);
+          if (star === undefined) continue;
+          const mapped = importMapTarget(target);
+          if (typeof mapped !== 'string') continue;
+          const resolved = resolveRelative(applyStar(mapped, star), manifest, host);
+          if (resolved) return resolved;
         }
       }
     }
@@ -949,12 +940,8 @@ function resolveExportsMap(moduleName: string, containingFile: string, compilerO
     const packageRoot = join(current, 'node_modules', packageName);
     const manifest = join(packageRoot, 'package.json');
     if (host.fileExists(manifest)) {
-      let exportsField: unknown;
-      try {
-        exportsField = (JSON.parse(host.readFile(manifest) ?? '{}') as { exports?: unknown } | null)?.exports;
-      } catch {
-        return undefined;
-      }
+      const text = host.readFile(manifest);
+      const exportsField = text ? parseManifest(manifest, text).exports : undefined;
       const target = exportsField === undefined ? undefined : resolveExportsSubpath(exportsField, subpath, importerCondition(compilerOptions, resolutionMode));
       return target ? firstExisting(host, sourceCandidates(join(packageRoot, target))) : undefined;
     }
@@ -1000,6 +987,7 @@ export function resolveModuleName(
   host: ModuleResolutionHost,
   resolutionMode?: ModuleKind,
 ): { resolvedModule?: ResolvedModule } {
+  assertPackageManifestsParse(moduleName, containingFile);
   const resolved = resolveTsconfigPaths(moduleName, containingFile, compilerOptions, host)
     ?? (moduleName.startsWith('.') || isAbsolute(moduleName)
       ? resolveRelative(moduleName, containingFile, host)

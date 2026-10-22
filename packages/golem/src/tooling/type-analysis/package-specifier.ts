@@ -13,21 +13,44 @@ interface PackageManifest { readonly root: string; readonly name: string; readon
 /** Parsed package.json files, re-read when the file changes (watch mode keeps this process alive). */
 const manifests = new Map<string, { readonly mtimeMs: number; readonly name?: string; readonly exports?: unknown }>();
 
+/** The JSON object in the text of the package.json `filename`. Text that is not a JSON object throws an error that names the file and keeps the parse error as its cause. */
+export function parseManifest(filename: string, text: string): Record<string, unknown> {
+  try {
+    const parsed: unknown = JSON.parse(text.replace(/^﻿/, ''));
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('the JSON is not an object');
+    return parsed as Record<string, unknown>;
+  }
+  catch (error) { throw new Error(`Cannot read ${filename} to resolve a package import: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
+}
+
 export function readManifest(filename: string): { readonly name?: string; readonly exports?: unknown } | undefined {
   let mtimeMs: number;
   try { mtimeMs = fs.statSync(filename).mtimeMs; } catch { return undefined; }
   const cached = manifests.get(filename);
   if (cached?.mtimeMs === mtimeMs) return cached;
-  let json: { name?: string; exports?: unknown };
-  try {
-    const parsed: unknown = JSON.parse(fs.readFileSync(filename, 'utf8'));
-    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('the JSON is not an object');
-    json = parsed as { name?: string; exports?: unknown };
-  }
-  catch (error) { throw new Error(`Cannot read ${filename} to resolve a package import: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
-  const manifest = { mtimeMs, name: json.name, exports: json.exports };
+  const json = parseManifest(filename, fs.readFileSync(filename, 'utf8'));
+  const manifest = { mtimeMs, name: json.name as string | undefined, exports: json.exports };
   manifests.set(filename, manifest);
   return manifest;
+}
+
+/**
+ * Throws when a package.json that a lookup of the package import `specifier` (a package name or a `#` import) from `importer`
+ * reads is not a JSON object: the nearest one above `importer`, which scopes `imports` and self references, and for a package
+ * name the nearest `node_modules/<name>/package.json`. Both TypeScript lanes call it, because the TypeScript 6 resolver reads
+ * such a file as `{}` and the TypeScript 7 lookup of golem would otherwise skip its `imports` and `exports`.
+ */
+export function assertPackageManifestsParse(specifier: string, importer: string): void {
+  if (specifier.startsWith('.') || path.isAbsolute(specifier)) return;
+  const segments = specifier.split('/');
+  const name = specifier.startsWith('#') ? undefined : segments.slice(0, specifier.startsWith('@') ? 2 : 1).join('/');
+  const nearest = (relative: (directory: string) => string): void => {
+    for (let directory = path.dirname(importer); ; directory = path.dirname(directory)) {
+      if (readManifest(relative(directory)) !== undefined || path.dirname(directory) === directory) return;
+    }
+  };
+  nearest((directory) => path.join(directory, 'package.json'));
+  if (name !== undefined) nearest((directory) => path.join(directory, 'node_modules', name, 'package.json'));
 }
 
 /** The package that owns `file`: the nearest package.json with a name. A nameless one (such as `{"type":"module"}`) only scopes module format. */

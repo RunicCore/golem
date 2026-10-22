@@ -30,6 +30,29 @@ test('a relative specifier with a dot in its name resolves to the source that be
   assert.equal(resolve('./user.other'), undefined);
 });
 
+for (const [place, specifier, manifest] of [
+  ['a # import reads the package.json above the importer', '#helper', 'package.json'],
+  ['a package name reads the package.json of the installed package', 'dep/helper', 'node_modules/dep/package.json'],
+] as const) {
+  test(`${place}, and a text that is not JSON throws an error that names the file and keeps the parse error`, t => {
+    // protects: T-7 a package.json that golem cannot parse is reported with its path and the parse error on both TypeScript lanes, not read as {}
+    const root = createFixtureProject(t, 'golem-malformed-manifest-');
+    const main = path.join(root, 'main.ts');
+    fs.mkdirSync(path.join(root, 'node_modules/dep'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'package.json'), '{"name": "app", "imports": { "#helper": "./helper.ts" }}');
+    fs.writeFileSync(path.join(root, 'helper.ts'), 'export const value = 1;\n');
+    fs.writeFileSync(path.join(root, 'node_modules/dep/package.json'), '{"name": "dep", "version": "1.0.0"}');
+    fs.writeFileSync(path.join(root, 'node_modules/dep/helper.d.ts'), 'export declare const value: number;\n');
+    const resolve = (): unknown => ts.resolveModuleName(specifier, main, {}, ts.sys);
+
+    fs.writeFileSync(path.join(root, manifest), '{"name": "broken", ');
+
+    assert.throws(resolve, (error: unknown) => error instanceof Error
+      && error.message.startsWith(`Cannot read ${path.join(fs.realpathSync(root), manifest)} to resolve a package import: `)
+      && error.cause instanceof SyntaxError);
+  });
+}
+
 /** A project whose one source imports `dependency.ts` from disk. */
 function sessionOnDiskDependency(t: TestContext): { readonly root: string; readonly main: string; readonly dependency: string } {
   const root = createFixtureProject(t, 'golem-session-disk-');

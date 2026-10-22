@@ -576,3 +576,17 @@ test('a job that generates nothing does not read the model manifests its program
 
   assert.deepEqual(generate({ root: app, profile: PROFILE }).artifacts, []);
 });
+
+test('generate stops and names the package.json of an imported package when it is not JSON, though the compiler reads it as {} and resolves the import', (t: TestContext) => {
+  // protects: T-7 a package.json that golem cannot parse is reported with its path and the parse error, never skipped, on both TypeScript lanes
+  const outer = createFixtureProject(t, 'golem-malformed-import-');
+  linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  writeModelSources(path.join(outer, 'node_modules/dep'), { 'package.json': '{"name": "dep", "exports": ', 'index.d.ts': 'export type Id = string;\n' });
+  const tsconfig = JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'ESNext', moduleResolution: 'Bundler', skipLibCheck: true, noEmit: true }, include: ['src/**/*.ts'] });
+  const order = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Id } from 'dep';\nexport type TOrder = IModel<{ id: Id }>;\n";
+  const app = appWithShared(outer, 'lib', false, { 'src/order.model.ts': order, 'tsconfig.json': tsconfig }, ['src/**/*.ts']);
+
+  assert.throws(() => generate({ root: app, profile: PROFILE }), (error: unknown) => error instanceof Error
+    && error.message.startsWith(`Cannot read ${path.join(fs.realpathSync(outer), 'node_modules/dep/package.json')} to resolve a package import: `)
+    && error.cause instanceof SyntaxError);
+});
