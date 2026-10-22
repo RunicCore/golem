@@ -1,4 +1,4 @@
-import { COST_ROW_OPERATIONS, PAYLOADS, VALIDATION_COLUMNS, type AdapterId } from './cases.js';
+import { ALL_PAYLOADS, COST_ROW_OPERATIONS, VALIDATION_COLUMNS, type AdapterId } from './cases.js';
 import type { BenchmarkResults } from './results-schema.js';
 
 /**
@@ -43,7 +43,7 @@ export function costTable(results: Pick<BenchmarkResults, 'cases' | 'cost'>): re
   const medians: Medians = new Map([...results.cases, ...(results.cost?.cases ?? [])]
     .flatMap(c => c.opsPerSec ? [[`${c.payload}/${c.operation}/${c.adapter}`, c.opsPerSec.median] as const] : []));
   const rows: CostRow[] = [];
-  for (const payload of PAYLOADS) {
+  for (const payload of ALL_PAYLOADS) {
     for (const operation of COST_ROW_OPERATIONS) {
       const cell = (adapter: AdapterId, off = false): CostCell => {
         // Validate has no "off" mode: a build with validation off has nothing to call.

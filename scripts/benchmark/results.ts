@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { arch, cpus, platform } from 'node:os';
 import path from 'node:path';
-import { BENCH_ADAPTERS, BENCH_OPERATIONS, COMPARE_CASES, COST_CASES, GROUPS, PAYLOADS, REPOSITORY_BLOB_URL, type AdapterId, type CaseSpec, type OperationId, type PayloadId } from './cases.js';
+import { ALL_PAYLOADS, BENCH_ADAPTERS, BENCH_OPERATIONS, COMPARE_CASES, COST_CASES, GROUPS, PAYLOADS, REPOSITORY_BLOB_URL, type AdapterId, type CaseSpec, type OperationId, type PayloadId } from './cases.js';
 import type { BenchmarkResults, OpsPerSec, ResultCase } from './results-schema.js';
 
 export interface BatchSample { readonly iterations: number; readonly elapsedMs: number }
@@ -43,8 +43,8 @@ export function summarize(samples: readonly BatchSample[]): OpsPerSec {
 export function buildResults(input: BuildInput): BenchmarkResults {
   const byKey = new Map(input.measured.map(m => [`${m.payload}/${m.operation}/${m.adapter}`, m]));
   const ran = new Set<AdapterId>(input.adapters ?? BENCH_ADAPTERS.map(a => a.id));
-  const ranPayloads = new Set<PayloadId>(input.payloads ?? PAYLOADS.map(p => p.id));
-  const partial = ran.size < BENCH_ADAPTERS.length || ranPayloads.size < PAYLOADS.length;
+  const ranPayloads = new Set<PayloadId>(input.payloads ?? ALL_PAYLOADS.map(p => p.id));
+  const partial = ran.size < BENCH_ADAPTERS.length || ranPayloads.size < ALL_PAYLOADS.length;
   const resultCase = (c: CaseSpec): ResultCase => {
     const base = { payload: c.payload, operation: c.operation, adapter: c.adapter, support: c.support, ...(c.note ? { note: c.note } : {}) };
     if (c.support === 'none') return base;

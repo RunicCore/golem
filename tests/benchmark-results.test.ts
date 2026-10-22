@@ -4,10 +4,10 @@ import { buildResults, type MeasuredCase } from '../scripts/benchmark/results.js
 import { isBenchmarkResults } from '../scripts/benchmark/results-schema.js';
 
 const sample = [{ iterations: 1000, elapsedMs: 10 }];
-const measured = (operation: MeasuredCase['operation']): MeasuredCase =>
-  ({ payload: 'simple', operation, adapter: 'golem-object-off', payloadBytes: 100, samples: sample });
+const measured = (operation: MeasuredCase['operation'], payload: MeasuredCase['payload'] = 'simple'): MeasuredCase =>
+  ({ payload, operation, adapter: 'golem-object-off', payloadBytes: 100, samples: sample });
 const input = (operations: readonly MeasuredCase['operation'][]) => ({
-  measured: operations.map(measured),
+  measured: operations.map(operation => measured(operation)),
   settings: { warmupMs: 1, batchMs: 1, batches: 2, rounds: 1 },
   environment: { node: 'v24', os: 'linux', arch: 'arm64', cpu: 'test', cpus: 1 },
   git: { sha: 'abc', dirty: false },
@@ -29,4 +29,12 @@ test('the results hold the cost timings, decode and encode included, and still p
   assert.deepEqual(results.cases, []);
   assert.equal(isBenchmarkResults(results), true);
   assert.equal(isBenchmarkResults({ ...results, cost: { cases: [{ payload: 'simple', operation: 'decode', adapter: 'golem-object-off', support: 'full' }] } }), false);
+});
+
+// protects: T-236 the serde payloads are cost-table payloads only
+test('the serde payloads are timed into the cost section and stay out of the compare table payload list', () => {
+  const results = buildResults({ ...input([]), measured: ['parse', 'stringify', 'decode', 'encode'].map(operation => measured(operation as MeasuredCase['operation'], 'serde-many')), payloads: ['serde-many'] });
+  assert.deepEqual(results.cost?.cases.map(c => `${c.payload}/${c.operation}`), ['serde-many/parse', 'serde-many/stringify', 'serde-many/decode', 'serde-many/encode']);
+  assert.deepEqual(results.payloads, []);
+  assert.equal(isBenchmarkResults(results), true);
 });

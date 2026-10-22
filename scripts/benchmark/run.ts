@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { adapterSpec, BENCH_ADAPTERS, BENCH_OPERATIONS, CASES, COST_OPERATIONS, PAYLOADS, operationSpec, payloadSpec, timedCases, type AdapterId, type AdapterSpec, type CaseSpec, type PayloadId, type PayloadSpec, type ProjectKind } from './cases.js';
+import { adapterSpec, BENCH_ADAPTERS, BENCH_OPERATIONS, ALL_PAYLOADS, CASES, COST_OPERATIONS, operationSpec, payloadSpec, timedCases, type AdapterId, type AdapterSpec, type CaseSpec, type PayloadId, type PayloadSpec, type ProjectKind } from './cases.js';
 import { prepareProjects, root } from './project.js';
 import type { BenchmarkResults } from './results-schema.js';
 import { buildResults, environment, gitState, packageVersions, summarize, writeFilesTogether, type MeasuredCase, type Settings } from './results.js';
@@ -12,7 +12,7 @@ import { parseWorkerOutput, type WorkerJob, type WorkerOutput } from './worker-p
 export const DEFAULT_SETTINGS: Settings = { warmupMs: 120, batchMs: 90, batches: 4, rounds: 2 };
 /**
  * `adapters` names the adapters to run; it defaults to every adapter in `BENCH_ADAPTERS`.
- * `payloads` names the payloads to run; it defaults to every payload in `PAYLOADS`.
+ * `payloads` names the payloads to run; it defaults to every payload in `ALL_PAYLOADS`.
  */
 export interface RunOptions { readonly settings: Settings; readonly outputFile: string; readonly rawFile: string; readonly adapters?: readonly AdapterId[]; readonly payloads?: readonly PayloadId[]; readonly log?: (line: string) => void }
 
@@ -29,14 +29,14 @@ function selectAdapters(requested?: readonly string[]): readonly AdapterSpec[] {
   return BENCH_ADAPTERS.filter(a => requested.includes(a.id));
 }
 
-/** The payloads to run, in `PAYLOADS` order. A name that no payload has, or an empty list, is a usage error. */
+/** The payloads to run, in `ALL_PAYLOADS` order. A name that no payload has, or an empty list, is a usage error. */
 export function selectPayloads(requested?: readonly string[]): readonly PayloadSpec[] {
-  if (requested === undefined) return PAYLOADS;
-  const valid = PAYLOADS.map(p => p.id).join(', ');
+  if (requested === undefined) return ALL_PAYLOADS;
+  const valid = ALL_PAYLOADS.map(p => p.id).join(', ');
   if (requested.length === 0) throw new BenchmarkUsageError(`No payload named. Valid payloads: ${valid}`);
-  const unknown = requested.filter(name => !PAYLOADS.some(p => p.id === name));
+  const unknown = requested.filter(name => !ALL_PAYLOADS.some(p => p.id === name));
   if (unknown.length > 0) throw new BenchmarkUsageError(`Unknown payload ${unknown.map(name => `"${name}"`).join(', ')}. Valid payloads: ${valid}`);
-  return PAYLOADS.filter(p => requested.includes(p.id));
+  return ALL_PAYLOADS.filter(p => requested.includes(p.id));
 }
 
 function runWorker(modulePath: string, fixtureAdapter: string, job: WorkerJob): WorkerOutput {
@@ -136,7 +136,7 @@ export function runBenchmark(options: RunOptions): BenchmarkRun {
 /** One line for each case of the selected adapters and payloads, in table order; the cost-table timings are in it. */
 function summaryTable(measured: readonly MeasuredCase[], adapters: readonly AdapterId[] | undefined, payloads: readonly PayloadId[] | undefined): string {
   const lines = [`${'payload'.padEnd(9)} ${'operation'.padEnd(10)} ${'adapter'.padEnd(19)} ${'median ops/s'.padStart(14)}`];
-  for (const p of PAYLOADS.filter(x => payloads?.includes(x.id) ?? true)) for (const o of [...BENCH_OPERATIONS, ...COST_OPERATIONS]) {
+  for (const p of ALL_PAYLOADS.filter(x => payloads?.includes(x.id) ?? true)) for (const o of [...BENCH_OPERATIONS, ...COST_OPERATIONS]) {
     for (const c of CASES.filter(x => x.payload === p.id && x.operation === o.id && (adapters?.includes(x.adapter) ?? true))) {
       const found = measured.find(m => m.payload === c.payload && m.operation === c.operation && m.adapter === c.adapter);
       // An adapter with no timed case on the selected payloads is not in `measured`; only an unsupported case shows "not supported".

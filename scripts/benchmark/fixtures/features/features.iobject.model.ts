@@ -1,7 +1,7 @@
 import type { IObject } from '@exprtlabs/golem/model';
 import type { Integer, MinLength, Minimum, TSerde, TValidation } from '@exprtlabs/golem/tags';
 import type { PermissionBits, ProjectName } from './access-rules.js';
-import type { Email, Money, Phone } from './feature-tags.js';
+import type { Email, HexCode, Money, Phone, PlainHexCode, PlainMoney, PlainPermissions, PlainYesNo, Stamp, YesNo } from './feature-tags.js';
 import { decodeHex, encodeHex, extraMoney, notBlank, positive } from './feature-tags.js';
 import type { Money as PaymentMoney } from './sdk/index.js';
 
@@ -95,3 +95,58 @@ export type TJsonCheckout = IObject<{
   memo?: string;
 }>;
 // #endregion checkout
+
+// The serde payloads: one shape of 21 fields. In serde-many every field converts; serde-none has the same rules on plain strings and numbers.
+export type TJsonSerdeManyLine = IObject<{
+  amount: Money;
+  due: Date;
+  ok: YesNo;
+  hits: HexCode;
+}>;
+
+export type TJsonSerdeMany = IObject<{
+  price: Money;
+  tax: Money;
+  fee: Money;
+  total: Money;
+  code: HexCode;
+  retry: HexCode;
+  perms: PermissionBits;
+  admin: PermissionBits;
+  active: YesNo;
+  archived: YesNo;
+  created: Date;
+  updated: Date;
+  expires: Date;
+  shipped: Date;
+  window: [Date, Date];
+  review: [Date, Date];
+  lines: TJsonSerdeManyLine[];
+}>;
+
+export type TJsonSerdeNoneLine = IObject<{
+  amount: PlainMoney;
+  due: Stamp;
+  ok: PlainYesNo;
+  hits: PlainHexCode;
+}>;
+
+export type TJsonSerdeNone = IObject<{
+  price: PlainMoney;
+  tax: PlainMoney;
+  fee: PlainMoney;
+  total: PlainMoney;
+  code: PlainHexCode;
+  retry: PlainHexCode;
+  perms: PlainPermissions;
+  admin: PlainPermissions;
+  active: PlainYesNo;
+  archived: PlainYesNo;
+  created: Stamp;
+  updated: Stamp;
+  expires: Stamp;
+  shipped: Stamp;
+  window: [Stamp, Stamp];
+  review: [Stamp, Stamp];
+  lines: TJsonSerdeNoneLine[];
+}>;

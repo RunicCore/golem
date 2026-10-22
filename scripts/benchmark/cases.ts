@@ -5,7 +5,7 @@ export const BENCH_SERIES_COUNT = 4;
 
 export const REPOSITORY_BLOB_URL = 'https://github.com/RunicCore/golem/blob/master';
 
-export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout';
+export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout' | 'serde-none' | 'serde-many';
 /** The operations of the compare table. */
 export type CompareOperationId = 'parse' | 'stringify' | 'validate';
 /** The operations that only the golem cost table times: value to and from a plain object, with no JSON text. */
@@ -37,6 +37,18 @@ export const PAYLOADS: readonly PayloadSpec[] = [
   { id: 'array', fixture: 'ArrayHierarchical-1000', label: 'Large array', description: 'One company, 10 departments, 1,000 employees.', sourceFile: 'scripts/benchmark/fixtures/upstream/shared.ts' },
   { id: 'checkout', fixture: 'sdk-extend', label: 'Checkout', description: 'Money from a generated SDK type, hex code, dates, nested line items, flags, a union and optional fields, with value conversion.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
 ];
+
+/**
+ * The payloads that only the golem cost table times: one shape of 21 fields, with every field converting (serde-many) or
+ * none converting (serde-none). The compare table does not list them.
+ */
+export const COST_PAYLOADS: readonly PayloadSpec[] = [
+  { id: 'serde-none', fixture: 'serde-none', label: 'Serde none', description: 'Twenty-one fields on plain strings and numbers: nothing converts.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
+  { id: 'serde-many', fixture: 'serde-many', label: 'Serde many', description: 'The same shape with every field converting: money, hex codes, permission bits, yes/no flags, dates and date tuples.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
+];
+
+/** Every payload a run can time. */
+export const ALL_PAYLOADS: readonly PayloadSpec[] = [...PAYLOADS, ...COST_PAYLOADS];
 
 export const BENCH_OPERATIONS: readonly OperationSpec<CompareOperationId>[] = [
   { id: 'parse', fixtureOperation: 'text-to-model', label: 'Parse', description: 'JSON text to the library\'s model value.' },
@@ -115,7 +127,7 @@ export const COST_ROW_OPERATIONS: readonly OperationId[] = ['parse', 'stringify'
  * The cases only the cost table times: every cost row of the four adapters that the compare table does not time already.
  * Validate has no "off" mode: a build with validation off has nothing to call.
  */
-export const COST_CASES: readonly CaseSpec[] = PAYLOADS.flatMap(payload => COST_ROW_OPERATIONS.flatMap(operation =>
+export const COST_CASES: readonly CaseSpec[] = ALL_PAYLOADS.flatMap(payload => COST_ROW_OPERATIONS.flatMap(operation =>
   Object.values(VALIDATION_COLUMNS).flatMap(pair => (['off', 'on'] as const)
     .filter(mode => operation !== 'validate' || mode === 'on')
     .map(mode => ({ payload: payload.id, operation, adapter: pair[mode], support: 'full' }) satisfies CaseSpec)
@@ -129,7 +141,7 @@ export function timedCases(): readonly CaseSpec[] {
 }
 
 export function payloadSpec(id: PayloadId): PayloadSpec {
-  const found = PAYLOADS.find(p => p.id === id);
+  const found = ALL_PAYLOADS.find(p => p.id === id);
   if (!found) throw new Error(`Unknown payload: ${id}`);
   return found;
 }
