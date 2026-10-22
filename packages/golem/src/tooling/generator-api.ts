@@ -18,6 +18,26 @@ export function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
+/** Whether `filename` is `directory` or lies inside it, by path alone: the path from `directory` is not `..`, does not start with `..` and the separator, and is not absolute. */
+export function isInsideDirectory(directory: string, filename: string): boolean {
+  const relative = path.relative(directory, filename);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+/** A copy of a JSON-like value with its object keys sorted at every depth. */
+export function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value).sort().map((key) => [key, stableValue(value[key])]),
+  );
+}
+
+/** Indented JSON text with sorted keys and a final line end, so equal values give equal text. */
+export function stableJson(value: unknown): string {
+  return `${JSON.stringify(stableValue(value), null, 2)}\n`;
+}
+
 export interface GolemProfile {
   readonly mobx: boolean;
   readonly validation: boolean;
@@ -299,5 +319,5 @@ export function discoverSources(root: string, options: SourceDiscoveryOptions): 
     }
   };
   visit(root);
-  return [...found].sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  return [...found].sort(compareText);
 }

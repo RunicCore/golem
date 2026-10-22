@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { InputObserver } from '@exprtlabs/golem/generator-api';
+import { isInsideDirectory, type InputObserver } from '@exprtlabs/golem/generator-api';
 import YAML from 'yaml';
 import { displayLocation } from './origin.js';
 import { asRecord, escapeJsonPointerToken, isJsonObject, jsonPointerJoin, objectEntries, resolveJsonPointer } from './json.js';
@@ -114,8 +114,7 @@ function realpathOrNearestAncestor(candidate: string): string {
 function localReferenceEscapes(rootDirectory: string, candidate: string): boolean {
   const rootReal = realpathOrNearestAncestor(rootDirectory);
   const boundaryPath = realpathOrNearestAncestor(candidate);
-  const relative = path.relative(rootReal, boundaryPath);
-  return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+  return !isInsideDirectory(rootReal, boundaryPath);
 }
 
 interface ReferenceLoadOptions extends ReferenceResolutionOptions {

@@ -4,10 +4,10 @@ import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } fr
 import YAML from 'yaml';
 import * as ts from '../typescript-ns.js';
 import { readManifest } from './package-specifier.js';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, discoverSources, hasErrorCode, suffixPattern, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
-import { canonicalFilename, isOutside } from './path-identity.js';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, suffixPattern, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
+import { canonicalFilename } from './path-identity.js';
 
-export { canonicalFilename, isOutside };
+export { canonicalFilename };
 
 export interface ProgramInfo {
   readonly configPath?: string;
@@ -37,7 +37,7 @@ export function commonDirectory(filenames: readonly string[]): string {
   let current = dirname(canonicalFilename(filenames[0]));
   for (const filename of filenames.slice(1)) {
     const directory = dirname(canonicalFilename(filename));
-    while (relative(current, directory).startsWith(`..${sep}`) || relative(current, directory) === '..') {
+    while (!isInsideDirectory(current, directory)) {
       const parent = dirname(current);
       if (parent === current) break;
       current = parent;
@@ -82,7 +82,7 @@ export function includedModelSources(files: readonly string[], suffixes: readonl
   const pattern = modelFilePattern(suffixes);
   return uniqueFilenames(files)
     .filter((filename) => pattern.test(filename) && !isGeneratedCompanion(filename))
-    .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    .sort(compareText);
 }
 
 /** `files` without a second name for one file: a file reached through a folder link counts once, by its real path when the program holds it. */
@@ -126,7 +126,7 @@ export function isModelFileName(boundary: Pick<ModelBoundary, 'suffixes'>, filen
  */
 export function isOwnModelFile(boundary: ModelBoundary, filename: string): boolean {
   const real = canonicalPath(filename);
-  return !isOutside(boundary.root, real)
+  return isInsideDirectory(boundary.root, real)
     && !relative(boundary.root, real).split(sep).includes('node_modules')
     && !isAmbientDeclaration(real);
 }
@@ -147,7 +147,7 @@ export function nestedModelsJobs(root: string, own: string, files: readonly stri
   };
   const found = new Set<string>();
   for (const file of files) {
-    for (let directory = dirname(canonicalPath(file)); !isOutside(root, directory); directory = dirname(directory)) {
+    for (let directory = dirname(canonicalPath(file)); isInsideDirectory(root, directory); directory = dirname(directory)) {
       if (directory === own || own.startsWith(`${directory}${sep}`)) break;
       if (directoryHasModelsJob(directory)) found.add(join(directory, 'golem.yaml'));
       if (directory === root || dirname(directory) === directory) break;
@@ -261,7 +261,7 @@ export function ignoredSharedFileWarnings(sharedFiles: readonly string[], appDir
   };
   for (const modelFile of sharedFiles) {
     const packageFolder = packageFolderOf(modelFile, appDirectory);
-    for (let directory = dirname(modelFile); packageFolder !== undefined && !isOutside(packageFolder, directory); directory = dirname(directory)) {
+    for (let directory = dirname(modelFile); packageFolder !== undefined && isInsideDirectory(packageFolder, directory); directory = dirname(directory)) {
       const golemYaml = join(directory, 'golem.yaml');
       onInput?.(golemYaml);
       if (existsSync(golemYaml) && !warnings.has(golemYaml)) {
@@ -565,7 +565,7 @@ export function createModelStubProgram(
     const overlays = new Map(stubs);
     for (const filename of parsed.projectFiles) {
       const companion = canonicalFilename(filename);
-      const underOutput = boundary.companions !== undefined && !isOutside(boundary.companions.output, companion);
+      const underOutput = boundary.companions !== undefined && isInsideDirectory(boundary.companions.output, companion);
       if (isGeneratedCompanion(companion) && !overlays.has(companion) && (underOutput || isOrphanCompanion(companion, boundary.suffixes))) {
         overlays.set(companion, 'export {}\n');
       }

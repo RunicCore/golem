@@ -9,7 +9,7 @@ import type {
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, isInsideDirectory, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
 import { ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
@@ -45,7 +45,6 @@ import {
   includedModelSources,
   isOrphanCompanion,
   isModelSource,
-  isOutside,
   isOwnModelFile,
   modelBoundary,
   nestedModelsJobs,
@@ -390,7 +389,7 @@ function withoutRepeatedFieldTypeWarnings(diagnostics: readonly GolemDiagnostic[
 /** A `sources` entry is a file of this job: one outside the models root, in node_modules or a declaration file stops generation. */
 function assertListedSourceIsOwn(boundary: ModelBoundary, source: string): void {
   const real = canonicalPath(source);
-  if (isOutside(boundary.root, real)) throw new Error(outsideModelsRootMessage(real, boundary.root));
+  if (!isInsideDirectory(boundary.root, real)) throw new Error(outsideModelsRootMessage(real, boundary.root));
   if (!isOwnModelFile(boundary, source)) {
     throw new Error(real.split(sep).includes('node_modules')
       ? `models.sources entry ${real} is in node_modules. Golem does not generate models in node_modules.`

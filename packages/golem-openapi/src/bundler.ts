@@ -1,4 +1,4 @@
-import { identifier } from '@exprtlabs/golem/generator-api';
+import { compareText, identifier } from '@exprtlabs/golem/generator-api';
 import { escapePointerToken } from '@exprtlabs/golem/internal/schema';
 import { escapeJsonPointerToken, isJsonObject, resolveJsonPointer, unescapeJsonPointerToken } from './json.js';
 import { displayLocation, displayUri } from './origin.js';
@@ -114,7 +114,7 @@ function primaryRootAliasNames(candidates: readonly RootAliasCandidate[]): Reado
   }
   const primary = new Map<string, string>();
   for (const [key, names] of namesByKey) {
-    primary.set(key, [...names].sort(compareCodeUnits)[0]);
+    primary.set(key, [...names].sort(compareText)[0]);
   }
   return primary;
 }
@@ -156,11 +156,6 @@ function assertUniqueNames(
   }
 }
 
-/** Code-unit order: deterministic across locales, and 'User' sorts before 'user'. */
-function compareCodeUnits(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
 export function bundleReferenceGraph(graph: ReferenceGraph): BundledDocument {
   const rootDocument = graph.documents.get(graph.rootUri)?.document;
   if (!isJsonObject(rootDocument)) throw new TypeError('root OpenAPI document must be an object');
@@ -193,7 +188,7 @@ export function bundleReferenceGraph(graph: ReferenceGraph): BundledDocument {
       fromRootAlias: aliasName !== undefined,
     });
   }
-  const hoists = [...byKey.values()].sort((a, b) => compareCodeUnits(a.kind, b.kind) || compareCodeUnits(a.name, b.name));
+  const hoists = [...byKey.values()].sort((a, b) => compareText(a.kind, b.kind) || compareText(a.name, b.name));
   const primaryAliasRootKeys = new Set(hoists.filter((hoist) => hoist.fromRootAlias).map((hoist) => `${hoist.kind}\u0000${hoist.name}`));
   assertUniqueNames(hoists, result.components, graph.rootUri, graph.rootDirectory, primaryAliasRootKeys);
 

@@ -1,8 +1,8 @@
+import { compareText } from '@exprtlabs/golem/generator-api';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
 import { mergeSchemaMetadata } from './nest/json-schema-merge.js';
 import type { ControllerParameter, ControllerRoute, ResponseDescription, TypeReference } from './nest/types.js';
-import { compareCodeUnits } from './compare.js';
 import { parameterOverrideKey } from './nest/parameters.js';
 
 export type OpenApiSchema = Record<string, unknown> | boolean;
@@ -543,6 +543,6 @@ export async function collectOperations(
     paths[route.path] = pathItem;
   }
   return {
-    paths: Object.fromEntries(Object.entries(paths).sort(([left], [right]) => compareCodeUnits(left, right))),
+    paths: Object.fromEntries(Object.entries(paths).sort(([left], [right]) => compareText(left, right))),
   };
 }

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { discoverSources, isRecord, resolveProfile } from './generator-api.js';
+import { discoverSources, isRecord, resolveProfile, stableValue } from './generator-api.js';
 import type { GolemProfile, InputObserver } from './generator-api.js';
 import type { CodecSchemaClosureEntry } from './validation-plan.js';
 
@@ -27,20 +27,10 @@ export interface ModelManifest {
   readonly [key: string]: unknown;
 }
 
+export { stableJson } from './generator-api.js';
+
 export const MODEL_MANIFEST_FILENAME = 'model-manifest.json';
 export const MODEL_MANIFEST_MARKER = '@golem-model-manifest';
-
-function stableValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stableValue);
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(
-    Object.keys(value).sort().map((key) => [key, stableValue(value[key])]),
-  );
-}
-
-export function stableJson(value: unknown): string {
-  return `${JSON.stringify(stableValue(value), null, 2)}\n`;
-}
 
 /** Return an identity projection that deliberately excludes generation profile. */
 export function stableIdentity(value: unknown): unknown {

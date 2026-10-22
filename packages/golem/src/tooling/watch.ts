@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { contains } from './config.js';
 import type { GolemConfig } from './config.js';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, discoverSources, errorMessage, hasErrorCode, suffixPattern } from './generator-api.js';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, discoverSources, errorMessage, hasErrorCode, isInsideDirectory, suffixPattern } from './generator-api.js';
 import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, PipelineState } from './pipeline.js';
 
@@ -10,7 +9,7 @@ function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers'): 
   const found = new Set<string>();
   // Generated outputs can contain model-named files; they are not model sources.
   const outputs = config.jobs.flatMap(job => job.kind === 'openapi' || job.kind === 'controllers' ? [job.options.output] : []);
-  const skip = (directory: string): boolean => outputs.some(output => contains(output, directory));
+  const skip = (directory: string): boolean => outputs.some(output => isInsideDirectory(output, directory));
   for (const job of config.jobs) {
     if (job.kind !== kind) continue;
     found.add(path.join(job.options.root, 'tsconfig.json'));

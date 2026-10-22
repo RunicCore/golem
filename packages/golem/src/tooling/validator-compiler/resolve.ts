@@ -1,4 +1,5 @@
 import { unescapePointerToken } from '../../json-pointer.js';
+import { isRecord } from '../generator-api.js';
 
 /** A schema node with the context its keywords and references are read in. */
 export interface SchemaLocation {
@@ -17,10 +18,6 @@ const SCHEMA_LIST_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as const
 const SCHEMA_MAP_KEYWORDS = ['$defs', 'properties', 'patternProperties', 'dependentSchemas'] as const;
 
 const HIERARCHICAL_URI = /^[A-Za-z][A-Za-z0-9+.-]*:\/\//;
-
-export function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
 
 /** One RFC 6901 pointer segment. */
 export function pointerSegment(token: string | number): string {

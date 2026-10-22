@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { runPipeline, watchPipeline } from '#golem/cli';
-import { contains } from '#golem/config';
+import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { OwnedOutputIndex } from '#golem/watch';
 import { workspace } from './support/process.js';
@@ -31,7 +31,7 @@ test('owned output index excludes exactly the outputs and the directories contai
     path.join(root, 'src/sub/../cart.model.generated.ts'),
   ];
   for (const input of inputs) {
-    assert.equal(index.covers(input), owned.some(output => contains(input, output)), input);
+    assert.equal(index.covers(input), owned.some(output => isInsideDirectory(input, output)), input);
   }
   assert.equal(index.covers(path.join(root, 'sdk2/models.ts')), false, 'a sibling with a shared prefix is not owned');
 });
