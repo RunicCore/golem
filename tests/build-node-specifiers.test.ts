@@ -8,7 +8,7 @@ import test from 'node:test';
 import { decodeMappings } from '#golem/source-map';
 import { copyFixture, fileFixtureScope, linkProjectPackages, onceShared } from './fixture-project.js';
 import { MINIMAL_GOLEM_YAML, writeModelSources } from './model-project.js';
-import { build, TSC } from './support/build-project.js';
+import { build, editTsconfig, TSC } from './support/build-project.js';
 import { createNodeSpecifierProject } from './support/node-specifiers-project.js';
 import { command, workspace } from './support/process.js';
 
@@ -54,12 +54,17 @@ export const lazy: Promise<{ readonly lazyValue: string }> = loadLazy();
 `;
 
 /** The fixture project with a golem build over it. The fixture holds the user sources; the tests read what the build wrote. */
-async function buildFixture(compilerOptions: Readonly<Record<string, unknown>>) {
+function fixtureProject(compilerOptions: Readonly<Record<string, unknown>>): string {
   const root = createNodeSpecifierProject(scope, { prefix: 'golem-build-node-specifiers-', compilerOptions });
   copyFixture(path.join(root, 'src'), 'node-specifiers/src');
   writeModelSources(path.join(root, 'src'), { 'item.model.ts': ITEM_MODEL, 'construct.ts': CONSTRUCT_SITE, ...DECLARED_SOURCES });
   fs.writeFileSync(path.join(root, 'golem.yaml'), MINIMAL_GOLEM_YAML);
   linkProjectPackages(root, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
+  return root;
+}
+
+async function buildFixture(compilerOptions: Readonly<Record<string, unknown>>) {
+  const root = fixtureProject(compilerOptions);
   const main = fs.readFileSync(path.join(root, 'src/main.ts'), 'utf8');
   const result = await build(root);
   return { root, result, main };
@@ -130,4 +135,27 @@ test('a declarations-only build writes the same Node-resolvable declarations int
   assert.equal(result.exitCode, 0);
   assert.equal(fs.existsSync(path.join(root, 'build')), false, 'no JavaScript and no declaration lands in the outDir');
   assert.deepEqual(await checkConsumer(root, 'types'), { code: 0, output: '' });
+});
+
+test('a build with no rootDir rewrites the declarations where the compiler wrote them, below the tsconfig directory', async () => {
+  // protects: T-144 the declaration of each source is found from the compiler's own list, whatever the output layout
+  const root = fixtureProject({ declaration: true, rootDir: undefined });
+  // With sources in two folders the compiler's output root is the tsconfig directory, so the declarations land in build/src/ and build/tools/.
+  writeModelSources(root, { 'tools/probe.ts': "export { thing } from '../src/api';\n" });
+  editTsconfig(root, tsconfig => { tsconfig.include = ['src/**/*.ts', 'src/**/*.js', 'tools/**/*.ts']; });
+  assert.equal((await build(root)).exitCode, 0);
+  assert.ok(fs.existsSync(path.join(root, 'build/tools/probe.d.ts')));
+  assert.deepEqual(await checkConsumer(root, 'build/src'), { code: 0, output: '' });
+});
+
+test('a build that stopped before it changed the declaration paths changes them in the next build', async () => {
+  // protects: T-144 the compiler does not write a declaration twice, so a stopped build must not leave one unchanged for good
+  const root = fixtureProject({ declaration: true });
+  const manifest = path.join(root, 'node_modules/lodashy/package.json');
+  const text = fs.readFileSync(manifest, 'utf8');
+  fs.writeFileSync(manifest, 'not json');
+  await assert.rejects(build(root), /lodashy/);
+  fs.writeFileSync(manifest, text);
+  assert.equal((await build(root)).exitCode, 0);
+  assert.deepEqual(await checkConsumer(root, 'build'), { code: 0, output: '' });
 });
