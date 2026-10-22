@@ -311,6 +311,16 @@ export function projectFilesImportedBy(file: ts.SourceFile, compilerOptions: ts.
   return [...found];
 }
 
+/** The import specifier that `output` writes for `source`: relative, with the extension the emitted file has. */
+export function sourceImportPath(source: string, output: string): string {
+  const relativePath = relative(dirname(output), source)
+    .replace(/\\/g, '/')
+    .replace(/\.ts$/, '.js')
+    .replace(/\.mts$/, '.mjs')
+    .replace(/\.cts$/, '.cjs');
+  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
+}
+
 /** The companion of a source: `.generated` before its final extension. */
 export function generatedFilename(source: string): string {
   const generated = source.replace(/\.([cm]?ts)$/, '.generated.$1');
@@ -441,12 +451,14 @@ function openParsedProgram(
   parsed: ReturnType<typeof parsedProject>,
   rootNames: readonly string[],
   onInput?: InputObserver,
+  overlays?: ReadonlyMap<string, string>,
 ): ProgramInfo {
   const programConfig = effectiveConfigPath(parsed);
   const program = session.openProgram({
     root,
     sources: rootNames,
     ...(programConfig ? { configFile: programConfig } : {}),
+    ...(overlays ? { overlays } : {}),
     onInput,
   });
   const host = ts.createCompilerHost(parsed.options, true);
@@ -483,6 +495,92 @@ export function createProjectProgram(
   const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
   const parsed = parsedProject(root, [], session, onInput, configFile);
   return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput);
+}
+
+/** Whether a generated companion is left over: its model source no longer exists. */
+export function isOrphanCompanion(companion: string, suffixes: readonly string[]): boolean {
+  const source = companion.replace(/\.generated(\.[cm]?ts)$/, '$1');
+  return source !== companion && suffixPattern(suffixes).test(basename(source)) && !existsSync(source);
+}
+
+/**
+ * The names of the class models a model file declares: the exported aliases `type Name = IModel<...>`, where `IModel` is
+ * the name the file imports it by (`import { IModel as Model }` too) or a member of a namespace import. The text is read
+ * with patterns; a name it misses keeps the companion on disk for the analysis.
+ */
+export function classModelNames(text: string): string[] {
+  const local = new Set<string>();
+  const namespaces = new Set<string>();
+  for (const [, clause = ''] of text.matchAll(/\bimport\s+(?:type\s+)?([^'";]*?)\s*\bfrom\s*['"][^'"]*['"]/g)) {
+    for (const [, members = ''] of clause.matchAll(/\{([^}]*)\}/g)) {
+      for (const member of members.split(',')) {
+        const [imported, alias] = member.trim().replace(/^type\s+/, '').split(/\s+as\s+/);
+        if (imported === 'IModel') local.add(alias ?? imported);
+      }
+    }
+    const namespace = /\*\s*as\s+([\w$]+)/.exec(clause)?.[1];
+    if (namespace !== undefined) namespaces.add(namespace);
+  }
+  const names: string[] = [];
+  for (const [, name = '', owner, member = ''] of text.matchAll(/\bexport\s+type\s+([\w$]+)\s*=\s*(?:([\w$]+)\s*\.\s*)?([\w$]+)\s*</g)) {
+    if (owner === undefined ? local.has(member) : namespaces.has(owner) && member === 'IModel') names.push(name);
+  }
+  return [...new Set(names)];
+}
+
+/**
+ * A program whose generated base classes are stubs. A generated companion on disk is missing on the first run and stale
+ * after a model change, so the program reads each class model's base from an overlay instead: an empty abstract class that
+ * has the fields of the model (`IModel<F>` is `F`). The checker then resolves every use of an app class, and every utility
+ * type over it, from the model as it is now. A companion that no model declares any more reads as `export {}`.
+ * The stubs come from the model files of `modelFiles`, read before the program opens; a model file that only the
+ * program reaches (a shared folder) gets its stub from a second program opened from the same session.
+ */
+export function createModelStubProgram(
+  sources: readonly string[],
+  root: string,
+  boundary: ModelBoundary,
+  modelFiles: readonly string[],
+  onInput?: InputObserver,
+  retained?: ts.ProgramSession,
+): ProgramInfo {
+  const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
+  const parsed = parsedProject(root, sources, session, onInput);
+  const stubbed = new Set<string>();
+  const stubsOf = (files: readonly string[]): Map<string, string> => {
+    const stubs = new Map<string, string>();
+    for (const file of files) {
+      const real = canonicalFilename(file);
+      if (stubbed.has(real) || !existsSync(file)) continue;
+      stubbed.add(real);
+      const names = classModelNames(readFileSync(file, 'utf8'));
+      if (names.length === 0) continue;
+      const companion = canonicalFilename(companionFilename(boundary, file));
+      stubs.set(companion, `import type { ${names.join(', ')} } from ${JSON.stringify(sourceImportPath(real, companion))};\n`
+        + names.map((name) => `export declare abstract class ${name}BaseModel {}\nexport interface ${name}BaseModel extends ${name} {}\n`).join(''));
+    }
+    return stubs;
+  };
+  const open = (stubs: ReadonlyMap<string, string>): ProgramInfo => {
+    const overlays = new Map(stubs);
+    for (const filename of parsed.projectFiles) {
+      const companion = canonicalFilename(filename);
+      const underOutput = boundary.companions !== undefined && !isOutside(boundary.companions.output, companion);
+      if (isGeneratedCompanion(companion) && !overlays.has(companion) && (underOutput || isOrphanCompanion(companion, boundary.suffixes))) {
+        overlays.set(companion, 'export {}\n');
+      }
+    }
+    return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput, overlays);
+  };
+  const stubs = stubsOf(modelFiles);
+  const info = open(stubs);
+  const reached = stubsOf(byRealPath(includedModelSources(info.program.getSourceFiles()
+    .filter((file) => !info.program.isSourceFileDefaultLibrary(file))
+    .map((file) => file.fileName), boundary.suffixes)));
+  if (reached.size === 0) return info;
+  const next = open(new Map([...stubs, ...reached]));
+  info.program[Symbol.dispose]();
+  return next;
 }
 
 export function createOverlayProgram(

@@ -36,13 +36,14 @@ import {
   byRealPath,
   canonicalFilename,
   companionFilename,
+  createModelStubProgram,
   createOverlayProgram,
-  createProgram,
   discoverModelSources,
   formatDiagnostics,
   generatedFilename,
   ignoredSharedFileWarnings,
   includedModelSources,
+  isOrphanCompanion,
   isModelSource,
   isOutside,
   isOwnModelFile,
@@ -358,12 +359,6 @@ function ownDiagnostics(diagnostics: readonly ts.Diagnostic[], outputs: readonly
   return diagnostics.filter((diagnostic) => diagnostic.fileName === undefined || own.has(canonicalFilename(diagnostic.fileName)));
 }
 
-/** A companion of a model-suffixed source that no longer exists; any other `*.generated.ts` is not golem's. */
-function isOrphanCompanion(companion: string, suffixes: readonly string[]): boolean {
-  const source = companion.replace(/\.generated(\.[cm]?ts)$/, '$1');
-  return source !== companion && suffixPattern(suffixes).test(basename(source)) && !existsSync(source);
-}
-
 const CODE_UNION_DISCRIMINATOR_MISSING = 'RUNM1080';
 
 /** An object union with no literal tag stops generation with its code, the model file and the fix. */
@@ -427,13 +422,15 @@ export function generate(context: GolemModelContext): GolemModelResult {
     if (listed) assertListedSourceIsOwn(boundary, source);
   }
 
-  // Phase one intentionally tolerates diagnostics from stale companions.  It
-  // only supplies a checker for model-specification discovery.  The generated
-  // companions are then overlaid in phase two, whose unsuppressed diagnostics
-  // are the write gate and preserve genuine handwritten-source failures.
-  const programInfo = createProgram(
+  // Phase one reads the job's model files and reports what they declare. The program it opens reads each generated base class
+  // as a stub with the fields of its model, so a class that is not generated yet, or is stale, still has its fields. The
+  // handwritten sources can still fail on a companion export other than the base: phase two's unsuppressed diagnostics are
+  // the write gate and preserve genuine handwritten-source failures.
+  const programInfo = createModelStubProgram(
     discovered,
     normalized.root,
+    boundary,
+    discovered,
     normalized.onInput,
     retainedProgramSession(normalized.session, SESSION_OWNER, normalized.root),
   );

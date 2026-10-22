@@ -34,6 +34,7 @@ import {
   companionOfSpecification,
   portableRelativeFilename,
   projectFilesImportedBy,
+  sourceImportPath,
 } from '@exprtlabs/golem/internal/type-analysis';
 import type {
   ConstraintSchemaValue,
@@ -66,15 +67,6 @@ function richDescriptor(descriptor: ModelConversionDescriptor): RichDescriptor {
 
 function bindingImportPath(binding: { readonly module: string; readonly specifier?: string }, output: string): string {
   return binding.specifier ?? sourceImportPath(binding.module, output);
-}
-
-function sourceImportPath(source: string, output: string): string {
-  const relativePath = relative(dirname(output), source)
-    .replace(/\\/g, '/')
-    .replace(/\.ts$/, '.js')
-    .replace(/\.mts$/, '.mjs')
-    .replace(/\.cts$/, '.cjs');
-  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
 }
 
 /**
