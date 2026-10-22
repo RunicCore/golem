@@ -21,10 +21,13 @@ import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFacto
  * `npm run bench:typia -- --toggles` the cost toggles on the scratch validators beside the generated fast checks and
  *                                    the codec call chain (one window)
  * `npm run bench:typia -- --verify`  the checks only, no timing
+ * `npm run bench:typia -- --json-value` a model with a recursive JSON value field: the ordered branch test of its untagged
+ *                                    union against a typeof dispatch, and the acyclic pre-walk of a validated encode (one window)
  */
 const SETTINGS = { warmupMs: 30, batchMs: 18, batches: 5 };
 const TYPIA_FIXTURES = path.join(root, 'scripts/benchmark/fixtures/typia');
 const MOBX_FIXTURES = path.join(root, 'scripts/benchmark/fixtures/typia-mobx');
+const JSON_FIXTURES = path.join(root, 'scripts/benchmark/fixtures/json-value');
 
 interface CompareModule {
   verifyCompareModels(): void;
@@ -261,11 +264,64 @@ function reportBench(cases: readonly CompareCase[], samples: Map<CompareCase, Ba
   process.stdout.write(`Encode of the flat IModel class instance, ops/s: its fields only, and with program state (one unknown own key)\n${table([['fields only', 'program state', 'state/fields'], [fixed(valid), fixed(state), ratio(state, valid)]])}\n\n`);
 }
 
+/** The scratch alternative to the generated ordered branch test: one `typeof` dispatch, with the array and the record walked. */
+function dispatchIsJson(value: unknown): boolean {
+  if (value === null) return true;
+  switch (typeof value) {
+    case 'boolean': case 'string': return true;
+    case 'number': return Number.isFinite(value);
+    case 'object':
+      if (Array.isArray(value)) { for (let index = 0; index < value.length; index++) if (!dispatchIsJson(value[index])) return false; return true; }
+      for (const key in value) if (!dispatchIsJson((value as Record<string, unknown>)[key])) return false;
+      return true;
+    default: return false;
+  }
+}
+
+/**
+ * The two valid-path costs of a recursive JSON value field, measured and not gated (F-250): the generated fast check,
+ * which tries the branches of the untagged union in order, against a typeof dispatch; and the acyclic pre-walk that a
+ * validated encode runs, against the whole validated encode. Both run in one window, interleaved.
+ */
+async function jsonValueMode(directory: string): Promise<void> {
+  process.stderr.write('Preparing the JSON value project (generation and compile)…\n');
+  const built = prepare(directory, 'validating', [JSON_FIXTURES]);
+  const out = path.dirname(built);
+  const fixture = await import(pathToFileURL(path.join(out, 'json-value.model.js')).href) as { jsonPayload(): unknown; JsonDoc: new (init: object) => object };
+  const codecs = await import(pathToFileURL(path.join(out, 'json-value.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
+  const validators = await import(pathToFileURL(path.join(out, 'generated/models/models.validators.generated.js')).href) as ValidatorExports;
+  const { assertAcyclicEncodeInput } = await import('@exprtlabs/golem/conversion');
+  const payload = fixture.jsonPayload();
+  const doc = new fixture.JsonDoc({ id: 1, payload });
+  const isJson = generatedFunction(validators, 'is', 'JsonValue') as (value: unknown) => boolean;
+  if (isJson(payload) !== true || dispatchIsJson(payload) !== true) throw new Error('The JSON payload is not valid');
+  const bad = { a: [{ b: Symbol('x') }] };
+  if (isJson(bad) !== false || dispatchIsJson(bad) !== false) throw new Error('A symbol leaf is accepted');
+  const toWire = codecs.toWireFormatTJsonDoc;
+  const step = (side: string, run: () => unknown): CompareCase => ({ model: 'json', twin: 'plain', task: 'toggle', side, run });
+  const cases = [
+    step('generated is_X (ordered branches)', () => isJson(payload)),
+    step('typeof dispatch (scratch)', () => dispatchIsJson(payload)),
+    step('validated toWireFormat', () => toWire(doc)),
+    step('acyclic pre-walk alone', () => assertAcyclicEncodeInput(doc)),
+  ];
+  const loadBefore = load();
+  const started = performance.now();
+  const samples = measure((value) => (typeof value === 'boolean' ? 1 : 0), cases);
+  const windowSeconds = (performance.now() - started) / 1000;
+  const median = (side: string): number => summarize(samples.get(cases.find(c => c.side === side)!)!).median;
+  const rows: string[][] = [['case', 'ops/s'], ...cases.map(c => [c.side, fixed(median(c.side))])];
+  process.stdout.write(`JSON value field, ops/s (median of ${SETTINGS.batches} batches of ${SETTINGS.batchMs} ms)\n${table(rows)}\n\n`);
+  process.stdout.write(`dispatch/ordered ${ratio(median('typeof dispatch (scratch)'), median('generated is_X (ordered branches)'))} (above 1: the dispatch is faster); the pre-walk takes ${(median('validated toWireFormat') / median('acyclic pre-walk alone')).toFixed(2)} of the time of the validated encode\n`);
+  process.stdout.write(`Measured window ${windowSeconds.toFixed(1)} s for ${cases.length} cases; load average before ${loadBefore}, after ${load()}\n`);
+}
+
 async function main(): Promise<void> {
   const mode = process.argv.includes('--toggles') ? 'toggles' : process.argv.includes('--verify') ? 'verify' : 'bench';
   mkdirSync(path.join(root, '.cache'), { recursive: true });
   const directory = mkdtempSync(path.join(root, '.cache/benchmark-work-'));
   try {
+    if (process.argv.includes('--json-value')) { await jsonValueMode(directory); return; }
     process.stderr.write('Preparing the projects (generation and compile)…\n');
     const built = prepare(directory, 'validating', [TYPIA_FIXTURES]);
     const builtMobx = prepare(path.join(directory, 'mobx'), 'validating', [MOBX_FIXTURES], true);

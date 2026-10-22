@@ -170,7 +170,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1003
 
-**Unsupported TypeScript type.** A model or field type isn't one of the shapes this generator can convert — none of the recognized primitive, literal, array, tuple, object, or union forms. A type alias that contains itself through arrays, tuples, or unions, with no model between, also gives this code. The message names the alias and the field. **Fix:** Replace it with a supported shape, such as a plain object, array, primitive, or named model reference. A recursive shape works only through an `IObject` or `IModel`, so change the shape to pass through one, for example `type TNode = IObject<{ value: string; children: TNode[] }>`.
+**Unsupported TypeScript type.** A model or field type isn't one of the shapes this generator can convert — none of the recognized primitive, literal, array, tuple, object, or union forms. The message names the type and the field. **Fix:** Replace it with a supported shape, such as a plain object, array, primitive, or named model reference.
 
 ### RUNM1004
 
@@ -258,7 +258,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1056
 
-**Unresolvable recursive object.** An anonymous object type refers back to itself with nothing to break the cycle: no named model, and no derived-type contract for it. **Fix:** Give the recursive shape a named model, or declare it as an explicit derived type.
+**Unresolvable recursive type.** A type refers back to itself, and golem cannot give the cycle a name. A recursive type alias gets its name from the alias, so the cycle needs a type alias that you wrote. **Fix:** Declare the recursive shape as a named type alias, for example `type Tree = { children: Tree[] }`, or as a named model.
 
 ### RUNM1057
 

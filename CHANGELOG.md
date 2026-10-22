@@ -9,6 +9,14 @@ Every breaking change, one bullet per change, with the action to take:
 [Migrating to 1.0](docs/migrating.md). Details for each package are
 in the sections below.
 
+## Unreleased
+
+### Models
+
+- A type alias that refers to itself now works in any shape: a union, an array, a tuple or a record. `type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }` is a valid field type. Golem generates one function for the alias. [`RUNM1003`](docs/reference/diagnostics.md#runm1003) no longer reports a recursive alias, and [`RUNM1056`](docs/reference/diagnostics.md#runm1056) now means a cycle that golem cannot name.
+- A union of scalars, one array and one object converts and validates without a tag.
+- `golem-ts-openapi` writes a controller response that has a recursive alias type as one component that refers to itself.
+
 ## 1.0.0
 
 Version 1.0.0 includes four independently installable packages:

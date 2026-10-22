@@ -85,9 +85,18 @@ The field type decides construction, conversion and validation.
 | your class (extends a `*Base`) | a nested instance of that class |
 | `Date` | an ISO date-time string in JSON, restored with `Date` parsing; add format checks with [tags](/guide/tags) |
 | `TemporalInstant`, `TemporalPlainDate` and the other [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) types | an ISO 8601 string in JSON; needs a `Temporal` global ([Dates and times](/guide/dates)) |
+| a [recursive type alias](#recursive-type-aliases) | converted and validated at every level |
 | `unknown` | accepted without structural checks only when `allowAny` is `true` |
 
 `any` and `unknown` are accepted only when `allowAny` is `true`, set in `golem.yaml` or per model; otherwise generation fails with [`RUNM1011`](/reference/diagnostics#runm1011) ([strict objects](/guide/model-composition#strict-objects-and-any)).
+
+## Recursive type aliases
+
+A type alias can refer to itself, in any shape: a union, an array, a tuple or a record. Golem generates one function for the alias, so a recursive alias needs no model around it. For example, `type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }` is a valid type for a model field, beside `IModel<{ payload: JsonValue }>`.
+
+Use the alias as a field type, as an optional field or as an array item. Golem validates and converts every level. `stringify` and `toWireFormat` throw an error for a value that contains itself.
+
+A type alias that does not refer to itself stays part of the field type. A recursive alias that holds a `Date` or a model converts the `Date` or the model at every level. A cycle that golem cannot name stops generation with [`RUNM1056`](/reference/diagnostics#runm1056).
 
 ## Regenerate
 
