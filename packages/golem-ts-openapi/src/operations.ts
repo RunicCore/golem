@@ -95,14 +95,17 @@ function arraySchema(schema: OpenApiSchema): OpenApiSchema {
   return { type: 'array', items: schema };
 }
 
-function primitiveResponseType(checker: ts.TypeChecker, type: ts.Type): boolean {
+function primitiveResponseType(checker: ts.TypeChecker, type: ts.Type, seen: ReadonlySet<ts.Type> = new Set()): boolean {
+  // A recursive alias (`type Json = ... | Json[]`) meets its own type again; a repeat adds no non-primitive member.
+  if (seen.has(type)) return true;
+  const inside = new Set(seen).add(type);
   if (type.isUnion()) {
     const members = type.types.filter(item => (item.flags & ts.TypeFlags.Undefined) === 0);
-    return members.length > 0 && members.every(item => primitiveResponseType(checker, item));
+    return members.length > 0 && members.every(item => primitiveResponseType(checker, item, inside));
   }
   if (checker.isArrayType(type)) {
     const item = checker.getTypeArguments(type as ts.TypeReference)[0];
-    return item !== undefined && primitiveResponseType(checker, item);
+    return item !== undefined && primitiveResponseType(checker, item, inside);
   }
   return (type.flags & (
     ts.TypeFlags.StringLike
