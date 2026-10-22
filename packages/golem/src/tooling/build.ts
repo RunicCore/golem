@@ -54,7 +54,7 @@ interface Project {
   readonly rootDir?: string;
   readonly baseUrl?: string;
   readonly paths?: Readonly<Record<string, readonly string[]>>;
-  /** The original configuration emits declarations, so the check writes them from the original sources. */
+  /** The original configuration emits declarations, so the check writes them from the original sources and the build changes their import paths. */
   readonly declaration: boolean;
   /** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: the build is the check alone. */
   readonly emitsJavaScript: boolean;
@@ -252,6 +252,14 @@ function commonDirectory(directories: readonly string[]): string {
   return path.resolve(`${first.slice(0, length).join(path.sep)}${path.sep}`);
 }
 
+/**
+ * The directory the compiler writes outputs relative to: the common directory of the tsconfig's directory, the `rootDir` and every source.
+ * With a `rootDir` the output layout starts at that directory instead.
+ */
+function sourceBase(project: Project, sources: readonly ts.SourceFile[]): string {
+  return commonDirectory([project.root, ...sources.map((source) => path.dirname(source.fileName)), ...project.rootDir === undefined ? [] : [project.rootDir]]);
+}
+
 /** The `package.json` that governs `directory`: its own, or the nearest one above. */
 function nearestManifest(directory: string): string | undefined {
   for (let current = directory; ; current = path.dirname(current)) {
@@ -309,7 +317,7 @@ interface StageResult {
 function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrites: ReadonlyMap<string, FileRewrite>): StageResult {
   const { root } = project;
   const stageDirectory = path.join(project.buildDirectory, 'stage');
-  const base = commonDirectory([root, ...sources.map((source) => path.dirname(source.fileName)), ...project.rootDir === undefined ? [] : [project.rootDir]]);
+  const base = sourceBase(project, sources);
   const stagePath = (original: string): string => insideStage(stageDirectory, path.join(stageDirectory, path.relative(base, original)));
   const keyOf = (original: string): string => posix(path.relative(base, original));
   const maps = new Map<string, SourceMapV3>();
@@ -355,10 +363,8 @@ function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrite
     compilerOptions: {
       outDir: project.outDir,
       ...(project.rootDir === undefined ? {} : { rootDir: stageOf(project.rootDir) }),
-      // Declarations follow the original, so the stage reports what the original reports. The real ones come from the check;
-      // these go where nothing reads them.
-      declaration: project.declaration,
-      ...(project.declaration ? { declarationDir: path.join(project.buildDirectory, 'stage-declarations') } : {}),
+      // The stage's text has the calls rewritten, so its types differ from the original's: the declarations come from the check.
+      declaration: false,
       declarationMap: false,
       composite: false,
       noEmit: false,
@@ -395,6 +401,50 @@ function withNodeSpecifiers(root: string, sources: readonly ts.SourceFile[], che
     });
   }
   return rewrites;
+}
+
+/** How the compiler names the declaration file of a source by its extension, and the extension of the file that holds that declaration's text in the program that reads it. */
+const DECLARATION_FILES: Readonly<Record<string, { readonly declaration: string; readonly module: string }>> = {
+  '.ts': { declaration: '.d.ts', module: '.ts' },
+  '.tsx': { declaration: '.d.ts', module: '.ts' },
+  '.js': { declaration: '.d.ts', module: '.ts' },
+  '.jsx': { declaration: '.d.ts', module: '.ts' },
+  '.mts': { declaration: '.d.mts', module: '.mts' },
+  '.mjs': { declaration: '.d.mts', module: '.mts' },
+  '.cts': { declaration: '.d.cts', module: '.cts' },
+  '.cjs': { declaration: '.d.cts', module: '.cts' },
+};
+
+/**
+ * Give the declarations the check wrote from the original sources the import paths Node resolves, as the emitted JavaScript has
+ * them (`nodeSpecifierEdits`): a NodeNext consumer reads these files. A declaration's text is read as a module beside its source, so
+ * a specifier resolves from where the source's own does, and the edits apply to the declaration. A declaration that needs no edit
+ * is not written, so the incremental state of the check keeps it.
+ */
+function rewriteDeclarations(session: ts.ProgramSession, project: Project, sources: readonly ts.SourceFile[], rootNames: readonly string[]): void {
+  const layoutRoot = project.rootDir ?? sourceBase(project, sources);
+  const directory = project.declarationDir ?? project.outDir;
+  const declarations = new Map<string, { readonly file: string; readonly text: string }>();
+  for (const source of sources.filter((candidate) => !candidate.isDeclarationFile)) {
+    const extension = Object.keys(DECLARATION_FILES).find((candidate) => source.fileName.endsWith(candidate));
+    if (extension === undefined) continue;
+    const kind = DECLARATION_FILES[extension]!;
+    const stem = source.fileName.slice(0, source.fileName.length - extension.length);
+    const file = path.join(directory, `${path.relative(layoutRoot, stem)}${kind.declaration}`);
+    const text = fs.statSync(file, { throwIfNoEntry: false })?.isFile() ? fs.readFileSync(file, 'utf8') : undefined;
+    if (text !== undefined) declarations.set(`${stem}.golem-declaration${kind.module}`, { file, text });
+  }
+  if (declarations.size === 0) return;
+  const overlays = new Map([...declarations].map(([module, { text }]) => [module, text]));
+  using program = session.openProgram({ root: project.root, sources: [...rootNames, ...overlays.keys()], configFile: project.configFile, overlays });
+  const checker = program.getTypeChecker();
+  const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(sources.map((source) => source.fileName)) };
+  for (const [module, { file, text }] of declarations) {
+    const declaration = program.getSourceFile(module);
+    if (declaration === undefined) throw new Error(`golem build could not read the declaration ${file} to change its import paths.`);
+    const { edits } = nodeSpecifierEdits(declaration, checker, options);
+    if (edits.length > 0) atomicWrite(file, applyRewrites(text, { edits, imports: [] }, file).code);
+  }
 }
 
 /** The emitted files the compiler listed (`--listEmittedFiles`), and its output without those lines. */
@@ -517,11 +567,14 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   ], true);
   // Like the compiler: a failed check still emits unless noEmitOnError is set, and the exit status stays the check's.
   if (check.code !== 0 && project.noEmitOnError) return check.code;
-  if (!project.emitsJavaScript) return check.code;
+  const writesDeclarations = project.declaration && !project.noEmit;
+  if (!project.emitsJavaScript && !writesDeclarations) return check.code;
 
   using program = session.openProgram({ root, sources: parsed.fileNames, configFile, onInput: observe });
   const sources = projectSources(program);
   for (const source of sources) observeSource(source.fileName);
+  if (writesDeclarations) rewriteDeclarations(session, project, sources, parsed.fileNames);
+  if (!project.emitsJavaScript) return check.code;
   const checker = program.getTypeChecker();
   const models = golemConfig.jobs.find((job) => job.kind === 'models');
   const scanned = new RewriteScanner({ root, directory: golemConfig.directory, modelsRoot: modelsRootOf(golemConfig), suffixes: models?.options.suffixes, output: models?.options.output, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers'), nonModelInputs: golemConfig.nonModelInputs })
@@ -540,6 +593,8 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     '--noCheck', '--listEmittedFiles',
     '--incremental', '--tsBuildInfoFile', emitState,
     ...run.tscArguments,
+    // A forwarded --declaration or --declarationMap beats the stage's configuration: the emit run writes JavaScript alone.
+    '--declaration', 'false', '--declarationMap', 'false',
   ], false);
   const { files, rest } = emittedFiles(emit.stdout);
   for (const file of files.filter((candidate) => /\.[cm]?jsx?\.map$/.test(candidate))) remapSourceMap(file, stage);

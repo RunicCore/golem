@@ -208,7 +208,7 @@ const DYNAMIC_IMPORT = /\bimport(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\n]*\n)*\(/;
 // Characters by code, not a regex literal: emit would print U+2028 raw in one.
 const UNSAFE_IN_LITERAL = ['\\', '\n', '\r', '\u2028', '\u2029'];
 
-/** The module specifier of an import declaration, an `export … from`, or a dynamic `import()` with one string literal. */
+/** The module specifier of an import declaration, an `export … from`, a dynamic `import()` with one string literal, or an import type (`import("x").T`, which declaration files hold). */
 function specifierLiteral(node: ts.Node): ts.StringLiteral | undefined {
   if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
     return node.moduleSpecifier;
@@ -216,6 +216,7 @@ function specifierLiteral(node: ts.Node): ts.StringLiteral | undefined {
   if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments.length >= 1 && ts.isStringLiteral(node.arguments[0]!)) {
     return node.arguments[0];
   }
+  if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) return node.argument.literal;
   return undefined;
 }
 
@@ -227,7 +228,7 @@ function specifierLiteral(node: ts.Node): ts.StringLiteral | undefined {
 export function nodeSpecifierEdits(file: ts.SourceFile, checker: ts.TypeChecker, options: NodeSpecifierOptions): NodeSpecifierEdits {
   const edits: RewriteEdit[] = [];
   const specifiers = new Map<string, string>();
-  // An import declaration and an `export … from` are top-level statements; only an `import(` call can sit deeper.
+  // An import declaration and an `export … from` are top-level statements; only an `import(` call or an import type can sit deeper.
   const dynamic = DYNAMIC_IMPORT.test(file.text);
   const rewrite = (node: ts.Node): undefined => {
     const literal = specifierLiteral(node);

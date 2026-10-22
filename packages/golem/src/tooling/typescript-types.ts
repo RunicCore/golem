@@ -409,6 +409,11 @@ export interface LiteralTypeNode extends TypeNode {
   readonly kind: KindOf<'LiteralTypeNode'>;
   readonly literal: Node;
 }
+/** `import("x").T` and `typeof import("x")`: the argument is a literal type that holds the specifier. */
+export interface ImportTypeNode extends TypeNode {
+  readonly kind: KindOf<'ImportTypeNode'>;
+  readonly argument: TypeNode;
+}
 export interface TypeLiteralNode extends TypeNode {
   readonly kind: KindOf<'TypeLiteralNode'>;
   readonly members: readonly Node[];
@@ -667,6 +672,7 @@ export interface TypeScriptBackend {
   isImportDeclaration(node: Node): node is ImportDeclaration;
   isImportEqualsDeclaration(node: Node): node is ImportEqualsDeclaration;
   isImportSpecifier(node: Node): node is ImportSpecifier;
+  isImportTypeNode(node: Node): node is ImportTypeNode;
   isIndexSignatureDeclaration(node: Node): node is IndexSignatureDeclaration;
   isIndexedAccessTypeNode(node: Node): node is IndexedAccessTypeNode;
   isInterfaceDeclaration(node: Node): node is InterfaceDeclaration;
