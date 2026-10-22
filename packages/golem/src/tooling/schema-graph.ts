@@ -6,13 +6,13 @@
 import type { ModelTypeDescriptor } from '../model.js';
 import {
   canonicalDescriptorKey,
-  canonicalSchemaKey,
   constraintSchemaValues,
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
   schemaForDescriptor,
   type JsonSchema,
   type ModelConstraint,
 } from './schema.js';
+import { canonicalSchemaKey } from './canonical-schema-key.js';
 import { compareText } from './generator-api.js';
 
 export type SchemaNodeKind = 'object' | 'array' | 'tuple' | 'union' | 'intersection' | 'scalar' | 'reference';

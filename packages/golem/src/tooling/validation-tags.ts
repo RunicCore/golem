@@ -4,7 +4,7 @@
  */
 import type { ModelConstraint, ModelTypeDescriptor } from '../model.js';
 import { compareText } from './generator-api.js';
-import { canonicalSchemaKey } from './schema.js';
+import { canonicalSchemaKey } from './canonical-schema-key.js';
 
 export interface ValidationTagGroup {
   readonly constraints: readonly ModelConstraint[];
