@@ -410,6 +410,30 @@ for (const [importer, appType, resolved] of [['a CommonJS app', undefined, 'cjs'
   });
 }
 
+for (const [importer, appType, form] of [['a CommonJS app', undefined, 'd.cts'], ['an ES module app', 'module', 'd.mts']] as const) {
+  test(`a model of an installed package whose types export is customer.model.${form} generates for ${importer}, with the companion of customer.model`, async (t: TestContext) => {
+    // protects: T-223 a .model.d.cts or .model.d.mts file of an installed package is a shared model file (RUNM1074 on both TypeScript lanes before)
+    const outer = createFixtureProject(t, 'golem-shared-declaration-forms-');
+    linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+    writeModelSources(path.join(outer, 'node_modules/@acme/shared'), {
+      'package.json': JSON.stringify({ name: '@acme/shared', version: '1.0.0', exports: { './customer.model': { types: `./dist/customer.model.${form}` } } }),
+      [`dist/customer.model.${form}`]: "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCustomer = IModel<{ name: string }>;\n",
+    });
+    const app = appWithShared(outer, 'lib', false, {
+      'package.json': JSON.stringify({ name: 'lib', private: true, type: appType }),
+      'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model'),
+    }, ['src/**/*.ts']);
+
+    const { artifacts } = generate({ root: app, profile: PROFILE });
+    writeGeneratedArtifacts(artifacts);
+
+    assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/dist/customer.model.generated.ts')));
+    const order = artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'));
+    assert.match(order?.content ?? '', /from "\.\/generated\/models\/@acme\/shared\/dist\/customer\.model\.generated\.js";/);
+    await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
+  });
+}
+
 test('a generated .d.ts beside the .model.d.ts file of an installed package gives one warning that names it, and the app writes its own companion', (t: TestContext) => {
   // protects: D-34 warn about a companion in an installed package, no hard reject
   const outer = createFixtureProject(t, 'golem-shared-installed-');

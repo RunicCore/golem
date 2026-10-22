@@ -68,9 +68,9 @@ export function discoverModelSources(
   return discoverSources(join(root, 'src'), { source: suffixPattern(suffixes), normalize: canonicalFilename, onInput });
 }
 
-/** `suffixes` and their declaration forms: `x.model.d.ts` is a model file as `x.model.ts` is. */
+/** `suffixes` and their declaration forms: `x.model.d.ts`, `x.model.d.cts` and `x.model.d.mts` are model files as `x.model.ts` is. */
 function modelFilePattern(suffixes: readonly string[]): RegExp {
-  return suffixPattern([...suffixes, ...suffixes.map((suffix) => suffix.replace(/\.([cm]?)ts$/, '.d.$1ts'))]);
+  return suffixPattern([...suffixes, ...suffixes.flatMap((suffix) => ['ts', 'cts', 'mts'].map((extension) => suffix.replace(/\.[cm]?ts$/, `.d.${extension}`)))]);
 }
 
 /**
@@ -214,14 +214,14 @@ function packageNameOf(packageFolder: string): string {
 
 /**
  * The generated companion of a model file. An own file's is beside it: `.generated` before its final extension. A shared file's
- * is in `models.output`: `<package name>/<path of the file in its package folder>`, with `.d` dropped from a declaration file.
+ * is in `models.output`: `<package name>/<path of the file in its package folder>`, a declaration file's `.d.ts`, `.d.cts` or `.d.mts` becomes `.ts`.
  * Two shared files can give one path: `assertDistinctCompanions` stops the job.
  */
 export function companionFilename(boundary: ModelBoundary | undefined, modelFile: string): string {
   if (boundary?.companions === undefined || isOwnModelFile(boundary, modelFile)) return generatedFilename(modelFile);
   const real = canonicalPath(modelFile);
   const packageFolder = packageFolderOf(real, boundary.companions.directory) ?? dirname(real);
-  const inPackage = relative(packageFolder, real).replace(/\\/g, '/').replace(/\.d\.([cm]?ts)$/, '.$1');
+  const inPackage = relative(packageFolder, real).replace(/\\/g, '/').replace(/\.d\.[cm]?ts$/, '.ts');
   return generatedFilename(join(boundary.companions.output, packageNameOf(packageFolder), inPackage));
 }
 
