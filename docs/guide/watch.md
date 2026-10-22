@@ -67,8 +67,8 @@ file's content, or the inventory's own record of it, no longer matches what
 generation would produce now, even when the file's modification time was left
 untouched.
 
-Configured destinations such as `output: ../shared-sdk` are relative to the
-configuration file and follow the same rules. Colliding outputs and paths that
+Configured destinations such as `output: ../shared-sdk` for an `openapi` job are relative to the
+configuration file and follow the same rules. The `output` of a `models` job must lie inside the tsconfig directory. Colliding outputs and paths that
 escape a destination through a symbolic link are rejected before generation
 writes them.
 
