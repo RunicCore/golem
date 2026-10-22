@@ -147,7 +147,7 @@ function resolveObjects<S>(
     const closes = schema.unevaluatedProperties === false && parts.every((part) => part.extra.mode === 'open');
     const names = never.map(({ name }) => name);
     const joined = joinMembers([
-      ...(ownPart ? [ownPartDescriptor(ownPart, requiredNames(schema))] : []),
+      ...(ownPart ? [ownPartDescriptor(ownPart, requiredNames(schema), schema.additionalProperties === true)] : []),
       ...members.map(({ descriptor }) => withNeverProperties(descriptor, names)),
     ]);
     return {
@@ -361,13 +361,14 @@ function leaf<S>(schema: unknown, scope: S, reader: CompositionReader<S>): SlotC
 }
 
 /** The own part as an object descriptor, so the component's descriptor holds its own names beside the allOf. */
-function ownPartDescriptor<S>(part: ObjectPart<SlotChild<S>>, required: readonly string[]): ModelTypeDescriptor {
+function ownPartDescriptor<S>(part: ObjectPart<SlotChild<S>>, required: readonly string[], declaredOpen: boolean): ModelTypeDescriptor {
   const { extra } = part;
   return {
     kind: 'object',
     properties: Object.fromEntries(Object.entries(part.slots).map(([name, child]) => [name, child.descriptor])),
     required,
     additionalProperties: extra.mode === 'values' ? extra.child.descriptor : extra.mode === 'open',
+    ...(extra.mode === 'open' && declaredOpen ? { additionalPropertiesDeclared: true as const } : {}),
   };
 }
 

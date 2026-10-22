@@ -47,6 +47,8 @@ const document = {
       Lead: { allOf: [{ type: 'object', required: ['lead'], properties: { lead: ref('Base') } }, { oneOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] }] },
       // Composed roots: open by an explicit additionalProperties true on a member or on the root, and open only by default.
       ComposedOpenInline: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { additionalProperties: true }] },
+      ComposedOpenRef: { allOf: [ref('Base'), { additionalProperties: true }] },
+      ComposedOwnRef: { allOf: [ref('Base')], additionalProperties: true },
       ComposedOpenRoot: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { type: 'object', properties: { tag: { type: 'string' } } }], additionalProperties: true },
       ComposedDefault: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { type: 'object', properties: { tag: { type: 'string' } } }] },
       Bag: { type: 'object', additionalProperties: { type: 'string' }, required: ['id'], properties: { id: { type: 'string' } } },
@@ -186,6 +188,8 @@ test('options a user passes with a checked key still take the lenient path', asy
 
 for (const [name, root, required, keeps] of [
   ['a member with additionalProperties true', 'ComposedOpenInline', { id: 'a' }, true],
+  ['a model base and a member with additionalProperties true', 'ComposedOpenRef', { name: 'a' }, true],
+  ['a model base and additionalProperties true on the root', 'ComposedOwnRef', { name: 'a' }, true],
   ['additionalProperties true on the root', 'ComposedOpenRoot', { id: 'a' }, true],
   ['no additionalProperties', 'ComposedDefault', { id: 'a' }, false],
 ] as const) {

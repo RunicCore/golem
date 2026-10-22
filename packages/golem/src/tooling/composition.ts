@@ -311,6 +311,7 @@ function composeObjectDescriptors(
     properties: composed.slots,
     required: composed.required,
     additionalProperties: composed.extra.mode === 'values' ? composed.extra.child : composed.extra.mode === 'open',
+    ...(composed.extra.mode === 'open' && objects.some((object) => object.additionalPropertiesDeclared) ? { additionalPropertiesDeclared: true as const } : {}),
   };
 }
 
