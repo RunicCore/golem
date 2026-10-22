@@ -56,7 +56,7 @@ npx golem build --declaration --noEmitOnError
 A build runs three steps:
 
 1. It generates the outputs of `golem.yaml`, as `golem generate` does. A job whose inputs did not change since the last run is skipped: `.golem/jobs.json` keeps, per job, a hash of the code of golem and of the job's generator package, the job's options and a hash of every input it read, so a second build with no change runs no job. A job whose generator code changed runs again, even under the same version. An input change runs the job and every job after it that reads its outputs.
-2. It type-checks the sources you wrote with the TypeScript in your project, TypeScript 6.0 or 7, and prints its messages unchanged. An error points at your line, and the declarations come from your sources.
+2. It type-checks the sources you wrote with the TypeScript in your project, TypeScript 6.0 or 7, and prints its messages unchanged. An error points at your line, and the declarations come from your sources. The build then changes their import paths the same way ([import paths](#import-paths)).
 3. It emits JavaScript with the calls rewritten and the import paths that Node loads ([import paths](#import-paths)). Source maps point at your sources.
 
 The build starts from `golem.yaml`: the one in the working directory, or the one `--config` names. Without one it stops with `golem build needs a golem.yaml; run it next to one or pass --config`, and it never searches the folders above. It builds the tsconfig that `golem.yaml` names with [`tsconfig`](/reference/config#root-keys), which is the `tsconfig.json` beside `golem.yaml` by default, so `golem generate` and `golem build` always agree on the project.
@@ -67,13 +67,13 @@ A build never edits your source files. It writes the generated files `golem.yaml
 
 ### Import paths
 
-Node needs the full file name in an import. So the JavaScript that `golem build` writes uses full names, and your sources can keep the short form the compiler accepts. The build changes these specifiers:
+Node needs the full file name in an import. So the JavaScript and the declarations that `golem build` writes use full names, and your sources can keep the short form the compiler accepts. The build changes these specifiers:
 
 - A relative specifier: `./x`, `./dir`, `./dir/`, `.`, `..` and `./x.ts`. They become `./x.js`, `./dir/index.js`, `./dir/index.js`, `./index.js`, `../index.js` and `./x.js`.
 - A specifier that matches a pattern of `paths`. It becomes a relative path with the extension of the output file.
 - A deep path of a package whose root `package.json` has no `exports` field, such as `@nestjs/core/helpers/execution-context-host`. It gets `.js`, or `/index.js` for a folder.
 
-Static `import`, `export … from` and `import()` with a string literal change. An import that already ends in `.js` stays as it is.
+Static `import`, `export … from`, `import()` and an import type (`import("./x").T`) with a string literal change. An import that already ends in `.js` stays as it is.
 
 Every other specifier stays: a bare package name, a `#` import, a URL, a specifier with `?` or `#`, and a specifier that only `baseUrl` resolves. A `paths` alias to a file that is not a source, such as a `.css` file, also stays, and Node cannot load it.
 

@@ -225,6 +225,7 @@ export const {
   isImportDeclaration,
   isImportEqualsDeclaration,
   isImportSpecifier,
+  isImportTypeNode,
   isIndexSignatureDeclaration,
   isIndexedAccessTypeNode,
   isInterfaceDeclaration,
