@@ -1847,9 +1847,14 @@ function emitNodeRuntime(
     emitSerdeValidates(validationEnabled),
   ];
   if (validationEnabled) {
+    const wireAssertCall = `${node.sameSchema ? assertName : wireAssertName}(wire, options);`;
     convertLines.push(
       '  if (validates) {',
-      `    ${node.sameSchema ? assertName : wireAssertName}(wire, options);`,
+      // A validator walks a cyclic value under a recursive model until the stack ends. A valid value pays nothing: the
+      // cycle walk runs only after the validator failed, and reports the cycle in place of the failure.
+      ...(reachesCycle
+        ? ['    try {', `      ${wireAssertCall}`, '    } catch (error) {', '      assertWireAcyclic(wire);', '      throw error;', '    }']
+        : [`    ${wireAssertCall}`]),
       '  }',
     );
   }
