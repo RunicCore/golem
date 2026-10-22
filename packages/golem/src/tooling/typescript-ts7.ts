@@ -877,7 +877,8 @@ function resolveTsconfigPaths(
     for (const target of mapped) {
       if (typeof target !== 'string') continue;
       const candidate = resolvePath(baseUrl, applyStar(target, star));
-      const match = firstExisting(host, sourceCandidates(candidate));
+      // The candidate is absolute, so it probes extensions and index files as a relative specifier does.
+      const match = resolveRelative(candidate, containingFile, host);
       if (match) return match;
     }
   }

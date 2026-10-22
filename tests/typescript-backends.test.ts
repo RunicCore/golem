@@ -30,7 +30,7 @@ test('a relative specifier with a dot in its name resolves to the source that be
   assert.equal(resolve('./user.other'), undefined);
 });
 
-test('a folder is no module file: a folder named like a source is skipped, and a paths alias does not resolve to a folder', t => {
+test('a folder is no module file: a folder named like a source is skipped, and a paths alias to a folder resolves to its index', t => {
   // protects: T-181 the TypeScript 7 system answers fileExists as the TypeScript 6 system does, true for files only
   const root = createFixtureProject(t, 'golem-folder-not-file-');
   const main = path.join(root, 'main.ts');
@@ -41,7 +41,20 @@ test('a folder is no module file: a folder named like a source is skipped, and a
   const resolve = (specifier: string): string | undefined => ts.resolveModuleName(specifier, main, options, ts.sys).resolvedModule?.resolvedFileName;
   assert.equal(ts.sys.fileExists(path.join(root, 'src/models')), false);
   assert.equal(resolve('./src/util'), undefined);
-  assert.notEqual(resolve('@app/models'), path.join(root, 'src/models'));
+  assert.equal(resolve('@app/models'), path.join(root, 'src/models/index.ts'));
+});
+
+test('a paths alias without an extension resolves to the source file or the index of the folder it names', t => {
+  // protects: T-224 a paths alias probes extensions and index files on both TypeScript lanes
+  const root = createFixtureProject(t, 'golem-paths-extensionless-');
+  const main = path.join(root, 'main.ts');
+  fs.mkdirSync(path.join(root, 'src/models'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src/models/index.ts'), 'export const value = 1;\n');
+  fs.writeFileSync(path.join(root, 'src/plain.ts'), 'export const value = 1;\n');
+  const options = { baseUrl: root, paths: { '@app/*': ['src/*'] } };
+  const resolve = (specifier: string): string | undefined => ts.resolveModuleName(specifier, main, options, ts.sys).resolvedModule?.resolvedFileName;
+  assert.equal(resolve('@app/plain'), path.join(root, 'src/plain.ts'));
+  assert.equal(resolve('@app/models'), path.join(root, 'src/models/index.ts'));
 });
 
 for (const [place, specifier, manifest] of [
