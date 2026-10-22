@@ -881,19 +881,27 @@ function modelPropertyAccess(name: string): string {
   return `[${JSON.stringify(name)}]`;
 }
 
-/**
- * The local that holds one field's present value. `presentKeysSource` fills it in one own-key pass, so an inherited value
- * never counts and a getter runs once.
- */
+/** The local that holds one field's value, read once. */
 function modelPresentLocal(index: number): string {
   return `__golemValue${index}`;
 }
 
-/** The statement that reads the captured fields of `target`; empty when no field is captured. */
+/**
+ * The statement that reads the captured fields of `target` in the JSON view (`presentKeysSource`): one own-key pass, so an
+ * inherited value never counts and a getter runs once. Empty when no field is captured. Constructor and decode use it.
+ */
 function modelPresentRead(indent: string, target: string, captures: readonly (readonly [name: string, type: string])[]): string[] {
   if (captures.length === 0) return [];
   const types = new Map(captures.map(([, type], index) => [modelPresentLocal(index), type]));
   return [`${indent}${presentKeysSource(target, captures.map(([name], index) => [name, modelPresentLocal(index)] as const), local => `${local}: ${types.get(local)} | undefined`)}`];
+}
+
+/**
+ * The statement that reads the declared fields of `model` for encode: one plain property access each, so a getter or an
+ * inherited value supplies a field as it does in stringify, and a getter runs once. Empty when no field is captured.
+ */
+function modelDeclaredRead(indent: string, model: string, captures: readonly (readonly [name: string, type: string])[]): string[] {
+  return captures.map(([name, type], index) => `${indent}const ${modelPresentLocal(index)}: ${type} | undefined = ${model}${modelPropertyAccess(name)};`);
 }
 
 function modelPropertyAssignment(target: string, name: string, value: string): string {
@@ -2092,7 +2100,7 @@ export function generateModels(
       );
       return `  if (${input} !== undefined) ${modelPropertyAssignment('result', name, converted)}`;
     });
-    const jsonRead = modelPresentRead('  ', 'model', fields.map(([name]) => [name, `${className}${modelPropertyAccess(name)}`] as const));
+    const jsonRead = modelDeclaredRead('  ', 'model', fields.map(([name]) => [name, `${className}${modelPropertyAccess(name)}`] as const));
     const allProperties = modelSchemaProperties(fieldEnv, definition.rawSchema);
     const allFieldNames = [...allProperties.keys()];
     const fieldNames = allFieldNames.map(name => JSON.stringify(name)).join(', ');

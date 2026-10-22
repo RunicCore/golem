@@ -275,8 +275,9 @@ test('the class-level encode of an SDK model writes no program state of an insta
   assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: task })), { title: 'n', data: { name: 't' } });
 });
 
-test('an SDK model constructor, decode and encode count only own enumerable keys, and a constructor or encode getter runs once', async () => {
+test('an SDK model constructor and decode count only own enumerable keys; encode writes each declared field by property access', async () => {
   // protects: bug T-162 the constructor copied an inherited value (values["name"] !== undefined), against the own-key rule of presence.ts
+  // protects: fact F-286 encode reads each declared field by property access, so a prototype value or a getter is written, once
   const { models } = await validatedSdk();
   const Stamped = models.StampedModel as new (values?: object) => { name?: string; at?: Date };
   const instance = (values: object) => new Stamped(values);
@@ -297,10 +298,14 @@ test('an SDK model constructor, decode and encode count only own enumerable keys
   assert.deepEqual({ ...decodeGeneratedModel(Stamped, { at: '2024-01-02T03:04:05.000Z' }) }, { at: new Date('2024-01-02T03:04:05.000Z') }, 'decode converts an own value');
 
   const prototype = Object.assign(new Stamped(), { name: 'x', at: new Date('2024-01-02T03:04:05.000Z') });
-  assert.deepEqual(encodeGeneratedModel(Object.create(prototype)), {}, 'encode leaves an inherited value out');
+  assert.deepEqual(encodeGeneratedModel(Object.create(prototype)), { name: 'x', at: '2024-01-02T03:04:05.000Z' }, 'encode writes an inherited declared field');
   assert.deepEqual(encodeGeneratedModel(instance({ at: new Date('2024-01-02T03:04:05.000Z') })), { at: '2024-01-02T03:04:05.000Z' }, 'encode writes an own value');
   let encodeReads = 0;
   const encodeGetter = Object.defineProperty(new Stamped(), 'at', { enumerable: true, get() { encodeReads += 1; return new Date('2024-01-02T03:04:05.000Z'); } });
   assert.deepEqual(encodeGeneratedModel(encodeGetter), { at: '2024-01-02T03:04:05.000Z' });
   assert.equal(encodeReads, 1, 'encode reads an own getter once');
+  let hiddenReads = 0;
+  const hidden = Object.defineProperty(new Stamped(), 'name', { enumerable: false, get() { hiddenReads += 1; return 'x'; } });
+  assert.deepEqual(encodeGeneratedModel(hidden), { name: 'x' }, 'encode writes a declared field that a non-enumerable getter supplies');
+  assert.equal(hiddenReads, 1, 'encode reads that getter once');
 });
