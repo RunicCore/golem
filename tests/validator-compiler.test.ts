@@ -376,6 +376,48 @@ test('anyOf and oneOf without a discriminator report a union with the matched co
   await assertIssues(oneOf, 'a', [{ path: [], code: 'union', matched: 0 }]);
 });
 
+test('an anyOf of branches that differ by JSON type checks a valid value with the one branch of its type', async () => {
+  // protects: T-255 one type switch for a disjoint union (F-250); `Number.isInteger` runs only in the integer branch, which comes first.
+  const compiled = await compileValidatorModule({
+    roots: { root: { anyOf: [{ type: 'integer' }, { type: 'string' }, { type: 'null' }, { type: 'array', items: { type: 'string' } }, { type: 'object' }] } },
+    fastPath: true,
+  });
+  const isInteger = Number.isInteger;
+  let calls = 0;
+  Number.isInteger = (value: unknown): value is number => (calls++, isInteger(value));
+  try {
+    const checks = [compiled.fastByRoot.root, (value: unknown) => compiled.byRoot.root(value, false).length === 0];
+    for (const check of checks) {
+      const run = (value: unknown): readonly [boolean, number] => {
+        calls = 0;
+        return [check(value), calls];
+      };
+      assert.deepEqual(run('a'), [true, 0]);
+      assert.deepEqual(run(null), [true, 0]);
+      assert.deepEqual(run(['a']), [true, 0]);
+      assert.deepEqual(run({ a: 1 }), [true, 0]);
+      assert.deepEqual(run(3), [true, 1]);
+    }
+  } finally {
+    Number.isInteger = isInteger;
+  }
+});
+
+test('a union that dispatches by JSON type reports the union issue for a value no branch accepts, in both modes', async () => {
+  // protects: T-255 issues of a disjoint-type union do not change.
+  const disjoint = { anyOf: [{ type: 'null' }, { type: 'boolean' }, { type: 'number' }, { type: 'string' }, { type: 'array', items: { type: 'string' } }, { type: 'object', additionalProperties: { type: 'string' } }] };
+  const none = [{ path: [], code: 'union', matched: 0 }];
+  for (const value of [undefined, Number.NaN, Number.POSITIVE_INFINITY, () => 1, [1], { a: 1 }, [undefined]]) await assertIssues(disjoint, value, none);
+  for (const value of [null, true, 1.5, 'a', ['a'], [], { a: 'b' }, {}]) await assertIssues(disjoint, value, []);
+  // Branches that share a JSON type are tried in order inside that type; a branch with no type is tried for every value.
+  const shared = { anyOf: [{ type: 'string', minLength: 3 }, { type: 'integer' }, { type: 'string', pattern: '^b' }, { type: ['null', 'integer'], minimum: 5 }] };
+  for (const value of ['abc', 'b', 7, null, 3]) await assertIssues(shared, value, []);
+  for (const value of ['a', 1.5, [], {}, true]) await assertIssues(shared, value, none);
+  const untyped = { anyOf: [{ type: 'string', minLength: 3 }, { type: 'integer' }, { not: { type: 'boolean' } }] };
+  for (const value of ['a', 1.5, null, 3]) await assertIssues(untyped, value, []);
+  await assertIssues(untyped, true, none);
+});
+
 test('an anyOf or oneOf of constants reports one literal issue with every allowed value', async () => {
   await assertIssues({ anyOf: [{ const: 'a' }, { const: 'b' }] }, 'c', [{ path: [], code: 'literal', expected: ['a', 'b'] }]);
   await assertIssues({ anyOf: [{ const: 'a' }, { const: 'b' }] }, 'b', []);

@@ -256,6 +256,12 @@ const TYPE_TESTS: Readonly<Record<IrTypeName, (value: Code) => Code>> = {
   array: value => code`Array.isArray(${value})`,
 };
 
+/** The tests that tell the JSON type of a value for a union; a `number` branch tests finiteness itself. */
+const DISPATCH_TESTS: Readonly<Record<IrTypeName, (value: Code) => Code>> = {
+  ...TYPE_TESTS,
+  number: value => code`typeof ${value} === 'number'`,
+};
+
 /** Module-level state the function bodies add to while they are emitted. */
 class ModuleState {
   private readonly declarations: Code[] = [];
@@ -1232,12 +1238,35 @@ class FunctionWriter {
   private unionCheck(check: IrUnion, value: Code): void {
     if (this.record !== undefined) return this.recordingUnionCheck(check, value);
     const attempt = (fn: number): Code => this.call(fn, { value, issues: code`[]`, all: code`false` });
-    if (!check.exactlyOne) return this.leaf({ fails: code`!(${join(check.branches.map(attempt), code` || `)})`, issue: code`code: 'union', matched: 0` });
+    if (!check.exactlyOne) return this.leaf({ fails: code`!(${this.typeDispatch(check.branches, value, attempt) ?? join(check.branches.map(attempt), code` || `)})`, issue: code`code: 'union', matched: 0` });
     const matched = this.fresh('matched');
     this.line(code`let ${matched} = 0;`);
     // Two matches already decide the outcome, so later branches are not run.
     check.branches.forEach((fn, position) => this.line(code`if (${position === 0 ? code`` : code`${matched} < 2 && `}${attempt(fn)}) ${matched}++;`));
     this.leaf({ fails: code`${matched} !== 1`, issue: code`code: 'union', matched: ${matched}` });
+  }
+
+  /**
+   * The test of an `anyOf` that picks the branches by the JSON type of the value: the first test that holds selects the
+   * branches whose type list names that type, tried in order. A branch that cannot pass a value of another type is not
+   * run for it, so the issues do not change. Undefined when a branch states no type, or when one type holds every
+   * branch: the branches are then tried in order.
+   */
+  private typeDispatch(branches: readonly number[], value: Code, attempt: (fn: number) => Code): Code | undefined {
+    const typesOf = branches.map(id => this.branchTypes(id));
+    if (typesOf.some(types => types === undefined)) return undefined;
+    const groups = JSON_TYPE_NAMES
+      .map(name => ({ name, group: branches.filter((_, position) => typesOf[position]?.includes(name)) }))
+      .filter(({ group }) => group.length > 0);
+    if (groups.length < 2 || groups.some(({ group }) => group.length === branches.length)) return undefined;
+    return code`${join(groups.map(({ name, group }) => code`${DISPATCH_TESTS[name](value)} ? ${join(group.map(attempt), code` || `)} : `), code``)}false`;
+  }
+
+  /** The JSON types a value must have to pass the function `id` (after forwarding): those of its first `type` check, `integer` as `number`; undefined when it has none. */
+  private branchTypes(id: number): readonly IrTypeName[] | undefined {
+    const body = this.functions[this.target(id)].body;
+    const type = body.kind === 'checks' ? body.checks.find(check => check.kind === 'type') : undefined;
+    return type?.names.map(name => (name === 'integer' ? 'number' : name));
   }
 
   /** Every branch that passes marks what it evaluated, so `anyOf` runs all of its branches here. */
