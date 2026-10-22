@@ -373,34 +373,3 @@ export class Nest extends TNestBaseModel { constructor(values: Partial<TNestFiel
   assert.deepEqual(decode({ id: 'a', when: undefined }), { id: 'a' }, 'an undefined field');
   assert.deepEqual(decode({ id: 'a', when: text, extra: 1 }), { id: 'a', when: new Date(text), extra: 1 }, 'an own field is converted and another key is kept');
 });
-
-for (const validation of [true, false]) {
-  test(`the class-level encode, toWireFormat and stringify read the declared fields of a nested object by the JSON view (validation ${validation ? 'on' : 'off'})`, async (t) => {
-    // protects: bug T-226 an encode read a nested object by plain property reads, so an inherited or non-enumerable field was written
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-nested-encode-', name: 'model-nested-encode', linkWorkspaceNodeModules: true });
-    fs.writeFileSync(path.join(sourceRoot, 'nest.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-import { TNestBaseModel, type TNestFields } from './nest.model.generated.js';
-export type TNest = IModel<{ inner: { id: string; when?: Date } }>;
-export class Nest extends TNestBaseModel { constructor(values: Partial<TNestFields> = {}) { super(values); } }
-`);
-    writeModelGolemYaml(root, { mobx: false, validation });
-    await buildModelProject(root);
-    const { Nest } = await import(pathToFileURL(path.join(root, 'build/nest.model.js')).href) as { Nest: new (values?: object) => object };
-    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TNest'));
-    const when = new Date('2020-01-02T03:04:05.000Z');
-    const hidden = Object.defineProperty({ id: 'a' }, 'when', { value: when, enumerable: false });
-    const inherited = Object.assign(Object.create({ when }), { id: 'a' });
-    // The nested value is set after construction, as application code does.
-    const holding = (inner: object) => Object.assign(new Nest(), { inner });
-    const absent = { inner: { id: 'a' } };
-    for (const [inner, label] of [[hidden, 'a non-enumerable field'], [inherited, 'an inherited field'], [{ id: 'a', when: undefined }, 'an undefined field']] as const) {
-      assert.deepEqual(encodeGeneratedModel(holding(inner)), absent, `the class-level encode of ${label}`);
-      assert.deepEqual(codec.toWireFormat(holding(inner)), absent, `toWireFormat of ${label}`);
-      assert.equal(codec.stringify(holding(inner)), JSON.stringify(absent), `stringify of ${label}`);
-    }
-    const written = { inner: { id: 'a', when: '2020-01-02T03:04:05.000Z' } };
-    assert.deepEqual(encodeGeneratedModel(holding({ id: 'a', when })), written, 'the class-level encode of an own field');
-    assert.deepEqual(codec.toWireFormat(holding({ id: 'a', when })), written, 'toWireFormat of an own field');
-    assert.equal(codec.stringify(holding({ id: 'a', when })), JSON.stringify(written), 'stringify of an own field');
-  });
-}

@@ -33,7 +33,7 @@ function paymentGraph(): ReturnType<typeof createSchemaGraph> {
   };
   const graph = createSchemaGraph();
   graph.intern(money, 'Money', true);
-  graph.intern(payment, 'Payment', true);
+  graph.intern(payment, 'Payment');
   graph.seal();
   return graph;
 }
@@ -162,7 +162,7 @@ test('a nested trusted call to a model of another module shares one frozen optio
   };
   const graph = createSchemaGraph();
   graph.intern({ kind: 'generated-model', id: 'Pet' }, 'Pet');
-  graph.intern(owner, 'Owner', true);
+  graph.intern(owner, 'Owner');
   graph.seal();
   const source = emitCodecRuntime(graph, { validationEnabled: false, nestedGenerated: (id) => `${id}Model` });
   assert.equal(occurrences(source, TRUSTED_LITERAL), 1, 'the options literal appears once, in the constant');

@@ -462,20 +462,37 @@ function emitNested(
     const omitsUndefined = (name: string): boolean => direction === 'toJSON' && !descriptor.required.includes(name);
     const additionalChanged = additional !== 'value';
     const knownChanged = assignments.some(({ sourceValue, value }) => value !== sourceValue);
-    if (!descriptor.projection && !knownChanged && !additionalChanged) return expression;
-    // Both directions read the declared fields of any object by the JSON view: one Object.keys pass reads each field once
-    // into a local. A projection also drops the keys it does not declare.
-    const knownKeys = Object.keys(descriptor.properties).map(name => JSON.stringify(name)).join(', ');
-    // An additionalProperties tag declares the other keys of a projection as data: they are copied as they are or by
-    // the tag's type. Another object keeps its other keys the same way.
-    const extras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared
-      ? `for (const [key, value] of Object.entries(source)) if (value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)) defineModelProperty(out, key, ${additional});`
-      : '';
-    const capture = assignments.length === 0 ? [] : [presentKeysSource('source', assignments.map(({ name }, index) => [name, projectionLocal(index)] as const), local => `${local}: unknown`)];
-    const fields = assignments.map(({ name, property, presentValue }, index) => direction === 'toJSON' && !omitsUndefined(name)
-      ? `if (Object.hasOwn(source, ${property})) defineModelProperty(out, ${property}, ${projectionLocal(index)} === undefined ? undefined : (${presentValue}));`
-      : `if (${projectionLocal(index)} !== undefined) defineModelProperty(out, ${property}, ${presentValue});`);
-    return `${objectValueExpression(expression)} ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; ${[...capture, ...fields, extras].filter(Boolean).join(' ')} return out; })(${recordExpression(expression)}) : ${expression}`;
+    // A decoder reads the declared fields of any object by the JSON view, so it builds the copy from one Object.keys pass.
+    // A projection does so in both directions, and also drops the keys it does not declare.
+    if (descriptor.projection || (direction !== 'toJSON' && (knownChanged || additionalChanged))) {
+      const knownKeys = Object.keys(descriptor.properties).map(name => JSON.stringify(name)).join(', ');
+      // An additionalProperties tag declares the other keys of a projection as data: they are copied as they are or by
+      // the tag's type. Another object keeps its other keys the same way.
+      const extras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared
+        ? `for (const [key, value] of Object.entries(source)) if (value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)) defineModelProperty(out, key, ${additional});`
+        : '';
+      // A decoder reads its input by the JSON view: one Object.keys pass reads each field once into a local.
+      const capture = direction === 'toJSON' || assignments.length === 0 ? [] : [presentKeysSource('source', assignments.map(({ name }, index) => [name, projectionLocal(index)] as const), local => `${local}: unknown`)];
+      const fields = assignments.map(({ name, property, sourceValue, value, presentValue }, index) => direction !== 'toJSON'
+        ? `if (${projectionLocal(index)} !== undefined) defineModelProperty(out, ${property}, ${presentValue});`
+        : omitsUndefined(name)
+          ? `if (${sourceValue} !== undefined) defineModelProperty(out, ${property}, ${value});`
+          : `if (Object.hasOwn(source, ${property})) defineModelProperty(out, ${property}, ${sourceValue} === undefined ? undefined : (${value}));`);
+      return `${objectValueExpression(expression)} ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; ${[...capture, ...fields, extras].filter(Boolean).join(' ')} return out; })(${recordExpression(expression)}) : ${expression}`;
+    }
+    if (!knownChanged && !additionalChanged) return expression;
+    const knownKeys = Object.keys(descriptor.properties).map((name) => JSON.stringify(name)).join(', ');
+    const base = additionalChanged
+      ? `Object.fromEntries(Object.entries(${recordExpression(expression)}).filter(([key, value]) => value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)).map(([key, value]) => [key, ${additional}]))`
+      : recordExpression(expression);
+    const fields = assignments.map(({ name, property, sourceValue, value }) => {
+      if (omitsUndefined(name)) return `...(${sourceValue} !== undefined ? { [${property}]: ${value} } : undefined)`;
+      const guarded = value === sourceValue
+        ? sourceValue
+        : `${sourceValue} === undefined ? ${sourceValue} : (${value})`;
+      return `[${property}]: ${guarded}`;
+    });
+    return `${objectValueExpression(expression)} ? { ...${base}, ${fields.join(', ')} } : ${expression}`;
   }
   return expression;
 }
