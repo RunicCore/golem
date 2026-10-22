@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
-import type { TJsonCheckout, TJsonSerdeMany, TJsonSerdeNone } from './features.iobject.model.js';
+import type { TJsonCheckout, TJsonCheckoutPlain, TJsonSerdeMany, TJsonSerdeNone } from './features.iobject.model.js';
 import './features.iobject.model.generated.js';
 import './sdk/index.js';
-import { assertFeatureWire, assertSerdeModel, checkoutInput, featureComparison, serdeComparison, serdeInput, serdeInvalidWires, type SerdeDensity } from './payloads.js';
+import { assertFeatureWire, assertSerdeModel, checkoutInput, checkoutPlainInput, checkoutPlainInvalidWires, featureComparison, serdeComparison, serdeInput, serdeInvalidWires, type SerdeDensity } from './payloads.js';
 
 const validationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
 
@@ -46,6 +46,46 @@ function serdeFixtures(validation: boolean): readonly ComparisonFixture[] {
   });
 }
 
+/** The checkout without conversion, as plain objects: the wire value is the model. */
+function checkoutPlainFixture(validation: boolean): ComparisonFixture {
+  const input = checkoutPlainInput();
+  // #region checkout-plain-calls
+  const checkout = requireObjectCodec<TJsonCheckoutPlain>('TJsonCheckoutPlain');
+  const model = checkout.parse(input.text);
+  const timed = {
+    'text-to-model': () => checkout.parse(input.text),
+    'model-to-text': () => checkout.stringify(model),
+    validate: () => {
+      if (!checkout.validate(model)) throw new Error('IObject validate rejected a valid fixture');
+      return true;
+    },
+  };
+  // #endregion checkout-plain-calls
+  const conversions = {
+    'object-to-model': () => checkout.fromWireFormat(input.payload),
+    'model-to-object': () => checkout.toWireFormat(model),
+  };
+  const operations = validation ? { ...timed, ...conversions } : { 'text-to-model': timed['text-to-model'], 'model-to-text': timed['model-to-text'], ...conversions };
+  return featureComparison(input.name, input.payload, operations, async () => {
+    const original = structuredClone(input.payload);
+    const fromText = checkout.parse(input.text);
+    assert.equal(Object.getPrototypeOf(fromText), Object.prototype);
+    assert.deepEqual(fromText, original);
+    assert.equal(checkout.stringify(fromText), input.text, 'adapter output must retain the compact JSON representation');
+    assert.deepEqual(checkout.fromWireFormat(input.payload), original);
+    assert.deepEqual(checkout.toWireFormat(fromText), original);
+    assert.deepEqual(input.payload, original);
+    if (!validation) return;
+    assert.equal(checkout.validate(fromText), true);
+    const invalid = checkoutPlainInvalidWires();
+    for (const wire of [...invalid.broken, invalid.unknownProperty]) {
+      assert.throws(() => checkout.parse(JSON.stringify(wire)), validationError);
+      assert.equal(checkout.validate(wire), false);
+      assert.throws(() => checkout.stringify(wire as never), validationError);
+    }
+  });
+}
+
 export async function createGolemObjectFeatureFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
   if (adapter !== 'golem-object' && adapter !== 'golem-object-off') throw new TypeError(`Unsupported Golem IObject adapter: ${adapter}`);
   const validation = adapter === 'golem-object';
@@ -69,7 +109,7 @@ export async function createGolemObjectFeatureFixtures(adapter: Adapter): Promis
   };
   // A build with validation off has no validators to call, so it has no validate.
   const operations = validation ? { ...timed, ...conversions } : { 'text-to-model': timed['text-to-model'], 'model-to-text': timed['model-to-text'], ...conversions };
-  return [...serdeFixtures(validation), featureComparison(input.name, input.payload, operations, async () => {
+  return [...serdeFixtures(validation), checkoutPlainFixture(validation), featureComparison(input.name, input.payload, operations, async () => {
     const original = structuredClone(input.payload);
     const fromText = checkout.parse(input.text);
     assert.equal(Object.getPrototypeOf(fromText), Object.prototype);

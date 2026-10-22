@@ -21,6 +21,35 @@ export function checkoutInput(): { readonly name: 'sdk-extend'; readonly payload
   return { name: 'sdk-extend', payload, text: JSON.stringify(payload) };
 }
 
+/**
+ * The checkout-plain payload: the checkout fields with date-time strings for dates, a plain hex string for the code,
+ * and no conversion and no custom rule, so every library runs it. The wire value is the checkout's.
+ */
+export function checkoutPlainInput(): { readonly name: 'checkout-plain'; readonly payload: typeof sdkExtendWire; readonly text: string } {
+  const payload = structuredClone(sdkExtendWire);
+  return { name: 'checkout-plain', payload, text: JSON.stringify(payload) };
+}
+
+/** Wire values that every validating library rejects: one broken field of each kind, and an unknown property last. */
+export function checkoutPlainInvalidWires(): { readonly broken: readonly unknown[]; readonly unknownProperty: unknown } {
+  const base = sdkExtendWire;
+  const change = (patch: Record<string, unknown>): unknown => ({ ...structuredClone(base), ...patch });
+  return {
+    broken: [
+      change({ money: { amount: 12, currency: 'usd' } }),
+      change({ money: { amount: -1, currency: 'USD' } }),
+      change({ note: '' }),
+      change({ code: 'zz' }),
+      change({ when: 'not a date' }),
+      change({ primary: { sku: 'A', quantity: -1.5, price: -2 } }),
+      change({ span: ['not a date', '2026-01-02T00:00:00.000Z'] }),
+      change({ channel: { kind: 'hold', until: 'not a date' } }),
+      change({ hold: 5 }),
+    ],
+    unknownProperty: change({ extra: 1 }),
+  };
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }

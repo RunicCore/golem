@@ -1,5 +1,5 @@
 import type { IObject } from '@exprtlabs/golem/model';
-import type { Integer, MinLength, Minimum, TSerde, TValidation } from '@exprtlabs/golem/tags';
+import type { Integer, MinLength, Minimum, Pattern, TSerde, TValidation } from '@exprtlabs/golem/tags';
 import type { PermissionBits, ProjectName } from './access-rules.js';
 import type { Email, HexCode, Money, Phone, PlainHexCode, PlainMoney, PlainPermissions, PlainYesNo, Stamp, YesNo } from './feature-tags.js';
 import { decodeHex, encodeHex, extraMoney, notBlank, positive } from './feature-tags.js';
@@ -95,6 +95,24 @@ export type TJsonCheckout = IObject<{
   memo?: string;
 }>;
 // #endregion checkout
+
+// #region checkout-plain
+// Stamp is `string & Format<'date-time'>`: dates stay strings, and nothing converts.
+export type TJsonCheckoutPlain = IObject<{
+  money: { amount: number & Minimum<0>; currency: string & Pattern<'^[A-Z]{3}$'> };
+  note: string & MinLength<1>;
+  code: string & Pattern<'^[0-9a-f]+$'>;
+  when: Stamp;
+  items: Array<{ sku: string & MinLength<3> }>;
+  primary: TJsonLineItem;
+  flags: Record<string, string>;
+  channel: { kind: 'open' } | { kind: 'hold'; until: Stamp };
+  span: [Stamp, Stamp];
+  hold: Stamp | null;
+  bag?: { lane: string };
+  memo?: string;
+}>;
+// #endregion checkout-plain
 
 // The serde payloads: one shape of 21 fields. In serde-many every field converts; serde-none has the same rules on plain strings and numbers.
 export type TJsonSerdeManyLine = IObject<{

@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import typia, { TypeGuardError } from 'typia';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import type {
+  CheckoutPlain,
   Collection,
   ConstrainedObjectHierarchical,
   ObjectSimple,
 } from './typia.models.js';
+import { checkoutPlainInput, checkoutPlainInvalidWires, consumeFeatureValue } from './payloads.js';
 import {
   assertNoMutation,
   assertValidText,
@@ -118,6 +120,46 @@ function verifyChecked(input: FixtureInput, model: TypiaModel, functions: TypiaF
   assert.throws(() => functions.stringify(invalidModel), TypeGuardError);
 }
 
+/** The checkout without conversion: Typia checks every rule and keeps the wire value as the model. */
+function checkoutPlainFixture(): ComparisonFixture {
+  const input = checkoutPlainInput();
+  // #region checkout-plain-calls
+  // Exact, like the other variants: unknown properties are rejected.
+  const assertEquals = typia.createAssertEquals<CheckoutPlain>();
+  const stringify = typia.json.createStringify<CheckoutPlain>();
+  const is = typia.createEquals<CheckoutPlain>();
+  const parse = (text: string): CheckoutPlain => assertEquals(JSON.parse(text));
+  const serialize = (value: unknown): string => stringify(assertEquals(value));
+  const model = parse(input.text);
+  // #endregion checkout-plain-calls
+  return {
+    name: input.name,
+    payload: input.payload,
+    operations: {
+      'text-to-model': () => parse(input.text),
+      'model-to-text': () => serialize(model),
+      validate: () => {
+        if (!is(model)) throw new Error('typia.equals rejected a valid fixture');
+        return true;
+      },
+    },
+    consume: consumeFeatureValue,
+    verify: async () => {
+      const original = structuredClone(input.payload);
+      assert.deepEqual(parse(input.text), original);
+      assertValidText(serialize(parse(input.text)), input.text);
+      assert.deepEqual(input.payload, original);
+      assert.throws(() => parse('{"broken":'), SyntaxError);
+      const invalid = checkoutPlainInvalidWires();
+      for (const wire of [...invalid.broken, invalid.unknownProperty]) {
+        assert.throws(() => parse(JSON.stringify(wire)), TypeGuardError);
+        assert.equal(is(wire), false);
+        assert.throws(() => serialize(wire), TypeGuardError);
+      }
+    },
+  };
+}
+
 export async function createTypiaFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
   if (adapter !== 'typia') throw new TypeError(`Unsupported Typia adapter: ${adapter}`);
   const functionTable = createFunctionTable();
@@ -141,5 +183,6 @@ export async function createTypiaFixtures(adapter: Adapter): Promise<readonly Co
       verify: async () => verifyChecked(input, model, functions),
     });
   }
+  fixtures.push(checkoutPlainFixture());
   return fixtures;
 }

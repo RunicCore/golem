@@ -5,7 +5,7 @@ export const BENCH_SERIES_COUNT = 4;
 
 export const REPOSITORY_BLOB_URL = 'https://github.com/RunicCore/golem/blob/master';
 
-export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout' | 'serde-none' | 'serde-many';
+export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout' | 'checkout-plain' | 'serde-none' | 'serde-many';
 /** The operations of the compare table. */
 export type CompareOperationId = 'parse' | 'stringify' | 'validate';
 /** The operations that only the golem cost table times: value to and from a plain object, with no JSON text. */
@@ -26,9 +26,10 @@ export interface GroupSpec {
 }
 /**
  * `group` is the compare group of the adapter; an adapter with no group is in no compare table and only the cost table times it.
+ * `lessWork` names what the library does not do in a case where the others do (R1); the tables mark its cells with it.
  * `plainObjects` marks a groupless adapter whose parse returns plain objects (the adapters of the `plain` group do already).
  */
-export interface AdapterSpec { readonly id: AdapterId; readonly fixtureAdapter: Adapter; readonly project: ProjectKind; readonly group: GroupId | null; readonly plainObjects?: true; readonly label: string; readonly library: string; readonly checked: boolean; readonly sourceFile: string }
+export interface AdapterSpec { readonly id: AdapterId; readonly fixtureAdapter: Adapter; readonly project: ProjectKind; readonly group: GroupId | null; readonly plainObjects?: true; readonly lessWork?: string; readonly label: string; readonly library: string; readonly checked: boolean; readonly sourceFile: string }
 export interface CaseSpec { readonly payload: PayloadId; readonly operation: OperationId; readonly adapter: AdapterId; readonly support: Support; readonly note?: string }
 
 export const PAYLOADS: readonly PayloadSpec[] = [
@@ -36,6 +37,7 @@ export const PAYLOADS: readonly PayloadSpec[] = [
   { id: 'nested', fixture: 'ObjectHierarchical-Constrained', label: 'Nested object', description: 'A nested API record with integer, length, pattern and array-size constraints.', sourceFile: 'scripts/benchmark/fixtures/upstream/shared.ts' },
   { id: 'array', fixture: 'ArrayHierarchical-1000', label: 'Large array', description: 'One company, 10 departments, 1,000 employees.', sourceFile: 'scripts/benchmark/fixtures/upstream/shared.ts' },
   { id: 'checkout', fixture: 'sdk-extend', label: 'Checkout', description: 'Money from a generated SDK type, hex code, dates, nested line items, flags, a union and optional fields, with value conversion.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
+  { id: 'checkout-plain', fixture: 'checkout-plain', label: 'Checkout, no conversion', description: 'The checkout fields with dates as date-time strings, no value conversion and no custom rule, so every library runs it. It keeps the union, the tuple, the map and the optional and nullable fields.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
 ];
 
 /**
@@ -87,7 +89,7 @@ export const BENCH_ADAPTERS: readonly AdapterSpec[] = [
   { id: 'golem', fixtureAdapter: 'golem', project: 'plain', group: 'classes', label: 'Golem (IModel)', library: '@exprtlabs/golem', checked: false, sourceFile: `${F}/golem.ts` },
   { id: 'class-transformer', fixtureAdapter: 'class-transformer', project: 'plain', group: 'classes', label: 'class-transformer', library: 'class-transformer', checked: false, sourceFile: `${F}/class-transformer.ts` },
   { id: 'golem-validated', fixtureAdapter: 'golem-validated', project: 'validating', group: 'validated-classes', label: 'Golem (IModel, validated)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem.ts` },
-  { id: 'class-validator', fixtureAdapter: 'class-validator', project: 'plain', group: 'validated-classes', label: 'class-transformer + class-validator', library: 'class-validator', checked: true, sourceFile: `${F}/class-validator.ts` },
+  { id: 'class-validator', fixtureAdapter: 'class-validator', project: 'plain', group: 'validated-classes', label: 'class-transformer + class-validator', library: 'class-validator', checked: true, lessWork: 'does not reject unknown properties', sourceFile: `${F}/class-validator.ts` },
 ];
 
 const noConversion = (library: string): string => `${library} checks every rule but does not convert values, so the hex code and the dates would stay strings.`;

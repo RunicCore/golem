@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
-import { checkoutInput, consumeFeatureValue } from './payloads.js';
+import { checkoutInput, checkoutPlainInput, consumeFeatureValue } from './payloads.js';
 import { consumeValue, createFixtureInputs } from './shared.js';
 
 /**
@@ -25,8 +25,10 @@ function fixture(name: string, payload: unknown, text: string, consume: (value: 
 export async function createControlFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
   if (adapter !== 'control') throw new TypeError(`Unsupported control adapter: ${adapter}`);
   const checkout = checkoutInput();
+  const plain = checkoutPlainInput();
   return [
     ...createFixtureInputs().map(input => fixture(input.name, input.payload, input.text, consumeValue)),
     fixture(checkout.name, checkout.payload, checkout.text, consumeFeatureValue),
+    fixture(plain.name, plain.payload, plain.text, consumeFeatureValue),
   ];
 }

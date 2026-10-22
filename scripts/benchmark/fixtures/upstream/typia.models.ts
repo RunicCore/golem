@@ -134,3 +134,20 @@ export interface ConstrainedObjectHierarchical {
   created_at: ConstrainedTimestamp;
 }
 // #endregion nested
+
+// #region checkout-plain
+export interface CheckoutPlain {
+  money: { amount: number & tags.Minimum<0>; currency: string & tags.Pattern<'^[A-Z]{3}$'> };
+  note: string & tags.MinLength<1>;
+  code: string & tags.Pattern<'^[0-9a-f]+$'>;
+  when: string & tags.Format<'date-time'>;
+  items: Array<{ sku: string & tags.MinLength<3> }>;
+  primary: { sku: string & tags.MinLength<3>; quantity: number & tags.Type<'int32'> & tags.Minimum<0>; price: number & tags.Minimum<0> };
+  flags: Record<string, string>;
+  channel: { kind: 'open' } | { kind: 'hold'; until: string & tags.Format<'date-time'> };
+  span: [string & tags.Format<'date-time'>, string & tags.Format<'date-time'>];
+  hold: (string & tags.Format<'date-time'>) | null;
+  bag?: { lane: string };
+  memo?: string;
+}
+// #endregion checkout-plain

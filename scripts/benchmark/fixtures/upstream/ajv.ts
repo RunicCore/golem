@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { Ajv, type SchemaObject, type ValidateFunction } from 'ajv';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
+import { checkoutPlainInput, checkoutPlainInvalidWires, consumeFeatureValue } from './payloads.js';
 import { consumeValue, createFixtureInputs, invalidIpLength, invalidVariants, missingNullable, nullableVariant, unknownPropertyVariants, type FixtureInput } from './shared.js';
 
 // #region simple
@@ -48,7 +49,31 @@ const company = object({
 const collection = object({ data: { type: 'array', items: company } });
 // #endregion array
 
-const ajv = new Ajv();
+// #region checkout-plain
+// `object` is declared with the Simple object schema. Dates stay date-time strings, and nothing converts.
+const dateTime: SchemaObject = { type: 'string', format: 'date-time' };
+const checkoutPlain: SchemaObject = {
+  ...object({
+    money: object({ amount: { type: 'number', minimum: 0 }, currency: { type: 'string', pattern: '^[A-Z]{3}$' } }),
+    note: { type: 'string', minLength: 1 },
+    code: { type: 'string', pattern: '^[0-9a-f]+$' },
+    when: dateTime,
+    items: { type: 'array', items: object({ sku: { type: 'string', minLength: 3 } }) },
+    primary: object({ sku: { type: 'string', minLength: 3 }, quantity: { type: 'integer', minimum: 0 }, price: { type: 'number', minimum: 0 } }),
+    flags: { type: 'object', additionalProperties: { type: 'string' } },
+    channel: { oneOf: [object({ kind: { const: 'open' } }), object({ kind: { const: 'hold' }, until: dateTime })] },
+    span: { type: 'array', items: [dateTime, dateTime], minItems: 2, additionalItems: false },
+    hold: nullable(dateTime),
+    bag: object({ lane: { type: 'string' } }),
+    memo: { type: 'string' },
+  }),
+  required: ['money', 'note', 'code', 'when', 'items', 'primary', 'flags', 'channel', 'span', 'hold'],
+};
+// #endregion checkout-plain
+
+// Ajv has no built-in date-time format: it takes a format as a function or an expression (its documented `formats` option).
+const dateTimeFormat = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i;
+const ajv = new Ajv({ formats: { 'date-time': dateTimeFormat } });
 
 function schemaFor(input: FixtureInput): SchemaObject {
   switch (input.name) {
@@ -102,7 +127,48 @@ function verifyChecked(input: FixtureInput, validate: ValidateFunction, parse: (
   assert.equal(validate(model), true);
 }
 
+function checkoutPlainFixture(): ComparisonFixture {
+  const input = checkoutPlainInput();
+  const validate = ajv.compile(checkoutPlain);
+  const fail = (): never => { throw new Error(ajv.errorsText(validate.errors)); };
+  const parse = (text: string): unknown => {
+    const value: unknown = JSON.parse(text);
+    return validate(value) ? value : fail();
+  };
+  const stringify = (model: unknown): string => validate(model) ? JSON.stringify(model) : fail();
+  const model = parse(input.text);
+  return {
+    name: input.name,
+    payload: input.payload,
+    // #region checkout-plain-calls
+    operations: {
+      'text-to-model': () => {
+        const value: unknown = JSON.parse(input.text);
+        return validate(value) ? value : fail();
+      },
+      'model-to-text': () => validate(model) ? JSON.stringify(model) : fail(),
+      validate: () => validate(model),
+    },
+    // #endregion checkout-plain-calls
+    consume: consumeFeatureValue,
+    verify: async () => {
+      const original = structuredClone(input.payload);
+      assert.deepEqual(parse(input.text), original);
+      assert.equal(stringify(parse(input.text)), input.text, 'ajv: round trip');
+      assert.throws(() => parse('{"broken":'), SyntaxError);
+      const invalid = checkoutPlainInvalidWires();
+      for (const [index, value] of [...invalid.broken, invalid.unknownProperty].entries()) {
+        assert.equal(validate(value), false, `ajv checkout-plain: invalid variant ${index} accepted`);
+        assert.throws(() => parse(JSON.stringify(value)), Error, `ajv checkout-plain: invalid variant ${index} parsed`);
+        assert.throws(() => stringify(value), Error, `ajv checkout-plain: invalid variant ${index} stringified`);
+      }
+      assert.equal(validate(model), true);
+      assert.deepEqual(input.payload, original);
+    },
+  };
+}
+
 export async function createAjvFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]> {
   if (adapter !== 'ajv') throw new TypeError(`Unsupported Ajv adapter: ${adapter}`);
-  return createFixtureInputs().map(fixture);
+  return [...createFixtureInputs().map(fixture), checkoutPlainFixture()];
 }

@@ -1,4 +1,4 @@
-import { ALL_PAYLOADS, BENCH_OPERATIONS, COST_ROW_OPERATIONS, GROUPS, PAYLOADS, VALIDATION_COLUMNS, type AdapterId, type GroupId } from './cases.js';
+import { adapterSpec, ALL_PAYLOADS, BENCH_OPERATIONS, COST_ROW_OPERATIONS, GROUPS, PAYLOADS, VALIDATION_COLUMNS, type AdapterId, type GroupId } from './cases.js';
 import type { BenchmarkResults } from './results-schema.js';
 
 /**
@@ -80,7 +80,7 @@ function text(cell: CostCell): string {
 
 /** The cost table's validation columns as console text. */
 export function formatCostTable(rows: readonly CostRow[]): string {
-  const widths = [10, 10, 12, 12, 8, 12, 12, 8, 14, 15];
+  const widths = [14, 10, 12, 12, 8, 12, 12, 8, 14, 15];
   const line = (cells: readonly string[]): string => cells.map((c, i) => i < 2 ? c.padEnd(widths[i]) : c.padStart(widths[i])).join(' ');
   return [
     line(['', '', 'IModel off', 'IModel on', 'on/off', 'IObject off', 'IObject on', 'on/off', 'IModel/IObject', 'serde many/none']),
@@ -114,11 +114,6 @@ export function rankSpeeds(speeds: readonly number[], band: number | undefined):
   }
   return ranks;
 }
-
-/** A cell the library does less work in (R1) carries the mark; the reason is its text. */
-export const LESS_WORK: Readonly<Partial<Record<AdapterId, string>>> = {
-  'class-validator': 'does not reject unknown properties',
-};
 
 export type CompareCell =
   | { readonly kind: 'ops'; readonly value: number; readonly rank: number; readonly mark?: string }
@@ -156,7 +151,7 @@ export function compareTable(results: Pick<BenchmarkResults, 'cases' | 'adapters
           const recorded = found.get(`${payload}/${operation.id}/${adapter}`);
           const value = speeds[i];
           if (value === undefined) return { adapter, cell: recorded?.support === 'none' ? { kind: 'not-supported', note: recorded.note ?? '' } : { kind: 'not-run' } };
-          const mark = LESS_WORK[adapter];
+          const mark = adapterSpec(adapter).lessWork;
           return { adapter, cell: { kind: 'ops', value, rank: ranks[timed.indexOf(i)], ...(mark ? { mark } : {}) } };
         }),
       });
@@ -193,7 +188,7 @@ export function formatCompareTable(table: ReturnType<typeof compareTable>, label
       if (cell.mark) marks.set(mark, cell.mark);
       return `${Math.round(cell.value).toLocaleString('en-US')} #${cell.rank}${mark}`;
     };
-    const widths = [10, 10, ...libraries.map(id => Math.max((labels.get(id) ?? id).length, 18))];
+    const widths = [14, 10, ...libraries.map(id => Math.max((labels.get(id) ?? id).length, 18))];
     const line = (cells: readonly string[]): string => cells.map((c, i) => i < 2 ? c.padEnd(widths[i]) : c.padStart(widths[i])).join(' ');
     return [
       group.label,

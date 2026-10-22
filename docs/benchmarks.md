@@ -9,7 +9,7 @@ Benchmarks are for reference purposes only.
 <BenchmarkChart>
 <template #plain>
 
-Each library turns JSON into plain objects, checks every rule and rejects unknown properties. Golem uses an [`IObject` declaration](/guide/models#iobject-or-imodel) and also converts dates and [`TSerde` fields](/guide/tags#convert-a-field-to-a-different-json-value); Typia and [Ajv](https://ajv.js.org) check every rule but do not convert values, so they can't run the Checkout payload. Ajv is an outside library, here for comparison. It compiles a JSON Schema to a function, and the timed calls pair that function with `JSON.parse` and `JSON.stringify`.
+Each library turns JSON into plain objects, checks every rule and rejects unknown properties. Golem uses an [`IObject` declaration](/guide/models#iobject-or-imodel) and also converts dates and [`TSerde` fields](/guide/tags#convert-a-field-to-a-different-json-value); Typia and [Ajv](https://ajv.js.org) check every rule but do not convert values, so they can't run the Checkout payload; all four run Checkout, no conversion, where dates stay strings and Ajv checks the date-time format with an expression. Ajv is an outside library, here for comparison. It compiles a JSON Schema to a function, and the timed calls pair that function with `JSON.parse` and `JSON.stringify`.
 
 </template>
 <template #classes>
@@ -114,6 +114,31 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 <<< @/../scripts/benchmark/fixtures/features/comparison-features-golem-object.ts#calls [Golem (IObject)]
 <<< @/../scripts/benchmark/fixtures/upstream/zod.ts#calls [Zod]
+
+:::
+
+</template>
+<template #plain-checkout-plain-code>
+
+#### Declarations for the Checkout, no conversion payload
+
+::: code-group
+
+<<< @/../scripts/benchmark/fixtures/features/features.iobject.model.ts#checkout-plain [Golem (IObject)]
+<<< @/../scripts/benchmark/fixtures/upstream/typia.models.ts#checkout-plain [Typia]
+<<< @/../scripts/benchmark/fixtures/upstream/zod.ts#checkout-plain [Zod]
+<<< @/../scripts/benchmark/fixtures/upstream/ajv.ts#checkout-plain [Ajv]
+
+:::
+
+#### Timed calls
+
+::: code-group
+
+<<< @/../scripts/benchmark/fixtures/features/comparison-features-golem-object.ts#checkout-plain-calls [Golem (IObject)]
+<<< @/../scripts/benchmark/fixtures/upstream/typia.ts#checkout-plain-calls [Typia]
+<<< @/../scripts/benchmark/fixtures/upstream/zod.ts#calls [Zod]
+<<< @/../scripts/benchmark/fixtures/upstream/ajv.ts#checkout-plain-calls [Ajv]
 
 :::
 
