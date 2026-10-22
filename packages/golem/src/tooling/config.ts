@@ -29,6 +29,8 @@ export interface GolemConfig {
   /** Whether the yaml sets `tsconfig`, as opposed to the default beside it. */
   readonly tsconfigNamed: boolean;
   readonly profile: GolemProfile;
+  /** What the rewrite scan does with a `@Body()` or `@Query()` parameter that is no golem model: `error` (the default) stops, `warn` reports and continues. Not part of the profile: no generated file records it. */
+  readonly nonModelInputs?: 'error' | 'warn';
   readonly jobs: readonly GolemJob[];
   readonly inventoryFile: string;
 }
@@ -222,9 +224,10 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   onInput?.(configFile);
   const directory = path.dirname(configFile);
   const value: unknown = YAML.parse(fs.readFileSync(configFile, 'utf8'), { uniqueKeys: true });
-  keys(value, ['version', 'tsconfig', 'mobx', 'validation', 'allowAny', 'exact', 'unknownFormats', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
+  keys(value, ['version', 'tsconfig', 'mobx', 'validation', 'allowAny', 'exact', 'unknownFormats', 'nonModelInputs', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
   if (value.version !== 1) throw new Error('Configuration version must be 1.');
   if (value.unknownFormats !== undefined && value.unknownFormats !== 'warn' && value.unknownFormats !== 'error') throw new Error('unknownFormats must be "warn" or "error".');
+  if (value.nonModelInputs !== undefined && value.nonModelInputs !== 'warn' && value.nonModelInputs !== 'error') throw new Error('nonModelInputs must be "warn" or "error".');
   const profile = resolveProfile({
     mobx: boolean(value.mobx, false, 'mobx'), validation: boolean(value.validation, true, 'validation'),
     allowAny: boolean(value.allowAny, false, 'allowAny'),
@@ -387,7 +390,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       }
     }
   }
-  return { configFile, directory, tsconfig, tsconfigNamed: value.tsconfig !== undefined, profile, jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
+  return { configFile, directory, tsconfig, tsconfigNamed: value.tsconfig !== undefined, profile, nonModelInputs: value.nonModelInputs ?? 'error', jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
 }
 
 /** The `models.root` of the config's models job: where its own model sources are. Without a models job, the directory of the golem.yaml. */

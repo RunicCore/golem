@@ -524,10 +524,13 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   for (const source of sources) observeSource(source.fileName);
   const checker = program.getTypeChecker();
   const models = golemConfig.jobs.find((job) => job.kind === 'models');
-  const scanned = new RewriteScanner({ root, directory: golemConfig.directory, modelsRoot: modelsRootOf(golemConfig), suffixes: models?.options.suffixes, output: models?.options.output, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') })
+  const scanned = new RewriteScanner({ root, directory: golemConfig.directory, modelsRoot: modelsRootOf(golemConfig), suffixes: models?.options.suffixes, output: models?.options.output, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers'), nonModelInputs: golemConfig.nonModelInputs })
     .scanFiles(sources.map((source) => source.fileName));
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(errors);
+  for (const warning of scanned.diagnostics) {
+    if (warning.severity === GolemDiagnosticSeverity.Warning) process.stderr.write(`${warning.code} (${warning.file}:${warning.line}:${warning.column}): ${warning.message}\n`);
+  }
 
   const stage = writeStage(project, sources, withNodeSpecifiers(root, sources, checker, program.getCompilerOptions(), scanned.files));
   // The stage holds copies of these: a change to one is a change to build for.
