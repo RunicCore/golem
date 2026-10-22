@@ -20,20 +20,20 @@ dependencies, the generator in development dependencies, alongside the peer
 compiler ([installation](docs/guide/install.md)):
 
 ```sh
-npm install @exprtlabs/golem@rc ajv ajv-formats
-npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2
+npm install @exprtlabs/golem
+npm install --save-dev @exprtlabs/golem-model typescript@~7.0.2
 ```
 
 Or, for an existing OpenAPI document:
 
 ```sh
-npm install --save-dev @exprtlabs/golem-openapi@rc typescript@~7.0.2
+npm install --save-dev @exprtlabs/golem-openapi typescript@~7.0.2
 ```
 
 Or, for NestJS controllers only:
 
 ```sh
-npm install --save-dev @exprtlabs/golem-ts-openapi@rc typescript@~7.0.2
+npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.0.2
 ```
 
 ## Quick start

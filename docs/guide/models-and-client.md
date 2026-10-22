@@ -11,8 +11,8 @@ The generated class builds the `money` field as the SDK's runtime class, `TMoney
 ## Install
 
 ```sh
-npm install @exprtlabs/golem@rc
-npm install --save-dev @exprtlabs/golem-model@rc @exprtlabs/golem-openapi@rc typescript@~7.0.2
+npm install @exprtlabs/golem
+npm install --save-dev @exprtlabs/golem-model @exprtlabs/golem-openapi typescript@~7.0.2
 ```
 
 Build with `npx golem build`, which generates first, the Vite or esbuild plugin, or the Node loader ([TypeScript setup](/guide/install#typescript-setup)). Include both `src/**/*.ts` and the generated `sdk/**/*.ts` in your TypeScript program.

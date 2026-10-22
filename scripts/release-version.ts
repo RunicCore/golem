@@ -68,8 +68,8 @@ export function assertReleaseConsistency(workspaceRoot: string): string {
       throw new Error(`${packageName} must use workspace version ${releaseVersion}; found ${String(manifest.version)}`);
     }
     const publishConfig = manifest.publishConfig;
-    if (!record(publishConfig) || publishConfig.access !== 'public' || publishConfig.tag !== 'rc') {
-      throw new Error(`${packageName} must publish publicly with the rc tag`);
+    if (!record(publishConfig) || publishConfig.access !== 'public' || publishConfig.tag !== 'latest') {
+      throw new Error(`${packageName} must publish publicly with the latest tag`);
     }
     exactInternalPins(manifest, releaseVersion, filename);
   }

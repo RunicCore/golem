@@ -1,6 +1,6 @@
 {
   "name": "@exprtlabs/golem",
-  "version": "1.0.0-rc",
+  "version": "1.0.0",
   "description": "Shared model runtime and independently extensible TypeScript generation CLI",
   "keywords": [
     "typescript",
@@ -26,7 +26,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "tag": "rc"
+    "tag": "latest"
   },
   "type": "module",
   "engines": {

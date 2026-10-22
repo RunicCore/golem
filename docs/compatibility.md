@@ -22,7 +22,7 @@ OpenAPI feature support depends on the document version and generation profile (
 
 ## Stability
 
-The configuration format (`version: 1`) and the public subpaths of `@exprtlabs/golem` follow semver from 1.0.0. Until then, a release candidate may change them; each change is listed in [Release notes](/changelog).
+The configuration format (`version: 1`) and the public subpaths of `@exprtlabs/golem` follow semver from 1.0.0. Each change is listed in [Release notes](/changelog).
 
 ## Public API
 

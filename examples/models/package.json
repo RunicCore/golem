@@ -9,11 +9,11 @@
     "start": "golem build && node .build/src/main.js"
   },
   "dependencies": {
-    "@exprtlabs/golem": "1.0.0-rc",
+    "@exprtlabs/golem": "1.0.0",
     "temporal-polyfill": "^1.0.5"
   },
   "devDependencies": {
-    "@exprtlabs/golem-model": "1.0.0-rc",
+    "@exprtlabs/golem-model": "1.0.0",
     "typescript": "7.x",
     "@types/node": "22.20.1"
   }

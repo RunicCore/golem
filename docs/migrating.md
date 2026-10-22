@@ -23,6 +23,7 @@ Each item names a breaking change and the action to take.
 - Wildcard, regular-expression and quoted route paths fail with [`NEST1207`](/reference/diagnostics#nest1207). Use named `:param` segments, or exclude the route with `@ApiExcludeEndpoint()`.
 - Optional segments (`:id?`, `{/:id}`) expand into one operation per path, with `__path_N` operationId suffixes. Update generated-client call sites and any tooling keyed on those operationIds.
 - `@Header()`, `@Cookie()`, `@Cookies()` and `ApiCookie` are no longer read as parameters. Use `@Headers('name')` for request headers; document cookie authentication with `@ApiCookieAuth()`.
+- Stacked `@ApiHeader` and `@ApiQuery` decorators list their parameters in the order `@nestjs/swagger` applies them, so the order of parameters in a generated document can change. Regenerate, and read parameters by name, not by position.
 
 ## OpenAPI clients
 
@@ -40,6 +41,7 @@ Each item names a breaking change and the action to take.
 - An implicit discriminator value for a schema from another file is its path-based component name (for example `schemas.dog`). Add an explicit `discriminator.mapping`, or a root alias, to keep a chosen value.
 - The `spec-ref-siblings`, `path-not-include-query` and `nullable-type-sibling` validation rules are gone, and error lines name the file that contains the problem. A document that relied on their stricter checks to fail generation now passes; every other rule is unchanged.
 - `collectLocalReferenceInputs` from `@exprtlabs/golem-openapi/generator` now returns a `Promise`. Await the call.
+- An `allOf` of a base model and a `oneOf` or `anyOf` generates a union of merged objects. A model beside a union that cannot be spread stops generation with `OPENAPI_COMPOSITION_CONVERSION_CONFLICT`. Give each union its own variant schemas, or drop the base from the `allOf`.
 
 ## Packages
 
@@ -54,6 +56,9 @@ Each item names a breaking change and the action to take.
 - A `TSerde` or `TValidation` function declared in a `*.model.ts` file is a generation error (RUNM1065). Move it to its own module.
 - A `TSerde` or `TValidation` function in another package, including a sibling workspace package, is imported by its package name, so that package's `exports` must reach the file (RUNM1060). Add an `exports` entry for the codec file.
 - The CLI is `golem` (was `runic-codegen`) and generator-API types are `Golem*` (was `Codegen*`, for example `GolemProvider`). Rename `runic-codegen.yaml` to `golem.yaml`, delete `.runic-codegen/` and run `npx golem generate`.
+- A `.model.d.cts` or `.model.d.mts` file of an installed package is a shared model file, as a `.model.d.ts` file is.
+- The `models` output must lie inside the directory of the tsconfig that `golem.yaml` names. Move it inside; an SDK or a document output may lie anywhere.
+- Golem stops, and names the file, instead of deleting a recorded file that no longer holds its generated content and has no generator header. Move the file or delete it yourself.
 
 ## Validation
 

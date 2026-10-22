@@ -11,7 +11,7 @@ A controller in your NestJS project, `src/payment-notes.controller.ts`:
 ## Install
 
 ```sh
-npm install --save-dev @exprtlabs/golem-ts-openapi@rc typescript@~7.0.2
+npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.0.2
 npm install @nestjs/swagger
 ```
 
@@ -98,8 +98,8 @@ The controller job writes `api/openapi.yaml`. An OpenAPI job reads that document
 ### Install the client and runtime packages
 
 ```sh
-npm install --save-dev @exprtlabs/golem-openapi@rc @exprtlabs/golem-model@rc
-npm install @exprtlabs/golem@rc reflect-metadata
+npm install --save-dev @exprtlabs/golem-openapi @exprtlabs/golem-model
+npm install @exprtlabs/golem reflect-metadata
 ```
 
 <<< ../../examples/payments/web/src/submit-payment.ts#payment-client

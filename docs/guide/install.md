@@ -17,14 +17,14 @@ The `golem` command comes from `@exprtlabs/golem`, which every generator depends
 
 | To generate | Development dependency |
 | --- | --- |
-| TypeScript models | `npm install --save-dev @exprtlabs/golem-model@rc` |
-| An OpenAPI client | `npm install --save-dev @exprtlabs/golem-openapi@rc` |
-| OpenAPI from NestJS controllers | `npm install --save-dev @exprtlabs/golem-ts-openapi@rc` |
+| TypeScript models | `npm install --save-dev @exprtlabs/golem-model` |
+| An OpenAPI client | `npm install --save-dev @exprtlabs/golem-openapi` |
+| OpenAPI from NestJS controllers | `npm install --save-dev @exprtlabs/golem-ts-openapi` |
 
 Generated models and clients import the runtime:
 
 ```sh
-npm install @exprtlabs/golem@rc
+npm install @exprtlabs/golem
 ```
 
 Generating OpenAPI from controllers doesn't need the runtime. A NestJS app that registers `NestModelInterceptor` does.

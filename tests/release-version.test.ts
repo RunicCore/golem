@@ -11,7 +11,7 @@ function writeJson(filename: string, value: unknown): void {
   fs.writeFileSync(filename, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function releaseFixture(root: string, version = '1.0.0-rc'): void {
+function releaseFixture(root: string, version = '1.0.0'): void {
   writeJson(path.join(root, 'package.json'), { private: true, version });
   for (const [directory, name, dependencies] of [
     ['golem', '@exprtlabs/golem', {}],
@@ -22,7 +22,7 @@ function releaseFixture(root: string, version = '1.0.0-rc'): void {
     writeJson(path.join(root, 'packages', directory, 'package.json'), {
       name,
       version,
-      publishConfig: { access: 'public', tag: 'rc' },
+      publishConfig: { access: 'public', tag: 'latest' },
       dependencies,
     });
   }
@@ -41,17 +41,17 @@ test('release consistency rejects public version and internal pin drift', t => {
 
   writeJson(path.join(root, 'packages', 'golem-model', 'package.json'), {
     name: '@exprtlabs/golem-model',
-    version: '1.0.0',
-    publishConfig: { access: 'public', tag: 'rc' },
-    dependencies: { '@exprtlabs/golem': '1.0.0-rc' },
+    version: '1.0.1',
+    publishConfig: { access: 'public', tag: 'latest' },
+    dependencies: { '@exprtlabs/golem': '1.0.0' },
   });
   assert.throws(() => assertReleaseConsistency(root), /@exprtlabs\/golem-model must use workspace version/);
 
   writeJson(path.join(root, 'packages', 'golem-model', 'package.json'), {
     name: '@exprtlabs/golem-model',
-    version: '1.0.0-rc',
-    publishConfig: { access: 'public', tag: 'rc' },
-    dependencies: { '@exprtlabs/golem': '^1.0.0-rc' },
+    version: '1.0.0',
+    publishConfig: { access: 'public', tag: 'latest' },
+    dependencies: { '@exprtlabs/golem': '^1.0.0' },
   });
   assert.throws(() => assertReleaseConsistency(root), /must pin @exprtlabs\/golem to /);
 });
@@ -60,7 +60,7 @@ test('release consistency rejects an example project missing from the maintained
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-release-version-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   releaseFixture(root);
-  assert.equal(assertReleaseConsistency(root), '1.0.0-rc');
+  assert.equal(assertReleaseConsistency(root), '1.0.0');
 
   writeJson(path.join(root, 'examples', 'unlisted', 'package.json'), { name: 'unlisted-example' });
   assert.throws(() => assertReleaseConsistency(root), /must match the maintained example inventory/);

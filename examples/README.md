@@ -21,8 +21,7 @@ The guides walk through them: [models](../docs/guide/models.md),
 
 ## Install and run
 
-Every example depends on `1.0.0-rc` of `@exprtlabs/golem*`, which is not
-published yet. Run them from this repository checkout: run `npm install` once at
+Every example depends on `1.0.0` of `@exprtlabs/golem*`. Run them from this repository checkout: run `npm install` once at
 the repository root, then in the example directory:
 
 ```sh
@@ -40,6 +39,6 @@ npm test           # offline; golem build generates first
 
 Files under `sdk/`, the `*.model.generated.ts` files, `src/generated/` and `.golem/` are generated output, and each example's `.gitignore` lists them.
 Edit the authored contract or handwritten source, then run `npm run generate`.
-See [Installation](../docs/guide/install.md) for the `@rc` tag and profiles.
+See [Installation](../docs/guide/install.md) for the packages and profiles.
 
 [Quick start](../docs/guide/quick-start.md) shows how to add the packages to an existing application.

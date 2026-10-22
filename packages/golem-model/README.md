@@ -11,8 +11,8 @@ are not committed: `golem build` generates first
 In an ESM TypeScript project with Node.js 22.15 or newer:
 
 ```sh
-npm install @exprtlabs/golem@rc
-npm install --save-dev @exprtlabs/golem-model@rc typescript@~7.0.2
+npm install @exprtlabs/golem
+npm install --save-dev @exprtlabs/golem-model typescript@~7.0.2
 ```
 
 [Defining models](../../docs/guide/models.md) walks through a declaration,

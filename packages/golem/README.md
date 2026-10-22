@@ -10,7 +10,7 @@ observable profile also needs `mobx`.
 Use npm with Node.js 22.15 or newer:
 
 ```sh
-npm install @exprtlabs/golem@rc
+npm install @exprtlabs/golem
 ```
 
 `parse<T>`, `stringify<T>`, `fromWireFormat<T>`, `toWireFormat<T>`, `validate<T>` and `assertValue<T>` need a

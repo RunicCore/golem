@@ -10,7 +10,7 @@ An offline task tracker built from golem models: one TypeScript declaration per 
 - Dates: a `Date` reminder and Temporal schedule fields.
 - Money is a decimal string with an ISO 4217 currency code, never a float.
 
-The example depends on `1.0.0-rc` of `@exprtlabs/golem*`, which is not published yet. Run it from this repository checkout: it resolves the packages from the root `node_modules`, so run `npm install` at the repository root first.
+The example depends on `1.0.0` of `@exprtlabs/golem*`. Run it from this repository checkout: it resolves the packages from the root `node_modules`, so run `npm install` at the repository root first.
 
 ## Install and run
 

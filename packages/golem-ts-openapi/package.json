@@ -1,6 +1,6 @@
 {
   "name": "@exprtlabs/golem-ts-openapi",
-  "version": "1.0.0-rc",
+  "version": "1.0.0",
   "description": "Generate OpenAPI documents from TypeScript controllers without starting the application",
   "keywords": [
     "openapi",
@@ -23,7 +23,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "tag": "rc"
+    "tag": "latest"
   },
   "type": "module",
   "engines": {
@@ -42,7 +42,7 @@
     }
   },
   "dependencies": {
-    "@exprtlabs/golem": "1.0.0-rc",
+    "@exprtlabs/golem": "1.0.0",
     "yaml": "^2.9.0"
   },
   "peerDependencies": {

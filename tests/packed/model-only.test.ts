@@ -36,5 +36,5 @@ test('packed manifests and tarballs carry the release contract', () => {
     assert.ok(entry.pack.files.some(file => file.path === 'LICENSE'));
     assert.ok(entry.pack.files.every(file => !/(?:^|\/)(?:docs?|assets?|\.vitepress|vitepress|vue|node_modules)(?:\/|$)/i.test(file.path)), name);
   }
-  assert.deepEqual(registry.distTags, { rc: registry.workspaceVersion });
+  assert.deepEqual(registry.distTags, { latest: registry.workspaceVersion });
 });

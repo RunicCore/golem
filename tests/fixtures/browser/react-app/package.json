@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
-    "@exprtlabs/golem": "rc",
+    "@exprtlabs/golem": "latest",
     "mobx": "6.16.1",
     "mobx-react-lite": "4.1.1",
     "react": "18.3.1",
@@ -12,8 +12,8 @@
     "typescript": "~7.0.2"
   },
   "devDependencies": {
-    "@exprtlabs/golem-model": "rc",
-    "@exprtlabs/golem-openapi": "rc",
+    "@exprtlabs/golem-model": "latest",
+    "@exprtlabs/golem-openapi": "latest",
     "@types/node": "22.20.1",
     "@types/react": "18.3.31",
     "@types/react-dom": "18.3.7",

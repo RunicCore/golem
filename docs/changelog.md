@@ -1,6 +1,6 @@
 # Release notes
 
-This release candidate brings TypeScript models, NestJS controller contracts
+Golem 1.0.0 brings TypeScript models, NestJS controller contracts
 and OpenAPI clients into one generation workflow. Install the generators
 independently, or combine them in one `golem.yaml` file.
 

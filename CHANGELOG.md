@@ -9,9 +9,9 @@ Every breaking change, one bullet per change, with the action to take:
 [Migrating to 1.0](docs/migrating.md). Details for each package are
 in the sections below.
 
-## Release candidate
+## 1.0.0
 
-The first release candidate includes four independently installable packages:
+Version 1.0.0 includes four independently installable packages:
 
 | Package | Purpose |
 | --- | --- |
@@ -84,6 +84,7 @@ The first release candidate includes four independently installable packages:
 - A scalar value of a scalar-or-array union such as `string | Date[]` now converts by its own type. Before, golem converted it like an array item, so a valid string failed as a bad date (HTTP 400), a number string such as `'12'` became a `Date`, and encoding the string threw. A scalar variant that needs a conversion must be the only scalar variant, as in `Token | Token[]`; a union such as `Token | number | Token[]` is now rejected at generation, as `Date | Date[]` already is.
 - A scalar-or-array union may hold one tuple instead of an array, such as `string | [Date]` or `oneOf` of `string` and a `prefixItems` tuple. The tuple converts by item, with the item index in a decode error path, and the scalar converts as in `string | Date[]`. `string | [Date]` was rejected as ambiguous; a union whose tuple items need no conversion, such as `string | [string]`, already generated.
 - `ModelConstraint` from `@exprtlabs/golem/model` has a new kind, `allOf`: the value must hold each schema in its `schemas` list. Code that switches over the constraint kinds must handle it.
+- Fixed: a `.model.d.cts` or `.model.d.mts` declaration file of an installed package is a shared model file, as a `.model.d.ts` file is. Before, a package that exports `customer.model.d.cts` stopped generation with RUNM1074.
 
 ### OpenAPI
 
@@ -153,7 +154,7 @@ The first release candidate includes four independently installable packages:
 - Fixed: a generated model's array or `prefixItems` tuple field with no `type`, or with `type: [array, null]`, converts and is typed like `type: array`. Before, `items: { type: string, format: date-time }` beside `type: [array, null]` stayed `string[] | null`; now it decodes to `Date[] | null`, and `null` stays `null`. The same holds for such a schema as a `oneOf` branch beside a scalar.
 - Fixed: a generated model's object or `oneOf` field converts by its own `properties` or `oneOf` when its `allOf` members only add constraints or a description, such as `allOf: [{ minProperties: 1 }]`. Before, `properties: { at: { type: string, format: date-time } }` was typed `{ at?: Date }` but `at` stayed a string, so `.getTime()` threw at runtime; the same held for a `oneOf` with a `date-time` branch. The constraints still apply. When an `allOf` member declares the object itself, that member decides the conversion.
 - Fixed: a generated model's inline nullable object field (`type: [object, null]` with `properties` or `additionalProperties`) admits `null` and is typed with `| null`. Before, validation rejected `null` and the type was the object alone, `{ at?: Date }`. The same holds when its `allOf` members only add constraints, such as `allOf: [{ minProperties: 1 }]`; an empty object still fails the constraint.
-- Fixed: a generated model field that references a nullable component object (`Pet: { type: [object, null] }`, `pet: { $ref: Pet }`) is typed `PetModel | null` and its validator admits `null`. Before, the field type was `PetModel` and validation rejected `null` with `PetModel expected an object`. A `oneOf` or `anyOf` variant that references such a component stays non-null; the union admits `null` only through a `{ type: null }` branch.
+- Fixed: a generated model field that references a nullable component object (`Pet: { type: [object, null] }`, `pet: { $ref: Pet }`) is typed `PetModel | null` and its validator admits `null`. Before, the field type was `PetModel` and validation rejected `null` with `PetModel expected an object`. A `oneOf` or `anyOf` variant that references such a component admits `null` and is typed `| null`, unless the union has a `discriminator`; a discriminated union keeps its variants non-null.
 - Fixed: a generated model's inline object field with its own `properties` and an `allOf` member that declares properties is typed and converted from both. With `properties: { at: date-time }` and `allOf: [{ properties: { b: date-time } }]`, the type is `{ at?: Date; b?: Date }`, and `at` and `b` both decode to `Date`. Before, the type held only `at` while the conversion read only `b`, so `at` stayed a string.
 - Fixed: a generated model's inline object field takes the names in the `required` list of its `allOf` members as required, in the type and in the validator. With `properties: { at: date-time }` and `allOf: [{ required: [at] }]`, the type is `{ at: Date }` and `{}` fails validation; before, `at` was optional in both.
 - Fixed: a generated model's inline field that is an `allOf` of object members with no keywords of its own is typed from the same members that convert it. With members that declare `at` and `b` as `date-time`, the type is `{ at?: Date; b?: Date }`. Before, it was `{ at?: string } & { b?: string }` while both decoded to `Date`.
@@ -165,6 +166,15 @@ The first release candidate includes four independently installable packages:
 - **Breaking:** `null` in an `allOf` follows JSON Schema: the object admits `null` only when each member that declares a `type` admits `null`. `{ type: [object, null], allOf: [{ $ref: Pet }] }` now rejects `null` when `Pet` is `type: object`. To admit `null`, use `oneOf: [{ $ref: Pet }, { type: 'null' }]`.
 - A model with an explicit `additionalProperties: true` now writes its extra keys in `stringify` and `toWireFormat`. Before, they wrote only the declared fields. Its codec id changes, so regenerate. A model that is open only by the JSON Schema default still writes its declared fields only.
 - The generated constructor, `decode` and `encode` of an OpenAPI model read only the own enumerable fields of their input, once each. Before, they also read inherited values and ran a getter twice. Regenerate.
+- An `allOf` of a base model and a `oneOf` or `anyOf` generates a union of merged objects, one for each variant. The type, the constructor input and the validator agree. A field or component with an `allOf` beside its own `oneOf` or `anyOf` is typed and converted as the `allOf` and the union together. Before, the component was a class that extended the `allOf` and dropped the union.
+- A model beside a union that cannot be spread, such as a base that meets two unions or a variant that is not an object, stops generation with `OPENAPI_COMPOSITION_CONVERSION_CONFLICT`. A conflict between `allOf` members in an inline operation parameter, body or response schema stops generation as it does under `components`. Before, it generated silently.
+- Fixed: a component with two base references, such as `Cat: allOf: [Pet, Named]`, counts both bases when it narrows a property. Before, it failed as a conversion conflict.
+- Fixed: a `oneOf` of a model reference and a string keeps both branches, in the type and in the codec.
+- Fixed: a field that widens a nullable component reference with `null` keeps the component's conversions, so a nullable component with a `date-time` property validates and decodes.
+- Fixed: a composed `allOf` root with `additionalProperties: true`, also over a model base, keeps its extra keys in `stringify` and `toWireFormat`. Regenerate.
+- Fixed: the class-level decode of a model reads the declared fields of a nested object as `JSON.stringify` does, so an inherited, non-enumerable or `undefined` field is absent.
+- **Breaking:** stacked `@ApiHeader` and `@ApiQuery` decorators list their parameters in the order `@nestjs/swagger` applies them. The order of the parameters in a generated document can change. Regenerate, and read parameters by name, not by position.
+- Fixed: a controller path can be an enum member or a `const` object member.
 
 See [OpenAPI client support](docs/reference/openapi-support.md) for supported versions and contract limitations.
 
@@ -183,6 +193,7 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - Generated model validators answer a valid value with a fast boolean check, `is_<Name>`, written beside `validate_<Name>`; validation results, issues, errors and messages are the same, and a value that fails and a `validationContext` take the full validator as before. A model has no fast check, and keeps the full validator, when it reaches a `TValidation` function, or when its own checks use `unevaluatedProperties` or `unevaluatedItems` (a parent that refs it still gets the fast check). The validators module exports the fast checks. Each generated validate and assert function calls its fast check first, and the validators call the new runtime helper `formatTest`. Newly generated files need this runtime: with an older one, they fail at import with a missing export.
 - Checking a `date-time` string is about six times faster, so decode, encode, parse and stringify with validation on run 1.2 to 2 times faster on models with a date. A string is valid or invalid exactly as before.
 - Fixed: in `const`, `enum`, `uniqueItems` and tags, an array hole no longer matches any value.
+- Every array keyword (`items`, `prefixItems`, `contains` and `uniqueItems`) reads an `undefined` item as `null`, and `stringify` of `(string | null)[]` with an `undefined` item writes `null`. An array with a hole is not valid: the validator reports one `type` issue at the index of the hole.
 - **Breaking:** an SDK generated by an older release, without `validationSchemaClosure` in its `model-manifest.json`, fails generation in every project that uses its models, with validation on or off. Regenerate the SDK.
 - **Breaking:** a field typed `unknown` fails generation with `RUNM1011`, as `any` does, unless `allowAny` is `true` in `golem.yaml` or in the model's options. This includes the parameter of a `TSerde` deserializer. `RUNM1011` is now titled "Field contains any or unknown"; its fix is a concrete type or `allowAny: true`.
 - **Breaking:** `$dynamicRef` and `$dynamicAnchor` in an external OpenAPI document fail generation with `VALIDATE_UNSUPPORTED_KEYWORD`.
@@ -231,6 +242,12 @@ See [OpenAPI client support](docs/reference/openapi-support.md) for supported ve
 - **Breaking:** codec ids in generated files change. A hand-written model and an SDK model with the same name and shape no longer share an id.
 - **Breaking:** the output inventory (`.golem/outputs.json`) records a `destination` and `destinationKind` for every file.
 - Golem sorts names, keys and imports in generated files, `.golem/outputs.json` and `.golem/codec-keys.json` by code unit, so the same sources give byte-identical files under any machine locale. Regenerate once: an order that followed your locale (such as `maximum` before `maxLength`) changes. Field order feeds the codec id, so regenerating changes codec ids and SDK `_group-<hash>` file names once. For example, the fields `eTag` and `email` swap places.
+- **Breaking:** the `models` output must lie inside the directory of the tsconfig that `golem.yaml` names, also through a folder link. Otherwise `golem.yaml` fails to load with an error that names the job, the resolved path and the directory. An SDK, a document or a generator output may lie anywhere.
+- **Breaking:** golem stops and names the file, instead of deleting it, when a recorded file no longer holds its generated content and has no generator header. Move it or delete it yourself. A header names the generator package, followed by a space, a full stop or a line end, so a header of `foo-bar` is not a header of `foo`.
+- Fixed: `golem watch` generates a new model file in any folder of the models root, also outside `src`.
+- Fixed: Vite dev transforms a module again when a file that its serde type argument is re-exported through changes, also through an `export *` barrel.
+- Fixed: `golem build` rewrites a side-effect import through a `paths` alias of a script file to the relative path of the emitted file.
+- Fixed: golem resolves modules the same way on TypeScript 6 and 7. A `paths` alias without an extension resolves, a folder is not a module file, the `require` conditions of a package's `exports` apply to a CommonJS importer, and a module is resolved with the format of its importer.
 
 ### Package subpaths
 
