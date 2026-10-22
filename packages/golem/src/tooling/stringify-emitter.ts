@@ -26,6 +26,7 @@ import {
   unionDispatch,
   type DispatchOptions,
   type ObjectTypeDescriptor,
+  type UnionConversion,
   type UnionTypeDescriptor,
 } from './union-conversion.js';
 
@@ -81,6 +82,8 @@ export interface CodecRuntimeOptions {
 
 interface EmitCtx {
   readonly graph: SchemaGraph;
+  /** The node is a recursive union: each inline array, tuple and object branch of its encoders checks its value for a cycle. */
+  readonly guardInline?: boolean;
   readonly validatorName?: (id: string) => string;
   readonly fastCheckName?: (id: string) => string | undefined;
   readonly resolvedSchemasExpr?: string;
@@ -356,14 +359,17 @@ function emitValue(
   if (named && isObjectish(descriptor)) {
     if (
       ctx.wireIdentity
-      && named.descriptor.kind === 'object'
+      && (named.descriptor.kind === 'object' || (descriptor.kind === 'reference' && descriptor.projection === true))
       && (descriptorNeedsConversion(named.descriptor) || !named.sameSchema)
     ) {
       // Call the node's own wire stringify: inlining would repeat the child for
       // every path to it and never terminate for a recursive model.
       if (ctx.wireStringifyIds?.has(named.id)) return `${stringifyFunctionName(named.id)}Wire(${expression} as never)`;
       if (ctx.wireInlining?.has(named.id)) return emitRecursiveWireCall(named, expression, ctx);
-      return emitObjectInline(named.descriptor, expression, { ...ctx, wireInlining: new Set([...(ctx.wireInlining ?? []), named.id]) });
+      const inlining = { ...ctx, wireInlining: new Set([...(ctx.wireInlining ?? []), named.id]) };
+      return named.descriptor.kind === 'object'
+        ? emitObjectInline(named.descriptor, expression, inlining)
+        : emitValue(named.descriptor, expression, inlining);
     }
     return nestedStringifyCall(named.id, expression, ctx);
   }
@@ -609,6 +615,7 @@ export function emitStringifyFunction(
     withoutOptions: extra?.withoutOptions,
     wireInlining: extra?.wireIdentity ? new Set([node.id]) : undefined,
     inlineLocals: new Set(),
+    guardInline: !extra?.wireIdentity && node.descriptor.kind === 'union' && reachesNode(node.descriptor, node.id, { graph }),
   };
   const fn = stringifyFunctionName(node.id);
   let source: string;
@@ -1088,6 +1095,17 @@ function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: st
   return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) => discriminatorMatch(read(name), values)));
 }
 
+/**
+ * The branch of a recursive union that writes an inline array, tuple or object registers its value while it writes, so a
+ * value that holds itself throws at its first repeat. A named node guards itself.
+ */
+function inlineBranchGuard(ctx: EmitCtx, expression: string): UnionConversion['guard'] {
+  if (!ctx.guardInline) return undefined;
+  return (variant, code) => ctx.graph.nodeFor(variant)
+    ? code
+    : `(() => { beginEncode(${expression}); try { return ${code}; } finally { endEncode(${expression}); } })()`;
+}
+
 function emitUnionValue(
   descriptor: UnionTypeDescriptor,
   expression: string,
@@ -1096,6 +1114,7 @@ function emitUnionValue(
   let itemsUnchanged = true;
   const plain = `stringifyJsonScalar(${expression} as never)`;
   return emitUnionConversion(descriptor, expression, 'stringify', {
+    guard: inlineBranchGuard(ctx, expression),
     convert: (variant) => emitValue(variant, expression, ctx),
     items: {
       output: 'json',
@@ -1211,6 +1230,7 @@ function emitUnionEncode(
   ctx: EmitCtx,
 ): string {
   return emitUnionConversion(descriptor, expression, 'encode', {
+    guard: inlineBranchGuard(ctx, expression),
     convert: (variant) => emitEncodeValue(variant, expression, ctx),
     items: {
       output: 'value',
@@ -1234,7 +1254,7 @@ function emitUnionEncode(
     },
     afterGenerated: (present) => {
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-      if (objects.length === present.length && objects.some(descriptorNeedsConversion)) {
+      if (objects.length === present.length && objects.some((object) => descriptorNeedsConversion(object))) {
         throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
       }
       return undefined;
@@ -1772,8 +1792,9 @@ function emitNodeRuntime(
   // A validator and an encoder walk a cyclic value under a recursive model until the stack ends.
   const reachesCycle = reachesRecursion(node.descriptor, ctx);
   const recursiveNode = reachesNode(node.descriptor, node.id, ctx) && !passesValueOn(node.descriptor, objectDescriptor !== undefined);
-  const encodedStringifyContext: EmitCtx = { ...ctx, inlineLocals: new Set() };
-  const encodedWireContext: EmitCtx = { ...ctx, inlineLocals: new Set() };
+  const guardInline = node.descriptor.kind === 'union' && reachesNode(node.descriptor, node.id, ctx);
+  const encodedStringifyContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline };
+  const encodedWireContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline };
   const encodedExpr = objectDescriptor
     ? emitEncodedRecord(objectDescriptor, 'value', encodedStringifyContext)
     : emitEncodeValue(node.descriptor, '(value as never)', encodedStringifyContext);
@@ -1816,9 +1837,10 @@ function emitNodeRuntime(
   const fill = objectDescriptor ? emitFillFunction(node, ctx, objectDescriptor) : undefined;
   const fillSrc = fill?.source ?? '';
   const rootScope: EmitCtx = { ...ctx, decodeLocals: [] };
+  // The wire of a node that is not an object is `unknown`; `access` reads a property of a name `wire` as a record.
   const decodedExpr = objectDescriptor
     ? undefined
-    : emitDecodeValue(node.descriptor, 'wire', rootScope);
+    : emitDecodeValue(node.descriptor, 'wire', rootScope).replaceAll('wire[', '(wire as Record<string, unknown>)[');
 
   const convertLines: string[] = [
     `function ${convertName}(wire: unknown, options: ${SERDE_OPTIONS} | undefined): unknown {`,

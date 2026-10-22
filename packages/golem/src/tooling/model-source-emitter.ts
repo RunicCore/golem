@@ -72,6 +72,8 @@ export interface FromJsonModelResolver {
   readonly decode: (value: string) => string;
   /** Construct a domain model from a nested model initializer. */
   readonly fromInit?: (value: string) => string;
+  /** A projection whose value converts to itself: a use writes no call. */
+  readonly identity?: true;
 }
 
 export interface ToJsonModelResolver {
@@ -81,6 +83,8 @@ export interface ToJsonModelResolver {
   readonly bases?: readonly string[];
   /** Internal generated-model wire encoder expression. */
   readonly encode?: (value: string) => string;
+  /** A projection whose value converts to itself: a use writes no call. */
+  readonly identity?: true;
 }
 
 /**
@@ -412,6 +416,7 @@ function emitNested(
   if (descriptor.kind === 'reference') {
     const model = resolveModel(descriptor.name);
     if (descriptor.projection) {
+      if (model.identity) return expression;
       if (direction === 'toJSON') return 'encode' in model ? model.encode?.(expression) ?? expression : expression;
       if (!('decode' in model)) throw new Error(`Missing projected conversion for ${descriptor.name}.`);
       return direction === 'fromInit' ? (model.fromInit ?? model.decode)(expression) : model.decode(expression);

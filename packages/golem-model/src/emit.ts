@@ -15,6 +15,7 @@ import {
   fromWireFunctionName,
   toWireFunctionName,
   literalValues,
+  descriptorNeedsConversion,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
   type ModelDiscriminators,
@@ -1224,8 +1225,14 @@ export function emitSource(
       encode: `encode${name}`,
     });
   }
+  // A projection that reaches no date, serde value or model converts to itself, so a use writes no call.
+  const identityProjections = new Set([...projectionNames].filter((name) => {
+    const body = objectOnlyNames.has(name) ? undefined : definitions[name];
+    return body !== undefined && !(body.kind === 'object' && body.projection === true) && !descriptorNeedsConversion(body, (held) => definitions[held]);
+  }));
   const resolveProjection = (name: string): FromJsonModelResolver & ToJsonModelResolver => ({
     className: 'Object',
+    ...(identityProjections.has(name) ? { identity: true as const } : {}),
     discriminators: discriminators(name),
     decode: value => `${projectionHelperByName.get(name)?.decode ?? `decode${name}`}(${value})`,
     fromInit: value => `${projectionHelperByName.get(name)?.init ?? `init${name}`}(${value})`,
@@ -1600,6 +1607,8 @@ export function emitSource(
     const representative = helper.representative;
     const expressions = representative === name ? projectionExpressions.get(name) : undefined;
     if (representative === name && !expressions) throw new Error(`Generated projection expressions are missing: ${name}`);
+    // A body that is not an object takes the value itself; only an object checks that the input is one.
+    const input = (object: boolean): string => object ? `const data = modelObject(value, ${JSON.stringify(name)});` : 'const data = value as Record<string, unknown>;';
     const fieldsType = representative === name
       ? descriptorType(descriptor, 'model', localNames, externalNames, classNames)
       : `${representative}Fields`;
@@ -1614,11 +1623,11 @@ export function emitSource(
       `${exported}type ${name}Fields = ${fieldsType};`,
       `${exported}type ${name}JSON = ${jsonType};`,
       `${exported}type ${name}Init = ${initType};`,
-      ...(expressions ? [
-        `function decode${name}(value: unknown): ${name}Fields { const data = modelObject(value, ${JSON.stringify(name)}); return (${expressions.decode}) as ${name}Fields; }`,
+      ...(expressions && !identityProjections.has(name) ? [
+        `function decode${name}(value: unknown): ${name}Fields { ${input(descriptor?.kind === 'object')} return (${expressions.decode}) as ${name}Fields; }`,
         expressions.init === expressions.decode
           ? `const init${name} = decode${name};`
-          : `function init${name}(value: unknown): ${name}Fields { const data = modelObject(value, ${JSON.stringify(name)}); return (${expressions.init}) as ${name}Fields; }`,
+          : `function init${name}(value: unknown): ${name}Fields { ${input(descriptor?.kind === 'object')} return (${expressions.init}) as ${name}Fields; }`,
         `function encode${name}(value: unknown): ${name}JSON { const data = value as Record<string, unknown>; return (${expressions.encode}) as ${name}JSON; }`,
       ] : []),
       '',

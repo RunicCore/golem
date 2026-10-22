@@ -287,7 +287,7 @@ export function emitSequenceBranch(
  * value cannot tell it from its siblings, so the union is rejected.
  */
 export function scalarBranchVariant(scalars: readonly ModelTypeDescriptor[]): ModelTypeDescriptor | undefined {
-  const converting = scalars.filter(descriptorNeedsConversion);
+  const converting = scalars.filter((scalar) => descriptorNeedsConversion(scalar));
   if (converting.length === 0) return undefined;
   if (scalars.length > 1) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
   return converting[0];
@@ -329,6 +329,11 @@ export interface UnionConversion {
   readonly joinSequence?: (mapped: string, scalar: string) => string;
   /** Dispatch by tag (and class); undefined when the variants carry no tag to dispatch on. */
   readonly tagged: () => string | undefined;
+  /**
+   * Wraps the conversion of an inline array, tuple or object branch, so a value that holds itself is found at its first
+   * repeat. A branch that is a named node guards itself, and the union guards nothing at its entry: it hands the same value on.
+   */
+  readonly guard?: (variant: ModelTypeDescriptor, code: string) => string;
   /** A step before the generated-model one, which returns the whole conversion or undefined. */
   readonly beforeGenerated?: (present: readonly ModelTypeDescriptor[]) => string | undefined;
   readonly generated?: GeneratedWithObjects;
@@ -352,6 +357,9 @@ export function emitUnionConversion(
   conversion: UnionConversion,
 ): string {
   const json = direction === 'stringify';
+  // A branch that converts nothing stays the value itself, so it has nothing to guard.
+  const guarded = (variant: ModelTypeDescriptor, code: string): string =>
+    code === expression || !conversion.guard ? code : conversion.guard(variant, code);
   const plain = json ? `stringifyJsonScalar(${expression} as never)` : expression;
   const present = presentUnionVariants(descriptor);
   if (present.length === 1 && present.length !== descriptor.variants.length) {
@@ -364,7 +372,7 @@ export function emitUnionConversion(
     const { sequence, scalars } = pair;
     const scalarVariant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
     const scalar = scalarVariant ? conversion.convert(scalarVariant) : plain;
-    const mapped = emitSequenceBranch(sequence, expression, conversion.items);
+    const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
     return conversion.joinSequence?.(mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
   }
   const jsonValue = scalarArrayObject(present);
@@ -372,8 +380,8 @@ export function emitUnionConversion(
     const { sequence, scalars, object } = jsonValue;
     const scalarVariant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
     const scalar = scalarVariant ? conversion.convert(scalarVariant) : plain;
-    const converted = conversion.convert(object);
-    const mapped = emitSequenceBranch(sequence, expression, conversion.items);
+    const converted = guarded(object, conversion.convert(object));
+    const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
     const rest = converted === plain && scalar === plain
       ? plain
       : json
@@ -442,7 +450,19 @@ function generatedWithObjects(
   return undefined;
 }
 
-export function descriptorNeedsConversion(descriptor: ModelTypeDescriptor): boolean {
+/** The descriptor a projection reference names, for the identity test to follow. */
+export type ProjectionBodyLookup = (name: string) => ModelTypeDescriptor | undefined;
+
+/**
+ * Whether a value of `descriptor` changes when it is converted. A reference needs conversion when the codec constructs a
+ * class for it. With `lookup`, a reference to a projection is followed to its body, once per name, so a recursive alias that
+ * reaches no date, serde value or model needs none. A projected object copies its declared keys, so it always converts.
+ */
+export function descriptorNeedsConversion(
+  descriptor: ModelTypeDescriptor,
+  lookup?: ProjectionBodyLookup,
+  visited: Set<string> = new Set(),
+): boolean {
   const tags = descriptor as ModelTypeDescriptor & {
     readonly serde?: { readonly id: string };
     readonly date?: true;
@@ -450,19 +470,25 @@ export function descriptorNeedsConversion(descriptor: ModelTypeDescriptor): bool
   if (tags.serde || tags.date || descriptor.kind === 'date' || descriptor.kind === 'generated-model') {
     return true;
   }
-  if (descriptor.kind === 'reference') return descriptor.construct === true;
-  if (descriptor.kind === 'array') return descriptorNeedsConversion(descriptor.item);
+  const needs = (held: ModelTypeDescriptor): boolean => descriptorNeedsConversion(held, lookup, visited);
+  if (descriptor.kind === 'reference') {
+    if (descriptor.construct === true) return true;
+    if (!lookup || !descriptor.projection || visited.has(descriptor.name)) return false;
+    visited.add(descriptor.name);
+    const body = lookup(descriptor.name);
+    return body !== undefined && ((body.kind === 'object' && body.projection === true) || needs(body));
+  }
+  if (descriptor.kind === 'array') return needs(descriptor.item);
   if (descriptor.kind === 'tuple') {
-    return descriptor.items.some(descriptorNeedsConversion)
-      || (descriptor.rest !== undefined && descriptorNeedsConversion(descriptor.rest.item));
+    return descriptor.items.some(needs)
+      || (descriptor.rest !== undefined && needs(descriptor.rest.item));
   }
   if (descriptor.kind === 'object') {
-    return Object.values(descriptor.properties).some(descriptorNeedsConversion)
-      || (typeof descriptor.additionalProperties === 'object'
-        && descriptorNeedsConversion(descriptor.additionalProperties));
+    return Object.values(descriptor.properties).some(needs)
+      || (typeof descriptor.additionalProperties === 'object' && needs(descriptor.additionalProperties));
   }
   if (descriptor.kind === 'union' || descriptor.kind === 'intersection') {
-    return descriptor.variants.some(descriptorNeedsConversion);
+    return descriptor.variants.some(needs);
   }
   return false;
 }

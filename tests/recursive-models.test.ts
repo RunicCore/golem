@@ -341,8 +341,11 @@ export type TItem = string | TItem[];
 export type Tree = [string, Tree[]];
 export type Registry = { [key: string]: Registry };
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+export type TLeaf = IModel<{ name: string }>;
+export type Mixed = TLeaf | Mixed[];
 export type TShelf = IModel<{ item: TItem }>;
 export type TDoc = IModel<{ tree: Tree; registry: Registry; payload: JsonValue; extra?: JsonValue; list: JsonValue[]; items: JsonValue[][] }>;
+export type TBox = IModel<{ mixed: Mixed }>;
 `,
 };
 const shelfWire = { item: ['a', ['b', ['c']], 'd'] };
@@ -389,5 +392,33 @@ for (const [label, profile] of profiles) {
       assert.throws(() => codecs.fromWireFormatTDoc({ ...docWire, tree: ['root', [['left', [1]]]] }), 'a tuple slot of the wrong type fails');
       assert.throws(() => codecs.fromWireFormatTShelf({ item: ['a', [3]] }));
     }
+  });
+
+  test(`a cyclic value in a field of a recursive alias throws a Serialization LibError, and a union of a named model and an array encodes (${label})`, async (t: TestContext) => {
+    // protects: T-221 a recursive alias never overflows the stack on a cyclic value, and encodes a valid named model beside an array
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-alias-cycle-', linkTypescript: true });
+    writeModelSources(sourceRoot, aliasSources);
+    writeModelGolemYaml(root, profile);
+    await buildModelProject(root);
+    const codecs = await import(pathToFileURL(path.join(root, 'build/alias.model.generated.js')).href) as Codecs;
+    const doc = (payload: unknown) => ({ tree: ['t', []], registry: {}, payload, list: [], items: [] });
+
+    const cyclicList: unknown[] = [1];
+    cyclicList.push(cyclicList);
+    const cyclicRecord: Record<string, unknown> = { a: 1 };
+    cyclicRecord.back = { inner: [cyclicRecord] };
+    for (const payload of [cyclicList, cyclicRecord]) {
+      for (const encode of [codecs.stringifyTDoc, codecs.toWireFormatTDoc]) {
+        assert.throws(() => encode(doc(payload)), isSerializationError, 'a cyclic payload');
+      }
+    }
+    const shared = { n: 1 };
+    const dag = doc({ left: shared, right: [shared, shared] });
+    assert.equal(codecs.stringifyTDoc(dag), JSON.stringify(dag));
+
+    const mixed = [{ name: 'a' }, [{ name: 'b' }, [{ name: 'c' }]]];
+    const model = codecs.fromWireFormatTBox({ mixed });
+    assert.deepEqual(json(codecs.toWireFormatTBox(model)), { mixed });
+    assert.equal(codecs.stringifyTBox({ mixed }), JSON.stringify({ mixed }));
   });
 }
