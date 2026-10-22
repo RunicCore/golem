@@ -12,7 +12,7 @@ import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { emitCodecRuntime, emitGraphStringify } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { instantiate } from './emitted-runtime.js';
+import { instantiate, instantiateRuntime } from './emitted-runtime.js';
 
 const stringCorpus = [
   '',
@@ -114,6 +114,36 @@ test('generated stringify matches JSON.stringify for required, optional and arra
     const labeled = { scale: payload.scale, label, ids: payload.ids };
     assert.equal(stringifyBox(labeled as never), JSON.stringify(labeled));
   }
+});
+
+test('with validation off an object writes the fields it holds, in order and with each field read once', () => {
+  // protects: T-156 a missing required field is left out; T-230 the all-present write is one joined string with the same commas
+  const record: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { a: { kind: 'string' }, b: { kind: 'number' }, c: { kind: 'string' }, d: { kind: 'boolean' }, e: { kind: 'string' } },
+    required: ['b', 'd'],
+    additionalProperties: false,
+  };
+  const graph = createSchemaGraph();
+  graph.intern(record, 'Record5');
+  graph.seal();
+  const { stringifyRecord5 } = instantiateRuntime(emitCodecRuntime(graph, { validationEnabled: false }));
+  const write = (value: object): unknown => stringifyRecord5!(value, { validate: false });
+  assert.equal(write({ b: 1, d: true }), '{"b":1,"d":true}');
+  assert.equal(write({ a: 'x', b: 1, c: 'y', d: true, e: 'z' }), '{"a":"x","b":1,"c":"y","d":true,"e":"z"}');
+  assert.equal(write({ a: 'x', b: 1, d: false }), '{"a":"x","b":1,"d":false}');
+  assert.equal(write({ b: 1, d: true, e: 'z' }), '{"b":1,"d":true,"e":"z"}');
+  assert.equal(write({ a: 'x', d: true, e: 'z' }), '{"a":"x","d":true,"e":"z"}', 'a missing required field is left out');
+  assert.equal(write({ c: 'y' }), '{"c":"y"}');
+  assert.equal(write({}), '{}');
+  const reads: string[] = [];
+  const held: Record<string, unknown> = { a: 'x', b: 1, c: 'y', d: true, e: 'z' };
+  const value = Object.defineProperties({}, Object.fromEntries(Object.keys(held).map((name) => [
+    name,
+    { enumerable: true, get() { reads.push(name); return held[name]; } },
+  ])));
+  assert.equal(write(value), '{"a":"x","b":1,"c":"y","d":true,"e":"z"}');
+  assert.deepEqual(reads, ['a', 'b', 'c', 'd', 'e']);
 });
 
 test('nullable nested objects stringify both populated and null values', () => {

@@ -550,12 +550,62 @@ function isPlainDataMap(descriptor: Extract<ModelTypeDescriptor, { kind: 'object
     && isPlainData(descriptor.additionalProperties);
 }
 
+/**
+ * The writer of an object with validation off that has required fields and no other names. Each declared field is read
+ * once, in declaration order, into a local and converted at once when it is present. While every required field is
+ * present, one joined string is the result; otherwise the present fields are written one by one from the same locals.
+ */
+function emitLenientObjectStringify(
+  fn: string,
+  descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
+  ctx: EmitCtx,
+): string {
+  const properties = Object.entries(descriptor.properties);
+  const lines: string[] = [`function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`];
+  const fields = properties.map(([name, property], index) => {
+    const read = access('value', name);
+    const field = `__golemField${index}`;
+    const piece = `__golemPiece${index}`;
+    lines.push(
+      `  const ${field} = ${read};`,
+      `  const ${piece} = ${field} !== undefined ? ${emitValue(property, read, ctx).replaceAll(read, field)} : undefined;`,
+    );
+    return { name: JSON.stringify(name), piece, required: descriptor.required.includes(name) };
+  });
+  // The first required field has no comma before it: a field before it carries its comma after it, and one after it before.
+  const first = fields.findIndex((field) => field.required);
+  const chunks = fields.map((field, index) => {
+    const member = `${JSON.stringify(`${index > first ? ',' : ''}${field.name}:`)} + ${field.piece}`;
+    if (field.required) return member;
+    return `(${field.piece} !== undefined ? ${member}${index < first ? ' + ","' : ''} : '')`;
+  });
+  const present = fields.filter((field) => field.required).map((field) => `${field.piece} !== undefined`);
+  lines.push(
+    `  if (${present.join(' && ')}) return '{' + ${chunks.join(' + ')} + '}';`,
+    "  let out = '{';",
+    '  let sep = false;',
+  );
+  for (const field of fields) {
+    lines.push(
+      `  if (${field.piece} !== undefined) {`,
+      '    if (sep) out += ",";',
+      `    out += ${JSON.stringify(`${field.name}:`)} + ${field.piece};`,
+      '    sep = true;',
+      '  }',
+    );
+  }
+  lines.splice(1, 0, ...inlineLocalDeclarations(ctx));
+  lines.push("  return out + '}';", '}', '');
+  return lines.join('\n');
+}
+
 function emitObjectStringify(
   fn: string,
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   ctx: EmitCtx,
 ): string {
-  const required = new Set(descriptor.required);
+  // With validation off a required field can be missing, so a lenient object writes each field that is present.
+  const required = new Set(ctx.lenientRoot ? [] : descriptor.required);
   const properties = Object.entries(descriptor.properties);
   const additional = typeof descriptor.additionalProperties === 'object'
     ? descriptor.additionalProperties
@@ -576,6 +626,7 @@ function emitObjectStringify(
       '',
     ].join('\n');
   }
+  if (ctx.lenientRoot && !additional && properties.some(([name]) => descriptor.required.includes(name))) return emitLenientObjectStringify(fn, descriptor, ctx);
   const lines: string[] = [
     `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
     "  let out = '{';",
@@ -661,7 +712,7 @@ export function emitStringifyFunction(
     ? resolveObjectDescriptor(node.descriptor, ctx)
     : undefined;
   const root = node.descriptor.kind === 'object' ? node.descriptor : merged;
-  if (root) source = emitObjectStringify(fn, ctx.lenientRoot ? { ...root, required: [] } : root, ctx);
+  if (root) source = emitObjectStringify(fn, root, ctx);
   else if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') {
     source = `function ${fn}(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {\n  return requireObjectCodec(${JSON.stringify(node.codecId)}).stringify(value as never, options);\n}\n`;
   } else {
