@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
 import { BENCH_ADAPTERS } from './cases.js';
-import { ADAPTERS, type Adapter, type ComparisonFixture, type ComparisonModule } from './fixture-contract.js';
+import { ADAPTERS, type Adapter, type ComparisonFixture, type ComparisonModule, type InvalidOperations } from './fixture-contract.js';
 import type { BatchSample } from './results.js';
 import { sampleAsync, sampleSync, schedule } from './sampling.js';
 import { parseWorkerJob, type WorkerCaseResult, type WorkerJob, type WorkerOutput } from './worker-protocol.js';
@@ -20,11 +20,17 @@ const wanted = new Set(job.cases.map(c => c.fixture));
 const fixtures = (await suite.createComparisonFixtures(fixtureAdapter)).filter(f => wanted.has(f.name));
 
 let checksum = 0;
+// A broken value is built only here, in `invalid` mode (R5); once for each fixture.
+const invalidOperations = new Map<ComparisonFixture, InvalidOperations | undefined>();
+const invalidOperationsOf = (fixture: ComparisonFixture) => {
+  if (!invalidOperations.has(fixture)) invalidOperations.set(fixture, fixture.invalidOperations?.());
+  return invalidOperations.get(fixture);
+};
 interface Runnable { readonly fixture: ComparisonFixture; readonly key: string; readonly operation: WorkerJob['cases'][number]['operation']; readonly run: () => unknown }
 const runnables: Runnable[] = job.cases.map(c => {
   const fixture = fixtures.find(f => f.name === c.fixture);
   if (!fixture) throw new Error(`${fixtureAdapter}: fixture ${c.fixture} not provided`);
-  const run = (job.mode === 'invalid' ? fixture.invalidOperations : fixture.operations)?.[c.operation];
+  const run = (job.mode === 'invalid' ? invalidOperationsOf(fixture) : fixture.operations)?.[c.operation];
   if (!run) throw new Error(`${fixtureAdapter}: ${c.fixture} has no ${job.mode === 'invalid' ? 'invalid ' : ''}${c.operation}`);
   return { fixture, key: `${c.fixture}/${c.operation}`, operation: c.operation, run };
 });

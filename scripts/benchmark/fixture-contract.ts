@@ -10,23 +10,32 @@ export type Operation = typeof OPERATIONS[number];
 export const ADAPTERS = ['golem', 'golem-validated', 'golem-object', 'golem-object-off', 'control', 'class-transformer', 'class-validator', 'typia', 'zod', 'ajv'] as const;
 export type Adapter = typeof ADAPTERS[number];
 
+/** The reading operations on one broken variant of a payload. */
+export type InvalidOperations = Partial<Record<Operation, () => unknown>>;
+
 export interface ComparisonFixture {
   readonly name: string;
   readonly payload: unknown;
   readonly operations: Partial<Record<Operation, () => unknown>>;
   /**
-   * The reading operations on one broken variant of the payload, for a validating build: each call must be rejected.
-   * The run times them in a process of its own (R5), never in the process that times valid input.
+   * A factory of the reading operations on one broken variant of the payload, for a validating build: each call must be rejected.
+   * The worker calls it only in `invalid` mode, so a process that times valid input never builds a broken value (R5).
    */
-  readonly invalidOperations?: Partial<Record<Operation, () => unknown>>;
+  readonly invalidOperations?: () => InvalidOperations;
   consume(value: unknown): number;
   verify(): Promise<void>;
 }
 
-/** An invalid-input call: `call` must throw, and the timed work is the throw and the catch. It returns a positive number to consume. */
-export function rejects(call: () => unknown): () => number {
+/**
+ * An invalid-input call: `call` must throw an error that `isRejection` accepts, and the timed work is the throw and the catch.
+ * Any other error is a program fault and propagates, so it is never timed as a rejection. It returns a positive number to consume.
+ */
+export function rejects(call: () => unknown, isRejection: (error: unknown) => boolean): () => number {
   return () => {
-    try { call(); } catch (error) { return 1 + (error instanceof Error ? error.message.length : 0); }
+    try { call(); } catch (error) {
+      if (!isRejection(error)) throw error;
+      return 1 + (error instanceof Error ? error.message.length : 0);
+    }
     throw new Error('Invalid input was accepted');
   };
 }

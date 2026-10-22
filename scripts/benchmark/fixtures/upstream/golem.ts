@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/serde';
-import { rejects, rejectsValidate, type Adapter, type ComparisonFixture } from './fixture-contract.js';
+import { rejects, rejectsValidate, type Adapter, type ComparisonFixture, type InvalidOperations } from './fixture-contract.js';
 import {
   Account,
   Channel,
@@ -205,13 +205,14 @@ async function verify(input: FixtureInput, validation: boolean, model: GolemMode
   assertNestedInstances(input, model);
 
   if (!validation) return;
+  // Broken input is built in a verify step only, never when the fixtures are created (R5).
+  if (input.name === 'ObjectHierarchical-Constrained') await verifyPublicTagInvocation(input);
   const codec = requireObjectCodec(codecId(input));
   assert.equal(codec.validate(fromObject), true);
   assert.equal(codec.validate(fromText), true);
   const [invalidScalar, missingRequired, nestedInvalid] = invalidVariants(input);
   const invalidDraft = decode({ ...input, payload: invalidScalar } as FixtureInput, false);
   assert.equal(codec.validate(invalidDraft), false);
-  const validationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
   const withPayload = (payload: unknown): FixtureInput => ({ ...input, payload } as FixtureInput);
   await assert.throws(() => decode(withPayload(invalidScalar), true), validationError);
   await assert.throws(() => decode(withPayload(missingRequired), true), validationError);
@@ -250,16 +251,21 @@ async function verify(input: FixtureInput, validation: boolean, model: GolemMode
   assert.throws(() => encode(invalidModel, true));
 }
 
-function invalidOperationsOf(input: FixtureInput): ComparisonFixture['invalidOperations'] {
-  const codec = requireObjectCodec(codecId(input));
-  const construct = constructFor(input);
-  const wire = invalidVariants(input)[0];
-  const text = JSON.stringify(wire);
-  const draft = codec.fromWireFormat(wire, { validate: false as const, construct });
-  return {
-    'object-to-model': rejects(() => codec.fromWireFormat(wire, { construct })),
-    'text-to-model': rejects(() => codec.parse(text, { construct })),
-    validate: rejectsValidate(() => codec.validate(draft)),
+const validationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
+
+/** The factory of the invalid-input calls on the first broken variant of the verify step. The worker calls it only in `invalid` mode (R5). */
+function invalidOperationsOf(input: FixtureInput): () => InvalidOperations {
+  return () => {
+    const codec = requireObjectCodec(codecId(input));
+    const construct = constructFor(input);
+    const wire = invalidVariants(input)[0];
+    const text = JSON.stringify(wire);
+    const draft = codec.fromWireFormat(wire, { validate: false as const, construct });
+    return {
+      'object-to-model': rejects(() => codec.fromWireFormat(wire, { construct }), validationError),
+      'text-to-model': rejects(() => codec.parse(text, { construct }), validationError),
+      validate: rejectsValidate(() => codec.validate(draft)),
+    };
   };
 }
 
@@ -268,10 +274,6 @@ export async function createGolemFixtures(adapter: Adapter): Promise<readonly Co
   const validation = validationFor(adapter);
   const fixtures: ComparisonFixture[] = [];
   const inputs = createFixtureInputs();
-  const constrained = inputs.find((input) => input.name === 'ObjectHierarchical-Constrained');
-  if (validation && constrained?.name === 'ObjectHierarchical-Constrained') {
-    await verifyPublicTagInvocation(constrained);
-  }
   for (const input of inputs) {
     const model = await decode(input, validation);
     // #region calls
