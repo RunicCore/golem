@@ -54,6 +54,25 @@ function parameterOptionsOf(
 }
 
 /**
+ * The decorators in the order TypeScript applies them: bottom-up within one
+ * declaration. `@nestjs/swagger` appends each parameter as its decorator runs, so
+ * stacked `@ApiHeader(A) @ApiHeader(B)` lists B first. The declarations of a class
+ * chain keep their order, base class first.
+ */
+function inApplicationOrder(decorators: readonly DecoratorInfo[]): readonly DecoratorInfo[] {
+  const ordered: DecoratorInfo[] = [];
+  let run: DecoratorInfo[] = [];
+  for (const decorator of decorators) {
+    if (run.length > 0 && run[0].decorator.parent !== decorator.decorator.parent) {
+      ordered.push(...run.reverse());
+      run = [];
+    }
+    run.push(decorator);
+  }
+  return [...ordered, ...run.reverse()];
+}
+
+/**
  * The key of a parameter override: OpenAPI identifies a parameter by name and
  * location together. `@ApiQuery` documents the query string, so it also names
  * an OAS 3.2 `querystring` parameter (a whole `@Query()` object).
@@ -349,9 +368,9 @@ export function parseParameters(
   // `@nestjs/swagger` puts class-level headers before the route's own parameters.
   const classHeaders: ControllerParameter[] = [];
   for (const [decoratorNames, location] of SWAGGER_PARAMETER_LOCATIONS) {
-    const inherited = [...parameterOptionsOf(context, classDecorators, decoratorNames)].reverse();
+    const inherited = [...parameterOptionsOf(context, inApplicationOrder(classDecorators), decoratorNames)].reverse();
     // A method's declaration wins over its class's, and a derived class's over its base's.
-    for (const entry of [...parameterOptionsOf(context, methodDecorators, decoratorNames), ...inherited]) {
+    for (const entry of [...parameterOptionsOf(context, inApplicationOrder(methodDecorators), decoratorNames), ...inherited]) {
       const { options } = entry;
       const name = options.string('name');
       if (!name || [...parameters, ...classHeaders].some(parameter => parameter.name === name

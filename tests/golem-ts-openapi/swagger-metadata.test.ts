@@ -385,9 +385,9 @@ export class ThingsController extends BaseController {
 });
 
 test('writes one header parameter for each @ApiHeaders entry at class and method level, as @ApiHeader does', async t => {
-  // protects: T-198 @ApiHeaders is a list of @ApiHeader options
+  // protects: T-198 @ApiHeaders is a list of @ApiHeader options; T-216 parameter order is Nest Swagger's
   const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
-import { ApiHeader, ApiHeaders } from '@nestjs/swagger';
+import { ApiHeader, ApiHeaders, ApiQuery } from '@nestjs/swagger';
 
 @ApiHeaders([
   { name: 'X-Tenant', required: true, description: 'Tenant', schema: { type: 'string', format: 'uuid' } },
@@ -422,6 +422,20 @@ export class SingleController {
   @ApiHeader({ name: 'X-Debug', required: true })
   list(): void {}
 }
+
+@ApiHeader({ name: 'X-P' })
+@ApiHeader({ name: 'X-Q' })
+class ChainBase {}
+
+@ApiHeader({ name: 'X-A' })
+@ApiHeader({ name: 'X-B' })
+@Controller('chain')
+export class ChainController extends ChainBase {
+  @Get()
+  @ApiQuery({ name: 'q1' })
+  @ApiQuery({ name: 'q2' })
+  list(): void {}
+}
 `);
   const document = documentOf(await generateAt(root));
   const listed = document.paths['/listed']?.get?.parameters;
@@ -431,6 +445,12 @@ export class SingleController {
     ['header', 'X-Lang', 'Language', false],
     ['header', 'X-Debug', undefined, true],
   ]);
-  assert.deepEqual(listed, document.paths['/single']?.get?.parameters);
+  // @nestjs/swagger applies stacked decorators bottom-up, so stacked @ApiHeader lists the lower one first
+  // (class headers, then method headers); @ApiHeaders keeps its array order.
+  const stacked = document.paths['/single']?.get?.parameters;
+  assert.deepEqual(stacked?.map(item => item.name), ['X-Trace', 'X-Tenant', 'X-Debug', 'X-Lang']);
+  assert.deepEqual(stacked?.map(item => item.required), [false, true, true, false]);
+  // Same for a class chain (base class first) and for stacked @ApiQuery; the order is that of createDocument.
+  assert.deepEqual(document.paths['/chain']?.get?.parameters?.map(item => item.name), ['X-Q', 'X-P', 'X-B', 'X-A', 'q2', 'q1']);
   assert.deepEqual(listed, document.paths['/constant']?.get?.parameters);
 });
