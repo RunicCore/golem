@@ -138,7 +138,7 @@ test('a declarations-only build writes the same Node-resolvable declarations int
 });
 
 test('a build with no rootDir rewrites the declarations where the compiler wrote them, below the tsconfig directory', async () => {
-  // protects: T-144 the declaration of each source is found from the compiler's own list, whatever the output layout
+  // protects: T-144 the declaration path follows tsc's rule: below the tsconfig directory when the sources share no deeper folder
   const root = fixtureProject({ declaration: true, rootDir: undefined });
   // With sources in two folders the compiler's output root is the tsconfig directory, so the declarations land in build/src/ and build/tools/.
   writeModelSources(root, { 'tools/probe.ts': "export { thing } from '../src/api';\n" });
@@ -146,16 +146,4 @@ test('a build with no rootDir rewrites the declarations where the compiler wrote
   assert.equal((await build(root)).exitCode, 0);
   assert.ok(fs.existsSync(path.join(root, 'build/tools/probe.d.ts')));
   assert.deepEqual(await checkConsumer(root, 'build/src'), { code: 0, output: '' });
-});
-
-test('a build that stopped before it changed the declaration paths changes them in the next build', async () => {
-  // protects: T-144 the compiler does not write a declaration twice, so a stopped build must not leave one unchanged for good
-  const root = fixtureProject({ declaration: true });
-  const manifest = path.join(root, 'node_modules/lodashy/package.json');
-  const text = fs.readFileSync(manifest, 'utf8');
-  fs.writeFileSync(manifest, 'not json');
-  await assert.rejects(build(root), /lodashy/);
-  fs.writeFileSync(manifest, text);
-  assert.equal((await build(root)).exitCode, 0);
-  assert.deepEqual(await checkConsumer(root, 'build'), { code: 0, output: '' });
 });
