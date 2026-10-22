@@ -82,6 +82,29 @@ interface ModelDefinition {
   isUnion?: boolean;
 }
 
+/**
+ * A non-model component that reaches itself through `$ref`. It cannot be written inline, so it is a named node of the
+ * schema graph, owned by one model group, and every use calls that node.
+ */
+interface RecursiveAlias {
+  readonly name: string;
+  readonly schemaName: string;
+  readonly rawSchema: unknown;
+  /** The graph node that converts it; set when the graph is interned. */
+  nodeId?: string;
+  /** The conversion descriptor of the component, with each use of a recursive component as a projection reference. */
+  descriptor?: ModelTypeDescriptor;
+  /** Whether it reaches a date or a model: its model type is then a private alias of the owner group, not `Types.<Name>`. */
+  convertsValue?: boolean;
+}
+
+/** The models of a document by type name, and its recursive aliases. */
+class ModelDefinitions extends Map<string, ModelDefinition> {
+  constructor(readonly aliases: ReadonlyMap<string, RecursiveAlias>) {
+    super();
+  }
+}
+
 interface DiscriminatorSelection {
   readonly propertyName: string;
   readonly variants: ReadonlyMap<string, string>;
@@ -103,7 +126,7 @@ interface ModelResolveEnv {
 }
 
 interface OpenApiModelAnalysis {
-  readonly definitions: ReadonlyMap<string, ModelDefinition>;
+  readonly definitions: ModelDefinitions;
   readonly ordered: readonly ModelDefinition[];
   readonly schemaGraph: SchemaGraph;
   readonly grouping: SchemaGraphGrouping;
@@ -210,7 +233,7 @@ function admitsNull(schema: Readonly<Record<string, unknown>>): boolean {
 function admitsNullThroughReference(
   schema: unknown,
   reference: string,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
 ): boolean {
   return admitsNull(asRecord(schema)) || admitsNull(asRecord(definitions.get(reference)?.schema));
 }
@@ -263,6 +286,120 @@ function isInlineUnion(schema: unknown): boolean {
   return isJsonObject(schema) && (schema.oneOf !== undefined || schema.anyOf !== undefined);
 }
 
+/**
+ * The non-model components that reach themselves through `$ref`, found once before the type and conversion walks.
+ * A model reference ends a path, as it ends the walks; only the keywords the walks follow count. A non-recursive
+ * non-model component is not named: each use inlines it.
+ */
+function findRecursiveAliases(env: ModelResolveEnv): ReadonlyMap<string, RecursiveAlias> {
+  const schemas = asRecord(asRecord(asRecord(env.document).components).schemas);
+  const components = new Map<string, { readonly schemaName: string; readonly rawSchema: unknown }>();
+  for (const [schemaName, rawSchema] of objectEntries(schemas)) {
+    if (!isModelSchema(env, resolveLocal(env.document, rawSchema))) components.set(identifier(schemaName), { schemaName, rawSchema });
+  }
+  const edgesOf = new Map<string, ReadonlySet<string>>();
+  const collect = (schema: unknown, scope: ModelResolveEnv, edges: Set<string>): void => {
+    if (!isJsonObject(schema)) return;
+    const nested = withSchemaBase(scope, schema);
+    const reference = directComponentSchemaRef(schema, nested);
+    if (reference) {
+      if (components.has(reference)) edges.add(reference);
+      return;
+    }
+    for (const keyword of ['allOf', 'oneOf', 'anyOf', 'prefixItems'] as const) {
+      for (const item of Array.isArray(schema[keyword]) ? schema[keyword] : []) collect(item, nested, edges);
+    }
+    for (const [, child] of objectEntries(schema.properties)) collect(child, nested, edges);
+    collect(schema.items, nested, edges);
+    collect(schema.additionalProperties, nested, edges);
+  };
+  const edges = (name: string): ReadonlySet<string> => {
+    let found = edgesOf.get(name);
+    if (!found) {
+      const collected = new Set<string>();
+      collect(components.get(name)?.rawSchema, env, collected);
+      edgesOf.set(name, found = collected);
+    }
+    return found;
+  };
+  const reachesOwnName = (name: string): boolean => {
+    const visited = new Set<string>();
+    const pending = [...edges(name)];
+    for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+      if (next === name) return true;
+      if (visited.has(next)) continue;
+      visited.add(next);
+      pending.push(...edges(next));
+    }
+    return false;
+  };
+  return new Map([...components].filter(([name]) => reachesOwnName(name)).map(([name, { schemaName, rawSchema }]) => [name, { name, schemaName, rawSchema }]));
+}
+
+/** The environment a component's own schema is read in: its anchors, and the analysis' dates and discriminator tables. */
+function componentEnv(env: ModelResolveEnv, schemaName: string, rawSchema: unknown): ModelResolveEnv {
+  const anchors = schemaContext(env.document, schemaContext(env.document, { resources: env.resources }), schemaName, rawSchema).anchors;
+  return modelEnv(env.document, undefined, anchors, env.resources, env.selections, env.dates);
+}
+
+/** The conversion descriptor of a recursive alias: each use of a recursive component, itself included, is a projection reference. */
+function aliasDescriptor(alias: RecursiveAlias, definitions: ModelDefinitions, env: ModelResolveEnv): ModelTypeDescriptor {
+  alias.descriptor ??= modelConversionDescriptor(alias.rawSchema, definitions, componentEnv(env, alias.schemaName, alias.rawSchema), 'to', new Set(), true, 'definition');
+  return alias.descriptor;
+}
+
+/** Whether a use of the alias converts a value (it reaches a date, a serde value or a model); if not, its model type is its wire type. */
+function aliasConvertsValue(alias: RecursiveAlias, definitions: ModelDefinitions, env: ModelResolveEnv): boolean {
+  alias.convertsValue ??= descriptorNeedsConversion(
+    { kind: 'reference', name: alias.name, projection: true },
+    (name) => {
+      const held = definitions.aliases.get(name);
+      return held ? aliasDescriptor(held, definitions, env) : undefined;
+    },
+  );
+  return alias.convertsValue;
+}
+
+/** The model-layer type of an alias that reaches a date or a model. */
+function aliasModelTypeName(alias: RecursiveAlias): string {
+  return `${alias.name}Fields`;
+}
+
+/** Whether a conversion descriptor holds a use of a recursive alias. */
+function holdsRecursiveAlias(descriptor: ModelTypeDescriptor): boolean {
+  switch (descriptor.kind) {
+    case 'reference': return descriptor.projection === true;
+    case 'array': return holdsRecursiveAlias(descriptor.item);
+    case 'tuple': return descriptor.items.some(holdsRecursiveAlias) || (descriptor.rest !== undefined && holdsRecursiveAlias(descriptor.rest.item));
+    case 'object':
+      return Object.values(descriptor.properties).some(holdsRecursiveAlias)
+        || (typeof descriptor.additionalProperties === 'object' && holdsRecursiveAlias(descriptor.additionalProperties));
+    case 'union': case 'intersection': return descriptor.variants.some(holdsRecursiveAlias);
+    default: return false;
+  }
+}
+
+/**
+ * The init type of a model. `ModelInit` expands a recursive alias without end (TS2589), so the fields that hold one keep
+ * their field type as their init type, as a conversion keeps their value.
+ */
+function modelInitType(
+  typeName: string,
+  properties: ReadonlyMap<string, unknown>,
+  definitions: ModelDefinitions,
+  env: ModelResolveEnv,
+): string {
+  const aliasFields = [...properties].filter(([, schema]) => holdsRecursiveAlias(modelConversionDescriptor(schema, definitions, env, 'from'))).map(([name]) => name);
+  if (aliasFields.length === 0) return `ModelInit<${typeName}Fields>`;
+  const omitted = aliasFields.map((name) => JSON.stringify(name)).join(' | ');
+  return `ModelInit<{ [Key in keyof ${typeName}Fields as Key extends ${omitted} ? never : Key]: ${typeName}Fields[Key] }> & { ${aliasFields.map((name) => `${propertyName(name)}?: ${typeName}Fields[${JSON.stringify(name)}]`).join('; ')} }`;
+}
+
+/** The type of a use of a recursive alias in the model layer. */
+function aliasUseType(alias: RecursiveAlias, definitions: ModelDefinitions, env: ModelResolveEnv): string {
+  return aliasConvertsValue(alias, definitions, env) ? aliasModelTypeName(alias) : `Types.${alias.name}`;
+}
+
 /** The component schemas that the allOf refers to, in order. */
 function modelBaseSchemaNames(schema: unknown, env: ModelResolveEnv): string[] {
   const record = asRecord(schema);
@@ -308,7 +445,7 @@ function modelSchemaReference(schema: unknown, env: ModelResolveEnv): string | n
 
 function modelFieldType(
   schema: unknown,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
   visiting: ReadonlySet<unknown> = new Set(),
   nullThroughReference = true,
@@ -319,7 +456,9 @@ function modelFieldType(
     const nullable = nullThroughReference ? admitsNullThroughReference(schema, reference, definitions) : admitsNull(asRecord(schema));
     return `${reference}Model${nullable ? ' | null' : ''}`;
   }
-  if (visiting.has(schema)) throw new Error('Recursive schema aliases must resolve to an object model.');
+  const alias = reference ? definitions.aliases.get(reference) : undefined;
+  if (alias) return `${aliasUseType(alias, definitions, env)}${admitsNull(asRecord(schema)) ? ' | null' : ''}`;
+  if (visiting.has(schema)) throw new Error('Internal error: a schema reaches itself without a named recursive alias.');
   const seen = new Set(visiting).add(schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelFieldType(target, definitions, nested, seen);
@@ -461,7 +600,7 @@ function withOwnUnionsAsMembers(schema: Readonly<Record<string, unknown>>): Read
 /** A tuple (prefixItems) or an array (items) schema: each prefix item converts by its own schema, and `items` converts the rest. */
 function sequenceConversionDescriptor(
   schema: Readonly<Record<string, unknown>>,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
   direction: 'from' | 'to',
   seen: ReadonlySet<unknown>,
@@ -473,7 +612,7 @@ function sequenceConversionDescriptor(
 
 function sequenceBodyDescriptor(
   schema: Readonly<Record<string, unknown>>,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
   direction: 'from' | 'to',
   seen: ReadonlySet<unknown>,
@@ -505,7 +644,7 @@ function hasOwnConversionKeywords(schema: Readonly<Record<string, unknown>>): bo
 
 function modelConversionDescriptor(
   schema: unknown,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
   direction: 'from' | 'to' = 'from',
   visiting: ReadonlySet<unknown> = new Set(),
@@ -520,7 +659,12 @@ function modelConversionDescriptor(
       ? { kind: 'union', variants: [generated, { kind: 'null' }] }
       : generated;
   }
-  if (visiting.has(schema)) throw new Error('Recursive schema aliases must resolve to an object model.');
+  const alias = reference ? definitions.aliases.get(reference) : undefined;
+  if (alias) {
+    const projection: ModelTypeDescriptor = { kind: 'reference', name: alias.name, projection: true };
+    return admitsNull(asRecord(schema)) ? { kind: 'union', variants: [projection, { kind: 'null' }] } : projection;
+  }
+  if (visiting.has(schema)) throw new Error('Internal error: a schema reaches itself without a named recursive alias.');
   const seen = new Set(visiting).add(schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return modelConversionDescriptor(target, definitions, nested, direction, seen);
@@ -659,7 +803,7 @@ class CompositionError extends Error {
 }
 
 function compositionReader(
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   direction: 'from' | 'to',
   seen: ReadonlySet<unknown>,
 ): CompositionReader<ModelResolveEnv> {
@@ -678,7 +822,7 @@ function compositionReader(
 
 function resolvedComposition(
   schema: Readonly<Record<string, unknown>>,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
   direction: 'from' | 'to',
   seen: ReadonlySet<unknown>,
@@ -691,7 +835,7 @@ function resolvedComposition(
 
 function fieldComposition(
   schema: Readonly<Record<string, unknown>>,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
   direction: 'from' | 'to',
   seen: ReadonlySet<unknown>,
@@ -716,7 +860,7 @@ function objectCompositionDescriptor(composition: ObjectComposition): ModelTypeD
 
 function objectCompositionType(
   composition: ObjectComposition,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   seen: ReadonlySet<unknown>,
 ): string {
   const childType = (child: SlotChild<ModelResolveEnv>): string => {
@@ -758,7 +902,17 @@ function modelDiscriminators(definition: ModelDefinition | undefined): ModelDisc
 }
 
 /** How generated conversion code decodes and constructs a referenced model. */
-function modelResolver(reference: string, definitions: ReadonlyMap<string, ModelDefinition>): FromJsonModelResolver {
+function modelResolver(reference: string, definitions: ModelDefinitions, env: ModelResolveEnv): FromJsonModelResolver {
+  const alias = definitions.aliases.get(reference);
+  if (alias) {
+    // A use of a recursive alias calls its node. A model-layer value is not a wire value, so init keeps it as it is.
+    return {
+      className: alias.name,
+      decode: (value) => `${generatedFunctionName(aliasNodeId(alias), 'fromWire')}(${value})`,
+      fromInit: (value) => value,
+      ...(aliasConvertsValue(alias, definitions, env) ? {} : { identity: true as const }),
+    };
+  }
   const discriminators = modelDiscriminators(definitions.get(reference));
   const bases = modelBases(definitions.get(reference));
   return {
@@ -770,6 +924,11 @@ function modelResolver(reference: string, definitions: ReadonlyMap<string, Model
     ...(discriminators ? { discriminators } : {}),
     ...(bases.length ? { bases } : {}),
   };
+}
+
+function aliasNodeId(alias: RecursiveAlias): string {
+  if (alias.nodeId === undefined) throw new Error(`Internal error: the recursive component ${JSON.stringify(alias.schemaName)} has no schema node.`);
+  return alias.nodeId;
 }
 
 /** A conversion conflict that an emitter finds carries the resolver's code. */
@@ -803,14 +962,14 @@ function withConflictCode(owner: string | CompositionSite, emit: () => string): 
 function modelFromJSONExpression(
   schema: unknown,
   expression: string,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
   owner: string | CompositionSite,
 ): string {
   return withConflictCode(owner, () => emitModelFromJSON(
     modelConversionDescriptor(schema, definitions, env, 'from'),
     expression,
-    (reference) => modelResolver(reference, definitions),
+    (reference) => modelResolver(reference, definitions, env),
     TEMPORAL_SERDE,
   ));
 }
@@ -818,18 +977,18 @@ function modelFromJSONExpression(
 function modelInitExpression(
   schema: unknown,
   expression: string,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
   owner: string | CompositionSite,
 ): string {
   const descriptor = modelConversionDescriptor(schema, definitions, env, 'from');
-  return withConflictCode(owner, () => emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions)));
+  return withConflictCode(owner, () => emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions, env)));
 }
 
 function modelToJSONExpression(
   schema: unknown,
   expression: string,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
   owner: string | CompositionSite,
 ): string {
@@ -837,6 +996,14 @@ function modelToJSONExpression(
     modelConversionDescriptor(schema, definitions, env, 'to'),
     expression,
     (reference) => {
+      const alias = definitions.aliases.get(reference);
+      if (alias) {
+        return {
+          className: alias.name,
+          encode: value => `${generatedFunctionName(aliasNodeId(alias), 'toWire')}(${value})`,
+          ...(aliasConvertsValue(alias, definitions, env) ? {} : { identity: true as const }),
+        };
+      }
       const bases = modelBases(definitions.get(reference));
       return { className: `${reference}Model`, encode: value => `encodeGeneratedModel(${value})`, ...(bases.length ? { bases } : {}) };
     },
@@ -872,7 +1039,7 @@ function modelFieldDeclaration(
   name: string,
   schema: unknown,
   required: boolean,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
 ): string {
   const description = isJsonObject(schema) && schema.description
@@ -920,7 +1087,7 @@ function modelPropertyAssignment(target: string, name: string, value: string): s
 function discriminatorSelection(
   schemaName: string,
   schema: unknown,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
   warn: (code: string, message: string) => void,
 ): DiscriminatorSelection | undefined {
@@ -1021,7 +1188,7 @@ function checkComposition(
   site: CompositionSite,
   rawSchema: unknown,
   definition: ModelDefinition | undefined,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   document: unknown,
   resources: ResourceIndex | undefined,
   warn: (code: string, message: string) => void,
@@ -1109,7 +1276,7 @@ export function checkOperationCompositions(
 
 /** One JSON Pointer token. */
 export function collectOpenApiModelDefinitions(document: unknown, resources?: ResourceIndex): {
-  definitions: Map<string, ModelDefinition>;
+  definitions: ModelDefinitions;
   ordered: ModelDefinition[];
   diagnostics: GolemDiagnostic[];
   selections: DiscriminatorSelections;
@@ -1121,7 +1288,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
   };
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const env = modelEnv(document, undefined, undefined, resources, selections);
-  const definitions = new Map<string, ModelDefinition>();
+  const definitions = new ModelDefinitions(findRecursiveAliases(env));
   const schemaScope = new ComponentNameScope('models.ts schema identifiers');
   for (const [rawName, rawSchema] of objectEntries(schemas)) {
     const name = identifier(rawName);
@@ -1285,7 +1452,7 @@ export function generateModelManifest(
   const digest = sourceDigest(document);
   const stableId = (definition: ModelDefinition) =>
     `openapi:${digest.slice(0, 16)}#/components/schemas/${definition.schemaName}`;
-  const byName = new Map(ordered.map((definition) => [definition.name, definition]));
+  const byName = modelAnalysis.definitions;
   const sharedSchemaContext = schemaContext(document, { resources: modelAnalysis.resources });
   const models = ordered.map((definition) => {
     const anchors = schemaContext(
@@ -1356,7 +1523,7 @@ export function generateModelManifest(
 function unionDiscriminatorTable(
   schema: Readonly<Record<string, unknown>>,
   items: readonly unknown[],
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
 ): UnionDiscriminator | undefined {
   if (!isJsonObject(schema.discriminator)) return undefined;
@@ -1386,7 +1553,7 @@ function unionDiscriminatorTable(
  */
 function modelClassDescriptor(
   descriptor: ModelTypeDescriptor,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
 ): ModelTypeDescriptor {
   if (descriptor.kind !== 'generated-model') return descriptor;
@@ -1408,7 +1575,7 @@ function modelClassDescriptor(
 function internOpenApiSchemaGraph(
   document: unknown,
   ordered: readonly ModelDefinition[],
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   validationEnabled = true,
   resources?: ResourceIndex,
   selections?: DiscriminatorSelections,
@@ -1418,7 +1585,14 @@ function internOpenApiSchemaGraph(
     codecSource: 'openapi',
   });
   const sharedSchemaContext = schemaContext(document, resources ? { resources } : {});
-  const nodeIdByDefinition = internDescriptors(schemaGraph, ordered.map((definition) => {
+  const aliasEnv = modelEnv(document, undefined, undefined, resources, selections, dates);
+  const aliasEntries = [...definitions.aliases.values()].map((alias) => ({
+    name: alias.name,
+    descriptor: aliasDescriptor(alias, definitions, aliasEnv),
+    emitClass: false,
+    validationEnabled,
+  }));
+  const nodeIdByDefinition = internDescriptors(schemaGraph, [...ordered.map((definition) => {
     const anchors = schemaContext(
       document,
       sharedSchemaContext,
@@ -1434,7 +1608,7 @@ function internOpenApiSchemaGraph(
       emitClass: true,
       validationEnabled,
     };
-  }));
+  }), ...aliasEntries]);
   schemaGraph.seal();
   return { schemaGraph, nodeIdByDefinition };
 }
@@ -1476,9 +1650,13 @@ export function analyzeOpenApiModels(
   const resources = collectCanonicalResources(document);
   const { definitions, ordered, diagnostics, selections } = collectOpenApiModelDefinitions(document, resources);
   const { schemaGraph, nodeIdByDefinition } = internOpenApiSchemaGraph(document, ordered, definitions, validationEnabled, resources, selections, dates);
+  for (const alias of definitions.aliases.values()) {
+    const nodeId = nodeIdByDefinition.get(alias.name);
+    if (nodeId !== undefined) alias.nodeId = nodeId;
+  }
   const nodes = [...schemaGraph.nodes.values()];
   const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  const { nodesByName, definitionNameByNodeId } = nodesByDefinitionName(schemaGraph, nodeIdByDefinition);
+  const { nodesByName, definitionNameByNodeId } = nodesByDefinitionName(schemaGraph, new Map([...nodeIdByDefinition].filter(([name]) => definitions.has(name))));
   const nodesByCodecId = new Map(nodes.map((node) => [node.codecId, node]));
   const grouping = schemaGraphGroups(schemaGraph, definitions, nodesByName, definitionNameByNodeId);
   return { definitions, ordered, schemaGraph, grouping, resources, nodesById, nodesByName, definitionNameByNodeId, nodesByCodecId, diagnostics, selections, dates };
@@ -1579,7 +1757,7 @@ interface SchemaGraphGrouping {
 
 function schemaGraphGroups(
   schemaGraph: SchemaGraph,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   nodesByName: ReadonlyMap<string, SchemaNode>,
   definitionNameByNodeId: ReadonlyMap<string, string>,
 ): SchemaGraphGrouping {
@@ -1754,6 +1932,7 @@ export function generateOpenApiModelArtifacts(
       exportedInitializersByGroup.set(initializerGroupId, exports);
     }
   }
+  const aliasByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
   const files = new Map<string, string>();
   const diagnostics: GolemDiagnostic[] = [];
   const codecExports = (name: string): string[] => {
@@ -1815,6 +1994,8 @@ export function generateOpenApiModelArtifacts(
         addImport(codecModule, generatedFunctionName(node.id, functionName));
       }
       if (node.kind === 'object') addImport(codecModule, generatedFunctionName(node.id, 'fill'));
+      const alias = aliasByNodeId.get(nodeId);
+      if (alias && aliasConvertsValue(alias, definitions, sharedModelEnv)) addImport(codecModule, `type ${aliasModelTypeName(alias)}`);
       if (exportsWireStringify(schemaGraph, node, profile)) addImport(codecModule, wireStringifyExportName(node.codecId));
       const modelName = analysis.definitionNameByNodeId.get(nodeId);
       if (node.emitClass && modelName !== undefined) {
@@ -1911,11 +2092,11 @@ export function generateOpenApiModelArtifacts(
 function unionConversion(
   definition: ModelDefinition,
   direction: 'fromJSON' | 'fromInit',
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
   env: ModelResolveEnv,
 ): string {
   const descriptor = modelConversionDescriptor(definition.rawSchema, definitions, env, 'from');
-  const resolve = (reference: string) => modelResolver(reference, definitions);
+  const resolve = (reference: string) => modelResolver(reference, definitions, env);
   try {
     return direction === 'fromJSON'
       ? emitModelFromJSON(descriptor, 'value', resolve, TEMPORAL_SERDE)
@@ -1939,7 +2120,7 @@ function unionConversion(
 function emitSchemaCodecRuntime(
   graph: SchemaGraph,
   options: CodecRuntimeOptions,
-  definitions: ReadonlyMap<string, ModelDefinition>,
+  definitions: ModelDefinitions,
 ): string {
   // Group modules import each other's codec functions, anonymous ones included.
   options = { ...options, exportAnonymousCodecs: true };
@@ -2141,7 +2322,7 @@ export function generateModels(
       ...(additionalPropertyType ? [`  [key: string]: ${fields.length || definition.baseName ? 'unknown' : additionalPropertyType};`] : []),
       '};',
       `export type ${typeName}JSON = Types.${typeName};`,
-      `export type ${typeName}Init = ModelInit<${typeName}Fields>;`,
+      `export type ${typeName}Init = ${modelInitType(typeName, allProperties, definitions, fieldEnv)};`,
       '',
       ...fieldHelpers.flatMap(helper => [helper, '']),
       ...(!definition.isUnion ? [
@@ -2226,9 +2407,17 @@ export function generateModels(
       ]),
     );
   }
+  for (const alias of definitions.aliases.values()) {
+    if (helpers.graphNodeIds && !(alias.nodeId !== undefined && helpers.graphNodeIds.has(alias.nodeId))) continue;
+    if (!aliasConvertsValue(alias, definitions, sharedModelEnv)) continue;
+    const aliasType = aliasModelTypeName(alias);
+    moduleScope.claim(aliasType, `model type of the recursive component ${JSON.stringify(alias.schemaName)}`, alias.schemaName);
+    output.push(`export type ${aliasType} = ${modelFieldType(alias.rawSchema, definitions, componentEnv(sharedModelEnv, alias.schemaName, alias.rawSchema))};`, '');
+  }
   if (helpers.resolvedSchemas) {
     output.push(`const modelSchemas = JSON.parse(${JSON.stringify(JSON.stringify(helpers.resolvedSchemas))}) as Readonly<Record<string, object>>;`, '');
   }
+  const aliasesByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
   const codecRuntimeOptions: CodecRuntimeOptions = {
     validationEnabled: profile.validation,
     serde: TEMPORAL_SERDE,
@@ -2249,11 +2438,12 @@ export function generateModels(
     })),
     wireType: (node) => {
       const modelName = analysis.definitionNameByNodeId.get(node.id);
-      return modelName !== undefined && definitions.has(modelName) ? `Types.${modelName}` : undefined;
+      return modelName !== undefined && definitions.has(modelName) ? `Types.${modelName}` : aliasesByNodeId.get(node.id) === undefined ? undefined : `Types.${aliasesByNodeId.get(node.id)?.name}`;
     },
     fieldsType: (node) => {
       const modelName = analysis.definitionNameByNodeId.get(node.id);
-      return modelName !== undefined && definitions.has(modelName) ? `${modelName}Fields` : undefined;
+      const alias = aliasesByNodeId.get(node.id);
+      return modelName !== undefined && definitions.has(modelName) ? `${modelName}Fields` : alias === undefined ? undefined : aliasUseType(alias, definitions, sharedModelEnv);
     },
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),
     nestedConstruct: (codecId) => {
