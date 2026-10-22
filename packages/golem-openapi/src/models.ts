@@ -250,6 +250,8 @@ function isModelSchema(env: ModelResolveEnv, schema: unknown, visiting = new Set
   const nested = withSchemaBase(env, schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return isModelSchema(nested, target, visiting);
+  // An allOf beside the schema's own union is a union of objects, not a class that extends the allOf.
+  if (hasAllOfMembers(schema) && (schema.oneOf !== undefined || schema.anyOf !== undefined)) return false;
   if (schema.type === 'object' || schema.properties || schema.additionalProperties !== undefined) return true;
   if (Array.isArray(schema.allOf) && schema.allOf.length) {
     return schema.allOf.some((item) => isModelSchema(nested, item, visiting));
@@ -335,6 +337,9 @@ function modelFieldType(
     : [];
   const decidingMembers = allOfMembers.filter(({ descriptor }) => isDecidingPart(descriptor));
   const [decidingMember] = decidingMembers;
+  // A deciding member makes the schema's own union one more member; constraint-only members leave the union to convert it.
+  const field = isJsonObject(schema) ? withOwnUnionsAsMembers(schema) : schema;
+  if (field !== schema && decidingMembers.length > 0) return modelFieldType(field, definitions, env, seen, nullThroughReference);
   // One deciding sequence or model reference is the field's type, as it is its conversion (a lone `allOf [$ref Pet]`).
   if (decidingMembers.length === 1 && decidingMember
     && (isSequenceDescriptor(decidingMember.descriptor) || decidingMember.descriptor.kind === 'generated-model')) {
@@ -432,6 +437,20 @@ function hasAllOfMembers(schema: Readonly<Record<string, unknown>>): schema is R
 }
 
 /**
+ * A schema's own `oneOf` and `anyOf` beside its `allOf` are two more allOf members: the value satisfies the allOf members and
+ * the union (JSON Schema AND), so the one resolver reads them as it reads a union member.
+ */
+function withOwnUnionsAsMembers(schema: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  if (!hasAllOfMembers(schema) || (schema.oneOf === undefined && schema.anyOf === undefined)) return schema;
+  const { oneOf, anyOf, discriminator, ...rest } = schema;
+  const unions = [
+    ...(oneOf === undefined ? [] : [{ oneOf, ...(discriminator === undefined ? {} : { discriminator }) }]),
+    ...(anyOf === undefined ? [] : [{ anyOf, ...(discriminator === undefined || oneOf !== undefined ? {} : { discriminator }) }]),
+  ];
+  return { ...rest, allOf: [...schema.allOf, ...unions] };
+}
+
+/**
  * `type: array` or `[array, null]`, or no `type` beside `prefixItems` or `items`. Without a `type`, `properties`
  * or `additionalProperties` make the schema an object, as the wire type reads it.
  */
@@ -524,6 +543,9 @@ function modelConversionDescriptor(
     // Deciding members win. Members that only constrain, or restate an array without converting it, leave the schema's own
     // array, oneOf, anyOf and properties keywords to convert the field; the constraints join that descriptor.
     const deciding = members.filter(isDecidingPart);
+    // A deciding member makes the schema's own union one more member; constraint-only members leave the union to convert it.
+    const allOf = withOwnUnionsAsMembers(schema);
+    if (allOf !== schema && deciding.length > 0) return modelConversionDescriptor(allOf, definitions, env, direction, seen, nullThroughReference, position);
     if (deciding.length === 0 && hasOwnConversionKeywords(schema)) {
       return joinMembers([
         modelConversionDescriptor(ownKeywords(schema), definitions, nested, direction, seen),

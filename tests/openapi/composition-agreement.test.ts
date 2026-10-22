@@ -635,6 +635,53 @@ const rows: readonly Row[] = [
     ],
     rejected: [{ m: { id: '1' } }, { m: { kind: 'a', a: AT } }],
   },
+  // The schema's own oneOf beside its allOf: the value satisfies the base AND one variant (T-92).
+  {
+    shape: 'a field that is allOf [inline base] beside its own oneOf of two inline objects',
+    fixture: 'own-one-of',
+    root: 'Visit',
+    document: visitDocument({ m: { allOf: [object({ id: text, at: dateTime }, { required: ['id'] })], oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] })] } }),
+    accepted: [
+      { wire: { m: { id: '1', at: AT, kind: 'a', a: 'x' } }, model: { m: { id: '1', at: new Date(AT), kind: 'a', a: 'x' } } },
+      { wire: { m: { id: '1', kind: 'b', b: 'y' } }, model: { m: { id: '1', kind: 'b', b: 'y' } } },
+    ],
+    rejected: [{ m: { id: '1' } }, { m: { kind: 'a', a: 'x' } }],
+  },
+  {
+    shape: 'a field that is allOf [$ref Base] beside its own oneOf of two $ref models',
+    root: 'Visit',
+    document: visitDocument(
+      { m: { allOf: [ref('Base')], oneOf: [ref('A'), ref('B')] } },
+      {
+        Base: object({ id: text, at: dateTime }, { required: ['id'] }),
+        A: object({ kind: { const: 'a' }, a: dateTime }, { required: ['kind', 'a'] }),
+        B: object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] }),
+      },
+    ),
+    accepted: [
+      { wire: { m: { id: '1', at: AT, kind: 'a', a: B } }, model: { m: { id: '1', at: new Date(AT), kind: 'a', a: new Date(B) } } },
+      { wire: { m: { id: '1', kind: 'b', b: 'y' } }, model: { m: { id: '1', kind: 'b', b: 'y' } } },
+    ],
+    rejected: [{ m: { id: '1' } }, { m: { kind: 'a', a: AT } }],
+  },
+  {
+    shape: 'a component that is allOf [$ref Base] beside its own oneOf of two $ref models, read through a field',
+    root: 'Visit',
+    document: visitDocument(
+      { m: ref('Combo') },
+      {
+        Base: object({ id: text, at: dateTime }, { required: ['id'] }),
+        A: object({ kind: { const: 'a' }, a: dateTime }, { required: ['kind', 'a'] }),
+        B: object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] }),
+        Combo: { allOf: [ref('Base')], oneOf: [ref('A'), ref('B')] },
+      },
+    ),
+    accepted: [
+      { wire: { m: { id: '1', at: AT, kind: 'a', a: B } }, model: { m: { id: '1', at: new Date(AT), kind: 'a', a: new Date(B) } } },
+      { wire: { m: { id: '1', kind: 'b', b: 'y' } }, model: { m: { id: '1', kind: 'b', b: 'y' } } },
+    ],
+    rejected: [{ m: { id: '1' } }, { m: { kind: 'a', a: AT } }],
+  },
 ];
 
 interface Built {
