@@ -126,3 +126,10 @@ test('two projects that share one TypeScript install both open in one process', 
   const shared = path.join(workspace, 'node_modules/typescript');
   assert.deepEqual(await opened(directory(), [project(shared), project(shared)]), [{ rewritten: false }, { rewritten: false }]);
 });
+
+test('a project whose TypeScript failed to load does not block the next project', async () => {
+  // protects: T-8 a request that never took effect is replaced, not compared
+  const [first, second] = await opened(directory(), [project({ version: '5.9.0' }), project(path.join(workspace, 'node_modules/typescript'))]) as [{ error?: string }, unknown];
+  assert.match(first.error ?? '', /found 5\.9\.0/);
+  assert.deepEqual(second, { rewritten: false });
+});

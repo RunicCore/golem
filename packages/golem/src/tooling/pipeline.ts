@@ -13,7 +13,8 @@ import { distTagForVersion } from './dist-tag.js';
 import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
-import { TypeScriptNotInstalledError, resolveTypeScript } from './typescript-version.js';
+import { selectedTypeScript } from './typescript-selection.js';
+import { TypeScriptNotInstalledError } from './typescript-version.js';
 
 export type InputKind = 'config' | 'controllers' | 'openapi' | 'models' | 'generator';
 
@@ -313,7 +314,7 @@ function rewriteRoot(config: GolemConfig): RewriteRoot {
 async function loadRewriteScan(hasCompilerJob: boolean): Promise<typeof import('./rewrite-scan.js') | undefined> {
   if (!hasCompilerJob) {
     try {
-      resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? process.cwd());
+      selectedTypeScript();
     } catch (error) {
       if (error instanceof TypeScriptNotInstalledError) return undefined;
       throw error;

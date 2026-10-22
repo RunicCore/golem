@@ -42,13 +42,21 @@ export function selectedTypeScript(): SelectedTypeScript {
 }
 
 /**
- * A project asks for the TypeScript beside its tsconfig. It takes effect when nothing has selected one yet; afterwards
- * the process must already hold the same install, compared by real path so that two projects sharing a hoisted or linked
- * install agree. A different install throws: run one host per TypeScript install. GOLEM_TYPESCRIPT_ROOT overrides every
- * request and is never compared.
+ * A project asks for the TypeScript beside its tsconfig; the golem command and every host ask here. It takes effect when
+ * nothing has selected one yet; afterwards the process must already hold the same install, compared by real path so that two
+ * projects sharing a hoisted or linked install agree. A different install throws: run one host per TypeScript install.
+ * GOLEM_TYPESCRIPT_ROOT overrides every request and is never compared.
+ *
+ * A request resolves the project's TypeScript now, so a root without a usable one throws before the module that loads the
+ * compiler is imported; the module system keeps a failed import for the life of the process. The golem command passes
+ * `lazy`: it needs a compiler only when a job asks for one, so its request is kept unresolved until a module selects.
  */
-export function requestTypeScriptRoot(root: string): void {
+export function requestTypeScriptRoot(root: string, options: { readonly lazy?: boolean } = {}): void {
   if (process.env.GOLEM_TYPESCRIPT_ROOT !== undefined) return;
+  if (options.lazy === true && selection === undefined && requested === undefined) {
+    requested = root;
+    return;
+  }
   const wanted = resolveTypeScript(root);
   const held = selection ?? (requested === undefined ? undefined : { typescript: resolveTypeScript(requested), source: 'request' as const, root: requested });
   if (held === undefined) {
