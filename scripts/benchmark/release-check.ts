@@ -5,9 +5,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BENCH_ADAPTERS, CONTROL_ID, type AdapterId, type PayloadId } from './cases.js';
 import { prepareProjects, root } from './project.js';
-import { controlSpread, environment, gitState, summarize, writeFilesTogether, type MeasuredCase, type Settings } from './results.js';
+import { environment, gitState, summarize, writeFilesTogether, type BatchSample, type MeasuredCase, type Settings } from './results.js';
 import { adapterRounds, BenchmarkUsageError, measureAdapter, parseRunArguments, planRun, verifyAdapter } from './run.js';
-import { formatReleaseRows, formatReleaseVerdict, releaseVerdict, type ReleaseTiming } from './tables.js';
+import { formatReleaseRows, formatReleaseVerdict, releaseBand, releaseVerdict, type ReleasePair, type ReleaseTiming } from './tables.js';
 
 const USAGE = 'Usage: npm run bench:release -- --base <git ref> [--adapters <id>,<id>] [--payloads <id>,<id>]';
 /** The release check times golem against golem; the other libraries have no base. */
@@ -105,41 +105,43 @@ export function runReleaseCheck(options: ReleaseOptions): { readonly text: strin
     const { batches, rounds } = RELEASE_SETTINGS;
     if (!Number.isInteger(batches / rounds)) throw new Error(`settings.batches (${batches}) must split evenly across settings.rounds (${rounds})`);
     for (const adapter of adapters) {
-      for (const side of adapter.id === CONTROL_ID ? ['head' as const] : ['base' as const, 'head' as const]) {
+      for (const side of ['base', 'head'] as const) {
         log(`Verifying ${adapter.id} (${side})`);
         verifyAdapter(adapter.id, sides[side], RELEASE_SETTINGS, payloadsOf(adapter.id));
       }
     }
-    const measured = new Map<string, MeasuredCase>();
-    const keep = (side: Side, results: readonly MeasuredCase[]): void => {
+    // The rounds split into two halves; a case is judged in each half and fails only when it fails in both.
+    const halfOf = (round: number): number => round < rounds / 2 ? 0 : 1;
+    const samples = new Map<string, BatchSample[]>();
+    const keep = (half: number, side: Side, results: readonly MeasuredCase[]): void => {
       for (const result of results) {
-        const key = `${side}/${result.payload}/${result.operation}/${result.adapter}${result.invalid ? '/invalid' : ''}`;
-        const previous = measured.get(key);
-        measured.set(key, previous ? { ...previous, samples: [...previous.samples, ...result.samples] } : result);
+        const key = `${half}|${side}|${result.payload}/${result.operation}/${result.adapter}${result.invalid ? '/invalid' : ''}`;
+        samples.set(key, [...(samples.get(key) ?? []), ...result.samples]);
       }
     };
     for (const [round, order] of adapterRounds(adapters.map(a => a.id), rounds).entries()) {
       for (const id of order) {
-        // The control sits in the same rotation, so its spread is the noise of the moments the golem cases ran in. Base and head swap places each round.
-        const turn = id === CONTROL_ID ? ['head' as const] : round % 2 === 0 ? ['base' as const, 'head' as const] : ['head' as const, 'base' as const];
+        // The control sits in the same rotation on both sides. Base and head swap places each round.
+        const turn = round % 2 === 0 ? ['base' as const, 'head' as const] : ['head' as const, 'base' as const];
         for (const invalid of [false, true]) {
           for (const side of turn) {
             const results = measureAdapter(id, sides[side], RELEASE_SETTINGS, payloadsOf(id), invalid);
             if (results.length > 0) log(`Measured ${id} (${side}${invalid ? ', invalid input' : ''}, round ${round + 1} of ${rounds})`);
-            keep(side, results);
+            keep(halfOf(round), side, results);
           }
         }
       }
     }
     const loadEnd = loadavg();
-    const control = [...measured].filter(([key]) => key.startsWith('head/') && key.endsWith(`/${CONTROL_ID}`)).map(([, m]) => m);
-    const band = controlSpread(control);
-    const timings = (invalid: boolean): ReleaseTiming[] => [...measured].flatMap(([key, m]) => {
-      if (!key.startsWith('base/') || m.adapter === CONTROL_ID || (m.invalid === true) !== invalid) return [];
-      const head = measured.get(`head/${key.slice('base/'.length)}`);
-      if (!head) throw new Error(`The base was timed on ${key} but this checkout was not`);
-      return [{ key: key.slice('base/'.length).replace(/\/invalid$/, ''), base: summarize(m.samples).median, head: summarize(head.samples).median }];
-    });
+    // The median of one side's batches in the given halves.
+    const median = (side: Side, caseKey: string, halves: readonly number[]): number =>
+      summarize(halves.flatMap(h => samples.get(`${h}|${side}|${caseKey}`) ?? [])).median;
+    const pair = (caseKey: string, halves: readonly number[]): ReleasePair => ({ base: median('base', caseKey, halves), head: median('head', caseKey, halves) });
+    const caseKeys = (control: boolean, invalid: boolean): string[] => [...new Set([...samples.keys()].map(k => k.slice(k.indexOf('|', 2) + 1)))]
+      .filter(k => (k.split('/')[2] === CONTROL_ID) === control && k.endsWith('/invalid') === invalid);
+    // The control is the same code on both sides: its head/base ratios, in the halves the cases are judged in, measure the noise of the method.
+    const { band, p90 } = releaseBand(caseKeys(true, false).flatMap(k => [0, 1].map(h => { const { base, head } = pair(k, [h]); return head / base; })));
+    const timings = (invalid: boolean): ReleaseTiming[] => caseKeys(false, invalid).map(k => ({ key: k.replace(/\/invalid$/, ''), ...pair(k, [0, 1]), halves: [pair(k, [0]), pair(k, [1])] }));
     const valid = releaseVerdict(timings(false), band);
     const invalidRows = timings(true).length > 0 ? releaseVerdict(timings(true), band).rows : [];
     const seconds = Math.round((Date.now() - started) / 1000);
@@ -147,16 +149,16 @@ export function runReleaseCheck(options: ReleaseOptions): { readonly text: strin
     writeFilesTogether([[options.outputFile, () => JSON.stringify({
       schema: 1, measuredAt: new Date().toISOString(), seconds, base: { ref: options.base, sha: base.sha }, head: git, environment: environment(), settings: RELEASE_SETTINGS,
       adapters: adapters.filter(a => a.id !== CONTROL_ID).map(a => a.id), payloads: payloadIds,
-      noise: { loadAverage: { start: loadStart, end: loadEnd }, controlSpread: band }, verdict: valid.verdict,
-      failing: valid.failing.map(r => r.key), cases: valid.rows, invalid: invalidRows,
+      noise: { loadAverage: { start: loadStart, end: loadEnd }, band, bandP90: p90 }, verdict: valid.verdict,
+      failing: valid.failing.map(r => r.key), means: valid.means, cases: valid.rows, invalid: invalidRows,
     }, null, 2) + '\n']]);
     const load = (values: readonly number[]): string => values.map(v => v.toFixed(2)).join(' ');
     const text = [
-      `Valid path, this checkout over base ${base.sha.slice(0, 7)} (ratio below ${(1 - band).toFixed(3)} is slower than the noise band):`,
+      `Valid path, this checkout over base ${base.sha.slice(0, 7)} (SLOWER: below ${(1 - band).toFixed(3)} in both halves):`,
       formatReleaseRows(valid.rows, true),
       ...(invalidRows.length > 0 ? ['', 'Invalid path (shown, no verdict):', formatReleaseRows(invalidRows, false)] : []),
       '',
-      `Noise: host load average (1, 5, 15 min) ${load(loadStart)} at the start, ${load(loadEnd)} at the end; control spread ${(band * 100).toFixed(1)}%`,
+      `Noise: host load average (1, 5, 15 min) ${load(loadStart)} at the start, ${load(loadEnd)} at the end; release band ${(band * 100).toFixed(1)}% (largest control ratio away from 1; 90th percentile ${(p90 * 100).toFixed(1)}%)`,
       '',
       formatReleaseVerdict(valid),
       `Wrote ${path.relative(root, options.outputFile)} in ${seconds} s`,

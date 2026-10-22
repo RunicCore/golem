@@ -217,41 +217,70 @@ export function formatCompareTable(table: ReturnType<typeof compareTable>, label
   return [...blocks, ...notes, ties].join('\n\n');
 }
 
-/** One case timed on both sides of the release check: medians in ops/s, base and this checkout, from one session. */
-export interface ReleaseTiming { readonly key: string; readonly base: number; readonly head: number }
-/** `ratio` is this checkout over the base. `slower` is a ratio below `1 - band`. */
-export interface ReleaseRow extends ReleaseTiming { readonly ratio: number; readonly slower: boolean }
-export interface ReleaseVerdict { readonly band: number; readonly rows: readonly ReleaseRow[]; readonly failing: readonly ReleaseRow[]; readonly verdict: 'pass' | 'stop' }
+/** A median in ops/s of the base and of this checkout, from the same rounds. */
+export interface ReleasePair { readonly base: number; readonly head: number }
+/** One case timed on both sides of the release check: over the whole session (`base`, `head`) and in each half of its rounds (`halves`). */
+export interface ReleaseTiming extends ReleasePair { readonly key: string; readonly halves: readonly ReleasePair[] }
+/** `ratio` is this checkout over the base, `halfRatios` the same in each half. `slower` is a ratio below `1 - band` in every half. */
+export interface ReleaseRow extends ReleaseTiming { readonly ratio: number; readonly halfRatios: readonly number[]; readonly slower: boolean }
+/** The geometric mean of the ratios of one adapter, over the whole session and in each half. */
+export interface ReleaseMean { readonly adapter: string; readonly ratio: number; readonly halfRatios: readonly number[] }
+export interface ReleaseVerdict { readonly band: number; readonly rows: readonly ReleaseRow[]; readonly failing: readonly ReleaseRow[]; readonly means: readonly ReleaseMean[]; readonly verdict: 'pass' | 'stop' }
+
+function checkPair(pair: ReleasePair, what: string): void {
+  if (!(pair.base > 0) || !(pair.head > 0) || !Number.isFinite(pair.base) || !Number.isFinite(pair.head)) throw new Error(`Cannot judge the release: invalid timing for ${what}`);
+}
 
 /**
- * The release check's verdict on valid-path cases (A-62 R9): a case fails when this checkout runs below the base by more than
- * the session's noise band (the control's spread), so a ratio exactly at `1 - band` passes. One failing case stops the release.
- * A check that compared nothing, or has no usable band, is an error, never a pass.
+ * The noise band of a release session, from the control timed on both sides. Native JSON is the same code on both sides, so
+ * each control ratio (this checkout over the base) away from 1 is noise of the method. The band is the largest distance
+ * from 1 (`band`); the 90th percentile of the distances is reported beside it (`p90`).
+ */
+export function releaseBand(controlRatios: readonly number[]): { readonly band: number; readonly p90: number } {
+  if (controlRatios.length === 0) throw new Error('Cannot take the release band: no control ratio');
+  if (controlRatios.some(r => !(r > 0) || !Number.isFinite(r))) throw new Error('Cannot take the release band: invalid control ratio');
+  const distances = controlRatios.map(r => Math.abs(1 - r)).sort((a, b) => a - b);
+  return { band: distances[distances.length - 1], p90: distances[Math.ceil(distances.length * 0.9) - 1] };
+}
+
+/**
+ * The release check's verdict on valid-path cases (A-62 R9). A case fails when this checkout runs below the base by more than
+ * the band in every half of the rounds, so a drop that shows in one half only is noise. A ratio exactly at `1 - band` passes.
+ * One failing case stops the release. A check that compared nothing, or has no usable band, is an error, never a pass.
  */
 export function releaseVerdict(timings: readonly ReleaseTiming[], band: number): ReleaseVerdict {
   if (!(band >= 0) || !Number.isFinite(band)) throw new Error(`Cannot judge the release: the noise band is ${band}`);
   if (timings.length === 0) throw new Error('Cannot judge the release: no case was timed on both sides');
+  const below = (pair: ReleasePair): boolean => pair.head < pair.base * (1 - band);
   const rows = timings.map(t => {
-    if (!(t.base > 0) || !(t.head > 0) || !Number.isFinite(t.base) || !Number.isFinite(t.head)) throw new Error(`Cannot judge the release: invalid timing for ${t.key}`);
-    return { ...t, ratio: t.head / t.base, slower: t.head < t.base * (1 - band) };
+    for (const pair of [t, ...t.halves]) checkPair(pair, t.key);
+    return { ...t, ratio: t.head / t.base, halfRatios: t.halves.map(h => h.head / h.base), slower: t.halves.length > 0 && t.halves.every(below) };
+  });
+  const adapterOf = (key: string): string => key.slice(key.lastIndexOf('/') + 1);
+  const geometricMean = (ratios: readonly number[]): number => Math.exp(ratios.reduce((sum, r) => sum + Math.log(r), 0) / ratios.length);
+  const means = [...new Set(rows.map(r => adapterOf(r.key)))].map(adapter => {
+    const mine = rows.filter(r => adapterOf(r.key) === adapter);
+    return { adapter, ratio: geometricMean(mine.map(r => r.ratio)), halfRatios: mine[0].halves.map((_, h) => geometricMean(mine.map(r => r.halfRatios[h]))) };
   });
   const failing = rows.filter(r => r.slower);
-  return { band, rows, failing, verdict: failing.length > 0 ? 'stop' : 'pass' };
+  return { band, rows, failing, means, verdict: failing.length > 0 ? 'stop' : 'pass' };
 }
 
-/** The ratio of every case, the failing ones marked. `mark: false` shows ratios with no judgment (the invalid path has no stop rule, F-250). */
+/** The ratio of every case over the session and in each half, the failing ones marked. `mark: false` shows ratios with no judgment (the invalid path has no stop rule, F-250). */
 export function formatReleaseRows(rows: readonly ReleaseRow[], mark: boolean): string {
-  const lines = [`${'case'.padEnd(44)} ${'base'.padStart(12)} ${'this'.padStart(12)} ${'ratio'.padStart(7)}`];
+  const halves = rows[0]?.halfRatios.length ?? 0;
+  const lines = [`${'case'.padEnd(44)} ${'base'.padStart(12)} ${'this'.padStart(12)} ${'ratio'.padStart(7)}${Array.from({ length: halves }, (_, h) => `${`half ${h + 1}`.padStart(8)}`).join('')}`];
   for (const r of rows) {
     const ops = (value: number): string => Math.round(value).toLocaleString('en-US').padStart(12);
-    lines.push(`${r.key.padEnd(44)} ${ops(r.base)} ${ops(r.head)} ${r.ratio.toFixed(3).padStart(7)}${mark && r.slower ? '  SLOWER' : ''}`);
+    lines.push(`${r.key.padEnd(44)} ${ops(r.base)} ${ops(r.head)} ${r.ratio.toFixed(3).padStart(7)}${r.halfRatios.map(h => h.toFixed(3).padStart(8)).join('')}${mark && r.slower ? '  SLOWER' : ''}`);
   }
   return lines.join('\n');
 }
 
 export function formatReleaseVerdict(verdict: ReleaseVerdict): string {
-  const band = `noise band ${(verdict.band * 100).toFixed(1)}% (control spread)`;
+  const means = `Geometric mean of this over base, per adapter (whole session; each half):\n${verdict.means.map(m => `  ${m.adapter.padEnd(18)} ${m.ratio.toFixed(3)}  ${m.halfRatios.map(h => h.toFixed(3)).join('  ')}`).join('\n')}`;
+  const band = `noise band ${(verdict.band * 100).toFixed(1)}% (largest control ratio away from 1)`;
   return verdict.verdict === 'pass'
-    ? `PASS: ${verdict.rows.length} valid-path cases, none below ${(1 - verdict.band).toFixed(3)} of the base; ${band}`
-    : `STOP: ${verdict.failing.length} of ${verdict.rows.length} valid-path cases are slower than the base beyond the ${band}:\n${verdict.failing.map(r => `  ${r.key} ratio ${r.ratio.toFixed(3)}`).join('\n')}`;
+    ? `${means}\n\nPASS: ${verdict.rows.length} valid-path cases, none below ${(1 - verdict.band).toFixed(3)} of the base in both halves; ${band}`
+    : `${means}\n\nSTOP: ${verdict.failing.length} of ${verdict.rows.length} valid-path cases are below ${(1 - verdict.band).toFixed(3)} of the base in both halves (${band}):\n${verdict.failing.map(r => `  ${r.key} ratio ${r.ratio.toFixed(3)}, halves ${r.halfRatios.map(h => h.toFixed(3)).join(' and ')}`).join('\n')}`;
 }
