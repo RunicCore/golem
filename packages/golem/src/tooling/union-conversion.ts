@@ -283,6 +283,132 @@ export function emitScalarOrArrayConversion(
   return `Array.isArray(${expression}) ? (${mappedArray}) : (${scalar})`;
 }
 
+/** Which walker asks for the conversion. `stringify` writes JSON text; the others write a value. */
+export type UnionDirection = 'decode' | 'encode' | 'stringify' | 'nested';
+
+type GeneratedModelTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'generated-model' }>;
+
+/** A union of one generated model and tagged objects, or scalars: the model takes the objects whose tag does not match. */
+export interface GeneratedWithObjects {
+  /** The conversion of the model; undefined when this walker emits no class for it. */
+  readonly text: (generated: GeneratedModelTypeDescriptor) => string | undefined;
+  /** The tag tests of the object variants. */
+  readonly tagMatch: (objects: readonly ObjectTypeDescriptor[]) => string[];
+  /** The conversion of the object variants whose tag matches. */
+  readonly objects: (objects: readonly ObjectTypeDescriptor[]) => string;
+  /** With no tagged object, the model takes every object whatever the other variants are. */
+  readonly takesEveryObject?: boolean;
+}
+
+/** What a walker gives the shared union emitter: its conversions, and the steps that only its direction has. */
+export interface UnionConversion {
+  /** The conversion of one variant, written against the union's expression. */
+  readonly convert: (variant: ModelTypeDescriptor) => string;
+  /** The item conversion of the array or tuple of a scalar-or-array union. */
+  readonly items: SequenceItems;
+  /** Joins the converted sequence and scalar; defaults to the value form. */
+  readonly joinSequence?: (mapped: string, scalar: string) => string;
+  /** Dispatch by tag (and class); undefined when the variants carry no tag to dispatch on. */
+  readonly tagged: () => string | undefined;
+  /** A step before the generated-model one, which returns the whole conversion or undefined. */
+  readonly beforeGenerated?: (present: readonly ModelTypeDescriptor[]) => string | undefined;
+  readonly generated?: GeneratedWithObjects;
+  /** A step after the generated-model one, which returns the whole conversion or undefined. */
+  readonly afterGenerated?: (present: readonly ModelTypeDescriptor[]) => string | undefined;
+}
+
+/** The variant kinds that sit beside one object or model in a value conversion and need no conversion. */
+const PLAIN_VARIANT_KINDS = ['string', 'number', 'boolean', 'bigint', 'literal'];
+
+/**
+ * The one conversion of a union, shared by the stringify, decode and encode walkers and the model walker. The order is
+ * fixed: a nullable single variant, a scalar-or-array pair, tagged dispatch, a generated model beside tagged objects,
+ * one object or model beside plain variants, and the ambiguity error. Each walker gives its conversions and its own
+ * steps through `UnionConversion`. A stringify walker needs no work for a valid value beyond the tests it emits here.
+ */
+export function emitUnionConversion(
+  descriptor: UnionTypeDescriptor,
+  expression: string,
+  direction: UnionDirection,
+  conversion: UnionConversion,
+): string {
+  const json = direction === 'stringify';
+  const plain = json ? `stringifyJsonScalar(${expression} as never)` : expression;
+  const present = presentUnionVariants(descriptor);
+  if (present.length === 1 && present.length !== descriptor.variants.length) {
+    const converted = conversion.convert(present[0]);
+    if (json) return `(${expression} == null ? 'null' : (${converted}))`;
+    return converted === expression ? expression : `${expression} == null ? ${expression} : (${converted})`;
+  }
+  const pair = scalarOrArray(present);
+  if (pair) {
+    const { sequence, scalars } = pair;
+    const scalarVariant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
+    const scalar = scalarVariant ? conversion.convert(scalarVariant) : plain;
+    const mapped = emitSequenceBranch(sequence, expression, conversion.items);
+    return conversion.joinSequence?.(mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
+  }
+  const tagged = conversion.tagged();
+  if (tagged !== undefined) return tagged;
+  const before = conversion.beforeGenerated?.(present);
+  if (before !== undefined) return before;
+  const withObjects = conversion.generated && generatedWithObjects(present, expression, plain, conversion.generated);
+  if (withObjects) return withObjects;
+  const after = conversion.afterGenerated?.(present);
+  if (after !== undefined) return after;
+  // A stringify walker converts the one object or model before it compares all conversions; the others compare first.
+  const unchanged = (): string | undefined => {
+    const conversions = present.map(conversion.convert);
+    return conversions.every((converted) => converted === plain) ? plain : undefined;
+  };
+  if (!json) {
+    const same = unchanged();
+    if (same !== undefined) return same;
+  }
+  const objectsOrModels = present.filter((variant) =>
+    variant.kind === 'object' || variant.kind === 'reference' || variant.kind === 'generated-model');
+  if (
+    objectsOrModels.length === 1
+    && present.every((variant) => variant === objectsOrModels[0]
+      || (json ? isScalarishDescriptor(variant) : PLAIN_VARIANT_KINDS.includes(variant.kind)))
+  ) {
+    const converted = conversion.convert(objectsOrModels[0]);
+    return json
+      ? `(${objectValueExpression(expression)} ? ${converted} : ${plain})`
+      : `${objectValueExpression(expression)} ? (${converted}) : ${expression}`;
+  }
+  if (json) {
+    const same = unchanged();
+    if (same !== undefined) return same;
+  }
+  if (direction === 'decode' || direction === 'encode') {
+    if (!descriptorNeedsConversion(descriptor)) return expression;
+  }
+  throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
+}
+
+function generatedWithObjects(
+  present: readonly ModelTypeDescriptor[],
+  expression: string,
+  plain: string,
+  options: GeneratedWithObjects,
+): string | undefined {
+  const generated = present.filter((variant): variant is GeneratedModelTypeDescriptor => variant.kind === 'generated-model');
+  if (generated.length !== 1) return undefined;
+  const generatedText = options.text(generated[0]);
+  if (generatedText === undefined) return undefined;
+  const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
+  if (objects.length > 0 && !objectDiscriminator(objects)) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
+  const tagged = options.tagMatch(objects);
+  if (tagged.length) {
+    return `(${objectValueExpression(expression)} && !(${tagged.join(' || ')}) ? ${generatedText} : ${options.objects(objects)})`;
+  }
+  if (options.takesEveryObject || present.every((variant) => variant === generated[0] || isScalarishDescriptor(variant))) {
+    return `(${objectValueExpression(expression)} ? ${generatedText} : ${plain})`;
+  }
+  return undefined;
+}
+
 export function descriptorNeedsConversion(descriptor: ModelTypeDescriptor): boolean {
   const tags = descriptor as ModelTypeDescriptor & {
     readonly serde?: { readonly id: string };

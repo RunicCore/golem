@@ -16,20 +16,15 @@ import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
   OBJECT_UNION_DISCRIMINATOR_ERROR,
   descriptorNeedsConversion,
-  emitScalarOrArrayConversion,
-  emitSequenceBranch,
   isScalarishDescriptor,
   discriminatorMatch,
   emitDispatch,
+  emitUnionConversion,
   literalDiscriminator,
-  objectDiscriminator,
   objectValueExpression,
   presentUnionIndices,
-  presentUnionVariants,
   unionDispatch,
   type DispatchOptions,
-  scalarBranchVariant,
-  scalarOrArray,
   type ObjectTypeDescriptor,
   type UnionTypeDescriptor,
 } from './union-conversion.js';
@@ -401,95 +396,7 @@ function emitValue(
       item: (item, value) => ({ code: emitValue(item, value, ctx), throws: false }),
     });
   }
-  if (descriptor.kind === 'union') {
-    const present = presentUnionVariants(descriptor);
-    if (present.length === 1 && present.length !== descriptor.variants.length) {
-      const converted = emitValue(present[0], expression, ctx);
-      return `(${expression} == null ? 'null' : (${converted}))`;
-    }
-    const scalarOrArrayUnion = scalarOrArray(present);
-    if (scalarOrArrayUnion) {
-      const { sequence, scalars } = scalarOrArrayUnion;
-      let itemsUnchanged = true;
-      const jsonItem = (item: ModelTypeDescriptor, value: string): { code: string; throws: false } => {
-        const code = emitValue(item, value, ctx);
-        if (code !== JSON_SCALAR_ITEM) itemsUnchanged = false;
-        return { code, throws: false };
-      };
-      const scalarVariant = scalarBranchVariant(scalars) ?? (scalars.length === 1 ? scalars[0] : undefined);
-      const scalar = scalarVariant
-        ? emitValue(scalarVariant, expression, ctx)
-        : `stringifyJsonScalar(${expression} as never)`;
-      const items = emitSequenceBranch(sequence, expression, { output: 'json', item: jsonItem });
-      if (
-        itemsUnchanged
-        && scalar === `stringifyJsonScalar(${expression} as never)`
-      ) {
-        return `stringifyJsonScalar(${expression} as never)`;
-      }
-      return `(Array.isArray(${expression}) ? ${items} : (${scalar}))`;
-    }
-    const tagged = emitTaggedVariantUnion(
-      descriptor,
-      presentUnionIndices(descriptor),
-      expression,
-      ctx,
-      (variant) => {
-        if (!ctx.wireIdentity) {
-          const node = ctx.graph.nodeFor(variant);
-          if (node && isObjectish(variant)) {
-            return nestedStringifyCall(node.id, expression, ctx);
-          }
-        }
-        return emitValue(variant, expression, ctx);
-      },
-      'encode-json',
-      { unresolved: 'skip' },
-    );
-    if (tagged !== undefined) return tagged;
-    const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-    if (objects.length > 1) {
-      const structured = objects.some((object) => {
-        const node = ctx.graph.nodeFor(object);
-        return Boolean(node) || Object.keys(object.properties).length > 0 || object.additionalProperties === false;
-      });
-      if (structured) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-    }
-    if (present.every(isScalarishDescriptor)) {
-      return `stringifyJsonScalar(${expression} as never)`;
-    }
-    const generated = present.filter((variant): variant is Extract<ModelTypeDescriptor, { kind: 'generated-model' }> =>
-      variant.kind === 'generated-model');
-    if (generated.length === 1) {
-      const generatedText = emitValue(generated[0], expression, ctx);
-      const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-      if (objects.length > 0 && !objectDiscriminator(objects)) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-      const tagged = objectTagMatch(objects, expression, false);
-      if (tagged.length) {
-        const objectText = objects.length === 1
-          ? emitValue(objects[0], expression, ctx)
-          : emitTaggedObjects(descriptor, expression, ctx, (object) => emitValue(object, expression, ctx), 'encode-json');
-        return `(${objectValueExpression(expression)} && !(${tagged.join(' || ')}) ? ${generatedText} : ${objectText})`;
-      }
-      if (present.every((variant) => variant === generated[0] || isScalarishDescriptor(variant))) {
-        return `(${objectValueExpression(expression)} ? ${generatedText} : stringifyJsonScalar(${expression} as never))`;
-      }
-    }
-    const objectsOrModels = present.filter((variant) =>
-      variant.kind === 'object' || variant.kind === 'reference' || variant.kind === 'generated-model');
-    if (
-      objectsOrModels.length === 1
-      && present.every((variant) => variant === objectsOrModels[0] || isScalarishDescriptor(variant))
-    ) {
-      const converted = emitValue(objectsOrModels[0], expression, ctx);
-      return `(${objectValueExpression(expression)} ? ${converted} : stringifyJsonScalar(${expression} as never))`;
-    }
-    const conversions = present.map((variant) => emitValue(variant, expression, ctx));
-    if (conversions.every((converted) => converted === `stringifyJsonScalar(${expression} as never)`)) {
-      return `stringifyJsonScalar(${expression} as never)`;
-    }
-    throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
-  }
+  if (descriptor.kind === 'union') return emitUnionValue(descriptor, expression, ctx);
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);
     if (node) return nestedStringifyCall(node.id, expression, ctx);
@@ -1181,22 +1088,72 @@ function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: st
   return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) => discriminatorMatch(read(name), values)));
 }
 
+function emitUnionValue(
+  descriptor: UnionTypeDescriptor,
+  expression: string,
+  ctx: EmitCtx,
+): string {
+  let itemsUnchanged = true;
+  const plain = `stringifyJsonScalar(${expression} as never)`;
+  return emitUnionConversion(descriptor, expression, 'stringify', {
+    convert: (variant) => emitValue(variant, expression, ctx),
+    items: {
+      output: 'json',
+      item: (item, value) => {
+        const code = emitValue(item, value, ctx);
+        if (code !== JSON_SCALAR_ITEM) itemsUnchanged = false;
+        return { code, throws: false };
+      },
+    },
+    joinSequence: (items, scalar) => itemsUnchanged && scalar === plain
+      ? plain
+      : `(Array.isArray(${expression}) ? ${items} : (${scalar}))`,
+    tagged: () => emitTaggedVariantUnion(
+      descriptor,
+      presentUnionIndices(descriptor),
+      expression,
+      ctx,
+      (variant) => {
+        if (!ctx.wireIdentity) {
+          const node = ctx.graph.nodeFor(variant);
+          if (node && isObjectish(variant)) {
+            return nestedStringifyCall(node.id, expression, ctx);
+          }
+        }
+        return emitValue(variant, expression, ctx);
+      },
+      'encode-json',
+      { unresolved: 'skip' },
+    ),
+    beforeGenerated: (present) => {
+      const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
+      if (objects.length > 1) {
+        const structured = objects.some((object) => {
+          const node = ctx.graph.nodeFor(object);
+          return Boolean(node) || Object.keys(object.properties).length > 0 || object.additionalProperties === false;
+        });
+        if (structured) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
+      }
+      return present.every(isScalarishDescriptor) ? plain : undefined;
+    },
+    generated: {
+      text: (generated) => emitValue(generated, expression, ctx),
+      tagMatch: (objects) => objectTagMatch(objects, expression, false),
+      objects: (objects) => objects.length === 1
+        ? emitValue(objects[0], expression, ctx)
+        : emitTaggedObjects(descriptor, expression, ctx, (object) => emitValue(object, expression, ctx), 'encode-json'),
+    },
+  });
+}
+
 function emitUnionDecode(
   descriptor: UnionTypeDescriptor,
   expression: string,
   ctx: EmitCtx,
 ): string {
-  const present = presentUnionVariants(descriptor);
-  if (present.length === 1 && present.length !== descriptor.variants.length) {
-    const converted = emitDecodeValue(present[0], expression, ctx);
-    return converted === expression ? expression : `${expression} == null ? ${expression} : (${converted})`;
-  }
-  const scalarOrArrayUnion = scalarOrArray(present);
-  if (scalarOrArrayUnion) {
-    const { sequence, scalars } = scalarOrArrayUnion;
-    const scalarVariant = scalarBranchVariant(scalars);
-    const scalar = scalarVariant ? emitDecodeValue(scalarVariant, expression, ctx) : expression;
-    const mapped = emitSequenceBranch(sequence, expression, {
+  return emitUnionConversion(descriptor, expression, 'decode', {
+    convert: (variant) => emitDecodeValue(variant, expression, ctx),
+    items: {
       output: 'value',
       paths: 'deserialize',
       item: (item, value) => {
@@ -1210,63 +1167,42 @@ function emitUnionDecode(
         const call = `${converter}(${value})`;
         return { code: singleCallConverter(call, value) === converter ? call : decoded, throws: true };
       },
-    });
-    return emitScalarOrArrayConversion(expression, mapped, scalar);
-  }
-  const tagged = emitTaggedVariantUnion(
-    descriptor,
-    presentUnionIndices(descriptor),
-    expression,
-    ctx,
-    (variant) => emitDecodeValue(variant, expression, ctx),
-    'decode',
-  );
-  if (tagged !== undefined) return tagged;
-  const generated = present.filter((variant): variant is Extract<ModelTypeDescriptor, { kind: 'generated-model' }> =>
-    variant.kind === 'generated-model');
-  if (generated.length === 1) {
-    const className = ctx.nestedGenerated?.(generated[0].id);
-    if (className) {
-      const converted = `${expression} instanceof ${className} ? ${expression} : ${fallibleConversion(ctx, `decodeGeneratedModelTrusted(${className}, ${expression})`)}`;
-      const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-      const discriminator = objectDiscriminator(objects);
-      if (objects.length > 0 && !discriminator) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-      const tagged = objectTagMatch(objects, expression, true);
-      if (tagged.length) {
-        return `(${objectValueExpression(expression)} && !(${tagged.join(' || ')}) ? ${converted} : ${expression})`;
+    },
+    tagged: () => emitTaggedVariantUnion(
+      descriptor,
+      presentUnionIndices(descriptor),
+      expression,
+      ctx,
+      (variant) => emitDecodeValue(variant, expression, ctx),
+      'decode',
+    ),
+    generated: {
+      text: (generated) => {
+        const className = ctx.nestedGenerated?.(generated.id);
+        return className
+          ? `${expression} instanceof ${className} ? ${expression} : ${fallibleConversion(ctx, `decodeGeneratedModelTrusted(${className}, ${expression})`)}`
+          : undefined;
+      },
+      tagMatch: (objects) => objectTagMatch(objects, expression, true),
+      objects: () => expression,
+      takesEveryObject: true,
+    },
+    afterGenerated: (present) => {
+      const refs = present.filter((variant): variant is Extract<ModelTypeDescriptor, { kind: 'reference' }> =>
+        variant.kind === 'reference' && variant.construct === true);
+      if (refs.length === 0 || refs.length !== present.length) return undefined;
+      const branches: string[] = [];
+      for (const ref of refs) {
+        const node = ctx.graph.nodeFor(ref);
+        const object = node?.descriptor.kind === 'object' ? node.descriptor : undefined;
+        if (!object) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
+        const tags = objectTagMatch([object], expression, true);
+        if (tags.length === 0) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
+        branches.push(`${tags.join(' && ')} ? ${emitDecodeValue(ref, expression, ctx)}`);
       }
-      return `(${objectValueExpression(expression)} ? ${converted} : ${expression})`;
-    }
-  }
-  const refs = present.filter((variant): variant is Extract<ModelTypeDescriptor, { kind: 'reference' }> =>
-    variant.kind === 'reference' && variant.construct === true);
-  if (refs.length > 0 && refs.length === present.length) {
-    const branches: string[] = [];
-    for (const ref of refs) {
-      const node = ctx.graph.nodeFor(ref);
-      const object = node?.descriptor.kind === 'object' ? node.descriptor : undefined;
-      if (!object) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
-      const tags = objectTagMatch([object], expression, true);
-      if (tags.length === 0) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-      branches.push(`${tags.join(' && ')} ? ${emitDecodeValue(ref, expression, ctx)}`);
-    }
-    return `(${objectValueExpression(expression)} ? ${[...branches, expression].join(' : ')} : ${expression})`;
-  }
-  const conversions = present.map((variant) => emitDecodeValue(variant, expression, ctx));
-  if (conversions.every((converted) => converted === expression)) return expression;
-  const objectsOrModels = present.filter((variant) =>
-    variant.kind === 'object' || variant.kind === 'reference' || variant.kind === 'generated-model');
-  if (
-    objectsOrModels.length === 1
-    && present.every((variant) =>
-      variant === objectsOrModels[0]
-      || ['string', 'number', 'boolean', 'bigint', 'literal'].includes(variant.kind))
-  ) {
-    const converted = emitDecodeValue(objectsOrModels[0], expression, ctx);
-    return `${objectValueExpression(expression)} ? (${converted}) : ${expression}`;
-  }
-  if (!descriptorNeedsConversion(descriptor)) return expression;
-  throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
+      return `(${objectValueExpression(expression)} ? ${[...branches, expression].join(' : ')} : ${expression})`;
+    },
+  });
 }
 
 function emitUnionEncode(
@@ -1274,68 +1210,36 @@ function emitUnionEncode(
   expression: string,
   ctx: EmitCtx,
 ): string {
-  const present = presentUnionVariants(descriptor);
-  if (present.length === 1 && present.length !== descriptor.variants.length) {
-    const converted = emitEncodeValue(present[0], expression, ctx);
-    return converted === expression ? expression : `${expression} == null ? ${expression} : (${converted})`;
-  }
-  const scalarOrArrayUnion = scalarOrArray(present);
-  if (scalarOrArrayUnion) {
-    const { sequence, scalars } = scalarOrArrayUnion;
-    const scalarVariant = scalarBranchVariant(scalars);
-    const scalar = scalarVariant ? emitEncodeValue(scalarVariant, expression, ctx) : expression;
-    const mapped = emitSequenceBranch(sequence, expression, {
+  return emitUnionConversion(descriptor, expression, 'encode', {
+    convert: (variant) => emitEncodeValue(variant, expression, ctx),
+    items: {
       output: 'value',
       item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
-    });
-    return emitScalarOrArrayConversion(expression, mapped, scalar);
-  }
-  const tagged = emitTaggedVariantUnion(
-    descriptor,
-    presentUnionIndices(descriptor),
-    expression,
-    ctx,
-    (variant) => emitEncodeValue(variant, expression, ctx),
-    'encode-value',
-    { unresolved: 'skip' },
-  );
-  if (tagged !== undefined) return tagged;
-  const generated = present.filter((variant): variant is Extract<ModelTypeDescriptor, { kind: 'generated-model' }> =>
-    variant.kind === 'generated-model');
-  if (generated.length === 1) {
-    const generatedText = emitEncodeValue(generated[0], expression, ctx);
-    const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-    if (objects.length > 0 && !objectDiscriminator(objects)) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-    const taggedObjects = objectTagMatch(objects, expression, false);
-    if (taggedObjects.length) {
-      const objectText = objects.length === 1
+    },
+    tagged: () => emitTaggedVariantUnion(
+      descriptor,
+      presentUnionIndices(descriptor),
+      expression,
+      ctx,
+      (variant) => emitEncodeValue(variant, expression, ctx),
+      'encode-value',
+      { unresolved: 'skip' },
+    ),
+    generated: {
+      text: (generated) => emitEncodeValue(generated, expression, ctx),
+      tagMatch: (objects) => objectTagMatch(objects, expression, false),
+      objects: (objects) => objects.length === 1
         ? emitEncodeValue(objects[0], expression, ctx)
-        : emitTaggedObjects(descriptor, expression, ctx, (object) => emitEncodeValue(object, expression, ctx), 'encode-value');
-      return `(${objectValueExpression(expression)} && !(${taggedObjects.join(' || ')}) ? ${generatedText} : ${objectText})`;
-    }
-    if (present.every((variant) => variant === generated[0] || isScalarishDescriptor(variant))) {
-      return `(${objectValueExpression(expression)} ? ${generatedText} : ${expression})`;
-    }
-  }
-  const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-  if (objects.length === present.length && objects.some(descriptorNeedsConversion)) {
-    throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-  }
-  const conversions = present.map((variant) => emitEncodeValue(variant, expression, ctx));
-  if (conversions.every((converted) => converted === expression)) return expression;
-  const objectsOrModels = present.filter((variant) =>
-    variant.kind === 'object' || variant.kind === 'reference' || variant.kind === 'generated-model');
-  if (
-    objectsOrModels.length === 1
-    && present.every((variant) =>
-      variant === objectsOrModels[0]
-      || ['string', 'number', 'boolean', 'bigint', 'literal'].includes(variant.kind))
-  ) {
-    const converted = emitEncodeValue(objectsOrModels[0], expression, ctx);
-    return `${objectValueExpression(expression)} ? (${converted}) : ${expression}`;
-  }
-  if (!descriptorNeedsConversion(descriptor)) return expression;
-  throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
+        : emitTaggedObjects(descriptor, expression, ctx, (object) => emitEncodeValue(object, expression, ctx), 'encode-value'),
+    },
+    afterGenerated: (present) => {
+      const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
+      if (objects.length === present.length && objects.some(descriptorNeedsConversion)) {
+        throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
+      }
+      return undefined;
+    },
+  });
 }
 
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ctx: EmitCtx): string {
