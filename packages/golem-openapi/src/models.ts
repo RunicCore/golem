@@ -538,7 +538,10 @@ function modelConversionDescriptor(
     const composition = resolvedComposition(schema, definitions, env, direction, seen, position);
     if (composition.kind === 'object') return objectCompositionDescriptor(composition);
     if (composition.kind === 'inherits') return composition.descriptor;
-    if (composition.kind === 'variants') return { kind: 'union', variants: composition.variants.map(objectCompositionDescriptor) };
+    if (composition.kind === 'variants') {
+      const discriminator = unionDiscriminatorTable(composition.union, composition.items, definitions, composition.scope);
+      return { kind: 'union', variants: composition.variants.map(objectCompositionDescriptor), ...(discriminator ? { discriminator } : {}) };
+    }
     const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
     // Deciding members win. Members that only constrain, or restate an array without converting it, leave the schema's own
     // array, oneOf, anyOf and properties keywords to convert the field; the constraints join that descriptor.

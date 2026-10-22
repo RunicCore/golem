@@ -90,7 +90,15 @@ export type Composition<S> =
    * An allOf with a union member (`allOf [X, { oneOf: [A, B] }]`) is a union of objects: `X AND A` or `X AND B`, each
    * resolved as an object composition. The caller builds a union of the merged objects.
    */
-  | { readonly kind: 'variants'; readonly variants: readonly ObjectComposition<S>[]; readonly never: readonly NeverName[] }
+  | {
+    readonly kind: 'variants';
+    readonly variants: readonly ObjectComposition<S>[];
+    /** The union member and its variant schemas, read in `scope`: the caller builds the discriminator table from them. */
+    readonly union: Readonly<Record<string, unknown>>;
+    readonly items: readonly unknown[];
+    readonly scope: S;
+    readonly never: readonly NeverName[];
+  }
   /** Not an object composition: a scalar, sequence, oneOf or constraint-only allOf; the caller keeps its own reading. */
   | { readonly kind: 'members' }
   | { readonly kind: 'rejected'; readonly code: string; readonly message: string };
@@ -209,17 +217,26 @@ function distributeUnion<S>(
     isJsonObject(member) && !reader.reference(member, nested) && (Array.isArray(member.oneOf) || Array.isArray(member.anyOf)) ? [index] : []);
   const [index, another] = unions;
   const union = index === undefined ? undefined : members[index];
-  if (another !== undefined || !isJsonObject(union)) return undefined;
+  if (index === undefined || !isJsonObject(union)) return undefined;
+  // A generated model beside a union that this cannot spread would be built as the model alone: the value would lose the
+  // variant's names and the type would not compile. That shape stops generation instead.
+  const unspread = members.some((member) => reader.reference(member, nested)?.model)
+    ? conflict('a model beside a union that is not one union of objects; give the base and each variant plain object schemas')
+    : undefined;
+  if (another !== undefined) return unspread;
   const variants = Array.isArray(union.oneOf) ? union.oneOf : Array.isArray(union.anyOf) ? union.anyOf : [];
+  // The member's other keywords (properties, required, constraints) stay a part of every variant.
+  const { oneOf: _oneOf, anyOf: _anyOf, discriminator: _discriminator, ...beside } = union;
+  const rest = Object.keys(beside).length ? [beside] : [];
   const objects: ObjectComposition<S>[] = [];
   for (const variant of variants) {
-    const composed = resolveObjects({ ...schema, allOf: members.map((member, at) => at === index ? variant : member) }, scope, reader, 'field');
+    const composed = resolveObjects({ ...schema, allOf: members.flatMap((member, at) => at === index ? [...rest, variant] : [member]) }, scope, reader, 'field');
     if (composed.kind === 'rejected') return composed;
-    if (composed.kind !== 'object') return undefined;
+    if (composed.kind !== 'object') return unspread;
     objects.push(composed);
   }
   const never = new Map(objects.flatMap((object) => object.never).map((name) => [name.name, name]));
-  return objects.length > 1 ? { kind: 'variants', variants: objects, never: [...never.values()] } : objects[0];
+  return objects.length > 1 ? { kind: 'variants', variants: objects, union, items: variants, scope: reader.nested(union, nested), never: [...never.values()] } : objects[0];
 }
 
 /**

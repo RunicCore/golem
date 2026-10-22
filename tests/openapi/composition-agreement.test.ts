@@ -682,6 +682,59 @@ const rows: readonly Row[] = [
     ],
     rejected: [{ m: { id: '1' } }, { m: { kind: 'a', a: AT } }],
   },
+  // A discriminator beside the union keeps the tag table (T-227): the kind property has no const, so only the table dispatches.
+  {
+    shape: 'a field that is allOf [$ref Base, { discriminated oneOf of two $ref models }]',
+    root: 'Visit',
+    document: visitDocument(
+      { m: { allOf: [ref('Base'), { oneOf: [ref('A'), ref('B')], discriminator: { propertyName: 'kind', mapping: { a: '#/components/schemas/A', b: '#/components/schemas/B' } } }] } },
+      {
+        Base: object({ id: text, at: dateTime }, { required: ['id'] }),
+        A: object({ kind: text, a: dateTime }, { required: ['kind', 'a'] }),
+        B: object({ kind: text, b: text }, { required: ['kind', 'b'] }),
+      },
+    ),
+    accepted: [
+      { wire: { m: { id: '1', at: AT, kind: 'a', a: B } }, model: { m: { id: '1', at: new Date(AT), kind: 'a', a: new Date(B) } } },
+      { wire: { m: { id: '1', kind: 'b', b: 'y' } }, model: { m: { id: '1', kind: 'b', b: 'y' } } },
+    ],
+    rejected: [{ m: { id: '1', kind: 'a' } }, { m: { id: '1', kind: 'b', a: AT } }, { m: { id: '1', kind: 'c' } }],
+  },
+  {
+    shape: 'a field that is allOf [$ref Base] beside its own discriminated oneOf of two $ref models',
+    root: 'Visit',
+    document: visitDocument(
+      { m: { allOf: [ref('Base')], oneOf: [ref('A'), ref('B')], discriminator: { propertyName: 'kind', mapping: { a: '#/components/schemas/A', b: '#/components/schemas/B' } } } },
+      {
+        Base: object({ id: text, at: dateTime }, { required: ['id'] }),
+        A: object({ kind: text, a: dateTime }, { required: ['kind', 'a'] }),
+        B: object({ kind: text, b: text }, { required: ['kind', 'b'] }),
+      },
+    ),
+    accepted: [
+      { wire: { m: { id: '1', at: AT, kind: 'a', a: B } }, model: { m: { id: '1', at: new Date(AT), kind: 'a', a: new Date(B) } } },
+      { wire: { m: { id: '1', kind: 'b', b: 'y' } }, model: { m: { id: '1', kind: 'b', b: 'y' } } },
+    ],
+    rejected: [{ m: { id: '1', kind: 'a' } }, { m: { id: '1', kind: 'b', a: AT } }, { m: { id: '1', kind: 'c' } }],
+  },
+  // Keywords beside the oneOf in the union member are one more part of every variant (T-227).
+  {
+    shape: 'a field that is allOf [inline base, { properties and required beside a oneOf }]',
+    root: 'Visit',
+    document: visitDocument({
+      m: {
+        allOf: [
+          object({ id: text }, { required: ['id'] }),
+          { properties: { note: text }, required: ['note'], oneOf: [object({ kind: { const: 'a' }, a: dateTime }, { required: ['kind', 'a'] }), object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] })] },
+        ],
+      },
+    }),
+    accepted: [
+      { wire: { m: { id: '1', note: 'n', kind: 'a', a: AT } }, model: { m: { id: '1', note: 'n', kind: 'a', a: new Date(AT) } } },
+      { wire: { m: { id: '1', note: 'n', kind: 'b', b: 'y' } }, model: { m: { id: '1', note: 'n', kind: 'b', b: 'y' } } },
+    ],
+    rejected: [{ m: { id: '1', kind: 'b', b: 'y' } }, { m: { id: '1', note: 'n' } }],
+  },
 ];
 
 interface Built {
@@ -924,6 +977,16 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     shape: 'members that convert one property to a Date and to a model',
     error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
     document: visitDocument({ m: { allOf: [object({ x: dateTime }), object({ x: ref('M') })] } }, { M: object({ n: text }) }),
+  },
+  {
+    shape: 'a model base beside a union with a variant that is no object',
+    error: /schema "Visit" at #\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: .*model beside a union.*plain object schemas/,
+    document: visitDocument({ m: { allOf: [ref('Base'), { oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), text] }] } }, { Base: object({ id: text }, { required: ['id'] }) }),
+  },
+  {
+    shape: 'a model base beside two unions',
+    error: /schema "Visit" at #\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: .*model beside a union.*plain object schemas/,
+    document: visitDocument({ m: { allOf: [ref('Base'), { oneOf: [object({ kind: { const: 'a' } }), object({ kind: { const: 'b' } })] }, { oneOf: [object({ mode: { const: 'x' } }), object({ mode: { const: 'y' } })] }] } }, { Base: object({ id: text }, { required: ['id'] }) }),
   },
   // The model path finds this conflict: the members are not objects, so the resolver keeps them.
   {
