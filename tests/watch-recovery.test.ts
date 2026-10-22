@@ -165,6 +165,26 @@ test('watch generates a new file that ends in a configured model suffix', async 
   }
 });
 
+test('watch generates a new model file in a folder of the models root outside src', async (t: TestContext) => {
+  // protects: T-29 watch finds new model files in every included folder of the root
+  const { root, config } = generationWatchFixture(t);
+  const tsconfig = path.join(root, 'tsconfig.json');
+  fs.writeFileSync(tsconfig, fs.readFileSync(tsconfig, 'utf8').replace('"src/**/*.ts"', '"src/**/*.ts", "lib/**/*.ts"'));
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  try {
+    await until(() => runs() === 1, 'initial generation');
+    fs.mkdirSync(path.join(root, 'lib'));
+    fs.writeFileSync(path.join(root, 'lib/pet.model.ts'), "import type { IModel } from '@exprtlabs/golem/model';\n\nexport type TPet = IModel<{ name: string }>;\n");
+    await until(() => fs.existsSync(path.join(root, 'lib/pet.model.generated.ts')), () => `the companion is written (errors=${errors.map(String).join('; ')})`);
+    assert.equal(runs(), 2, 'one regeneration for the new file');
+  } finally {
+    stop();
+  }
+  assert.deepEqual(errors, []);
+});
+
 test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
   const errors: unknown[] = [];

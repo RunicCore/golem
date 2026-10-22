@@ -15,7 +15,8 @@ function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers'): 
     if (job.kind !== kind) continue;
     found.add(path.join(job.options.root, 'tsconfig.json'));
     const suffixes = job.options.suffixes ?? (kind === 'models' ? DEFAULT_MODEL_SUFFIXES : DEFAULT_CONTROLLER_SUFFIXES);
-    const sources = job.options.sources ?? discoverSources(path.join(job.options.root, 'src'), { source: suffixPattern(suffixes), ...(kind === 'models' ? { skip } : {}) });
+    // A models job generates every model file of its root that its tsconfig includes; a controllers job reads `src`.
+    const sources = job.options.sources ?? discoverSources(kind === 'models' ? job.options.root : path.join(job.options.root, 'src'), { source: suffixPattern(suffixes), ...(kind === 'models' ? { skip } : {}) });
     for (const source of sources) found.add(source);
   }
   return found;
