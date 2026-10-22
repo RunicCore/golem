@@ -386,6 +386,8 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 
 **allOf members that convert one value in two ways.** The members of an `allOf` give one property, or the value itself, two conversions, such as `format: date-time` (a `Date`) and a `$ref` to a model. No generated value can be both. The message names the schema, and the property when the conflict is in one property. **Fix:** Give that property, or the value, one schema in every member.
 
+**A model beside a union that does not spread.** An `allOf` of a `$ref` model and a `oneOf`/`anyOf` becomes one merged object for each variant. This needs one union member whose variants are all objects. When the `allOf` has two union members, or a variant that is not an object, the model and the union have no merged value. Generation stops. **Fix:** Give the base and each variant a plain object schema, and put the variants in one `oneOf`/`anyOf`.
+
 ### OPENAPI_COMPOSITION_PROPERTY_NEVER
 
 **allOf property that cannot hold a value.** An optional property of an `allOf` has no value that every member accepts. A member with `additionalProperties: false` judges each name that its own `properties` do not list, also the names of its sibling members. Two members can also give the property types that have no common value. This is a warning: generation continues, and the property is typed `never`. **Fix:** For a closed base, remove `additionalProperties: false` from the base, then add `unevaluatedProperties: false` to each component that extends it. For a closed member of the schema itself, replace its `additionalProperties: false` with `unevaluatedProperties: false` beside the `allOf`. The message names that member. For two types, give the property one type in every member.
