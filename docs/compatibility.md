@@ -14,7 +14,9 @@ Check which versions Golem supports and which APIs stay stable.
 
 Generation, `golem build` and the `parse<T>` rewrite run on TypeScript 6.0 and later 6.x, or on 7.x, and write the same files on both. TypeScript 5 isn't supported. `golem build`, the Vite plugin, the esbuild plugin and the Node loader are all fully supported; faster transforms in a Vite dev server are an extra optimization that comes later.
 
-CI runs the unit suite on Node.js 22.15.0 and 24, on Ubuntu and Windows; Windows jobs are allowed to fail.
+CI runs the unit suite on Node.js 22.15.0 and 24, on Ubuntu and Windows.
+
+Windows support is best effort. Golem makes no promise for Windows. When you report a problem on Windows, we fix it.
 
 OpenAPI feature support depends on the document version and generation profile ([OpenAPI client support](/reference/openapi-support)).
 
