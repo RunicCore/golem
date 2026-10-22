@@ -342,7 +342,7 @@ function modelFieldType(
   if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
     const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
     return variants
-      .map((item) => modelFieldType(item, definitions, nested, seen, false))
+      .map((item) => modelFieldType(item, definitions, nested, seen, !isJsonObject(schema.discriminator)))
       .map((type) => `(${type})`)
       .join(' | ');
   }
@@ -530,7 +530,8 @@ function modelConversionDescriptor(
     // A nullable array variant is a plain union of its own; its branches join the outer union.
     const convertedVariants = variants.flatMap((item): readonly ModelTypeDescriptor[] => {
       if (isNullBranch(item)) return [{ kind: 'null' }];
-      const converted = modelConversionDescriptor(item, definitions, nested, direction, seen, false);
+      // A discriminator needs object variants, so a discriminated union keeps its references non-null.
+      const converted = modelConversionDescriptor(item, definitions, nested, direction, seen, !isJsonObject(schema.discriminator));
       return converted.kind === 'union' && converted.discriminator === undefined ? converted.variants : [converted];
     });
     const temporalVariants = convertedVariants.filter(isTemporalDescriptor);
@@ -554,7 +555,9 @@ function modelConversionDescriptor(
       isJsonObject(item) &&
       (item.type === 'null' || (Array.isArray(item.type) && item.type.includes('null')))
     );
-    if (modelReferences.length === 1 && (permitsNull || direction === 'to') && !isJsonObject(schema.discriminator)) {
+    // A reference with only null beside it is that model; any other branch (a string) stays a union branch.
+    const onlyModelOrNull = convertedVariants.every((item) => item.kind === 'generated-model' || item.kind === 'null');
+    if (modelReferences.length === 1 && onlyModelOrNull && (permitsNull || direction === 'to') && !isJsonObject(schema.discriminator)) {
       const id = modelReferences[0];
       if (!id) return { kind: 'unknown' };
       return permitsNull ? {

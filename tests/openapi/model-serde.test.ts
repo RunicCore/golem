@@ -1310,7 +1310,7 @@ test('a discriminated oneOf with a nullable component variant still generates an
   assert.doesNotThrow(() => codec.fromWireFormat({ pet: { kind: 'dog', name: 'Rex' } }, { construct }));
 });
 
-test('a oneOf of a nullable component and a string has a type and a validator that agree on null', async t => {
+test('a oneOf variant that references a nullable component admits null and is typed with | null', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-oneof-nullable-reference-'), 'sdk');
   const document = sequenceSerdeDocument({
     either: { oneOf: [{ $ref: '#/components/schemas/Pet' }, { type: 'string' }] },
@@ -1333,13 +1333,73 @@ test('a oneOf of a nullable component and a string has a type and a validator th
   const construct = VisitModel as unknown as abstract new (values?: never) => object;
 
   assert.doesNotThrow(() => codec.fromWireFormat({ either: { name: 'Miso' } }, { construct }));
-  assert.throws(
-    () => codec.fromWireFormat({ either: null }, { construct }),
-    (error: unknown): true => {
-      assert.ok(error instanceof LibError);
-      return true;
-    },
+  assert.equal(decodeGeneratedModel(VisitModel, { either: null }).either, null);
+  assert.equal((codec.fromWireFormat({ either: null }, { construct }) as { either: unknown }).either, null);
+});
+
+for (const validation of [true, false]) for (const petType of ['object', ['object', 'null']]) {
+  test(`a oneOf of a ${Array.isArray(petType) ? 'nullable ' : ''}component and a string decodes and encodes each branch by its type (validation ${validation})`, async t => {
+    // protects: T-97 oneOf of a model reference and a string keeps both branches
+    const output = path.join(createFixtureProject(t, 'golem-openapi-oneof-reference-string-'), 'sdk');
+    const document = sequenceSerdeDocument({
+      either: { oneOf: [{ $ref: '#/components/schemas/Pet' }, { type: 'string' }] },
+    }) as { components: { schemas: Record<string, Record<string, unknown>> } };
+    document.components.schemas.Pet = { type: petType, required: ['name'], properties: { name: { type: 'string' } } };
+    await generateMaterializedSdk(document, {
+      output,
+      name: 'SequenceSerde',
+      profile: { mobx: false, validation, allowAny: false },
+    });
+    compileStandaloneModelSerdeSdk(output);
+
+    const models = requireRecord(
+      await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+      'generated oneOf reference and string models',
+    );
+    const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+    const codec = requireObjectCodec<Record<string, unknown>>(generatedCodecIdFromRoot(output, 'Visit'));
+    const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+    const text = codec.fromWireFormat({ either: 'abc' }, { construct });
+    assert.equal(text.either, 'abc');
+    assert.deepEqual(codec.toWireFormat(text), { either: 'abc' });
+    const pet = codec.fromWireFormat({ either: { name: 'Miso' } }, { construct });
+    assert.ok(pet.either instanceof (models.PetModel as new () => object));
+    assert.deepEqual(codec.toWireFormat(pet), { either: { name: 'Miso' } });
+  });
+}
+
+for (const validation of [true, false]) test(`a oneOf of a nullable component with a date-time property and a string decodes the date and admits null (validation ${validation})`, async t => {
+  // protects: T-97 oneOf variant of a nullable component keeps the component's date-time conversion
+  const output = path.join(createFixtureProject(t, 'golem-openapi-oneof-nullable-date-'), 'sdk');
+  const document = sequenceSerdeDocument({
+    either: { oneOf: [{ $ref: '#/components/schemas/Pet' }, { type: 'string' }] },
+  }) as { components: { schemas: Record<string, Record<string, unknown>> } };
+  document.components.schemas.Pet = {
+    type: ['object', 'null'],
+    required: ['name'],
+    properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } },
+  };
+  await generateMaterializedSdk(document, {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation, allowAny: false },
+  });
+  compileStandaloneModelSerdeSdk(output);
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated oneOf nullable date models',
   );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec<Record<string, unknown>>(generatedCodecIdFromRoot(output, 'Visit'));
+  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+  const pet = codec.fromWireFormat({ either: { name: 'Miso', at: '2024-05-06T07:08:09.000Z' } }, { construct });
+  assert.deepEqual({ ...(pet.either as object) }, { name: 'Miso', at: new Date('2024-05-06T07:08:09.000Z') });
+  assert.deepEqual(codec.toWireFormat(pet), { either: { name: 'Miso', at: '2024-05-06T07:08:09.000Z' } });
+  assert.equal(codec.fromWireFormat({ either: null }, { construct }).either, null);
+  assert.equal(codec.fromWireFormat({ either: 'abc' }, { construct }).either, 'abc');
 });
 
 test(`an allOf of an additionalProperties member and a properties member converts every name by the merged object (validation false)`, async t => {
