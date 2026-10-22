@@ -37,10 +37,10 @@ import { presentKeysSource, presentValueSource } from '../presence.js';
 import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
 import { FIELD_CONVERSION_INPUT, emitArrayConversion, emitTupleConversion, singleCallConverter, type SequenceItems } from './sequence-conversion.js';
 import {
-  OBJECT_UNION_DISCRIMINATOR_ERROR,
   discriminatorMatch,
   literalDiscriminator,
   objectDiscriminator,
+  ObjectUnionDiscriminatorError,
   objectValueExpression,
   objectVariant,
   presentUnionVariants,
@@ -53,7 +53,7 @@ import {
 } from './union-conversion.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
-export { descriptorNeedsConversion, literalValues } from './union-conversion.js';
+export { descriptorNeedsConversion, literalValues, ObjectUnionDiscriminatorError } from './union-conversion.js';
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
@@ -336,7 +336,7 @@ function emitNestedUnion(
       if (convertedObjects.some(({ converted }) => converted !== expression)) {
         const discriminator = unionDispatch(descriptor, objectIndices, objectVariant);
         if (!discriminator && (objects.length > 1 || descriptor.variants.some(variant => ['reference', 'generated-model', 'any', 'unknown', 'intersection'].includes(variant.kind)))) {
-          throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
+          throw new ObjectUnionDiscriminatorError(descriptor.variants);
         }
         if (discriminator && result === undefined && objects.length === present.length) {
           return emitDispatch({

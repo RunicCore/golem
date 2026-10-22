@@ -16,8 +16,19 @@ export type ObjectTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind:
 type ArrayTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'array' }>;
 export type UnionTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'union' }>;
 
-export const OBJECT_UNION_DISCRIMINATOR_ERROR =
-  'Object union conversions require a unique, required literal discriminator.';
+/** An object union that needs conversion has no unique, required literal tag: generation stops, and a generator adds its code, location and fix. */
+export class ObjectUnionDiscriminatorError extends Error {
+  constructor(variants: readonly ModelTypeDescriptor[]) {
+    super(`Object union conversions require a unique, required literal discriminator. The variants are ${variants.map(describeVariant).join(' | ')}.`);
+  }
+}
+
+function describeVariant(variant: ModelTypeDescriptor): string {
+  if (variant.kind === 'object') return `{ ${Object.keys(variant.properties).join(', ')} }`;
+  if (variant.kind === 'reference') return variant.name;
+  return variant.kind === 'generated-model' ? variant.id : variant.kind;
+}
+
 export const AMBIGUOUS_UNION_CONVERSION_ERROR =
   'Union has ambiguous conversions. Use a discriminated object union or one serde pair for the value.';
 
@@ -439,7 +450,7 @@ function generatedWithObjects(
   const generatedText = options.text(generated[0]);
   if (generatedText === undefined) return undefined;
   const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-  if (objects.length > 0 && !objectDiscriminator(objects)) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
+  if (objects.length > 0 && !objectDiscriminator(objects)) throw new ObjectUnionDiscriminatorError(objects);
   const tagged = options.tagMatch(objects);
   if (tagged.length) {
     return `(${objectValueExpression(expression)} && !(${tagged.join(' || ')}) ? ${generatedText} : ${options.objects(objects)})`;

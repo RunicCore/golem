@@ -31,7 +31,7 @@ A discriminated union of two models:
 Generation fails for:
 
 - a root `IModel` union such as `IModel<TEmail | TPhone>` ([`RUNM1052`](/reference/diagnostics#runm1052)); put the union in a field
-- object unions without a unique required literal discriminator (`Object union conversions require a unique, required literal discriminator`)
+- object unions without a unique required literal discriminator ([`RUNM1080`](/reference/diagnostics#runm1080)); give each variant a required literal field such as `kind: 'cat'`
 - several undiscriminated SDK model classes, or an SDK model class plus an array, `any`, `unknown`, intersection or untagged object ([`RUNM1030`](/reference/diagnostics#runm1030))
 - any union that would need to probe alternatives (`Union has ambiguous conversions`)
 

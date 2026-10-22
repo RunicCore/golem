@@ -14,13 +14,13 @@ import { modelName, requireComposedObject, type ModelBases } from './composition
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR_ITEM, singleCallConverter } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
-  OBJECT_UNION_DISCRIMINATOR_ERROR,
   descriptorNeedsConversion,
   isScalarishDescriptor,
   discriminatorMatch,
   emitDispatch,
   emitUnionConversion,
   literalDiscriminator,
+  ObjectUnionDiscriminatorError,
   objectValueExpression,
   presentUnionIndices,
   unionDispatch,
@@ -1036,7 +1036,7 @@ function emitTaggedVariantUnion(
   if (!dispatch) {
     if (direction !== 'encode-json' && conversions.every((converted) => converted === expression)) return expression;
     if (options?.unresolved === 'skip') return undefined;
-    throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
+    throw new ObjectUnionDiscriminatorError(variants);
   }
   return emitDispatch({
     expression,
@@ -1082,7 +1082,7 @@ function emitTaggedObjects(
 ): string {
   const indices = presentUnionIndices(union).filter((index) => union.variants[index].kind === 'object');
   const converted = emitTaggedVariantUnion(union, indices, expression, ctx, convert, direction);
-  if (converted === undefined) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
+  if (converted === undefined) throw new ObjectUnionDiscriminatorError(union.variants);
   return converted;
 }
 
@@ -1151,7 +1151,7 @@ function emitUnionValue(
           const node = ctx.graph.nodeFor(object);
           return Boolean(node) || Object.keys(object.properties).length > 0 || object.additionalProperties === false;
         });
-        if (structured) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
+        if (structured) throw new ObjectUnionDiscriminatorError(objects);
       }
       return present.every(isScalarishDescriptor) ? plain : undefined;
     },
@@ -1216,7 +1216,7 @@ function emitUnionDecode(
         const object = node?.descriptor.kind === 'object' ? node.descriptor : undefined;
         if (!object) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
         const tags = objectTagMatch([object], expression, true);
-        if (tags.length === 0) throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
+        if (tags.length === 0) throw new ObjectUnionDiscriminatorError(present);
         branches.push(`${tags.join(' && ')} ? ${emitDecodeValue(ref, expression, ctx)}`);
       }
       return `(${objectValueExpression(expression)} ? ${[...branches, expression].join(' : ')} : ${expression})`;
@@ -1255,7 +1255,7 @@ function emitUnionEncode(
     afterGenerated: (present) => {
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
       if (objects.length === present.length && objects.some((object) => descriptorNeedsConversion(object))) {
-        throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
+        throw new ObjectUnionDiscriminatorError(objects);
       }
       return undefined;
     },
