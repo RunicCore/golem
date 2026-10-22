@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { transformSync } from 'esbuild';
 
-import { convertModelField, convertModelItems, convertModelTupleItems, deserializeDate, serializeDate, withDiscriminatorValue } from '@exprtlabs/golem/conversion';
+import { convertModelField, convertModelItems, convertModelTupleItems, defineModelProperty, deserializeDate, serializeDate, withDiscriminatorValue } from '@exprtlabs/golem/conversion';
 import {
   emitModelFromInit,
   emitModelFromJSON,
@@ -123,6 +123,7 @@ const bindings: Readonly<Record<string, unknown>> = {
   convertModelField,
   convertModelItems,
   convertModelTupleItems,
+  defineModelProperty,
   ChildModel,
   decodeGeneratedModel: (_constructor: unknown, value: unknown) =>
     value instanceof ChildModel ? value : ChildModel.fromJSON(value),

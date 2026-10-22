@@ -460,10 +460,15 @@ function emitNested(
       : 'value';
     // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do.
     const omitsUndefined = (name: string): boolean => direction === 'toJSON' && !descriptor.required.includes(name);
-    if (descriptor.projection) {
+    const additionalChanged = additional !== 'value';
+    const knownChanged = assignments.some(({ sourceValue, value }) => value !== sourceValue);
+    // A decoder reads the declared fields of any object by the JSON view, so it builds the copy from one Object.keys pass.
+    // A projection does so in both directions, and also drops the keys it does not declare.
+    if (descriptor.projection || (direction !== 'toJSON' && (knownChanged || additionalChanged))) {
       const knownKeys = Object.keys(descriptor.properties).map(name => JSON.stringify(name)).join(', ');
-      // An additionalProperties tag declares the other keys as data: they are copied as they are or by the tag's type.
-      const extras = typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared
+      // An additionalProperties tag declares the other keys of a projection as data: they are copied as they are or by
+      // the tag's type. Another object keeps its other keys the same way.
+      const extras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared
         ? `for (const [key, value] of Object.entries(source)) if (value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)) defineModelProperty(out, key, ${additional});`
         : '';
       // A decoder reads its input by the JSON view: one Object.keys pass reads each field once into a local.
@@ -475,8 +480,6 @@ function emitNested(
           : `if (Object.hasOwn(source, ${property})) defineModelProperty(out, ${property}, ${sourceValue} === undefined ? undefined : (${value}));`);
       return `${objectValueExpression(expression)} ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; ${[...capture, ...fields, extras].filter(Boolean).join(' ')} return out; })(${recordExpression(expression)}) : ${expression}`;
     }
-    const additionalChanged = additional !== 'value';
-    const knownChanged = assignments.some(({ sourceValue, value }) => value !== sourceValue);
     if (!knownChanged && !additionalChanged) return expression;
     const knownKeys = Object.keys(descriptor.properties).map((name) => JSON.stringify(name)).join(', ');
     const base = additionalChanged

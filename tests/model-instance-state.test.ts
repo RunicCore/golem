@@ -5,7 +5,7 @@ import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import { LibError } from '@exprtlabs/golem/errors';
-import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { registerGeneratedModel } from '@exprtlabs/golem/model';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 
@@ -351,4 +351,25 @@ export class View extends TViewBaseModel {
   assert.equal(codec.stringify(instance), JSON.stringify(written));
   assert.deepEqual(codec.toWireFormat(instance), written);
   assert.deepEqual({ ...(codec.parse(JSON.stringify(written), { construct: View }) as { view: object }).view }, written.view, 'parse with construct');
+});
+
+test('the class-level decode reads the declared fields of a nested object by the JSON view', async (t) => {
+  // protects: bug T-124 decodeGeneratedModel read a nested object by plain property reads, so an inherited, non-enumerable or undefined field was decoded as present
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-nested-view-', name: 'model-nested-view', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'nest.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TNestBaseModel, type TNestFields } from './nest.model.generated.js';
+export type TNest = IModel<{ inner: { id: string; when?: Date } }>;
+export class Nest extends TNestBaseModel { constructor(values: Partial<TNestFields> = {}) { super(values); } }
+`);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const { Nest } = await import(pathToFileURL(path.join(root, 'build/nest.model.js')).href) as { Nest: new (values?: object) => object };
+  const text = '2020-01-02T03:04:05.000Z';
+  const hidden = Object.defineProperty({ id: 'a' }, 'when', { value: text, enumerable: false });
+  const inherited = Object.assign(Object.create({ when: text }), { id: 'a' });
+  const decode = (inner: object) => ({ ...(decodeGeneratedModel(Nest, { inner }) as { inner: object }).inner });
+  assert.deepEqual(decode(hidden), { id: 'a' }, 'a non-enumerable field');
+  assert.deepEqual(decode(inherited), { id: 'a' }, 'an inherited field');
+  assert.deepEqual(decode({ id: 'a', when: undefined }), { id: 'a' }, 'an undefined field');
+  assert.deepEqual(decode({ id: 'a', when: text, extra: 1 }), { id: 'a', when: new Date(text), extra: 1 }, 'an own field is converted and another key is kept');
 });
