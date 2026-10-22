@@ -2,9 +2,8 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { contains } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
-import { GolemDiagnosticSeverity, hasErrorCode, isRecord } from './generator-api.js';
+import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, isRecord } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { atomicWrite, loadInventory } from './outputs.js';
 import type { Inventory, InventoryEntry } from './outputs.js';
@@ -90,12 +89,12 @@ export function loadJobRecords(config: GolemConfig): Map<string, JobRecord> {
 
 export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string, JobRecord>): void {
   const jobs = Object.fromEntries([...records]
-    .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+    .sort(([left], [right]) => compareText(left, right))
     .map(([id, record]) => [id, {
       golemCode: record.golemCode,
       providerCode: record.providerCode,
       options: record.options,
-      inputs: Object.fromEntries(Object.entries(record.inputs).sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))),
+      inputs: Object.fromEntries(Object.entries(record.inputs).sort(([left], [right]) => compareText(left, right))),
       manifestInputs: record.manifestInputs,
       outputs: record.outputs,
       manifests: record.manifests,
@@ -115,7 +114,7 @@ function hashText(text: string): string {
 
 /** Whether `filename` is one of `directories` or lies under one. */
 export function insideAny(directories: readonly string[], filename: string): boolean {
-  return directories.some(directory => contains(directory, filename));
+  return directories.some(directory => isInsideDirectory(directory, filename));
 }
 
 /**
@@ -156,7 +155,7 @@ export function inputDigest(filename: string, excluded: (filename: string) => bo
   }
   if (!stat) return MISSING;
   if (stat.isDirectory()) {
-    if (!contains(root, filename)) return OUTSIDE_DIRECTORY;
+    if (!isInsideDirectory(root, filename)) return OUTSIDE_DIRECTORY;
     // A directory that holds only generated files lists as an absent one: a job's own output directory does not exist before its first run.
     const listed = listFiles(filename, excluded);
     return listed.length === 0 ? MISSING : hashText(listed.join('\n'));

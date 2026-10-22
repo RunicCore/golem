@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
-import { isRecord } from '@exprtlabs/golem/generator-api';
-import { stableJson } from '@exprtlabs/golem/manifest';
+import { isRecord, stableJson } from '@exprtlabs/golem/generator-api';
 import { buildOperationValidationSchemas, generateClientModules } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes } from './document.js';
 import { buildEmissionPlan, type ArtifactFile, type EmissionPlan } from './emission-plan.js';

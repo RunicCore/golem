@@ -2,9 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-import { canonicalPath, compareText, hasErrorCode, isRecord } from './generator-api.js';
+import { canonicalPath, compareText, hasErrorCode, isInsideDirectory, isRecord } from './generator-api.js';
 import type { GolemArtifact } from './generator-api.js';
-import { contains } from './config.js';
 import { codecKeysPath, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
 import type { GolemConfig, GolemJob } from './config.js';
 
@@ -74,7 +73,7 @@ function configuredDestinationPath(destination: string): string {
 function inventoryBoundaryPath(config: GolemConfig): string {
   const requested = path.resolve(config.inventoryFile);
   const configuredRoot = path.resolve(config.directory);
-  if (contains(configuredRoot, requested)) {
+  if (isInsideDirectory(configuredRoot, requested)) {
     return path.join(canonicalPath(configuredRoot), path.relative(configuredRoot, requested));
   }
   return canonicalPath(requested);
@@ -86,7 +85,7 @@ function assertInventoryPath(config: GolemConfig): void {
   if (link !== undefined) {
     throw new Error(`Generated inventory path uses symbolic link: ${config.inventoryFile}`);
   }
-  if (!contains(canonicalPath(config.directory), canonicalPath(boundary))) {
+  if (!isInsideDirectory(canonicalPath(config.directory), canonicalPath(boundary))) {
     throw new Error(`Generated inventory escapes its configuration directory: ${config.inventoryFile}`);
   }
 }
@@ -113,7 +112,7 @@ function assertDestinationPath(filename: string, destination: string, label: str
   }
   const canonicalDestination = canonicalPath(destination);
   const canonicalFilename = canonicalPath(filename);
-  if (!contains(canonicalDestination, canonicalFilename)) {
+  if (!isInsideDirectory(canonicalDestination, canonicalFilename)) {
     const link = symlinkInPath(filename);
     throw new Error(`Generated output escapes its ${label} destination${link === undefined ? '' : ` through symbolic link ${link}`}: ${filename}`);
   }
@@ -154,9 +153,9 @@ function artifactDestination(config: GolemConfig, job: GolemJob, filename: strin
     }
   }
   const destination = destinations.find(candidate => {
-    if (contains(path.resolve(candidate), filename)) return true;
+    if (isInsideDirectory(path.resolve(candidate), filename)) return true;
     try {
-      return contains(canonicalPath(candidate), canonicalPath(filename));
+      return isInsideDirectory(canonicalPath(candidate), canonicalPath(filename));
     } catch { return false; }
   });
   if (destination === undefined) {

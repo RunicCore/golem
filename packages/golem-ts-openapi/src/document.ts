@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { stableValue } from '@exprtlabs/golem/generator-api';
 import YAML from 'yaml';
 import { GolemDiagnosticSeverity, TsToOpenApiDiagnosticCode, TsToOpenApiError } from './diagnostics.js';
 import {
@@ -7,7 +8,6 @@ import {
   type SchemaResolver,
 } from './operations.js';
 import type { ControllerRoute } from './nest/types.js';
-import { compareCodeUnits } from './compare.js';
 
 interface OpenApiDocumentContext extends OperationBuildContext {
   readonly openapiVersion?: '3.2.0' | '3.1.2';
@@ -17,15 +17,6 @@ interface OpenApiDocumentContext extends OperationBuildContext {
   readonly tags?: readonly Readonly<Record<string, unknown>>[];
   readonly routes: readonly ControllerRoute[];
   readonly schemaResolver?: SchemaResolver;
-}
-
-function stable(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(stable);
-  if (value === null || typeof value !== 'object') return value;
-  const entries = Object.entries(value as Record<string, unknown>)
-    .sort(([left], [right]) => compareCodeUnits(left, right))
-    .map(([key, item]) => [key, stable(item)] as const);
-  return Object.fromEntries(entries);
 }
 
 function requiredString(value: unknown, field: string): string {
@@ -338,14 +329,14 @@ export async function buildDocument(
   if (configuredSecuritySchemes && Object.keys(configuredSecuritySchemes).length > 0) {
     document.components = { securitySchemes: configuredSecuritySchemes };
   }
-  return stable(document) as Readonly<Record<string, unknown>>;
+  return stableValue(document) as Readonly<Record<string, unknown>>;
 }
 
 function serializeDocument(
   document: Readonly<Record<string, unknown>>,
   format: 'json' | 'yaml' = 'json',
 ): string {
-  const canonical = stable(document);
+  const canonical = stableValue(document);
   if (format === 'yaml') return `${YAML.stringify(canonical, { sortMapEntries: false })}`;
   return `${JSON.stringify(canonical, null, 2)}\n`;
 }

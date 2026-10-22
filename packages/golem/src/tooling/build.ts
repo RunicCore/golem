@@ -2,10 +2,10 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { canonicalFile, contains, modelsRootOf, resolveConfig } from './config.js';
+import { canonicalFile, modelsRootOf, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
-import { GolemDiagnosticSeverity, isRecord } from './generator-api.js';
+import { GolemDiagnosticSeverity, isInsideDirectory, isRecord } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { nodeSpecifierEdits } from './node-specifiers.js';
 import { atomicWrite } from './outputs.js';
@@ -231,7 +231,7 @@ function scanFailure(errors: readonly GolemDiagnostic[]): Error {
 
 /** The stage's own guard: nothing is written, linked or removed outside the stage directory, whatever computed the path. */
 function insideStage(stageDirectory: string, target: string): string {
-  if (!contains(stageDirectory, target)) throw new Error(`golem build would change ${target}, which is outside its stage ${stageDirectory}.`);
+  if (!isInsideDirectory(stageDirectory, target)) throw new Error(`golem build would change ${target}, which is outside its stage ${stageDirectory}.`);
   return target;
 }
 
@@ -353,7 +353,7 @@ function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrite
   }
   pruneStage(stageDirectory, keep);
 
-  const stageOf = (absolute: string): string => (contains(base, absolute) ? posix(stagePath(absolute)) : absolute);
+  const stageOf = (absolute: string): string => (isInsideDirectory(base, absolute) ? posix(stagePath(absolute)) : absolute);
   const configFile = path.join(stageDirectory, 'tsconfig.json');
   const stageConfig = {
     extends: posix(path.relative(stageDirectory, project.configFile)),
@@ -464,7 +464,7 @@ function remapSourceMap(mapFile: string, stage: StageResult): void {
   const [source] = emitted.sources;
   if (emitted.sources.length !== 1 || source === undefined) return;
   const staged = path.resolve(path.dirname(mapFile), source);
-  if (!contains(stage.directory, staged)) return;
+  if (!isInsideDirectory(stage.directory, staged)) return;
   const relative = posix(path.relative(stage.directory, staged));
   const original = posix(path.relative(path.dirname(mapFile), path.join(stage.base, relative)));
   const inner = stage.maps.get(relative);
@@ -542,7 +542,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   outsideDirectories.clear();
   const observeSource = (filename: string): void => {
     observe(filename);
-    if (!contains(root, filename)) outsideDirectories.add(path.dirname(filename));
+    if (!isInsideDirectory(root, filename)) outsideDirectories.add(path.dirname(filename));
   };
   for (const filename of parsed.fileNames) observeSource(filename);
   const checkState = path.join(project.buildDirectory, 'check.tsbuildinfo');
@@ -622,7 +622,7 @@ function directorySignature(directory: string, ownDirectories: ReadonlySet<strin
 function watchedDirectories(root: string, inputs: ReadonlySet<string>, outsideDirectories: ReadonlySet<string>): Set<string> {
   const directories = new Set<string>(outsideDirectories);
   for (const input of inputs) {
-    for (let directory = path.dirname(input); contains(root, directory) && !directories.has(directory); directory = path.dirname(directory)) {
+    for (let directory = path.dirname(input); isInsideDirectory(root, directory) && !directories.has(directory); directory = path.dirname(directory)) {
       if (directory.split(path.sep).includes('node_modules') || directory === path.join(root, GOLEM_DIRECTORY)) break;
       directories.add(directory);
     }
@@ -634,7 +634,7 @@ function watchedDirectories(root: string, inputs: ReadonlySet<string>, outsideDi
 function ownDirectories(root: string, outputs: ReadonlySet<string>): Set<string> {
   const own = new Set([path.join(root, GOLEM_DIRECTORY)]);
   for (const output of outputs) {
-    for (let directory = output; contains(root, directory) && directory !== root; directory = path.dirname(directory)) own.add(directory);
+    for (let directory = output; isInsideDirectory(root, directory) && directory !== root; directory = path.dirname(directory)) own.add(directory);
   }
   return own;
 }

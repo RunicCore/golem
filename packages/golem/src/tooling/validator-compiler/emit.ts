@@ -1,6 +1,7 @@
 import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
+import { compareText } from '../generator-api.js';
 import { instanceFieldsSource, presentKeysSource, presentValueSource } from '../../presence.js';
 
 interface EmitOptions {
@@ -51,7 +52,7 @@ function identifier(text: string): string {
  * told apart by a number from 2, handed out in the order of the roots' own names, so the numbers of that set can shift.
  */
 export function exportNames(rootNames: Iterable<string>): ReadonlyMap<string, string> {
-  const names = [...new Set(rootNames)].sort((first, second) => (first < second ? -1 : first > second ? 1 : 0));
+  const names = [...new Set(rootNames)].sort(compareText);
   const taken = new Set<string>();
   const result = new Map<string, string>();
   for (const name of names) {

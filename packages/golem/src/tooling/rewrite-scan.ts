@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { GolemDiagnosticSeverity, canonicalPath, isRecord } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, compareText, isRecord } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
 import { operationCodecRegistryPath } from './generated-paths.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
@@ -843,10 +843,6 @@ function scanFile(
 }
 
 // The scan
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
-}
 
 /** What one file needs rewritten, answered per file from the program the scanner holds. */
 export interface FileScanResult extends FileRewrite {

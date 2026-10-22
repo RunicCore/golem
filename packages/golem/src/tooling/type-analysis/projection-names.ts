@@ -1,3 +1,4 @@
+import { compareText } from '../generator-api.js';
 import * as ts from '../typescript-ns.js';
 import { resolveSymbol } from './symbols.js';
 
@@ -195,8 +196,7 @@ export function unionVariantNaming(
   }
   const matched = named.every(variant => indexOf(variant) >= 0);
   const order = matched ? undefined : [...named].sort((left, right) => {
-    const a = checker.typeToString(left), b = checker.typeToString(right);
-    return a < b ? -1 : a > b ? 1 : 0;
+    return compareText(checker.typeToString(left), checker.typeToString(right));
   });
   named.forEach(variant => {
     const position = order ? order.indexOf(variant) : indexOf(variant);

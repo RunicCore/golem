@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { DEFAULT_CONTROLLER_SUFFIXES, discoverSources, stripSourceSuffix, suffixPattern } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_CONTROLLER_SUFFIXES, compareText, discoverSources, stripSourceSuffix, suffixPattern } from '@exprtlabs/golem/generator-api';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,
@@ -21,7 +21,6 @@ import type {
   NestHttpMethod,
 } from './types.js';
 import { NEST_HTTP_METHODS } from './types.js';
-import { compareCodeUnits } from '../compare.js';
 
 const ROUTE_DECORATORS = new Map<string, NestHttpMethod>(NEST_HTTP_METHODS.map(method => [method[0].toUpperCase() + method.slice(1), method]));
 /**
@@ -146,7 +145,7 @@ function classMethods(
   for (const method of inherited) if (method.name && ts.isIdentifier(method.name)) byName.set(method.name.text, method);
   for (const method of own) if (method.name && ts.isIdentifier(method.name)) byName.set(method.name.text, method);
   return [...byName.values()].sort((left, right) => {
-    return compareCodeUnits(left.getSourceFile().fileName, right.getSourceFile().fileName) || left.getStart() - right.getStart();
+    return compareText(left.getSourceFile().fileName, right.getSourceFile().fileName) || left.getStart() - right.getStart();
   });
 }
 

@@ -1,10 +1,10 @@
 import { MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
 import { unescapePointerToken } from '../../json-pointer.js';
 import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
-import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-api.js';
+import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-api.js';
 import type { CompileInput, CompileOptions } from './index.js';
 import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrFunction, IrInstance, IrModule, IrSchema, IrTypeName, IrValidationImport } from './ir.js';
-import { baseInside, isRecord, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';
+import { baseInside, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';
 
 export const VALIDATE_UNSUPPORTED_KEYWORD = 'VALIDATE_UNSUPPORTED_KEYWORD';
 export const VALIDATE_UNRESOLVED_REF = 'VALIDATE_UNRESOLVED_REF';
