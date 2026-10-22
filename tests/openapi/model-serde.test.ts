@@ -1056,6 +1056,46 @@ test('a field that references a nullable component object is typed with | null a
   assert.equal(JSON.stringify(decodeGeneratedModel(VisitModel, { pet: { name: 'Miso' } }).pet), '{"name":"Miso"}');
 });
 
+test('a field that references a nullable component with a date-time property decodes, validates and encodes it', async t => {
+  // protects: T-95 nullable component with a date-time property validates its wire form
+  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-date-reference-'), 'sdk');
+  const document = sequenceSerdeDocument({ pet: { $ref: '#/components/schemas/Pet' } }) as {
+    components: { schemas: Record<string, Record<string, unknown>> };
+  };
+  document.components.schemas.Pet = {
+    type: ['object', 'null'],
+    required: ['name'],
+    properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } },
+  };
+  await generateMaterializedSdk(document, {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation: true, allowAny: false },
+  });
+  compileStandaloneModelSerdeSdk(output);
+
+  const models = requireRecord(
+    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
+    'generated nullable component date models',
+  );
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const codec = requireObjectCodec<Record<string, unknown>>(generatedCodecIdFromRoot(output, 'Visit'));
+  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+
+  const decoded = codec.fromWireFormat({ pet: { name: 'Miso', at: '2024-05-06T07:08:09.000Z' } }, { construct });
+  assert.deepEqual({ ...(decoded.pet as object) }, { name: 'Miso', at: new Date('2024-05-06T07:08:09.000Z') });
+  assert.deepEqual(codec.toWireFormat(decoded), { pet: { name: 'Miso', at: '2024-05-06T07:08:09.000Z' } });
+  assert.equal(codec.fromWireFormat({ pet: null }, { construct }).pet, null);
+  assert.throws(
+    () => codec.fromWireFormat({ pet: { name: 'Miso', at: 'yesterday' } }, { construct }),
+    (error: unknown): true => {
+      assert.ok(error instanceof LibError);
+      assert.equal(error.kind, LibErrorKind.Validation);
+      return true;
+    },
+  );
+});
+
 for (const validation of [true, false]) test(`an object field with its own properties and an allOf member that adds properties types and converts both alike (validation ${validation})`, async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-allof-member-properties-'), 'sdk');
   await generateMaterializedSdk(sequenceSerdeDocument({
