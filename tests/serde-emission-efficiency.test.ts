@@ -413,3 +413,23 @@ export class Series extends TSeriesBaseModel {}
   assert.throws(() => codecs.stringifyTCounts({ a: NaN }), isSerializationError);
   assert.throws(() => codecs.stringifyTSeries({ a: [1, Infinity] }), isSerializationError);
 });
+
+test('a map of numbers whose class has a toJSON that stringifies itself writes its own entries and does not overflow the stack', async (t) => {
+  // protects: T-262 the native JSON writer calls toJSON, which the per-entry writer never did
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'counts.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TCountsBaseModel } from './counts.model.generated.js';
+export type TCounts = IModel<{ [key: string]: number }>;
+export class Counts extends TCountsBaseModel {}
+`);
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  await buildModelProject(value.root);
+  const codecs = await import(pathToFileURL(path.join(value.root, 'build/counts.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
+  class Tally {
+    a = 1;
+    b = 2;
+    toJSON(): unknown { return JSON.parse(codecs.stringifyTCounts(this) as string); }
+  }
+  assert.equal(codecs.stringifyTCounts(new Tally()), '{"a":1,"b":2}');
+  assert.equal(codecs.stringifyTCounts({ a: 1, b: -0.5 }), '{"a":1,"b":-0.5}');
+});

@@ -471,7 +471,8 @@ function isPlainDataMap(descriptor: Extract<ModelTypeDescriptor, { kind: 'object
 
 /**
  * Whether the object is a map with no declared field whose values are plain numbers. It is written by a finite check
- * of each value, which throws on NaN and Infinity as the per-entry writer does, and then by the native JSON writer.
+ * of each value, which throws on NaN and Infinity as the per-entry writer does, and then by the native JSON writer. A value
+ * with a `toJSON` takes the per-entry writer.
  */
 function isNumberMap(descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>): boolean {
   const values = fieldlessMapValues(descriptor);
@@ -544,17 +545,6 @@ function emitObjectStringify(
   if (isPlainDataMap(descriptor)) {
     return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
   }
-  if (isNumberMap(descriptor)) {
-    return [
-      `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
-      '  for (const entry of Object.values(value)) {',
-      '    if (entry !== undefined) stringifyJsonNumber(entry as number);',
-      '  }',
-      '  return JSON.stringify(value);',
-      '}',
-      '',
-    ].join('\n');
-  }
   if (!additional && properties.every(([name]) => required.has(name))) {
     const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
     return [
@@ -568,6 +558,15 @@ function emitObjectStringify(
   if (ctx.lenientRoot && !additional && properties.some(([name]) => descriptor.required.includes(name))) return emitLenientObjectStringify(fn, descriptor, ctx);
   const lines: string[] = [
     `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
+    // The native writer calls a `toJSON` of the value, which the per-entry writer below never does: a value that has one takes that writer.
+    ...(isNumberMap(descriptor) ? [
+      "  if (typeof value['toJSON'] !== 'function') {",
+      '    for (const entry of Object.values(value)) {',
+      '      if (entry !== undefined) stringifyJsonNumber(entry as number);',
+      '    }',
+      '    return JSON.stringify(value);',
+      '  }',
+    ] : []),
     "  let out = '{';",
     '  let sep = false;',
   ];
