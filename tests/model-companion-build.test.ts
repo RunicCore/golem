@@ -259,7 +259,7 @@ test('a model defined by a keyof of its own class stops the build with a diagnos
     'customer.ts': CUSTOMER_CLASS,
   });
   writeModelGolemYaml(root, { mobx: false, validation: true });
-  await assert.rejects(buildModelProject(root), /RUNM1058: Field of TCustomer maps over Customer/);
+  await assert.rejects(buildModelProject(root), /RUNM1058: .*TCustomer maps over its own class Customer/);
 });
 
 test('a tagged field picked from an app class keeps its tag on the first run and on every later run', async t => {
