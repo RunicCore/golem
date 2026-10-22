@@ -258,3 +258,28 @@ test('folds helper chains up to the nesting cap and rejects deeper chains', asyn
     (error: unknown) => error instanceof TsToOpenApiError && error.diagnostics.some(item => String(item.code) === 'RUNT2101'),
   );
 });
+
+test('folds an enum member and a const object member used as a route path', async (t: TestContext) => {
+  // protects: F-163 a controller or route path from an enum or const object member, as Nest reads it (T-178)
+  const { root } = project(t);
+  const filename = write(root, 'src/members.ts', [
+    "enum Routes { Users = 'users' }",
+    "const PATHS = { users: 'people', nested: { admin: 'admin' } } as const;",
+    'export const ENUM = Routes.Users;',
+    'export const OBJECT = PATHS.nested.admin;',
+    "export const QUOTED = PATHS['users'];",
+    'export const JOINED = `${Routes.Users}/${PATHS.users}`;',
+    'export const MISSING = PATHS.missing;',
+    '',
+  ].join('\n'));
+  const program = compile(root);
+  const byName = expressionsByName(program, filename);
+  const fold = (name: string): Promise<unknown> => evaluateRouteExpression(byName.get(name)!, program);
+  assert.equal(await fold('ENUM'), 'users');
+  assert.equal(await fold('OBJECT'), 'admin');
+  assert.equal(await fold('QUOTED'), 'people');
+  assert.equal(await fold('JOINED'), 'users/people');
+  await assert.rejects(() => fold('MISSING'), (error: unknown) => (
+    error instanceof TsToOpenApiError && error.diagnostics.some(item => String(item.code) === 'RUNT2101')
+  ));
+});

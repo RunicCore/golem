@@ -215,7 +215,7 @@ function bindArguments(
   return bindings;
 }
 
-function constString(expression: ts.Identifier, ctx: FoldContext): string {
+function constString(expression: ts.Expression, ctx: FoldContext): string {
   const result = evaluateStaticValue(ctx.checker, expression, {
     onDeclaration: declaration => watchDeclaration(declaration, ctx),
   });
@@ -251,10 +251,16 @@ function fold(expression: ts.Expression, scope: Scope, ctx: FoldContext): string
     if (binding?.kind === 'string') return binding.value;
     return constString(unwrapped, ctx);
   }
-  if (ts.isPropertyAccessExpression(unwrapped) && ts.isIdentifier(unwrapped.expression) && ts.isIdentifier(unwrapped.name)) {
-    const binding = scope.bindings.get(unwrapped.expression.text);
-    if (!binding || binding.kind !== 'object' || !(unwrapped.name.text in binding.fields)) reject();
-    return binding.fields[unwrapped.name.text];
+  if (ts.isPropertyAccessExpression(unwrapped) || ts.isElementAccessExpression(unwrapped)) {
+    // A member of a helper parameter reads the bound argument; any other member (an enum member,
+    // a `const` object member) is a static value the evaluator resolves, as for a bare identifier.
+    const parameter = ts.isPropertyAccessExpression(unwrapped) && ts.isIdentifier(unwrapped.expression)
+      ? scope.bindings.get(unwrapped.expression.text)
+      : undefined;
+    if (!parameter) return constString(unwrapped, ctx);
+    if (parameter.kind !== 'object' || !ts.isPropertyAccessExpression(unwrapped) || !ts.isIdentifier(unwrapped.name)
+      || !(unwrapped.name.text in parameter.fields)) reject();
+    return parameter.fields[unwrapped.name.text];
   }
   if (!ts.isCallExpression(unwrapped) || unwrapped.questionDotToken) reject();
   const resolved = resolveCallee(unwrapped.expression, scope, ctx);
