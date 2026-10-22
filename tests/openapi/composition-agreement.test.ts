@@ -682,6 +682,26 @@ const rows: readonly Row[] = [
     ],
     rejected: [{ m: { id: '1' } }, { m: { kind: 'a', a: AT } }],
   },
+  // A component whose allOf holds a union member is an alias of the union of merged objects, not a class with no variant fields (T-220).
+  {
+    shape: 'a component that is allOf [$ref Base, { oneOf of two $ref models }], read as a type and through a field',
+    fixture: 'component-member-union',
+    root: 'Visit',
+    document: visitDocument(
+      { m: ref('Pet') },
+      {
+        Base: object({ id: text, at: dateTime }, { required: ['id'] }),
+        A: object({ kind: { const: 'a' }, a: dateTime }, { required: ['kind', 'a'] }),
+        B: object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] }),
+        Pet: { allOf: [ref('Base'), { oneOf: [ref('A'), ref('B')] }] },
+      },
+    ),
+    accepted: [
+      { wire: { m: { id: '1', at: AT, kind: 'a', a: B } }, model: { m: { id: '1', at: new Date(AT), kind: 'a', a: new Date(B) } } },
+      { wire: { m: { id: '1', kind: 'b', b: 'y' } }, model: { m: { id: '1', kind: 'b', b: 'y' } } },
+    ],
+    rejected: [{ m: { id: '1' } }, { m: { kind: 'a', a: AT } }],
+  },
   // A discriminator beside the union keeps the tag table (T-227): the kind property has no const, so only the table dispatches.
   {
     shape: 'a field that is allOf [$ref Base, { discriminated oneOf of two $ref models }]',

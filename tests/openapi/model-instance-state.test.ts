@@ -33,8 +33,10 @@ const document = {
         allOf: [ref('Base'), { type: 'object', properties: { mode: { type: 'string' }, serverId: { type: 'string', readOnly: true } } }],
         unevaluatedProperties: false,
       },
-      // A member that is no object (a oneOf) does not resolve to one merged object.
-      Mixed: { allOf: [ref('Base'), { oneOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] }] },
+      // An allOf with a union member is an alias of the union of merged objects, so a holder reaches it through a field (T-220).
+      MixedHolder: { type: 'object', required: ['value'], properties: { value: ref('Mixed') } },
+      LeadHolder: { type: 'object', required: ['value'], properties: { value: ref('Lead') } },
+      Mixed: { allOf: [ref('Base'), { oneOf: [{ type: 'object', required: ['kind', 'a'], properties: { kind: { const: 'a' }, a: { type: 'string' } } }, { type: 'object', required: ['kind', 'b'], properties: { kind: { const: 'b' }, b: { type: 'string' } } }] }] },
       Holder: { type: 'object', required: ['base'], properties: { base: ref('Base') } },
       Tree: { type: 'object', required: ['label'], properties: { label: { type: 'string' }, child: ref('Tree') } },
       Open: { type: 'object', additionalProperties: true, required: ['id'], properties: { id: { type: 'string' } } },
@@ -44,7 +46,7 @@ const document = {
       EmptyOpen: { type: 'object', additionalProperties: true },
       // A field of unknown type, and a composed root with a model in a field.
       Note: { type: 'object', required: ['title'], properties: { title: { type: 'string' }, data: {} } },
-      Lead: { allOf: [{ type: 'object', required: ['lead'], properties: { lead: ref('Base') } }, { oneOf: [{ type: 'object', required: ['a'], properties: { a: { type: 'string' } } }, { type: 'object', required: ['b'], properties: { b: { type: 'string' } } }] }] },
+      Lead: { allOf: [{ type: 'object', required: ['lead'], properties: { lead: ref('Base') } }, { oneOf: [{ type: 'object', required: ['kind', 'a'], properties: { kind: { const: 'a' }, a: { type: 'string' } } }, { type: 'object', required: ['kind', 'b'], properties: { kind: { const: 'b' }, b: { type: 'string' } } }] }] },
       // Composed roots: open by an explicit additionalProperties true on a member or on the root, and open only by default.
       ComposedOpenInline: { allOf: [{ type: 'object', required: ['id'], properties: { id: { type: 'string' } } }, { additionalProperties: true }] },
       ComposedOpenRef: { allOf: [ref('Base'), { additionalProperties: true }] },
@@ -86,7 +88,7 @@ test('the own state of an SDK model instance is no unknown key; a declared key s
   assert.equal(derived.stringify(withState), '{"name":"n","mode":"m"}', 'the composed root writes its declared fields only');
   assert.throws(() => derived.stringify({ name: 'n', cache: 1 }), (error: unknown) => error instanceof LibError, 'a plain value with an extra key is judged as input');
 
-  assert.equal(stringified('Mixed', { name: 'n', a: 'x' }), '{"name":"n","a":"x"}', 'a composition with a member that is no object keeps the fields of both members');
+  assert.equal(stringified('MixedHolder', { value: { name: 'n', kind: 'a', a: 'x' } }), '{"value":{"name":"n","kind":"a","a":"x"}}', 'a composition with a union member keeps the fields of both members');
   const bag = requireObjectCodec(generatedCodecIdFromRoot(output, 'Bag'));
   const map = Object.assign(new Bag({ id: 'a' }), { extra: 'x' });
   assert.equal(bag.validate(map), true);
@@ -94,13 +96,13 @@ test('the own state of an SDK model instance is no unknown key; a declared key s
   assert.deepEqual(bag.toWireFormat(map), { id: 'a', extra: 'x' });
 });
 
-test('a composed root with a member that is no object stringifies the declared fields of a model instance only', async () => {
+test('a field that is a composition with a union member stringifies the declared fields of a model instance only', async () => {
   // protects: bug T-155 the fallback of a composed root wrote every own key, program state of a model instance included
   const { models } = await unvalidatedSdk();
-  const Mixed = models.MixedModel as Model;
-  const stringify = models.stringifyMixed as (value: unknown) => string;
-  assert.equal(stringify(Object.assign(new Mixed({ name: 'n' }), { cache: new Map<string, string>(), hits: 3 })), '{"name":"n"}');
-  assert.equal(stringify({ name: 'n', a: 'x' }), '{"name":"n","a":"x"}', 'a plain value is written as it is');
+  const Base = models.BaseModel as Model;
+  const stringify = models.stringifyMixedHolder as (value: unknown) => string;
+  assert.equal(stringify({ value: Object.assign(new Base({ name: 'n' }), { kind: 'a', a: 'x', ...programState() }) }), '{"value":{"name":"n","kind":"a","a":"x"}}');
+  assert.equal(stringify({ value: { name: 'n', kind: 'a', a: 'x' } }), '{"value":{"name":"n","kind":"a","a":"x"}}', 'a plain value is written as it is');
 });
 
 // Each SDK is generated and compiled once for the file: one with validation on, one with it off.
@@ -153,13 +155,13 @@ test('an object that is open only by default writes its declared fields only, in
   assert.deepEqual(base.toWireFormat({ name: 'n', extra: 'x' }), { name: 'n' });
 });
 
-test('a composed root with a member that is no object encodes the declared fields of a model instance only', async () => {
-  // protects: P-10 no codec writes program state; toWireFormat of this root returned the instance as it was
+test('a field that is a composition with a union member encodes the declared fields of a model instance only', async () => {
+  // protects: P-10 no codec writes program state; toWireFormat of this field returned the instance as it was
   const { output, models } = await unvalidatedSdk();
-  const Mixed = models.MixedModel as Model;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Mixed'));
-  assert.deepEqual(codec.toWireFormat(Object.assign(new Mixed({ name: 'n' }), { cache: new Map<string, string>(), hits: 3 })), { name: 'n' });
-  assert.deepEqual(codec.toWireFormat({ name: 'n', a: 'x' }), { name: 'n', a: 'x' }, 'a plain value is kept');
+  const Base = models.BaseModel as Model;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'MixedHolder'));
+  assert.deepEqual(codec.toWireFormat({ value: Object.assign(new Base({ name: 'n' }), { kind: 'a', a: 'x', ...programState() }) }), { value: { name: 'n', kind: 'a', a: 'x' } });
+  assert.deepEqual(codec.toWireFormat({ value: { name: 'n', kind: 'a', a: 'x' } }), { value: { name: 'n', kind: 'a', a: 'x' } }, 'a plain value is kept');
 });
 
 test('with validation off a nested object that lacks a required field is written with the fields it holds', async () => {
@@ -256,14 +258,14 @@ for (const validation of [true, false]) {
   });
 }
 
-test('a model instance in a field of a composed root writes no program state', async () => {
+test('a model instance in a field of a composition with a union member writes no program state', async () => {
   // protects: bug T-157 a composed root with a member that is no object wrote an instance of a field as it was
   const { output, models } = await unvalidatedSdk();
   const Base = models.BaseModel as Model;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Lead'));
-  const value = { lead: Object.assign(new Base({ name: 'n' }), programState()), a: 'x' };
-  assert.deepEqual(codec.toWireFormat(value), { lead: { name: 'n' }, a: 'x' });
-  assert.equal(codec.stringify(value), '{"lead":{"name":"n"},"a":"x"}');
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'LeadHolder'));
+  const value = { value: { lead: Object.assign(new Base({ name: 'n' }), programState()), kind: 'a', a: 'x' } };
+  assert.deepEqual(codec.toWireFormat(value), { value: { lead: { name: 'n' }, kind: 'a', a: 'x' } });
+  assert.equal(codec.stringify(value), '{"value":{"lead":{"name":"n"},"kind":"a","a":"x"}}');
 });
 
 test('the class-level encode of an SDK model writes no program state of an instance inside its unknown field', async () => {

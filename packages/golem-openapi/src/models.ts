@@ -250,13 +250,17 @@ function isModelSchema(env: ModelResolveEnv, schema: unknown, visiting = new Set
   const nested = withSchemaBase(env, schema);
   const target = componentSchemaTarget(schema, nested);
   if (target !== undefined && target !== schema) return isModelSchema(nested, target, visiting);
-  // An allOf beside the schema's own union is a union of objects, not a class that extends the allOf.
-  if (hasAllOfMembers(schema) && (schema.oneOf !== undefined || schema.anyOf !== undefined)) return false;
+  // An allOf beside the schema's own union, or with a union member, is a union of objects, not a class that extends the allOf.
+  if (hasAllOfMembers(schema) && (schema.oneOf !== undefined || schema.anyOf !== undefined || schema.allOf.some(isInlineUnion))) return false;
   if (schema.type === 'object' || schema.properties || schema.additionalProperties !== undefined) return true;
   if (Array.isArray(schema.allOf) && schema.allOf.length) {
     return schema.allOf.some((item) => isModelSchema(nested, item, visiting));
   }
   return false;
+}
+
+function isInlineUnion(schema: unknown): boolean {
+  return isJsonObject(schema) && (schema.oneOf !== undefined || schema.anyOf !== undefined);
 }
 
 /** The component schemas that the allOf refers to, in order. */
