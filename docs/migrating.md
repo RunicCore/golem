@@ -41,7 +41,7 @@ Each item names a breaking change and the action to take.
 - An implicit discriminator value for a schema from another file is its path-based component name (for example `schemas.dog`). Add an explicit `discriminator.mapping`, or a root alias, to keep a chosen value.
 - The `spec-ref-siblings`, `path-not-include-query` and `nullable-type-sibling` validation rules are gone, and error lines name the file that contains the problem. A document that relied on their stricter checks to fail generation now passes; every other rule is unchanged.
 - `collectLocalReferenceInputs` from `@exprtlabs/golem-openapi/generator` now returns a `Promise`. Await the call.
-- **Breaking:** a component with an `allOf` beside its own `oneOf` or `anyOf`, or with an `allOf` that holds a `oneOf` or `anyOf` member, is a type alias of the union of merged objects. It was a class that extended the `allOf`. Build the value of a variant through its init type. Do not extend the alias or construct it. Its variants need a unique, required literal discriminator, as for any object union.
+- A component with an `allOf` beside its own `oneOf` or `anyOf`, or with an `allOf` that holds a `oneOf` or `anyOf` member, is a type alias of the union of merged objects. It was a class that extended the `allOf`. Build the value of a variant through its init type. Do not extend the alias or construct it. Its variants need a unique, required literal discriminator, as for any object union.
 - An `allOf` of a base model and a `oneOf` or `anyOf` generates a union of merged objects. A model beside a union that cannot be spread stops generation with `OPENAPI_COMPOSITION_CONVERSION_CONFLICT`. Give each union its own variant schemas, or drop the base from the `allOf`.
 
 ## Packages
@@ -52,8 +52,8 @@ Each item names a breaking change and the action to take.
 - Generated files are not committed. Ignore the generated files and `.golem/` ([ignore generated files](/reference/generated-files#gitignore)).
 - `golem generate` no longer stops on a type error in a handwritten file that is not a model source; `tsc` and `golem build` report it.
 - The Node loader runs a NestJS app only with a second loader that compiles decorators, registered after golem's ([loader](/reference/runtime-api#register)). With `preserveSymlinks`, a `parse<T>()` call in a symlinked workspace package fails at run time.
-- **Breaking:** eight subpaths of `@exprtlabs/golem` move under `internal/`: `emitter`, `schema`, `schema-graph`, `type-analysis`, `generated-paths`, `ts`, `validation-plan` and `validator-compiler` (for example `@exprtlabs/golem/internal/schema`). A path that starts with `internal/` has no stability promise and may change in any release. The old names fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Use only the documented subpaths.
-- **Breaking:** `@exprtlabs/golem/cli` is removed. Run the `golem` command.
+- Eight subpaths of `@exprtlabs/golem` move under `internal/`: `emitter`, `schema`, `schema-graph`, `type-analysis`, `generated-paths`, `ts`, `validation-plan` and `validator-compiler` (for example `@exprtlabs/golem/internal/schema`). A path that starts with `internal/` has no stability promise and may change in any release. The old names fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`. Use only the documented subpaths.
+- `@exprtlabs/golem/cli` is removed. Run the `golem` command.
 - Several pre-1.0 exports are removed with no replacement ([Removed APIs](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#removed-apis-pre-10)).
 - The packages are renamed: `@exprtlabs/codegen` is `@exprtlabs/golem`, `@exprtlabs/model-codegen` is `@exprtlabs/golem-model`, `@exprtlabs/openapi-to-ts` is `@exprtlabs/golem-openapi` and `@exprtlabs/ts-to-openapi` is `@exprtlabs/golem-ts-openapi`. Subpaths are unchanged. Replace the dependencies and imports.
 - A `TSerde` or `TValidation` function declared in a `*.model.ts` file is a generation error (RUNM1065). Move it to its own module.
