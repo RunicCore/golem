@@ -1,4 +1,4 @@
-import { ALL_PAYLOADS, COST_ROW_OPERATIONS, VALIDATION_COLUMNS, type AdapterId } from './cases.js';
+import { ALL_PAYLOADS, BENCH_OPERATIONS, COST_ROW_OPERATIONS, GROUPS, PAYLOADS, VALIDATION_COLUMNS, type AdapterId, type GroupId } from './cases.js';
 import type { BenchmarkResults } from './results-schema.js';
 
 /**
@@ -86,4 +86,125 @@ export function formatCostTable(rows: readonly CostRow[]): string {
     line(['', '', 'IModel off', 'IModel on', 'on/off', 'IObject off', 'IObject on', 'on/off', 'IModel/IObject', 'serde many/none']),
     ...rows.map(r => line([r.payload, r.operation, ...[r.imodelOff, r.imodelOn, r.imodelOnOverOff, r.iobjectOff, r.iobjectOn, r.iobjectOnOverOff, r.imodelOverIobject, r.serdeManyOverNone].map(text)])),
   ].join('\n');
+}
+
+/*
+ * The compare table (Table 1): ranks inside a group, per row, and a summary for each library of a group.
+ *
+ * A row is one payload and one operation. The score of a cell is its median ops/s. A rank is a competition rank: 1 plus
+ * the number of libraries that are in an earlier run, so tied libraries share a rank and the next run skips the places it
+ * used (1, 1, 3). Libraries of other groups, and a rejected value (F-250), take no part.
+ *
+ * A tie is a ratio inside the run's noise band: a library ties the fastest library of its run when
+ * slower / faster >= 1 - band, with the band the control's spread (`results.noise.controlSpread`). The tie is anchored,
+ * not chained (PO6): a run starts at its fastest library, and a later library joins it only when it is inside the band of
+ * that fastest library. So A ties B and B ties C does not make A tie C: if C is outside the band of A, C starts the next
+ * run and takes its own rank, even though C is inside the band of B. Each library gets exactly one rank.
+ *
+ * A file with no noise band (measured before the control) ranks with no ties.
+ */
+export function rankSpeeds(speeds: readonly number[], band: number | undefined): readonly number[] {
+  const order = speeds.map((_, index) => index).sort((a, b) => speeds[b] - speeds[a]);
+  const ranks: number[] = [];
+  let leader = -1;
+  let leaderRank = 0;
+  for (const [position, index] of order.entries()) {
+    if (leader < 0 || band === undefined || speeds[index] < speeds[leader] * (1 - band)) { leader = index; leaderRank = position + 1; }
+    ranks[index] = leaderRank;
+  }
+  return ranks;
+}
+
+/** A cell the library does less work in (R1) carries the mark; the reason is its text. */
+export const LESS_WORK: Readonly<Partial<Record<AdapterId, string>>> = {
+  'class-validator': 'does not reject unknown properties',
+};
+
+export type CompareCell =
+  | { readonly kind: 'ops'; readonly value: number; readonly rank: number; readonly mark?: string }
+  | { readonly kind: 'not-supported'; readonly note: string }
+  | { readonly kind: 'not-run' };
+
+/** The libraries that do the operation in this group, in group order. */
+export interface CompareRow { readonly payload: string; readonly operation: string; readonly cells: readonly { readonly adapter: AdapterId; readonly cell: CompareCell }[] }
+
+/**
+ * `score` is the geometric mean of the library's speed over the row leader's speed, over the `rows` that every library of the group
+ * supports, out of `of` rows that the run timed or marked unsupported. It is at most 1; the leader of every row scores 1. It is absent when `rows` is 0.
+ */
+export interface GroupSummary { readonly adapter: AdapterId; readonly label: string; readonly score?: number; readonly rows: number; readonly of: number }
+export interface CompareGroup { readonly id: GroupId; readonly label: string; readonly rows: readonly CompareRow[]; readonly summary: readonly GroupSummary[] }
+
+/** Table 1 of the results: ranks and summaries, derived from the cases (PO2). `band` is the noise band the ties used, or undefined for no ties. */
+export function compareTable(results: Pick<BenchmarkResults, 'cases' | 'adapters' | 'payloads' | 'noise'>): { readonly band: number | undefined; readonly groups: readonly CompareGroup[] } {
+  const band = results.noise?.controlSpread;
+  const found = new Map(results.cases.map(c => [`${c.payload}/${c.operation}/${c.adapter}`, c] as const));
+  const payloadIds = PAYLOADS.filter(p => results.payloads.some(r => r.id === p.id)).map(p => p.id);
+  const groups: CompareGroup[] = [];
+  for (const group of GROUPS) {
+    const present = new Set(results.adapters.filter(a => a.group === group.id).map(a => a.id));
+    const rows: CompareRow[] = [];
+    for (const payload of payloadIds) for (const operation of BENCH_OPERATIONS) {
+      const members = group.operations[operation.id].filter(id => present.has(id) && found.has(`${payload}/${operation.id}/${id}`));
+      if (members.length === 0) continue;
+      const speeds = members.map(id => found.get(`${payload}/${operation.id}/${id}`)?.opsPerSec?.median);
+      const timed = members.flatMap((id, i) => speeds[i] === undefined ? [] : [i]);
+      const ranks = rankSpeeds(timed.map(i => speeds[i] as number), band);
+      rows.push({
+        payload, operation: operation.id,
+        cells: members.map((adapter, i) => {
+          const recorded = found.get(`${payload}/${operation.id}/${adapter}`);
+          const value = speeds[i];
+          if (value === undefined) return { adapter, cell: recorded?.support === 'none' ? { kind: 'not-supported', note: recorded.note ?? '' } : { kind: 'not-run' } };
+          const mark = LESS_WORK[adapter];
+          return { adapter, cell: { kind: 'ops', value, rank: ranks[timed.indexOf(i)], ...(mark ? { mark } : {}) } };
+        }),
+      });
+    }
+    if (rows.length === 0) continue;
+    const supported = rows.filter(r => r.cells.every(c => c.cell.kind === 'ops'));
+    const libraries = [...new Set([...group.operations.parse, ...group.operations.stringify, ...group.operations.validate])].filter(id => present.has(id));
+    const summary = libraries
+      .map(adapter => {
+        const ratios = supported.flatMap(r => {
+          const own = r.cells.find(c => c.adapter === adapter)?.cell;
+          if (own?.kind !== 'ops') return [];
+          const leader = Math.max(...r.cells.map(c => c.cell.kind === 'ops' ? c.cell.value : 0));
+          return [own.value / leader];
+        });
+        const label = results.adapters.find(a => a.id === adapter)?.label ?? adapter;
+        return { adapter, label, rows: ratios.length, of: rows.length, ...(ratios.length > 0 ? { score: Math.exp(ratios.reduce((sum, r) => sum + Math.log(r), 0) / ratios.length) } : {}) };
+      });
+    groups.push({ id: group.id, label: group.label, rows, summary });
+  }
+  return { band, groups };
+}
+
+/** Table 1 as console text: one block per group, a rank after each speed, a mark after a cell that does less work, and the summary. */
+export function formatCompareTable(table: ReturnType<typeof compareTable>, labels: ReadonlyMap<string, string>): string {
+  const marks = new Map<string, string>();
+  const blocks = table.groups.map(group => {
+    const libraries = group.summary.map(s => s.adapter);
+    const speed = (cell: CompareCell | undefined): string => {
+      if (cell === undefined) return 'no check';
+      if (cell.kind === 'not-supported') return 'no conversion';
+      if (cell.kind === 'not-run') return '-';
+      const mark = cell.mark ? '*' : '';
+      if (cell.mark) marks.set(mark, cell.mark);
+      return `${Math.round(cell.value).toLocaleString('en-US')} #${cell.rank}${mark}`;
+    };
+    const widths = [10, 10, ...libraries.map(id => Math.max((labels.get(id) ?? id).length, 18))];
+    const line = (cells: readonly string[]): string => cells.map((c, i) => i < 2 ? c.padEnd(widths[i]) : c.padStart(widths[i])).join(' ');
+    return [
+      group.label,
+      line(['payload', 'operation', ...libraries.map(id => labels.get(id) ?? id)]),
+      ...group.rows.map(row => line([row.payload, row.operation, ...libraries.map(id => speed(row.cells.find(c => c.adapter === id)?.cell))])),
+      line(['summary', 'score', ...group.summary.map(s => s.score === undefined ? '-' : `${s.score.toFixed(2)} (${s.rows} of ${s.of})`)]),
+    ].join('\n');
+  });
+  const notes = [...marks.values()].map(reason => `* ${reason}`);
+  const ties = table.band === undefined
+    ? 'No noise band in these results: ranks have no ties.'
+    : `Libraries within ${(table.band * 100).toFixed(1)}% of the fastest of a run (the control's spread) tie and share its rank.`;
+  return [...blocks, ...notes, ties].join('\n\n');
 }

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ResultCase } from '../scripts/benchmark/results-schema.js';
-import { costTable } from '../scripts/benchmark/tables.js';
+import { compareTable, costTable, rankSpeeds } from '../scripts/benchmark/tables.js';
 
 const timed = (payload: string, operation: string, adapter: string, median: number): ResultCase =>
   ({ payload, operation, adapter, support: 'full', opsPerSec: { median, min: median, max: median } });
@@ -57,4 +57,59 @@ test('the cost table divides serde-many by serde-none for the same operation on 
     ['serde-many', 'decode', ratio(0.25)],
     ['serde-many', 'encode', { kind: 'not-run' }],
   ]);
+});
+
+// protects: T-239 order, shared rank inside the noise band, separate rank outside it
+test('rank orders the libraries by speed and lets a library inside the band share the rank of the fastest of its run', () => {
+  assert.deepEqual(rankSpeeds([80, 100, 96], 0.05), [3, 1, 1]);
+  assert.deepEqual(rankSpeeds([100, 90], 0.05), [1, 2]);
+  assert.deepEqual(rankSpeeds([100, 95], 0.05), [1, 1], 'a ratio of exactly 1 - band is a tie');
+});
+
+// protects: T-239 the tie chain rule: a tie is anchored at the fastest library of the run, never chained
+test('a library inside the band of its neighbour but outside the band of the fastest starts the next run', () => {
+  // 96 ties 100, and 92 ties 96 (0.958), but 92 is outside the band of 100 (0.92 < 0.95): it takes its own rank.
+  assert.deepEqual(rankSpeeds([100, 96, 92], 0.05), [1, 1, 3]);
+  assert.deepEqual(rankSpeeds([100, 96, 92, 91], 0.05), [1, 1, 3, 3]);
+});
+
+// protects: T-239 a file with no noise band ranks without ties
+test('rank gives every library its own rank when the results have no noise band', () => {
+  assert.deepEqual(rankSpeeds([100, 99.9], undefined), [1, 2]);
+});
+
+const adapters = ['typia', 'zod'].map(id => ({ id, group: 'plain', label: id, library: id, checked: true, sourceUrl: '' }));
+const payloads = ['simple', 'checkout'].map(id => ({ id, label: id, bytes: 1, description: '', sourceUrl: '' }));
+const unsupported = (payload: string, operation: string, adapter: string): ResultCase => ({ payload, operation, adapter, support: 'none', note: 'no conversion' });
+
+// protects: T-239 the compare table ranks per row inside the group, skips unsupported cells and sums up with n of m
+test('the compare table ranks each row, leaves an unsupported row out of the summary, and scores with n of m', () => {
+  const cases = [
+    timed('simple', 'parse', 'typia', 400), timed('simple', 'parse', 'zod', 100),
+    timed('simple', 'stringify', 'typia', 100), timed('simple', 'stringify', 'zod', 98),
+    unsupported('checkout', 'parse', 'typia'), timed('checkout', 'parse', 'zod', 50),
+  ];
+  const table = compareTable({ cases, adapters, payloads, noise: { loadAverage: { start: [0, 0, 0], end: [0, 0, 0] }, controlSpread: 0.05 } });
+  assert.equal(table.band, 0.05);
+  assert.deepEqual(table.groups.map(g => g.id), ['plain']);
+  const [plain] = table.groups;
+  assert.deepEqual(plain.rows.map(r => [r.payload, r.operation, r.cells.map(c => c.cell.kind === 'ops' ? c.cell.rank : c.cell.kind)]), [
+    ['simple', 'parse', [1, 2]],
+    ['simple', 'stringify', [1, 1]],
+    ['checkout', 'parse', ['not-supported', 1]],
+  ]);
+  const zod = plain.summary.find(s => s.adapter === 'zod');
+  // Zod's speed over the leader: 100 / 400 = 0.25 and 98 / 100 = 0.98; the geometric mean is sqrt(0.245).
+  assert.ok(zod?.score !== undefined && Math.abs(zod.score - Math.sqrt(0.245)) < 1e-12);
+  assert.deepEqual([zod?.rows, zod?.of], [2, 3]);
+  assert.deepEqual(plain.summary.find(s => s.adapter === 'typia')?.rows, 2);
+});
+
+// protects: T-239 a library that does less work carries a mark
+test('the compare table marks the cells of a library that does less work', () => {
+  const classValidator = [{ id: 'class-validator', group: 'validated-classes', label: 'class-validator', library: 'class-validator', checked: true, sourceUrl: '' }];
+  const table = compareTable({ cases: [timed('simple', 'parse', 'class-validator', 100)], adapters: classValidator, payloads, noise: undefined });
+  const cell = table.groups[0].rows[0].cells[0].cell;
+  assert.deepEqual(cell, { kind: 'ops', value: 100, rank: 1, mark: 'does not reject unknown properties' });
+  assert.equal(table.band, undefined);
 });

@@ -7,7 +7,7 @@ import { adapterSpec, BENCH_ADAPTERS, BENCH_OPERATIONS, ALL_PAYLOADS, CASES, CON
 import { prepareProjects, root } from './project.js';
 import type { BenchmarkResults } from './results-schema.js';
 import { buildResults, environment, gitState, packageVersions, summarize, writeFilesTogether, type MeasuredCase, type Settings } from './results.js';
-import { costTable, formatCostTable } from './tables.js';
+import { compareTable, costTable, formatCompareTable, formatCostTable } from './tables.js';
 import { parseWorkerOutput, type WorkerJob, type WorkerOutput } from './worker-protocol.js';
 
 export const DEFAULT_SETTINGS: Settings = { warmupMs: 120, batchMs: 90, batches: 4, rounds: 2 };
@@ -156,6 +156,12 @@ function summaryTable(measured: readonly MeasuredCase[], adapters: readonly Adap
   return lines.join('\n');
 }
 
+/** The compare table with its ranks and group summaries, or nothing when the run timed no compare case. */
+function compareSection(results: BenchmarkResults): string {
+  const table = compareTable(results);
+  return table.groups.length === 0 ? '' : `Compare (median ops/s, #rank inside the group):\n${formatCompareTable(table, new Map(results.adapters.map(a => [a.id, a.label])))}\n\n`;
+}
+
 /** The cost table with its heading, or nothing when the run timed no cost row. */
 function costSection(results: BenchmarkResults): string {
   const rows = costTable(results);
@@ -209,7 +215,7 @@ export function main(args: readonly string[] = process.argv.slice(2)): void {
   const outputFile = path.join(root, filtered ? '.cache/benchmark/results.json' : 'docs/public/benchmarks/results.json');
   try {
     const { results, measured } = runBenchmark({ settings: DEFAULT_SETTINGS, outputFile, rawFile: path.join(root, '.cache/benchmark/raw.json'), ...selection });
-    process.stdout.write(`${summaryTable(measured, selection.adapters, selection.payloads)}\n\n${costSection(results)}${noiseLine(results)}\n\nWrote ${path.relative(root, outputFile)} in ${Math.round((Date.now() - started) / 1000)} s\n`);
+    process.stdout.write(`${summaryTable(measured, selection.adapters, selection.payloads)}\n\n${compareSection(results)}${costSection(results)}${noiseLine(results)}\n\nWrote ${path.relative(root, outputFile)} in ${Math.round((Date.now() - started) / 1000)} s\n`);
   } catch (error) {
     if (!(error instanceof BenchmarkUsageError)) throw error;
     process.stderr.write(`${error.message}\n`);
