@@ -1,5 +1,6 @@
 import { createFixtureProject } from '../fixture-project.js';
-import { compileGeneratedSdk, generateMaterializedSdk, readGeneratedModelSource, requireRecord } from './helpers.js';
+import { compileGeneratedSdk, generateMaterializedSdk, readGeneratedModelSource, requireRecord, writeOpenApiDocument } from './helpers.js';
+import { generate } from '#openapi/generator';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -117,4 +118,60 @@ test('a recursive component that holds a date-time value types it as Date in the
   assert.equal(log.history[0]?.kids[0]?.at instanceof Date, true);
   assert.equal(log.history[0]?.kids[0]?.at.toISOString(), '2025-02-03T04:05:06.000Z');
   assert.deepEqual(JSON.parse(stringifyLog(log)), wire);
+});
+
+// Forest is an array of inline objects that hold a Leaf model and the array again.
+const forestDocument = {
+  openapi: '3.1.0',
+  info: { title: 'RecursiveForest', version: '1' },
+  paths: { '/gardens': operation('createGarden', 'Garden') },
+  components: {
+    schemas: {
+      Leaf: object({ name: { type: 'string' } }, ['name']),
+      Forest: { type: 'array', items: object({ leaf: ref('Leaf'), kids: ref('Forest') }, ['leaf', 'kids']) },
+      Garden: object({ name: { type: 'string' }, forest: ref('Forest') }, ['name', 'forest']),
+    },
+  },
+};
+
+test('a recursive component that holds a model decodes and initializes a model at each level, and encodes it back', async t => {
+  // protects: T-251 init of a recursive alias that reaches a model constructs the model
+  const output = path.join(createFixtureProject(t, 'golem-openapi-recursive-model-'), 'sdk');
+  await generateMaterializedSdk(forestDocument, { output, name: 'RecursiveForest', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, noUnusedLocals: true });
+  const models = await loadModels(output);
+  const GardenModel = models.GardenModel as new (init: unknown) => { forest: { leaf: unknown; kids: { leaf: unknown }[] }[] };
+  const LeafModel = models.LeafModel as abstract new (...args: never[]) => unknown;
+  const parseGarden = models.parseGarden as (text: string) => InstanceType<typeof GardenModel>;
+  const stringifyGarden = models.stringifyGarden as (value: unknown) => string;
+  const wire = { name: 'g', forest: [{ leaf: { name: 'a' }, kids: [{ leaf: { name: 'b' }, kids: [] }] }] };
+
+  const decoded = parseGarden(JSON.stringify(wire));
+  assert.equal(decoded.forest[0]?.leaf instanceof LeafModel, true);
+  assert.equal(decoded.forest[0]?.kids[0]?.leaf instanceof LeafModel, true);
+  const initialized = new GardenModel(wire);
+  assert.equal(initialized.forest[0]?.leaf instanceof LeafModel, true);
+  assert.equal(initialized.forest[0]?.kids[0]?.leaf instanceof LeafModel, true);
+  assert.deepEqual(JSON.parse(stringifyGarden(initialized)), wire);
+  assert.deepEqual(JSON.parse(stringifyGarden(decoded)), wire);
+});
+
+test('a component that is only a $ref to itself stops generation with the ref cycle error', async t => {
+  // protects: T-251 a $ref loop without a base case is reported, not an internal error
+  const directory = createFixtureProject(t, 'golem-openapi-ref-loop-');
+  const loop = {
+    openapi: '3.1.0',
+    info: { title: 'RefLoop', version: '1' },
+    paths: { '/loops': operation('createLoop', 'Holder') },
+    components: { schemas: { A: ref('A'), Holder: object({ value: ref('A') }, ['value']) } },
+  };
+  const result = await generate({
+    input: writeOpenApiDocument(directory, loop),
+    output: path.join(directory, 'sdk'),
+    profile: { mobx: false, validation: true },
+  });
+  assert.deepEqual(result.artifacts, []);
+  const diagnostics = result.diagnostics ?? [];
+  assert.notEqual(diagnostics.length, 0);
+  assert.deepEqual([...new Set(diagnostics.map(({ code, severity }) => `${code} ${severity}`))], ['VALIDATE_REF_CYCLE error']);
 });

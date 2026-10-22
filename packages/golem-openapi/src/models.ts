@@ -96,6 +96,8 @@ interface RecursiveAlias {
   descriptor?: ModelTypeDescriptor;
   /** Whether it reaches a date or a model: its model type is then a private alias of the owner group, not `Types.<Name>`. */
   convertsValue?: boolean;
+  /** Whether a model sits inside it: its init is then a function of the owner group. */
+  initsModel?: boolean;
 }
 
 /** The models of a document by type name, and its recursive aliases. */
@@ -360,39 +362,37 @@ function aliasConvertsValue(alias: RecursiveAlias, definitions: ModelDefinitions
   return alias.convertsValue;
 }
 
-/** The model-layer type of an alias that reaches a date or a model. */
-function aliasModelTypeName(alias: RecursiveAlias): string {
-  return `${alias.name}Fields`;
+/** Whether a value of the alias holds a model at some level, so that its init builds that model from a plain object. */
+function aliasInitsModel(alias: RecursiveAlias, definitions: ModelDefinitions, env: ModelResolveEnv): boolean {
+  alias.initsModel ??= holdsModel({ kind: 'reference', name: alias.name, projection: true }, definitions, env, new Set());
+  return alias.initsModel;
 }
 
-/** Whether a conversion descriptor holds a use of a recursive alias. */
-function holdsRecursiveAlias(descriptor: ModelTypeDescriptor): boolean {
+function holdsModel(descriptor: ModelTypeDescriptor, definitions: ModelDefinitions, env: ModelResolveEnv, visited: Set<string>): boolean {
+  const holds = (held: ModelTypeDescriptor): boolean => holdsModel(held, definitions, env, visited);
   switch (descriptor.kind) {
-    case 'reference': return descriptor.projection === true;
-    case 'array': return holdsRecursiveAlias(descriptor.item);
-    case 'tuple': return descriptor.items.some(holdsRecursiveAlias) || (descriptor.rest !== undefined && holdsRecursiveAlias(descriptor.rest.item));
-    case 'object':
-      return Object.values(descriptor.properties).some(holdsRecursiveAlias)
-        || (typeof descriptor.additionalProperties === 'object' && holdsRecursiveAlias(descriptor.additionalProperties));
-    case 'union': case 'intersection': return descriptor.variants.some(holdsRecursiveAlias);
+    case 'generated-model': return true;
+    case 'reference': {
+      const alias = descriptor.projection === true ? definitions.aliases.get(descriptor.name) : undefined;
+      if (!alias || visited.has(alias.name)) return false;
+      visited.add(alias.name);
+      return holds(aliasDescriptor(alias, definitions, env));
+    }
+    case 'array': return holds(descriptor.item);
+    case 'tuple': return descriptor.items.some(holds) || (descriptor.rest !== undefined && holds(descriptor.rest.item));
+    case 'object': return Object.values(descriptor.properties).some(holds) || (typeof descriptor.additionalProperties === 'object' && holds(descriptor.additionalProperties));
+    case 'union': case 'intersection': return descriptor.variants.some(holds);
     default: return false;
   }
 }
 
-/**
- * The init type of a model. `ModelInit` expands a recursive alias without end (TS2589), so the fields that hold one keep
- * their field type as their init type, as a conversion keeps their value.
- */
-function modelInitType(
-  typeName: string,
-  properties: ReadonlyMap<string, unknown>,
-  definitions: ModelDefinitions,
-  env: ModelResolveEnv,
-): string {
-  const aliasFields = [...properties].filter(([, schema]) => holdsRecursiveAlias(modelConversionDescriptor(schema, definitions, env, 'from'))).map(([name]) => name);
-  if (aliasFields.length === 0) return `ModelInit<${typeName}Fields>`;
-  const omitted = aliasFields.map((name) => JSON.stringify(name)).join(' | ');
-  return `ModelInit<{ [Key in keyof ${typeName}Fields as Key extends ${omitted} ? never : Key]: ${typeName}Fields[Key] }> & { ${aliasFields.map((name) => `${propertyName(name)}?: ${typeName}Fields[${JSON.stringify(name)}]`).join('; ')} }`;
+function aliasInitName(alias: RecursiveAlias): string {
+  return `initialize${alias.name}`;
+}
+
+/** The model-layer type of an alias that reaches a date or a model. */
+function aliasModelTypeName(alias: RecursiveAlias): string {
+  return `${alias.name}Fields`;
 }
 
 /** The type of a use of a recursive alias in the model layer. */
@@ -905,11 +905,11 @@ function modelDiscriminators(definition: ModelDefinition | undefined): ModelDisc
 function modelResolver(reference: string, definitions: ModelDefinitions, env: ModelResolveEnv): FromJsonModelResolver {
   const alias = definitions.aliases.get(reference);
   if (alias) {
-    // A use of a recursive alias calls its node. A model-layer value is not a wire value, so init keeps it as it is.
+    // A use of a recursive alias calls its node. A model-layer value is not a wire value, so init builds only the models.
     return {
       className: alias.name,
       decode: (value) => `${generatedFunctionName(aliasNodeId(alias), 'fromWire')}(${value})`,
-      fromInit: (value) => value,
+      fromInit: aliasInitsModel(alias, definitions, env) ? (value) => `${aliasInitName(alias)}(${value})` : (value) => value,
       ...(aliasConvertsValue(alias, definitions, env) ? {} : { identity: true as const }),
     };
   }
@@ -1996,6 +1996,7 @@ export function generateOpenApiModelArtifacts(
       if (node.kind === 'object') addImport(codecModule, generatedFunctionName(node.id, 'fill'));
       const alias = aliasByNodeId.get(nodeId);
       if (alias && aliasConvertsValue(alias, definitions, sharedModelEnv)) addImport(codecModule, `type ${aliasModelTypeName(alias)}`);
+      if (alias && aliasInitsModel(alias, definitions, sharedModelEnv)) addImport(codecModule, aliasInitName(alias));
       if (exportsWireStringify(schemaGraph, node, profile)) addImport(codecModule, wireStringifyExportName(node.codecId));
       const modelName = analysis.definitionNameByNodeId.get(nodeId);
       if (node.emitClass && modelName !== undefined) {
@@ -2322,7 +2323,7 @@ export function generateModels(
       ...(additionalPropertyType ? [`  [key: string]: ${fields.length || definition.baseName ? 'unknown' : additionalPropertyType};`] : []),
       '};',
       `export type ${typeName}JSON = Types.${typeName};`,
-      `export type ${typeName}Init = ${modelInitType(typeName, allProperties, definitions, fieldEnv)};`,
+      `export type ${typeName}Init = ModelInit<${typeName}Fields>;`,
       '',
       ...fieldHelpers.flatMap(helper => [helper, '']),
       ...(!definition.isUnion ? [
@@ -2413,6 +2414,11 @@ export function generateModels(
     const aliasType = aliasModelTypeName(alias);
     moduleScope.claim(aliasType, `model type of the recursive component ${JSON.stringify(alias.schemaName)}`, alias.schemaName);
     output.push(`export type ${aliasType} = ${modelFieldType(alias.rawSchema, definitions, componentEnv(sharedModelEnv, alias.schemaName, alias.rawSchema))};`, '');
+    if (aliasInitsModel(alias, definitions, sharedModelEnv)) {
+      moduleScope.claim(aliasInitName(alias), `initializer of the recursive component ${JSON.stringify(alias.schemaName)}`, alias.schemaName);
+      const body = withConflictCode(alias.schemaName, () => emitModelFromInit(aliasDescriptor(alias, definitions, sharedModelEnv), 'value', (reference) => modelResolver(reference, definitions, sharedModelEnv)));
+      output.push(`export function ${aliasInitName(alias)}(value: unknown): ${aliasType} {`, `  return (${body}) as ${aliasType};`, '}', '');
+    }
   }
   if (helpers.resolvedSchemas) {
     output.push(`const modelSchemas = JSON.parse(${JSON.stringify(JSON.stringify(helpers.resolvedSchemas))}) as Readonly<Record<string, object>>;`, '');

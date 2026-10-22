@@ -38,9 +38,19 @@ export type IModel<
 
 /** Constructor values may contain existing nested models or nested initializers. */
 export type ModelInit<Value> = Value extends Date ? Date
-  : Value extends readonly unknown[] ? { [Index in keyof Value]: ModelInit<Value[Index]> }
+  : Value extends readonly (infer Item)[]
+    // An array type is an interface, so a type that holds itself through an array ends. A tuple keeps its shape.
+    ? PlainArray<Value, Item> extends true
+      ? (Value extends unknown[] ? InitArray<Item> : InitReadonlyArray<Item>)
+      : { [Index in keyof Value]: ModelInit<Value[Index]> }
   : Value extends object ? Value | { [Key in ModelField<Value>]?: ModelInit<Value[Key]> }
   : Value;
+
+/** Whether an array type is `Item[]` itself and not a tuple. */
+type PlainArray<Value, Item> = Value extends unknown[] ? ([Item[]] extends [Value] ? true : false) : ([readonly Item[]] extends [Value] ? true : false);
+
+interface InitArray<Item> extends Array<ModelInit<Item>> {}
+interface InitReadonlyArray<Item> extends ReadonlyArray<ModelInit<Item>> {}
 
 /** A nested schema carried by a type tag.  Model descriptors are objects. */
 export type ConstraintSchemaValue = boolean | object;
