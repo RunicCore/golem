@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ResultCase } from '../scripts/benchmark/results-schema.js';
-import { compareTable, costTable, rankSpeeds } from '../scripts/benchmark/tables.js';
+import { compareTable, costTable, rankSpeeds, releaseVerdict } from '../scripts/benchmark/tables.js';
 
 const timed = (payload: string, operation: string, adapter: string, median: number): ResultCase =>
   ({ payload, operation, adapter, support: 'full', opsPerSec: { median, min: median, max: median } });
@@ -129,4 +129,27 @@ test('the cost table divides invalid input by valid input for parse, decode and 
     ['validate', ratio(1)],
   ]);
   assert.deepEqual(costTable({ ...results, invalid: undefined }).map(r => r.invalidOverValid.kind), ['not-run', 'not-applicable', 'not-run', 'not-applicable', 'not-run']);
+});
+
+const release = (key: string, base: number, head: number) => ({ key, base, head });
+
+// protects: T-243 the release check stops on a valid-path drop beyond the noise band and passes inside it
+test('the release verdict stops when a case runs below the base by more than the band, and names it', () => {
+  const verdict = releaseVerdict([release('simple/parse/golem', 100, 101), release('simple/decode/golem', 100, 80)], 0.1);
+  assert.equal(verdict.verdict, 'stop');
+  assert.deepEqual(verdict.failing.map(r => [r.key, r.ratio]), [['simple/decode/golem', 0.8]]);
+  assert.deepEqual(verdict.rows.map(r => [r.key, r.ratio, r.slower]), [['simple/parse/golem', 1.01, false], ['simple/decode/golem', 0.8, true]]);
+});
+
+test('the release verdict passes a drop inside the band and any gain, and a ratio exactly at one minus the band', () => {
+  const verdict = releaseVerdict([release('a', 100, 95), release('b', 100, 50), release('c', 100, 300)], 0.5);
+  assert.deepEqual(verdict.failing, []);
+  assert.equal(verdict.verdict, 'pass');
+  assert.equal(releaseVerdict([release('a', 100, 49.9)], 0.5).verdict, 'stop');
+});
+
+test('the release verdict refuses to pass a check that compared nothing or has no usable band', () => {
+  assert.throws(() => releaseVerdict([], 0.1), /no case was timed on both sides/);
+  assert.throws(() => releaseVerdict([release('a', 100, 100)], Number.NaN), /noise band is NaN/);
+  assert.throws(() => releaseVerdict([release('a', 0, 100)], 0.1), /invalid timing for a/);
 });

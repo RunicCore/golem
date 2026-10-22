@@ -73,7 +73,7 @@ function hasMetadata(value: Record<string, unknown>): boolean {
     && isObject(settings) && [settings.warmupMs, settings.batchMs, settings.batches, settings.rounds ?? 1].every(isCount);
 }
 
-/** Structural check used by the docs page and bench:compare before trusting a file. */
+/** Structural check used by the docs page before trusting a file. */
 export function isBenchmarkResults(value: unknown): value is BenchmarkResults {
   if (!isObject(value) || (value.schema !== 2 && value.schema !== 3) || !hasMetadata(value)) return false;
   if (value.schema === 3 && (value.cost === undefined || value.noise === undefined || value.invalid === undefined)) return false;

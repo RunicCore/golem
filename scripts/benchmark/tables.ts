@@ -216,3 +216,42 @@ export function formatCompareTable(table: ReturnType<typeof compareTable>, label
     : `Libraries within ${(table.band * 100).toFixed(1)}% of the fastest of a run (the control's spread) tie and share its rank.`;
   return [...blocks, ...notes, ties].join('\n\n');
 }
+
+/** One case timed on both sides of the release check: medians in ops/s, base and this checkout, from one session. */
+export interface ReleaseTiming { readonly key: string; readonly base: number; readonly head: number }
+/** `ratio` is this checkout over the base. `slower` is a ratio below `1 - band`. */
+export interface ReleaseRow extends ReleaseTiming { readonly ratio: number; readonly slower: boolean }
+export interface ReleaseVerdict { readonly band: number; readonly rows: readonly ReleaseRow[]; readonly failing: readonly ReleaseRow[]; readonly verdict: 'pass' | 'stop' }
+
+/**
+ * The release check's verdict on valid-path cases (A-62 R9): a case fails when this checkout runs below the base by more than
+ * the session's noise band (the control's spread), so a ratio exactly at `1 - band` passes. One failing case stops the release.
+ * A check that compared nothing, or has no usable band, is an error, never a pass.
+ */
+export function releaseVerdict(timings: readonly ReleaseTiming[], band: number): ReleaseVerdict {
+  if (!(band >= 0) || !Number.isFinite(band)) throw new Error(`Cannot judge the release: the noise band is ${band}`);
+  if (timings.length === 0) throw new Error('Cannot judge the release: no case was timed on both sides');
+  const rows = timings.map(t => {
+    if (!(t.base > 0) || !(t.head > 0) || !Number.isFinite(t.base) || !Number.isFinite(t.head)) throw new Error(`Cannot judge the release: invalid timing for ${t.key}`);
+    return { ...t, ratio: t.head / t.base, slower: t.head < t.base * (1 - band) };
+  });
+  const failing = rows.filter(r => r.slower);
+  return { band, rows, failing, verdict: failing.length > 0 ? 'stop' : 'pass' };
+}
+
+/** The ratio of every case, the failing ones marked. `mark: false` shows ratios with no judgment (the invalid path has no stop rule, F-250). */
+export function formatReleaseRows(rows: readonly ReleaseRow[], mark: boolean): string {
+  const lines = [`${'case'.padEnd(44)} ${'base'.padStart(12)} ${'this'.padStart(12)} ${'ratio'.padStart(7)}`];
+  for (const r of rows) {
+    const ops = (value: number): string => Math.round(value).toLocaleString('en-US').padStart(12);
+    lines.push(`${r.key.padEnd(44)} ${ops(r.base)} ${ops(r.head)} ${r.ratio.toFixed(3).padStart(7)}${mark && r.slower ? '  SLOWER' : ''}`);
+  }
+  return lines.join('\n');
+}
+
+export function formatReleaseVerdict(verdict: ReleaseVerdict): string {
+  const band = `noise band ${(verdict.band * 100).toFixed(1)}% (control spread)`;
+  return verdict.verdict === 'pass'
+    ? `PASS: ${verdict.rows.length} valid-path cases, none below ${(1 - verdict.band).toFixed(3)} of the base; ${band}`
+    : `STOP: ${verdict.failing.length} of ${verdict.rows.length} valid-path cases are slower than the base beyond the ${band}:\n${verdict.failing.map(r => `  ${r.key} ratio ${r.ratio.toFixed(3)}`).join('\n')}`;
+}

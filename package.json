@@ -17,7 +17,7 @@
     "vendor:openapi-schemas": "npm run build:scripts && node .build/scripts/vendor-openapi-schemas.js",
     "bench": "npm run build && npm run build:scripts && node .build/scripts/benchmark/run.js",
     "bench:typia": "npm run build && npm run build:scripts && node .build/scripts/benchmark/typia-validation.js",
-    "bench:compare": "npm run build:scripts && node .build/scripts/benchmark/compare.js",
+    "bench:release": "npm run build && npm run build:scripts && node .build/scripts/benchmark/release-check.js",
     "test": "bash scripts/test-runner/run.sh focused",
     "test:full": "bash scripts/test-runner/run.sh full",
     "test:acceptance": "bash scripts/test-runner/run.sh acceptance",

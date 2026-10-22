@@ -71,13 +71,13 @@ function adapterJob(id: AdapterId, mode: WorkerJob['mode'], settings: Settings, 
 }
 
 /** Each library's own checks, invalid inputs included, in a process that times nothing. */
-function verifyAdapter(id: AdapterId, projects: Record<ProjectKind, string>, settings: Settings, payloads: ReadonlySet<PayloadId>): void {
+export function verifyAdapter(id: AdapterId, projects: Record<ProjectKind, string>, settings: Settings, payloads: ReadonlySet<PayloadId>): void {
   const adapter = adapterSpec(id);
   runWorker(projects[adapter.project], adapter.fixtureAdapter, adapterJob(id, 'verify', settings, payloads));
 }
 
 /** Times the valid input of one adapter, or with `invalid` its invalid input; either way in a process that times nothing else. */
-function measureAdapter(id: AdapterId, projects: Record<ProjectKind, string>, settings: Settings, payloads: ReadonlySet<PayloadId>, invalid = false): MeasuredCase[] {
+export function measureAdapter(id: AdapterId, projects: Record<ProjectKind, string>, settings: Settings, payloads: ReadonlySet<PayloadId>, invalid = false): MeasuredCase[] {
   const adapter = adapterSpec(id);
   const mine = invalid ? invalidCasesOf(id, payloads) : casesOf(id, payloads);
   if (mine.length === 0) return [];
@@ -94,11 +94,18 @@ function measureAdapter(id: AdapterId, projects: Record<ProjectKind, string>, se
 /** `results` is what the results file holds; `measured` is every timing of the run, the cost-table timings included. */
 export interface BenchmarkRun { readonly results: BenchmarkResults; readonly measured: readonly MeasuredCase[] }
 
-export function runBenchmark(options: RunOptions): BenchmarkRun {
-  const log = options.log ?? ((line: string) => process.stderr.write(`${line}\n`));
-  // Checked before the projects compile, so a bad name fails at once.
-  const selected = selectAdapters(options.adapters);
-  const payloadIds = selectPayloads(options.payloads).map(p => p.id);
+/** What a run times: the requested adapters and payloads, with the control added, and the payloads each adapter runs on. */
+export interface RunPlan {
+  readonly selected: readonly AdapterSpec[];
+  readonly payloadIds: readonly PayloadId[];
+  /** The adapters to run, the control included. */
+  readonly adapters: readonly AdapterSpec[];
+  readonly payloadsOf: (id: AdapterId) => ReadonlySet<PayloadId>;
+}
+
+export function planRun(requestedAdapters?: readonly string[], requestedPayloads?: readonly string[]): RunPlan {
+  const selected = selectAdapters(requestedAdapters);
+  const payloadIds = selectPayloads(requestedPayloads).map(p => p.id);
   const payloads: ReadonlySet<PayloadId> = new Set(payloadIds);
   // The control runs in every run, so every run has a noise band: on the selected payloads of the compare table, or on all of them when none is selected.
   const compareSelected = PAYLOADS.filter(p => payloads.has(p.id)).map(p => p.id);
@@ -107,7 +114,13 @@ export function runBenchmark(options: RunOptions): BenchmarkRun {
   // An adapter with no timed case on the selected payloads, such as Typia on the checkout, has nothing to run.
   const requested = selected.filter(a => casesOf(a.id, payloadsOf(a.id)).length > 0);
   if (requested.length === 0) throw new BenchmarkUsageError(`No timed case for adapter ${selected.map(a => `"${a.id}"`).join(', ')} on payload ${payloadIds.map(id => `"${id}"`).join(', ')}`);
-  const adapters = requested.some(a => a.id === CONTROL_ID) ? requested : [...requested, adapterSpec(CONTROL_ID)];
+  return { selected, payloadIds, payloadsOf, adapters: requested.some(a => a.id === CONTROL_ID) ? requested : [...requested, adapterSpec(CONTROL_ID)] };
+}
+
+export function runBenchmark(options: RunOptions): BenchmarkRun {
+  const log = options.log ?? ((line: string) => process.stderr.write(`${line}\n`));
+  // Checked before the projects compile, so a bad name fails at once.
+  const { selected, payloadIds, adapters, payloadsOf } = planRun(options.adapters, options.payloads);
   const loadStart = loadavg();
   mkdirSync(path.join(root, '.cache'), { recursive: true });
   const directory = mkdtempSync(path.join(root, '.cache/benchmark-work-'));
