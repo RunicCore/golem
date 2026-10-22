@@ -906,25 +906,14 @@ class FunctionWriter {
       // The JSON view of an item: an `undefined` item is `null`, and a hole is no JSON value (one `type` issue; its schema is skipped).
       check.prefixItems.forEach((schema, position) => {
         this.open(`if (${value}.length > ${position})`);
-        this.unlessHole(String(position), value, () => {
-          if (schema.kind === 'always') return;
-          const item = this.fresh('item');
-          this.line(`const ${item} = ${value}[${position}] ?? null;`);
-          this.atChild(String(position), () => this.schema(schema, item));
-        });
+        this.arrayItem(String(position), value, schema.kind === 'always' ? undefined : schema);
         this.close();
       });
       if (check.items !== undefined || check.closed) this.mark(record => `${record}.allItems = true;`);
       // The loop over the items checks for holes too, so a valid array is walked once; an array check with no such loop gets one.
       const index = this.fresh('x');
-      const items = check.items !== undefined && check.items.kind !== 'always' ? check.items : undefined;
       this.open(`for (let ${index} = ${check.prefixItems.length}; ${index} < ${value}.length; ${index}++)`);
-      this.unlessHole(index, value, () => {
-        if (items === undefined) return;
-        const item = this.fresh('item');
-        this.line(`const ${item} = ${value}[${index}] ?? null;`);
-        this.atChild(index, () => this.schema(items, item));
-      });
+      this.arrayItem(index, value, check.items !== undefined && check.items.kind !== 'always' ? check.items : undefined);
       this.close();
       if (check.contains !== undefined) this.containsCheck(check.contains, value);
       if (check.uniqueItems) {
@@ -946,13 +935,43 @@ class FunctionWriter {
     }, true);
   }
 
-  /** The `type` issue of a hole at `index`; `body` runs for an item that is there. */
-  private unlessHole(index: string, value: string, body: () => void): void {
-    this.atChild(index, () => this.leaf({ fails: `!(${index} in ${value})`, issue: `code: 'type', expected: ${JSON.stringify(JSON_TYPE_NAMES)}` }));
-    if (this.mode.fail.leaves) return body();
-    this.open(`if (${index} in ${value})`);
-    body();
-    this.close();
+  /**
+   * The item of `value` at `index`, checked against `schema`: a hole is one `type` issue and skips the schema, and an
+   * `undefined` item is read as `null`. A valid item costs one comparison with `undefined`; the `in` test runs for an
+   * `undefined` item only. Without a schema, the hole test is all there is.
+   */
+  private arrayItem(index: string, value: string, schema: IrSchema | undefined): void {
+    const hole = `!(${index} in ${value})`;
+    const issue = `code: 'type', expected: ${JSON.stringify(JSON_TYPE_NAMES)}`;
+    if (schema === undefined) {
+      // The path is pushed for the issue only.
+      const fails = `${value}[${index}] === undefined && ${hole}`;
+      if (this.mode.fail.leaves) return this.failWhen(fails);
+      this.open(`if (${fails})`);
+      this.atChild(index, () => this.issue(issue));
+      this.close();
+      return;
+    }
+    this.atChild(index, () => {
+      const item = this.fresh('item');
+      this.line(`let ${item} = ${value}[${index}];`);
+      // A mode that leaves at a failure has left at the hole; the full validator goes on in all-errors mode, so it jumps past the schema.
+      const skip = this.mode.fail.leaves ? undefined : this.fresh('skip');
+      if (skip !== undefined) this.open(`${skip}:`);
+      this.open(`if (${item} === undefined)`);
+      if (skip === undefined) {
+        this.leaf({ fails: hole, issue });
+      } else {
+        this.open(`if (${hole})`);
+        this.issue(issue);
+        this.line(`break ${skip};`);
+        this.close();
+      }
+      this.line(`${item} = null;`);
+      this.close();
+      this.schema(schema, item);
+      if (skip !== undefined) this.close();
+    });
   }
 
   /** Counts the items that pass `contains`; the count must lie between its limits, and each match counts as evaluated. */
