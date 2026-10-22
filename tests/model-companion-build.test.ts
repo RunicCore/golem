@@ -193,3 +193,22 @@ for (const row of [
     await assert.rejects(buildModelProject(root), /RUNM1058: Field "summary" of TOrder maps over Customer, and golem finds no members in it\. Use Pick, Omit, Partial, Required or Readonly, or name the keys in the mapped type\./);
   });
 }
+
+test('stringify writes an undefined array item as null and rejects a hole', async t => {
+  // protects: T-183 an undefined array item reads as null in every array keyword; a hole is rejected
+  const { root, sourceRoot } = companionModelProject(t, 'model-array-undefined-item');
+  writeModelSources(sourceRoot, {
+    'list.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TList = IModel<{ names: (string | null)[] }>;\nexport type TAny = IModel<{ values: unknown[] }, { allowAny: true }>;\n",
+    'use.ts': `import { stringify } from '@exprtlabs/golem/serde';
+import type { TAny, TList } from './list.model.js';
+const run = (write: () => string): string => { try { return write(); } catch (error) { return error instanceof Error ? error.message : String(error); } };
+export const undefinedItem = stringify<TList>({ names: ['x', undefined] } as never);
+export const hole = run(() => stringify<TList>({ names: ['x', , ] } as never));
+export const anyHole = run(() => stringify<TAny>({ values: ['x', , ] } as never));
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { undefinedItem: string; hole: string; anyHole: string };
+  assert.deepEqual({ ...loaded }, { undefinedItem: '{"names":["x",null]}', hole: 'Model validation failed.', anyHole: 'Model validation failed.' });
+});

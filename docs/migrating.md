@@ -102,7 +102,8 @@ A NestJS application's HTTP 400 response body carries the new issue shape: type-
 - A field is present only when it is an own enumerable property and its value is not `undefined`, as `JSON.stringify` writes it. This rule applies to validation, decode, constructors and `validateInstance`.
 - A property whose value is `undefined`, a non-enumerable property and an inherited property are absent. `new Model({ a: undefined })` does not define `a`.
 - A getter on your class does not supply a declared field to `validateInstance`. Set the field on the instance.
-- In `const`, `enum` and `uniqueItems`, a key whose value is `undefined` is absent, and `[undefined]`, `[ , ]` and `[null]` are equal.
+- In `const`, `enum` and `uniqueItems`, a key whose value is `undefined` is absent, and `[undefined]` and `[null]` are equal.
+- In every array keyword (`items`, `prefixItems`, `contains` and `uniqueItems`), an `undefined` item is read as `null`. An array with a hole is not valid: the validator reports a `type` issue at the index of the hole.
 - The `source` of an issue from a nested model is the source of the model that holds it.
 
 ### Client validators

@@ -572,6 +572,9 @@ interface LeafCheck {
   readonly path?: string;
 }
 
+/** The type names of every JSON value, which a hole in an array is none of. */
+const JSON_TYPE_NAMES: readonly IrTypeName[] = ['null', 'boolean', 'number', 'string', 'array', 'object'];
+
 /** The issue fields of a limit; `limit` is a number, or an expression of the generated code. */
 function limitFields(code: 'tooSmall' | 'tooBig', measure: string, limit: number | string, inclusive: boolean): string {
   return `code: ${literal(code)}, measure: ${literal(measure)}, limit: ${typeof limit === 'number' ? JSON.stringify(limit) : limit}, inclusive: ${inclusive}`;
@@ -899,12 +902,17 @@ class FunctionWriter {
     this.guarded(`if (Array.isArray(${value}))`, ['array'], types, () => {
       this.limitLeaves('items', `${value}.length`, check.minItems, check.maxItems);
       if (check.closed) this.leaf({ fails: `${value}.length > ${check.prefixItems.length}`, issue: limitFields('tooBig', 'items', check.prefixItems.length, true) });
+      // The JSON view of an item: an `undefined` item is `null` below, and a hole is no JSON value.
+      const hole = this.fresh('x');
+      this.open(`for (let ${hole} = 0; ${hole} < ${value}.length; ${hole}++)`);
+      this.atChild(hole, () => this.leaf({ fails: `!(${hole} in ${value})`, issue: `code: 'type', expected: ${JSON.stringify(JSON_TYPE_NAMES)}` }));
+      this.close();
       if (check.prefixItems.length > 0) this.mark(record => `${record}.prefix = Math.max(${record}.prefix, Math.min(${value}.length, ${check.prefixItems.length}));`);
       check.prefixItems.forEach((schema, position) => {
         if (schema.kind === 'always') return;
         this.open(`if (${value}.length > ${position})`);
         const item = this.fresh('item');
-        this.line(`const ${item} = ${value}[${position}];`);
+        this.line(`const ${item} = ${value}[${position}] ?? null;`);
         this.atChild(String(position), () => this.schema(schema, item));
         this.close();
       });
@@ -914,7 +922,7 @@ class FunctionWriter {
         const item = this.fresh('item');
         const items = check.items;
         this.open(`for (let ${index} = ${check.prefixItems.length}; ${index} < ${value}.length; ${index}++)`);
-        this.line(`const ${item} = ${value}[${index}];`);
+        this.line(`const ${item} = ${value}[${index}] ?? null;`);
         this.atChild(index, () => this.schema(items, item));
         this.close();
       }
@@ -927,7 +935,7 @@ class FunctionWriter {
         const jsonEqual = this.state.runtimeHelper('jsonEqual');
         this.open(`${label === undefined ? '' : `${label}: `}for (let ${first} = 0; ${first} < ${value}.length - 1; ${first}++)`);
         this.open(`for (let ${second} = ${first} + 1; ${second} < ${value}.length; ${second}++)`);
-        // An `undefined` item and a hole are `null` in the JSON view, as `jsonEqual` reads nested items.
+        // An `undefined` item is `null` in the JSON view, as in every array keyword and as `jsonEqual` reads nested items.
         this.open(`if (${jsonEqual}(${value}[${first}] ?? null, ${value}[${second}] ?? null))`);
         this.issue(`code: 'unique', indexes: [${first}, ${second}]`);
         if (label !== undefined) this.line(`break ${label};`);
@@ -946,7 +954,7 @@ class FunctionWriter {
     const index = this.fresh('x');
     this.line(`let ${count} = 0;`);
     this.open(`for (let ${index} = 0; ${index} < ${value}.length; ${index}++)`);
-    this.open(`if (${this.call(contains.fn, { value: `${value}[${index}]`, issues: '[]', all: 'false' })})`);
+    this.open(`if (${this.call(contains.fn, { value: `${value}[${index}] ?? null`, issues: '[]', all: 'false' })})`);
     this.line(`${count}++;`);
     this.mark(record => `${record}.indexes.add(${index});`);
     // Without a maximum or a record, the first `min` matches decide the outcome.

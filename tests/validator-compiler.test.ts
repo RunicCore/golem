@@ -337,10 +337,23 @@ test('uniqueItems reports the first duplicate pair by index', async () => {
   await assertIssues({ uniqueItems: false }, [1, 1], []);
 });
 
-test('uniqueItems compares items by the JSON view: an undefined item and a hole equal null', async () => {
+test('uniqueItems compares items by the JSON view: an undefined item equals null', async () => {
   await assertIssues({ uniqueItems: true }, [undefined, null], [{ path: [], code: 'unique', indexes: [0, 1] }]);
-  await assertIssues({ uniqueItems: true }, [1, , null], [{ path: [], code: 'unique', indexes: [1, 2] }]);
   await assertIssues({ uniqueItems: true }, [undefined, 0], []);
+});
+
+test('items, prefixItems and contains read an undefined item as null, as uniqueItems does', async () => {
+  // protects: T-183 one JSON view of an array item in every array keyword
+  await assertIssues({ items: { type: 'null' } }, [undefined, null], []);
+  await assertIssues({ prefixItems: [{ type: 'null' }] }, [undefined], []);
+  await assertIssues({ contains: { type: 'null' } }, ['a', undefined], []);
+});
+
+test('a hole in an array is a type issue at its index', async () => {
+  // protects: T-183 conversion rejects array holes (runtime-api.md); an undefined item is not a hole
+  const expected = ['null', 'boolean', 'number', 'string', 'array', 'object'];
+  await assertIssues({ type: 'array' }, ['a', , 'b'], [{ path: [1], code: 'type', expected }]);
+  await assertIssues({ items: { type: ['string', 'null'] } }, [, 'a'], [{ path: [0], code: 'type', expected }]);
 });
 
 test('allOf reports the issues of every failing branch', async () => {

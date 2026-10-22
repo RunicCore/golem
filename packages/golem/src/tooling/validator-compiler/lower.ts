@@ -462,7 +462,9 @@ class Lowering {
       contains = { fn: otherValueFunction('contains', node.contains), min: finiteNumber(node.minContains) ?? 1, max: finiteNumber(node.maxContains) };
     }
     const marksItems = this.tracksEvaluation && (prefixItems.length > 0 || items !== undefined);
-    if (prefixItems.some(item => item.kind !== 'always') || (items !== undefined && items.kind !== 'always') || closed || contains !== undefined || marksItems || minItems !== undefined || maxItems !== undefined || uniqueItems) {
+    // An array schema always checks its items: a hole in the array is no JSON value.
+    const arrayType = node.type === 'array' || (Array.isArray(node.type) && node.type.includes('array'));
+    if (arrayType || prefixItems.some(item => item.kind !== 'always') || (items !== undefined && items.kind !== 'always') || closed || contains !== undefined || marksItems || minItems !== undefined || maxItems !== undefined || uniqueItems) {
       checks.push({ kind: 'array', prefixItems, items, closed, contains, minItems, maxItems, uniqueItems });
     }
 
