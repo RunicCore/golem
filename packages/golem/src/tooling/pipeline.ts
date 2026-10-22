@@ -9,6 +9,7 @@ import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
 import { absoluteRecordPath, codeDigest, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, errorMessage, hasErrorCode, isRecord, suffixPattern } from './generator-api.js';
+import { distTagForVersion } from './dist-tag.js';
 import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
@@ -118,16 +119,6 @@ export class GeneratorSessionResources implements Disposable {
   }
 }
 
-/**
- * The npm dist-tag matching this golem release: the prerelease channel
- * (`1.0.0-rc` or `1.0.0-rc.2` → `rc`), or `latest` for a stable version.
- * Generator packages are published in lockstep under the same tag.
- */
-function golemDistTag(version: string = golemVersion()): string {
-  const prerelease = /^\d+\.\d+\.\d+-([0-9A-Za-z-]+)/.exec(version)?.[1];
-  return prerelease ?? 'latest';
-}
-
 function golemVersion(): string {
   // dist/tooling/pipeline.js → package.json of @exprtlabs/golem.
   const manifest: unknown = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
@@ -174,7 +165,7 @@ export async function providersFor(config: GolemConfig, only?: ReadonlySet<strin
     let filename: string;
     try { filename = requireFromProject.resolve(`${job.package}/generator`); }
     catch (error) {
-      if (hasErrorCode(error, 'MODULE_NOT_FOUND')) throw new Error(`${job.kind} is configured but ${job.package} is not installed in ${config.directory}. Install it with npm install -D ${job.package}@${golemDistTag()}.`);
+      if (hasErrorCode(error, 'MODULE_NOT_FOUND')) throw new Error(`${job.kind} is configured but ${job.package} is not installed in ${config.directory}. Install it with npm install -D ${job.package}@${distTagForVersion(golemVersion())}.`);
       throw new Error(`Cannot resolve ${job.package}/generator: ${errorMessage(error)}`);
     }
     // golem publishes its own packages in lockstep; a third-party generator versions on its own.

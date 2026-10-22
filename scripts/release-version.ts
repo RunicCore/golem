@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { distTagForVersion } from '../packages/golem/src/tooling/dist-tag.js';
 import { EXAMPLE_NAMES, assertExampleInventory } from './maintained-examples.js';
 
 export const PUBLIC_PACKAGE_NAMES = [
@@ -62,14 +63,15 @@ function exactInternalPins(manifest: Record<string, unknown>, releaseVersion: st
 export function assertReleaseConsistency(workspaceRoot: string): string {
   const root = path.resolve(workspaceRoot);
   const releaseVersion = readWorkspaceReleaseVersion(root);
+  const distTag = distTagForVersion(releaseVersion);
   for (const packageName of PUBLIC_PACKAGE_NAMES) {
     const { filename, manifest } = packageManifestByName(root, packageName);
     if (manifest.version !== releaseVersion) {
       throw new Error(`${packageName} must use workspace version ${releaseVersion}; found ${String(manifest.version)}`);
     }
     const publishConfig = manifest.publishConfig;
-    if (!record(publishConfig) || publishConfig.access !== 'public' || publishConfig.tag !== 'latest') {
-      throw new Error(`${packageName} must publish publicly with the latest tag`);
+    if (!record(publishConfig) || publishConfig.access !== 'public' || publishConfig.tag !== distTag) {
+      throw new Error(`${packageName} must publish publicly with the ${distTag} tag`);
     }
     exactInternalPins(manifest, releaseVersion, filename);
   }

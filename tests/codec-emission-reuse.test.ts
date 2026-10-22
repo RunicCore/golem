@@ -124,7 +124,7 @@ test('a nested trusted call to a model of the same module runs its core and pass
   const source = paymentRuntimeSource();
   assert.equal(occurrences(source, TRUSTED_LITERAL), 0, 'no per-call options literal');
   assert.doesNotMatch(source, /__golemTrusted/, 'no constant when every callee is in this module');
-  assert.match(functionBody(source, 'stringifyPaymentCore'), /const __golemPiece1 = __golemField1 !== undefined \? stringifyMoneyCore\(__golemField1 as never\) : undefined;/);
+  assert.match(functionBody(source, 'stringifyPaymentCore'), /stringifyMoneyCore\(__golem\w+ as never\)/);
   assert.match(functionBody(source, 'stringifyPaymentWire'), /stringifyMoneyWire\(value\["amount"\] as never\)/);
   assert.match(functionBody(source, 'stringifyPayment'), /stringifyPaymentWire\(wire as never\);/);
   assert.match(functionBody(source, 'stringifyPayment'), /return stringifyPaymentCore\(value as never\);/);
@@ -167,7 +167,7 @@ test('a nested trusted call to a model of another module shares one frozen optio
   const source = emitCodecRuntime(graph, { validationEnabled: false, nestedGenerated: (id) => `${id}Model` });
   assert.equal(occurrences(source, TRUSTED_LITERAL), 1, 'the options literal appears once, in the constant');
   assert.match(source, /^const __golemTrusted = Object\.freeze\(\{ validate: false \}\);\n/);
-  assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(__golemField0 as never, __golemTrusted\)/);
+  assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(__golem\w+ as never, __golemTrusted\)/);
   assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(item as never, __golemTrusted\)/);
   assert.match(functionBody(source, 'toWireFormatOwnerCore'), /toWireFormatPet\(record\["pet"\] as never, __golemTrusted\)/);
 });

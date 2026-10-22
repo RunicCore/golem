@@ -11,7 +11,7 @@ function writeJson(filename: string, value: unknown): void {
   fs.writeFileSync(filename, `${JSON.stringify(value, null, 2)}\n`);
 }
 
-function releaseFixture(root: string, version = '1.0.0'): void {
+function releaseFixture(root: string, version = '1.0.0', tag = 'latest'): void {
   writeJson(path.join(root, 'package.json'), { private: true, version });
   for (const [directory, name, dependencies] of [
     ['golem', '@exprtlabs/golem', {}],
@@ -22,7 +22,7 @@ function releaseFixture(root: string, version = '1.0.0'): void {
     writeJson(path.join(root, 'packages', directory, 'package.json'), {
       name,
       version,
-      publishConfig: { access: 'public', tag: 'latest' },
+      publishConfig: { access: 'public', tag },
       dependencies,
     });
   }
@@ -68,4 +68,21 @@ test('release consistency rejects an example project missing from the maintained
   fs.rmSync(path.join(root, 'examples', 'unlisted'), { recursive: true });
   fs.rmSync(path.join(root, 'examples', 'models'), { recursive: true });
   assert.throws(() => assertReleaseConsistency(root), /must match the maintained example inventory/);
+});
+
+test('release consistency requires the dist-tag of the release version: latest for a stable version, the channel for a prerelease', t => {
+  // protects: P-16 a prerelease must not publish under latest, and a stable release must
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-release-version-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const cases: readonly [string, string, RegExp | undefined][] = [
+    ['1.0.0', 'latest', undefined],
+    ['1.0.0', 'rc', /must publish publicly with the latest tag/],
+    ['1.0.0-rc.2', 'rc', undefined],
+    ['1.0.0-rc.2', 'latest', /must publish publicly with the rc tag/],
+  ];
+  for (const [version, tag, failure] of cases) {
+    releaseFixture(root, version, tag);
+    if (failure) assert.throws(() => assertReleaseConsistency(root), failure, `${version} published as ${tag}`);
+    else assert.equal(assertReleaseConsistency(root), version, `${version} published as ${tag}`);
+  }
 });
