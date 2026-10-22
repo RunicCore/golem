@@ -930,8 +930,11 @@ function importerCondition(compilerOptions: CompilerOptions, resolutionMode: Mod
   return resolution === ModuleResolutionKind.Node16 || resolution === ModuleResolutionKind.NodeNext ? 'require' : 'import';
 }
 
-/** The file the `exports` map of the nearest `node_modules/<package>` names for the subpath, as the real resolver reads it for `containingFile`: `types` first, then `require` or `import`, `node`, and `default`, in the order of the map. */
-function resolveExportsMap(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode: ModuleKind | undefined, host: ModuleResolutionHost): string | undefined {
+/**
+ * The file the `exports` map of the nearest `node_modules/<package>` names for the subpath, as the real resolver reads it for `containingFile`: `types` first, then `require` or `import`, `node`, and `default`, in the order of the map.
+ * `governed` is true when that package has an `exports` map: it decides alone, so a subpath it hides stays unresolved.
+ */
+function resolveExportsMap(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode: ModuleKind | undefined, host: ModuleResolutionHost): { readonly file?: string; readonly governed: boolean } {
   const segments = moduleName.split('/');
   const nameLength = moduleName.startsWith('@') ? 2 : 1;
   const packageName = segments.slice(0, nameLength).join('/');
@@ -943,11 +946,12 @@ function resolveExportsMap(moduleName: string, containingFile: string, compilerO
     if (host.fileExists(manifest)) {
       const text = host.readFile(manifest);
       const exportsField = text ? parseManifest(manifest, text).exports : undefined;
-      const target = exportsField === undefined ? undefined : resolveExportsSubpath(exportsField, subpath, importerCondition(compilerOptions, resolutionMode));
-      return target ? firstExisting(host, sourceCandidates(join(packageRoot, target))) : undefined;
+      if (!exportsField) return { governed: false };
+      const target = resolveExportsSubpath(exportsField, subpath, importerCondition(compilerOptions, resolutionMode));
+      return { file: target ? firstExisting(host, sourceCandidates(join(packageRoot, target))) : undefined, governed: true };
     }
     const parent = dirname(current);
-    if (parent === current) return undefined;
+    if (parent === current) return { governed: false };
     current = parent;
   }
 }
@@ -958,7 +962,7 @@ function resolvePackage(moduleName: string, containingFile: string, compilerOpti
     if (mapped) return mapped;
   }
   const exported = resolveExportsMap(moduleName, containingFile, compilerOptions, resolutionMode, host);
-  if (exported) return exported;
+  if (exported.file || exported.governed) return exported.file;
   try {
     const require = createRequire(containingFile);
     const resolved = require.resolve(moduleName);
