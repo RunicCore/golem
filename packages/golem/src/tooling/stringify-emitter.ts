@@ -568,7 +568,7 @@ function emitLenientObjectStringify(
     const piece = `__golemPiece${index}`;
     lines.push(
       `  const ${field} = ${read};`,
-      `  const ${piece} = ${field} !== undefined ? ${emitValue(property, read, ctx).replaceAll(read, field)} : undefined;`,
+      `  const ${piece} = ${field} !== undefined ? ${emitValue(property, field, ctx)} : undefined;`,
     );
     return { name: JSON.stringify(name), piece, required: descriptor.required.includes(name) };
   });
