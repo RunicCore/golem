@@ -216,6 +216,7 @@ export const {
   isExportDeclaration,
   isExportSpecifier,
   isExpression,
+  isExpressionWithTypeArguments,
   isFunctionDeclaration,
   isFunctionExpression,
   isFunctionLike,

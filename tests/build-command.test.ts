@@ -159,6 +159,15 @@ test('an argument golem build sets itself is rejected with the reason and the wo
   assert.equal(fs.existsSync(path.join(root, 'build')), false, 'a rejected argument builds nothing');
 });
 
+test('golem build stops on parse<T> used as a value and names the file and line', async (t) => {
+  // protects: F-36 an unrewritten serde call throws at run time, so the build reports each form it cannot rewrite
+  const root = sourceOnlyProject(t, 'build-value-use');
+  write(root, 'src/use.ts', `${USE}export const decode = parse<TMoney>;\n`);
+  const result = await golemBuild(root, []);
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /RUNM1079 \(src\/use\.ts:\d+:\d+\): parse<TMoney> is used as a value, which golem cannot rewrite\. Call parse<TMoney>\(\.\.\.\) directly\./);
+});
+
 test('a forwarded --declaration writes declarations from the original sources', async (t) => {
   const root = sourceOnlyProject(t, 'build-declaration-argument');
   editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.declaration = false; });

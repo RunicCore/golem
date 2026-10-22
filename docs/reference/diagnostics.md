@@ -344,6 +344,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Two shared model files have one generated file.** Each app writes the generated file of a shared model file in `models.output`, at `<package name>/<path of the file in the package>.generated.ts`. Two shared model files in different folders that have the same package name and the same path in the package would write one file, so generation stops. The message names both model files and the path. **Fix:** Rename one model file, or move it into a package folder with another name.
 
+### RUNM1079
+
+**Serde function used as a value or as an optional call.** A `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` with type arguments is not the callee of a plain call. Examples are `const decode = parse<TPayment>`, `texts.map(parse<TPayment>)` and `parse?.<TPayment>(text)`. Golem rewrites a call only, so this code stays as you wrote it and throws when it runs. The message names the function, the form, and the position. `golem build`, `golem check` and every host report it. **Fix:** Call the function directly with its type arguments, such as `parse<TPayment>(text)`. To pass it as a value, write an arrow function: `texts.map((text) => parse<TPayment>(text))`.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.

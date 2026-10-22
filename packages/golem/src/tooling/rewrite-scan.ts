@@ -64,6 +64,8 @@ const CODE_NEST_NO_CODEC = 'RUNM1071';
 const CODE_NEST_REGISTRY = 'RUNM1072';
 /** A model that golem does not generate for this project: its file name has no model suffix. */
 const CODE_FOREIGN_MODEL = 'RUNM1074';
+/** A serde function with type arguments that no call rewrite reaches: `parse<T>` as a value, or `parse?.<T>(...)`. */
+const CODE_NOT_A_CALL = 'RUNM1079';
 
 /** The serde functions a type argument turns into a codec call, and the runtime method each becomes. */
 const SERDE_METHODS: ReadonlyMap<string, string> = new Map([
@@ -661,8 +663,20 @@ function scanFile(
   const classes: { readonly name: string; readonly id: string; readonly end: number }[] = [];
   let reserved: ts.Identifier | undefined;
 
+  /** A serde function with type arguments that is not the callee of a plain call stays as written, and throws at run time. */
+  const reportNotRewritten = (node: ts.CallExpression | ts.ExpressionWithTypeArguments, typeArguments: ts.NodeArray<ts.TypeNode>, callee: ts.Expression): void => {
+    const serde = serdeMethod(checker, callee);
+    if (!serde) return;
+    const types = typeArguments.map((argument) => argument.getText(file)).join(', ');
+    scan.diagnostics.push(locate(root, file, node, CODE_NOT_A_CALL, `${serde.name}${ts.isCallExpression(node) ? '?.' : ''}<${types}>${ts.isCallExpression(node) ? '(...) is an optional call' : ' is used as a value'}, which golem cannot rewrite. Call ${serde.name}<${types}>(...) directly.`));
+  };
+
   const visitCall = (call: ts.CallExpression): void => {
-    if (call.questionDotToken || !call.typeArguments?.length) return;
+    if (!call.typeArguments?.length) return;
+    if (call.questionDotToken) {
+      reportNotRewritten(call, call.typeArguments, call.expression);
+      return;
+    }
     const serde = serdeMethod(checker, call.expression);
     if (!serde) return;
     const { method } = serde;
@@ -736,6 +750,7 @@ function scanFile(
     if (nest && ts.isParameter(node)) visitParameter(node);
     else if (nest && ts.isMethodDeclaration(node)) visitMethod(node);
     if (ts.isCallExpression(node)) visitCall(node);
+    else if (ts.isExpressionWithTypeArguments(node) && node.typeArguments?.length) reportNotRewritten(node, node.typeArguments, node.expression);
     else if (ts.isClassDeclaration(node) && node.name) {
       const found = registeredModelOf({ checker, keys }, file, node as ts.ClassDeclaration & { readonly name: ts.Identifier }, scan.dependencies);
       if (found !== undefined) {

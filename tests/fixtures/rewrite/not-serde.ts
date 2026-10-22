@@ -5,6 +5,5 @@ declare function stringify<T>(value: T): string;
 declare const text: string;
 export const local = stringify<TMoney>({ currency: 'USD', value: '1' });
 export const json = JSON.parse(text) as TMoney;
-export const optional = parse?.<TMoney>(text);
 export const comment = 'parse<TMoney>(text)'; // parse<TMoney>(text)
 export const noTypeArgument = parse(text);

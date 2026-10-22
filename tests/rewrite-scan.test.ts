@@ -96,7 +96,7 @@ test('a callee reached through an alias, a namespace or a re-export is rewritten
     'export const reexported = __golem_requireObjectCodec("TMoney_11111111").parse(text);',
     'export const reexportedStar = __golem_requireObjectCodec("TMoney_11111111").stringify(money);',
   ]);
-  assert.equal(result.files.get('src/not-serde.ts'), undefined, 'a local function, JSON.parse, an optional call, a comment and a call without a type argument stay');
+  assert.equal(result.files.get('src/not-serde.ts'), undefined, 'a local function, JSON.parse, a comment and a call without a type argument stay');
   assert.equal(result.files.get('src/index.ts'), undefined);
 });
 
@@ -420,6 +420,20 @@ test('a type argument that is not a type name, a type without a codec and a type
     expected('RUNM1067', 'parse<T> has no unique codec id', 'parse<T>(value)'),
   ]);
   assert.equal(files.get('src/bad-arguments.ts'), undefined);
+});
+
+test('parse<T> used as a value or with an optional call is reported with its position, and a direct call is rewritten', (t) => {
+  // protects: F-36 an unrewritten serde call throws at run time, so the build reports each form it cannot rewrite
+  const root = project(t, ['value-use.ts']);
+  const source = readFixture('rewrite/value-use.ts');
+  const { diagnostics, files } = scan(root);
+  const expected = (message: string, needle: string) => ({ code: 'RUNM1079', severity: 'error', message, file: 'src/value-use.ts', ...position(source, needle) });
+  assert.deepEqual(diagnostics, [
+    expected('parse<TMoney> is used as a value, which golem cannot rewrite. Call parse<TMoney>(...) directly.', 'parse<TMoney>;'),
+    expected('parse<TMoney> is used as a value, which golem cannot rewrite. Call parse<TMoney>(...) directly.', 'parse<TMoney>)'),
+    expected('parse?.<TMoney>(...) is an optional call, which golem cannot rewrite. Call parse<TMoney>(...) directly.', 'parse?.<TMoney>'),
+  ]);
+  assertLines(rewritten(root, { diagnostics, files }, 'value-use.ts'), ['export const direct = __golem_requireObjectCodec("TMoney_11111111").parse(texts[0]!);']);
 });
 
 test('a file that gets a rewrite may not use a name that starts with the added import prefix', (t) => {

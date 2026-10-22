@@ -224,6 +224,7 @@ export interface MethodDeclaration extends FunctionLikeDeclaration {
 export interface ExpressionWithTypeArguments extends Node {
   readonly kind: KindOf<'ExpressionWithTypeArguments'>;
   readonly expression: Expression;
+  readonly typeArguments?: NodeArray<TypeNode>;
 }
 export interface HeritageClause extends Node {
   readonly kind: KindOf<'HeritageClause'>;
@@ -656,6 +657,7 @@ export interface TypeScriptBackend {
   isExportDeclaration(node: Node): node is ExportDeclaration;
   isExportSpecifier(node: Node): node is ExportSpecifier;
   isExpression(node: Node): node is Expression;
+  isExpressionWithTypeArguments(node: Node): node is ExpressionWithTypeArguments;
   isFunctionDeclaration(node: Node): node is FunctionDeclaration;
   isFunctionExpression(node: Node): node is FunctionExpression;
   isFunctionLike(node: Node): node is FunctionLikeDeclaration;
