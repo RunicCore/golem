@@ -11,7 +11,7 @@ import { MODEL_CODEC_IDS_KEY } from '@exprtlabs/golem/internal/schema';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 
-import { compileSchema, compileValidators } from './support/compiled-validators.js';
+import { compileSchema, compileValidatorModule, compileValidators } from './support/compiled-validators.js';
 
 /** Asserts the all-errors result, then that fast-fail returns only the first of those issues. */
 async function assertIssues(schema: unknown, value: unknown, expected: readonly object[]): Promise<void> {
@@ -1235,3 +1235,35 @@ test('fastPath as a set of root names gives a fast check to the roots in it that
   assert.deepEqual([...fastExports.keys()].sort(), ['AlsoIncluded', 'Included']);
   assert.deepEqual([...exports.keys()].sort(), ['AlsoIncluded', 'Excluded', 'Included'], 'every root keeps its validator');
 });
+
+// An object that names no property needs no pass of its own in the fast check, but the fast check still reads every own
+// value (spec 7.3). `late` is the last key; its getter shows whether the check read it, also after an earlier key failed.
+const NO_NAMED_PROPERTIES = [
+  { name: 'additionalProperties schema', schema: { additionalProperties: { type: 'integer' } }, late: 'zz', lateValue: 1, valid: { a: 1 }, invalid: { a: 'x' }, issues: [{ path: ['a'], code: 'type', expected: ['integer'] }] },
+  { name: 'additionalProperties schema beside patternProperties', schema: { patternProperties: { '^x': { type: 'string' } }, additionalProperties: { type: 'integer' } }, late: 'zz', lateValue: 1, valid: { xa: 'p', b: 1 }, invalid: { xa: 1, b: 'q' }, issues: [{ path: ['b'], code: 'type', expected: ['integer'] }, { path: ['xa'], code: 'type', expected: ['string'] }] },
+  { name: 'additionalProperties schema beside a pattern that accepts everything', schema: { patternProperties: { '^x': true }, additionalProperties: { type: 'integer' } }, late: 'x9', lateValue: 1, valid: { a: 1 }, invalid: { a: 'x' }, issues: [{ path: ['a'], code: 'type', expected: ['integer'] }] },
+  { name: 'additionalProperties schema beside propertyNames', schema: { propertyNames: { maxLength: 2 }, additionalProperties: { type: 'integer' } }, late: 'zz', lateValue: 1, valid: { a: 1 }, invalid: { a: 'x' }, issues: [{ path: ['a'], code: 'type', expected: ['integer'] }] },
+  { name: 'patternProperties', schema: { patternProperties: { '^x': { type: 'integer' } } }, late: 'x9', lateValue: 1, valid: { xa: 1 }, invalid: { xa: 'x' }, issues: [{ path: ['xa'], code: 'type', expected: ['integer'] }] },
+  { name: 'propertyNames', schema: { propertyNames: { maxLength: 2 } }, late: 'zz', lateValue: 1, valid: { ab: 1 }, invalid: { abc: 1 }, issues: [{ path: [], code: 'invalidKey', key: 'abc' }] },
+  // The pass stays for these: a count, an unknown-key flag or a captured key does real work.
+  { name: 'additionalProperties false', schema: { additionalProperties: false }, late: 'zz', lateValue: undefined, valid: {}, invalid: { a: 1 }, issues: [{ path: ['a'], code: 'unknownKey', key: 'a' }] },
+  { name: 'maxProperties beside additionalProperties schema', schema: { maxProperties: 2, additionalProperties: { type: 'integer' } }, late: 'zz', lateValue: 1, valid: { a: 1 }, invalid: { a: 'x', b: 1 }, issues: [{ path: [], code: 'tooBig', measure: 'properties', limit: 2, inclusive: true }, { path: ['a'], code: 'type', expected: ['integer'] }] },
+  { name: 'required key beside additionalProperties schema', schema: { required: ['r'], additionalProperties: { type: 'integer' } }, late: 'zz', lateValue: 1, valid: { r: 1 }, invalid: { a: 'x' }, issues: [{ path: ['r'], code: 'required', key: 'r' }, { path: ['a'], code: 'type', expected: ['integer'] }] },
+];
+
+for (const row of NO_NAMED_PROPERTIES) {
+  test(`${row.name}: the fast check gives the verdict, the issues and the reads of the full validator`, async () => {
+    // protects: T-255 the fast check of an object with no named property keeps the full validator's verdict and reads
+    const { byRoot: { root: validate }, fastByRoot: { root: isValid } } = await compileValidatorModule({ roots: { root: row.schema }, fastPath: true });
+    const reads: string[] = [];
+    const withLate = (base: object): object => Object.defineProperty({ ...base }, row.late, { enumerable: true, get: () => { reads.push(row.late); return row.lateValue; } });
+    const expected = [{ value: withLate(row.valid), issues: [] }, { value: withLate(row.invalid), issues: row.issues }];
+    for (const { value, issues } of expected) {
+      assert.deepEqual(validate(value, true), issues);
+      assert.deepEqual(validate(value, false), issues.slice(0, 1));
+      reads.length = 0;
+      assert.equal(isValid(value), issues.length === 0);
+      assert.ok(reads.includes(row.late), 'the fast check read the last key');
+    }
+  });
+}

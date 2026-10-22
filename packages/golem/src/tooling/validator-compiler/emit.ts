@@ -19,7 +19,7 @@ interface EmitResult {
 }
 
 type RuntimeHelper = 'checkFormat' | 'codePointLength' | 'formatTest' | 'jsonEqual';
-type LocalHelper = 'isPresent' | 'definedKeys' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOf' | 'hashedId' | 'selectedModel' | 'modelOf' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
+type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOf' | 'hashedId' | 'selectedModel' | 'modelOf' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
 
 // Parameters of every generated function: the value, the path stack, the issue list and the all-errors flag,
 // then, for a function that receives an evaluation record (see `IrFunction`), the caller's record. Every call and
@@ -120,6 +120,8 @@ const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
   // The JSON view: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes it. A
   // model's optional field may be set to `undefined` and JSON has no such value.
   definedKeys: 'const definedKeys = value => Object.keys(value).filter(key => value[key] !== undefined);',
+  // The failure of a fast check whose key test left the values unread: it reads them as the full validator does, then fails.
+  readAll: 'function readAll(value, keys) { for (const key of keys) value[key]; return false; }',
   isPresent: 'const isPresent = (value, key) => Object.prototype.propertyIsEnumerable.call(value, key) && value[key] !== undefined;',
   isObject: "const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);",
   // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFieldsSource`).
@@ -342,6 +344,11 @@ interface KeyTest {
   readonly undefinedToo?: boolean;
   /** A local that is true when the key test met a key that `additionalProperties: false` forbids; the test runs after `required`. */
   readonly unknown?: string;
+  /**
+   * Set when the key test left the own values unread: the statement that a failing check writes instead of `return false`.
+   * It reads every value first (spec 7.3), and the passes over the key list read each value before they skip a key.
+   */
+  readonly failure?: string;
 }
 
 /** Which own values of an object the full validator reads before its checks (spec 7.3). */
@@ -473,7 +480,9 @@ const FULL_VALIDATOR_BESIDE_FAST_CHECKS: WriterMode = { ...FULL_VALIDATOR, selec
  * that `additionalProperties: false` forbids is only marked, and a schema of `additionalProperties` runs after
  * `required` in a second pass, both in the full validator's order. A key that matches a pattern of `patternProperties` is
  * not additional. A keyword that loops over the keys (a schema of `additionalProperties`, `patternProperties`,
- * `propertyNames`) gets the one key list, which also holds the keys whose value is `undefined`.
+ * `propertyNames`) gets the one key list, which also holds the keys whose value is `undefined`. The pass is written only
+ * when it has a case, a count, an unknown key or a captured key to handle. Otherwise it would only read the values: the
+ * passes over the key list read them, and a failure of theirs reads the rest before it leaves (`KeyTest.failure`).
  */
 function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: KeyTestRequest): KeyTest {
   const presence = objectPresence(writer.state, value, captured);
@@ -500,6 +509,11 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   ];
   // A required or dependent key that `properties` does not name is still additional: `default` captures it.
   const unnamed = additional === undefined ? [] : captured.filter(([name]) => !named.has(name));
+  // A pass with no case, no count, no unknown key and no captured key only reads the values. The passes over the key
+  // list read them all too, and a failure of theirs reads the rest first (`failure`), so the pass is left out.
+  if (list !== undefined && cases.length === 0 && count === undefined && unknown === undefined && unnamed.length === 0) {
+    return { presence, keys: list, undefinedToo: true, failure: `return ${writer.state.localHelper('readAll')}(${value}, ${list});` };
+  }
   const item = writer.fresh('item');
   writer.open(`for (const ${key} of ${list ?? `Object.keys(${value})`})`);
   writer.open(`switch (${key})`);
@@ -610,7 +624,7 @@ class FunctionWriter {
     public readonly functions: readonly IrFunction[],
     public readonly target: (id: number) => number,
     private readonly fn: IrFunction,
-    public readonly mode: WriterMode,
+    private mode: WriterMode,
   ) {
     // The record travels through the full validators' arguments, so a function that keeps or receives one is a leaf of the fast check.
     if (!mode.records && (fn.collects || fn.receives)) throw new Error(`The validator compiler writes no fast check for the schema function ${fn.id}: it keeps or receives an evaluation record.`);
@@ -1030,7 +1044,7 @@ class FunctionWriter {
     // A key that matches a pattern is not "additional" even when the pattern's schema accepts everything.
     const patterns = check.patternProperties.map(entry => ({ entry, expression: patternExpression(this.state, entry.pattern) }));
     const patternsToRun = patterns.filter(({ entry }) => reads.patterns.includes(entry));
-    const { presence, count, keys, undefinedToo, unknown } = prepared ?? this.mode.keyTest(this, { check, value, captured, reads });
+    const { presence, count, keys, undefinedToo, unknown, failure } = prepared ?? this.mode.keyTest(this, { check, value, captured, reads });
     // The key test makes the key list or the count for each check below that reads it.
     const listed = (what: string | undefined): string => {
       if (what === undefined) throw new Error('The key test of this validator mode left no key list or count for an object check that reads it.');
@@ -1047,6 +1061,9 @@ class FunctionWriter {
     }
     // Ahead of `properties`: with fail-fast the first issue is the object's own unknown key. A key test that made `unknown` ran it.
     if (unknown !== undefined) this.failWhen(unknown);
+    // The passes below fail only after the values are read, which the key test left to them.
+    const outer = this.mode;
+    if (failure !== undefined) this.mode = { ...outer, fail: { ...outer.fail, issue: () => [failure], fail: () => failure } };
     if (check.additional && visitsAdditional && keys !== undefined && unknown === undefined) {
       const additional = check.additional;
       const key = this.fresh('key');
@@ -1056,15 +1073,22 @@ class FunctionWriter {
       const fields = this.fresh('fields');
       this.line(`let ${fields};`);
       this.open(`for (const ${key} of ${keys})`);
+      // A key test that left the values unread has this pass read each one, also of a key it then skips.
+      const member = this.fresh('member');
+      if (failure !== undefined) {
+        this.line(`const ${member} = ${value}[${key}];`);
+        this.line(`if (${member} === undefined) continue;`);
+      }
       if (skipped.length > 0) this.line(`if (${skipped.join(' || ')}) continue;`);
       this.line(`if (${lazyStateTest(fields, value, key, this.state.localHelper('instanceFields'))}) continue;`);
       if (additional.kind === 'forbid') {
         this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
         const schema = additional.schema;
-        const member = this.fresh('member');
-        this.line(`const ${member} = ${value}[${key}];`);
-        if (undefinedToo) this.line(`if (${member} === undefined) continue;`);
+        if (failure === undefined) {
+          this.line(`const ${member} = ${value}[${key}];`);
+          if (undefinedToo) this.line(`if (${member} === undefined) continue;`);
+        }
         this.atChild(key, () => this.schema(schema, member));
       }
       this.close();
@@ -1120,6 +1144,7 @@ class FunctionWriter {
       this.leaf({ fails: `!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })} && !${this.state.localHelper('isInstanceState')}(${value}, ${key})`, issue: `code: 'invalidKey', key: ${key}` });
       this.close();
     }
+    this.mode = outer;
   }
 
   /** `unevaluatedProperties`: the keys that nothing evaluated. */
