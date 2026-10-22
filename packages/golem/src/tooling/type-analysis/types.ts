@@ -558,33 +558,6 @@ function projectedSourceType(checker: ts.TypeChecker, type: ts.Type): ts.Type | 
   return template && ts.isIndexedAccessTypeNode(template) ? checker.getTypeFromTypeNode(template.objectType) : undefined;
 }
 
-/** A TypeScript library utility that keeps members of its source type, and for `Omit` the keys it leaves out (undefined when they are not literals). */
-function libraryProjection(type: ts.Type): { readonly name: 'Pick' | 'Omit' | 'Partial' | 'Required' | 'Readonly'; readonly omitted?: ReadonlySet<string> } | undefined {
-  const name = type.aliasSymbol?.getName();
-  if (name !== 'Pick' && name !== 'Omit' && name !== 'Partial' && name !== 'Required' && name !== 'Readonly') return undefined;
-  if (!type.aliasSymbol?.declarations?.every(declaration => /(?:^|[\\/])lib\.[\w.-]*\.d\.ts$/.test(declaration.getSourceFile().fileName))) return undefined;
-  if (name !== 'Omit') return { name };
-  const keys = type.aliasTypeArguments?.[1];
-  const literals = keys && (keys.isUnion() ? keys.types : [keys]);
-  return literals?.every(key => (key.flags & (ts.TypeFlags.StringLiteral | ts.TypeFlags.Never)) !== 0)
-    ? { name, omitted: new Set(literals.filter(key => key.flags & ts.TypeFlags.StringLiteral).map(key => String((key as ts.StringLiteralType).value))) }
-    : { name };
-}
-
-/** A projected member that the model of a class declares takes the optionality the utility gives it: `Partial` adds undefined, `Required` removes it. */
-function withOptionality(descriptor: ModelConversionDescriptor, optional: boolean): ModelConversionDescriptor {
-  const admitsUndefined = descriptor.kind === 'union' && descriptor.variants.some(variant => variant.kind === 'undefined');
-  if (optional) {
-    return admitsUndefined ? descriptor : {
-      kind: 'union',
-      variants: [descriptor, { kind: 'undefined' } as ModelConversionDescriptor].sort((left, right) => compareText(canonicalDescriptorKey(left), canonicalDescriptorKey(right))),
-    };
-  }
-  if (descriptor.kind !== 'union' || !admitsUndefined) return descriptor;
-  const variants = descriptor.variants.filter(variant => variant.kind !== 'undefined');
-  return variants.length === 1 && variants[0] ? variants[0] : { ...descriptor, variants };
-}
-
 export function descriptorBuilder(
   checker: ts.TypeChecker,
   specifications: readonly ModelSpecification[],
@@ -1036,33 +1009,18 @@ export function descriptorBuilder(
         // would invoke the legacy setter for an own `__proto__` key.
         const properties: Record<string, ModelConversionDescriptor> = Object.create(null);
         const required: string[] = [];
-        // A projection of an app class reads the class. On the first run the generated base of the class is not written yet (and
-        // later it can be stale), so the checker sees none of the members the base declares, and `Pick<Customer, 'name'>` gives
-        // `name: unknown`. The model of the class is known from its base import and declares them, so a member the class lacks comes
-        // from the model. The base also declares type-only brand members, which no projection takes as a field.
+        // The generated base of an app class is a stub of its model in the analysis program, so a projection of the class reads
+        // the members of the model. An SDK base is real and also declares type-only brand members, which no projection takes.
         const projectedSource = projection && isPropertyMapping(type) ? projectedSourceType(checker, type) : undefined;
         const sourceObject = projectedSource && (projectedSource.flags & ts.TypeFlags.Object) !== 0 ? projectedSource : undefined;
-        const sourceModel = sourceObject && modelSpecificationForClass(checker, sourceObject, specifications, compilerOptions);
-        const library = sourceModel ? libraryProjection(type) : undefined;
-        const members: { readonly name: string; readonly property: ts.Symbol; readonly fromModel: boolean; readonly absentFromSource: boolean }[] = [];
+        const members: { readonly name: string; readonly property: ts.Symbol; readonly absentFromSource: boolean }[] = [];
         for (const mapped of checker.getPropertiesOfType(type)) {
           const name = mapped.getName();
           if (sourceObject && GENERATED_BRAND_KEY.test(name)) continue;
-          const absentFromSource = sourceObject !== undefined && !sourceObject.getProperty(name);
-          const modelProperty = absentFromSource ? sourceModel?.fieldsType.getProperty(name) : undefined;
-          members.push({ name, property: modelProperty ?? mapped, fromModel: modelProperty !== undefined, absentFromSource });
-        }
-        // `Partial`, `Required`, `Readonly` and `Omit` take their keys from `keyof Customer`, so the members of the missing base are not keys yet.
-        if (sourceModel && library && library.name !== 'Pick' && (library.name !== 'Omit' || library.omitted)) {
-          const present = new Set(members.map((member) => member.name));
-          for (const field of checker.getPropertiesOfType(sourceModel.fieldsType)) {
-            if (!present.has(field.getName()) && !library.omitted?.has(field.getName())) {
-              members.push({ name: field.getName(), property: field, fromModel: true, absentFromSource: true });
-            }
-          }
+          members.push({ name, property: mapped, absentFromSource: sourceObject !== undefined && !sourceObject.getProperty(name) });
         }
         // A model defined by a mapped type over its own class has no members: the base of the class is a stub of this very model.
-        if (sourceModel?.declaration === context.declaration && !context.schemaData && members.length === 0) {
+        if (sourceObject && modelSpecificationForClass(checker, sourceObject, specifications, compilerOptions)?.declaration === context.declaration && !context.schemaData && members.length === 0) {
           throw diagnostic(
             context.sourceFile,
             node ?? context.declaration,
@@ -1070,10 +1028,8 @@ export function descriptorBuilder(
             `${context.name} maps over its own class ${checker.typeToString(sourceObject!)}, whose members are generated from ${context.name}, so golem finds no members in it. Declare the fields in ${context.name}.`,
           );
         }
-        for (const { name, property, fromModel, absentFromSource } of members) {
-          const optional = fromModel
-            ? library?.name === 'Partial' || (library?.name !== 'Required' && (property.flags & ts.SymbolFlags.Optional) !== 0)
-            : (property.flags & ts.SymbolFlags.Optional) !== 0;
+        for (const { name, property, absentFromSource } of members) {
+          const optional = (property.flags & ts.SymbolFlags.Optional) !== 0;
           const isMethod = (property.flags & ts.SymbolFlags.Method) !== 0
             || property.declarations?.some(declaration => ts.isMethodDeclaration(declaration) || ts.isMethodSignature(declaration)) === true;
           if (!context.schemaData && !isMethod) assertSupportedModelFieldName(name);
@@ -1081,7 +1037,7 @@ export function descriptorBuilder(
           const valueType = propertyType(checker, property, context.declaration);
           // A member the source type lacks makes the checker's picked type `unknown`; the field is not typed unknown, so `allowAny` is no fix.
           // A string index signature holds the member, and then the field is really typed by it.
-          if (absentFromSource && !fromModel && !checker.getIndexTypeOfType(sourceObject!, ts.IndexKind.String) && !context.schemaData && (valueType.flags & ts.TypeFlags.Unknown) !== 0 && !(context.allowAny ?? allowAny)) {
+          if (absentFromSource && !checker.getIndexTypeOfType(sourceObject!, ts.IndexKind.String) && !context.schemaData && (valueType.flags & ts.TypeFlags.Unknown) !== 0 && !(context.allowAny ?? allowAny)) {
             throw diagnostic(
               context.sourceFile,
               node ?? context.declaration,
@@ -1114,14 +1070,10 @@ export function descriptorBuilder(
             childSubstitutions,
             `${projectionName ?? nameHint}${pascalIdentifier(name) ?? 'Field'}`,
           );
-          properties[name] = fromModel ? withOptionality(described, optional) : described;
+          properties[name] = described;
           if (!optional) required.push(name);
         }
-        const modelReadonly = sourceModel ? new Set(readonlyPropertyNames(checker, sourceModel.fieldsType)) : new Set<string>();
-        const readonlyProperties = [
-          ...readonlyPropertyNames(checker, type).filter(name => !(sourceObject && GENERATED_BRAND_KEY.test(name)) && !members.some(member => member.fromModel && member.name === name)),
-          ...members.filter(member => member.fromModel && (library?.name === 'Readonly' || modelReadonly.has(member.name))).map(member => member.name),
-        ];
+        const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => !(sourceObject && GENERATED_BRAND_KEY.test(name)));
         const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
         const taggedAdditional = indexType ? undefined : additionalPropertiesFromTags(metadata.constraints);
         const descriptor = withMetadata({
