@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { compareTable } from '../scripts/benchmark/tables.js';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const docs = path.join(root, 'docs');
@@ -53,7 +54,25 @@ test('the built benchmarks page server-renders the first group table', () => {
   const html = readFileSync(benchmarksHtml, 'utf8');
   const table = html.slice(html.indexOf('bench-table'));
   assert.ok(html.includes('bench-table'), 'combined table rendered');
-  for (const text of ['Golem (IObject)', 'Typia', 'Zod', 'not supported', 'Parse', 'Stringify', 'Validate']) assert.ok(table.includes(text), `table lacks "${text}"`);
+  for (const text of ['Golem (IObject)', 'Typia', 'Zod', 'no conversion', 'Parse', 'Stringify', 'Validate']) assert.ok(table.includes(text), `table lacks "${text}"`);
+});
+
+// protects: T-245 the page shows the ranks, tie marks, tie band and group scores that the compare table derives
+test('the built benchmarks page shows the rank and tie of each cell, the tie band and the group scores of the first group', () => {
+  assert.ok(existsSync(benchmarksHtml), 'run npm run docs:build first');
+  const html = readFileSync(benchmarksHtml, 'utf8').replace(/ data-v-[0-9a-f]+/g, '');
+  const results = JSON.parse(readFileSync(path.join(docs, 'public/benchmarks/results.json'), 'utf8')) as Parameters<typeof compareTable>[0];
+  const expected = compareTable(results).groups[0];
+  const table = html.slice(html.indexOf('bench-frame'), html.indexOf('</ul>', html.indexOf('bench-frame')));
+  const shown = [...table.matchAll(/class="[^"]*\bbench-rank\b[^"]*">(=?)#(\d+)/g)].map(m => `${m[1]}#${m[2]}`);
+  const derived = expected.rows.flatMap(row => {
+    const ranks = row.cells.flatMap(c => c.cell.kind === 'ops' ? [c.cell.rank] : []);
+    return ranks.map(rank => `${ranks.filter(r => r === rank).length > 1 ? '=' : ''}#${rank}`);
+  });
+  assert.deepEqual(shown, derived);
+  assert.ok(derived.some(rank => rank.startsWith('=')), 'the committed results hold a tie, so the page must show one');
+  assert.ok(table.includes(`Libraries within ${((results.noise?.controlSpread ?? 0) * 100).toFixed(1)}% of the fastest tie`), 'the legend names the run\'s band');
+  for (const summary of expected.summary) assert.ok(table.includes(`>${summary.score?.toFixed(2)}</span><small>${summary.rows} of ${summary.of} rows</small>`), `group score of ${summary.label}`);
 });
 
 test('built pages never render #region markers from imported snippets', () => {

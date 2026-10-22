@@ -1,19 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
 import raw from '../../public/benchmarks/results.json';
-import { isBenchmarkResults, type ResultCase } from '../../../scripts/benchmark/results-schema.js';
+import { isBenchmarkResults } from '../../../scripts/benchmark/results-schema.js';
 import { BENCH_SERIES_COUNT, GROUPS } from '../../../scripts/benchmark/cases.js';
+import { compareTable } from '../../../scripts/benchmark/tables.js';
 
 const data = isBenchmarkResults(raw) ? raw : undefined;
 // An empty placeholder means nothing is published yet; anything else that fails the check is a broken file.
 const published = typeof raw === 'object' && raw !== null && Object.keys(raw).length > 0;
 const exact = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
-const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 2 });
 
 const groups = data?.groups ?? [];
 const payloads = data?.payloads ?? [];
 const groupId = ref(groups[0]?.id ?? '');
-const payloadId = ref(payloads[0]?.id ?? '');
 const codePayloadId = ref(payloads[0]?.id ?? '');
 /** What an operation does in the selected group; falls back to the generic description. */
 const operationText = (operation: { id: string; description: string }): string =>
@@ -23,38 +22,61 @@ const tabs = ref<HTMLButtonElement[]>([]);
 const adapterLabel = (id: string) => data?.adapters.find(a => a.id === id)?.label ?? id;
 const adapterUrl = (id: string) => data?.adapters.find(a => a.id === id)?.sourceUrl;
 const bytes = (value: number) => value >= 1024 ? `${exact.format(Math.round(value / 1024))} KB` : `${value} B`;
-const find = (payload: string, operation: string, adapter: string): ResultCase | undefined =>
-  data?.cases.find(c => c.payload === payload && c.operation === operation && c.adapter === adapter);
 
-/** One block per operation the selected group runs; one row per library, in the group's order. */
-const blocks = computed(() => {
-  const members = (data?.adapters ?? []).filter(a => a.group === groupId.value);
-  return (data?.operations ?? []).flatMap(operation => {
-    const rows = members.filter(a => payloads.some(p => find(p.id, operation.id, a.id)));
-    if (rows.length === 0) return [];
-    const scale = (payload: string) => Math.max(1, ...rows.map(a => find(payload, operation.id, a.id)?.opsPerSec?.median ?? 0));
-    return [{
-      operation,
-      rows: rows.map((adapter, index) => ({
-        adapter,
-        series: `s${(members.indexOf(adapter) % BENCH_SERIES_COUNT) + 1}`,
-        cells: payloads.map(p => {
-          const found = find(p.id, operation.id, adapter.id);
-          const median = found?.opsPerSec?.median;
-          return { payload: p.id, median, note: found?.note, share: median === undefined ? 0 : median / scale(p.id) };
-        }),
-      })),
-    }];
-  });
+// Ranks, ties and scores come from the one function that the console table uses (scripts/benchmark/tables.ts); the page only draws them.
+const table = data ? compareTable(data) : undefined;
+const tieLegend = table?.band === undefined
+  ? 'These results have no noise band, so no ranks tie.'
+  : `Libraries within ${(table.band * 100).toFixed(1)}% of the fastest tie and share its rank. The band is the spread of the control (native JSON) in this run.`;
+const MARKS = ['*', '\u2020', '\u2021', '\u00a7'];
+
+const group = computed(() => table?.groups.find(g => g.id === groupId.value));
+/** One column per library, in the group's order; the series color follows the column. */
+const columns = computed(() => (group.value?.summary ?? []).map((summary, index) => ({ ...summary, series: `s${(index % BENCH_SERIES_COUNT) + 1}` })));
+
+/** A mark on a cell that does less work (R1), with the footnote that explains it. */
+const footnotes = computed(() => {
+  const seen = new Map<string, { symbol: string; text: string }>();
+  for (const row of group.value?.rows ?? []) for (const { adapter, cell } of row.cells) {
+    const key = `${adapter}\0${cell.kind === 'ops' ? cell.mark : ''}`;
+    if (cell.kind === 'ops' && cell.mark && !seen.has(key)) {
+      const symbol = MARKS[seen.size % MARKS.length];
+      seen.set(key, { symbol, text: `${symbol} ${adapterLabel(adapter)} ${cell.mark}, so it does less work in the cells with this mark.` });
+    }
+  }
+  return seen;
 });
 
-/** Why a library cannot run a case, once per library and note. */
+/** One block per payload, one row per operation. A tie is a rank that more than one library of the row holds. */
+const blocks = computed(() => payloads.flatMap(payload => {
+  const rows = (group.value?.rows ?? []).filter(r => r.payload === payload.id).map(row => {
+    const timed = row.cells.flatMap(c => c.cell.kind === 'ops' ? [c.cell] : []);
+    const leader = Math.max(...timed.map(c => c.value));
+    return {
+      operation: data?.operations.find(o => o.id === row.operation) ?? { id: row.operation, label: row.operation, description: '' },
+      cells: columns.value.map(column => {
+        const cell = row.cells.find(c => c.adapter === column.adapter)?.cell;
+        return cell?.kind === 'ops'
+          ? { ...cell, tie: timed.filter(t => t.rank === cell.rank).length > 1, share: cell.value / leader, symbol: cell.mark ? footnotes.value.get(`${column.adapter}\0${cell.mark}`)?.symbol : undefined }
+          : cell;
+      }),
+    };
+  });
+  return rows.length ? [{ payload, rows }] : [];
+}));
+
+/** What each operation of the selected group does, once under the table. */
+const operationLegend = computed(() => (data?.operations ?? [])
+  .filter(operation => group.value?.rows.some(r => r.operation === operation.id))
+  .map(operation => `${operation.label}: ${operationText(operation)}.`));
+
+/** Why a library cannot run a case, once per library and payload (R10). */
 const notes = computed(() => {
   const seen = new Map<string, string>();
-  for (const block of blocks.value) for (const row of block.rows) for (const cell of row.cells) {
-    if (cell.note && cell.median === undefined) {
-      const payload = payloads.find(p => p.id === cell.payload)?.label ?? cell.payload;
-      seen.set(`${row.adapter.id}\0${cell.payload}`, `${row.adapter.label} on ${payload}: ${cell.note}`);
+  for (const row of group.value?.rows ?? []) for (const { adapter, cell } of row.cells) {
+    if (cell.kind === 'not-supported' && cell.note) {
+      const payload = payloads.find(p => p.id === row.payload)?.label ?? row.payload;
+      seen.set(`${adapter}\0${row.payload}`, `${adapterLabel(adapter)} on ${payload}: ${cell.note}`);
     }
   }
   return [...seen.values()];
@@ -93,46 +115,47 @@ async function onTabKey(event: KeyboardEvent, index: number): Promise<void> {
     <section id="bench-panel" role="tabpanel" :aria-labelledby="`bench-tab-${groupId}`" class="bench-panel">
     <div v-for="group in groups" v-show="group.id === groupId" :key="group.id" class="bench-explain"><slot :name="group.id">{{ group.description }}</slot></div>
 
-    <table class="bench-table">
-      <thead>
-        <tr><th scope="col"><span class="visually-hidden">Library</span></th>
-          <th v-for="p in payloads" :key="p.id" scope="col">{{ p.label }}<small>{{ bytes(p.bytes) }}</small></th></tr>
-      </thead>
-      <tbody v-for="block in blocks" :key="block.operation.id">
-        <tr class="bench-op"><th :colspan="payloads.length + 1" scope="rowgroup">{{ block.operation.label }} <small>{{ operationText(block.operation) }}</small></th></tr>
-        <tr v-for="row in block.rows" :key="row.adapter.id">
-          <th scope="row"><span class="bench-dot" :class="row.series" aria-hidden="true" /><a :href="adapterUrl(row.adapter.id)">{{ row.adapter.label }}</a></th>
-          <td v-for="cell in row.cells" :key="cell.payload">
-            <template v-if="cell.median !== undefined">
-              {{ exact.format(cell.median) }}<span class="bench-mini"><span :class="row.series" :style="{ width: `${cell.share * 100}%` }" /></span>
-            </template>
-            <span v-else-if="cell.note" class="bench-na" :title="cell.note">not supported</span>
-          </td>
-        </tr>
-      </tbody>
-    </table>
-
-    <div class="bench-picker">
-      <div class="bench-chips" role="group" aria-label="Payload">
-        <button v-for="p in payloads" :key="p.id" type="button" :aria-pressed="p.id === payloadId" :class="{ on: p.id === payloadId }"
-          @click="payloadId = p.id">{{ p.label }}</button>
-      </div>
-      <div v-for="block in blocks" :key="block.operation.id" class="bench-phone-op">
-        <h4>{{ block.operation.label }} <small>{{ operationText(block.operation) }}</small></h4>
-        <template v-for="row in block.rows" :key="row.adapter.id">
-          <template v-for="cell in row.cells.filter(c => c.payload === payloadId)" :key="cell.payload">
-            <div v-if="cell.median !== undefined" class="bench-phone-row">
-              <span class="bench-phone-name">{{ row.adapter.label }}</span>
-              <span class="bench-track"><span :class="row.series" :style="{ width: `${cell.share * 100}%` }" /></span>
-              <span class="bench-phone-value">{{ compact.format(cell.median) }}</span>
-            </div>
-            <p v-else-if="cell.note" class="bench-na">{{ row.adapter.label }}: not supported</p>
-          </template>
-        </template>
-      </div>
+    <div class="bench-frame" role="region" tabindex="0" :aria-label="`${group?.label ?? ''} speeds`">
+      <table class="bench-table">
+        <thead>
+          <tr><th scope="col">Payload and operation</th>
+            <th v-for="column in columns" :key="column.adapter" scope="col"><span class="bench-dot" :class="column.series" aria-hidden="true" /><a :href="adapterUrl(column.adapter)">{{ column.label }}</a></th></tr>
+        </thead>
+        <tbody v-for="block in blocks" :key="block.payload.id">
+          <tr class="bench-op"><th :colspan="columns.length + 1" scope="rowgroup">{{ block.payload.label }} <small>{{ bytes(block.payload.bytes) }}</small></th></tr>
+          <tr v-for="row in block.rows" :key="row.operation.id">
+            <th scope="row" :title="operationText(row.operation)">{{ row.operation.label }}</th>
+            <td v-for="(cell, index) in row.cells" :key="columns[index].adapter">
+              <template v-if="cell?.kind === 'ops'">
+                <span class="bench-rank" :class="{ tie: cell.tie, lead: cell.rank === 1 }">{{ cell.tie ? '=' : '' }}#{{ cell.rank }}<span v-if="cell.tie" class="visually-hidden"> (tied)</span></span>
+                <span class="bench-ops">{{ exact.format(cell.value) }}<sup v-if="cell.symbol" class="bench-mark">{{ cell.symbol }}</sup></span>
+                <span class="bench-mini"><span :class="columns[index].series" :style="{ width: `${cell.share * 100}%` }" /></span>
+              </template>
+              <span v-else-if="cell?.kind === 'not-supported'" class="bench-na" :title="cell.note">no conversion</span>
+              <span v-else-if="cell?.kind === 'not-run'" class="bench-na">not run</span>
+              <span v-else class="bench-na">no check</span>
+            </td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr class="bench-summary">
+            <th scope="row">Group score</th>
+            <td v-for="column in columns" :key="column.adapter">
+              <template v-if="column.score !== undefined"><span class="bench-ops">{{ column.score.toFixed(2) }}</span><small>{{ column.rows }} of {{ column.of }} rows</small></template>
+              <span v-else class="bench-na">-</span>
+            </td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
 
-    <ul v-if="notes.length" class="bench-notes"><li v-for="note in notes" :key="note">{{ note }}</li></ul>
+    <ul class="bench-notes">
+      <li v-for="line in operationLegend" :key="line">{{ line }}</li>
+      <li>{{ tieLegend }}<template v-if="table?.band !== undefined"> A tied cell shows <strong>=#</strong> and its rank.</template></li>
+      <li>Group score: the geometric mean of a library's speed over the fastest speed of the row, for the rows that every library of the group supports. 1.00 means fastest in every row.</li>
+      <li v-for="note in footnotes.values()" :key="note.text">{{ note.text }}</li>
+      <li v-for="note in notes" :key="note">{{ note }}</li>
+    </ul>
     <div class="bench-code">
       <h4>Code</h4>
       <div class="bench-chips" role="group" aria-label="Payload for the code">
@@ -159,40 +182,38 @@ async function onTabKey(event: KeyboardEvent, index: number): Promise<void> {
 .bench-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--vp-c-divider); }
 .bench-tabs button { padding: 8px 12px; margin-bottom: -1px; border-bottom: 2px solid transparent; color: var(--vp-c-text-2); font-size: 14px; }
 .bench-tabs button.on { color: var(--vp-c-text-1); border-color: var(--vp-c-brand-1); font-weight: 600; }
-.bench-tabs button:focus-visible, .bench-chips button:focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: 2px; }
+.bench-tabs button:focus-visible, .bench-chips button:focus-visible, .bench-frame:focus-visible { outline: 2px solid var(--vp-c-brand-1); outline-offset: 2px; }
 .bench-explain { font-size: 14px; margin: 12px 0 8px; }
 .bench-explain :deep(p) { margin: 0; }
-.bench-table { display: table; width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; margin: 8px 0 0; }
+/* The table scrolls inside its own frame, so the page never scrolls sideways. */
+.bench-frame { overflow-x: auto; max-width: 100%; margin: 8px 0 0; }
+.bench-table { display: table; width: 100%; min-width: 640px; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; margin: 0; }
 .bench-table th, .bench-table td { border: 0; border-bottom: 1px solid var(--vp-c-divider); padding: 8px 10px; background: none; }
-.bench-table thead th { color: var(--vp-c-text-2); font-weight: 500; font-size: 13px; text-align: right; }
-.bench-table thead th small { display: block; font-weight: 400; font-size: 12px; }
-.bench-table tbody th[scope="row"] { text-align: left; font-weight: 500; white-space: nowrap; }
-.bench-table tbody th[scope="row"] a { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
-.bench-table td { text-align: right; }
+.bench-table thead th { color: var(--vp-c-text-2); font-weight: 500; font-size: 13px; text-align: right; vertical-align: bottom; }
+.bench-table thead th:first-child { text-align: left; }
+.bench-table thead th a { color: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
+.bench-table tbody th[scope="row"], .bench-table tfoot th[scope="row"] { text-align: left; font-weight: 500; white-space: nowrap; position: sticky; left: 0; background: var(--vp-c-bg); }
+.bench-table td { text-align: right; white-space: nowrap; }
 .bench-table tr:nth-child(2n) { background: none; }
-.bench-op th small, .bench-phone-op h4 small { text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 6px; }
+.bench-table small { display: block; font-weight: 400; font-size: 12px; color: var(--vp-c-text-2); }
 .bench-op th { text-align: left; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--cg-muted); padding-top: 18px; }
+.bench-op th small { display: inline; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+.bench-rank { margin-right: 8px; font-size: 12px; color: var(--vp-c-text-2); }
+.bench-rank.lead { color: var(--vp-c-text-1); font-weight: 600; }
+.bench-rank.tie { border-bottom: 1px solid var(--vp-c-brand-1); }
+.bench-mark { margin-left: 2px; }
+.bench-summary th, .bench-summary td { border-top: 2px solid var(--cg-line-2); border-bottom: 0; font-weight: 600; }
 .bench-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; vertical-align: 1px; }
 .bench-mini { display: block; height: 3px; margin-top: 4px; background: var(--vp-c-bg-soft); border-radius: 2px; position: relative; }
-.bench-mini span, .bench-track span { position: absolute; inset: 0 auto 0 0; border-radius: 2px; }
+.bench-mini span { position: absolute; inset: 0 auto 0 0; border-radius: 2px; }
 .s1 { background: var(--cg-series-1); } .s2 { background: var(--cg-series-2); } .s3 { background: var(--cg-series-3); } .s4 { background: var(--cg-series-4); }
 .bench-na { color: var(--vp-c-text-2); font-size: 13px; }
 .bench-notes { font-size: 13px; color: var(--vp-c-text-2); margin: 10px 0 0; }
 .bench-payloads { font-size: 13px; margin: 16px 0 0; }
 .bench-code { margin-top: 20px; }
 .bench-code :deep(h4) { margin: 16px 0 4px; font-size: 14px; }
-.bench-picker { display: none; }
 .bench-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
 .bench-chips button { border: 1px solid var(--vp-c-divider); border-radius: 999px; padding: 3px 12px; font-size: 13px; color: var(--vp-c-text-2); }
 .bench-chips button.on { border-color: var(--vp-c-brand-1); color: var(--vp-c-text-1); font-weight: 600; }
-.bench-phone-op h4 { margin: 14px 0 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--cg-muted); }
-.bench-phone-row { display: grid; grid-template-columns: 8.5rem 1fr 3.5rem; gap: 8px; align-items: center; margin: 6px 0; font-size: 13px; }
-.bench-phone-name { overflow-wrap: anywhere; }
-.bench-track { height: 8px; background: var(--vp-c-bg-soft); border-radius: 2px; position: relative; }
-.bench-phone-value { text-align: right; font-variant-numeric: tabular-nums; }
 .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-@media (max-width: 640px) {
-  .bench-table { display: none; }
-  .bench-picker { display: block; }
-}
 </style>
