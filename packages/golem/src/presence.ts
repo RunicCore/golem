@@ -101,13 +101,16 @@ export function instanceFieldsSource(): string {
  * Source text that reads the declared keys of `object` in one `Object.keys` pass, the fastest exact form of the JSON
  * view (presence rows of scripts/benchmark/validator-toggles.ts). Each `[key, local]` pair gets the key's value in a new
  * `let` local, or `undefined` when the key is absent, so each field is read once. `declare` writes the declaration of
- * a local, for example with a type annotation.
+ * a local, for example with a type annotation. `otherwise` is the statement for a key that is not in `captures`; it
+ * reads that key as `__golemKey`, so the same pass sees the other keys.
  */
 export function presentKeysSource(
   object: string,
   captures: readonly (readonly [key: string, local: string])[],
   declare: (local: string) => string = local => local,
+  otherwise?: string,
 ): string {
   const cases = captures.map(([key, local]) => `case ${JSON.stringify(key)}: ${local} = ${object}[${JSON.stringify(key)}]; break;`).join(' ');
-  return `let ${captures.map(([, local]) => declare(local)).join(', ')}; for (const __golemKey of Object.keys(${object})) switch (__golemKey) { ${cases} }`;
+  const other = otherwise === undefined ? '' : ` default: ${otherwise}`;
+  return `let ${captures.map(([, local]) => declare(local)).join(', ')}; for (const __golemKey of Object.keys(${object})) switch (__golemKey) { ${cases}${other} }`;
 }

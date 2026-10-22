@@ -468,11 +468,19 @@ function emitNested(
       const knownKeys = Object.keys(descriptor.properties).map(name => JSON.stringify(name)).join(', ');
       // An additionalProperties tag declares the other keys of a projection as data: they are copied as they are or by
       // the tag's type. Another object keeps its other keys the same way.
-      const extras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared
-        ? `for (const [key, value] of Object.entries(source)) if (value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)) defineModelProperty(out, key, ${additional});`
-        : '';
+      const hasExtras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
       // A decoder reads its input by the JSON view: one Object.keys pass reads each field once into a local.
-      const capture = direction === 'toJSON' || assignments.length === 0 ? [] : [presentKeysSource('source', assignments.map(({ name }, index) => [name, projectionLocal(index)] as const), local => `${local}: unknown`)];
+      const captured = direction !== 'toJSON' && assignments.length > 0;
+      // The same pass collects the other keys, and the copy writes them after the fields, in key order.
+      const collectExtras = hasExtras && captured;
+      const capture = captured
+        ? [`${collectExtras ? 'let __golemExtra: string[] | undefined; ' : ''}${presentKeysSource('source', assignments.map(({ name }, index) => [name, projectionLocal(index)] as const), local => `${local}: unknown`, collectExtras ? '(__golemExtra ??= []).push(__golemKey);' : undefined)}`]
+        : [];
+      const extras = !hasExtras
+        ? ''
+        : collectExtras
+          ? `if (__golemExtra !== undefined) for (const key of __golemExtra) { const value = source[key]; if (value !== undefined) defineModelProperty(out, key, ${additional}); }`
+          : `for (const [key, value] of Object.entries(source)) if (value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)) defineModelProperty(out, key, ${additional});`;
       const fields = assignments.map(({ name, property, sourceValue, value, presentValue }, index) => direction !== 'toJSON'
         ? `if (${projectionLocal(index)} !== undefined) defineModelProperty(out, ${property}, ${presentValue});`
         : omitsUndefined(name)
