@@ -124,12 +124,12 @@ test('a nested trusted call to a model of the same module runs its core and pass
   const source = paymentRuntimeSource();
   assert.equal(occurrences(source, TRUSTED_LITERAL), 0, 'no per-call options literal');
   assert.doesNotMatch(source, /__golemTrusted/, 'no constant when every callee is in this module');
-  assert.match(functionBody(source, 'stringifyPaymentCore'), /out \+= stringifyMoneyCore\(__golemValue1 as never\);/);
+  assert.match(functionBody(source, 'stringifyPaymentCore'), /out \+= stringifyMoneyCore\(__golemPresent1 as never\);/);
   assert.match(functionBody(source, 'stringifyPaymentWire'), /stringifyMoneyWire\(value\["amount"\] as never\)/);
   assert.match(functionBody(source, 'stringifyPayment'), /stringifyPaymentWire\(wire as never\);/);
   assert.match(functionBody(source, 'stringifyPayment'), /return stringifyPaymentCore\(value as never\);/);
-  assert.match(functionBody(source, 'stringifyPayment'), /toWireFormatMoneyCore\(value\["amount"\] as never\)/);
-  assert.match(functionBody(source, 'toWireFormatPaymentCore'), /toWireFormatMoneyCore\(record\["amount"\] as never\)/);
+  assert.match(functionBody(source, 'stringifyPayment'), /toWireFormatMoneyCore\(\(Object\.prototype\.propertyIsEnumerable\.call\(value, "amount"\) \? value\["amount"\] : undefined\) as never\)/);
+  assert.match(functionBody(source, 'toWireFormatPaymentCore'), /toWireFormatMoneyCore\(\(Object\.prototype\.propertyIsEnumerable\.call\(record, "amount"\) \? record\["amount"\] : undefined\) as never\)/);
   assert.doesNotMatch(source, /function \w+Core\([^)]*options/, 'a core function takes no options');
   assert.doesNotMatch(source, /function stringify\w+Wire\([^)]*options/, 'a wire stringify takes no options');
 });
@@ -167,9 +167,9 @@ test('a nested trusted call to a model of another module shares one frozen optio
   const source = emitCodecRuntime(graph, { validationEnabled: false, nestedGenerated: (id) => `${id}Model` });
   assert.equal(occurrences(source, TRUSTED_LITERAL), 1, 'the options literal appears once, in the constant');
   assert.match(source, /^const __golemTrusted = Object\.freeze\(\{ validate: false \}\);\n/);
-  assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(__golemValue0 as never, __golemTrusted\)/);
+  assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(__golemPresent0 as never, __golemTrusted\)/);
   assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(item as never, __golemTrusted\)/);
-  assert.match(functionBody(source, 'toWireFormatOwnerCore'), /toWireFormatPet\(record\["pet"\] as never, __golemTrusted\)/);
+  assert.match(functionBody(source, 'toWireFormatOwnerCore'), /toWireFormatPet\(\(Object\.prototype\.propertyIsEnumerable\.call\(record, "pet"\) \? record\["pet"\] : undefined\) as never, __golemTrusted\)/);
 });
 
 test('a codec that does not validate publishes its own schemas, not the plan entries it has none of', () => {

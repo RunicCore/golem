@@ -216,6 +216,24 @@ function access(expression: string, name: string): string {
   return `${record}[${JSON.stringify(name)}]`;
 }
 
+/**
+ * The read of a declared field by the JSON view: the field is present when it is an own enumerable key, as
+ * `JSON.stringify` judges it, so an inherited or non-enumerable field reads as `undefined`. `object` is read twice, so
+ * it is a bound name (`bindObject`).
+ */
+function presentRead(object: string, name: string): string {
+  return `(${presentValueSource(object, JSON.stringify(name), access(object, name))})`;
+}
+
+/** `build` over a name for the object that `expression` yields, evaluated once: a local when `expression` is no name. */
+function bindObject(expression: string, ctx: EmitCtx, build: (object: string) => string): string {
+  if (/^[A-Za-z_$][\w$]*$/.test(expression)) return build(expression);
+  const local = allocateInlineLocal(ctx, '__golemRecord');
+  return local
+    ? `(${local} = ${expression}, ${build(local)})`
+    : `((__golemRecord) => (${build('__golemRecord')}))(${expression})`;
+}
+
 function emitJsonLiteral(value: unknown): string {
   if (value === null) return "'null'";
   if (value === true) return "'true'";
@@ -248,14 +266,14 @@ function isObjectish(descriptor: ModelTypeDescriptor): boolean {
 
 function emitRequiredObjectConcat(
   properties: ReadonlyArray<readonly [string, ModelTypeDescriptor]>,
-  expression: string,
+  readOf: (name: string, index: number) => string,
   ctx: EmitCtx,
 ): string {
   const chunks = properties.map(([name, property], index) => emitInlineObjectField(
     name,
     property,
     true,
-    expression,
+    readOf(name, index),
     index,
     index > 0,
     ctx,
@@ -279,12 +297,11 @@ function emitInlineObjectField(
   name: string,
   property: ModelTypeDescriptor,
   required: boolean,
-  expression: string,
+  read: string,
   index: number,
   leadingComma: boolean,
   ctx: EmitCtx,
 ): string {
-  const read = access(expression, name);
   const value = emitValue(property, read, ctx);
   const repeated = occurrenceCount(value, read) + (required ? 0 : 1) > 1;
   if (!repeated) {
@@ -513,19 +530,14 @@ function emitObjectInline(
     // The other names are data: the encoded record keeps them, and a wire value is already encoded.
     return `stringifyJsonScalar(${ctx.wireIdentity ? expression : emitEncodedRecord(descriptor, expression, ctx)} as never)`;
   }
-  if (properties.every(([name]) => required.has(name))) {
-    return `'{' + ${emitRequiredObjectConcat(properties, expression, ctx)}`;
-  }
-  const parts = properties.map(([name, property], index) => emitInlineObjectField(
-    name,
-    property,
-    required.has(name),
-    expression,
-    index,
-    false,
-    ctx,
-  ));
-  return `'{' + [${parts.join(', ')}].filter(Boolean).join(',') + '}'`;
+  // A wire value is already encoded, so its own keys are the JSON view.
+  const write = (object: string): string => {
+    const readOf = (name: string): string => ctx.wireIdentity ? access(object, name) : presentRead(object, name);
+    if (properties.every(([name]) => required.has(name))) return `'{' + ${emitRequiredObjectConcat(properties, readOf, ctx)}`;
+    const parts = properties.map(([name, property], index) => emitInlineObjectField(name, property, required.has(name), readOf(name), index, false, ctx));
+    return `'{' + [${parts.join(', ')}].filter(Boolean).join(',') + '}'`;
+  };
+  return ctx.wireIdentity ? write(expression) : bindObject(expression, ctx, write);
 }
 
 function stringifyParameters(value: string, ctx: EmitCtx): string {
@@ -566,11 +578,18 @@ function emitObjectStringify(
   if (isPlainDataMap(descriptor)) {
     return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
   }
+  // A wire value is already encoded, so its own keys are the JSON view. Any other value is read by one Object.keys pass.
+  const present = (index: number): string => `__golemPresent${index}`;
+  const captured = ctx.wireIdentity || properties.length === 0
+    ? []
+    : [`  ${presentKeysSource('value', properties.map(([name], index) => [name, present(index)] as const), local => `${local}: unknown`)}`];
+  const readOf = (name: string, index: number): string => ctx.wireIdentity ? access('value', name) : present(index);
   if (!additional && properties.every(([name]) => required.has(name))) {
-    const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
+    const concatenated = emitRequiredObjectConcat(properties, readOf, ctx);
     return [
       `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
       ...inlineLocalDeclarations(ctx),
+      ...captured,
       `  return '{' + ${concatenated};`,
       '}',
       '',
@@ -582,10 +601,10 @@ function emitObjectStringify(
     '  let sep = false;',
   ];
   for (const [index, [name, property]] of properties.entries()) {
-    const read = access('value', name);
+    const read = readOf(name, index);
     const value = emitValue(property, read, ctx);
     const local = `__golemValue${index}`;
-    const needsSnapshot = occurrenceCount(value, read) + (required.has(name) ? 0 : 1) > 1;
+    const needsSnapshot = ctx.wireIdentity && occurrenceCount(value, read) + (required.has(name) ? 0 : 1) > 1;
     const valueExpr = needsSnapshot ? value.replaceAll(read, local) : value;
     const fieldExpr = needsSnapshot ? local : read;
     const key = JSON.stringify(`${JSON.stringify(name)}:`);
@@ -622,7 +641,7 @@ function emitObjectStringify(
       '  }',
     );
   }
-  lines.splice(1, 0, ...inlineLocalDeclarations(ctx));
+  lines.splice(1, 0, ...inlineLocalDeclarations(ctx), ...captured);
   lines.push("  return out + '}';", '}', '');
   return lines.join('\n');
 }
@@ -1651,43 +1670,39 @@ function emitEncodedRecord(
   ctx: EmitCtx,
 ): string {
   const fields = Object.entries(descriptor.properties);
-  const required = new Set(descriptor.required);
-  const values = fields.map(([name, property], index) => {
-    const read = access(expression, name);
-    const value = emitEncodeValue(property, read, ctx);
-    // An optional field whose value is undefined is omitted, as stringify and JSON.stringify do.
-    if (!required.has(name) && !value.startsWith('...')) {
-      const local = allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`;
-      const entry = `(${local} !== undefined ? { [${JSON.stringify(name)}]: ${value.replaceAll(read, local)} } : undefined)`;
-      return [name, ctx.inlineLocals ? `...(${local} = ${read}, ${entry})` : `...((${local}) => ${entry})(${read})`] as const;
-    }
-    if (occurrenceCount(value, read) <= 1) return [name, value] as const;
-    const local = allocateInlineLocal(ctx, '__golemField');
-    if (!local) {
-      const fallbackLocal = `__golemField${index}`;
-      return [name, `((${fallbackLocal}) => ${value.replaceAll(read, fallbackLocal)})(${read})`] as const;
-    }
-    return [name, `(${local} = ${read}, ${value.replaceAll(read, local)})`] as const;
-  });
-  // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
-  // keeps them as they are. Any other object writes its listed names only.
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
-  const extras = additional || descriptor.additionalPropertiesDeclared
-    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([${fields.length === 0 ? '' : 'key'}, extra]) => extra !== undefined${fields.length === 0 ? '' : ` && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)`}).map(([key, extra]) => [key, ${emitEncodeValue(additional ?? { kind: 'unknown' }, 'extra', ctx)}]))`]
-    : [];
-  const entries = [...extras, ...values.map(([name, value]) => value.startsWith('...')
-    ? value
-    : `[${JSON.stringify(name)}]: ${value}`)];
-  const record = entries.length === 0 ? '{}' : `{ ${entries.join(', ')} }`;
-  // Inline nested records can receive a getter expression from their parent.
-  // Bind that object only when its expression would otherwise be evaluated
-  // more than once; ordinary top-level `value`/`record` paths stay direct.
-  if (/^[A-Za-z_$][\w$]*$/.test(expression) || occurrenceCount(record, expression) <= 1) return record;
-  const local = allocateInlineLocal(ctx, '__golemRecord');
-  if (!local) {
-    return `((__golemRecord) => (${record.replaceAll(expression, '__golemRecord')}))(${expression})`;
-  }
-  return `(${local} = ${expression}, ${record.replaceAll(expression, local)})`;
+  const hasExtras = additional !== undefined || descriptor.additionalPropertiesDeclared === true;
+  const write = (object: string): string => {
+    const required = new Set(descriptor.required);
+    const values = fields.map(([name, property], index) => {
+      const read = presentRead(object, name);
+      const value = emitEncodeValue(property, read, ctx);
+      // An optional field whose value is undefined is omitted, as stringify and JSON.stringify do.
+      if (!required.has(name) && !value.startsWith('...')) {
+        const local = allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`;
+        const entry = `(${local} !== undefined ? { [${JSON.stringify(name)}]: ${value.replaceAll(read, local)} } : undefined)`;
+        return [name, ctx.inlineLocals ? `...(${local} = ${read}, ${entry})` : `...((${local}) => ${entry})(${read})`] as const;
+      }
+      if (occurrenceCount(value, read) <= 1) return [name, value] as const;
+      const local = allocateInlineLocal(ctx, '__golemField');
+      if (!local) {
+        const fallbackLocal = `__golemField${index}`;
+        return [name, `((${fallbackLocal}) => ${value.replaceAll(read, fallbackLocal)})(${read})`] as const;
+      }
+      return [name, `(${local} = ${read}, ${value.replaceAll(read, local)})`] as const;
+    });
+    // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
+    // keeps them as they are. Any other object writes its listed names only.
+    const extras = hasExtras
+      ? [`...Object.fromEntries(Object.entries(${asRecord(object)}).filter(([${fields.length === 0 ? '' : 'key'}, extra]) => extra !== undefined${fields.length === 0 ? '' : ` && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)`}).map(([key, extra]) => [key, ${emitEncodeValue(additional ?? { kind: 'unknown' }, 'extra', ctx)}]))`]
+      : [];
+    const entries = [...extras, ...values.map(([name, value]) => value.startsWith('...')
+      ? value
+      : `[${JSON.stringify(name)}]: ${value}`)];
+    return entries.length === 0 ? '{}' : `{ ${entries.join(', ')} }`;
+  };
+  // The object is read once into a name, so a nested record does not repeat the read of its parent.
+  return fields.length === 0 && !hasExtras ? '{}' : bindObject(expression, ctx, write);
 }
 
 function allocateInlineLocal(

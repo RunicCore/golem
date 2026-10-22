@@ -379,7 +379,8 @@ export class Stamps extends TStampsBaseModel {}
   const stringifyDirectory = functionBody(generated, 'stringifyTDirectory');
   assert.match(stringifyDirectory, /return stringifyJsonScalar\(value as never\);/, 'the plain map takes the native writer');
   assert.doesNotMatch(stringifyDirectory, /Object\.keys/, 'no per-key loop');
-  assert.doesNotMatch(functionBody(generated, 'stringifyTShelf'), /Object\.(keys|entries|fromEntries)/, 'a plain map field takes the native writer too');
+  // The one Object.keys pass over the declared fields (the JSON view) stays; the map's own keys get no loop.
+  assert.doesNotMatch(functionBody(generated, 'stringifyTShelf'), /Object\.(entries|fromEntries)|for \(const key of/, 'a plain map field takes the native writer too');
 
   const codecs = await import(pathToFileURL(path.join(value.root, 'build/maps.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
   const { Directory } = await import(pathToFileURL(path.join(value.root, 'build/maps.model.js')).href) as { Directory: new () => object };
