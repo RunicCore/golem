@@ -5,9 +5,12 @@ import {
   IsArray,
   IsDate,
   IsInt,
+  IsISO8601,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
+  Matches,
   Min,
   MinLength,
   Validate,
@@ -155,3 +158,114 @@ export class Checkout {
   memo?: string;
 }
 // #endregion checkout
+
+// #region checkout-plain
+// Dates stay date-time strings, and nothing converts.
+export class PlainLineItem {
+  @IsString()
+  @MinLength(3)
+  sku!: string;
+
+  @IsInt()
+  @Min(0)
+  quantity!: number;
+
+  @IsNumber()
+  @Min(0)
+  price!: number;
+}
+
+export class PlainMoney {
+  @IsNumber()
+  @Min(0)
+  amount!: number;
+
+  @IsString()
+  @Matches(/^[A-Z]{3}$/)
+  currency!: string;
+}
+
+export class PlainItem {
+  @IsString()
+  @MinLength(3)
+  sku!: string;
+}
+
+export class PlainBag {
+  @IsString()
+  lane!: string;
+}
+
+export class PlainChannelOpen {
+  @IsString()
+  kind!: 'open';
+}
+
+export class PlainChannelHold {
+  @IsString()
+  kind!: 'hold';
+
+  @IsISO8601()
+  until!: string;
+}
+
+export class CheckoutPlain {
+  @ValidateNested()
+  @Type(() => PlainMoney)
+  money!: PlainMoney;
+
+  @IsString()
+  @MinLength(1)
+  note!: string;
+
+  @IsString()
+  @Matches(/^[0-9a-f]+$/)
+  code!: string;
+
+  @IsISO8601()
+  when!: string;
+
+  @ValidateNested({ each: true })
+  @Type(() => PlainItem)
+  items!: PlainItem[];
+
+  @ValidateNested()
+  @Type(() => PlainLineItem)
+  primary!: PlainLineItem;
+
+  @IsObject()
+  flags!: Record<string, string>;
+
+  @ValidateNested()
+  @Type(() => Object, {
+    discriminator: {
+      property: 'kind',
+      subTypes: [
+        { name: 'open', value: PlainChannelOpen },
+        { name: 'hold', value: PlainChannelHold },
+      ],
+    },
+    keepDiscriminatorProperty: true,
+  })
+  channel!: PlainChannelOpen | PlainChannelHold;
+
+  @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(2)
+  @IsISO8601({}, { each: true })
+  span!: [string, string];
+
+  @ValidateIf((_, value) => value !== null)
+  @IsISO8601()
+  hold!: string | null;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PlainBag)
+  bag?: PlainBag;
+
+  @IsOptional()
+  @IsString()
+  memo?: string;
+}
+// #endregion checkout-plain

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { instanceToPlain, plainToInstance } from 'class-transformer';
 import { validateOrReject, ValidationError } from 'class-validator';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
-import { Checkout, LineItem } from './features-class-validator.models.js';
-import { assertFeatureWire, checkoutInput, featureComparison } from './payloads.js';
+import { Checkout, CheckoutPlain, LineItem, PlainLineItem, PlainMoney } from './features-class-validator.models.js';
+import { assertFeatureWire, checkoutInput, checkoutPlainInput, checkoutPlainInvalidWires, featureComparison } from './payloads.js';
 
 function isValidationFailure(error: unknown): boolean {
   const hasConstraint = (item: ValidationError): boolean => Object.keys(item.constraints ?? {}).length > 0 || (item.children ?? []).some(hasConstraint);
@@ -26,7 +26,7 @@ export async function createClassValidatorFeatureFixtures(adapter: Adapter): Pro
   if (adapter !== 'class-validator') throw new TypeError(`Unsupported class-validator adapter: ${adapter}`);
   const input = checkoutInput();
   const model = await toModel(input.payload);
-  return [featureComparison(input.name, input.payload, {
+  return [await checkoutPlainFixture(), featureComparison(input.name, input.payload, {
     'object-to-model': () => toModel(input.payload),
     'model-to-object': () => toPlain(model),
     'text-to-model': () => toModel(JSON.parse(input.text)),
@@ -54,4 +54,46 @@ export async function createClassValidatorFeatureFixtures(adapter: Adapter): Pro
     const invalid = { ...structuredClone(original), money: { amount: 12, currency: 'XXX' } };
     await assert.rejects(() => toModel(invalid), isValidationFailure);
   })];
+}
+
+/**
+ * The checkout without conversion: class-transformer builds the nested instances and class-validator checks the rules.
+ * It does not reject an unknown property, so the proof below leaves that variant out (R1).
+ */
+async function checkoutPlainFixture(): Promise<ComparisonFixture> {
+  const input = checkoutPlainInput();
+  // #region checkout-plain-calls
+  const toModel = async (value: unknown): Promise<CheckoutPlain> => {
+    const checkout = plainToInstance(CheckoutPlain, value);
+    await validateOrReject(checkout);
+    return checkout;
+  };
+  const toPlain = async (checkout: CheckoutPlain): Promise<unknown> => {
+    await validateOrReject(checkout);
+    return instanceToPlain(checkout);
+  };
+  const model = plainToInstance(CheckoutPlain, input.payload);
+  await validateOrReject(model);
+  // #endregion checkout-plain-calls
+  return featureComparison(input.name, input.payload, {
+    'object-to-model': () => toModel(input.payload),
+    'model-to-object': () => toPlain(model),
+    'text-to-model': () => toModel(JSON.parse(input.text)),
+    'model-to-text': async () => JSON.stringify(await toPlain(model)),
+    validate: async () => {
+      await validateOrReject(model);
+      return true;
+    },
+  }, async () => {
+    const original = structuredClone(input.payload);
+    for (const checked of [await toModel(input.payload), await toModel(JSON.parse(input.text))]) {
+      assert.ok(checked instanceof CheckoutPlain);
+      assert.ok(checked.money instanceof PlainMoney);
+      assert.ok(checked.primary instanceof PlainLineItem);
+      assertFeatureWire(await toPlain(checked), original);
+    }
+    assert.equal(JSON.stringify(await toPlain(await toModel(input.payload))), input.text);
+    assert.deepEqual(input.payload, original);
+    for (const wire of checkoutPlainInvalidWires().broken) await assert.rejects(() => toModel(wire), isValidationFailure);
+  });
 }

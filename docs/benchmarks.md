@@ -227,6 +227,27 @@ Class instances are checked against their rules on the way in and out. Golem run
 :::
 
 </template>
+<template #classes-checkout-plain-code>
+
+#### Declarations for the Checkout, no conversion payload
+
+::: code-group
+
+<<< @/../scripts/benchmark/fixtures/features/features.model.ts#checkout-plain [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/features/features-class-transformer.models.ts#checkout-plain [class-transformer]
+
+:::
+
+#### Timed calls
+
+::: code-group
+
+<<< @/../scripts/benchmark/fixtures/features/comparison-features-golem.ts#checkout-plain-calls [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/features/comparison-features-class-transformer.ts#checkout-plain-calls [class-transformer]
+
+:::
+
+</template>
 <template #validated-classes-simple-code>
 
 #### Declarations for the Simple object payload
@@ -307,6 +328,27 @@ Class instances are checked against their rules on the way in and out. Golem run
 
 <<< @/../scripts/benchmark/fixtures/features/comparison-features-golem.ts#calls [Golem (IModel)]
 <<< @/../scripts/benchmark/fixtures/features/comparison-features-class-validator.ts#calls [class-transformer + class-validator]
+
+:::
+
+</template>
+<template #validated-classes-checkout-plain-code>
+
+#### Declarations for the Checkout, no conversion payload
+
+::: code-group
+
+<<< @/../scripts/benchmark/fixtures/features/features.model.ts#checkout-plain [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/features/features-class-validator.models.ts#checkout-plain [class-transformer + class-validator]
+
+:::
+
+#### Timed calls
+
+::: code-group
+
+<<< @/../scripts/benchmark/fixtures/features/comparison-features-golem.ts#checkout-plain-calls [Golem (IModel)]
+<<< @/../scripts/benchmark/fixtures/features/comparison-features-class-validator.ts#checkout-plain-calls [class-transformer + class-validator]
 
 :::
 

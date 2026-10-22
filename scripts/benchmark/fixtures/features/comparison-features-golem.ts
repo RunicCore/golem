@@ -2,12 +2,13 @@ import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/serde';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
-import { Checkout, LineItem, SerdeMany, SerdeManyLine, SerdeNone, SerdeNoneLine } from './features.model.js';
+import { Checkout, CheckoutPlain, LineItem, SerdeMany, SerdeManyLine, SerdeNone, SerdeNoneLine } from './features.model.js';
 import './sdk/index.js';
-import { assertFeatureWire, assertSerdeModel, checkoutInput, featureComparison, serdeComparison, serdeInput, serdeInvalidWires, type SerdeDensity } from './payloads.js';
+import { assertFeatureWire, assertSerdeModel, checkoutInput, checkoutPlainInput, checkoutPlainInvalidWires, featureComparison, serdeComparison, serdeInput, serdeInvalidWires, type SerdeDensity } from './payloads.js';
 
 registerIModelClass('TLineItem', LineItem);
 registerIModelClass('TCheckout', Checkout);
+registerIModelClass('TCheckoutPlain', CheckoutPlain);
 registerIModelClass('TSerdeManyLine', SerdeManyLine);
 registerIModelClass('TSerdeMany', SerdeMany);
 registerIModelClass('TSerdeNoneLine', SerdeNoneLine);
@@ -42,6 +43,48 @@ function checkConverted(model: object): void {
 }
 
 const validationError = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.Validation;
+
+/** The checkout without conversion, as a class model: dates stay strings, and the class instance holds the wire values. */
+function checkoutPlainFixture(validation: boolean): ComparisonFixture {
+  const input = checkoutPlainInput();
+  // #region checkout-plain-calls
+  // Resolve the codec and options once, as the other libraries' fixtures do; timed calls do only the conversion.
+  const checkout = requireObjectCodec('TCheckoutPlain');
+  const decodeOptions = options(validation, CheckoutPlain);
+  const encodeOptions = options(validation);
+  const model = checkout.fromWireFormat(input.payload, decodeOptions);
+  const timed = {
+    'object-to-model': () => checkout.fromWireFormat(input.payload, decodeOptions),
+    'model-to-object': () => checkout.toWireFormat(model as never, encodeOptions),
+    'text-to-model': () => checkout.parse(input.text, decodeOptions),
+    'model-to-text': () => checkout.stringify(model as never, encodeOptions),
+    ...(validation ? {
+      validate: () => {
+        if (!checkout.validate(model as never)) throw new Error('Class validate rejected a valid fixture');
+        return true;
+      },
+    } : {}),
+  };
+  // #endregion checkout-plain-calls
+  return featureComparison(input.name, input.payload, timed, async () => {
+    const original = structuredClone(input.payload);
+    const fromObject = checkout.fromWireFormat(input.payload, decodeOptions);
+    const fromText = checkout.parse(input.text, decodeOptions);
+    assert.ok(fromObject instanceof CheckoutPlain && fromText instanceof CheckoutPlain);
+    assert.deepEqual(JSON.parse(JSON.stringify(fromObject)), original);
+    assert.deepEqual(JSON.parse(JSON.stringify(fromText)), original);
+    assertFeatureWire(checkout.toWireFormat(fromObject as never, encodeOptions), original);
+    assert.equal(checkout.stringify(fromObject as never, encodeOptions), input.text, 'JSON output is the same compact wire representation');
+    assert.deepEqual(input.payload, original);
+    if (!validation) return;
+    assert.equal(checkout.validate(fromObject), true);
+    const invalid = checkoutPlainInvalidWires();
+    for (const wire of [...invalid.broken, invalid.unknownProperty]) {
+      assert.throws(() => checkout.fromWireFormat(wire, decodeOptions), validationError);
+      assert.throws(() => checkout.parse(JSON.stringify(wire), decodeOptions), validationError);
+    }
+  });
+}
 
 /** The serde payloads of the golem cost table, as class models. A converting field must round-trip exactly; a validating mode rejects a broken field of each kind. */
 function serdeFixtures(validation: boolean): readonly ComparisonFixture[] {
@@ -94,7 +137,7 @@ export async function createGolemFeatureFixtures(adapter: Adapter): Promise<read
   const decode = (): object => checkout.fromWireFormat(input.payload, decodeOptions) as object;
   const decodeText = (text: string, checked = validation): object => checkout.parse(text, options(checked, Checkout)) as object;
   const model = decode();
-  return [...serdeFixtures(validation), featureComparison(input.name, input.payload, {
+  return [...serdeFixtures(validation), checkoutPlainFixture(validation), featureComparison(input.name, input.payload, {
     'object-to-model': decode,
     'model-to-object': () => checkout.toWireFormat(model as never, encodeOptions),
     'text-to-model': () => checkout.parse(input.text, decodeOptions),
