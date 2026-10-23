@@ -8,6 +8,7 @@ import { test, type TestContext } from 'node:test';
 import { runPipeline, watchPipeline } from '#golem/cli';
 import { generate as generateOpenApi } from '#openapi/generator';
 import { workspace } from './support/process.js';
+import { until } from './support/watch-wait.js';
 import { writeFixture } from './support/consumer.js';
 import { compileGeneratedSdk } from './openapi/helpers.js';
 
@@ -183,23 +184,6 @@ async function generatedOpenApiFixture(
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-async function until(
-  check: () => boolean,
-  message: string,
-  timeout = 25_000,
-): Promise<void> {
-  const deadline = Date.now() + timeout;
-  while (Date.now() < deadline) {
-    if (check()) return;
-    await delay(50);
-  }
-  throw new Error(`Timed out: ${message}`);
 }
 
 function waitForClose(child: ChildProcess): Promise<ChildResult> {
