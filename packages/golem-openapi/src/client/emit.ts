@@ -657,7 +657,7 @@ export function buildOperationValidationSchemas(
       const operationName = operationRoots.get(resource);
       if (operationName === undefined) return undefined;
       const prefix = `/operations/${escapeJsonPointerToken(operationName)}`;
-      return pointer.startsWith(prefix) ? { where: `operation ${literal(operationName)} at ${pointer.slice(prefix.length) || '/'}` } : undefined;
+      return pointer.startsWith(prefix) ? { where: `operation ${JSON.stringify(operationName)} at ${pointer.slice(prefix.length) || '/'}` } : undefined;
     },
   };
 }

@@ -6,7 +6,7 @@ import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSche
 import { buildEmissionPlan, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
 import { assertPortableFilenames, assertUniqueExportNames, identifier } from '@exprtlabs/golem/generator-api';
-import { code, docComment, documentLiteral, exportedName, identifier as identifierPart, join, renderModule, type Code, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
+import { code, documentLiteral, exportedName, identifier as identifierPart, join, renderModule, type Code, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
@@ -22,7 +22,7 @@ import {
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
 import { compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
-import { generateDirectionalSchemas, generateTypes } from './types.js';
+import { descriptionComment, generateDirectionalSchemas, generateTypes } from './types.js';
 
 interface WriteSdkResult extends GolemResult {}
 
@@ -111,11 +111,13 @@ export const ${exportedName('responseLinks')} = ${documentLiteral(links, 2)} as 
 `);
 }
 
-function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan, modelReexports: Code = code``): RenderedModule {
+/** The index module, and the files it re-exports with `export *`. */
+function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan, modelReexports: Code = code``): RenderedModule & { readonly stars: readonly string[] } {
   requireProfile(profile);
   const artifacts = plan?.artifacts;
   const include = (name: ArtifactFile): boolean => artifacts ? artifacts.has(name) : true;
-  return renderModule(code`${generatedBannerComment()}
+  const stars = ['types.ts', ...(['client.ts', 'inbound.ts', 'links.ts'] as const).filter(include)];
+  return { ...renderModule(code`${generatedBannerComment()}
 export * from './types.js';
 ${include('input-schemas.ts') ? code`export type * as ${exportedName('InputSchemas')} from './input-schemas.js';` : code``}
 ${include('output-schemas.ts') ? code`export type * as ${exportedName('OutputSchemas')} from './output-schemas.js';` : code``}
@@ -123,12 +125,12 @@ ${modelReexports}
 ${include('client.ts') ? code`export * from './client.js';` : code``}
 ${include('inbound.ts') ? code`export * from './inbound.js';` : code``}
 ${include('links.ts') ? code`export * from './links.js';` : code``}
-`);
+`), stars };
 }
 
 function generateInbound(clientName: string, operations: readonly NormalizedOperation[]): RenderedModule {
   const methods = join(operations.map((operation) =>
-    code`  ${docComment(`${operation.sourceKind} ${operation.sourceName}: ${operation.method} ${operation.route}`)}\n  ${identifierPart(operation.name)}(input: Types.${identifierPart(`${operation.typeName}OperationInput`)}): Promise<Types.${identifierPart(`${operation.typeName}OperationHttpResponse`)}>;`,
+    code`  ${descriptionComment(`${operation.sourceKind} ${operation.sourceName}: ${operation.method} ${operation.route}`)}\n  ${identifierPart(operation.name)}(input: Types.${identifierPart(`${operation.typeName}OperationInput`)}): Promise<Types.${identifierPart(`${operation.typeName}OperationHttpResponse`)}>;`,
   ), code`\n\n`);
   return renderModule(code`${generatedBannerComment()}
 import type * as Types from './types.js';
@@ -246,8 +248,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   }
   const index = generateIndex(profile, plan, modelReexports);
   files.set('index.ts', index.source);
-  const starred = ['types.ts', 'client.ts', 'inbound.ts', 'links.ts'].filter((name) => name === 'types.ts' || plan.artifacts.has(name as ArtifactFile));
-  modules.set('index.ts', { exports: index.exports, stars: starred });
+  modules.set('index.ts', { exports: index.exports, stars: index.stars });
   assertUniqueExportNames(modules);
   assertPortableFilenames(files.keys());
   return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
