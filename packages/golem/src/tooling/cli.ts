@@ -111,7 +111,8 @@ export async function main(argv = process.argv.slice(2)) {
     return;
   }
   if (options.action === 'watch') {
-    const stop = watchPipeline(options.config);
+    // With no folder to watch the watch ends by itself, and the exit code says it failed.
+    const stop = watchPipeline(options.config, undefined, undefined, undefined, () => { process.exitCode = 1; });
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { stop(); process.exitCode = signal === 'SIGINT' ? 130 : 143; });
     return;
   }

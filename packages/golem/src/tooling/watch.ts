@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemConfig } from './config.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, isInsideDirectory, suffixPattern } from './generator-api.js';
-import { changedPaths, InputPoller, OwnedOutputIndex, RunBaseline } from './input-poller.js';
+import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, RunBaseline } from './input-watcher.js';
 import { GeneratorSessionResources, jobFailedBeforeWriting, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, JobReport, PipelineState } from './pipeline.js';
 
@@ -13,11 +13,6 @@ function sourcePatterns(config: GolemConfig | undefined): readonly { readonly ki
     if ((job.kind !== 'models' && job.kind !== 'controllers') || job.options.sources) return [];
     return [{ kind: job.kind, pattern: suffixPattern(job.options.suffixes ?? (job.kind === 'models' ? DEFAULT_MODEL_SUFFIXES : DEFAULT_CONTROLLER_SUFFIXES)) }];
   });
-}
-
-/** The folder of an input outside the root, which a source added beside it joins; undefined for an input inside the root or under `node_modules`. */
-function outsideFolder(root: string, input: string): string | undefined {
-  return isInsideDirectory(root, input) || input.split(path.sep).includes('node_modules') ? undefined : path.dirname(input);
 }
 
 /** Records an input a run reads: its signature and the folders around it, as they are when the run first reads them. */
@@ -34,18 +29,18 @@ function observeInput(baseline: RunBaseline, root: string, input: string): void 
 export function baselineBeforeRun(configFile: string): { readonly baseline: RunBaseline; readonly onInput: (input: string) => void } {
   const resolved = path.resolve(configFile);
   const root = path.dirname(resolved);
-  const before = new InputPoller([resolved], { root, outsideDirectories: new Set<string>() }).snapshot();
+  const before = new InputScan([resolved], { root }).snapshot();
   const baseline = new RunBaseline(before, root);
   return { baseline, onInput: input => { observeInput(baseline, root, input); } };
 }
 
-/** What one watch polls between two runs. */
+/** What one watch looks at between two runs. */
 interface Watched {
   readonly root: string;
   readonly sources: ReturnType<typeof sourcePatterns>;
-  /** The inputs it stats, by what reads them. */
+  /** The inputs it reads, by what reads them. */
   readonly kinds: ReadonlyMap<string, InputKind>;
-  readonly poller: InputPoller;
+  readonly scan: InputScan;
 }
 
 const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
@@ -66,12 +61,14 @@ export function summarizeRun(state: PipelineState, ms: number): string {
 }
 
 /**
- * Serialized polling of specific inputs, including reads attempted by failed runs, and of the folders around them, so a source
- * added to one of them starts a run. A `session` from the first run of the same command is kept; the watch closes it when it
- * stops. Without one, the watch opens its own. With a `PipelineState`, the first poll compares with `firstBaseline`, taken before the run
- * that made the state (`baselineBeforeRun`), else with the disk as it is now.
+ * Serialized runs on file-system events for specific inputs, including reads attempted by failed runs, and for the folders around
+ * them, so a source added to one of them starts a run. An event only wakes the watch: it then compares the inputs with what the last
+ * run left. A package manager's install starts a full run. A `session` from the first run of the same command is kept; the watch
+ * closes it when it stops. Without one, the watch opens its own. With a `PipelineState`, the first comparison is with `firstBaseline`,
+ * taken before the run that made the state (`baselineBeforeRun`), else with the disk as it is now. A failure to watch goes to
+ * `reportError` once; the watch goes on unless not one folder can be watched: then it stops, and `onUnwatchable` is called.
  */
-export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, session: GeneratorSessionResources = new GeneratorSessionResources(), firstBaseline?: RunBaseline): () => void {
+export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, session: GeneratorSessionResources = new GeneratorSessionResources(), firstBaseline?: RunBaseline, onUnwatchable: () => void = () => {}): () => void {
   let state = typeof initial === 'string' ? undefined : initial;
   const filename = path.resolve(typeof initial === 'string' ? initial : initial.config.configFile);
   let config = state?.config;
@@ -81,13 +78,22 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
   let first = !state;
   let busy = false;
   let stopped = false;
+  const watcher = new InputWatcher({ root: () => watched.root, tick: installed => tick(installed), onError: reportError,
+    onUnwatchable: () => {
+      // It can come while the watch is built, before it can return its stop.
+      stopped = true;
+      watcher.close();
+      if (!busy) closeSession();
+      queueMicrotask(onUnwatchable);
+    },
+  });
   // The last run failed: the next good run says it recovered.
   let failed = false;
   // Compiler processes stay warm between runs and close with the watch.
   const closeSession = (): void => {
     try { session[Symbol.dispose](); } catch (error) { reportError(error); }
   };
-  // The inputs and folders to poll change only when a run ends, so they are worked out then and not at every tick.
+  // The inputs and folders to scan change only when a run ends, so they are worked out then and not at every tick.
   const watch = (): Watched => {
     const inputs = new Map<string, InputKind>(state?.inputs);
     for (const [input, kind] of attempted) inputs.set(input, strongestInputKind(inputs.get(input), kind));
@@ -109,33 +115,31 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
     }
     // A new output directory can have been observed as missing during module
     // resolution. Its creation is output work, not a source edit. Adding a
-    // source beneath it is still seen: the poll lists the names around the inputs.
+    // source beneath it is still seen: the scan lists the names around the inputs.
     const kinds = new Map([...inputs].filter(([input]) => !owned.covers(input)));
     // Generated outputs can contain model-named files; they are not model sources.
     const outputs = (config?.jobs ?? []).flatMap(job => job.kind === 'openapi' || job.kind === 'controllers' ? [job.options.output] : []);
-    const outsideDirectories = new Set<string>();
-    for (const input of kinds.keys()) {
-      const folder = outsideFolder(root, input);
-      if (folder !== undefined && fs.existsSync(input)) outsideDirectories.add(folder);
-    }
-    const poller = new InputPoller(kinds.keys(), {
-      root, outsideDirectories, descend,
+    const scan = new InputScan(kinds.keys(), {
+      root, descend,
       skipDescent: directory => outputs.some(output => isInsideDirectory(output, directory)),
     });
-    return { root, sources, kinds, poller };
+    return { root, sources, kinds, scan };
   };
   let watched = watch();
-  let previous = firstBaseline?.settle(watched.poller.snapshot()) ?? watched.poller.snapshot();
-  /** What reads a changed path: a polled input, or else a source that was added or removed. A name that is no source is not a change. */
+  const firstSnapshot = watcher.snapshotWatching(watched.scan);
+  let previous = firstBaseline?.settle(firstSnapshot) ?? firstSnapshot;
+  /** What reads a changed path: an input, or else a source that was added or removed. A name that is no source is not a change. */
   const kindOf = (input: string): InputKind | undefined => watched.kinds.get(input) ?? watched.sources.find(source => source.pattern.test(path.basename(input)))?.kind;
-  const tick = async (): Promise<void> => {
-    if (busy || stopped) return;
+  const tick = async (installed: boolean): Promise<void> => {
+    if (stopped) return;
     busy = true;
     try {
-      const before = watched.poller.snapshot();
+      const before = watcher.snapshotWatching(watched.scan);
       const paths = changedPaths(previous, before, input => owned.covers(input));
       const changed = paths.filter(input => kindOf(input) !== undefined);
-      if (!first && !changed.length) {
+      // An install can change any package a job read: the run reads everything again.
+      if (installed) retryFull = true;
+      if (!first && !changed.length && !installed) {
         // Names that are no source are taken as seen, so they are not listed at every tick.
         if (paths.length) previous = before;
         return;
@@ -170,18 +174,18 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       attempted = latestAttempt;
       // Keep pre-read signatures so edits during work trigger the next serialized run.
       watched = watch();
-      previous = baseline.settle(watched.poller.snapshot());
+      previous = baseline.settle(watcher.snapshotWatching(watched.scan));
     } catch (error) { reportError(error); }
     finally {
       busy = false;
       if (stopped) closeSession();
     }
   };
-  const timer = setInterval(() => { void tick(); }, 200);
-  if (first) void tick();
+  // The first run, or the first look at what changed since the run that made the state.
+  watcher.start();
   return () => {
     stopped = true;
-    clearInterval(timer);
+    watcher.close();
     if (!busy) closeSession();
   };
 }
