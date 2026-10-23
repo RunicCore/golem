@@ -37,6 +37,7 @@ in the sections below.
 - `golem build` writes the import paths that Node loads in declaration files (`.d.ts`) too, as it does in JavaScript.
 - A `@Body()` or `@Query()` parameter that `NestModelInterceptor` rejects stops `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader with [`RUNM1081`](docs/reference/diagnostics.md#runm1081). This holds for a whole parameter and for one field, such as `@Body('name')`. If your own interceptor handles these parameters, set `nonModelInputs: warn` in `golem.yaml`; the diagnostic is then a warning. `golem build` and `golem check` print the warning. The plugins and the loader continue and print nothing.
 - On TypeScript 7, a package subpath that the `exports` map of its package hides does not resolve, as on TypeScript 6.
+- Fix: `golem build --watch` in a models project no longer builds a second time right after its first build, when the first build created the folders of the generated files.
 - `@exprtlabs/golem/generator-api` exports `stableJson`, `stableValue` and `isInsideDirectory` for authors of generators. See the [generator API](docs/reference/runtime-api.md).
 
 ## 1.0.0
