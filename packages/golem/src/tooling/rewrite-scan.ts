@@ -709,6 +709,21 @@ function constructOptionEdits(file: ts.SourceFile, call: ts.CallExpression, targ
   return [insertion(start, `{ construct: ${target}, ...`), insertion(second.end, ' }')];
 }
 
+/**
+ * What to wait for when the generated file of the model `alias` declares is missing or older than its model file, so the key
+ * table cannot name the model yet; undefined when the file is current, or when the model file is not on disk.
+ */
+function pendingGeneration(root: string, boundary: ModelBoundary, alias: ts.TypeAliasDeclaration): string | undefined {
+  const source = alias.getSourceFile().fileName;
+  const companion = companionFilename(boundary, source);
+  const sourceTime = fs.statSync(source, { throwIfNoEntry: false })?.mtimeMs;
+  if (sourceTime === undefined) return undefined;
+  const companionTime = fs.statSync(companion, { throwIfNoEntry: false })?.mtimeMs;
+  if (companionTime !== undefined && companionTime >= sourceTime) return undefined;
+  const shown = path.relative(root, companion).split(path.sep).join('/');
+  return `${shown} ${companionTime === undefined ? 'is missing' : 'is older than its model file'}. Wait for golem generate or golem watch to write it.`;
+}
+
 function scanFile(
   input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly nest: boolean; readonly nonModelInputs: 'error' | 'warn'; readonly boundary: ModelBoundary; readonly modelClasses: () => ReadonlyMap<string, number> },
   file: ts.SourceFile,
@@ -748,9 +763,10 @@ function scanFile(
       const model = fieldProvenance(checker, call.typeArguments[0], []).anonymous;
       const alias = model && declaredModelAlias(model);
       const foreign = alias ? foreignModelReason(alias, boundary) : undefined;
+      const pending = alias && foreign === undefined ? pendingGeneration(root, boundary, alias) : undefined;
       scan.diagnostics.push(foreign !== undefined
         ? locate(root, file, call, CODE_FOREIGN_MODEL, foreign)
-        : locate(root, file, call, CODE_NO_CODEC, `${method}<${call.typeArguments[0].getText(file)}> has no unique codec id`));
+        : locate(root, file, call, CODE_NO_CODEC, `${method}<${call.typeArguments[0].getText(file)}> has no unique codec id${pending === undefined ? '' : `. ${pending}`}`));
       return;
     }
     const start = call.expression.getStart(file);

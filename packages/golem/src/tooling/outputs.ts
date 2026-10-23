@@ -344,7 +344,15 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
   return drift;
 }
 
-export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false): void {
+/** The files a run changed on disk: written with new content, or deleted. A file already as the run would write it is in neither list. */
+export interface FileChanges {
+  readonly written: readonly string[];
+  readonly removed: readonly string[];
+}
+
+const NO_CHANGES: FileChanges = { written: [], removed: [] };
+
+export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false): FileChanges {
   assertInventoryPath(config);
   if (!Array.isArray(artifacts)) throw new Error(`${job.package} returned invalid artifacts.`);
   const expected = new Map<string, ExpectedArtifact>();
@@ -386,27 +394,33 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     stale.push(key);
   }
   if (check && stale.length) throw new Error(`Generated outputs are stale for ${job.id}:\n${stale.sort().map(key => `  ${key}`).join('\n')}`);
-  if (!check) {
-    for (const [key, artifact] of expected) {
-      assertDestinationPath(artifact.filename, recordedDestinationPath(config, artifact.destination), 'job');
-      atomicWrite(artifact.filename, artifact.content);
-      inventory.files[key] = {
-        job: job.id,
-        owner: job.package,
-        digest: digest(artifact.content),
-        destination: artifact.destination,
-        destinationKind: destinationKind(job.package),
-      };
-    }
-    for (const { key, filename } of deletions) {
-      if (readFile(filename) !== undefined) fs.unlinkSync(filename);
-      delete inventory.files[key];
-    }
-    saveInventory(config, inventory);
+  if (check) return NO_CHANGES;
+  const written: string[] = [];
+  const removed: string[] = [];
+  for (const [key, artifact] of expected) {
+    assertDestinationPath(artifact.filename, recordedDestinationPath(config, artifact.destination), 'job');
+    if (atomicWrite(artifact.filename, artifact.content)) written.push(artifact.filename);
+    inventory.files[key] = {
+      job: job.id,
+      owner: job.package,
+      digest: digest(artifact.content),
+      destination: artifact.destination,
+      destinationKind: destinationKind(job.package),
+    };
   }
+  for (const { key, filename } of deletions) {
+    if (readFile(filename) !== undefined) {
+      fs.unlinkSync(filename);
+      removed.push(filename);
+    }
+    delete inventory.files[key];
+  }
+  saveInventory(config, inventory);
+  return { written, removed };
 }
 
-export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, check = false): void {
+/** Deletes the outputs of jobs the configuration no longer lists, and returns the files it deleted. */
+export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, check = false): string[] {
   assertInventoryPath(config);
   const active = new Set(config.jobs.map(job => job.id));
   const retired = Object.entries(inventory.files).filter(([, entry]) => !active.has(entry.job));
@@ -418,12 +432,17 @@ export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, che
     assertDeletable(filename, entry);
   }
   if (check && retired.length) throw new Error(`Generated outputs belong to removed jobs:\n${retired.map(([key]) => `  ${key}`).join('\n')}`);
+  const removed: string[] = [];
   if (!check && retired.length) {
     for (const [key] of retired) {
       const filename = inventoryPath(config, key);
-      if (readFile(filename) !== undefined) fs.unlinkSync(filename);
+      if (readFile(filename) !== undefined) {
+        fs.unlinkSync(filename);
+        removed.push(filename);
+      }
       delete inventory.files[key];
     }
     saveInventory(config, inventory);
   }
+  return removed;
 }

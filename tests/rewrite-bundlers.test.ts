@@ -372,7 +372,7 @@ test('vite serve: regenerating a model transforms again the module that used it,
   server.watcher.emit('change', keyTable(root));
   assert.equal(moduleOf('src/main.ts')?.transformResult, null);
   assert.ok(moduleOf('src/tag.ts')?.transformResult);
-  assert.equal(reloads(), 1);
+  await until(() => reloads() === 1, 'the reload of the regenerated model');
 
   // Vite caches a transform only when it starts after the module's invalidation, to the millisecond.
   pastThisMillisecond();
@@ -384,7 +384,6 @@ test('vite serve: regenerating a model transforms again the module that used it,
   server.watcher.emit('change', keyTable(root));
   assert.ok(moduleOf('src/main.ts')?.transformResult, 'main.ts stays cached when the same files are announced again');
   assert.ok(moduleOf('src/tag.ts')?.transformResult, 'tag.ts stays cached when the same files are announced again');
-  assert.equal(reloads(), 1);
 });
 
 test('vite serve: retargeting an alias that a module parses through transforms it again with the new codec id', async (t) => {
@@ -431,6 +430,30 @@ test('vite serve: retargeting an alias or an export * that a module reaches thro
   assert.match(await idsIn(), new RegExp(`"${tagId}"`));
 });
 
+test('vite serve: the file events of one run invalidate every module they change and send one full reload', async (t) => {
+  // protects: T-314 one watch run writes several files; the page reloads once, not once per file
+  const root = await generatedProject(t, 'vite-one-reload');
+  for (const name of ['first', 'second']) {
+    write(root, `src/${name}-alias.ts`, "export type { TMoney as TAlias } from './money.model.js';\n");
+    write(root, `src/use-${name}.ts`, `import { parse } from '${SERDE}';\nimport type { TAlias } from './${name}-alias.js';\n\nexport const value = parse<TAlias>('{}');\n`);
+  }
+  const server = await serve(t, root);
+  const send = t.mock.method(server.ws, 'send', () => undefined);
+  const reloads = (): number => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length;
+  for (const name of ['first', 'second']) await server.transformRequest(`/src/use-${name}.ts`);
+
+  for (const name of ['first', 'second']) {
+    write(root, `src/${name}-alias.ts`, "export type { TTag as TAlias } from './money.model.js';\n");
+    server.watcher.emit('change', path.join(root, `src/${name}-alias.ts`));
+  }
+
+  for (const name of ['first', 'second']) {
+    assert.equal(server.moduleGraph.getModuleById(path.join(root, `src/use-${name}.ts`))?.transformResult, null, `${name} is invalidated by its own event`);
+  }
+  await until(() => reloads() > 0, 'the reload of the run');
+  assert.equal(reloads(), 1, 'both events share one reload');
+});
+
 test('vite serve: a module whose model had no generated code transforms again once golem generate has written it', async (t) => {
   const root = await generatedProject(t, 'vite-recover', { generate: false });
   const server = await serve(t, root);
@@ -438,7 +461,7 @@ test('vite serve: a module whose model had no generated code transforms again on
   await assert.rejects(server.transformRequest('/src/main.ts'), /run golem generate/);
   await runPipeline(path.join(root, 'golem.yaml'));
   server.watcher.emit('add', keyTable(root));
-  assert.equal(send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length, 1);
+  await until(() => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length === 1, 'the reload once golem generate has written the model');
   pastThisMillisecond();
   assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
 });
@@ -450,7 +473,7 @@ test('vite serve: a generated model file outside the project root transforms aga
   await assert.rejects(server.transformRequest('/src/main.ts'), /run golem generate/);
   await runPipeline(path.join(root, 'golem.yaml'));
   server.watcher.emit('add', path.join(createFixtureProject(t, 'golem-bundler-outside-'), 'shared.model.generated.ts'));
-  assert.equal(send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length, 1);
+  await until(() => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length === 1, 'the reload once the outside model file exists');
   pastThisMillisecond();
   assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
 });

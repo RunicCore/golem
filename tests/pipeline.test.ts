@@ -11,6 +11,7 @@ import { runBuild } from '#golem/build';
 import { command, workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 import { until } from './support/watch-wait.js';
+import { runLines } from './support/watch-runs.js';
 import { readGeneratedModelSource } from './openapi/helpers.js';
 
 function fixture(t: TestContext): { root: string; config: string } {
@@ -99,13 +100,13 @@ test('watch regenerates model edits without rewriting SDKs or looping on outputs
   child.stdout.on('data', (value: Buffer) => { stdout += value.toString(); });
   child.stderr.on('data', (value: Buffer) => { stderr += value.toString(); });
   try {
-    await until(() => stdout.includes('Generated configured outputs.'), `initial watch generation: ${stderr}`);
+    await until(() => runLines(stdout).length > 0, `initial watch generation: ${stderr}`);
     const sdk = path.join(root, 'sdk/index.ts');
     const sdkMtime = fs.statSync(sdk).mtimeMs;
     const modelSource = path.join(root, 'src/cart.model.ts');
     fs.writeFileSync(modelSource, fs.readFileSync(modelSource, 'utf8').replace('note: string', 'note: string; selected?: boolean'));
     const generated = path.join(root, 'src/cart.model.generated.ts');
-    const runs = () => (stdout.match(/Generated configured outputs\./g) || []).length;
+    const runs = () => runLines(stdout).length;
     await until(() => runs() >= 2 && fs.readFileSync(generated, 'utf8').includes('selected'), `model regeneration: ${stderr}`);
     assert.equal(fs.statSync(sdk).mtimeMs, sdkMtime);
     // The next source edit is the observation point: a run triggered by outputs would precede its single run.

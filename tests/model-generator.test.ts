@@ -414,6 +414,21 @@ export { wrong };
   );
 });
 
+test('a compiler error prints its file relative to the working directory', (t: TestContext) => {
+  // protects: T-312 diagnostics print paths relative to the working directory, as tsc does
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-relative-', linkTypescript: true });
+  const broken = path.join(sourceRoot, 'broken.model.ts');
+  fs.writeFileSync(broken, `import type { IModel } from '@exprtlabs/golem/model';
+const wrong: string = 5;
+export type TBroken = IModel<{ id: string }>;
+export { wrong };
+`);
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: false } }),
+    (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), broken)}:2:7 - error TS2322`),
+  );
+});
+
 test('a type error in a handwritten file that is not a model source does not stop generation', (t: TestContext) => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-unrelated-error-', linkTypescript: true, compilerOptions: { declaration: false } });
   writeModelSources(sourceRoot, { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`id: string` }) });

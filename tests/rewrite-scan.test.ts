@@ -667,6 +667,29 @@ function bareProject(t: TestContext, files: Readonly<Record<string, string>>, ke
   return root;
 }
 
+test('RUNM1067 for a model whose generated file is missing or older than its model file says to wait for golem generate or golem watch', (t) => {
+  // protects: T-314 the hint says what to wait for when the generated file is not there yet
+  const root = bareProject(t, {
+    'a.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TA = IModel<{ id: string }>;\n",
+    'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TA } from './a.model.js';\ndeclare const text: string;\nexport const a = parse<TA>(text);\n",
+  });
+  const messages = (): string[] => scan(root).diagnostics.map(({ message }) => message);
+  const wait = ' Wait for golem generate or golem watch to write it.';
+
+  assert.deepEqual(messages(), [`parse<TA> has no unique codec id. src/a.model.generated.ts is missing.${wait}`]);
+
+  const companion = path.join(root, 'src/a.model.generated.ts');
+  fs.writeFileSync(companion, 'export {};\n');
+  const source = path.join(root, 'src/a.model.ts');
+  fs.utimesSync(companion, new Date(1_000_000), new Date(1_000_000));
+  assert.deepEqual(messages(), [`parse<TA> has no unique codec id. src/a.model.generated.ts is older than its model file.${wait}`]);
+
+  // A current generated file that still lacks the key is not something to wait for.
+  fs.utimesSync(companion, new Date(), new Date(Date.now() + 10_000));
+  assert.deepEqual(messages(), ['parse<TA> has no unique codec id']);
+  assert.ok(fs.statSync(source).mtimeMs < fs.statSync(companion).mtimeMs);
+});
+
 test('a class registers under the id its own file keys, never under a same-named declaration of another file', (t) => {
   const root = bareProject(t, {
     // `Foo` is keyed only in b.model.ts; a.model.ts declares its own `Foo` and reads b's through a namespace.

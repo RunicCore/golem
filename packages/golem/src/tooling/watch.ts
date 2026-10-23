@@ -4,7 +4,7 @@ import type { GolemConfig } from './config.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, isInsideDirectory, suffixPattern } from './generator-api.js';
 import { changedPaths, InputPoller, OwnedOutputIndex, RunBaseline } from './input-poller.js';
 import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
-import type { InputKind, PipelineState } from './pipeline.js';
+import type { InputKind, JobReport, PipelineState } from './pipeline.js';
 
 /** The names a job reads as sources, and what they are: a path with one of these endings is a source whether or not a run has read it. */
 function sourcePatterns(config: GolemConfig | undefined): readonly { readonly kind: 'models' | 'controllers'; readonly pattern: RegExp }[] {
@@ -29,6 +29,23 @@ interface Watched {
   readonly poller: InputPoller;
 }
 
+const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+function describeReport(report: JobReport | undefined): string {
+  const parts = [
+    ...(report?.written.length ? [`${plural(report.written.length, 'file')} updated`] : []),
+    ...(report?.removed.length ? [`${report.removed.length} removed`] : []),
+  ];
+  return parts.length ? parts.join(', ') : 'unchanged';
+}
+
+/** The line one good watch run prints: the result of each job, a job that did not run or wrote nothing as `unchanged`, then the time of the run. */
+export function summarizeRun(state: PipelineState, ms: number): string {
+  const jobs = state.config.jobs.map(job => `${job.id.replace(/:\.$/, '')}: ${describeReport(state.reports.get(job.id))}`);
+  if (state.retired.length) jobs.push(`removed jobs: ${plural(state.retired.length, 'file')} removed`);
+  return [...jobs, `${ms} ms`].join(' · ');
+}
+
 /**
  * Serialized polling of specific inputs, including reads attempted by failed runs, and of the folders around them, so a source
  * added to one of them starts a run. A `session` from the first run of the same command is kept; the watch closes it when it
@@ -44,6 +61,8 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
   let first = !state;
   let busy = false;
   let stopped = false;
+  // The last run failed: the next good run says it recovered.
+  let failed = false;
   // Compiler processes stay warm between runs and close with the watch.
   const closeSession = (): void => {
     try { session[Symbol.dispose](); } catch (error) { reportError(error); }
@@ -107,6 +126,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       const baseline = new RunBaseline(before, watched.root);
       const latestAttempt = new Map<string, InputKind>();
       try {
+        const started = performance.now();
         const next = await runPipeline(filename, {
           modelOnly, previous: state, session,
           ...(!retryFull ? { changedInputs: changed } : {}),
@@ -122,10 +142,13 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
         state = next;
         config = next.config;
         retryFull = false;
-        process.stdout.write('Generated configured outputs.\n');
+        process.stdout.write(`${failed ? 'Recovered: ' : ''}${summarizeRun(next, Math.round(performance.now() - started))}\n`);
+        failed = false;
       } catch (error) {
         retryFull = true;
+        failed = true;
         reportError(error);
+        process.stderr.write('The run failed. The last good output stays in place.\n');
       }
       attempted = latestAttempt;
       // Keep pre-read signatures so edits during work trigger the next serialized run.
