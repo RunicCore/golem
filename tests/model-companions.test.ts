@@ -251,14 +251,6 @@ test('re-exported IModel and IObject symbols preserve class versus plain-object 
   assert.deepEqual(loaded.plain, { label: 'plain' });
 });
 
-test('with validation off a generated model file has no validator import and validate true is unavailable', async () => {
-  const { root, artifacts } = await trustedProject();
-  const generated = artifacts.find((file) => file.path.endsWith('a.model.generated.ts'))?.content ?? '';
-  assert.doesNotMatch(generated, /models\.validators\.generated/);
-  const verifier = copyFixtureFile(root, 'models/model-companions/verify-validation-unavailable.mjs', 'verify-validation-unavailable.mjs');
-  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TA')]);
-});
-
 test('two models that import each other load and validate across the cycle', async () => {
   const { root } = await validatingProject();
   const verifier = copyFixtureFile(root, 'models/model-companions/verify-import-cycle.mjs', 'verify-import-cycle.mjs');
@@ -290,34 +282,6 @@ export type TA = IModel<{ title: string }>;
   await buildModelProject(root);
 
   assert.equal(fs.existsSync(oldFile), false);
-});
-
-/** Builds a project with `profile`, then runs the verifier against the built model file. */
-async function verifyProfile(
-  t: TestContext,
-  profile: { readonly mobx: boolean; readonly validation: boolean },
-  expectation: 'validates' | 'accepts',
-): Promise<void> {
-  const { root, sourceRoot } = companionModelProject(t, 'app-profile');
-  writeModelSources(sourceRoot, {
-    'order.model.ts': tsSource`import type { IModel, IObject } from '@exprtlabs/golem/model';
-import type { MinLength } from '@exprtlabs/golem/tags';
-export type TMoney = IObject<{ currency: string & MinLength<3> }>;
-export type TOrder = IModel<{ total: TMoney }>;
-`,
-  });
-  writeModelGolemYaml(root, profile);
-  await buildModelProject(root);
-  const verifier = copyFixtureFile(root, 'models/model-companions/verify-layer-profile.mjs', 'verify-layer-profile.mjs');
-  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TOrder'), expectation]);
-}
-
-test('validation and the MobX hook follow the profile of the app: a validating app rejects the short currency and observes the validator', async (t) => {
-  await verifyProfile(t, { mobx: true, validation: true }, 'validates');
-});
-
-test('validation and the MobX hook follow the profile of the app: an app without validation parses the same value', async (t) => {
-  await verifyProfile(t, { mobx: true, validation: false }, 'accepts');
 });
 
 test('a custom validation binding is imported by the generated validators and the model file imports those', (t) => {

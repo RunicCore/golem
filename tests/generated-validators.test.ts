@@ -386,59 +386,6 @@ test('generated validators permit equal model names in independent source graphs
   assert.equal(await getValidator(new SecondItem({ count: 2 } as never)).validate(), true);
 });
 
-test('a project with validation off generates no validators and refuses validate: true', async t => {
-  const value = fixture(t);
-  writeFileSync(path.join(value.sourceRoot, 'root.model.ts'), readFixture("models/generated-validators/generated-object-codecs-close-nested-schemas-and-preserve-first-all-sync-and-context/root.model.ts"));
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
-  await compile(value.root);
-  assert.equal(generatedModelFiles(value.root).some(item => item.path.endsWith('.validators.generated.ts')), false);
-  const { TRootBaseModel } = await import(pathToFileURL(path.join(value.root, 'build/root.model.generated.js')).href) as {
-    TRootBaseModel: abstract new (...args: never[]) => object;
-  };
-  const { findCodecIdForConstructor, requireObjectCodec } = await import('@exprtlabs/golem/serde');
-  const codecId = findCodecIdForConstructor(TRootBaseModel);
-  assert.ok(codecId);
-  const wire = '{"label":"x","first":{"label":"first","child":{"code":"y"}},"second":{"label":"second","child":{"code":"z"}}}';
-  assert.throws(
-    () => requireObjectCodec(codecId).parse(wire, { validate: true }),
-    error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
-  );
-  assert.doesNotThrow(() => requireObjectCodec(codecId).parse(wire));
-});
-
-test('a project with validation off generates when one model opts in, and the shared object keeps its own schemas', async t => {
-  const value = fixture(t);
-  writeFileSync(path.join(value.sourceRoot, 'a.model.ts'), [
-    "import type { IObject } from '@exprtlabs/golem/model';",
-    'export type TChild = IObject<{ at: Date }>;',
-    '',
-  ].join('\n'));
-  writeFileSync(path.join(value.sourceRoot, 'b.model.ts'), [
-    "import type { IModel } from '@exprtlabs/golem/model';",
-    "import type { TChild } from './a.model.js';",
-    "import { TParentBaseModel } from './b.model.generated.js';",
-    'export type TParent = IModel<{ child: TChild }, { validation: true }>;',
-    'export class Parent extends TParentBaseModel {}',
-    '',
-  ].join('\n'));
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
-  await compile(value.root);
-
-  const { Parent } = await import(pathToFileURL(path.join(value.root, 'build/b.model.js')).href) as {
-    Parent: new (values?: never) => object;
-  };
-  const { requireObjectCodec } = await import('@exprtlabs/golem/serde');
-  assert.equal(requireObjectCodec('TParent').validate(new Parent({ child: { at: new Date(0) } } as never)), true);
-  // The shared object does not validate itself, so its codec publishes the schemas it was generated with (Nest reads them for query shapes).
-  const child = requireObjectCodec('TChild');
-  assert.equal(typeof child.schema, 'object');
-  assert.equal(typeof child.wireSchema, 'object');
-  assert.throws(
-    () => child.validate({ at: new Date(0) }),
-    error => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
-  );
-});
-
 test('a model format golem does not check stops generation by default, and unknownFormats: warn warns and writes the files', async t => {
   // protects: T-33 unknownFormats defaults to error; warn is the opt-out
   const value = fixture(t);

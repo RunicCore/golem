@@ -129,6 +129,9 @@ export type TOpted = IModel<{ at: Date }, { validation: true }>;
   assert.doesNotMatch(content('plain.model.generated.ts'), /models\.validators\.generated/);
   assert.match(content('plain.model.generated.ts'), /profile: \{ validation: false \}/);
   assert.match(content('opted.model.generated.ts'), /profile: \{ validation: true \}/);
+  // With no opt-in model there is no validators file at all.
+  const plainOnly = generate({ root, sources: [path.join(sourceRoot, 'plain.model.ts')], profile: { mobx: false, validation: false } });
+  assert.equal(plainOnly.artifacts.some((artifact) => artifact.path.endsWith('.validators.generated.ts')), false);
 });
 
 const cycleSources = {

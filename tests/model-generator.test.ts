@@ -63,10 +63,15 @@ test('exports API 1 and emits profile-specific model companions without writes',
     // The same profile, built and run. An import or a MobX hook the profile does not use fails the strict unused compile.
     const built = createModelProject(t, { prefix: 'golem-model-generator-built-', name: 'model-generator-built', compilerOptions: { noUnusedLocals: true } });
     writeModelSources(built.sourceRoot, {
+      'money.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
+import type { MinLength } from '@exprtlabs/golem/tags';
+export type TMoney = IObject<{ currency: string & MinLength<3> }>;
+`,
       'payment.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import { asGenObservable } from '@exprtlabs/golem/mobx';
+import type { TMoney } from './money.model.js';
 import { TPaymentBaseModel } from './payment.model.generated.js';
-export type TPayment = IModel<{ id: string; amount: number }>;
+export type TPayment = IModel<{ id: string; amount: number; total: TMoney }>;
 // A second asGenObservable call on one instance throws: the generated base never makes the model observable itself.
 export class Payment extends TPaymentBaseModel {
   constructor(values: ConstructorParameters<typeof TPaymentBaseModel>[0] = {}) { super(values); asGenObservable(this); }
@@ -74,25 +79,30 @@ export class Payment extends TPaymentBaseModel {
 `,
       'fields-assert.ts': tsSource`import type { generatedModelFieldsBrand } from '@exprtlabs/golem/model';
 import type { Payment } from './payment.model.js';
-export const fields: Payment[typeof generatedModelFieldsBrand] = { id: 'a', amount: 1 };
+export const fields: Payment[typeof generatedModelFieldsBrand] = { id: 'a', amount: 1, total: { currency: 'USD' } };
 // @ts-expect-error the fields brand carries the declared field types
-export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount: 1 };
+export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount: 1, total: { currency: 'USD' } };
 `,
     });
     writeModelGolemYaml(built.root, profile);
     await buildModelProject(built.root);
     const { Payment } = await import(`${pathToFileURL(path.join(built.root, 'build/payment.model.js')).href}`);
-    const payment = decodeGeneratedModel(Payment, { id: 'p1', amount: 5 });
+    const wire = { id: 'p1', amount: 5, total: { currency: 'USD' } };
+    const payment = decodeGeneratedModel(Payment, wire);
     assert.ok(payment instanceof Payment, 'the companion registers the model for conversion');
-    assert.deepEqual(encodeGeneratedModel(payment), { id: 'p1', amount: 5 });
+    assert.deepEqual(encodeGeneratedModel(payment), wire);
     const codec = requireObjectCodec(generatedCodecIdFromRoot(built.root, 'TPayment'));
+    // A validating app rejects the short nested currency when it parses; an app without validation reads the same text.
+    const shortCurrency = JSON.stringify({ ...wire, total: { currency: 'US' } });
     if (expected.validation) {
+      assert.throws(() => codec.parse(shortCurrency));
       const validator = getValidator(payment);
       assert.equal(await validator.validate(), true);
-      assert.equal(await getValidator(new Payment({ id: 'p1', amount: 'five' })).validate(), false);
+      assert.equal(await getValidator(new Payment({ id: 'p1', amount: 'five', total: wire.total })).validate(), false);
       assert.equal(isComputedProp(validator, 'valid'), expected.mobx, 'the validator is observable exactly when the profile uses MobX');
       assert.equal(codec.validate(payment), true);
     } else {
+      assert.deepEqual(codec.parse(shortCurrency), { ...wire, total: { currency: 'US' } });
       assert.throws(() => getValidator(payment), isValidationUnavailable);
       assert.throws(() => codec.validate(payment), isValidationUnavailable);
     }
@@ -512,29 +522,6 @@ export type TPayment = IModel<{ id: string; total: TMoney }>;
 
 const NESTED_PAYMENT_WIRE = { id: 'p1', total: { currency: 'USD', note: 1, at: '2024-01-01T00:00:00.000Z' } };
 
-test('a model file records the profile of the app and imports the MobX hook only when it validates under MobX', async (t: TestContext) => {
-  const { isComputedProp } = await import('mobx');
-  for (const [profile, validates, observable] of [
-    [{ mobx: false, validation: false }, false, false],
-    [{ mobx: true, validation: false }, false, false],
-    [{ mobx: false, validation: true }, true, false],
-    [{ mobx: true, validation: true }, true, true],
-  ] as const) {
-    const { root } = nestedPaymentProject(t);
-    writeModelGolemYaml(root, profile);
-    await buildModelProject(root);
-    const { TPaymentBaseModel } = await import(pathToFileURL(path.join(root, 'build/payment.model.generated.js')).href);
-    const payment = decodeGeneratedModel(TPaymentBaseModel, NESTED_PAYMENT_WIRE);
-    if (validates) {
-      const validator = getValidator(payment);
-      assert.equal(await validator.validate(), true);
-      assert.equal(isComputedProp(validator, 'valid'), observable, `${JSON.stringify(profile)}: the validator is observable exactly when the app uses MobX and validates`);
-    } else {
-      assert.throws(() => getValidator(payment), isValidationUnavailable, `${JSON.stringify(profile)}: the model records that the app does not validate`);
-    }
-  }
-});
-
 /** A workspace folder with `@exprtlabs/golem` linked, for projects that include a folder outside their own root. */
 function sharedWorkspace(t: TestContext): string {
   const outer = createFixtureProject(t, 'golem-shared-depth-');
@@ -594,7 +581,7 @@ export type TParent = IModel<{ name: string & MinLength<3>; child: TChild }, { v
   writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
   const verifier = copyFixtureFile(root, 'models/model-generator/verify-open-child.mjs', 'verify-open-child.mjs');
-  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TParent')]);
+  await command(root, process.execPath, [verifier, generatedCodecIdFromRoot(root, 'TParent'), generatedCodecIdFromRoot(root, 'TChild')]);
 });
 
 test('a companion imports only the validators of its own models and the companions its source imports', async (t: TestContext) => {
