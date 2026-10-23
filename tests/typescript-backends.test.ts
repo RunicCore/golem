@@ -119,6 +119,55 @@ test('a manifest lookup sees the disk and the files it is given, not the overlay
   assert.equal(lookup('./virtual.js', new Set([virtual])), virtual);
   assert.equal(lookup('./virtual.js'), undefined);
   assert.ok(program.getSourceFile(overlay));
+
+  // The lookups left the overlay of the open program as it was: another program with it still holds the file.
+  using second = session.openProgram({ root, sources: [path.join(root, 'main.ts'), overlay], overlays: new Map([[overlay, 'export {};\n']]) });
+  assert.ok(second.getSourceFile(overlay));
+  // A lookup that stops on a package.json that is not JSON leaves the session usable.
+  fs.mkdirSync(path.join(root, 'node_modules/broken'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'node_modules/broken/package.json'), '{"name": "broken", ');
+  assert.throws(() => lookup('broken'), /^Error: Cannot read .*package\.json to resolve a package import: /);
+  using third = session.openProgram({ root, sources: [path.join(root, 'main.ts'), overlay], overlays: new Map([[overlay, 'export {};\n']]) });
+  assert.ok(third.getSourceFile(overlay));
+});
+
+test('a manifest lookup follows an edit of a package exports map made between two lookups of one session', t => {
+  // protects: T-345 the manifest lookup of both TypeScript lanes does not keep a package.json it read before an edit
+  const root = createFixtureProject(t, 'golem-manifest-edit-');
+  const dependency = path.join(root, 'node_modules/edited');
+  fs.mkdirSync(dependency, { recursive: true });
+  for (const name of ['first', 'second']) fs.writeFileSync(path.join(dependency, `${name}.d.ts`), 'export declare const value: number;\n');
+  const exportsOf = (target: string): string => JSON.stringify({ name: 'edited', version: '1.0.0', exports: { '.': { types: target } } });
+  fs.writeFileSync(path.join(dependency, 'package.json'), exportsOf('./first.d.ts'));
+  const { lookup } = manifestLookup(t, root);
+  assert.equal(lookup('edited'), fs.realpathSync(path.join(dependency, 'first.d.ts')));
+
+  fs.writeFileSync(path.join(dependency, 'package.json'), exportsOf('./second.d.ts'));
+
+  assert.equal(lookup('edited'), fs.realpathSync(path.join(dependency, 'second.d.ts')));
+});
+
+test('an import that resolves to no file resolves to a file the caller names as about to exist, through any import form and in the mode of the importer', t => {
+  // protects: T-345 the lookup that counts companions a job is about to write follows #imports and the importer's module format
+  const root = createFixtureProject(t, 'golem-virtual-files-');
+  fs.mkdirSync(path.join(root, 'node_modules/dual'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'app', private: true, imports: { '#gen/*': './gen/*' } }));
+  fs.writeFileSync(path.join(root, 'node_modules/dual/package.json'), JSON.stringify({ name: 'dual', version: '1.0.0', exports: { '.': { types: { import: './esm.d.ts', require: './cjs.d.ts' } } } }));
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { module: 'NodeNext', moduleResolution: 'NodeNext', noEmit: true, skipLibCheck: true }, include: ['*.mts', '*.cts'] }));
+  fs.writeFileSync(path.join(root, 'esm.mts'), "import 'dual';\nimport '#gen/order.js';\n");
+  fs.writeFileSync(path.join(root, 'cjs.cts'), "import 'dual';\n");
+  const program = ts.createProgramFromSources({ root, sources: [path.join(root, 'esm.mts'), path.join(root, 'cjs.cts')] });
+  t.after(() => program.close());
+  const checker = program.getTypeChecker();
+  const specifiers = (file: string): readonly ts.StringLiteralLike[] => program.getSourceFile(path.join(root, file))!.statements.filter(ts.isImportDeclaration).map((statement) => statement.moduleSpecifier).filter(ts.isStringLiteralLike);
+  const [dualOfEsm, generated] = specifiers('esm.mts');
+  const [dualOfCjs] = specifiers('cjs.cts');
+  const virtual = new Set(['gen/order.ts', 'node_modules/dual/esm.d.ts', 'node_modules/dual/cjs.d.ts'].map((file) => path.join(root, file)));
+
+  assert.equal(checker.resolveImport(generated!), undefined);
+  assert.equal(checker.resolveImport(generated!, virtual)?.resolvedFileName, path.join(root, 'gen/order.ts'));
+  assert.equal(checker.resolveImport(dualOfEsm!, virtual)?.resolvedFileName, path.join(root, 'node_modules/dual/esm.d.ts'));
+  assert.equal(checker.resolveImport(dualOfCjs!, virtual)?.resolvedFileName, path.join(root, 'node_modules/dual/cjs.d.ts'));
 });
 
 for (const [place, specifier, manifest] of [

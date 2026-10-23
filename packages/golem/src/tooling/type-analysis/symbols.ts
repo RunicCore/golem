@@ -84,15 +84,14 @@ export function modelSpecificationForClass(
   checker: ts.TypeChecker,
   type: ts.Type,
   specifications: readonly ModelSpecification[],
-  compilerOptions: ts.CompilerOptions = { moduleResolution: ts.ModuleResolutionKind.NodeNext },
   seen = new Set<ts.ClassDeclaration>(),
 ): ModelSpecification | undefined {
   const declaration = resolveSymbol(checker, type.getSymbol())?.declarations?.find(ts.isClassDeclaration);
   if (!declaration || seen.has(declaration)) return undefined;
   seen.add(declaration);
   // The companions the jobs are about to write do not exist on the first run, so the compiler finds no module for an import of one; the
-  // lookup that counts them covers every import form (relative, `paths`, `#imports`).
-  const expected = new Set(specifications.map(specification => canonicalFilename(companionOfSpecification(specification))));
+  // lookup that counts them covers every import form (relative, `paths`, `#imports`). Built when the first import needs it.
+  let expected: ReadonlySet<string> | undefined;
   const match = (filename: string, name: string | undefined): ModelSpecification | undefined => specifications.find(specification =>
     canonicalFilename(companionOfSpecification(specification)) === canonicalFilename(filename)
       && name === `${specification.name}BaseModel`);
@@ -109,11 +108,11 @@ export function modelSpecificationForClass(
         if (!ts.isImportSpecifier(alias)) continue;
         const statement = alias.parent.parent.parent;
         if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier)) continue;
-        const resolved = checker.resolveImport(statement.moduleSpecifier, expected)?.resolvedFileName;
+        const resolved = checker.resolveImport(statement.moduleSpecifier, expected ??= new Set(specifications.map(specification => canonicalFilename(companionOfSpecification(specification)))))?.resolvedFileName;
         const specification = resolved && match(resolved, (alias.propertyName ?? alias.name).text);
         if (specification) return specification;
       }
-      const inherited = modelSpecificationForClass(checker, checker.getTypeAtLocation(base), specifications, compilerOptions, seen);
+      const inherited = modelSpecificationForClass(checker, checker.getTypeAtLocation(base), specifications, seen);
       if (inherited) return inherited;
     }
   }
@@ -128,13 +127,12 @@ export function linkedClassNames(
   checker: ts.TypeChecker,
   specification: ModelSpecification,
   specifications: readonly ModelSpecification[],
-  compilerOptions?: ts.CompilerOptions,
 ): string[] {
   const candidates = specification.sourceFile.statements.filter((statement): statement is ts.ClassDeclaration & { readonly name: ts.Identifier } =>
     ts.isClassDeclaration(statement)
       && statement.name !== undefined
       && statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) === true
-      && modelSpecificationForClass(checker, checker.getTypeAtLocation(statement.name), specifications, compilerOptions) === specification);
+      && modelSpecificationForClass(checker, checker.getTypeAtLocation(statement.name), specifications) === specification);
   const extendsCandidate = (candidate: ts.ClassDeclaration): boolean => (candidate.heritageClauses ?? [])
     .filter((clause) => clause.token === ts.SyntaxKind.ExtendsKeyword)
     .flatMap((clause) => clause.types)
@@ -151,8 +149,7 @@ export function exportedConcreteClass(
   checker: ts.TypeChecker,
   specification: ModelSpecification,
   specifications: readonly ModelSpecification[],
-  compilerOptions?: ts.CompilerOptions,
 ): string | undefined {
-  const linked = linkedClassNames(checker, specification, specifications, compilerOptions);
+  const linked = linkedClassNames(checker, specification, specifications);
   return linked.length === 1 ? linked[0] : undefined;
 }

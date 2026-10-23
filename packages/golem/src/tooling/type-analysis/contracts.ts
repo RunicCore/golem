@@ -54,12 +54,12 @@ export function createContractAnalysis(
   };
   // A model with exactly one linked class is named by that class, any other model by its alias.
   const baseNames = new Map(specifications.map((specification) => {
-    const linked = linkedClassNames(checker, specification, specifications, program.getCompilerOptions());
+    const linked = linkedClassNames(checker, specification, specifications);
     return [specification, linked.length === 1 ? linked[0]! : specification.name] as const;
   }));
   // OpenAPI describes the full contract even when runtime validation is omitted.
   // The document describes an SDK model by its type; only the codec ids see it as the manifest reference the models job hashes.
-  const buildDescribe = (nameFor?: (specification: ModelSpecification) => string, manifests: ManifestIndex = emptyManifests) => descriptorBuilder(checker, specifications, manifests, true, options.allowAny ?? false, options.root, program.getCompilerOptions(), false, nameFor, undefined, undefined, (node) => typeScriptErrorAt(program, node));
+  const buildDescribe = (nameFor?: (specification: ModelSpecification) => string, manifests: ManifestIndex = emptyManifests) => descriptorBuilder(checker, specifications, manifests, true, options.allowAny ?? false, options.root, false, nameFor, undefined, undefined, (node) => typeScriptErrorAt(program, node));
   const describeAll = (builder: ReturnType<typeof buildDescribe>): Map<ModelSpecification, ModelConversionDescriptor> => new Map(
     specifications.map((specification) => [specification, builder(specification.fieldsType, specification, undefined, specification.fieldsNode)] as const),
   );
@@ -123,7 +123,7 @@ export function createContractAnalysis(
     const sameFields = candidate && checker.isTypeAssignableTo(type, candidate.fieldsType)
       && checker.isTypeAssignableTo(candidate.fieldsType, type)
       && checker.getPropertiesOfType(type).length === checker.getPropertiesOfType(candidate.fieldsType).length;
-    return sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, specifications, program.getCompilerOptions()) : undefined;
+    return sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, specifications) : undefined;
   };
 
   return {

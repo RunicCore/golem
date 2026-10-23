@@ -70,7 +70,7 @@ test('type analysis reads the tags of an alias in the .model.d.ts file of an ins
   const order = path.join(root, 'src/order.model.ts');
   const info = createProgram([order], root);
   const { checker, specifications } = collectSpecifications(info.program, [order, declaration]);
-  const job = createJobAnalysis(checker, specifications, loadModelManifests(root, info, [], PROFILE), PROFILE, [order], root, info.options);
+  const job = createJobAnalysis(checker, specifications, loadModelManifests(root, info, [], PROFILE), PROFILE, [order], root);
   const describe = (name: string): { properties: Record<string, object> } => {
     const specification = specifications.find((item) => item.name === name);
     assert.ok(specification);
@@ -213,7 +213,7 @@ test('on the first run an app class that imports the shared base through a paths
   const { checker, specifications } = collectSpecifications(info.program, [path.join(outer, 'shared/customer.model.ts')], undefined, (file) => companionFilename(boundary, file));
 
   const classSymbol = checker.getExportsOfModule(checker.getSymbolAtLocation(info.program.getSourceFile(customer)!)!).find((symbol) => symbol.name === 'Customer')!;
-  const specification = modelSpecificationForClass(checker, checker.getDeclaredTypeOfSymbol(classSymbol), specifications, info.options);
+  const specification = modelSpecificationForClass(checker, checker.getDeclaredTypeOfSymbol(classSymbol), specifications);
 
   assert.equal(specification?.name, 'TCustomer');
 });

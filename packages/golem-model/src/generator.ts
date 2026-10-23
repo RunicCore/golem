@@ -503,7 +503,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
     normalized.profile,
     sources,
     normalized.root,
-    programInfo.options,
     (filename) => program.getSourceFile(filename),
     boundary,
   );
@@ -517,7 +516,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
       manifestIndex,
       normalized.profile,
       normalized.root,
-      programInfo.options,
       job,
     ))
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);

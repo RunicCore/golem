@@ -109,7 +109,6 @@ function canonicalModelSchema(root: string, sourceRoot: string): unknown {
     manifestIndex,
     profile,
     root,
-    programInfo.options,
   );
   assert.ok(graph, 'model source graph');
   const descriptor = graph.definitions.TA;

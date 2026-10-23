@@ -573,7 +573,6 @@ export function descriptorBuilder(
   validationEnabled: boolean,
   allowAny = false,
   identityRoot?: string,
-  compilerOptions?: ts.CompilerOptions,
   allowUnresolved = true,
   /** Name that references to a model and its derived projections use; the model's own name when omitted. */
   nameFor?: (specification: ModelSpecification) => string,
@@ -632,7 +631,7 @@ export function descriptorBuilder(
   const isModelBoundary = (type: ts.Type): boolean =>
     modelSpecificationForType(checker, type, specifications) !== undefined
     || manifestIndex.externalModelForType(type) !== undefined
-    || ((type.flags & ts.TypeFlags.Object) !== 0 && modelSpecificationForClass(checker, type, specifications, compilerOptions) !== undefined);
+    || ((type.flags & ts.TypeFlags.Object) !== 0 && modelSpecificationForClass(checker, type, specifications) !== undefined);
   // The types a type holds that `describe` descends into. It stops where `describe` stops, so a type that reaches
   // itself only through a model is not a cycle: the model is a reference.
   const heldTypes = (type: ts.Type, location: ts.Node): readonly ts.Type[] => {
@@ -820,7 +819,7 @@ export function descriptorBuilder(
     const isRoot = node === context.fieldsNode;
     const classMatch = isRoot || type.isUnion() || isPropertyMapping(type) || projection
       ? undefined
-      : modelSpecificationForClass(checker, type, specifications, compilerOptions);
+      : modelSpecificationForClass(checker, type, specifications);
     const projectedStructural = (): ModelSpecification | undefined => {
       const structural = structuralModel(type);
       return structural && !provenance.models.includes(structural) ? structural : undefined;
@@ -1035,7 +1034,7 @@ export function descriptorBuilder(
           members.push({ name, property: mapped, absentFromSource: sourceObject !== undefined && !sourceObject.getProperty(name) });
         }
         // A model defined by a mapped type over its own class has no members: the base of the class is a stub of this very model.
-        if (sourceObject && modelSpecificationForClass(checker, sourceObject, specifications, compilerOptions)?.declaration === context.declaration && !context.schemaData && members.length === 0) {
+        if (sourceObject && modelSpecificationForClass(checker, sourceObject, specifications)?.declaration === context.declaration && !context.schemaData && members.length === 0) {
           throw diagnostic(
             context.sourceFile,
             node ?? context.declaration,

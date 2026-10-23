@@ -734,7 +734,6 @@ export interface SourceModelGraph {
   readonly source: string;
   readonly output: string;
   readonly identityRoot: string;
-  readonly compilerOptions?: ts.CompilerOptions;
   readonly definitions: Readonly<Record<string, ModelConversionDescriptor>>;
   readonly modelDefinitions: Readonly<Record<string, ModelConversionDescriptor>>;
   readonly wireDefinitions: Readonly<Record<string, ModelConversionDescriptor>>;
@@ -766,7 +765,6 @@ interface JobAnalysis {
   readonly directImports: Map<string, readonly string[]>;
   /** The job's model-file suffixes: a model file of a shared package is read through an import. */
   readonly suffixes: readonly string[] | undefined;
-  readonly compilerOptions: ts.CompilerOptions;
   /** The parsed file of a canonical filename, when the program holds it. */
   readonly sourceFileOf: (filename: string) => ts.SourceFile | undefined;
   /**
@@ -802,7 +800,6 @@ export function createJobAnalysis(
   profile: GolemProfile,
   sources: readonly string[],
   identityRoot?: string,
-  compilerOptions?: ts.CompilerOptions,
   sourceFileOf?: (filename: string) => ts.SourceFile | undefined,
   boundary?: ModelBoundary,
 ): JobAnalysis {
@@ -819,7 +816,6 @@ export function createJobAnalysis(
       profile.validation,
       profile.allowAny ?? false,
       stableIdentityRoot,
-      compilerOptions,
       true,
       undefined,
       modelSources,
@@ -830,7 +826,6 @@ export function createJobAnalysis(
     executableMemo: createExecutableValidationMemo(),
     directImports: new Map(),
     suffixes: boundary?.suffixes,
-    compilerOptions: compilerOptions ?? { moduleResolution: ts.ModuleResolutionKind.NodeNext },
     sourceFileOf: sourceFileOf ?? ((filename) => specifications
       .find((specification) => canonicalFilename(specification.sourceFile.fileName) === filename)?.sourceFile),
   };
@@ -870,8 +865,7 @@ export function analyzeSourceGraph(
   manifestIndex: ManifestIndex,
   profile: GolemProfile,
   identityRoot?: string,
-  compilerOptions?: ts.CompilerOptions,
-  job: JobAnalysis = createJobAnalysis(checker, specifications, manifestIndex, profile, [source], identityRoot, compilerOptions),
+  job: JobAnalysis = createJobAnalysis(checker, specifications, manifestIndex, profile, [source], identityRoot),
 ): SourceModelGraph | undefined {
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
@@ -975,7 +969,6 @@ export function analyzeSourceGraph(
     source,
     output,
     identityRoot: stableIdentityRoot,
-    ...(compilerOptions ? { compilerOptions } : {}),
     definitions,
     modelDefinitions,
     wireDefinitions,
@@ -1060,7 +1053,7 @@ export function codecEntriesForGraph(
     return {
       source: portableRelativeFilename(specification.sourceFile.fileName, graph.identityRoot),
       name: specification.name,
-      classNames: linkedClassNames(checker, specification, specifications, graph.compilerOptions),
+      classNames: linkedClassNames(checker, specification, specifications),
       codecId: node?.codecId ?? codecPublicId(specification.name, descriptor ?? { kind: 'unknown' }, undefined, { source: 'typescript', constructs: specification.emitClass }),
     };
   });
@@ -1351,13 +1344,13 @@ function buildEmitContext(
   const concreteNames = new Map(
     [...emitted]
       .filter((specification) => !cyclicSiblings?.has(specification.name))
-      .map((specification) => [specification.name, exportedConcreteClass(checker, specification, specifications, graph.compilerOptions)] as const)
+      .map((specification) => [specification.name, exportedConcreteClass(checker, specification, specifications)] as const)
       .filter((entry): entry is readonly [string, string] => entry[1] !== undefined),
   );
   const linkedByName = new Map(
     [...emitted]
       .filter((specification) => !cyclicSiblings?.has(specification.name))
-      .map((specification) => [specification.name, linkedClassNames(checker, specification, specifications, graph.compilerOptions)] as const),
+      .map((specification) => [specification.name, linkedClassNames(checker, specification, specifications)] as const),
   );
   const referenceNames = [...Object.values(definitions)].reduce(
     (found, descriptor) => descriptorReferences(descriptor, found),
