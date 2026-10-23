@@ -1,40 +1,18 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemConfig } from './config.js';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, discoverSources, errorMessage, hasErrorCode, isInsideDirectory, suffixPattern } from './generator-api.js';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, isInsideDirectory, suffixPattern } from './generator-api.js';
+import { changedPaths, InputPoller, RunBaseline } from './input-poller.js';
 import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, PipelineState } from './pipeline.js';
 
-function sourceCandidates(config: GolemConfig, kind: 'models' | 'controllers'): Set<string> {
-  const found = new Set<string>();
-  // Generated outputs can contain model-named files; they are not model sources.
-  const outputs = config.jobs.flatMap(job => job.kind === 'openapi' || job.kind === 'controllers' ? [job.options.output] : []);
-  const skip = (directory: string): boolean => outputs.some(output => isInsideDirectory(output, directory));
-  for (const job of config.jobs) {
-    if (job.kind !== kind) continue;
-    found.add(path.join(job.options.root, 'tsconfig.json'));
-    const suffixes = job.options.suffixes ?? (kind === 'models' ? DEFAULT_MODEL_SUFFIXES : DEFAULT_CONTROLLER_SUFFIXES);
-    // A models job generates every model file of its root that its tsconfig includes; a controllers job reads `src`.
-    const sources = job.options.sources ?? discoverSources(kind === 'models' ? job.options.root : path.join(job.options.root, 'src'), { source: suffixPattern(suffixes), ...(kind === 'models' ? { skip } : {}) });
-    for (const source of sources) found.add(source);
-  }
-  return found;
+/** The names a job reads as sources, and what they are: a path with one of these endings is a source whether or not a run has read it. */
+function sourcePatterns(config: GolemConfig | undefined): readonly { readonly kind: 'models' | 'controllers'; readonly pattern: RegExp }[] {
+  return (config?.jobs ?? []).flatMap(job => {
+    // A job with a list of sources reads those and no others.
+    if ((job.kind !== 'models' && job.kind !== 'controllers') || job.options.sources) return [];
+    return [{ kind: job.kind, pattern: suffixPattern(job.options.suffixes ?? (job.kind === 'models' ? DEFAULT_MODEL_SUFFIXES : DEFAULT_CONTROLLER_SUFFIXES)) }];
+  });
 }
-
-/** Content signature of a watched path: `missing`, `directory` (a directory's mtime also moves on output writes), or mtime, ctime and size. */
-export function signature(filename: string): string {
-  try {
-    // Most watched paths are failed module-resolution probes; avoid an exception per missing path.
-    const stat = fs.statSync(filename, { throwIfNoEntry: false });
-    if (!stat) return 'missing';
-    // Source discovery scans model names. Directory mtimes also change on output writes.
-    return stat.isDirectory() ? 'directory' : `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
-  } catch (error) {
-    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR')) return 'missing';
-    throw error;
-  }
-}
-interface Fingerprint { readonly kind: InputKind; readonly signature: string }
 
 function pathKey(filename: string): string {
   const resolved = path.resolve(filename);
@@ -68,9 +46,25 @@ export class OwnedOutputIndex {
   }
 }
 
+/** The folder of a source outside the root, which a source added beside it joins; undefined for any other input. */
+function outsideSourceFolder(root: string, sources: ReturnType<typeof sourcePatterns>, input: string): string | undefined {
+  if (isInsideDirectory(root, input) || input.split(path.sep).includes('node_modules')) return undefined;
+  return sources.some(source => source.pattern.test(path.basename(input))) ? path.dirname(input) : undefined;
+}
+
+/** What one watch polls between two runs. */
+interface Watched {
+  readonly root: string;
+  readonly sources: ReturnType<typeof sourcePatterns>;
+  /** The inputs it stats, by what reads them. */
+  readonly kinds: ReadonlyMap<string, InputKind>;
+  readonly poller: InputPoller;
+}
+
 /**
- * Serialized polling of specific inputs, including reads attempted by failed runs. A `session` from the first run of the same
- * command is kept; the watch closes it when it stops. Without one, the watch opens its own.
+ * Serialized polling of specific inputs, including reads attempted by failed runs, and of the folders around them, so a source
+ * added to one of them starts a run. A `session` from the first run of the same command is kept; the watch closes it when it
+ * stops. Without one, the watch opens its own.
  */
 export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, session: GeneratorSessionResources = new GeneratorSessionResources()): () => void {
   let state = typeof initial === 'string' ? undefined : initial;
@@ -86,38 +80,63 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
   const closeSession = (): void => {
     try { session[Symbol.dispose](); } catch (error) { reportError(error); }
   };
-  const fingerprints = (): Map<string, Fingerprint> => {
+  // The inputs and folders to poll change only when a run ends, so they are worked out then and not at every tick.
+  const watch = (): Watched => {
     const inputs = new Map<string, InputKind>(state?.inputs);
     for (const [input, kind] of attempted) inputs.set(input, strongestInputKind(inputs.get(input), kind));
     inputs.set(filename, 'config');
+    const sources = sourcePatterns(config);
+    const root = config ? path.dirname(config.tsconfig) : path.dirname(filename);
+    const descend: string[] = [];
     if (config) {
       for (const job of config.jobs) {
         if (job.kind === 'controllers') {
           inputs.set(job.options.root, strongestInputKind(inputs.get(job.options.root), 'controllers'));
         } else if (job.kind === 'openapi') inputs.set(job.options.input, strongestInputKind(inputs.get(job.options.input), 'openapi'));
+        if (job.kind !== 'models' && job.kind !== 'controllers') continue;
+        const tsconfig = path.join(job.options.root, 'tsconfig.json');
+        inputs.set(tsconfig, strongestInputKind(inputs.get(tsconfig), job.kind));
+        // A job reads every source of its root; a controllers job reads `src`.
+        if (!job.options.sources) descend.push(job.kind === 'models' ? job.options.root : path.join(job.options.root, 'src'));
       }
-      for (const source of sourceCandidates(config, 'controllers')) inputs.set(source, strongestInputKind(inputs.get(source), 'controllers'));
-      for (const source of sourceCandidates(config, 'models')) inputs.set(source, strongestInputKind(inputs.get(source), 'models'));
     }
     // A new output directory can have been observed as missing during module
-    // resolution. Its creation is output work, not a source edit. Discovery
-    // still scans model filenames, so adding a source beneath it is visible.
-    const watched = new Map([...inputs].filter(([input]) => !owned.covers(input))
-      .map(([input, kind]) => [input, { kind, signature: signature(input) }]));
-    return watched;
+    // resolution. Its creation is output work, not a source edit. Adding a
+    // source beneath it is still seen: the poll lists the names around the inputs.
+    const kinds = new Map([...inputs].filter(([input]) => !owned.covers(input)));
+    // Generated outputs can contain model-named files; they are not model sources.
+    const outputs = (config?.jobs ?? []).flatMap(job => job.kind === 'openapi' || job.kind === 'controllers' ? [job.options.output] : []);
+    const outsideDirectories = new Set<string>();
+    for (const input of kinds.keys()) {
+      const folder = outsideSourceFolder(root, sources, input);
+      if (folder !== undefined) outsideDirectories.add(folder);
+    }
+    const poller = new InputPoller(kinds.keys(), {
+      root, outsideDirectories, descend,
+      skipDescent: directory => outputs.some(output => isInsideDirectory(output, directory)),
+    });
+    return { root, sources, kinds, poller };
   };
-  let previous = fingerprints();
+  let watched = watch();
+  let previous = watched.poller.snapshot();
+  /** What reads a changed path: a polled input, or else a source that was added or removed. A name that is no source is not a change. */
+  const kindOf = (input: string): InputKind | undefined => watched.kinds.get(input) ?? watched.sources.find(source => source.pattern.test(path.basename(input)))?.kind;
   const tick = async (): Promise<void> => {
     if (busy || stopped) return;
     busy = true;
     try {
-      const before = fingerprints();
-      const changed = [...new Set([...previous.keys(), ...before.keys()])].filter(input => previous.get(input)?.signature !== before.get(input)?.signature);
-      if (!first && !changed.length) return;
+      const before = watched.poller.snapshot();
+      const paths = changedPaths(previous, before, input => owned.covers(input));
+      const changed = paths.filter(input => kindOf(input) !== undefined);
+      if (!first && !changed.length) {
+        // Names that are no source are taken as seen, so they are not listed at every tick.
+        if (paths.length) previous = before;
+        return;
+      }
       first = false;
       session.inputsChanged(changed);
-      const modelOnly = !retryFull && changed.every(input => (before.get(input) ?? previous.get(input))?.kind === 'models');
-      const observed = new Map<string, Fingerprint>();
+      const modelOnly = !retryFull && changed.every(input => kindOf(input) === 'models');
+      const baseline = new RunBaseline(before, watched.root);
       const latestAttempt = new Map<string, InputKind>();
       try {
         const next = await runPipeline(filename, {
@@ -126,7 +145,9 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
           onConfig: value => { config = value; },
           onInput: (input, kind) => {
             latestAttempt.set(input, strongestInputKind(latestAttempt.get(input), kind));
-            if (!observed.has(input)) observed.set(input, { kind, signature: signature(input) });
+            baseline.observe(input);
+            const folder = outsideSourceFolder(watched.root, watched.sources, input);
+            if (folder !== undefined) baseline.observeFolder(folder);
           },
           onOwned: filenames => { for (const filename of filenames) owned.add(filename); },
         });
@@ -140,7 +161,8 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       }
       attempted = latestAttempt;
       // Keep pre-read signatures so edits during work trigger the next serialized run.
-      previous = new Map([...fingerprints()].map(([input, value]) => [input, before.get(input) ?? observed.get(input) ?? value]));
+      watched = watch();
+      previous = baseline.settle(watched.poller.snapshot());
     } catch (error) { reportError(error); }
     finally {
       busy = false;
