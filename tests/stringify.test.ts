@@ -9,10 +9,10 @@ import {
   stringifyJsonString,
 } from '@exprtlabs/golem/serde';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { emitCodecRuntime, emitGraphStringify } from '@exprtlabs/golem/internal/emitter';
+import { emitGraphStringify } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { instantiate, instantiateRuntime } from './emitted-runtime.js';
+import { instantiate, instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
 
 const stringCorpus = [
   '',
@@ -127,7 +127,7 @@ test('with validation off an object writes the fields it holds, in order and wit
   const graph = createSchemaGraph();
   graph.intern(record, 'Record5');
   graph.seal();
-  const { stringifyRecord5 } = instantiateRuntime(emitCodecRuntime(graph, { validationEnabled: false }));
+  const { stringifyRecord5 } = instantiateRuntime(emitCodecRuntimeText(graph, { validationEnabled: false }));
   const write = (value: object): unknown => stringifyRecord5!(value, { validate: false });
   assert.equal(write({ b: 1, d: true }), '{"b":1,"d":true}');
   assert.equal(write({ a: 'x', b: 1, c: 'y', d: true, e: 'z' }), '{"a":"x","b":1,"c":"y","d":true,"e":"z"}');
@@ -247,7 +247,7 @@ test('an explicit union tag table must list every variant', () => {
   assert.throws(() => {
     graph.intern(owner, 'Owner');
     graph.seal();
-    emitCodecRuntime(graph, { validationEnabled: false });
+    emitCodecRuntimeText(graph, { validationEnabled: false });
   }, /tag values for every (union )?variant/);
 });
 

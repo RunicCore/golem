@@ -3,12 +3,12 @@ import test from 'node:test';
 import { transformSync } from 'esbuild';
 
 import * as conversion from '@exprtlabs/golem/conversion';
-import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON, render } from '@exprtlabs/golem/internal/emitter';
+import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render } from '@exprtlabs/golem/internal/emitter';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import * as serde from '@exprtlabs/golem/serde';
-import { instantiateRuntime, type RuntimeFunction } from './emitted-runtime.js';
+import { instantiateRuntime, type RuntimeFunction, emitCodecRuntimeText } from './emitted-runtime.js';
 
 function failsWith(kind: LibErrorKind, message: RegExp): (error: unknown) => boolean {
   return (error) => error instanceof LibError && error.kind === kind && message.test(error.message);
@@ -63,7 +63,7 @@ function ownerRuntime(
   }), `${prefix}Owner`);
   graph.seal();
   const classes = options.classes ?? options.constructed ?? {};
-  const source = emitCodecRuntime(graph, {
+  const source = emitCodecRuntimeText(graph, {
     validationEnabled: false,
     ...(options.classes ? { nestedGenerated: (id: string) => `${id}Model` } : {}),
     ...(options.constructed

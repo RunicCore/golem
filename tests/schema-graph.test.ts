@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph, emitCodecDeclarationTable, codecPublicId } from '@exprtlabs/golem/internal/schema-graph';
-import { emitCodecRuntime, emitGraphStringify } from '@exprtlabs/golem/internal/emitter';
+import { emitGraphStringify } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import * as serde from '@exprtlabs/golem/serde';
 import { LibError } from '@exprtlabs/golem/errors';
-import { instantiate, instantiateRuntime } from './emitted-runtime.js';
+import { instantiate, instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
 
 const money: ModelTypeDescriptor = {
@@ -32,8 +32,8 @@ const payment: ModelTypeDescriptor = {
 };
 
 /** Emits the runtime with each validator named after its root, as the text a test reads needs no validators module. */
-function emitRuntime(graph: Parameters<typeof emitCodecRuntime>[0]): string {
-  return emitCodecRuntime(graph, { validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}` });
+function emitRuntime(graph: Parameters<typeof emitCodecRuntimeText>[0]): string {
+  return emitCodecRuntimeText(graph, { validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}` });
 }
 
 test('schema graph interns nested objects once and stringify composes by call', () => {
@@ -507,7 +507,7 @@ test('wire schema drops model-only Not predicates and IObject assert checks the 
     validations: { positive: { importPath: './rules.mjs', exportName: 'positive' } },
     modules: { 'rules.mjs': "export const positive = value => typeof value === 'number' && value > 0;" },
   });
-  const source = emitCodecRuntime(graph, { validatorName: validators.validatorName });
+  const source = emitCodecRuntimeText(graph, { validatorName: validators.validatorName });
   const { assertA, fromWireFormatA, parseA } = instantiateRuntime(source, validators.scope);
   assert.throws(
     () => assertA({ neg: 5 }),
@@ -544,7 +544,7 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
     additionalProperties: false,
   }, 'Checkout', true);
   graph.seal();
-  const source = emitCodecRuntime(graph, {
+  const source = emitCodecRuntimeText(graph, {
     validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}`,
     nestedGenerated: (id) => id === 'Money' ? 'MoneyModel' : id,
   });

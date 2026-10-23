@@ -1,11 +1,17 @@
 import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { generate, writeSdk } from '#openapi/generator';
 import {
+  compileStrictUnusedSdk,
   documentBase,
+  generateMaterializedSdk,
   generatedModelSource,
+  isGeneratedModelClass,
+  requireRecord,
   writeGeneratedSdk,
   writeOpenApiDocument,
 } from './helpers.js';
@@ -125,3 +131,27 @@ test('SDK generation rejects declared Object.prototype field names and directs c
     } } },
   }, { output: path.join(output, 'metadata'), profile: { mobx: false, validation: false } }));
 });
+
+for (const validation of [false, true]) {
+  test(`a field named like a runtime export keeps the SDK compiling with unused names rejected and decoding (validation ${validation})`, async t => {
+    // protects: SC-3 the unused-import fault, a field named parseJson or beginDecode kept the runtime import because pruning counted the field name as a use
+    const output = path.join(createFixtureProject(t, 'golem-openapi-runtime-names-'), 'sdk');
+    await generateMaterializedSdk(documentBase('3.1.0', {
+      components: {
+        schemas: {
+          Echo: {
+            type: 'object',
+            required: ['parseJson'],
+            properties: { parseJson: { type: 'string' }, beginDecode: { type: 'string' }, registerIModelClass: { type: 'string' } },
+          },
+        },
+      },
+    }), { output, name: 'RuntimeNames', profile: { mobx: false, validation } });
+    compileStrictUnusedSdk(output);
+    const EchoModel = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'runtime names SDK').EchoModel;
+    assert.ok(isGeneratedModelClass(EchoModel));
+    const wire = { parseJson: 'a', beginDecode: 'b', registerIModelClass: 'c' };
+    const decoded = decodeGeneratedModel(EchoModel, wire);
+    assert.deepEqual(encodeGeneratedModel(decoded), wire);
+  });
+}

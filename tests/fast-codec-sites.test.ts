@@ -5,11 +5,11 @@ import { LibError } from '@exprtlabs/golem/errors';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { registerIModelClass } from '@exprtlabs/golem/serde';
-import { code, emitCodecRuntime, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
+import { code, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 
-import { instantiateRuntime, type RuntimeFunction } from './emitted-runtime.js';
+import { instantiateRuntime, type RuntimeFunction, emitCodecRuntimeText } from './emitted-runtime.js';
 import { compileValidationPlanBinding, type FastCheck } from './support/compiled-validators.js';
 
 // The generated codec of one model `Order`, run on its compiled validators. The scope the codec runs in is the test's:
@@ -93,7 +93,7 @@ async function orderCodec(descriptor: ModelTypeDescriptor, fastPath: boolean, ne
     ...Object.fromEntries(Object.entries(binding.scope).map(([name, run]) => [name, countValidator(name, run)])),
     ...Object.fromEntries(Object.entries(binding.fastScope).map(([name, run]) => [name, countFast(name, run)])),
   };
-  const source = emitCodecRuntime(graph, { validatorName: binding.validatorName, fastCheckName: binding.fastCheckName, serde: BYTES_SERDE });
+  const source = emitCodecRuntimeText(graph, { validatorName: binding.validatorName, fastCheckName: binding.fastCheckName, serde: BYTES_SERDE });
   return { functions: instantiateRuntime(source, scope), calls, binding, codecId: root.codecId };
 }
 

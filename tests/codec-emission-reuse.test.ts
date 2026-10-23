@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON, render } from '@exprtlabs/golem/internal/emitter';
+import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
-import { instantiateRuntime } from './emitted-runtime.js';
+import { instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
 
 /** A parent that nests a model with a date, so the wire differs from the model and validation is on. */
@@ -39,8 +39,8 @@ function paymentGraph(): ReturnType<typeof createSchemaGraph> {
 }
 
 /** The runtime source; a test that only reads the text names each validator after its root. */
-function paymentRuntimeSource(options: Parameters<typeof emitCodecRuntime>[1] = {}): string {
-  return emitCodecRuntime(paymentGraph(), { validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}`, ...options });
+function paymentRuntimeSource(options: Parameters<typeof emitCodecRuntimeText>[1] = {}): string {
+  return emitCodecRuntimeText(paymentGraph(), { validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}`, ...options });
 }
 
 /** The generated validators the payment runtime imports, compiled from the same graph, and the names the runtime source must use. */
@@ -164,7 +164,7 @@ test('a nested trusted call to a model of another module shares one frozen optio
   graph.intern({ kind: 'generated-model', id: 'Pet' }, 'Pet');
   graph.intern(owner, 'Owner');
   graph.seal();
-  const source = emitCodecRuntime(graph, { validationEnabled: false, nestedGenerated: (id) => `${id}Model` });
+  const source = emitCodecRuntimeText(graph, { validationEnabled: false, nestedGenerated: (id) => `${id}Model` });
   assert.equal(occurrences(source, TRUSTED_LITERAL), 1, 'the options literal appears once, in the constant');
   assert.match(source, /^const __golemTrusted = Object\.freeze\(\{ validate: false \}\);\n/);
   assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(__golem\w+ as never, __golemTrusted\)/);

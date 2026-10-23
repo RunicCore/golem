@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { LibError } from '@exprtlabs/golem/errors';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
-import { render } from '#golem/code';
+import { legacyText, render } from '#golem/code';
 import { emitArrayConversion, emitArrayItems, emitTupleConversion, type SequenceItem, type TupleConversionDescriptor } from '#golem/sequence-conversion';
 import { instantiateRuntime } from './emitted-runtime.js';
 
@@ -15,21 +15,21 @@ const nothing: ModelTypeDescriptor = { kind: 'null' };
 
 /** Strings upper-case, numbers double and booleans flip, so each item shows which conversion ran on it. */
 function valueItem(descriptor: ModelTypeDescriptor, value: string): SequenceItem {
-  if (descriptor.kind === 'string') return { code: `(${value} as string).toUpperCase()`, throws: false };
-  if (descriptor.kind === 'number') return { code: `(${value} as number) * 2`, throws: false };
-  if (descriptor.kind === 'boolean') return { code: `!${value}`, throws: false };
-  return { code: value, throws: false };
+  if (descriptor.kind === 'string') return { code: legacyText(`(${value} as string).toUpperCase()`), throws: false };
+  if (descriptor.kind === 'number') return { code: legacyText(`(${value} as number) * 2`), throws: false };
+  if (descriptor.kind === 'boolean') return { code: legacyText(`!${value}`), throws: false };
+  return { code: legacyText(value), throws: false };
 }
 
 function jsonItem(descriptor: ModelTypeDescriptor, value: string): SequenceItem {
-  if (descriptor.kind === 'string') return { code: `stringifyJsonString(${value} as string)`, throws: false };
-  if (descriptor.kind === 'number') return { code: `stringifyJsonNumber(${value} as number)`, throws: false };
-  if (descriptor.kind === 'boolean') return { code: `stringifyJsonBoolean(${value} as boolean)`, throws: false };
-  return { code: `stringifyJsonScalar(${value} as never)`, throws: false };
+  if (descriptor.kind === 'string') return { code: legacyText(`stringifyJsonString(${value} as string)`), throws: false };
+  if (descriptor.kind === 'number') return { code: legacyText(`stringifyJsonNumber(${value} as number)`), throws: false };
+  if (descriptor.kind === 'boolean') return { code: legacyText(`stringifyJsonBoolean(${value} as boolean)`), throws: false };
+  return { code: legacyText(`stringifyJsonScalar(${value} as never)`), throws: false };
 }
 
 function dateItem(descriptor: ModelTypeDescriptor, value: string): SequenceItem {
-  return descriptor.kind === 'date' ? { code: `deserializeDate(${value})`, throws: true } : { code: value, throws: false };
+  return descriptor.kind === 'date' ? { code: legacyText(`deserializeDate(${value})`), throws: true } : { code: legacyText(value), throws: false };
 }
 
 function tuple(items: TupleConversionDescriptor['items'], rest?: TupleConversionDescriptor['rest'], optionalFrom?: number): TupleConversionDescriptor {
