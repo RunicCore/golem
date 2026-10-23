@@ -17,7 +17,7 @@ Add `golem.yaml` at the project root. The example keeps it in `server/`. Paths a
 
 <<< ../../examples/payments/server/golem.yaml#openapi-job
 
-The document is the contract. Keep it in the project or point `input` at the file that your API already owns. The generator reads the features in [OpenAPI client support](/reference/openapi-support). The example's [`provider.yaml`](https://github.com/RunicCore/golem/blob/master/examples/payments/server/provider/provider.yaml) declares `createCharge` (`POST /charges`), and list, get, text and event operations:
+The document is the contract. Keep it in the project or point `input` at the file that your API already owns. The generator reads the features in [OpenAPI support](/reference/openapi-support). The example's [`provider.yaml`](https://github.com/RunicCore/golem/blob/master/examples/payments/server/provider/provider.yaml) declares `createCharge` (`POST /charges`), and list, get, text and event operations:
 
 <<< ../../examples/payments/server/provider/provider.yaml#create-charge-operation
 
