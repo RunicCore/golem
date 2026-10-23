@@ -50,8 +50,8 @@ export class PaymentStore {
         return false;
       }
       // #endregion validate-and-save
-      const wire = encodeGeneratedModel(this.editor);
       // #region send-payment
+      const wire = encodeGeneratedModel(this.editor);
       const response = await this.createPayment.execute(
         { body: { merchant, billing, money: wire.money, note: wire.note } },
         { signal: controller.signal },

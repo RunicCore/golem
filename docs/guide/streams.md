@@ -1,35 +1,28 @@
 # Streaming responses
 
-Read an OpenAPI 3.2 operation that streams items one at a time instead of returning one body.
+Read the items of a streaming response one at a time instead of waiting for one body.
 
-A generated operation's `response.body` is an `AsyncIterable` of decoded items, which you read with `for await`.
+An operation that declares `itemSchema` in an OpenAPI 3.2 document has a `response.body` that is an `AsyncIterable` of decoded items. Read it with `for await`.
 
 <<< ../../examples/payments/server/provider/events.ts#read-events
 
-- NDJSON, JSON-seq and SSE have built-in framing.
-- Breaking out of the loop cancels its reader.
-- `.execute()` returns the response; consuming items is a separate step.
-- `response.body` is an `AsyncIterable`. Connection, decoding and validation failures throw inside the loop; wrap the loop in `try`/`catch`.
-- With validation enabled, each item is checked before your loop receives it.
-
 ## Describe the items
 
-For an API that sends one JSON object per line, describe the response in
-`provider.yaml`:
+For an API that sends one JSON object per line, describe the response in `provider.yaml`:
 
 <<< ../../examples/payments/server/provider/provider.yaml#events-operation
 
-`golem.yaml`, whose `openapi` job reads that document:
+The `openapi` job in `golem.yaml` reads that document, as in [Generate a client](/guide/client#point-to-your-openapi-document). Run `npx golem generate` to update the client.
 
-<<< ../../examples/payments/server/golem.yaml#openapi-job
+## Read items
 
-Run `npx golem generate` to update the client. With the [default
-validation dependencies](/guide/install#runtime-dependencies)
-installed, each decoded item is checked.
+- `.execute()` returns the response. Reading the items is a separate step.
+- A connection, decoding or validation failure throws inside the loop. Wrap the loop in `try` and `catch`.
+- With validation on, the client checks each item before your loop receives it. With validation off, items arrive unchecked.
 
 ## Stop reading
 
-For the same `readEvents` operation, `provider/events.ts` consumes one item:
+For the same `readEvents` operation, `provider/events.ts` reads one item. Leaving the loop cancels its reader:
 
 <<< ../../examples/payments/server/provider/events.ts#first-event
 
@@ -37,33 +30,28 @@ For the same `readEvents` operation, `provider/events.ts` consumes one item:
 
 <<< ../../examples/payments/server/provider/events.ts#cancel-events
 
-## Supported formats
+## Formats
 
 | Content type | Items returned |
 | --- | --- |
-| `application/x-ndjson`, `application/ndjson`, `application/jsonl`, or a media type ending `+jsonl` | One decoded JSON value per line |
-| `application/json-seq`, or a media type ending `+json-seq` | Decoded JSON values separated by record separators; values may span lines |
-| `text/event-stream` | `{ data: string, event?, id?, retry? }` per event |
+| `application/x-ndjson`, `application/ndjson`, `application/jsonl`, or a media type that ends with `+jsonl` | One decoded JSON value per line |
+| `application/json-seq`, or a media type that ends with `+json-seq` | Decoded JSON values, divided by record separators, that can span lines |
+| `text/event-stream` | `{ data: string, event?, id?, retry? }` for each event |
 
-SSE `data` stays a string. Parse it in your application if the server sends
-JSON in that field. Malformed or truncated JSON-seq fails iteration and
-releases the reader. Other framing formats need a custom `streamDecoders`
-entry.
+SSE `data` stays a string. Parse it in your application if the server sends JSON in that field. A malformed or truncated JSON-seq body fails the iteration and releases the reader. Any other framing needs a `streamDecoders` entry.
 
 ## Connect a custom stream decoder
 
-Declare `application/vnd.provider.events` with `itemSchema` on a `readEventIds`
-operation, then regenerate `ProviderClient`. The decoder below reads integer
-lines and yields the objects declared by `itemSchema`. The same file connects it:
+Declare `application/vnd.provider.events` with `itemSchema` on a `readEventIds` operation, then generate `ProviderClient` again. The decoder below reads integer lines and yields the objects that `itemSchema` declares. The same file connects it:
 
 <<< ../../examples/payments/server/provider/events.ts#custom-events
 
 | Decoder contract | Requirement |
 | --- | --- |
 | Signature | `(response: Response, context: ProviderStreamDecoderContext) => AsyncIterable<unknown>` |
-| Context | Operation name and actual response content type |
-| Output | Decoded items matching `itemSchema` |
-| Cleanup | Cancel and release any reader you acquire when iteration ends or fails |
+| Context | The operation name and the actual response content type |
+| Output | Decoded items that match `itemSchema` |
+| Cleanup | Cancel and release each reader you acquire when the iteration ends or fails |
 
-- An exact media-type key wins — the actual content type, then the declared one — then its lowercase type/subtype without parameters, then `*/*`.
-- A configured decoder overrides built-in framing.
+- The client uses the exact media-type key first. This is the actual content type, then the declared one. Next it tries the type and subtype in lowercase without parameters, then `*/*`.
+- A configured decoder replaces the built-in framing.
