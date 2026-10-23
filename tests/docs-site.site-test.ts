@@ -50,10 +50,12 @@ test('the How it works illustration server-renders its final state', () => {
 
 const benchmarksHtml = path.join(dist, 'benchmarks.html');
 const projection = buildBenchmarkSiteProjection(root);
-test('the built benchmarks page server-renders the speed table of the golem setups', () => {
+// protects: R-30 the built page renders the speed table of the golem setups; R-24 it says benchmarks are for reference only
+test('the built benchmarks page server-renders the disclaimer and the speed table of the golem setups', () => {
   assert.ok(existsSync(benchmarksHtml), 'run npm run docs:build first');
   const html = readFileSync(benchmarksHtml, 'utf8');
   const table = html.slice(html.indexOf('bench-table'));
+  assert.ok(html.includes('Benchmarks are for reference purposes only.'), 'the disclaimer is on the page');
   assert.ok(html.includes('bench-table'), 'speed table rendered');
   for (const text of [...projection.columns.map(column => column.label), 'Parse', 'Stringify', 'Validate']) assert.ok(table.includes(text), `table lacks "${text}"`);
 });

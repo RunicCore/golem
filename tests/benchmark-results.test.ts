@@ -27,8 +27,8 @@ test('building the results refuses a cost case that has no measurement', () => {
   assert.throws(() => buildResults(input(['parse', 'stringify', 'decode'])), /missing measurement simple\/encode\/golem-object-off/);
 });
 
-// protects: T-235 schema 2 carries decode and encode in an optional cost section
-test('the results hold the cost timings, decode and encode included, and still pass the schema', () => {
+// protects: T-235 schema 3 carries decode and encode in a required cost section
+test('the results hold the cost timings, decode and encode included, and pass the schema', () => {
   const results = buildResults(input(['parse', 'stringify', 'decode', 'encode']));
   assert.deepEqual(results.cost?.cases.map(c => `${c.operation}:${c.opsPerSec?.median}`), ['parse:100000', 'stringify:100000', 'decode:100000', 'encode:100000']);
   assert.deepEqual(results.cases, []);
@@ -74,6 +74,14 @@ test('schema 3 needs the cost, noise and invalid sections, and a schema 2 file w
   }
   assert.equal(isBenchmarkResults({ ...results, schema: 2, cost: undefined, noise: undefined, invalid: undefined }), true);
   assert.equal(isBenchmarkResults({ ...results, invalid: { cases: [{ payload: 'simple', operation: 'parse', adapter: 'golem-validated', support: 'full' }] } }), false);
+});
+
+// protects: R-30 a corrupt payload or adapter field stops the docs build instead of showing "NaN B"
+test('the schema refuses a payload without its size and an adapter without its label', () => {
+  const results = buildResults(input(['parse', 'stringify', 'decode', 'encode']));
+  assert.equal(isBenchmarkResults({ ...results, payloads: [{ ...results.payloads[0], bytes: 'big' }] }), false);
+  assert.equal(isBenchmarkResults({ ...results, payloads: [{ ...results.payloads[0], label: undefined }] }), false);
+  assert.equal(isBenchmarkResults({ ...results, adapters: [{ ...results.adapters[0], label: 3 }] }), false);
 });
 
 // protects: T-242 invalid input is timed on its own and a missing invalid timing stops the build

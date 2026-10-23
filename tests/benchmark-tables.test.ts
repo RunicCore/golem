@@ -135,6 +135,21 @@ test('the console compare table marks two different reasons with two symbols, an
   assert.match(text, /\* skips unknown keys\n\n\u2020 skips dates/);
 });
 
+// protects: R-24 the console keeps the reason of an unsupported cell
+test('the console compare table gives an unsupported cell a footnote with its reason', () => {
+  const table = {
+    band: undefined,
+    groups: [{
+      id: 'plain' as const, label: 'Plain',
+      summary: [{ adapter: 'typia' as const, label: 'typia', rows: 0, of: 1 }, { adapter: 'zod' as const, label: 'zod', score: 1, rows: 1, of: 1 }],
+      rows: [{ payload: 'checkout', operation: 'parse', cells: [{ adapter: 'typia' as const, cell: { kind: 'not-supported' as const, note: 'typia keeps dates as strings' } }, { adapter: 'zod' as const, cell: { kind: 'ops' as const, value: 50, rank: 1 } }] }],
+    }],
+  };
+  const text = formatCompareTable(table, new Map());
+  assert.match(text, /no conversion\*\s+50 #1\n/);
+  assert.match(text, /\* typia keeps dates as strings/);
+});
+
 // protects: T-242 the invalid/valid column divides the invalid timing by the valid one for the reading operations only
 test('the cost table divides invalid input by valid input for parse, decode and validate, and shows not applicable for stringify and encode', () => {
   const results = {

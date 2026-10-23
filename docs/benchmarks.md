@@ -200,6 +200,15 @@ The base is a branch, a tag or a commit. The command exports the base into `.cac
 
 The noise band comes from the control on both sides. A valid-path case is slower when this checkout is below the base by more than the band in both halves of the rounds. One slower case stops the release. Invalid input is shown and has no verdict.
 
-The exit code is 0 when no case is slower, 1 when a case is slower, and 2 when the call is wrong (for example, a missing or unknown base). The command writes the full result to `.cache/benchmark/release.json`. It changes nothing else in the repository.
+The exit code tells the outcome:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | No case is slower |
+| 1 | A case is slower |
+| 2 | The call is wrong, for example a missing or unknown base |
+| 3 | The check failed and gave no verdict, for example a failed build or a worker crash |
+
+On code 3 the command prints the error and its cause. The command writes the full result to `.cache/benchmark/release.json`. It changes nothing else in the repository.
 
 A check of one adapter on one payload takes about 30 seconds. A full check takes about 5 minutes on an Apple M4. The first check of a base also builds it, and later checks of the same commit reuse that build.

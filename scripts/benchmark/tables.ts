@@ -1,4 +1,4 @@
-import { adapterSpec, ALL_PAYLOADS, BENCH_OPERATIONS, COST_ROW_OPERATIONS, GROUPS, PAYLOADS, VALIDATION_COLUMNS, type AdapterId, type GroupId } from './cases.js';
+import { adapterSpec, ALL_PAYLOADS, BENCH_OPERATIONS, COST_ROW_OPERATIONS, GROUPS, PAYLOADS, VALIDATION_COLUMNS, type AdapterId, type GroupId, type OperationId, type PayloadId } from './cases.js';
 import type { BenchmarkResults } from './results-schema.js';
 
 /**
@@ -13,8 +13,8 @@ export type CostCell =
 
 /** The validation columns of the cost table for one payload and operation. A ratio divides the compared mode by its reference mode. */
 export interface CostRow {
-  readonly payload: string;
-  readonly operation: string;
+  readonly payload: PayloadId;
+  readonly operation: OperationId;
   readonly imodelOff: CostCell;
   readonly imodelOn: CostCell;
   /** IModel with validation on, divided by IModel with validation off. */
@@ -130,8 +130,7 @@ export function rankSpeeds(speeds: readonly number[], band: number | undefined):
 
 export type CompareCell =
   | { readonly kind: 'ops'; readonly value: number; readonly rank: number; readonly mark?: string }
-  | { readonly kind: 'not-supported'; readonly note: string }
-  | { readonly kind: 'not-run' };
+  | { readonly kind: 'not-supported'; readonly note: string };
 
 /** The libraries that do the operation in this group, in group order. */
 export interface CompareRow { readonly payload: string; readonly operation: string; readonly cells: readonly { readonly adapter: AdapterId; readonly cell: CompareCell }[] }
@@ -153,17 +152,20 @@ export function compareTable(results: Pick<BenchmarkResults, 'cases' | 'adapters
     const present = new Set(results.adapters.filter(a => a.group === group.id).map(a => a.id));
     const rows: CompareRow[] = [];
     for (const payload of payloadIds) for (const operation of BENCH_OPERATIONS) {
-      const members = group.operations[operation.id].filter(id => present.has(id) && found.has(`${payload}/${operation.id}/${id}`));
+      const members = group.operations[operation.id].flatMap(id => {
+        const recorded = present.has(id) ? found.get(`${payload}/${operation.id}/${id}`) : undefined;
+        return recorded ? [{ id, recorded }] : [];
+      });
       if (members.length === 0) continue;
-      const speeds = members.map(id => found.get(`${payload}/${operation.id}/${id}`)?.opsPerSec?.median);
-      const timed = members.flatMap((id, i) => speeds[i] === undefined ? [] : [i]);
+      const speeds = members.map(m => m.recorded.opsPerSec?.median);
+      const timed = members.flatMap((_, i) => speeds[i] === undefined ? [] : [i]);
       const ranks = rankSpeeds(timed.map(i => speeds[i] as number), band);
       rows.push({
         payload, operation: operation.id,
-        cells: members.map((adapter, i) => {
-          const recorded = found.get(`${payload}/${operation.id}/${adapter}`);
+        cells: members.map(({ id: adapter, recorded }, i) => {
           const value = speeds[i];
-          if (value === undefined) return { adapter, cell: recorded?.support === 'none' ? { kind: 'not-supported', note: recorded.note ?? '' } : { kind: 'not-run' } };
+          // A case without a number is an unsupported one: the results check lets a case omit its timing only with support "none" and a note.
+          if (value === undefined) return { adapter, cell: { kind: 'not-supported', note: recorded.note ?? '' } };
           const mark = adapterSpec(adapter).lessWork;
           return { adapter, cell: { kind: 'ops', value, rank: ranks[timed.indexOf(i)], ...(mark ? { mark } : {}) } };
         }),
@@ -194,22 +196,25 @@ const LESS_WORK_SYMBOLS = ['*', '\u2020', '\u2021', '\u00a7'];
 export function formatCompareTable(table: ReturnType<typeof compareTable>, labels: ReadonlyMap<string, string>): string {
   // Each reason takes the next symbol, as the page does.
   const symbols = new Map<string, string>();
+  const symbolOf = (reason: string): string => {
+    if (!symbols.has(reason)) symbols.set(reason, LESS_WORK_SYMBOLS[symbols.size % LESS_WORK_SYMBOLS.length]);
+    return symbols.get(reason) as string;
+  };
   const blocks = table.groups.map(group => {
     const libraries = group.summary.map(s => s.adapter);
-    const speed = (cell: CompareCell | undefined): string => {
-      if (cell === undefined) return 'no check';
-      if (cell.kind === 'not-supported') return 'no conversion';
-      if (cell.kind === 'not-run') return '-';
-      if (cell.mark && !symbols.has(cell.mark)) symbols.set(cell.mark, LESS_WORK_SYMBOLS[symbols.size % LESS_WORK_SYMBOLS.length]);
-      const mark = cell.mark ? symbols.get(cell.mark) : '';
-      return `${Math.round(cell.value).toLocaleString('en-US')} #${cell.rank}${mark}`;
+    const speed = (adapter: AdapterId, row: CompareRow): string => {
+      const found = row.cells.find(c => c.adapter === adapter);
+      if (!found) throw new Error(`The compare row ${row.payload}/${row.operation} has no cell for ${adapter}`);
+      const { cell } = found;
+      if (cell.kind === 'not-supported') return `no conversion${symbolOf(cell.note)}`;
+      return `${Math.round(cell.value).toLocaleString('en-US')} #${cell.rank}${cell.mark ? symbolOf(cell.mark) : ''}`;
     };
     const widths = [14, 10, ...libraries.map(id => Math.max((labels.get(id) ?? id).length, 18))];
     const line = (cells: readonly string[]): string => cells.map((c, i) => i < 2 ? c.padEnd(widths[i]) : c.padStart(widths[i])).join(' ');
     return [
       group.label,
       line(['payload', 'operation', ...libraries.map(id => labels.get(id) ?? id)]),
-      ...group.rows.map(row => line([row.payload, row.operation, ...libraries.map(id => speed(row.cells.find(c => c.adapter === id)?.cell))])),
+      ...group.rows.map(row => line([row.payload, row.operation, ...libraries.map(id => speed(id, row))])),
       line(['summary', 'score', ...group.summary.map(s => s.score === undefined ? '-' : `${s.score.toFixed(2)} (${s.rows} of ${s.of})`)]),
     ].join('\n');
   });

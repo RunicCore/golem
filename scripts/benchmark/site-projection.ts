@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { BENCH_OPERATIONS, BENCH_SERIES_COUNT, GOLEM_ADAPTERS, PAYLOADS, REPOSITORY_BLOB_URL, adapterSpec, operationSpec, payloadSpec, type AdapterId, type OperationId, type PayloadId } from './cases.js';
+import { BENCH_OPERATIONS, BENCH_SERIES_COUNT, GOLEM_ADAPTERS, PAYLOADS, REPOSITORY_BLOB_URL, adapterSpec, operationSpec, payloadSpec, type AdapterId } from './cases.js';
 import { FULL_RESULTS_FILE, isBenchmarkResults, type BenchmarkResults } from './results-schema.js';
 import { costTable, type CostRow } from './tables.js';
 
@@ -36,11 +36,11 @@ export function benchmarkSiteProjection(results: BenchmarkResults): BenchmarkSit
   });
   const costRows = costTable(results);
   const cost = [...new Set(costRows.map(row => row.payload))].map(payloadId => {
-    const { id, label, description } = payloadSpec(payloadId as PayloadId);
+    const { id, label, description } = payloadSpec(payloadId);
     return {
       payload: { id, label, description },
       rows: costRows.filter(row => row.payload === payloadId).map(({ payload: _payload, operation, ...cells }) => ({
-        operation: { id: operation, label: operationSpec(operation as OperationId).label }, cells,
+        operation: { id: operation, label: operationSpec(operation).label }, cells,
       })),
     };
   });

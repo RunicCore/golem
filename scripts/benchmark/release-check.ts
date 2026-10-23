@@ -39,12 +39,13 @@ export function parseReleaseArguments(args: readonly string[]): ReleaseArguments
   return { base, ...(adapters ? { adapters } : {}), ...(payloads ? { payloads } : {}) };
 }
 
+/** A command that fails is a fault of the check or of the base, not a wrong call: it throws a plain error that keeps the command's error as its cause. */
 function run(command: string, args: readonly string[], cwd: string, what: string, timeout: number): void {
   try {
     execFileSync(command, args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout, maxBuffer: 64 * 1024 * 1024 });
   } catch (error) {
     const detail = error instanceof Error && 'stderr' in error ? String(error.stderr).trim().split('\n').slice(-12).join('\n') : String(error);
-    throw new BenchmarkUsageError(`${what} failed:\n${detail}`);
+    throw new Error(`${what} failed:\n${detail}`, { cause: error });
   }
 }
 
@@ -176,16 +177,26 @@ function buildBase(directory: string, base: { readonly directory: string }, ref:
   }
 }
 
+/** Exit code of a call that ended in an error: 2 for a wrong call, 3 for a fault of the check, with the error and its causes as text. */
+export function failureOf(error: unknown): { readonly code: 2 | 3; readonly text: string } {
+  if (error instanceof BenchmarkUsageError) return { code: 2, text: error.message };
+  const lines = [error instanceof Error ? error.stack ?? error.message : String(error)];
+  for (let cause = error instanceof Error ? error.cause : undefined; cause !== undefined && lines.length < 5; cause = cause instanceof Error ? cause.cause : undefined) {
+    lines.push(`Caused by: ${cause instanceof Error ? cause.message : String(cause)}`);
+  }
+  return { code: 3, text: `The release check failed and gave no verdict:\n${lines.join('\n')}` };
+}
+
 export function main(args: readonly string[] = process.argv.slice(2)): void {
   try {
     const { text, stop } = runReleaseCheck({ ...parseReleaseArguments(args), outputFile: path.join(root, '.cache/benchmark/release.json') });
     process.stdout.write(`${text}\n`);
-    // A stop verdict is the answer of the check, not a fault: exit 1 so a script can tell it from a pass (0) and from a bad call (2).
+    // A stop verdict is the answer of the check, not a fault: exit 1 so a script can tell it from a pass (0), from a bad call (2) and from a crash (3).
     process.exitCode = stop ? 1 : 0;
   } catch (error) {
-    if (!(error instanceof BenchmarkUsageError)) throw error;
-    process.stderr.write(`${error.message}\n`);
-    process.exitCode = 2;
+    const { code, text } = failureOf(error);
+    process.stderr.write(`${text}\n`);
+    process.exitCode = code;
   }
 }
 

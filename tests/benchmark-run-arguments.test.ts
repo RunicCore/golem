@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { parseReleaseArguments } from '../scripts/benchmark/release-check.js';
+import { failureOf, parseReleaseArguments } from '../scripts/benchmark/release-check.js';
 import { BenchmarkUsageError, outputFileOf, parseRunArguments } from '../scripts/benchmark/run.js';
 
 // protects: T-234 --payloads filter beside --adapters, usage error for an unknown id
@@ -35,4 +35,12 @@ test('the release check reads the base ref beside the filters, and refuses a mis
   assert.throws(() => parseReleaseArguments(['--adapters', 'golem']), (error: unknown) => error instanceof BenchmarkUsageError && error.message.startsWith('No base ref.'));
   assert.throws(() => parseReleaseArguments(['--base', 'main', '--adapters', 'zod']),
     (error: unknown) => error instanceof BenchmarkUsageError && error.message.startsWith('The release check times golem only; "zod" is not golem.'));
+});
+
+// protects: T-248 a crash of the release check exits with its own code and shows its cause, never the code of a slower verdict
+test('the release check exits 2 for a wrong call and 3 for a crash, and the crash text names the cause', () => {
+  assert.deepEqual(failureOf(new BenchmarkUsageError('No base ref.')), { code: 2, text: 'No base ref.' });
+  const crash = failureOf(new Error('Building base main failed:\nnpm ERR!', { cause: new Error('Command failed: npm run build') }));
+  assert.equal(crash.code, 3);
+  assert.match(crash.text, /gave no verdict[\s\S]*Building base main failed:\nnpm ERR![\s\S]*Caused by: Command failed: npm run build/);
 });

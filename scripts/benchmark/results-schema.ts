@@ -86,7 +86,8 @@ export function isBenchmarkResults(value: unknown): value is BenchmarkResults {
   if (!Array.isArray(value.groups) || !Array.isArray(value.payloads) || !Array.isArray(value.operations) || !Array.isArray(value.adapters) || !Array.isArray(value.cases)) return false;
   if (!value.groups.every(g => isObject(g) && isString(g.id) && isString(g.label) && isString(g.description))) return false;
   const groupIds = new Set(value.groups.map(g => (g as { id: string }).id));
-  if (!value.adapters.every(a => isObject(a) && isString(a.group) && groupIds.has(a.group))) return false;
+  if (!value.payloads.every(p => isObject(p) && [p.id, p.label, p.description, p.sourceUrl].every(isString) && isCount(p.bytes))) return false;
+  if (!value.adapters.every(a => isObject(a) && [a.id, a.label, a.library, a.sourceUrl].every(isString) && typeof a.checked === 'boolean' && isString(a.group) && groupIds.has(a.group))) return false;
   if (value.noise !== undefined && !isNoise(value.noise)) return false;
   for (const section of [value.cost, value.invalid]) {
     if (section !== undefined && !(isObject(section) && Array.isArray(section.cases) && section.cases.every(isResultCase))) return false;

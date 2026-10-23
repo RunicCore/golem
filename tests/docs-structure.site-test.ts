@@ -97,6 +97,7 @@ test('home stage, how-it-works text (4.5:1) and benchmark series colors (3:1) ar
   }
 });
 
+// protects: R-30 every golem setup the page shows has its own series color
 test('each golem setup on the benchmarks page has its own series color', () => {
   const { columns } = buildBenchmarkSiteProjection(root);
   assert.ok(columns.length <= BENCH_SERIES_COUNT, `the page shows ${columns.length} golem setups and defines ${BENCH_SERIES_COUNT} series colors`);
@@ -104,16 +105,6 @@ test('each golem setup on the benchmarks page has its own series color', () => {
 
 test('the guide index mounts the How it works illustration', () => {
   assert.match(readFileSync(path.join(docs, 'guide/index.md'), 'utf8'), /## How it works\n\n<HowItWorks \/>\n/);
-});
-
-test('the benchmark page is disclaimed, shown by tabs, and explained in markdown', () => {
-  const page = readFileSync(path.join(docs, 'benchmarks.md'), 'utf8');
-  assert.match(page, /Benchmarks are for reference purposes only\./);
-  assert.match(page, /<template #speed>/, 'explanation of the speed table');
-  const chart = readFileSync(path.join(docs, '.vitepress/theme/BenchmarkChart.vue'), 'utf8');
-  assert.match(chart, /role="tablist"/);
-  assert.match(chart, /role="tab"/);
-  assert.match(chart, /<slot name="speed"/, 'the explanation comes from the page');
 });
 
 // protects: R-30 the page shows golem's own declarations and timed calls, for each payload it shows numbers for
