@@ -1,8 +1,12 @@
 import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
-import { code, emittedCode, indentation, join, legacyText, nameOf, nameSlot, NameTable, render, type Code, type Emitted, type NameSlot } from '../code.js';
+import {
+  code, emittedCode, helper, helperDefinitions, helperName, identifier as identifierCode, indentation, join, legacyText, literal as literalCode, nameOf, nameSlot, NameTable, render, runtimeImports,
+  type Code, type Emitted, type Helper, type InputSlot, type NameSlot,
+} from '../code.js';
 import { compareText } from '../generator-api.js';
+import { rt, rtType } from '../rt.js';
 import { instanceFieldsSource, presentKeysSource, presentValueSource } from '../../presence.js';
 
 interface EmitOptions {
@@ -20,7 +24,6 @@ interface EmitResult {
   readonly fastExports: ReadonlyMap<string, string>;
 }
 
-type RuntimeHelper = 'checkFormat' | 'codePointLength' | 'formatTest' | 'jsonEqual';
 type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOf' | 'hashedId' | 'selectedModel' | 'modelOf' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
 
 // Parameters of every generated function: the value, the path stack, the issue list and the all-errors flag,
@@ -29,6 +32,7 @@ type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'insta
 const VALUE = 'v';
 const PATH = 'p';
 const NEWLINE = code`\n`;
+const runtime = rt['validation-runtime'];
 const ISSUES = 'i';
 const ALL = 'a';
 const INHERITED = 'e';
@@ -122,91 +126,117 @@ interface CallArguments {
   readonly record?: string;
 }
 
+/**
+ * Code from a template whose values are strings of code or Code.
+ * migration door, deleted in P-22 step 7 (with legacyText): the emitter still holds an expression as a string, and a
+ * helper in it is a Code.
+ */
+function mixed(strings: TemplateStringsArray, ...values: readonly Emitted[]): Code {
+  return join(strings.flatMap((text, index) => (index < values.length ? [legacyText(text), emittedCode(values[index])] : [legacyText(text)])));
+}
+
 function callFunction(callee: IrFunction, name: Code, args: CallArguments): Code {
   const record = callee.receives && args.record !== undefined ? [args.record] : [];
   return code`${name}(${legacyText([args.value, args.path ?? PATH, args.issues, args.all, ...record].join(', '))})`;
 }
 
-/** True when the registered codec id `registered` is the model `id`, in the text of `selectedModel` and `modelOf`. */
-const MODEL_ID_MATCHES = 'registered === id\n    || (!hashedId.test(id) && registered.length === id.length + 9 && registered.startsWith(id + "_") && hashedId.test(registered))';
+/** A helper function of a generated module: the file holds its definition once, where the code that names it asks for it. */
+function localHelper(id: LocalHelper, rank: number, define: (self: Code) => Code): Helper {
+  const made: Helper = helper(id, () => define(helperName(made)), rank);
+  return made;
+}
 
-const LOCAL_HELPERS: Readonly<Record<LocalHelper, string>> = {
+/** The name of a local helper, and the request that the file defines it. */
+function localName(name: LocalHelper): Code {
+  return helperName(HELPERS[name]);
+}
+
+/** True when the registered codec id `registered` is the model `id`, in the code of `selectedModel` and `modelOf`. */
+function modelIdMatches(): Code {
+  const hashedId = localName('hashedId');
+  return code`registered === id
+    || (!${hashedId}.test(id) && registered.length === id.length + 9 && registered.startsWith(id + "_") && ${hashedId}.test(registered))`;
+}
+
+// The rank of a helper is its place in the module: helpers come in this order, after the helpers their definitions name.
+const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
   // The JSON view: a key is present when it is own, enumerable and not `undefined`, as `JSON.stringify` writes it. A
   // model's optional field may be set to `undefined` and JSON has no such value.
-  definedKeys: 'const definedKeys = value => Object.keys(value).filter(key => value[key] !== undefined);',
+  definedKeys: localHelper('definedKeys', 0, self => code`const ${self} = value => Object.keys(value).filter(key => value[key] !== undefined);`),
   // The failure of a fast check whose key test left the values unread reads them as the full validator does, then fails.
-  readAll: 'function readAll(value, keys) { for (const key of keys) value[key]; }',
-  isPresent: 'const isPresent = (value, key) => Object.prototype.propertyIsEnumerable.call(value, key) && value[key] !== undefined;',
-  isObject: "const isObject = value => typeof value === 'object' && value !== null && !Array.isArray(value);",
+  readAll: localHelper('readAll', 1, self => code`function ${self}(value, keys) { for (const key of keys) value[key]; }`),
+  isPresent: localHelper('isPresent', 2, self => code`const ${self} = (value, key) => Object.prototype.propertyIsEnumerable.call(value, key) && value[key] !== undefined;`),
+  isObject: localHelper('isObject', 3, self => code`const ${self} = value => typeof value === 'object' && value !== null && !Array.isArray(value);`),
   // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFieldsSource`).
-  instanceFields: instanceFieldsSource(),
-  isInstanceState: 'function isInstanceState(value, key) { const fields = instanceFields(value); return fields !== undefined && !fields.includes(key); }',
+  // migration door, deleted in P-22 step 7: presence.ts gives the definition as text
+  instanceFields: localHelper('instanceFields', 4, () => legacyText(instanceFieldsSource())),
+  isInstanceState: localHelper('isInstanceState', 5, self => code`function ${self}(value, key) { const fields = ${localName('instanceFields')}(value); return fields !== undefined && !fields.includes(key); }`),
   // The quotient of two doubles is off by rounding (0.3 / 0.1), so a quotient within a few ulps of a non-zero
   // whole number counts. An infinite quotient falls back to the exact remainder.
-  isMultipleOf: [
-    'function isMultipleOf(value, divisor) {',
-    '  const quotient = value / divisor;',
-    '  if (!Number.isFinite(quotient)) return value % divisor === 0;',
-    '  if (Number.isInteger(quotient)) return true;',
-    '  const nearest = Math.round(quotient);',
-    '  return nearest !== 0 && Math.abs(quotient - nearest) <= 4 * Number.EPSILON * Math.abs(nearest);',
-    '}',
-  ].join('\n'),
-  hashedId: 'const hashedId = /_[0-9a-f]{8}$/;',
+  isMultipleOf: localHelper('isMultipleOf', 6, self => join([
+    code`function ${self}(value, divisor) {`,
+    code`  const quotient = value / divisor;`,
+    code`  if (!Number.isFinite(quotient)) return value % divisor === 0;`,
+    code`  if (Number.isInteger(quotient)) return true;`,
+    code`  const nearest = Math.round(quotient);`,
+    code`  return nearest !== 0 && Math.abs(quotient - nearest) <= 4 * Number.EPSILON * Math.abs(nearest);`,
+    code`}`,
+  ], NEWLINE)),
+  hashedId: localHelper('hashedId', 7, self => code`const ${self} = /_[0-9a-f]{8}$/;`),
   // The registered model class a value is an instance of, as `golemModelInstance` reads it. The symbol key is
   // `MODEL_CODEC_IDS_KEY`, which object-codec.ts registers under: the generated module imports nothing that registers classes. The most derived
   // registered prototype on the chain wins. A hashed codec id (`Name_1a2b3c4d`) matches exactly; an unhashed name also
   // matches the hashed ids of that name.
-  selectedModel: [
-    'function selectedModel(value, among) {',
-    "  if (typeof value !== 'object' || value === null) return undefined;",
-    `  const key = Symbol.for(${JSON.stringify(MODEL_CODEC_IDS_KEY)});`,
-    `  const matches = (registered, id) => ${MODEL_ID_MATCHES};`,
-    '  for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {',
-    '    if (!Object.prototype.hasOwnProperty.call(prototype, key)) continue;',
-    '    for (const id of among) if (prototype[key].some(registered => matches(registered, id))) return id;',
-    '  }',
-    '  return undefined;',
-    '}',
-  ].join('\n'),
+  selectedModel: localHelper('selectedModel', 8, self => join([
+    code`function ${self}(value, among) {`,
+    code`  if (typeof value !== 'object' || value === null) return undefined;`,
+    code`  const key = Symbol.for(${literalCode(MODEL_CODEC_IDS_KEY)});`,
+    code`  const matches = (registered, id) => ${modelIdMatches()};`,
+    code`  for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {`,
+    code`    if (!Object.prototype.hasOwnProperty.call(prototype, key)) continue;`,
+    code`    for (const id of among) if (prototype[key].some(registered => matches(registered, id))) return id;`,
+    code`  }`,
+    code`  return undefined;`,
+    code`}`,
+  ], NEWLINE)),
   // `selectedModel` for the fast check: the same selection with the key read once at load and no function made per call.
-  modelOf: [
-    `const modelIdsKey = Symbol.for(${JSON.stringify(MODEL_CODEC_IDS_KEY)});`,
-    `const modelIdMatches = (registered, id) => ${MODEL_ID_MATCHES};`,
-    'function modelOf(value, among) {',
-    "  if (typeof value !== 'object' || value === null) return undefined;",
-    '  for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {',
-    '    if (!Object.prototype.hasOwnProperty.call(prototype, modelIdsKey)) continue;',
-    '    const registered = prototype[modelIdsKey];',
-    '    for (let x = 0; x < among.length; x++) for (let y = 0; y < registered.length; y++) if (modelIdMatches(registered[y], among[x])) return among[x];',
-    '  }',
-    '  return undefined;',
-    '}',
-  ].join('\n'),
+  modelOf: localHelper('modelOf', 9, self => join([
+    code`const modelIdsKey = Symbol.for(${literalCode(MODEL_CODEC_IDS_KEY)});`,
+    code`const modelIdMatches = (registered, id) => ${modelIdMatches()};`,
+    code`function ${self}(value, among) {`,
+    code`  if (typeof value !== 'object' || value === null) return undefined;`,
+    code`  for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {`,
+    code`    if (!Object.prototype.hasOwnProperty.call(prototype, modelIdsKey)) continue;`,
+    code`    const registered = prototype[modelIdsKey];`,
+    code`    for (let x = 0; x < among.length; x++) for (let y = 0; y < registered.length; y++) if (modelIdMatches(registered[y], among[x])) return among[x];`,
+    code`  }`,
+    code`  return undefined;`,
+    code`}`,
+  ], NEWLINE)),
   // What the keywords of one value evaluated: keys by name, or all of them; leading items by count, others by
   // index, or all of them.
-  newEvaluation: 'const newEvaluation = () => ({ keys: new Set(), allKeys: false, prefix: 0, indexes: new Set(), allItems: false });',
-  mergeEvaluation: [
-    'function mergeEvaluation(into, from) {',
-    '  for (const key of from.keys) into.keys.add(key);',
-    '  for (const index of from.indexes) into.indexes.add(index);',
-    '  into.allKeys = into.allKeys || from.allKeys;',
-    '  into.prefix = Math.max(into.prefix, from.prefix);',
-    '  into.allItems = into.allItems || from.allItems;',
-    '}',
-  ].join('\n'),
+  newEvaluation: localHelper('newEvaluation', 10, self => code`const ${self} = () => ({ keys: new Set(), allKeys: false, prefix: 0, indexes: new Set(), allItems: false });`),
+  mergeEvaluation: localHelper('mergeEvaluation', 11, self => join([
+    code`function ${self}(into, from) {`,
+    code`  for (const key of from.keys) into.keys.add(key);`,
+    code`  for (const index of from.indexes) into.indexes.add(index);`,
+    code`  into.allKeys = into.allKeys || from.allKeys;`,
+    code`  into.prefix = Math.max(into.prefix, from.prefix);`,
+    code`  into.allItems = into.allItems || from.allItems;`,
+    code`}`,
+  ], NEWLINE)),
   // The fast check runs a function that has no fast check through its full validator, fail-fast, and reads only the
   // verdict. The path and issue lists are module-level and emptied on each call, so a pass allocates nothing, and a call
   // made while another runs (a getter that validates) changes no verdict: only the returned boolean is read.
-  leafPasses: [
-    'const scratchPath = [];',
-    'const scratchIssues = [];',
-    'function leafPasses(validate, value) {',
-    '  scratchPath.length = 0;',
-    '  scratchIssues.length = 0;',
-    '  return validate(value, scratchPath, scratchIssues, false);',
-    '}',
-  ].join('\n'),
+  leafPasses: localHelper('leafPasses', 12, self => join([
+    code`const scratchPath = [];`,
+    code`const scratchIssues = [];`,
+    code`function ${self}(validate, value) {`,
+    code`  scratchPath.length = 0;`,
+    code`  scratchIssues.length = 0;`,
+    code`  return validate(value, scratchPath, scratchIssues, false);`,
+    code`}`,
+  ], NEWLINE)),
 };
 
 /** True when `key` is program state of the instance whose `instanceFields` is the local `fields`. */
@@ -220,25 +250,18 @@ function stateTest(fields: string, key: string): string {
  * for a plain value. A value whose keys the schema all names never reads them, so a failing check of a model instance
  * does not walk its prototypes.
  */
-function lazyStateTest(fields: string, value: string, key: string, instanceFields: string): string {
-  return `(${fields} === undefined ? (${fields} = ${instanceFields}(${value}) ?? false) : ${fields}) !== false && !${fields}.includes(${key})`;
+function lazyStateTest(fields: string, value: string, key: string, instanceFields: Code): Emitted {
+  return mixed`(${fields} === undefined ? (${fields} = ${instanceFields}(${value}) ?? false) : ${fields}) !== false && !${fields}.includes(${key})`;
 }
 
-/** The helpers a helper's text uses. */
-const HELPER_NEEDS: Readonly<Partial<Record<LocalHelper, readonly LocalHelper[]>>> = {
-  selectedModel: ['hashedId'],
-  modelOf: ['hashedId'],
-  isInstanceState: ['instanceFields'],
-};
-
-const TYPE_TESTS: Readonly<Record<IrTypeName, (value: string) => string>> = {
+const TYPE_TESTS: Readonly<Record<IrTypeName, (value: string) => Emitted>> = {
   string: value => `typeof ${value} === 'string'`,
   // JSON has no NaN or infinity; a model value that holds one is not a number.
   number: value => `(typeof ${value} === 'number' && Number.isFinite(${value}))`,
   integer: value => `Number.isInteger(${value})`,
   boolean: value => `typeof ${value} === 'boolean'`,
   null: value => `${value} === null`,
-  object: value => `isObject(${value})`,
+  object: value => mixed`${localName('isObject')}(${value})`,
   array: value => `Array.isArray(${value})`,
 };
 
@@ -249,23 +272,10 @@ function literal(text: string): string {
 
 /** Module-level state the function bodies add to while they are emitted. */
 class ModuleState {
-  private readonly runtime = new Set<RuntimeHelper>();
-  private readonly helpers = new Set<LocalHelper>();
-  private readonly declarations: string[] = [];
+  private readonly declarations: Code[] = [];
   /** The name of each declared constant, by what it holds: one constant serves every use of the same value. */
   private readonly constants = new Map<string, string>();
   private imports: readonly IrValidationImport[] = [];
-
-  public runtimeHelper(name: RuntimeHelper): string {
-    this.runtime.add(name);
-    return name;
-  }
-
-  public localHelper(name: LocalHelper): string {
-    this.helpers.add(name);
-    for (const needed of HELPER_NEEDS[name] ?? []) this.helpers.add(needed);
-    return name;
-  }
 
   public importValidations(imports: readonly IrValidationImport[]): void {
     this.imports = imports;
@@ -281,26 +291,30 @@ class ModuleState {
    * (the expression itself by default), is declared once. Every initializer is a call or a `new`, so it carries the
    * annotation that lets a bundler drop the constant with the validator that alone uses it; a call among its
    * arguments carries the annotation too, as a bundler keeps a pure call whose arguments may have side effects.
+   * An expression that holds a runtime part has no text to compare, so it comes with its `key`.
    */
-  public constant(prefix: string, expression: string, key = expression): string {
+  public constant(prefix: string, expression: Emitted, key: string | undefined = typeof expression === 'string' ? expression : undefined): string {
+    if (key === undefined) throw new Error('A constant whose expression is Code needs a key that tells it from the other constants.');
     const identity = `${prefix}\u0000${key}`;
     const known = this.constants.get(identity);
     if (known !== undefined) return known;
     const name = `${prefix}${this.declarations.length}`;
-    this.declarations.push(`const ${name} = /*#__PURE__*/ ${expression};`);
+    this.declarations.push(code`const ${identifierCode(name)} = /*#__PURE__*/ ${emittedCode(expression)};`);
     this.constants.set(identity, name);
     return name;
   }
 
-  public prelude(runtimeModule: string): string[] {
-    const lines: string[] = [];
-    if (this.runtime.size > 0) lines.push(`import { ${[...this.runtime].sort().join(', ')} } from ${literal(runtimeModule)};`);
-    this.imports.forEach((entry, index) => {
-      const exported = /^[A-Za-z_$][\w$]*$/.test(entry.exportName) ? entry.exportName : literal(entry.exportName);
-      lines.push(`import { ${exported} as ${this.validationFunction(index)} } from ${literal(entry.importPath)};`);
+  /** The import line of each validation function the module calls. */
+  public validationImports(): readonly Code[] {
+    return this.imports.map((entry, index) => {
+      const exported = /^[A-Za-z_$][\w$]*$/.test(entry.exportName) ? identifierCode(entry.exportName) : literalCode(entry.exportName);
+      return code`import { ${exported} as ${identifierCode(this.validationFunction(index))} } from ${literalCode(entry.importPath)};`;
     });
-    for (const name of Object.keys(LOCAL_HELPERS) as LocalHelper[]) if (this.helpers.has(name)) lines.push(LOCAL_HELPERS[name]);
-    return [...lines, ...this.declarations];
+  }
+
+  /** The declaration of each module-level constant. */
+  public constantDeclarations(): readonly Code[] {
+    return this.declarations;
   }
 }
 
@@ -311,9 +325,9 @@ interface FailMode {
   /** The line that ends the body once every check passed or was reported. */
   readonly end: string;
   /** The statements of a check that failed with the issue `fields` at `path`. */
-  issue(fields: string, path: string): readonly string[];
+  issue(fields: string, path: string): readonly Emitted[];
   /** The statement of a check that failed where a callee already reported the issue. */
-  fail(): string;
+  fail(): Emitted;
   /** A failed check leaves the function at once with its verdict: its issue is never built and nothing after it runs. */
   readonly leaves: boolean;
 }
@@ -323,7 +337,7 @@ interface PresenceReader {
   /** Statements that run before the first `present` or `read`. */
   readonly setup: readonly string[];
   /** An expression that is true when `key` is present by the JSON view. */
-  present(key: string): string;
+  present(key: string): Emitted;
   /** An expression that reads the value of `key`; written only where `present(key)` holds. */
   read(key: string): string;
 }
@@ -370,7 +384,7 @@ interface KeyTest {
    * would without this object. It reads every value first (spec 7.3), and the passes over the key list read each value
    * before they skip a key.
    */
-  readonly failure?: string;
+  readonly failure?: Emitted;
 }
 
 /** Which own values of an object the full validator reads before its checks (spec 7.3). */
@@ -419,7 +433,7 @@ interface WriterMode {
   /** Writes `body`, which checks the child `token` of the current value. */
   readonly child: (writer: FunctionWriter, token: string, body: () => void) => void;
   /** An expression that selects the model class of `value` among the codec ids `among`. */
-  readonly selectModel: (state: ModuleState, value: string, among: readonly string[]) => string;
+  readonly selectModel: (state: ModuleState, value: string, among: readonly string[]) => Emitted;
   /** The mode writes functions that keep or receive an evaluation record. */
   readonly records: boolean;
   /**
@@ -434,10 +448,9 @@ const REPORT_FAILURE = `ok = false; if (!${ALL}) { ${PATH}.length = pl; return f
 function objectPresence(state: ModuleState, value: string, captured: readonly (readonly [key: string, local: string])[] = []): PresenceReader {
   // One Object.keys pass reads the declared keys of an object; the faster exact form of the JSON view.
   const locals = new Map(captured);
-  const single = (): string => state.localHelper('isPresent');
   return {
     setup: captured.length > 0 ? [presentKeysSource(value, captured)] : [],
-    present: key => { const local = locals.get(key); return local !== undefined ? `(${local} !== undefined)` : `${single()}(${value}, ${literal(key)})`; },
+    present: key => { const local = locals.get(key); return local !== undefined ? `(${local} !== undefined)` : mixed`${localName('isPresent')}(${value}, ${literal(key)})`; },
     read: key => locals.get(key) ?? `${value}[${literal(key)}]`,
   };
 }
@@ -458,13 +471,13 @@ const FULL_VALIDATOR: WriterMode = {
     const presence = objectPresence(writer.state, value, captured);
     for (const line of presence.setup) writer.line(line);
     const keys = writer.fresh('keys');
-    if (reads.all) writer.line(`const ${keys} = ${writer.state.localHelper('definedKeys')}(${value});`);
+    if (reads.all) writer.line(mixed`const ${keys} = ${localName('definedKeys')}(${value});`);
     if (check.minProperties === undefined && check.maxProperties === undefined) return { presence, ...(reads.all ? { keys } : {}) };
     // The program state of a model instance does not count.
     const count = writer.fresh('count');
     const key = writer.fresh('key');
     const fields = writer.fresh('fields');
-    writer.line(`const ${fields} = ${writer.state.localHelper('instanceFields')}(${value});`);
+    writer.line(mixed`const ${fields} = ${localName('instanceFields')}(${value});`);
     writer.line(`let ${count} = ${keys}.length;`);
     writer.line(`if (${fields} !== undefined) for (const ${key} of ${keys}) if (${stateTest(fields, key)}) ${count}--;`);
     return { presence, count, keys };
@@ -479,13 +492,13 @@ const FULL_VALIDATOR: WriterMode = {
     body();
     writer.line(`${PATH}.pop();`);
   },
-  selectModel: (state, value, among) => `${state.localHelper('selectedModel')}(${value}, ${JSON.stringify(among)})`,
+  selectModel: (_state, value, among) => mixed`${localName('selectedModel')}(${value}, ${JSON.stringify(among)})`,
   records: true,
 };
 
 /** `selectedModel` without a function made per call, and its list of codec ids made once. */
-function modelOfSelection(state: ModuleState, value: string, among: readonly string[]): string {
-  return `${state.localHelper('modelOf')}(${value}, ${state.constant('models', `Object.freeze(${JSON.stringify(among)})`)})`;
+function modelOfSelection(state: ModuleState, value: string, among: readonly string[]): Emitted {
+  return mixed`${localName('modelOf')}(${value}, ${state.constant('models', `Object.freeze(${JSON.stringify(among)})`)})`;
 }
 
 /**
@@ -534,7 +547,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   // A pass with no case, no count, no unknown key and no captured key only reads the values. The passes over the key
   // list read them all too, and a failure of theirs reads the rest first (`failure`), so the pass is left out.
   if (list !== undefined && cases.length === 0 && count === undefined && unknown === undefined && unnamed.length === 0) {
-    return { presence, keys: list, undefinedToo: true, failure: `${writer.state.localHelper('readAll')}(${value}, ${list});` };
+    return { presence, keys: list, undefinedToo: true, failure: mixed`${localName('readAll')}(${value}, ${list});` };
   }
   const item = writer.fresh('item');
   writer.open(`for (const ${key} of ${list ?? `Object.keys(${value})`})`);
@@ -547,8 +560,8 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
   unnamed.forEach(([name, local], position) => writer.line(`${position === 0 ? '' : 'else '}if (${key} === ${literal(name)}) ${local} = ${item};`));
   if (unknown !== undefined) {
     const patterns = check.patternProperties.map(entry => `${patternExpression(writer.state, entry.pattern)}.test(${key})`);
-    const state = `!${writer.state.localHelper('isInstanceState')}(${value}, ${key})`;
-    writer.line(`if (${patterns.length === 0 ? state : `!(${patterns.join(' || ')}) && ${state}`}) ${unknown} = true;`);
+    const state = mixed`!${localName('isInstanceState')}(${value}, ${key})`;
+    writer.line(mixed`if (${patterns.length === 0 ? state : mixed`!(${patterns.join(' || ')}) && ${state}`}) ${unknown} = true;`);
   }
   writer.close();
   writer.close();
@@ -557,7 +570,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
     // The names that the instance's own model declares: a key outside them is program state and does not count, the
     // full validator's rule. A plain value has no such names and runs no second pass.
     const fields = writer.fresh('fields');
-    writer.line(`const ${fields} = ${writer.state.localHelper('instanceFields')}(${value});`);
+    writer.line(mixed`const ${fields} = ${localName('instanceFields')}(${value});`);
     writer.line(`if (${fields} !== undefined) for (const ${key} of ${list ?? `Object.keys(${value})`}) if (!${fields}.includes(${key}) && ${value}[${key}] !== undefined) ${count}--;`);
   }
   return {
@@ -576,7 +589,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
 function fastCheckMode(plan: FastPlan): WriterMode {
   const leafCall = (writer: FunctionWriter, id: number, value: string): Code => {
     writer.calls.add(id);
-    return code`${legacyText(writer.state.localHelper('leafPasses'))}(${nameOf(writer.calleeSlot(id, false))}, ${legacyText(value)})`;
+    return code`${localName('leafPasses')}(${nameOf(writer.calleeSlot(id, false))}, ${legacyText(value)})`;
   };
   return {
     fail: { start: [], end: 'return true;', issue: () => ['return false;'], fail: () => 'return false;', leaves: true },
@@ -657,18 +670,18 @@ class FunctionWriter {
   /** The body of the function, without its header line. */
   public write(): Code {
     for (const start of this.mode.fail.start) this.line(start);
-    if (this.fn.collects) this.line(`const ${EVALUATION} = ${this.state.localHelper('newEvaluation')}();`);
-    else if (this.fn.receives) this.line(`const ${EVALUATION} = ${INHERITED} ?? ${this.state.localHelper('newEvaluation')}();`);
+    if (this.fn.collects) this.line(mixed`const ${EVALUATION} = ${localName('newEvaluation')}();`);
+    else if (this.fn.receives) this.line(mixed`const ${EVALUATION} = ${INHERITED} ?? ${localName('newEvaluation')}();`);
     this.schema(this.fn.body, VALUE);
     // A function that both keeps a record and receives one hands what it evaluated to its caller once it passed.
-    if (this.fn.collects && this.fn.receives) this.line(`if (ok && ${INHERITED} !== undefined) ${this.state.localHelper('mergeEvaluation')}(${INHERITED}, ${EVALUATION});`);
+    if (this.fn.collects && this.fn.receives) this.line(mixed`if (ok && ${INHERITED} !== undefined) ${localName('mergeEvaluation')}(${INHERITED}, ${EVALUATION});`);
     // A `false` schema has already left the function in a mode that leaves at a failure.
     if (this.fn.body.kind !== 'never' || !this.mode.fail.leaves) this.line(this.mode.fail.end);
     this.lines.push(code`}`);
     return join(this.lines, NEWLINE);
   }
 
-  // migration door, deleted in step 4b (T-318): a line is still given as a string, which is wrapped as text
+  // migration door, deleted in P-22 step 7 (with legacyText): a line without a helper or a runtime name is still given as a string, which is wrapped as text
   public line(text: Emitted): void {
     this.lines.push(code`${indentation(this.depth * 2)}${emittedCode(text)}`);
   }
@@ -685,7 +698,7 @@ class FunctionWriter {
   }
 
   /** A block that is left out when `body` writes nothing, as when a check only marks what it evaluates and nothing reads the mark. */
-  private block(head: string, body: () => void): void {
+  private block(head: Emitted, body: () => void): void {
     const start = this.lines.length;
     this.open(head);
     body();
@@ -702,7 +715,7 @@ class FunctionWriter {
    * the guard tests for: a type check before it left the function on any other type. `dropsEmpty` leaves out a guard
    * whose body writes nothing, as `block` does.
    */
-  private guarded(head: string, guardTypes: readonly IrTypeName[], types: readonly IrTypeName[] | undefined, body: () => void, dropsEmpty: boolean): void {
+  private guarded(head: Emitted, guardTypes: readonly IrTypeName[], types: readonly IrTypeName[] | undefined, body: () => void, dropsEmpty: boolean): void {
     if (types !== undefined && types.every(name => guardTypes.includes(name))) return body();
     if (dropsEmpty) return this.block(head, body);
     this.open(head);
@@ -726,7 +739,7 @@ class FunctionWriter {
 
   /** Fails the function when `test` holds, where a callee already reported the issue, or the mode builds none. */
   public failWhen(test: Emitted): void {
-    if (this.mode.fail.leaves) return this.line(code`if (${emittedCode(test)}) ${legacyText(this.mode.fail.fail())}`);
+    if (this.mode.fail.leaves) return this.line(code`if (${emittedCode(test)}) ${emittedCode(this.mode.fail.fail())}`);
     this.open(code`if (${emittedCode(test)})`);
     this.fail();
     this.close();
@@ -741,7 +754,7 @@ class FunctionWriter {
   }
 
   /** The `tooSmall` and `tooBig` leaves of a lower and an upper limit on `measure`, whose value `actual` holds; `fast` writes each test cheaper. */
-  private limitLeaves(measure: string, actual: Text, min: number | undefined, max: number | undefined, fast?: { readonly min: (limit: number) => string; readonly max: (limit: number) => string }): void {
+  private limitLeaves(measure: string, actual: Text, min: number | undefined, max: number | undefined, fast?: { readonly min: (limit: number) => Emitted; readonly max: (limit: number) => Emitted }): void {
     if (min !== undefined) this.leaf({ fails: () => `${text(actual)} < ${JSON.stringify(min)}`, ...(fast ? { fast: () => fast.min(min) } : {}), issue: limitFields('tooSmall', measure, min, true) });
     if (max !== undefined) this.leaf({ fails: () => `${text(actual)} > ${JSON.stringify(max)}`, ...(fast ? { fast: () => fast.max(max) } : {}), issue: limitFields('tooBig', measure, max, true) });
   }
@@ -799,24 +812,23 @@ class FunctionWriter {
   private check(check: IrCheck, value: string, types?: readonly IrTypeName[]): void {
     switch (check.kind) {
       case 'type':
-        if (check.names.includes('object')) this.state.localHelper('isObject');
-        return this.leaf({ fails: `!(${check.names.map(name => TYPE_TESTS[name](value)).join(' || ')})`, issue: `code: 'type', expected: ${JSON.stringify(check.names)}` });
+        return this.leaf({ fails: mixed`!(${join(check.names.map(name => emittedCode(TYPE_TESTS[name](value))), code` || `)})`, issue: `code: 'type', expected: ${JSON.stringify(check.names)}` });
       case 'literal': {
         const values = (): string => this.state.constant('lit', `Object.freeze(/*#__PURE__*/ JSON.parse(${literal(JSON.stringify(check.values))}))`);
-        const equal = (item: string): string => `${this.state.runtimeHelper('jsonEqual')}(${value}, ${item})`;
+        const equal = (item: string): Code => mixed`${runtime.jsonEqual}(${value}, ${item})`;
         return this.leaf({
-          fails: () => (check.values.length === 1 ? `!${equal(`${values()}[0]`)}` : `!${values()}.some(item => ${equal('item')})`),
+          fails: () => (check.values.length === 1 ? mixed`!${equal(`${values()}[0]`)}` : mixed`!${values()}.some(item => ${equal('item')})`),
           // `jsonEqual` starts with `===`, and a JSON primitive equals nothing else, so `===` decides for a primitive.
           // An empty `enum` allows no value.
-          fast: () => (check.values.length === 0 ? 'true' : check.values.map((item, position) => (isPrimitive(item) ? `${value} !== ${JSON.stringify(item)}` : `!${equal(`${values()}[${position}]`)}`)).join(' && ')),
+          fast: () => (check.values.length === 0 ? 'true' : join(check.values.map((item, position) => (isPrimitive(item) ? legacyText(`${value} !== ${JSON.stringify(item)}`) : mixed`!${equal(`${values()}[${position}]`)}`)), code` && `)),
           issue: () => `code: 'literal', expected: ${values()}`,
         });
       }
       case 'format':
         return this.leaf({
-          fails: () => `!${this.state.runtimeHelper('checkFormat')}(${literal(check.format)}, ${value})`,
+          fails: () => mixed`!${runtime.checkFormat}(${literal(check.format)}, ${value})`,
           // The format's test, looked up once when the module loads.
-          fast: () => `!${this.state.constant('format', `${this.state.runtimeHelper('formatTest')}(${literal(check.format)})`)}(${value})`,
+          fast: () => mixed`!${this.state.constant('format', mixed`${runtime.formatTest}(${literal(check.format)})`, literal(check.format))}(${value})`,
           issue: `code: 'format', format: ${literal(check.format)}`,
         });
       case 'date':
@@ -836,11 +848,10 @@ class FunctionWriter {
         return this.leaf({ fails: this.call(check.fn, { value, issues: '[]', all: 'false' }), issue: "code: 'not'" });
       case 'conditional': return this.conditionalCheck(check, value);
       case 'dependentSchemas': {
-        this.state.localHelper('isObject');
         const presence = this.mode.presence(this.state, value);
-        this.open(`if (isObject(${value}))`);
+        this.open(mixed`if (${localName('isObject')}(${value}))`);
         for (const { trigger, fn } of check.entries) {
-          this.open(`if (${presence.present(trigger)})`);
+          this.open(mixed`if (${presence.present(trigger)})`);
           this.callInPlace(fn, value);
           this.close();
         }
@@ -860,7 +871,7 @@ class FunctionWriter {
   /** The class the value's encoder selects must be `of`; see `IrInstance`. */
   private instanceCheck(check: IrInstance, value: string): void {
     const selected = this.fresh('selected');
-    this.line(`const ${selected} = ${this.mode.selectModel(this.state, value, check.among)};`);
+    this.line(mixed`const ${selected} = ${this.mode.selectModel(this.state, value, check.among)};`);
     const expected = check.of === undefined ? 'undefined' : literal(check.of);
     this.leaf({
       fails: check.required || check.of === undefined ? `${selected} !== ${expected}` : `${selected} !== undefined && ${selected} !== ${expected}`,
@@ -901,15 +912,15 @@ class FunctionWriter {
     const length = (): string => {
       if (counted === undefined) {
         counted = this.fresh('n');
-        this.line(`const ${counted} = ${this.state.runtimeHelper('codePointLength')}(${value});`);
+        this.line(mixed`const ${counted} = ${runtime.codePointLength}(${value});`);
       }
       return counted;
     };
     // A code point is one or two UTF-16 units, so the fast check counts them only where the length cannot decide.
-    const codePoints = (): string => `${this.state.runtimeHelper('codePointLength')}(${value})`;
+    const codePoints = (): Code => mixed`${runtime.codePointLength}(${value})`;
     this.limitLeaves('length', length, check.minLength, check.maxLength, {
-      min: limit => `${value}.length < ${JSON.stringify(2 * limit)} && ${codePoints()} < ${JSON.stringify(limit)}`,
-      max: limit => `${value}.length > ${JSON.stringify(limit)} && ${codePoints()} > ${JSON.stringify(limit)}`,
+      min: limit => mixed`${value}.length < ${JSON.stringify(2 * limit)} && ${codePoints()} < ${JSON.stringify(limit)}`,
+      max: limit => mixed`${value}.length > ${JSON.stringify(limit)} && ${codePoints()} > ${JSON.stringify(limit)}`,
     });
     if (check.pattern !== undefined) {
       const expression = patternExpression(this.state, check.pattern);
@@ -933,7 +944,7 @@ class FunctionWriter {
       if (limit === undefined) continue;
       this.leaf({ fails: `${value} ${operator} ${JSON.stringify(limit)}`, issue: limitFields(code, 'value', limit, inclusive) });
     }
-    if (check.multipleOf !== undefined) this.leaf({ fails: `!${this.state.localHelper('isMultipleOf')}(${value}, ${JSON.stringify(check.multipleOf)})`, issue: `code: 'multipleOf', divisor: ${JSON.stringify(check.multipleOf)}` });
+    if (check.multipleOf !== undefined) this.leaf({ fails: mixed`!${localName('isMultipleOf')}(${value}, ${JSON.stringify(check.multipleOf)})`, issue: `code: 'multipleOf', divisor: ${JSON.stringify(check.multipleOf)}` });
   }
 
   private arrayCheck(check: IrArray, value: string, types: readonly IrTypeName[] | undefined): void {
@@ -959,11 +970,10 @@ class FunctionWriter {
         const second = this.fresh('y');
         // With all errors the search stops at the first duplicate pair; a mode that leaves at a failure needs no label.
         const label = this.mode.fail.leaves ? undefined : this.fresh('unique');
-        const jsonEqual = this.state.runtimeHelper('jsonEqual');
         this.open(`${label === undefined ? '' : `${label}: `}for (let ${first} = 0; ${first} < ${value}.length - 1; ${first}++)`);
         this.open(`for (let ${second} = ${first} + 1; ${second} < ${value}.length; ${second}++)`);
         // An `undefined` item is `null` in the JSON view, as in every array keyword and as `jsonEqual` reads nested items.
-        this.open(`if (${jsonEqual}(${value}[${first}] ?? null, ${value}[${second}] ?? null))`);
+        this.open(mixed`if (${runtime.jsonEqual}(${value}[${first}] ?? null, ${value}[${second}] ?? null))`);
         this.issue(`code: 'unique', indexes: [${first}, ${second}]`);
         if (label !== undefined) this.line(`break ${label};`);
         this.close();
@@ -1031,19 +1041,17 @@ class FunctionWriter {
   }
 
   private objectCheck(check: IrObject, value: string, types: readonly IrTypeName[] | undefined): void {
-    this.state.localHelper('isObject');
-    this.guarded(`if (${TYPE_TESTS.object(value)})`, ['object'], types, () => this.objectKeywords(check, value), true);
+    this.guarded(mixed`if (${TYPE_TESTS.object(value)})`, ['object'], types, () => this.objectKeywords(check, value), true);
   }
 
   /** The type check that requires an object, and the object keywords in its `else`: the value is tested once. */
   private objectOrTypeIssue(type: IrType, check: IrObject, value: string): void {
-    this.state.localHelper('isObject');
     // A mode that leaves at a failure needs no `else`: the keywords follow the type test.
     if (this.mode.fail.leaves) {
-      this.failWhen(`!${TYPE_TESTS.object(value)}`);
+      this.failWhen(mixed`!${TYPE_TESTS.object(value)}`);
       return this.objectKeywords(check, value);
     }
-    this.open(`if (!${TYPE_TESTS.object(value)})`);
+    this.open(mixed`if (!${TYPE_TESTS.object(value)})`);
     this.issue(`code: 'type', expected: ${JSON.stringify(type.names)}`);
     this.depth--;
     this.line('} else {');
@@ -1075,11 +1083,11 @@ class FunctionWriter {
       return what;
     };
     this.limitLeaves('properties', () => listed(count), check.minProperties, check.maxProperties);
-    const required = (key: string): LeafCheck => ({ fails: `!${presence.present(key)}`, issue: `code: 'required', key: ${literal(key)}`, path: `[...${PATH}, ${literal(key)}]` });
+    const required = (key: string): LeafCheck => ({ fails: mixed`!${presence.present(key)}`, issue: `code: 'required', key: ${literal(key)}`, path: `[...${PATH}, ${literal(key)}]` });
     for (const key of check.required) this.leaf(required(key));
     for (const { trigger, keys: dependents } of check.dependentRequired) {
       if (dependents.length === 0) continue;
-      this.open(`if (${presence.present(trigger)})`);
+      this.open(mixed`if (${presence.present(trigger)})`);
       for (const key of dependents) this.leaf(required(key));
       this.close();
     }
@@ -1089,7 +1097,7 @@ class FunctionWriter {
     const outer = this.mode;
     // A failure of the passes reads this object's values, then fails as the enclosing object does, which reads its own.
     if (failure !== undefined) {
-      const chained = `{ ${failure} ${outer.fail.fail()} }`;
+      const chained = mixed`{ ${failure} ${outer.fail.fail()} }`;
       this.mode = { ...outer, fail: { ...outer.fail, issue: () => [chained], fail: () => chained } };
     }
     if (check.additional && visitsAdditional && keys !== undefined && unknown === undefined) {
@@ -1108,7 +1116,7 @@ class FunctionWriter {
         this.line(`if (${member} === undefined) continue;`);
       }
       if (skipped.length > 0) this.line(`if (${skipped.join(' || ')}) continue;`);
-      this.line(`if (${lazyStateTest(fields, value, key, this.state.localHelper('instanceFields'))}) continue;`);
+      this.line(mixed`if (${lazyStateTest(fields, value, key, localName('instanceFields'))}) continue;`);
       if (additional.kind === 'forbid') {
         this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
@@ -1127,7 +1135,7 @@ class FunctionWriter {
       if (property.schema.kind === 'always' && !marks) continue;
       const schema = property.schema;
       const guarded = !present.has(property.key);
-      if (guarded) this.open(`if (${presence.present(property.key)})`);
+      if (guarded) this.open(mixed`if (${presence.present(property.key)})`);
       this.mark(record => `${record}.keys.add(${literal(property.key)});`);
       if (schema.kind !== 'always') {
         const member = this.fresh('member');
@@ -1150,7 +1158,7 @@ class FunctionWriter {
       for (const { entry, expression } of patternsToRun) {
         this.open(`if (${expression}.test(${key}))`);
         // Program state is no property to judge, and it is not evaluated.
-        this.line(`if (${lazyStateTest(fields, value, key, this.state.localHelper('instanceFields'))}) continue;`);
+        this.line(mixed`if (${lazyStateTest(fields, value, key, localName('instanceFields'))}) continue;`);
         this.mark(record => `${record}.keys.add(${key});`);
         if (entry.schema.kind !== 'always') {
           const schema = entry.schema;
@@ -1169,7 +1177,7 @@ class FunctionWriter {
       this.open(`for (const ${key} of ${listed(keys)})`);
       if (undefinedToo) this.line(`if (${value}[${key}] === undefined) continue;`);
       // A name that the instance's own model does not declare is program state, not a property name to judge.
-      this.leaf({ fails: code`!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })} && !${legacyText(`${this.state.localHelper('isInstanceState')}(${value}, ${key})`)}`, issue: `code: 'invalidKey', key: ${key}` });
+      this.leaf({ fails: mixed`!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })} && !${localName('isInstanceState')}(${value}, ${key})`, issue: `code: 'invalidKey', key: ${key}` });
       this.close();
     }
     this.mode = outer;
@@ -1178,15 +1186,14 @@ class FunctionWriter {
   /** `unevaluatedProperties`: the keys that nothing evaluated. */
   private unevaluatedProperties(schema: IrSchema, value: string): void {
     const record = this.requireRecord();
-    this.state.localHelper('isObject');
-    this.open(`if (isObject(${value}))`);
+    this.open(mixed`if (${localName('isObject')}(${value}))`);
     if (schema.kind !== 'always') {
       const key = this.fresh('key');
       this.open(`if (!${record}.allKeys)`);
-      this.open(`for (const ${key} of ${this.state.localHelper('definedKeys')}(${value}))`);
+      this.open(mixed`for (const ${key} of ${localName('definedKeys')}(${value}))`);
       this.line(`if (${record}.keys.has(${key})) continue;`);
       // Program state of a model instance is no unevaluated key, whether the schema forbids it or judges its value.
-      this.line(`if (${this.state.localHelper('isInstanceState')}(${value}, ${key})) continue;`);
+      this.line(mixed`if (${localName('isInstanceState')}(${value}, ${key})) continue;`);
       if (schema.kind === 'never') {
         this.issue(`code: 'unknownKey', key: ${key}`, `[...${PATH}, ${key}]`);
       } else {
@@ -1230,9 +1237,9 @@ class FunctionWriter {
   /** `if` runs with a scratch list and, when this function keeps a record, a scratch record that counts only when `if` passes. */
   private conditionalCheck(check: Extract<IrCheck, { kind: 'conditional' }>, value: string): void {
     const scratch = this.record === undefined ? undefined : this.fresh('scratch');
-    if (scratch !== undefined) this.line(`const ${scratch} = ${this.state.localHelper('newEvaluation')}();`);
+    if (scratch !== undefined) this.line(mixed`const ${scratch} = ${localName('newEvaluation')}();`);
     this.open(code`if (${this.call(check.if, { value, issues: '[]', all: 'false', record: scratch })})`);
-    if (scratch !== undefined && this.record !== undefined) this.line(`${this.state.localHelper('mergeEvaluation')}(${this.record}, ${scratch});`);
+    if (scratch !== undefined && this.record !== undefined) this.line(mixed`${localName('mergeEvaluation')}(${this.record}, ${scratch});`);
     if (check.then !== undefined) this.callInPlace(check.then, value);
     this.close();
     if (check.else !== undefined) {
@@ -1261,10 +1268,10 @@ class FunctionWriter {
     check.branches.forEach((fn, position) => {
       const scratch = this.fresh('scratch');
       this.open(position === 0 || !check.exactlyOne ? '' : `if (${matched} < 2)`);
-      this.line(`const ${scratch} = ${this.state.localHelper('newEvaluation')}();`);
+      this.line(mixed`const ${scratch} = ${localName('newEvaluation')}();`);
       this.open(code`if (${this.call(fn, { value, issues: '[]', all: 'false', record: scratch })})`);
       this.line(`${matched}++;`);
-      this.line(`${this.state.localHelper('mergeEvaluation')}(${record}, ${scratch});`);
+      this.line(mixed`${localName('mergeEvaluation')}(${record}, ${scratch});`);
       this.close();
       this.close();
     });
@@ -1284,22 +1291,20 @@ class FunctionWriter {
       for (const target of targets) this.merging.delete(target);
       return;
     }
-    this.state.localHelper('isObject');
     const presence = this.mode.presence(this.state, value);
     const property = literal(discriminator.property);
-    const jsonEqual = (): string => this.state.runtimeHelper('jsonEqual');
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
-    const read = this.mode.form<Text>(
-      () => `isObject(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined`,
-      `isObject(${value}) ? (${presentValueSource(value, property, `${value}[${property}]`)}) : undefined`,
+    const read = this.mode.form<Test>(
+      () => mixed`${localName('isObject')}(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined`,
+      mixed`${localName('isObject')}(${value}) ? (${presentValueSource(value, property, `${value}[${property}]`)}) : undefined`,
     );
-    this.line(`const ${tag} = ${text(read)};`);
-    const selection = this.mode.form<Text>(
-      () => `${this.tagLists(discriminator)}.findIndex(list => list.some(item => ${jsonEqual()}(${tag}, item)))`,
+    this.line(mixed`const ${tag} = ${test(read)};`);
+    const selection = this.mode.form<Test>(
+      () => mixed`${this.tagLists(discriminator)}.findIndex(list => list.some(item => ${runtime.jsonEqual}(${tag}, item)))`,
       () => this.tagSelection(discriminator, tag),
     );
-    this.line(`const ${selected} = ${text(selection)};`);
+    this.line(mixed`const ${selected} = ${test(selection)};`);
     check.branches.forEach((fn, position) => {
       this.open(`if (${selected} === ${position})`);
       this.callInPlace(fn, value);
@@ -1321,11 +1326,13 @@ class FunctionWriter {
    * The branch position of the tag held by `tag`, or -1: the first branch whose list holds it, as a tag lies in one list.
    * A primitive tag is compared with `===`, which `jsonEqual` starts with, and no function is made per call.
    */
-  private tagSelection(discriminator: IrDiscriminator, tag: string): string {
-    const matches = (position: number): string => discriminator.tags[position]
-      .map((item, index) => (isPrimitive(item) ? `${tag} === ${JSON.stringify(item)}` : `${this.state.runtimeHelper('jsonEqual')}(${tag}, ${this.tagLists(discriminator)}[${position}][${index}])`))
-      .join(' || ') || 'false';
-    return `${discriminator.tags.map((_, position) => `${matches(position)} ? ${position} : `).join('')}-1`;
+  private tagSelection(discriminator: IrDiscriminator, tag: string): Code {
+    const matches = (position: number): Code => {
+      const tests = discriminator.tags[position]
+        .map((item, index) => (isPrimitive(item) ? legacyText(`${tag} === ${JSON.stringify(item)}`) : mixed`${runtime.jsonEqual}(${tag}, ${this.tagLists(discriminator)}[${String(position)}][${String(index)}])`));
+      return tests.length === 0 ? legacyText('false') : join(tests, code` || `);
+    };
+    return join([...discriminator.tags.map((_, position) => mixed`${matches(position)} ? ${String(position)} : `), legacyText('-1')]);
   }
 
   /**
@@ -1365,8 +1372,7 @@ class FunctionWriter {
    * not name to be absent. Every read is of an own enumerable key (spec 5.1 rule 3).
    */
   private mergedUnion(branches: readonly IrObject[], discriminator: IrDiscriminator, value: string): void {
-    this.failWhen(`!${TYPE_TESTS.object(value)}`);
-    this.state.localHelper('isObject');
+    this.failWhen(mixed`!${TYPE_TESTS.object(value)}`);
     const reads = branches.map(object => readSet(object, false));
     const named = branches.map(object => new Set(object.properties.map(property => property.key)));
     // A merged branch reads every value only when `additionalProperties: false` closes it (see `mergedBranches`).
@@ -1386,7 +1392,7 @@ class FunctionWriter {
     this.close();
     this.close();
     const selected = this.fresh('branch');
-    this.line(`const ${selected} = ${this.tagSelection(discriminator, tag)};`);
+    this.line(mixed`const ${selected} = ${this.tagSelection(discriminator, tag)};`);
     this.failWhen(`${selected} < 0`);
     branches.forEach((object, position) => {
       this.open(`if (${selected} === ${position})`);
@@ -1408,7 +1414,7 @@ class FunctionWriter {
         this.open(`for (const ${other} of Object.keys(${value}))`);
         this.open(`switch (${other})`);
         this.line(`${keys.map(name => `case ${literal(name)}:`).join(' ')} break;`);
-        this.line(`default: if (${value}[${other}] !== undefined && !${this.state.localHelper('isInstanceState')}(${value}, ${other})) ${unknown} = true;`);
+        this.line(mixed`default: if (${value}[${other}] !== undefined && !${localName('isInstanceState')}(${value}, ${other})) ${unknown} = true;`);
         this.close();
         this.close();
         this.close();
@@ -1416,7 +1422,7 @@ class FunctionWriter {
       if (closed[position]) {
         if (!named[position].has(discriminator.property)) this.failWhen(`${tag} !== undefined`);
         // A key that the instance's own model declares is judged; any other own key is program state.
-        for (const [name, local] of absent) this.failWhen(`${local} !== undefined && !${this.state.localHelper('isInstanceState')}(${value}, ${literal(name)})`);
+        for (const [name, local] of absent) this.failWhen(mixed`${local} !== undefined && !${localName('isInstanceState')}(${value}, ${literal(name)})`);
         if (unknown !== undefined) this.failWhen(unknown);
       }
       this.objectKeywords(object, value, { presence: objectPresence(this.state, value, captured) });
@@ -1611,9 +1617,22 @@ function bodyKey(body: Code, slots: FunctionSlots, groups: ReadonlyMap<number, n
         if (callee === undefined) throw new Error(`The validator compiler body names "${part.slot.label}", which is no function.`);
         return [callee.fast, groups.get(callee.id) ?? -1];
       }
-      default: throw new Error(`The validator compiler body holds a ${part.kind} part, which only a function name may be.`);
+      case 'runtime': return ['runtime', part.module, part.name, part.typeOnly === true];
+      case 'helper': return ['helper', part.helper.id];
+      case 'input': return ['input', inputNumber(part.slot)];
     }
   }));
+}
+
+const inputNumbers = new WeakMap<InputSlot, number>();
+let inputsNumbered = 0;
+
+/** A number for an input slot that is the same each time, so bodies that read the same slot have the same key. */
+function inputNumber(slot: InputSlot): number {
+  const known = inputNumbers.get(slot);
+  if (known !== undefined) return known;
+  inputNumbers.set(slot, inputsNumbered);
+  return inputsNumbered++;
 }
 
 /**
@@ -1719,27 +1738,26 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
     if (known === undefined) throw new Error(`The validator compiler has no export name for the root ${JSON.stringify(name)}.`);
     return known;
   };
-  const wrappers = module.exports.map(({ name, fn }) => code`${legacyText(options.typed
-      ? `export function ${exportName(name)}(value: unknown, all: boolean): readonly SchemaIssue[] {`
-      : `export function ${exportName(name)}(value, all) {`)}
+  const signature = options.typed ? code`(value: unknown, all: boolean): readonly ${rtType['validation-runtime'].SchemaIssue}[] {` : code`(value, all) {`;
+  const wrappers = module.exports.map(({ name, fn }) => code`export function ${identifierCode(exportName(name))}${signature}
   const issues = [];
   ${callFunction(module.functions[target(fn)], nameOf(stayingSlot(target(fn), false)), { value: 'value', path: '[]', issues: 'issues', all: 'all' })};
   return issues;
 }`);
   const fastExports = new Map(fastRootExports.map(({ name }) => [name, fastExportName(exportName(name))] as const));
   // The fast check itself is the export: a valid value takes no extra call.
-  const fastWrappers = fastRootExports.map(({ name, fn }) => code`${legacyText(options.typed
-      ? `export const ${fastExportName(exportName(name))}: (value: unknown) => boolean = `
-      : `export const ${fastExportName(exportName(name))} = `)}${nameOf(stayingSlot(target(fn), true))};`);
+  const fastType = options.typed ? code`: (value: unknown) => boolean` : code``;
+  const fastWrappers = fastRootExports.map(({ name, fn }) => code`export const ${identifierCode(fastExportName(exportName(name)))}${fastType} = ${nameOf(stayingSlot(target(fn), true))};`);
+  // The imports and the helpers come from the parts of everything the file holds.
+  const contents = [...state.constantDeclarations(), ...functions, ...fastFunctions, ...wrappers, ...fastWrappers];
+  const everything = join(contents, NEWLINE);
   return {
     source: render(join([
-      ...(options.typed ? [legacyText(`import type { SchemaIssue } from ${literal(options.runtimeModule)};`)] : []),
-      ...state.prelude(options.runtimeModule).map(line => legacyText(line)),
-      ...functions,
-      ...fastFunctions,
-      ...wrappers,
-      ...fastWrappers,
-      legacyText(''),
+      ...runtimeImports(everything, { specifiers: { 'validation-runtime': options.runtimeModule }, quote: '"' }),
+      ...state.validationImports(),
+      ...helperDefinitions(everything),
+      ...contents,
+      code``,
     ], NEWLINE), names),
     fastExports,
   };

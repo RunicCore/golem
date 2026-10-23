@@ -13,7 +13,7 @@ import type * as serde from '../serde.js';
 import type * as temporal from '../temporal.js';
 import type * as validation from '../validation.js';
 import type * as validationRuntime from '../validation-runtime.js';
-import type { Code } from './code.js';
+import { runtimeCode, type Code } from './code.js';
 
 /** The runtime subpaths (`@exprtlabs/golem/<key>`) and the values each one exports. */
 export interface RuntimeExports {
@@ -30,6 +30,18 @@ export interface RuntimeExports {
 }
 
 export type RuntimeModule = keyof RuntimeExports;
+
+/**
+ * The type names that generated code may import, by runtime module. A type cannot be listed from a module's types, so
+ * each name is written once here, and a name the module does not export is a type error.
+ */
+export interface RuntimeTypeExports {
+  readonly 'validation-runtime': { readonly SchemaIssue: validationRuntime.SchemaIssue };
+}
+
+export type RuntimeTypeTable = {
+  readonly [M in keyof RuntimeTypeExports]: { readonly [N in keyof RuntimeTypeExports[M]]: Code };
+};
 
 export type RuntimeTable = {
   readonly [M in RuntimeModule]: { readonly [N in keyof RuntimeExports[M] & string]: Code };
@@ -49,13 +61,13 @@ export const RUNTIME_MODULE_RANK = {
   'validation-runtime': 9,
 } as const satisfies Record<RuntimeModule, number>;
 
-function moduleTable(module: RuntimeModule): object {
+function moduleTable(module: RuntimeModule, typeOnly: boolean): object {
   const codes = new Map<string, Code>();
   return new Proxy({}, {
     get: (_target, name) => {
       if (typeof name !== 'string') return undefined;
       let named = codes.get(name);
-      if (!named) codes.set(name, named = { parts: [{ kind: 'runtime', module, name }] });
+      if (!named) codes.set(name, named = runtimeCode(module, name, typeOnly));
       return named;
     },
   });
@@ -64,5 +76,10 @@ function moduleTable(module: RuntimeModule): object {
 // The names of a module exist only as types, and loading the runtime modules here would load mobx on every run of the
 // tooling. The cast is the one place where the table takes its type from them.
 export const rt = Object.fromEntries(
-  (Object.keys(RUNTIME_MODULE_RANK) as RuntimeModule[]).map((module) => [module, moduleTable(module)]),
+  (Object.keys(RUNTIME_MODULE_RANK) as RuntimeModule[]).map((module) => [module, moduleTable(module, false)]),
 ) as unknown as RuntimeTable;
+
+/** The type names, as Code with a type-only runtime part: `rtType['validation-runtime'].SchemaIssue`. */
+export const rtType = Object.fromEntries(
+  (Object.keys(RUNTIME_MODULE_RANK) as RuntimeModule[]).map((module) => [module, moduleTable(module, true)]),
+) as unknown as RuntimeTypeTable;

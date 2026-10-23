@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  NameTable, bindRead, code, helper, helperBlock, helperName, helperSet, identifier, importSet, inputOf, inputSlot, join, literal,
+  NameTable, bindRead, code, helper, helperDefinitions, helperName, helperSet, identifier, importSet, inputOf, inputSlot, join, literal,
   nameOf, nameSlot, render, runtimeImports, sameCode, legacyText,
 } from '#golem/code';
-import { rt } from '#golem/rt';
+import { rt, rtType } from '#golem/rt';
 
 test('render writes the parts once, in order, and fills each name from the table of the file', () => {
   // protects: T-281 render is the one place that makes text
@@ -16,6 +16,8 @@ test('render writes the parts once, in order, and fills each name from the table
   assert.equal(render(join([call, call], code`\n`), names), 'const decodeOrder = parseJson("a\\"b", field);\nconst decodeOrder = parseJson("a\\"b", field);');
   assert.throws(() => render(inputOf(inputSlot('value')), names), /input "value" is not bound/);
   assert.throws(() => render(nameOf(nameSlot('later')), names), /no name is decided for "later"/);
+  // a Code in a string template would print "[object Object]"
+  assert.throws(() => `${call}`, /put it in the code tag/);
 });
 
 test('the import set holds each runtime part once, grouped by module in the fixed order', () => {
@@ -28,15 +30,15 @@ test('the import set holds each runtime part once, grouped by module in the fixe
     ${rt.model.registerGeneratedModel}(Order);
   `;
   assert.deepEqual(importSet(body), [
-    { module: 'conversion', names: ['decodeCheckedInput'] },
-    { module: 'model', names: ['registerGeneratedModel'] },
-    { module: 'serde', names: ['parseJson', 'stringifyJsonString'] },
+    { module: 'conversion', names: ['decodeCheckedInput'], types: [] },
+    { module: 'model', names: ['registerGeneratedModel'], types: [] },
+    { module: 'serde', names: ['parseJson', 'stringifyJsonString'], types: [] },
   ]);
   assert.equal(
-    render(runtimeImports(body), new NameTable()),
+    render(join(runtimeImports(body), code`\n`), new NameTable()),
     "import { decodeCheckedInput } from '@exprtlabs/golem/conversion';\n"
       + "import { registerGeneratedModel } from '@exprtlabs/golem/model';\n"
-      + "import { parseJson, stringifyJsonString } from '@exprtlabs/golem/serde';\n",
+      + "import { parseJson, stringifyJsonString } from '@exprtlabs/golem/serde';",
   );
 });
 
@@ -50,10 +52,26 @@ test('the helper set holds each named helper once with the helpers it names and 
   // The two functions name each other, so either order loads; a cycle is written from the first name met.
   assert.deepEqual(helperSet(body).map((found) => found.id), ['decodeNode', 'decodeLeaf']);
   assert.equal(
-    render(helperBlock(body), new NameTable()),
+    render(join(helperDefinitions(body), code`\n\n`), new NameTable()),
     'function decodeNode(v) { return decodeLeaf(v); }\n\nfunction decodeLeaf(v) { return decodeCheckedInput(v, decodeNode); }',
   );
-  assert.deepEqual(importSet(body), [{ module: 'conversion', names: ['decodeCheckedInput'] }]);
+  assert.deepEqual(importSet(body), [{ module: 'conversion', names: ['decodeCheckedInput'], types: [] }]);
+});
+
+test('a type name is imported with import type, and a file picks the specifier of each runtime module', () => {
+  // protects: T-318 a type name never lands in a value import, and the runtime may be imported from a resolved URL
+  const body = code`export function check(): readonly ${rtType['validation-runtime'].SchemaIssue}[] { return ${rt['validation-runtime'].jsonEqual}(a, b) ? [] : []; }`;
+  // @ts-expect-error a type name that the module does not export is a type error
+  void rtType['validation-runtime'].NoSuchType;
+  assert.deepEqual(importSet(body), [{ module: 'validation-runtime', names: ['jsonEqual'], types: ['SchemaIssue'] }]);
+  assert.equal(
+    render(join(runtimeImports(body, { specifiers: { 'validation-runtime': 'file:///runtime/validation-runtime.js' }, quote: '"' }), code`\n`)),
+    'import type { SchemaIssue } from "file:///runtime/validation-runtime.js";\nimport { jsonEqual } from "file:///runtime/validation-runtime.js";',
+  );
+  assert.equal(
+    render(join(runtimeImports(body), code`\n`)),
+    "import type { SchemaIssue } from '@exprtlabs/golem/validation-runtime';\nimport { jsonEqual } from '@exprtlabs/golem/validation-runtime';",
+  );
 });
 
 test('a helper that a file reads while it loads comes after the helper it names', () => {
@@ -61,7 +79,7 @@ test('a helper that a file reads while it loads comes after the helper it names'
   const markKey: ReturnType<typeof helper> = helper('markKey', () => code`const markKey = Symbol.for('t286:mark');`);
   const checkedOptions: ReturnType<typeof helper> = helper('checkedOptions', () =>
     code`const checkedOptions = Object.freeze({ [${helperName(markKey)}]: true });`);
-  const block = render(helperBlock(code`${helperName(checkedOptions)}`), new NameTable());
+  const block = render(join(helperDefinitions(code`${helperName(checkedOptions)}`), code`\n\n`), new NameTable());
   assert.deepEqual(helperSet(code`${helperName(checkedOptions)}`).map((found) => found.id), ['markKey', 'checkedOptions']);
   // The file loads: the first constant would be read before it exists if the ids set the order.
   const loaded = new Function(`${block}\nreturn checkedOptions;`)() as Record<symbol, unknown>;

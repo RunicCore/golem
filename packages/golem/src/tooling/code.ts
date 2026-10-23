@@ -32,11 +32,13 @@ export interface InputSlot {
 export interface Helper {
   readonly id: string;
   readonly define: () => Code;
+  /** Where the helper stands among helpers that no definition orders: lower first, then by id. A file with a fixed order of helpers sets it. */
+  readonly rank?: number;
 }
 
 export type Part =
   | { readonly kind: 'text'; readonly text: string }
-  | { readonly kind: 'runtime'; readonly module: RuntimeModule; readonly name: string }
+  | { readonly kind: 'runtime'; readonly module: RuntimeModule; readonly name: string; readonly typeOnly?: true }
   | { readonly kind: 'helper'; readonly helper: Helper }
   | { readonly kind: 'name'; readonly slot: NameSlot }
   | { readonly kind: 'input'; readonly slot: InputSlot };
@@ -45,6 +47,24 @@ export interface Code {
   readonly parts: readonly Part[];
   /** The code is one object literal, which an arrow body wraps in parentheses. Only `asObjectLiteral` sets it, on the code the emitter built as that literal. */
   readonly objectLiteral?: true;
+}
+
+/** Every Code is a `CodeValue`. A Code in a string template would print "[object Object]", so its text conversion fails. */
+class CodeValue implements Code {
+  public readonly objectLiteral?: true;
+
+  public constructor(public readonly parts: readonly Part[], objectLiteral: boolean = false) {
+    if (objectLiteral) this.objectLiteral = true;
+  }
+
+  public toString(): never {
+    throw new TypeError('a Code was put in a string template or a string; put it in the code tag, or in render');
+  }
+}
+
+/** The Code of one runtime part: the value `name` of a runtime module, or its type when `typeOnly`. The rt tables make these. */
+export function runtimeCode(module: RuntimeModule, name: string, typeOnly: boolean = false): Code {
+  return new CodeValue([{ kind: 'runtime', module, name, ...(typeOnly ? { typeOnly: true } : {}) }]);
 }
 
 /** A value that `literal` writes as a JSON literal. */
@@ -68,7 +88,7 @@ function fromParts(parts: readonly Part[]): Code {
       else merged.push(part);
     } else merged.push(part);
   }
-  return { parts: merged };
+  return new CodeValue(merged);
 }
 
 /**
@@ -120,11 +140,11 @@ export function legacyText(text: string): Code {
 
 /** The code of an object literal, as the emitter that built the literal says. Any later change of the code drops the mark. */
 export function asObjectLiteral(literalCode: Code): Code {
-  return { parts: literalCode.parts, objectLiteral: true };
+  return new CodeValue(literalCode.parts, true);
 }
 
-export function helper(id: string, define: () => Code): Helper {
-  return { id: checkedIdentifier(id, 'helper id'), define };
+export function helper(id: string, define: () => Code, rank?: number): Helper {
+  return { id: checkedIdentifier(id, 'helper id'), define, ...(rank === undefined ? {} : { rank }) };
 }
 
 /** A call site of a helper: the name of the helper, and a request that the file holds its definition. */
@@ -153,7 +173,7 @@ export function indentation(spaces: number): Code {
 export type Emitted = string | Code;
 
 /** A string is wrapped as one text part. */
-// migration door, deleted in steps 5 and 6 (T-288, T-289): the walkers of golem-model and golem-openapi, and the item callbacks of sequence-conversion, still give strings
+// migration door, deleted in steps 5, 6 and 7 (T-288, T-289, and P-22 step 7): the walkers of golem-model and golem-openapi, the item callbacks of sequence-conversion, and the line writer of the validator compiler still give strings
 export function emittedCode(emitted: Emitted): Code {
   return typeof emitted === 'string' ? legacyText(emitted) : emitted;
 }
@@ -229,26 +249,31 @@ export class NameTable {
 
 /** What a Code needs from the runtime and from the file: the runtime parts grouped by module, and the helpers with their code. */
 interface Collected {
-  readonly runtime: Map<RuntimeModule, Set<string>>;
+  readonly runtime: Map<RuntimeModule, { readonly values: Set<string>; readonly types: Set<string> }>;
   /** The helpers by id, in the order a file can define them: a helper comes after the helpers its definition names. */
   readonly helpers: Map<string, { readonly helper: Helper; readonly definition: Code }>;
 }
 
+/** Helpers with a rank come first by rank, then every helper by id in code point order. */
+function compareHelpers(left: Helper, right: Helper): number {
+  return (left.rank ?? Infinity) === (right.rank ?? Infinity) ? compareText(left.id, right.id) : (left.rank ?? Infinity) < (right.rank ?? Infinity) ? -1 : 1;
+}
+
 function collect(root: Code): Collected {
-  const runtime = new Map<RuntimeModule, Set<string>>();
+  const runtime = new Map<RuntimeModule, { readonly values: Set<string>; readonly types: Set<string> }>();
   const found = new Map<string, { readonly helper: Helper; readonly definition: Code; readonly needs: readonly Helper[] }>();
   const scan = (piece: Code): readonly Helper[] => {
     const needs = new Map<string, Helper>();
     for (const part of piece.parts) {
       if (part.kind === 'runtime') {
-        const names = runtime.get(part.module) ?? new Set<string>();
-        names.add(part.name);
+        const names = runtime.get(part.module) ?? { values: new Set<string>(), types: new Set<string>() };
+        (part.typeOnly ? names.types : names.values).add(part.name);
         runtime.set(part.module, names);
       } else if (part.kind === 'helper') {
         needs.set(part.helper.id, part.helper);
       }
     }
-    return [...needs.values()].sort((left, right) => compareText(left.id, right.id));
+    return [...needs.values()].sort(compareHelpers);
   };
   const pending: Helper[] = [...scan(root)];
   for (let next = pending.pop(); next; next = pending.pop()) {
@@ -274,28 +299,51 @@ function collect(root: Code): Collected {
     entry.needs.forEach(visit);
     helpers.set(next.id, { helper: entry.helper, definition: entry.definition });
   };
-  [...found.values()].map(({ helper: each }) => each).sort((left, right) => compareText(left.id, right.id)).forEach(visit);
+  [...found.values()].map(({ helper: each }) => each).sort(compareHelpers).forEach(visit);
   return { runtime, helpers };
 }
 
 export interface RuntimeImport {
   readonly module: RuntimeModule;
-  /** Each name once, in code point order. */
+  /** Each value name once, in code point order. */
   readonly names: readonly string[];
+  /** Each type name once, in code point order. */
+  readonly types: readonly string[];
 }
 
 /** The runtime parts of a Code and of the helpers it needs, grouped by module in the fixed module order. */
 export function importSet(root: Code): readonly RuntimeImport[] {
   return [...collect(root).runtime]
     .sort(([left], [right]) => RUNTIME_MODULE_RANK[left] - RUNTIME_MODULE_RANK[right])
-    .map(([module, names]) => ({ module, names: [...names].sort() }));
+    .map(([module, { values, types }]) => ({ module, names: [...values].sort(), types: [...types].sort() }));
 }
 
-/** The import statements of the runtime parts, one line for each module. */
-export function runtimeImports(root: Code): Code {
-  return join(
-    importSet(root).map(({ module, names }) => plainText(`import { ${names.join(', ')} } from '@exprtlabs/golem/${module}';\n`)),
-  );
+/** How a file writes the imports of its runtime parts. */
+export interface ImportOptions {
+  /** The specifier of a runtime module; a module not listed is imported from `@exprtlabs/golem/<module>`. */
+  readonly specifiers?: Partial<Readonly<Record<RuntimeModule, string>>>;
+  /** The quote of a specifier; a single quote by default. */
+  readonly quote?: "'" | '"';
+}
+
+/**
+ * The import statements of the runtime parts, in module order. A module with type names gets an `import type` statement
+ * before its value statement, so a type name is never in a value import.
+ */
+export function runtimeImports(root: Code, options: ImportOptions = {}): readonly Code[] {
+  return importSet(root).flatMap(({ module, names, types }) => {
+    const specifier = options.specifiers?.[module] ?? `@exprtlabs/golem/${module}`;
+    const quoted = options.quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`;
+    return [
+      ...(types.length > 0 ? [plainText(`import type { ${types.join(', ')} } from ${quoted};`)] : []),
+      ...(names.length > 0 ? [plainText(`import { ${names.join(', ')} } from ${quoted};`)] : []),
+    ];
+  });
+}
+
+function checkedSingleQuoted(specifier: string): string {
+  if (/['\\\n]/.test(specifier)) throw new TypeError(`a module specifier written in single quotes cannot hold a quote, a backslash or a line end, got ${JSON.stringify(specifier)}`);
+  return specifier;
 }
 
 /** The helpers that a Code names, and the helpers that those helpers name, in the order of their definitions (see `collect`). */
@@ -303,9 +351,9 @@ export function helperSet(root: Code): readonly Helper[] {
   return [...collect(root).helpers.values()].map(({ helper: found }) => found);
 }
 
-/** The definitions of `helperSet`, separated by an empty line. */
-export function helperBlock(root: Code): Code {
-  return join([...collect(root).helpers.values()].map(({ definition }) => definition), plainText('\n\n'));
+/** The definitions of `helperSet`, one Code for each helper. */
+export function helperDefinitions(root: Code): readonly Code[] {
+  return [...collect(root).helpers.values()].map(({ definition }) => definition);
 }
 
 /** Text that this module writes itself: import lines and the gap between helpers. */
