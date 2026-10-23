@@ -381,6 +381,8 @@ test('exec --watch keeps its child alive through generation failure, recovers, a
     fs.writeFileSync(api, JSON.stringify({ openapi: '2.0', info: {}, paths: {} }));
     await until(() => /OpenAPI|validation failed|unsupported/i.test(stderr), `exec --watch reports a later generation failure: ${stderr}`);
     assert.equal(parent.exitCode, null, 'a later watch generation failure must not kill the exec child');
+    // The failure is reported within the debounce of the edit, which can come before the child's first heartbeat.
+    await until(() => fs.existsSync(heartbeat) && fs.readFileSync(heartbeat, 'utf8') !== '', 'the child writes its first heartbeat');
     const heartbeatBefore = fs.readFileSync(heartbeat, 'utf8');
     await until(() => !['', heartbeatBefore].includes(fs.readFileSync(heartbeat, 'utf8')), 'the child must remain alive after a watch failure');
 

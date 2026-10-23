@@ -18,7 +18,7 @@ import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
-import { changedPaths, InputScan, OwnedOutputIndex, RunBaseline } from './input-watcher.js';
+import { changedPaths, InputScan, InputWatcher, OwnedOutputIndex, RunBaseline } from './input-watcher.js';
 import type { InputSnapshot } from './input-watcher.js';
 
 interface BuildOptions {
@@ -36,14 +36,11 @@ interface BuildOptions {
   readonly tscArguments?: readonly string[];
   /** Called after the generate step of each build with the ids of the jobs that executed; a job its record showed to be current is not among them. */
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
-  /** Called after each poll of a watching build that found nothing to build, so a caller knows the watcher has looked since the last build. */
-  readonly onIdlePoll?: () => void;
 }
 
 export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
 
 const GOLEM_DIRECTORY = '.golem';
-const POLL_MS = 200;
 
 /** What a build needs from the project's configuration, read once per build from the compiler's own parse. */
 interface Project {
@@ -561,12 +558,12 @@ function writtenDirectories(project: Project): Set<string> {
   ]);
 }
 
-/** What one build and the builds after it share: the files a watching build polls, and the generate step's state. */
+/** What one build and the builds after it share: the files a watching build looks at, and the generate step's state. */
 interface BuildRun {
   readonly project: string | undefined;
   readonly config: string | undefined;
   readonly tscArguments: readonly string[];
-  /** Every file the build read, for a watching build to poll. */
+  /** Every file the build read, for a watching build to look at. */
   readonly inputs: Set<string>;
   readonly outputs: Set<string>;
   /** The files the generate step wrote or kept. Generating one is the build's own doing, so it is no change to watch for. */
@@ -727,21 +724,65 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   if (!options.watch) return { exitCode: await run() };
 
   let exitCode = 0;
-  const pollerOf = (): InputScan => new InputScan(inputs, { root, outsideDirectories: state.outsideDirectories });
+  const scanOf = (): InputScan => new InputScan(inputs, { root, outsideDirectories: state.outsideDirectories });
   // The build's own names, which come and go with the build itself: the directories it writes, the files it generates and the directories it created for them. It changes only when a build ends.
   let own = new OwnedOutputIndex();
-  let poller = pollerOf();
-  let previous = poller.snapshot();
-  const attempt = async (changed: readonly string[] | undefined, before = poller.snapshot()): Promise<void> => {
-    // The poll from before the build, so an edit or a new file made during it starts the next build. The first build has no
+  let scan = scanOf();
+  // A deleted output directory is seen in the folder above it, so that folder is watched too.
+  const outputParents = (): string[] => [...outputs].map((directory) => path.dirname(directory));
+  let busy = false;
+  let starting = true;
+  let finish = (): void => {};
+  // A folder or file the scan cannot read (a permission, too many open files) is reported once; the watch goes on with the next event.
+  let unreadable: string | undefined;
+  const watcher = new InputWatcher({
+    root: () => root,
+    tick: async (installed) => {
+      if (options.signal?.aborted) return;
+      busy = true;
+      try {
+        if (starting) {
+          // The first build runs as the first tick, so no tick runs beside it. What changed while it ran is told by its baseline, in the tick that follows.
+          starting = false;
+          await attempt(undefined);
+          process.stdout.write('Watching for changes.\n');
+          watcher.request();
+          return;
+        }
+        let current: InputSnapshot;
+        let changed: string[];
+        try {
+          current = watcher.snapshotWatching(scan, outputParents());
+          changed = changedPaths(previous, current, (filename) => own.covers(filename));
+          unreadable = undefined;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          if (message !== unreadable) process.stderr.write(`${message}\n`);
+          unreadable = message;
+          return;
+        }
+        if (changed.length === 0 && !installed && !(wrote && !outputsPresent())) return;
+        session.inputsChanged(changed);
+        // An install can change any package a job or the compiler read: everything is built again.
+        await attempt(installed ? undefined : changed, current);
+      } finally {
+        busy = false;
+        if (options.signal?.aborted) finish();
+      }
+    },
+    onError: (error) => { process.stderr.write(`${error.message}\n`); },
+  });
+  let previous: InputSnapshot = { files: new Map(), folders: new Map() };
+  const attempt = async (changed: readonly string[] | undefined, before = watcher.snapshotWatching(scan, outputParents())): Promise<void> => {
+    // The scan from before the build, so an edit or a new file made during it starts the next build. The first build has no
     // inputs yet: its files carry the signature they had when the build first read them.
     const baseline = new RunBaseline(before, root);
     state.baseline = baseline;
     const record = (): void => {
       // A file the generate step wrote, and the directory it created for it, is the build's own: its signature after the build is the one the next build compares with.
       own = new OwnedOutputIndex([...outputs, ...state.owned]);
-      poller = pollerOf();
-      previous = baseline.settle(poller.snapshot(), (file) => own.covers(file));
+      scan = scanOf();
+      previous = baseline.settle(watcher.snapshotWatching(scan, outputParents()), (file) => own.covers(file));
     };
     try {
       exitCode = await run(changed, record);
@@ -753,37 +794,14 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       record();
     }
   };
-  await attempt(undefined);
-  process.stdout.write('Watching for changes.\n');
   await new Promise<void>((resolve) => {
-    let busy = false;
-    // A folder or file the poll cannot read (a permission, too many open files) is reported once; the watch keeps polling.
-    let unreadable: string | undefined;
-    const timer = setInterval(() => {
-      if (busy) return;
-      let current: InputSnapshot;
-      let changed: string[];
-      try {
-        current = poller.snapshot();
-        changed = changedPaths(previous, current, (filename) => own.covers(filename));
-        unreadable = undefined;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (message !== unreadable) process.stderr.write(`${message}\n`);
-        unreadable = message;
-        return;
-      }
-      if (changed.length === 0 && !(wrote && !outputsPresent())) {
-        options.onIdlePoll?.();
-        return;
-      }
-      busy = true;
-      session.inputsChanged(changed);
-      void attempt(changed, current).catch((error: unknown) => { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); }).finally(() => { busy = false; if (options.signal?.aborted) { clearInterval(timer); resolve(); } });
-    }, POLL_MS);
-    const stop = (): void => { clearInterval(timer); if (!busy) resolve(); };
+    finish = () => { watcher.close(); resolve(); };
+    const stop = (): void => { if (!busy) finish(); };
     if (options.signal?.aborted) stop();
-    else options.signal?.addEventListener('abort', stop, { once: true });
+    else {
+      options.signal?.addEventListener('abort', stop, { once: true });
+      watcher.start();
+    }
   });
   return { exitCode };
 }

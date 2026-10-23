@@ -333,14 +333,15 @@ export class InputWatcher {
     return opened;
   }
 
-  /** Scans, watching every folder the scan lists first, so that nothing changes unseen between the scan and its watchers. */
-  snapshotWatching(scan: InputScan): InputSnapshot {
+  /** Scans, watching every folder the scan lists first (and the `also` folders), so that nothing changes unseen between the scan and its watchers. */
+  snapshotWatching(scan: InputScan, also: Iterable<string> = []): InputSnapshot {
+    const extra = [this.options.root(), ...scan.linkedFolders, ...also];
     let snapshot = scan.snapshot();
-    for (let round = 0; round < SETTLE_ROUNDS && this.sync([this.options.root(), ...scan.linkedFolders, ...snapshot.folders.keys()]); round += 1) snapshot = scan.snapshot();
+    for (let round = 0; round < SETTLE_ROUNDS && this.sync([...extra, ...snapshot.folders.keys()]); round += 1) snapshot = scan.snapshot();
     return snapshot;
   }
 
-  /** Runs a tick now when none runs, else after the one that runs. */
+  /** Runs a tick now. */
   start(): void {
     this.fire();
   }
@@ -401,7 +402,8 @@ export class InputWatcher {
     if (gone.length > 0 || !isIgnoredName(name)) this.request(false);
   }
 
-  private request(installed: boolean): void {
+  /** Asks for a tick after the debounce, or after the tick that runs. */
+  request(installed = false): void {
     if (this.closed) return;
     this.installed ||= installed;
     if (this.running) this.dirty = true;
