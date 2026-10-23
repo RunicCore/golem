@@ -1909,7 +1909,6 @@ function emitNodeRuntime(
       code`export function ${names.parse}(text: string, options?: ${SERDE_OPTIONS}): unknown {`,
       code`  return ${rt.serde.requireObjectCodec}(${id}).parse(text, options);`,
       code`}`,
-      code``,
     ]);
   }
 
@@ -2193,7 +2192,6 @@ function emitNodeRuntime(
     ...(resolved(node.codecId) !== undefined ? [code`  schemaRefsResolved: true,`] : []),
     code`  issueSource: ${rt.serde.IssueSource}.${identifier(ctx.issueSource)},`,
     code`});`,
-    code``,
   ];
 
   return blocksToText([rowsToText(ctx.hoisted?.sources ?? []), fillSrc, wrappedStringify, rowsToText(convertLines), rowsToText(fromWireLines), rowsToText(toWireLines), rowsToText(parseLines), rowsToText(validateLines), rowsToText(wireAssertLines), rowsToText(codec)]);
@@ -2264,7 +2262,8 @@ export function emitCodecRuntimeCode(
     const runtime = emitNodeRuntime(node, ctx, validates(node));
     if (runtime.parts.length > 0) runtimes.push(runtime);
   }
-  return withModuleConstants(blocksToText(runtimes));
+  // A blank line stands between two functions' runtimes, and none ends the last.
+  return withModuleConstants(join(runtimes, code`\n\n`));
 }
 
 /** The helpers whose definitions `withModuleConstants` writes into the runtime code, so the file places no definition of them. */

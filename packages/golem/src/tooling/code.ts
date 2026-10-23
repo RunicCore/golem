@@ -306,17 +306,6 @@ export function nest(body: Code, spaces: number = 2): Code {
   return fromParts([{ kind: 'indent', by: spaces }, ...body.parts, { kind: 'indent', by: -spaces }]);
 }
 
-/** The code without the whitespace at its end. Whitespace names nothing. */
-export function trimEnd(root: Code): Code {
-  const parts = [...root.parts];
-  for (let last = parts.at(-1); last?.kind === 'text'; last = parts.at(-1)) {
-    parts.pop();
-    const kept = last.text.trimEnd();
-    if (kept !== '') { parts.push({ kind: 'text', text: kept }); break; }
-  }
-  return fromParts(parts);
-}
-
 /** Spaces at the start of a line. Whitespace names nothing, so it is the one text that needs no check. */
 export function indentation(spaces: number): Code {
   let known = indentations.get(spaces);

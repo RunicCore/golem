@@ -1,12 +1,12 @@
 import path from 'node:path';
-import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult, type PublicModule } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
 import { isRecord, stableJson } from '@exprtlabs/golem/generator-api';
 import { buildOperationValidationSchemas, generateClientModules } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes } from './document.js';
 import { buildEmissionPlan, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
-import { assertPortableFilenames, assertUniqueExportNames, identifier } from '@exprtlabs/golem/generator-api';
-import { code, documentLiteral, exportedName, identifier as identifierPart, join, renderModule, type Code, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
+import { assertPortableFilenames, identifier } from '@exprtlabs/golem/generator-api';
+import { assertUniqueExportNames, code, documentLiteral, exportedName, identifier as identifierPart, join, renderModule, type Code, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';

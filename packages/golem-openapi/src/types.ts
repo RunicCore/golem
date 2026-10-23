@@ -1,7 +1,7 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/generator-api';
-import { code, codeKey, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, trimEnd, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { refName } from './names.js';
 import {
   effectiveSchemaTypes,
@@ -11,7 +11,6 @@ import {
   type NormalizedResponse,
   type OpenApiMediaType,
 } from './normalize.js';
-import { manifestMarkerComment } from '@exprtlabs/golem/manifest';
 import { generatedBannerComment } from './package-info.js';
 import { ComponentNameScope } from './origin.js';
 import { projectSchema, collectCanonicalResources, nextSchemaBase, resolveSchemaTarget, schemaDocumentBase, schemaTargetIdentity, type ResolvedSchemaTarget, type ResourceIndex } from './schema-projection.js';
@@ -882,7 +881,7 @@ export function generateTypes(
     BLANK,
     types,
   ], lineBreak);
-  return renderModule(code`${trimEnd(output)}\n`);
+  return renderModule(code`${output}\n`);
 }
 
 export function generateDirectionalSchemas(document: unknown, direction: 'input' | 'output'): string {
@@ -902,10 +901,10 @@ export function generateDirectionalSchemas(document: unknown, direction: 'input'
   if (Object.keys(schemas).length === 0) body.push(code`export {};`);
   emitBlobType(body, 0, blobTypeName);
   dropTrailingBlankLines(body);
-  return render(code`${trimEnd(join([
+  return render(code`${join([
     generatedBannerComment(),
     docComment(`Component schemas projected for ${direction === 'input' ? 'request' : 'response'} data.`),
     BLANK,
     ...body,
-  ], lineBreak))}\n`);
+  ], lineBreak)}\n`);
 }

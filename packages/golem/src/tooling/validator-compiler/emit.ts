@@ -2,7 +2,7 @@ import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModul
 
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
 import {
-  code, helper, helperDefinitions, helperName, identifier as identifierCode, indented, join, literal as literalCode, nameOf, nameSlot, NameTable, render, runtimeImports,
+  code, codeKey, helper, helperDefinitions, helperName, identifier as identifierCode, indented, join, literal as literalCode, nameOf, nameSlot, NameTable, render, runtimeImports,
   type Code, type Helper, type InputSlot, type NameSlot,
 } from '../code.js';
 import { compareText } from '../generator-api.js';
@@ -1669,7 +1669,7 @@ function inputNumber(slot: InputSlot): number {
 function groupFunctions(written: readonly WrittenFunction[], fastReached: ReadonlySet<number>, slots: FunctionSlots): ReadonlyMap<number, number> {
   // The key of a body and the text of its parameters do not change between rounds; only the groups of the callees do.
   const keyed = new Map(written.map(entry => [entry.id, bodyKeyOf(entry.body, slots)]));
-  const parameters = new Map(written.map(entry => [entry.id, render(entry.parameters)]));
+  const parameters = new Map(written.map(entry => [entry.id, codeKey(entry.parameters)]));
   let groups = new Map<number, number>(written.map(entry => [entry.id, 0]));
   let size = 1;
   for (;;) {

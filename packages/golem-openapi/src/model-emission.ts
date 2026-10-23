@@ -33,7 +33,6 @@ import {
   rt,
   rtType,
   sameCode,
-  trimEnd,
   type Code,
   type Helper,
   type ImportOptions,
@@ -1156,5 +1155,5 @@ export function generateModels(
     BLANK,
     ...bodyLines,
   ];
-  return render(code`${trimEnd(join(lines, code`\n`))}\n`, names.table);
+  return render(code`${join(lines, code`\n`)}\n`, names.table);
 }

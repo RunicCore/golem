@@ -19,9 +19,9 @@ export {
 } from './stringify-emitter.js';
 export { calleeOf, FIELD_CONVERSION_INPUT, type TupleConversionDescriptor } from './sequence-conversion.js';
 export { presentKeysCode } from './union-conversion.js';
-/** The one function that turns the Code of an emitter into text, for generators that still build text. */
+/** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
-  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importLines, importSet, ImportSource, inputOf, inputSlot, join, lineBreak, literal, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport, trimEnd,
+  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importLines, importSet, ImportSource, inputOf, inputSlot, join, lineBreak, literal, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
   type Code, type Helper, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
 export { rt, rtType, type RuntimeModule } from './rt.js';
@@ -39,8 +39,10 @@ export {
   type Rejected,
   type SlotRule,
 } from './composition.js';
-import { bindInput, code, identifier, inputOf, inputSlot, join, literal, sameCode, type Code } from './code.js';
+import { blockComment, bindInput, code, identifier, inputOf, inputSlot, join, literal, sameCode, type Code } from './code.js';
 import { rt } from './rt.js';
+import { MODEL_MANIFEST_FILENAME, MODEL_MANIFEST_MARKER } from './model-manifest.js';
+export { assertUniqueExportNames, type PublicModule } from './names.js';
 import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
 import { FIELD_CONVERSION_INPUT, calleeOf, emitArrayConversion, emitTupleConversion, type SequenceItems } from './sequence-conversion.js';
 import {
@@ -594,4 +596,9 @@ export function emitModelFromInit(
   resolveModel: (id: string) => FromJsonModelResolver,
 ): Code {
   return emitNested(descriptor, expression, 'fromInit', resolveModel);
+}
+
+/** The marker comment of a file that names its model manifest, as Code. */
+export function manifestMarkerComment(relative = `./${MODEL_MANIFEST_FILENAME}`): Code {
+  return blockComment(`${MODEL_MANIFEST_MARKER} ${relative}`);
 }

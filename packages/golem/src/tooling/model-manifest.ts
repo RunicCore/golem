@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { blockComment, type Code } from './code.js';
 import { discoverSources, isRecord, resolveProfile, stableValue } from './generator-api.js';
 import type { GolemProfile, InputObserver } from './generator-api.js';
 import type { CodecSchemaClosureEntry } from './validation-plan.js';
@@ -168,9 +167,4 @@ export function discoverModelManifests(root = process.cwd(), onInput?: InputObse
 
 export function manifestMarker(relative = `./${MODEL_MANIFEST_FILENAME}`) {
   return `/* ${MODEL_MANIFEST_MARKER} ${relative} */`;
-}
-
-/** The marker comment as Code, for a generator that builds its file from Code values. */
-export function manifestMarkerComment(relative = `./${MODEL_MANIFEST_FILENAME}`): Code {
-  return blockComment(`${MODEL_MANIFEST_MARKER} ${relative}`);
 }

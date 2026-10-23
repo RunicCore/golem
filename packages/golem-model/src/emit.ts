@@ -25,7 +25,6 @@ import {
   rt,
   rtType,
   sameCode,
-  trimEnd,
   render,
   type Code,
   type Helper,
@@ -2116,7 +2115,7 @@ export function emitSource(
     BLANK,
     ...placeHelpers(calls, pieces, MODULE_CONSTANT_HELPERS),
   ];
-  return render(code`${trimEnd(join(lines, code`\n`))}\n`);
+  return render(code`${join(lines, code`\n`)}\n`);
 }
 
 /**

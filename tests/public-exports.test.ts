@@ -38,7 +38,7 @@ test('distinct named re-exports and an index-level model re-export do not collid
 });
 
 test('the generator checks the exports of its modules from the names its Code holds', () => {
-  // protects: T-330 assertUniquePublicExports reads export names from module values, not from emitted text
+  // protects: T-330 assertUniqueExportNames reads export names from module values, not from emitted text
   const types = code`export interface ${exportedName('ValidationResult')} { ok: boolean }`;
   const schemas = exportFrom([['validate', 'validateWith'], 'ValidationResult'], '@exprtlabs/golem/validation', true);
   assert.deepEqual(exportedNames(schemas), ['validateWith', 'ValidationResult']);
