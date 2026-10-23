@@ -585,6 +585,8 @@ test('SDK model functions use the model types instead of unknown', async t => {
   }, { output, name: 'Typed', profile: { mobx: false, validation: true } });
   const assertFile = writeAssertFile(output, 'functions-assert.ts', `import { parseMoney, toWireFormatMoney, validateMoney, type MoneyFields } from './index.js';
 import type * as Types from './types.js';
+type IsAny<T> = 0 extends 1 & T ? true : false;
+const returnsAny: IsAny<ReturnType<typeof parseMoney>> = false;
 const parsed: MoneyFields = parseMoney('{"amount":"1"}');
 const wire: Types.Money = toWireFormatMoney(parsed);
 declare const input: unknown;
@@ -595,6 +597,7 @@ if (validateMoney(input)) {
 // @ts-expect-error toWireFormatMoney takes a model value, not unknown
 void toWireFormatMoney(input);
 void wire;
+void returnsAny;
 `);
   compileStrictUnusedSdk(output, [assertFile]);
   const sdk = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'typed SDK');
