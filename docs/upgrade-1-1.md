@@ -21,7 +21,7 @@ Install one of the supported versions, then update the Golem packages:
 ```sh
 npm install --save-dev typescript@~7.1.0-beta
 # or: npm install --save-dev typescript@^6.0.0
-npm install --save-dev @exprtlabs/golem@^1.1.0
+npm install @exprtlabs/golem@^1.1.0
 ```
 
 Update the other Golem packages that your project lists in the same way. The `typescript` peer range of `@exprtlabs/golem`, `@exprtlabs/golem-model` and `@exprtlabs/golem-ts-openapi` is `>=6.0.0 <7 || >=7.1.0-0 <8` ([Install](/guide/install#peer-dependencies)). Run `npx golem generate` afterwards. Generation writes the same files on TypeScript 6.0+ and 7.1+.
@@ -31,7 +31,7 @@ Update the other Golem packages that your project lists in the same way. The `ty
 Pin each Golem package to 1.0.x, so that no update installs 1.1:
 
 ```sh
-npm install --save-dev @exprtlabs/golem@~1.0.0
+npm install @exprtlabs/golem@~1.0.0
 ```
 
 Pin `@exprtlabs/golem-model`, `@exprtlabs/golem-openapi` and `@exprtlabs/golem-ts-openapi` the same way when you use them. Golem 1.0 supports TypeScript 6.0+ and 7.0.
