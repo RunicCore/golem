@@ -1,6 +1,6 @@
 # NestJS controllers
 
-Lists how each controller construct becomes OpenAPI.
+See how each controller construct becomes OpenAPI.
 
 ## Route helpers
 
@@ -20,7 +20,7 @@ Use it in your controller:
 | A helper whose object argument is destructured in its signature | Folded |
 | A static class method or an object-literal method used as a helper | Folded |
 | A non-static class method used as a helper | Error |
-| A helper with more than one return expression, such as one that reads a file or awaits | Error |
+| A helper whose body is more than one `return` expression (any statement before the return counts) | Error |
 
 A route that the generator cannot fold stops generation with an error that names the expression.
 
@@ -65,7 +65,7 @@ A model's component name comes from the types it was declared with:
 | `type TMerchant = IModel<…>` with no class | `TMerchant`, the exact alias |
 | `type TPaymentInput = IObject<…>` | `TPaymentInput`, the exact alias |
 
-A type derived from a model, such as `Omit<TMerchant, 'id'>`, is named from the model's component, as in `TMerchantOmitId`. Two models with the same component name and an identical schema share one component.
+A type derived from a model, such as `Omit<TMerchant, 'id'>`, is named from the model's component, as in `TMerchantOmitId`. Two models with the same component name and an identical schema share one component. For `getSchemaPath()` and `refs()` from `@nestjs/swagger`, a class named with `@ApiSchema({ name })` resolves to that name.
 
 Two models with the same name and different schemas are qualified by where they are declared. Each takes the shortest trailing run of its file's directory segments, relative to the project root, that tells the models apart, joined with `.`: `orders.Payment` and `billing.Payment`. Models in the same directory add the file name without `.model.ts` or `.ts`: `billing.payment.Payment` and `billing.refund.Payment`. Characters other than letters, digits and underscores in a segment become `_`.
 
@@ -84,7 +84,7 @@ Two models with the same name and different schemas are qualified by where they 
 - Swagger response decorators describe the response, and `@HttpCode` controls the status Nest sends. A Swagger `200`, `201`, `202`, `204` or `205` response that differs from the Nest status stops generation ([`NEST1311`](/reference/diagnostics#nest1311)).
 - `@ApiProduces` sets the response media types, and `@ApiConsumes` sets the request body media types. `@Header('Content-Type', …)` sets the media type of the success response. A `content` option in a Swagger response sets its own.
 - Path parameters must match the placeholders of the route, and they are always required.
-- A route with several paths or versions gets one operation for each. Their operation IDs end in `__path_1`, `__version_1` and so on. Two operations with the same ID stop generation ([`NEST1305`](/reference/diagnostics#nest1305)).
+- A route with several paths or versions gets one operation for each. Their operation IDs end in `__path_1`, `__version_1` and so on, or in `__path_1__version_1` when a route has several paths and several versions. Two operations with the same ID stop generation ([`NEST1305`](/reference/diagnostics#nest1305)).
 
 `@Res()` and `@Res({ passthrough: false })` handle the response manually, so declare a Swagger success response with a type or content and schema. Write the `@Res()` options as an inline object. The `passthrough` option and the endpoint-exclusion options must be static booleans.
 
@@ -114,7 +114,14 @@ Merge rules for response decorators follow `@nestjs/swagger`:
 | OpenAPI 3.2 | Emits `in: querystring` with form content and the complete query schema |
 | OpenAPI 3.1.2 | Flattens independent fields into named parameters and rejects a contract whose constraints would be lost ([`NEST1108`](/reference/diagnostics#nest1108)) |
 
-Named `@Query('name')` parameters remain ordinary query parameters. A whole `@Query()` object supports flat scalars and scalar arrays. Nested objects, dictionaries and nullable form values stop generation ([`NEST1107`](/reference/diagnostics#nest1107)). A whole `@Query()` object cannot share an operation with named query parameters on OpenAPI 3.2.
+Named `@Query('name')` parameters remain ordinary query parameters. A named parameter must be a scalar or an array of scalars, or generation stops ([`NEST1107`](/reference/diagnostics#nest1107)).
+
+A whole `@Query()` object follows these rules:
+
+- A type with an index signature, such as a dictionary, stops generation on both versions ([`NEST1105`](/reference/diagnostics#nest1105)).
+- A property that is not a scalar or an array of scalars stops generation on both versions ([`NEST1107`](/reference/diagnostics#nest1107)). This covers a nested object and a nullable value.
+- On OpenAPI 3.2, the object becomes one `querystring` parameter. It cannot share an operation with named query parameters or a second whole object ([`NEST1107`](/reference/diagnostics#nest1107)).
+- On OpenAPI 3.1.2, an object whose constraints or codecs would be lost in the flat form stops generation ([`NEST1108`](/reference/diagnostics#nest1108)).
 
 ## Excluded endpoints
 

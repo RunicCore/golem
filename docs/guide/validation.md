@@ -90,6 +90,6 @@ A `LibError` from `@exprtlabs/golem/errors` has these members:
 
 Each issue has a `code`, a `path`, a `message` and a `source`. Check `issue.code` and TypeScript narrows to the fields of that code, such as `issue.limit` after `issue.code === 'tooSmall'`. A `path` such as `['items', 0, 'amount']` names the field. Every kind, code and field is in the [runtime reference](/reference/runtime-api#errors).
 
-Constraints on the models of a NestJS controller reach the OpenAPI document that golem writes. Constraints in an OpenAPI document reach the generated validators and clients. The supported keywords are in [OpenAPI support](/reference/openapi-support).
+Constraints on the models of a NestJS controller reach the OpenAPI document that golem writes. Constraints in an OpenAPI document reach the generated validators and clients. The tag-to-keyword mapping is in [Model schemas](/reference/nestjs#model-schemas), and the supported keywords are in [OpenAPI support](/reference/openapi-support).
 
 Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

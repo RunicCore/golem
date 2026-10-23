@@ -42,14 +42,14 @@ The interceptor converts HTTP handlers. A handler of another context, such as RP
 1. `fromWireFormat` runs on each `@Body()` and `@Query()` parameter with fail-fast validation.
 2. Input that fails validation or cannot be decoded returns HTTP 400 with `issues` (`LibError.causedByInput`). Examples are a broken constraint, an unknown discriminator tag and an unparsable date.
 3. Valid input reaches the handler as a model. A type alias stays a plain object, and your class is constructed.
-4. An `IModel` or `IObject` return is stringified with that type. This includes a `Promise` or an array of that type.
+4. An `IModel` or `IObject` return is stringified with that type. This includes a `Promise` or an array of that type. A return that the rewrite did not mark stays Nest JSON. Examples are a handler with no written return type and a handler that returns a union.
 5. An application converter that throws, and missing generated metadata, return HTTP 500. A marked return whose generated model did not load fails the request with HTTP 500 before the handler runs.
 
 `@Param()` and `@Headers()` stay as Nest received them.
 
 ## Arrays and one-field parameters
 
-Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. For any other type, the interceptor throws a `TypeError` that names the controller, the method and the parameter, and Nest answers HTTP 500. This holds for a plain interface, a plain class, a primitive and a parameter with no type. The interceptor throws on each request to the handler, not at startup. `golem build` and `golem check` report [`RUNM1081`](/reference/diagnostics#runm1081) for a typed parameter of that kind. If your own interceptor handles those parameters, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys) to turn the error into a warning.
+Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. For any other type, the interceptor throws a `TypeError` that names the controller, the method and the parameter, and Nest answers HTTP 500. This holds for a plain interface, a plain class, a primitive and a parameter with no type. The interceptor throws on each request to the handler, not at startup. Return types are not affected. `golem build` and `golem check` report [`RUNM1081`](/reference/diagnostics#runm1081) for a typed parameter of that kind. If your own interceptor handles those parameters, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys) to turn the error into a warning.
 
 An array of models, such as `@Body() items: Item[]` or `@Body('items') items: Item[]`, converts item by item. An invalid item returns HTTP 400. Each issue path starts with the field name, if any, and the item index, such as `['items', 1, 'name']`. A value that is not an array returns HTTP 400 with a `type` issue. A whole `@Query()` is an object, so declare it as one model and not as an array.
 
