@@ -34,9 +34,14 @@ in the sections below.
 - A `oneOf` or `anyOf` of objects that needs a conversion, and has no `discriminator` and no required `const` or single-value `enum` property that differs between variants, stops generation with [`OPENAPI_UNION_DISCRIMINATOR_MISSING`](docs/reference/diagnostics.md#openapi-union-discriminator-missing). The message names the schema and lists the variants. Add the property to each variant, or add a `discriminator`.
 - An `allOf` whose members declare types with no common value, such as `allOf: [{ type: string }, { type: number }]`, stops generation with [`OPENAPI_COMPOSITION_UNSATISFIABLE`](docs/reference/diagnostics.md#openapi-composition-unsatisfiable). Before, it generated code. Give the members a type that they share.
 - `golem-ts-openapi` sees a model change on the same run. After you edit a model, the generated OpenAPI is right on the first `golem generate`. Before, it showed the previous model until the next run.
+- A generated model with no fields, no base model and no additional properties names its constructor parameter `_values` and its encode parameter `_model`, so the SDK compiles with `noUnusedParameters`.
+- The generated codec code holds no runs of two blank lines. An SDK that you commit shows blank-line changes after you generate it again.
+- `schemaType()` from `@exprtlabs/golem-openapi/generator` accepts a qualifier only as identifiers that each end in a dot, such as `InputSchemas.`.
 
 ### Generation
 
+- Generated files import only the runtime names, helpers and models that their code uses, and hold only the helpers that their code calls. A field named like a runtime export, such as `parseJson`, now compiles with `noUnusedLocals`. Before, the unused import stayed.
+- A generated `stringify` function whose body reads no value names its parameter `_value`, so it compiles with `noUnusedParameters`.
 - `golem build` writes the import paths that Node loads in declaration files (`.d.ts`) too, as it does in JavaScript.
 - A `@Body()` or `@Query()` parameter that `NestModelInterceptor` rejects stops `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader with [`RUNM1081`](docs/reference/diagnostics.md#runm1081). This holds for a whole parameter and for one field, such as `@Body('name')`. If your own interceptor handles these parameters, set `nonModelInputs: warn` in `golem.yaml`; the diagnostic is then a warning. `golem build` and `golem check` print the warning. The plugins and the loader continue and print nothing.
 - On TypeScript 7, a package subpath that the `exports` map of its package hides does not resolve, as on TypeScript 6.
