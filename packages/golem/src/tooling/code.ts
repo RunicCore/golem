@@ -172,7 +172,8 @@ function checkedIdentifier(name: string, what: string): string {
  * part. It returns the text still pending; `finish` writes it.
  */
 function append(out: Part[], pending: string, source: readonly Part[]): string {
-  for (const part of source) {
+  for (let index = 0; index < source.length; index += 1) {
+    const part = source[index]!;
     if (part.kind === 'text' && !part.identifier) pending += part.text;
     else {
       if (pending !== '') { out.push({ kind: 'text', text: pending }); pending = ''; }
@@ -222,8 +223,11 @@ export function code(strings: TemplateStringsArray, ...values: readonly Code[]):
 
 const constants = new WeakMap<TemplateStringsArray, Code>();
 
+/** The Code that writes nothing. */
+const NOTHING: Code = new CodeValue([]);
+
 /** Code from the pieces of a list, with `separator` between them. */
-export function join(pieces: readonly Code[], separator: Code = fromParts([])): Code {
+export function join(pieces: readonly Code[], separator: Code = NOTHING): Code {
   const out: Part[] = [];
   let pending = '';
   for (let index = 0; index < pieces.length; index += 1) {
