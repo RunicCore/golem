@@ -65,7 +65,5 @@ function visible(record: SupportProjectionRecord): boolean {
       <summary>What the support labels mean</summary>
       <ul><li v-for="item in metadata.statuses" :key="item.id"><strong>{{ item.label }}</strong>: {{ item.meaning }}.</li></ul>
     </details>
-    <slot name="type-system-limits" />
-    <ul><li v-for="boundary in metadata.representationBoundaries" :key="boundary">{{ boundary }}</li></ul>
   </div>
 </template>
