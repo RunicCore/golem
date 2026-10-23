@@ -710,18 +710,14 @@ function constructOptionEdits(file: ts.SourceFile, call: ts.CallExpression, targ
 }
 
 /**
- * What to wait for when the generated file of the model `alias` declares is missing or older than its model file, so the key
- * table cannot name the model yet; undefined when the file is current, or when the model file is not on disk.
+ * What to wait for when the generated file of the model `alias` declares is missing, so the key table cannot name the model
+ * yet; undefined when the file exists. An older file is no sign of a pending run: a save that changes nothing generated leaves it older.
  */
 function pendingGeneration(root: string, boundary: ModelBoundary, alias: ts.TypeAliasDeclaration): string | undefined {
   const source = alias.getSourceFile().fileName;
   const companion = companionFilename(boundary, source);
-  const sourceTime = fs.statSync(source, { throwIfNoEntry: false })?.mtimeMs;
-  if (sourceTime === undefined) return undefined;
-  const companionTime = fs.statSync(companion, { throwIfNoEntry: false })?.mtimeMs;
-  if (companionTime !== undefined && companionTime >= sourceTime) return undefined;
-  const shown = path.relative(root, companion).split(path.sep).join('/');
-  return `${shown} ${companionTime === undefined ? 'is missing' : 'is older than its model file'}. Wait for golem generate or golem watch to write it.`;
+  if (fs.existsSync(companion)) return undefined;
+  return `${path.relative(root, companion).split(path.sep).join('/')} is missing. Wait for golem generate or golem watch to write it.`;
 }
 
 function scanFile(

@@ -495,7 +495,7 @@ The plugin rewrites TypeScript in memory before Vite strips its types, in the de
 - Put `golem()` before plugins that transform TypeScript. It runs first (`enforce: 'pre'`) and must see the file text as it is on disk.
 - Without a `golem.yaml`, a TypeScript file outside `node_modules` fails the build. A call that cannot be rewritten fails with the file and the line; if its model has no generated code, run `golem generate`. An id with a query, such as `?raw`, passes through.
 - Vite does not strip `.cts` files.
-- The dev server watches the files each rewrite depends on, and a build adds them to its watch set. When one changes, or a generated model file of the project does, the plugin scans again and transforms only the modules whose rewrite came out different. The page reloads once for the file events of one run, which arrive within 100 ms of each other.
+- The dev server watches the files each rewrite depends on, and a build adds them to its watch set. When one changes, or a generated model file of the project does, the plugin scans again and transforms only the modules whose rewrite came out different. The page reloads once for the file events of one run: the first event opens a 100 ms window, and the events inside it share one reload.
 - A workspace package symlinked into `node_modules` follows the rule of the [loader](#register), including the `preserveSymlinks` limit.
 
 ## `@exprtlabs/golem/esbuild` {#esbuild}
