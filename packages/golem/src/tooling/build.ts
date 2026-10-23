@@ -19,6 +19,7 @@ import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
 import { changedPaths, InputPoller, ownDirectories, RunBaseline } from './input-poller.js';
+import { OwnedOutputIndex } from './watch.js';
 
 interface BuildOptions {
   /**
@@ -35,6 +36,8 @@ interface BuildOptions {
   readonly tscArguments?: readonly string[];
   /** Called after the generate step of each build with the ids of the jobs that executed; a job its record showed to be current is not among them. */
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
+  /** Called after each poll of a watching build that found nothing to build, so a caller knows the watcher has looked since the last build. */
+  readonly onIdlePoll?: () => void;
 }
 
 export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
@@ -646,10 +649,11 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
 
   let exitCode = 0;
   const pollerOf = (): InputPoller => new InputPoller(inputs, { root, outsideDirectories: state.outsideDirectories });
-  // The build's own names, which come and go with the build itself: the directories it writes and the files it generates.
+  // The build's own names, which come and go with the build itself: the directories it writes, the files it generates and the directories it created for them.
   const ownership = (): ((filename: string) => boolean) => {
     const own = ownDirectories(root, outputs);
-    return (filename) => own.has(filename) || state.owned.has(filename);
+    const generated = new OwnedOutputIndex(state.owned);
+    return (filename) => own.has(filename) || generated.covers(filename);
   };
   let poller = pollerOf();
   let previous = poller.snapshot();
@@ -659,9 +663,10 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     const baseline = new RunBaseline(before, root);
     state.baseline = baseline;
     const record = (): void => {
-      // A file the generate step wrote is the build's own: its signature after the build is the one the next build compares with.
+      // A file the generate step wrote, and the directory it created for it, is the build's own: its signature after the build is the one the next build compares with.
+      const own = new OwnedOutputIndex(state.owned);
       poller = pollerOf();
-      previous = baseline.settle(poller.snapshot(), (file) => state.owned.has(file));
+      previous = baseline.settle(poller.snapshot(), (file) => own.covers(file));
     };
     try {
       exitCode = await run(changed, record);
@@ -681,7 +686,10 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       if (busy) return;
       const current = poller.snapshot();
       const changed = changedPaths(previous, current, ownership());
-      if (changed.length === 0 && !(wrote && !outputsPresent())) return;
+      if (changed.length === 0 && !(wrote && !outputsPresent())) {
+        options.onIdlePoll?.();
+        return;
+      }
       busy = true;
       session.inputsChanged(changed);
       void attempt(changed, current).finally(() => { busy = false; if (options.signal?.aborted) { clearInterval(timer); resolve(); } });

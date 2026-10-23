@@ -971,7 +971,7 @@ test('const and enum accept a value with an extra undefined-valued key', async (
 });
 
 test('compile with typed emits the same validator with its issue type', async () => {
-  // protects: P-22 typed output keeps its behavior and its signature when the emitter changes
+  // protects: value the typed validator reports the same issues as the untyped one and returns SchemaIssue[]
   const { byRoot } = await compileValidatorModule({ roots: { root: { type: 'string' } }, typed: true });
   assert.deepEqual(byRoot.root('a', true), []);
   assert.deepEqual(byRoot.root(5, true), [{ path: [], code: 'type', expected: ['string'] }]);
@@ -988,7 +988,7 @@ const MODEL_ROOTS = new Map<string, unknown>([
 ]);
 
 test('every root is exported as a named function under the name the compile reports, and runs its own root', async () => {
-  // protects: P-22 the module exports one validator for each root under the name the compile reports
+  // protects: value each root has one exported validator, under the name the compile reports, that runs its own root
   const { exports, exportNames, byRoot } = await compileValidatorModule({ roots: Object.fromEntries(MODEL_ROOTS) });
   assert.deepEqual([...exports], [
     ['PaymentDraft_8be34727', 'validate_PaymentDraft_8be34727'],
@@ -1021,7 +1021,7 @@ test('roots whose names become one identifier get a number, the others keep thei
 });
 
 test('a bundle of one validator drops an unused validator with its constants', async t => {
-  // protects: P-22 a bundler drops the pattern, set and literal constants of a validator that nothing imports
+  // protects: value a bundle of one validator holds no pattern, set or literal constant of a validator it does not import
   const roots = new Map<string, unknown>([
     ['kept', { type: 'string', pattern: '^kept-pattern-[0-9]+$' }],
     ['unused', { type: 'object', properties: { code: { type: 'string', pattern: '^unused-pattern-[0-9]+$' }, kind: { enum: ['unused-literal-a', 'unused-literal-b'] } }, additionalProperties: false }],
