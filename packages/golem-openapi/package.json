@@ -46,8 +46,7 @@
     }
   },
   "dependencies": {
-    "@exprtlabs/golem": "1.0.0",
-    "yaml": "^2.9.0"
+    "@exprtlabs/golem": "1.0.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
