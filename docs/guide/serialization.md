@@ -32,6 +32,8 @@ Do not write `stringify(toWireFormat(x))` or `fromWireFormat(parse(text))` on th
 
 The model value is what your code holds. The JSON value is what `toWireFormat` returns and `stringify` writes. For most fields the two are equal. A `Date` is a `Date` in the model and an ISO string in JSON. A [`TSerde`](#change-the-json-form) field has the form that its functions give.
 
+A `Date` decodes with ECMAScript `Date` parsing. A value that is not a string, or that does not parse, throws `Deserialization` with `causedByInput: true`. Put format rules on `Format<'date-time'>` or `TValidation`. A `Date` encodes as UTC ISO text with milliseconds. A year outside 0000-9999 throws `Serialization`. A function, a symbol or an array hole is not a JSON value and fails the JSON check.
+
 `WireFormat<T>` names the JSON shape of a model. Generated JSON types end in `JSON`, such as `TTaskJSON`.
 
 ## Change the JSON form

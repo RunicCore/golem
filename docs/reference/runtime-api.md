@@ -26,7 +26,7 @@ Find every `@exprtlabs/golem` subpath that your application, NestJS app or build
 
 A path that starts with `internal/` is for the generators and may change in any release. Do not import it ([Compatibility and stability](/compatibility#public-api)).
 
-With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). The names that generated files import are in [Exports for generated code](#generated-code).
+With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). Generated files also import the names in [Exports for generated code](#generated-code).
 
 ## `@exprtlabs/golem/model` {#model}
 
@@ -54,7 +54,7 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 | `allowAny` | root `allowAny`, `false` | Controls `any` and `unknown` fields ([`any` and `unknown`](/guide/field-types#any-and-unknown)). |
 | `validation` | root `validation`, `true` | Generates checks for this named `IObject` or `IModel`. A nested declaration uses its own setting. |
 
-The generated type names, such as `TTaskFields`, `TTaskJSON` and `TTaskInit`, are in [Derived type names](/reference/generated-files#derived-type-names).
+Generation also writes [derived type names](/reference/generated-files#derived-type-names), such as `TTaskFields`, `TTaskJSON` and `TTaskInit`.
 
 Types that describe generated metadata:
 
@@ -123,7 +123,7 @@ function validateWith(validator: Validator, value: unknown, all = true): Promise
 
 ## `@exprtlabs/golem/validation-runtime` {#validation-runtime}
 
-Generated validators import this subpath. Your code does not.
+Generated validators import this subpath. Your code does not. Semver covers the names that generated validators import.
 
 ## `@exprtlabs/golem/mobx` {#mobx}
 
@@ -179,7 +179,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 | `ValidationUnavailable` | `validation_unavailable` | Checks were not generated, no build rewrote a call, or a validation context lacks a validator. |
 | `Response` | `response` | A generated client receives a status or media type the operation does not declare. |
 
-`ModelValidator.validate()` returns `false` for an invalid value. Checked serde calls and generated client checks throw `LibError` instead. A predicate, codec or native call that throws is wrapped once with its `cause`. A thrown `LibError` passes through unchanged. Read the failures in [Errors and issues](/guide/validation#errors-and-issues).
+`ModelValidator.validate()` returns `false` for an invalid value. Checked serde calls and generated client checks throw `LibError` instead. A predicate, codec or native call that throws is wrapped once with its `cause`. A thrown `LibError` passes through unchanged. [Errors and issues](/guide/validation#errors-and-issues) shows how to read them.
 
 | `Issue` field | Type | Meaning |
 | --- | --- | --- |
@@ -236,7 +236,7 @@ interface ApiOperation<Input, Result, Options = unknown> {
 - Overlapping `execute` calls all run. Each one after the first logs `Concurrent execute() invocation for <name>`.
 - An operation caches no results or errors.
 
-Generated client options are in [Create a client](/guide/client-usage#create-a-client). The request runtime that generated SDKs call is in [Exports for generated code](#generated-code).
+[Create a client](/guide/client-usage#create-a-client) shows the generated client options. Generated SDKs call the request runtime in [Exports for generated code](#generated-code).
 
 ## `@exprtlabs/golem/conversion` {#conversion}
 
@@ -286,7 +286,7 @@ The `TSerde` deserializer's parameter type sets the JSON schema of the field ([w
 
 ## `@exprtlabs/golem/temporal` {#temporal}
 
-Temporal field types for models. Each converts to an ISO 8601 string on the wire. Setup is in [Use Temporal fields](/guide/dates#use-temporal-fields).
+Temporal field types for models. Each converts to an ISO 8601 string on the wire. [Use Temporal fields](/guide/dates#use-temporal-fields) shows the setup.
 
 | Tag | Model type | Wire string |
 | --- | --- | --- |
@@ -296,6 +296,8 @@ Temporal field types for models. Each converts to an ISO 8601 string on the wire
 | `TemporalPlainDateTime` | `Temporal.PlainDateTime` | `2025-01-02T03:04:05` |
 | `TemporalPlainTime` | `Temporal.PlainTime` | `03:04:05.123` |
 | `TemporalDuration` | `Temporal.Duration` | `P1DT2H` |
+
+The wire string has a four-digit year and no calendar annotation.
 
 Each tag `TemporalX` has the functions `serializeTemporalX` and `deserializeTemporalX` and the type `TemporalXWire`. Its `TSerde` uses the two functions.
 
@@ -328,7 +330,7 @@ import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem
 | `validationContext` | both | none | Resolves validators from your own function ([validation context](#validation-context)). |
 | `allowGetter` | `AllowGetterOptions` | `false` | `true` reads declared root fields through getters and inherited values ([below](#allow-getter)). |
 
-`ValidateOptions` has `failFast` and `validationContext`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. The checks of each call are in [Checks during conversion](/guide/serialization#checks-during-conversion).
+`ValidateOptions` has `failFast` and `validationContext`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. Each call runs the checks in the table of [Checks during conversion](/guide/serialization#checks-during-conversion).
 
 ### `allowGetter` {#allow-getter}
 
@@ -398,7 +400,12 @@ For inbound conversion in your own interceptor or pipe, get the codec with `obje
 
 ## `@exprtlabs/golem/loader` {#loader}
 
-A Node `load` hook that rewrites TypeScript files as Node loads them. Install it through [`register`](#register). Import `loader` only to call `module.register` yourself. Setup is in [Node loader](/guide/build#node-loader).
+A Node `load` hook that rewrites TypeScript files as Node loads them. Install it through [`register`](#register). Import `loader` only to call `module.register` yourself ([Node loader](/guide/build#node-loader)).
+
+- It rewrites only `.ts`, `.mts` and `.cts` files outside `node_modules`. A `.tsx` file goes to Node unchanged.
+- It needs ES modules. A `.cts` file, or a `.ts` file under a CommonJS `package.json`, that holds a call to rewrite throws `golem rewrites need ES modules`. The message names the file.
+- A call that cannot be rewritten fails the load with the file, the line and the instruction to run `golem generate`.
+- Without a `golem.yaml`, the load fails with `golem needs a golem.yaml to rewrite parse<T>() calls; set config or GOLEM_CONFIG`.
 
 ## `@exprtlabs/golem/register` {#register}
 
@@ -421,7 +428,11 @@ export default defineConfig({ plugins: [golem()] });
 | --- | --- | --- |
 | `config` | `string` | The `golem.yaml` to open, relative to Vite's `root`. Without it the plugin uses `GOLEM_CONFIG`, else `./golem.yaml` in `root`. |
 
-The plugin rewrites TypeScript in memory before Vite strips its types. Setup is in [Vite](/guide/build#vite).
+The plugin rewrites TypeScript in memory before Vite strips its types ([Vite](/guide/build#vite)). Put `golem()` before plugins that transform TypeScript.
+
+- An id with a query, such as `?raw`, is not rewritten.
+- The dev server rewrites a module again when a file its rewrite depends on, or a generated model file, changes.
+- Without a `golem.yaml`, or for a call that cannot be rewritten, the build fails with the same messages as the [loader](#loader).
 
 ## `@exprtlabs/golem/esbuild` {#esbuild}
 
@@ -436,7 +447,10 @@ await build({ entryPoints: ['src/main.ts'], bundle: true, outfile: 'dist/main.js
 | --- | --- | --- |
 | `config` | `string` | The `golem.yaml` to open, relative to `absWorkingDir` (default: the current directory). Without it the plugin uses `GOLEM_CONFIG`, else `./golem.yaml` in `absWorkingDir`. |
 
-The plugin rewrites TypeScript in memory before esbuild strips its types and chains the source map into the bundle's. Setup is in [esbuild](/guide/build#esbuild).
+The plugin rewrites TypeScript in memory before esbuild strips its types and chains the source map into the bundle's ([esbuild](/guide/build#esbuild)). A plugin that needs the TypeScript files goes before `golem()`.
+
+- Watch mode builds a file again when a file its rewrite depends on changes.
+- Without a `golem.yaml`, or for a call that cannot be rewritten, the build fails with the same messages as the [loader](#loader).
 
 ## Exports for generated code {#generated-code}
 
