@@ -575,11 +575,18 @@ export function createModelStubProgram(
   };
   const stubs = stubsOf(modelFiles);
   const info = open(stubs);
-  const reached = stubsOf(byRealPath(includedModelSources(info.program.getSourceFiles()
-    .filter((file) => !info.program.isSourceFileDefaultLibrary(file))
-    .map((file) => file.fileName), boundary.suffixes)));
-  if (reached.size === 0) return info;
-  const next = open(new Map([...stubs, ...reached]));
+  let next: ProgramInfo;
+  try {
+    const reached = stubsOf(byRealPath(includedModelSources(info.program.getSourceFiles()
+      .filter((file) => !info.program.isSourceFileDefaultLibrary(file))
+      .map((file) => file.fileName), boundary.suffixes)));
+    if (reached.size === 0) return info;
+    next = open(new Map([...stubs, ...reached]));
+  } catch (error) {
+    // The first program holds the session; a failed second pass would leave it held.
+    info.program[Symbol.dispose]();
+    throw error;
+  }
   info.program[Symbol.dispose]();
   return next;
 }
