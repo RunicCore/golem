@@ -1,6 +1,6 @@
 # Install
 
-Lists the packages to install for each generator, with their peer dependencies and project settings.
+Install the packages that each generator needs, with their peer dependencies and project settings.
 
 ## Requirements
 
@@ -38,7 +38,14 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 | `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <8` |
 | `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <8` |
 | `@exprtlabs/golem-openapi` | none, add `typescript` to compile the SDK |
-| `@exprtlabs/golem` | optional: `typescript` (`>=6.0.0 <8`) for `golem build`, the plugins and the loader, `vite` (`>=5`) and `esbuild` for their plugins, `mobx`, `@nestjs/common` and `rxjs` for the features that use them |
+
+`@exprtlabs/golem` has only optional peer dependencies:
+
+- `typescript` `>=6.0.0 <8`, for `golem build`, the plugins and the loader
+- `vite` `>=5`, for the Vite plugin
+- `esbuild` `^0.25.12`, for the esbuild plugin
+- `mobx` `^6.13.0`, for MobX models
+- `@nestjs/common` `^11.0.0` and `rxjs` `^7.8.0`, for `NestModelInterceptor`
 
 ```sh
 npm install --save-dev typescript@~7.0.2

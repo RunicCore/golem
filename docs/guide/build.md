@@ -4,7 +4,7 @@ Choose and set up the build host that rewrites `parse<T>` and five other calls.
 
 ## Why a host is needed
 
-`parse<T>`, `stringify<T>`, `toWireFormat<T>`, `fromWireFormat<T>`, `validate<T>` and `assertValue<T>` take a type argument. TypeScript erases that argument at run time. A host reads each call with your project's TypeScript and replaces it with a call to the generated code. `tsc` does not rewrite these calls.
+`parse<T>`, `stringify<T>`, `toWireFormat<T>`, `fromWireFormat<T>`, `validate<T>` and `assertValue<T>` take a type argument. TypeScript erases that argument at run time. A host is a tool that compiles or loads your TypeScript. It reads each of these calls with your project's TypeScript and replaces the call with a call to the generated code. `tsc` does not rewrite these calls.
 
 A call that no host rewrote throws `parse<T> was not rewritten to a generated function`. A call that no host can rewrite fails the build with its file, its line and what to run. `golem check` reports the same calls.
 
@@ -19,7 +19,11 @@ Generated classes and `validateInstance` work without a host.
 | [esbuild plugin](#esbuild) | esbuild bundles your app | `golem()` in `plugins` |
 | [Node loader](#node-loader) | Node runs your TypeScript files | `--import` flag |
 
-Every host works with TypeScript 6 and 7 and produces the same rewrite. The plugins and the loader open your project from `golem.yaml`. Each plugin takes a `config` option for another file, then reads the `GOLEM_CONFIG` environment variable, then opens `./golem.yaml`. The loader reads `GOLEM_CONFIG`, then `./golem.yaml`. Each host scans your files itself. It needs the generated files to exist, so run `golem generate` once with the plugins and the loader.
+Every host works with TypeScript 6 and 7 and produces the same rewrite.
+
+The plugins and the loader open your project from `golem.yaml`. A plugin uses its `config` option first. Then it reads the `GOLEM_CONFIG` environment variable, then it opens `./golem.yaml`. The loader reads `GOLEM_CONFIG`, then `./golem.yaml`.
+
+The plugins and the loader scan your files themselves. They need the generated files to exist. Run `golem generate` once before you use them.
 
 ## Build with golem build
 
@@ -27,19 +31,19 @@ Every host works with TypeScript 6 and 7 and produces the same rewrite. The plug
 npx golem build
 ```
 
-`golem build` generates first, type-checks your sources with the TypeScript in your project, and writes JavaScript with the calls rewritten into `outDir`. A fresh clone builds with this one command. Run the result with Node:
+`golem build` generates first and type-checks your sources with the TypeScript in your project. Then it writes JavaScript with the calls rewritten into `outDir`. A fresh clone builds with this one command. Run the result with Node:
 
 ```sh
 node .build/src/main.js
 ```
 
-The build needs a `golem.yaml` and a tsconfig with `outDir`. The [project settings](/guide/install#project-settings) show the settings to use. The options, the import paths that the build changes and the compiler arguments that it passes on are in the [CLI reference](/reference/cli#build).
+The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project settings](/guide/install#project-settings). The options, the import paths that the build changes and the compiler arguments that it passes on are in the [CLI reference](/reference/cli#build).
 
 ## Vite
 
 <<< ../../examples/payments/vite.config.ts#vite-config
 
-`golem()` rewrites each TypeScript module in memory before Vite strips its types, in the dev server and in builds. Put it before plugins that transform TypeScript. `config` names the `golem.yaml` relative to the Vite root. Keep [`golem watch`](/guide/watch#watch) running while you edit models. The dev server then transforms again only the modules whose rewrite changed.
+`golem()` rewrites each TypeScript module in memory before Vite strips its types, in the dev server and in builds. Put it before plugins that transform TypeScript. The `config` option is optional. It names the `golem.yaml` relative to the Vite root. Without it, the plugin follows the lookup order above. While `golem watch` ([Watch](/guide/watch#watch)) runs, the dev server transforms again only the modules whose rewrite changed.
 
 ## esbuild
 
@@ -65,4 +69,4 @@ A host rewrites calls. It does not give your editor the generated files. Run `np
 npx --no-install golem build
 ```
 
-`golem build` generates first, so a clone needs no committed generated files. `--no-install` makes `npx` fail when the project does not install golem ([Install](/guide/install#packages-per-generator)). [`golem check`](/guide/watch#check-without-writing) reports stale generated files without writing.
+`golem build` generates first, so a clone needs no committed generated files. With `--no-install`, `npx` fails when the project does not install Golem ([why](/guide/install#packages-for-each-generator)). [`golem check`](/guide/watch#check-without-writing) reports stale generated files without writing.

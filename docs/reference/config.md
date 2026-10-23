@@ -12,7 +12,7 @@ from the current directory.
 
 The CLI runs [generator jobs](#generator-jobs) first, controller jobs next, OpenAPI SDK jobs third and model jobs
 last. A model job can therefore consume the manifest emitted by an SDK job.
-It records what it writes in an [inventory](/guide/watch#files-golem-owns).
+Golem replaces only files that it generated ([files Golem owns](/guide/watch#files-golem-owns)).
 
 ## Root keys
 

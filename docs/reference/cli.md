@@ -3,15 +3,11 @@
 The `golem` command comes from `@exprtlabs/golem`. Run it from the
 directory that contains `golem.yaml`. It resolves the configuration,
 runs the configured generators, and writes their artifacts to the configured
-destinations. The inventory (`.golem/outputs.json`) records which
-generated files each job produced.
+destinations.
 
 `golem build` compiles your project and rewrites the calls that a build host rewrites ([Build your app](/guide/build)).
 
-A job replaces a file at one of its output paths only when the inventory
-records it or the file starts with that generator's marker comment. Any other
-file there stops `generate` and `check` with an error naming it; remove or
-rename the file, or change the job's output path.
+A job replaces only files that Golem generated. Another file at an output path stops `generate` and `check` ([files Golem owns](/guide/watch#files-golem-owns)).
 
 ```text
 Usage: golem <generate|check|watch|exec> [--config golem.yaml]

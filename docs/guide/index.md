@@ -13,7 +13,7 @@ Each generator installs on its own and runs through the same `golem` command and
 | NestJS controllers | [`@exprtlabs/golem-ts-openapi`](/guide/nestjs) | An OpenAPI document from routes and types |
 | An OpenAPI document and app models | [`golem-openapi` and `golem-model`](/guide/models-and-client) | App models that reuse the SDK's types |
 
-NestJS is not required. Every generated model and client imports the runtime package `@exprtlabs/golem` ([Install](/guide/install#packages-per-generator)).
+NestJS is not required. Every generated model and client imports the runtime package `@exprtlabs/golem` ([Install](/guide/install#packages-for-each-generator)).
 
 ## IObject or IModel
 

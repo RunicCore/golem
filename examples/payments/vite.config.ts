@@ -1,10 +1,13 @@
-// #region vite-config
 import { defineConfig } from 'vite';
+// #region vite-config
 import react from '@vitejs/plugin-react';
 import { golem } from '@exprtlabs/golem/vite';
 
+const plugins = [golem({ config: 'web/golem.yaml' }), react()];
+// #endregion vite-config
+
 export default defineConfig({
-  plugins: [golem({ config: 'web/golem.yaml' }), react()],
+  plugins,
   server: {
     port: 5173,
     strictPort: true,
@@ -12,4 +15,3 @@ export default defineConfig({
     proxy: { '/api': `http://127.0.0.1:${process.env.API_PORT ?? '3000'}` },
   },
 });
-// #endregion vite-config

@@ -33,11 +33,11 @@ Check the [requirements](/guide/install#requirements). Add `"type": "module"` to
 
 <<< ../../examples/models/src/priority-word.ts#priority-word
 
-Then mark a type with `IModel` in `src/task.model.ts`; `TSerde` ties `priority` to those functions:
+Then mark a type with `IModel` in `src/task.model.ts`. `TSerde` ties `priority` to those functions:
 
 <<< ../../examples/models/src/task.model.ts#task-declaration
 
-The generator reads `src/**/*.model.ts` and `src/**/*.models.ts`; [`models.suffixes`](/reference/config#typescript-models) changes the endings and `models.sources` names the files.
+The generator reads `src/**/*.model.ts` and `src/**/*.models.ts`. [`models.suffixes`](/reference/config#typescript-models) changes the endings and `models.sources` names the files.
 
 Declare an `IObject` instead to keep plain objects ([IObject or IModel](/guide/models#iobject-or-imodel)).
 
@@ -69,7 +69,7 @@ Extend the generated class in `src/task.model.ts`, below the declaration:
 
 <<< ../../examples/models/src/task.model.ts#task-model
 
-To add a field later, change `TTask` and generate again. Only `task.model.generated.ts` is replaced; `toggle()` stays.
+To add a field later, change `TTask` and generate again. Only `task.model.generated.ts` is replaced. `toggle()` stays.
 
 ## Use the model
 
@@ -91,6 +91,6 @@ Built tsconfig.json.
 []
 ```
 
-`golem build` generates first, checks your sources, and writes JavaScript with the `toWireFormat` call rewritten into `.build/`. A bundler plugin or the Node loader can rewrite the calls instead ([Build your app](/guide/build)). Edit and regenerate in the loop of [Generate, watch and check](/guide/watch).
+`golem build` generates first, checks your sources, and writes JavaScript with the `toWireFormat` call rewritten into `.build/`. A bundler plugin or the Node loader can rewrite the calls instead ([Build your app](/guide/build)). Run `golem watch` to regenerate while you edit ([daily loop](/guide/watch)).
 
 Your `main.ts` holds only the code above, so this is all it prints. The full example's `main.ts` continues with one line per feature. `npm start` in [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models) prints them all.

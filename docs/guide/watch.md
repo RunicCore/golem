@@ -16,19 +16,27 @@ npx golem generate
 npx golem watch
 ```
 
-`watch` generates once. It then reruns when `golem.yaml`, the tsconfig and its `extends` files, a model or controller source (also a new one), a file those import, an OpenAPI document or a manifest changes. It regenerates everything that depends on the change. A model-only edit does not rerun an unchanged SDK job. The models job reads the whole project, so an edit to any project source runs it again. The watcher does not poll remote references.
+`watch` generates once. It then reruns when one of these changes:
+
+- `golem.yaml`
+- the tsconfig and its `extends` files
+- a model or controller source, also a new one
+- a file that a source imports
+- an OpenAPI document or a manifest
+
+It regenerates everything that depends on the change. A model-only edit does not rerun an unchanged SDK job. The models job reads the whole project, so an edit to any project source runs it again. The watcher does not poll remote references.
 
 Type errors that come only from an outdated `.model.generated.ts` file do not block regeneration. A type error in a model source stops the write. A type error in another file is for `tsc` and `golem build` to report. A failed run prints its error and the watcher keeps running.
 
 ## Start an app after generation
 
-Use `exec` when the application must not start before its generated files exist:
+Use `exec` when the app must not start before its generated files exist:
 
 ```sh
 npx golem exec --watch -- npm run dev
 ```
 
-The CLI generates first, then starts the child command and keeps watching until the child exits. If generation fails, the child does not start. Without `--watch`, `exec` generates once and forwards the exit status of the child command. Regeneration does not restart your app. Use the reload of your framework.
+The CLI generates first, then starts the child command and watches until the child exits. If generation fails, the child does not start. Without `--watch`, `exec` generates once and forwards the exit status of the child command. Regeneration does not restart your app. Use the reload of your framework.
 
 ## Check without writing
 
@@ -36,11 +44,19 @@ The CLI generates first, then starts the child command and keeps watching until 
 npx --no-install golem check
 ```
 
-`check` exits with code 1 when a generated file is missing or stale, and it writes nothing. It also reports each `parse<T>()` call that no host can rewrite, with its file and line and what to run. `check` needs generated files, so CI runs `golem build` or `golem generate` first ([ignore generated files](/reference/generated-files#gitignore)). When golem has not generated yet, `check` stops with one message that tells you to run `golem generate` or `golem build` first. The flag `--no-install` is explained in [Install](/guide/install#packages-per-generator).
+`check` exits with code 1 when a generated file is missing or stale, and it writes nothing. It also reports each `parse<T>()` call that no host can rewrite, with its file and line and what to run.
+
+`check` needs generated files, so CI runs `golem build` or `golem generate` first ([ignore generated files](/reference/generated-files#gitignore)). When Golem has not generated yet, `check` stops with one message. The message tells you to run `golem generate` or `golem build` first.
+
+With `--no-install`, `npx` fails when the project does not install Golem ([why](/guide/install#packages-for-each-generator)).
 
 ## Files golem owns
 
-Golem replaces a file at an output path when it generated that file before, or when the file starts with the marker comment of the generator. Any other file at an output path stops `generate` and `check` with an error that names the file. Remove or rename that file, or change the output path of the job. When no job produces a generated file any more, `generate` deletes it. A file that carries a marker but that golem never recorded is reported and left alone, and `check` fails on it.
+Golem replaces a file at an output path when it generated that file before. It also replaces a file that starts with the marker comment of the generator, even if Golem never recorded it. Any other file at an output path stops `generate` and `check` with an error that names the file. Remove or rename that file, or change the output path of the job.
+
+When no job produces a generated file any more, `generate` deletes it. Golem deletes the file only if it still holds its generated content or its marker. Otherwise `generate` stops and names the file. Move the file or delete it yourself.
+
+A file with a marker can also sit in an output folder at a path that no job produces, and Golem never recorded it. `generate` leaves that file alone. `check` reports it and fails.
 
 Put custom behavior in your classes or application code. Do not edit `*.generated.ts` files. Ignore the `.golem/` folder.
 

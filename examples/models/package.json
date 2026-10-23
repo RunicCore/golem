@@ -8,7 +8,7 @@
     "test": "golem build && node --test .build/src/app.test.js",
     "start": "golem build && node .build/src/main.js",
     "bundle": "golem generate && node bundle.mjs && node .build/bundle/main.js",
-    "start:loader": "golem generate && node --import @exprtlabs/golem/register src/main.ts"
+    "start:loader": "golem generate && node --experimental-strip-types --import @exprtlabs/golem/register src/main.ts"
   },
   "dependencies": {
     "@exprtlabs/golem": "1.0.0",
