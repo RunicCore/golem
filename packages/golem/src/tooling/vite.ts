@@ -17,6 +17,9 @@ import { BUNDLER_TYPESCRIPT_FILE, NODE_MODULES, openRewriteProject, type GolemHo
  */
 export type { GolemHostOptions };
 
+/** The generated files of one watch run arrive as separate file events; the events inside this window share one reload. */
+const RELOAD_WINDOW_MS = 100;
+
 const posix = (file: string): string => file.split(path.sep).join('/');
 
 export function golem(options: GolemHostOptions = {}): Plugin {
@@ -31,6 +34,7 @@ export function golem(options: GolemHostOptions = {}): Plugin {
   const digests = new Map<string, string>();
   /** Modules whose scan failed: a regenerated model may fix them. */
   const failed = new Set<string>();
+  let reloadTimer: NodeJS.Timeout | undefined;
 
   const open = (): Promise<RewriteProject> => {
     opening ??= openRewriteProject({ cwd: root, ...options }).then((opened) => {
@@ -72,6 +76,15 @@ export function golem(options: GolemHostOptions = {}): Plugin {
     }
   };
 
+  /** Sends one full reload for the invalidations of the events within the window that this call opens. */
+  const reloadSoon = (): void => {
+    reloadTimer ??= setTimeout(() => {
+      reloadTimer = undefined;
+      server?.ws.send({ type: 'full-reload' });
+    }, RELOAD_WINDOW_MS);
+    reloadTimer.unref();
+  };
+
   /** A rewrite's dependency or a generated model file of the project changed: tell the session, then invalidate what depended on it. */
   const fileChanged = (changed: string): void => {
     if (!server || !project) return;
@@ -90,7 +103,7 @@ export function golem(options: GolemHostOptions = {}): Plugin {
         invalidated += 1;
       }
     }
-    if (invalidated > 0) server.ws.send({ type: 'full-reload' });
+    if (invalidated > 0) reloadSoon();
   };
 
   return {
@@ -126,6 +139,8 @@ export function golem(options: GolemHostOptions = {}): Plugin {
       return { code: rewritten.code, map: { version: 3, sources: [path.basename(id)], sourcesContent: [code], names: [...map.names], mappings: map.mappings } };
     },
     closeBundle() {
+      clearTimeout(reloadTimer);
+      reloadTimer = undefined;
       const closing = opening;
       opening = undefined;
       project = undefined;

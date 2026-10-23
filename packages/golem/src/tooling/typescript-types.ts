@@ -515,6 +515,10 @@ export interface CompilerOptions {
 
 export interface Diagnostic {
   readonly text?: string;
+  /** The TypeScript error number, such as 2304. */
+  readonly code?: number;
+  /** Where the diagnostic starts in its file. */
+  readonly pos?: number;
   /** The file the diagnostic is about; absent for a diagnostic about the program as a whole. */
   readonly fileName?: string;
 }
@@ -540,6 +544,8 @@ export interface Program extends Disposable {
   getCompilerOptions(): CompilerOptions;
   /** The parse errors of one file, read without a type check. */
   getSyntacticDiagnostics(filename: string): readonly Diagnostic[];
+  /** The type errors of one file, found by checking that file. */
+  getSemanticDiagnostics(filename: string): readonly Diagnostic[];
   readonly session: ProgramSession;
 }
 

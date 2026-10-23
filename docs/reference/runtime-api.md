@@ -432,6 +432,7 @@ The plugin rewrites TypeScript in memory before Vite strips its types ([Vite](/g
 
 - An id with a query, such as `?raw`, is not rewritten.
 - The dev server rewrites a module again when a file its rewrite depends on, or a generated model file, changes.
+- The page reloads once for the file events of one run. The first event opens a 100 ms window, and the events in that window share one reload.
 - Without a `golem.yaml`, or for a call that cannot be rewritten, the build fails with the same messages as the [loader](#loader).
 
 ## `@exprtlabs/golem/esbuild` {#esbuild}

@@ -9,6 +9,7 @@ import { runPipeline, watchPipeline } from '#golem/cli';
 import { generate as generateOpenApi } from '#openapi/generator';
 import { workspace } from './support/process.js';
 import { until } from './support/watch-wait.js';
+import { runLines } from './support/watch-runs.js';
 import { writeFixture } from './support/consumer.js';
 import { compileGeneratedSdk } from './openapi/helpers.js';
 
@@ -375,7 +376,7 @@ test('exec --watch keeps its child alive through generation failure, recovers, a
   const initialDocument = fs.readFileSync(api, 'utf8');
 
   try {
-    await until(() => stdout.includes('Generated configured outputs.') && fs.existsSync(ready), `exec --watch initial generation: ${stderr}`);
+    await until(() => runLines(stdout).length > 0 && fs.existsSync(ready), `exec --watch initial generation: ${stderr}`);
 
     fs.writeFileSync(api, JSON.stringify({ openapi: '2.0', info: {}, paths: {} }));
     await until(() => /OpenAPI|validation failed|unsupported/i.test(stderr), `exec --watch reports a later generation failure: ${stderr}`);
@@ -431,6 +432,40 @@ test('exec --watch does not start its child or watcher when initial generation f
     assert.match(stderr, /OpenAPI|validation failed|unsupported/i);
   } finally {
     if (parent.exitCode === null && parent.signalCode === null) await stopChild(parent);
+  }
+});
+
+test('exec --watch generates a model file that was created during its first run', async (t: TestContext) => {
+  // protects: T-316 the watch started by exec compares with the disk as it was before the first run
+  const { root, config } = combinedFixture(t);
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
+  const created = path.join(root, 'src/pet.model.ts');
+  // In the exec process: the first run publishes the cart companion, after it read the sources; create a model file at that moment.
+  const hook = path.join(root, 'create-during-first-run.cjs');
+  fs.writeFileSync(hook, [
+    "const fs = require('node:fs');",
+    'let created = false;',
+    'const rename = fs.renameSync;',
+    'fs.renameSync = (from, to) => {',
+    "  if (!created && String(to).endsWith('cart.model.generated.ts')) {",
+    '    created = true;',
+    `    fs.writeFileSync(${JSON.stringify(created)}, "import type { IModel } from '@exprtlabs/golem/model';\\n\\nexport type TPet = IModel<{ id: string }>;\\n");`,
+    '  }',
+    '  return rename(from, to);',
+    '};',
+  ].join('\n'));
+  const parent = spawn(process.execPath, ['--require', hook, binary, 'exec', '--watch', '--config', config, '--', process.execPath, '-e', 'setInterval(() => {}, 1000)'], {
+    cwd: root,
+    env: { ...process.env, NODE_PATH: '' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderr = '';
+  parent.stderr?.on('data', (value: Buffer) => { stderr += value.toString(); });
+  try {
+    await until(() => fs.existsSync(path.join(root, 'src/pet.model.generated.ts')), () => `the model created during the first run is generated (stderr=${stderr})`);
+    assert.ok(fs.existsSync(created));
+  } finally {
+    await stopChild(parent);
   }
 });
 

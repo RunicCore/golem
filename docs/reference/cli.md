@@ -39,6 +39,12 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 
 `generate` runs the configured jobs in the order set by [configuration](/reference/config). `exec` needs the `--` separator. Arguments after it go to the child process unchanged. `--watch` is valid only with `exec`. An unknown option fails before generation starts.
 
+Each good run of `watch` prints one line: the result of each job, then the time of the run. A job shows the files it updated or removed. A job that did not run, or wrote nothing new, shows `unchanged`. The first good run after a failed run starts with `Recovered:`. `exec --watch` prints the same line for its first run. A failed run prints its error. When a job fails before it writes, the run also says that the job wrote no files and that its last good output stays in place; a job that finished earlier in the same run has written its files.
+
+```text
+models: 2 files updated · openapi:sdk: unchanged · 412 ms
+```
+
 ## Build
 
 `golem build` rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) while it compiles. It generates the code that `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite when it loads your TypeScript ([Build your app](/guide/build)).
@@ -59,7 +65,7 @@ A build runs three steps:
 
 The build starts from `golem.yaml`: the one in the working directory, or the one that `--config` names. Without one it stops with `golem build needs a golem.yaml; run it next to one or pass --config`. It never searches the folders above. It builds the tsconfig that `golem.yaml` names with [`tsconfig`](/reference/config#root-keys), which is the `tsconfig.json` beside `golem.yaml` by default. So `golem generate` and `golem build` always agree on the project.
 
-`-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`. It must lie in the directory of the tsconfig that `golem.yaml` names. With `--watch` the build repeats when a source, a tsconfig or `golem.yaml` changes. It generates first, so editing a model source regenerates its file and rebuilds once. The models job reads every source of the project, so editing any other source runs it again before the rebuild. A job that reads no changed input does not run. Deleting `outDir` while the build runs starts one build that writes it again.
+`-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`. It must lie in the directory of the tsconfig that `golem.yaml` names. With `--watch` the build repeats when a source, a tsconfig or `golem.yaml` changes. It generates first, so editing a model source regenerates its file and rebuilds once. The models job reads every source of the project, so editing any other source runs it again before the rebuild. A job that reads no changed input does not run. Deleting `outDir` while the build runs starts one build that writes it again. When you delete a source, the build removes the JavaScript, declaration and map files that it emitted for that source from `outDir` and `declarationDir`. It also removes the folders that become empty. It removes no file that it did not write.
 
 A build never edits your source files. It writes the generated files that `golem.yaml` configures, and the declarations and JavaScript that the tsconfig asks for into `outDir`. Ignore the generated files and `.golem/` ([ignore generated files](/reference/generated-files#gitignore)). Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
 

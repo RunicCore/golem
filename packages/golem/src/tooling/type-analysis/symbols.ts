@@ -1,6 +1,6 @@
 import { dirname, resolve } from 'node:path';
 import * as ts from '../typescript-ns.js';
-import { DEFAULT_MODEL_SUFFIXES, canonicalPath } from '../generator-api.js';
+import { DEFAULT_MODEL_SUFFIXES, canonicalPath, displayPath } from '../generator-api.js';
 import { canonicalFilename, generatedFilename, isModelFileName, type ModelBoundary } from './project.js';
 import type { ModelSpecification } from './models.js';
 
@@ -13,7 +13,7 @@ export function diagnostic(
 ): Error & { readonly code: string } {
   const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
   const error = new Error(
-    `${sourceFile.fileName}:${position.line + 1}:${position.character + 1} RUNM${code}: ${message}`,
+    `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1} RUNM${code}: ${message}`,
   ) as Error & { readonly code: string };
   Object.defineProperty(error, 'code', { value: `RUNM${code}`, enumerable: true });
   return error;
@@ -65,7 +65,7 @@ export function foreignModelReason(declaration: ts.TypeAliasDeclaration, boundar
   const filename = canonicalPath(declaration.getSourceFile().fileName);
   const suffixes = boundary?.suffixes ?? DEFAULT_MODEL_SUFFIXES;
   if (isModelFileName({ suffixes }, filename)) return undefined;
-  return `${filename}#${declaration.name.text} is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in ${suffixes.join(' or ')}. Move the model into such a file.`;
+  return `${displayPath(filename)}#${declaration.name.text} is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in ${suffixes.join(' or ')}. Move the model into such a file.`;
 }
 
 /** The alias that declares the model the type reference names, when it is written as `type Name = IModel<...>` or `IObject<...>`. */
