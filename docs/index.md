@@ -22,11 +22,11 @@ features:
   - title: TypeScript is the schema
     details: Tags on a field's type drive both its validation, such as <code>string & MinLength&lt;2&gt;</code>, and its JSON form, with <code>TSerde</code>. No decorators, no schema language, no second copy of your fields.
     link: /guide/tags
-    linkText: Type tags
+    linkText: Validation tags
   - title: Fast
     details: Parsing, stringifying and validation run as generated code, with no decorator metadata or reflection at runtime.
     link: /guide/serialization
-    linkText: Serialization
+    linkText: JSON conversion
   - title: Your code survives regeneration
     details: Generation owns the generated class, <code>TTaskBaseModel</code>. Your class, <code>Task</code>, extends it and keeps its methods.
     link: /guide/models
@@ -34,7 +34,7 @@ features:
   - title: Types end to end
     details: NestJS controllers produce the OpenAPI document. The client generator turns it back into typed operations and models.
     link: /guide/nestjs
-    linkText: Generate OpenAPI
+    linkText: OpenAPI from controllers
   - title: Validated by default
     details: Validation is on for models and for client requests and responses. Turn on MobX when React needs observable models.
     link: /guide/validation

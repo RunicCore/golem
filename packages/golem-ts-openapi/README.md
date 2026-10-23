@@ -13,8 +13,8 @@ Add the generator to an existing NestJS project:
 npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.0.2
 ```
 
-[Generate OpenAPI](../../docs/guide/nestjs.md) walks through a controller.
-[Compatibility and stability](../../docs/compatibility.md) has supported
-versions.
+[OpenAPI from controllers](../../docs/guide/nestjs.md) walks through a
+controller.
+[Compatibility](../../docs/compatibility.md) has supported versions.
 
 MIT License. Copyright (c) 2026 exprtlabs.ai.

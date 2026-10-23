@@ -24,7 +24,7 @@ Find every `@exprtlabs/golem` subpath that your application, NestJS app or build
 | [`vite`](#vite) | Vite plugin that rewrites TypeScript before Vite strips its types | `vite` |
 | [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
 
-A path that starts with `internal/` is for the generators and may change in any release. Do not import it ([Compatibility and stability](/compatibility#public-api)).
+A path that starts with `internal/` is for the generators and may change in any release. Do not import it ([Compatibility](/compatibility#public-api)).
 
 With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). Generated files also import the names in [Exports for generated code](#generated-code).
 
@@ -454,7 +454,7 @@ The plugin rewrites TypeScript in memory before esbuild strips its types and cha
 
 ## Exports for generated code {#generated-code}
 
-Generated files import these names. Application code does not call them. They follow semver ([Compatibility and stability](/compatibility#public-api)).
+Generated files import these names. Application code does not call them. They follow semver ([Compatibility](/compatibility#public-api)).
 
 ### From `model`
 

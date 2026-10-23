@@ -13,11 +13,11 @@ Use npm with Node.js 22.15 or newer:
 npm install @exprtlabs/golem
 ```
 
-`parse<T>`, `stringify<T>`, `fromWireFormat<T>`, `toWireFormat<T>`, `validate<T>` and `assertValue<T>` need a
-build host that rewrites them ([Build your app](../../docs/guide/build.md)).
+Six calls, such as `parse<T>` and `validate<T>`, need a build host that
+rewrites them ([Build your app](../../docs/guide/build.md)).
 
 [Runtime API](../../docs/reference/runtime-api.md) lists every subpath, its
-signature and its extra dependency. [Compatibility and
-stability](../../docs/compatibility.md) has supported versions.
+signature and its extra dependency. [Compatibility](../../docs/compatibility.md)
+has supported versions.
 
 MIT License. Copyright (c) 2026 exprtlabs.ai.

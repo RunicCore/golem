@@ -50,7 +50,7 @@ Dispose the reaction when the observation is no longer needed.
 
 When an observable generated model contains another generated model, `asGenObservable` walks nested values through arrays, records, maps and sets.
 
-The `golem.yaml` above generates the SDK into `sdk/` from `../server/api/openapi.yaml`, so a [model with a client](/guide/models-and-client) is observable together with its SDK types. In `src/payment-editor.model.ts`, `setAmount` edits the nested `money` model:
+The `golem.yaml` above generates the SDK into `sdk/` from `../server/api/openapi.yaml`, so a [model that uses SDK types](/guide/models-and-client) is observable together with its SDK types. In `src/payment-editor.model.ts`, `setAmount` edits the nested `money` model:
 
 <<< ../../examples/payments/web/src/payment-editor.model.ts#nested-editing
 

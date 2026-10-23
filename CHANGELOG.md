@@ -6,7 +6,7 @@ This file is the complete list of changes. The documentation site's
 ## Migrating to 1.0
 
 Every breaking change, one bullet per change, with the action to take:
-[Migrating to 1.0](docs/migrating.md). Details for each package are
+[Upgrade to 1.0](docs/migrating.md). Details for each package are
 in the sections below.
 
 ## Unreleased
@@ -213,7 +213,7 @@ Version 1.0.0 includes four independently installable packages:
 - **Breaking:** stacked `@ApiHeader` and `@ApiQuery` decorators list their parameters in the order `@nestjs/swagger` applies them. The order of the parameters in a generated document can change. Regenerate, and read parameters by name, not by position.
 - Fixed: a controller path can be an enum member or a `const` object member.
 
-See [OpenAPI client support](docs/reference/openapi-support.md) for supported versions and contract limitations.
+See [OpenAPI support](docs/reference/openapi-support.md) for supported versions and contract limitations.
 
 ### Validation
 

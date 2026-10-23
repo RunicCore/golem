@@ -16,7 +16,7 @@ npm install --save-dev @exprtlabs/golem-model typescript@~7.0.2
 ```
 
 [Define models](../../docs/guide/models.md) walks through a declaration,
-generation and the handwritten class. [Compatibility and
-stability](../../docs/compatibility.md) has supported versions.
+generation and the handwritten class.
+[Compatibility](../../docs/compatibility.md) has supported versions.
 
 MIT License. Copyright (c) 2026 exprtlabs.ai.

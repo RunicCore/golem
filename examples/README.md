@@ -16,7 +16,7 @@ The guides walk through them: [models](../docs/guide/models.md),
 [validation tags](../docs/guide/tags.md),
 [NestJS](../docs/guide/nestjs.md),
 [an API client](../docs/guide/client.md),
-[models with a client](../docs/guide/models-and-client.md) and
+[SDK types in your models](../docs/guide/models-and-client.md) and
 [MobX and React](../docs/guide/mobx.md).
 
 ## Install and run
@@ -39,6 +39,6 @@ npm test           # offline; golem build generates first
 
 Files under `sdk/`, the `*.model.generated.ts` files, `src/generated/` and `.golem/` are generated output, and each example's `.gitignore` lists them.
 Edit the authored contract or handwritten source, then run `npm run generate`.
-See [Installation](../docs/guide/install.md) for the packages and profiles.
+See [Install](../docs/guide/install.md) for the packages and profiles.
 
 [Quick start](../docs/guide/quick-start.md) shows how to add the packages to an existing application.
