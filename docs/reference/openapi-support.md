@@ -2,30 +2,17 @@
 
 Check what the client generator supports for each OpenAPI version, feature and profile. The generator turns the validation keywords of a schema into model and client validation, whichever tool produced the document.
 
-The table opens on OpenAPI 3.1 with MobX off and validation on. Each row names the feature, whether it is available, and the limitation that still applies.
+The table opens on OpenAPI 3.1 with MobX off and validation on. Each row names the feature, its support status and what to expect.
 
-These limits show up often:
-
-- Callbacks and webhooks get TypeScript types. The application implements the handlers.
-- The client does not choose an OpenAPI `servers` URL. Pass `baseUrl`.
-- A whole query object stays one schema on OpenAPI 3.2. OpenAPI 3.1.2 flattens independent fields and rejects a contract whose constraints would be lost ([query compatibility](/reference/nestjs#query-compatibility)).
-- A cookie parameter, or an API key sent through a cookie, reaches the server as a `Cookie` header from Node, but browsers don't let scripts set that header ([`OPENAPI_BROWSER_COOKIE`](/reference/diagnostics#openapi-browser-cookie)).
-
-<SupportTable>
-<template #type-system-limits>
-
-## Type system limits
-
-</template>
-</SupportTable>
+<SupportTable />
 
 ## Generated names
 
-Schema fields that override `Object.prototype` names, such as `__proto__` or `toString`, are unsupported. Generation reports the field so you can rename it in the API contract.
+Generation reports a schema field that is named like an `Object.prototype` member, such as `__proto__` or `toString`, or like a generated model member, such as `toJSON`. Rename the field in the API contract.
 
-An operation name that is a JavaScript reserved word receives a `_` suffix (`operationId: delete` generates `delete_`), as does a client member name such as `constructor`; generation reports the rename as a warning ([`OPENAPI_OPERATION_RENAMED`](/reference/diagnostics#openapi-operation-renamed)). Operation names that differ only by letter case are rejected because their modules would collide on case-insensitive file systems.
+An operation name that is a JavaScript reserved word receives a `_` suffix (`operationId: delete` generates `delete_`), as does a client member name such as `constructor`. Generation reports the rename as a warning ([`OPENAPI_OPERATION_RENAMED`](/reference/diagnostics#openapi-operation-renamed)). Operation names that differ only by letter case stop generation, because their modules would collide on case-insensitive file systems.
 
-A security scheme named `constructor` keeps that name on the generated `auth` option; it is not renamed. TypeScript requires `constructor: undefined` when supplying an `auth` object that omits that credential, for example `auth: { bearerAuth: 'token', constructor: undefined }`. This avoids a conflict with JavaScript's inherited constructor property while leaving the credential unavailable.
+A security scheme named `constructor` keeps that name on the generated `auth` option. When an `auth` object omits that credential, set `constructor: undefined`, for example `auth: { bearerAuth: 'token', constructor: undefined }`.
 
 ## Recursive schemas
 
@@ -39,7 +26,7 @@ A component that does not refer to itself stays part of each field that uses it.
 
 A discriminator `mapping` value inside a referenced file must be a pointer such as `#/components/schemas/Dog`, or the name of a root alias. A bare name in another file names a root component, so generation fails when the root declares none by that name and reports the mapping and its file.
 
-`#/…` always means the containing document root, also inside a schema that declares its own `$id`. Pointers relative to an `$id` resource, such as `#/properties/x`, are unsupported; the `no-unresolved-refs` rule reports them.
+`#/…` always means the containing document root, also inside a schema that declares its own `$id`. The `no-unresolved-refs` rule reports a pointer relative to an `$id` resource, such as `#/properties/x`.
 
 ## Response matching
 
@@ -51,11 +38,7 @@ A `$ref` and a composed schema (`allOf`, `oneOf`, `anyOf`) follow the same text-
 
 The required-codec check applies to the operation, response status and media type that declared it. An unrelated operation still uses built-in handling even when another operation on the same client requires a custom codec.
 
-OpenAPI 3.1 does not provide the `itemSchema` streaming contract; it needs OpenAPI 3.2. OpenAPI 3.0 documents are not accepted. Declaring `itemSchema: false` permits no items — validation rejects the first one — and generates a response type of `AsyncIterable<never>`. With validation disabled, decoded items still arrive despite that type.
-
-## Nest controller generation
-
-The controller generator is described in [NestJS controllers](/reference/nestjs).
+The `itemSchema` streaming contract needs an OpenAPI 3.2 document. The generator reads OpenAPI 3.1 and 3.2 documents. `itemSchema: false` generates the response type `AsyncIterable<never>`, and validation rejects the first item.
 
 ## Full compliance matrix
 
