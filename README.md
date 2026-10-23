@@ -16,19 +16,19 @@ compiler:
 
 ```sh
 npm install @exprtlabs/golem
-npm install --save-dev @exprtlabs/golem-model typescript@~7.0.2
+npm install --save-dev @exprtlabs/golem-model typescript@~7.1.0-beta
 ```
 
 Or, for an existing OpenAPI document:
 
 ```sh
-npm install --save-dev @exprtlabs/golem-openapi typescript@~7.0.2
+npm install --save-dev @exprtlabs/golem-openapi typescript@~7.1.0-beta
 ```
 
 Or, for NestJS controllers only:
 
 ```sh
-npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.0.2
+npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.1.0-beta
 ```
 
 ## Documentation

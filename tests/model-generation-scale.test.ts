@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Checker } from 'typescript/unstable/sync';
+import fs from 'node:fs';
+import path from 'node:path';
+import { createProgramFromSources } from '#golem/typescript-ts7';
 
 import { scaleModelSource } from './fixture-templates/models/scale.js';
 import { generate } from '#model/generator';
@@ -28,10 +30,17 @@ test('model identity checks grow linearly with the model count', t => {
   // Every field is described once. Resolving structural model identity
   // compares a type against every specification, so it must stay off the
   // primitive and literal paths or the checker traffic grows quadratically.
-  const prototype = Checker.prototype as unknown as { isTypeAssignableTo(...args: unknown[]): boolean };
+  // golem's checker is the seam every identity check goes through. TypeScript 7.1 stores its own checker methods on each
+  // checker at first use, so the compiler's prototype is no place to count them.
+  const probe = createModelProject(t, { prefix: 'golem-identity-checks-probe-', name: null, linkWorkspaceNodeModules: true });
+  const probeSource = path.join(probe.sourceRoot, 'probe.ts');
+  fs.writeFileSync(probeSource, 'export const probe = 1;\n');
+  const probeProgram = createProgramFromSources({ root: probe.root, sources: [probeSource] });
+  const prototype = Object.getPrototypeOf(probeProgram.getTypeChecker()) as { isTypeAssignableTo(...args: unknown[]): boolean };
+  probeProgram.close();
   const original = prototype.isTypeAssignableTo;
   let calls = 0;
-  prototype.isTypeAssignableTo = function countedIsTypeAssignableTo(this: Checker, ...args: unknown[]): boolean {
+  prototype.isTypeAssignableTo = function countedIsTypeAssignableTo(this: unknown, ...args: unknown[]): boolean {
     calls += 1;
     return original.apply(this, args);
   };

@@ -69,7 +69,7 @@ test('an installed TypeScript that golem does not support is still an error', as
   await command(root, process.execPath, [binary, 'generate'], { env: CHOSEN_ROOT });
   const result = await command(root, process.execPath, [binary, 'check'], { allowFailure: true, env: { GOLEM_TYPESCRIPT_ROOT: unsupported } });
   assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.x; found 5\.9\.0/);
+  assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.1\+; found 5\.9\.0/);
 });
 
 test('the TypeScript of the directory of golem.yaml is the one used, wherever the command runs from, unless the user names another', async () => {
@@ -81,7 +81,7 @@ test('the TypeScript of the directory of golem.yaml is the one used, wherever th
   await command(elsewhere, process.execPath, [binary, 'generate', '--config', config], { env: CHOSEN_ROOT });
   const result = await command(elsewhere, process.execPath, [binary, 'check', '--config', config], { allowFailure: true, env: CHOSEN_ROOT });
   assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.x; found 5\.9\.0/);
+  assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.1\+; found 5\.9\.0/);
   // GOLEM_TYPESCRIPT_ROOT set by the user wins: this directory has no TypeScript, so the scan is skipped.
   await command(elsewhere, process.execPath, [binary, 'check', '--config', config], { env: { GOLEM_TYPESCRIPT_ROOT: elsewhere } });
 });
@@ -94,7 +94,7 @@ test('the TypeScript of the directory of the tsconfig golem.yaml names is the on
   // Only app/ has a TypeScript, and golem has none of its own, so the version it names is the directory the lookup started from.
   const result = await command(project({}), process.execPath, [binary, 'build', '--config', path.join(root, 'golem.yaml')], { allowFailure: true, env: CHOSEN_ROOT });
   assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.x; found 5\.9\.0 at .*app/);
+  assert.match(result.stderr, /golem supports TypeScript 6\.0\+ and 7\.1\+; found 5\.9\.0 at .*app/);
 });
 
 test('an exec child gets GOLEM_TYPESCRIPT_ROOT only when the user set it', async () => {

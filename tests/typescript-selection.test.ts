@@ -131,7 +131,7 @@ console.log(JSON.stringify(results));`);
 test('a host opened from a directory without TypeScript loads the TypeScript beside the tsconfig of its project', async () => {
   const unsupported = project({ version: '5.9.0' });
   const [result] = await opened(directory(), [unsupported]) as { error?: string }[];
-  assert.match(result.error ?? '', /golem supports TypeScript 6\.0\+ and 7\.x; found 5\.9\.0 at .*case-\d+[\\/]node_modules[\\/]typescript/);
+  assert.match(result.error ?? '', /golem supports TypeScript 6\.0\+ and 7\.1\+; found 5\.9\.0 at .*case-\d+[\\/]node_modules[\\/]typescript/);
 });
 
 test('two projects that share one TypeScript install both open in one process', async () => {

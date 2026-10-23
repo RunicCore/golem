@@ -12,7 +12,7 @@ The generated class builds the `money` field as the SDK's runtime class, `TMoney
 
 ```sh
 npm install @exprtlabs/golem
-npm install --save-dev @exprtlabs/golem-model @exprtlabs/golem-openapi typescript@~7.0.2
+npm install --save-dev @exprtlabs/golem-model @exprtlabs/golem-openapi typescript@~7.1.0-beta
 ```
 
 Choose how to build in [Build your app](/guide/build). Include both `src/**/*.ts` and the generated `sdk/**/*.ts` in your TypeScript program.

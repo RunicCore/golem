@@ -7,7 +7,7 @@ Check which versions Golem supports and which APIs stay stable.
 | Requirement | Version |
 | --- | --- |
 | Node.js | `>=22.15.0` |
-| TypeScript | `>=6.0.0 <7` or `>=7.0.0 <8` |
+| TypeScript | `>=6.0.0 <7` or `>=7.1.0-0 <8` (7.1.0-beta and newer) |
 | NestJS | `^11.0.0` (`@nestjs/common`) |
 | OpenAPI input documents | 3.1, 3.2 |
 | OpenAPI output (`openapiVersion`) | `3.2.0` (default) or `3.1.2` |
@@ -37,8 +37,10 @@ A process loads one TypeScript. A host fails when it opens a second project whos
 A `typescript` version outside the range in the table fails at load:
 
 ```text
-golem supports TypeScript 6.0+ and 7.x; found <version> at <path>.
+golem supports TypeScript 6.0+ and 7.1+; found <version> at <path>.
 ```
+
+TypeScript 7.0 adds `golem 1.0 supports TypeScript 7.0.` to that message.
 
 With TypeScript 7, the project and Golem must resolve one install. When they differ, loading fails:
 
@@ -46,7 +48,7 @@ With TypeScript 7, the project and Golem must resolve one install. When they dif
 golem loads TypeScript 7 (<version>) from <path> but the project uses <version> at <path>; install one TypeScript 7 for both.
 ```
 
-When neither the project nor Golem has `typescript`, a command that needs the compiler fails with `golem needs TypeScript 6.0+ or 7.x installed in <directory>.`
+When neither the project nor Golem has `typescript`, a command that needs the compiler fails with `golem needs TypeScript 6.0+ or 7.1+ installed in <directory>.`
 
 ## Defaults
 

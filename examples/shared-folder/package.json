@@ -14,7 +14,7 @@
   },
   "devDependencies": {
     "@exprtlabs/golem-model": "1.0.0",
-    "typescript": "7.x",
+    "typescript": "7.1.0-beta",
     "@types/node": "22.20.1"
   }
 }

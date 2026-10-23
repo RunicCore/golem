@@ -5,7 +5,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { API } from '#golem/typescript-ts7';
+import { API, ProgramSession } from '#golem/typescript-ts7';
 import { createFixtureProject, readFixture } from './fixture-project.js';
 import { generate as generateController } from '#controllers/generator';
 import { generate as generateModel } from '#model/generator';
@@ -145,29 +145,48 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
   return { source, manifest };
 }
 
-function throwAfterRealClose(t: TestContext, failure: Error): () => number {
-  const prototype = API.prototype as unknown as {
-    updateSnapshot(this: API, ...args: readonly unknown[]): unknown;
-    close(this: API): void;
+/**
+ * Wrap each snapshot request a program session sends, through its one sending method. TypeScript 7.1 sends the first
+ * request with `createSnapshot` and later ones through the newest snapshot, so the session is the seam both go through.
+ * Returns the restore.
+ */
+function wrapSnapshotRequests(t: TestContext, wrap: (api: API, params: unknown, send: () => unknown) => unknown): () => void {
+  const prototype = ProgramSession.prototype as unknown as { advance(this: ProgramSession, api: API, params: unknown): unknown };
+  const original = prototype.advance;
+  prototype.advance = function wrappedAdvance(this: ProgramSession, api: API, params: unknown): unknown {
+    return wrap(api, params, () => original.call(this, api, params));
   };
-  const originalUpdateSnapshot = prototype.updateSnapshot;
-  const originalClose = prototype.close;
+  const restore = (): void => { prototype.advance = original; };
+  t.after(restore);
+  return restore;
+}
+
+function throwAfterRealClose(t: TestContext, failure: Error): () => number {
+  // TypeScript 7.1 defines `close` as a prototype getter that returns the method, so the getter is wrapped.
+  const descriptor = Object.getOwnPropertyDescriptor(API.prototype, 'close');
+  assert.ok(descriptor?.get, 'API.prototype.close is a getter');
+  const realClose = descriptor.get;
   const owned = new WeakSet<API>();
   let calls = 0;
-  prototype.updateSnapshot = function updateSnapshotForTest(this: API, ...args: readonly unknown[]): unknown {
-    owned.add(this);
-    return originalUpdateSnapshot.call(this, ...args);
-  };
-  prototype.close = function closeWithFailure(this: API): void {
-    const isOwned = owned.has(this);
-    originalClose.call(this);
-    if (!isOwned) return;
-    calls += 1;
-    throw failure;
-  };
+  wrapSnapshotRequests(t, (api, _params, send) => {
+    owned.add(api);
+    return send();
+  });
+  Object.defineProperty(API.prototype, 'close', {
+    ...descriptor,
+    get(this: API) {
+      const close = realClose.call(this) as () => void;
+      return () => {
+        const isOwned = owned.has(this);
+        close();
+        if (!isOwned) return;
+        calls += 1;
+        throw failure;
+      };
+    },
+  });
   t.after(() => {
-    prototype.updateSnapshot = originalUpdateSnapshot;
-    prototype.close = originalClose;
+    Object.defineProperty(API.prototype, 'close', descriptor);
   });
   return () => calls;
 }
@@ -408,31 +427,25 @@ test('closing a program session ends the compiler with a signal it cannot report
 });
 
 function captureSnapshotRequests(t: TestContext): unknown[] {
-  const prototype = API.prototype as unknown as { updateSnapshot(this: API, ...args: unknown[]): unknown };
-  const original = prototype.updateSnapshot;
   const requests: unknown[] = [];
-  prototype.updateSnapshot = function capturedUpdateSnapshot(this: API, ...args: unknown[]): unknown {
-    requests.push(args[0]);
-    return original.apply(this, args);
-  };
-  t.after(() => { prototype.updateSnapshot = original; });
+  wrapSnapshotRequests(t, (_api, params, send) => {
+    requests.push(params);
+    return send();
+  });
   return requests;
 }
 
 /** Whether a snapshot update is running: the compiler's file system callbacks of a snapshot arrive while it is. */
 function snapshotRunning(t: TestContext): () => boolean {
-  const prototype = API.prototype as unknown as { updateSnapshot(this: API, ...args: unknown[]): unknown };
-  const original = prototype.updateSnapshot;
   let running = false;
-  prototype.updateSnapshot = function runningUpdateSnapshot(this: API, ...args: unknown[]): unknown {
+  wrapSnapshotRequests(t, (_api, _params, send) => {
     running = true;
     try {
-      return original.apply(this, args);
+      return send();
     } finally {
       running = false;
     }
-  };
-  t.after(() => { prototype.updateSnapshot = original; });
+  });
   return () => running;
 }
 
@@ -454,15 +467,12 @@ test('a compiler that exits during a snapshot update is replaced and the program
   assert.ok(compiler);
 
   // Kill the warm compiler as the next snapshot update is sent, so the request itself fails.
-  const prototype = API.prototype as unknown as { updateSnapshot(this: API, ...args: unknown[]): unknown };
-  const original = prototype.updateSnapshot;
   let updates = 0;
-  prototype.updateSnapshot = function crashingUpdateSnapshot(this: API, ...args: unknown[]): unknown {
+  const restore = wrapSnapshotRequests(t, (_api, _params, send) => {
     updates++;
     if (updates === 1) compiler.kill('SIGKILL');
-    return original.apply(this, args);
-  };
-  t.after(() => { prototype.updateSnapshot = original; });
+    return send();
+  });
 
   fs.writeFileSync(imported, "export type Imported = { shape: 'second' };\n");
   session.inputsChanged([imported]);
@@ -473,7 +483,7 @@ test('a compiler that exits during a snapshot update is replaced and the program
   while (compiler.exitCode === null && compiler.signalCode === null && Date.now() < deadline) await delay(20);
   assert.equal(compiler.signalCode, 'SIGKILL');
   assert.equal(tracker.seen(), 2, 'one replacement compiler');
-  prototype.updateSnapshot = original;
+  restore();
   assert.equal(diagnostics().length > 0, true, 'the replacement stays warm for the next program');
   assert.equal(tracker.seen(), 2);
   session[Symbol.dispose]();
@@ -513,7 +523,7 @@ test('host-reported and module-resolution changes invalidate the warm compiler, 
     session.openProgram({ root: fixture.root, sources: [importer], onInput: filename => inputs.add(filename) }).close();
     return inputs;
   };
-  const lastChanges = (): unknown => (requests.at(-1) as { readonly fileChanges?: unknown }).fileChanges;
+  const lastChanges = (): unknown => (requests.at(-1) as { readonly fileNotifications?: unknown }).fileNotifications;
 
   assert.ok(open().has(imported));
   open();
@@ -537,79 +547,11 @@ test('host-reported and module-resolution changes invalidate the warm compiler, 
   assert.equal(open().has(imported), false);
 });
 
-// A tsconfig edit must reach the compiler's project however the edit and the compiler's reads interleave. The compiler
-// can read or probe a tsconfig while a snapshot is built without applying it, and invalidating every file does not parse
-// a tsconfig again; see ProgramSession in typescript-ts7.ts.
+// A tsconfig edit must reach the compiler's project however the edit and the compiler's reads interleave. On TypeScript 7.1
+// the reachable interleaving is an edit that lands inside a full snapshot: a snapshot that opens no new project reads no
+// tsconfig, and golem opens no file on its own; see ProgramSession in typescript-ts7.ts.
 for (const hinted of [false, true]) {
   const how = hinted ? 'reported by the host' : 'found by the signatures';
-
-  test(`a tsconfig edit that lands while the compiler probes the project is applied by the next program, ${how}`, t => {
-    const project = pathMappedProject(t, 'compiler-lifecycle-probing-edit');
-    const running = snapshotRunning(t);
-    let edits = 0;
-    let armed = false;
-    const session = new ts.ProgramSession({ cwd: project.root });
-    t.after(() => session[Symbol.dispose]());
-    const open = (sources: readonly string[], virtual?: string): ts.Program => session.openProgram({
-      root: project.root,
-      sources,
-      ...(virtual === undefined ? {} : {
-        configFile: virtual,
-        overlays: new Map([[virtual, JSON.stringify({ extends: './tsconfig.json', files: [...sources], include: [] })]]),
-      }),
-      onInput: filename => {
-        if (!armed || !running() || filename !== project.tsconfig) return;
-        armed = false;
-        edits++;
-        project.writeMapping('second');
-      },
-    });
-
-    open([project.app]).close();
-    // Another project takes over, then the first reopens from the tsconfig on disk.
-    open([project.sdk], path.join(project.root, 'virtual.json')).close();
-    open([project.app]).close();
-    // Opening files in a directory the compiler has not searched makes it probe the tsconfig without reading it.
-    armed = true;
-    using stale = open([project.app, project.sdk]);
-    assert.equal(edits, 1, 'the edit landed in the snapshot');
-    assert.equal(project.mappingOf(stale), 'first', 'the program holds the project of the tsconfig it read');
-
-    if (hinted) session.inputsChanged([project.tsconfig]);
-    using current = open([project.app, project.sdk]);
-    assert.equal(project.mappingOf(current), 'second', 'the next program applies the edit');
-  });
-
-  test(`a tsconfig edit that lands in the snapshot after a full snapshot is applied by the next program, ${how}`, t => {
-    const project = pathMappedProject(t, 'compiler-lifecycle-discovery-edit');
-    const running = snapshotRunning(t);
-    let edits = 0;
-    let armed = false;
-    const session = new ts.ProgramSession({ cwd: project.root });
-    t.after(() => session[Symbol.dispose]());
-    const open = (sources: readonly string[]): ts.Program => session.openProgram({
-      root: project.root,
-      sources,
-      onInput: filename => {
-        if (!armed || !running() || filename !== project.tsconfig) return;
-        armed = false;
-        edits++;
-        project.writeMapping('second');
-      },
-    });
-
-    open([project.app]).close();
-    // A manifest change invalidates module resolution: a full snapshot, which does not parse the tsconfig again.
-    project.changeManifest();
-    open([project.app]).close();
-    armed = true;
-    open([project.app, project.sdk]).close();
-    assert.equal(edits, 1, 'the edit landed in the snapshot');
-
-    if (hinted) session.inputsChanged([project.tsconfig]);
-    using current = open([project.app, project.sdk]);
-    assert.equal(project.mappingOf(current), 'second', 'the next program applies the edit');
-  });
 
   test(`a tsconfig edit that lands inside a full snapshot is applied by the next program, ${how}`, t => {
     const project = pathMappedProject(t, 'compiler-lifecycle-edit-inside-full-snapshot');
@@ -657,9 +599,9 @@ for (const hinted of [false, true]) {
     if (hinted) session.inputsChanged([project.tsconfig, project.manifest]);
     using second = open();
     assert.equal(project.mappingOf(second), 'second', 'the full snapshot applies the tsconfig edit');
-    const [reported, invalidated] = requests.slice(-2) as { readonly fileChanges?: { readonly changed?: readonly string[]; readonly invalidateAll?: boolean } }[];
-    assert.ok(reported?.fileChanges?.changed?.includes(project.tsconfig), 'the tsconfig is reported as changed before every file is invalidated');
-    assert.deepEqual(invalidated?.fileChanges, { invalidateAll: true });
+    const [reported, invalidated] = requests.slice(-2) as { readonly fileNotifications?: { readonly changed?: readonly string[]; readonly invalidateAll?: boolean } }[];
+    assert.ok(reported?.fileNotifications?.changed?.includes(project.tsconfig), 'the tsconfig is reported as changed before every file is invalidated');
+    assert.deepEqual(invalidated?.fileNotifications, { invalidateAll: true });
   });
 }
 
@@ -678,31 +620,3 @@ test('a configuration error keeps the warm compiler running', async t => {
   assert.equal(tracker.live().length, 1);
 });
 
-// ProgramSession keeps its newest snapshot alive until the next one exists
-// (ProgramSession.latest in typescript-ns.ts). TypeScript 7.0.2 reports changed
-// files only against a live previous snapshot; after the previous snapshot is
-// disposed, the client still serves its parsed files. When the stale assertion
-// fails, the server reports changes after disposal and the session can
-// dispose snapshots with their programs.
-test('server change report: TypeScript 7.0.2 serves stale files after the previous snapshot is disposed', t => {
-  const fixture = projectFixture(t, 'compiler-lifecycle-server-changes');
-  const source = path.join(fixture.sourceRoot, 'value.ts');
-  const configFile = path.join(fixture.root, 'tsconfig.json');
-  const api = new API({ cwd: fixture.root });
-  t.after(() => api.close());
-  const read = (snapshot: ReturnType<API['updateSnapshot']>): string | undefined =>
-    snapshot.getProject(configFile)?.program.getSourceFile(source)?.text;
-
-  fs.writeFileSync(source, 'export const value = 1;\n');
-  const live = api.updateSnapshot({ openProjects: [configFile] });
-  assert.equal(read(live), 'export const value = 1;\n');
-  fs.writeFileSync(source, 'export const value = 2;\n');
-  const afterLive = api.updateSnapshot({ fileChanges: { changed: [source] } });
-  assert.equal(read(afterLive), 'export const value = 2;\n', 'changes against a live snapshot are reported');
-  live.dispose();
-
-  afterLive.dispose();
-  fs.writeFileSync(source, 'export const value = 3;\n');
-  const afterDisposed = api.updateSnapshot({ fileChanges: { changed: [source] } });
-  assert.equal(read(afterDisposed), 'export const value = 2;\n', 'the client keeps the disposed snapshot\'s parsed file');
-});

@@ -9,10 +9,12 @@ export class TypeScriptNotInstalledError extends UnsupportedTypeScriptError {}
 export function resolveTypeScript(root: string, golemUrl = import.meta.url): { readonly version: string; readonly major: 6 | 7; readonly packageDir: string } {
   const manifest = resolveManifest(root, golemUrl);
   const { version } = JSON.parse(readFileSync(manifest, 'utf8')) as { version: string };
-  const major = Number(version.split('.')[0]);
+  const [major, minor] = version.split('.').map(Number);
   const packageDir = path.dirname(manifest);
-  if (major !== 6 && major !== 7) {
-    throw new UnsupportedTypeScriptError(`golem supports TypeScript 6.0+ and 7.x; found ${version} at ${packageDir}.`);
+  if (major !== 6 && !(major === 7 && minor >= 1)) {
+    // TypeScript 7.0 serves the compiler API under typescript/unstable/*, which golem 1.1 does not load.
+    const older = major === 7 ? ' golem 1.0 supports TypeScript 7.0.' : '';
+    throw new UnsupportedTypeScriptError(`golem supports TypeScript 6.0+ and 7.1+; found ${version} at ${packageDir}.${older}`);
   }
   return { version, major, packageDir };
 }
@@ -24,13 +26,13 @@ function resolveManifest(root: string, golemUrl: string): string {
     try {
       return createRequire(golemUrl).resolve('typescript/package.json');
     } catch {
-      throw new TypeScriptNotInstalledError(`golem needs TypeScript 6.0+ or 7.x installed in ${root}.`);
+      throw new TypeScriptNotInstalledError(`golem needs TypeScript 6.0+ or 7.1+ installed in ${root}.`);
     }
   }
 }
 
 /**
- * The TypeScript 7 backend imports the compiler's unstable API from golem's own location, so it can only serve the TypeScript 7
+ * The TypeScript 7 backend imports the compiler API from golem's own location, so it can only serve the TypeScript 7
  * the project selected when that is the install golem resolves. Anything else would silently analyse with another compiler.
  */
 export function assertGolemLoadsTypeScript(

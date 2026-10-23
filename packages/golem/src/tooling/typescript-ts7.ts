@@ -2,12 +2,12 @@
  * Type-aware TypeScript 7 surface for generators.
  *
  * TS 7's main `typescript` export is version-only. Analysis uses
- * `typescript/unstable/ast` plus `typescript/unstable/sync`. This module keeps
+ * `typescript/ast` plus `typescript/sync` (TypeScript 7.1 and newer). This module keeps
  * the previous checker-shaped API so model and Nest generators do not walk
  * schemas by hand.
  */
 
-export * from 'typescript/unstable/ast';
+export * from 'typescript/ast';
 
 import { ChildProcess } from 'node:child_process';
 import {
@@ -28,11 +28,12 @@ import {
   resolve as resolvePath,
   sep,
 } from 'node:path';
-import * as ast from 'typescript/unstable/ast';
+import * as ast from 'typescript/ast';
 import { matchStarPattern } from './star-pattern.js';
 import { assertPackageManifestsParse, parseManifest, resolveExportsSubpath } from './type-analysis/package-specifier.js';
 import {
   API,
+  CheckFlags as SyncCheckFlags,
   Checker,
   DiagnosticCategory,
   ElementFlags,
@@ -46,12 +47,13 @@ import {
   SymbolFlags,
   TypeFlags,
   type CompilerOptions,
+  type CreateSnapshotParams,
   type Diagnostic as SyncDiagnostic,
   type Signature as SyncSignature,
   type Type as SyncType,
-} from 'typescript/unstable/sync';
-import type { FileSystem } from 'typescript/unstable/fs';
-import type { Node, SourceFile, TypeNode } from 'typescript/unstable/ast';
+} from 'typescript/sync';
+import { serverFS, type FileSystemCallbacks } from 'typescript/fs';
+import type { Node, SourceFile, TypeNode } from 'typescript/ast';
 
 export {
   API,
@@ -73,8 +75,8 @@ export function typeReferenceTarget(type: Type): Type | undefined {
   return type.target;
 }
 
-/** Checker-internal `CheckFlags` bits; the TypeScript 7 API exposes the number but no enum. */
-export const CheckFlags = { Readonly: 1 << 3, Mapped: 1 << 18 } as const;
+/** The `CheckFlags` bits golem reads, from the compiler's own enum: their positions differ between TypeScript 7 releases. */
+export const CheckFlags = { Readonly: SyncCheckFlags.Readonly, Mapped: SyncCheckFlags.Mapped } as const;
 
 export type Type = CompatType;
 export type Symbol = CompatSymbol;
@@ -343,7 +345,7 @@ function wrapSymbol(symbol: SyncSymbol, checker: CompatChecker): CompatSymbol {
       if (property === 'declarations') {
         return target.declarations
           .map((handle) => handle.resolve(checker.project))
-          .filter((node): node is Node => node !== undefined);
+          .filter((node) => node !== undefined);
       }
       const value = Reflect.get(target, property, receiver);
       return typeof value === 'function' ? (value as (...args: never[]) => unknown).bind(target) : value;
@@ -597,7 +599,7 @@ class CompatProgram implements Program {
   }
 
   getCompilerOptions(): CompilerOptions {
-    return this.project.compilerOptions;
+    return this.project.parsedCommandLine.options;
   }
 
   getSyntacticDiagnostics(file?: string): readonly SyncDiagnostic[] {
@@ -1060,8 +1062,6 @@ interface ProgramRequest {
   readonly hidden: ReadonlySet<string>;
 }
 
-type UpdateSnapshotParams = NonNullable<Parameters<API['updateSnapshot']>[0]>;
-
 const MISSING = 'missing';
 
 function fileSignature(filename: string): string {
@@ -1120,7 +1120,7 @@ function programRequest(options: OpenProgramOptions): ProgramRequest {
 
 /** The compiler process of an API, or undefined when this TypeScript build keeps it somewhere else. */
 function compilerProcess(api: API): ChildProcess | undefined {
-  const child: unknown = api['client']?.['channel']?.['child'];
+  const child: unknown = (api as unknown as { readonly client?: { readonly channel?: { readonly child?: unknown } } }).client?.channel?.child;
   return child instanceof ChildProcess ? child : undefined;
 }
 
@@ -1195,13 +1195,10 @@ export class ProgramSession implements Disposable {
   /** Inputs a host saw change since the previous snapshot. */
   private readonly hinted = new Set<string>();
   private readonly openProjects = new Set<string>();
-  private readonly openFiles = new Set<string>();
   private readonly held = new Map<CompatProgram, ProgramRequest>();
   /**
-   * The newest snapshot stays alive until the next one exists. The server
-   * reports changed files only against a live previous snapshot, and the
-   * client otherwise carries its parsed files into the next snapshot (see the
-   * "server change report" test in compiler-lifecycle.test.ts).
+   * The newest snapshot stays alive until the next one exists: TypeScript 7.1 builds each snapshot as an update of a
+   * live one, and refuses to update a disposed snapshot.
    */
   private latest: Snapshot | undefined;
 
@@ -1244,26 +1241,24 @@ export class ProgramSession implements Disposable {
         created: nonEmpty(pending.changes.created),
         deleted: nonEmpty(pending.changes.deleted),
       };
+      // The request's configuration lists every root, so no file is opened on its own: TypeScript 7.1.0-beta panics while it
+      // searches a default project for an open file outside every tsconfig directory.
       const projects = new Set([request.configPath]);
-      const files = new Set(request.files);
       // Invalidating every file leaves a parsed configuration as it is, so its change is reported first.
-      if (pending?.full && changes) this.advance(api, { fileChanges: changes });
+      if (pending?.full && changes) this.advance(api, { fileNotifications: changes });
       const snapshot = this.advance(api, {
         openProjects: this.openProjects.has(request.configPath) ? undefined : [request.configPath],
         closeProjects: nonEmpty([...this.openProjects].filter((project) => !projects.has(project))),
-        openFiles: nonEmpty(request.files.filter((filename) => !this.openFiles.has(filename))),
-        closeFiles: nonEmpty([...this.openFiles].filter((filename) => !files.has(filename))),
-        fileChanges: pending?.full ? { invalidateAll: true } : changes,
+        fileNotifications: pending?.full ? { invalidateAll: true } : changes,
       });
       pending?.commit();
       if (full) this.fullRecordCount = this.observed.size;
       this.hinted.clear();
       replaceAll(this.openProjects, projects);
-      replaceAll(this.openFiles, files);
       try {
         // The project of the request's own configuration (the derived one when roots were added), so every run of a job
         // sees the same files. Another project would be the wrong program.
-        const project = snapshot.getProject(request.configPath);
+        const project = snapshot.getConfiguredProject(request.configPath);
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${request.configPath} for ${options.root}.`);
         const program = new CompatProgram(this, snapshot, project);
         this.held.set(program, request);
@@ -1276,14 +1271,17 @@ export class ProgramSession implements Disposable {
   }
 
   /**
-   * Send one snapshot update. The newest snapshot stays alive until the next one exists, and the one before it is
-   * disposed unless a held program uses it.
+   * Send one snapshot update, based on the newest snapshot. The newest snapshot stays alive until the next one exists, and
+   * the one before it is disposed unless a held program uses it. An update that changes nothing returns its base.
    */
-  private advance(api: API, params: UpdateSnapshotParams): Snapshot {
-    const snapshot = api.updateSnapshot(params);
+  private advance(api: API, changes: CreateSnapshotParams): Snapshot {
     const previous = this.latest;
+    // TypeScript 7.1 rebuilds a program that a change made dirty only when the request asks for it; without this the
+    // snapshot serves the previous program. The session keeps one project open, so every project is the requested one.
+    const params: CreateSnapshotParams = { ...changes, ensurePrograms: true };
+    const snapshot = previous === undefined ? api.createSnapshot(params) : previous.update(params);
     this.latest = snapshot;
-    if (previous && ![...this.held.keys()].some((program) => program.snapshot === previous)) disposeSnapshot(previous);
+    if (previous && previous !== snapshot && !this.heldBy(previous)) disposeSnapshot(previous);
     return snapshot;
   }
 
@@ -1311,10 +1309,15 @@ export class ProgramSession implements Disposable {
     return { configPath, files: base.files, overlays, hidden: new Set([...base.hidden, configPath]) };
   }
 
+  /** Whether a held program reads this snapshot: an update that changes nothing may return its base, shared by two programs. */
+  private heldBy(snapshot: Snapshot): boolean {
+    return [...this.held.keys()].some((program) => program.snapshot === snapshot);
+  }
+
   /** Called by a closing program. */
   release(program: CompatProgram): void {
     this.held.delete(program);
-    if (program.snapshot !== this.latest) disposeSnapshot(program.snapshot);
+    if (program.snapshot !== this.latest && !this.heldBy(program.snapshot)) disposeSnapshot(program.snapshot);
     if (this.options.closeWhenIdle && this.held.size === 0) this.close();
   }
 
@@ -1382,7 +1385,6 @@ export class ProgramSession implements Disposable {
     this.fullRecordCount = 0;
     this.hinted.clear();
     this.openProjects.clear();
-    this.openFiles.clear();
     this.held.clear();
   }
 
@@ -1425,34 +1427,39 @@ export class ProgramSession implements Disposable {
     if (!this.signatures.has(filename)) this.signatures.set(filename, fileSignature(filename));
   }
 
-  private fileSystem(): FileSystem {
+  /** Overlays answer from memory; every other path goes to the disk (`serverFS.useOS`), as the compiler would read it. */
+  private fileSystem(): FileSystemCallbacks {
     return {
       readFile: (fileName) => {
         const filename = canonical(fileName);
         this.report(filename);
         if (this.overlays.has(filename)) return this.overlays.get(filename)!;
         this.recordSignature(filename);
-        return undefined;
+        return serverFS.useOS;
       },
       fileExists: (fileName) => {
         const filename = canonical(fileName);
         this.report(filename);
         if (this.overlays.has(filename)) return true;
         this.recordSignature(filename);
-        return undefined;
+        return serverFS.useOS;
       },
       directoryExists: (directoryName) => {
         const directory = canonical(directoryName);
         this.report(directory);
         if (this.overlayDirectories.has(directory)) return true;
         this.recordSignature(directory);
-        return undefined;
+        return serverFS.useOS;
       },
       getAccessibleEntries: (directoryName) => {
         const directory = canonical(directoryName);
         if (!this.listings.has(directory)) this.listings.set(directory, directoryEntries(directory));
-        return undefined;
+        return serverFS.useOS;
       },
+      realpath: serverFS.useOS,
+      stat: serverFS.useOS,
+      writeFile: serverFS.useOS,
+      removeFile: serverFS.useOS,
     };
   }
 

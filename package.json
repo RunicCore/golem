@@ -48,7 +48,7 @@
     "reflect-metadata": "0.2.2",
     "temporal-polyfill": "^1.0.5",
     "ttsc": "0.30.x",
-    "typescript": "7.x",
+    "typescript": "7.1.0-beta",
     "typia": "^14.0.6",
     "vite": "5.4.21",
     "vitepress": "1.6.4",

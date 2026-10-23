@@ -12,7 +12,7 @@ In an ESM TypeScript project with Node.js 22.15 or newer:
 
 ```sh
 npm install @exprtlabs/golem
-npm install --save-dev @exprtlabs/golem-model typescript@~7.0.2
+npm install --save-dev @exprtlabs/golem-model typescript@~7.1.0-beta
 ```
 
 [Define models](../../docs/guide/models.md) walks through a declaration,

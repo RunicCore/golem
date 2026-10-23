@@ -11,7 +11,7 @@ A controller in your NestJS project, `src/payment-notes.controller.ts`:
 ## Install
 
 ```sh
-npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.0.2
+npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.1.0-beta
 npm install @nestjs/swagger
 ```
 

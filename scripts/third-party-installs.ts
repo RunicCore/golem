@@ -6,7 +6,7 @@ import fs from 'node:fs';
 // that a test installs from a fixture's own manifest are warmed from that
 // manifest, not listed here; the Nest specs below read the same manifest so
 // there is one place to change a Nest version.
-const versions = { mobx: '^6.13.0', typescript: '~7.0.2', typescript6: '~6.0.3' };
+const versions = { mobx: '^6.13.0', typescript: '~7.1.0-beta', typescript6: '~6.0.3' };
 
 const nestAppManifest: { dependencies: Record<string, string> } = JSON.parse(
   fs.readFileSync(new URL('../../tests/fixtures/packed/nest-app/package.json', import.meta.url), 'utf8'),

@@ -6,7 +6,7 @@ Declare a model, generate its class, add a method, and run it.
 
 ```sh
 npm install @exprtlabs/golem
-npm install --save-dev @exprtlabs/golem-model typescript@~7.0.2
+npm install --save-dev @exprtlabs/golem-model typescript@~7.1.0-beta
 ```
 
 Check the [requirements](/guide/install#requirements). Add `"type": "module"` to `package.json` and this to `tsconfig.json`:

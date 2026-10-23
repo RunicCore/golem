@@ -15,7 +15,7 @@ interface Rule {
 }
 
 const RULES: readonly Rule[] = [
-  { forbids: specifier => specifier === 'typescript/unstable' || specifier.startsWith('typescript/unstable/'), allowedIn: 'packages/golem/src/tooling/typescript-ts7.ts', because: 'the TypeScript 7 API stays inside the generator shim' },
+  { forbids: specifier => /^typescript\/(?:unstable|ast|sync|async|fs|proto|path)(?:\/|$)/.test(specifier), allowedIn: 'packages/golem/src/tooling/typescript-ts7.ts', because: 'the TypeScript 7 API stays inside the generator shim' },
   { forbids: specifier => /^require\(.*\bpackageDir\b/.test(specifier), allowedIn: 'packages/golem/src/tooling/typescript-ts6.ts', because: 'only the TypeScript 6 backend loads the project\'s TypeScript by directory' },
   { forbids: specifier => specifier === 'typescript', allowedIn: undefined, because: 'the TypeScript 6 backend loads the project\'s TypeScript by the directory resolveTypeScript found; a bare import would load golem\'s own' },
 ];

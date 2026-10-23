@@ -7,9 +7,9 @@ Install the packages that each generator needs, with their peer dependencies and
 | Tool | Version |
 | --- | --- |
 | Node.js | `22.15` or newer |
-| `typescript` | `>=6.0.0 <7` or `>=7.0.0 <8` |
+| `typescript` | `>=6.0.0 <7` or `>=7.1.0-0 <8` |
 
-Golem uses the `typescript` installed in your project. Generation writes the same files on TypeScript 6.0+ and 7.x.
+Golem uses the `typescript` installed in your project. Generation writes the same files on TypeScript 6.0+ and 7.1+.
 
 ## Packages for each generator
 
@@ -35,20 +35,20 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 
 | Package | Peer dependencies |
 | --- | --- |
-| `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <8` |
-| `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <8` |
+| `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <7 || >=7.1.0-0 <8` |
+| `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <7 || >=7.1.0-0 <8` |
 | `@exprtlabs/golem-openapi` | none, add `typescript` to compile the SDK |
 
 `@exprtlabs/golem` has only optional peer dependencies:
 
-- `typescript` `>=6.0.0 <8`, for `golem build`, the plugins and the loader
+- `typescript` `>=6.0.0 <7 || >=7.1.0-0 <8`, for `golem build`, the plugins and the loader
 - `vite` `>=5`, for the Vite plugin
 - `esbuild` `^0.25.12`, for the esbuild plugin
 - `mobx` `^6.13.0`, for MobX models
 - `@nestjs/common` `^11.0.0` and `rxjs` `^7.8.0`, for `NestModelInterceptor`
 
 ```sh
-npm install --save-dev typescript@~7.0.2
+npm install --save-dev typescript@~7.1.0-beta
 ```
 
 ## Project settings

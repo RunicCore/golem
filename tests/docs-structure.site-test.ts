@@ -129,15 +129,18 @@ test('the benchmarks page shows, per payload, the declarations and timed calls o
   }
 });
 
-/** `typescript` is declared as `>=A.B.C <D`; an install command pins a tilde range. */
+/** `typescript` is declared as `>=A.B.C[-0] <D`, or several of those joined by `||`; an install command pins a tilde range, which one of them must admit. */
 function admits(peer: string, range: string): boolean {
-  const bounds = /^>=(\d+)\.(\d+)\.(\d+) <(\d+)$/.exec(peer);
-  const version = /^~(\d+)\.(\d+)\.(\d+)$/.exec(range);
-  if (!bounds || !version) return false;
-  const [low, high] = [bounds.slice(1, 4).map(Number), Number(bounds[4])];
+  const version = /^~(\d+)\.(\d+)\.(\d+)(?:-[\w.]+)?$/.exec(range);
+  if (!version) return false;
   const found = version.slice(1, 4).map(Number);
-  const atLeastLow = found[0] !== low[0] ? found[0] > low[0] : found[1] !== low[1] ? found[1] > low[1] : found[2] >= low[2];
-  return atLeastLow && found[0] < high;
+  return peer.split('||').some(part => {
+    const bounds = /^>=(\d+)\.(\d+)\.(\d+)(?:-0)? <(\d+)$/.exec(part.trim());
+    if (!bounds) return false;
+    const [low, high] = [bounds.slice(1, 4).map(Number), Number(bounds[4])];
+    const atLeastLow = found[0] !== low[0] ? found[0] > low[0] : found[1] !== low[1] ? found[1] > low[1] : found[2] >= low[2];
+    return atLeastLow && found[0] < high;
+  });
 }
 
 test('install commands pin a typescript inside the peer range', () => {
@@ -147,7 +150,7 @@ test('install commands pin a typescript inside the peer range', () => {
   for (const file of files) {
     for (const [line] of readFileSync(file, 'utf8').matchAll(/^npm install .*$/gm)) {
       for (const [, name, range] of line.matchAll(/\b(typescript)@(\S+)/g)) {
-        if (!(range === '~7.0.2' && admits(peers[name], range))) wrong.push(`${path.relative(root, file)}: ${name}@${range} (peer ${peers[name]})`);
+        if (!(range === '~7.1.0-beta' && admits(peers[name], range))) wrong.push(`${path.relative(root, file)}: ${name}@${range} (peer ${peers[name]})`);
       }
     }
   }
