@@ -4,7 +4,6 @@
  */
 
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
-import { presentValueSource } from '../presence.js';
 import { code, emittedCode as asCode, join, legacyText, literal, render, sameCode, type Code, type Emitted } from './code.js';
 import { rt } from './rt.js';
 import {
@@ -36,6 +35,14 @@ export class AmbiguousUnionConversionError extends Error {
   constructor(variants: readonly ModelTypeDescriptor[]) {
     super(`Union has ambiguous conversions. Use a discriminated object union or one serde pair for the value. The variants are ${variants.map(describeVariant).join(' | ')}.`);
   }
+}
+
+/**
+ * Code of `presentValue` (presence.ts): `object` and `key` are expressions, and `read` reads the field from `object`.
+ * The template is the one of `presentValueSource`; T-290 makes the two one.
+ */
+export function presentValueCode(object: Code, key: Code, read: Code): Code {
+  return code`Object.prototype.propertyIsEnumerable.call(${object}, ${key}) ? ${read} : undefined`;
 }
 
 export function objectValueExpression(expression: Emitted): Code {
@@ -202,10 +209,9 @@ export function emitDispatch(options: DispatchOptions): Code {
   const encode = direction !== 'decode';
   const propertyRead = code`(${value} as unknown as Record<string, unknown>)[${literal(property)}]`;
   // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag selects no branch.
-  // migration door, deleted in step 3d (T-286): presentValueSource takes the text of the expression, which a decoder gives as text
   const tagRead = encode
     ? propertyRead
-    : code`(${legacyText(presentValueSource(render(value), JSON.stringify(property), render(propertyRead)))})`;
+    : code`(${presentValueCode(value, literal(property), propertyRead)})`;
   const tag = tagLocal ? legacyText(tagLocal) : tagRead;
   const reject = code`${rt.conversion.unknownDiscriminatorValue}(${literal(property)}, ${tag}, ${encode ? code`'serialize'` : code`'deserialize'`})`;
   const key = literal(property);

@@ -5,7 +5,7 @@
  */
 
 import type { ModelTypeDescriptor } from '../model.js';
-import { presentKeysSource, presentValueSource } from '../presence.js';
+import { presentKeysSource } from '../presence.js';
 import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
@@ -13,10 +13,10 @@ import type { JsonSchema } from './schema.js';
 import { modelName, requireComposedObject, type ModelBases } from './composition.js';
 import {
   bindInput, bindRead, code, emittedCode, identifier, inputCount, inputOf, inputSlot, join, legacyText, literal, readShape, render, sameCode,
-  type Code, type Emitted, type JsonValue, type ReadShape,
+  type Code, type Emitted, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
 import { rt } from './rt.js';
-import { emitArrayConversion, emitTupleConversion, JSON_SCALAR_ITEM, singleCallConverter } from './sequence-conversion.js';
+import { emitArrayConversion, emitTupleConversion, JSON_SCALAR_ITEM } from './sequence-conversion.js';
 import {
   AmbiguousUnionConversionError,
   descriptorNeedsConversion,
@@ -28,6 +28,7 @@ import {
   ObjectUnionDiscriminatorError,
   objectValueExpression,
   presentUnionIndices,
+  presentValueCode,
   unionDispatch,
   type DispatchOptions,
   type ObjectTypeDescriptor,
@@ -134,15 +135,17 @@ interface EmitCtx {
   readonly fillThrows?: Map<string, boolean>;
   /** Locals a decoder assigns; the function that holds the decoder declares them. Without it the decoder re-reads. */
   readonly decodeLocals?: string[];
-  /** Reads a union above already made into a local; a decoder below uses the local where it would read the property. */
+  /** Reads a union above holds in a local; a decoder below reads the input of the read where it would read the property. */
   readonly knownReads?: readonly KnownRead[];
+  /** The root of a decoder whose wire is `unknown`: a property of `wire` is cast where it is read. */
+  readonly castWire?: boolean;
 }
 
-/** The read of `property` of the decoded `expression`, held by `local`. */
+/** The read of `property` of the decoded `expression`, which the union above binds to its local once the variants are written. */
 interface KnownRead {
-  readonly expression: string;
+  readonly expression: Code;
   readonly property: string;
-  readonly local: string;
+  readonly input: InputSlot;
 }
 
 interface HoistedConverters {
@@ -246,9 +249,16 @@ function access(expression: string, name: string): string {
   return render(accessRead(expression, name).read);
 }
 
-/** The read of a property of a decoded expression: the local that a union above holds it in, or the read itself. */
-function decodeRead(ctx: EmitCtx, expression: string, name: string): string {
-  return ctx.knownReads?.find((known) => known.expression === expression && known.property === name)?.local ?? access(expression, name);
+/**
+ * The read of a property of a decoded expression, and its shape: the input of a read that a union above holds in a local, a
+ * cast read of the root `wire`, or the read itself.
+ */
+function decodeRead(ctx: EmitCtx, expression: Emitted, name: string): { readonly read: Code; readonly shape: ReadShape } {
+  const value = emittedCode(expression);
+  const known = ctx.knownReads?.find((candidate) => candidate.property === name && sameCode(candidate.expression, value));
+  if (known) return { read: inputOf(known.input), shape: known.input.shape };
+  if (ctx.castWire && sameCode(value, code`wire`)) return { read: code`(wire as Record<string, unknown>)[${literal(name)}]`, shape: 'chain' };
+  return accessRead(value, name);
 }
 
 function emitJsonLiteral(value: unknown): Code {
@@ -777,15 +787,15 @@ function isScalarDescriptor(descriptor: ModelTypeDescriptor): boolean {
  */
 function emitClosedIdentityObject(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-): string | undefined {
+): Code | undefined {
   const required = new Set(descriptor.required);
   const names = Object.keys(descriptor.properties);
   if (names.length === 0) return undefined;
   if (names.some((name) => name === '__proto__' || !required.has(name))) return undefined;
   if (names.some((name) => !isScalarDescriptor(descriptor.properties[name]))) return undefined;
-  return `(${emitComputedRecord(names.map((name) => [name, decodeRead(ctx, expression, name)]))})`;
+  return code`(${emitComputedRecord(names.map((name) => [name, decodeRead(ctx, expression, name).read] as const))})`;
 }
 
 /**
@@ -794,7 +804,7 @@ function emitClosedIdentityObject(
  * whether the expression can throw, since the field then needs to be on the conversion path for the error
  * to report it.
  */
-function fallibleConversion(ctx: EmitCtx, call: string): string {
+function fallibleConversion(ctx: EmitCtx, call: Code): Code {
   if (ctx.effects) ctx.effects.fallible++;
   return call;
 }
@@ -804,29 +814,38 @@ function fallibleCount(ctx: EmitCtx): number {
 }
 
 /** Whether an expression emitted since `before` can throw, so it runs under its field's path. */
-function emittedFallible(before: number, decoded: string, ctx: EmitCtx): boolean {
-  return fallibleCount(ctx) !== before || decoded.includes('unknownDiscriminatorValue(');
+function emittedFallible(before: number, decoded: Code, ctx: EmitCtx): boolean {
+  return fallibleCount(ctx) !== before
+    || decoded.parts.some((part) => part.kind === 'runtime' && part.module === 'conversion' && part.name === 'unknownDiscriminatorValue');
 }
 
-/** A decoder of `local` as a module-level function, so converting a value allocates no closure. */
-function hoistConverter(local: string, decoded: string, locals: readonly string[], ctx: EmitCtx): string {
-  if (decoded === `(${local} instanceof Date ? ${local} : deserializeDate(${local}))`) return 'deserializeDate';
-  if (!ctx.hoisted) return `(${local}) => (${decoded})`;
+/**
+ * A decoder of `local` as a module-level function, so converting a value allocates no closure. `named` says the converter
+ * is a function name, which a caller can call on the value instead of writing the decoder in place.
+ */
+function hoistConverter(local: string, decoded: Code, locals: readonly string[], ctx: EmitCtx): { readonly converter: Code; readonly named: boolean } {
+  const input = identifier(local);
+  if (sameCode(decoded, code`(${input} instanceof Date ? ${input} : ${rt.conversion.deserializeDate}(${input}))`)) {
+    return { converter: rt.conversion.deserializeDate, named: true };
+  }
+  if (!ctx.hoisted) return { converter: code`(${input}) => (${decoded})`, named: false };
   const declarations = locals.length > 0 ? `  let ${locals.map((name) => `${name}: unknown`).join(', ')};\n` : '';
-  const body = `(${local}: unknown): unknown {\n${declarations}  return (${decoded});\n}\n`;
+  // The text of a hoisted body is only the key that finds an equal body again.
+  const body = `(${local}: unknown): unknown {\n${declarations}  return (${render(decoded)});\n}\n`;
   const known = ctx.hoisted.names.get(body);
-  if (known) return known;
+  if (known) return { converter: identifier(known), named: true };
   const name = `__golemDecode_${ctx.hoisted.prefix}_${ctx.hoisted.names.size}`;
   ctx.hoisted.names.set(body, name);
   ctx.hoisted.sources.push(`function ${name}${body}`);
-  return name;
+  return { converter: identifier(name), named: true };
 }
 
 /** `convertModelField` for the decoder of `property` written against `local`, with the field value passed in as `input`. */
-function emitFieldConversion(field: string, local: string, property: ModelTypeDescriptor, input: string, ctx: EmitCtx): string {
+function emitFieldConversion(field: Emitted, local: string, property: ModelTypeDescriptor, input: Emitted, ctx: EmitCtx): Code {
   const scope: EmitCtx = { ...ctx, decodeLocals: [] };
   const decoded = emitDecodeValue(property, local, scope);
-  return `convertModelField("deserialize", ${field}, ${hoistConverter(local, decoded, scope.decodeLocals ?? [], ctx)}, ${input})`;
+  const { converter } = hoistConverter(local, decoded, scope.decodeLocals ?? [], ctx);
+  return code`${rt.conversion.convertModelField}("deserialize", ${emittedCode(field)}, ${converter}, ${emittedCode(input)})`;
 }
 
 /** Whether the fill of `node` can throw, so a caller runs it under its field's path. */
@@ -838,12 +857,6 @@ function fillCanThrow(node: SchemaNode, ctx: EmitCtx): boolean {
   const fill = emitFillFunction(node, { ...ctx, effects: { fallible: 0 }, hoisted: undefined, decodeLocals: undefined });
   ctx.fillThrows.set(node.id, fill.fallible);
   return fill.fallible;
-}
-
-function countOccurrences(text: string, needle: string): number {
-  let count = 0;
-  for (let index = text.indexOf(needle); index !== -1; index = text.indexOf(needle, index + needle.length)) count++;
-  return count;
 }
 
 /**
@@ -981,14 +994,17 @@ function guardEncodeCycle(source: string): string {
 function emitInternedObjectDecode(
   node: SchemaNode,
   descriptor: ModelTypeDescriptor,
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-): string {
+): Code {
+  const value = emittedCode(expression);
   if (shouldConstructNested(descriptor, ctx)) {
     const local = !isExternalCodecNode(node) && !(ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id));
+    // migration door, deleted in steps 5 and 6 (T-288, T-289): the options are text that the walker's callbacks give
+    const options = legacyText(nestedFromWireOptions(descriptor, ctx));
     return fallibleConversion(ctx, local
-      ? `convertFromWire${node.id}(${expression}, ${nestedFromWireOptions(descriptor, ctx)})`
-      : `${fromWireFunctionName(node.id)}(${expression}, ${nestedFromWireOptions(descriptor, ctx)})`);
+      ? code`${identifier(`convertFromWire${node.id}`)}(${value}, ${options})`
+      : code`${identifier(fromWireFunctionName(node.id))}(${value}, ${options})`);
   }
   if (
     node.kind === 'object'
@@ -996,16 +1012,18 @@ function emitInternedObjectDecode(
     && !descriptorNeedsConversion(node.descriptor)
   ) {
     // An open object or a map is copied by its `fill*`; only a closed object of scalars is one literal.
-    const closed = extrasAllowed(node.descriptor) ? undefined : emitClosedIdentityObject(node.descriptor, expression, ctx);
+    const closed = extrasAllowed(node.descriptor) ? undefined : emitClosedIdentityObject(node.descriptor, value, ctx);
     if (closed) return closed;
   }
   if (node.kind === 'object') {
     const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
-    const call = `${imported?.fill ?? fillFunctionName(node.id)}({} as Record<string, unknown>, ${asRecord(expression)})`;
+    // migration door, deleted in steps 5 and 6 (T-288, T-289): the fill name of an imported serde is text that a callback gives
+    const fill = imported?.fill === undefined ? identifier(fillFunctionName(node.id)) : legacyText(imported.fill);
+    const call = code`${fill}({} as Record<string, unknown>, ${asRecordCode(value)})`;
     // A local fill that cannot throw runs without its field's path.
     return imported || fillCanThrow(node, ctx) ? fallibleConversion(ctx, call) : call;
   }
-  return fallibleConversion(ctx, `${fromWireFunctionName(node.id)}(${expression}, ${trustedOptions(ctx)})`);
+  return fallibleConversion(ctx, code`${identifier(fromWireFunctionName(node.id))}(${value}, ${legacyText(trustedOptions(ctx))})`);
 }
 
 /**
@@ -1086,16 +1104,19 @@ function emitTaggedVariantUnion(
   const dispatch = unionDispatch(union, indices, objectFor);
   // A decoder in a function that declares its locals reads the tag once and reuses it in the variant's copy: the variants
   // are decoded with that read known, so they use the local where they would read the tag.
-  const decoderName = typeof expression === 'string' && readShape(expression) === 'name' ? expression : undefined;
-  const tagLocal = dispatch && direction === 'decode' && ctx.decodeLocals && decoderName !== undefined
+  const tagLocal = dispatch && direction === 'decode' && ctx.decodeLocals && readShape(value) === 'name'
     && variants.every((variant) => variantClassName(variant, ctx) === undefined)
     ? `__golemTag${ctx.decodeLocals.length}`
     : undefined;
   if (tagLocal) ctx.decodeLocals?.push(tagLocal);
-  const scope: EmitCtx = tagLocal && dispatch && decoderName !== undefined
-    ? { ...ctx, knownReads: [...(ctx.knownReads ?? []), { expression: decoderName, property: dispatch.property, local: tagLocal }] }
+  const tag = inputSlot('tag', 'name');
+  const scope: EmitCtx = tagLocal && dispatch
+    ? { ...ctx, knownReads: [...(ctx.knownReads ?? []), { expression: value, property: dispatch.property, input: tag }] }
     : ctx;
-  const conversions = variants.map((variant) => convert(variant, scope));
+  const conversions = variants.map((variant) => {
+    const converted = convert(variant, scope);
+    return tagLocal ? bindInput(emittedCode(converted), tag, identifier(tagLocal)) : converted;
+  });
   if (!dispatch) {
     if (direction !== 'encode-json' && conversions.every((converted) => sameCode(emittedCode(converted), value))) return value;
     if (options?.unresolved === 'skip') return undefined;
@@ -1152,9 +1173,8 @@ function emitTaggedObjects(
 /** Match any required literal tag of `objects`, for mixing them with one generated model. */
 function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: Emitted, decode: boolean): Code[] {
   // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag matches no object.
-  // migration door, deleted in step 3d (T-286): presentValueSource takes the text of the expression, which a decoder gives as text
   const read = (name: string): Code => decode
-    ? code`(${legacyText(presentValueSource(render(emittedCode(expression)), JSON.stringify(name), render(tagAccess(expression, name))))})`
+    ? code`(${presentValueCode(emittedCode(expression), literal(name), tagAccess(expression, name))})`
     : tagAccess(expression, name);
   return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) => discriminatorMatch(read(name), values)));
 }
@@ -1231,63 +1251,65 @@ function emitUnionValue(
   });
 }
 
+/** The decoder of an array item: an item that can throw runs under its index, as a module-level function when it is hoisted. */
+function decodeItem(ctx: EmitCtx): (item: ModelTypeDescriptor, value: string) => { readonly code: Code; readonly throws: boolean } {
+  return (item, value) => {
+    const before = fallibleCount(ctx);
+    const decoded = emitDecodeValue(item, value, { ...ctx, decodeLocals: undefined });
+    if (!emittedFallible(before, decoded, ctx)) return { code: decoded, throws: false };
+    const scope: EmitCtx = { ...ctx, decodeLocals: [] };
+    const scoped = emitDecodeValue(item, value, scope);
+    const { converter, named } = hoistConverter(value, scoped, scope.decodeLocals ?? [], ctx);
+    return { code: named ? code`${converter}(${identifier(value)})` : scoped, throws: true };
+  };
+}
+
 function emitUnionDecode(
   descriptor: UnionTypeDescriptor,
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-): string {
-  return render(emitUnionConversion(descriptor, expression, 'decode', {
-    convert: (variant) => emitDecodeValue(variant, expression, ctx),
-    items: {
-      output: 'value',
-      paths: 'deserialize',
-      item: (item, value) => {
-        const before = fallibleCount(ctx);
-        const code = emitDecodeValue(item, value, { ...ctx, decodeLocals: undefined });
-        // An item that can throw runs under its index, as a module-level function when it is hoisted.
-        if (!emittedFallible(before, code, ctx)) return { code, throws: false };
-        const scope: EmitCtx = { ...ctx, decodeLocals: [] };
-        const decoded = emitDecodeValue(item, value, scope);
-        const converter = hoistConverter(value, decoded, scope.decodeLocals ?? [], ctx);
-        const call = `${converter}(${value})`;
-        return { code: singleCallConverter(call, value) === converter ? call : decoded, throws: true };
-      },
-    },
+): Code {
+  const value = emittedCode(expression);
+  return emitUnionConversion(descriptor, value, 'decode', {
+    convert: (variant) => emitDecodeValue(variant, value, ctx),
+    items: { output: 'value', paths: 'deserialize', item: decodeItem(ctx) },
     tagged: () => emitTaggedVariantUnion(
       descriptor,
       presentUnionIndices(descriptor),
-      expression,
+      value,
       ctx,
-      (variant, scope) => emitDecodeValue(variant, expression, scope),
+      (variant, scope) => emitDecodeValue(variant, value, scope),
       'decode',
     ),
     generated: {
       text: (generated) => {
         const className = ctx.nestedGenerated?.(generated.id);
-        return className
-          ? `${expression} instanceof ${className} ? ${expression} : ${fallibleConversion(ctx, `decodeGeneratedModelTrusted(${className}, ${expression})`)}`
+        // migration door, deleted in steps 5 and 6 (T-288, T-289): a class name is text that a callback gives
+        const name = className ? legacyText(className) : undefined;
+        return name
+          ? code`${value} instanceof ${name} ? ${value} : ${fallibleConversion(ctx, code`${rt.conversion.decodeGeneratedModelTrusted}(${name}, ${value})`)}`
           : undefined;
       },
-      tagMatch: (objects) => objectTagMatch(objects, expression, true),
-      objects: () => expression,
+      tagMatch: (objects) => objectTagMatch(objects, value, true),
+      objects: () => value,
       takesEveryObject: true,
     },
     afterGenerated: (present) => {
       const refs = present.filter((variant): variant is Extract<ModelTypeDescriptor, { kind: 'reference' }> =>
         variant.kind === 'reference' && variant.construct === true);
       if (refs.length === 0 || refs.length !== present.length) return undefined;
-      const branches: string[] = [];
+      const branches: Code[] = [];
       for (const ref of refs) {
         const node = ctx.graph.nodeFor(ref);
         const object = node?.descriptor.kind === 'object' ? node.descriptor : undefined;
         if (!object) throw new AmbiguousUnionConversionError(present);
-        const tags = objectTagMatch([object], expression, true);
+        const tags = objectTagMatch([object], value, true);
         if (tags.length === 0) throw new ObjectUnionDiscriminatorError(present);
-        branches.push(`${render(join(tags, code` && `))} ? ${emitDecodeValue(ref, expression, ctx)}`);
+        branches.push(code`${join(tags, code` && `)} ? ${emitDecodeValue(ref, value, ctx)}`);
       }
-      return `(${render(objectValueExpression(expression))} ? ${[...branches, expression].join(' : ')} : ${expression})`;
+      return code`(${objectValueExpression(value)} ? ${join([...branches, value], code` : `)} : ${value})`;
     },
-  }));
+  });
 }
 
 function emitUnionEncode(
@@ -1329,125 +1351,114 @@ function emitUnionEncode(
   });
 }
 
-function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ctx: EmitCtx): string {
+function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Emitted, ctx: EmitCtx): Code {
+  const value = emittedCode(expression);
   if (descriptor.kind === 'generated-model') {
     const className = ctx.nestedGenerated?.(descriptor.id);
-    if (className) return fallibleConversion(ctx, `decodeGeneratedModelTrusted(${className}, ${expression})`);
+    // migration door, deleted in steps 5 and 6 (T-288, T-289): a class name is text that a callback gives
+    if (className) return fallibleConversion(ctx, code`${rt.conversion.decodeGeneratedModelTrusted}(${legacyText(className)}, ${value})`);
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
-    // migration door, deleted in step 3d (T-286)
-    const deserialized = ctx.serde ? fallibleConversion(ctx, render(ctx.serde.deserialize(tags.serde.id, legacyText(expression)))) : expression;
+    const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde.id, value)) : value;
     const wire = serdeWireDescriptor(descriptor);
     if (wire?.kind === 'string') {
-      return `(typeof ${expression} === 'string' ? ${deserialized} : ${expression})`;
+      return code`(typeof ${value} === 'string' ? ${deserialized} : ${value})`;
     }
     if (wire?.kind === 'number') {
-      return `(typeof ${expression} === 'number' ? ${expression} : ${deserialized})`;
+      return code`(typeof ${value} === 'number' ? ${value} : ${deserialized})`;
     }
     if (wire?.kind === 'boolean') {
-      return `(typeof ${expression} === 'boolean' ? ${expression} : ${deserialized})`;
+      return code`(typeof ${value} === 'boolean' ? ${value} : ${deserialized})`;
     }
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
-      return `(${render(objectValueExpression(expression))} ? ${deserialized} : ${expression})`;
+      return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;
     }
     return deserialized;
   }
   if (descriptor.kind === 'date' || tags.date) {
-    return fallibleConversion(ctx, `(${expression} instanceof Date ? ${expression} : deserializeDate(${expression}))`);
+    return fallibleConversion(ctx, code`(${value} instanceof Date ? ${value} : ${rt.conversion.deserializeDate}(${value}))`);
   }
   if (descriptor.kind === 'union') {
-    return emitUnionDecode(descriptor, expression, ctx);
+    return emitUnionDecode(descriptor, value, ctx);
   }
   // An intersection of objects decodes as the one merged object, so each member's fields convert.
   const decodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, graphModelBases(ctx.graph)) : undefined;
-  if (decodedMerge) return emitDecodeValue(decodedMerge, expression, ctx);
+  if (decodedMerge) return emitDecodeValue(decodedMerge, value, ctx);
   if (descriptor.kind === 'object' && typeof descriptor.additionalProperties === 'object') {
     const listed = Object.keys(descriptor.properties);
     // A node's fill converts each listed name by its own schema and every other name by the additional schema.
     if (listed.length > 0 || !descriptorNeedsConversion(descriptor)) {
       const named = ctx.graph.nodeFor(descriptor);
-      if (named) return emitInternedObjectDecode(named, descriptor, expression, ctx);
+      if (named) return emitInternedObjectDecode(named, descriptor, value, ctx);
     }
     const before = fallibleCount(ctx);
     const decoded = emitDecodeValue(descriptor.additionalProperties, 'value', { ...ctx, decodeLocals: undefined });
     const entry = emittedFallible(before, decoded, ctx)
       ? emitFieldConversion('key', 'value', descriptor.additionalProperties, 'value', ctx)
       : decoded;
-    const entries = `Object.entries((${expression} ?? {}) as Record<string, unknown>)`;
-    if (listed.length === 0) return `Object.fromEntries(${entries}.map(([key, value]) => [key, ${entry}]))`;
-    const extras = `Object.fromEntries(${entries}.filter(([key]) => !${JSON.stringify(listed)}.includes(key)).map(([key, value]) => [key, ${entry}]))`;
-    return `{ ...${extras}, ...${emitDecodedRecord(descriptor, expression, ctx)} }`;
+    const entries = code`Object.entries((${value} ?? {}) as Record<string, unknown>)`;
+    if (listed.length === 0) return code`Object.fromEntries(${entries}.map(([key, value]) => [key, ${entry}]))`;
+    const extras = code`Object.fromEntries(${entries}.filter(([key]) => !${literal(listed)}.includes(key)).map(([key, value]) => [key, ${entry}]))`;
+    return code`{ ...${extras}, ...${emitDecodedRecord(descriptor, value, ctx)} }`;
   }
   const named = ctx.graph.nodeFor(descriptor);
   if (named && isObjectish(descriptor)) {
-    return emitInternedObjectDecode(named, descriptor, expression, ctx);
+    return emitInternedObjectDecode(named, descriptor, value, ctx);
   }
   if (descriptor.kind === 'array') {
-    return render(emitArrayConversion(descriptor.item, expression, {
-      output: 'value',
-      paths: 'deserialize',
-      item: (item, value) => {
-        const before = fallibleCount(ctx);
-        const code = emitDecodeValue(item, value, { ...ctx, decodeLocals: undefined });
-        // An item that can throw runs under its index, as a module-level function when it is hoisted.
-        if (!emittedFallible(before, code, ctx)) return { code, throws: false };
-        const scope: EmitCtx = { ...ctx, decodeLocals: [] };
-        const decoded = emitDecodeValue(item, value, scope);
-        const converter = hoistConverter(value, decoded, scope.decodeLocals ?? [], ctx);
-        const call = `${converter}(${value})`;
-        return { code: singleCallConverter(call, value) === converter ? call : decoded, throws: true };
-      },
-    }));
+    return emitArrayConversion(descriptor.item, value, { output: 'value', paths: 'deserialize', item: decodeItem(ctx) });
   }
   if (descriptor.kind === 'tuple') {
-    return render(emitTupleConversion(descriptor, expression, {
+    return emitTupleConversion(descriptor, value, {
       output: 'value',
       paths: 'deserialize',
-      item: (item, value) => {
+      item: (item, itemValue) => {
         const before = fallibleCount(ctx);
-        const code = emitDecodeValue(item, value, ctx);
-        return { code, throws: emittedFallible(before, code, ctx) };
+        const decoded = emitDecodeValue(item, itemValue, ctx);
+        return { code: decoded, throws: emittedFallible(before, decoded, ctx) };
       },
-    }));
+    });
   }
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);
-    if (node) return emitInternedObjectDecode(node, descriptor, expression, ctx);
-    return emitDecodedRecord(descriptor, expression, ctx);
+    if (node) return emitInternedObjectDecode(node, descriptor, value, ctx);
+    return emitDecodedRecord(descriptor, value, ctx);
   }
-  return expression;
+  return value;
 }
 
-function emitComputedRecord(fields: readonly (readonly [string, string])[]): string {
-  if (fields.length === 0) return '{}';
-  return `{ ${fields.map(([name, value]) => value.startsWith('...') ? value : `[${JSON.stringify(name)}]: ${value}`).join(', ')} }`;
+function emitComputedRecord(fields: readonly (readonly [string, Code])[]): Code {
+  if (fields.length === 0) return code`{}`;
+  return code`{ ${join(fields.map(([name, value]) => isSpread(value) ? value : code`[${literal(name)}]: ${value}`), code`, `)} }`;
 }
 
 function emitDecodedRecord(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-): string {
+): Code {
+  const value = emittedCode(expression);
   const fields = Object.entries(descriptor.properties);
-  if (fields.length === 0) return expression;
+  if (fields.length === 0) return value;
   const required = new Set(descriptor.required);
   return emitComputedRecord(fields.map(([name, property]) => {
-    const source = decodeRead(ctx, expression, name);
+    const { read, shape } = decodeRead(ctx, value, name);
+    const input = inputSlot(name, shape);
     const before = fallibleCount(ctx);
-    const decoded = emitDecodeValue(property, source, { ...ctx, decodeLocals: undefined });
+    const decoded = emitDecodeValue(property, inputOf(input), { ...ctx, decodeLocals: undefined });
     // A source property is read once: a conversion that can throw runs under its field's path with the
     // property as its argument, and another conversion binds it to a parameter when it uses it again.
     const converted = emittedFallible(before, decoded, ctx)
-      ? emitFieldConversion(JSON.stringify(name), NESTED_SOURCE, property, source, ctx)
-      : countOccurrences(decoded, source) > 1
-        ? `((${NESTED_SOURCE}) => ${emitDecodeValue(property, NESTED_SOURCE, ctx)})(${source})`
-        : decoded;
+      ? emitFieldConversion(JSON.stringify(name), NESTED_SOURCE, property, read, ctx)
+      : inputCount(decoded, input) > 1
+        ? code`((${identifier(NESTED_SOURCE)}) => ${emitDecodeValue(property, NESTED_SOURCE, ctx)})(${read})`
+        : bindInput(decoded, input, read);
     // An optional property that converts is read only when the input has it.
-    if (!required.has(name) && decoded !== source) {
-      return [name, `...(${source} !== undefined ? { [${JSON.stringify(name)}]: ${converted} } : {})`];
+    if (!required.has(name) && !sameCode(decoded, inputOf(input))) {
+      return [name, code`...(${read} !== undefined ? { [${literal(name)}]: ${converted} } : {})`] as const;
     }
-    return [name, converted];
+    return [name, converted] as const;
   }));
 }
 
@@ -1486,16 +1497,20 @@ function emitFillValue(
   ctx: EmitCtx,
 ): FillValue {
   const before = fallibleCount(ctx);
-  const decoded = emitDecodeValue(property, read, { ...ctx, decodeLocals: undefined });
+  // The fill reads the property through a local that the caller declared, so its input is a name.
+  const readInput = inputSlot(read, 'name');
+  const decoded = emitDecodeValue(property, inputOf(readInput), { ...ctx, decodeLocals: undefined });
   const fallible = emittedFallible(before, decoded, ctx);
   const checked = sharesInput(property, ctx);
-  const converted = decoded !== read;
-  if (!checked && !fallible && countOccurrences(decoded, read) <= 1) return { statements: [], value: decoded, converted, checked, fallible };
+  const converted = !sameCode(decoded, inputOf(readInput));
+  if (!checked && !fallible && inputCount(decoded, readInput) <= 1) {
+    return { statements: [], value: render(bindInput(decoded, readInput, identifier(read))), converted, checked, fallible };
+  }
   const input = checked ? `assertPropertyAcyclic(wire, ${field}, ${read})` : read;
   if (fallible) {
-    return { statements: [], value: emitFieldConversion(field, local, property, input, ctx), converted, checked, fallible };
+    return { statements: [], value: render(emitFieldConversion(field, local, property, input, ctx)), converted, checked, fallible };
   }
-  return { statements: [`const ${local} = ${input};`], value: emitDecodeValue(property, local, ctx), converted, checked, fallible };
+  return { statements: [`const ${local} = ${input};`], value: render(emitDecodeValue(property, local, ctx)), converted, checked, fallible };
 }
 
 function emitFillFunction(
@@ -1921,11 +1936,11 @@ function emitNodeRuntime(
 
   const fill = objectDescriptor ? emitFillFunction(node, ctx, objectDescriptor) : undefined;
   const fillSrc = fill?.source ?? '';
-  const rootScope: EmitCtx = { ...ctx, decodeLocals: [] };
+  const rootScope: EmitCtx = { ...ctx, decodeLocals: [], castWire: true };
   // The wire of a node that is not an object is `unknown`; `access` reads a property of a name `wire` as a record.
   const decodedExpr = objectDescriptor
     ? undefined
-    : emitDecodeValue(node.descriptor, 'wire', rootScope).replaceAll('wire[', '(wire as Record<string, unknown>)[');
+    : render(emitDecodeValue(node.descriptor, 'wire', rootScope));
 
   const convertLines: string[] = [
     `function ${convertName}(wire: unknown, options: ${SERDE_OPTIONS} | undefined): unknown {`,
