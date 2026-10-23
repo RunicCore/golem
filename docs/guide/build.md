@@ -43,7 +43,7 @@ The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project se
 
 <<< ../../examples/payments/vite.config.ts#vite-config
 
-`golem()` rewrites each TypeScript module in memory before Vite strips its types, in the dev server and in builds. Put it before plugins that transform TypeScript. The `config` option is optional. It names the `golem.yaml` relative to the Vite root. Without it, the plugin follows the lookup order above. While `golem watch` ([Watch](/guide/watch#watch)) runs, the dev server transforms again only the modules whose rewrite changed.
+`golem()` rewrites each TypeScript module in memory before Vite strips its types, in the dev server and in builds. Put it before plugins that transform TypeScript. The `config` option is optional. It names the `golem.yaml` relative to the Vite root. Without it, the plugin reads `GOLEM_CONFIG`, then `./golem.yaml`. While you run [`golem watch`](/guide/watch#watch), the dev server transforms again only the modules whose rewrite changed.
 
 ## esbuild
 
@@ -69,4 +69,4 @@ A host rewrites calls. It does not give your editor the generated files. Run `np
 npx --no-install golem build
 ```
 
-`golem build` generates first, so a clone needs no committed generated files. With `--no-install`, `npx` fails when the project does not install Golem ([why](/guide/install#packages-for-each-generator)). [`golem check`](/guide/watch#check-without-writing) reports stale generated files without writing.
+`golem build` generates first, so a clone needs no committed generated files. With `--no-install`, `npx` fails when the project does not [install Golem](/guide/install#packages-for-each-generator). [`golem check`](/guide/watch#check-without-writing) reports stale generated files without writing.

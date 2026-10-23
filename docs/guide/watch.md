@@ -48,11 +48,11 @@ npx --no-install golem check
 
 `check` needs generated files, so CI runs `golem build` or `golem generate` first ([ignore generated files](/reference/generated-files#gitignore)). When Golem has not generated yet, `check` stops with one message. The message tells you to run `golem generate` or `golem build` first.
 
-With `--no-install`, `npx` fails when the project does not install Golem ([why](/guide/install#packages-for-each-generator)).
+With `--no-install`, `npx` fails when the project does not [install Golem](/guide/install#packages-for-each-generator).
 
 ## Files golem owns
 
-Golem replaces a file at an output path when it generated that file before. It also replaces a file that starts with the marker comment of the generator, even if Golem never recorded it. Any other file at an output path stops `generate` and `check` with an error that names the file. Remove or rename that file, or change the output path of the job.
+Golem replaces a file at an output path when it generated that file before. It also replaces a file that carries the marker of the generator, even if Golem never recorded it. Any other file at an output path stops `generate` and `check` with an error that names the file. Remove or rename that file, or change the output path of the job.
 
 When no job produces a generated file any more, `generate` deletes it. Golem deletes the file only if it still holds its generated content or its marker. Otherwise `generate` stops and names the file. Move the file or delete it yourself.
 
