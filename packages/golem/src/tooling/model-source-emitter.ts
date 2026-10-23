@@ -1,6 +1,5 @@
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 export {
-  emitCodecRuntime,
   emitCodecRuntimeCode,
   emitGraphStringify,
   emitStringifyFunction,
@@ -19,7 +18,7 @@ export {
 } from './stringify-emitter.js';
 export { presentKeysSource } from '../presence.js';
 export { pruneGeneratedImports } from './generated-imports.js';
-export { calleeOf, FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
+export { calleeOf, FIELD_CONVERSION_INPUT, type TupleConversionDescriptor } from './sequence-conversion.js';
 /** The one function that turns the Code of an emitter into text, for generators that still build text. */
 export {
   aliased, blockComment, code, fileImports, helper, helperName, helperSet, identifier, importedNames, importLines, importSet, ImportSource, join, legacyText, literal, nameOf, NameTable, nameSlot, render, sameCode, trimEnd,

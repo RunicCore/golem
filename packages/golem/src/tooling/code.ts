@@ -37,7 +37,8 @@ export interface Helper {
 }
 
 export type Part =
-  | { readonly kind: 'text'; readonly text: string }
+  /** `identifier` marks the text as one name that `identifier` checked, so a conversion that calls it on its value is a call of a function name (`calleeOf`). */
+  | { readonly kind: 'text'; readonly text: string; readonly identifier?: true }
   | { readonly kind: 'runtime'; readonly module: RuntimeModule; readonly name: string; readonly typeOnly?: true; readonly alias?: string }
   | { readonly kind: 'imported'; readonly source: ImportSource; readonly name: string; readonly typeOnly?: true; readonly alias?: string }
   | { readonly kind: 'helper'; readonly helper: Helper }
@@ -122,7 +123,7 @@ function fromParts(parts: readonly Part[]): Code {
     const last = merged.at(-1);
     if (part.kind === 'text') {
       if (part.text === '') continue;
-      if (last?.kind === 'text') merged[merged.length - 1] = { kind: 'text', text: last.text + part.text };
+      if (last?.kind === 'text' && !last.identifier && !part.identifier) merged[merged.length - 1] = { kind: 'text', text: last.text + part.text };
       else merged.push(part);
     } else merged.push(part);
   }
@@ -165,7 +166,7 @@ function jsonText(value: JsonValue): string {
 
 /** A name that is written as it is, after a check that it is an identifier. */
 export function identifier(name: string): Code {
-  return fromParts([{ kind: 'text', text: checkedIdentifier(name, 'identifier') }]);
+  return fromParts([{ kind: 'text', text: checkedIdentifier(name, 'identifier'), identifier: true }]);
 }
 
 /**
@@ -511,7 +512,8 @@ export function sameCode(left: Code, right: Code): boolean {
   const flat = (root: Code): readonly Part[] => fromParts(root.parts.map((part): Part =>
     part.kind === 'runtime' || part.kind === 'imported' ? { kind: 'text', text: part.alias ?? part.name }
       : part.kind === 'helper' ? { kind: 'text', text: part.helper.id }
-        : part)).parts;
+        : part.kind === 'text' ? { kind: 'text', text: part.text }
+          : part)).parts;
   const [first, second] = [flat(left), flat(right)];
   return first.length === second.length && first.every((part, index) => {
     const other = second[index];

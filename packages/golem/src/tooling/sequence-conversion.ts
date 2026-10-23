@@ -5,7 +5,7 @@
  * `emitTupleItems` have none. It imports no walker.
  */
 import type { ModelTypeDescriptor } from '../model.js';
-import { asObjectLiteral, code, emittedCode, identifier, legacyText, literal, readShape, sameCode, type Code, type Emitted } from './code.js';
+import { code, emittedCode, identifier, literal, readShape, sameCode, type Code, type Emitted } from './code.js';
 import { rt } from './rt.js';
 
 export type TupleConversionDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'tuple' }>;
@@ -17,7 +17,7 @@ export interface SequenceItem {
    * conversion. For `json` output, an item that needs none is `stringifyJsonScalar(<value> as never)`. A string is the
    * text of a walker that does not return Code yet.
    */
-  readonly code: string | Code;
+  readonly code: Code;
   /** The item code can throw, so it runs under the item index in the error path. */
   readonly throws: boolean;
 }
@@ -37,32 +37,14 @@ export interface SequenceItems {
  */
 export const FIELD_CONVERSION_INPUT = 'fieldValue';
 
-const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
-
-/**
- * The function name when a conversion that a caller wrote as text, emitted against `input`, is exactly one call on it.
- * A caller passes that function and the value to `convertModelField` or `convertModelItems` instead of allocating a closure.
- */
-// migration door, deleted in step 6 (T-289): golem-openapi calls it
-export function singleCallConverter(converted: string, input: string = FIELD_CONVERSION_INPUT): string | undefined {
-  const call = `(${input})`;
-  if (!converted.endsWith(call)) return undefined;
-  const name = converted.slice(0, -call.length);
-  return IDENTIFIER.test(name) ? name : undefined;
-}
-
 /**
  * The function of a conversion of `input` that is exactly one call on it. A call that an emitter wrote is a function part
- * and `(<input>)`. Text from a caller that does not return Code yet goes through `singleCallConverter`.
+ * and `(<input>)`.
  */
 export function calleeOf(converted: Code, input: string = FIELD_CONVERSION_INPUT): Code | undefined {
-  const [first, second, ...more] = converted.parts;
-  if (second === undefined) {
-    const name = first?.kind === 'text' ? singleCallConverter(first.text, input) : undefined; // migration door, same steps as singleCallConverter
-    return name === undefined ? undefined : identifier(name);
-  }
-  if (more.length > 0 || second.kind !== 'text' || second.text !== `(${input})`) return undefined;
-  return first.kind === 'runtime' || first.kind === 'imported' || first.kind === 'helper' || first.kind === 'name' ? { parts: [first] } : undefined;
+  const [first, ...call] = converted.parts;
+  if (first === undefined || call.length === 0 || !call.every((part) => part.kind === 'text') || call.map((part) => part.text).join('') !== `(${input})`) return undefined;
+  return first.kind === 'runtime' || first.kind === 'imported' || first.kind === 'helper' || first.kind === 'name' || (first.kind === 'text' && first.identifier === true) ? { parts: [first] } : undefined;
 }
 
 const ITEM = identifier('item');
@@ -90,9 +72,7 @@ interface ConvertedItem {
 }
 
 function convertedItem(item: SequenceItem): ConvertedItem {
-  // migration door, deleted in step 6 (T-289): the text of a walker that gives a string says it is an object literal by its first character
-  const converted = typeof item.code !== 'string' ? item.code : item.code.startsWith('{') ? asObjectLiteral(legacyText(item.code)) : legacyText(item.code);
-  return { code: converted, callee: calleeOf(converted, 'item'), throws: item.throws };
+  return { code: item.code, callee: calleeOf(item.code, 'item'), throws: item.throws };
 }
 
 /** The result of an items emitter, and whether it is the value itself because no item changes. */

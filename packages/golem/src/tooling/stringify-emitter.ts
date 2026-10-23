@@ -66,7 +66,7 @@ export interface CodecRuntimeOptions {
   readonly resolvedSchemasExpr?: Emitted;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Emitted;
-  readonly nestedGenerated?: (id: string) => Emitted;
+  readonly nestedGenerated?: (id: string) => Emitted | undefined;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
   /** The name of the wire stringify that the companion of a sibling codec exports; without it, `wireStringifyExportName`. */
   readonly siblingWireName?: (codecId: string) => Emitted;
@@ -98,7 +98,7 @@ interface EmitCtx {
   readonly resolvedSchemasExpr?: Emitted;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Emitted;
-  readonly nestedGenerated?: (id: string) => Emitted;
+  readonly nestedGenerated?: (id: string) => Emitted | undefined;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
   readonly siblingWireName?: (codecId: string) => Emitted;
   readonly exportedFillFunctionIds?: ReadonlySet<string>;
@@ -1192,8 +1192,7 @@ function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx): Emitted |
     : variant.kind === 'reference' && shouldConstructNested(variant, ctx)
       ? ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.kind === 'reference' ? variant.className : undefined)
       : undefined;
-  // A resolver answers 'undefined' for a model it emits no class for.
-  return name === undefined || isUndefinedName(name) ? undefined : name;
+  return name;
 }
 
 /** Object variants of a union mixed with one generated model; their literal tags must dispatch. */
@@ -1853,11 +1852,6 @@ function validatorReference(ctx: EmitCtx, id: string): Code {
   return emittedCode(ctx.validatorName(id));
 }
 
-// migration door, deleted in step 6 (T-289): golem-openapi answers 'undefined' as text for a model it emits no class for
-function isUndefinedName(name: Emitted): boolean {
-  return sameCode(emittedCode(name), legacyText('undefined'));
-}
-
 /**
  * True when the fast check `fast` answers for `value`: no validation context decides instead (spec 7.1). The test is
  * written in each model's function, not in a shared runtime helper, so each call of a fast check sees one check only
@@ -2246,14 +2240,6 @@ function isExternalCodecNode(node: SchemaNode): boolean {
 }
 
 /** Specialized stringify/parse/validate and codec registration for every graph node. */
-// migration door, deleted in step 6 (T-289): golem-openapi writes its file from text
-export function emitCodecRuntime(
-  graph: SchemaGraph,
-  options: CodecRuntimeOptions = {},
-): string {
-  return render(emitCodecRuntimeCode(graph, options));
-}
-
 export function emitCodecRuntimeCode(
   graph: SchemaGraph,
   options: CodecRuntimeOptions = {},

@@ -1051,7 +1051,7 @@ export function generateModels(
         ?? analysis.nodesById.get(name)
         ?? analysis.nodesByCodecId.get(name);
       const modelName = node ? analysis.definitionNameByNodeId.get(node.id) ?? node.name : name;
-      return node?.emitClass ? (helpers.modelImport?.(modelName) ?? `${modelName}Model`) : 'undefined';
+      return node?.emitClass ? (helpers.modelImport?.(modelName) ?? `${modelName}Model`) : undefined;
     },
     nestedImportedSerde: (codecId) => {
       if (!helpers.codecFunctionImport) return undefined;
