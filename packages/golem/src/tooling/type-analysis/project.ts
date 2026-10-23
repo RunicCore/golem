@@ -633,6 +633,16 @@ export function assertNoSyntaxErrors(program: ts.Program, files: readonly string
   if (errors.length > 0) throw new Error(formatDiagnostics(errors, root));
 }
 
+/** The first TypeScript error that starts inside `node`, as `TS2304: Cannot find name 'strin'.`; undefined when the file has none there. Reads the semantic diagnostics of one file, so a caller uses it on a failure path only. */
+export function typeScriptErrorAt(program: ts.Program, node: ts.Node): string | undefined {
+  const file = node.getSourceFile();
+  const start = node.getStart(file);
+  const end = node.end;
+  const found = program.getSemanticDiagnostics(file.fileName)
+    .find((error) => error.pos !== undefined && error.pos >= start && error.pos < end);
+  return found?.text === undefined ? undefined : `TS${found.code}: ${found.text}`;
+}
+
 /** `unwritten` are the texts of program files that are not on disk yet, such as the companions of a run, by path. */
 export function formatDiagnostics(
   diagnostics: readonly ts.Diagnostic[],
