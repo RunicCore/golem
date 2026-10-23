@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   NameTable, code, helper, helperBlock, helperName, helperSet, identifier, importSet, inputOf, inputSlot, join, literal,
-  nameOf, nameSlot, render, runtimeImports,
+  nameOf, nameSlot, render, runtimeImports, sameCode, legacyText,
 } from '#golem/code';
 import { rt } from '#golem/rt';
 
@@ -53,4 +53,17 @@ test('the helper set holds each named helper once with the helpers it names and 
     'function decodeLeaf(v) { return decodeCheckedInput(v, decodeNode); }\n\nfunction decodeNode(v) { return decodeLeaf(v); }',
   );
   assert.deepEqual(importSet(body), [{ module: 'conversion', names: ['decodeCheckedInput'] }]);
+});
+
+test('sameCode matches parts one by one, and a runtime part equals the text of its name', () => {
+  // protects: T-282 an emitter decides "unchanged" from Code, also against the text a caller still writes by hand
+  const first = nameSlot('first');
+  const second = nameSlot('second');
+  const written = code`${rt.serde.stringifyJsonScalar}(item as never)`;
+  assert.equal(sameCode(written, legacyText('stringifyJsonScalar(item as never)')), true);
+  assert.equal(sameCode(written, legacyText('stringifyJsonString(item as never)')), false);
+  assert.equal(sameCode(nameOf(first), nameOf(first)), true);
+  assert.equal(sameCode(nameOf(first), nameOf(second)), false);
+  assert.equal(sameCode(inputOf(inputSlot('value')), nameOf(first)), false);
+  assert.equal(render(code`${rt.serde.parseJson}(x)`), 'parseJson(x)');
 });

@@ -221,10 +221,31 @@ function plainText(text: string): Code {
 }
 
 /**
+ * Whether two Codes write the same code: their parts match one by one, and a runtime or helper part counts as the text of
+ * its name, so `rt.serde.parseJson` equals the text `parseJson` that a caller wrote by hand.
+ */
+export function sameCode(left: Code, right: Code): boolean {
+  const flat = (root: Code): readonly Part[] => fromParts(root.parts.map((part): Part =>
+    part.kind === 'runtime' ? { kind: 'text', text: part.name }
+      : part.kind === 'helper' ? { kind: 'text', text: part.helper.id }
+        : part)).parts;
+  const [first, second] = [flat(left), flat(right)];
+  return first.length === second.length && first.every((part, index) => {
+    const other = second[index];
+    switch (part.kind) {
+      case 'text': return other.kind === 'text' && other.text === part.text;
+      case 'name': return other.kind === 'name' && other.slot === part.slot;
+      case 'input': return other.kind === 'input' && other.slot === part.slot;
+      default: return false;
+    }
+  });
+}
+
+/**
  * The one place that makes text. A runtime part is its export name and a helper part is its id. A name part reads the
  * table of the file. An input part must be bound before the Code is rendered.
  */
-export function render(root: Code, names: NameTable): string {
+export function render(root: Code, names: NameTable = new NameTable()): string {
   let text = '';
   for (const part of root.parts) {
     switch (part.kind) {
