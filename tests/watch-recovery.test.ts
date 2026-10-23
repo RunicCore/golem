@@ -111,7 +111,7 @@ test('watch started on a golem.yaml that is not YAML reports its file, line and 
 });
 
 test('each watch run prints the result of every job and its time; the run after a failure starts with Recovered:', async (t: TestContext) => {
-  // protects: T-312 each watch run says what it did; a failing run says the last good output stays
+  // protects: T-312 each watch run says what it did; a failing run says the failed job's last good output stays
   const { config } = generationWatchFixture(t);
   const valid = fs.readFileSync(config, 'utf8');
   const lines = watchRunLines(t);
@@ -134,7 +134,7 @@ test('each watch run prints the result of every job and its time; the run after 
 
     fs.writeFileSync(config, `${valid}version: 1\n`);
     await until(() => errors.length === 1, 'the broken golem.yaml is reported');
-    assert.ok(stderr.some(text => text.includes('The last good output stays in place')), stderr.join(''));
+    assert.ok(stderr.some(text => text.includes('its last good output stays in place')), stderr.join(''));
     fs.writeFileSync(config, valid);
     await until(() => lines.length === 3, () => `the fixed golem.yaml runs (errors=${errors.map(String).join('; ')})`);
     assert.ok(lines[2].startsWith('Recovered: '), lines[2]);

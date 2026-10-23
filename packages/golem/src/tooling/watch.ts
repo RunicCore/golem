@@ -148,7 +148,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
         retryFull = true;
         failed = true;
         reportError(error);
-        process.stderr.write('The run failed. The last good output stays in place.\n');
+        process.stderr.write('The run failed. The job that failed wrote no files; its last good output stays in place.\n');
       }
       attempted = latestAttempt;
       // Keep pre-read signatures so edits during work trigger the next serialized run.
