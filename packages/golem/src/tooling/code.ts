@@ -133,11 +133,16 @@ export function inputSlot(label: string, shape: ReadShape = 'other'): InputSlot 
   return { label, shape };
 }
 
+/** Spaces at the start of a line. Whitespace names nothing, so it is the one text that needs no check. */
+export function indentation(spaces: number): Code {
+  return fromParts([{ kind: 'text', text: ' '.repeat(spaces) }]);
+}
+
 /** Code that an emitter wrote, or the text of a walker that does not return Code yet. */
 export type Emitted = string | Code;
 
 /** A string is wrapped as one text part. */
-// migration door, deleted in steps 3b to 3d (T-284, T-285, T-286) for stringify-emitter and in steps 5 and 6 (T-288, T-289) for golem-model and golem-openapi
+// migration door, deleted in steps 5 and 6 (T-288, T-289): the walkers of golem-model and golem-openapi, and the item callbacks of sequence-conversion, still give strings
 export function emittedCode(emitted: Emitted): Code {
   return typeof emitted === 'string' ? legacyText(emitted) : emitted;
 }
@@ -154,7 +159,7 @@ export function readShape(expression: Emitted): ReadShape {
   if (only === undefined || more.length > 0) return 'other';
   if (only.kind === 'input') return only.slot.shape;
   if (only.kind === 'name') return 'name';
-  // migration door, deleted in steps 3b to 3d (T-284, T-285, T-286): tests the text of a read that a caller wrote as a string
+  // migration door, deleted in steps 5 and 6 (T-288, T-289): tests the text of a read that a caller wrote as a string
   if (only.kind === 'text') return NAME_TEXT.test(only.text) ? 'name' : CHAIN_TEXT.test(only.text) ? 'chain' : 'other';
   return 'other';
 }

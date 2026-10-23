@@ -43,7 +43,7 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
  * The function name when a conversion that a caller wrote as text, emitted against `input`, is exactly one call on it.
  * A caller passes that function and the value to `convertModelField` or `convertModelItems` instead of allocating a closure.
  */
-// migration door, deleted in steps 3b to 3d (T-284, T-285, T-286) for stringify-emitter and in steps 5 and 6 (T-288, T-289) for golem-model and golem-openapi
+// migration door, deleted in steps 5 and 6 (T-288, T-289): golem-model and golem-openapi call it
 export function singleCallConverter(converted: string, input: string = FIELD_CONVERSION_INPUT): string | undefined {
   const call = `(${input})`;
   if (!converted.endsWith(call)) return undefined;
