@@ -195,6 +195,16 @@ export function literal(value: JsonValue): Code {
   return fromParts([{ kind: 'text', text: jsonText(value) }]);
 }
 
+/**
+ * A JSON literal of a value that comes from a document, so its type is not known here, pretty-printed with `indent` spaces
+ * when given. A value with no JSON text, such as `undefined`, is an error.
+ */
+export function documentLiteral(value: unknown, indent?: number): Code {
+  const written = JSON.stringify(value, null, indent);
+  if (written === undefined) throw new TypeError('documentLiteral cannot write a value that has no JSON text');
+  return fromParts([{ kind: 'text', text: written }]);
+}
+
 function jsonText(value: JsonValue): string {
   if (typeof value === 'number' && !Number.isFinite(value)) throw new TypeError(`literal cannot write ${value}`);
   return JSON.stringify(value);

@@ -13,7 +13,10 @@ import {
   importSet,
   ImportSource,
   join,
-  legacyText,
+  literal,
+  docComment,
+  documentLiteral,
+  propertyKey,
   render,
   rt,
   rtType,
@@ -35,40 +38,35 @@ import { textCodecRequirement } from '../types.js';
 /** A client runtime function: the name is a key of the client module, so a misspelled name is a type error. */
 type ClientFunction = keyof typeof rt.client;
 
-/** The tag of the templates of this file: the text between the values is code, and a value that is not Code is text of this file. */
-function text(strings: TemplateStringsArray, ...values: readonly (string | number | boolean | Code)[]): Code {
-  return code(strings, ...values.map((value) => typeof value === 'object' ? value : legacyText(String(value))));
-}
-
 const BLANK = code``;
 
-function routeExpression(operation: NormalizedOperation, use: (name: ClientFunction) => Code): { declarations: Code; expression: string } {
+function routeExpression(operation: NormalizedOperation, use: (name: ClientFunction) => Code): { declarations: Code; expression: Code } {
   const parameters = new Map(operation.parameters.filter((item) => item.in === 'path').map(item => [item.name, item]));
-  const variables = new Map<string, string>();
+  const variables = new Map<string, Code>();
   const declarations: Code[] = [];
-  const parts: string[] = [];
+  const parts: Code[] = [];
   let offset = 0;
   for (const match of operation.route.matchAll(/\{([^{}]+)\}/g)) {
     const parameter = parameters.get(match[1] ?? '');
     if (!parameter) continue;
-    parts.push(JSON.stringify(operation.route.slice(offset, match.index)));
+    parts.push(literal(operation.route.slice(offset, match.index)));
     offset = match.index + match[0].length;
     const previous = variables.get(parameter.name);
     if (previous) { parts.push(previous); continue; }
-    const variable = `pathValue${variables.size}`;
+    const variable = identifierPart(`pathValue${variables.size}`);
     variables.set(parameter.name, variable);
     parts.push(variable);
     if (parameter.content) {
       const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      declarations.push(text`    const ${variable} = ${use('encode')}(${use('serializeContentParameter')}(runtime, input.path[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'path', contentType: ${JSON.stringify(contentType)} }));`);
+      declarations.push(code`    const ${variable} = ${use('encode')}(${use('serializeContentParameter')}(runtime, input.path[${literal(parameter.name)}], { operation: ${literal(operation.name)}, name: ${literal(parameter.name)}, in: 'path', contentType: ${literal(contentType)} }));`);
       continue;
     }
     const style = parameter.style || 'simple';
     const explode = parameter.explode === undefined ? false : parameter.explode;
-    declarations.push(text`    const ${variable} = ${use('serializePath')}(runtime, ${JSON.stringify(parameter.name)}, input.path[${JSON.stringify(parameter.name)}], ${JSON.stringify(style)}, ${explode});`);
+    declarations.push(code`    const ${variable} = ${use('serializePath')}(runtime, ${literal(parameter.name)}, input.path[${literal(parameter.name)}], ${literal(style)}, ${literal(explode)});`);
   }
-  parts.push(JSON.stringify(operation.route.slice(offset)));
-  return { declarations: join(declarations, code`\n`), expression: parts.join(' + ') };
+  parts.push(literal(operation.route.slice(offset)));
+  return { declarations: join(declarations, code`\n`), expression: join(parts, code` + `) };
 }
 
 function responseContractsForOperation(
@@ -124,21 +122,21 @@ function operationSecuritySchemeData(
   return Object.fromEntries(Object.entries(schemes).filter(([name]) => names.has(name)));
 }
 
-function literalType(value: unknown): string {
-  if (value === undefined) return 'undefined';
-  if (value === null) return 'null';
+function literalType(value: unknown): Code {
+  if (value === undefined) return code`undefined`;
+  if (value === null) return code`null`;
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return JSON.stringify(value) ?? 'unknown';
+    return documentLiteral(value);
   }
   if (Array.isArray(value)) {
-    return `readonly [${value.map(literalType).join(', ')}]`;
+    return code`readonly [${join(value.map(literalType), code`, `)}]`;
   }
   if (typeof value === 'object') {
     const entries = Object.entries(value);
-    if (!entries.length) return '{}';
-    return `{ ${entries.map(([name, child]) => `readonly ${propertyName(name)}: ${literalType(child)}`).join('; ')} }`;
+    if (!entries.length) return code`{}`;
+    return code`{ ${join(entries.map(([name, child]) => code`readonly ${propertyKey(name)}: ${literalType(child)}`), code`; `)} }`;
   }
-  return 'unknown';
+  return code`unknown`;
 }
 
 interface GeneratedClientModules {
@@ -182,11 +180,11 @@ function operationSource(
   const singleContentType = operation.requestContent.length === 1
     ? operation.requestContent[0]?.contentType
     : null;
-  const bodyValue = operation.requestContent.length > 1 ? 'input.body?.value' : 'input.body';
+  const bodyValue = operation.requestContent.length > 1 ? code`input.body?.value` : code`input.body`;
   const bodyContentType = operation.requestContent.length > 1
-    ? 'input.body?.contentType'
-    : JSON.stringify(singleContentType);
-  const bodyEncodings = JSON.stringify(Object.fromEntries(
+    ? code`input.body?.contentType`
+    : documentLiteral(singleContentType ?? null);
+  const bodyEncodings = documentLiteral(Object.fromEntries(
     operation.requestContent.map((media) => {
       const requirement = textCodecRequirement(media, 'bodyEncoders', document);
       return [media.contentType, {
@@ -199,7 +197,7 @@ function operationSource(
       }];
     }),
   ));
-  const security = JSON.stringify(operation.security || []);
+  const security = documentLiteral(operation.security || []);
   const surfaces = plan.clientSurfaces;
   // An empty effective requirement list (an operation-level `security: []` or no
   // security anywhere) is a no-op in applySecurity, so the call is not emitted.
@@ -207,31 +205,31 @@ function operationSource(
   const queryLines = queryParameters.map((parameter) => {
     if (parameter.content) {
       const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      return text`    if (input.query?.[${JSON.stringify(parameter.name)}] !== undefined) ${use('appendQuery')}(runtime, query, ${JSON.stringify(parameter.name)}, ${use('serializeContentParameter')}(runtime, input.query[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'query', contentType: ${JSON.stringify(contentType)} }), ${parameter.allowReserved === true});`;
+      return code`    if (input.query?.[${literal(parameter.name)}] !== undefined) ${use('appendQuery')}(runtime, query, ${literal(parameter.name)}, ${use('serializeContentParameter')}(runtime, input.query[${literal(parameter.name)}], { operation: ${literal(operation.name)}, name: ${literal(parameter.name)}, in: 'query', contentType: ${literal(contentType)} }), ${literal(parameter.allowReserved === true)});`;
     }
-    return text`    ${use('addQueryParameter')}(runtime, query, ${JSON.stringify(parameter.name)}, input.query?.[${JSON.stringify(parameter.name)}], ${JSON.stringify(parameter.style || 'form')}, ${parameter.explode === undefined ? true : parameter.explode}, ${parameter.allowReserved === true});`;
+    return code`    ${use('addQueryParameter')}(runtime, query, ${literal(parameter.name)}, input.query?.[${literal(parameter.name)}], ${literal(parameter.style || 'form')}, ${literal(parameter.explode === undefined ? true : parameter.explode)}, ${literal(parameter.allowReserved === true)});`;
   });
   const headerLines = headerParameters.map((parameter) => {
     if (parameter.content) {
       const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      return text`    if (input.header?.[${JSON.stringify(parameter.name)}] !== undefined) headers.set(${JSON.stringify(parameter.name)}, ${use('serializeContentParameter')}(runtime, input.header[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'header', contentType: ${JSON.stringify(contentType)} }));`;
+      return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeContentParameter')}(runtime, input.header[${literal(parameter.name)}], { operation: ${literal(operation.name)}, name: ${literal(parameter.name)}, in: 'header', contentType: ${literal(contentType)} }));`;
     }
-    return text`    if (input.header?.[${JSON.stringify(parameter.name)}] !== undefined) headers.set(${JSON.stringify(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, input.header[${JSON.stringify(parameter.name)}], ${parameter.explode === true}));`;
+    return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, input.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}));`;
   });
   const cookieLines = cookieParameters.map((parameter) => {
     if (parameter.content) {
       const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      return text`    if (input.cookie?.[${JSON.stringify(parameter.name)}] !== undefined) cookies.push(${JSON.stringify(parameter.name)} + '=' + encodeURIComponent(${use('serializeContentParameter')}(runtime, input.cookie[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'cookie', contentType: ${JSON.stringify(contentType)} })));`;
+      return code`    if (input.cookie?.[${literal(parameter.name)}] !== undefined) cookies.push(${literal(parameter.name)} + '=' + encodeURIComponent(${use('serializeContentParameter')}(runtime, input.cookie[${literal(parameter.name)}], { operation: ${literal(operation.name)}, name: ${literal(parameter.name)}, in: 'cookie', contentType: ${literal(contentType)} })));`;
     }
     if (parameter.style === 'cookie') {
-      return text`    ${use('addCookieStyleParameter')}(runtime, cookies, ${JSON.stringify(parameter.name)}, input.cookie?.[${JSON.stringify(parameter.name)}], ${parameter.explode === true});`;
+      return code`    ${use('addCookieStyleParameter')}(runtime, cookies, ${literal(parameter.name)}, input.cookie?.[${literal(parameter.name)}], ${literal(parameter.explode === true)});`;
     }
-    return text`    ${use('addCookieParameter')}(runtime, cookies, ${JSON.stringify(parameter.name)}, input.cookie?.[${JSON.stringify(parameter.name)}], ${parameter.explode === undefined ? true : parameter.explode});`;
+    return code`    ${use('addCookieParameter')}(runtime, cookies, ${literal(parameter.name)}, input.cookie?.[${literal(parameter.name)}], ${literal(parameter.explode === undefined ? true : parameter.explode)});`;
   });
   const queryStringLine = queryStringParameter
-    ? text`    ${use('setQueryString')}(runtime, query, input.querystring, { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(queryStringParameter.name)}, in: 'querystring', contentType: ${JSON.stringify(Object.keys(queryStringParameter.content || {})[0] || 'application/x-www-form-urlencoded')} });`
+    ? code`    ${use('setQueryString')}(runtime, query, input.querystring, { operation: ${literal(operation.name)}, name: ${literal(queryStringParameter.name)}, in: 'querystring', contentType: ${literal(Object.keys(queryStringParameter.content || {})[0] || 'application/x-www-form-urlencoded')} });`
     : BLANK;
-  const inputName = profile.validation || operation.parameters.length || requestBody ? 'input' : '_input';
+  const inputName = identifierPart(profile.validation || operation.parameters.length || requestBody ? 'input' : '_input');
   const factoryName = operationFactoryName(operation);
   if (appliesSecurity) use('applySecurity');
   if (requestBody) use('encodeBody');
@@ -266,12 +264,12 @@ function operationSource(
     if (validatesWithSources) moduleScope.claim(name, origin);
     return name;
   };
-  const validationSourcesName = uniqueModuleName('__operationValidationSources', 'operation validation sources');
+  const validationSourcesName = identifierPart(uniqueModuleName('__operationValidationSources', 'operation validation sources'));
   const typesModule = new ImportSource('../types.js', true, { namespace: 'Types' });
   const inputType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}`;
   const responseType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}`;
   const validatorSetup = validatesWithSources
-    ? text`  const validators = ${rt.validation.operationValidators}(runtime, ${JSON.stringify(operation.name)}, ${validationSourcesName});\n  const checkResponse = ${rt.validation.responseCheck}(validators);`
+    ? code`  const validators = ${rt.validation.operationValidators}(runtime, ${literal(operation.name)}, ${validationSourcesName});\n  const checkResponse = ${rt.validation.responseCheck}(validators);`
     : BLANK;
   // The generated validators this operation imports, each under a module-local alias that no operation name can take.
   const validatorImports = validationBundle
@@ -290,62 +288,63 @@ function operationSource(
   const createApiOperation = profile.mobx ? aliased(rt.mobx.createObservableApiOperation, 'createApiOperation') : rt.client.createApiOperation;
   const validationSources = validationBundle
     ? join([
-      text`const ${validationSourcesName}: ${rtType.client.OperationValidationSources} = {`,
-      text`  input: ${validatorNames[0]},`,
-      text`  responses: [${join(validationBundle.responseReferences.map((item, index) => text`{ status: ${JSON.stringify(item.status)}, contentType: ${JSON.stringify(item.contentType)}, validator: ${validatorNames[index + 1]} }`), code`, `)}],`,
+      code`const ${validationSourcesName}: ${rtType.client.OperationValidationSources} = {`,
+      code`  input: ${validatorNames[0]},`,
+      code`  responses: [${join(validationBundle.responseReferences.map((item, index) => code`{ status: ${literal(item.status)}, contentType: ${literal(item.contentType)}, validator: ${validatorNames[index + 1]} }`), code`, `)}],`,
       code`};`,
     ], code`\n`)
     : BLANK;
   const securitySchemesType = rtType.client.RuntimeSecuritySchemes;
   // The client module imports `__golemSecuritySchemes` from every operation module.
   const securityDeclaration = surfaces.auth || surfaces.mutualTls
-    ? text`export const __golemSecuritySchemes = ${JSON.stringify(securitySchemes, null, 2)} as const;${appliesSecurity ? text`\nconst securitySchemes: ${securitySchemesType} = __golemSecuritySchemes;` : BLANK}`
+    ? code`export const __golemSecuritySchemes = ${documentLiteral(securitySchemes, 2)} as const;${appliesSecurity ? code`\nconst securitySchemes: ${securitySchemesType} = __golemSecuritySchemes;` : BLANK}`
     : BLANK;
   const securityCall = appliesSecurity
-    ? text`    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);`
+    ? code`    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);`
     : BLANK;
   const usesQuery = queryLines.length > 0 || queryStringLine.parts.length > 0 || securityCall.parts.length > 0;
   const usesCookies = cookieLines.length > 0 || securityCall.parts.length > 0;
   const bodyLines = [
-    profile.validation ? text`    await ${rt.validation.validateOperationInput}(${JSON.stringify(operation.name)}, input, validators);` : BLANK,
-    usesQuery ? text`    const query: string[] = [];` : BLANK,
+    profile.validation ? code`    await ${rt.validation.validateOperationInput}(${literal(operation.name)}, input, validators);` : BLANK,
+    usesQuery ? code`    const query: string[] = [];` : BLANK,
     ...queryLines,
     queryStringLine,
-    text`    const headers = new Headers(runtime.defaultHeaders);`,
+    code`    const headers = new Headers(runtime.defaultHeaders);`,
     ...headerLines,
-    usesCookies ? text`    const cookies: string[] = [];` : BLANK,
+    usesCookies ? code`    const cookies: string[] = [];` : BLANK,
     ...cookieLines,
     securityCall,
-    usesCookies ? text`    if (cookies.length) headers.set('Cookie', cookies.join('; '));` : BLANK,
-    requestBody ? text`    const encodedBody = ${use('encodeBody')}(runtime, ${JSON.stringify(operation.name)}, ${bodyValue}, ${bodyContentType}, ${bodyEncodings});\n    if (encodedBody.contentType) headers.set('Content-Type', encodedBody.contentType);` : BLANK,
+    usesCookies ? code`    if (cookies.length) headers.set('Cookie', cookies.join('; '));` : BLANK,
+    requestBody ? code`    const encodedBody = ${use('encodeBody')}(runtime, ${literal(operation.name)}, ${bodyValue}, ${bodyContentType}, ${bodyEncodings});\n    if (encodedBody.contentType) headers.set('Content-Type', encodedBody.contentType);` : BLANK,
     route.declarations,
-    text`    const request: RequestInit = {`,
-    text`      method: ${JSON.stringify(operation.method)},`,
-    text`      headers,`,
-    text`    };`,
-    text`    if (options.signal !== undefined) request.signal = options.signal;`,
-    requestBody ? text`    if (encodedBody.body !== undefined) request.body = encodedBody.body;` : BLANK,
-    text`    const response = await runtime.fetchImpl(runtime.url(${route.expression}, ${usesQuery ? 'query' : '[]'}), request);`,
-    text`    return runtime.readResponse<${responseType}>(`,
-    text`      ${JSON.stringify(operation.name)},`,
-    text`      response,`,
-    text`      responseContracts,${validatesWithSources ? '\n      checkResponse,' : ''}`,
-    text`    );`,
+    code`    const request: RequestInit = {`,
+    code`      method: ${literal(operation.method)},`,
+    code`      headers,`,
+    code`    };`,
+    code`    if (options.signal !== undefined) request.signal = options.signal;`,
+    requestBody ? code`    if (encodedBody.body !== undefined) request.body = encodedBody.body;` : BLANK,
+    code`    const response = await runtime.fetchImpl(runtime.url(${route.expression}, ${usesQuery ? code`query` : code`[]`}), request);`,
+    code`    return runtime.readResponse<${responseType}>(`,
+    code`      ${literal(operation.name)},`,
+    code`      response,`,
+    code`      responseContracts,${validatesWithSources ? code`\n      checkResponse,` : BLANK}`,
+    code`    );`,
   ].filter(line => line.parts.length > 0);
-  const body = text`  return ${createApiOperation}(${JSON.stringify(operation.name)}, async (${inputName}: ${inputType}, options: ${requestOptions} = {}): Promise<${responseType}> => {
+  const body = code`  return ${createApiOperation}(${literal(operation.name)}, async (${inputName}: ${inputType}, options: ${requestOptions} = {}): Promise<${responseType}> => {
 ${join(bodyLines, code`\n`)}
   });`;
   const declarations = join([
     securityDeclaration,
-    text`const responseContracts: readonly ${rtType.client.RuntimeResponseContract}[] = ${JSON.stringify(responseContracts)};`,
+    code`const responseContracts: readonly ${rtType.client.RuntimeResponseContract}[] = ${documentLiteral(responseContracts)};`,
     validationSources,
   ].filter((part) => part.parts.length > 0), code`\n`);
-  const functions = text`export function ${operation.name}(options: ${clientOptions}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
-  return ${factoryName}(new ${clientRuntime}(${JSON.stringify(clientName)}, options));
+  const factoryCode = identifierPart(factoryName);
+  const functions = code`export function ${identifierPart(operation.name)}(options: ${clientOptions}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
+  return ${factoryCode}(new ${clientRuntime}(${literal(clientName)}, options));
 }
 
-export function ${factoryName}(runtime: ${clientRuntime}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
-${validatorSetup.parts.length > 0 ? text`${validatorSetup}\n` : BLANK}${body}
+export function ${factoryCode}(runtime: ${clientRuntime}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
+${validatorSetup.parts.length > 0 ? code`${validatorSetup}\n` : BLANK}${body}
 }
 `;
   const file = join([declarations, functions], code`\n`);
@@ -385,13 +384,14 @@ function emitSecurityTypes(
 ): Code {
   const entries = objectEntries(rawSecuritySchemes);
   const contextSchemes = entries.filter(([, scheme]) => isJsonObject(scheme) && !scheme.$ref && scheme.type !== 'mutualTLS');
-  const schemeNames = entries.map(([name]) => JSON.stringify(name));
-  const nameType = schemeNames.length ? schemeNames.join(' | ') : 'never';
+  const named = (suffix: string): Code => identifierPart(`${clientName}${suffix}`);
+  const schemeNames = entries.map(([name]) => literal(name));
+  const nameType = schemeNames.length ? join(schemeNames, code` | `) : code`never`;
   const flowCases = contextSchemes.map(([name, scheme]) =>
-    `  Name extends ${JSON.stringify(name)} ? ${literalType(asRecord(scheme).flows)} :`,
+    code`  Name extends ${literal(name)} ? ${literalType(asRecord(scheme).flows)} :`,
   );
   const urlCases = contextSchemes.map(([name, scheme]) =>
-    `  Name extends ${JSON.stringify(name)} ? ${literalType(asRecord(scheme).openIdConnectUrl)} :`,
+    code`  Name extends ${literal(name)} ? ${literalType(asRecord(scheme).openIdConnectUrl)} :`,
   );
   const contexts = contextSchemes.map(([name, scheme]) => {
     const record = asRecord(scheme);
@@ -401,58 +401,55 @@ function emitSecurityTypes(
       ),
     )];
     const scopeType = scopes.length
-      ? `readonly (${scopes.map((scope) => JSON.stringify(scope)).join(' | ')})[]`
-      : 'readonly string[]';
-    return `export type ${clientName}${identifier(name)}Context =
-  Omit<${clientName}AuthContext, 'scheme' | 'type' | 'scopes' | 'flows' | 'openIdConnectUrl'> & {
-    readonly scheme: ${JSON.stringify(name)};
-    readonly type: ${JSON.stringify(record.type)};
+      ? code`readonly (${join(scopes.map((scope) => literal(scope)), code` | `)})[]`
+      : code`readonly string[]`;
+    return code`export type ${named(`${identifier(name)}Context`)} =
+  Omit<${named('AuthContext')}, 'scheme' | 'type' | 'scopes' | 'flows' | 'openIdConnectUrl'> & {
+    readonly scheme: ${literal(name)};
+    readonly type: ${documentLiteral(record.type)};
     readonly scopes: ${scopeType};
-    readonly flows: ${clientName}SecuritySchemeFlows<${JSON.stringify(name)}>;
-    readonly openIdConnectUrl: ${clientName}SecuritySchemeOpenIdConnectUrl<${JSON.stringify(name)}>;
+    readonly flows: ${named('SecuritySchemeFlows')}<${literal(name)}>;
+    readonly openIdConnectUrl: ${named('SecuritySchemeOpenIdConnectUrl')}<${literal(name)}>;
   };`;
   });
   const properties = contextSchemes.map(([name, scheme]) => {
     const record = asRecord(scheme);
-    const contextType = `${clientName}${identifier(name)}Context`;
+    const contextType = named(`${identifier(name)}Context`);
     const valueType = record.type === 'http' && String(record.scheme).toLowerCase() === 'basic'
-      ? `${clientName}BasicAuthValue<${contextType}>`
-      : `${clientName}TokenAuthValue<${contextType}>`;
-    return `  ${propertyName(name)}?: ${valueType};`;
+      ? code`${named('BasicAuthValue')}<${contextType}>`
+      : code`${named('TokenAuthValue')}<${contextType}>`;
+    return code`  ${propertyKey(name)}?: ${valueType};`;
   });
   if (!entries.length) return BLANK;
+  const otherwise = code`  Name extends ${named('SecuritySchemeName')} ? undefined : never;`;
 
-  return text`export type ${clientName}AuthContext = ${runtime}.AuthContext;
+  return code`export type ${named('AuthContext')} = ${runtime}.AuthContext;
 
-export type ${clientName}SecuritySchemeName = ${nameType};
+export type ${named('SecuritySchemeName')} = ${nameType};
 
-export type ${clientName}SecuritySchemeFlows<
-  Name extends ${clientName}SecuritySchemeName,
+export type ${named('SecuritySchemeFlows')}<
+  Name extends ${named('SecuritySchemeName')},
 > =
-${flowCases.length
-    ? `${flowCases.join('\n')}  undefined;`
-    : `  Name extends ${clientName}SecuritySchemeName ? undefined : never;`}
+${flowCases.length ? code`${join(flowCases, code`\n`)}  undefined;` : otherwise}
 
-export type ${clientName}SecuritySchemeOpenIdConnectUrl<
-  Name extends ${clientName}SecuritySchemeName,
+export type ${named('SecuritySchemeOpenIdConnectUrl')}<
+  Name extends ${named('SecuritySchemeName')},
 > =
-${urlCases.length
-    ? `${urlCases.join('\n')}  undefined;`
-    : `  Name extends ${clientName}SecuritySchemeName ? undefined : never;`}
+${urlCases.length ? code`${join(urlCases, code`\n`)}  undefined;` : otherwise}
 
-${contexts.join('\n\n')}
+${join(contexts, code`\n\n`)}
 
-export type ${clientName}TokenAuthValue<
-  Context extends ${clientName}AuthContext = ${clientName}AuthContext,
+export type ${named('TokenAuthValue')}<
+  Context extends ${named('AuthContext')} = ${named('AuthContext')},
 > = ${runtime}.TokenAuthValue<Context>;
 
-export type ${clientName}BasicCredentials = ${runtime}.BasicCredentials;
-export type ${clientName}BasicAuthValue<
-  Context extends ${clientName}AuthContext = ${clientName}AuthContext,
+export type ${named('BasicCredentials')} = ${runtime}.BasicCredentials;
+export type ${named('BasicAuthValue')}<
+  Context extends ${named('AuthContext')} = ${named('AuthContext')},
 > = ${runtime}.BasicAuthValue<Context>;
 
-export interface ${clientName}Auth {
-${properties.join('\n')}
+export interface ${named('Auth')} {
+${join(properties, code`\n`)}
 }
 `;
 }
@@ -498,38 +495,41 @@ function emitClient(
       securityAliases.set(operation.name, securityAlias);
     }
   });
-  const imports = operations.map((operation) => {
-    const names = [`${operationFactoryName(operation)} as ${aliases.get(operation.name)}`];
+  const metadataCode = identifierPart(metadataName);
+  // Each operation module is imported under the aliases that the scope decided; a name is imported when the code calls it.
+  const operationSources = operations.map((operation) => new ImportSource(`./operations/${operation.name}.js`));
+  const factoryCodes = operations.map((operation, index) => operationSources[index]?.name(operationFactoryName(operation), { alias: aliases.get(operation.name) ?? '' }) ?? BLANK);
+  const securityCodes = operations.flatMap((operation, index) => {
     const securityAlias = securityAliases.get(operation.name);
-    if (securityAlias) names.push(`__golemSecuritySchemes as ${securityAlias}`);
-    return `import { ${names.join(', ')} } from ${JSON.stringify(`./operations/${operation.name}.js`)};`;
-  }).join('\n');
+    return securityAlias ? [operationSources[index]?.name('__golemSecuritySchemes', { alias: securityAlias }) ?? BLANK] : [];
+  });
   const metadata = plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls
-    ? `export const ${metadataName} = {
-${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
+    ? code`export const ${metadataCode} = {
+${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
 } as const;`
-    : '';
+    : BLANK;
   const clientRuntime = rt.client.ClientRuntime;
   const runtimeTypes = new ImportSource('@exprtlabs/golem/client', true, { namespace: 'Runtime' });
   const typesModule = new ImportSource('./types.js', true, { namespace: 'Types' });
   const runtimeNamespace = runtimeTypes.namespace();
   const typesNamespace = typesModule.namespace();
+  const named = (suffix: string): Code => identifierPart(`${clientName}${suffix}`);
   const inputTypeOf = (operation: NormalizedOperation): Code => code`${typesNamespace}.${identifierPart(`${operation.typeName}OperationInput`)}`;
   const responseTypeOf = (operation: NormalizedOperation): Code => code`${typesNamespace}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}`;
   const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
   const methods = join(operations.map((operation) =>
-    text`  ${operation.name}(): ${apiOperation}<${inputTypeOf(operation)}, ${responseTypeOf(operation)}, ${clientName}RequestOptions>;`,
+    code`  ${identifierPart(operation.name)}(): ${apiOperation}<${inputTypeOf(operation)}, ${responseTypeOf(operation)}, ${named('RequestOptions')}>;`,
   ), code`\n`);
-  const implementations = join(operations.map((operation) =>
-    text`  ${operation.name}(): ${apiOperation}<${inputTypeOf(operation)}, ${responseTypeOf(operation)}, ${clientName}RequestOptions> {
-    return ${String(aliases.get(operation.name))}(this.runtime);
+  const implementations = join(operations.map((operation, index) =>
+    code`  ${identifierPart(operation.name)}(): ${apiOperation}<${inputTypeOf(operation)}, ${responseTypeOf(operation)}, ${named('RequestOptions')}> {
+    return ${factoryCodes[index] ?? BLANK}(this.runtime);
   }`,
   ), code`\n\n`);
   const undeclared = plan.helpers.has('selectResponse');
   const usesAuth = surfaces.auth || surfaces.mutualTls;
   const optionExtensions: Code[] = [
-    ...(surfaces.auth ? [legacyText(`  /** Values or lazy providers keyed by OpenAPI security-scheme name. */\n  auth?: ${clientName}Auth;`)] : []),
-    ...(profile.validation ? [text`  /** Overrides generated validators for individual operations. */\n  operationValidators?: ReadonlyMap<__GolemOperationName, ${aliased(rtType.validation.OperationRuntimeValidators, '__GolemOperationRuntimeValidators')}>;`] : []),
+    ...(surfaces.auth ? [code`  ${docComment('Values or lazy providers keyed by OpenAPI security-scheme name.')}\n  auth?: ${named('Auth')};`] : []),
+    ...(profile.validation ? [code`  ${docComment('Overrides generated validators for individual operations.')}\n  operationValidators?: ReadonlyMap<__GolemOperationName, ${aliased(rtType.validation.OperationRuntimeValidators, '__GolemOperationRuntimeValidators')}>;`] : []),
   ];
   const omittedOptions = [
     ...(surfaces.bodyEncoders ? [] : ['bodyEncoders']),
@@ -541,53 +541,55 @@ ${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
     'auth',
     'operationValidators',
   ];
-  const optionsType = text`Omit<${runtimeNamespace}.ClientOptions, ${omittedOptions.map((name) => JSON.stringify(name)).join(' | ')}>${optionExtensions.length ? text` & {\n${join(optionExtensions, code`\n`)}\n}` : ''}`;
+  const optionsType = code`Omit<${runtimeNamespace}.ClientOptions, ${join(omittedOptions.map((name) => literal(name)), code` | `)}>${optionExtensions.length ? code` & {\n${join(optionExtensions, code`\n`)}\n}` : BLANK}`;
   const aliases_ = join([
-    text`export type ${clientName}ClientOptions = ${optionsType};`,
-    text`export type ${clientName}RequestOptions = ${runtimeNamespace}.RequestOptions;`,
+    code`export type ${named('ClientOptions')} = ${optionsType};`,
+    code`export type ${named('RequestOptions')} = ${runtimeNamespace}.RequestOptions;`,
     ...(undeclared ? [
-      text`export type ${clientName}UndeclaredResponseError = ${runtimeNamespace}.UndeclaredResponseError;`,
-      text`export function is${clientName}UndeclaredResponseError(error: unknown): error is ${runtimeNamespace}.UndeclaredResponseError {\n  return ${rt.client.isUndeclaredResponseError}(error, ${JSON.stringify(clientName)});\n}`,
+      code`export type ${named('UndeclaredResponseError')} = ${runtimeNamespace}.UndeclaredResponseError;`,
+      code`export function ${identifierPart(`is${clientName}UndeclaredResponseError`)}(error: unknown): error is ${runtimeNamespace}.UndeclaredResponseError {\n  return ${rt.client.isUndeclaredResponseError}(error, ${literal(clientName)});\n}`,
     ] : []),
-    ...(surfaces.mutualTls ? [text`export type ${clientName}MutualTlsTransport = ${runtimeNamespace}.MutualTlsTransport;`] : []),
+    ...(surfaces.mutualTls ? [code`export type ${named('MutualTlsTransport')} = ${runtimeNamespace}.MutualTlsTransport;`] : []),
     ...(surfaces.streamDecoders ? [
-      text`export type ${clientName}StreamDecoderContext = ${runtimeNamespace}.StreamDecoderContext;`,
-      text`export type ${clientName}StreamDecoder = ${runtimeNamespace}.StreamDecoder;`,
+      code`export type ${named('StreamDecoderContext')} = ${runtimeNamespace}.StreamDecoderContext;`,
+      code`export type ${named('StreamDecoder')} = ${runtimeNamespace}.StreamDecoder;`,
     ] : []),
     ...(surfaces.parameterSerializers ? [
-      text`export type ${clientName}ParameterSerializerContext = ${runtimeNamespace}.ParameterSerializerContext;`,
-      text`export type ${clientName}ParameterSerializer = ${runtimeNamespace}.ParameterSerializer;`,
+      code`export type ${named('ParameterSerializerContext')} = ${runtimeNamespace}.ParameterSerializerContext;`,
+      code`export type ${named('ParameterSerializer')} = ${runtimeNamespace}.ParameterSerializer;`,
     ] : []),
     ...(surfaces.responseHeaderDecoders ? [
-      text`export type ${clientName}ResponseHeaderDecoderContext = ${runtimeNamespace}.ResponseHeaderDecoderContext;`,
-      text`export type ${clientName}ResponseHeaderDecoder = ${runtimeNamespace}.ResponseHeaderDecoder;`,
+      code`export type ${named('ResponseHeaderDecoderContext')} = ${runtimeNamespace}.ResponseHeaderDecoderContext;`,
+      code`export type ${named('ResponseHeaderDecoder')} = ${runtimeNamespace}.ResponseHeaderDecoder;`,
     ] : []),
     ...(surfaces.bodyEncoders ? [
-      text`export type ${clientName}EncodedBody = ${runtimeNamespace}.EncodedBody;`,
-      text`export type ${clientName}EncodingMetadata = ${runtimeNamespace}.EncodingMetadata;`,
-      text`export type ${clientName}BodyEncoderContext = ${runtimeNamespace}.BodyEncoderContext;`,
-      text`export type ${clientName}BodyEncoder = ${runtimeNamespace}.BodyEncoder;`,
+      code`export type ${named('EncodedBody')} = ${runtimeNamespace}.EncodedBody;`,
+      code`export type ${named('EncodingMetadata')} = ${runtimeNamespace}.EncodingMetadata;`,
+      code`export type ${named('BodyEncoderContext')} = ${runtimeNamespace}.BodyEncoderContext;`,
+      code`export type ${named('BodyEncoder')} = ${runtimeNamespace}.BodyEncoder;`,
     ] : []),
-  ].map((item) => typeof item === 'string' ? legacyText(item) : item), code`\n`);
-  const rest = text`${imports}
-${profile.validation ? `\n${operationNameType('__GolemOperationName', operations)}\n` : ''}
+  ], code`\n`);
+  const tail = code`
+${profile.validation ? code`\n${operationNameType('__GolemOperationName', operations)}\n` : BLANK}
 ${aliases_}
-${usesAuth ? text`\n${emitSecurityTypes(clientName, rawSecuritySchemes, runtimeNamespace)}` : ''}
-export interface ${clientName}ClientPort {
+${usesAuth ? code`\n${emitSecurityTypes(clientName, rawSecuritySchemes, runtimeNamespace)}` : BLANK}
+export interface ${named('ClientPort')} {
 ${methods}
 }
 
-export class ${clientName}Client implements ${clientName}ClientPort {
+export class ${named('Client')} implements ${named('ClientPort')} {
   private readonly runtime: ${clientRuntime};
 
-  constructor(options: ${clientName}ClientOptions) {
-    this.runtime = new ${clientRuntime}(${JSON.stringify(clientName)}, options);
+  constructor(options: ${named('ClientOptions')}) {
+    this.runtime = new ${clientRuntime}(${literal(clientName)}, options);
   }
 
 ${implementations}
 }
 ${metadata}
 `;
+  const imports = join(fileImports(tail, operationSources, { quote: '"', elsewhere: [runtimeTypes, typesModule] }), code`\n`);
+  const rest = code`${imports}${tail}`;
   const imports_: ImportOptions = { modules: ['client', 'mobx', 'validation'] };
   const runtime = new Map(importSet(rest, imports_).map((entry) => [entry.module, entry] as const));
   const written = new Set<string>();
@@ -599,9 +601,9 @@ ${metadata}
   };
   const importLinesOfFile = [
     ...lines('client', { values: true }),
-    ...fileImports(rest, [runtimeTypes], { elsewhere: [typesModule] }),
+    ...fileImports(rest, [runtimeTypes], { elsewhere: [typesModule, ...operationSources] }),
     ...lines('validation', { types: true }),
-    ...fileImports(rest, [typesModule], { elsewhere: [runtimeTypes] }),
+    ...fileImports(rest, [typesModule], { elsewhere: [runtimeTypes, ...operationSources] }),
     ...lines('mobx', { types: true }),
     ...(profile.mobx ? [] : lines('client', { types: true })),
   ];
@@ -651,7 +653,7 @@ export function buildOperationValidationSchemas(
       const operationName = operationRoots.get(resource);
       if (operationName === undefined) return undefined;
       const prefix = `/operations/${escapeJsonPointerToken(operationName)}`;
-      return pointer.startsWith(prefix) ? { where: `operation ${JSON.stringify(operationName)} at ${pointer.slice(prefix.length) || '/'}` } : undefined;
+      return pointer.startsWith(prefix) ? { where: `operation ${literal(operationName)} at ${pointer.slice(prefix.length) || '/'}` } : undefined;
     },
   };
 }

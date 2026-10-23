@@ -467,7 +467,7 @@ export function generateOpenApiModelArtifacts(
      */
     readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly locateModel: (name: string) => SchemaPlace }) => Pick<PlanValidators, 'exports' | 'fastExports'>;
   } = {},
-): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: string; readonly diagnostics: readonly GolemDiagnostic[] } {
+): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: Code; readonly diagnostics: readonly GolemDiagnostic[] } {
   const { schemaGraph, definitions, ordered, grouping } = analysis;
   const { groups, owner, runtimeEdges } = grouping;
   const digest = sourceDigest(document);
@@ -664,7 +664,7 @@ export function generateOpenApiModelArtifacts(
     exportFrom([`${definition.name}Model`, ...codecExports(definition.name).map(([, exported]) => exported)], `./models/${definition.name}.js`),
     exportFrom([`${definition.name}Fields`, `${definition.name}JSON`, `${definition.name}Init`], `./models/${definition.name}.js`, true),
   ]);
-  return { files, entryReexports: render(join(reexports, lineBreak)), diagnostics: uniqueDiagnostics(diagnostics) };
+  return { files, entryReexports: join(reexports, lineBreak), diagnostics: uniqueDiagnostics(diagnostics) };
 }
 
 /**

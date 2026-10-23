@@ -6,9 +6,10 @@ import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSche
 import { buildEmissionPlan, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
 import { assertPortableFilenames, assertUniquePublicExports, identifier } from '@exprtlabs/golem/generator-api';
+import { code, docComment, documentLiteral, identifier as identifierPart, join, render, type Code } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
-import { generatedBanner } from './package-info.js';
+import { generatedBannerComment } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
 import {
@@ -72,7 +73,7 @@ function generateLinks(operations: readonly NormalizedOperation[]): string {
     }
     if (Object.keys(responses).length) links[operation.name] = responses;
   }
-  return `${generatedBanner()}
+  return render(code`${generatedBannerComment()}
 ${operationNameType('OperationName', operations)}
 
 export interface LinkServer {
@@ -106,41 +107,40 @@ export type ResponseLinkRegistry = Readonly<Record<
  * status key, and link name. Runtime expressions are preserved verbatim for
  * application-owned workflow/navigation code to evaluate.
  */
-export const responseLinks = ${JSON.stringify(links, null, 2)} as const satisfies Partial<ResponseLinkRegistry>;
-`;
+export const responseLinks = ${documentLiteral(links, 2)} as const satisfies Partial<ResponseLinkRegistry>;
+`);
 }
 
-function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan, modelReexports = ''): string {
+function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan, modelReexports: Code = code``): string {
   requireProfile(profile);
   const artifacts = plan?.artifacts;
   const include = (name: ArtifactFile): boolean => artifacts ? artifacts.has(name) : true;
-  return `${generatedBanner()}
+  return render(code`${generatedBannerComment()}
 export * from './types.js';
-${include('input-schemas.ts') ? "export type * as InputSchemas from './input-schemas.js';" : ''}
-${include('output-schemas.ts') ? "export type * as OutputSchemas from './output-schemas.js';" : ''}
+${include('input-schemas.ts') ? code`export type * as InputSchemas from './input-schemas.js';` : code``}
+${include('output-schemas.ts') ? code`export type * as OutputSchemas from './output-schemas.js';` : code``}
 ${modelReexports}
-${include('client.ts') ? "export * from './client.js';" : ''}
-${include('inbound.ts') ? "export * from './inbound.js';" : ''}
-${include('links.ts') ? "export * from './links.js';" : ''}
-`;
+${include('client.ts') ? code`export * from './client.js';` : code``}
+${include('inbound.ts') ? code`export * from './inbound.js';` : code``}
+${include('links.ts') ? code`export * from './links.js';` : code``}
+`);
 }
 
 function generateInbound(clientName: string, operations: readonly NormalizedOperation[]): string {
-  const methods = operations.map((operation) =>
-    `  /** ${operation.sourceKind} ${operation.sourceName}: ${operation.method} ${operation.route} */\n` +
-    `  ${operation.name}(input: Types.${operation.typeName}OperationInput): Promise<Types.${operation.typeName}OperationHttpResponse>;`
-  ).join('\n\n');
-  return `${generatedBanner()}
+  const methods = join(operations.map((operation) =>
+    code`  ${docComment(`${operation.sourceKind} ${operation.sourceName}: ${operation.method} ${operation.route}`)}\n  ${identifierPart(operation.name)}(input: Types.${identifierPart(`${operation.typeName}OperationInput`)}): Promise<Types.${identifierPart(`${operation.typeName}OperationHttpResponse`)}>;`,
+  ), code`\n\n`);
+  return render(code`${generatedBannerComment()}
 import type * as Types from './types.js';
 
 /**
  * Application-owned handlers for inbound OpenAPI callbacks and webhooks.
  * This contract intentionally does not choose an HTTP server framework.
  */
-export interface ${clientName}InboundPort {
+export interface ${identifierPart(`${clientName}InboundPort`)} {
 ${methods}
 }
-`;
+`);
 }
 
 export function generatedFiles(document: unknown, options: WriteSdkOptions): GeneratedFiles {
@@ -197,7 +197,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
     );
     return validators.compiled;
   };
-  let modelReexports = '';
+  let modelReexports: Code = code``;
   const modelDiagnostics: GolemDiagnostic[] = [];
   if (plan.hasModels) {
     const models = generateOpenApiModelArtifacts(document, profile, modelAnalysis, {

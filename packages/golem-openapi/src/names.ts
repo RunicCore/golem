@@ -1,5 +1,6 @@
 import { unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import { bindingName, camelIdentifier, identifier, RESERVED_BINDING_NAMES } from '@exprtlabs/golem/generator-api';
+import { code, identifier as identifierPart, join, literal, type Code } from '@exprtlabs/golem/internal/emitter';
 
 /**
  * An operation name is both an exported function and a generated client
@@ -27,8 +28,8 @@ export function operationName(
 }
 
 /** A file-private union of client operation names, for emitted files that type a name without importing it. */
-export function operationNameType(typeName: string, operations: readonly { readonly name: string }[]): string {
-  return `type ${typeName} = ${operations.map((operation) => JSON.stringify(operation.name)).join(' | ')};`;
+export function operationNameType(typeName: string, operations: readonly { readonly name: string }[]): Code {
+  return code`type ${identifierPart(typeName)} = ${join(operations.map((operation) => literal(operation.name)), code` | `)};`;
 }
 
 export function inboundOperationName(
