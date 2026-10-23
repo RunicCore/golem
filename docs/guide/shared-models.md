@@ -25,7 +25,7 @@ An alias in a file that does not end in a model suffix is not a model. A field t
 
 ## Where each app writes
 
-A model file whose real path is inside `models.root` is a model file of the app, and its generated file stays beside it. Golem follows folder links to find the real path. Every other model file is a shared model file. It does not matter whether the app reaches it by a plain include, a folder link, a linked workspace package or `node_modules`. Its aliases are models of the app. A declaration file such as `customer.model.d.ts` is always a shared model file, also inside `models.root`, because it cannot hold your class.
+A model file whose real path is inside `models.root` is a model file of the app, and its generated file stays beside it. Golem follows folder links to find the real path. Every other model file is a shared model file. It does not matter whether the app reaches it by a plain include, a folder link, a linked workspace package or `node_modules`. Its aliases are models of the app. A declaration file such as `customer.model.d.ts` is always a shared model file, also inside `models.root`, because it cannot hold your class. The exception is a model file that a `model-manifest.json` of an SDK lists: it keeps the generated code of the [SDK](/guide/models-and-client).
 
 Each app generates the shared models in its own `models.output`, so several apps never write to one file. Golem writes nothing into the shared folder. The generated file is at:
 
@@ -64,5 +64,7 @@ A shared folder holds no `golem.yaml` and no generated file. When one is there, 
 - A generated file beside a shared model file, such as `customer.model.generated.ts`, `.generated.js` or `.generated.d.ts`. Golem does not use it. The app uses its own generated file.
 
 A `golem.yaml` with a `models` job below the `models.root` of another `golem.yaml` stops `golem generate` and `golem check` with [RUNM1077](/reference/diagnostics#runm1077). Both jobs would write the same generated files. Remove the `models` job from the nested `golem.yaml`, or move its folder out of the root.
+
+`golem generate`, `golem check`, `golem build` and `golem watch` write each warning once for each run.
 
 Full example: [`examples/shared-folder`](https://github.com/RunicCore/golem/tree/master/examples/shared-folder), with a shared folder that declares a model, one app that includes the folder and one that reaches it through a folder link.

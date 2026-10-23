@@ -28,7 +28,7 @@ The second type argument of `IModel` and `IObject` controls extra properties, `a
 
 <<< ../../examples/models/src/metadata.model.ts#exact-and-any
 
-`exact` defaults to `true`: extra properties fail validation, including in nested plain objects. The own state of a model instance is not an extra property. Constructors assign declared fields only, and extra keys added to an instance are not serialized.
+`exact` defaults to `true`: extra properties fail validation, including in nested plain objects. A key on an instance that its model does not declare is program state, not an extra property. Codecs never report it as an unknown key and never write it to JSON, also inside an `unknown` or `any` field. Input from JSON or a request stays exact. Constructors assign declared fields only.
 
 Set `exact: false` in `golem.yaml` to change the default for every model. The option on the declaration overrides `golem.yaml`, and `golem.yaml` overrides the default.
 
@@ -51,7 +51,9 @@ Supported:
 - scalar types only, such as `string | number`, and literal unions, such as `'paid' | 'pending'`
 - optional and nullish values: `T | undefined`, `T | null`
 - one object, model or class beside scalars: `string | TPlace`
-- a scalar or several scalars beside one array or one tuple: `string | Date[]`, `string | [Date]`, `T | T[]`, as in query objects (`status?: Status | Status[]`). A scalar that converts, such as `Date` or a model, must be the only scalar
+- strings, numbers, booleans or literals beside one array or one tuple, as in query objects (`status?: Status | Status[]`). The items can convert: `string | Date[]`. A `Date` cannot be the single value beside an array: `Date | Date[]` fails
+- a model beside an array of that model: `TPlace | TPlace[]`
+- strings, numbers, booleans or literals beside one array and one object or model: `string | string[] | TPlace`. The `JsonValue` alias under [Recursive type aliases](#recursive-type-aliases) has this shape
 - object unions with one unique, required literal discriminator
 - an SDK model class (generated from an OpenAPI document) plus a primitive or a uniquely tagged object
 

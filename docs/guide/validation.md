@@ -75,7 +75,7 @@ The next `validator.validate()` replaces these messages with its own results. Th
 
 ## Errors and issues
 
-An invalid value is an ordinary result for `validateInstance` and `validate()`. A call that converts a value throws a `LibError` instead: `parse`, `stringify`, `fromWireFormat`, `toWireFormat` and `assertValue`. A validator also throws `LibError` when validation cannot run, for example when the model was generated with `validation: false`.
+An invalid value is an ordinary result for `validateInstance` and `validate()`. A call that converts a value throws a `LibError` instead: `parse`, `stringify`, `fromWireFormat`, `toWireFormat` and `assertValue`. A validator also throws `LibError` when validation cannot run, for example when the model was generated with `validation: false`, or when a rule or a converter throws.
 
 <<< ../../examples/models/src/read-errors.ts#lib-error
 

@@ -108,7 +108,7 @@ With validation on, the default, each call checks the value. The JSON value and 
 
 ## Copies and references
 
-`fromWireFormat` and `parse` copy objects, maps (`Record<string, V>`) and arrays. Values typed `unknown` or `any` (the model sets `allowAny: true`) are carried by reference, including the undeclared properties of an open object. The result holds the same object as the input.
+`fromWireFormat` and `parse` copy objects, maps (`Record<string, V>`) and arrays. Values typed `unknown` or `any` (the model sets `allowAny: true`) are carried by reference, including the undeclared properties of an open object. The result holds the same object as the input. Golem reads each declared property once, so a getter runs once.
 
 Cyclic input throws a `LibError` of kind `deserialization`. Encoding a cyclic value throws a `LibError` of kind `serialization`.
 
