@@ -409,9 +409,10 @@ export interface ImportOptions {
   readonly quote?: "'" | '"';
   /**
    * How a module writes its type names: `separate` (the default) puts them in an `import type` statement before the value
-   * statement; `inline` puts them after the values in one statement, each as `type Name`.
+   * statement; `inline` puts them after the values in one statement, each as `type Name`; `ordered` puts values and
+   * types in one statement in the order of `order`, then the unlisted values, then the unlisted types.
    */
-  readonly typeNames?: 'separate' | 'inline';
+  readonly typeNames?: 'separate' | 'inline' | 'ordered';
   /** The names of a module that a file with a fixed order lists: they come first, in this order, for values and types alike; the others follow in code point order. */
   /** The runtime modules this call writes, in this order; a module that the code uses and the list lacks is an error. Without it, every module in the fixed order. */
   readonly modules?: readonly RuntimeModule[];
@@ -433,6 +434,16 @@ export function importLines({ module, names, types }: RuntimeImport, options: Im
   if (options.typeNames === 'inline') {
     const listed = [...names, ...types.map((type) => `type ${type}`)];
     return listed.length > 0 ? [plainText(`import { ${listed.join(', ')} } from ${quoted};`)] : [];
+  }
+  if (options.typeNames === 'ordered') {
+    const listed = options.order?.[module] ?? [];
+    const place = (spelled: string): number => { const at = listed.indexOf(spelled.split(' as ')[0] ?? spelled); return at < 0 ? Infinity : at; };
+    const members = [...names.map((spelled) => ({ spelled, typeOnly: false })), ...types.map((spelled) => ({ spelled: `type ${spelled}`, typeOnly: true }))];
+    const ordered = members
+      .map((member, index) => ({ member, index, at: place(member.typeOnly ? member.spelled.slice('type '.length) : member.spelled) }))
+      .sort((left, right) => left.at === right.at ? left.index - right.index : left.at < right.at ? -1 : 1)
+      .map(({ member }) => member.spelled);
+    return ordered.length > 0 ? [plainText(`import { ${ordered.join(', ')} } from ${quoted};`)] : [];
   }
   return [
     ...(types.length > 0 ? [plainText(`import type { ${types.join(', ')} } from ${quoted};`)] : []),

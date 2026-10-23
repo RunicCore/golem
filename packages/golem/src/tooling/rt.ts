@@ -41,6 +41,8 @@ export interface RuntimeTypeExports {
     readonly GeneratedModelConstructor: model.GeneratedModelConstructor;
     readonly GeneratedModelWire: model.GeneratedModelWire<unknown>;
     readonly generatedModelFieldsBrand: typeof model.generatedModelFieldsBrand;
+    readonly generatedModelResultBrand: typeof model.generatedModelResultBrand;
+    readonly ModelInit: model.ModelInit<unknown>;
     readonly generatedModelWireBrand: typeof model.generatedModelWireBrand;
   };
   readonly serde: { readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
