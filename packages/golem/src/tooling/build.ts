@@ -161,16 +161,31 @@ function compilerCli(root: string): string {
 interface TscResult { readonly code: number; readonly stdout: string; readonly stderr: string }
 
 /** Run the compiler CLI; `forward` prints its output as it arrives, exactly as the compiler wrote it. */
-function runTsc(cli: string, cwd: string, args: readonly string[], forward: boolean): Promise<TscResult> {
+function runTsc(cli: string, cwd: string, args: readonly string[], forward: boolean, hideEmittedList = false): Promise<TscResult> {
   return new Promise((resolve, reject) => {
     const pretty = forward && process.stdout.isTTY ? ['--pretty'] : [];
     const child = spawn(process.execPath, [cli, ...args, ...pretty], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk; if (forward) process.stdout.write(chunk); });
+    // The list of emitted files is for the build, not for its user: the forwarded output leaves its lines out.
+    let partial = '';
+    const forwardLines = (text: string): void => {
+      const lines = (partial + text).split('\n');
+      partial = lines.pop() ?? '';
+      for (const line of lines) if (!line.startsWith(EMITTED_LINE)) process.stdout.write(`${line}\n`);
+    };
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk;
+      if (!forward) return;
+      if (hideEmittedList) forwardLines(chunk.toString());
+      else process.stdout.write(chunk);
+    });
     child.stderr.on('data', (chunk: Buffer) => { stderr += chunk; if (forward) process.stderr.write(chunk); });
     child.once('error', reject);
-    child.once('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.once('close', (code) => {
+      if (partial !== '' && !partial.startsWith(EMITTED_LINE)) process.stdout.write(partial);
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
   });
 }
 
@@ -447,59 +462,67 @@ function rewriteDeclarations(session: ts.ProgramSession, project: Project, sourc
   }
 }
 
-/** The JavaScript extensions the compiler writes for a source extension. */
-const SCRIPT_FILES: Readonly<Record<string, readonly string[]>> = {
-  '.ts': ['.js'], '.tsx': ['.js', '.jsx'], '.js': ['.js'], '.jsx': ['.js', '.jsx'], '.mts': ['.mjs'], '.mjs': ['.mjs'], '.cts': ['.cjs'], '.cjs': ['.cjs'],
-};
+/** The endings of the files the compiler writes for a source, longest first: the JavaScript, the declaration and their maps. */
+const EMITTED_ENDINGS = ['.d.ts.map', '.d.mts.map', '.d.cts.map', '.d.ts', '.d.mts', '.d.cts', '.js.map', '.mjs.map', '.cjs.map', '.jsx.map', '.js', '.mjs', '.cjs', '.jsx'] as const;
 
 /**
- * The files of the build's output that exist for each source of the program: where the compiler puts its JavaScript, its declaration
- * and their maps. These paths belong to the source, so a source that leaves the program takes them with it, and nothing else.
+ * The source an emitted file belongs to: the one whose path, without its extension, is the file's path under the output directory,
+ * from a folder that holds every source. Undecided when none or several do, so the file is not attributed and not removed later.
  */
-function outputsOf(project: Project, sources: readonly ts.SourceFile[]): Map<string, string[]> {
-  const local = sources.filter((source) => !source.isDeclarationFile);
-  // The compiler lays outputs out from `rootDir`, else from the common directory of the sources it emits.
-  const layoutRoot = project.rootDir ?? (local.length === 0 ? project.root : commonDirectory(local.map((source) => path.dirname(source.fileName))));
-  const outputs = new Map<string, string[]>();
-  for (const source of local) {
+function sourceOfEmitted(project: Project, local: readonly ts.SourceFile[], file: string): string | undefined {
+  const ending = EMITTED_ENDINGS.find((candidate) => file.endsWith(candidate));
+  if (ending === undefined) return undefined;
+  const stem = file.slice(0, file.length - ending.length);
+  const directory = ending.startsWith('.d.') ? project.declarationDir ?? project.outDir : project.outDir;
+  const relative = path.relative(directory, stem);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return undefined;
+  const matches = local.filter((source) => {
     const extension = Object.keys(DECLARATION_FILES).find((candidate) => source.fileName.endsWith(candidate));
-    if (extension === undefined) continue;
-    const stem = path.relative(layoutRoot, source.fileName.slice(0, source.fileName.length - extension.length));
-    const candidates = [
-      ...project.emitsJavaScript ? SCRIPT_FILES[extension]!.map((ending) => path.join(project.outDir, `${stem}${ending}`)) : [],
-      ...project.declaration && !project.noEmit ? [path.join(project.declarationDir ?? project.outDir, `${stem}${DECLARATION_FILES[extension]!.declaration}`)] : [],
-    ];
-    outputs.set(source.fileName, candidates.flatMap((file) => [file, `${file}.map`]).filter((file) => fs.statSync(file, { throwIfNoEntry: false })?.isFile()));
-  }
-  return outputs;
+    if (extension === undefined) return false;
+    const sourceStem = source.fileName.slice(0, source.fileName.length - extension.length);
+    if (sourceStem !== relative && !sourceStem.endsWith(`${path.sep}${relative}`)) return false;
+    const layoutRoot = sourceStem.slice(0, sourceStem.length - relative.length);
+    return local.every((other) => isInsideDirectory(layoutRoot, other.fileName));
+  });
+  return matches.length === 1 ? matches[0]!.fileName : undefined;
 }
 
 /**
- * A source that left the program since the build before takes its output with it: its JavaScript, declaration and maps, and the
- * directories that leave empty inside the output. A file that a source still in the program writes stays.
+ * Keep the files the compiler emitted for each source of the program, and remove those of a source that left the program since
+ * the build before: its JavaScript, declaration and maps, and the directories that leave empty inside the output. A file that a
+ * source still in the program owns stays. Only the files recorded here are removed: a file another tool wrote is never touched.
  */
-function removeOutputsOfDeletedSources(run: BuildRun, project: Project, sources: readonly ts.SourceFile[]): void {
-  const current = outputsOf(project, sources);
-  const kept = new Set([...current.values()].flat());
-  for (const [source, files] of run.emitted) {
-    if (current.has(source)) continue;
-    for (const file of files.filter((candidate) => !kept.has(candidate))) {
+function settleOutputs(run: BuildRun, project: Project, sources: readonly ts.SourceFile[], emitted: readonly string[]): void {
+  const { emitted: record } = run;
+  if (record === undefined) return;
+  const local = sources.filter((source) => !source.isDeclarationFile);
+  for (const file of emitted) {
+    const source = sourceOfEmitted(project, local, path.resolve(file));
+    if (source !== undefined) record.set(source, new Set([...record.get(source) ?? [], path.resolve(file)]));
+  }
+  const present = new Set(local.map((source) => source.fileName));
+  const kept = new Set([...record].filter(([source]) => present.has(source)).flatMap(([, files]) => [...files]));
+  for (const [source, files] of [...record]) {
+    if (present.has(source)) continue;
+    record.delete(source);
+    for (const file of [...files].filter((candidate) => !kept.has(candidate))) {
       fs.rmSync(file, { force: true });
       // Directories that this leaves empty go too, but never the output directory itself or anything above it.
       const inOutput = (directory: string): boolean => [project.outDir, project.declarationDir].some((output) => output !== undefined && output !== directory && isInsideDirectory(output, directory));
       for (let directory = path.dirname(file); inOutput(directory) && fs.existsSync(directory) && fs.readdirSync(directory).length === 0; directory = path.dirname(directory)) fs.rmdirSync(directory);
     }
   }
-  run.emitted.clear();
-  for (const [source, files] of current) run.emitted.set(source, files);
 }
+
+/** The start of each line of the list that `--listEmittedFiles` prints. */
+const EMITTED_LINE = 'TSFILE: ';
 
 /** The emitted files the compiler listed (`--listEmittedFiles`), and its output without those lines. */
 function emittedFiles(output: string): { readonly files: readonly string[]; readonly rest: string } {
   const files: string[] = [];
   const rest: string[] = [];
   for (const line of output.split('\n')) {
-    if (line.startsWith('TSFILE: ')) files.push(line.slice('TSFILE: '.length));
+    if (line.startsWith(EMITTED_LINE)) files.push(line.slice(EMITTED_LINE.length));
     else rest.push(line);
   }
   return { files, rest: rest.join('\n').trim() };
@@ -548,8 +571,8 @@ interface BuildRun {
   readonly outputs: Set<string>;
   /** The files the generate step wrote or kept. Generating one is the build's own doing, so it is no change to watch for. */
   readonly owned: Set<string>;
-  /** The output files of each source of the last build that finished: a source that leaves the program takes them with it. */
-  readonly emitted: Map<string, readonly string[]>;
+  /** For a watching build: the files the compiler emitted for each source, over all its builds. A source that leaves the program takes them with it. */
+  readonly emitted?: Map<string, Set<string>>;
   /** The directories that hold the program's sources outside the tsconfig's directory: a source added beside one is a change to build for. */
   readonly outsideDirectories: Set<string>;
   /** For a watching build, what the build reads first and what it was then: the only baseline a file the build has not met before can have. */
@@ -615,8 +638,9 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     '-p', configFile,
     '--incremental', '--tsBuildInfoFile', checkState,
     project.declaration && !project.noEmit ? '--emitDeclarationOnly' : '--noEmit',
+    ...run.emitted === undefined ? [] : ['--listEmittedFiles'],
     ...run.tscArguments,
-  ], true);
+  ], true, run.emitted !== undefined);
   // Like the compiler: a failed check still emits unless noEmitOnError is set, and the exit status stays the check's.
   if (check.code !== 0 && project.noEmitOnError) return check.code;
   const writesDeclarations = project.declaration && !project.noEmit;
@@ -626,8 +650,9 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const sources = projectSources(program);
   for (const source of sources) observeSource(source.fileName);
   if (writesDeclarations) rewriteDeclarations(session, project, sources, parsed.fileNames);
+  const checkFiles = run.emitted === undefined ? [] : emittedFiles(check.stdout).files;
   if (!project.emitsJavaScript) {
-    removeOutputsOfDeletedSources(run, project, sources);
+    settleOutputs(run, project, sources, checkFiles);
     return check.code;
   }
   const checker = program.getTypeChecker();
@@ -653,7 +678,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   ], false);
   const { files, rest } = emittedFiles(emit.stdout);
   for (const file of files.filter((candidate) => /\.[cm]?jsx?\.map$/.test(candidate))) remapSourceMap(file, stage);
-  removeOutputsOfDeletedSources(run, project, sources);
+  settleOutputs(run, project, sources, [...checkFiles, ...files]);
   // After a failed check the compiler already reported what the emit run would report.
   if (emit.code !== 0 && check.code === 0) {
     if (rest !== '') process.stdout.write(`${rest}\n`);
@@ -685,7 +710,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     inputs,
     outputs,
     owned: new Set<string>(),
-    emitted: new Map<string, readonly string[]>(),
+    ...(options.watch ? { emitted: new Map<string, Set<string>>() } : {}),
     outsideDirectories: new Set<string>(),
     generation,
     ...(options.onGenerated === undefined ? {} : { onGenerated: options.onGenerated }),

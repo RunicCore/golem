@@ -154,5 +154,31 @@ test('golem build --watch removes the output of a source that is deleted, and no
   fs.rmSync(path.join(root, 'src/extra/helper.ts'));
   await until(() => count(watcher.output(), /^Built /) === 3, 'the build after the last source of a folder was deleted');
   assert.equal(fs.existsSync(path.join(root, 'build/extra')), false, 'the folder the deletion left empty is gone');
+  assert.doesNotMatch(watcher.output(), /TSFILE/, 'the list of emitted files is for the build, not for its output');
+  assert.equal(await watcher.stop(), 130);
+});
+
+test('golem build --watch without a rootDir removes the output of a deleted source from build/src, and leaves a file another tool wrote', async (t) => {
+  // protects: T-315 only the files the build emitted for the deleted source are removed
+  const root = serdeProject(t, 'build-watch-delete-layout');
+  // Sources in two folders: with no rootDir, the compiler lays out from the tsconfig folder, so outputs land in build/src and build/tools.
+  editTsconfig(root, (tsconfig) => { delete tsconfig.compilerOptions.rootDir; tsconfig.include = ['src/**/*.ts', 'tools/**/*.ts']; });
+  write(root, 'tools/probe.ts', 'export const probe = 1;\n');
+  write(root, 'src/use.ts', USE);
+  write(root, 'src/index.ts', 'export const index = 1;\n');
+  const watcher = watching(t, root);
+  await until(() => count(watcher.output(), /^Built /) === 1, () => `the first build (output=${watcher.output()})`);
+  const outputs = (name: string): string[] => ['.js', '.js.map', '.d.ts'].map((ending) => path.join(root, 'build/src', `${name}${ending}`));
+  for (const file of [...outputs('index'), ...outputs('use')]) assert.ok(fs.existsSync(file), `${file} is built`);
+  // Files of another tool, at the path a layout from the sources' folder would give to src/index.ts.
+  write(root, 'build/index.js', 'other tool');
+  write(root, 'build/index.js.map', 'other tool');
+
+  fs.rmSync(path.join(root, 'src/index.ts'));
+  await until(() => count(watcher.output(), /^Built /) === 2, 'the build after the source was deleted');
+  assert.deepEqual(outputs('index').filter((file) => fs.existsSync(file)), [], 'the output of the deleted source is gone');
+  assert.ok(outputs('use').every((file) => fs.existsSync(file)), 'the output of the other source stays');
+  assert.equal(fs.readFileSync(path.join(root, 'build/index.js'), 'utf8'), 'other tool');
+  assert.equal(fs.readFileSync(path.join(root, 'build/index.js.map'), 'utf8'), 'other tool');
   assert.equal(await watcher.stop(), 130);
 });
