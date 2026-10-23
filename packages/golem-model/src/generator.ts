@@ -11,7 +11,7 @@ import type {
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, isInsideDirectory, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
-import { ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
+import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
 import {
   analyzeSourceGraph,
@@ -359,14 +359,20 @@ function ownDiagnostics(diagnostics: readonly ts.Diagnostic[], outputs: readonly
 }
 
 const CODE_UNION_DISCRIMINATOR_MISSING = 'RUNM1080';
+const CODE_UNION_CONVERSION_AMBIGUOUS = 'RUNM1082';
 
-/** An object union with no literal tag stops generation with its code, the model file and the fix. */
+/** A union that golem cannot convert without trying its variants stops generation with its code, the model file and the fix. */
 function withUnionDiscriminatorCode(source: string, emit: () => string | undefined): string | undefined {
   try {
     return emit();
   } catch (thrown) {
-    if (!(thrown instanceof ObjectUnionDiscriminatorError)) throw thrown;
-    throw new Error(`${source} ${CODE_UNION_DISCRIMINATOR_MISSING}: ${thrown.message} Give each variant a required literal tag, such as \`kind: 'cat'\`, so that golem can pick the variant from the JSON.`, { cause: thrown });
+    if (thrown instanceof ObjectUnionDiscriminatorError) {
+      throw new Error(`${source} ${CODE_UNION_DISCRIMINATOR_MISSING}: ${thrown.message} Give each variant a required literal tag, such as \`kind: 'cat'\`, so that golem can pick the variant from the JSON.`, { cause: thrown });
+    }
+    if (thrown instanceof AmbiguousUnionConversionError) {
+      throw new Error(`${source} ${CODE_UNION_CONVERSION_AMBIGUOUS}: ${thrown.message}`, { cause: thrown });
+    }
+    throw thrown;
   }
 }
 
