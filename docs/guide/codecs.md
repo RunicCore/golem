@@ -2,7 +2,7 @@
 
 Send and receive JSON, form, text and binary bodies, or add your own format.
 
-This page uses the `PaymentsClient` from [SDK types in your models](/guide/models-and-client). Its `createPayment` operation sends a payment as JSON. `money` is `{ amount, currency }` and `amount` is a decimal string.
+The examples use the `PaymentsClient` from [SDK types in your models](/guide/models-and-client). Its `createPayment` operation sends a payment as JSON. `money` is `{ amount, currency }` and `amount` is a decimal string.
 
 `web/src/submit-payment.ts`:
 
@@ -54,12 +54,13 @@ Declare it on a `createChargeText` operation and generate `ProviderClient` again
 | `bodyEncoders` | The request value (`unknown`) and a context with `contentType` and the encoding rules | `BodyInit`, or `{ body, contentType? }` |
 | `responseDecoders` | The `Response` | The decoded value, or a promise of it |
 
-- Each option is an object keyed by media type. The client uses the exact media-type key first, then the type and subtype in lowercase without parameters, then `*/*`.
+- Each option is an object keyed by media type. For `bodyEncoders`, the client tries the declared request media type, then the type and subtype in lowercase without parameters, then `*/*`.
+- For `responseDecoders`, the client tries the actual response content type, then the declared one, then the lowercase type and subtype, then `*/*`.
 - A configured codec replaces the built-in handling.
 - A decoder must return the shape that the response schema declares.
 - A missing required codec, an encoding failure or a decoding failure rejects `.execute()`.
 - If your decoder calls `response.body.getReader()`, call `reader.releaseLock()` when it ends or fails. The client can then cancel the unread body.
 
-A text body whose schema allows other types than string (including `nullable`) needs a codec. Without one, `.execute()` rejects and names the missing option.
+A text body whose schema allows a type other than string (including `nullable`) needs a codec. Without one, `.execute()` rejects and names the missing option.
 
 A response that sends items one at a time uses [stream decoders](/guide/streams#connect-a-custom-stream-decoder) instead.

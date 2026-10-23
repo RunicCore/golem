@@ -16,6 +16,8 @@ security:
 
 Run `npx golem generate`. The client then has an `auth` option, keyed by security-scheme name. A client whose operations reference no security scheme has no `auth` option.
 
+## Pass a token
+
 `provider/client.ts`:
 
 <<< ../../examples/payments/server/provider/client.ts#send-payment

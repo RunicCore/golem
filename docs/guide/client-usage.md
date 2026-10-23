@@ -24,7 +24,7 @@ A response holds the HTTP `status` and the decoded `body`. This includes declare
 | `fetchImpl` | The `fetch` function for requests. Defaults to the global `fetch`. |
 | `headers` | Headers that the client sends with every request. |
 | `auth` | Credentials or functions that return them, keyed by security-scheme name ([Authentication](/guide/auth)). |
-| `operationValidators` | Replacements for the generated validators of named operations ([Runtime API](/reference/runtime-api#validation)). |
+| `operationValidators` | Replacements for the generated validators of named operations ([Runtime API](/reference/runtime-api#runtime-validators)). |
 
 ## Pass parameters and a body
 
@@ -42,7 +42,7 @@ A feature that uses one endpoint imports its operation factory:
 
 <<< ../../examples/payments/server/provider/charges.ts#standalone-operation
 
-The factory has the name of the operation and takes the client options. It returns the same operation as `client.getCharge()`, with `loading` when MobX is on. Create the operation once and call `.execute()` for each request.
+The factory has the name of the operation and takes the client options. It returns the same operation as `client.getCharge()`, with `loading` when MobX is on. Create the operation once and call `.execute()` for each request. If `.execute()` fails with a `ValidationUnavailable` error and the message `Missing generated input validator for <operation>`, run `golem generate` again.
 
 For a schema named `Charge`, the SDK has `Charge`, the JSON data type, and `ChargeModel`, its runtime class. A response body is plain data. Call `fromWireFormat<T>` to get a model instance:
 
@@ -64,7 +64,7 @@ For a schema named `Charge`, the SDK has `Charge`, the JSON data type, and `Char
 
 <<< ../../examples/payments/server/provider/charges.ts#invalid-charge
 
-Set the check with the [`validation` key](/reference/config#validation-profiles). [Errors and issues](/guide/validation#errors-and-issues) shows how to read `error.issues`. The [runtime API](/reference/runtime-api#errors) holds the issue codes.
+Turn the checks on or off with the [`validation` key](/reference/config#validation-profiles). [Errors and issues](/guide/validation#errors-and-issues) shows how to read `error.issues`. The [runtime API](/reference/runtime-api#errors) holds the issue codes.
 
 ## Handle errors
 

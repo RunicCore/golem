@@ -13,7 +13,7 @@ Requests and responses are validated by default ([validation profiles](/referenc
 
 ## Point to your OpenAPI document
 
-Add `golem.yaml` at the project root. The example keeps it in `server/`. Paths are relative to this file. `name: Provider` names the client `ProviderClient`. The [`mobx`](/reference/config#root-keys) and [`validation`](/reference/config#validation-profiles) root keys, which this excerpt leaves out, set MobX observability and runtime validation for the generated code.
+Add `golem.yaml` at the project root. The example keeps it in `server/`. Paths are relative to this file. `name: Provider` names the client `ProviderClient`. This excerpt leaves out two root keys. The [`mobx`](/reference/config#root-keys) key sets MobX observability for the generated code. The [`validation`](/reference/config#validation-profiles) key sets runtime validation.
 
 <<< ../../examples/payments/server/golem.yaml#openapi-job
 
@@ -43,6 +43,6 @@ Change `provider.yaml` and generate again when the contract changes.
 
 <<< ../../examples/payments/server/provider/charges.ts#create-and-list
 
-Set `baseUrl` to your service and pass credentials as in [Authentication](/guide/auth). `client.listCharges()` creates a reusable operation. `.execute({})` sends `GET /charges` and returns the response. Add [parameters and a body](/guide/client-usage#pass-parameters-and-a-body), and [read the response](/guide/client-usage#read-responses-and-handle-failures) before you use it.
+Set `baseUrl` to your service and pass credentials as in [Authentication](/guide/auth). `client.listCharges()` creates a reusable operation. `.execute({})` sends `GET /charges` and returns the response. Add [parameters and a body](/guide/client-usage#pass-parameters-and-a-body), and [read the response](/guide/client-usage#read-responses-and-handle-failures) and check the `status` before you read the `body`.
 
 Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)

@@ -35,7 +35,7 @@ For the same `readEvents` operation, `provider/events.ts` reads one item. Leavin
 | Content type | Items returned |
 | --- | --- |
 | `application/x-ndjson`, `application/ndjson`, `application/jsonl`, or a media type that ends with `+jsonl` | One decoded JSON value per line |
-| `application/json-seq`, or a media type that ends with `+json-seq` | Decoded JSON values, divided by record separators, that can span lines |
+| `application/json-seq`, or a media type that ends with `+json-seq` | One decoded JSON value per record. A record can span lines |
 | `text/event-stream` | `{ data: string, event?, id?, retry? }` for each event |
 
 SSE `data` stays a string. Parse it in your application if the server sends JSON in that field. A malformed or truncated JSON-seq body fails the iteration and releases the reader. Any other framing needs a `streamDecoders` entry.
