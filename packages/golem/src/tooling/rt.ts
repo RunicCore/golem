@@ -45,6 +45,13 @@ export interface RuntimeTypeExports {
     readonly ModelInit: model.ModelInit<unknown>;
     readonly generatedModelWireBrand: typeof model.generatedModelWireBrand;
   };
+  readonly client: {
+    readonly ApiOperation: client.ApiOperation<never, never, never>;
+    readonly OperationValidationSources: client.OperationValidationSources;
+    readonly RuntimeResponseContract: client.RuntimeResponseContract;
+    readonly RuntimeSecuritySchemes: client.RuntimeSecuritySchemes;
+  };
+  readonly mobx: { readonly ObservableApiOperation: mobx.ObservableApiOperation<never, never, never> };
   readonly serde: { readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
   readonly 'validation-runtime': { readonly SchemaIssue: validationRuntime.SchemaIssue };
 }

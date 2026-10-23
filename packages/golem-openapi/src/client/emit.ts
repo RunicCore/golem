@@ -5,6 +5,21 @@ import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from '.
 import { componentPlace, type OriginLocator } from '../origin.js';
 import { identifier, NameScope, propertyName } from '@exprtlabs/golem/generator-api';
 import {
+  aliased,
+  code,
+  fileImports,
+  importLines,
+  importSet,
+  ImportSource,
+  join,
+  legacyText,
+  render,
+  rt,
+  rtType,
+  type Code,
+  type ImportOptions,
+} from '@exprtlabs/golem/internal/emitter';
+import {
   parameterSchema,
   resolveLocal,
   type NormalizedOperation,
@@ -16,10 +31,20 @@ import { requireProfile } from '../profile.js';
 import { buildOperationValidationSchemaBundle, buildOperationValidationSchemaBundles, buildSchemaData } from '../schemas.js';
 import { textCodecRequirement } from '../types.js';
 
-function routeExpression(operation: NormalizedOperation, use: (name: string) => string): { declarations: string; expression: string } {
+/** A client runtime function: the name is a key of the client module, so a misspelled name is a type error. */
+type ClientFunction = keyof typeof rt.client;
+
+/** The tag of the templates of this file: the text between the values is code, and a value that is not Code is text of this file. */
+function text(strings: TemplateStringsArray, ...values: readonly (string | number | boolean | Code)[]): Code {
+  return code(strings, ...values.map((value) => typeof value === 'object' ? value : legacyText(String(value))));
+}
+
+const BLANK = code``;
+
+function routeExpression(operation: NormalizedOperation, use: (name: ClientFunction) => Code): { declarations: Code; expression: string } {
   const parameters = new Map(operation.parameters.filter((item) => item.in === 'path').map(item => [item.name, item]));
   const variables = new Map<string, string>();
-  const declarations: string[] = [];
+  const declarations: Code[] = [];
   const parts: string[] = [];
   let offset = 0;
   for (const match of operation.route.matchAll(/\{([^{}]+)\}/g)) {
@@ -34,15 +59,15 @@ function routeExpression(operation: NormalizedOperation, use: (name: string) => 
     parts.push(variable);
     if (parameter.content) {
       const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      declarations.push(`    const ${variable} = ${use('encode')}(${use('serializeContentParameter')}(runtime, input.path[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'path', contentType: ${JSON.stringify(contentType)} }));`);
+      declarations.push(text`    const ${variable} = ${use('encode')}(${use('serializeContentParameter')}(runtime, input.path[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'path', contentType: ${JSON.stringify(contentType)} }));`);
       continue;
     }
     const style = parameter.style || 'simple';
     const explode = parameter.explode === undefined ? false : parameter.explode;
-    declarations.push(`    const ${variable} = ${use('serializePath')}(runtime, ${JSON.stringify(parameter.name)}, input.path[${JSON.stringify(parameter.name)}], ${JSON.stringify(style)}, ${explode});`);
+    declarations.push(text`    const ${variable} = ${use('serializePath')}(runtime, ${JSON.stringify(parameter.name)}, input.path[${JSON.stringify(parameter.name)}], ${JSON.stringify(style)}, ${explode});`);
   }
   parts.push(JSON.stringify(operation.route.slice(offset)));
-  return { declarations: declarations.join('\n'), expression: parts.join(' + ') };
+  return { declarations: join(declarations, code`\n`), expression: parts.join(' + ') };
 }
 
 function responseContractsForOperation(
@@ -143,9 +168,9 @@ function operationSource(
   validatorExports: ReadonlyMap<string, string>,
 ): string {
   const usedFunctions = new Set<string>();
-  const use = (name: string): string => {
+  const use = (name: ClientFunction): Code => {
     usedFunctions.add(name);
-    return name;
+    return rt.client[name];
   };
   const route = routeExpression(operation, use);
   const queryParameters = operation.parameters.filter((item) => item.in === 'query');
@@ -181,30 +206,30 @@ function operationSource(
   const queryLines = queryParameters.map((parameter) => {
     if (parameter.content) {
       const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      return `    if (input.query?.[${JSON.stringify(parameter.name)}] !== undefined) ${use('appendQuery')}(runtime, query, ${JSON.stringify(parameter.name)}, ${use('serializeContentParameter')}(runtime, input.query[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'query', contentType: ${JSON.stringify(contentType)} }), ${parameter.allowReserved === true});`;
+      return text`    if (input.query?.[${JSON.stringify(parameter.name)}] !== undefined) ${use('appendQuery')}(runtime, query, ${JSON.stringify(parameter.name)}, ${use('serializeContentParameter')}(runtime, input.query[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'query', contentType: ${JSON.stringify(contentType)} }), ${parameter.allowReserved === true});`;
     }
-    return `    ${use('addQueryParameter')}(runtime, query, ${JSON.stringify(parameter.name)}, input.query?.[${JSON.stringify(parameter.name)}], ${JSON.stringify(parameter.style || 'form')}, ${parameter.explode === undefined ? true : parameter.explode}, ${parameter.allowReserved === true});`;
+    return text`    ${use('addQueryParameter')}(runtime, query, ${JSON.stringify(parameter.name)}, input.query?.[${JSON.stringify(parameter.name)}], ${JSON.stringify(parameter.style || 'form')}, ${parameter.explode === undefined ? true : parameter.explode}, ${parameter.allowReserved === true});`;
   });
   const headerLines = headerParameters.map((parameter) => {
     if (parameter.content) {
       const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      return `    if (input.header?.[${JSON.stringify(parameter.name)}] !== undefined) headers.set(${JSON.stringify(parameter.name)}, ${use('serializeContentParameter')}(runtime, input.header[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'header', contentType: ${JSON.stringify(contentType)} }));`;
+      return text`    if (input.header?.[${JSON.stringify(parameter.name)}] !== undefined) headers.set(${JSON.stringify(parameter.name)}, ${use('serializeContentParameter')}(runtime, input.header[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'header', contentType: ${JSON.stringify(contentType)} }));`;
     }
-    return `    if (input.header?.[${JSON.stringify(parameter.name)}] !== undefined) headers.set(${JSON.stringify(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, input.header[${JSON.stringify(parameter.name)}], ${parameter.explode === true}));`;
+    return text`    if (input.header?.[${JSON.stringify(parameter.name)}] !== undefined) headers.set(${JSON.stringify(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, input.header[${JSON.stringify(parameter.name)}], ${parameter.explode === true}));`;
   });
   const cookieLines = cookieParameters.map((parameter) => {
     if (parameter.content) {
       const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      return `    if (input.cookie?.[${JSON.stringify(parameter.name)}] !== undefined) cookies.push(${JSON.stringify(parameter.name)} + '=' + encodeURIComponent(${use('serializeContentParameter')}(runtime, input.cookie[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'cookie', contentType: ${JSON.stringify(contentType)} })));`;
+      return text`    if (input.cookie?.[${JSON.stringify(parameter.name)}] !== undefined) cookies.push(${JSON.stringify(parameter.name)} + '=' + encodeURIComponent(${use('serializeContentParameter')}(runtime, input.cookie[${JSON.stringify(parameter.name)}], { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(parameter.name)}, in: 'cookie', contentType: ${JSON.stringify(contentType)} })));`;
     }
     if (parameter.style === 'cookie') {
-      return `    ${use('addCookieStyleParameter')}(runtime, cookies, ${JSON.stringify(parameter.name)}, input.cookie?.[${JSON.stringify(parameter.name)}], ${parameter.explode === true});`;
+      return text`    ${use('addCookieStyleParameter')}(runtime, cookies, ${JSON.stringify(parameter.name)}, input.cookie?.[${JSON.stringify(parameter.name)}], ${parameter.explode === true});`;
     }
-    return `    ${use('addCookieParameter')}(runtime, cookies, ${JSON.stringify(parameter.name)}, input.cookie?.[${JSON.stringify(parameter.name)}], ${parameter.explode === undefined ? true : parameter.explode});`;
+    return text`    ${use('addCookieParameter')}(runtime, cookies, ${JSON.stringify(parameter.name)}, input.cookie?.[${JSON.stringify(parameter.name)}], ${parameter.explode === undefined ? true : parameter.explode});`;
   });
   const queryStringLine = queryStringParameter
-    ? `    ${use('setQueryString')}(runtime, query, input.querystring, { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(queryStringParameter.name)}, in: 'querystring', contentType: ${JSON.stringify(Object.keys(queryStringParameter.content || {})[0] || 'application/x-www-form-urlencoded')} });`
-    : '';
+    ? text`    ${use('setQueryString')}(runtime, query, input.querystring, { operation: ${JSON.stringify(operation.name)}, name: ${JSON.stringify(queryStringParameter.name)}, in: 'querystring', contentType: ${JSON.stringify(Object.keys(queryStringParameter.content || {})[0] || 'application/x-www-form-urlencoded')} });`
+    : BLANK;
   const inputName = profile.validation || operation.parameters.length || requestBody ? 'input' : '_input';
   const factoryName = operationFactoryName(operation);
   if (appliesSecurity) use('applySecurity');
@@ -244,8 +269,8 @@ function operationSource(
   const inputType = `Types.${operation.typeName}OperationInput`;
   const responseType = `Types.${operation.typeName}OperationHttpResponse`;
   const validatorSetup = validatesWithSources
-    ? `  const validators = operationValidators(runtime, ${JSON.stringify(operation.name)}, ${validationSourcesName});\n  const checkResponse = responseCheck(validators);`
-    : '';
+    ? text`  const validators = ${rt.validation.operationValidators}(runtime, ${JSON.stringify(operation.name)}, ${validationSourcesName});\n  const checkResponse = ${rt.validation.responseCheck}(validators);`
+    : BLANK;
   // The generated validators this operation imports, each under a module-local alias that no operation name can take.
   const validatorImports = validationBundle
     ? [
@@ -253,82 +278,101 @@ function operationSource(
       ...validationBundle.responseReferences.map((item, index) => ({ reference: item.reference, local: uniqueModuleName(`__validateResponse${index}`, 'generated response validator import') })),
     ].map(item => ({ ...item, exported: requireValidatorExport(operation.name, item.reference, validatorExports) }))
     : [];
+  const validatorsSource = new ImportSource('../validators.generated.js');
+  const validatorNames = validatorImports.map((item) => validatorsSource.name(item.exported, { alias: item.local }));
+  const clientModule = new ImportSource('../client.js', true);
+  const clientOptions = clientModule.name(`${clientName}ClientOptions`, { alias: 'ClientOptions' });
+  const requestOptions = clientModule.name(`${clientName}RequestOptions`, { alias: 'RequestOptions' });
+  const clientRuntime = rt.client.ClientRuntime;
+  const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
+  const createApiOperation = profile.mobx ? aliased(rt.mobx.createObservableApiOperation, 'createApiOperation') : rt.client.createApiOperation;
   const validationSources = validationBundle
-    ? [
-      `const ${validationSourcesName}: OperationValidationSources = {`,
-      `  input: ${validatorImports[0].local},`,
-      `  responses: [${validationBundle.responseReferences.map((item, index) => `{ status: ${JSON.stringify(item.status)}, contentType: ${JSON.stringify(item.contentType)}, validator: ${validatorImports[index + 1].local} }`).join(', ')}],`,
-      '};',
-    ].join('\n')
-    : '';
-  const runtimeImports = [
-    `import { ClientRuntime${runtimeFunctions.map(name => `, ${name}`).join('')}${profile.mobx ? '' : ', createApiOperation, type ApiOperation'}, type RuntimeResponseContract${appliesSecurity ? ', type RuntimeSecuritySchemes' : ''}${profile.validation ? ', type OperationValidationSources' : ''} } from '@exprtlabs/golem/client';`,
-    `import type { ${clientName}ClientOptions as ClientOptions, ${clientName}RequestOptions as RequestOptions } from '../client.js';`,
-    `import type * as Types from '../types.js';`,
-    profile.mobx
-      ? `import { createObservableApiOperation as createApiOperation, type ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';`
-      : '',
-    validatesWithSources ? `import { ${validatorImports.map(item => `${item.exported} as ${item.local}`).join(', ')} } from '../validators.generated.js';` : '',
-    validationFunctions.length
-      ? `import { ${validationFunctions.join(', ')} } from '@exprtlabs/golem/validation';`
-      : '',
-  ].filter(Boolean).join('\n');
+    ? join([
+      text`const ${validationSourcesName}: ${rtType.client.OperationValidationSources} = {`,
+      text`  input: ${validatorNames[0]},`,
+      text`  responses: [${join(validationBundle.responseReferences.map((item, index) => text`{ status: ${JSON.stringify(item.status)}, contentType: ${JSON.stringify(item.contentType)}, validator: ${validatorNames[index + 1]} }`), code`, `)}],`,
+      code`};`,
+    ], code`\n`)
+    : BLANK;
+  const securitySchemesType = rtType.client.RuntimeSecuritySchemes;
   // The client module imports `__golemSecuritySchemes` from every operation module.
   const securityDeclaration = surfaces.auth || surfaces.mutualTls
-    ? `export const __golemSecuritySchemes = ${JSON.stringify(securitySchemes, null, 2)} as const;${appliesSecurity ? '\nconst securitySchemes: RuntimeSecuritySchemes = __golemSecuritySchemes;' : ''}`
-    : '';
+    ? text`export const __golemSecuritySchemes = ${JSON.stringify(securitySchemes, null, 2)} as const;${appliesSecurity ? text`\nconst securitySchemes: ${securitySchemesType} = __golemSecuritySchemes;` : BLANK}`
+    : BLANK;
   const securityCall = appliesSecurity
-    ? `    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);`
-    : '';
-  const usesQuery = queryLines.length > 0 || queryStringLine !== '' || securityCall !== '';
-  const usesCookies = cookieLines.length > 0 || securityCall !== '';
+    ? text`    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);`
+    : BLANK;
+  const usesQuery = queryLines.length > 0 || queryStringLine.parts.length > 0 || securityCall.parts.length > 0;
+  const usesCookies = cookieLines.length > 0 || securityCall.parts.length > 0;
   const bodyLines = [
-    profile.validation ? `    await validateOperationInput(${JSON.stringify(operation.name)}, input, validators);` : '',
-    usesQuery ? '    const query: string[] = [];' : '',
+    profile.validation ? text`    await ${rt.validation.validateOperationInput}(${JSON.stringify(operation.name)}, input, validators);` : BLANK,
+    usesQuery ? text`    const query: string[] = [];` : BLANK,
     ...queryLines,
     queryStringLine,
-    '    const headers = new Headers(runtime.defaultHeaders);',
+    text`    const headers = new Headers(runtime.defaultHeaders);`,
     ...headerLines,
-    usesCookies ? '    const cookies: string[] = [];' : '',
+    usesCookies ? text`    const cookies: string[] = [];` : BLANK,
     ...cookieLines,
     securityCall,
-    usesCookies ? "    if (cookies.length) headers.set('Cookie', cookies.join('; '));" : '',
-    requestBody ? `    const encodedBody = ${use('encodeBody')}(runtime, ${JSON.stringify(operation.name)}, ${bodyValue}, ${bodyContentType}, ${bodyEncodings});\n    if (encodedBody.contentType) headers.set('Content-Type', encodedBody.contentType);` : '',
+    usesCookies ? text`    if (cookies.length) headers.set('Cookie', cookies.join('; '));` : BLANK,
+    requestBody ? text`    const encodedBody = ${use('encodeBody')}(runtime, ${JSON.stringify(operation.name)}, ${bodyValue}, ${bodyContentType}, ${bodyEncodings});\n    if (encodedBody.contentType) headers.set('Content-Type', encodedBody.contentType);` : BLANK,
     route.declarations,
-    '    const request: RequestInit = {',
-    `      method: ${JSON.stringify(operation.method)},`,
-    '      headers,',
-    '    };',
-    '    if (options.signal !== undefined) request.signal = options.signal;',
-    requestBody ? '    if (encodedBody.body !== undefined) request.body = encodedBody.body;' : '',
-    `    const response = await runtime.fetchImpl(runtime.url(${route.expression}, ${usesQuery ? 'query' : '[]'}), request);`,
-    `    return runtime.readResponse<${responseType}>(`,
-    `      ${JSON.stringify(operation.name)},`,
-    '      response,',
-    `      responseContracts,${validatesWithSources ? '\n      checkResponse,' : ''}`,
-    '    );',
-  ].filter(line => line.trim() !== '');
-  const body = `  return createApiOperation(${JSON.stringify(operation.name)}, async (${inputName}: ${inputType}, options: RequestOptions = {}): Promise<${responseType}> => {
-${bodyLines.join('\n')}
+    text`    const request: RequestInit = {`,
+    text`      method: ${JSON.stringify(operation.method)},`,
+    text`      headers,`,
+    text`    };`,
+    text`    if (options.signal !== undefined) request.signal = options.signal;`,
+    requestBody ? text`    if (encodedBody.body !== undefined) request.body = encodedBody.body;` : BLANK,
+    text`    const response = await runtime.fetchImpl(runtime.url(${route.expression}, ${usesQuery ? 'query' : '[]'}), request);`,
+    text`    return runtime.readResponse<${responseType}>(`,
+    text`      ${JSON.stringify(operation.name)},`,
+    text`      response,`,
+    text`      responseContracts,${validatesWithSources ? '\n      checkResponse,' : ''}`,
+    text`    );`,
+  ].filter(line => line.parts.length > 0);
+  const body = text`  return ${createApiOperation}(${JSON.stringify(operation.name)}, async (${inputName}: ${inputType}, options: ${requestOptions} = {}): Promise<${responseType}> => {
+${join(bodyLines, code`\n`)}
   });`;
-
-  return `${[
-    generatedBanner().trimEnd(),
-    runtimeImports,
-    '',
+  const declarations = join([
     securityDeclaration,
-    `const responseContracts: readonly RuntimeResponseContract[] = ${JSON.stringify(responseContracts)};`,
+    text`const responseContracts: readonly ${rtType.client.RuntimeResponseContract}[] = ${JSON.stringify(responseContracts)};`,
     validationSources,
-  ].filter((part, index) => part !== '' || index === 2).join('\n')}
-
-export function ${operation.name}(options: ClientOptions): ApiOperation<${inputType}, ${responseType}, RequestOptions> {
-  return ${factoryName}(new ClientRuntime(${JSON.stringify(clientName)}, options));
+  ].filter((part) => part.parts.length > 0), code`\n`);
+  const functions = text`export function ${operation.name}(options: ${clientOptions}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
+  return ${factoryName}(new ${clientRuntime}(${JSON.stringify(clientName)}, options));
 }
 
-export function ${factoryName}(runtime: ClientRuntime): ApiOperation<${inputType}, ${responseType}, RequestOptions> {
-${validatorSetup ? `${validatorSetup}\n` : ''}${body}
+export function ${factoryName}(runtime: ${clientRuntime}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
+${validatorSetup.parts.length > 0 ? text`${validatorSetup}\n` : BLANK}${body}
 }
 `;
+  const file = join([declarations, functions], code`\n`);
+  // The imports are the names the code uses, in the order the generated modules have always listed them.
+  const imports: ImportOptions = {
+    typeNames: 'ordered',
+    modules: ['client', 'mobx', 'validation'],
+    order: { client: ['ClientRuntime', ...[...usedFunctions].sort(), 'createApiOperation', 'ApiOperation', 'RuntimeResponseContract', 'RuntimeSecuritySchemes', 'OperationValidationSources'] },
+  };
+  const runtime = new Map(importSet(file, imports).map((entry) => [entry.module, entry] as const));
+  const runtimeLines = (module: 'client' | 'mobx' | 'validation'): readonly Code[] => {
+    const entry = runtime.get(module);
+    return entry ? importLines(entry, imports) : [];
+  };
+  const clientImports = fileImports(file, [clientModule], { elsewhere: [validatorsSource] });
+  const validatorImportLines = fileImports(file, [validatorsSource], { elsewhere: [clientModule] });
+  return render(code`${join([
+    legacyText(generatedBanner().trimEnd()),
+    ...runtimeLines('client'),
+    ...clientImports,
+    legacyText(`import type * as Types from '../types.js';`),
+    ...runtimeLines('mobx'),
+    ...validatorImportLines,
+    ...runtimeLines('validation'),
+    BLANK,
+    ...(declarations.parts.length > 0 ? [declarations] : []),
+  ], code`\n`)}
+
+${functions}`);
 }
 
 function emitSecurityTypes(
