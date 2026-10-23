@@ -14,6 +14,12 @@ import { workspace } from './process.js';
 /** The built runtime file; the emitted module sits in a temp directory where the package name does not resolve. */
 const runtimeModule = pathToFileURL(path.join(workspace, 'packages/golem/dist/validation-runtime.js')).href;
 
+/**
+ * Node caches each ES module by its URL, and a deleted temp directory's name can come back.
+ * A counter in each directory name keeps a later load from getting an earlier load's modules (T-358).
+ */
+let loads = 0;
+
 export interface CompiledValidatorInput {
   readonly roots: Readonly<Record<string, unknown>>;
   readonly resources?: Readonly<Record<string, unknown>>;
@@ -59,7 +65,7 @@ export async function compileValidatorModule(input: CompiledValidatorInput): Pro
   );
   const errors = diagnostics.filter(entry => entry.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw new Error(`Compile failed: ${errors.map(entry => `${entry.code} ${entry.message}`).join('; ')}`);
-  const directory = mkdtempSync(path.join(tmpdir(), 'golem-validators-'));
+  const directory = mkdtempSync(path.join(tmpdir(), `golem-validators-${loads++}-`));
   try {
     const file = path.join(directory, 'validators.mjs');
     writeFileSync(file, input.typed ? transformSync(source, { loader: 'ts' }).code : source);
