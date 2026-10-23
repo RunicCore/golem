@@ -12,11 +12,11 @@ import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { modelName, requireComposedObject, type ModelBases } from './composition.js';
 import {
-  bindInput, bindRead, code, emittedCode, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, join, legacyText, literal, readShape, render, sameCode,
+  asObjectLiteral, bindInput, bindRead, code, emittedCode, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, join, legacyText, literal, readShape, render, sameCode,
   type Code, type Emitted, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
 import { rt } from './rt.js';
-import { emitArrayConversion, emitTupleConversion, JSON_SCALAR_ITEM } from './sequence-conversion.js';
+import { emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
   AmbiguousUnionConversionError,
   descriptorNeedsConversion,
@@ -152,7 +152,8 @@ interface KnownRead {
 
 interface HoistedConverters {
   readonly prefix: string;
-  readonly names: Map<string, string>;
+  /** The hoisted bodies with their function names, so an equal body finds its function again. */
+  readonly bodies: { readonly body: Code; readonly name: string }[];
   readonly sources: Code[];
 }
 
@@ -832,7 +833,7 @@ function emitClosedIdentityObject(
   if (names.length === 0) return undefined;
   if (names.some((name) => name === '__proto__' || !required.has(name))) return undefined;
   if (names.some((name) => !isScalarDescriptor(descriptor.properties[name]))) return undefined;
-  return code`(${emitComputedRecord(names.map((name) => [name, decodeRead(ctx, expression, name).read] as const))})`;
+  return code`(${emitComputedRecord(names.map((name) => ({ name, code: decodeRead(ctx, expression, name).read, spread: false })))})`;
 }
 
 /**
@@ -868,12 +869,10 @@ function hoistConverter(local: string, decoded: Code, locals: readonly string[],
   if (!ctx.hoisted) return { converter: code`(${input}) => (${decoded})`, named: false };
   const declarations = locals.length > 0 ? code`  let ${join(locals.map((name) => code`${identifier(name)}: unknown`), code`, `)};\n` : code``;
   const body = code`(${input}: unknown): unknown {\n${declarations}  return (${decoded});\n}\n`;
-  // The text of a hoisted body is only the key that finds an equal body again.
-  const key = render(body);
-  const known = ctx.hoisted.names.get(key);
-  if (known) return { converter: identifier(known), named: true };
-  const name = `__golemDecode_${ctx.hoisted.prefix}_${ctx.hoisted.names.size}`;
-  ctx.hoisted.names.set(key, name);
+  const known = ctx.hoisted.bodies.find((candidate) => sameCode(candidate.body, body));
+  if (known) return { converter: identifier(known.name), named: true };
+  const name = `__golemDecode_${ctx.hoisted.prefix}_${ctx.hoisted.bodies.length}`;
+  ctx.hoisted.bodies.push({ body, name });
   ctx.hoisted.sources.push(code`function ${identifier(name)}${body}`);
   return { converter: identifier(name), named: true };
 }
@@ -1232,7 +1231,7 @@ function emitUnionValue(
       output: 'json',
       item: (item, itemValue) => {
         const converted = emitValue(item, itemValue, ctx);
-        if (!sameCode(converted, legacyText(JSON_SCALAR_ITEM))) itemsUnchanged = false;
+        if (!sameCode(converted, JSON_SCALAR)) itemsUnchanged = false;
         return { code: converted, throws: false };
       },
     },
@@ -1427,7 +1426,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Emitted, c
     const entries = code`Object.entries((${value} ?? {}) as Record<string, unknown>)`;
     if (listed.length === 0) return code`Object.fromEntries(${entries}.map(([key, value]) => [key, ${entry}]))`;
     const extras = code`Object.fromEntries(${entries}.filter(([key]) => !${literal(listed)}.includes(key)).map(([key, value]) => [key, ${entry}]))`;
-    return code`{ ...${extras}, ...${emitDecodedRecord(descriptor, value, ctx)} }`;
+    return asObjectLiteral(code`{ ...${extras}, ...${emitDecodedRecord(descriptor, value, ctx)} }`);
   }
   const named = ctx.graph.nodeFor(descriptor);
   if (named && isObjectish(descriptor)) {
@@ -1455,9 +1454,16 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Emitted, c
   return value;
 }
 
-function emitComputedRecord(fields: readonly (readonly [string, Code])[]): Code {
-  if (fields.length === 0) return code`{}`;
-  return code`{ ${join(fields.map(([name, value]) => isSpread(value) ? value : code`[${literal(name)}]: ${value}`), code`, `)} }`;
+/** A field of a record literal: its name and value, or a spread that stands for several fields and is written as it is. */
+interface RecordField {
+  readonly name: string;
+  readonly code: Code;
+  readonly spread: boolean;
+}
+
+function emitComputedRecord(fields: readonly RecordField[]): Code {
+  if (fields.length === 0) return asObjectLiteral(code`{}`);
+  return asObjectLiteral(code`{ ${join(fields.map((field) => field.spread ? field.code : code`[${literal(field.name)}]: ${field.code}`), code`, `)} }`);
 }
 
 function emitDecodedRecord(
@@ -1483,9 +1489,9 @@ function emitDecodedRecord(
         : bindInput(decoded, input, read);
     // An optional property that converts is read only when the input has it.
     if (!required.has(name) && !sameCode(decoded, inputOf(input))) {
-      return [name, code`...(${read} !== undefined ? { [${literal(name)}]: ${converted} } : {})`] as const;
+      return { name, code: code`...(${read} !== undefined ? { [${literal(name)}]: ${converted} } : {})`, spread: true };
     }
-    return [name, converted] as const;
+    return { name, code: converted, spread: false };
   }));
 }
 
@@ -1750,12 +1756,6 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Emitted, c
   return value;
 }
 
-/** Whether an entry is a spread, which stands for several fields and is written as it is. */
-function isSpread(entry: Code): boolean {
-  const [first] = entry.parts;
-  return first?.kind === 'text' && first.text.startsWith('...');
-}
-
 function emitEncodedRecord(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   expression: Emitted,
@@ -1767,24 +1767,24 @@ function emitEncodedRecord(
   // The record reads its own input: the expression is read once per field, and bound to a local when that is more than once.
   const bare = isRecordExpression(value);
   const self = inputSlot('record', readShape(value));
-  const values = fields.map(([name, property], index) => {
+  const values = fields.map(([name, property], index): RecordField => {
     const { read, shape } = accessRead(inputOf(self), name, bare);
     const input = inputSlot(name, shape);
     const encoded = emitEncodeValue(property, inputOf(input), ctx);
     // An optional field whose value is undefined is omitted, as stringify and JSON.stringify do.
-    if (!required.has(name) && !isSpread(encoded)) {
+    if (!required.has(name)) {
       const local = identifier(allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`);
       const entry = code`(${local} !== undefined ? { [${literal(name)}]: ${bindInput(encoded, input, local)} } : undefined)`;
-      return [name, ctx.inlineLocals ? code`...(${local} = ${read}, ${entry})` : code`...((${local}) => ${entry})(${read})`] as const;
+      return { name, code: ctx.inlineLocals ? code`...(${local} = ${read}, ${entry})` : code`...((${local}) => ${entry})(${read})`, spread: true };
     }
-    if (inputCount(encoded, input) <= 1) return [name, bindInput(encoded, input, read)] as const;
+    if (inputCount(encoded, input) <= 1) return { name, code: bindInput(encoded, input, read), spread: false };
     const allocated = allocateInlineLocal(ctx, '__golemField');
     if (!allocated) {
       const fallbackLocal = identifier(`__golemField${index}`);
-      return [name, code`((${fallbackLocal}) => ${bindInput(encoded, input, fallbackLocal)})(${read})`] as const;
+      return { name, code: code`((${fallbackLocal}) => ${bindInput(encoded, input, fallbackLocal)})(${read})`, spread: false };
     }
     const local = identifier(allocated);
-    return [name, code`(${local} = ${read}, ${bindInput(encoded, input, local)})`] as const;
+    return { name, code: code`(${local} = ${read}, ${bindInput(encoded, input, local)})`, spread: false };
   });
   // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
   // keeps them as they are. Any other object writes its listed names only.
@@ -1795,14 +1795,12 @@ function emitEncodedRecord(
   const extras = additional || descriptor.additionalPropertiesDeclared
     ? [code`...Object.fromEntries(Object.entries(${asRecordCode(inputOf(self))}).filter(([${keyParameter}, extra]) => extra !== undefined${unlisted}).map(([key, extra]) => [key, ${bindInput(emitEncodeValue(additional ?? { kind: 'unknown' }, inputOf(extra), ctx), extra, code`extra`)}]))`]
     : [];
-  const entries = [...extras, ...values.map(([name, entry]) => isSpread(entry)
-    ? entry
-    : code`[${literal(name)}]: ${entry}`)];
+  const entries = [...extras, ...values.map((field) => field.spread ? field.code : code`[${literal(field.name)}]: ${field.code}`)];
   const record = entries.length === 0 ? code`{}` : code`{ ${join(entries, code`, `)} }`;
   // Inline nested records can receive a getter expression from their parent.
   // Bind that object only when its expression would otherwise be evaluated
   // more than once; ordinary top-level `value`/`record` paths stay direct.
-  if (readShape(value) === 'name' || inputCount(record, self) <= 1) return bindInput(record, self, value);
+  if (readShape(value) === 'name' || inputCount(record, self) <= 1) return asObjectLiteral(bindInput(record, self, value));
   const allocated = allocateInlineLocal(ctx, '__golemRecord');
   if (!allocated) {
     const fallbackLocal = identifier('__golemRecord');
@@ -1849,6 +1847,7 @@ function validatorReference(ctx: EmitCtx, id: string): Code {
  * and V8 can inline it.
  */
 function fastPasses(fast: string, value: Code): Code {
+  // migration door, deleted in steps 5 and 6 (T-288, T-289): the import name of a fast check is text that the module gives
   return code`options?.validationContext === undefined && ${legacyText(fast)}(${value})`;
 }
 
@@ -1917,7 +1916,7 @@ function emitNodeRuntime(
   const ctx: EmitCtx = {
     ...moduleCtx,
     effects: { fallible: 0 },
-    hoisted: { prefix: node.id, names: new Map(), sources: [] },
+    hoisted: { prefix: node.id, bodies: [], sources: [] },
     fillThrows: moduleCtx.fillThrows ?? new Map(),
   };
   // The validated call of a codec whose wire and model schemas agree runs this function after its check, so it keeps the

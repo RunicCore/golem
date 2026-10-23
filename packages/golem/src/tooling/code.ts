@@ -41,7 +41,11 @@ export type Part =
   | { readonly kind: 'name'; readonly slot: NameSlot }
   | { readonly kind: 'input'; readonly slot: InputSlot };
 
-export interface Code { readonly parts: readonly Part[] }
+export interface Code {
+  readonly parts: readonly Part[];
+  /** The code is one object literal, which an arrow body wraps in parentheses. Only `asObjectLiteral` sets it, on the code the emitter built as that literal. */
+  readonly objectLiteral?: true;
+}
 
 /** A value that `literal` writes as a JSON literal. */
 export type JsonValue = string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
@@ -112,6 +116,11 @@ export function identifier(name: string): Code {
  */
 export function legacyText(text: string): Code {
   return fromParts([{ kind: 'text', text }]);
+}
+
+/** The code of an object literal, as the emitter that built the literal says. Any later change of the code drops the mark. */
+export function asObjectLiteral(literalCode: Code): Code {
+  return { parts: literalCode.parts, objectLiteral: true };
 }
 
 export function helper(id: string, define: () => Code): Helper {
