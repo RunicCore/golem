@@ -18,7 +18,7 @@ import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
-import { signature } from './watch.js';
+import { OwnedOutputIndex, signature } from './watch.js';
 
 interface BuildOptions {
   /**
@@ -694,8 +694,9 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     const directoriesBefore = directorySignatures();
     baselines?.clear();
     const record = (): void => {
-      // A file the generate step wrote is the build's own: its signature after the build is the one the next build compares with.
-      previous = new Map([...fingerprints()].map(([input, value]) => [input, state.owned.has(input) ? value : before.get(input) ?? baselines?.get(input) ?? value]));
+      // A file the generate step wrote, and the directory it created for it, is the build's own: its signature after the build is the one the next build compares with.
+      const own = new OwnedOutputIndex(state.owned);
+      previous = new Map([...fingerprints()].map(([input, value]) => [input, own.covers(input) ? value : before.get(input) ?? baselines?.get(input) ?? value]));
       directories = new Map([...directorySignatures()].map(([directory, value]) => [directory, directoriesBefore.get(directory) ?? value]));
     };
     try {
