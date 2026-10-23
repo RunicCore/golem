@@ -3,6 +3,7 @@ import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
+import YAML from 'yaml';
 import { loadReferenceGraph, type ReferenceGraph } from '#openapi/reference-loader';
 import { createFixtureProject } from '../fixture-project.js';
 
@@ -93,7 +94,7 @@ test('a referenced file that fails to parse is observed and named in the error',
   const observed: string[] = [];
   await assert.rejects(
     () => loadReferenceGraph(write(directory, 'api.json', document), document, { onInput: (file) => { observed.push(file); } }),
-    (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), path.join(directory, 'broken.yaml'))}:1:`),
+    (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), path.join(directory, 'broken.yaml'))}:1:`) && error.cause instanceof YAML.YAMLParseError,
   );
   assert.ok(observed.includes(path.join(directory, 'broken.yaml')));
 });

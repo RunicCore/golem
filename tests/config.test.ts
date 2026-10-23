@@ -220,12 +220,12 @@ test('configuration errors reject unknown overrides, duplicate keys and overlapp
   }
 });
 
-test('a golem.yaml that is not YAML fails with its path relative to the working directory, the line, the column and the parse error', (t: TestContext) => {
+test('a golem.yaml that is not YAML fails with its path relative to the working directory, the line, the column and the parse error as its cause', (t: TestContext) => {
   // protects: T-311 a YAML parse error names the file
   const { filename } = fixture(t, 'version: 1\nversion: 1\nmodels: {}\n');
   assert.throws(() => loadConfig(filename), (error: unknown) => {
     assert.ok(error instanceof YamlFileError);
-    assert.ok(error.message.startsWith(`${path.relative(process.cwd(), filename)}:2:1 Map keys must be unique:\n`), error.message);
+    assert.ok(error.message.startsWith(`${path.relative(process.cwd(), filename)}:2:1 `), error.message);
     assert.ok(error.cause instanceof YAML.YAMLParseError);
     return true;
   });

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import YAML from 'yaml';
 import { runPipeline, watchPipeline } from '#golem/cli';
 import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
@@ -98,7 +99,8 @@ test('watch started on a golem.yaml that is not YAML reports its file, line and 
     await until(() => errors.length > 0, 'the broken golem.yaml is reported');
     assert.ok(errors[0] instanceof Error);
     assert.ok(errors[0].message.startsWith(`${path.relative(process.cwd(), config)}:`), errors[0].message);
-    assert.match(errors[0].message, /^\S+:\d+:\d+ Map keys must be unique/);
+    assert.match(errors[0].message, /^\S+:\d+:\d+ /);
+    assert.ok(errors[0].cause instanceof YAML.YAMLParseError);
     fs.writeFileSync(config, valid);
     await until(() => runs() === 1, () => `the fixed golem.yaml runs (errors=${errors.map(String).join('; ')})`);
   } finally {

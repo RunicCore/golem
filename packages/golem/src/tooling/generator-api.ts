@@ -259,7 +259,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** A YAML file that does not parse: the developer's input to fix. The message starts with `<file>:<line>:<column>`; `cause` is the parser's error. */
 export class YamlFileError extends Error {
-  constructor(message: string, readonly file: string, options: { cause: unknown }) {
+  constructor(message: string, options: { cause: unknown }) {
     super(message, options);
     this.name = 'YamlFileError';
   }
@@ -279,7 +279,7 @@ export function parseYamlFile(text: string, filename: string, options?: YAML.Doc
     const start = error.linePos?.[0];
     // The parser's message ends its first line with the position; the prefix already says it.
     const reason = error.message.replace(/ at line \d+, column \d+:/, ':').trimEnd();
-    throw new YamlFileError(`${file}${start === undefined ? '' : `:${start.line}:${start.col}`} ${reason}`, file, { cause: error });
+    throw new YamlFileError(`${file}${start === undefined ? '' : `:${start.line}:${start.col}`} ${reason}`, { cause: error });
   }
 }
 
