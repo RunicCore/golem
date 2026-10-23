@@ -135,7 +135,11 @@ interface EmitCtx {
   readonly fillThrows?: Map<string, boolean>;
   /** Locals a decoder assigns; the function that holds the decoder declares them. Without it the decoder re-reads. */
   readonly decodeLocals?: string[];
-  /** Reads a union above holds in a local; a decoder below reads the input of the read where it would read the property. */
+  /**
+   * Reads a union above holds in a local; a decoder below reads the input of the read where it would read the property.
+   * A read is known by the text of its expression, so a scope that binds a new parameter (an item, a field source, a
+   * hoisted converter) starts with none.
+   */
   readonly knownReads?: readonly KnownRead[];
   /** The name of the function a stringify emitter writes, when it is not `stringify<Id>`: the module decides it before the body. */
   readonly functionName?: string;
@@ -879,7 +883,7 @@ function hoistConverter(local: string, decoded: Code, locals: readonly string[],
 
 /** `convertModelField` for the decoder of `property` written against `local`, with the field value passed in as `input`. */
 function emitFieldConversion(field: Emitted, local: string, property: ModelTypeDescriptor, input: Emitted, ctx: EmitCtx): Code {
-  const scope: EmitCtx = { ...ctx, decodeLocals: [] };
+  const scope: EmitCtx = { ...ctx, decodeLocals: [], knownReads: undefined };
   const decoded = emitDecodeValue(property, local, scope);
   const { converter } = hoistConverter(local, decoded, scope.decodeLocals ?? [], ctx);
   return code`${rt.conversion.convertModelField}("deserialize", ${emittedCode(field)}, ${converter}, ${emittedCode(input)})`;
@@ -1280,9 +1284,9 @@ function emitUnionValue(
 function decodeItem(ctx: EmitCtx): (item: ModelTypeDescriptor, value: string) => { readonly code: Code; readonly throws: boolean } {
   return (item, value) => {
     const before = fallibleCount(ctx);
-    const decoded = emitDecodeValue(item, value, { ...ctx, decodeLocals: undefined });
+    const decoded = emitDecodeValue(item, value, { ...ctx, decodeLocals: undefined, knownReads: undefined });
     if (!emittedFallible(before, decoded, ctx)) return { code: decoded, throws: false };
-    const scope: EmitCtx = { ...ctx, decodeLocals: [] };
+    const scope: EmitCtx = { ...ctx, decodeLocals: [], knownReads: undefined };
     const scoped = emitDecodeValue(item, value, scope);
     const { converter, named } = hoistConverter(value, scoped, scope.decodeLocals ?? [], ctx);
     return { code: named ? code`${converter}(${identifier(value)})` : scoped, throws: true };
@@ -1419,7 +1423,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Emitted, c
     }
     const before = fallibleCount(ctx);
     // migration door, deleted in T-290: the arrow parameter `value` names the local of a hoisted converter, whose key is its text
-    const decoded = emitDecodeValue(descriptor.additionalProperties, 'value', { ...ctx, decodeLocals: undefined });
+    const decoded = emitDecodeValue(descriptor.additionalProperties, 'value', { ...ctx, decodeLocals: undefined, knownReads: undefined });
     const entry = emittedFallible(before, decoded, ctx)
       ? emitFieldConversion('key', 'value', descriptor.additionalProperties, 'value', ctx)
       : decoded;
@@ -1441,7 +1445,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Emitted, c
       paths: 'deserialize',
       item: (item, itemValue) => {
         const before = fallibleCount(ctx);
-        const decoded = emitDecodeValue(item, itemValue, ctx);
+        const decoded = emitDecodeValue(item, itemValue, { ...ctx, knownReads: undefined });
         return { code: decoded, throws: emittedFallible(before, decoded, ctx) };
       },
     });
@@ -1485,7 +1489,7 @@ function emitDecodedRecord(
     const converted = emittedFallible(before, decoded, ctx)
       ? emitFieldConversion(literal(name), NESTED_SOURCE, property, read, ctx)
       : inputCount(decoded, input) > 1
-        ? code`((${identifier(NESTED_SOURCE)}) => ${emitDecodeValue(property, NESTED_SOURCE, ctx)})(${read})`
+        ? code`((${identifier(NESTED_SOURCE)}) => ${emitDecodeValue(property, NESTED_SOURCE, { ...ctx, knownReads: undefined })})(${read})`
         : bindInput(decoded, input, read);
     // An optional property that converts is read only when the input has it.
     if (!required.has(name) && !sameCode(decoded, inputOf(input))) {
@@ -1963,13 +1967,14 @@ function emitNodeRuntime(
   const encodedStringifyContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline };
   const encodedWireContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline };
   const stringifyValue = inputSlot('value', 'name', true);
+  const toWireValue = inputSlot('value', 'name', true);
   const toWireRecord = inputSlot('record', 'name', true);
   const encodedExpr = objectDescriptor
     ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(stringifyValue), encodedStringifyContext), stringifyValue, code`value`)
     : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encodedStringifyContext));
   const encodedRecordExpr = objectDescriptor
-    ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(toWireRecord), encodedWireContext), toWireRecord, code`record`)
-    : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encodedWireContext));
+    ? emitEncodedRecord(objectDescriptor, inputOf(toWireRecord), encodedWireContext)
+    : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encodedWireContext), inputOf(toWireValue));
   const exportsWire = isExported && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true);
   const wireStringifySrc = emitsValidatedWire
     ? code`${stringifyCode(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true, functionName: `${stringifyName}Wire` })}${exportsWire
@@ -2081,22 +2086,20 @@ function emitNodeRuntime(
 
   // The wire encoding without validation: nested trusted calls and the validating wrapper both run it.
   // A model with no field and no extra names writes `{}` and reads nothing from the value.
-  const readsRecord = objectDescriptor !== undefined && !sameCode(encodedRecordExpr, code`{}`);
+  // The function reads `record` only when an entry of the encoded record does, and `value` only when it or the guard does.
+  const readsRecord = inputCount(encodedRecordExpr, toWireRecord) > 0;
   const toWireCoreBody = [
-    ...(readsRecord ? [code`  const record = value as Record<string, unknown>;`] : []),
+    ...(readsRecord ? [code`  const record = ${inputOf(toWireValue)} as Record<string, unknown>;`] : []),
     ...inlineLocalLines(encodedWireContext),
-    code`  const wire = ${encodedRecordExpr};`,
+    code`  const wire = ${bindInput(encodedRecordExpr, toWireRecord, code`record`)};`,
     wireCode ? code`  return wire as ${wireCode};` : code`  return wire;`,
   ];
   // A recursive node registers the value while the body writes it, so a value that holds itself throws at its first repeat.
-  const toWireValue = inputSlot('value', 'name', true);
-  const toWireCoreSource = bindInput(
-    functionCode(
-      code`function ${toWireCoreId}(${identifier(readsRecord || !objectDescriptor ? 'value' : '_value')}: ${fieldsOrUnknown}): ${wireOrUnknown} {`,
-      guardedBody(toWireCoreBody, recursiveNode, toWireValue),
-    ),
+  const toWireCoreSource = stringifyFunction(
+    (parameter) => code`function ${toWireCoreId}(${parameter}: ${fieldsOrUnknown}): ${wireOrUnknown} {`,
+    toWireCoreBody,
+    recursiveNode,
     toWireValue,
-    identifier('value'),
   );
   const toWireLines = [
     toWireCoreSource,
