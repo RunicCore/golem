@@ -4,6 +4,7 @@
  * and the helpers of a file come from the parts and no step reads emitted text back to decide something.
  * Internal to the tooling: no package export names this module.
  */
+import { compareText } from './generator-api.js';
 import { RUNTIME_MODULE_RANK, type RuntimeModule } from './rt.js';
 
 /** A name the file decides. The slot is its identity: two slots with one label are two names. */
@@ -212,10 +213,6 @@ export function helperBlock(root: Code): Code {
       .map(({ definition }) => definition),
     plainText('\n\n'),
   );
-}
-
-function compareText(left: string, right: string): number {
-  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 /** Text that this module writes itself: import lines and the gap between helpers. */
