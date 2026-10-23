@@ -709,6 +709,18 @@ function identityOf(target: object): number {
  * text, so where the text was split into parts names nothing.
  */
 export function codeKey(root: Code): string {
+  let known = keys.get(root);
+  if (known === undefined) {
+    known = keyOf(root);
+    keys.set(root, known);
+  }
+  return known;
+}
+
+/** A Code is never changed and is keyed again and again (a set of types, a comparison), so its key is made once. */
+const keys = new WeakMap<Code, string>();
+
+function keyOf(root: Code): string {
   let key = '';
   let text = '';
   for (const part of root.parts) {
