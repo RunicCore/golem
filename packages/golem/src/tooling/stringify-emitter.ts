@@ -143,7 +143,7 @@ interface HoistedConverters {
 }
 
 const TRUSTED = '{ validate: false }';
-const STRINGIFY_OPTIONS = '_options?: { readonly validate?: boolean; readonly failFast?: boolean }';
+const STRINGIFY_OPTIONS = code`_options?: { readonly validate?: boolean; readonly failFast?: boolean }`;
 /** Declared once per emitted module that passes trusted options to a function in another module. */
 const TRUSTED_CONSTANT = '__golemTrusted';
 /**
@@ -309,8 +309,12 @@ function emitInlineObjectField(
     : code`(${local} = ${read}, (${local} !== undefined ? ${member} : ''))`;
 }
 
+function inlineLocalLines(ctx: EmitCtx): Code[] {
+  return [...(ctx.inlineLocals ?? [])].map((name) => code`  let ${identifier(name)}: unknown;`);
+}
+
 function inlineLocalDeclarations(ctx: EmitCtx): string[] {
-  return [...(ctx.inlineLocals ?? [])].map((name) => `  let ${name}: unknown;`);
+  return inlineLocalLines(ctx).map((line) => render(line));
 }
 
 /**
@@ -454,8 +458,18 @@ function emitObjectInline(
   return code`'{' + [${join(parts, code`, `)}].filter(Boolean).join(',') + '}'`;
 }
 
-function stringifyParameters(value: string, ctx: EmitCtx): string {
-  return ctx.withoutOptions ? value : `${value}, ${STRINGIFY_OPTIONS}`;
+function stringifyParameters(value: Code, ctx: EmitCtx): Code {
+  return ctx.withoutOptions ? value : code`${value}, ${STRINGIFY_OPTIONS}`;
+}
+
+/**
+ * A stringify function: its header, its body lines, and the cycle guard around the body when the node reaches itself.
+ * The guard registers the value while the body writes it, so a value that holds itself throws at its first repeat.
+ */
+function stringifyFunction(header: Code, body: readonly Code[], guard: boolean): Code {
+  const open = guard ? [code`  beginEncode(value);`, code`  try {`] : [];
+  const close = guard ? [code`  } finally {`, code`    endEncode(value);`, code`  }`] : [];
+  return join([header, ...open, ...body, ...close, code`}`, code``], code`\n`);
 }
 
 /** The schema of the values of a map with no declared field, or undefined for any other object. */
@@ -501,114 +515,109 @@ function emitLenientObjectStringify(
   fn: string,
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   ctx: EmitCtx,
-): string {
+  guard: boolean,
+): Code {
   const properties = Object.entries(descriptor.properties);
-  const header = `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`;
-  const lines: string[] = [];
+  const header = code`function ${identifier(fn)}(${stringifyParameters(code`value: Record<string, unknown>`, ctx)}): string {`;
+  const lines: Code[] = [];
   const fields = properties.map(([name, property], index) => {
-    const read = access('value', name);
-    const field = `__golemField${index}`;
-    const piece = `__golemPiece${index}`;
+    const { read } = accessRead('value', name);
+    const field = identifier(`__golemField${index}`);
+    const piece = identifier(`__golemPiece${index}`);
     lines.push(
-      `  const ${field} = ${read};`,
-      `  const ${piece} = ${field} !== undefined ? ${render(emitValue(property, field, ctx))} : undefined;`,
+      code`  const ${field} = ${read};`,
+      code`  const ${piece} = ${field} !== undefined ? ${emitValue(property, field, ctx)} : undefined;`,
     );
-    return { name: JSON.stringify(name), piece, required: descriptor.required.includes(name) };
+    return { name, piece, required: descriptor.required.includes(name) };
   });
   // The first required field has no comma before it: a field before it carries its comma after it, and one after it before.
   const first = fields.findIndex((field) => field.required);
   const chunks = fields.map((field, index) => {
-    const member = `${JSON.stringify(`${index > first ? ',' : ''}${field.name}:`)} + ${field.piece}`;
+    const member = code`${memberPrefix(field.name, index > first)} + ${field.piece}`;
     if (field.required) return member;
-    return `(${field.piece} !== undefined ? ${member}${index < first ? ' + ","' : ''} : '')`;
+    return code`(${field.piece} !== undefined ? ${member}${index < first ? code` + ","` : code``} : '')`;
   });
-  const present = fields.filter((field) => field.required).map((field) => `${field.piece} !== undefined`);
+  const present = join(fields.filter((field) => field.required).map((field) => code`${field.piece} !== undefined`), code` && `);
   lines.push(
-    `  if (${present.join(' && ')}) return '{' + ${chunks.join(' + ')} + '}';`,
-    "  let out = '{';",
-    '  let sep = false;',
+    code`  if (${present}) return '{' + ${join(chunks, code` + `)} + '}';`,
+    code`  let out = '{';`,
+    code`  let sep = false;`,
   );
   for (const field of fields) {
     lines.push(
-      `  if (${field.piece} !== undefined) {`,
-      '    if (sep) out += ",";',
-      `    out += ${JSON.stringify(`${field.name}:`)} + ${field.piece};`,
-      '    sep = true;',
-      '  }',
+      code`  if (${field.piece} !== undefined) {`,
+      code`    if (sep) out += ",";`,
+      code`    out += ${memberPrefix(field.name, false)} + ${field.piece};`,
+      code`    sep = true;`,
+      code`  }`,
     );
   }
-  lines.push("  return out + '}';", '}', '');
-  return [header, ...inlineLocalDeclarations(ctx), ...lines].join('\n');
+  lines.push(code`  return out + '}';`);
+  return stringifyFunction(header, [...inlineLocalLines(ctx), ...lines], guard);
 }
 
 function emitObjectStringify(
   fn: string,
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   ctx: EmitCtx,
-): string {
+  guard: boolean,
+): Code {
   // With validation off a required field can be missing, so a lenient object writes each field that is present.
   const required = new Set(ctx.lenientRoot ? [] : descriptor.required);
   const properties = Object.entries(descriptor.properties);
   const additional = typeof descriptor.additionalProperties === 'object'
     ? descriptor.additionalProperties
     : descriptor.additionalPropertiesDeclared ? { kind: 'unknown' as const } : undefined;
+  const name = identifier(fn);
   if (properties.length === 0 && !additional) {
-    return `function ${fn}(${stringifyParameters('_value: Record<string, unknown>', ctx)}): string {\n  return '{}';\n}\n`;
+    return stringifyFunction(code`function ${name}(${stringifyParameters(code`_value: Record<string, unknown>`, ctx)}): string {`, [code`  return '{}';`], guard);
   }
+  const header = code`function ${name}(${stringifyParameters(code`value: Record<string, unknown>`, ctx)}): string {`;
   if (isPlainDataMap(descriptor)) {
-    return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
+    return stringifyFunction(header, [code`  return ${rt.serde.stringifyJsonScalar}(value as never);`], guard);
   }
-  if (!additional && properties.every(([name]) => required.has(name))) {
-    const concatenated = render(emitRequiredObjectConcat(properties, 'value', ctx));
-    return [
-      `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
-      ...inlineLocalDeclarations(ctx),
-      `  return '{' + ${concatenated};`,
-      '}',
-      '',
-    ].join('\n');
+  if (!additional && properties.every(([property]) => required.has(property))) {
+    const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
+    return stringifyFunction(header, [...inlineLocalLines(ctx), code`  return '{' + ${concatenated};`], guard);
   }
-  if (ctx.lenientRoot && !additional && properties.some(([name]) => descriptor.required.includes(name))) return emitLenientObjectStringify(fn, descriptor, ctx);
-  const header = `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`;
-  const lines: string[] = [
+  if (ctx.lenientRoot && !additional && properties.some(([property]) => descriptor.required.includes(property))) return emitLenientObjectStringify(fn, descriptor, ctx, guard);
+  const lines: Code[] = [
     // The native writer calls a `toJSON` of the value, which the per-entry writer below never does: a value that has one takes that writer.
     ...(isNumberMap(descriptor) ? [
-      "  if (typeof value['toJSON'] !== 'function') {",
-      '    for (const entry of Object.values(value)) {',
-      '      if (entry !== undefined) stringifyJsonNumber(entry as number);',
-      '    }',
-      '    return JSON.stringify(value);',
-      '  }',
+      code`  if (typeof value['toJSON'] !== 'function') {`,
+      code`    for (const entry of Object.values(value)) {`,
+      code`      if (entry !== undefined) ${rt.serde.stringifyJsonNumber}(entry as number);`,
+      code`    }`,
+      code`    return JSON.stringify(value);`,
+      code`  }`,
     ] : []),
-    "  let out = '{';",
-    '  let sep = false;',
+    code`  let out = '{';`,
+    code`  let sep = false;`,
   ];
-  for (const [index, [name, property]] of properties.entries()) {
-    const { read, shape } = accessRead('value', name);
-    const input = inputSlot(name, shape);
-    const piece = emitValue(property, inputOf(input), ctx);
-    const local = `__golemValue${index}`;
+  for (const [index, [property, schema]] of properties.entries()) {
+    const { read, shape } = accessRead('value', property);
+    const input = inputSlot(property, shape);
+    const piece = emitValue(schema, inputOf(input), ctx);
+    const local = identifier(`__golemValue${index}`);
     // An optional field reads its input once more, in the `!== undefined` test.
-    const bound = bindRead(piece, input, read, identifier(local), required.has(name) ? 0 : 1);
-    const valueExpr = render(bound.code);
-    const fieldExpr = bound.local ? local : render(read);
-    const key = JSON.stringify(`${JSON.stringify(name)}:`);
-    if (bound.local) lines.push(`  const ${local} = ${render(read)};`);
-    if (required.has(name)) {
+    const bound = bindRead(piece, input, read, local, required.has(property) ? 0 : 1);
+    const key = memberPrefix(property, false);
+    if (bound.local) lines.push(code`  const ${local} = ${read};`);
+    if (required.has(property)) {
       lines.push(
-        '  if (sep) out += ",";',
-        `  out += ${key};`,
-        `  out += ${valueExpr};`,
-        '  sep = true;',
+        code`  if (sep) out += ",";`,
+        code`  out += ${key};`,
+        code`  out += ${bound.code};`,
+        code`  sep = true;`,
       );
     } else {
       lines.push(
-        `  if (${fieldExpr} !== undefined) {`,
-        '    if (sep) out += ",";',
-        `    out += ${key};`,
-        `    out += ${valueExpr};`,
-        '    sep = true;',
-        '  }',
+        code`  if (${bound.local ? local : read} !== undefined) {`,
+        code`    if (sep) out += ",";`,
+        code`    out += ${key};`,
+        code`    out += ${bound.code};`,
+        code`    sep = true;`,
+        code`  }`,
       );
     }
   }
@@ -616,18 +625,18 @@ function emitObjectStringify(
     // A schema for the other names: they are written after the listed names, each by that schema. Without one, a declared
     // `additionalProperties: true` makes them data of unknown type.
     lines.push(
-      '  for (const key of Object.keys(value)) {',
-      ...(properties.length === 0 ? [] : [`    if (${JSON.stringify(properties.map(([name]) => name))}.includes(key)) continue;`]),
-      '    const __golemExtra = value[key];',
-      '    if (__golemExtra === undefined) continue;',
-      '    if (sep) out += ",";',
-      `    out += stringifyJsonString(key) + ":" + ${render(emitValue(additional, '__golemExtra', ctx))};`,
-      '    sep = true;',
-      '  }',
+      code`  for (const key of Object.keys(value)) {`,
+      ...(properties.length === 0 ? [] : [code`    if (${literal(properties.map(([property]) => property))}.includes(key)) continue;`]),
+      code`    const __golemExtra = value[key];`,
+      code`    if (__golemExtra === undefined) continue;`,
+      code`    if (sep) out += ",";`,
+      code`    out += ${rt.serde.stringifyJsonString}(key) + ":" + ${emitValue(additional, '__golemExtra', ctx)};`,
+      code`    sep = true;`,
+      code`  }`,
     );
   }
-  lines.push("  return out + '}';", '}', '');
-  return [header, ...inlineLocalDeclarations(ctx), ...lines].join('\n');
+  lines.push(code`  return out + '}';`);
+  return stringifyFunction(header, [...inlineLocalLines(ctx), ...lines], guard);
 }
 
 export function emitStringifyFunction(
@@ -657,7 +666,6 @@ export function emitStringifyFunction(
     guardInline: !extra?.wireIdentity && node.descriptor.kind === 'union' && reachesNode(node.descriptor, node.id, { graph }),
   };
   const fn = stringifyFunctionName(node.id);
-  let source: string;
   // An intersection (allOf) is one merged object: the root writes its declared fields, as decode and encode do. With
   // validation off a required field can be missing, so a lenient root writes each field that is present. A checked
   // root, such as the validated wire stringify, keeps the all-required fast path.
@@ -665,22 +673,16 @@ export function emitStringifyFunction(
     ? resolveObjectDescriptor(node.descriptor, ctx)
     : undefined;
   const root = node.descriptor.kind === 'object' ? node.descriptor : merged;
-  if (root) source = emitObjectStringify(fn, root, ctx);
-  else if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') {
-    source = `function ${fn}(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {\n  return requireObjectCodec(${JSON.stringify(node.codecId)}).stringify(value as never, options);\n}\n`;
-  } else {
-    const value = render(emitValue(node.descriptor, '(value as never)', ctx));
-    source = [
-      `function ${fn}(${stringifyParameters('value: unknown', ctx)}): string {`,
-      ...inlineLocalDeclarations(ctx),
-      `  return ${value};`,
-      '}',
-      '',
-    ].join('\n');
-  }
   const delegates = node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference';
   const startsLevel = !passesValueOn(node.descriptor, root !== undefined);
-  return !ctx.wireIdentity && !delegates && startsLevel && reachesNode(node.descriptor, node.id, ctx) ? guardEncodeCycle(source) : source;
+  const guard = !ctx.wireIdentity && !delegates && startsLevel && reachesNode(node.descriptor, node.id, ctx);
+  if (root) return render(emitObjectStringify(fn, root, ctx, guard));
+  if (delegates) {
+    return `function ${fn}(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {\n  return requireObjectCodec(${JSON.stringify(node.codecId)}).stringify(value as never, options);\n}\n`;
+  }
+  const value = emitValue(node.descriptor, '(value as never)', ctx);
+  const header = code`function ${identifier(fn)}(${stringifyParameters(code`value: unknown`, ctx)}): string {`;
+  return render(stringifyFunction(header, [...inlineLocalLines(ctx), code`  return ${value};`], guard));
 }
 
 export function emitGraphStringify(graph: SchemaGraph, serde?: StringifySerdeResolver): string {
@@ -954,6 +956,7 @@ function passesValueOn(descriptor: ModelTypeDescriptor, writesMergedObject: bool
  * Wraps the body of a generated encoder function of `value` so that a value already being written is a cycle.
  * Only a recursive model's encoders carry it; the other encoders keep their speed.
  */
+// migration door, deleted in step 3d (T-286): splices the guard into the text of a function that is not Code yet
 function guardEncodeCycle(source: string): string {
   const bodyStart = source.indexOf('{\n') + 2;
   const bodyEnd = source.lastIndexOf('}');
