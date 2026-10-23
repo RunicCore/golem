@@ -176,7 +176,7 @@ test('golem build --watch without a rootDir removes the output of a deleted sour
 });
 
 test('golem build --watch builds again for a package manager marker and for a source in a new folder, and for nothing written inside node_modules', async (t) => {
-  // protects: T-332 installed files are not watched; an install is told by its marker and builds everything again
+  // protects: R-31 installed files are not watched; an install is told by its marker and builds everything again
   const root = serdeProject(t, 'build-watch-install');
   write(root, 'src/use.ts', USE);
   const watcher = watching(t, root);
@@ -196,4 +196,43 @@ test('golem build --watch builds again for a package manager marker and for a so
   await quietly();
   assert.equal(count(watcher.output(), /^Built /), 3, 'the builds\' own writes started no build');
   assert.equal(await watcher.stop(), 130);
+});
+
+for (const [where, base] of [['outside the tsconfig directory', '../tsconfig.base.json'], ['with a hidden name', './.tsconfig.base.json']] as const) {
+  test(`golem build --watch builds again for an edit to the config that its tsconfig extends, ${where}`, async (t) => {
+    // protects: R-31 an input outside the root that is no source, or has a hidden name, still starts a build
+    const { root: outer } = createModelProject(t, { prefix: 'golem-build-watch-base-', name: 'build-watch-base', linkTypescript: true, packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') } });
+    const app = path.join(outer, 'app');
+    write(app, 'package.json', '{"name":"watch-base-app","type":"module"}');
+    write(app, 'golem.yaml', MINIMAL_GOLEM_YAML);
+    const baseFile = path.join(app, base);
+    fs.writeFileSync(baseFile, JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true } }));
+    write(app, 'tsconfig.json', JSON.stringify({ extends: base, compilerOptions: { outDir: 'build', rootDir: 'src' }, include: ['src/**/*.ts'] }));
+    write(app, 'src/main.ts', 'export const main: number = 1;\n');
+    const watcher = watching(t, app);
+    await until(() => count(watcher.output(), /^Built /) === 1, () => `the first build (${watcher.output()})`);
+
+    fs.writeFileSync(baseFile, JSON.stringify({ compilerOptions: { strict: true, target: 'ES2020', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true } }));
+    await until(() => count(watcher.output(), /^Built /) === 2, 'the build after the extended config was edited');
+    assert.equal(await watcher.stop(), 130);
+  });
+}
+
+test('golem build --watch that can watch no folder reports it and ends with exit code 1', async (t) => {
+  // protects: R-31 no working watcher ends the watch with a failure instead of an idle process
+  const root = serdeProject(t, 'build-watch-unwatchable');
+  t.mock.method(fs, 'watch', () => { throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' }); });
+  let errorText = '';
+  const stderr = process.stderr.write.bind(process.stderr);
+  t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array, ...rest: unknown[]) => {
+    errorText += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
+    return (stderr as (chunk: string | Uint8Array, ...rest: unknown[]) => boolean)(chunk, ...rest);
+  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 20_000);
+  t.after(() => clearTimeout(timer));
+  const result = await runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal });
+  assert.equal(result.exitCode, 1);
+  assert.equal(controller.signal.aborted, false, 'it ended by itself');
+  assert.match(errorText, /fs\.inotify\.max_user_watches/);
 });
