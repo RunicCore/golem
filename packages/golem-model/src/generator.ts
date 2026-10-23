@@ -470,6 +470,9 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // A model file that an SDK manifest lists stays an SDK file: the SDK's generated code serves it.
   const sdkFiles = sharedModelFiles.length === 0 ? new Set<string>() : sdkModelFiles(manifests());
   const sharedCandidates = sharedModelFiles.filter((source) => !sdkFiles.has(canonicalPath(source)));
+  // A syntax error in a model source stops here with the compiler's own message: the analysis reads the broken type as any and would report RUNM1011.
+  const syntaxErrors = [...ownCandidates, ...sharedCandidates].flatMap((source) => program.getSyntacticDiagnostics(source));
+  if (syntaxErrors.length > 0) throw new Error(formatDiagnostics(syntaxErrors, normalized.root));
   const { checker, specifications } = collectSpecifications(program, [...ownCandidates, ...sharedCandidates], normalized.exact, (file) => companionFilename(boundary, file));
   // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
   // A file that `models.sources` names must have one.
