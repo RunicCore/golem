@@ -305,7 +305,7 @@ test('a file that is no source, added to a watched folder, starts no run', async
 });
 
 test('an editor save by renaming over the file, a save through a backup file and a delete each start one run', async (t: TestContext) => {
-  // protects: T-331 the events of an editor's save and of a delete reach the watch as one run each
+  // protects: R-31 the events of an editor's save and of a delete reach the watch as one run each
   const { root, config } = generationWatchFixture(t);
   const runs = countRuns(t);
   const errors: unknown[] = [];
@@ -341,7 +341,7 @@ test('an editor save by renaming over the file, a save through a backup file and
 });
 
 test('a package manager marker starts one full run, and a change inside node_modules alone starts none', async (t: TestContext) => {
-  // protects: T-331 installed packages are not watched; an install is told by its marker and reads everything again
+  // protects: R-31 installed packages are not watched; an install is told by its marker and reads everything again
   const { root, config } = generationWatchFixture(t);
   const schema = path.join(root, 'node_modules/shared-schemas/user.json');
   const sdk = path.join(root, 'sdk');
@@ -403,6 +403,55 @@ test('an idle watch reads no file, and stopping it closes its file watches', asy
   }
   assert.equal(watchers.open(), 0, 'every watcher is closed');
   assert.deepEqual(errors, []);
+});
+
+test('watch generates once a missing file outside the models root, imported by a model, is created', async (t: TestContext) => {
+  // protects: R-31 a failed run's missing import outside the root is an input; its folder is watched
+  const { root, config } = generationWatchFixture(t);
+  const app = path.join(root, 'app');
+  fs.mkdirSync(path.join(app, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'shared'), { recursive: true });
+  fs.rmSync(path.join(root, 'src'), { recursive: true, force: true });
+  fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true },
+    include: ['src/**/*.ts'],
+  }));
+  fs.writeFileSync(path.join(root, 'shared/other.ts'), 'export type Other = number;\n');
+  fs.writeFileSync(path.join(app, 'src/cart.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { Note } from '../../shared/note.js';",
+    '',
+    'export type TCart = IModel<{ note: Note }>;',
+    '',
+  ].join('\n'));
+  fs.writeFileSync(config, `tsconfig: app/tsconfig.json\n${fs.readFileSync(config, 'utf8').replace('root: .', 'root: app')}`);
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  try {
+    await until(() => errors.length > 0, 'the missing import is reported');
+    fs.writeFileSync(path.join(root, 'shared/note.ts'), 'export type Note = { text: string };\n');
+    await until(() => fs.existsSync(path.join(app, 'src/cart.model.generated.ts')), () => `the created file starts a run (errors=${errors.map(String).join('; ')})`);
+  } finally {
+    stop();
+  }
+});
+
+test('a watch that can watch no folder reports it with its fix, runs nothing and tells its caller', async (t: TestContext) => {
+  // protects: R-31 no working watcher ends the watch with a failure instead of an idle process
+  const { config } = generationWatchFixture(t);
+  t.mock.method(fs, 'watch', () => { throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' }); });
+  const runs = countRuns(t);
+  const errors: Error[] = [];
+  let unwatchable = 0;
+  const stop = watchPipeline(config, error => { errors.push(error as Error); }, undefined, undefined, () => { unwatchable += 1; });
+  try {
+    await until(() => unwatchable === 1, 'the caller is told');
+    assert.match(errors.map(String).join('\n'), /fs\.inotify\.max_user_watches/);
+    assert.match(errors.map(String).join('\n'), /cannot watch any folder, so it stops/);
+    assert.equal(runs(), 0);
+  } finally {
+    stop();
+  }
 });
 
 /** An app whose tsconfig includes the `shared` folder beside it; `linked` in the app is a folder link to it. */

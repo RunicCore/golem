@@ -9,7 +9,7 @@ const NODE_MODULES = 'node_modules';
 const GOLEM_DIRECTORY = '.golem';
 
 /** Content signature of a watched path: `missing`, `directory` (a directory's mtime also moves on output writes), or mtime, ctime and size. */
-export function signature(filename: string): string {
+function signature(filename: string): string {
   try {
     // Most watched paths are failed module-resolution probes; avoid an exception per missing path.
     const stat = fs.statSync(filename, { throwIfNoEntry: false });
@@ -29,15 +29,10 @@ export interface InputSnapshot {
   readonly folders: ReadonlyMap<string, readonly string[]>;
 }
 
-/** Which folders a scan lists besides the folders of the inputs. */
+/** Which folders a scan lists besides the folders of the inputs and the folders of the inputs outside the root. */
 export interface ScanScope {
   /** Where the walk up from an input ends: a file added beside an input inside it changes one of the folders on the way. */
   readonly root: string;
-  /**
-   * Folders outside `root` that hold sources: a source added beside one is a change. A source outside the root adds its own
-   * folder and no other: what lies above it may be a whole monorepo.
-   */
-  readonly outsideDirectories: ReadonlySet<string>;
   /** Folders whose subfolders are listed too, so a source added in a folder that holds no input yet is seen. Folder links are not followed. */
   readonly descend?: readonly string[];
   /** A folder the descent does not enter. */
@@ -133,6 +128,17 @@ function inNodeModules(filename: string): boolean {
 }
 
 /**
+ * The folder of an input outside the root, which a file added beside it joins; undefined for an input inside the root or under
+ * `node_modules`. A path that does not exist counts too, as a file that may be created, unless its folder holds the root: the
+ * probes for a `package.json` in every folder above the project would watch a whole monorepo, or the temporary folder.
+ */
+export function outsideFolder(root: string, input: string): string | undefined {
+  if (isInsideDirectory(root, input) || inNodeModules(input)) return undefined;
+  const folder = path.dirname(input);
+  return fs.existsSync(input) || !isInsideDirectory(folder, root) ? folder : undefined;
+}
+
+/**
  * The inputs of a run that a watch reads, and the folders around them. An installed package's file is no input: a new install
  * is told by its marker. A file reached through a link is an input when the link leads out of every `node_modules`, as a
  * workspace package does under `preserveSymlinks`. Between two runs the inputs do not change, so the loop builds a scan when a run
@@ -143,6 +149,7 @@ export class InputScan {
   readonly files: readonly string[];
   /** The folders of the linked files, where a change to one of them happens; they are watched and not listed. */
   readonly linkedFolders: ReadonlySet<string>;
+  private readonly fileSet: ReadonlySet<string>;
   private readonly directories: ReadonlySet<string>;
 
   constructor(inputs: Iterable<string>, private readonly scope: ScanScope) {
@@ -164,8 +171,19 @@ export class InputScan {
       linked.add(folder);
     }
     this.files = files;
+    this.fileSet = new Set(files);
     this.linkedFolders = linked;
-    this.directories = new Set([...watchedDirectories(scope.root, files, scope.outsideDirectories), ...scope.descend ?? []]);
+    const outside = new Set<string>();
+    for (const file of files) {
+      const folder = outsideFolder(scope.root, file);
+      if (folder !== undefined) outside.add(folder);
+    }
+    this.directories = new Set([...watchedDirectories(scope.root, files, outside), ...scope.descend ?? []]);
+  }
+
+  /** Whether the file is one of the inputs it stats. */
+  has(file: string): boolean {
+    return this.fileSet.has(file);
   }
 
   snapshot(): InputSnapshot {
@@ -290,6 +308,8 @@ export interface InputWatcherOptions {
   readonly tick: (installed: boolean) => Promise<void>;
   /** Called with a failure to watch (the error names its fix) or a tick that threw. */
   readonly onError: (error: Error) => void;
+  /** Called once when not one folder can be watched: nothing will wake the loop, so it must end. */
+  readonly onUnwatchable: () => void;
 }
 
 /**
@@ -305,6 +325,10 @@ export class InputWatcher {
   private dirty = false;
   private running = false;
   private closed = false;
+  private unwatchable = false;
+  private failures = 0;
+  /** What the last scan reads, so that an event for an input with a hidden name still counts. */
+  private reads: { readonly scan: InputScan; readonly also: ReadonlySet<string> } | undefined;
   private timer: NodeJS.Timeout | undefined;
 
   constructor(private readonly options: InputWatcherOptions) {}
@@ -330,12 +354,14 @@ export class InputWatcher {
       this.folders.set(folder, watcher);
       opened = true;
     }
+    this.checkWatchable();
     return opened;
   }
 
   /** Scans, watching every folder the scan lists first (and the `also` folders), so that nothing changes unseen between the scan and its watchers. */
   snapshotWatching(scan: InputScan, also: Iterable<string> = []): InputSnapshot {
     const extra = [this.options.root(), ...scan.linkedFolders, ...also];
+    this.reads = { scan, also: new Set(extra) };
     let snapshot = scan.snapshot();
     for (let round = 0; round < SETTLE_ROUNDS && this.sync([...extra, ...snapshot.folders.keys()]); round += 1) snapshot = scan.snapshot();
     return snapshot;
@@ -363,7 +389,12 @@ export class InputWatcher {
       const watcher = fs.watch(folder, (event, name) => { this.seen(folder, markers, event, name === null ? undefined : String(name)); });
       watcher.on('error', (error) => {
         this.drop(folder);
-        this.cannotWatch(folder, error);
+        // Windows reports a deleted folder as an error of its watcher: the folder is gone, and the next sync finds out whether it came back.
+        if ((hasErrorCode(error, 'EPERM') || hasErrorCode(error, 'ENOENT')) && !fs.existsSync(folder)) this.request(false);
+        else {
+          this.cannotWatch(folder, error);
+          this.checkWatchable();
+        }
       });
       return watcher;
     } catch (error) {
@@ -377,12 +408,21 @@ export class InputWatcher {
   /** The file system could not watch a folder (no watches left, too many open files, a file system without events): say so once for each kind, with the fix. */
   private cannotWatch(folder: string, error: unknown): void {
     const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : 'unknown';
+    this.failures += 1;
     if (this.reported.has(code)) return;
     this.reported.add(code);
     const fix = code === 'ENOSPC'
       ? 'raise fs.inotify.max_user_watches (Linux) or watch fewer folders'
       : code === 'EMFILE' ? 'raise the open-file limit (ulimit -n)' : 'run golem on a file system that reports file events';
     this.options.onError(new Error(`golem cannot watch ${folder} (${code}): ${errorMessage(error)}\nChanges there are not seen until it can; to fix: ${fix}.`, { cause: error }));
+  }
+
+  /** Not one folder is watched although some failed to open: the loop would sleep forever, so it is told to end. */
+  private checkWatchable(): void {
+    if (this.unwatchable || this.closed || this.failures === 0 || this.folders.size > 0) return;
+    this.unwatchable = true;
+    this.options.onError(new Error('golem cannot watch any folder, so it stops.'));
+    this.options.onUnwatchable();
   }
 
   /** An event in a watched folder. A hidden file or an editor's temporary file is no input, and the markers are the only names that count in a `node_modules` folder. */
@@ -397,9 +437,10 @@ export class InputWatcher {
     }
     // A folder deleted and created again is a new folder, and the watcher of the old one no longer sees it: the next sync opens another.
     // The folder says so itself, by its own name, and so does the folder above it.
-    const gone = event === 'rename' ? [path.join(folder, name), ...name === path.basename(folder) ? [folder] : []].filter((candidate) => this.folders.has(candidate)) : [];
+    const child = path.join(folder, name);
+    const gone = event === 'rename' ? [child, ...name === path.basename(folder) ? [folder] : []].filter((candidate) => this.folders.has(candidate)) : [];
     for (const candidate of gone) this.drop(candidate);
-    if (gone.length > 0 || !isIgnoredName(name)) this.request(false);
+    if (gone.length > 0 || !isIgnoredName(name) || this.reads?.scan.has(child) || this.reads?.also.has(child)) this.request(false);
   }
 
   /** Asks for a tick after the debounce, or after the tick that runs. */

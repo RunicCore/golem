@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemConfig } from './config.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, isInsideDirectory, suffixPattern } from './generator-api.js';
-import { changedPaths, InputScan, InputWatcher, OwnedOutputIndex, RunBaseline } from './input-watcher.js';
+import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, RunBaseline } from './input-watcher.js';
 import { GeneratorSessionResources, jobFailedBeforeWriting, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, JobReport, PipelineState } from './pipeline.js';
 
@@ -13,11 +13,6 @@ function sourcePatterns(config: GolemConfig | undefined): readonly { readonly ki
     if ((job.kind !== 'models' && job.kind !== 'controllers') || job.options.sources) return [];
     return [{ kind: job.kind, pattern: suffixPattern(job.options.suffixes ?? (job.kind === 'models' ? DEFAULT_MODEL_SUFFIXES : DEFAULT_CONTROLLER_SUFFIXES)) }];
   });
-}
-
-/** The folder of an input outside the root, which a source added beside it joins; undefined for an input inside the root or under `node_modules`. */
-function outsideFolder(root: string, input: string): string | undefined {
-  return isInsideDirectory(root, input) || input.split(path.sep).includes('node_modules') ? undefined : path.dirname(input);
 }
 
 /** Records an input a run reads: its signature and the folders around it, as they are when the run first reads them. */
@@ -34,7 +29,7 @@ function observeInput(baseline: RunBaseline, root: string, input: string): void 
 export function baselineBeforeRun(configFile: string): { readonly baseline: RunBaseline; readonly onInput: (input: string) => void } {
   const resolved = path.resolve(configFile);
   const root = path.dirname(resolved);
-  const before = new InputScan([resolved], { root, outsideDirectories: new Set<string>() }).snapshot();
+  const before = new InputScan([resolved], { root }).snapshot();
   const baseline = new RunBaseline(before, root);
   return { baseline, onInput: input => { observeInput(baseline, root, input); } };
 }
@@ -71,9 +66,9 @@ export function summarizeRun(state: PipelineState, ms: number): string {
  * run left. A package manager's install starts a full run. A `session` from the first run of the same command is kept; the watch
  * closes it when it stops. Without one, the watch opens its own. With a `PipelineState`, the first comparison is with `firstBaseline`,
  * taken before the run that made the state (`baselineBeforeRun`), else with the disk as it is now. A failure to watch goes to
- * `reportError` once; the watch does not stop.
+ * `reportError` once; the watch goes on unless not one folder can be watched: then it stops, and `onUnwatchable` is called.
  */
-export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, session: GeneratorSessionResources = new GeneratorSessionResources(), firstBaseline?: RunBaseline): () => void {
+export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, session: GeneratorSessionResources = new GeneratorSessionResources(), firstBaseline?: RunBaseline, onUnwatchable: () => void = () => {}): () => void {
   let state = typeof initial === 'string' ? undefined : initial;
   const filename = path.resolve(typeof initial === 'string' ? initial : initial.config.configFile);
   let config = state?.config;
@@ -83,7 +78,15 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
   let first = !state;
   let busy = false;
   let stopped = false;
-  const watcher = new InputWatcher({ root: () => watched.root, tick: installed => tick(installed), onError: reportError });
+  const watcher = new InputWatcher({ root: () => watched.root, tick: installed => tick(installed), onError: reportError,
+    onUnwatchable: () => {
+      // It can come while the watch is built, before it can return its stop.
+      stopped = true;
+      watcher.close();
+      if (!busy) closeSession();
+      queueMicrotask(onUnwatchable);
+    },
+  });
   // The last run failed: the next good run says it recovered.
   let failed = false;
   // Compiler processes stay warm between runs and close with the watch.
@@ -112,17 +115,12 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
     }
     // A new output directory can have been observed as missing during module
     // resolution. Its creation is output work, not a source edit. Adding a
-    // source beneath it is still seen: the poll lists the names around the inputs.
+    // source beneath it is still seen: the scan lists the names around the inputs.
     const kinds = new Map([...inputs].filter(([input]) => !owned.covers(input)));
     // Generated outputs can contain model-named files; they are not model sources.
     const outputs = (config?.jobs ?? []).flatMap(job => job.kind === 'openapi' || job.kind === 'controllers' ? [job.options.output] : []);
-    const outsideDirectories = new Set<string>();
-    for (const input of kinds.keys()) {
-      const folder = outsideFolder(root, input);
-      if (folder !== undefined && fs.existsSync(input)) outsideDirectories.add(folder);
-    }
     const scan = new InputScan(kinds.keys(), {
-      root, outsideDirectories, descend,
+      root, descend,
       skipDescent: directory => outputs.some(output => isInsideDirectory(output, directory)),
     });
     return { root, sources, kinds, scan };
