@@ -215,11 +215,6 @@ export function identifier(name: string): Code {
   return fromParts([{ kind: 'text', text: checkedIdentifier(name, 'identifier'), identifier: true }]);
 }
 
-/** Text that an emitter has not moved to Code yet. It is the only door through which a string of code becomes a Code. */
-export function legacyText(text: string): Code {
-  return fromParts([{ kind: 'text', text }]);
-}
-
 /** The code of an object literal, as the emitter that built the literal says. Any later change of the code drops the mark. */
 export function asObjectLiteral(literalCode: Code): Code {
   return new CodeValue(literalCode.parts, true);

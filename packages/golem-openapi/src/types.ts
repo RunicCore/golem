@@ -1,7 +1,7 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/generator-api';
-import { code, codeKey, docComment, fileImports, identifier as identifierPart, ImportSource, join, legacyText, lineBreak, literal, nest, propertyKey, render, sameCode, trimEnd, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { code, codeKey, docComment, fileImports, identifier as identifierPart, ImportSource, join, lineBreak, literal, nest, propertyKey, render, sameCode, trimEnd, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { refName } from './names.js';
 import {
   effectiveSchemaTypes,
@@ -11,7 +11,7 @@ import {
   type NormalizedResponse,
   type OpenApiMediaType,
 } from './normalize.js';
-import { manifestMarker } from '@exprtlabs/golem/manifest';
+import { manifestMarkerComment } from '@exprtlabs/golem/manifest';
 import { generatedBannerComment } from './package-info.js';
 import { ComponentNameScope } from './origin.js';
 import { projectSchema, collectCanonicalResources, nextSchemaBase, resolveSchemaTarget, schemaDocumentBase, schemaTargetIdentity, type ResolvedSchemaTarget, type ResourceIndex } from './schema-projection.js';
@@ -877,7 +877,7 @@ export function generateTypes(
   const types = join(body, lineBreak);
   const output = join([
     generatedBannerComment(),
-    legacyText(manifestMarker()),
+    manifestMarkerComment(),
     ...fileImports(types, [inputSchemas, outputSchemas]),
     BLANK,
     types,
