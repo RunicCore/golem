@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { preparedPackages, registryNpmrc, startRegistry } from './packed-registry.js';
+import { preparedPackages, registryNpmrc, startRegistry, useReleaseChannel } from './packed-registry.js';
 import { THIRD_PARTY_INSTALLS } from './third-party-installs.js';
 
 // Fill the npm cache with what the packed and browser tests install, so those
@@ -106,6 +106,7 @@ async function main(): Promise<void> {
     for (const fixture of FIXTURE_APPS) {
       const directory = path.join(scratch, path.basename(fixture));
       fs.cpSync(path.join(root, fixture), directory, { recursive: true });
+      useReleaseChannel(directory, registry.workspaceVersion);
       fs.writeFileSync(path.join(directory, '.npmrc'), registryNpmrc(registry.url));
       installs.push({ label: `fixture ${fixture}`, directory, batches: [[]] });
     }

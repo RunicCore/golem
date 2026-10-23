@@ -8,7 +8,7 @@ import { chromium, expect, type Browser, type Page } from '@playwright/test';
 import { build } from 'esbuild';
 import { cli, command, npm } from '../support/process.js';
 import { writeFixture } from '../support/consumer.js';
-import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
+import { startRegistry, packageSpec, useReleaseChannel, type PackedRegistry } from '../../scripts/packed-registry.js';
 import { ESBUILD, MOBX } from '../../scripts/third-party-installs.js';
 import { copyFixture, copyFixtureFile, readFixture } from '../fixture-project.js';
 
@@ -143,6 +143,7 @@ test('packed browser executes reusable APIs, nested MobX models and custom codec
 test('packed React form survives StrictMode, validation, retry and disposal', async t => {
   const root = registry.create(t, 'react-consumer');
   copyFixture(root, 'browser/react-app');
+  useReleaseChannel(root, registry.workspaceVersion);
   await npm(root, ['install']);
   await cli(root, ['generate']);
   await cli(root, ['check']);

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { after, before, test } from 'node:test';
 import { cli, command, npm } from '../support/process.js';
-import { startRegistry, type PackedRegistry } from '../../scripts/packed-registry.js';
+import { startRegistry, useReleaseChannel, type PackedRegistry } from '../../scripts/packed-registry.js';
 import { copyFixture } from '../fixture-project.js';
 
 let registry: PackedRegistry;
@@ -15,6 +15,7 @@ const ADAPTERS: readonly ('express' | 'fastify')[] = ['express', 'fastify'];
 test(`packed Nest consumer round trips on ${ADAPTERS.join(' and ')}`, async t => {
   const root = registry.create(t, 'nest-app');
   copyFixture(root, 'packed/nest-app');
+  useReleaseChannel(root, registry.workspaceVersion);
   await npm(root, ['install']);
   await cli(root, ['generate']);
   await cli(root, ['check']);

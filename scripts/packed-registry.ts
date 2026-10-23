@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import type { TestContext } from 'node:test';
 import type { PackedPackage, PackageManifest, PackResult } from './packed-archive.js';
 import { packedSetDigest } from './public-source.js';
+import { distTagForVersion } from '../packages/golem/src/tooling/dist-tag.js';
 
 // The registry serves the packed set built by test-pack.ts. It lives under
 // scripts/ because both the packed tests and the prepare step's cache warming
@@ -65,7 +66,7 @@ export async function startRegistry(prepared: PreparedPackages = preparedPackage
     const entry = prepared.packages.get(requested);
     if (!entry) { response.writeHead(404); response.end(JSON.stringify({ error: 'Package not part of fixture registry' })); return; }
     response.setHeader('content-type', 'application/json');
-    const distTags = entry.manifest.version.includes('-') ? { rc: entry.manifest.version } : { latest: entry.manifest.version };
+    const distTags = { [distTagForVersion(entry.manifest.version)]: entry.manifest.version };
     response.end(JSON.stringify({ name: requested, 'dist-tags': distTags, versions: {
       [entry.manifest.version]: { ...entry.manifest, dist: { tarball: `${url}tarballs/${entry.pack.filename}`, shasum: entry.pack.shasum, integrity: entry.pack.integrity } },
     } }));
@@ -74,7 +75,7 @@ export async function startRegistry(prepared: PreparedPackages = preparedPackage
   const address = server.address();
   if (!address || typeof address === 'string') throw new Error('Registry did not bind TCP.');
   url = `http://127.0.0.1:${address.port}/${prefix}`;
-  const distTags: Readonly<Record<string, string>> = Object.freeze({ [prepared.workspaceVersion.includes('-') ? 'rc' : 'latest']: prepared.workspaceVersion });
+  const distTags: Readonly<Record<string, string>> = Object.freeze({ [distTagForVersion(prepared.workspaceVersion)]: prepared.workspaceVersion });
   const version = spawnSync('npm', ['--version'], { cwd: os.tmpdir(), encoding: 'utf8' });
   if (version.error || version.status !== 0) throw version.error ?? new Error(`npm --version failed: ${version.stderr}`);
   return {
@@ -89,6 +90,20 @@ export async function startRegistry(prepared: PreparedPackages = preparedPackage
     },
     async close() { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); },
   };
+}
+
+/**
+ * A fixture app asks for each golem package as `latest`. Point those ranges at the dist-tag the workspace version is
+ * published under, as a user of that channel installs it: an rc has no `latest` tag.
+ */
+export function useReleaseChannel(directory: string, version: string): void {
+  const file = path.join(directory, 'package.json');
+  const manifest: Record<string, unknown> = JSON.parse(fs.readFileSync(file, 'utf8'));
+  for (const field of ['dependencies', 'devDependencies'] as const) {
+    const ranges = (manifest[field] ?? {}) as Record<string, string>;
+    for (const [name, range] of Object.entries(ranges)) if (name.startsWith('@exprtlabs/golem') && range === 'latest') ranges[name] = distTagForVersion(version);
+  }
+  fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 export function packageSpec(registry: { readonly packages: ReadonlyMap<string, PackedPackage> }, name: string): string {
