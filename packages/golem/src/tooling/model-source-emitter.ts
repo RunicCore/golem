@@ -1,6 +1,7 @@
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 export {
   emitCodecRuntime,
+  emitCodecRuntimeCode,
   emitGraphStringify,
   emitStringifyFunction,
   fillFunctionName,
@@ -18,9 +19,13 @@ export {
 } from './stringify-emitter.js';
 export { presentKeysSource } from '../presence.js';
 export { pruneGeneratedImports } from './generated-imports.js';
-export { FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
+export { calleeOf, FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
 /** The one function that turns the Code of an emitter into text, for generators that still build text. */
-export { code, identifier, legacyText, render, type Code } from './code.js';
+export {
+  aliased, code, fileImports, helper, helperDefinitions, helperName, identifier, ImportSource, join, legacyText, literal, render, runtimeImports, sameCode,
+  type Code, type Emitted, type Helper, type ImportOptions,
+} from './code.js';
+export { rt, rtType } from './rt.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
 export {
   composeObjects,
@@ -36,7 +41,7 @@ export {
   type SlotRule,
 } from './composition.js';
 import { presentKeysSource, presentValueSource } from '../presence.js';
-import { code, join, legacyText, literal, sameCode, type Code } from './code.js';
+import { code, emittedCode, join, legacyText, literal, sameCode, type Code, type Emitted } from './code.js';
 import { rt } from './rt.js';
 import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
 import { FIELD_CONVERSION_INPUT, calleeOf, emitArrayConversion, emitTupleConversion, type SequenceItems } from './sequence-conversion.js';
@@ -67,26 +72,29 @@ const projectionLocal = (index: number): string => `__golemProjected${index}`;
 /** A model's required tag properties and their literal value or values. */
 export type ModelDiscriminators = Readonly<Record<string, DiscriminatorValue | readonly DiscriminatorValue[]>>;
 
+/**
+ * Each answer of a resolver is Code that holds the callee as a part, so the file imports it. golem-openapi still answers text.
+ */
 export interface FromJsonModelResolver {
-  readonly className: string;
+  readonly className: Emitted;
   readonly discriminators?: ModelDiscriminators;
   /** The models that this model extends, so a derived model narrows its bases where they judge one property. */
   readonly bases?: readonly string[];
   /** Internal generated-model wire decoder expression. */
-  readonly decode: (value: string) => string;
+  readonly decode: (value: string) => Emitted;
   /** Construct a domain model from a nested model initializer. */
-  readonly fromInit?: (value: string) => string;
+  readonly fromInit?: (value: string) => Emitted;
   /** A projection whose value converts to itself: a use writes no call. */
   readonly identity?: true;
 }
 
 export interface ToJsonModelResolver {
-  readonly className: string;
+  readonly className: Emitted;
   readonly discriminators?: ModelDiscriminators;
   /** The models that this model extends, so a derived model narrows its bases where they judge one property. */
   readonly bases?: readonly string[];
   /** Internal generated-model wire encoder expression. */
-  readonly encode?: (value: string) => string;
+  readonly encode?: (value: string) => Emitted;
   /** A projection whose value converts to itself: a use writes no call. */
   readonly identity?: true;
 }
@@ -192,14 +200,14 @@ function taggedObjectExpression(
 /** The construction of a model from its initializer: the resolver's own, or `new <class>(<value>)`. */
 function fromInitCall(model: FromJsonModelResolver, expression: string): Code {
   return model.fromInit
-    ? legacyText(model.fromInit(expression))
-    : code`new ${legacyText(model.className)}(${legacyText(expression)})`;
+    ? emittedCode(model.fromInit(expression))
+    : code`new ${emittedCode(model.className)}(${legacyText(expression)})`;
 }
 
 /** The wire encoding of a model: the resolver's own, or `encodeGeneratedModel(<value>)`. */
-function encodeCall(model: { readonly encode?: (value: string) => string }, expression: string): Code {
+function encodeCall(model: { readonly encode?: (value: string) => Emitted }, expression: string): Code {
   return model.encode
-    ? legacyText(model.encode(expression))
+    ? emittedCode(model.encode(expression))
     : code`${rt.conversion.encodeGeneratedModel}(${legacyText(expression)})`;
 }
 
@@ -215,7 +223,7 @@ function unionGeneratedFromJson(
   );
   const model = resolveModel(generated.id);
   const value = legacyText(expression);
-  const converted = code`${value} instanceof ${legacyText(model.className)} ? ${value} : ${legacyText(model.decode(expression))}`;
+  const converted = code`${value} instanceof ${emittedCode(model.className)} ? ${value} : ${emittedCode(model.decode(expression))}`;
   if (objects.length === 0) {
     return code`${objectValueExpression(expression)} ? ${converted} : ${value}`;
   }
@@ -235,7 +243,7 @@ function unionGeneratedFromInit(
   );
   const model = resolveModel(generated.id);
   const value = legacyText(expression);
-  const converted = code`${value} instanceof ${legacyText(model.className)} ? ${value} : ${fromInitCall(model, expression)}`;
+  const converted = code`${value} instanceof ${emittedCode(model.className)} ? ${value} : ${fromInitCall(model, expression)}`;
   if (objects.length === 0) return code`${objectValueExpression(expression)} ? ${converted} : ${value}`;
   const tagged = taggedObjectExpression(expression, objects);
   return code`${objectValueExpression(expression)} && !(${tagged}) ? ${converted} : ${value}`;
@@ -250,7 +258,7 @@ function unionGeneratedToJson(
   if (!generated) return undefined;
   const model = resolveModel(generated.id);
   const value = legacyText(expression);
-  return code`${value} instanceof ${legacyText(model.className)} ? ${encodeCall(model, expression)} : ${value}`;
+  return code`${value} instanceof ${emittedCode(model.className)} ? ${encodeCall(model, expression)} : ${value}`;
 }
 
 /**
@@ -426,26 +434,26 @@ function emitNested(
     if (direction === 'fromJSON' || direction === 'fromInit') {
       const fromJson = model;
       if (!('decode' in fromJson)) throw new Error(`Missing decode resolver for generated model ${descriptor.id}.`);
-      const convert = direction === 'fromInit' ? fromInitCall(fromJson, expression) : legacyText(fromJson.decode(expression));
-      return code`${value} == null || ${value} instanceof ${legacyText(fromJson.className)} ? ${value} : ${convert}`;
+      const convert = direction === 'fromInit' ? fromInitCall(fromJson, expression) : emittedCode(fromJson.decode(expression));
+      return code`${value} == null || ${value} instanceof ${emittedCode(fromJson.className)} ? ${value} : ${convert}`;
     }
-    return code`${value} instanceof ${legacyText(model.className)} ? ${encodeCall('encode' in model ? model : {}, expression)} : ${value}`;
+    return code`${value} instanceof ${emittedCode(model.className)} ? ${encodeCall('encode' in model ? model : {}, expression)} : ${value}`;
   }
   if (descriptor.kind === 'reference') {
     const model = resolveModel(descriptor.name);
     if (descriptor.projection) {
       if (model.identity) return value;
-      if (direction === 'toJSON') return 'encode' in model && model.encode ? legacyText(model.encode(expression)) : value;
+      if (direction === 'toJSON') return 'encode' in model && model.encode ? emittedCode(model.encode(expression)) : value;
       if (!('decode' in model)) throw new Error(`Missing projected conversion for ${descriptor.name}.`);
-      return legacyText(direction === 'fromInit' ? (model.fromInit ?? model.decode)(expression) : model.decode(expression));
+      return emittedCode(direction === 'fromInit' ? (model.fromInit ?? model.decode)(expression) : model.decode(expression));
     }
     if (direction === 'fromJSON' || direction === 'fromInit') {
       const fromJson = model;
       if (!('decode' in fromJson)) throw new Error(`Missing decode resolver for generated model ${descriptor.name}.`);
-      const convert = direction === 'fromInit' ? fromInitCall(fromJson, expression) : legacyText(fromJson.decode(expression));
-      return code`${value} == null || ${value} instanceof ${legacyText(fromJson.className)} ? ${value} : ${convert}`;
+      const convert = direction === 'fromInit' ? fromInitCall(fromJson, expression) : emittedCode(fromJson.decode(expression));
+      return code`${value} == null || ${value} instanceof ${emittedCode(fromJson.className)} ? ${value} : ${convert}`;
     }
-    return code`${value} instanceof ${legacyText(model.className)} ? ${encodeCall('encode' in model ? model : {}, expression)} : ${value}`;
+    return code`${value} instanceof ${emittedCode(model.className)} ? ${encodeCall('encode' in model ? model : {}, expression)} : ${value}`;
   }
   if (descriptor.kind === 'array') {
     return emitArrayConversion(descriptor.item, expression, sequenceItems(direction, resolveModel, resolveSerde));

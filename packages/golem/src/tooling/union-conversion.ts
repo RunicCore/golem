@@ -166,7 +166,7 @@ export function discriminatorMatch(access: Emitted, values: readonly Discriminat
 interface DispatchBranch {
   readonly values: readonly DiscriminatorValue[];
   /** Instances of this class select the branch before any tag test. */
-  readonly className?: string;
+  readonly className?: Emitted;
   readonly convert: Emitted;
   /** JSON output only: whether `convert` writes the tag property; undefined when unknown. */
   readonly writesTag?: boolean;
@@ -240,9 +240,9 @@ export function emitDispatch(options: DispatchOptions): Code {
   for (let index = branches.length - 1; index >= 0; index--) {
     const branch = branches[index];
     if (!branch.className) continue;
-    const self = legacyText(branch.className);
-    const subclasses = classes.filter((other) => other !== branch.className)
-      .map((other) => code` && !((${value} as object) instanceof ${legacyText(other)} && ${legacyText(other)}.prototype instanceof ${self})`);
+    const self = asCode(branch.className);
+    const subclasses = classes.filter((other) => !sameCode(asCode(other), self))
+      .map((other) => code` && !((${value} as object) instanceof ${asCode(other)} && ${asCode(other)}.prototype instanceof ${self})`);
     const guard = code`(${value} as object) instanceof ${self}${join(subclasses)}`;
     const ownTag = options.canonicalTag ? code`(${tag} === undefined ? ${literal(branch.values[0])} : ${tag})` : tag;
     const accepted = options.canonicalTag

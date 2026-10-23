@@ -41,32 +41,35 @@ export interface StringifySerdeResolver {
   readonly serialize: (id: string, value: Code) => Code;
 }
 
+/** The functions of a codec that another module generated, as the names this module imports them under. */
 export interface NestedImportedSerde {
-  readonly stringify: string;
-  readonly fromWire: string;
-  readonly toWire: string;
+  readonly stringify: Emitted;
+  readonly fromWire: Emitted;
+  readonly toWire: Emitted;
   /** Direct generated helper for converted anonymous object dependencies. */
-  readonly fill?: string;
+  readonly fill?: Emitted;
 }
 
 export interface CodecRuntimeOptions {
   readonly validationEnabled?: boolean;
   /**
    * The name the module imports the validator of a root under; the root is a codec id and plane (`Id`, `Id#wire`,
-   * `Id#model-only`, `Id#wire-only`). Called once for each use, so the caller knows which validators to import.
+   * `Id#model-only`, `Id#wire-only`). The name is Code that holds an imported part, so the file imports the validators its code uses.
    */
-  readonly validatorName?: (id: string) => string;
+  readonly validatorName?: (id: string) => Emitted;
   /**
    * The name the module imports the fast check of a root under, by the same keys; undefined for a root that has none,
    * which keeps the validator's route. Called once for each use, as `validatorName` is.
    */
-  readonly fastCheckName?: (id: string) => string | undefined;
+  readonly fastCheckName?: (id: string) => Emitted | undefined;
   /** Expression of a record of the validation plan's resolved schemas by the same keys. A validated codec publishes these as its schemas; without it the codec carries its own unresolved payload. */
   readonly resolvedSchemasExpr?: string;
   readonly serde?: StringifySerdeResolver;
-  readonly nestedConstruct?: (name: string, className?: string) => string;
-  readonly nestedGenerated?: (id: string) => string;
+  readonly nestedConstruct?: (name: string, className?: string) => Emitted;
+  readonly nestedGenerated?: (id: string) => Emitted;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
+  /** The name of the wire stringify that the companion of a sibling codec exports; without it, `wireStringifyExportName`. */
+  readonly siblingWireName?: (codecId: string) => Emitted;
   /** Internal fill helpers needed by other generated graph modules. */
   readonly exportedFillFunctionIds?: ReadonlySet<string>;
   readonly issueSource?: 'TypeScript' | 'OpenAPI';
@@ -90,13 +93,14 @@ interface EmitCtx {
   readonly graph: SchemaGraph;
   /** The node is a recursive union: each inline array, tuple and object branch of its encoders checks its value for a cycle. */
   readonly guardInline?: boolean;
-  readonly validatorName?: (id: string) => string;
-  readonly fastCheckName?: (id: string) => string | undefined;
+  readonly validatorName?: (id: string) => Emitted;
+  readonly fastCheckName?: (id: string) => Emitted | undefined;
   readonly resolvedSchemasExpr?: string;
   readonly serde?: StringifySerdeResolver;
-  readonly nestedConstruct?: (name: string, className?: string) => string;
-  readonly nestedGenerated?: (id: string) => string;
+  readonly nestedConstruct?: (name: string, className?: string) => Emitted;
+  readonly nestedGenerated?: (id: string) => Emitted;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
+  readonly siblingWireName?: (codecId: string) => Emitted;
   readonly exportedFillFunctionIds?: ReadonlySet<string>;
   readonly issueSource: 'TypeScript' | 'OpenAPI';
   readonly wireType?: (node: SchemaNode) => string | undefined;
@@ -182,6 +186,11 @@ function trustedOptions(ctx: EmitCtx): Code {
   return ctx.trustedOptions ?? TRUSTED;
 }
 
+/** The wire stringify of a sibling codec: the name the file imports it under. */
+function siblingWireCall(codecId: string, ctx: EmitCtx): Code {
+  return ctx.siblingWireName ? emittedCode(ctx.siblingWireName(codecId)) : identifier(wireStringifyExportName(codecId));
+}
+
 /** A nested stringify call that skips validation: the node's Core function when this module emits it. */
 function nestedStringifyCall(id: string, expression: Emitted, ctx: EmitCtx): Code {
   const value = emittedCode(expression);
@@ -189,7 +198,8 @@ function nestedStringifyCall(id: string, expression: Emitted, ctx: EmitCtx): Cod
     return code`${identifier(`${stringifyFunctionName(id)}Core`)}(${value} as never)`;
   }
   const options = ctx.trustedOptions !== undefined && !ctx.lenientRoot ? helperName(CHECKED_HELPER) : trustedOptions(ctx);
-  return code`${identifier(stringifyFunctionName(id))}(${value} as never, ${options})`;
+  const imported = ctx.nestedImportedSerde?.(id);
+  return code`${imported ? emittedCode(imported.stringify) : identifier(stringifyFunctionName(id))}(${value} as never, ${options})`;
 }
 
 /** A nested toWireFormat call that skips validation: the node's Core function when this module emits it. */
@@ -197,7 +207,7 @@ function nestedToWireCall(id: string, expression: Emitted, ctx: EmitCtx): Code {
   const value = emittedCode(expression);
   return ctx.localCoreIds?.has(id)
     ? code`${identifier(`${toWireFunctionName(id)}Core`)}(${value} as never)`
-    : code`${identifier(toWireFunctionName(id))}(${value} as never, ${trustedOptions(ctx)})`;
+    : code`${emittedCode(ctx.nestedImportedSerde?.(id)?.toWire ?? identifier(toWireFunctionName(id)))}(${value} as never, ${trustedOptions(ctx)})`;
 }
 
 export function stringifyFunctionName(id: string): string {
@@ -344,7 +354,7 @@ function inlineLocalLines(ctx: EmitCtx): Code[] {
  * stringify imported; one with no encoded value under it writes as the model does; any other has no function to call.
  */
 function emitRecursiveWireCall(named: SchemaNode, expression: Emitted, ctx: EmitCtx): Code {
-  if (ctx.siblingWireCodecIds?.has(named.codecId)) return code`${identifier(wireStringifyExportName(named.codecId))}(${emittedCode(expression)} as never)`;
+  if (ctx.siblingWireCodecIds?.has(named.codecId)) return code`${siblingWireCall(named.codecId, ctx)}(${emittedCode(expression)} as never)`;
   if (named.sameSchema && !reachesEncodedValue(named.descriptor, ctx)) return nestedStringifyCall(named.id, expression, ctx);
   throw new Error(named.validationEnabled === false
     ? `Recursive model ${named.name} has validation turned off, so its wire form has no function to write it; turn validation on for it.`
@@ -391,7 +401,7 @@ function emitValue(
   if (named?.siblingCodec && ctx.wireIdentity) {
     // An encoded wire value of a sibling codec: its companion's wire stringify writes it.
     return ctx.siblingWireCodecIds?.has(named.codecId)
-      ? code`${identifier(wireStringifyExportName(named.codecId))}(${value} as never)`
+      ? code`${siblingWireCall(named.codecId, ctx)}(${value} as never)`
       : nestedStringifyCall(named.id, value, ctx);
   }
   if (named && isObjectish(descriptor)) {
@@ -711,6 +721,7 @@ function stringifyCode(
     graph,
     serde,
     nestedConstruct: extra?.nestedConstruct,
+    siblingWireName: extra?.siblingWireName,
     nestedGenerated: extra?.nestedGenerated,
     nestedImportedSerde: extra?.nestedImportedSerde,
     issueSource: extra?.issueSource ?? 'TypeScript',
@@ -773,9 +784,8 @@ function nestedFromWireOptions(descriptor: ModelTypeDescriptor, ctx: EmitCtx): C
   const id = node?.codecId
     ?? (descriptor.kind === 'reference' ? descriptor.name : descriptor.kind === 'generated-model' ? descriptor.id : undefined);
   if (!id) return trustedOptions(ctx);
-  // migration door, deleted in steps 5 and 6 (T-288, T-289): the class expression is text that a callback gives
   const given = ctx.nestedConstruct?.(id, descriptor.kind === 'reference' ? descriptor.className : undefined);
-  const ctor = given === undefined ? code`${rt.serde.requireIModelClass}(${literal(id)})` : legacyText(given);
+  const ctor = given === undefined ? code`${rt.serde.requireIModelClass}(${literal(id)})` : emittedCode(given);
   return code`{ validate: false, construct: ${ctor} }`;
 }
 
@@ -1029,11 +1039,12 @@ function emitInternedObjectDecode(
 ): Code {
   const value = emittedCode(expression);
   if (shouldConstructNested(descriptor, ctx)) {
-    const local = !isExternalCodecNode(node) && !(ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id));
+    const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
+    const local = !isExternalCodecNode(node) && !imported;
     const options = nestedFromWireOptions(descriptor, ctx);
     return fallibleConversion(ctx, local
       ? code`${identifier(`convertFromWire${node.id}`)}(${value}, ${options})`
-      : code`${identifier(fromWireFunctionName(node.id))}(${value}, ${options})`);
+      : code`${imported ? emittedCode(imported.fromWire) : identifier(fromWireFunctionName(node.id))}(${value}, ${options})`);
   }
   if (
     node.kind === 'object'
@@ -1046,13 +1057,13 @@ function emitInternedObjectDecode(
   }
   if (node.kind === 'object') {
     const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
-    // migration door, deleted in steps 5 and 6 (T-288, T-289): the fill name of an imported serde is text that a callback gives
-    const fill = imported?.fill === undefined ? identifier(fillFunctionName(node.id)) : legacyText(imported.fill);
+    const fill = imported?.fill === undefined ? identifier(fillFunctionName(node.id)) : emittedCode(imported.fill);
     const call = code`${fill}({} as Record<string, unknown>, ${asRecordCode(value)})`;
     // A local fill that cannot throw runs without its field's path.
     return imported || fillCanThrow(node, ctx) ? fallibleConversion(ctx, call) : call;
   }
-  return fallibleConversion(ctx, code`${identifier(fromWireFunctionName(node.id))}(${value}, ${trustedOptions(ctx)})`);
+  const importedWire = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
+  return fallibleConversion(ctx, code`${importedWire ? emittedCode(importedWire.fromWire) : identifier(fromWireFunctionName(node.id))}(${value}, ${trustedOptions(ctx)})`);
 }
 
 /**
@@ -1175,14 +1186,14 @@ function emitTaggedVariantUnion(
  * generated model, or a reference the codec constructs. Only a class the
  * emitting module binds is used, so a guard never looks up a registry.
  */
-function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx): string | undefined {
+function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx): Emitted | undefined {
   const name = variant.kind === 'generated-model'
     ? ctx.nestedGenerated?.(variant.id)
     : variant.kind === 'reference' && shouldConstructNested(variant, ctx)
       ? ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.kind === 'reference' ? variant.className : undefined)
       : undefined;
   // A resolver answers 'undefined' for a model it emits no class for.
-  return name === 'undefined' ? undefined : name;
+  return name === undefined || isUndefinedName(name) ? undefined : name;
 }
 
 /** Object variants of a union mixed with one generated model; their literal tags must dispatch. */
@@ -1313,8 +1324,7 @@ function emitUnionDecode(
     generated: {
       text: (generated) => {
         const className = ctx.nestedGenerated?.(generated.id);
-        // migration door, deleted in steps 5 and 6 (T-288, T-289): a class name is text that a callback gives
-        const name = className ? legacyText(className) : undefined;
+        const name = className ? emittedCode(className) : undefined;
         return name
           ? code`${value} instanceof ${name} ? ${value} : ${fallibleConversion(ctx, code`${rt.conversion.decodeGeneratedModelTrusted}(${name}, ${value})`)}`
           : undefined;
@@ -1384,8 +1394,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Emitted, c
   const value = emittedCode(expression);
   if (descriptor.kind === 'generated-model') {
     const className = ctx.nestedGenerated?.(descriptor.id);
-    // migration door, deleted in steps 5 and 6 (T-288, T-289): a class name is text that a callback gives
-    if (className) return fallibleConversion(ctx, code`${rt.conversion.decodeGeneratedModelTrusted}(${legacyText(className)}, ${value})`);
+    if (className) return fallibleConversion(ctx, code`${rt.conversion.decodeGeneratedModelTrusted}(${emittedCode(className)}, ${value})`);
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
@@ -1839,10 +1848,14 @@ function emitSerdeValidates(validationEnabled: boolean): Code {
     : code`  ${rt.serde.serdeValidates}(options, false);`;
 }
 
-// migration door, deleted in steps 5 and 6 (T-288, T-289): the validator and fast check names are text that the module gives
 function validatorReference(ctx: EmitCtx, id: string): Code {
   if (ctx.validatorName === undefined) throw new Error(`The codec of ${JSON.stringify(id)} validates, and the module names no validators to import.`);
-  return legacyText(ctx.validatorName(id));
+  return emittedCode(ctx.validatorName(id));
+}
+
+// migration door, deleted in step 6 (T-289): golem-openapi answers 'undefined' as text for a model it emits no class for
+function isUndefinedName(name: Emitted): boolean {
+  return sameCode(emittedCode(name), legacyText('undefined'));
 }
 
 /**
@@ -1850,9 +1863,8 @@ function validatorReference(ctx: EmitCtx, id: string): Code {
  * written in each model's function, not in a shared runtime helper, so each call of a fast check sees one check only
  * and V8 can inline it.
  */
-function fastPasses(fast: string, value: Code): Code {
-  // migration door, deleted in steps 5 and 6 (T-288, T-289): the import name of a fast check is text that the module gives
-  return code`options?.validationContext === undefined && ${legacyText(fast)}(${value})`;
+function fastPasses(fast: Emitted, value: Code): Code {
+  return code`options?.validationContext === undefined && ${emittedCode(fast)}(${value})`;
 }
 
 /** Whether `value` passes the validator of `reference`, from the fast check first when the root has one (spec 7.1). */
@@ -2234,10 +2246,18 @@ function isExternalCodecNode(node: SchemaNode): boolean {
 }
 
 /** Specialized stringify/parse/validate and codec registration for every graph node. */
+// migration door, deleted in step 6 (T-289): golem-openapi writes its file from text
 export function emitCodecRuntime(
   graph: SchemaGraph,
   options: CodecRuntimeOptions = {},
 ): string {
+  return render(emitCodecRuntimeCode(graph, options));
+}
+
+export function emitCodecRuntimeCode(
+  graph: SchemaGraph,
+  options: CodecRuntimeOptions = {},
+): Code {
   const defaultEnabled = options.validationEnabled !== false;
   const validates = (node: SchemaNode): boolean => nodeValidates(node, defaultEnabled);
   const nodes = [...graph.topo()];
@@ -2257,6 +2277,7 @@ export function emitCodecRuntime(
     resolvedSchemasExpr: options.resolvedSchemasExpr,
     serde: options.serde,
     nestedConstruct: options.nestedConstruct,
+    siblingWireName: options.siblingWireName,
     nestedGenerated: options.nestedGenerated,
     nestedImportedSerde: options.nestedImportedSerde,
     exportedFillFunctionIds: options.exportedFillFunctionIds,
@@ -2272,7 +2293,7 @@ export function emitCodecRuntime(
     const runtime = emitNodeRuntime(node, ctx, validates(node));
     if (runtime.parts.length > 0) runtimes.push(runtime);
   }
-  return render(withModuleConstants(join(runtimes, code`\n`)));
+  return withModuleConstants(join(runtimes, code`\n`));
 }
 
 /** One frozen object of each kind serves every nested call that passes options to another module's function. */
