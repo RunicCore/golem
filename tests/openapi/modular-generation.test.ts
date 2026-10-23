@@ -781,13 +781,15 @@ function roundTrip(sdk: Record<string, unknown>, model: string, klass: string, v
 test('schemas whose names the codec rule shortens still get output files and exports', async t => {
   const { result, sdk, source } = await generateShortened(t, { PaymentModel: idObject, TPayment: amountObject, 'Pay$ment': idObject });
   const written = new Set(result.artifacts.map(artifact => artifact.path));
-  const classes = [['PaymentModel', 'PaymentModelModel'], ['TPayment', 'TPaymentModel'], ['Pay$ment', 'Pay$mentModel']] as const;
-  for (const [schema, klass] of classes) {
+  const assertExported = async (schema: string, klass: string): Promise<void> => {
     assert.ok(written.has(path.join(source, 'models', `${schema}.ts`)), `models/${schema}.ts is written`);
     const direct = requireRecord(await import(pathToFileURL(path.join(source, `dist/models/${schema}.js`)).href), `${schema} module`);
     assert.ok(isGeneratedModelClass(sdk[klass]), `${klass} is exported by the SDK entry`);
     assert.strictEqual(sdk[klass], direct[klass]);
-  }
+  };
+  await assertExported('PaymentModel', 'PaymentModelModel');
+  await assertExported('TPayment', 'TPaymentModel');
+  await assertExported('Pay$ment', 'Pay$mentModel');
 });
 
 test('a model that references schemas with shortened names imports their own classes', async t => {

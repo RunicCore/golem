@@ -18,7 +18,7 @@ import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
-import { signature } from './watch.js';
+import { OwnedOutputIndex, signature } from './watch.js';
 
 interface BuildOptions {
   /**
@@ -35,6 +35,8 @@ interface BuildOptions {
   readonly tscArguments?: readonly string[];
   /** Called after the generate step of each build with the ids of the jobs that executed; a job its record showed to be current is not among them. */
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
+  /** Called after each poll of a watching build that found nothing to build, so a caller knows the watcher has looked since the last build. */
+  readonly onIdlePoll?: () => void;
 }
 
 export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
@@ -694,8 +696,9 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     const directoriesBefore = directorySignatures();
     baselines?.clear();
     const record = (): void => {
-      // A file the generate step wrote is the build's own: its signature after the build is the one the next build compares with.
-      previous = new Map([...fingerprints()].map(([input, value]) => [input, state.owned.has(input) ? value : before.get(input) ?? baselines?.get(input) ?? value]));
+      // A file the generate step wrote, and the directory it created for it, is the build's own: its signature after the build is the one the next build compares with.
+      const own = new OwnedOutputIndex(state.owned);
+      previous = new Map([...fingerprints()].map(([input, value]) => [input, own.covers(input) ? value : before.get(input) ?? baselines?.get(input) ?? value]));
       directories = new Map([...directorySignatures()].map(([directory, value]) => [directory, directoriesBefore.get(directory) ?? value]));
     };
     try {
@@ -717,7 +720,10 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       const changed = [...fingerprints()].filter(([input, value]) => previous.get(input) !== value).map(([input]) => input);
       const own = ownDirectories(root, outputs);
       const added = [...directories].some(([directory, value]) => directorySignature(directory, own, state.owned) !== value);
-      if (changed.length === 0 && !added && !(wrote && !outputsPresent())) return;
+      if (changed.length === 0 && !added && !(wrote && !outputsPresent())) {
+        options.onIdlePoll?.();
+        return;
+      }
       busy = true;
       session.inputsChanged(changed);
       void attempt(changed).finally(() => { busy = false; if (options.signal?.aborted) { clearInterval(timer); resolve(); } });

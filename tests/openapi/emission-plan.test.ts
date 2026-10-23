@@ -515,11 +515,13 @@ test('the SDK entry re-exports each model module directly', async t => {
   ]);
   compileStrictUnusedSdk(output);
   const entry = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'SDK entry');
-  for (const name of ['Money', 'Payment']) {
+  const assertDirect = async (name: string): Promise<void> => {
     const direct = requireRecord(await import(pathToFileURL(path.join(output, `dist/models/${name}.js`)).href), `${name} module`);
     assert.ok(isGeneratedModelClass(entry[`${name}Model`]), `${name}Model is a model class`);
     assert.strictEqual(entry[`${name}Model`], direct[`${name}Model`]);
-  }
+  };
+  await assertDirect('Money');
+  await assertDirect('Payment');
 });
 
 test('a validation SDK with operations compiles under strict unused checks', async t => {
@@ -585,6 +587,8 @@ test('SDK model functions use the model types instead of unknown', async t => {
   }, { output, name: 'Typed', profile: { mobx: false, validation: true } });
   const assertFile = writeAssertFile(output, 'functions-assert.ts', `import { parseMoney, toWireFormatMoney, validateMoney, type MoneyFields } from './index.js';
 import type * as Types from './types.js';
+type IsAny<T> = 0 extends 1 & T ? true : false;
+const returnsAny: IsAny<ReturnType<typeof parseMoney>> = false;
 const parsed: MoneyFields = parseMoney('{"amount":"1"}');
 const wire: Types.Money = toWireFormatMoney(parsed);
 declare const input: unknown;
@@ -595,6 +599,7 @@ if (validateMoney(input)) {
 // @ts-expect-error toWireFormatMoney takes a model value, not unknown
 void toWireFormatMoney(input);
 void wire;
+void returnsAny;
 `);
   compileStrictUnusedSdk(output, [assertFile]);
   const sdk = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'typed SDK');
