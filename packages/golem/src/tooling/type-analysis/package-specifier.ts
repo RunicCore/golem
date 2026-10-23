@@ -36,8 +36,8 @@ export function readManifest(filename: string): { readonly name?: string; readon
 /**
  * Throws when a package.json that a lookup of the package import `specifier` (a package name or a `#` import) from `importer`
  * reads is not a JSON object: the nearest one above `importer`, which scopes `imports` and self references, and for a package
- * name the nearest `node_modules/<name>/package.json`. Both TypeScript lanes call it, because the TypeScript 6 resolver reads
- * such a file as `{}` and the TypeScript 7 lookup of golem would otherwise skip its `imports` and `exports`.
+ * name the nearest `node_modules/<name>/package.json`. Both TypeScript lanes call it, because the compiler reads such a
+ * file as `{}` and does not name it.
  */
 export function assertPackageManifestsParse(specifier: string, importer: string): void {
   if (specifier.startsWith('.') || path.isAbsolute(specifier)) return;

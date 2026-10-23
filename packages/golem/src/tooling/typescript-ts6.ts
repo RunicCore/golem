@@ -89,6 +89,7 @@ interface ClassicProgram {
   getCompilerOptions(): Golem.CompilerOptions;
   getSyntacticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
   getSemanticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
+  getModeForUsageLocation(file: Golem.SourceFile, usage: Golem.StringLiteralLike): Golem.ModuleKind;
   /** Internal to the classic compiler: the resolution it stored for an import. */
   getResolvedModuleFromModuleSpecifier(specifier: Golem.StringLiteralLike, file: Golem.SourceFile): { readonly resolvedModule?: Golem.ResolvedModule } | undefined;
 }
@@ -140,7 +141,7 @@ interface ParsedConfigHost {
 
 // Names that this module implements itself; every other seam name is the classic API's own member.
 type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources'
-  | 'formatDiagnosticsWithColorAndContext' | 'getPreEmitDiagnostics' | 'resolveImport' | 'typeParameterDefault' | 'typeReferenceTarget';
+  | 'formatDiagnosticsWithColorAndContext' | 'getPreEmitDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
 
 interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'ObjectFlags' | 'SignatureKind'> {
   readonly SignatureKind: Golem.TypeScriptBackend['SignatureKind'] & { readonly Construct: Golem.SignatureKind };
@@ -287,18 +288,6 @@ export const {
   sys,
 } = classic;
 
-/** The program that last handed out each source file: its resolved modules hold the file's imports. */
-const importerPrograms = new WeakMap<object, CompatProgram>();
-
-/** The module an import resolved to in the program that holds its source file. The classic compiler reads a package.json that is not JSON as `{}`; golem names the file instead. */
-export function resolveImport(specifier: Golem.StringLiteralLike): Golem.ResolvedModule | undefined {
-  const file = specifier.getSourceFile();
-  const program = importerPrograms.get(file);
-  if (!program) throw new Error(`${file.fileName} belongs to no open TypeScript program, so golem cannot read how its imports resolve.`);
-  assertPackageManifestsParse(specifier.text, file.fileName);
-  return program.program.getResolvedModuleFromModuleSpecifier(specifier, file)?.resolvedModule;
-}
-
 /** TypeScript 7 names a type parameter's default `defaultType`; TypeScript 6 names it `default`. */
 export function typeParameterDefault(parameter: Golem.TypeParameterDeclaration): Golem.TypeNode | undefined {
   // TypeScript 6's TypeParameterDeclaration declares `default`, which golem's own declaration omits.
@@ -411,7 +400,11 @@ function wrapSignature(signature: ClassicSignature, checker: CompatChecker): Gol
 
 /** The classic checker behind the checker declaration golem reads, with the TypeScript 7 backend's fallbacks. */
 class CompatChecker implements Golem.TypeChecker {
-  public constructor(private readonly inner: ClassicChecker) {}
+  public constructor(private readonly inner: ClassicChecker, private readonly program: CompatProgram) {}
+
+  resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: ReadonlySet<string>): Golem.ResolvedModule | undefined {
+    return this.program.resolveImport(specifier, virtualFiles);
+  }
 
   getTypeFromTypeNode(node: Golem.TypeNode): Golem.Type {
     return wrapType(this.inner.getTypeFromTypeNode(node) ?? this.inner.getUnknownType(), this);
@@ -554,9 +547,26 @@ class CompatProgram implements Golem.Program {
     readonly program: ClassicProgram,
   ) {}
 
+  /**
+   * The module an import of a file of this program resolved to, as the compiler resolved it for the program. The classic compiler reads
+   * a package.json that is not JSON as `{}`; golem names the file instead. When the compiler found none, `virtualFiles` are files that
+   * do not exist yet but will, and a second lookup counts them.
+   */
+  resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: ReadonlySet<string>): Golem.ResolvedModule | undefined {
+    const file = specifier.getSourceFile();
+    assertPackageManifestsParse(specifier.text, file.fileName);
+    // The lookup the program stored is internal to the classic compiler: stop with a clear error if a release drops it.
+    if (typeof this.program.getResolvedModuleFromModuleSpecifier !== 'function') {
+      throw new Error(`TypeScript ${selected.version} gives golem no way to read how a program resolved an import: its program has no getResolvedModuleFromModuleSpecifier.`);
+    }
+    const resolved = this.program.getResolvedModuleFromModuleSpecifier(specifier, file)?.resolvedModule;
+    if (resolved || !virtualFiles || virtualFiles.size === 0) return resolved;
+    return this.session.resolveModuleName(specifier.text, file.fileName, this.getCompilerOptions(), this.program.getModeForUsageLocation(file, specifier), virtualFiles).resolvedModule;
+  }
+
   getTypeChecker(): Golem.TypeChecker {
     // Creating the classic checker binds every file, so it waits for the first use.
-    this.checker ??= new CompatChecker(this.program.getTypeChecker());
+    this.checker ??= new CompatChecker(this.program.getTypeChecker(), this);
     return this.checker;
   }
 
@@ -766,16 +776,19 @@ export class ProgramSession implements Disposable {
     this.latest = { program, overlayPaths };
     const held = new CompatProgram(this, program);
     this.held.add(held);
-    for (const file of program.getSourceFiles()) importerPrograms.set(file, held);
     this.retainFilesOf(held);
     return held;
   }
 
-  /** Resolve a module name that no program imports, such as one an SDK manifest names. The classic resolver takes the mode after its cache and redirect arguments. */
-  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: Golem.CompilerOptions, resolutionMode?: Golem.ModuleKind): { resolvedModule?: Golem.ResolvedModule } {
+  /**
+   * Resolve a module name that no program imports, such as one an SDK manifest names. The lookup sees the disk and `virtualFiles`, the
+   * same files as on the TypeScript 7 lane. The classic resolver takes the mode after its cache and redirect arguments.
+   */
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: Golem.CompilerOptions, resolutionMode?: Golem.ModuleKind, virtualFiles: ReadonlySet<string> = new Set()): { resolvedModule?: Golem.ResolvedModule } {
     this.assertOpen();
     assertPackageManifestsParse(moduleName, containingFile);
-    return classic.resolveModuleName(moduleName, containingFile, compilerOptions, this.host(compilerOptions, new Map()), undefined, undefined, resolutionMode);
+    const overlays = new Map([...virtualFiles].map((filename) => [canonical(filename), 'export {}\n']));
+    return classic.resolveModuleName(moduleName, containingFile, compilerOptions, this.host(compilerOptions, overlays), undefined, undefined, resolutionMode);
   }
 
   /** Called by a closing program. */

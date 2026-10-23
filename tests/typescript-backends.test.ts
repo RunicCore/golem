@@ -20,15 +20,16 @@ test('every name the facade exports is defined on the active backend', () => {
   assert.match(ts.typescriptVersion, /^[67]\./);
 });
 
-/** The compiler's own resolution of an import: a program opens `main.ts` with an import of each specifier, and the answer is what `resolveImport` reads from it. */
+/** The compiler's own resolution of an import: a program opens `main.ts` with an import of each specifier, and the answer is what the checker's `resolveImport` reads from it. */
 function importResolver(t: TestContext, root: string, specifiers: readonly string[], compilerOptions: object = {}): (specifier: string) => string | undefined {
   const main = path.join(root, 'main.ts');
   fs.writeFileSync(main, specifiers.map((specifier) => `import ${JSON.stringify(specifier)};\n`).join(''));
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { module: 'NodeNext', moduleResolution: 'NodeNext', noEmit: true, skipLibCheck: true, ...compilerOptions }, include: ['main.ts'] }));
   const program = ts.createProgramFromSources({ root, sources: [main] });
   t.after(() => program.close());
+  const checker = program.getTypeChecker();
   const imports = program.getSourceFile(main)!.statements.filter(ts.isImportDeclaration).map((statement) => statement.moduleSpecifier).filter(ts.isStringLiteralLike);
-  return (specifier) => ts.resolveImport(imports.find((node) => node.text === specifier)!)?.resolvedFileName;
+  return (specifier) => checker.resolveImport(imports.find((node) => node.text === specifier)!)?.resolvedFileName;
 }
 
 test('a relative specifier with a dot in its name resolves to the source that bears the name', t => {
@@ -41,7 +42,7 @@ test('a relative specifier with a dot in its name resolves to the source that be
 });
 
 test('a folder is no module file: a folder named like a source is skipped, and a paths alias to a folder resolves to its index', t => {
-  // protects: T-181 the TypeScript 7 system answers fileExists as the TypeScript 6 system does, true for files only
+  // protects: F-267 a folder named like a module file never resolves, and a paths alias to a folder resolves to its index
   const root = createFixtureProject(t, 'golem-folder-not-file-');
   fs.mkdirSync(path.join(root, 'src/models'), { recursive: true });
   fs.mkdirSync(path.join(root, 'src/util.ts'));
@@ -78,6 +79,46 @@ test('a package subpath that the exports map hides does not resolve, and a packa
   assert.equal(resolve('guarded/shown'), real('node_modules/guarded/shown.d.ts'));
   assert.equal(resolve('guarded/hidden'), undefined);
   assert.equal(resolve('open/deep'), real('node_modules/open/deep.d.ts'));
+});
+
+/** A project and its session, with the compiler options its tsconfig parses to; `lookup` resolves a name for a file of `sdk/`, as a manifest lookup does. */
+function manifestLookup(t: TestContext, root: string): { readonly session: InstanceType<typeof ts.ProgramSession>; readonly lookup: (name: string, virtualFiles?: ReadonlySet<string>) => string | undefined } {
+  fs.mkdirSync(path.join(root, 'sdk'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { module: 'NodeNext', moduleResolution: 'NodeNext', noEmit: true, skipLibCheck: true }, include: ['*.ts'] }));
+  const session = new ts.ProgramSession({ cwd: root });
+  t.after(() => session[Symbol.dispose]());
+  const { options } = session.parseConfigFile(path.join(root, 'tsconfig.json'));
+  return { session, lookup: (name, virtualFiles) => session.resolveModuleName(name, path.join(root, 'sdk/model-manifest.json'), options, undefined, virtualFiles).resolvedModule?.resolvedFileName };
+}
+
+test('a module that an SDK manifest names resolves to the require target of an exports map under NodeNext', t => {
+  // protects: F-260 an SDK manifest JSON importer resolves with the require condition under Node16 and NodeNext, on both TypeScript lanes
+  const root = createFixtureProject(t, 'golem-manifest-require-');
+  fs.mkdirSync(path.join(root, 'node_modules/sdk-dep'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'node_modules/sdk-dep/package.json'), JSON.stringify({ name: 'sdk-dep', version: '1.0.0', exports: { '.': { import: './esm.js', require: './cjs.js' } } }));
+  fs.writeFileSync(path.join(root, 'node_modules/sdk-dep/esm.js'), 'export {};\n');
+  fs.writeFileSync(path.join(root, 'node_modules/sdk-dep/cjs.js'), 'exports.value = 1;\n');
+  const { lookup } = manifestLookup(t, root);
+
+  assert.equal(lookup('sdk-dep'), fs.realpathSync(path.join(root, 'node_modules/sdk-dep/cjs.js')));
+});
+
+test('a manifest lookup sees the disk and the files it is given, not the overlay of an open program', t => {
+  // protects: T-345 the manifest lookup of both TypeScript lanes sees the same files
+  const root = createFixtureProject(t, 'golem-manifest-files-');
+  const { session, lookup } = manifestLookup(t, root);
+  fs.writeFileSync(path.join(root, 'main.ts'), 'export {};\n');
+  fs.writeFileSync(path.join(root, 'sdk/on-disk.ts'), 'export {};\n');
+  const overlay = path.join(root, 'overlay.ts');
+  const virtual = path.join(root, 'sdk/virtual.ts');
+  using program = session.openProgram({ root, sources: [path.join(root, 'main.ts'), overlay], overlays: new Map([[overlay, 'export {};\n']]) });
+
+  assert.equal(lookup('./on-disk.js'), path.join(root, 'sdk/on-disk.ts'));
+  assert.equal(lookup('../overlay.js'), undefined);
+  assert.equal(lookup('./virtual.js'), undefined);
+  assert.equal(lookup('./virtual.js', new Set([virtual])), virtual);
+  assert.equal(lookup('./virtual.js'), undefined);
+  assert.ok(program.getSourceFile(overlay));
 });
 
 for (const [place, specifier, manifest] of [

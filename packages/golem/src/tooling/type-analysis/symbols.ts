@@ -1,4 +1,4 @@
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { DEFAULT_MODEL_SUFFIXES, canonicalPath, displayPath } from '../generator-api.js';
 import { canonicalFilename, generatedFilename, isModelFileName, type ModelBoundary } from './project.js';
@@ -90,6 +90,9 @@ export function modelSpecificationForClass(
   const declaration = resolveSymbol(checker, type.getSymbol())?.declarations?.find(ts.isClassDeclaration);
   if (!declaration || seen.has(declaration)) return undefined;
   seen.add(declaration);
+  // The companions the jobs are about to write do not exist on the first run, so the compiler finds no module for an import of one; the
+  // lookup that counts them covers every import form (relative, `paths`, `#imports`).
+  const expected = new Set(specifications.map(specification => canonicalFilename(companionOfSpecification(specification))));
   const match = (filename: string, name: string | undefined): ModelSpecification | undefined => specifications.find(specification =>
     canonicalFilename(companionOfSpecification(specification)) === canonicalFilename(filename)
       && name === `${specification.name}BaseModel`);
@@ -106,7 +109,7 @@ export function modelSpecificationForClass(
         if (!ts.isImportSpecifier(alias)) continue;
         const statement = alias.parent.parent.parent;
         if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier)) continue;
-        const resolved = ts.resolveImport(statement.moduleSpecifier)?.resolvedFileName;
+        const resolved = checker.resolveImport(statement.moduleSpecifier, expected)?.resolvedFileName;
         const specification = resolved && match(resolved, (alias.propertyName ?? alias.name).text);
         if (specification) return specification;
       }

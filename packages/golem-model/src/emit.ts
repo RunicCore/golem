@@ -756,6 +756,7 @@ const executableMemos = new WeakMap<object, ExecutableValidationMemo>();
 
 /** One job's type analysis: every model is described once, shared by all companions. */
 interface JobAnalysis {
+  readonly checker: ts.TypeChecker;
   readonly describe: ReturnType<typeof descriptorBuilder>;
   readonly described: Map<ModelSpecification, ModelConversionDescriptor>;
   /** Canonical filenames of the job's model sources. */
@@ -810,6 +811,7 @@ export function createJobAnalysis(
   ));
   const modelSources = new Set(sources.map(canonicalFilename));
   return {
+    checker,
     describe: descriptorBuilder(
       checker,
       specifications,
@@ -839,7 +841,7 @@ function directImports(job: JobAnalysis, file: ts.SourceFile): readonly string[]
   const key = canonicalFilename(file.fileName);
   const known = job.directImports.get(key);
   if (known) return known;
-  const imports = projectFilesImportedBy(file, job.compilerOptions, job.suffixes);
+  const imports = projectFilesImportedBy(file, job.checker, job.suffixes);
   job.directImports.set(key, imports);
   return imports;
 }

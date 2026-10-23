@@ -122,7 +122,6 @@ export const {
   isVariableDeclaration,
   isVariableDeclarationList,
   isVariableStatement,
-  resolveImport,
   sys,
   typeParameterDefault,
   typeReferenceTarget,

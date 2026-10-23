@@ -13,7 +13,7 @@ import { createJobAnalysis } from '#model/emit';
 import { generate } from '#model/generator';
 import { applyRewrites } from '#golem/rewrite';
 import { scanProject } from '#golem/rewrite-scan';
-import { collectSpecifications, companionFilename, createModelStubProgram, createProgram, isOwnModelFile, loadModelManifests, modelBoundary, modelSpecificationForClass } from '@exprtlabs/golem/internal/type-analysis';
+import { collectSpecifications, companionFilename, createProgram, isOwnModelFile, loadModelManifests, modelBoundary, modelSpecificationForClass } from '@exprtlabs/golem/internal/type-analysis';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const PROFILE = { mobx: false, validation: false };
@@ -209,7 +209,7 @@ test('on the first run an app class that imports the shared base through a paths
   fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true, paths: { '#models/*': ['./src/generated/models/*'] } }, include: ['src/**/*.ts', '../shared/**/*.ts'] }));
   const boundary = modelBoundary(app, undefined, { directory: app, output: path.join(app, 'src/generated/models') });
   const customer = path.join(app, 'src/customer.ts');
-  const info = createModelStubProgram([path.join(app, 'src/order.model.ts'), customer], app, boundary, [path.join(outer, 'shared/customer.model.ts')]);
+  const info = createProgram([path.join(app, 'src/order.model.ts'), customer], app);
   const { checker, specifications } = collectSpecifications(info.program, [path.join(outer, 'shared/customer.model.ts')], undefined, (file) => companionFilename(boundary, file));
 
   const classSymbol = checker.getExportsOfModule(checker.getSymbolAtLocation(info.program.getSourceFile(customer)!)!).find((symbol) => symbol.name === 'Customer')!;

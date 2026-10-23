@@ -382,10 +382,15 @@ class CompatChecker implements TypeChecker {
   public constructor(
     private readonly inner: Checker,
     readonly project: Project,
+    private readonly program: CompatProgram,
   ) {}
 
   getTypeChecker(): TypeChecker {
     return this;
+  }
+
+  resolveImport(specifier: StringLiteralLike, virtualFiles?: ReadonlySet<string>): ResolvedModule | undefined {
+    return this.program.resolveImport(specifier, virtualFiles);
   }
 
   getTypeFromTypeNode(node: TypeNode): CompatType {
@@ -553,11 +558,24 @@ class CompatProgram implements Program {
     readonly snapshot: Snapshot,
     readonly project: Project,
   ) {
-    this.checker = new CompatChecker(project.checker, project);
+    this.checker = new CompatChecker(project.checker, project, this);
   }
 
   getTypeChecker(): TypeChecker {
     return this.checker;
+  }
+
+  /**
+   * The module an import of a file of this program resolved to, as the compiler resolved it for the program. When the compiler found
+   * none, `virtualFiles` are files that do not exist yet but will, and a second lookup counts them.
+   */
+  resolveImport(specifier: StringLiteralLike, virtualFiles?: ReadonlySet<string>): ResolvedModule | undefined {
+    const file = specifier.getSourceFile().fileName;
+    assertPackageManifestsParse(specifier.text, file);
+    const resolved = this.project.program.getResolvedModuleFromModuleSpecifier(specifier, file);
+    if (resolved || !virtualFiles || virtualFiles.size === 0) return resolved;
+    const mode = this.project.program.getModeForUsageLocation(file, specifier);
+    return this.session.resolveModuleName(specifier.text, file, this.getCompilerOptions(), mode, virtualFiles).resolvedModule;
   }
 
   close(): void {
@@ -582,7 +600,6 @@ class CompatProgram implements Program {
 
   /** The program's module format of the file, as the classic `SourceFile.impliedNodeFormat`; the TypeScript 7 file leaves it in the program's metadata. */
   private withImpliedNodeFormat(file: SourceFile | undefined): SourceFile | undefined {
-    if (file) importerPrograms.set(file, this);
     if (file && !Object.hasOwn(file, 'impliedNodeFormat')) {
       const format = this.project.program.getSourceFileMetadata(file.fileName)?.impliedNodeFormat;
       Object.defineProperty(file, 'impliedNodeFormat', { value: format === undefined || format === ModuleKind.None ? undefined : format });
@@ -736,22 +753,6 @@ export function getPreEmitDiagnostics(program: Program): readonly SyncDiagnostic
     ...(options.declaration === true || options.composite === true ? program.getDeclarationDiagnostics() : []),
     ...program.getProgramDiagnostics(),
   ];
-}
-
-/** The program that last handed out each source file: it holds the file's imports and their resolutions. */
-const importerPrograms = new WeakMap<object, CompatProgram>();
-
-/**
- * The module an import of a source file resolved to in its program, as the compiler resolved it for the program, or undefined when it
- * resolved to none. A program that closed since it handed the file out passes the question to the newest open program of its session.
- */
-export function resolveImport(specifier: StringLiteralLike): ResolvedModule | undefined {
-  const file = specifier.getSourceFile();
-  const owner = importerPrograms.get(file);
-  const program = owner && (owner.session.holds(owner) ? owner : owner.session.newestProgram());
-  if (!program) throw new Error(`${file.fileName} belongs to no open TypeScript program, so golem cannot read how its imports resolve.`);
-  assertPackageManifestsParse(specifier.text, file.fileName);
-  return program.project.program.getResolvedModuleFromModuleSpecifier(specifier, file.fileName);
 }
 
 export function canHaveDecorators(node: Node): boolean {
@@ -940,8 +941,8 @@ export class ProgramSession implements Disposable {
   private readonly hinted = new Set<string>();
   private readonly openProjects = new Set<string>();
   private readonly held = new Map<CompatProgram, ProgramRequest>();
-  /** The compiler's module resolver of each set of options, made when a lookup first needs it. */
-  private resolvers = new WeakMap<object, ModuleResolver>();
+  /** The compiler's module resolver of each set of options (by their JSON), made when a lookup first needs it. */
+  private readonly resolvers = new Map<string, ModuleResolver>();
   /**
    * The newest snapshot stays alive until the next one exists: TypeScript 7.1 builds each snapshot as an update of a
    * live one, and refuses to update a disposed snapshot.
@@ -970,26 +971,25 @@ export class ProgramSession implements Disposable {
   }
 
   /**
-   * Resolve a module name for a file at `containingFile` with the compiler's own resolver, in the newest snapshot so that overlays
-   * count. For a module that is no import of a program, such as one an SDK manifest names.
+   * Resolve a module name for a file at `containingFile` with the compiler's own resolver, for a module that is no import of a
+   * program, such as one an SDK manifest names. The lookup sees the disk and `virtualFiles`, the same files as on the TypeScript 6
+   * lane, and no overlay of a program.
    */
-  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind): { resolvedModule?: ResolvedModule } {
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles: ReadonlySet<string> = new Set()): { resolvedModule?: ResolvedModule } {
     assertPackageManifestsParse(moduleName, containingFile);
     return this.withCompiler('parse', (api) => {
-      let resolver = this.resolvers.get(compilerOptions);
-      if (!resolver) this.resolvers.set(compilerOptions, resolver = api.createModuleResolver(compilerOptions));
-      return resolver.resolveModuleName(moduleName, dirname(containingFile), resolutionMode as ResolutionMode | undefined, { snapshot: this.latest });
+      // Options that parse alike share a resolver, so a watch that parses its configuration again does not make a new one.
+      const key = JSON.stringify(compilerOptions);
+      let resolver = this.resolvers.get(key);
+      if (!resolver) this.resolvers.set(key, resolver = api.createModuleResolver(compilerOptions));
+      const previous = this.overlays;
+      this.setOverlays(new Map([...virtualFiles].map((filename) => [canonical(filename), 'export {}\n'])));
+      try {
+        return resolver.resolveModuleName(moduleName, dirname(containingFile), resolutionMode as ResolutionMode | undefined);
+      } finally {
+        this.setOverlays(previous);
+      }
     });
-  }
-
-  /** Whether the program is open in this session. */
-  holds(program: CompatProgram): boolean {
-    return this.held.has(program);
-  }
-
-  /** The program opened last of those still open. */
-  newestProgram(): CompatProgram | undefined {
-    return [...this.held.keys()].at(-1);
   }
 
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
@@ -1146,7 +1146,7 @@ export class ProgramSession implements Disposable {
   private reset(): void {
     this.api = undefined;
     this.latest = undefined;
-    this.resolvers = new WeakMap();
+    this.resolvers.clear();
     this.callbackFailed = false;
     this.setOverlays(new Map());
     this.observed.clear();
