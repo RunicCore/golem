@@ -180,14 +180,18 @@ test('a diagnostic names the line and column of the compiler line map, also for 
   // TypeScript ends a line at \n, \r\n, a lone \r, U+2028 and U+2029; the error sits on line 3 or 4, never on line 1.
   const onDisk = path.join(root, 'src/breaks.ts');
   const unwritten = path.join(root, 'src/unwritten.generated.ts');
+  // An astral character takes two UTF-16 units, as the compiler counts a column.
+  const wide = path.join(root, 'src/wide.ts');
+  fs.writeFileSync(wide, "export const s = '\u{1F600}'; export const c: string = 3;\n");
   fs.writeFileSync(onDisk, 'export const a = 1;\rexport const b = 2;\u2028export const c: string = 3;\n');
   using session = new ts.ProgramSession({ cwd: root });
-  using program = session.openProgram({ root, sources: [onDisk, unwritten], overlays: new Map([[unwritten, 'export const a = 1;\u2029export const b = 2;\r\nexport const c = 3;\rexport const d: string = 4;\n']]) });
+  using program = session.openProgram({ root, sources: [onDisk, unwritten, wide], overlays: new Map([[unwritten, 'export const a = 1;\u2029export const b = 2;\r\nexport const c = 3;\rexport const d: string = 4;\n']]) });
   const host = { getCanonicalFileName: (name: string) => path.relative(root, name), getCurrentDirectory: () => root, getNewLine: () => '\n' };
   const printed = ts.getPreEmitDiagnostics(program).map(diagnostic => ts.formatDiagnosticsWithColorAndContext([diagnostic], host));
   assert.deepEqual(printed, [
     "src/breaks.ts:3:14 - error TS2322: Type 'number' is not assignable to type 'string'.",
     "src/unwritten.generated.ts:4:14 - error TS2322: Type 'number' is not assignable to type 'string'.",
+    "src/wide.ts:1:37 - error TS2322: Type 'number' is not assignable to type 'string'.",
   ]);
 });
 
