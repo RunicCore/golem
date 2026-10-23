@@ -1,6 +1,7 @@
 import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModule, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
+import { code, emittedCode, indentation, join, legacyText, nameOf, nameSlot, NameTable, render, type Code, type Emitted, type NameSlot } from '../code.js';
 import { compareText } from '../generator-api.js';
 import { instanceFieldsSource, presentKeysSource, presentValueSource } from '../../presence.js';
 
@@ -27,6 +28,7 @@ type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'insta
 // header goes through `functionParameters` and `callFunction`, so a change to the parameter list is made in one place.
 const VALUE = 'v';
 const PATH = 'p';
+const NEWLINE = code`\n`;
 const ISSUES = 'i';
 const ALL = 'a';
 const INHERITED = 'e';
@@ -71,34 +73,45 @@ function fastExportName(validateName: string): string {
 }
 
 /**
- * The name of the function written at position `index` among the functions the module keeps. The index keeps names
- * unique; the schema's name, when it has one, shows in stack traces and profiles.
+ * The name of the function written at position `index` among the functions the module keeps (`f3_User`), or of its fast
+ * check (`is3_User`). The index keeps names unique; the schema's name, when it has one, shows in stack traces and profiles.
  */
-function functionName(index: number, schemaName?: string): string {
-  return schemaName === undefined ? `f${index}` : `f${index}_${identifier(schemaName).slice(0, NAME_LIMIT)}`;
+function functionName(index: number, schemaName: string | undefined, fast: boolean): string {
+  const prefix = fast ? 'is' : 'f';
+  return schemaName === undefined ? `${prefix}${index}` : `${prefix}${index}_${identifier(schemaName).slice(0, NAME_LIMIT)}`;
 }
 
 /**
- * Stands for a function in the text of another until the module is assembled: the final name depends on which
- * functions turn out to be one. The character cannot occur otherwise, as a string literal escapes it.
+ * The name slot of each function and of its fast check. A body names a callee by its slot, because the name depends on
+ * which functions turn out to be one: the survey writes every function against its own slots, and the final pass writes
+ * each call against the slots of the function that stays (see `groupFunctions`), so a name has one slot.
  */
-const FUNCTION_MARK = /\u0000(\d+)\u0000/g;
+class FunctionSlots {
+  private readonly full: readonly NameSlot[];
+  private readonly fast: readonly NameSlot[];
+  private readonly owners = new Map<NameSlot, { readonly id: number; readonly fast: boolean }>();
 
-function functionMark(id: number): string {
-  return `\u0000${id}\u0000`;
+  public constructor(functions: readonly IrFunction[]) {
+    this.full = functions.map(fn => nameSlot(`function ${fn.id}`));
+    this.fast = functions.map(fn => nameSlot(`fast check ${fn.id}`));
+    functions.forEach((fn, id) => {
+      this.owners.set(this.full[id], { id, fast: false });
+      this.owners.set(this.fast[id], { id, fast: true });
+    });
+  }
+
+  public of(id: number, fast: boolean): NameSlot {
+    return (fast ? this.fast : this.full)[id];
+  }
+
+  /** The function a slot belongs to, and whether it is the slot of its fast check. */
+  public owner(slot: NameSlot): { readonly id: number; readonly fast: boolean } | undefined {
+    return this.owners.get(slot);
+  }
 }
 
-/** Stands for the fast check of a function, as `functionMark` stands for the function. */
-const FAST_MARK = /\u0001(\d+)\u0001/g;
-
-function fastMark(id: number): string {
-  return `\u0001${id}\u0001`;
-}
-
-/** The fast check of the function named `name` (`f3_User` becomes `is3_User`). */
-function fastName(name: string): string {
-  return `is${name.slice(1)}`;
-}
+/** The slot a call names: the function `id` after forwarding, or its fast check. */
+type CalleeSlot = (id: number, fast: boolean) => NameSlot;
 
 interface CallArguments {
   readonly value: string;
@@ -109,9 +122,9 @@ interface CallArguments {
   readonly record?: string;
 }
 
-function callFunction(callee: IrFunction, name: string, args: CallArguments): string {
+function callFunction(callee: IrFunction, name: Code, args: CallArguments): Code {
   const record = callee.receives && args.record !== undefined ? [args.record] : [];
-  return `${name}(${[args.value, args.path ?? PATH, args.issues, args.all, ...record].join(', ')})`;
+  return code`${name}(${legacyText([args.value, args.path ?? PATH, args.issues, args.all, ...record].join(', '))})`;
 }
 
 /** True when the registered codec id `registered` is the model `id`, in the text of `selectedModel` and `modelOf`. */
@@ -325,6 +338,13 @@ function text(value: Text): string {
   return typeof value === 'string' ? value : value();
 }
 
+/** The test of a leaf check, which can hold a call of another function, so it is a `Code`. */
+type Test = Emitted | (() => Emitted);
+
+function test(value: Test): Emitted {
+  return typeof value === 'function' ? value() : value;
+}
+
 /** What the key test of one object is given. */
 interface KeyTestRequest {
   readonly check: IrObject;
@@ -391,11 +411,11 @@ interface WriterMode {
   /** `captured` names a local for each declared key the object's checks read; a key outside it is read on its own. */
   readonly presence: (state: ModuleState, value: string, captured?: readonly (readonly [key: string, local: string])[]) => PresenceReader;
   /** The form the mode writes of a check that has a full form and may have a cheaper fast one. */
-  readonly form: (full: Text, fast: Text | undefined) => Text;
+  readonly form: <Form extends Text | Test>(full: Form, fast: Form | undefined) => Form;
   /** Writes the key test of an object: it reads the declared keys, and in the fast check also tests the unknown keys and counts the keys. */
   readonly keyTest: (writer: FunctionWriter, request: KeyTestRequest) => KeyTest;
   /** An expression that is true when the function `id` passes `args.value`. */
-  readonly call: (writer: FunctionWriter, id: number, args: CallArguments) => string;
+  readonly call: (writer: FunctionWriter, id: number, args: CallArguments) => Code;
   /** Writes `body`, which checks the child `token` of the current value. */
   readonly child: (writer: FunctionWriter, token: string, body: () => void) => void;
   /** An expression that selects the model class of `value` among the codec ids `among`. */
@@ -452,7 +472,7 @@ const FULL_VALIDATOR: WriterMode = {
   call: (writer, id, args) => {
     const target = writer.target(id);
     writer.calls.add(target);
-    return callFunction(writer.functions[target], functionMark(target), args);
+    return callFunction(writer.functions[target], nameOf(writer.calleeSlot(target, false)), args);
   },
   child: (writer, token, body) => {
     writer.line(`${PATH}.push(${token});`);
@@ -554,9 +574,9 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
  * validator (`leafPasses`).
  */
 function fastCheckMode(plan: FastPlan): WriterMode {
-  const leafCall = (writer: FunctionWriter, id: number, value: string): string => {
+  const leafCall = (writer: FunctionWriter, id: number, value: string): Code => {
     writer.calls.add(id);
-    return `${writer.state.localHelper('leafPasses')}(${functionMark(id)}, ${value})`;
+    return code`${legacyText(writer.state.localHelper('leafPasses'))}(${nameOf(writer.calleeSlot(id, false))}, ${legacyText(value)})`;
   };
   return {
     fail: { start: [], end: 'return true;', issue: () => ['return false;'], fail: () => 'return false;', leaves: true },
@@ -567,7 +587,7 @@ function fastCheckMode(plan: FastPlan): WriterMode {
       const target = writer.target(id);
       if (!plan.has(target)) return leafCall(writer, target, args.value);
       writer.fastCalls.add(target);
-      return `${fastMark(target)}(${args.value})`;
+      return code`${nameOf(writer.calleeSlot(target, true))}(${legacyText(args.value)})`;
     },
     child: (_writer, _token, body) => body(),
     selectModel: modelOfSelection,
@@ -579,9 +599,9 @@ function fastCheckMode(plan: FastPlan): WriterMode {
 
 /** A leaf check: the expression that is true when the value fails it, and the issue it then reports. */
 interface LeafCheck {
-  readonly fails: Text;
+  readonly fails: Test;
   /** The same test written cheaper for the fast check, where the full validator's form costs more than the verdict needs. */
-  readonly fast?: Text;
+  readonly fast?: Test;
   /** The fields of the issue after its path. */
   readonly issue: Text;
   /** The path of the issue; the current path by default. */
@@ -608,7 +628,7 @@ function patternExpression(state: ModuleState, pattern: string): string {
 
 /** Writes one function in the given mode: the mode decides what a failed check writes and how a declared key is read. */
 class FunctionWriter {
-  private readonly lines: string[] = [];
+  private readonly lines: Code[] = [];
   private depth = 1;
   private counter = 0;
   /** The record that checks of the value being checked fill; undefined when this function keeps none, or while a child value is checked. */
@@ -627,6 +647,7 @@ class FunctionWriter {
     public readonly target: (id: number) => number,
     private readonly fn: IrFunction,
     private mode: WriterMode,
+    public readonly calleeSlot: CalleeSlot,
   ) {
     // The record travels through the full validators' arguments, so a function that keeps or receives one is a leaf of the fast check.
     if (!mode.records && (fn.collects || fn.receives)) throw new Error(`The validator compiler writes no fast check for the schema function ${fn.id}: it keeps or receives an evaluation record.`);
@@ -634,7 +655,7 @@ class FunctionWriter {
   }
 
   /** The body of the function, without its header line. */
-  public write(): string {
+  public write(): Code {
     for (const start of this.mode.fail.start) this.line(start);
     if (this.fn.collects) this.line(`const ${EVALUATION} = ${this.state.localHelper('newEvaluation')}();`);
     else if (this.fn.receives) this.line(`const ${EVALUATION} = ${INHERITED} ?? ${this.state.localHelper('newEvaluation')}();`);
@@ -643,17 +664,18 @@ class FunctionWriter {
     if (this.fn.collects && this.fn.receives) this.line(`if (ok && ${INHERITED} !== undefined) ${this.state.localHelper('mergeEvaluation')}(${INHERITED}, ${EVALUATION});`);
     // A `false` schema has already left the function in a mode that leaves at a failure.
     if (this.fn.body.kind !== 'never' || !this.mode.fail.leaves) this.line(this.mode.fail.end);
-    this.lines.push('}');
-    return this.lines.join('\n');
+    this.lines.push(code`}`);
+    return join(this.lines, NEWLINE);
   }
 
-  public line(text: string): void {
-    this.lines.push(`${'  '.repeat(this.depth)}${text}`);
+  // migration door, deleted in step 4b (T-318): a line is still given as a string, which is wrapped as text
+  public line(text: Emitted): void {
+    this.lines.push(code`${indentation(this.depth * 2)}${emittedCode(text)}`);
   }
 
   /** Opens a block; an empty `head` opens a bare scope. */
-  public open(head: string): void {
-    this.line(head === '' ? '{' : `${head} {`);
+  public open(head: Emitted): void {
+    this.line(head === '' ? '{' : code`${emittedCode(head)} {`);
     this.depth++;
   }
 
@@ -703,17 +725,17 @@ class FunctionWriter {
   }
 
   /** Fails the function when `test` holds, where a callee already reported the issue, or the mode builds none. */
-  public failWhen(test: string): void {
-    if (this.mode.fail.leaves) return this.line(`if (${test}) ${this.mode.fail.fail()}`);
-    this.open(`if (${test})`);
+  public failWhen(test: Emitted): void {
+    if (this.mode.fail.leaves) return this.line(code`if (${emittedCode(test)}) ${legacyText(this.mode.fail.fail())}`);
+    this.open(code`if (${emittedCode(test)})`);
     this.fail();
     this.close();
   }
 
   private leaf(check: LeafCheck): void {
-    const test = text(this.mode.form(check.fails, check.fast));
-    if (this.mode.fail.leaves) return this.failWhen(test);
-    this.open(`if (${test})`);
+    const failing = test(this.mode.form(check.fails, check.fast));
+    if (this.mode.fail.leaves) return this.failWhen(failing);
+    this.open(code`if (${emittedCode(failing)})`);
     this.issue(text(check.issue), check.path);
     this.close();
   }
@@ -734,13 +756,13 @@ class FunctionWriter {
     return this.record;
   }
 
-  private call(id: number, args: CallArguments): string {
+  private call(id: number, args: CallArguments): Code {
     return this.mode.call(this, id, args);
   }
 
   /** The function `id` applies to the same value in place: it fails this function when it fails, and fills this function's record. */
   private callInPlace(id: number, value: string): void {
-    this.failWhen(`!${this.call(id, { value, issues: ISSUES, all: ALL, record: this.record })}`);
+    this.failWhen(code`!${this.call(id, { value, issues: ISSUES, all: ALL, record: this.record })}`);
   }
 
   public schema(schema: IrSchema, value: string): void {
@@ -861,7 +883,7 @@ class FunctionWriter {
       }
     };
     if (check.fn === undefined) return runCalls();
-    this.open(`if (${this.call(check.fn, { value, issues: ISSUES, all: ALL, record: this.record })})`);
+    this.open(code`if (${this.call(check.fn, { value, issues: ISSUES, all: ALL, record: this.record })})`);
     runCalls();
     this.close();
     this.open('else');
@@ -998,7 +1020,7 @@ class FunctionWriter {
     const index = this.fresh('x');
     this.line(`let ${count} = 0;`);
     this.open(`for (let ${index} = 0; ${index} < ${value}.length; ${index}++)`);
-    this.open(`if (${this.call(contains.fn, { value: `${value}[${index}] ?? null`, issues: '[]', all: 'false' })})`);
+    this.open(code`if (${this.call(contains.fn, { value: `${value}[${index}] ?? null`, issues: '[]', all: 'false' })})`);
     this.line(`${count}++;`);
     this.mark(record => `${record}.indexes.add(${index});`);
     // Without a maximum or a record, the first `min` matches decide the outcome.
@@ -1147,7 +1169,7 @@ class FunctionWriter {
       this.open(`for (const ${key} of ${listed(keys)})`);
       if (undefinedToo) this.line(`if (${value}[${key}] === undefined) continue;`);
       // A name that the instance's own model does not declare is program state, not a property name to judge.
-      this.leaf({ fails: `!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })} && !${this.state.localHelper('isInstanceState')}(${value}, ${key})`, issue: `code: 'invalidKey', key: ${key}` });
+      this.leaf({ fails: code`!${this.call(check.propertyNames, { value: key, issues: '[]', all: 'false' })} && !${legacyText(`${this.state.localHelper('isInstanceState')}(${value}, ${key})`)}`, issue: `code: 'invalidKey', key: ${key}` });
       this.close();
     }
     this.mode = outer;
@@ -1209,7 +1231,7 @@ class FunctionWriter {
   private conditionalCheck(check: Extract<IrCheck, { kind: 'conditional' }>, value: string): void {
     const scratch = this.record === undefined ? undefined : this.fresh('scratch');
     if (scratch !== undefined) this.line(`const ${scratch} = ${this.state.localHelper('newEvaluation')}();`);
-    this.open(`if (${this.call(check.if, { value, issues: '[]', all: 'false', record: scratch })})`);
+    this.open(code`if (${this.call(check.if, { value, issues: '[]', all: 'false', record: scratch })})`);
     if (scratch !== undefined && this.record !== undefined) this.line(`${this.state.localHelper('mergeEvaluation')}(${this.record}, ${scratch});`);
     if (check.then !== undefined) this.callInPlace(check.then, value);
     this.close();
@@ -1222,12 +1244,12 @@ class FunctionWriter {
 
   private unionCheck(check: IrUnion, value: string): void {
     if (this.record !== undefined) return this.recordingUnionCheck(check, value);
-    const attempt = (fn: number): string => this.call(fn, { value, issues: '[]', all: 'false' });
-    if (!check.exactlyOne) return this.leaf({ fails: `!(${check.branches.map(attempt).join(' || ')})`, issue: "code: 'union', matched: 0" });
+    const attempt = (fn: number): Code => this.call(fn, { value, issues: '[]', all: 'false' });
+    if (!check.exactlyOne) return this.leaf({ fails: code`!(${join(check.branches.map(attempt), code` || `)})`, issue: "code: 'union', matched: 0" });
     const matched = this.fresh('matched');
     this.line(`let ${matched} = 0;`);
     // Two matches already decide the outcome, so later branches are not run.
-    check.branches.forEach((fn, position) => this.line(`if (${position === 0 ? '' : `${matched} < 2 && `}${attempt(fn)}) ${matched}++;`));
+    check.branches.forEach((fn, position) => this.line(code`if (${legacyText(position === 0 ? '' : `${matched} < 2 && `)}${attempt(fn)}) ${legacyText(`${matched}++;`)}`));
     this.leaf({ fails: `${matched} !== 1`, issue: `code: 'union', matched: ${matched}` });
   }
 
@@ -1240,7 +1262,7 @@ class FunctionWriter {
       const scratch = this.fresh('scratch');
       this.open(position === 0 || !check.exactlyOne ? '' : `if (${matched} < 2)`);
       this.line(`const ${scratch} = ${this.state.localHelper('newEvaluation')}();`);
-      this.open(`if (${this.call(fn, { value, issues: '[]', all: 'false', record: scratch })})`);
+      this.open(code`if (${this.call(fn, { value, issues: '[]', all: 'false', record: scratch })})`);
       this.line(`${matched}++;`);
       this.line(`${this.state.localHelper('mergeEvaluation')}(${record}, ${scratch});`);
       this.close();
@@ -1268,12 +1290,12 @@ class FunctionWriter {
     const jsonEqual = (): string => this.state.runtimeHelper('jsonEqual');
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
-    const read = this.mode.form(
+    const read = this.mode.form<Text>(
       () => `isObject(${value}) && ${presence.present(discriminator.property)} ? ${presence.read(discriminator.property)} : undefined`,
       `isObject(${value}) ? (${presentValueSource(value, property, `${value}[${property}]`)}) : undefined`,
     );
     this.line(`const ${tag} = ${text(read)};`);
-    const selection = this.mode.form(
+    const selection = this.mode.form<Text>(
       () => `${this.tagLists(discriminator)}.findIndex(list => list.some(item => ${jsonEqual()}(${tag}, item)))`,
       () => this.tagSelection(discriminator, tag),
     );
@@ -1549,8 +1571,8 @@ class FastPlan {
 
 /** The fast check of a function as text, with what it calls. */
 interface WrittenFastCheck {
-  /** The body, with the full validators it calls as `functionMark`s and the fast checks as `fastMark`s. */
-  readonly body: string;
+  /** The body; the full validators and fast checks it calls are name parts. */
+  readonly body: Code;
   readonly calls: ReadonlySet<number>;
   readonly fastCalls: ReadonlySet<number>;
 }
@@ -1558,43 +1580,58 @@ interface WrittenFastCheck {
 interface WrittenFunction {
   readonly id: number;
   readonly parameters: string;
-  /** The body, with the functions it calls as marks. */
-  readonly body: string;
+  /** The body; the functions it calls are name parts. */
+  readonly body: Code;
   readonly calls: ReadonlySet<number>;
   /** The fast check, for a function that has one. */
   readonly fast?: WrittenFastCheck;
 }
 
-function writeFunction(state: ModuleState, module: IrModule, target: (id: number) => number, fn: IrFunction, mode: WriterMode): WrittenFunction {
-  const writer = new FunctionWriter(state, module.functions, target, fn, mode);
+function writeFunction(state: ModuleState, module: IrModule, target: (id: number) => number, calleeSlot: CalleeSlot, fn: IrFunction, mode: WriterMode): WrittenFunction {
+  const writer = new FunctionWriter(state, module.functions, target, fn, mode, calleeSlot);
   const body = writer.write();
   return { id: fn.id, parameters: functionParameters(fn), body, calls: writer.calls };
 }
 
-function writeFastCheck(state: ModuleState, module: IrModule, target: (id: number) => number, fn: IrFunction, mode: WriterMode): WrittenFastCheck {
-  const writer = new FunctionWriter(state, module.functions, target, fn, mode);
+function writeFastCheck(state: ModuleState, module: IrModule, target: (id: number) => number, calleeSlot: CalleeSlot, fn: IrFunction, mode: WriterMode): WrittenFastCheck {
+  const writer = new FunctionWriter(state, module.functions, target, fn, mode, calleeSlot);
   return { body: writer.write(), calls: writer.calls, fastCalls: writer.fastCalls };
 }
 
 /**
- * Groups the functions that behave alike: those with the same parameters whose bodies are the same text once each call
+ * The key of a body: its text parts, and for each name part the group of the function it calls (and whether it is the
+ * fast check). Two bodies with one key are the same code once each call names the group of its callee.
+ */
+function bodyKey(body: Code, slots: FunctionSlots, groups: ReadonlyMap<number, number>): string {
+  return JSON.stringify(body.parts.map(part => {
+    switch (part.kind) {
+      case 'text': return part.text;
+      case 'name': {
+        const callee = slots.owner(part.slot);
+        if (callee === undefined) throw new Error(`The validator compiler body names "${part.slot.label}", which is no function.`);
+        return [callee.fast, groups.get(callee.id) ?? -1];
+      }
+      default: throw new Error(`The validator compiler body holds a ${part.kind} part, which only a function name may be.`);
+    }
+  }));
+}
+
+/**
+ * Groups the functions that behave alike: those with the same parameters whose bodies are the same code once each call
  * names the group of its callee. Groups start as one and split until stable, so recursive functions that mirror each
  * other (a model and its wire form) end up together. The fast check is no part of the key: it follows from the body, and
  * a model root and an operation root of the same schema must share one function whether or not the fast check is
  * written for both. A group is named by its lowest id that `fastReached` holds, else by its lowest id, so the group's
  * fast check is written from a function that has one.
  */
-function groupFunctions(written: readonly WrittenFunction[], fastReached: ReadonlySet<number>): ReadonlyMap<number, number> {
+function groupFunctions(written: readonly WrittenFunction[], fastReached: ReadonlySet<number>, slots: FunctionSlots): ReadonlyMap<number, number> {
   let groups = new Map<number, number>(written.map(entry => [entry.id, 0]));
   let size = 1;
   for (;;) {
     const keys = new Map<string, number>();
     const next = new Map<number, number>();
-    const named = (text: string): string => text
-      .replace(FUNCTION_MARK, (_, id: string) => functionName(groups.get(Number(id)) ?? -1))
-      .replace(FAST_MARK, (_, id: string) => fastName(functionName(groups.get(Number(id)) ?? -1)));
     for (const entry of written) {
-      const key = `${groups.get(entry.id)}\n${entry.parameters}\n${named(entry.body)}`;
+      const key = `${groups.get(entry.id)}\n${entry.parameters}\n${bodyKey(entry.body, slots, groups)}`;
       if (!keys.has(key)) keys.set(key, keys.size);
       next.set(entry.id, keys.get(key) ?? 0);
     }
@@ -1637,12 +1674,14 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
   const fastMode = plan === undefined ? undefined : fastCheckMode(plan);
   const fullMode = plan === undefined ? FULL_VALIDATOR : FULL_VALIDATOR_BESIDE_FAST_CHECKS;
   const hasFastCheck = (id: number): boolean => plan?.has(id) ?? false;
-  // First pass: every function as text, to learn which of those the roots reach are the same.
+  // First pass: every function as code, to learn which of those the roots reach are the same.
   const survey = new ModuleState();
   survey.importValidations(module.validations);
+  const slots = new FunctionSlots(module.functions);
+  const ownSlot: CalleeSlot = (id, fast) => slots.of(id, fast);
   const written = new Map(module.functions.filter(fn => target(fn.id) === fn.id).map(fn => [fn.id, {
-    ...writeFunction(survey, module, target, fn, fullMode),
-    ...(fastMode !== undefined && hasFastCheck(fn.id) ? { fast: writeFastCheck(survey, module, target, fn, fastMode) } : {}),
+    ...writeFunction(survey, module, target, ownSlot, fn, fullMode),
+    ...(fastMode !== undefined && hasFastCheck(fn.id) ? { fast: writeFastCheck(survey, module, target, ownSlot, fn, fastMode) } : {}),
   }] as const));
   const fastRootExports = module.exports.filter(({ name, fn }) => wantsFastCheck(name) && hasFastCheck(target(fn)));
   const fastRoots = fastRootExports.map(({ fn }) => target(fn));
@@ -1651,58 +1690,57 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
     [...module.exports.map(({ fn }) => target(fn)), ...[...fastReached].flatMap(id => [...(written.get(id)?.fast?.calls ?? [])])],
     id => written.get(id)?.calls ?? [],
   );
-  const representative = groupFunctions([...written.values()].filter(entry => reached.has(entry.id)), fastReached);
+  const representative = groupFunctions([...written.values()].filter(entry => reached.has(entry.id)), fastReached, slots);
   const kept = [...new Set(representative.values())].sort((first, second) => first - second);
-  const names = new Map(kept.map((id, index) => [id, functionName(index, module.functions[id].name)] as const));
-  // A mark holds the id after forwarding.
-  const markName = (id: number): string => {
-    const name = names.get(representative.get(id) ?? -1);
-    if (name === undefined) throw new Error(`The validator compiler has no emitted function for the schema function ${id}.`);
-    return name;
+  const fastKept = new Set([...fastReached].map(id => representative.get(id) ?? id));
+  // A name has one slot: the slot of the function that stays, which every call of the functions grouped with it names.
+  const stayingSlot: CalleeSlot = (id, fast) => {
+    const staying = representative.get(id);
+    if (staying === undefined) throw new Error(`The validator compiler has no emitted function for the schema function ${id}.`);
+    return slots.of(staying, fast);
   };
-  const nameOf = (id: number): string => markName(target(id));
-  const resolved = (body: string): string => body
-    .replace(FUNCTION_MARK, (_, called: string) => markName(Number(called)))
-    .replace(FAST_MARK, (_, called: string) => fastName(markName(Number(called))));
+  const names = new NameTable();
+  kept.forEach((id, index) => {
+    names.declare(slots.of(id, false), functionName(index, module.functions[id].name, false));
+    if (fastKept.has(id)) names.declare(slots.of(id, true), functionName(index, module.functions[id].name, true));
+  });
   // Second pass: only the functions that stay, so the constants and helpers are those they use.
   const state = new ModuleState();
   state.importValidations(module.validations);
   const functions = kept.map(id => {
-    const { parameters, body } = writeFunction(state, module, target, module.functions[id], fullMode);
-    return `function ${names.get(id)}(${parameters}) {\n${resolved(body)}`;
+    const { parameters, body } = writeFunction(state, module, target, stayingSlot, module.functions[id], fullMode);
+    return code`function ${nameOf(slots.of(id, false))}(${legacyText(parameters)}) {\n${body}`;
   });
-  const fastKept = [...new Set([...fastReached].map(id => representative.get(id) ?? id))].sort((first, second) => first - second);
-  const fastFunctions = fastMode === undefined ? [] : fastKept.map(id => `function ${fastName(markName(id))}(${VALUE}) {\n${resolved(writeFastCheck(state, module, target, module.functions[id], fastMode).body)}`);
+  const fastFunctions = fastMode === undefined ? [] : [...fastKept].sort((first, second) => first - second)
+    .map(id => code`function ${nameOf(slots.of(id, true))}(${legacyText(VALUE)}) {\n${writeFastCheck(state, module, target, stayingSlot, module.functions[id], fastMode).body}`);
   const exported = exportNames(module.exports.map(({ name }) => name));
   const exportName = (name: string): string => {
     const known = exported.get(name);
     if (known === undefined) throw new Error(`The validator compiler has no export name for the root ${JSON.stringify(name)}.`);
     return known;
   };
-  const wrappers = module.exports.map(({ name, fn }) => [
-    options.typed
+  const wrappers = module.exports.map(({ name, fn }) => code`${legacyText(options.typed
       ? `export function ${exportName(name)}(value: unknown, all: boolean): readonly SchemaIssue[] {`
-      : `export function ${exportName(name)}(value, all) {`,
-    '  const issues = [];',
-    `  ${callFunction(module.functions[target(fn)], nameOf(fn), { value: 'value', path: '[]', issues: 'issues', all: 'all' })};`,
-    '  return issues;',
-    '}',
-  ].join('\n'));
+      : `export function ${exportName(name)}(value, all) {`)}
+  const issues = [];
+  ${callFunction(module.functions[target(fn)], nameOf(stayingSlot(target(fn), false)), { value: 'value', path: '[]', issues: 'issues', all: 'all' })};
+  return issues;
+}`);
   const fastExports = new Map(fastRootExports.map(({ name }) => [name, fastExportName(exportName(name))] as const));
   // The fast check itself is the export: a valid value takes no extra call.
-  const fastWrappers = fastRootExports.map(({ name, fn }) => options.typed
-    ? `export const ${fastExportName(exportName(name))}: (value: unknown) => boolean = ${fastName(nameOf(fn))};`
-    : `export const ${fastExportName(exportName(name))} = ${fastName(nameOf(fn))};`);
+  const fastWrappers = fastRootExports.map(({ name, fn }) => code`${legacyText(options.typed
+      ? `export const ${fastExportName(exportName(name))}: (value: unknown) => boolean = `
+      : `export const ${fastExportName(exportName(name))} = `)}${nameOf(stayingSlot(target(fn), true))};`);
   return {
-    source: [
-      ...(options.typed ? [`import type { SchemaIssue } from ${literal(options.runtimeModule)};`] : []),
-      ...state.prelude(options.runtimeModule),
+    source: render(join([
+      ...(options.typed ? [legacyText(`import type { SchemaIssue } from ${literal(options.runtimeModule)};`)] : []),
+      ...state.prelude(options.runtimeModule).map(line => legacyText(line)),
       ...functions,
       ...fastFunctions,
       ...wrappers,
       ...fastWrappers,
-      '',
-    ].join('\n'),
+      legacyText(''),
+    ], NEWLINE), names),
     fastExports,
   };
 }
