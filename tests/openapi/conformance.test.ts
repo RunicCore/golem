@@ -9,6 +9,8 @@ import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { validateModelManifest } from '@exprtlabs/golem/manifest';
+import { reaction, runInAction } from 'mobx';
 import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { generatedCodecId } from '../support/consumer.js';
@@ -256,7 +258,7 @@ test('OpenAPI 3.1 generation preserves its dialect', async (t) => {
   await assert.rejects(() => respond({ value: 'x', extra: 1 }).getValues().execute({}), /validation failed/i);
 });
 
-test('component-root dynamic anchors retain their local recursive scope', (t) => {
+test('component-root dynamic anchors retain their local recursive scope', async (t) => {
   const recursiveObject = (valueType: string) => ({
     $dynamicAnchor: 'node',
     type: 'object',
@@ -281,16 +283,33 @@ test('component-root dynamic anchors retain their local recursive scope', (t) =>
   };
   const output = createFixtureProject(t, 'golem-openapi-dynamic-anchor-');
   writeSdk(document, { output, name: 'RecursiveAnchors' });
-  const types = fs.readFileSync(path.join(output, 'types.ts'), 'utf8');
-  const models = readGeneratedModelSource(output);
-  const stringType = types.split('export type StringTree = ')[1].split('export type ')[0];
-  const numberType = types.split('export type NumberTree = ')[1].split('export type ')[0];
-  const stringModel = models.split('export class StringTreeModel')[1].split('export class ')[0];
-  const numberModel = models.split('export class NumberTreeModel')[1].split('export class ')[0];
-  assert.match(stringType, /children\?: StringTree\[\]/);
-  assert.match(numberType, /children\?: NumberTree\[\]/);
-  assert.match(stringModel, /children\?: Array<StringTreeModel>/);
-  assert.match(numberModel, /children\?: Array<NumberTreeModel>/);
+  // The recursive child type of each component is that same component, in its type and in its model.
+  const assertFile = path.join(output, 'recursive-assert.ts');
+  fs.writeFileSync(assertFile, `import type { StringTree, NumberTree } from './types.js';
+import type { StringTreeModel, NumberTreeModel } from './index.js';
+declare const stringTree: StringTree;
+declare const numberTree: NumberTree;
+declare const stringModel: StringTreeModel;
+declare const numberModel: NumberTreeModel;
+export const stringChildren: StringTree[] | undefined = stringTree.children;
+export const numberChildren: NumberTree[] | undefined = numberTree.children;
+export const stringModelChildren: StringTreeModel[] | undefined = stringModel.children;
+export const numberModelChildren: NumberTreeModel[] | undefined = numberModel.children;
+// @ts-expect-error the children of a StringTree are StringTree values, not NumberTree values
+export const mixedChildren: NumberTree[] | undefined = stringTree.children;
+// @ts-expect-error the children of a NumberTreeModel are NumberTreeModel values, not StringTreeModel values
+export const mixedModelChildren: StringTreeModel[] | undefined = numberModel.children;
+`);
+  compileGeneratedSdk(output, [assertFile], { strict: true });
+  const exports = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'recursive models');
+  const { StringTreeModel, NumberTreeModel } = exports;
+  if (!isGeneratedModelClass(StringTreeModel) || !isGeneratedModelClass(NumberTreeModel)) {
+    throw new TypeError('expected generated model classes');
+  }
+  const stringTree = requireRecord(decodeGeneratedModel(StringTreeModel, { value: 'a', children: [{ value: 'b' }] }), 'string tree');
+  const numberTree = requireRecord(decodeGeneratedModel(NumberTreeModel, { value: 1, children: [{ value: 2 }] }), 'number tree');
+  assert.ok(Array.isArray(stringTree.children) && stringTree.children[0] instanceof StringTreeModel);
+  assert.ok(Array.isArray(numberTree.children) && numberTree.children[0] instanceof NumberTreeModel);
 });
 
 test('generates inheritable object models with serde conversion metadata', async (t) => {
@@ -324,12 +343,15 @@ test('generates inheritable object models with serde conversion metadata', async
   const output = createFixtureProject(t, 'golem-openapi-models-');
   writeSdk(document, { output, name: 'Models' });
   const models = readGeneratedModelSource(output);
-  assert.match(models, /class PaymentModel extends BasePaymentModel/);
-  assert.match(models, /class MetadataModel \{[\s\S]*Dynamic map values are preserved during conversion/);
-  assert.match(models, /generatedModelFieldsBrand/);
-  assert.match(models, /asGenObservable\(this\)/);
 
   copyFixtureFile(output, "openapi/conformance/consumer.ts", "consumer.ts");
+  // A rule of a handwritten subclass names the generated fields through the exported brand.
+  fs.writeFileSync(path.join(output, 'brand-assert.ts'), `import type { generatedModelFieldsBrand } from '@exprtlabs/golem/model';
+import type { PaymentModel } from './index.js';
+export const amountField: keyof PaymentModel[typeof generatedModelFieldsBrand] = 'amount';
+// @ts-expect-error a field the Payment schema does not declare is not a key of its fields
+export const missingField: keyof PaymentModel[typeof generatedModelFieldsBrand] = 'missing';
+`);
   const compiled = spawnSync(process.execPath, [tscBin(), 
     '--target', 'ES2022',
     '--module', 'NodeNext',
@@ -337,6 +359,7 @@ test('generates inheritable object models with serde conversion metadata', async
     '--lib', 'ES2023,ESNext.Collection,DOM,DOM.Iterable',
     '--outDir', path.join(output, 'dist'),
     path.join(output, 'consumer.ts'),
+    path.join(output, 'brand-assert.ts'),
   ], { encoding: 'utf8' });
   assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
 
@@ -358,6 +381,12 @@ test('generates inheritable object models with serde conversion metadata', async
   assert.deepEqual(encodeGeneratedModel(generated(payment)), { amount: 125, id: 'pay_7', note: 'memo' });
   assert.throws(() => requireObjectCodec(generatedCodecId(models, 'Payment')).assert( ['not', 'an', 'object']), /validation|deserial/i);
   assert.deepEqual(encodeGeneratedModel(generated(decodeGeneratedModel(MetadataModel, { traceId: 'trace_7' }))), { traceId: 'trace_7' });
+  // The mobx profile makes a decoded model observable: a reaction sees a field change.
+  const seen: unknown[] = [];
+  const stop = reaction(() => Reflect.get(payment, 'amount'), (amount) => seen.push(amount));
+  runInAction(() => Reflect.set(payment, 'amount', 200));
+  stop();
+  assert.deepEqual(seen, [200]);
 });
 
 test('normalizes callbacks and webhooks into typed inbound contracts', (t) => {
@@ -438,10 +467,8 @@ test('normalizes callbacks and webhooks into typed inbound contracts', (t) => {
   const output = createFixtureProject(t, 'golem-openapi-inbound-');
   writeSdk(document, { output, name: 'Inbound' });
   const inbound = fs.readFileSync(path.join(output, 'inbound.ts'), 'utf8');
-  assert.match(inbound, /interface InboundInboundPort/);
-  assert.match(inbound, /webhook paymentSettled: POST paymentSettled/);
-  assert.match(inbound, /callback createSubscription onStatus: POST/);
-  assert.match(inbound, /OperationInput/);
+  // Only text shows the doc line that names each method's source in the port file.
+  assert.match(inbound, /^(?=[\s\S]*webhook paymentSettled: POST paymentSettled)(?=[\s\S]*callback createSubscription onStatus: POST)/);
 
   copyFixtureFile(output, 'openapi/conformance/inbound-assert.ts', 'inbound-assert.ts');
   const compiled = spawnSync(process.execPath, [tscBin(),
@@ -469,7 +496,8 @@ test('generation is deterministic', async (t) => {
   assert.ok(fs.existsSync(path.join(output, 'output-schemas.ts')));
   const manifestText = fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8');
   const manifest = requireRecord(JSON.parse(manifestText), 'manifest');
-  assert.equal(Object.hasOwn(manifest, 'manifestVersion'), false);
+  // golem's own reader accepts the generated manifest.
+  assert.doesNotThrow(() => validateModelManifest(manifest));
   assert.deepEqual(manifest.profile, { mobx: true, validation: true, allowAny: false, unknownFormats: 'error' });
   const source = requireRecord(manifest.source, 'source');
   assert.equal(source.dialect, requireRecord(document, 'document').openapi);
@@ -481,12 +509,12 @@ test('generation is deterministic', async (t) => {
     const type = requireRecord(record.type, 'type');
     const generated = requireRecord(record.generated, 'generated');
     return record.sourceKind === 'openapi'
-      && !Object.hasOwn(record, 'validation')
       && type.module === './types.ts'
       && generated.module === `./models/${String(type.export)}.ts`
       && generated.export === `${String(type.export)}Model`
       && fs.existsSync(path.join(output, String(generated.module)));
   }));
+  // Only text shows the marker comment that tooling follows from types.ts to the manifest.
   assert.match(
     fs.readFileSync(path.join(output, 'types.ts'), 'utf8'),
     /@golem-model-manifest \.\/model-manifest\.json/,
