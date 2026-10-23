@@ -25,7 +25,7 @@ An alias in a file that does not end in a model suffix is not a model. A field t
 
 ## Where each app writes
 
-A model file whose real path is inside `models.root` is a model file of the app, and its generated file stays beside it. Golem follows folder links to find the real path. Every other model file is a shared model file. It does not matter whether the app reaches it by a plain include, a folder link, a linked workspace package or `node_modules`. Its aliases are models of the app. A declaration file such as `customer.model.d.ts` is always a shared model file, also inside `models.root`, because it cannot hold your class. The exception is a model file that a `model-manifest.json` of an SDK lists: it keeps the generated code of the [SDK](/guide/models-and-client).
+A model file whose real path is inside `models.root` is a model file of the app, and its generated file stays beside it. Golem follows folder links to find the real path. Every other model file is a shared model file. It does not matter whether the app reaches it by a plain include, a folder link, a linked workspace package or `node_modules`. Its aliases are models of the app. A declaration file such as `customer.model.d.ts` is always a shared model file, also inside `models.root`, because it cannot hold your class. An SDK file is the exception to these rules. A model file that the `model-manifest.json` of an [SDK](/guide/models-and-client) lists keeps the generated code of the SDK.
 
 Each app generates the shared models in its own `models.output`, so several apps never write to one file. Golem writes nothing into the shared folder. The generated file is at:
 
