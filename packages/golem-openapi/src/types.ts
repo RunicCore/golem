@@ -1,6 +1,7 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
-import { identifier, NameScope, propertyName } from '@exprtlabs/golem/generator-api';
+import { identifier, NameScope } from '@exprtlabs/golem/generator-api';
+import { code, docComment, fileImports, identifier as identifierPart, ImportSource, join, legacyText, lineBreak, literal, nest, propertyKey, render, sameCode, trimEnd, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { refName } from './names.js';
 import {
   effectiveSchemaTypes,
@@ -222,13 +223,14 @@ export function textCodecRequirement(
   const direction = option === 'bodyEncoders' ? 'input' : 'output';
   return {
     option,
-    schemaType: schemaType(media.schema, schemaContext(document, { direction })),
+    schemaType: render(schemaTypeCode(media.schema, schemaContext(document, { direction })).code),
   };
 }
 
 export interface SchemaTypeContext {
   readonly direction?: 'input' | 'output';
-  readonly qualifier?: string;
+  /** The code written before a component's type name: the namespace the type is imported under, such as `Types.`. */
+  readonly qualifier?: Code;
   readonly anchors?: ReadonlyMap<string, string>;
   /** Present only when a component shadows the global `Blob` in the emitted module. */
   readonly blobType?: { readonly name: string; used: boolean };
@@ -236,6 +238,31 @@ export interface SchemaTypeContext {
   readonly resources?: ResourceIndex;
   readonly currentBase?: string;
   readonly inlining?: ReadonlySet<string>;
+}
+
+/** How a type binds in a larger type: a member of a union, an intersection or an array parenthesizes by it. */
+export type TypeBinding = 'primary' | 'intersection' | 'union';
+
+/** The code of a type, and how it binds. The builder that writes the type knows its binding, so no step reads the code back. */
+export interface TypeCode {
+  readonly code: Code;
+  readonly binds: TypeBinding;
+}
+
+export function typeCode(typeText: Code, binds: TypeBinding = 'primary'): TypeCode {
+  return { code: typeText, binds };
+}
+
+const UNKNOWN_TYPE = typeCode(code`unknown`);
+const NEVER_TYPE = typeCode(code`never`);
+const NULL_TYPE = typeCode(code`null`);
+
+function sameType(left: TypeCode, right: TypeCode): boolean {
+  return sameCode(left.code, right.code);
+}
+
+function distinctTypes(types: readonly TypeCode[]): TypeCode[] {
+  return types.reduce<TypeCode[]>((kept, type) => kept.some((each) => sameType(each, type)) ? kept : [...kept, type], []);
 }
 
 /** Alias the global `Blob` when a component named `Blob` shadows it in the emitted module. */
@@ -251,71 +278,61 @@ function generatedBlobType(
   return { name, used: false };
 }
 
-function blobType(context: SchemaTypeContext): string {
+function blobType(context: SchemaTypeContext): TypeCode {
   const utility = context.blobType;
-  if (!utility) return 'Blob';
+  if (!utility) return typeCode(code`Blob`);
   utility.used = true;
-  return utility.name;
+  return typeCode(identifierPart(utility.name));
 }
 
-/** `T[]` never names the global `Array`, which a component may shadow. */
-/** Whether `type` contains one of `tokens` outside brackets, braces, parentheses, generics and string literals. */
-function hasTopLevel(type: string, tokens: readonly string[]): boolean {
-  let depth = 0;
-  let quote: string | undefined;
-  for (let index = 0; index < type.length; index += 1) {
-    const char = type[index]!;
-    if (quote) {
-      if (char === '\\') index += 1;
-      else if (char === quote) quote = undefined;
-      continue;
-    }
-    if (char === '"' || char === "'" || char === '`') quote = char;
-    else if ('([{<'.includes(char)) depth += 1;
-    else if (')]}>'.includes(char) && !(char === '>' && type[index - 1] === '=')) depth -= 1;
-    else if (depth === 0 && tokens.some((token) => type.startsWith(token, index))) return true;
-  }
-  return false;
+/** A union of distinct member types. A member never needs parentheses: the types written here bind tighter than `|`. */
+function unionType(types: readonly TypeCode[]): TypeCode | undefined {
+  const members = distinctTypes(types);
+  const [only, ...more] = members;
+  if (only === undefined) return undefined;
+  return more.length === 0 ? only : typeCode(join(members.map((type) => type.code), code` | `), 'union');
 }
 
-/** A union of distinct member types; a member is parenthesized only where precedence needs it. */
-function unionType(types: readonly string[]): string {
-  const members = [...new Set(types)];
-  if (members.length === 1) return members[0]!;
-  return members.map((type) => hasTopLevel(type, ['=>', '?']) ? `(${type})` : type).join(' | ');
+/** An intersection of distinct member types; a union member is parenthesized. */
+function intersectionType(types: readonly TypeCode[]): TypeCode {
+  const members = distinctTypes(types);
+  const [only, ...more] = members;
+  if (only === undefined) throw new Error('Internal error: an intersection has no member.');
+  if (more.length === 0) return only;
+  return typeCode(join(members.map((type) => type.binds === 'union' ? code`(${type.code})` : type.code), code` & `), 'intersection');
 }
 
-/** An intersection of distinct member types; a member is parenthesized only where precedence needs it. */
-function intersectionType(types: readonly string[]): string {
-  const members = [...new Set(types)];
-  if (members.length === 1) return members[0]!;
-  return members.map((type) => hasTopLevel(type, ['|', '=>', '?']) ? `(${type})` : type).join(' & ');
+/** `T | null`. */
+export function orNull(type: TypeCode): TypeCode {
+  return typeCode(code`${type.code} | null`, 'union');
 }
 
 /** The right-hand side after `=`: one response variant per line when there are several. */
-function responseUnion(variants: readonly string[]): string {
-  if (variants.length === 0) return ' never';
-  if (variants.length === 1) return ` ${variants[0]!}`;
-  return `\n${variants.map((variant) => `  | ${nested(variant, '  ')}`).join('\n')}`;
+function responseUnion(variants: readonly TypeCode[]): Code {
+  const [only, ...more] = variants;
+  if (only === undefined) return code` never`;
+  if (more.length === 0) return code` ${only.code}`;
+  return join(variants.map((variant) => code`${lineBreak}  | ${nest(variant.code)}`));
 }
 
-/** Indent the continuation lines of a multi-line type written after `indent` on a member line. */
-function nested(type: string, indent: string): string {
-  return type.replace(/\n/g, `\n${indent}`);
-}
-
-function arrayType(item: string): string {
-  return hasTopLevel(item, [' ']) ? `(${item})[]` : `${item}[]`;
+/** `T[]` never names the global `Array`, which a component may shadow. */
+export function arrayType(item: TypeCode): TypeCode {
+  return typeCode(item.binds === 'primary' ? code`${item.code}[]` : code`(${item.code})[]`);
 }
 
 /** An inline index signature: a component named `Record` cannot shadow it, so no helper alias is needed. */
-function recordType(valueType: string): string {
-  return `{ [key: string]: ${valueType} }`;
+function recordType(valueType: TypeCode): TypeCode {
+  return typeCode(code`{ [key: string]: ${valueType.code} }`);
 }
 
-function emitBlobType(output: string[], index: number, utility: { readonly name: string; used: boolean } | undefined): void {
+function emitBlobType(output: Code[], index: number, utility: { readonly name: string; used: boolean } | undefined): void {
   // The module's own `Blob` shadows the global name, so reach it through globalThis.
-  if (utility?.used) output.splice(index, 0, `type ${utility.name} = InstanceType<typeof globalThis.Blob>;`, '');
+  if (utility?.used) output.splice(index, 0, code`type ${identifierPart(utility.name)} = InstanceType<typeof globalThis.Blob>;`, code``);
+}
+
+/** The comment of a description: one line, and it cannot end itself. */
+export function descriptionComment(description: unknown): Code {
+  return docComment(String(description).replace(/\*\//g, '*\\/').replace(/\s+/g, ' '));
 }
 
 function componentAnchorTypes(document: unknown): Map<string, string> {
@@ -359,7 +376,25 @@ export function schemaContext(
   };
 }
 
-export function schemaType(schema: unknown, context: SchemaTypeContext = {}): string {
+/** A public context names the qualifier as text: one or more identifiers, each followed by a dot. */
+export interface PublicSchemaTypeContext extends Omit<SchemaTypeContext, 'qualifier'> {
+  readonly qualifier?: string;
+}
+
+function qualifierCode(qualifier: string | undefined): Code | undefined {
+  if (qualifier === undefined || qualifier === '') return undefined;
+  if (!qualifier.endsWith('.')) throw new TypeError(`a qualifier is identifiers with a dot after each, got ${JSON.stringify(qualifier)}`);
+  return code`${join(qualifier.slice(0, -1).split('.').map(identifierPart), code`.`)}.`;
+}
+
+/** The type of a schema as text, for callers that take no Code. */
+export function schemaType(schema: unknown, context: PublicSchemaTypeContext = {}): string {
+  const { qualifier, ...rest } = context;
+  const qualified = qualifierCode(qualifier);
+  return render(schemaTypeCode(schema, { ...rest, ...(qualified ? { qualifier: qualified } : {}) }).code);
+}
+
+export function schemaTypeCode(schema: unknown, context: SchemaTypeContext = {}): TypeCode {
   const projected = context.direction
     ? projectSchema(schema, { document: context.document ?? {}, direction: context.direction })
     : schema;
@@ -367,7 +402,7 @@ export function schemaType(schema: unknown, context: SchemaTypeContext = {}): st
 }
 
 /** The type of a `prefixItems` array: a union of the prefix lengths that min/max allow. `itemType` gives the type of one item schema. */
-export function prefixItemsType(schema: JsonObjectLike, itemType: (item: unknown) => string): string {
+export function prefixItemsType(schema: JsonObjectLike, itemType: (item: unknown) => TypeCode): TypeCode {
   const prefix = (Array.isArray(schema.prefixItems) ? schema.prefixItems : [])
     .map(itemType);
   const min = typeof schema.minItems === 'number' ? schema.minItems : 0;
@@ -376,23 +411,22 @@ export function prefixItemsType(schema: JsonObjectLike, itemType: (item: unknown
     ? null
     : schema.items !== undefined && schema.items !== null
       ? itemType(schema.items)
-      : 'unknown';
-  if (max !== undefined && max < min) return 'never';
-  if (additional === null && min > prefix.length) return 'never';
-  const variants: string[] = [];
+      : UNKNOWN_TYPE;
+  if (max !== undefined && max < min) return NEVER_TYPE;
+  if (additional === null && min > prefix.length) return NEVER_TYPE;
+  const variants: TypeCode[] = [];
   const lastExact = additional === null
     ? (max === undefined ? prefix.length : Math.min(prefix.length, max))
     : Math.min(prefix.length, max === undefined ? prefix.length : max);
   const minExact = Math.max(0, Math.min(min, prefix.length));
+  const items = (count: number): Code => join(prefix.slice(0, count).map((item) => item.code), code`, `);
   for (let length = minExact; length <= lastExact; length += 1) {
-    if (length === 0) variants.push('[]');
-    else variants.push(`[${prefix.slice(0, length).join(', ')}]`);
+    variants.push(typeCode(length === 0 ? code`[]` : code`[${items(length)}]`));
   }
   if (additional !== null && (max === undefined || max > prefix.length || min > prefix.length)) {
-    variants.push(`[${prefix.join(', ')}${prefix.length ? ', ' : ''}...${arrayType(additional)}]`);
+    variants.push(typeCode(code`[${items(prefix.length)}${prefix.length ? code`, ` : code``}...${arrayType(additional).code}]`));
   }
-  const unique = [...new Set(variants)];
-  return unique.length ? unique.join(' | ') : 'never';
+  return unionType(variants) ?? NEVER_TYPE;
 }
 
 function projectedResourceSchema(schema: unknown, context: SchemaTypeContext): unknown {
@@ -444,7 +478,7 @@ function schemaWithoutCyclicRefs(
   return cyclic;
 }
 
-function inlinedTargetType(target: ResolvedSchemaTarget, context: SchemaTypeContext): string {
+function inlinedTargetType(target: ResolvedSchemaTarget, context: SchemaTypeContext): TypeCode {
   const resources = context.resources;
   const identity = schemaTargetIdentity(target);
   const inner: SchemaTypeContext = {
@@ -466,18 +500,23 @@ function inlinedTargetType(target: ResolvedSchemaTarget, context: SchemaTypeCont
   return schemaTypeNode(projectedResourceSchema(target.schema, context), { ...inner, inlining });
 }
 
-function referencedSchemaType(reference: string, context: SchemaTypeContext): string {
+/** The type named `name`, written after the qualifier of the context. */
+function qualifiedType(context: SchemaTypeContext, name: string): TypeCode {
+  return typeCode(context.qualifier ? code`${context.qualifier}${identifierPart(name)}` : identifierPart(name));
+}
+
+function referencedSchemaType(reference: string, context: SchemaTypeContext): TypeCode {
   const resources = context.resources;
   const currentBase = context.currentBase ?? '';
   if (resources) {
     const target = resolveSchemaTarget(reference, currentBase, resources, context.document);
     if (target) {
-      if (target.exactComponent) return `${context.qualifier || ''}${target.exactComponent.typeName}`;
+      if (target.exactComponent) return qualifiedType(context, target.exactComponent.typeName);
       return inlinedTargetType(target, context);
     }
   }
   const name = refName(reference);
-  return name ? `${context.qualifier || ''}${name}` : 'unknown';
+  return name ? qualifiedType(context, name) : UNKNOWN_TYPE;
 }
 
 function isSchemaReference(schema: JsonObjectLike): boolean {
@@ -505,9 +544,9 @@ function allOfRequirements(schema: JsonObjectLike): AllOfRequirements {
 }
 
 /** Keeps the referenced type shared while requiring the given keys it declares. */
-function requiredKeysType(type: string, names: readonly string[]): string {
-  const operand = hasTopLevel(type, ['|', '&', '=>', '?']) ? `(${type})` : type;
-  return `Required<Pick<${type}, Extract<${names.map((name) => JSON.stringify(name)).join(' | ')}, keyof ${operand}>>>`;
+function requiredKeysType(type: TypeCode, names: readonly string[]): TypeCode {
+  const operand = type.binds === 'primary' ? type.code : code`(${type.code})`;
+  return typeCode(code`Required<Pick<${type.code}, Extract<${join(names.map((name) => literal(name)), code` | `)}, keyof ${operand}>>>`);
 }
 
 /** The schema's `required` names that neither its own properties nor an inline allOf member declare. */
@@ -547,12 +586,12 @@ function withBranchRequired(branch: unknown, names: readonly string[]): unknown 
  * with a required-key part so the shared component's own type is unchanged. The names that no inline
  * member declares also apply inside the member's oneOf/anyOf branches.
  */
-function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, context: SchemaTypeContext): string[] {
+function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, context: SchemaTypeContext): TypeCode[] {
   if (!isJsonObject(item)) return [schemaTypeNode(item, context)];
   if (isSchemaReference(item)) {
     const type = schemaTypeNode(item, context);
     const undeclared = [...requirements.required].filter((name) => !requirements.declared.has(name));
-    return undeclared.length && type !== 'unknown' ? [type, requiredKeysType(type, undeclared)] : [type];
+    return undeclared.length && !sameType(type, UNKNOWN_TYPE) ? [type, requiredKeysType(type, undeclared)] : [type];
   }
   const undeclared = [...requirements.required].filter((name) => !requirements.declared.has(name));
   const member = withUnionRequired(item, undeclared);
@@ -562,10 +601,10 @@ function allOfMemberTypes(item: unknown, requirements: AllOfRequirements, contex
   return [schemaTypeNode(member, context)];
 }
 
-function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): string {
-  if (rawSchema === true) return 'unknown';
-  if (rawSchema === false) return 'never';
-  if (!isJsonObject(rawSchema)) return 'unknown';
+function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): TypeCode {
+  if (rawSchema === true) return UNKNOWN_TYPE;
+  if (rawSchema === false) return NEVER_TYPE;
+  if (!isJsonObject(rawSchema)) return UNKNOWN_TYPE;
   const allOfNames = Array.isArray(rawSchema.allOf) && !isSchemaReference(rawSchema)
     ? allOfRequirements(rawSchema)
     : undefined;
@@ -581,7 +620,7 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): st
   if (typeof schema.$dynamicRef === 'string' || typeof schema.$ref === 'string') {
     const reference = String(schema.$dynamicRef || schema.$ref);
     const anchored = inner.anchors && inner.anchors.get(reference);
-    if (anchored) return `${inner.qualifier || ''}${anchored}`;
+    if (anchored) return qualifiedType(inner, anchored);
   }
   if (typeof schema.$ref === 'string') {
     return referencedSchemaType(schema.$ref, inner);
@@ -589,10 +628,10 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): st
   if (typeof schema.$dynamicRef === 'string') {
     return referencedSchemaType(schema.$dynamicRef, inner);
   }
-  if (schema.not === true) return 'never';
-  if (schema.const !== undefined) return JSON.stringify(schema.const);
+  if (schema.not === true) return NEVER_TYPE;
+  if (schema.const !== undefined) return typeCode(literal(schema.const as JsonValue));
   if (Array.isArray(schema.enum)) {
-    if (schema.enum.length === 0) return 'never';
+    if (schema.enum.length === 0) return NEVER_TYPE;
     const excluded = isJsonObject(schema.not)
       ? new Set(
         schema.not.const !== undefined
@@ -602,84 +641,85 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): st
             : [],
       )
       : new Set<string>();
-    const values = schema.enum
-      .map((value) => JSON.stringify(value))
-      .filter((value) => !excluded.has(value));
-    return values.length ? values.join(' | ') : 'never';
+    const values = schema.enum.filter((value) => !excluded.has(JSON.stringify(value)));
+    return unionType(values.map((value) => typeCode(literal(value as JsonValue)))) ?? NEVER_TYPE;
   }
   const types = effectiveSchemaTypes(schema);
   const nullable = types.includes('null');
   const concrete = types.filter((type) => type !== 'null');
-  const primitiveType = (type: string): string => {
+  const primitiveType = (type: string): TypeCode => {
     switch (type) {
     case 'string':
-      return schema.format === 'binary' ? blobType(inner) : 'string';
+      return schema.format === 'binary' ? blobType(inner) : typeCode(code`string`);
     case 'integer':
-    case 'number': return 'number';
-    case 'boolean': return 'boolean';
+    case 'number': return typeCode(code`number`);
+    case 'boolean': return typeCode(code`boolean`);
     case 'array': {
       if (Array.isArray(schema.prefixItems)) return prefixItemsType(schema, (item) => schemaTypeNode(item, inner));
-      return schema.items === false ? '[]' : arrayType(schemaTypeNode(schema.items, inner));
+      return schema.items === false ? typeCode(code`[]`) : arrayType(schemaTypeNode(schema.items, inner));
     }
     case 'object': return objectType(schema, inner);
-    case 'null': return 'null';
+    case 'null': return NULL_TYPE;
     default:
-      return 'unknown';
+      return UNKNOWN_TYPE;
     }
   };
   const baseParts = concrete.length
     ? concrete.map((type) => primitiveType(type))
     : nullable
-      ? ['null']
+      ? [NULL_TYPE]
     : schema.properties || schema.additionalProperties !== undefined
       ? [objectType(schema, inner)]
       : Array.isArray(schema.prefixItems) || schema.items
         ? [primitiveType('array')]
         : [];
-  let result = baseParts.length ? unionType(baseParts) : '';
+  let result = unionType(baseParts);
   if (schema.oneOf || schema.anyOf) {
     const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
     const union = unionType(variants.map((item) => schemaTypeNode(item, inner)));
-    result = result ? intersectionType([result, union]) : union;
+    if (union) result = result ? intersectionType([result, union]) : union;
   }
   if (Array.isArray(schema.allOf)) {
     const requirements = allOfNames ?? allOfRequirements(schema);
     const parts = schema.allOf
       .flatMap((item) => allOfMemberTypes(item, requirements, inner))
-      .filter((part) => part !== 'unknown');
+      .filter((part) => !sameType(part, UNKNOWN_TYPE));
     if (parts.length) result = intersectionType(result ? [result, ...parts] : parts);
   }
-  if (!result) result = 'unknown';
-  return nullable && result !== 'unknown' && result !== 'null' ? `${result} | null` : result;
+  if (!result) result = UNKNOWN_TYPE;
+  return nullable && !sameType(result, UNKNOWN_TYPE) && !sameType(result, NULL_TYPE) ? orNull(result) : result;
 }
 
-function objectType(schema: JsonObjectLike, context: SchemaTypeContext): string {
+/** The members of a braced type, one to a line, each line one level in. */
+function bracedLines(lines: readonly Code[], closing: Code = code`}`): Code {
+  return code`{${nest(join(lines.map((line) => code`${lineBreak}${line}`)))}${lineBreak}${closing}`;
+}
+
+function objectType(schema: JsonObjectLike, context: SchemaTypeContext): TypeCode {
   const required = new Set(Array.isArray(schema.required) ? schema.required.map(String) : []);
   const properties = objectEntries(schema.properties);
   const propertyTypes = properties.map(([, value]) => schemaTypeNode(value, context));
-  const members = properties.map(([name, value]) => {
-    const description = isJsonObject(value) && value.description
-      ? `  /** ${String(value.description).replace(/\*\//g, '*\\/').replace(/\s+/g, ' ')} */\n`
-      : '';
-    return `${description}  ${propertyName(name)}${required.has(name) ? '' : '?'}: ${nested(schemaTypeNode(value, context), '  ')};`;
+  const members = properties.map(([name, value], index) => {
+    const member = code`${propertyKey(name)}${required.has(name) ? code`` : code`?`}: ${propertyTypes[index]!.code};`;
+    return isJsonObject(value) && value.description ? code`${descriptionComment(value.description)}${lineBreak}${member}` : member;
   });
   if (schema.additionalProperties) {
     const additionalType = schema.additionalProperties === true
-      ? 'unknown'
-      : schemaType(schema.additionalProperties, context);
+      ? UNKNOWN_TYPE
+      : schemaTypeCode(schema.additionalProperties, context);
     const optional = properties.some(([name]) => !required.has(name));
-    const indexTypes = additionalType === 'unknown'
-      ? ['unknown']
-      : [...new Set([additionalType, ...propertyTypes, ...(optional ? ['undefined'] : [])])];
-    members.push(`  [key: string]: ${nested(indexTypes.join(' | '), '  ')};`);
+    const indexTypes = sameType(additionalType, UNKNOWN_TYPE)
+      ? [UNKNOWN_TYPE]
+      : distinctTypes([additionalType, ...propertyTypes, ...(optional ? [typeCode(code`undefined`)] : [])]);
+    members.push(code`[key: string]: ${join(indexTypes.map((type) => type.code), code` | `)};`);
   }
-  if (members.length) return `{\n${members.join('\n')}\n}`;
-  return schema.additionalProperties === false ? recordType('never') : recordType('unknown');
+  if (members.length) return typeCode(bracedLines(members));
+  return schema.additionalProperties === false ? recordType(NEVER_TYPE) : recordType(UNKNOWN_TYPE);
 }
 
 type JsonObjectLike = { readonly [key: string]: unknown };
 
-function inputType(operation: NormalizedOperation, context: SchemaTypeContext = {}): string {
+function inputType(operation: NormalizedOperation, context: SchemaTypeContext = {}): TypeCode {
   const groups: Record<string, NormalizedOperation['parameters'][number][]> = {
     path: [],
     query: [],
@@ -687,84 +727,89 @@ function inputType(operation: NormalizedOperation, context: SchemaTypeContext = 
     cookie: [],
   };
   const queryString = operation.parameters.find((parameter) => parameter.in === 'querystring');
-  const lines: string[] = [];
+  const lines: Code[] = [];
   for (const parameter of operation.parameters) {
     if (!groups[parameter.in]) continue;
     groups[parameter.in].push(parameter);
   }
   if (queryString) {
     const schema = parameterSchema(queryString);
-    lines.push(`  querystring${queryString.required ? '' : '?'}: ${nested(schemaType(schema, context), '  ')};`);
+    lines.push(code`querystring${queryString.required ? code`` : code`?`}: ${schemaTypeCode(schema, context).code};`);
   }
   for (const [location, parameters] of Object.entries(groups)) {
     if (!parameters.length) continue;
     const requiredGroup = location === 'path' || parameters.some((parameter) => parameter.required);
     const fields = parameters.map((parameter) =>
-      `    ${propertyName(parameter.name)}${parameter.required || location === 'path' ? '' : '?'}: ${nested(schemaType(parameterSchema(parameter), context), '    ')};`
+      code`${propertyKey(parameter.name)}${parameter.required || location === 'path' ? code`` : code`?`}: ${schemaTypeCode(parameterSchema(parameter), context).code};`
     );
-    lines.push(`  ${location}${requiredGroup ? '' : '?'}: {\n${fields.join('\n')}\n  };`);
+    lines.push(code`${identifierPart(location)}${requiredGroup ? code`` : code`?`}: ${bracedLines(fields, code`};`)}`);
   }
   if (operation.requestContent.length === 1) {
-    lines.push(`  body${operation.requestBody?.required ? '' : '?'}: ${nested(schemaType(operation.requestContent[0]?.schema ?? null, context), '  ')};`);
+    lines.push(code`body${operation.requestBody?.required ? code`` : code`?`}: ${schemaTypeCode(operation.requestContent[0]?.schema ?? null, context).code};`);
   } else if (operation.requestContent.length > 1) {
-    const variants = operation.requestContent.map((media) =>
-      `{ contentType: ${JSON.stringify(media.contentType)}; value: ${schemaType(media.schema, context)} }`
-    ).join(' | ');
-    lines.push(`  body${operation.requestBody?.required ? '' : '?'}: ${nested(variants, '  ')};`);
+    const variants = join(operation.requestContent.map((media) =>
+      code`{ contentType: ${literal(media.contentType)}; value: ${schemaTypeCode(media.schema, context).code} }`
+    ), code` | `);
+    lines.push(code`body${operation.requestBody?.required ? code`` : code`?`}: ${variants};`);
   }
-  return lines.length ? `{\n${lines.join('\n')}\n}` : recordType('never');
+  return lines.length ? typeCode(bracedLines(lines)) : recordType(NEVER_TYPE);
 }
 
-function responseBodyType(response: NormalizedResponse, context: SchemaTypeContext = {}): string {
-  if (!response.content || response.content.length === 0) return 'void';
+function responseBodyType(response: NormalizedResponse, context: SchemaTypeContext = {}): TypeCode {
+  if (!response.content || response.content.length === 0) return typeCode(code`void`);
   const types = response.content.map((media) => mediaBodyType(media, context));
-  return unionType(types);
+  return unionType(types) ?? NEVER_TYPE;
 }
 
-function mediaBodyType(media: OpenApiMediaType, context: SchemaTypeContext = {}): string {
+function mediaBodyType(media: OpenApiMediaType, context: SchemaTypeContext = {}): TypeCode {
   if (media.itemSchemaPresent) {
-    return `AsyncIterable<${schemaType(media.itemSchema, context)}>`;
+    return typeCode(code`AsyncIterable<${schemaTypeCode(media.itemSchema, context).code}>`);
   }
   if (media.schema === null && isBinaryMediaType(media.contentType)) return blobType(context);
-  return schemaType(media.schema, context);
+  return schemaTypeCode(media.schema, context);
 }
 
-function operationBodyType(operation: NormalizedOperation, success: boolean, context: SchemaTypeContext = {}): string {
+function operationBodyType(operation: NormalizedOperation, success: boolean, context: SchemaTypeContext = {}): TypeCode {
   const responses = operation.responses.filter((response) => response.success === success);
-  if (!responses.length) return 'unknown';
-  return [...new Set(responses.map((response) => responseBodyType(response, context)))].join(' | ');
+  if (!responses.length) return UNKNOWN_TYPE;
+  return unionType(responses.map((response) => responseBodyType(response, context))) ?? UNKNOWN_TYPE;
 }
 
-function responseHeadersType(document: unknown, response: NormalizedResponse, context: SchemaTypeContext = {}): string {
+function responseHeadersType(document: unknown, response: NormalizedResponse, context: SchemaTypeContext = {}): TypeCode {
   const members = objectEntries(response.headers).map(([name, rawHeader]) => {
     const header = resolveLocal(document, rawHeader);
-    return `readonly ${propertyName(name)}?: ${schemaType(parameterSchema(header), context)}`;
+    return code`readonly ${propertyKey(name)}?: ${schemaTypeCode(parameterSchema(header), context).code}`;
   });
-  return members.length ? `{ ${members.join('; ')} }` : recordType('never');
+  return members.length ? typeCode(code`{ ${join(members, code`; `)} }`) : recordType(NEVER_TYPE);
 }
 
-function responseMatchType(status: string): string {
-  if (status === 'default') return "'default'";
-  if (/^[1-5]XX$/i.test(status)) return "'range'";
-  return "'status'";
+function responseMatchType(status: string): Code {
+  if (status === 'default') return code`'default'`;
+  if (/^[1-5]XX$/i.test(status)) return code`'range'`;
+  return code`'status'`;
 }
 
-function responseStatusType(status: string): string {
-  if (/^\d{3}$/.test(status)) return String(Number(status));
-  return 'number';
+function responseStatusType(status: string): Code {
+  if (/^\d{3}$/.test(status)) return literal(Number(status));
+  return code`number`;
 }
 
-function responseVariantTypes(document: unknown, response: NormalizedResponse, context: SchemaTypeContext = {}): string[] {
+function responseVariantTypes(document: unknown, response: NormalizedResponse, context: SchemaTypeContext = {}): TypeCode[] {
   const status = responseStatusType(response.status);
   const matched = responseMatchType(response.status);
-  const headers = responseHeadersType(document, response, context);
+  const headers = responseHeadersType(document, response, context).code;
   if (!response.content || response.content.length === 0) {
-    return [`{ matched: ${matched}; status: ${status}; contentType: null; body: void; headers: ${headers} }`];
+    return [typeCode(code`{ matched: ${matched}; status: ${status}; contentType: null; body: void; headers: ${headers} }`)];
   }
   return response.content.map((media) => {
-    const body = mediaBodyType(media, context);
-    return `{ matched: ${matched}; status: ${status}; contentType: ${JSON.stringify(media.contentType)}; body: ${body}; headers: ${headers} }`;
+    const body = mediaBodyType(media, context).code;
+    return typeCode(code`{ matched: ${matched}; status: ${status}; contentType: ${literal(media.contentType)}; body: ${body}; headers: ${headers} }`);
   });
+}
+
+/** The file ends with its last line, not with blank lines. */
+function dropTrailingBlankLines(lines: Code[]): void {
+  while (lines.at(-1)?.parts.length === 0) lines.pop();
 }
 
 export function generateTypes(
@@ -781,55 +826,61 @@ export function generateTypes(
   const useOutput = plan ? plan.typesUsesOutputSchemas : Object.keys(schemas).length > 0 && operations.length > 0;
   if (useInput) scope.claim('InputSchemas', 'import binding InputSchemas');
   if (useOutput) scope.claim('OutputSchemas', 'import binding OutputSchemas');
+  const inputSchemas = new ImportSource('./input-schemas.js', true, { namespace: 'InputSchemas' });
+  const outputSchemas = new ImportSource('./output-schemas.js', true, { namespace: 'OutputSchemas' });
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
   const baseContext = schemaContext(document, { blobType: blobTypeName });
-  const output = [
-    generatedBanner(),
-    manifestMarker(),
-    ...(useInput ? ["import type * as InputSchemas from './input-schemas.js';"] : []),
-    ...(useOutput ? ["import type * as OutputSchemas from './output-schemas.js';"] : []),
-    '',
-  ];
-  const blobTypeIndex = output.length;
+  const BLANK = code``;
+  const body: Code[] = [];
+  const blobTypeIndex = 0;
   for (const [name, rawSchema] of objectEntries(schemas)) {
     const schema = resolveLocal(document, rawSchema);
     const typeName = identifier(name);
     scope.claim(typeName, `component schema ${JSON.stringify(name)}`, name);
-    const type = schemaType(
+    const type = schemaTypeCode(
       schema,
       schemaContext(document, baseContext, name, schema),
     );
     const description = isJsonObject(schema) && schema.description
-      ? `/** ${String(schema.description).replace(/\*\//g, '*\\/').replace(/\s+/g, ' ')} */\n`
-      : '';
-    output.push(`${description}export type ${typeName} = ${type};`, '');
+      ? code`${descriptionComment(schema.description)}${lineBreak}`
+      : BLANK;
+    body.push(code`${description}export type ${identifierPart(typeName)} = ${type.code};`, BLANK);
   }
-  if (Object.keys(schemas).length === 0 && operations.length === 0) output.push('export {};');
+  if (Object.keys(schemas).length === 0 && operations.length === 0) body.push(code`export {};`);
   for (const operation of operations) {
     const inputContext = schemaContext(document, {
       direction: 'input',
-      qualifier: useInput ? 'InputSchemas.' : '',
+      ...(useInput ? { qualifier: code`${inputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
     });
     const outputContext = schemaContext(document, {
       direction: 'output',
-      qualifier: useOutput ? 'OutputSchemas.' : '',
+      ...(useOutput ? { qualifier: code`${outputSchemas.namespace()}.` } : {}),
       blobType: blobTypeName,
     });
     scope.claim(`${operation.typeName}OperationInput`, `operation ${JSON.stringify(operation.name)} input type`);
     scope.claim(`${operation.typeName}OperationSuccessBody`, `operation ${JSON.stringify(operation.name)} success body`);
     scope.claim(`${operation.typeName}OperationErrorBody`, `operation ${JSON.stringify(operation.name)} error body`);
     scope.claim(`${operation.typeName}OperationHttpResponse`, `operation ${JSON.stringify(operation.name)} http response`);
-    output.push(`export type ${operation.typeName}OperationInput = ${inputType(operation, inputContext)};`, '');
-    output.push(`export type ${operation.typeName}OperationSuccessBody = ${operationBodyType(operation, true, outputContext)};`, '');
-    output.push(`export type ${operation.typeName}OperationErrorBody = ${operationBodyType(operation, false, outputContext)};`, '');
-    output.push(
-      `export type ${operation.typeName}OperationHttpResponse =${responseUnion(operation.responses.flatMap((response) => responseVariantTypes(document, response, outputContext)))};`,
-      '',
+    body.push(code`export type ${identifierPart(`${operation.typeName}OperationInput`)} = ${inputType(operation, inputContext).code};`, BLANK);
+    body.push(code`export type ${identifierPart(`${operation.typeName}OperationSuccessBody`)} = ${operationBodyType(operation, true, outputContext).code};`, BLANK);
+    body.push(code`export type ${identifierPart(`${operation.typeName}OperationErrorBody`)} = ${operationBodyType(operation, false, outputContext).code};`, BLANK);
+    body.push(
+      code`export type ${identifierPart(`${operation.typeName}OperationHttpResponse`)} =${responseUnion(operation.responses.flatMap((response) => responseVariantTypes(document, response, outputContext)))};`,
+      BLANK,
     );
   }
-  emitBlobType(output, blobTypeIndex, blobTypeName);
-  return `${output.join('\n').trim()}\n`;
+  emitBlobType(body, blobTypeIndex, blobTypeName);
+  dropTrailingBlankLines(body);
+  const types = join(body, lineBreak);
+  const output = join([
+    legacyText(generatedBanner()),
+    legacyText(manifestMarker()),
+    ...fileImports(types, [inputSchemas, outputSchemas]),
+    BLANK,
+    types,
+  ], lineBreak);
+  return render(code`${trimEnd(output)}\n`);
 }
 
 export function generateDirectionalSchemas(document: unknown, direction: 'input' | 'output'): string {
@@ -837,20 +888,22 @@ export function generateDirectionalSchemas(document: unknown, direction: 'input'
   const scope = new ComponentNameScope(`${direction}-schemas.ts`);
   const blobTypeName = generatedBlobType(scope, objectEntries(schemas).map(([name]) => identifier(name)));
   const baseContext = schemaContext(document, { direction, blobType: blobTypeName });
-  const output = [
-    generatedBanner(),
-    `/** Component schemas projected for ${direction === 'input' ? 'request' : 'response'} data. */`,
-    '',
-  ];
-  const blobTypeIndex = output.length;
+  const BLANK = code``;
+  const body: Code[] = [];
   for (const [name, rawSchema] of objectEntries(schemas)) {
     const schema = resolveLocal(document, rawSchema);
     const typeName = identifier(name);
     scope.claim(typeName, `component schema ${JSON.stringify(name)}`, name);
     const context = schemaContext(document, baseContext, name, schema);
-    output.push(`export type ${typeName} = ${schemaType(schema, context)};`, '');
+    body.push(code`export type ${identifierPart(typeName)} = ${schemaTypeCode(schema, context).code};`, BLANK);
   }
-  if (Object.keys(schemas).length === 0) output.push('export {};');
-  emitBlobType(output, blobTypeIndex, blobTypeName);
-  return `${output.join('\n').trim()}\n`;
+  if (Object.keys(schemas).length === 0) body.push(code`export {};`);
+  emitBlobType(body, 0, blobTypeName);
+  dropTrailingBlankLines(body);
+  return render(code`${trimEnd(join([
+    legacyText(generatedBanner()),
+    docComment(`Component schemas projected for ${direction === 'input' ? 'request' : 'response'} data.`),
+    BLANK,
+    ...body,
+  ], lineBreak))}\n`);
 }

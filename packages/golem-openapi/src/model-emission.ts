@@ -5,6 +5,7 @@ import {
   calleeOf,
   code,
   emitCodecRuntimeCode,
+  fileImports,
   helper,
   helperName,
   helperSet,
@@ -15,6 +16,7 @@ import {
   ImportSource,
   join,
   legacyText,
+  lineBreak,
   literal,
   nameOf,
   NameTable,
@@ -33,7 +35,8 @@ import {
   emitModelToJSON,
   fillFunctionName,
   presentKeysSource,
-  pruneGeneratedImports,
+  propertyKey,
+  sideEffectImport,
   reachesItself,
   wireStringifyExportName,
   type CodecRuntimeOptions,
@@ -47,18 +50,20 @@ import { sourceDigest } from '@exprtlabs/golem/manifest';
 import { buildCodecValidationPlan, uniqueDiagnostics } from '@exprtlabs/golem/internal/validation-plan';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { isJsonObject } from './json.js';
-import { compareText, NameScope, propertyName, RESERVED_MODEL_MEMBERS, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { compareText, NameScope, RESERVED_MODEL_MEMBERS, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { componentOrigin, componentPlace, ComponentNameScope, LocatedError, type OriginLocator } from './origin.js';
 import { COMPOSITION_CONVERSION_CONFLICT, conflictMessage } from './composition.js';
 import { generatedBanner } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
-import { schemaContext } from './types.js';
+import { descriptionComment, schemaContext } from './types.js';
 import {
   type ModelDefinition,
   type RecursiveAlias,
   ModelDefinitions,
   type ModelResolveEnv,
+  type ModelNames,
+  LOCAL_NAMES,
   type OpenApiModelAnalysis,
   modelEnv,
   withSchemaBase,
@@ -175,11 +180,39 @@ class FunctionNames {
 interface ConversionContext {
   readonly names: FunctionNames;
   readonly initializer: (reference: string) => Code;
+  /** The names of the model classes and types the conversion writes: local, or imported from the module that holds them. */
+  readonly models: ModelNames;
+  /** A function of a schema node: a name of this module, or a part imported from the module that holds the node. */
+  readonly nodeFunction: (nodeId: string, functionName: 'stringify' | 'fill' | 'fromWire' | 'toWire') => Code;
+  /** The initializer of a recursive alias that holds a model. */
+  readonly aliasInit: (alias: RecursiveAlias) => Code;
+}
+
+/** What a group module takes from other modules: each name is a part imported from the module that holds it, or a local name. */
+interface ForeignNames extends Omit<ModelNames, 'types'> {
+  /** The initializer of a recursive alias that another module holds; undefined when this module holds it. */
+  readonly aliasInit: (alias: RecursiveAlias) => Code | undefined;
+  /** The encoder of a model. */
+  readonly encode: (reference: string) => Code;
+  /** The wire stringify that the companion of a sibling codec exports. */
+  readonly wireStringify: (codecId: string) => Code;
+}
+
+/** A context for conversion code that a module of its own writes: every name is local. */
+function localConversion(initializer: (reference: string) => Code): ConversionContext {
+  const names = new FunctionNames();
+  return {
+    names,
+    initializer,
+    models: LOCAL_NAMES,
+    nodeFunction: (nodeId, functionName) => names.of(generatedFunctionName(nodeId, functionName)),
+    aliasInit: (alias) => names.of(aliasInitName(alias)),
+  };
 }
 
 /** A context for conversion code that is checked and never written: the initializer is a plain name. */
 function checkContext(): ConversionContext {
-  return { names: new FunctionNames(), initializer: (reference) => identifier(`initialize${reference}`) };
+  return localConversion((reference) => identifier(`initialize${reference}`));
 }
 
 /** How generated conversion code decodes and constructs a referenced model. */
@@ -189,19 +222,19 @@ function modelResolver(reference: string, definitions: ModelDefinitions, env: Mo
     // A use of a recursive alias calls its node. A model-layer value is not a wire value, so init builds only the models.
     return {
       className: identifier(alias.name),
-      decode: (value) => code`${context.names.of(generatedFunctionName(aliasNodeId(alias), 'fromWire'))}(${legacyText(value)})`,
-      fromInit: aliasInitsModel(alias, definitions, env) ? (value) => code`${context.names.of(aliasInitName(alias))}(${legacyText(value)})` : (value) => legacyText(value),
+      decode: (value) => code`${context.nodeFunction(aliasNodeId(alias), 'fromWire')}(${legacyText(value)})`,
+      fromInit: aliasInitsModel(alias, definitions, env) ? (value) => code`${context.aliasInit(alias)}(${legacyText(value)})` : (value) => legacyText(value),
       ...(aliasConvertsValue(alias, definitions, env) ? {} : { identity: true as const }),
     };
   }
   const discriminators = modelDiscriminators(definitions.get(reference));
   const bases = modelBases(definitions.get(reference));
   return {
-    className: identifier(`${reference}Model`),
-    decode: (value) => code`${rt.conversion.decodeGeneratedModelTrusted}(${identifier(`${reference}Model`)}, ${legacyText(value)})`,
+    className: context.models.model(reference),
+    decode: (value) => code`${rt.conversion.decodeGeneratedModelTrusted}(${context.models.model(reference)}, ${legacyText(value)})`,
     fromInit: (value) => definitions.get(reference)?.isUnion
       ? code`${context.initializer(reference)}(${legacyText(value)})`
-      : code`new ${identifier(`${reference}Model`)}(${legacyText(value)} as ${identifier(`${reference}Init`)})`,
+      : code`new ${context.models.model(reference)}(${legacyText(value)} as ${context.models.init(reference)})`,
     ...(discriminators ? { discriminators } : {}),
     ...(bases.length ? { bases } : {}),
   };
@@ -280,12 +313,12 @@ function modelToJSONCode(
       if (alias) {
         return {
           className: identifier(alias.name),
-          encode: value => code`${context.names.of(generatedFunctionName(aliasNodeId(alias), 'toWire'))}(${legacyText(value)})`,
+          encode: value => code`${context.nodeFunction(aliasNodeId(alias), 'toWire')}(${legacyText(value)})`,
           ...(aliasConvertsValue(alias, definitions, env) ? {} : { identity: true as const }),
         };
       }
       const bases = modelBases(definitions.get(reference));
-      return { className: identifier(`${reference}Model`), encode: value => code`${rt.conversion.encodeGeneratedModel}(${legacyText(value)})`, ...(bases.length ? { bases } : {}) };
+      return { className: context.models.model(reference), encode: value => code`${rt.conversion.encodeGeneratedModel}(${legacyText(value)})`, ...(bases.length ? { bases } : {}) };
     },
     TEMPORAL_SERDE,
   ));
@@ -347,9 +380,9 @@ function modelFieldDeclaration(
   env: ModelResolveEnv,
 ): Code {
   const description = isJsonObject(schema) && schema.description
-    ? `  /** ${String(schema.description).replace(/\*\//g, '*\\/').replace(/\s+/g, ' ')} */\n`
-    : '';
-  return legacyText(`${description}  declare ${propertyName(name)}${required ? '' : '?'}: ${modelFieldType(schema, definitions, env)};`);
+    ? code`  ${descriptionComment(schema.description)}${lineBreak}`
+    : code``;
+  return code`${description}  declare ${propertyKey(name)}${required ? code`` : code`?`}: ${modelFieldType(schema, definitions, env)};`;
 }
 
 function modelPropertyAccess(name: string): string {
@@ -453,7 +486,17 @@ export function generateOpenApiModelArtifacts(
   }
   // A union model's initializer that another group calls is a name of the module of the group that owns it, so the parts of the
   // property conversions say which initializers each group imports and which each group must export.
-  const groupModules = new Map(groups.map((group) => [group.id, new ImportSource(`./_${group.id}.js`)] as const));
+  const moduleSources = new Map<string, ImportSource>();
+  const moduleSource = (specifier: string): ImportSource => {
+    let source = moduleSources.get(specifier);
+    if (!source) {
+      source = new ImportSource(specifier, false, { sorted: true });
+      moduleSources.set(specifier, source);
+    }
+    return source;
+  };
+  const validatorsSource = new ImportSource('../validators.generated.js', false, { sorted: true });
+  const groupModules = new Map(groups.map((group) => [group.id, moduleSource(`./_${group.id}.js`)] as const));
   const initializerOwner = (own: string) => (reference: string): ImportSource | undefined => {
     const ownerId = groupForModel.get(reference);
     return ownerId !== undefined && ownerId !== own ? groupModules.get(ownerId) : undefined;
@@ -462,10 +505,7 @@ export function generateOpenApiModelArtifacts(
   for (const group of groups) {
     const groupDefinitions = definitionsByGroup.get(group.id) ?? [];
     const external = initializerOwner(group.id);
-    const context: ConversionContext = {
-      names: new FunctionNames(),
-      initializer: (reference) => external(reference)?.name(`initialize${reference}`) ?? identifier(`initialize${reference}`),
-    };
+    const context = localConversion((reference) => external(reference)?.name(`initialize${reference}`) ?? identifier(`initialize${reference}`));
     const initializerCalls = join(groupDefinitions.flatMap((definition) =>
       [...definition.properties.values()].map((schema) => modelInitCode(schema, 'value', definitions, sharedModelEnv, definition.schemaName, context)),
     ), code`\n`);
@@ -527,71 +567,39 @@ export function generateOpenApiModelArtifacts(
   for (const group of groups) {
     const localIds = group.nodes;
     const dependencyIds = dependenciesByGroup.get(group.id) ?? new Set<string>();
-    const importsByModule = new Map<string, Set<string>>();
-    const addImport = (moduleName: string, name: string): void => {
-      const values = importsByModule.get(moduleName) ?? new Set<string>();
-      values.add(name);
-      importsByModule.set(moduleName, values);
-    };
-    for (const nodeId of dependencyIds) {
-      const node = schemaGraph.nodes.get(nodeId);
-      const dependencyGroupId = owner.get(nodeId);
-      const dependencyGroup = dependencyGroupId ? groupById.get(dependencyGroupId) : undefined;
-      if (!node || !dependencyGroup || dependencyGroupId === group.id) continue;
-      const codecModule = `./_${dependencyGroup.id}.js`;
-      for (const functionName of ['stringify', 'fromWire', 'toWire'] as const) {
-        addImport(codecModule, generatedFunctionName(node.id, functionName));
-      }
-      if (node.kind === 'object') addImport(codecModule, generatedFunctionName(node.id, 'fill'));
-      const alias = aliasByNodeId.get(nodeId);
-      if (alias && aliasConvertsValue(alias, definitions, sharedModelEnv)) addImport(codecModule, `type ${aliasModelTypeName(alias)}`);
-      if (alias && aliasInitsModel(alias, definitions, sharedModelEnv)) addImport(codecModule, aliasInitName(alias));
-      if (exportsWireStringify(schemaGraph, node, profile)) addImport(codecModule, wireStringifyExportName(node.codecId));
-      const modelName = analysis.definitionNameByNodeId.get(nodeId);
-      if (node.emitClass && modelName !== undefined) {
-        const modelModule = `./${modelName}.js`;
-        addImport(modelModule, `${modelName}Model`);
-        for (const suffix of ['Fields', 'JSON', 'Init'] as const) {
-          addImport(modelModule, `type ${modelName}${suffix}`);
-        }
-      }
-    }
     const groupDefinitions = definitionsByGroup.get(group.id) ?? [];
-    for (const definition of groupDefinitions) {
-      if (!definition.baseName) continue;
-      const baseGroupId = groupForModel.get(definition.baseName);
-      if (!baseGroupId || baseGroupId === group.id) continue;
-      addImport(`./${definition.baseName}.js`, `${definition.baseName}Model`);
-      addImport(`./${definition.baseName}.js`, `type ${definition.baseName}Fields`);
-      addImport(`./_${baseGroupId}.js`, `encode${definition.baseName}`);
-    }
-    for (const [groupId, reference] of calledInitializers.get(group.id) ?? []) {
-      addImport(`./_${groupId}.js`, `initialize${reference}`);
-    }
-    const moduleImports = [...importsByModule]
-      .sort(([left], [right]) => compareText(left, right))
-      .map(([moduleName, imports]) => `import { ${[...imports].sort().join(', ')} } from ${JSON.stringify(moduleName)};`);
+    const groupPlan = groupPlans.get(group.id);
+    const foreignGroup = (reference: string): string | undefined => {
+      const groupId = groupForModel.get(reference);
+      return groupId !== undefined && groupId !== group.id ? groupId : undefined;
+    };
+    const aliasModule = (alias: RecursiveAlias): ImportSource | undefined => {
+      const groupId = alias.nodeId === undefined ? undefined : owner.get(alias.nodeId);
+      return groupId !== undefined && groupId !== group.id ? groupModules.get(groupId) : undefined;
+    };
+    const foreignNames: ForeignNames = {
+      model: (reference) => foreignGroup(reference) ? moduleSource(`./${reference}.js`).name(`${reference}Model`) : LOCAL_NAMES.model(reference),
+      fields: (reference) => foreignGroup(reference) ? moduleSource(`./${reference}.js`).name(`${reference}Fields`, { typeOnly: true }) : LOCAL_NAMES.fields(reference),
+      init: (reference) => foreignGroup(reference) ? moduleSource(`./${reference}.js`).name(`${reference}Init`, { typeOnly: true }) : LOCAL_NAMES.init(reference),
+      aliasType: (alias) => aliasModule(alias)?.name(aliasModelTypeName(alias), { typeOnly: true }) ?? LOCAL_NAMES.aliasType(alias),
+      aliasInit: (alias) => aliasModule(alias)?.name(aliasInitName(alias)),
+      encode: (reference) => {
+        const groupId = foreignGroup(reference);
+        return groupId === undefined ? identifier(`encode${reference}`) : moduleSource(`./_${groupId}.js`).name(`encode${reference}`);
+      },
+      wireStringify: (codecId) => {
+        const node = analysis.nodesByCodecId.get(codecId);
+        const groupId = node ? owner.get(node.id) : undefined;
+        return groupId !== undefined && groupId !== group.id ? moduleSource(`./_${groupId}.js`).name(wireStringifyExportName(codecId)) : identifier(wireStringifyExportName(codecId));
+      },
+    };
     const dependencyGroups = new Set([...dependencyIds].flatMap((nodeId) => {
       const dependencyGroupId = owner.get(nodeId);
       return dependencyGroupId && dependencyGroupId !== group.id ? [dependencyGroupId] : [];
     }));
-    for (const dependencyGroupId of [...dependencyGroups].sort()) {
-      // A dependency may be needed only for schema registration. Importing its
-      // group for side effects ensures its codec exists before addNestedCodecSchema
-      // resolves the closure; named imports are still pruned to actual calls.
-      moduleImports.push(`import ${JSON.stringify(`./_${dependencyGroupId}.js`)};`);
-    }
-    const groupPlan = groupPlans.get(group.id);
-    if (groupPlan && validatorExports) {
-      // The model module's import pruning keeps the validators its codecs use.
-      const names = Object.keys(groupPlan.schemas).map((id) => {
-        const name = validatorExports.get(id);
-        if (name === undefined) throw new Error(`The SDK validators module has no validator for the codec ${JSON.stringify(id)} of model group ${group.id}.`);
-        const fast = fastCheckExports?.get(id);
-        return fast === undefined ? [name] : [name, fast];
-      }).flat();
-      if (names.length > 0) moduleImports.push(`import { ${[...new Set(names)].sort().join(', ')} } from '../validators.generated.js';`);
-    }
+    // A dependency may be needed only for schema registration. Importing its group for side effects ensures its codec
+    // exists before addNestedCodecSchema resolves the closure; the named imports are the names the code uses.
+    const sideEffectImports = [...dependencyGroups].sort().map((dependencyGroupId) => `./_${dependencyGroupId}.js`);
     const modelModule = generateModels(document, profile, {
       ...helpers,
       copyAdditionalProperties: groupDefinitions.some((definition) => Boolean(definition.additionalProperties)),
@@ -601,14 +609,17 @@ export function generateOpenApiModelArtifacts(
       graphNodeIds: localIds,
       dependencyNodeIds: dependencyIds,
       moduleFile: group.filename,
-      moduleImports,
+      foreignNames,
+      moduleSources: () => [...moduleSources.values()].sort((left, right) => compareText(left.specifier, right.specifier)),
+      sideEffectImports,
+      ...(groupPlan && validatorExports ? { validatorsSource } : {}),
       initializerModule: initializerOwner(group.id),
       ...(validatorExports ? { validatorExports } : {}),
       ...(fastCheckExports ? { fastCheckExports } : {}),
       codecFunctionImport: (nodeId, functionName) => {
         const dependencyGroupId = owner.get(nodeId);
         if (!dependencyGroupId || dependencyGroupId === group.id) return undefined;
-        return generatedFunctionName(nodeId, functionName);
+        return moduleSource(`./_${dependencyGroupId}.js`).name(generatedFunctionName(nodeId, functionName));
       },
       exportedFillFunctionIds: exportedFillFunctionsByGroup.get(group.id),
       exportedInitializerNames: exportedInitializersByGroup.get(group.id),
@@ -730,12 +741,19 @@ export function generateModels(
     readonly graphNodeIds?: ReadonlySet<string>;
     readonly dependencyNodeIds?: ReadonlySet<string>;
     readonly moduleFile?: string;
-    readonly modelImport?: (name: string) => string | undefined;
-    readonly codecFunctionImport?: (nodeId: string, functionName: 'stringify' | 'fill' | 'fromWire' | 'toWire') => string | undefined;
-    readonly moduleImports?: readonly string[];
+    /** What this module takes from other modules; without it every name is local. */
+    readonly foreignNames?: ForeignNames;
+    /** A function of a schema node that another module holds, as the part imported from it. */
+    readonly codecFunctionImport?: (nodeId: string, functionName: 'stringify' | 'fill' | 'fromWire' | 'toWire') => Code | undefined;
+    /** The sources of the modules this module may import names from, in the order of their statements. */
+    readonly moduleSources?: () => readonly ImportSource[];
+    /** The modules this module imports for their side effects, after the named imports. */
+    readonly sideEffectImports?: readonly string[];
+    /** The generated validators module, when `validatorExports` names validators to import. */
+    readonly validatorsSource?: ImportSource;
     /** The module that exports the initializer of a union model, when another module owns the model; a call of it is a name of that module. */
     readonly initializerModule?: (reference: string) => ImportSource | undefined;
-    /** The name the module's generated validators are exported under, by codec id and plane; set when `moduleImports` imports them. */
+    /** The name the module's generated validators are exported under, by codec id and plane; set when `validatorsSource` imports them. */
     readonly validatorExports?: ReadonlyMap<string, string>;
     /** The name of each root's fast check, by the same keys, for the roots that have one. */
     readonly fastCheckExports?: ReadonlyMap<string, string>;
@@ -761,7 +779,11 @@ export function generateModels(
   moduleScope.claim('Types', 'import binding Types');
   moduleScope.claim('ModelInit', 'import binding ModelInit');
   const reservedMembers = new Set(RESERVED_MODEL_MEMBERS);
-  const sharedModelEnv = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
+  const typesModule = new ImportSource(helpers.moduleFile?.includes('/') ? '../types.js' : './types.js', true, { namespace: 'Types' });
+  const typesNamespace = typesModule.namespace();
+  const foreign = helpers.foreignNames;
+  const models: ModelNames = { ...LOCAL_NAMES, ...foreign, types: typesNamespace };
+  const sharedModelEnv = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates, models);
   const schemaGraph = analysis.schemaGraph;
   const emittedSchemaGraph = helpers.graphNodeIds
     ? schemaGraphView(schemaGraph, helpers.graphNodeIds, helpers.dependencyNodeIds)
@@ -781,6 +803,9 @@ export function generateModels(
       const local = unionInitializers.get(reference);
       return local ? helperName(local) : identifier(`initialize${reference}`);
     },
+    models,
+    nodeFunction: (nodeId, functionName) => helpers.codecFunctionImport?.(nodeId, functionName) ?? names.of(generatedFunctionName(nodeId, functionName)),
+    aliasInit: (alias) => foreign?.aliasInit(alias) ?? names.of(aliasInitName(alias)),
   };
   const sharedSchemaContext = schemaContext(document, { resources: analysis.resources });
   const envOf = (definition: ModelDefinition): ModelResolveEnv => modelEnv(
@@ -790,13 +815,14 @@ export function generateModels(
     analysis.resources,
     analysis.selections,
     analysis.dates,
+    models,
   );
-  const variantUnionOf = (definition: ModelDefinition): string => (definition.variants ?? []).map(variant => `${variant}Model`).join(' | ');
+  const variantUnionOf = (definition: ModelDefinition): Code => join((definition.variants ?? []).map((variant) => models.model(variant)), code` | `);
   for (const definition of ordered) {
     if (!definition.isUnion) continue;
     const typeName = definition.name;
     const className = `${typeName}Model`;
-    const variantUnion = legacyText(variantUnionOf(definition));
+    const variantUnion = variantUnionOf(definition);
     let defined: Code | undefined;
     unionInitializers.set(typeName, helper(`initialize${typeName}`, () => defined ??= join([
       code`${helpers.moduleFile ? code`export ` : code``}function ${identifier(`initialize${typeName}`)}(json: unknown): ${variantUnion} {`,
@@ -831,7 +857,7 @@ export function generateModels(
     const fieldEnv = withSchemaBase(env, definition.rawSchema);
     const typeName = definition.name;
     const className = `${typeName}Model`;
-    const variantUnion = legacyText(variantUnionOf(definition));
+    const variantUnion = variantUnionOf(definition);
     moduleScope.claim(className, `generated model ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
     for (const suffix of ['Fields', 'JSON', 'Init']) {
       moduleScope.claim(`${typeName}${suffix}`, `generated ${suffix} type for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
@@ -839,25 +865,27 @@ export function generateModels(
     moduleScope.claim(`decode${typeName}`, `internal decoder for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
     moduleScope.claim(`encode${typeName}`, `internal encoder for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
     const classScope = new NameScope(`${className} members`);
-    const baseClass = definition.baseName ? `${definition.baseName}Model` : null;
+    const baseClass: Code | null = definition.baseName ? models.model(definition.baseName) : null;
+    const encodeBase: Code | null = definition.baseName ? foreign?.encode(definition.baseName) ?? identifier(`encode${definition.baseName}`) : null;
     const fields = [...definition.properties.entries()];
     for (const [name] of fields) {
       classScope.rejectReserved(name, `field ${JSON.stringify(name)} on ${className}`, reservedMembers, 'generated model API member');
       classScope.claim(name, `field ${JSON.stringify(name)}`);
     }
-    const additionalPropertyType = definition.additionalProperties === true
-      ? 'unknown'
+    const additionalPropertyType: Code | null = definition.additionalProperties === true
+      ? code`unknown`
       : isJsonObject(definition.additionalProperties)
         ? modelFieldType(definition.additionalProperties, definitions, fieldEnv)
         : null;
-    const implementsType = definition.isUnion || (additionalPropertyType && additionalPropertyType !== 'unknown') ? '' : ` implements ${typeName}Fields`;
+    const additionalIsUnknown = additionalPropertyType !== null && sameCode(additionalPropertyType, code`unknown`);
+    const implementsType = definition.isUnion || (additionalPropertyType && !additionalIsUnknown) ? code`` : code` implements ${identifier(`${typeName}Fields`)}`;
     const declarations = fields.map(([name, schema]) =>
       modelFieldDeclaration(name, schema, definition.required.has(name), definitions, fieldEnv),
     );
     const assignments = [
       ...modelPresentRead('    ', 'values', fields.map(([name]) => [name, `${typeName}Init[${JSON.stringify(name)}]`] as const)),
       ...fields.map(([name, schema], index) =>
-        code`    if (${legacyText(modelPresentLocal(index))} !== undefined) ${modelPropertyAssignment('this', name, code`(${modelInitCode(schema, modelPresentLocal(index), definitions, fieldEnv, definition.schemaName, context)}) as ${legacyText(modelFieldType(schema, definitions, fieldEnv))}`)}`),
+        code`    if (${legacyText(modelPresentLocal(index))} !== undefined) ${modelPropertyAssignment('this', name, code`(${modelInitCode(schema, modelPresentLocal(index), definitions, fieldEnv, definition.schemaName, context)}) as ${modelFieldType(schema, definitions, fieldEnv)}`)}`),
     ];
     const fieldHelpers: Code[] = [];
     const fieldHelperName = (direction: 'encode' | 'decode') => (index: number): string => {
@@ -912,11 +940,11 @@ export function generateModels(
     const initializer = unionInitializers.get(typeName);
     const optionalCopy = (direction: 'from' | 'init' | 'to'): Code => additionalConverter(direction) ?? BLANK;
     body.push(
-      code`export type ${identifier(`${typeName}Fields`)} = ${legacyText(definition.baseName ? `${definition.baseName}Fields & ` : '')}{`,
-      ...fields.map(([name, schema]) => legacyText(`  ${propertyName(name)}${definition.required.has(name) ? '' : '?'}: ${modelFieldType(schema, definitions, fieldEnv)};`)),
-      ...(additionalPropertyType ? [legacyText(`  [key: string]: ${fields.length || definition.baseName ? 'unknown' : additionalPropertyType};`)] : []),
+      code`export type ${identifier(`${typeName}Fields`)} = ${definition.baseName ? code`${models.fields(definition.baseName)} & ` : code``}{`,
+      ...fields.map(([name, schema]) => code`  ${propertyKey(name)}${definition.required.has(name) ? code`` : code`?`}: ${modelFieldType(schema, definitions, fieldEnv)};`),
+      ...(additionalPropertyType ? [code`  [key: string]: ${fields.length || definition.baseName ? code`unknown` : additionalPropertyType};`] : []),
       code`};`,
-      code`export type ${identifier(`${typeName}JSON`)} = ${identifier('Types')}.${identifier(typeName)};`,
+      code`export type ${identifier(`${typeName}JSON`)} = ${typesNamespace}.${identifier(typeName)};`,
       code`export type ${identifier(`${typeName}Init`)} = ${rtType.model.ModelInit}<${identifier(`${typeName}Fields`)}>;`,
       BLANK,
       ...fieldHelpers.flatMap(each => [each, BLANK]),
@@ -934,12 +962,12 @@ export function generateModels(
         code`}`,
         BLANK,
       ] : initializer ? [initializer] : []),
-      code`export ${legacyText(definition.isUnion ? 'abstract ' : '')}class ${identifier(className)}${legacyText(baseClass ? ` extends ${baseClass}` : '')}${legacyText(implementsType)} {`,
-      ...(additionalPropertyType && additionalPropertyType !== 'unknown'
+      code`export ${legacyText(definition.isUnion ? 'abstract ' : '')}class ${identifier(className)}${baseClass ? code` extends ${baseClass}` : code``}${implementsType} {`,
+      ...(additionalPropertyType && !additionalIsUnknown
         ? [legacyText('  /** Dynamic map values are preserved during conversion. */')]
         : additionalPropertyType ? [legacyText('  [key: string]: unknown;')] : []),
       ...declarations,
-      code`  declare readonly [${rtType.model.generatedModelWireBrand}]: ${identifier('Types')}.${identifier(typeName)};`,
+      code`  declare readonly [${rtType.model.generatedModelWireBrand}]: ${typesNamespace}.${identifier(typeName)};`,
       code`  declare readonly [${rtType.model.generatedModelFieldsBrand}]: ${identifier(`${typeName}Fields`)};`,
       ...(definition.isUnion ? [code`  declare static readonly [${rtType.model.generatedModelResultBrand}]: ${variantUnion};`] : []),
       code`  constructor(${identifier(readsInstance ? 'values' : '_values')}: ${identifier(`${typeName}Init`)} = {}) {`,
@@ -957,7 +985,7 @@ export function generateModels(
       BLANK,
       ...(definition.isUnion ? [
         code`function ${identifier(`decode${typeName}`)}(json: unknown): ${variantUnion} {`,
-        code`  const value = objectFromJSON<${identifier('Types')}.${identifier(typeName)}>(json, ${literal(className)});`,
+        code`  const value = objectFromJSON<${typesNamespace}.${identifier(typeName)}>(json, ${literal(className)});`,
         code`  const decoded: unknown = ${unionConversion(definition, 'fromJSON', definitions, env, context)};`,
         code`  return decoded as ${variantUnion};`,
         code`}`,
@@ -967,16 +995,16 @@ export function generateModels(
         code`}`,
       ]),
       BLANK,
-      code`${helpers.moduleFile ? code`export ` : code``}function ${identifier(`encode${typeName}`)}(${identifier(readsInstance ? 'model' : '_model')}: ${identifier(className)}): ${identifier('Types')}.${identifier(typeName)} {`,
-      baseClass
-        ? code`  const result: Record<string, unknown> = { ...${identifier(`encode${definition.baseName}`)}(model) };`
+      code`${helpers.moduleFile ? code`export ` : code``}function ${identifier(`encode${typeName}`)}(${identifier(readsInstance ? 'model' : '_model')}: ${identifier(className)}): ${typesNamespace}.${identifier(typeName)} {`,
+      encodeBase
+        ? code`  const result: Record<string, unknown> = { ...${encodeBase}(model) };`
         : code`  const result: Record<string, unknown> = {};`,
       ...jsonRead,
       ...jsonProperties,
       ...(additionalPropertyType
         ? [code`  if (${rt.model.findGeneratedModelDefinition}(model) === ${rt.model.findGeneratedModelDefinitionForConstructor}(${identifier(className)})) copyAdditionalProperties(result, model, [${fieldNames}]${optionalCopy('to')});`]
         : []),
-      code`  return result as ${identifier('Types')}.${identifier(typeName)};`,
+      code`  return result as ${typesNamespace}.${identifier(typeName)};`,
       code`}`,
       BLANK,
       BLANK,
@@ -998,7 +1026,7 @@ export function generateModels(
     if (!aliasConvertsValue(alias, definitions, sharedModelEnv)) continue;
     const aliasType = aliasModelTypeName(alias);
     moduleScope.claim(aliasType, `model type of the recursive component ${JSON.stringify(alias.schemaName)}`, alias.schemaName);
-    body.push(legacyText(`export type ${aliasType} = ${modelFieldType(alias.rawSchema, definitions, componentEnv(sharedModelEnv, alias.schemaName, alias.rawSchema))};`), BLANK);
+    body.push(code`export type ${identifier(aliasType)} = ${modelFieldType(alias.rawSchema, definitions, componentEnv(sharedModelEnv, alias.schemaName, alias.rawSchema))};`, BLANK);
     if (aliasInitsModel(alias, definitions, sharedModelEnv)) {
       moduleScope.claim(aliasInitName(alias), `initializer of the recursive component ${JSON.stringify(alias.schemaName)}`, alias.schemaName);
       const aliasBody = withConflictCode(alias.schemaName, () => emitModelFromInit(aliasDescriptor(alias, definitions, sharedModelEnv), 'value', (reference) => modelResolver(reference, definitions, sharedModelEnv, context)));
@@ -1013,6 +1041,7 @@ export function generateModels(
   if (helpers.resolvedSchemas) {
     body.push(legacyText(`const modelSchemas = JSON.parse(${JSON.stringify(JSON.stringify(helpers.resolvedSchemas))}) as Readonly<Record<string, object>>;`), BLANK);
   }
+  const validatorsSource = helpers.validatorsSource;
   const aliasesByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
   const codecRuntimeOptions: CodecRuntimeOptions = {
     validationEnabled: profile.validation,
@@ -1020,11 +1049,14 @@ export function generateModels(
     ...(helpers.validatorExports ? {
       validatorName: (id: string) => {
         const name = helpers.validatorExports?.get(id);
-        if (name === undefined) throw new Error(`The generated validators module has no validator for ${JSON.stringify(id)}.`);
-        return name;
+        if (name === undefined || validatorsSource === undefined) throw new Error(`The generated validators module has no validator for ${JSON.stringify(id)}.`);
+        return validatorsSource.name(name);
       },
     } : {}),
-    ...(helpers.fastCheckExports ? { fastCheckName: (id: string) => helpers.fastCheckExports?.get(id) } : {}),
+    ...(helpers.fastCheckExports ? { fastCheckName: (id: string) => {
+      const name = helpers.fastCheckExports?.get(id);
+      return name === undefined ? undefined : validatorsSource?.name(name);
+    } } : {}),
     ...(helpers.resolvedSchemas ? { resolvedSchemasExpr: 'modelSchemas' } : {}),
     issueSource: 'OpenAPI',
     exportWireStringify: (node) => exportsWireStringify(analysis.schemaGraph, node, profile),
@@ -1034,27 +1066,29 @@ export function generateModels(
     })),
     wireType: (node) => {
       const modelName = analysis.definitionNameByNodeId.get(node.id);
-      return modelName !== undefined && definitions.has(modelName) ? `Types.${modelName}` : aliasesByNodeId.get(node.id) === undefined ? undefined : `Types.${aliasesByNodeId.get(node.id)?.name}`;
+      const alias = aliasesByNodeId.get(node.id);
+      return modelName !== undefined && definitions.has(modelName) ? code`${typesNamespace}.${identifier(modelName)}` : alias === undefined ? undefined : code`${typesNamespace}.${identifier(alias.name)}`;
     },
     fieldsType: (node) => {
       const modelName = analysis.definitionNameByNodeId.get(node.id);
       const alias = aliasesByNodeId.get(node.id);
-      return modelName !== undefined && definitions.has(modelName) ? `${modelName}Fields` : alias === undefined ? undefined : aliasUseType(alias, definitions, sharedModelEnv);
+      return modelName !== undefined && definitions.has(modelName) ? models.fields(modelName) : alias === undefined ? undefined : aliasUseType(alias, definitions, sharedModelEnv);
     },
+    ...(foreign ? { siblingWireName: foreign.wireStringify } : {}),
     ...(helpers.exportedFillFunctionIds ? { exportedFillFunctionIds: helpers.exportedFillFunctionIds } : {}),
     nestedConstruct: (codecId) => {
       const node = analysis.nodesByCodecId.get(codecId)
         ?? analysis.nodesByName.get(codecId)
         ?? analysis.nodesById.get(codecId);
       const modelName = node ? analysis.definitionNameByNodeId.get(node.id) ?? node.name : codecId;
-      return helpers.modelImport?.(modelName) ?? `${modelName}Model`;
+      return models.model(modelName);
     },
     nestedGenerated: (name) => {
       const node = analysis.nodesByName.get(name)
         ?? analysis.nodesById.get(name)
         ?? analysis.nodesByCodecId.get(name);
       const modelName = node ? analysis.definitionNameByNodeId.get(node.id) ?? node.name : name;
-      return node?.emitClass ? (helpers.modelImport?.(modelName) ?? `${modelName}Model`) : undefined;
+      return node?.emitClass ? models.model(modelName) : undefined;
     },
     nestedImportedSerde: (codecId) => {
       if (!helpers.codecFunctionImport) return undefined;
@@ -1077,13 +1111,19 @@ export function generateModels(
   const runtime = new Map(importSet(calls, IMPORT_OPTIONS).map((entry) => [entry.module, entry] as const));
   const runtimeLines = (...modules: readonly RuntimeModule[]): readonly Code[] =>
     modules.flatMap((module) => { const entry = runtime.get(module); return entry ? importLines(entry, IMPORT_OPTIONS) : []; });
+  const bodyLines = body.flatMap((piece): readonly Code[] => isCode(piece) ? [piece] : defined.has(piece) ? [piece.define()] : []);
+  const bodyCode = join(bodyLines, code`\n`);
+  const moduleSources = helpers.moduleSources?.() ?? [];
+  const validatorSources = validatorsSource ? [validatorsSource] : [];
   const lines: readonly Code[] = [
     legacyText(generatedBanner()),
     ...runtimeLines('mobx-validation', 'model', 'conversion', 'temporal', 'serde', 'mobx'),
-    legacyText(`import type * as Types from '${helpers.moduleFile?.includes('/') ? '../types.js' : './types.js'}';`),
-    ...(helpers.moduleImports ?? []).map((statement) => legacyText(statement)),
+    ...fileImports(bodyCode, [typesModule], { elsewhere: [...moduleSources, ...validatorSources] }),
+    ...fileImports(bodyCode, moduleSources, { quote: '"', elsewhere: [typesModule, ...validatorSources] }),
+    ...(helpers.sideEffectImports ?? []).map((specifier) => sideEffectImport(specifier, '"')),
+    ...fileImports(bodyCode, validatorSources, { elsewhere: [typesModule, ...moduleSources] }),
     BLANK,
-    ...body.flatMap((piece): readonly Code[] => isCode(piece) ? [piece] : defined.has(piece) ? [piece.define()] : []),
+    ...bodyLines,
   ];
-  return pruneGeneratedImports(render(code`${trimEnd(join(lines, code`\n`))}\n`, names.table));
+  return render(code`${trimEnd(join(lines, code`\n`))}\n`, names.table);
 }

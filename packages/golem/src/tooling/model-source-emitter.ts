@@ -17,11 +17,10 @@ export {
   type StringifySerdeResolver,
 } from './stringify-emitter.js';
 export { presentKeysSource } from '../presence.js';
-export { pruneGeneratedImports } from './generated-imports.js';
 export { calleeOf, FIELD_CONVERSION_INPUT, type TupleConversionDescriptor } from './sequence-conversion.js';
 /** The one function that turns the Code of an emitter into text, for generators that still build text. */
 export {
-  aliased, blockComment, code, fileImports, helper, helperName, helperSet, identifier, importedNames, importLines, importSet, ImportSource, join, legacyText, literal, nameOf, NameTable, nameSlot, render, sameCode, trimEnd,
+  aliased, blockComment, code, docComment, fileImports, helper, helperName, helperSet, identifier, importedNames, importLines, importSet, ImportSource, join, legacyText, lineBreak, literal, nameOf, NameTable, nameSlot, nest, propertyKey, render, sameCode, sideEffectImport, trimEnd,
   type Code, type Emitted, type Helper, type ImportOptions, type JsonValue, type NameSlot,
 } from './code.js';
 export { rt, rtType, type RuntimeModule } from './rt.js';

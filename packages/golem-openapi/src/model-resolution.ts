@@ -2,7 +2,7 @@ import { descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/model';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from './json.js';
-import { identifier, propertyName, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { identifier, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { componentOrigin, LocatedError } from './origin.js';
 import {
   COMPOSITION_PROPERTY_NEVER,
@@ -19,7 +19,8 @@ import {
   type SlotChild,
 } from './composition.js';
 import { effectiveSchemaTypes } from './normalize.js';
-import { prefixItemsType, schemaContext, schemaType, type SchemaTypeContext } from './types.js';
+import { code, identifier as identifierPart, join, propertyKey, type Code } from '@exprtlabs/golem/internal/emitter';
+import { orNull, prefixItemsType, schemaContext, schemaTypeCode, typeCode, type SchemaTypeContext, type TypeCode } from './types.js';
 import {
   collectCanonicalResources,
   nextSchemaBase,
@@ -89,7 +90,31 @@ export interface ModelResolveEnv {
   readonly currentBase: string;
   readonly anchors?: ReadonlyMap<string, string>;
   readonly selections?: DiscriminatorSelections;
+  /** How the module that holds the code names types of other modules; without it, the types namespace is the local name `Types`. */
+  readonly names?: ModelNames;
 }
+
+/** What a module decides about the names its model code writes: each is a local name, or a part imported from the module that holds it. */
+export interface ModelNames {
+  /** The namespace the module imports `types.ts` under. */
+  readonly types: Code;
+  /** The class of the model `reference`. */
+  readonly model: (reference: string) => Code;
+  /** The fields type of the model `reference`. */
+  readonly fields: (reference: string) => Code;
+  /** The init type of the model `reference`. */
+  readonly init: (reference: string) => Code;
+  /** The model-layer type of a recursive alias that reaches a date or a model. */
+  readonly aliasType: (alias: RecursiveAlias) => Code;
+}
+
+export const LOCAL_NAMES: ModelNames = {
+  types: identifierPart('Types'),
+  model: (reference) => identifierPart(`${reference}Model`),
+  fields: (reference) => identifierPart(`${reference}Fields`),
+  init: (reference) => identifierPart(`${reference}Init`),
+  aliasType: (alias) => identifierPart(aliasModelTypeName(alias)),
+};
 
 export interface OpenApiModelAnalysis {
   readonly definitions: ModelDefinitions;
@@ -115,6 +140,7 @@ export function modelEnv(
   resources?: ResourceIndex,
   selections?: DiscriminatorSelections,
   dates: OpenApiDates = 'date',
+  names?: ModelNames,
 ): ModelResolveEnv {
   return {
     document,
@@ -123,6 +149,7 @@ export function modelEnv(
     currentBase: currentBase ?? schemaDocumentBase(document),
     anchors,
     selections,
+    ...(names ? { names } : {}),
   };
 }
 
@@ -132,9 +159,9 @@ export function withSchemaBase(env: ModelResolveEnv, schema: unknown): ModelReso
 
 /** `dates: temporal` string formats and the `@exprtlabs/golem/temporal` tag each converts with. */
 const TEMPORAL_FORMATS = {
-  'date-time': { typeName: 'Temporal.Instant', codec: 'TemporalInstant' },
-  date: { typeName: 'Temporal.PlainDate', codec: 'TemporalPlainDate' },
-  duration: { typeName: 'Temporal.Duration', codec: 'TemporalDuration' },
+  'date-time': { typeName: 'Temporal.Instant', type: code`Temporal.Instant`, codec: 'TemporalInstant' },
+  date: { typeName: 'Temporal.PlainDate', type: code`Temporal.PlainDate`, codec: 'TemporalPlainDate' },
+  duration: { typeName: 'Temporal.Duration', type: code`Temporal.Duration`, codec: 'TemporalDuration' },
 } as const;
 
 export const TEMPORAL_SERDE_PREFIX = 'temporal:';
@@ -152,7 +179,7 @@ function isTemporalDescriptor(descriptor: ModelTypeDescriptor): boolean {
 
 function typeContext(env: ModelResolveEnv): SchemaTypeContext {
   return {
-    qualifier: 'Types.',
+    qualifier: code`${(env.names ?? LOCAL_NAMES).types}.`,
     anchors: env.anchors,
     document: env.document,
     resources: env.resources,
@@ -222,7 +249,7 @@ export function modelSchemaProperties(
 /** The environment a component's own schema is read in: its anchors, and the analysis' dates and discriminator tables. */
 export function componentEnv(env: ModelResolveEnv, schemaName: string, rawSchema: unknown): ModelResolveEnv {
   const anchors = schemaContext(env.document, schemaContext(env.document, { resources: env.resources }), schemaName, rawSchema).anchors;
-  return modelEnv(env.document, undefined, anchors, env.resources, env.selections, env.dates);
+  return modelEnv(env.document, undefined, anchors, env.resources, env.selections, env.dates, env.names);
 }
 
 /** The conversion descriptor of a recursive alias: each use of a recursive component, itself included, is a projection reference. */
@@ -249,8 +276,9 @@ export function aliasModelTypeName(alias: RecursiveAlias): string {
 }
 
 /** The type of a use of a recursive alias in the model layer. */
-export function aliasUseType(alias: RecursiveAlias, definitions: ModelDefinitions, env: ModelResolveEnv): string {
-  return aliasConvertsValue(alias, definitions, env) ? aliasModelTypeName(alias) : `Types.${alias.name}`;
+export function aliasUseType(alias: RecursiveAlias, definitions: ModelDefinitions, env: ModelResolveEnv): Code {
+  const names = env.names ?? LOCAL_NAMES;
+  return aliasConvertsValue(alias, definitions, env) ? names.aliasType(alias) : code`${names.types}.${identifierPart(alias.name)}`;
 }
 
 /** Every model that the definition extends, its class base and the other refs of its allOf. */
@@ -262,37 +290,58 @@ export function modelSchemaReference(schema: unknown, env: ModelResolveEnv): str
   return directComponentSchemaRef(schema, withSchemaBase(env, schema));
 }
 
+/** The type of a model field, as the code of the model layer writes it. */
 export function modelFieldType(
   schema: unknown,
   definitions: ModelDefinitions,
   env: ModelResolveEnv,
   visiting: ReadonlySet<unknown> = new Set(),
   nullThroughReference = true,
-): string {
+): Code {
+  return modelFieldTypeNode(schema, definitions, env, visiting, nullThroughReference).code;
+}
+
+/** `T | null` when `nullable`. */
+function nullableType(type: TypeCode, nullable: boolean): TypeCode {
+  return nullable ? orNull(type) : type;
+}
+
+/** The members in parentheses, joined by `|`. */
+function parenthesizedUnion(members: readonly TypeCode[]): TypeCode {
+  return typeCode(join(members.map((member) => code`(${member.code})`), code` | `), members.length > 1 ? 'union' : 'primary');
+}
+
+function modelFieldTypeNode(
+  schema: unknown,
+  definitions: ModelDefinitions,
+  env: ModelResolveEnv,
+  visiting: ReadonlySet<unknown> = new Set(),
+  nullThroughReference = true,
+): TypeCode {
   const nested = withSchemaBase(env, schema);
   const reference = modelSchemaReference(schema, nested);
   if (reference && definitions.has(reference)) {
     const nullable = nullThroughReference ? admitsNullThroughReference(schema, reference, definitions) : admitsNull(asRecord(schema));
-    return `${reference}Model${nullable ? ' | null' : ''}`;
+    return nullableType(typeCode((env.names ?? LOCAL_NAMES).model(reference)), nullable);
   }
   const alias = reference ? definitions.aliases.get(reference) : undefined;
-  if (alias) return `${aliasUseType(alias, definitions, env)}${admitsNull(asRecord(schema)) ? ' | null' : ''}`;
+  if (alias) return nullableType(typeCode(aliasUseType(alias, definitions, env)), admitsNull(asRecord(schema)));
   if (visiting.has(schema)) throw new Error('Internal error: a schema reaches itself without a named recursive alias.');
   const seen = new Set(visiting).add(schema);
   const target = componentSchemaTarget(schema, nested);
-  if (target !== undefined && target !== schema) return modelFieldType(target, definitions, nested, seen);
+  if (target !== undefined && target !== schema) return modelFieldTypeNode(target, definitions, nested, seen);
   const temporal = temporalFormat(schema, env);
-  if (temporal) return admitsNull(asRecord(schema)) ? `${temporal.typeName} | null` : temporal.typeName;
+  if (temporal) return nullableType(typeCode(temporal.type), admitsNull(asRecord(schema)));
   if (isJsonObject(schema) && schema.format === 'date-time'
     && (schema.type === 'string' || (Array.isArray(schema.type) && schema.type.includes('string')))) {
-    return admitsNull(schema) ? 'Date | null' : 'Date';
+    return nullableType(typeCode(code`Date`), admitsNull(schema));
   }
   // The resolver decides an allOf object; otherwise deciding allOf members win, then the schema's own array keywords,
   // then oneOf and anyOf.
   const composition = isJsonObject(schema) ? fieldComposition(schema, definitions, env, 'from', seen) : undefined;
   if (composition?.kind === 'object') return objectCompositionType(composition, definitions, seen);
   if (composition?.kind === 'variants') {
-    return composition.variants.map((variant) => `(${objectCompositionType(variant, definitions, seen)})`).join(' | ');
+    return parenthesizedUnion(composition.variants.map((variant) => objectCompositionType(variant, definitions, seen)));
   }
   const allOfMembers = isJsonObject(schema) && hasAllOfMembers(schema)
     ? schema.allOf.map((item) => ({ item, descriptor: modelConversionDescriptor(item, definitions, nested, 'from', seen) }))
@@ -301,33 +350,31 @@ export function modelFieldType(
   const [decidingMember] = decidingMembers;
   // A deciding member makes the schema's own union one more member; constraint-only members leave the union to convert it.
   const field = isJsonObject(schema) ? withOwnUnionsAsMembers(schema) : schema;
-  if (field !== schema && decidingMembers.length > 0) return modelFieldType(field, definitions, env, seen, nullThroughReference);
+  if (field !== schema && decidingMembers.length > 0) return modelFieldTypeNode(field, definitions, env, seen, nullThroughReference);
   // One deciding sequence or model reference is the field's type, as it is its conversion (a lone `allOf [$ref Pet]`).
   if (decidingMembers.length === 1 && decidingMember
     && (isSequenceDescriptor(decidingMember.descriptor) || decidingMember.descriptor.kind === 'generated-model')) {
-    return modelFieldType(decidingMember.item, definitions, nested, seen);
+    return modelFieldTypeNode(decidingMember.item, definitions, nested, seen);
   }
   if (isJsonObject(schema) && decidingMembers.length === 0 && isSequenceSchema(schema)) {
-    const orNull = admitsNull(schema) ? ' | null' : '';
+    const nullable = admitsNull(schema);
     if (Array.isArray(schema.prefixItems)) {
-      return `${prefixItemsType(schema, (item) => modelFieldType(item, definitions, nested, seen))}${orNull}`;
+      return nullableType(prefixItemsType(schema, (item) => modelFieldTypeNode(item, definitions, nested, seen)), nullable);
     }
-    if (schema.items) return `Array<${modelFieldType(schema.items, definitions, nested, seen)}>${orNull}`;
+    if (schema.items) return nullableType(typeCode(code`Array<${modelFieldTypeNode(schema.items, definitions, nested, seen).code}>`), nullable);
   }
   if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
     const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
-    return variants
-      .map((item) => modelFieldType(item, definitions, nested, seen, !isJsonObject(schema.discriminator)))
-      .map((type) => `(${type})`)
-      .join(' | ');
+    return parenthesizedUnion(variants
+      .map((item) => modelFieldTypeNode(item, definitions, nested, seen, !isJsonObject(schema.discriminator))));
   }
   if (isJsonObject(schema) && (schema.properties || isJsonObject(schema.additionalProperties))) {
     const required = new Set(composedRequired(schema));
-    const fields = objectEntries(schema.properties).map(([name, child]) => `${propertyName(name)}${required.has(name) ? '' : '?'}: ${modelFieldType(child, definitions, nested, seen)}`);
-    if (isJsonObject(schema.additionalProperties)) fields.push(`[key: string]: ${fields.length ? 'unknown' : modelFieldType(schema.additionalProperties, definitions, nested, seen)}`);
-    return `{ ${fields.join('; ')} }${admitsNull(schema) ? ' | null' : ''}`;
+    const fields = objectEntries(schema.properties).map(([name, child]) => code`${propertyKey(name)}${required.has(name) ? code`` : code`?`}: ${modelFieldTypeNode(child, definitions, nested, seen).code}`);
+    if (isJsonObject(schema.additionalProperties)) fields.push(code`[key: string]: ${fields.length ? code`unknown` : modelFieldTypeNode(schema.additionalProperties, definitions, nested, seen).code}`);
+    return nullableType(typeCode(code`{ ${join(fields, code`; `)} }`), admitsNull(schema));
   }
-  return schemaType(schema, typeContext(nested));
+  return schemaTypeCode(schema, typeContext(nested));
 }
 
 function openApiKeywordConstraints(schema: Readonly<Record<string, unknown>>): ModelConstraint[] | undefined {
@@ -681,23 +728,24 @@ function objectCompositionType(
   composition: ObjectComposition,
   definitions: ModelDefinitions,
   seen: ReadonlySet<unknown>,
-): string {
-  const childType = (child: SlotChild<ModelResolveEnv>): string => {
-    const types = child.sources.map((source) => modelFieldType(source.schema, definitions, source.scope, seen));
-    return types.length === 0 ? 'never' : types.length === 1 ? types.join('') : types.map((type) => `(${type})`).join(' & ');
+): TypeCode {
+  const childType = (child: SlotChild<ModelResolveEnv>): TypeCode => {
+    const types = child.sources.map((source) => modelFieldTypeNode(source.schema, definitions, source.scope, seen));
+    const [only, ...more] = types;
+    return only === undefined ? typeCode(code`never`) : more.length === 0 ? only : typeCode(join(types.map((type) => code`(${type.code})`), code` & `), 'intersection');
   };
   const required = new Set(composition.required);
   const slots = Object.entries(composition.slots);
-  const fields = slots.map(([name, child]) => `${propertyName(name)}${required.has(name) ? '' : '?'}: ${childType(child)}`);
+  const fields = slots.map(([name, child]) => code`${propertyKey(name)}${required.has(name) ? code`` : code`?`}: ${childType(child).code}`);
   const { extra } = composition;
   if (extra.mode === 'values') {
     // An index signature holds every property: it names the value type when each property has it, else `unknown`.
     const key = JSON.stringify(extra.child.descriptor);
     const uniform = slots.every(([, child]) => JSON.stringify(child.descriptor) === key);
     const optional = slots.some(([name]) => !required.has(name));
-    fields.push(`[key: string]: ${uniform ? `${childType(extra.child)}${optional ? ' | undefined' : ''}` : 'unknown'}`);
+    fields.push(code`[key: string]: ${uniform ? code`${childType(extra.child).code}${optional ? code` | undefined` : code``}` : code`unknown`}`);
   }
-  return `{ ${fields.join('; ')} }${composition.nullable ? ' | null' : ''}`;
+  return nullableType(typeCode(code`{ ${join(fields, code`; `)} }`), composition.nullable);
 }
 
 /** Where the schemas of a component sit: its name, and the bundled component an error names. */

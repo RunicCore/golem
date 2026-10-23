@@ -1,4 +1,4 @@
-import { reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
+import { reachesRecursiveNode, render } from '@exprtlabs/golem/internal/emitter';
 import { codecPublicId, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
@@ -42,7 +42,7 @@ export function generateModelManifest(
     const fields = [...definition.properties.entries()].map(([name, schema]) => ({
       name,
       required: definition.required.has(name),
-      type: modelFieldType(schema, byName, fieldEnv),
+      type: render(modelFieldType(schema, byName, fieldEnv)),
       modelReferences: [...new Set([
         modelSchemaReference(schema, fieldEnv),
         ...(isJsonObject(schema) && schema.type === 'array'

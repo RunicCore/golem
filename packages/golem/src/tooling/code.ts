@@ -43,7 +43,11 @@ export type Part =
   | { readonly kind: 'imported'; readonly source: ImportSource; readonly name: string; readonly typeOnly?: true; readonly alias?: string }
   | { readonly kind: 'helper'; readonly helper: Helper }
   | { readonly kind: 'name'; readonly slot: NameSlot }
-  | { readonly kind: 'input'; readonly slot: InputSlot };
+  | { readonly kind: 'input'; readonly slot: InputSlot }
+  /** A line end. Render writes it with the indentation that the `indent` parts before it set. */
+  | { readonly kind: 'line' }
+  /** A change of the indentation, in spaces, for each `line` after it. `nest` writes the pair that opens and closes a level. */
+  | { readonly kind: 'indent'; readonly by: number };
 
 /**
  * A module that a file imports names from, other than a runtime module: a companion, a handwritten class, a generated
@@ -53,8 +57,27 @@ export type Part =
 export class ImportSource {
   readonly #declared = new Map<string, Code>();
 
-  /** `typeStatement` writes `import type { … }`, for a module that is imported for types only. */
-  public constructor(public readonly specifier: string, public readonly typeStatement: boolean = false) {}
+  /**
+   * `typeStatement` writes `import type { … }`, for a module that is imported for types only. `namespace` makes the
+   * statement `import * as <name> from '…'` (`import type * as` for a type statement): the file binds the whole module under
+   * that name, and `namespace()` is the part that uses it. `sorted` lists the used names in the order of their spelling
+   * (`type Name` for a type name in a value statement), not in the order of their declaration, for a module that several
+   * files import from with different names.
+   */
+  public readonly namespaceName: string | undefined;
+  readonly #sorted: boolean;
+
+  public constructor(public readonly specifier: string, public readonly typeStatement: boolean = false, options: { readonly namespace?: string; readonly sorted?: true } = {}) {
+    if (options.namespace !== undefined) checkedIdentifier(options.namespace, 'namespace name');
+    this.namespaceName = options.namespace;
+    this.#sorted = options.sorted === true;
+  }
+
+  /** The Code of the local name of a namespace import. The statement is written only when the code holds it. */
+  public namespace(): Code {
+    if (this.namespaceName === undefined) throw new TypeError(`the import source "${this.specifier}" is not a namespace import`);
+    return this.name(this.namespaceName);
+  }
 
   /** The Code of `name`, which the code writes as `alias` when it has one. The first call of a name decides its place in the statement. */
   public name(name: string, options: { readonly alias?: string; readonly typeOnly?: true } = {}): Code {
@@ -69,9 +92,17 @@ export class ImportSource {
     return declared;
   }
 
-  /** The declared names that `used` holds, in the order of their declaration. */
+  /** The declared names that `used` holds, in the order of their declaration, or of their spelling for a sorted source. */
   public statement(used: ReadonlySet<Code>): readonly Part[] {
-    return [...this.#declared.values()].filter((declared) => used.has(declared)).map((declared) => declared.parts[0]);
+    const parts = [...this.#declared.values()].filter((declared) => used.has(declared)).map((declared) => declared.parts[0]);
+    return this.#sorted ? parts.sort((left, right) => compareText(this.spelled(left), this.spelled(right))) : parts;
+  }
+
+  /** How the import statement writes a name: `name`, `name as alias`, and `type` before a type name of a value statement. */
+  public spelled(part: Part): string {
+    if (part.kind !== 'imported') throw new Error('an import source declared a part that is not a name');
+    const spelled = part.alias === undefined ? part.name : `${part.name} as ${part.alias}`;
+    return part.typeOnly && !this.typeStatement ? `type ${spelled}` : spelled;
   }
 }
 
@@ -207,6 +238,25 @@ export function inputSlot(label: string, shape: ReadShape = 'other', record: boo
 export function blockComment(text: string): Code {
   if (text.includes('*/')) throw new TypeError(`a comment cannot hold "*/", got ${JSON.stringify(text)}`);
   return fromParts([{ kind: 'text', text: `/* ${text} */` }]);
+}
+
+/** A documentation comment. The text cannot end the comment. */
+export function docComment(text: string): Code {
+  if (text.includes('*/')) throw new TypeError(`a comment cannot hold "*/", got ${JSON.stringify(text)}`);
+  return fromParts([{ kind: 'text', text: `/** ${text} */` }]);
+}
+
+/** An object member key: bare when it is an identifier name, otherwise a string literal. */
+export function propertyKey(name: string): Code {
+  return IDENTIFIER.test(name) ? identifier(name) : literal(name);
+}
+
+/** A line end. Render writes the line break and the indentation of the `nest` that holds it. */
+export const lineBreak: Code = fromParts([{ kind: 'line' }]);
+
+/** The code with its line ends indented by `spaces` more spaces than the code around it. Render owns the indentation: no step edits the text. */
+export function nest(body: Code, spaces: number = 2): Code {
+  return fromParts([{ kind: 'indent', by: spaces }, ...body.parts, { kind: 'indent', by: -spaces }]);
 }
 
 /** The code without the whitespace at its end. Whitespace names nothing. */
@@ -469,13 +519,15 @@ export function fileImports(
     const used = imported.get(source);
     if (!used) return [];
     const quoted = options.quote === '"' ? jsonText(source.specifier) : `'${checkedSingleQuoted(source.specifier)}'`;
-    const names = source.statement(used).map((part) => {
-      if (part.kind !== 'imported') throw new Error('an import source declared a part that is not a name');
-      const spelled = part.alias === undefined ? part.name : `${part.name} as ${part.alias}`;
-      return part.typeOnly && !source.typeStatement ? `type ${spelled}` : spelled;
-    });
+    if (source.namespaceName !== undefined) return [plainText(`import ${source.typeStatement ? 'type ' : ''}* as ${source.namespaceName} from ${quoted};`)];
+    const names = source.statement(used).map((part) => source.spelled(part));
     return [plainText(`import ${source.typeStatement ? 'type ' : ''}{ ${names.join(', ')} } from ${quoted};`)];
   });
+}
+
+/** An import statement that names no binding, only the module. */
+export function sideEffectImport(specifier: string, quote: "'" | '"' = "'"): Code {
+  return plainText(`import ${quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`};`);
 }
 
 /** The names of `source` that the code uses, as the module exports them, in the order of the declaration. */
@@ -521,6 +573,8 @@ export function sameCode(left: Code, right: Code): boolean {
       case 'text': return other.kind === 'text' && other.text === part.text;
       case 'name': return other.kind === 'name' && other.slot === part.slot;
       case 'input': return other.kind === 'input' && other.slot === part.slot;
+      case 'line': return other.kind === 'line';
+      case 'indent': return other.kind === 'indent' && other.by === part.by;
       default: return false;
     }
   });
@@ -532,6 +586,7 @@ export function sameCode(left: Code, right: Code): boolean {
  */
 export function render(root: Code, names: NameTable = new NameTable()): string {
   let text = '';
+  let depth = 0;
   for (const part of root.parts) {
     switch (part.kind) {
       case 'text': text += part.text; break;
@@ -540,6 +595,8 @@ export function render(root: Code, names: NameTable = new NameTable()): string {
       case 'helper': text += part.helper.id; break;
       case 'name': text += names.resolve(part.slot); break;
       case 'input': throw new Error(`the input "${part.slot.label}" is not bound`);
+      case 'line': text += `\n${' '.repeat(depth)}`; break;
+      case 'indent': depth += part.by; break;
     }
   }
   return text;
