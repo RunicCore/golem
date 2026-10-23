@@ -1609,9 +1609,16 @@ function bodyKey(body: Code, slots: FunctionSlots, groups: ReadonlyMap<number, n
       case 'imported': key.push(['imported', part.source.specifier, part.name, part.typeOnly === true, part.alias ?? null]); break;
       case 'helper': key.push(['helper', part.helper.id]); break;
       case 'input': key.push(['input', inputNumber(part.slot)]); break;
+      case 'line': key.push(['line']); break;
+      case 'indent': key.push(['indent', part.by]); break;
+      default: return unreachablePart(part);
     }
   }
   return JSON.stringify(key);
+}
+
+function unreachablePart(part: never): never {
+  throw new Error(`Internal error: the validator compiler body holds an unknown part ${JSON.stringify(part)}`);
 }
 
 const inputNumbers = new WeakMap<InputSlot, number>();

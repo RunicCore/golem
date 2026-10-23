@@ -11,11 +11,12 @@ import {
   helper,
   helperName,
   bindInput,
-  helperSet,
   identifier,
   inputOf,
   inputSlot,
   importedNames,
+  MODULE_CONSTANT_HELPERS,
+  placeHelpers,
   importLines,
   importSet,
   ImportSource,
@@ -2099,7 +2100,6 @@ export function emitSource(
   ];
   // What the file calls decides its imports and which helpers it defines: a helper stands where its definition goes.
   const calls = join(pieces.filter(isCode), code`\n`);
-  const defined = new Set(helperSet(calls));
   assertExternalImportsExported(calls, context);
   const runtime = new Map(importSet(calls, IMPORT_OPTIONS).map((entry) => [entry.module, entry] as const));
   const runtimeLines = (...modules: readonly RuntimeModule[]): readonly Code[] =>
@@ -2114,7 +2114,7 @@ export function emitSource(
     ...context.imports.siblingCompanions,
     ...fileImports(calls, context.imports.sources, { quote: '"', elsewhere: otherSources }),
     BLANK,
-    ...pieces.flatMap((piece): readonly Code[] => isCode(piece) ? [piece] : defined.has(piece) ? [piece.define()] : []),
+    ...placeHelpers(calls, pieces, MODULE_CONSTANT_HELPERS),
   ];
   return render(code`${trimEnd(join(lines, code`\n`))}\n`);
 }

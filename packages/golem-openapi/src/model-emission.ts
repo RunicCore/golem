@@ -9,9 +9,10 @@ import {
   fileImports,
   helper,
   helperName,
-  helperSet,
   identifier,
   importedNames,
+  MODULE_CONSTANT_HELPERS,
+  placeHelpers,
   importLines,
   importSet,
   ImportSource,
@@ -1117,11 +1118,10 @@ export function generateModels(
   // What the code calls decides the runtime imports and which helpers the module defines.
   const exportedInitializers = [...unionInitializers].filter(([name]) => helpers.exportedInitializerNames?.has(name)).map(([, each]) => helperName(each));
   const calls = join([...body.filter(isCode), ...exportedInitializers], code`\n`);
-  const defined = new Set(helperSet(calls));
   const runtime = new Map(importSet(calls, IMPORT_OPTIONS).map((entry) => [entry.module, entry] as const));
   const runtimeLines = (...modules: readonly RuntimeModule[]): readonly Code[] =>
     modules.flatMap((module) => { const entry = runtime.get(module); return entry ? importLines(entry, IMPORT_OPTIONS) : []; });
-  const bodyLines = body.flatMap((piece): readonly Code[] => isCode(piece) ? [piece] : defined.has(piece) ? [piece.define()] : []);
+  const bodyLines = placeHelpers(calls, body, MODULE_CONSTANT_HELPERS);
   const bodyCode = join(bodyLines, code`\n`);
   const moduleSources = helpers.moduleSources?.() ?? [];
   const validatorSources = validatorsSource ? [validatorsSource] : [];

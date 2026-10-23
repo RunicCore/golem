@@ -92,10 +92,15 @@ export class ImportSource {
     return declared;
   }
 
-  /** The declared names that `used` holds, in the order of their declaration, or of their spelling for a sorted source. */
+  /**
+   * The declared names that `used` holds, in the order of their declaration, or of their spelling for a sorted source. A name
+   * the code uses as a value and as a type is imported once, as the value.
+   */
   public statement(used: ReadonlySet<Code>): readonly Part[] {
     const parts = [...this.#declared.values()].filter((declared) => used.has(declared)).map((declared) => declared.parts[0]);
-    return this.#sorted ? parts.sort((left, right) => compareText(this.spelled(left), this.spelled(right))) : parts;
+    const values = new Set(parts.flatMap((part) => part.kind === 'imported' && !part.typeOnly ? [`${part.name}\0${part.alias ?? ''}`] : []));
+    const kept = parts.filter((part) => !(part.kind === 'imported' && part.typeOnly && values.has(`${part.name}\0${part.alias ?? ''}`)));
+    return this.#sorted ? kept.sort((left, right) => compareText(this.spelled(left), this.spelled(right))) : kept;
   }
 
   /** How the import statement writes a name: `name`, `name as alias`, and `type` before a type name of a value statement. */
@@ -200,10 +205,7 @@ export function identifier(name: string): Code {
   return fromParts([{ kind: 'text', text: checkedIdentifier(name, 'identifier'), identifier: true }]);
 }
 
-/**
- * Text that an emitter has not moved to Code yet. The migration needs it; the last step deletes it. It is the only door
- * through which a string of code becomes a Code.
- */
+/** Text that an emitter has not moved to Code yet. It is the only door through which a string of code becomes a Code. */
 export function legacyText(text: string): Code {
   return fromParts([{ kind: 'text', text }]);
 }
@@ -273,15 +275,6 @@ export function trimEnd(root: Code): Code {
 /** Spaces at the start of a line. Whitespace names nothing, so it is the one text that needs no check. */
 export function indentation(spaces: number): Code {
   return fromParts([{ kind: 'text', text: ' '.repeat(spaces) }]);
-}
-
-/** Code that an emitter wrote, or the text of a walker that does not return Code yet. */
-export type Emitted = string | Code;
-
-/** A string is wrapped as one text part. */
-// migration door, deleted in steps 6 and 7 (T-289, and P-22 step 7): the reads that the walkers of golem-model and golem-openapi give as text, the item callbacks of sequence-conversion, and the line writer of the validator compiler still give strings
-export function emittedCode(emitted: Emitted): Code {
-  return typeof emitted === 'string' ? legacyText(emitted) : emitted;
 }
 
 /**
@@ -355,7 +348,7 @@ interface RuntimeNames {
 }
 
 /** A name a file imports from a runtime module, and the local name it binds when that differs. */
-interface ImportedName { readonly name: string; readonly alias?: string }
+export interface ImportedName { readonly name: string; readonly alias?: string; readonly typeOnly?: true }
 
 interface Collected {
   readonly runtime: Map<RuntimeModule, RuntimeNames>;
@@ -370,7 +363,19 @@ function compareHelpers(left: Helper, right: Helper): number {
   return (left.rank ?? Infinity) === (right.rank ?? Infinity) ? compareText(left.id, right.id) : (left.rank ?? Infinity) < (right.rank ?? Infinity) ? -1 : 1;
 }
 
+const collected = new WeakMap<Code, Collected>();
+
+/** What a Code needs, found by one walk of the Code and of the definitions of its helpers. A Code is read many times, so the walk runs once for each. */
 function collect(root: Code): Collected {
+  let known = collected.get(root);
+  if (!known) {
+    known = collectFrom(root);
+    collected.set(root, known);
+  }
+  return known;
+}
+
+function collectFrom(root: Code): Collected {
   const runtime = new Map<RuntimeModule, RuntimeNames>();
   const imported = new Map<ImportSource, Set<Code>>();
   const found = new Map<string, { readonly helper: Helper; readonly definition: Code; readonly needs: readonly Helper[] }>();
@@ -379,7 +384,7 @@ function collect(root: Code): Collected {
     for (const part of piece.parts) {
       if (part.kind === 'runtime') {
         const names = runtime.get(part.module) ?? { values: new Map<string, ImportedName>(), types: new Map<string, ImportedName>() };
-        (part.typeOnly ? names.types : names.values).set(`${part.name}\0${part.alias ?? ''}`, { name: part.name, ...(part.alias === undefined ? {} : { alias: part.alias }) });
+        (part.typeOnly ? names.types : names.values).set(`${part.name}\0${part.alias ?? ''}`, { name: part.name, ...(part.alias === undefined ? {} : { alias: part.alias }), ...(part.typeOnly ? { typeOnly: true as const } : {}) });
         runtime.set(part.module, names);
       } else if (part.kind === 'imported') {
         const used = imported.get(part.source) ?? new Set<Code>();
@@ -421,18 +426,21 @@ function collect(root: Code): Collected {
 
 export interface RuntimeImport {
   readonly module: RuntimeModule;
-  /** Each value name once, as `name` or `name as alias`, in the order of the file (see `ImportOptions.order`). */
-  readonly names: readonly string[];
-  /** Each type name once, written the same way. */
-  readonly types: readonly string[];
+  /** Each value name once, in the order of the file (see `ImportOptions.order`). */
+  readonly names: readonly ImportedName[];
+  /** Each type name once, with `typeOnly`. A name the code also uses as a value is not here. */
+  readonly types: readonly ImportedName[];
 }
 
 /** The names of a module in the order of a file: the names its `order` lists come first in that order, then the others in code point order. */
-function inOrder(names: ReadonlyMap<string, ImportedName>, listed: readonly string[] = []): readonly string[] {
+function inOrder(names: Iterable<ImportedName>, listed: readonly string[] = []): readonly ImportedName[] {
   const place = (name: string): number => { const at = listed.indexOf(name); return at < 0 ? Infinity : at; };
-  return [...names.values()]
-    .sort((left, right) => place(left.name) === place(right.name) ? compareText(left.name, right.name) || compareText(left.alias ?? '', right.alias ?? '') : place(left.name) < place(right.name) ? -1 : 1)
-    .map(({ name, alias }) => alias === undefined ? name : `${name} as ${alias}`);
+  return [...names].sort((left, right) => place(left.name) === place(right.name) ? compareText(left.name, right.name) || compareText(left.alias ?? '', right.alias ?? '') : place(left.name) < place(right.name) ? -1 : 1);
+}
+
+/** How an import statement writes a runtime name: `name`, or `name as alias`. */
+function spelledName({ name, alias }: ImportedName): string {
+  return alias === undefined ? name : `${name} as ${alias}`;
 }
 
 /** The runtime parts of a Code and of the helpers it needs, grouped by module in the fixed module order. */
@@ -444,7 +452,12 @@ export function importSet(root: Code, options: Pick<ImportOptions, 'order' | 'mo
   if (unlisted) throw new Error(`the code uses the runtime module "${unlisted[0]}", which the file does not list in its module order`);
   return found
     .sort(([left], [right]) => position(left) - position(right))
-    .map(([module, { values, types }]) => ({ module, names: inOrder(values, order[module]), types: inOrder(types, order[module]) }));
+    .map(([module, { values, types }]) => ({
+      module,
+      names: inOrder(values.values(), order[module]),
+      // A name the code uses as a value and as a type is imported once, as the value.
+      types: inOrder([...types].filter(([key]) => !values.has(key)).map(([, type]) => type), order[module]),
+    }));
 }
 
 /** How a file writes the imports of its runtime parts. */
@@ -459,9 +472,9 @@ export interface ImportOptions {
    * types in one statement in the order of `order`, then the unlisted values, then the unlisted types.
    */
   readonly typeNames?: 'separate' | 'inline' | 'ordered';
-  /** The names of a module that a file with a fixed order lists: they come first, in this order, for values and types alike; the others follow in code point order. */
   /** The runtime modules this call writes, in this order; a module that the code uses and the list lacks is an error. Without it, every module in the fixed order. */
   readonly modules?: readonly RuntimeModule[];
+  /** The names of a module that a file with a fixed order lists: they come first, in this order, for values and types alike; the others follow in code point order. */
   readonly order?: Partial<Readonly<Record<RuntimeModule, readonly string[]>>>;
 }
 
@@ -478,22 +491,20 @@ export function importLines({ module, names, types }: RuntimeImport, options: Im
   const specifier = options.specifiers?.[module] ?? `@exprtlabs/golem/${module}`;
   const quoted = options.quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`;
   if (options.typeNames === 'inline') {
-    const listed = [...names, ...types.map((type) => `type ${type}`)];
+    const listed = [...names.map(spelledName), ...types.map((type) => `type ${spelledName(type)}`)];
     return listed.length > 0 ? [plainText(`import { ${listed.join(', ')} } from ${quoted};`)] : [];
   }
   if (options.typeNames === 'ordered') {
     const listed = options.order?.[module] ?? [];
-    const place = (spelled: string): number => { const at = listed.indexOf(spelled.split(' as ')[0] ?? spelled); return at < 0 ? Infinity : at; };
-    const members = [...names.map((spelled) => ({ spelled, typeOnly: false })), ...types.map((spelled) => ({ spelled: `type ${spelled}`, typeOnly: true }))];
-    const ordered = members
-      .map((member, index) => ({ member, index, at: place(member.typeOnly ? member.spelled.slice('type '.length) : member.spelled) }))
-      .sort((left, right) => left.at === right.at ? left.index - right.index : left.at < right.at ? -1 : 1)
-      .map(({ member }) => member.spelled);
+    const place = ({ name }: ImportedName): number => { const at = listed.indexOf(name); return at < 0 ? Infinity : at; };
+    const ordered = [...names, ...types]
+      .sort((left, right) => place(left) === place(right) ? 0 : place(left) < place(right) ? -1 : 1)
+      .map((member) => member.typeOnly ? `type ${spelledName(member)}` : spelledName(member));
     return ordered.length > 0 ? [plainText(`import { ${ordered.join(', ')} } from ${quoted};`)] : [];
   }
   return [
-    ...(types.length > 0 ? [plainText(`import type { ${types.join(', ')} } from ${quoted};`)] : []),
-    ...(names.length > 0 ? [plainText(`import { ${names.join(', ')} } from ${quoted};`)] : []),
+    ...(types.length > 0 ? [plainText(`import type { ${types.map(spelledName).join(', ')} } from ${quoted};`)] : []),
+    ...(names.length > 0 ? [plainText(`import { ${names.map(spelledName).join(', ')} } from ${quoted};`)] : []),
   ];
 }
 
@@ -561,26 +572,52 @@ function plainText(text: string): Code {
   return fromParts([{ kind: 'text', text }]);
 }
 
+const identities = new WeakMap<object, number>();
+let identified = 0;
+
+/** A number for an object that is the same each time, so a key tells two names, helpers or sources apart without reading their text. */
+function identityOf(target: object): number {
+  let known = identities.get(target);
+  if (known === undefined) { known = identified++; identities.set(target, known); }
+  return known;
+}
+
 /**
- * Whether two Codes write the same code: their parts match one by one, and each part matches by kind. A runtime part is the
- * same runtime export, an imported part the same name of the same source, a helper part the same helper, a name part the
- * same slot and an input part the same slot; none equals the text of its name. Two text parts match by their text.
+ * A key that two Codes share exactly when they write the same code: their parts match one by one, and each part matches by
+ * kind. A runtime part is the same runtime export, an imported part the same name of the same source, a helper part the same
+ * helper, a name part the same slot and an input part the same slot; none equals the text of its name. Adjacent text is one
+ * text, so where the text was split into parts names nothing.
  */
-export function sameCode(left: Code, right: Code): boolean {
-  const [first, second] = [left, right].map((root) => fromParts(root.parts.map((part): Part => part.kind === 'text' ? { kind: 'text', text: part.text } : part)).parts);
-  return first.length === second.length && first.every((part, index) => {
-    const other = second[index];
+export function codeKey(root: Code): string {
+  const key: unknown[] = [];
+  for (const part of root.parts) {
     switch (part.kind) {
-      case 'text': return other.kind === 'text' && other.text === part.text;
-      case 'runtime': return other.kind === 'runtime' && other.module === part.module && other.name === part.name && other.alias === part.alias && other.typeOnly === part.typeOnly;
-      case 'imported': return other.kind === 'imported' && other.source === part.source && other.name === part.name && other.alias === part.alias && other.typeOnly === part.typeOnly;
-      case 'helper': return other.kind === 'helper' && other.helper === part.helper;
-      case 'name': return other.kind === 'name' && other.slot === part.slot;
-      case 'input': return other.kind === 'input' && other.slot === part.slot;
-      case 'line': return other.kind === 'line';
-      case 'indent': return other.kind === 'indent' && other.by === part.by;
+      case 'text': {
+        const last = key.at(-1);
+        if (typeof last === 'string') key[key.length - 1] = last + part.text;
+        else key.push(part.text);
+        break;
+      }
+      case 'runtime': key.push(['runtime', part.module, part.name, part.alias ?? null, part.typeOnly === true]); break;
+      case 'imported': key.push(['imported', identityOf(part.source), part.name, part.alias ?? null, part.typeOnly === true]); break;
+      case 'helper': key.push(['helper', identityOf(part.helper)]); break;
+      case 'name': key.push(['name', identityOf(part.slot)]); break;
+      case 'input': key.push(['input', identityOf(part.slot)]); break;
+      case 'line': key.push(['line']); break;
+      case 'indent': key.push(['indent', part.by]); break;
+      default: return unreachable(part);
     }
-  });
+  }
+  return JSON.stringify(key);
+}
+
+function unreachable(part: never): never {
+  throw new Error(`Internal error: unknown part ${JSON.stringify(part)}`);
+}
+
+/** Whether two Codes write the same code (see `codeKey`). */
+export function sameCode(left: Code, right: Code): boolean {
+  return codeKey(left) === codeKey(right);
 }
 
 /**
@@ -590,17 +627,40 @@ export function sameCode(left: Code, right: Code): boolean {
 export function render(root: Code, names: NameTable = new NameTable()): string {
   let text = '';
   let depth = 0;
+  // A line break writes the indentation when the next text comes, at the depth it has then: a line that ends a `nest`
+  // is not indented as the nest, and a blank line holds no spaces.
+  let lineStart = false;
+  const write = (written: string): void => {
+    if (written === '') return;
+    if (lineStart && !written.startsWith('\n')) text += ' '.repeat(depth);
+    lineStart = false;
+    text += written;
+  };
   for (const part of root.parts) {
     switch (part.kind) {
-      case 'text': text += part.text; break;
+      case 'text': write(part.text); break;
       case 'runtime':
-      case 'imported': text += part.alias ?? part.name; break;
-      case 'helper': text += part.helper.id; break;
-      case 'name': text += names.resolve(part.slot); break;
+      case 'imported': write(part.alias ?? part.name); break;
+      case 'helper': write(part.helper.id); break;
+      case 'name': write(names.resolve(part.slot)); break;
       case 'input': throw new Error(`the input "${part.slot.label}" is not bound`);
-      case 'line': text += `\n${' '.repeat(depth)}`; break;
+      case 'line': write('\n'); lineStart = true; break;
       case 'indent': depth += part.by; break;
+      default: return unreachable(part);
     }
   }
   return text;
+}
+
+/**
+ * The pieces of a file with each helper replaced by its definition, or dropped when `root` does not name it. Every helper
+ * that `root` names must stand among the pieces, or be one of `writtenInCode`, whose definitions the code holds itself: a
+ * file that names a helper it does not place would call a missing function.
+ */
+export function placeHelpers(root: Code, pieces: readonly (Code | Helper)[], writtenInCode: readonly Helper[] = []): readonly Code[] {
+  const placed = new Set([...pieces.filter((piece): piece is Helper => 'define' in piece), ...writtenInCode]);
+  const missing = helperSet(root).find((needed) => !placed.has(needed));
+  if (missing) throw new Error(`Internal error: the code names the helper "${missing.id}", which the file does not place.`);
+  const defined = new Set(helperSet(root));
+  return pieces.flatMap((piece): readonly Code[] => 'define' in piece ? (defined.has(piece) ? [piece.define()] : []) : [piece]);
 }

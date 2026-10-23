@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   ImportSource, NameTable, aliased, bindRead, fileImports, code, helper, helperDefinitions, helperName, helperSet, identifier, importSet, inputOf, inputSlot, join, literal,
-  nameOf, nameSlot, render, runtimeImports, sameCode, legacyText,
+  nameOf, nameSlot, render, runtimeImports, sameCode, nest, lineBreak, placeHelpers, runtimeCode,
 } from '#golem/code';
 import { rt, rtType } from '#golem/rt';
 
@@ -30,9 +30,9 @@ test('the import set holds each runtime part once, grouped by module in the fixe
     ${rt.model.registerGeneratedModel}(Order);
   `;
   assert.deepEqual(importSet(body), [
-    { module: 'conversion', names: ['decodeCheckedInput'], types: [] },
-    { module: 'model', names: ['registerGeneratedModel'], types: [] },
-    { module: 'serde', names: ['parseJson', 'stringifyJsonString'], types: [] },
+    { module: 'conversion', names: [{ name: 'decodeCheckedInput' }], types: [] },
+    { module: 'model', names: [{ name: 'registerGeneratedModel' }], types: [] },
+    { module: 'serde', names: [{ name: 'parseJson' }, { name: 'stringifyJsonString' }], types: [] },
   ]);
   assert.equal(
     render(join(runtimeImports(body), code`\n`), new NameTable()),
@@ -55,7 +55,7 @@ test('the helper set holds each named helper once with the helpers it names and 
     render(join(helperDefinitions(body), code`\n\n`), new NameTable()),
     'function decodeNode(v) { return decodeLeaf(v); }\n\nfunction decodeLeaf(v) { return decodeCheckedInput(v, decodeNode); }',
   );
-  assert.deepEqual(importSet(body), [{ module: 'conversion', names: ['decodeCheckedInput'], types: [] }]);
+  assert.deepEqual(importSet(body), [{ module: 'conversion', names: [{ name: 'decodeCheckedInput' }], types: [] }]);
 });
 
 test('a type name is imported with import type, and a file picks the specifier of each runtime module', () => {
@@ -63,7 +63,7 @@ test('a type name is imported with import type, and a file picks the specifier o
   const body = code`export function check(): readonly ${rtType['validation-runtime'].SchemaIssue}[] { return ${rt['validation-runtime'].jsonEqual}(a, b) ? [] : []; }`;
   // @ts-expect-error a type name that the module does not export is a type error
   void rtType['validation-runtime'].NoSuchType;
-  assert.deepEqual(importSet(body), [{ module: 'validation-runtime', names: ['jsonEqual'], types: ['SchemaIssue'] }]);
+  assert.deepEqual(importSet(body), [{ module: 'validation-runtime', names: [{ name: 'jsonEqual' }], types: [{ name: 'SchemaIssue', typeOnly: true }] }]);
   assert.equal(
     render(join(runtimeImports(body, { specifiers: { 'validation-runtime': 'file:///runtime/validation-runtime.js' }, quote: '"' }), code`\n`)),
     'import type { SchemaIssue } from "file:///runtime/validation-runtime.js";\nimport { jsonEqual } from "file:///runtime/validation-runtime.js";',
@@ -129,8 +129,8 @@ test('sameCode matches parts one by one by kind, so a runtime part is not the te
   const second = nameSlot('second');
   const written = code`${rt.serde.stringifyJsonScalar}(item as never)`;
   assert.equal(sameCode(written, code`${rt.serde.stringifyJsonScalar}(item as never)`), true);
-  assert.equal(sameCode(written, legacyText('stringifyJsonScalar(item as never)')), false);
-  assert.equal(sameCode(written, legacyText('stringifyJsonString(item as never)')), false);
+  assert.equal(sameCode(written, code`stringifyJsonScalar(item as never)`), false);
+  assert.equal(sameCode(written, code`stringifyJsonString(item as never)`), false);
   assert.equal(sameCode(nameOf(first), nameOf(first)), true);
   assert.equal(sameCode(nameOf(first), nameOf(second)), false);
   assert.equal(sameCode(inputOf(inputSlot('value')), nameOf(first)), false);
@@ -149,4 +149,26 @@ test('a piece that reads its input twice gets a local, and one that reads it onc
   assert.deepEqual([render(repeated.code), repeated.local], ["__local === null ? 'null' : stringifyJsonNumber(__local as number)", true]);
   // an optional field also reads its input in the `!== undefined` check
   assert.equal(render(bindRead(once, input, code`value["a"]`, local, 1).code), 'stringifyJsonString(__local as string)');
+});
+
+test('render writes no spaces on a blank line, and a line break that ends a nest is not indented as the nest', () => {
+  // protects: S-65 review finding 12 (trailing spaces on a blank line; a closing brace indented as the nest it closes)
+  const block = code`{${nest(code`${lineBreak}a;${lineBreak}${lineBreak}b;${lineBreak}`)}}`;
+  assert.equal(render(block), '{\n  a;\n\n  b;\n}');
+});
+
+test('a name that the code uses as a value and as a type is imported once, as the value', () => {
+  // protects: S-65 review finding 9 (a duplicate identifier when X and type X are both used)
+  const source = new ImportSource('./shapes.js');
+  const body = code`${source.name('Shape')} ${source.name('Shape', { typeOnly: true })} ${source.name('Size', { typeOnly: true })}`;
+  assert.deepEqual(fileImports(body, [source]).map((line) => render(line)), ["import { Shape, type Size } from './shapes.js';"]);
+  const names = importSet(code`${rt.serde.parseJson} ${rtType.serde.SerdeOptions} ${runtimeCode('serde', 'parseJson', true)}`);
+  assert.deepEqual(names, [{ module: 'serde', names: [{ name: 'parseJson' }], types: [{ name: 'SerdeOptions', typeOnly: true }] }]);
+});
+
+test('a helper that the code names and the file neither places nor writes into its code is an error', () => {
+  // protects: S-65 review finding 7 (a helper dropped silently leaves a call of a missing function)
+  const lost = helper('lostHelper', () => code`function lostHelper() {}`);
+  assert.throws(() => placeHelpers(code`${helperName(lost)}()`, []), /names the helper "lostHelper", which the file does not place/);
+  assert.deepEqual(placeHelpers(code`${helperName(lost)}()`, [lost]).map((piece) => render(piece)), ['function lostHelper() {}']);
 });

@@ -1,7 +1,7 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/generator-api';
-import { code, docComment, fileImports, identifier as identifierPart, ImportSource, join, legacyText, lineBreak, literal, nest, propertyKey, render, sameCode, trimEnd, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { code, codeKey, docComment, fileImports, identifier as identifierPart, ImportSource, join, legacyText, lineBreak, literal, nest, propertyKey, render, sameCode, trimEnd, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { refName } from './names.js';
 import {
   effectiveSchemaTypes,
@@ -262,7 +262,9 @@ function sameType(left: TypeCode, right: TypeCode): boolean {
 }
 
 function distinctTypes(types: readonly TypeCode[]): TypeCode[] {
-  return types.reduce<TypeCode[]>((kept, type) => kept.some((each) => sameType(each, type)) ? kept : [...kept, type], []);
+  const kept = new Map<string, TypeCode>();
+  for (const type of types) if (!kept.has(codeKey(type.code))) kept.set(codeKey(type.code), type);
+  return [...kept.values()];
 }
 
 /** Alias the global `Blob` when a component named `Blob` shadows it in the emitted module. */

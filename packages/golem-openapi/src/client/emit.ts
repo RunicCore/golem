@@ -590,19 +590,26 @@ ${metadata}
 `;
   const imports_: ImportOptions = { modules: ['client', 'mobx', 'validation'] };
   const runtime = new Map(importSet(rest, imports_).map((entry) => [entry.module, entry] as const));
+  const written = new Set<string>();
   const lines = (module: 'client' | 'mobx' | 'validation', parts: { readonly values?: true; readonly types?: true }): readonly Code[] => {
+    if (parts.values) written.add(`${module} values`);
+    if (parts.types) written.add(`${module} types`);
     const entry = runtime.get(module);
     return entry ? importLines({ module, names: parts.values ? entry.names : [], types: parts.types ? entry.types : [] }, imports_) : [];
   };
-  return render(code`${join([
-    legacyText(generatedBanner()),
+  const importLinesOfFile = [
     ...lines('client', { values: true }),
     ...fileImports(rest, [runtimeTypes], { elsewhere: [typesModule] }),
     ...lines('validation', { types: true }),
     ...fileImports(rest, [typesModule], { elsewhere: [runtimeTypes] }),
     ...lines('mobx', { types: true }),
     ...(profile.mobx ? [] : lines('client', { types: true })),
-  ], code`\n`)}
+  ];
+  for (const [module, entry] of runtime) {
+    if (entry.names.length > 0 && !written.has(`${module} values`)) throw new Error(`Internal error: the client file uses the ${module} runtime values ${entry.names.map(({ name }) => name).join(', ')}, which its import list does not write.`);
+    if (entry.types.length > 0 && !written.has(`${module} types`)) throw new Error(`Internal error: the client file uses the ${module} runtime types ${entry.types.map(({ name }) => name).join(', ')}, which its import list does not write.`);
+  }
+  return render(code`${join([legacyText(generatedBanner()), ...importLinesOfFile], code`\n`)}
 ${rest}`);
 }
 

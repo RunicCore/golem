@@ -5,6 +5,7 @@ export {
   emitStringifyFunction,
   fillFunctionName,
   fromWireFunctionName,
+  MODULE_CONSTANT_HELPERS,
   parseFunctionName,
   reachesItself,
   reachesRecursiveNode,
@@ -20,7 +21,7 @@ export { calleeOf, FIELD_CONVERSION_INPUT, type TupleConversionDescriptor } from
 export { presentKeysCode } from './union-conversion.js';
 /** The one function that turns the Code of an emitter into text, for generators that still build text. */
 export {
-  aliased, bindInput, blockComment, code, docComment, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, importLines, importSet, ImportSource, inputOf, inputSlot, join, legacyText, lineBreak, literal, nameOf, NameTable, nameSlot, nest, propertyKey, render, sameCode, sideEffectImport, trimEnd,
+  aliased, bindInput, blockComment, code, codeKey, docComment, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, importLines, importSet, ImportSource, inputOf, inputSlot, join, legacyText, lineBreak, literal, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, sameCode, sideEffectImport, trimEnd,
   type Code, type Helper, type ImportOptions, type JsonValue, type NameSlot,
 } from './code.js';
 export { rt, rtType, type RuntimeModule } from './rt.js';

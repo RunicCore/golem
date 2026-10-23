@@ -5,7 +5,7 @@
  * `emitTupleItems` have none. It imports no walker.
  */
 import type { ModelTypeDescriptor } from '../model.js';
-import { code, identifier, literal, readShape, sameCode, type Code } from './code.js';
+import { code, codeKey, identifier, literal, readShape, sameCode, type Code } from './code.js';
 import { rt } from './rt.js';
 
 export type TupleConversionDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'tuple' }>;
@@ -37,12 +37,14 @@ export interface SequenceItems {
 export const FIELD_CONVERSION_INPUT = 'fieldValue';
 
 /**
- * The function of a conversion of `input` that is exactly one call on it. A call that an emitter wrote is a function part
- * and `(<input>)`.
+ * The function of a conversion of `input` that is exactly one call on it. A call that an emitter wrote is a function part,
+ * a `(` text, the parts of `input` and a `)` text.
  */
-export function calleeOf(converted: Code, input: string = FIELD_CONVERSION_INPUT): Code | undefined {
-  const [first, ...call] = converted.parts;
-  if (first === undefined || call.length === 0 || !call.every((part) => part.kind === 'text') || call.map((part) => part.text).join('') !== `(${input})`) return undefined;
+export function calleeOf(converted: Code, input: Code = identifier(FIELD_CONVERSION_INPUT)): Code | undefined {
+  const [first, open, ...tail] = converted.parts;
+  const close = tail.pop();
+  if (first === undefined || open?.kind !== 'text' || open.text !== '(' || close?.kind !== 'text' || close.text !== ')') return undefined;
+  if (codeKey({ parts: tail }) !== codeKey(input)) return undefined;
   return first.kind === 'runtime' || first.kind === 'imported' || first.kind === 'helper' || first.kind === 'name' || (first.kind === 'text' && first.identifier === true) ? { parts: [first] } : undefined;
 }
 
@@ -70,7 +72,7 @@ interface ConvertedItem {
 }
 
 function convertedItem(item: SequenceItem): ConvertedItem {
-  return { code: item.code, callee: calleeOf(item.code, 'item'), throws: item.throws };
+  return { code: item.code, callee: calleeOf(item.code, ITEM), throws: item.throws };
 }
 
 /** The result of an items emitter, and whether it is the value itself because no item changes. */

@@ -2275,9 +2275,12 @@ export function emitCodecRuntimeCode(
   return withModuleConstants(blocksToText(runtimes));
 }
 
+/** The helpers whose definitions `withModuleConstants` writes into the runtime code, so the file places no definition of them. */
+export const MODULE_CONSTANT_HELPERS: readonly Helper[] = [TRUSTED_HELPER, CHECKED_KEY_HELPER, CHECKED_HELPER];
+
 /** One frozen object of each kind serves every nested call that passes options to another module's function. */
 function withModuleConstants(runtime: Code): Code {
   const used = new Set(helperSet(runtime).map((found) => found.id));
-  const constants = [TRUSTED_HELPER, CHECKED_KEY_HELPER, CHECKED_HELPER].filter((found) => used.has(found.id)).map((found) => found.define());
+  const constants = MODULE_CONSTANT_HELPERS.filter((found) => used.has(found.id)).map((found) => found.define());
   return constants.length ? code`${join(constants, code`\n`)}\n\n${runtime}` : runtime;
 }
