@@ -6,7 +6,7 @@ import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
-import { compareText } from '../generator-api.js';
+import { compareText, displayPath } from '../generator-api.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey } from '../schema.js';
 import type {
   ModelConversionDescriptor,
@@ -558,6 +558,14 @@ function projectedSourceType(checker: ts.TypeChecker, type: ts.Type): ts.Type | 
   return template && ts.isIndexedAccessTypeNode(template) ? checker.getTypeFromTypeNode(template.objectType) : undefined;
 }
 
+const SHOWN_TEXT_LENGTH = 60;
+
+/** The source text of `node` on one line, cut after SHOWN_TEXT_LENGTH characters. */
+function shortenedText(node: ts.Node): string {
+  const text = node.getText(node.getSourceFile()).replace(/\s+/g, ' ');
+  return text.length > SHOWN_TEXT_LENGTH ? `${text.slice(0, SHOWN_TEXT_LENGTH - 1)}…` : text;
+}
+
 export function descriptorBuilder(
   checker: ts.TypeChecker,
   specifications: readonly ModelSpecification[],
@@ -573,6 +581,8 @@ export function descriptorBuilder(
   modelSources?: ReadonlySet<string>,
   /** The models-job boundary, for the diagnostic of a field that nests a model this job does not own. */
   boundary?: ModelBoundary,
+  /** The first TypeScript error that starts inside a node, for the diagnostic of a type that did not resolve. */
+  typeErrorAt?: (node: ts.Node) => string | undefined,
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
@@ -584,7 +594,7 @@ export function descriptorBuilder(
   const sourceLocation = (at: ts.Node): string => {
     const sourceFile = at.getSourceFile();
     const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
-    return `${sourceFile.fileName}:${position.line + 1}:${position.character + 1}`;
+    return `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1}`;
   };
   const modelNames = new Map(
     specifications.map((specification) => [specification.declaration, nameFor?.(specification) ?? specification.name] as const),
@@ -790,7 +800,8 @@ export function descriptorBuilder(
       const alias = declaredModelAlias(provenance.anonymous);
       const foreign = alias ? foreignModelReason(alias, boundary) : undefined;
       if (foreign !== undefined) throw diagnostic(context.sourceFile, node ?? context.declaration, '1074', foreign);
-      throw diagnostic(context.sourceFile, node ?? context.declaration, '1053', 'Nested IModel definitions need a named, exported declaration.');
+      const nested = provenance.anonymous;
+      throw diagnostic(nested.getSourceFile(), nested, '1053', `Nested IModel definitions need a named, exported declaration: ${shortenedText(nested)}. Give it its own exported type alias.`);
     }
     const projection = provenance.projection || isPropertyMapping(type);
     if (projection) {
@@ -839,7 +850,11 @@ export function descriptorBuilder(
     const externalModel = aliased[0]?.model ?? manifestIndex.externalModelForType(type);
     if (externalModel) return withMetadata({ kind: 'generated-model', id: externalModel.id }, metadata);
     if (type.flags & ts.TypeFlags.Any) {
-      if (!allowUnresolved && isErrorAny(type)) throw diagnostic(context.sourceFile, node ?? context.declaration, '1058', 'A contract type could not be resolved. Fix its declaration or import before generating OpenAPI.');
+      if (!allowUnresolved && isErrorAny(type)) {
+        const at = node ?? context.declaration;
+        const cause = typeErrorAt?.(at);
+        throw diagnostic(context.sourceFile, at, '1058', `A contract type could not be resolved${cause ? ` (${cause})` : ''}. Fix its declaration or import before generating OpenAPI.`);
+      }
       if (!isErrorAny(type)) rejectUnlessAllowAny(context, 'any');
       return withMetadata(isErrorAny(type) ? { kind: 'unknown' } : { kind: 'any' }, metadata);
     }

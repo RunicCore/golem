@@ -3,8 +3,8 @@ import path from 'node:path';
 import type { GolemConfig } from './config.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, isInsideDirectory, suffixPattern } from './generator-api.js';
 import { changedPaths, InputPoller, OwnedOutputIndex, RunBaseline } from './input-poller.js';
-import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
-import type { InputKind, PipelineState } from './pipeline.js';
+import { GeneratorSessionResources, jobFailedBeforeWriting, runPipeline, strongestInputKind } from './pipeline.js';
+import type { InputKind, JobReport, PipelineState } from './pipeline.js';
 
 /** The names a job reads as sources, and what they are: a path with one of these endings is a source whether or not a run has read it. */
 function sourcePatterns(config: GolemConfig | undefined): readonly { readonly kind: 'models' | 'controllers'; readonly pattern: RegExp }[] {
@@ -20,6 +20,25 @@ function outsideFolder(root: string, input: string): string | undefined {
   return isInsideDirectory(root, input) || input.split(path.sep).includes('node_modules') ? undefined : path.dirname(input);
 }
 
+/** Records an input a run reads: its signature and the folders around it, as they are when the run first reads them. */
+function observeInput(baseline: RunBaseline, root: string, input: string): void {
+  baseline.observe(input);
+  const folder = outsideFolder(root, input);
+  if (folder !== undefined) baseline.observeFolder(folder);
+}
+
+/**
+ * What a run that the caller makes before it starts the watch reads first. Pass `onInput` to that run and `baseline` to
+ * `watchPipeline`: a source added during the run then starts the watch's first run.
+ */
+export function baselineBeforeRun(configFile: string): { readonly baseline: RunBaseline; readonly onInput: (input: string) => void } {
+  const resolved = path.resolve(configFile);
+  const root = path.dirname(resolved);
+  const before = new InputPoller([resolved], { root, outsideDirectories: new Set<string>() }).snapshot();
+  const baseline = new RunBaseline(before, root);
+  return { baseline, onInput: input => { observeInput(baseline, root, input); } };
+}
+
 /** What one watch polls between two runs. */
 interface Watched {
   readonly root: string;
@@ -29,12 +48,30 @@ interface Watched {
   readonly poller: InputPoller;
 }
 
+const plural = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+
+function describeReport(report: JobReport | undefined): string {
+  const parts = [
+    ...(report?.written.length ? [`${plural(report.written.length, 'file')} updated`] : []),
+    ...(report?.removed.length ? [`${report.removed.length} removed`] : []),
+  ];
+  return parts.length ? parts.join(', ') : 'unchanged';
+}
+
+/** The line one good watch run prints: the result of each job, a job that did not run or wrote nothing as `unchanged`, then the time of the run. */
+export function summarizeRun(state: PipelineState, ms: number): string {
+  const jobs = state.config.jobs.map(job => `${job.id.replace(/:\.$/, '')}: ${describeReport(state.reports.get(job.id))}`);
+  if (state.retired.length) jobs.push(`removed jobs: ${plural(state.retired.length, 'file')} removed`);
+  return [...jobs, `${ms} ms`].join(' · ');
+}
+
 /**
  * Serialized polling of specific inputs, including reads attempted by failed runs, and of the folders around them, so a source
  * added to one of them starts a run. A `session` from the first run of the same command is kept; the watch closes it when it
- * stops. Without one, the watch opens its own.
+ * stops. Without one, the watch opens its own. With a `PipelineState`, the first poll compares with `firstBaseline`, taken before the run
+ * that made the state (`baselineBeforeRun`), else with the disk as it is now.
  */
-export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, session: GeneratorSessionResources = new GeneratorSessionResources()): () => void {
+export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, session: GeneratorSessionResources = new GeneratorSessionResources(), firstBaseline?: RunBaseline): () => void {
   let state = typeof initial === 'string' ? undefined : initial;
   const filename = path.resolve(typeof initial === 'string' ? initial : initial.config.configFile);
   let config = state?.config;
@@ -44,6 +81,8 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
   let first = !state;
   let busy = false;
   let stopped = false;
+  // The last run failed: the next good run says it recovered.
+  let failed = false;
   // Compiler processes stay warm between runs and close with the watch.
   const closeSession = (): void => {
     try { session[Symbol.dispose](); } catch (error) { reportError(error); }
@@ -86,7 +125,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
     return { root, sources, kinds, poller };
   };
   let watched = watch();
-  let previous = watched.poller.snapshot();
+  let previous = firstBaseline?.settle(watched.poller.snapshot()) ?? watched.poller.snapshot();
   /** What reads a changed path: a polled input, or else a source that was added or removed. A name that is no source is not a change. */
   const kindOf = (input: string): InputKind | undefined => watched.kinds.get(input) ?? watched.sources.find(source => source.pattern.test(path.basename(input)))?.kind;
   const tick = async (): Promise<void> => {
@@ -107,25 +146,26 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       const baseline = new RunBaseline(before, watched.root);
       const latestAttempt = new Map<string, InputKind>();
       try {
+        const started = performance.now();
         const next = await runPipeline(filename, {
           modelOnly, previous: state, session,
           ...(!retryFull ? { changedInputs: changed } : {}),
           onConfig: value => { config = value; },
           onInput: (input, kind) => {
             latestAttempt.set(input, strongestInputKind(latestAttempt.get(input), kind));
-            baseline.observe(input);
-            const folder = outsideFolder(watched.root, input);
-            if (folder !== undefined) baseline.observeFolder(folder);
+            observeInput(baseline, watched.root, input);
           },
           onOwned: filenames => { for (const filename of filenames) owned.add(filename); },
         });
         state = next;
         config = next.config;
         retryFull = false;
-        process.stdout.write('Generated configured outputs.\n');
+        process.stdout.write(`${failed ? 'Recovered: ' : ''}${summarizeRun(next, Math.round(performance.now() - started))}\n`);
+        failed = false;
       } catch (error) {
         retryFull = true;
-        reportError(error);
+        failed = true;
+        reportError(jobFailedBeforeWriting(error) ? new Error(`${errorMessage(error)}\nThe job that failed wrote no files; its last good output stays in place.`, { cause: error }) : error);
       }
       attempted = latestAttempt;
       // Keep pre-read signatures so edits during work trigger the next serialized run.

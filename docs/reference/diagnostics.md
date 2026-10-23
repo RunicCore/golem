@@ -2,7 +2,7 @@
 
 Find what a generator error code means and how to fix it.
 
-An error prints its code, location when known, and message, then stops generation; a warning prints the same and lets generation continue, as its entry below notes. The printed line may also carry a severity word next to the code.
+An error prints its code, location when known, and message, then stops generation; a warning prints the same and lets generation continue, as its entry below notes. The printed line may also carry a severity word next to the code. A file in a message is relative to the working directory.
 
 ## Controller generator (NEST)
 
@@ -246,7 +246,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1053
 
-**Unnamed nested IModel.** A field's type traces to an `IModel`/`IObject` definition that isn't a named, exported declaration. **Fix:** Give the nested model its own named, exported type alias.
+**Unnamed nested IModel.** A field's type traces to an `IModel`/`IObject` definition that isn't a named, exported declaration, such as `IObject<{ text: string }>` written inside a union. The message gives the position of that definition and shows its text. **Fix:** Give the nested model its own named, exported type alias.
 
 ### RUNM1054
 
@@ -266,7 +266,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1058
 
-**Unresolved contract type.** A field has TypeScript's internal error type, because golem could not resolve a declaration or an import. Golem also reports this code when a `Pick` names a member that its source type does not declare. Golem also reports this code when a model is defined by a mapped type over its own class, such as `IModel<{ [K in keyof Customer]: Customer[K] }>` where `Customer` extends the generated base of that model: the base is generated from the model, so the type has no members. **Fix:** Fix the declaration, the import, or the key, then generate again. For a model over its own class, declare the fields in the model.
+**Unresolved contract type.** A field has TypeScript's internal error type, because golem could not resolve a declaration or an import. The message adds the first TypeScript error at that position, such as `(TS2304: Cannot find name 'strin'.)`, when there is one. Golem also reports this code when a `Pick` names a member that its source type does not declare. Golem also reports this code when a model is defined by a mapped type over its own class, such as `IModel<{ [K in keyof Customer]: Customer[K] }>` where `Customer` extends the generated base of that model: the base is generated from the model, so the type has no members. **Fix:** Fix the declaration, the import, or the key, then generate again. For a model over its own class, declare the fields in the model.
 
 ### RUNM1059
 
@@ -302,7 +302,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1067
 
-**Serde type argument has no codec.** The type argument of a serde call names something that is no model: a type parameter, a type that no `IModel` or `IObject` declares, or a name that several models share. The message shows the call, such as `parse<T> has no unique codec id`. **Fix:** Name an exported `IModel` or `IObject` alias. Inside a generic function, take the codec as a parameter instead of a type parameter; golem rewrites a call only where the model is known when it generates.
+**Serde type argument has no codec.** The type argument of a serde call names something that is no model: a type parameter, a type that no `IModel` or `IObject` declares, or a name that several models share. The message shows the call, such as `parse<T> has no unique codec id`. When the generated file of the model is missing, the message adds that file and says to wait for `golem generate` or `golem watch` to write it. **Fix:** Name an exported `IModel` or `IObject` alias. Inside a generic function, take the codec as a parameter instead of a type parameter; golem rewrites a call only where the model is known when it generates.
 
 ### RUNM1068
 

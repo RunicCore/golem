@@ -28,7 +28,7 @@ import {
   presentKeysSource,
 } from '@exprtlabs/golem/internal/emitter';
 import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { compareText, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
+import { compareText, displayPath, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
 import { descriptorBuilder, propertyType } from '@exprtlabs/golem/internal/type-analysis';
@@ -205,8 +205,9 @@ function assertGeneratedNames(
   const used = new Map<string, string>();
   for (const specification of specifications) {
     for (const name of [specification.name, `${specification.name}BaseModel`, `${specification.name}Fields`]) {
-      if (used.has(name)) {
-        throw new Error(`Generated model symbol collision for "${name}" between ${used.get(name)} and ${specification.sourceFile.fileName}.`);
+      const earlier = used.get(name);
+      if (earlier !== undefined) {
+        throw new Error(`Generated model symbol collision for "${name}" between ${displayPath(earlier)} and ${displayPath(specification.sourceFile.fileName)}.`);
       }
       used.set(name, specification.sourceFile.fileName);
     }
@@ -720,7 +721,7 @@ function collectReferences(
         : undefined;
     if (candidates.length > 1 && sameSource.length !== 1) {
       throw new Error(
-        `Ambiguous generated type reference "${descriptor.name}" in ${owner.sourceFile.fileName}.`,
+        `Ambiguous generated type reference "${descriptor.name}" in ${displayPath(owner.sourceFile.fileName)}.`,
       );
     }
     if (referenced && !emitted.has(referenced)) pending.push(referenced);
