@@ -45,7 +45,7 @@ Run `npx golem generate`. It writes `sdk/` and `src/payment-editor.model.generat
 
 ## Validate and send
 
-Before sending, `getValidator(editor).validate({ failFast: false })` checks every field and keeps the errors on the editor for a form ([Validation](/guide/validation)). Constructing `PaymentEditor` turns `money` into a `TMoneyModel`; `encodeGeneratedModel(editor)` returns the plain object, so `wire.money` is the plain `TMoney` object the client sends.
+Before sending, `getValidator(editor).validate({ failFast: false })` checks every field and keeps the errors on the editor for a form ([Validate models](/guide/validation)). Constructing `PaymentEditor` turns `money` into a `TMoneyModel`; `encodeGeneratedModel(editor)` returns the plain object, so `wire.money` is the plain `TMoney` object the client sends.
 
 <<< ../../examples/payments/web/src/payment-store.ts#validate-and-save
 

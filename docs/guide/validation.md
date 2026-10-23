@@ -1,23 +1,16 @@
-# Validation
+# Validate models
 
-Check models and API data, show field errors, and add your own rules.
+Check models and data, show field errors in a form, and read the errors that golem reports.
 
-Put validation constraints such as `MinLength`, `Minimum`, and `TValidation` on field types. Generated validators check them.
-
-- `validateInstance(model)` returns an issue list.
-- `getValidator(model)` stores field errors for an editor.
-
-Both stop at the first issue by default. Pass `{ failFast: false }` to collect every issue, for example to show all field errors in a form.
+Generated validators check the [validation tags](/guide/tags) on your field types. `validateInstance(model)` returns an issue list. `getValidator(model)` stores field errors for an editor. Both stop at the first issue by default. Pass `{ failFast: false }` to collect every issue, for example to show all field errors in a form.
 
 <<< ../../examples/models/src/task-input.model.ts#custom-rule
 
 <<< ../../examples/models/src/task-input-checks.ts#validate-a-model
 
-`validation` defaults to `true`. `IObject` and `IModel` accept `{ validation: false }` to skip checks for that declaration. A nested `IObject` or `IModel` uses its own setting.
+`validation` defaults to `true`. [Validation profiles](/reference/config#validation-profiles) set it in `golem.yaml`. `IObject` and `IModel` accept `{ validation: false }` to skip checks for that declaration. A nested `IObject` or `IModel` uses its own setting.
 
 Constructors and field assignments do not validate. You can keep an incomplete model while someone edits it.
-
-[Using NestJS? `@Body()` / `@Query()` convert through `NestModelInterceptor`.](/guide/nestjs-requests#nestmodelinterceptor)
 
 ## Choose a check
 
@@ -26,18 +19,17 @@ Constructors and field assignments do not validate. You can keep an incomplete m
 | Check a model you built | `validateInstance(model)` |
 | Show field errors in a form | `getValidator(model)` |
 | Check untrusted data against a type | `validate<T>(value)` (type predicate) |
-| Check while converting | the default in `parse` / `fromWireFormat` |
-| Call an API | a generated client validates the request and response ([Using the client](/guide/client-usage)) |
+| Check while converting | the default in `parse` and `fromWireFormat` ([JSON conversion](/guide/serialization#checks-during-conversion)) |
+| Check `@Body()` and `@Query()` in NestJS | `NestModelInterceptor` ([Convert requests](/guide/nestjs-requests)) |
+| Call an API | a generated client validates the request and response ([Call operations](/guide/client-usage)) |
 
 ## Validate a model
 
-The title rule in the check above is declared in [Type tags](/guide/tags#add-a-custom-field-rule). `MinLength<1>` rejects an empty string; `TValidation<typeof notBlank>` also rejects whitespace-only titles.
+The title rule in the check above is declared in [Validation tags](/guide/tags#add-a-custom-field-rule). `MinLength<1>` rejects an empty string. `TValidation<typeof notBlank>` also rejects a title that holds only spaces.
 
 ### Stored validation state
 
-`getValidator(model)` returns the cached stateful validator for editor flows.
-Its type uses the generated declared fields; methods and other properties added
-only by your class are not validation fields.
+`getValidator(model)` returns the cached stateful validator for editor flows. Its type uses the generated declared fields. Methods and other properties that only your class adds are not validation fields.
 
 | Property or method | Does |
 | --- | --- |
@@ -53,15 +45,15 @@ only by your class are not validation fields.
 | `extend(rules)` | Adds a rule for this model instance, including asynchronous checks. |
 | `messages(overrides)` | Overrides the message for a generated check, by field and code, such as `'title.tooSmall'`. |
 
-Changing a field does not clear its old error. Validate again to refresh the result, or call `clear()` to remove the stored errors. If a converter throws or validation cannot run, the stateful `getValidator(model).validate()` throws `LibError` instead of returning `false`.
+Changing a field does not clear its old error. Validate again to refresh the result, or call `clear()` to remove the stored errors.
 
 ## Nested field errors
 
-Pass a path array to read errors inside objects or arrays. Field names are strings; array indexes are numbers.
+Pass a path array to read errors inside objects or arrays. Field names are strings. Array indexes are numbers.
 
 <<< ../../examples/models/src/checklist-input.model.ts#nested-field-errors
 
-Use `issues` when you need an error's code or source as well as its message: each [`Issue`](/reference/runtime-api#errors) carries both. The `errors` map keys messages by [escaped JSON Pointer](/reference/runtime-api#model-validator).
+Use `issues` when you need the code or source of an error as well as its message. The `errors` map keys messages by [escaped JSON Pointer](/reference/runtime-api#model-validator).
 
 ## Instance rules
 
@@ -73,42 +65,31 @@ Use `extend()` for a rule added to a particular model, including asynchronous ch
 - Register the rule in your class constructor when every instance needs it, including instances created by `fromWireFormat<TaskInput>()`.
 - Use [`TValidation`](/guide/tags#add-a-custom-field-rule) for a reusable synchronous predicate attached to a field type.
 
-## Errors returned by an API
+## Errors from an API
 
-`setErrors()` lets you display a server message alongside local validation errors. It stores messages; it does not add validation rules.
+`setErrors()` lets you display a server message beside local validation errors. It stores messages and does not add validation rules.
 
 <<< ../../examples/models/src/server-errors.ts#server-errors
 
-The next `validator.validate()` replaces these messages with its own results. The standalone `validateInstance(task)` leaves them unchanged. To customize messages for generated checks, use [`messages()`](/reference/runtime-api#validation) with the issue's code, such as `tooSmall`.
+The next `validator.validate()` replaces these messages with its own results. The standalone `validateInstance(task)` leaves them unchanged. To customize messages for generated checks, use [`messages()`](/reference/runtime-api#validation) with the code of the issue, such as `tooSmall`.
 
-## Validation during conversion
+## Errors and issues
 
-`parse<T>(text)` validates the incoming JSON, then runs each field's `TSerde` decoder. `fromWireFormat<T>(value)` does the same for a plain object, without `JSON.parse`. `{ validate: false }` skips the check and does not update stored field errors.
+An invalid value is an ordinary result for `validateInstance` and `validate()`. A call that converts a value throws a `LibError` instead: `parse`, `stringify`, `fromWireFormat`, `toWireFormat` and `assertValue`. A validator also throws `LibError` when validation cannot run, for example when the model was generated with `validation: false`.
 
-<<< ../../examples/models/src/load-task.ts#validation-during-conversion
+<<< ../../examples/models/src/read-errors.ts#lib-error
 
-- After successful `parse` / `fromWireFormat` (validation on), you do not need another `validateInstance(model)` call unless you edit the instance. Use `getValidator(model).validate()` when you want all field errors stored for display.
-- JSON values and model values are checked at separate stages.
-- Typing a `TSerde` decoder parameter as plain `string` drops the [validation constraints on the JSON value](/guide/tags#which-type-controls-validation), not the ones on the model value.
+A `LibError` from `@exprtlabs/golem/errors` has these members:
 
-## OpenAPI validation constraints in both directions
+| Member | Holds |
+| --- | --- |
+| `kind` | the failure category: `validation`, `invalid_json`, `serialization`, `deserialization`, `validation_unavailable` or `response` |
+| `issues` | a frozen list of failed checks |
+| `causedByInput` | `true` when the rejected value is at fault, `false` for a program fault |
+| `cause` | the exception that a `LibError` wraps, if any |
 
-Supported OpenAPI validation constraints work whether you start from TypeScript models or an existing OpenAPI document.
+Each issue has a `code`, a `path`, a `message` and a `source`. Check `issue.code` and TypeScript narrows to the fields of that code, such as `issue.limit` after `issue.code === 'tooSmall'`. A `path` such as `['items', 0, 'amount']` names the field. Every kind, code and field is in the [runtime reference](/reference/runtime-api#errors).
 
-| TypeScript validation constraint | OpenAPI schema rule | Generated validation |
-| --- | --- | --- |
-| `string & MinLength<3>` | `type: string`, `minLength: 3` | Rejects strings shorter than three characters. |
-| `number & Minimum<0>` | `type: number`, `minimum: 0` | Rejects negative numbers. |
-| `string & Pattern<'^[A-Z]+$'>` | `type: string`, `pattern: '^[A-Z]+$'` | Rejects strings that do not match. |
-
-- `@exprtlabs/golem-ts-openapi` writes supported validation constraints from controller models into the OpenAPI schemas.
-- `golem-openapi` uses supported schemas for model validation and automatic client request/response validation. The document can come from any OpenAPI producer.
-- Custom predicates and converters remain TypeScript functions. Sharing them through imports is optional; OpenAPI does not carry executable code. For a field with a `TSerde` serialize formatter, the OpenAPI schema describes the JSON value, not the model value.
-
-Supported keywords, versions and profiles are in [OpenAPI client support](/reference/openapi-support).
-
-## Generation settings
-
-Validation is enabled by default. [Validation profiles](/reference/config#validation-profiles) set it in `golem.yaml`.
+Constraints on the models of a NestJS controller reach the OpenAPI document that golem writes. Constraints in an OpenAPI document reach the generated validators and clients. The supported keywords are in [OpenAPI support](/reference/openapi-support).
 
 Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

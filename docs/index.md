@@ -30,7 +30,7 @@ features:
   - title: Your code survives regeneration
     details: Generation owns the generated class, <code>TTaskBaseModel</code>. Your class, <code>Task</code>, extends it and keeps its methods.
     link: /guide/models
-    linkText: Defining models
+    linkText: Define models
   - title: Types end to end
     details: NestJS controllers produce the OpenAPI document. The client generator turns it back into typed operations and models.
     link: /guide/nestjs

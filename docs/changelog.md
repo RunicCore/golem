@@ -30,7 +30,7 @@ document to the SDK and model generators in the same workflow
 
 Nested model references keep their classes, and derived types such as
 `Omit<TAddress, 'id'>` produce plain objects
-([Composing models](/guide/field-types#nested-models-and-derived-types)).
+([Field types](/guide/field-types#nested-models-and-derived-types)).
 
 ## TypeScript 6 and 7
 
@@ -63,7 +63,7 @@ Generation runs on TypeScript 6.0+ or 7.x, chosen from the `typescript` installe
 - **Breaking:** the codec keys of your models move to `.golem/codec-keys.json`, and the `model-manifest.json` of an SDK gains a `codecId` for each model. Regenerate your SDKs.
 - Generated files are not committed: ignore the generated files and `.golem/` ([ignore generated files](/reference/generated-files#gitignore)). A second build with no change runs no job.
 - The loader and the plugins open your project from `golem.yaml` (the `config` option, `GOLEM_CONFIG`, or `./golem.yaml`) and scan each file themselves, and `@exprtlabs/golem/rewrite` exports `applyRewrites` ([runtime API](/reference/runtime-api#rewrite)).
-- **Breaking:** a shared folder or package declares models, and each app generates them in its own `models.output`. Golem writes nothing into a shared folder. The layer `models.generated.ts`, `#golem-models` and `.golem.lock` are gone, and each generated model file imports only its own validators. Regenerate once, and delete old generated files in shared folders by hand ([shared folder](/reference/config#a-folder-shared-by-several-apps)).
+- **Breaking:** a shared folder or package declares models, and each app generates them in its own `models.output`. Golem writes nothing into a shared folder. The layer `models.generated.ts`, `#golem-models` and `.golem.lock` are gone, and each generated model file imports only its own validators. Regenerate once, and delete old generated files in shared folders by hand ([shared folder](/guide/shared-models)).
 - `models.suffixes` and `controllers[].suffixes` set the file endings golem reads ([configuration](/reference/config#typescript-models)).
 - Generation stops only on a type error in a model source or in a file it writes; `tsc` and `golem build` report the others.
 - Known limits: a NestJS app needs a decorator-compiling loader after golem's when it runs through the Node loader; `preserveSymlinks` with a symlinked workspace package fails at run time; a generator that lists `watchInputs` it does not announce runs every time.

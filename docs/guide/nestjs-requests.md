@@ -42,11 +42,11 @@ The model references them by type:
 - The decoder's parameter type supplies the JSON type. Generation reads that type; it never calls a converter to infer a schema.
 - A validation constraint on the model value, such as `Minimum<0>` on a number, is not copied onto the string JSON field.
 - Custom predicates and converters stay in TypeScript. OpenAPI carries only the JSON schema. Class-validator decorators are not interpreted.
-- [`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value) declares the pair.
+- [`TSerde`](/guide/serialization#change-the-json-form) declares the pair.
 
 An `IModel` contract is authoritative in both request and response directions.
 Swagger metadata can add documentation, but a structural override must agree
-with the TypeScript contract and its [validation constraints](/guide/validation#openapi-validation-constraints-in-both-directions).
+with the TypeScript contract and its [validation constraints](/reference/openapi-support).
 
 ## NestModelInterceptor
 

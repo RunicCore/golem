@@ -7,13 +7,13 @@ explain the examples and show source regions from these maintained files.
 
 | Example | Shows |
 | --- | --- |
-| [models](models/) | An offline task tracker: models, tags, validation, serialization, composition and dates. Start here to define models without a server. |
+| [models](models/) | An offline task tracker: models, tags, validation, serialization, field types and dates. Start here to define models without a server. |
 | [shared-folder](shared-folder/) | A shared folder that declares a model, used by two apps, one through a plain include and one through a folder link. Each app generates the model in its own output. The web app extends it and validates; the worker does not. |
 | [payments](payments/) | A merchant payments app: NestJS controllers that produce an OpenAPI document, a typed client, a React and MobX editor, and a client for a third-party provider with auth, streams, codecs and dates. |
 
 The guides walk through them: [models](../docs/guide/models.md),
-[a shared folder](../docs/reference/config.md#a-folder-shared-by-several-apps),
-[type tags](../docs/guide/tags.md),
+[a shared folder](../docs/guide/shared-models.md),
+[validation tags](../docs/guide/tags.md),
 [NestJS](../docs/guide/nestjs.md),
 [an API client](../docs/guide/client.md),
 [models with a client](../docs/guide/models-and-client.md) and

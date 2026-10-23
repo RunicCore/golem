@@ -15,7 +15,7 @@ npm install @exprtlabs/golem
 npm install --save-dev @exprtlabs/golem-model typescript@~7.0.2
 ```
 
-[Defining models](../../docs/guide/models.md) walks through a declaration,
+[Define models](../../docs/guide/models.md) walks through a declaration,
 generation and the handwritten class. [Compatibility and
 stability](../../docs/compatibility.md) has supported versions.
 

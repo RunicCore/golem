@@ -69,7 +69,7 @@ In the model output (`src/generated/models/` by default), the file `models.valid
 
 Each `<name>.model.generated.ts` file holds the profile of the app (`mobx` and `validation`) and the schemas of its own models. With `validation: true`, it imports only the validators of its own models from `models.validators.generated.ts`. The import is a relative path, so the file needs no alias or `imports` entry. With `validation: false`, it imports no validator.
 
-Golem writes a generated file beside a model file inside `models.root`. A model file outside the root is a shared model file, such as one in a [shared folder](/reference/config#a-folder-shared-by-several-apps) or an installed package. Each app that uses it writes its generated file in its own `models.output`, at `<models.output>/<package name>/<path of the file in the package>.generated.ts`: `shared/customer.model.ts` in the package `@acme/shared` gives `src/generated/models/@acme/shared/customer.model.generated.ts`. Golem writes nothing in the shared folder, and two apps never write one file.
+Golem writes a generated file beside a model file inside `models.root`. Each app writes the generated file of a [shared model file](/guide/shared-models#where-each-app-writes) in its own `models.output`.
 
 The models job writes a generated file only for a model file that has an `IModel` or `IObject` alias. It skips a discovered model file that has none, and it leaves the file beside it as it is. A file that `models.sources` names is never skipped ([rules](/reference/config#typescript-models)).
 

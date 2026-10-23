@@ -302,11 +302,11 @@ Every export is a type. Intersect a tag with a field type; assignment is unchang
 | Built-in constraints | `Integer`, `Minimum<N>`, `MinLength<N>`, `Pattern<S>`, `Format<S>`, … | JSON Schema keywords ([built-in constraints](/guide/tags#built-in-validation-constraints)). |
 | Short names | `Min`, `Max`, `ExclusiveMin`, `ExclusiveMax`, `MinProps`, `MaxProps` | Aliases of `Minimum`, `Maximum`, `ExclusiveMinimum`, `ExclusiveMaximum`, `MinProperties`, `MaxProperties`. |
 | `TValidation` | `TValidation<typeof predicate>` | Runs an exported synchronous function that returns `true` or an error message ([custom rule](/guide/tags#add-a-custom-field-rule)). |
-| `TSerde` | `TSerde<typeof serialize, typeof deserialize>` | Converts the field between model value and JSON value ([serialize formatter](/guide/tags#convert-a-field-to-a-different-json-value)). |
+| `TSerde` | `TSerde<typeof serialize, typeof deserialize>` | Converts the field between model value and JSON value ([serialize formatter](/guide/serialization#change-the-json-form)). |
 | `TSerdeWire` | `TSerdeWire<Value>` | `[Wire]`, the deserializer's input type, or `[]` without `TSerde`. |
 | `BuiltinModelTag` | union type | Every built-in constraint. |
 
-The `TSerde` deserializer's parameter type sets the JSON schema of the field ([which type controls validation](/guide/tags#which-type-controls-validation)). A parameter typed `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`.
+The `TSerde` deserializer's parameter type sets the JSON schema of the field ([which type controls validation](/guide/serialization#which-type-controls-validation)). A parameter typed `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`.
 
 Also exported: `ModelValidationFunction`, `ModelSerializeFunction`, `ModelDeserializeFunction`.
 
@@ -356,7 +356,7 @@ import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem
 | `validationContext` | both | none | Resolves validators from your own function ([validation context](#validation-context)). |
 | `allowGetter` | `AllowGetterOptions` | `false` | `true` reads declared root fields through getters and inherited values ([below](#allow-getter)). |
 
-`ValidateOptions` has `failFast` and `validationContext`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. The call order and checks per call are in [Validation during conversion](/guide/serialization#validation-during-conversion).
+`ValidateOptions` has `failFast` and `validationContext`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. The call order and checks per call are in [Checks during conversion](/guide/serialization#checks-during-conversion).
 
 ### `allowGetter` {#allow-getter}
 
@@ -375,7 +375,7 @@ By default a field counts when it is an own enumerable property, as in `JSON.str
 - `JSON.stringify(model)` does not convert or validate.
 - A `Date` field decodes with ECMAScript `Date` parsing; a non-string or unparsable value throws `Deserialization` with `causedByInput: true`. Put format rules on `Format<'date-time'>` or `TValidation`.
 - A `Date` encodes as UTC ISO text with milliseconds; years outside 0000–9999 throw `Serialization`.
-- Conversion rejects non-finite numbers, `bigint`, functions, symbols, cycles, array holes and non-plain objects, except in a field whose [`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value) codec converts the value.
+- Conversion rejects non-finite numbers, `bigint`, functions, symbols, cycles, array holes and non-plain objects, except in a field whose [`TSerde`](/guide/serialization#change-the-json-form) codec converts the value.
 
 ### Validation context {#validation-context}
 

@@ -20,6 +20,7 @@ import { checkChecklistInput } from './checklist-input.model.js';
 import { checkTitleRule } from './title-rule.js';
 import { checkServerErrors } from './server-errors.js';
 import { loadInvalidTask } from './load-task.js';
+import { explainTaskText } from './read-errors.js';
 import { isMoney, readMoney, writeMoney } from './estimate-json.js';
 import { Budget } from './estimate.model.js';
 import { describeAttachment } from './attachment-json.js';
@@ -65,6 +66,13 @@ test('quick start toggles a task, serializes it and validates it', async () => {
   } finally {
     info.mock.restore();
   }
+});
+
+test('a LibError of input lists the failed checks by path', () => {
+  // protects: docs Validate models, Errors and issues
+  assert.deepEqual(explainTaskText('{"title":"Plan","done":false,"priority":"low"}'), []);
+  assert.deepEqual(explainTaskText('{"title":"","done":"no","priority":"low"}'), ['done: Expected boolean', 'title: Must be at least 1 character']);
+  assert.deepEqual(explainTaskText('not json'), ['The text is not JSON.']);
 });
 
 test('priority is a number in the model and a word in JSON', () => {

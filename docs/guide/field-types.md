@@ -1,6 +1,36 @@
-# Composing models
+# Field types
 
-Nest models, derive types with `Pick` and `Omit`, and model unions that convert predictably.
+Pick the TypeScript shape of a field and see how golem constructs, converts and validates it.
+
+## Scalars, arrays and objects
+
+| TypeScript shape | Runtime and JSON |
+| --- | --- |
+| `string`, `number`, `boolean`, `null`, `undefined` | stored as is; an `undefined` property is left out of JSON |
+| `bigint` | needs a [`TSerde`](/guide/serialization#change-the-json-form) codec that writes it as JSON, such as a string; without one, `stringify` rejects it |
+| string, number and boolean literals | kept and checked |
+| arrays and tuples | items convert recursively; tuple length and optional or rest positions are checked |
+| object types | known properties convert; extra properties fail validation unless [`exact` is `false`](#objects-and-exact) |
+| intersections | the fields merge |
+| unions | [supported unions](#unions) |
+| a declaration alias, such as `TPlace` | a nested plain object, still converted |
+| your class, such as `Place` | a nested instance of that class |
+| `Date` | an ISO date-time string in JSON, restored with `Date` parsing |
+| `TemporalInstant`, `TemporalPlainDate` and the other [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) types | an ISO 8601 string in JSON ([Dates and times](/guide/dates)) |
+| a [recursive type alias](#recursive-type-aliases) | converted and validated at every level |
+| `any`, `unknown` | accepted only when [`allowAny` is `true`](#any-and-unknown) |
+
+[Validation tags](/guide/tags) add checks to these shapes, such as a format check on a `Date`.
+
+## Objects and exact
+
+The second type argument of `IModel` and `IObject` controls extra properties, `any` and `unknown`:
+
+<<< ../../examples/models/src/metadata.model.ts#exact-and-any
+
+`exact` defaults to `true`: extra properties fail validation, including in nested plain objects. The own state of a model instance is not an extra property. Constructors assign declared fields only, and extra keys added to an instance are not serialized.
+
+Set `exact: false` in `golem.yaml` to change the default for every model. The option on the declaration overrides `golem.yaml`, and `golem.yaml` overrides the default.
 
 ## Nested models and derived types
 
@@ -8,19 +38,20 @@ A field typed with your class, such as `office: Place`, holds an instance of tha
 
 <<< ../../examples/models/src/assignee.model.ts#nested-and-derived
 
-A derived type keeps field conversion and validation, but not `Place` methods, constructor defaults or rules added with [`getValidator(model).extend()`](/guide/validation#instance-rules). `Readonly` keeps TypeScript's modifier and doesn't freeze the value.
+A derived type keeps field conversion and validation. It does not keep `Place` methods, constructor defaults or rules added with [`getValidator(model).extend()`](/guide/validation#instance-rules). `Readonly` keeps the TypeScript modifier and does not freeze the value.
 
-A derived type is exact by default, like any model: extra keys fail validation; `{ exact: false }` keeps them. Put a whole-object [`TValidation`](/guide/tags#add-a-custom-field-rule) predicate or [`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value) formatter on the derived type itself rather than reusing one written for another shape.
+A derived type is exact by default, like any model. Put a whole-object [`TValidation`](/guide/tags#add-a-custom-field-rule) predicate or [`TSerde`](/guide/serialization#change-the-json-form) formatter on the derived type itself. Do not reuse one that you wrote for another shape.
 
 ## Unions
 
-Generation emits conversion for these unions and fails for anything else; conversion never tries branches one by one.
+Golem converts the unions below. Generation fails for any other union, because conversion never tries the variants one by one.
 
 Supported:
 
-- literal unions, such as `'paid' | 'pending'`
+- scalar types only, such as `string | number`, and literal unions, such as `'paid' | 'pending'`
 - optional and nullish values: `T | undefined`, `T | null`
-- a scalar or several scalars beside one array or one tuple: `string | Date[]`, `string | [Date]`, `T | T[]`, as in query objects (`status?: Status | Status[]`); a scalar that converts, such as `Date` or a model, must be the only scalar
+- one object, model or class beside scalars: `string | TPlace`
+- a scalar or several scalars beside one array or one tuple: `string | Date[]`, `string | [Date]`, `T | T[]`, as in query objects (`status?: Status | Status[]`). A scalar that converts, such as `Date` or a model, must be the only scalar
 - object unions with one unique, required literal discriminator
 - an SDK model class (generated from an OpenAPI document) plus a primitive or a uniquely tagged object
 
@@ -30,19 +61,25 @@ A discriminated union of two models:
 
 Generation fails for:
 
-- a root `IModel` union such as `IModel<TEmail | TPhone>` ([`RUNM1052`](/reference/diagnostics#runm1052)); put the union in a field
-- object unions without a unique required literal discriminator ([`RUNM1080`](/reference/diagnostics#runm1080)); give each variant a required literal field such as `kind: 'cat'`
+- a root `IModel` union such as `IModel<TEmail | TPhone>`: put the union in a field ([`RUNM1052`](/reference/diagnostics#runm1052))
+- object unions without a unique required literal discriminator: give each variant a required literal field such as `kind: 'cat'` ([`RUNM1080`](/reference/diagnostics#runm1080))
 - several undiscriminated SDK model classes, or an SDK model class plus an array, `any`, `unknown`, intersection or untagged object ([`RUNM1030`](/reference/diagnostics#runm1030))
-- any union that would need to probe alternatives ([`RUNM1082`](/reference/diagnostics#runm1082))
+- any other union that would need to probe alternatives ([`RUNM1082`](/reference/diagnostics#runm1082))
 
-`Extract` and `Exclude` keep your class only when the selected branch is the unchanged named model; a structurally identical plain object doesn't gain its methods.
+`Extract` and `Exclude` keep your class only when the selected branch is the unchanged named model. A structurally identical plain object does not gain its methods.
 
-## Strict objects and `any`
+## Recursive type aliases
 
-The second type argument of `IModel` controls extra properties, `any` and `unknown`:
+A type alias can refer to itself, in any shape: a union, an array, a tuple or a record. Golem generates one function for the alias, so a recursive alias needs no model around it. For example, `type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }` is a valid field type, as in `IModel<{ payload: JsonValue }>`.
 
-<<< ../../examples/models/src/metadata.model.ts#exact-and-any
+Use the alias as a field type, as an optional field or as an array item. Golem validates and converts every level. `stringify` and `toWireFormat` throw an error for a value that contains itself.
 
-`exact` defaults to `true`: extra properties fail validation, including in nested plain objects. The own state of a model instance is not an extra property. Set `exact: false` in `golem.yaml` to change the default for every model; the model option overrides it. Constructors still assign declared fields only, and extra keys added to an instance aren't serialized.
+A type alias that does not refer to itself stays part of the field type. A recursive alias that holds a `Date` or a model converts the `Date` or the model at every level. A cycle that golem cannot name stops generation with [`RUNM1056`](/reference/diagnostics#runm1056).
 
-A field typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true` for the model or in `golem.yaml`. `allowAny: true` skips inferred structure and conversion for that field; explicit tags still run. `{ allowAny: false }` tightens a permissive global setting. Neither option changes which fields `toWireFormat` emits.
+## `any` and `unknown`
+
+A field typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`. The `TIntegrationEvent` declaration above sets it for one model. Set `allowAny: true` in `golem.yaml` to allow it in every model. The option on the declaration overrides `golem.yaml`, and `{ allowAny: false }` tightens a permissive `golem.yaml`.
+
+`allowAny: true` skips inferred structure and conversion for that field. Explicit tags still run, and the JSON value must still be representable as JSON. Neither `allowAny` nor `exact` changes which fields `toWireFormat` emits. A referenced model keeps its own policy.
+
+Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

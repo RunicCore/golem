@@ -23,7 +23,7 @@ The generator reads every `*.controller.ts` under `src/`. Set `suffixes` in the 
 - a JSON response with `id` and `note`
 - the operation ID `PaymentNotesController_get`, which becomes the client method `paymentNotesController_get`
 
-The default document version is OpenAPI 3.2. `class-validator` decorators aren't read; put constraints on the types ([type tags](/guide/tags)).
+The default document version is OpenAPI 3.2. `class-validator` decorators aren't read; put constraints on the types ([validation tags](/guide/tags)).
 
 ## Configure and generate
 

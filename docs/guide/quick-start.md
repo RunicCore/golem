@@ -29,7 +29,7 @@ Check the [requirements](/guide/install#requirements). Add `"type": "module"` to
 
 ## Declare your fields
 
-`priority` is a number in your code and a word in JSON, so first write the two functions that convert it in `src/priority-word.ts`. The generated file imports them, so they cannot live in the model file ([`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value)):
+`priority` is a number in your code and a word in JSON, so first write the two functions that convert it in `src/priority-word.ts`. The generated file imports them, so they cannot live in the model file ([`TSerde`](/guide/serialization#change-the-json-form)):
 
 <<< ../../examples/models/src/priority-word.ts#priority-word
 

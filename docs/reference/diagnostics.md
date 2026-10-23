@@ -326,7 +326,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1074
 
-**Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `models.suffixes`. Golem reads a model from a model file only. A shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts` ([shared folder](/reference/config#a-folder-shared-by-several-apps)). The message names the alias as `file#export`. **Fix:** Move the alias into a file whose name ends in a model suffix.
+**Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `models.suffixes`. Golem reads a model from a model file only. A shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts` ([shared folder](/guide/shared-models)). The message names the alias as `file#export`. **Fix:** Move the alias into a file whose name ends in a model suffix.
 
 ### RUNM1075
 
