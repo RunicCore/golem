@@ -43,7 +43,7 @@ const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
  * The function name when a conversion that a caller wrote as text, emitted against `input`, is exactly one call on it.
  * A caller passes that function and the value to `convertModelField` or `convertModelItems` instead of allocating a closure.
  */
-// migration door, deleted in steps 5 and 6 (T-288, T-289): golem-model and golem-openapi call it
+// migration door, deleted in step 6 (T-289): golem-openapi calls it
 export function singleCallConverter(converted: string, input: string = FIELD_CONVERSION_INPUT): string | undefined {
   const call = `(${input})`;
   if (!converted.endsWith(call)) return undefined;
@@ -90,7 +90,7 @@ interface ConvertedItem {
 }
 
 function convertedItem(item: SequenceItem): ConvertedItem {
-  // migration door, deleted in steps 5 and 6 (T-288, T-289): the text of a walker that gives a string says it is an object literal by its first character
+  // migration door, deleted in step 6 (T-289): the text of a walker that gives a string says it is an object literal by its first character
   const converted = typeof item.code !== 'string' ? item.code : item.code.startsWith('{') ? asObjectLiteral(legacyText(item.code)) : legacyText(item.code);
   return { code: converted, callee: calleeOf(converted, 'item'), throws: item.throws };
 }

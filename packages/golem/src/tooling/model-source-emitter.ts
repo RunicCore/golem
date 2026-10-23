@@ -22,10 +22,10 @@ export { pruneGeneratedImports } from './generated-imports.js';
 export { calleeOf, FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
 /** The one function that turns the Code of an emitter into text, for generators that still build text. */
 export {
-  aliased, code, fileImports, helper, helperDefinitions, helperName, identifier, ImportSource, join, legacyText, literal, render, runtimeImports, sameCode,
-  type Code, type Emitted, type Helper, type ImportOptions,
+  aliased, blockComment, code, collapseBlankLines, fileImports, helper, helperName, helperSet, identifier, importedNames, importLines, importSet, ImportSource, join, legacyText, literal, render, sameCode, trimEnd,
+  type Code, type Emitted, type Helper, type ImportOptions, type JsonValue,
 } from './code.js';
-export { rt, rtType } from './rt.js';
+export { rt, rtType, type RuntimeModule } from './rt.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
 export {
   composeObjects,

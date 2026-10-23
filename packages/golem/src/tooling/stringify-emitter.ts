@@ -12,10 +12,10 @@ import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { modelName, requireComposedObject, type ModelBases } from './composition.js';
 import {
-  asObjectLiteral, bindInput, bindRead, code, emittedCode, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, join, legacyText, literal, readShape, render, sameCode,
+  aliased, asObjectLiteral, bindInput, bindRead, code, emittedCode, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, join, legacyText, literal, readShape, render, sameCode,
   type Code, type Emitted, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
-import { rt } from './rt.js';
+import { rt, rtType } from './rt.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
   AmbiguousUnionConversionError,
@@ -63,7 +63,7 @@ export interface CodecRuntimeOptions {
    */
   readonly fastCheckName?: (id: string) => Emitted | undefined;
   /** Expression of a record of the validation plan's resolved schemas by the same keys. A validated codec publishes these as its schemas; without it the codec carries its own unresolved payload. */
-  readonly resolvedSchemasExpr?: string;
+  readonly resolvedSchemasExpr?: Emitted;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Emitted;
   readonly nestedGenerated?: (id: string) => Emitted;
@@ -74,9 +74,9 @@ export interface CodecRuntimeOptions {
   readonly exportedFillFunctionIds?: ReadonlySet<string>;
   readonly issueSource?: 'TypeScript' | 'OpenAPI';
   /** Type expression of a local node's emitted JSON type; `toWireFormat${id}` returns it. */
-  readonly wireType?: (node: SchemaNode) => string | undefined;
+  readonly wireType?: (node: SchemaNode) => Emitted | undefined;
   /** Type expression of a local node's decoded value: parse, fromWireFormat, validate and assert produce it; stringify and toWireFormat accept it. */
-  readonly fieldsType?: (node: SchemaNode) => string | undefined;
+  readonly fieldsType?: (node: SchemaNode) => Emitted | undefined;
   /** Codec ids of sibling models that register a separate wire schema (`${id}#wire`). */
   readonly siblingWireCodecIds?: ReadonlySet<string>;
   /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
@@ -95,7 +95,7 @@ interface EmitCtx {
   readonly guardInline?: boolean;
   readonly validatorName?: (id: string) => Emitted;
   readonly fastCheckName?: (id: string) => Emitted | undefined;
-  readonly resolvedSchemasExpr?: string;
+  readonly resolvedSchemasExpr?: Emitted;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Emitted;
   readonly nestedGenerated?: (id: string) => Emitted;
@@ -103,8 +103,8 @@ interface EmitCtx {
   readonly siblingWireName?: (codecId: string) => Emitted;
   readonly exportedFillFunctionIds?: ReadonlySet<string>;
   readonly issueSource: 'TypeScript' | 'OpenAPI';
-  readonly wireType?: (node: SchemaNode) => string | undefined;
-  readonly fieldsType?: (node: SchemaNode) => string | undefined;
+  readonly wireType?: (node: SchemaNode) => Emitted | undefined;
+  readonly fieldsType?: (node: SchemaNode) => Emitted | undefined;
   readonly wireIdentity?: boolean;
   /** An object root writes each field it holds, and a missing required field is no error: validation did not run. */
   readonly lenientRoot?: boolean;
@@ -179,8 +179,8 @@ const CHECKED_KEY_HELPER: Helper = helper('__golemMark', () => code`const __gole
 const CHECKED_HELPER: Helper = helper('__golemChecked', () => code`const __golemChecked = Object.freeze({ validate: false, [${helperName(CHECKED_KEY_HELPER)}]: true });`);
 // Generated modules import these as `type ValidateOptions as __GolemValidateOptions` and
 // `type SerdeOptions as __GolemSerdeOptions` from @exprtlabs/golem/serde.
-const VALIDATE_OPTIONS = identifier('__GolemValidateOptions');
-const SERDE_OPTIONS = identifier('__GolemSerdeOptions');
+const VALIDATE_OPTIONS = aliased(rtType.serde.ValidateOptions, '__GolemValidateOptions');
+const SERDE_OPTIONS = aliased(rtType.serde.SerdeOptions, '__GolemSerdeOptions');
 
 function trustedOptions(ctx: EmitCtx): Code {
   return ctx.trustedOptions ?? TRUSTED;
@@ -1887,7 +1887,7 @@ function emitModelGuard(
     : wire ? `${node.codecId}#wire` : node.codecId;
   // A valid value passes the fast check first, unless a validation context decides (spec 7.1).
   const fast = ctx.fastCheckName?.(reference);
-  const slow = code`${rt.serde.assertModelValue}(${value}, options, ${validatorReference(ctx, reference)}, ${literal(reference)}, ${rt.errors.IssueRepresentation}.${identifier(representation)}, ${rt.errors.IssueSource}.${identifier(ctx.issueSource)});`;
+  const slow = code`${rt.serde.assertModelValue}(${value}, options, ${validatorReference(ctx, reference)}, ${literal(reference)}, ${rt.serde.IssueRepresentation}.${identifier(representation)}, ${rt.serde.IssueSource}.${identifier(ctx.issueSource)});`;
   return fast === undefined ? slow : code`if (!(${fastPasses(fast, value)})) ${slow}`;
 }
 
@@ -1954,9 +1954,8 @@ function emitNodeRuntime(
   const assertId = identifier(`assert${node.id}`);
   const isExported = !((node.anonymous && !ctx.exportAnonymousCodecs) || ctx.privateCodec?.(node));
   const exported = isExported ? code`export ` : code``;
-  // migration door, deleted in steps 5 and 6 (T-288, T-289): the type expressions are text that the module gives
   const fieldsType = ctx.fieldsType?.(node);
-  const fieldsCode = fieldsType === undefined ? undefined : legacyText(fieldsType);
+  const fieldsCode = fieldsType === undefined ? undefined : emittedCode(fieldsType);
   const fieldsOrUnknown = fieldsCode ?? code`unknown`;
   const modelType = fieldsCode ?? code`Record<string, unknown>`;
   const wireAssertId = identifier(`__golemAssertWire_${node.id}`);
@@ -2091,9 +2090,8 @@ function emitNodeRuntime(
     code``,
   ];
 
-  // migration door, deleted in steps 5 and 6 (T-288, T-289): the wire type expression is text that the module gives
   const wireType = ctx.wireType?.(node);
-  const wireCode = wireType === undefined ? undefined : legacyText(wireType);
+  const wireCode = wireType === undefined ? undefined : emittedCode(wireType);
   const wireOrUnknown = wireCode ?? code`unknown`;
 
   // The wire encoding without validation: nested trusted calls and the validating wrapper both run it.
@@ -2180,9 +2178,8 @@ function emitNodeRuntime(
     ]
     : [];
 
-  // migration door, deleted in steps 5 and 6 (T-288, T-289): the expression of the resolved schemas is text that the module gives
   const resolved = (id: string): Code | undefined => ctx.resolvedSchemasExpr !== undefined && validationEnabled
-    ? code`${legacyText(ctx.resolvedSchemasExpr)}[${literal(id)}] as object`
+    ? code`${emittedCode(ctx.resolvedSchemasExpr)}[${literal(id)}] as object`
     : undefined;
   const modelSchemaExpr = resolved(node.codecId)
     ?? code`${jsonDataExpression(schemaPayload(node.modelJsonSchema ?? node.jsonSchema, node.codecId))} as object`;
@@ -2212,7 +2209,7 @@ function emitNodeRuntime(
     ...(modelOnlySchemaExpr ? [code`  modelOnlySchema: ${modelOnlySchemaExpr},`] : []),
     ...(wireOnlySchemaExpr ? [code`  wireOnlySchema: ${wireOnlySchemaExpr},`] : []),
     ...(resolved(node.codecId) !== undefined ? [code`  schemaRefsResolved: true,`] : []),
-    code`  issueSource: ${rt.errors.IssueSource}.${identifier(ctx.issueSource)},`,
+    code`  issueSource: ${rt.serde.IssueSource}.${identifier(ctx.issueSource)},`,
     code`});`,
     code``,
   ];

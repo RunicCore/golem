@@ -202,6 +202,41 @@ export function inputSlot(label: string, shape: ReadShape = 'other', record: boo
   return { label, shape, record };
 }
 
+/**
+ * The code with each run of blank lines cut to one blank line. A run stays inside one text part: a part that is not text
+ * ends it.
+ */
+// migration door, deleted when the block spacing of the stringify emitter is exact (a follow-up of P-22 step 7): golem-model files have always had this normalization
+export function collapseBlankLines(root: Code): Code {
+  return fromParts(root.parts.map((part): Part => {
+    if (part.kind !== 'text') return part;
+    let text = '';
+    let run = 0;
+    for (const char of part.text) {
+      run = char === '\n' ? run + 1 : 0;
+      if (run <= 2) text += char;
+    }
+    return { kind: 'text', text };
+  }));
+}
+
+/** A block comment. The text cannot end the comment. */
+export function blockComment(text: string): Code {
+  if (text.includes('*/')) throw new TypeError(`a comment cannot hold "*/", got ${JSON.stringify(text)}`);
+  return fromParts([{ kind: 'text', text: `/* ${text} */` }]);
+}
+
+/** The code without the whitespace at its end. Whitespace names nothing. */
+export function trimEnd(root: Code): Code {
+  const parts = [...root.parts];
+  for (let last = parts.at(-1); last?.kind === 'text'; last = parts.at(-1)) {
+    parts.pop();
+    const kept = last.text.trimEnd();
+    if (kept !== '') { parts.push({ kind: 'text', text: kept }); break; }
+  }
+  return fromParts(parts);
+}
+
 /** Spaces at the start of a line. Whitespace names nothing, so it is the one text that needs no check. */
 export function indentation(spaces: number): Code {
   return fromParts([{ kind: 'text', text: ' '.repeat(spaces) }]);
@@ -211,7 +246,7 @@ export function indentation(spaces: number): Code {
 export type Emitted = string | Code;
 
 /** A string is wrapped as one text part. */
-// migration door, deleted in steps 5, 6 and 7 (T-288, T-289, and P-22 step 7): the walkers of golem-model and golem-openapi, the item callbacks of sequence-conversion, and the line writer of the validator compiler still give strings
+// migration door, deleted in steps 6 and 7 (T-289, and P-22 step 7): the reads that the walkers of golem-model and golem-openapi give as text, the item callbacks of sequence-conversion, and the line writer of the validator compiler still give strings
 export function emittedCode(emitted: Emitted): Code {
   return typeof emitted === 'string' ? legacyText(emitted) : emitted;
 }
@@ -228,7 +263,7 @@ export function readShape(expression: Emitted): ReadShape {
   if (only === undefined || more.length > 0) return 'other';
   if (only.kind === 'input') return only.slot.shape;
   if (only.kind === 'name' || only.kind === 'imported') return 'name';
-  // migration door, deleted in steps 5 and 6 (T-288, T-289): tests the text of a read that a caller wrote as a string
+  // migration door, deleted in steps 6 and 7 (T-289, and P-22 step 7): tests the text of a read that a caller wrote as a string
   if (only.kind === 'text') return NAME_TEXT.test(only.text) ? 'name' : CHAIN_TEXT.test(only.text) ? 'chain' : 'other';
   return 'other';
 }
@@ -406,27 +441,35 @@ export interface ImportOptions {
  * `import type` statement before the value statement, or after the values as `type Name` when the file asks for `inline`.
  */
 export function runtimeImports(root: Code, options: ImportOptions = {}): readonly Code[] {
-  return importSet(root, options).flatMap(({ module, names, types }) => {
-    const specifier = options.specifiers?.[module] ?? `@exprtlabs/golem/${module}`;
-    const quoted = options.quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`;
-    if (options.typeNames === 'inline') {
-      const listed = [...names, ...types.map((type) => `type ${type}`)];
-      return listed.length > 0 ? [plainText(`import { ${listed.join(', ')} } from ${quoted};`)] : [];
-    }
-    return [
-      ...(types.length > 0 ? [plainText(`import type { ${types.join(', ')} } from ${quoted};`)] : []),
-      ...(names.length > 0 ? [plainText(`import { ${names.join(', ')} } from ${quoted};`)] : []),
-    ];
-  });
+  return importSet(root, options).flatMap((entry) => importLines(entry, options));
+}
+
+/** The statements of one module of the import set (see `runtimeImports`), for a file that puts other statements between modules. */
+export function importLines({ module, names, types }: RuntimeImport, options: ImportOptions = {}): readonly Code[] {
+  const specifier = options.specifiers?.[module] ?? `@exprtlabs/golem/${module}`;
+  const quoted = options.quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`;
+  if (options.typeNames === 'inline') {
+    const listed = [...names, ...types.map((type) => `type ${type}`)];
+    return listed.length > 0 ? [plainText(`import { ${listed.join(', ')} } from ${quoted};`)] : [];
+  }
+  return [
+    ...(types.length > 0 ? [plainText(`import type { ${types.join(', ')} } from ${quoted};`)] : []),
+    ...(names.length > 0 ? [plainText(`import { ${names.join(', ')} } from ${quoted};`)] : []),
+  ];
 }
 
 /**
  * The import statements of the names that code takes from `sources`, one statement per source, in the order of `sources`.
- * A source with no used name writes none. Code that holds a name of a source not listed is an error.
+ * A source with no used name writes none. Code that holds a name of a source that neither `sources` nor `elsewhere` (the
+ * sources the file writes in another call) lists is an error.
  */
-export function fileImports(root: Code, sources: readonly ImportSource[], options: Pick<ImportOptions, 'quote'> = {}): readonly Code[] {
+export function fileImports(
+  root: Code,
+  sources: readonly ImportSource[],
+  options: Pick<ImportOptions, 'quote'> & { readonly elsewhere?: readonly ImportSource[] } = {},
+): readonly Code[] {
   const { imported } = collect(root);
-  const unlisted = [...imported.keys()].find((source) => !sources.includes(source));
+  const unlisted = [...imported.keys()].find((source) => !sources.includes(source) && !options.elsewhere?.includes(source));
   if (unlisted) throw new Error(`the code uses names of "${unlisted.specifier}", which the file does not list among its import sources`);
   return sources.flatMap((source) => {
     const used = imported.get(source);
@@ -439,6 +482,12 @@ export function fileImports(root: Code, sources: readonly ImportSource[], option
     });
     return [plainText(`import ${source.typeStatement ? 'type ' : ''}{ ${names.join(', ')} } from ${quoted};`)];
   });
+}
+
+/** The names of `source` that the code uses, as the module exports them, in the order of the declaration. */
+export function importedNames(root: Code, source: ImportSource): readonly string[] {
+  const used = collect(root).imported.get(source);
+  return used ? source.statement(used).flatMap((part) => part.kind === 'imported' ? [part.name] : []) : [];
 }
 
 function checkedSingleQuoted(specifier: string): string {

@@ -44,6 +44,33 @@ test('model companions compile with --noUnusedLocals for empty, scalar and neste
   }
 });
 
+test('a model with fields named like runtime exports compiles with --noUnusedLocals and still decodes and encodes', async t => {
+  // protects: SC-3 (T-288) a field name that equals a runtime export does not keep an unused import
+  const { root, sourceRoot } = modelProject(t);
+  writeModelSources(sourceRoot, {
+    'clash.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TClashBaseModel, type TClashFields } from './clash.model.generated.js';
+
+export type TClash = IModel<{ parseJson: string; unknownDiscriminatorValue: number }>;
+export class Clash extends TClashBaseModel {
+  constructor(values: Partial<TClashFields> = {}) {
+    super(values);
+  }
+}
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root, ['--noUnusedLocals', '--noUnusedParameters']);
+  fs.writeFileSync(path.join(root, 'verify.mjs'), `import assert from 'node:assert/strict';
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { Clash } from './build/clash.model.js';
+
+const wire = { parseJson: 'text', unknownDiscriminatorValue: 3 };
+assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(Clash, wire)), wire);
+`);
+  await command(root, process.execPath, [path.join(root, 'verify.mjs')]);
+});
+
 test('golem build rewrites nested model serde calls and preserves class construction in CRLF source', async t => {
   const { root, sourceRoot } = companionModelProject(t, 'model-serde-edit');
   const source = readFixture('models/model-companions/serde-edit.model.ts').replaceAll('\n', '\r\n');
