@@ -885,6 +885,9 @@ export function generateModels(
       const expression = emit(definition.additionalProperties, 'value', definitions, fieldEnv, definition.schemaName, context);
       return sameCode(expression, legacyText('value')) ? undefined : code`, (value) => ${expression}`;
     };
+    // The constructor reads `values`, and encode reads `model`, through a base class, a declared field or the copy of additional
+    // properties. A class with none of the three declares the parameter under an underscore name.
+    const readsInstance = baseClass !== null || fields.length > 0 || additionalPropertyType !== null;
     const decodeCaptures: (readonly [name: string, type: string])[] = [];
     const decodeConversions: Code[] = [];
     for (const [name, schema] of allProperties) {
@@ -939,7 +942,7 @@ export function generateModels(
       code`  declare readonly [${rtType.model.generatedModelWireBrand}]: ${identifier('Types')}.${identifier(typeName)};`,
       code`  declare readonly [${rtType.model.generatedModelFieldsBrand}]: ${identifier(`${typeName}Fields`)};`,
       ...(definition.isUnion ? [code`  declare static readonly [${rtType.model.generatedModelResultBrand}]: ${variantUnion};`] : []),
-      code`  constructor(values: ${identifier(`${typeName}Init`)} = {}) {`,
+      code`  constructor(${identifier(readsInstance ? 'values' : '_values')}: ${identifier(`${typeName}Init`)} = {}) {`,
       ...(baseClass ? [code`    super(values);`] : []),
       ...assignments,
       ...(additionalPropertyType
@@ -964,7 +967,7 @@ export function generateModels(
         code`}`,
       ]),
       BLANK,
-      code`${helpers.moduleFile ? code`export ` : code``}function ${identifier(`encode${typeName}`)}(model: ${identifier(className)}): ${identifier('Types')}.${identifier(typeName)} {`,
+      code`${helpers.moduleFile ? code`export ` : code``}function ${identifier(`encode${typeName}`)}(${identifier(readsInstance ? 'model' : '_model')}: ${identifier(className)}): ${identifier('Types')}.${identifier(typeName)} {`,
       baseClass
         ? code`  const result: Record<string, unknown> = { ...${identifier(`encode${definition.baseName}`)}(model) };`
         : code`  const result: Record<string, unknown> = {};`,

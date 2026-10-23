@@ -730,6 +730,7 @@ test('sequential same-title generation jobs keep schema and resource contexts is
 
 test('a model with a constant field only and a model with no field compile under noUnusedParameters and still write their JSON', async t => {
   // protects: T-295 a stringify core that reads no value declares it as _value
+  // protects: T-319 a model class with no field, base or additional property declares its constructor and encode parameters as _values and _model
   const { source } = fixture(t);
   const operation = (operationId: string, schema: Record<string, unknown>) => ({
     post: {
@@ -743,10 +744,12 @@ test('a model with a constant field only and a model with no field compile under
     info: { title: 'Fieldless Models', version: '1' },
     components: { schemas: {
       Fixed: { type: 'object', required: ['kind'], properties: { kind: { const: 'only' } }, additionalProperties: false },
+      Empty: { type: 'object', properties: {}, additionalProperties: false },
     } },
     paths: {
       '/fixed': operation('putFixed', { $ref: '#/components/schemas/Fixed' }),
       '/empty': operation('putEmpty', { type: 'object', properties: {}, additionalProperties: false }),
+      '/empty-model': operation('putEmptyModel', { $ref: '#/components/schemas/Empty' }),
     },
   }, { output: source, name: 'Fieldless', profile: { mobx: false, validation: true } });
   compileGeneratedSdk(source, [], STRICT_OPTIONS);
@@ -754,7 +757,9 @@ test('a model with a constant field only and a model with no field compile under
   await fixed.operation.execute({ body: { kind: 'only' } });
   const empty = await loadOperation(source, 'putEmpty');
   await empty.operation.execute({ body: {} });
-  assert.deepEqual([fixed.requests, empty.requests], [['{"kind":"only"}'], ['{}']]);
+  const emptyModel = await loadOperation(source, 'putEmptyModel');
+  await emptyModel.operation.execute({ body: {} });
+  assert.deepEqual([fixed.requests, empty.requests, emptyModel.requests], [['{"kind":"only"}'], ['{}'], ['{}']]);
 });
 
 test('the SDK validators module exports one named function per root and no record', async t => {
