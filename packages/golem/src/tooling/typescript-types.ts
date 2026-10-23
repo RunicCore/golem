@@ -566,6 +566,8 @@ export interface ProgramSession extends Disposable {
   inputsChanged(filenames: Iterable<string>): void;
   parseConfigFile(configPath: string, onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] };
   openProgram(options: OpenProgramOptions): Program;
+  /** Resolve a module name that no program imports, such as one an SDK manifest names, as the session's compiler resolves an import of `containingFile`. */
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind): { resolvedModule?: ResolvedModule };
 }
 
 // The runtime values of the seam, as the facade destructures them. The value `X` of an enum-like name carries the
@@ -645,8 +647,8 @@ export interface TypeScriptBackend {
   getDecorators(node: Node): readonly Decorator[] | undefined;
   getModifiers(node: Node): readonly Node[] | undefined;
   getPreEmitDiagnostics(program: Program): readonly Diagnostic[];
-  /** `resolutionMode` is the `impliedNodeFormat` of the importing source file; without it, Node16 and NodeNext resolution matches the `require` conditions. */
-  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, host: ModuleResolutionHost, resolutionMode?: ModuleKind): { resolvedModule?: ResolvedModule };
+  /** The module an import resolved to in the program that holds its source file, or undefined when it resolved to none. A package.json that is not JSON throws an error that names it. */
+  resolveImport(specifier: StringLiteralLike): ResolvedModule | undefined;
   /** TypeScript 7 names a type parameter's default `defaultType`; TypeScript 6 names it `default`. */
   typeParameterDefault(parameter: TypeParameterDeclaration): TypeNode | undefined;
   /** The generic target of a type reference (e.g. the tuple target of a tuple type). */

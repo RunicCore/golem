@@ -89,6 +89,8 @@ interface ClassicProgram {
   getCompilerOptions(): Golem.CompilerOptions;
   getSyntacticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
   getSemanticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
+  /** Internal to the classic compiler: the resolution it stored for an import. */
+  getResolvedModuleFromModuleSpecifier(specifier: Golem.StringLiteralLike, file: Golem.SourceFile): { readonly resolvedModule?: Golem.ResolvedModule } | undefined;
 }
 
 interface ClassicMessageChain {
@@ -138,7 +140,7 @@ interface ParsedConfigHost {
 
 // Names that this module implements itself; every other seam name is the classic API's own member.
 type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources'
-  | 'formatDiagnosticsWithColorAndContext' | 'getPreEmitDiagnostics' | 'resolveModuleName' | 'typeParameterDefault' | 'typeReferenceTarget';
+  | 'formatDiagnosticsWithColorAndContext' | 'getPreEmitDiagnostics' | 'resolveImport' | 'typeParameterDefault' | 'typeReferenceTarget';
 
 interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'ObjectFlags' | 'SignatureKind'> {
   readonly SignatureKind: Golem.TypeScriptBackend['SignatureKind'] & { readonly Construct: Golem.SignatureKind };
@@ -285,16 +287,16 @@ export const {
   sys,
 } = classic;
 
-/** The classic resolver takes the mode after its cache and redirect arguments. It reads a package.json that is not JSON as `{}`; golem names the file instead. */
-export function resolveModuleName(
-  moduleName: string,
-  containingFile: string,
-  compilerOptions: Golem.CompilerOptions,
-  host: Golem.ModuleResolutionHost,
-  resolutionMode?: Golem.ModuleKind,
-): { resolvedModule?: Golem.ResolvedModule } {
-  assertPackageManifestsParse(moduleName, containingFile);
-  return classic.resolveModuleName(moduleName, containingFile, compilerOptions, host, undefined, undefined, resolutionMode);
+/** The program that last handed out each source file: its resolved modules hold the file's imports. */
+const importerPrograms = new WeakMap<object, CompatProgram>();
+
+/** The module an import resolved to in the program that holds its source file. The classic compiler reads a package.json that is not JSON as `{}`; golem names the file instead. */
+export function resolveImport(specifier: Golem.StringLiteralLike): Golem.ResolvedModule | undefined {
+  const file = specifier.getSourceFile();
+  const program = importerPrograms.get(file);
+  if (!program) throw new Error(`${file.fileName} belongs to no open TypeScript program, so golem cannot read how its imports resolve.`);
+  assertPackageManifestsParse(specifier.text, file.fileName);
+  return program.program.getResolvedModuleFromModuleSpecifier(specifier, file)?.resolvedModule;
 }
 
 /** TypeScript 7 names a type parameter's default `defaultType`; TypeScript 6 names it `default`. */
@@ -764,8 +766,16 @@ export class ProgramSession implements Disposable {
     this.latest = { program, overlayPaths };
     const held = new CompatProgram(this, program);
     this.held.add(held);
+    for (const file of program.getSourceFiles()) importerPrograms.set(file, held);
     this.retainFilesOf(held);
     return held;
+  }
+
+  /** Resolve a module name that no program imports, such as one an SDK manifest names. The classic resolver takes the mode after its cache and redirect arguments. */
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: Golem.CompilerOptions, resolutionMode?: Golem.ModuleKind): { resolvedModule?: Golem.ResolvedModule } {
+    this.assertOpen();
+    assertPackageManifestsParse(moduleName, containingFile);
+    return classic.resolveModuleName(moduleName, containingFile, compilerOptions, this.host(compilerOptions, new Map()), undefined, undefined, resolutionMode);
   }
 
   /** Called by a closing program. */

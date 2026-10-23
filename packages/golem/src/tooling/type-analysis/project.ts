@@ -291,13 +291,13 @@ function ignoredGolemYamlMessage(golemYaml: string, modelFile: string): string {
  * The project files that `file` imports or re-exports, by canonical filename. A declaration file and a file in `node_modules`
  * are left out, unless it is a model file: a shared model can be declared there.
  */
-export function projectFilesImportedBy(file: ts.SourceFile, compilerOptions: ts.CompilerOptions, suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES): string[] {
+export function projectFilesImportedBy(file: ts.SourceFile, _compilerOptions: ts.CompilerOptions, suffixes: readonly string[] = DEFAULT_MODEL_SUFFIXES): string[] {
   const isModelFile = modelFilePattern(suffixes);
   const found = new Set<string>();
   for (const statement of file.statements) {
     const specifier = ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement) ? statement.moduleSpecifier : undefined;
     if (specifier === undefined || !ts.isStringLiteralLike(specifier)) continue;
-    const resolved = ts.resolveModuleName(specifier.text, file.fileName, compilerOptions, ts.sys, file.impliedNodeFormat).resolvedModule?.resolvedFileName;
+    const resolved = ts.resolveImport(specifier)?.resolvedFileName;
     if (resolved === undefined) continue;
     if ((isAmbientDeclaration(resolved) || /(?:^|[\\/])node_modules[\\/]/.test(resolved)) && !isModelFile.test(resolved)) continue;
     found.add(canonicalFilename(resolved));

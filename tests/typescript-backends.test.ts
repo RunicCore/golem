@@ -20,11 +20,21 @@ test('every name the facade exports is defined on the active backend', () => {
   assert.match(ts.typescriptVersion, /^[67]\./);
 });
 
+/** The compiler's own resolution of an import: a program opens `main.ts` with an import of each specifier, and the answer is what `resolveImport` reads from it. */
+function importResolver(t: TestContext, root: string, specifiers: readonly string[], compilerOptions: object = {}): (specifier: string) => string | undefined {
+  const main = path.join(root, 'main.ts');
+  fs.writeFileSync(main, specifiers.map((specifier) => `import ${JSON.stringify(specifier)};\n`).join(''));
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { module: 'NodeNext', moduleResolution: 'NodeNext', noEmit: true, skipLibCheck: true, ...compilerOptions }, include: ['main.ts'] }));
+  const program = ts.createProgramFromSources({ root, sources: [main] });
+  t.after(() => program.close());
+  const imports = program.getSourceFile(main)!.statements.filter(ts.isImportDeclaration).map((statement) => statement.moduleSpecifier).filter(ts.isStringLiteralLike);
+  return (specifier) => ts.resolveImport(imports.find((node) => node.text === specifier)!)?.resolvedFileName;
+}
+
 test('a relative specifier with a dot in its name resolves to the source that bears the name', t => {
   const root = createFixtureProject(t, 'golem-dotted-specifier-');
-  const main = path.join(root, 'main.ts');
   fs.writeFileSync(path.join(root, 'user.model.ts'), 'export class User {}\n');
-  const resolve = (specifier: string): string | undefined => ts.resolveModuleName(specifier, main, {}, ts.sys).resolvedModule?.resolvedFileName;
+  const resolve = importResolver(t, root, ['./user.model', './user.model.js', './user.other']);
   assert.equal(resolve('./user.model'), path.join(root, 'user.model.ts'));
   assert.equal(resolve('./user.model.js'), path.join(root, 'user.model.ts'));
   assert.equal(resolve('./user.other'), undefined);
@@ -33,12 +43,10 @@ test('a relative specifier with a dot in its name resolves to the source that be
 test('a folder is no module file: a folder named like a source is skipped, and a paths alias to a folder resolves to its index', t => {
   // protects: T-181 the TypeScript 7 system answers fileExists as the TypeScript 6 system does, true for files only
   const root = createFixtureProject(t, 'golem-folder-not-file-');
-  const main = path.join(root, 'main.ts');
   fs.mkdirSync(path.join(root, 'src/models'), { recursive: true });
   fs.mkdirSync(path.join(root, 'src/util.ts'));
   fs.writeFileSync(path.join(root, 'src/models/index.ts'), 'export const value = 1;\n');
-  const options = { baseUrl: root, paths: { '@app/*': ['src/*'] } };
-  const resolve = (specifier: string): string | undefined => ts.resolveModuleName(specifier, main, options, ts.sys).resolvedModule?.resolvedFileName;
+  const resolve = importResolver(t, root, ['./src/util', '@app/models'], { paths: { '@app/*': ['./src/*'] } });
   assert.equal(ts.sys.fileExists(path.join(root, 'src/models')), false);
   assert.equal(resolve('./src/util'), undefined);
   assert.equal(resolve('@app/models'), path.join(root, 'src/models/index.ts'));
@@ -47,12 +55,10 @@ test('a folder is no module file: a folder named like a source is skipped, and a
 test('a paths alias without an extension resolves to the source file or the index of the folder it names', t => {
   // protects: T-224 a paths alias probes extensions and index files on both TypeScript lanes
   const root = createFixtureProject(t, 'golem-paths-extensionless-');
-  const main = path.join(root, 'main.ts');
   fs.mkdirSync(path.join(root, 'src/models'), { recursive: true });
   fs.writeFileSync(path.join(root, 'src/models/index.ts'), 'export const value = 1;\n');
   fs.writeFileSync(path.join(root, 'src/plain.ts'), 'export const value = 1;\n');
-  const options = { baseUrl: root, paths: { '@app/*': ['src/*'] } };
-  const resolve = (specifier: string): string | undefined => ts.resolveModuleName(specifier, main, options, ts.sys).resolvedModule?.resolvedFileName;
+  const resolve = importResolver(t, root, ['@app/plain', '@app/models'], { paths: { '@app/*': ['./src/*'] } });
   assert.equal(resolve('@app/plain'), path.join(root, 'src/plain.ts'));
   assert.equal(resolve('@app/models'), path.join(root, 'src/models/index.ts'));
 });
@@ -60,7 +66,6 @@ test('a paths alias without an extension resolves to the source file or the inde
 test('a package subpath that the exports map hides does not resolve, and a package without an exports map resolves any file', t => {
   // protects: T-259 on TypeScript 7 the exports map decides alone, as on TypeScript 6; a hidden file is not found by a node_modules walk
   const root = createFixtureProject(t, 'golem-hidden-subpath-');
-  const main = path.join(root, 'main.ts');
   fs.mkdirSync(path.join(root, 'node_modules/guarded'), { recursive: true });
   fs.mkdirSync(path.join(root, 'node_modules/open'), { recursive: true });
   fs.writeFileSync(path.join(root, 'node_modules/guarded/package.json'), JSON.stringify({ name: 'guarded', version: '1.0.0', exports: { './shown': { types: './shown.d.ts' } } }));
@@ -68,7 +73,7 @@ test('a package subpath that the exports map hides does not resolve, and a packa
   fs.writeFileSync(path.join(root, 'node_modules/guarded/hidden.d.ts'), 'export declare const value: number;\n');
   fs.writeFileSync(path.join(root, 'node_modules/open/package.json'), JSON.stringify({ name: 'open', version: '1.0.0' }));
   fs.writeFileSync(path.join(root, 'node_modules/open/deep.d.ts'), 'export declare const value: number;\n');
-  const resolve = (specifier: string): string | undefined => ts.resolveModuleName(specifier, main, { module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext }, ts.sys).resolvedModule?.resolvedFileName;
+  const resolve = importResolver(t, root, ['guarded/shown', 'guarded/hidden', 'open/deep']);
   const real = (file: string): string => fs.realpathSync(path.join(root, file));
   assert.equal(resolve('guarded/shown'), real('node_modules/guarded/shown.d.ts'));
   assert.equal(resolve('guarded/hidden'), undefined);
@@ -82,17 +87,16 @@ for (const [place, specifier, manifest] of [
   test(`${place}, and a text that is not JSON throws an error that names the file and keeps the parse error`, t => {
     // protects: T-7 a package.json that golem cannot parse is reported with its path and the parse error on both TypeScript lanes, not read as {}
     const root = createFixtureProject(t, 'golem-malformed-manifest-');
-    const main = path.join(root, 'main.ts');
     fs.mkdirSync(path.join(root, 'node_modules/dep'), { recursive: true });
     fs.writeFileSync(path.join(root, 'package.json'), '{"name": "app", "imports": { "#helper": "./helper.ts" }}');
     fs.writeFileSync(path.join(root, 'helper.ts'), 'export const value = 1;\n');
     fs.writeFileSync(path.join(root, 'node_modules/dep/package.json'), '{"name": "dep", "version": "1.0.0"}');
     fs.writeFileSync(path.join(root, 'node_modules/dep/helper.d.ts'), 'export declare const value: number;\n');
-    const resolve = (): unknown => ts.resolveModuleName(specifier, main, {}, ts.sys);
 
     fs.writeFileSync(path.join(root, manifest), '{"name": "broken", ');
+    const resolve = importResolver(t, root, [specifier]);
 
-    assert.throws(resolve, (error: unknown) => error instanceof Error
+    assert.throws(() => resolve(specifier), (error: unknown) => error instanceof Error
       && error.message.startsWith(`Cannot read ${path.join(fs.realpathSync(root), manifest)} to resolve a package import: `)
       && error.cause instanceof SyntaxError);
   });

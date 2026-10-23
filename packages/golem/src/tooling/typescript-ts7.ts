@@ -17,11 +17,9 @@ import {
   realpathSync,
   statSync,
 } from 'node:fs';
-import { createRequire } from 'node:module';
 import {
   basename,
   dirname,
-  extname,
   isAbsolute,
   join,
   normalize,
@@ -29,8 +27,7 @@ import {
   sep,
 } from 'node:path';
 import * as ast from 'typescript/ast';
-import { matchStarPattern } from './star-pattern.js';
-import { assertPackageManifestsParse, parseManifest, resolveExportsSubpath } from './type-analysis/package-specifier.js';
+import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
   CheckFlags as SyncCheckFlags,
@@ -49,6 +46,8 @@ import {
   type CompilerOptions,
   type CreateSnapshotParams,
   type Diagnostic as SyncDiagnostic,
+  type ModuleResolver,
+  type ResolutionMode,
   type Signature as SyncSignature,
   type Type as SyncType,
 } from 'typescript/sync';
@@ -583,6 +582,7 @@ class CompatProgram implements Program {
 
   /** The program's module format of the file, as the classic `SourceFile.impliedNodeFormat`; the TypeScript 7 file leaves it in the program's metadata. */
   private withImpliedNodeFormat(file: SourceFile | undefined): SourceFile | undefined {
+    if (file) importerPrograms.set(file, this);
     if (file && !Object.hasOwn(file, 'impliedNodeFormat')) {
       const format = this.project.program.getSourceFileMetadata(file.fileName)?.impliedNodeFormat;
       Object.defineProperty(file, 'impliedNodeFormat', { value: format === undefined || format === ModuleKind.None ? undefined : format });
@@ -738,236 +738,20 @@ export function getPreEmitDiagnostics(program: Program): readonly SyncDiagnostic
   ];
 }
 
-const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.d.ts', '.js', '.mjs', '.cjs', '.json'];
-const JS_EXTENSIONS = new Set(['.js', '.mjs', '.cjs', '.jsx']);
-
-function tryFile(host: ModuleResolutionHost, filename: string): string | undefined {
-  if (host.fileExists(filename)) return canonical(filename);
-  return undefined;
-}
-
-function sourceCandidates(filename: string): readonly string[] {
-  const extension = extname(filename);
-  if (!JS_EXTENSIONS.has(extension)) return [filename];
-  const stem = filename.slice(0, -extension.length);
-  return [
-    filename,
-    `${stem}.ts`,
-    `${stem}.tsx`,
-    `${stem}.mts`,
-    `${stem}.cts`,
-    `${stem}.d.ts`,
-  ];
-}
-
-function firstExisting(host: ModuleResolutionHost, filenames: readonly string[]): string | undefined {
-  for (const filename of filenames) {
-    const match = tryFile(host, filename);
-    if (match) return match;
-  }
-  return undefined;
-}
-
-function resolveRelative(moduleName: string, containingFile: string, host: ModuleResolutionHost): string | undefined {
-  const base = resolvePath(dirname(containingFile), moduleName);
-  const extension = extname(base);
-  // A dot inside a name (`./user.model`) is no extension: the name takes one below.
-  if (SOURCE_EXTENSIONS.includes(extension) || JS_EXTENSIONS.has(extension)) {
-    const match = firstExisting(host, sourceCandidates(base));
-    if (match) return match;
-    if (JS_EXTENSIONS.has(extension)) {
-      const stem = base.slice(0, -extension.length);
-      for (const sourceExtension of SOURCE_EXTENSIONS) {
-        const nested = tryFile(host, join(stem, `index${sourceExtension}`));
-        if (nested) return nested;
-      }
-    }
-    return undefined;
-  }
-  for (const sourceExtension of SOURCE_EXTENSIONS) {
-    const match = tryFile(host, base + sourceExtension);
-    if (match) return match;
-  }
-  for (const sourceExtension of SOURCE_EXTENSIONS) {
-    const match = tryFile(host, join(base, `index${sourceExtension}`));
-    if (match) return match;
-  }
-  return undefined;
-}
-
-function importMapTarget(value: unknown): string | undefined {
-  if (typeof value === 'string') return value;
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  return importMapTarget(record.default) ?? importMapTarget(record.import);
-}
-
-function applyStar(target: string, star: string): string {
-  return target.replaceAll('*', star);
-}
-
-function resolveTsconfigPaths(
-  moduleName: string,
-  containingFile: string,
-  compilerOptions: CompilerOptions,
-  host: ModuleResolutionHost,
-): string | undefined {
-  const paths = (compilerOptions as CompilerOptions & { paths?: Record<string, string | readonly string[]> }).paths;
-  if (!paths || typeof paths !== 'object') return undefined;
-  let baseUrl = typeof (compilerOptions as { baseUrl?: string }).baseUrl === 'string'
-    ? resolvePath((compilerOptions as { baseUrl: string }).baseUrl)
-    : undefined;
-  if (!baseUrl) {
-    let current = dirname(containingFile);
-    for (;;) {
-      if (host.fileExists(join(current, 'tsconfig.json'))) {
-        baseUrl = current;
-        break;
-      }
-      const parent = dirname(current);
-      if (parent === current) {
-        baseUrl = dirname(containingFile);
-        break;
-      }
-      current = parent;
-    }
-  }
-  for (const [pattern, targets] of Object.entries(paths)) {
-    const star = matchStarPattern(pattern, moduleName);
-    if (star === undefined) continue;
-    const mapped = Array.isArray(targets) ? targets : [];
-    for (const target of mapped) {
-      if (typeof target !== 'string') continue;
-      const candidate = resolvePath(baseUrl, applyStar(target, star));
-      // The candidate is absolute, so it probes extensions and index files as a relative specifier does.
-      const match = resolveRelative(candidate, containingFile, host);
-      if (match) return match;
-    }
-  }
-  return undefined;
-}
-
-function resolveImportMap(
-  moduleName: string,
-  containingFile: string,
-  host: ModuleResolutionHost,
-): string | undefined {
-  let current = dirname(containingFile);
-  for (;;) {
-    const manifest = join(current, 'package.json');
-    if (host.fileExists(manifest)) {
-      const text = host.readFile(manifest);
-      const imports = text ? parseManifest(manifest, text).imports : undefined;
-      if (imports && typeof imports === 'object' && !Array.isArray(imports)) {
-        const record = imports as Record<string, unknown>;
-        const exact = importMapTarget(record[moduleName]);
-        if (typeof exact === 'string') {
-          const resolved = resolveRelative(exact, manifest, host);
-          if (resolved) return resolved;
-        }
-        for (const [pattern, target] of Object.entries(record)) {
-          const star = matchStarPattern(pattern, moduleName);
-          if (star === undefined) continue;
-          const mapped = importMapTarget(target);
-          if (typeof mapped !== 'string') continue;
-          const resolved = resolveRelative(applyStar(mapped, star), manifest, host);
-          if (resolved) return resolved;
-        }
-      }
-    }
-    const parent = dirname(current);
-    if (parent === current) return undefined;
-    current = parent;
-  }
-}
+/** The program that last handed out each source file: it holds the file's imports and their resolutions. */
+const importerPrograms = new WeakMap<object, CompatProgram>();
 
 /**
- * The condition of the importer's format, as the real resolver's `getConditions`: ESNext matches `import`, any other
- * mode `require`; with no mode, bundler resolution matches `import` and Node16 and NodeNext resolution `require`.
+ * The module an import of a source file resolved to in its program, as the compiler resolved it for the program, or undefined when it
+ * resolved to none. A program that closed since it handed the file out passes the question to the newest open program of its session.
  */
-function importerCondition(compilerOptions: CompilerOptions, resolutionMode: ModuleKind | undefined): 'import' | 'require' {
-  if (resolutionMode !== undefined) return resolutionMode === ModuleKind.ESNext ? 'import' : 'require';
-  const nodeModule = ([ModuleKind.Node16, ModuleKind.Node18, ModuleKind.Node20, ModuleKind.NodeNext] as readonly (number | undefined)[]).includes(compilerOptions.module);
-  const resolution = (compilerOptions.moduleResolution as number | undefined) ?? (nodeModule ? ModuleResolutionKind.NodeNext : ModuleResolutionKind.Bundler);
-  return resolution === ModuleResolutionKind.Node16 || resolution === ModuleResolutionKind.NodeNext ? 'require' : 'import';
-}
-
-/**
- * The file the `exports` map of the nearest `node_modules/<package>` names for the subpath, as the real resolver reads it for `containingFile`: `types` first, then `require` or `import`, `node`, and `default`, in the order of the map.
- * `governed` is true when that package has an `exports` map: it decides alone, so a subpath it hides stays unresolved.
- */
-function resolveExportsMap(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode: ModuleKind | undefined, host: ModuleResolutionHost): { readonly file?: string; readonly governed: boolean } {
-  const segments = moduleName.split('/');
-  const nameLength = moduleName.startsWith('@') ? 2 : 1;
-  const packageName = segments.slice(0, nameLength).join('/');
-  const subpath = ['.', ...segments.slice(nameLength)].join('/');
-  let current = dirname(containingFile);
-  for (;;) {
-    const packageRoot = join(current, 'node_modules', packageName);
-    const manifest = join(packageRoot, 'package.json');
-    if (host.fileExists(manifest)) {
-      const text = host.readFile(manifest);
-      const exportsField = text ? parseManifest(manifest, text).exports : undefined;
-      if (!exportsField) return { governed: false };
-      const target = resolveExportsSubpath(exportsField, subpath, importerCondition(compilerOptions, resolutionMode));
-      return { file: target ? firstExisting(host, sourceCandidates(join(packageRoot, target))) : undefined, governed: true };
-    }
-    const parent = dirname(current);
-    if (parent === current) return { governed: false };
-    current = parent;
-  }
-}
-
-function resolvePackage(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode: ModuleKind | undefined, host: ModuleResolutionHost): string | undefined {
-  if (moduleName.startsWith('#')) {
-    const mapped = resolveImportMap(moduleName, containingFile, host);
-    if (mapped) return mapped;
-  }
-  const exported = resolveExportsMap(moduleName, containingFile, compilerOptions, resolutionMode, host);
-  if (exported.file || exported.governed) return exported.file;
-  try {
-    const require = createRequire(containingFile);
-    const resolved = require.resolve(moduleName);
-    const mapped = firstExisting(host, sourceCandidates(resolved));
-    if (mapped) return mapped;
-  } catch {
-    // Fall through to a directory walk for generated companions.
-  }
-  let current = dirname(containingFile);
-  for (;;) {
-    const candidate = join(current, 'node_modules', moduleName);
-    for (const extension of SOURCE_EXTENSIONS) {
-      const match = firstExisting(host, sourceCandidates(candidate + extension))
-        ?? firstExisting(host, sourceCandidates(join(candidate, `index${extension}`)));
-      if (match) return match;
-    }
-    const parent = dirname(current);
-    if (parent === current) return undefined;
-    current = parent;
-  }
-}
-
-export function resolveModuleName(
-  moduleName: string,
-  containingFile: string,
-  compilerOptions: CompilerOptions,
-  host: ModuleResolutionHost,
-  resolutionMode?: ModuleKind,
-): { resolvedModule?: ResolvedModule } {
-  assertPackageManifestsParse(moduleName, containingFile);
-  const resolved = resolveTsconfigPaths(moduleName, containingFile, compilerOptions, host)
-    ?? (moduleName.startsWith('.') || isAbsolute(moduleName)
-      ? resolveRelative(moduleName, containingFile, host)
-      : resolvePackage(moduleName, containingFile, compilerOptions, resolutionMode, host));
-  if (!resolved) return {};
-  const isExternalLibraryImport = resolved.replace(/\\/g, '/').includes('/node_modules/');
-  return {
-    resolvedModule: {
-      // As the real resolver does: a file found through node_modules is named by its real path, unless preserveSymlinks keeps the link.
-      resolvedFileName: isExternalLibraryImport && !compilerOptions.preserveSymlinks ? host.realpath?.(resolved) ?? resolved : resolved,
-      isExternalLibraryImport,
-    },
-  };
+export function resolveImport(specifier: StringLiteralLike): ResolvedModule | undefined {
+  const file = specifier.getSourceFile();
+  const owner = importerPrograms.get(file);
+  const program = owner && (owner.session.holds(owner) ? owner : owner.session.newestProgram());
+  if (!program) throw new Error(`${file.fileName} belongs to no open TypeScript program, so golem cannot read how its imports resolve.`);
+  assertPackageManifestsParse(specifier.text, file.fileName);
+  return program.project.program.getResolvedModuleFromModuleSpecifier(specifier, file.fileName);
 }
 
 export function canHaveDecorators(node: Node): boolean {
@@ -1156,6 +940,8 @@ export class ProgramSession implements Disposable {
   private readonly hinted = new Set<string>();
   private readonly openProjects = new Set<string>();
   private readonly held = new Map<CompatProgram, ProgramRequest>();
+  /** The compiler's module resolver of each set of options, made when a lookup first needs it. */
+  private resolvers = new WeakMap<object, ModuleResolver>();
   /**
    * The newest snapshot stays alive until the next one exists: TypeScript 7.1 builds each snapshot as an update of a
    * live one, and refuses to update a disposed snapshot.
@@ -1181,6 +967,29 @@ export class ProgramSession implements Disposable {
       return api.parseConfigFile(configPath);
     });
     return { options: parsed.options as CompilerOptions, fileNames: parsed.fileNames };
+  }
+
+  /**
+   * Resolve a module name for a file at `containingFile` with the compiler's own resolver, in the newest snapshot so that overlays
+   * count. For a module that is no import of a program, such as one an SDK manifest names.
+   */
+  resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind): { resolvedModule?: ResolvedModule } {
+    assertPackageManifestsParse(moduleName, containingFile);
+    return this.withCompiler('parse', (api) => {
+      let resolver = this.resolvers.get(compilerOptions);
+      if (!resolver) this.resolvers.set(compilerOptions, resolver = api.createModuleResolver(compilerOptions));
+      return resolver.resolveModuleName(moduleName, dirname(containingFile), resolutionMode as ResolutionMode | undefined, { snapshot: this.latest });
+    });
+  }
+
+  /** Whether the program is open in this session. */
+  holds(program: CompatProgram): boolean {
+    return this.held.has(program);
+  }
+
+  /** The program opened last of those still open. */
+  newestProgram(): CompatProgram | undefined {
+    return [...this.held.keys()].at(-1);
   }
 
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
@@ -1337,6 +1146,7 @@ export class ProgramSession implements Disposable {
   private reset(): void {
     this.api = undefined;
     this.latest = undefined;
+    this.resolvers = new WeakMap();
     this.callbackFailed = false;
     this.setOverlays(new Map());
     this.observed.clear();

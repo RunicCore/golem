@@ -82,17 +82,6 @@ function validateGeneratedModules(
   const { options } = info;
   const exportsById = new Map<string, ReadonlySet<string>>();
   if (models.length === 0) return exportsById;
-  const host = ts.createCompilerHost(options, true);
-  const readFile = host.readFile.bind(host);
-  const fileExists = host.fileExists.bind(host);
-  host.readFile = (candidate): string | undefined => {
-    onInput?.(canonicalFilename(candidate));
-    return readFile(candidate);
-  };
-  host.fileExists = (candidate): boolean => {
-    onInput?.(canonicalFilename(candidate));
-    return fileExists(candidate);
-  };
   const files = new Map<ResolvedModelManifestEntry, string>();
   const resolutionCache = new Map<string, string>();
   for (const model of models) {
@@ -100,10 +89,7 @@ function validateGeneratedModules(
     const cacheKey = `${dirname(model.manifestFile)}\0${moduleName}`;
     let resolvedFileName = resolutionCache.get(cacheKey);
     if (!resolvedFileName) {
-      const resolved = ts.resolveModuleName(moduleName, model.manifestFile, options, {
-        fileExists: host.fileExists,
-        readFile: host.readFile,
-      }).resolvedModule;
+      const resolved = info.program.session.resolveModuleName(moduleName, model.manifestFile, options).resolvedModule;
       if (!resolved) {
         throw new Error(
           `Model manifest ${model.manifestFile} references missing generated module `

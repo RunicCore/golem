@@ -122,7 +122,7 @@ export const {
   isVariableDeclaration,
   isVariableDeclarationList,
   isVariableStatement,
-  resolveModuleName,
+  resolveImport,
   sys,
   typeParameterDefault,
   typeReferenceTarget,

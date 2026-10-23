@@ -66,8 +66,6 @@ function nearestManifest(file: string): PackageManifest | undefined {
 
 /** Conditions a generated TypeScript file matches under Node's ESM rules, besides `default`. */
 const IMPORT_CONDITIONS: ReadonlySet<string> = new Set(['types', 'import', 'node', 'default']);
-/** Conditions a CommonJS file matches under Node16 and NodeNext resolution. */
-const REQUIRE_CONDITIONS: ReadonlySet<string> = new Set(['types', 'require', 'node', 'default']);
 
 /**
  * The file one exports target names for a subpath, after Node's target rules: the first matching condition (in
@@ -100,8 +98,8 @@ function resolveTarget(target: unknown, capture: string | undefined, conditions:
 }
 
 /** Node's PACKAGE_EXPORTS_RESOLVE for one subpath: an exact key, else the pattern key with the longest prefix. */
-function resolveSubpath(map: Readonly<Record<string, unknown>>, subpath: string, conditions: ReadonlySet<string> = IMPORT_CONDITIONS): string | null | undefined {
-  if (Object.hasOwn(map, subpath) && !subpath.includes('*')) return resolveTarget(map[subpath], undefined, conditions);
+function resolveSubpath(map: Readonly<Record<string, unknown>>, subpath: string): string | null | undefined {
+  if (Object.hasOwn(map, subpath) && !subpath.includes('*')) return resolveTarget(map[subpath], undefined, IMPORT_CONDITIONS);
   let best: { readonly key: string; readonly base: string; readonly capture: string } | undefined;
   for (const key of Object.keys(map)) {
     const star = key.indexOf('*');
@@ -112,7 +110,7 @@ function resolveSubpath(map: Readonly<Record<string, unknown>>, subpath: string,
     if (best && (best.base.length > base.length || (best.base.length === base.length && best.key.length >= key.length))) continue;
     best = { key, base, capture: subpath.slice(base.length, subpath.length - trailer.length) };
   }
-  return best ? resolveTarget(map[best.key], best.capture, conditions) : undefined;
+  return best ? resolveTarget(map[best.key], best.capture, IMPORT_CONDITIONS) : undefined;
 }
 
 /** The exports field as a map of subpath keys: a string, an array or a condition object with no `.` key is the entry of `.`. */
@@ -121,11 +119,6 @@ function subpathMap(exportsField: unknown): Record<string, unknown> {
     || (exportsField && typeof exportsField === 'object' && !Object.keys(exportsField).some((key) => key.startsWith('.')))
     ? { '.': exportsField }
     : (exportsField as Record<string, unknown> | undefined) ?? {};
-}
-
-/** The `./`-relative file that the `exports` field of a package names for `subpath` (`.` or `./x`) when a file of format `importer` imports it: `null` when excluded, `undefined` when no entry applies. */
-export function resolveExportsSubpath(exportsField: unknown, subpath: string, importer: 'import' | 'require' = 'import'): string | null | undefined {
-  return resolveSubpath(subpathMap(exportsField), subpath, importer === 'require' ? REQUIRE_CONDITIONS : IMPORT_CONDITIONS);
 }
 
 /** Every string target in one exports entry, whatever condition holds it, in object order. */

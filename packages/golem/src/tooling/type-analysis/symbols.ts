@@ -90,24 +90,9 @@ export function modelSpecificationForClass(
   const declaration = resolveSymbol(checker, type.getSymbol())?.declarations?.find(ts.isClassDeclaration);
   if (!declaration || seen.has(declaration)) return undefined;
   seen.add(declaration);
-  const expected = new Set(specifications.map(specification => canonicalFilename(companionOfSpecification(specification))));
   const match = (filename: string, name: string | undefined): ModelSpecification | undefined => specifications.find(specification =>
     canonicalFilename(companionOfSpecification(specification)) === canonicalFilename(filename)
       && name === `${specification.name}BaseModel`);
-  // Module resolution finds only a file whose folder exists, and the folder of a shared companion in `models.output` is made when
-  // the models job writes it: the expected companions exist for every import form (relative, `paths`, `#imports`).
-  const expectedFolders = new Set([...expected].flatMap((filename) => {
-    const folders: string[] = [];
-    for (let folder = dirname(filename); !folders.includes(folder); folder = dirname(folder)) folders.push(folder);
-    return folders;
-  }));
-  // The system carries `directoryExists`, which the compiler's resolution reads and the golem-owned host type leaves out.
-  const system = ts.sys as ts.ModuleResolutionHost & { directoryExists?(directory: string): boolean };
-  const host = {
-    ...system,
-    fileExists: (filename: string) => expected.has(canonicalFilename(filename)) || system.fileExists(filename),
-    directoryExists: (directory: string) => expectedFolders.has(canonicalFilename(directory)) || system.directoryExists?.(directory) === true,
-  };
   for (const heritage of declaration.heritageClauses ?? []) {
     if (heritage.token !== ts.SyntaxKind.ExtendsKeyword) continue;
     for (const base of heritage.types) {
@@ -121,8 +106,7 @@ export function modelSpecificationForClass(
         if (!ts.isImportSpecifier(alias)) continue;
         const statement = alias.parent.parent.parent;
         if (!ts.isImportDeclaration(statement) || !ts.isStringLiteralLike(statement.moduleSpecifier)) continue;
-        const importer = statement.getSourceFile();
-        const resolved = ts.resolveModuleName(statement.moduleSpecifier.text, importer.fileName, compilerOptions, host, importer.impliedNodeFormat).resolvedModule?.resolvedFileName;
+        const resolved = ts.resolveImport(statement.moduleSpecifier)?.resolvedFileName;
         const specification = resolved && match(resolved, (alias.propertyName ?? alias.name).text);
         if (specification) return specification;
       }
