@@ -38,7 +38,7 @@ export interface Helper {
 
 export type Part =
   | { readonly kind: 'text'; readonly text: string }
-  | { readonly kind: 'runtime'; readonly module: RuntimeModule; readonly name: string; readonly typeOnly?: true }
+  | { readonly kind: 'runtime'; readonly module: RuntimeModule; readonly name: string; readonly typeOnly?: true; readonly alias?: string }
   | { readonly kind: 'helper'; readonly helper: Helper }
   | { readonly kind: 'name'; readonly slot: NameSlot }
   | { readonly kind: 'input'; readonly slot: InputSlot };
@@ -65,6 +65,13 @@ class CodeValue implements Code {
 /** The Code of one runtime part: the value `name` of a runtime module, or its type when `typeOnly`. The rt tables make these. */
 export function runtimeCode(module: RuntimeModule, name: string, typeOnly: boolean = false): Code {
   return new CodeValue([{ kind: 'runtime', module, name, ...(typeOnly ? { typeOnly: true } : {}) }]);
+}
+
+/** The runtime part `named` under a local name of the file: `rtType.serde.SerdeOptions` as `__GolemSerdeOptions` imports `SerdeOptions as __GolemSerdeOptions` and writes the alias. */
+export function aliased(named: Code, alias: string): Code {
+  const [only, ...more] = named.parts;
+  if (only?.kind !== 'runtime' || more.length > 0) throw new TypeError('aliased takes the Code of one runtime part');
+  return new CodeValue([{ ...only, alias: checkedIdentifier(alias, 'alias') }]);
 }
 
 /** A value that `literal` writes as a JSON literal. */
@@ -248,8 +255,16 @@ export class NameTable {
 }
 
 /** What a Code needs from the runtime and from the file: the runtime parts grouped by module, and the helpers with their code. */
+interface RuntimeNames {
+  readonly values: Map<string, ImportedName>;
+  readonly types: Map<string, ImportedName>;
+}
+
+/** A name a file imports from a runtime module, and the local name it binds when that differs. */
+interface ImportedName { readonly name: string; readonly alias?: string }
+
 interface Collected {
-  readonly runtime: Map<RuntimeModule, { readonly values: Set<string>; readonly types: Set<string> }>;
+  readonly runtime: Map<RuntimeModule, RuntimeNames>;
   /** The helpers by id, in the order a file can define them: a helper comes after the helpers its definition names. */
   readonly helpers: Map<string, { readonly helper: Helper; readonly definition: Code }>;
 }
@@ -260,14 +275,14 @@ function compareHelpers(left: Helper, right: Helper): number {
 }
 
 function collect(root: Code): Collected {
-  const runtime = new Map<RuntimeModule, { readonly values: Set<string>; readonly types: Set<string> }>();
+  const runtime = new Map<RuntimeModule, RuntimeNames>();
   const found = new Map<string, { readonly helper: Helper; readonly definition: Code; readonly needs: readonly Helper[] }>();
   const scan = (piece: Code): readonly Helper[] => {
     const needs = new Map<string, Helper>();
     for (const part of piece.parts) {
       if (part.kind === 'runtime') {
-        const names = runtime.get(part.module) ?? { values: new Set<string>(), types: new Set<string>() };
-        (part.typeOnly ? names.types : names.values).add(part.name);
+        const names = runtime.get(part.module) ?? { values: new Map<string, ImportedName>(), types: new Map<string, ImportedName>() };
+        (part.typeOnly ? names.types : names.values).set(`${part.name}\0${part.alias ?? ''}`, { name: part.name, ...(part.alias === undefined ? {} : { alias: part.alias }) });
         runtime.set(part.module, names);
       } else if (part.kind === 'helper') {
         needs.set(part.helper.id, part.helper);
@@ -305,17 +320,25 @@ function collect(root: Code): Collected {
 
 export interface RuntimeImport {
   readonly module: RuntimeModule;
-  /** Each value name once, in code point order. */
+  /** Each value name once, as `name` or `name as alias`, in the order of the file (see `ImportOptions.order`). */
   readonly names: readonly string[];
-  /** Each type name once, in code point order. */
+  /** Each type name once, written the same way. */
   readonly types: readonly string[];
 }
 
+/** The names of a module in the order of a file: the names its `order` lists come first in that order, then the others in code point order. */
+function inOrder(names: ReadonlyMap<string, ImportedName>, listed: readonly string[] = []): readonly string[] {
+  const place = (name: string): number => { const at = listed.indexOf(name); return at < 0 ? Infinity : at; };
+  return [...names.values()]
+    .sort((left, right) => place(left.name) === place(right.name) ? compareText(left.name, right.name) || compareText(left.alias ?? '', right.alias ?? '') : place(left.name) < place(right.name) ? -1 : 1)
+    .map(({ name, alias }) => alias === undefined ? name : `${name} as ${alias}`);
+}
+
 /** The runtime parts of a Code and of the helpers it needs, grouped by module in the fixed module order. */
-export function importSet(root: Code): readonly RuntimeImport[] {
+export function importSet(root: Code, order: ImportOptions['order'] = {}): readonly RuntimeImport[] {
   return [...collect(root).runtime]
     .sort(([left], [right]) => RUNTIME_MODULE_RANK[left] - RUNTIME_MODULE_RANK[right])
-    .map(([module, { values, types }]) => ({ module, names: [...values].sort(), types: [...types].sort() }));
+    .map(([module, { values, types }]) => ({ module, names: inOrder(values, order[module]), types: inOrder(types, order[module]) }));
 }
 
 /** How a file writes the imports of its runtime parts. */
@@ -324,16 +347,27 @@ export interface ImportOptions {
   readonly specifiers?: Partial<Readonly<Record<RuntimeModule, string>>>;
   /** The quote of a specifier; a single quote by default. */
   readonly quote?: "'" | '"';
+  /**
+   * How a module writes its type names: `separate` (the default) puts them in an `import type` statement before the value
+   * statement; `inline` puts them after the values in one statement, each as `type Name`.
+   */
+  readonly typeNames?: 'separate' | 'inline';
+  /** The names of a module that a file with a fixed order lists: they come first, in this order, for values and types alike; the others follow in code point order. */
+  readonly order?: Partial<Readonly<Record<RuntimeModule, readonly string[]>>>;
 }
 
 /**
- * The import statements of the runtime parts, in module order. A module with type names gets an `import type` statement
- * before its value statement, so a type name is never in a value import.
+ * The import statements of the runtime parts, in module order. A type name is never in a value import: it goes in an
+ * `import type` statement before the value statement, or after the values as `type Name` when the file asks for `inline`.
  */
 export function runtimeImports(root: Code, options: ImportOptions = {}): readonly Code[] {
-  return importSet(root).flatMap(({ module, names, types }) => {
+  return importSet(root, options.order).flatMap(({ module, names, types }) => {
     const specifier = options.specifiers?.[module] ?? `@exprtlabs/golem/${module}`;
     const quoted = options.quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`;
+    if (options.typeNames === 'inline') {
+      const listed = [...names, ...types.map((type) => `type ${type}`)];
+      return listed.length > 0 ? [plainText(`import { ${listed.join(', ')} } from ${quoted};`)] : [];
+    }
     return [
       ...(types.length > 0 ? [plainText(`import type { ${types.join(', ')} } from ${quoted};`)] : []),
       ...(names.length > 0 ? [plainText(`import { ${names.join(', ')} } from ${quoted};`)] : []),
@@ -367,7 +401,7 @@ function plainText(text: string): Code {
  */
 export function sameCode(left: Code, right: Code): boolean {
   const flat = (root: Code): readonly Part[] => fromParts(root.parts.map((part): Part =>
-    part.kind === 'runtime' ? { kind: 'text', text: part.name }
+    part.kind === 'runtime' ? { kind: 'text', text: part.alias ?? part.name }
       : part.kind === 'helper' ? { kind: 'text', text: part.helper.id }
         : part)).parts;
   const [first, second] = [flat(left), flat(right)];
@@ -391,7 +425,7 @@ export function render(root: Code, names: NameTable = new NameTable()): string {
   for (const part of root.parts) {
     switch (part.kind) {
       case 'text': text += part.text; break;
-      case 'runtime': text += part.name; break;
+      case 'runtime': text += part.alias ?? part.name; break;
       case 'helper': text += part.helper.id; break;
       case 'name': text += names.resolve(part.slot); break;
       case 'input': throw new Error(`the input "${part.slot.label}" is not bound`);

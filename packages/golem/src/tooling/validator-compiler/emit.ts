@@ -1617,7 +1617,7 @@ function bodyKey(body: Code, slots: FunctionSlots, groups: ReadonlyMap<number, n
         if (callee === undefined) throw new Error(`The validator compiler body names "${part.slot.label}", which is no function.`);
         return [callee.fast, groups.get(callee.id) ?? -1];
       }
-      case 'runtime': return ['runtime', part.module, part.name, part.typeOnly === true];
+      case 'runtime': return ['runtime', part.module, part.name, part.typeOnly === true, part.alias ?? null];
       case 'helper': return ['helper', part.helper.id];
       case 'input': return ['input', inputNumber(part.slot)];
     }

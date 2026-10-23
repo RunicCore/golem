@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  NameTable, bindRead, code, helper, helperDefinitions, helperName, helperSet, identifier, importSet, inputOf, inputSlot, join, literal,
+  NameTable, aliased, bindRead, code, helper, helperDefinitions, helperName, helperSet, identifier, importSet, inputOf, inputSlot, join, literal,
   nameOf, nameSlot, render, runtimeImports, sameCode, legacyText,
 } from '#golem/code';
 import { rt, rtType } from '#golem/rt';
@@ -72,6 +72,19 @@ test('a type name is imported with import type, and a file picks the specifier o
     render(join(runtimeImports(body), code`\n`)),
     "import type { SchemaIssue } from '@exprtlabs/golem/validation-runtime';\nimport { jsonEqual } from '@exprtlabs/golem/validation-runtime';",
   );
+});
+
+test('a file writes value and type names on one line, a type under a local name, and in the order it lists', () => {
+  // protects: T-288 mixed value and type import lines of a model file stay byte-identical (SC-2)
+  const options = { typeNames: 'inline', order: { serde: ['parseJson', 'IssueSource', 'assertModelValue'], model: ['GeneratedModel', 'generatedModelWireBrand'] } } as const;
+  const body = code`${rt.serde.assertModelValue}(${rt.serde.IssueSource}, ${rt.serde.parseJson}) as ${aliased(rtType.serde.SerdeOptions, '__GolemSerdeOptions')} & ${rtType.model.generatedModelFieldsBrand} & ${rtType.model.generatedModelWireBrand} & ${rtType.model.GeneratedModel}`;
+  assert.equal(
+    render(join(runtimeImports(body, options), code`\n`)),
+    "import { type GeneratedModel, type generatedModelWireBrand, type generatedModelFieldsBrand } from '@exprtlabs/golem/model';\n"
+      + "import { parseJson, IssueSource, assertModelValue, type SerdeOptions as __GolemSerdeOptions } from '@exprtlabs/golem/serde';",
+  );
+  assert.equal(render(body), 'assertModelValue(IssueSource, parseJson) as __GolemSerdeOptions & generatedModelFieldsBrand & generatedModelWireBrand & GeneratedModel');
+  assert.throws(() => aliased(code`a ${rt.serde.parseJson}`, 'x'), /one runtime part/);
 });
 
 test('a helper that a file reads while it loads comes after the helper it names', () => {

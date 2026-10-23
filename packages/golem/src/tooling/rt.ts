@@ -36,6 +36,14 @@ export type RuntimeModule = keyof RuntimeExports;
  * each name is written once here, and a name the module does not export is a type error.
  */
 export interface RuntimeTypeExports {
+  readonly model: {
+    readonly GeneratedModel: model.GeneratedModel;
+    readonly GeneratedModelConstructor: model.GeneratedModelConstructor;
+    readonly GeneratedModelWire: model.GeneratedModelWire<unknown>;
+    readonly generatedModelFieldsBrand: typeof model.generatedModelFieldsBrand;
+    readonly generatedModelWireBrand: typeof model.generatedModelWireBrand;
+  };
+  readonly serde: { readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
   readonly 'validation-runtime': { readonly SchemaIssue: validationRuntime.SchemaIssue };
 }
 
