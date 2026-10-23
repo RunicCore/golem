@@ -47,12 +47,25 @@ test('the helper set holds each named helper once with the helpers it names and 
   const decodeNode: ReturnType<typeof helper> = helper('decodeNode', () =>
     code`function decodeNode(v) { return ${helperName(decodeLeaf)}(v); }`);
   const body = code`${helperName(decodeNode)}(a); ${helperName(decodeNode)}(b);`;
-  assert.deepEqual(helperSet(body).map((found) => found.id), ['decodeLeaf', 'decodeNode']);
+  // The two functions name each other, so either order loads; a cycle is written from the first name met.
+  assert.deepEqual(helperSet(body).map((found) => found.id), ['decodeNode', 'decodeLeaf']);
   assert.equal(
     render(helperBlock(body), new NameTable()),
-    'function decodeLeaf(v) { return decodeCheckedInput(v, decodeNode); }\n\nfunction decodeNode(v) { return decodeLeaf(v); }',
+    'function decodeNode(v) { return decodeLeaf(v); }\n\nfunction decodeLeaf(v) { return decodeCheckedInput(v, decodeNode); }',
   );
   assert.deepEqual(importSet(body), [{ module: 'conversion', names: ['decodeCheckedInput'] }]);
+});
+
+test('a helper that a file reads while it loads comes after the helper it names', () => {
+  // protects: T-286 a helper used at load comes after its dependency
+  const markKey: ReturnType<typeof helper> = helper('markKey', () => code`const markKey = Symbol.for('t286:mark');`);
+  const checkedOptions: ReturnType<typeof helper> = helper('checkedOptions', () =>
+    code`const checkedOptions = Object.freeze({ [${helperName(markKey)}]: true });`);
+  const block = render(helperBlock(code`${helperName(checkedOptions)}`), new NameTable());
+  assert.deepEqual(helperSet(code`${helperName(checkedOptions)}`).map((found) => found.id), ['markKey', 'checkedOptions']);
+  // The file loads: the first constant would be read before it exists if the ids set the order.
+  const loaded = new Function(`${block}\nreturn checkedOptions;`)() as Record<symbol, unknown>;
+  assert.equal(loaded[Symbol.for('t286:mark')], true);
 });
 
 test('sameCode matches parts one by one, and a runtime part equals the text of its name', () => {

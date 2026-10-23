@@ -230,31 +230,52 @@ export class NameTable {
 /** What a Code needs from the runtime and from the file: the runtime parts grouped by module, and the helpers with their code. */
 interface Collected {
   readonly runtime: Map<RuntimeModule, Set<string>>;
+  /** The helpers by id, in the order a file can define them: a helper comes after the helpers its definition names. */
   readonly helpers: Map<string, { readonly helper: Helper; readonly definition: Code }>;
 }
 
 function collect(root: Code): Collected {
-  const collected: Collected = { runtime: new Map(), helpers: new Map() };
-  const pending: Code[] = [root];
-  for (let next = pending.pop(); next; next = pending.pop()) {
-    for (const part of next.parts) {
+  const runtime = new Map<RuntimeModule, Set<string>>();
+  const found = new Map<string, { readonly helper: Helper; readonly definition: Code; readonly needs: readonly Helper[] }>();
+  const scan = (piece: Code): readonly Helper[] => {
+    const needs = new Map<string, Helper>();
+    for (const part of piece.parts) {
       if (part.kind === 'runtime') {
-        const names = collected.runtime.get(part.module) ?? new Set<string>();
+        const names = runtime.get(part.module) ?? new Set<string>();
         names.add(part.name);
-        collected.runtime.set(part.module, names);
+        runtime.set(part.module, names);
       } else if (part.kind === 'helper') {
-        const known = collected.helpers.get(part.helper.id);
-        if (known) {
-          if (known.helper !== part.helper) throw new Error(`two helpers are named "${part.helper.id}"`);
-          continue;
-        }
-        const definition = part.helper.define();
-        collected.helpers.set(part.helper.id, { helper: part.helper, definition });
-        pending.push(definition);
+        needs.set(part.helper.id, part.helper);
       }
     }
+    return [...needs.values()].sort((left, right) => compareText(left.id, right.id));
+  };
+  const pending: Helper[] = [...scan(root)];
+  for (let next = pending.pop(); next; next = pending.pop()) {
+    const known = found.get(next.id);
+    if (known) {
+      if (known.helper !== next) throw new Error(`two helpers are named "${next.id}"`);
+      continue;
+    }
+    const definition = next.define();
+    const needs = scan(definition);
+    found.set(next.id, { helper: next, definition, needs });
+    pending.push(...needs);
   }
-  return collected;
+  // A helper that a file reads while it loads, such as a constant, must come after the helpers its definition names.
+  // The order is the post-order of the names, each level in code point order of the ids. A cycle is functions only.
+  const helpers = new Map<string, { readonly helper: Helper; readonly definition: Code }>();
+  const visiting = new Set<string>();
+  const visit = (next: Helper): void => {
+    if (helpers.has(next.id) || visiting.has(next.id)) return;
+    visiting.add(next.id);
+    const entry = found.get(next.id);
+    if (!entry) return;
+    entry.needs.forEach(visit);
+    helpers.set(next.id, { helper: entry.helper, definition: entry.definition });
+  };
+  [...found.values()].map(({ helper: each }) => each).sort((left, right) => compareText(left.id, right.id)).forEach(visit);
+  return { runtime, helpers };
 }
 
 export interface RuntimeImport {
@@ -277,19 +298,14 @@ export function runtimeImports(root: Code): Code {
   );
 }
 
-/** The helpers that a Code names, and the helpers that those helpers name, in code point order of their ids. */
+/** The helpers that a Code names, and the helpers that those helpers name, in the order of their definitions (see `collect`). */
 export function helperSet(root: Code): readonly Helper[] {
-  return [...collect(root).helpers.values()].map(({ helper: found }) => found).sort((left, right) => compareText(left.id, right.id));
+  return [...collect(root).helpers.values()].map(({ helper: found }) => found);
 }
 
 /** The definitions of `helperSet`, separated by an empty line. */
 export function helperBlock(root: Code): Code {
-  return join(
-    [...collect(root).helpers.values()]
-      .sort((left, right) => compareText(left.helper.id, right.helper.id))
-      .map(({ definition }) => definition),
-    plainText('\n\n'),
-  );
+  return join([...collect(root).helpers.values()].map(({ definition }) => definition), plainText('\n\n'));
 }
 
 /** Text that this module writes itself: import lines and the gap between helpers. */
