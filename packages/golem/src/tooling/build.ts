@@ -35,6 +35,8 @@ interface BuildOptions {
   readonly tscArguments?: readonly string[];
   /** Called after the generate step of each build with the ids of the jobs that executed; a job its record showed to be current is not among them. */
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
+  /** Called after each poll of a watching build that found nothing to build, so a caller knows the watcher has looked since the last build. */
+  readonly onIdlePoll?: () => void;
 }
 
 export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
@@ -718,7 +720,10 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       const changed = [...fingerprints()].filter(([input, value]) => previous.get(input) !== value).map(([input]) => input);
       const own = ownDirectories(root, outputs);
       const added = [...directories].some(([directory, value]) => directorySignature(directory, own, state.owned) !== value);
-      if (changed.length === 0 && !added && !(wrote && !outputsPresent())) return;
+      if (changed.length === 0 && !added && !(wrote && !outputsPresent())) {
+        options.onIdlePoll?.();
+        return;
+      }
       busy = true;
       session.inputsChanged(changed);
       void attempt(changed).finally(() => { busy = false; if (options.signal?.aborted) { clearInterval(timer); resolve(); } });
