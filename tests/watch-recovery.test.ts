@@ -11,6 +11,7 @@ import { OwnedOutputIndex } from '#golem/input-poller';
 import { workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
 import { until } from './support/watch-wait.js';
+import { isRunLine } from './support/watch-runs.js';
 
 test('owned output index excludes exactly the outputs and the directories containing them', () => {
   const root = path.resolve(os.tmpdir(), 'owned-index');
@@ -103,6 +104,41 @@ test('watch started on a golem.yaml that is not YAML reports its file, line and 
     assert.ok(errors[0].cause instanceof YAML.YAMLParseError);
     fs.writeFileSync(config, valid);
     await until(() => runs() === 1, () => `the fixed golem.yaml runs (errors=${errors.map(String).join('; ')})`);
+  } finally {
+    stop();
+  }
+  await until(() => compilerChildren(process.pid).length === 0, 'the compiler closes with the watch');
+});
+
+test('each watch run prints the result of every job and its time; the run after a failure starts with Recovered:', async (t: TestContext) => {
+  // protects: T-312 each watch run says what it did; a failing run says the last good output stays
+  const { config } = generationWatchFixture(t);
+  const valid = fs.readFileSync(config, 'utf8');
+  const lines = watchRunLines(t);
+  const errors: unknown[] = [];
+  const stderr: string[] = [];
+  t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array): boolean => { stderr.push(String(chunk)); return true; });
+  const results = (line: string): string[] => line.replace(/^Recovered: /, '').split(' · ').slice(0, -1);
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  try {
+    await until(() => lines.length === 1, 'the first run is summarized');
+    assert.match(lines[0], / · \d+ ms$/);
+    assert.ok(results(lines[0]).length >= 2, lines[0]);
+    for (const result of results(lines[0])) assert.match(result, /^\S+: \d+ files? updated$/);
+
+    // The same golem.yaml again: every job reruns and writes nothing.
+    fs.writeFileSync(config, valid);
+    await until(() => lines.length === 2, 'the run that changes nothing is summarized');
+    for (const result of results(lines[1])) assert.match(result, /^\S+: unchanged$/);
+    assert.ok(!lines[1].startsWith('Recovered:'), lines[1]);
+
+    fs.writeFileSync(config, `${valid}version: 1\n`);
+    await until(() => errors.length === 1, 'the broken golem.yaml is reported');
+    assert.ok(stderr.some(text => text.includes('The last good output stays in place')), stderr.join(''));
+    fs.writeFileSync(config, valid);
+    await until(() => lines.length === 3, () => `the fixed golem.yaml runs (errors=${errors.map(String).join('; ')})`);
+    assert.ok(lines[2].startsWith('Recovered: '), lines[2]);
+    for (const result of results(lines[2])) assert.match(result, /^\S+: unchanged$/);
   } finally {
     stop();
   }
@@ -346,18 +382,24 @@ test('a pipeline session closes the compiler of a removed job', { skip: process.
   await until(() => compilerChildren(process.pid).length === 0, 'the removed job closes its compiler');
 });
 
-/** Count completed watch runs by the line the watch prints after each successful generation. */
-function countRuns(t: TestContext): () => number {
-  let runs = 0;
+/** The lines the watch prints after each successful generation, in order. */
+function watchRunLines(t: TestContext): string[] {
+  const lines: string[] = [];
   const write = process.stdout.write.bind(process.stdout);
   t.mock.method(process.stdout, 'write', (chunk: string | Uint8Array, ...rest: never[]): boolean => {
-    if (String(chunk) === 'Generated configured outputs.\n') {
-      runs++;
+    if (isRunLine(String(chunk))) {
+      lines.push(String(chunk).trimEnd());
       return true;
     }
     return write(chunk, ...rest);
   });
-  return () => runs;
+  return lines;
+}
+
+/** Count completed watch runs by the line the watch prints after each successful generation. */
+function countRuns(t: TestContext): () => number {
+  const lines = watchRunLines(t);
+  return () => lines.length;
 }
 
 test('edits that land between two polls produce one run with the final content', async (t: TestContext) => {

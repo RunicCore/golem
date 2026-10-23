@@ -41,6 +41,12 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 Arguments after it are passed to the child process unchanged. `--watch` is
 valid only with `exec`; unknown options fail before generation starts.
 
+Each good run of `watch` prints one line: the result of each job, then the time of the run. A job shows the files it updated or removed. A job that did not run, or wrote nothing new, shows `unchanged`. The first good run after a failed run starts with `Recovered:`. A failed run prints its error and says that the last good output stays in place.
+
+```text
+models: 2 files updated · openapi:sdk: unchanged · 412 ms
+```
+
 ## Build
 
 `golem build` rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) while it compiles. It generates the code `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite while it loads your TypeScript instead: use the [Vite plugin](/reference/runtime-api#vite), the [esbuild plugin](/reference/runtime-api#esbuild) or the [Node loader](/reference/runtime-api#loader). Each of them opens your project from `golem.yaml`, and scans each file itself.

@@ -641,7 +641,8 @@ export function formatDiagnostics(
 ): string {
   const texts = new Map(unwritten.map((file) => [canonicalFilename(file.path), file.content]));
   return ts.formatDiagnosticsWithColorAndContext(diagnostics, {
-    getCanonicalFileName: (filename) => filename,
+    // Paths read from the working directory, as tsc prints them.
+    getCanonicalFileName: (filename) => relative(process.cwd(), filename),
     getCurrentDirectory: () => root,
     getNewLine: () => '\n',
     readFile: (filename) => texts.get(canonicalFilename(filename)),

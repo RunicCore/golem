@@ -6,7 +6,7 @@ import { jobTsconfigDiagnostics, modelsRootOf, resolveConfig, validateConfigInpu
 import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
-import type { Inventory } from './outputs.js';
+import type { FileChanges, Inventory } from './outputs.js';
 import { absoluteRecordPath, codeDigest, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, errorMessage, hasErrorCode, isInsideDirectory, isRecord, suffixPattern } from './generator-api.js';
@@ -34,6 +34,11 @@ export function strongestInputKind(existing: InputKind | undefined, candidate: I
     : existing;
 }
 interface LoadedProvider { readonly apiVersion: 1; generate(context: unknown): unknown }
+/** What one job did in a run that executed it. */
+export interface JobReport extends FileChanges {
+  /** How long the job took, in milliseconds. */
+  readonly ms: number;
+}
 export interface PipelineState {
   readonly config: GolemConfig;
   readonly results: ReadonlyMap<string, GolemResult>;
@@ -42,6 +47,10 @@ export interface PipelineState {
   readonly owned: ReadonlySet<string>;
   /** The ids of the jobs that executed in this run; a job reused from `previous` or skipped by the job cache is not in it. */
   readonly ran: ReadonlySet<string>;
+  /** For each job in `ran`: the files it wrote or removed and its time. */
+  readonly reports: ReadonlyMap<string, JobReport>;
+  /** The files removed because the job that generated them is no longer configured. */
+  readonly retired: readonly string[];
   /** The outputs of the jobs the job cache skipped, which have no result: the edges that tell a later watch run which jobs consume them. */
   readonly skippedOutputs: ReadonlyMap<string, readonly string[]>;
 }
@@ -414,6 +423,8 @@ interface PipelinePlan {
   readonly providerCode: (job: GolemJob) => string | undefined;
   /** The jobs a watch run must rerun, or undefined when every job is judged on its own. */
   readonly affected: ReadonlySet<string> | undefined;
+  /** The files removed with the jobs that are no longer configured. */
+  readonly retired: readonly string[];
 }
 
 /** What the jobs before the current one left behind. Only `absorbOutcome` writes to it. */
@@ -425,6 +436,7 @@ interface PipelineProgress {
   readonly owned: Set<string>;
   readonly used: Map<string, Set<string>>;
   readonly ran: Set<string>;
+  readonly reports: Map<string, JobReport>;
   readonly skippedOutputs: Map<string, readonly string[]>;
   readonly nextRecords: Map<string, JobRecord>;
   /** The outputs of the jobs that ran in this run: what a later job reads from them is not what its record holds. */
@@ -445,6 +457,8 @@ type JobOutcome =
     readonly record: JobRecord | undefined;
     /** The outputs this job wrote or replaced. */
     readonly writtenOutputs: readonly string[];
+    /** The files `applyJob` wrote with new content or deleted. */
+    readonly changes: FileChanges;
     /** Providers loaded because the plan skipped the job. */
     readonly loadedProviders: ReadonlyMap<string, LoadedProvider>;
   };
@@ -516,8 +530,8 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
   }
   const providers = await providersFor(config, jobCache ? planned : undefined);
   options.onOwned?.([config.inventoryFile, ...Object.keys(inventory.files).map(key => path.resolve(config.directory, key))]);
-  removeRetiredJobs(config, inventory, Boolean(options.check));
-  return { plan: { config, inventory, generated, jobCache, records, current, providerCode: codeOf, affected: affectedJobs(config, options) }, providers };
+  const retiredFiles = removeRetiredJobs(config, inventory, Boolean(options.check));
+  return { plan: { config, inventory, generated, jobCache, records, current, providerCode: codeOf, affected: affectedJobs(config, options), retired: retiredFiles }, providers };
 }
 
 /** Start the accumulator with the records of the jobs still configured. */
@@ -530,6 +544,7 @@ function startProgress(plan: PipelinePlan, providers: ReadonlyMap<string, Loaded
     owned: new Set([plan.config.inventoryFile]),
     used: new Map(),
     ran: new Set(),
+    reports: new Map(),
     skippedOutputs: new Map(),
     nextRecords: new Map([...plan.records].filter(([id]) => active.has(id))),
     ranOutputs: new Set(),
@@ -614,7 +629,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
   writeWarnings(result.diagnostics ?? []);
   assertUnowned(progress.owned, result.artifacts.map(artifact => artifact.path));
   options.onOwned?.(result.artifacts.map(artifact => artifact.path));
-  applyJob(config, inventory, job, result.artifacts, Boolean(options.check));
+  const changes = applyJob(config, inventory, job, result.artifacts, Boolean(options.check));
   // The job's record and its written output change together: a later job's failure leaves a record that matches the files.
   if (nextRecord) saveJobRecords(config, new Map(progress.nextRecords).set(job.id, nextRecord));
   for (const input of result.watchInputs) observer.observe(input, job.kind, job.id);
@@ -624,12 +639,13 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     keys,
     record: nextRecord,
     writtenOutputs: [...previousOutputs, ...result.artifacts.map(artifact => artifact.path)],
+    changes,
     loadedProviders,
   };
 }
 
 /** Add what one job left behind to the accumulator. */
-function absorbOutcome(progress: PipelineProgress, job: GolemJob, outcome: JobOutcome): void {
+function absorbOutcome(progress: PipelineProgress, job: GolemJob, outcome: JobOutcome, ms: number): void {
   if (outcome.kind === 'skipped') {
     for (const output of outcome.outputs) progress.owned.add(output);
     progress.manifests.push(...outcome.manifests);
@@ -640,6 +656,7 @@ function absorbOutcome(progress: PipelineProgress, job: GolemJob, outcome: JobOu
   if (outcome.kind === 'ran') {
     for (const [name, provider] of outcome.loadedProviders) progress.providers.set(name, provider);
     progress.ran.add(job.id);
+    progress.reports.set(job.id, { ...outcome.changes, ms });
     progress.used.set(job.id, outcome.keys);
     if (outcome.record) progress.nextRecords.set(job.id, outcome.record);
     for (const output of outcome.writtenOutputs) progress.ranOutputs.add(output);
@@ -693,7 +710,7 @@ async function finalizePipeline(run: PipelineRun, plan: PipelinePlan, progress: 
   if (!options.check) saveJobRecords(config, progress.nextRecords);
   for (const output of progress.owned) observer.inputs.delete(output);
   session.retainUsed(new Set(config.jobs.map((job) => job.id)), used);
-  return { config, results: progress.results, inputs: observer.inputs, dependencies: observer.dependencies, owned: progress.owned, ran: progress.ran, skippedOutputs: progress.skippedOutputs };
+  return { config, results: progress.results, inputs: observer.inputs, dependencies: observer.dependencies, owned: progress.owned, ran: progress.ran, reports: progress.reports, retired: plan.retired, skippedOutputs: progress.skippedOutputs };
 }
 
 export async function runPipeline(filename: string, options: PipelineOptions = {}): Promise<PipelineState> {
@@ -702,6 +719,10 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
   const run: PipelineRun = { options, session, observer: new InputObserver(options.onInput) };
   const { plan, providers } = await planPipeline(filename, run);
   const progress = startProgress(plan, providers);
-  for (const job of plan.config.jobs) absorbOutcome(progress, job, await runJob(job, run, plan, progress));
+  for (const job of plan.config.jobs) {
+    const started = performance.now();
+    const outcome = await runJob(job, run, plan, progress);
+    absorbOutcome(progress, job, outcome, Math.round(performance.now() - started));
+  }
   return await finalizePipeline(run, plan, progress);
 }
