@@ -111,13 +111,12 @@ test('watch started on a golem.yaml that is not YAML reports its file, line and 
 });
 
 test('each watch run prints the result of every job and its time; the run after a failure starts with Recovered:', async (t: TestContext) => {
-  // protects: T-312 each watch run says what it did; a failing run says the failed job's last good output stays
-  const { config } = generationWatchFixture(t);
+  // protects: T-312 each watch run says what it did; only a job that failed before writing says its last good output stays
+  const { root, config } = generationWatchFixture(t);
   const valid = fs.readFileSync(config, 'utf8');
   const lines = watchRunLines(t);
   const errors: unknown[] = [];
-  const stderr: string[] = [];
-  t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array): boolean => { stderr.push(String(chunk)); return true; });
+  const reported = (): string => errors.map(String).join('; ');
   const results = (line: string): string[] => line.replace(/^Recovered: /, '').split(' · ').slice(0, -1);
   const stop = watchPipeline(config, error => { errors.push(error); });
   try {
@@ -132,13 +131,24 @@ test('each watch run prints the result of every job and its time; the run after 
     for (const result of results(lines[1])) assert.match(result, /^\S+: unchanged$/);
     assert.ok(!lines[1].startsWith('Recovered:'), lines[1]);
 
+    // No job failed: the configuration did not load, so the error stands alone.
     fs.writeFileSync(config, `${valid}version: 1\n`);
     await until(() => errors.length === 1, 'the broken golem.yaml is reported');
-    assert.ok(stderr.some(text => text.includes('its last good output stays in place')), stderr.join(''));
+    assert.doesNotMatch(String(errors[0]), /wrote no files/);
     fs.writeFileSync(config, valid);
-    await until(() => lines.length === 3, () => `the fixed golem.yaml runs (errors=${errors.map(String).join('; ')})`);
+    await until(() => lines.length === 3, () => `the fixed golem.yaml runs (errors=${reported()})`);
     assert.ok(lines[2].startsWith('Recovered: '), lines[2]);
     for (const result of results(lines[2])) assert.match(result, /^\S+: unchanged$/);
+
+    // A job that throws before it writes says its last good output stays.
+    const model = path.join(root, 'src/cart.model.ts');
+    const goodModel = fs.readFileSync(model, 'utf8');
+    fs.writeFileSync(model, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCart = IModel<{ half: string & }>;\n");
+    await until(() => errors.length === 2, () => `the broken model is reported (errors=${reported()})`);
+    assert.match(errors[1] instanceof Error ? errors[1].message : '', /error TS\d+:[^]*\nThe job that failed wrote no files; its last good output stays in place\.$/);
+    fs.writeFileSync(model, goodModel);
+    await until(() => lines.length === 4, () => `the fixed model runs (errors=${reported()})`);
+    assert.ok(lines[3].startsWith('Recovered: '), lines[3]);
   } finally {
     stop();
   }

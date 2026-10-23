@@ -9,6 +9,7 @@ import { runPipeline, watchPipeline } from '#golem/cli';
 import { generate as generateOpenApi } from '#openapi/generator';
 import { workspace } from './support/process.js';
 import { until } from './support/watch-wait.js';
+import { runLines } from './support/watch-runs.js';
 import { writeFixture } from './support/consumer.js';
 import { compileGeneratedSdk } from './openapi/helpers.js';
 
@@ -375,7 +376,7 @@ test('exec --watch keeps its child alive through generation failure, recovers, a
   const initialDocument = fs.readFileSync(api, 'utf8');
 
   try {
-    await until(() => stdout.includes('Generated configured outputs.') && fs.existsSync(ready), `exec --watch initial generation: ${stderr}`);
+    await until(() => runLines(stdout).length > 0 && fs.existsSync(ready), `exec --watch initial generation: ${stderr}`);
 
     fs.writeFileSync(api, JSON.stringify({ openapi: '2.0', info: {}, paths: {} }));
     await until(() => /OpenAPI|validation failed|unsupported/i.test(stderr), `exec --watch reports a later generation failure: ${stderr}`);
