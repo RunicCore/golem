@@ -93,7 +93,7 @@ test('a referenced file that fails to parse is observed and named in the error',
   const observed: string[] = [];
   await assert.rejects(
     () => loadReferenceGraph(write(directory, 'api.json', document), document, { onInput: (file) => { observed.push(file); } }),
-    /failed to parse referenced document .*broken\.yaml/,
+    (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), path.join(directory, 'broken.yaml'))}:1:`),
   );
   assert.ok(observed.includes(path.join(directory, 'broken.yaml')));
 });

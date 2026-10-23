@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import YAML from 'yaml';
-import { GolemDiagnosticSeverity, canonicalPath, isInsideDirectory, isRecord, outsideModelsRootMessage, resolveProfile } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, isInsideDirectory, isRecord, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-api.js';
 import { defaultModelOutput } from './generated-paths.js';
 import type {
   GolemDiagnostic,
@@ -218,7 +217,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   const configFile = fs.realpathSync.native(requested);
   onInput?.(configFile);
   const directory = path.dirname(configFile);
-  const value: unknown = YAML.parse(fs.readFileSync(configFile, 'utf8'), { uniqueKeys: true });
+  const value: unknown = parseYamlFile(fs.readFileSync(configFile, 'utf8'), configFile, { uniqueKeys: true });
   keys(value, ['version', 'tsconfig', 'mobx', 'validation', 'allowAny', 'exact', 'unknownFormats', 'nonModelInputs', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
   if (value.version !== 1) throw new Error('Configuration version must be 1.');
   if (value.unknownFormats !== undefined && value.unknownFormats !== 'warn' && value.unknownFormats !== 'error') throw new Error('unknownFormats must be "warn" or "error".');
