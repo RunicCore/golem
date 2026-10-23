@@ -563,13 +563,14 @@ test('one package installed at two paths and used by models of one job is one bi
 });
 
 test('with validation off, a model that opts in generates and validates, and the default model it nests stays open', async (t: TestContext) => {
+  // protects: fbc92c3 a validating model compiles the undecided codecs it references: the nested Date child validates, though its model and wire schemas differ
   const { root, sourceRoot } = project(t);
   writeModelSources(sourceRoot, {
     'rules.ts': rulesSource,
     'child.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
 import type { TValidation } from '@exprtlabs/golem/tags';
 import { isEven } from './rules.js';
-export type TChild = IObject<{ count: number & TValidation<typeof isEven> }>;
+export type TChild = IObject<{ count: number & TValidation<typeof isEven>; at: Date }>;
 `,
     'parent.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
 import type { MinLength } from '@exprtlabs/golem/tags';
