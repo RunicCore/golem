@@ -26,7 +26,7 @@ import {
   type NormalizedOperation,
 } from '../normalize.js';
 import { operationNameType } from '../names.js';
-import { generatedBanner } from '../package-info.js';
+import { generatedBannerComment } from '../package-info.js';
 import type { OpenApiGenerationProfile } from '../profile.js';
 import { requireProfile } from '../profile.js';
 import { buildOperationValidationSchemaBundle, buildOperationValidationSchemaBundles, buildSchemaData } from '../schemas.js';
@@ -364,7 +364,7 @@ ${validatorSetup.parts.length > 0 ? text`${validatorSetup}\n` : BLANK}${body}
   const typesImports = fileImports(file, [typesModule], { elsewhere: [clientModule, validatorsSource] });
   const validatorImportLines = fileImports(file, [validatorsSource], { elsewhere: [typesModule, clientModule] });
   return render(code`${join([
-    legacyText(generatedBanner().trimEnd()),
+    generatedBannerComment(),
     ...runtimeLines('client'),
     ...clientImports,
     ...typesImports,
@@ -609,7 +609,7 @@ ${metadata}
     if (entry.names.length > 0 && !written.has(`${module} values`)) throw new Error(`Internal error: the client file uses the ${module} runtime values ${entry.names.map(({ name }) => name).join(', ')}, which its import list does not write.`);
     if (entry.types.length > 0 && !written.has(`${module} types`)) throw new Error(`Internal error: the client file uses the ${module} runtime types ${entry.types.map(({ name }) => name).join(', ')}, which its import list does not write.`);
   }
-  return render(code`${join([legacyText(generatedBanner()), ...importLinesOfFile], code`\n`)}
+  return render(code`${join([generatedBannerComment(), ...importLinesOfFile], code`\n`)}
 ${rest}`);
 }
 

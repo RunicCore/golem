@@ -12,7 +12,7 @@ import {
   type OpenApiMediaType,
 } from './normalize.js';
 import { manifestMarker } from '@exprtlabs/golem/manifest';
-import { generatedBanner } from './package-info.js';
+import { generatedBannerComment } from './package-info.js';
 import { ComponentNameScope } from './origin.js';
 import { projectSchema, collectCanonicalResources, nextSchemaBase, resolveSchemaTarget, schemaDocumentBase, schemaTargetIdentity, type ResolvedSchemaTarget, type ResourceIndex } from './schema-projection.js';
 
@@ -876,7 +876,7 @@ export function generateTypes(
   dropTrailingBlankLines(body);
   const types = join(body, lineBreak);
   const output = join([
-    legacyText(generatedBanner()),
+    generatedBannerComment(),
     legacyText(manifestMarker()),
     ...fileImports(types, [inputSchemas, outputSchemas]),
     BLANK,
@@ -903,7 +903,7 @@ export function generateDirectionalSchemas(document: unknown, direction: 'input'
   emitBlobType(body, 0, blobTypeName);
   dropTrailingBlankLines(body);
   return render(code`${trimEnd(join([
-    legacyText(generatedBanner()),
+    generatedBannerComment(),
     docComment(`Component schemas projected for ${direction === 'input' ? 'request' : 'response'} data.`),
     BLANK,
     ...body,
