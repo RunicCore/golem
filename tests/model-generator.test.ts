@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { registerHooks } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
@@ -35,6 +36,38 @@ function profileCases(): readonly [{ mobx: boolean; validation: boolean }, { mob
     [{ mobx: false, validation: true }, { mobx: false, validation: true }],
     [{ mobx: true, validation: true }, { mobx: true, validation: true }],
   ];
+}
+
+interface SpiedCall { readonly name: string; readonly args: readonly unknown[] }
+
+/**
+ * Redirect the runtime exports named in `spied` (by subpath) that the built modules of a project import to wrappers that
+ * record each call and run the real function; the test's own imports reach the real exports. Start it after the build and
+ * before the first import of a built module.
+ */
+async function spyOnBuild(root: string, spied: Readonly<Record<string, readonly string[]>>) {
+  fs.writeFileSync(path.join(root, 'spy-calls.mjs'), 'export const calls = [];\n');
+  const redirects = new Map<string, string>();
+  Object.entries(spied).forEach(([specifier, names], index) => {
+    const file = path.join(root, `spy-${index}.mjs`);
+    fs.writeFileSync(file, [
+      `import * as real from '${specifier}';`,
+      "import { calls } from './spy-calls.mjs';",
+      `export * from '${specifier}';`,
+      ...names.map((name) => `export const ${name} = (...args) => { calls.push({ name: '${name}', args }); return real.${name}(...args); };`),
+    ].join('\n'));
+    redirects.set(specifier, pathToFileURL(file).href);
+  });
+  const built = pathToFileURL(path.join(fs.realpathSync(root), 'build') + path.sep).href;
+  const hooks = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      const redirect = redirects.get(specifier);
+      if (redirect !== undefined && context.parentURL?.startsWith(built)) return { url: redirect, format: 'module', shortCircuit: true };
+      return nextResolve(specifier, context);
+    },
+  });
+  const { calls } = await import(pathToFileURL(path.join(root, 'spy-calls.mjs')).href) as { calls: SpiedCall[] };
+  return { calls, stop: () => hooks.deregister() };
 }
 
 const isValidationUnavailable = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable;
@@ -601,16 +634,18 @@ test('a companion imports only the validators of its own models and the companio
   // The strict unused compile of the build fails on a name the companion imports and does not use, and on a module it cannot find.
   writeModelGolemYaml(root, { mobx: true, validation: true });
   await buildModelProject(root);
-  // The payment companion alone brings in the money companion it needs.
-  const { TPaymentBaseModel } = await import(pathToFileURL(path.join(root, 'build/payment.model.generated.js')).href);
-  const payment = decodeGeneratedModel(TPaymentBaseModel, NESTED_PAYMENT_WIRE);
-  assert.ok(payment.total.at instanceof Date, 'the nested money converts with the decoder of its own companion');
-  // A cross-file child that is not recursive adds no cycle walk to its parent: encoding reads the child field once.
-  const total = payment.total;
-  let reads = 0;
-  Object.defineProperty(payment, 'total', { get() { reads += 1; return total; }, enumerable: true, configurable: true });
-  assert.deepEqual(encodeGeneratedModel(payment), { id: 'p1', total: { currency: 'USD', note: 1, at: '2024-01-01T00:00:00.000Z' } });
-  assert.equal(reads, 1);
+  const spy = await spyOnBuild(root, { '@exprtlabs/golem/conversion': ['assertAcyclicEncodeInput', 'beginEncode', 'endEncode'] });
+  try {
+    // The payment companion alone brings in the money companion it needs.
+    const { TPaymentBaseModel, stringifyTPayment, toWireFormatTPayment } = await import(pathToFileURL(path.join(root, 'build/payment.model.generated.js')).href);
+    const payment = decodeGeneratedModel(TPaymentBaseModel, NESTED_PAYMENT_WIRE);
+    assert.ok(payment.total.at instanceof Date, 'the nested money converts with the decoder of its own companion');
+    assert.deepEqual(encodeGeneratedModel(payment), NESTED_PAYMENT_WIRE);
+    assert.equal(stringifyTPayment(payment), JSON.stringify(NESTED_PAYMENT_WIRE));
+    assert.deepEqual(toWireFormatTPayment(payment), NESTED_PAYMENT_WIRE);
+    // A cross-file child that is not recursive adds no cycle walk to its parent.
+    assert.deepEqual(spy.calls, []);
+  } finally { spy.stop(); }
 });
 
 /** A model file with no alias: it extends the class of a companion that the project's own SDK generated. */
