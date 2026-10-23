@@ -1,8 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isInsideDirectory, type InputObserver } from '@exprtlabs/golem/generator-api';
-import YAML from 'yaml';
+import { isInsideDirectory, parseYamlFile, type InputObserver } from '@exprtlabs/golem/generator-api';
 import { displayLocation } from './origin.js';
 import { asRecord, escapeJsonPointerToken, isJsonObject, jsonPointerJoin, objectEntries, resolveJsonPointer } from './json.js';
 import {
@@ -187,9 +186,11 @@ function anchorFragmentError(reference: string, documentUri: string): Error {
   return new Error(`anchor fragments are only supported within the root document: ${reference} (in ${documentUri})`);
 }
 
+/** A YAML document's parse error names the document with its line and column; a JSON one is wrapped here. */
 function parseDocumentText(text: string, name: string): unknown {
+  if (!name.toLowerCase().endsWith('.json')) return parseYamlFile(text, name);
   try {
-    return name.toLowerCase().endsWith('.json') ? JSON.parse(text) : YAML.parse(text);
+    return JSON.parse(text);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`failed to parse referenced document ${name}: ${detail}`);

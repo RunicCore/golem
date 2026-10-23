@@ -538,6 +538,8 @@ export interface Program extends Disposable {
   isSourceFileFromExternalLibrary(file: SourceFile): boolean;
   isSourceFileDefaultLibrary(file: SourceFile): boolean;
   getCompilerOptions(): CompilerOptions;
+  /** The parse errors of one file, read without a type check. */
+  getSyntacticDiagnostics(filename: string): readonly Diagnostic[];
   readonly session: ProgramSession;
 }
 
