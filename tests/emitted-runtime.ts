@@ -2,6 +2,12 @@ import { transformSync } from 'esbuild';
 
 import * as conversion from '@exprtlabs/golem/conversion';
 import * as serde from '@exprtlabs/golem/serde';
+import { emitCodecRuntimeCode, render } from '@exprtlabs/golem/internal/emitter';
+
+/** The codec runtime of a schema graph as text. */
+export function emitCodecRuntimeText(...args: Parameters<typeof emitCodecRuntimeCode>): string {
+  return render(emitCodecRuntimeCode(...args));
+}
 
 /** Evaluate emitted `stringify*` functions with the public serde exports in scope. */
 export function instantiate(source: string): Record<string, (value: never) => string> {

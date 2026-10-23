@@ -389,6 +389,23 @@ export const missingField: keyof PaymentModel[typeof generatedModelFieldsBrand] 
   assert.deepEqual(seen, [200]);
 });
 
+test('a webhook name that holds a comment end is written into the inbound port doc line without ending it', (t) => {
+  // protects: T-290 the doc line of an inbound method escapes user text instead of throwing
+  const document = {
+    openapi: '3.1.0',
+    info: { title: 'Inbound', version: '1' },
+    webhooks: { 'paid*/done': { post: {
+      operationId: 'receivePaid',
+      requestBody: { required: true, content: { 'application/json': { schema: { type: 'object' } } } },
+      responses: { 204: { description: 'accepted' } },
+    } } },
+  };
+  const output = createFixtureProject(t, 'golem-openapi-inbound-comment-');
+  writeSdk(document, { output, name: 'Inbound' });
+  const inbound = fs.readFileSync(path.join(output, 'inbound.ts'), 'utf8');
+  assert.match(inbound, /^  \/\*\* webhook paid\*\\\/done: POST paid\*\\\/done \*\/$/m);
+});
+
 test('normalizes callbacks and webhooks into typed inbound contracts', (t) => {
   const document = {
     openapi: '3.2.0',

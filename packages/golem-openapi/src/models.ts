@@ -2,7 +2,7 @@ import { objectEntries } from './json.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { parameterSchema, resolveLocal, type NormalizedOperation, type OpenApiSchema } from './normalize.js';
 import { type OpenApiModelAnalysis, modelEnv, type CompositionSite, checkComposition } from './model-resolution.js';
-import { modelFromJSONExpression, modelToJSONExpression } from './model-emission.js';
+import { checkModelFromJSON, checkModelToJSON } from './model-emission.js';
 
 /** Whether the schema or a schema inside it has an allOf; a `$ref` target is a component and is read as one. */
 function containsAllOf(value: unknown, seen = new Set<unknown>()): boolean {
@@ -31,7 +31,7 @@ export function checkOperationCompositions(
     checkComposition(site, schema, undefined, analysis.definitions, document, analysis.resources, warn);
     // Members that are not objects convert in the model path; no component reads an inline schema there, so convert it once.
     if (!containsAllOf(schema)) return;
-    const convert = direction === 'from' ? modelFromJSONExpression : modelToJSONExpression;
+    const convert = direction === 'from' ? checkModelFromJSON : checkModelToJSON;
     convert(schema, 'value', analysis.definitions, env, site);
   };
   for (const operation of operations) {

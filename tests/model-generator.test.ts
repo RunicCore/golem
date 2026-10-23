@@ -200,6 +200,15 @@ test('rejects an SDK module that lacks a codec helper the companion imports', (t
   assert.equal(fs.existsSync(path.join(sourceRoot, 'aggregate.model.generated.ts')), false, 'no companion is written');
 });
 
+test('a model named with a non-ASCII letter generates a companion that keeps the name', (t: TestContext) => {
+  // protects: T-290 a user model name may hold any Unicode letter, as it did before Code values
+  const { root, sourceRoot } = project(t);
+  const source = path.join(sourceRoot, 'cafe.model.ts');
+  fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCafé = IModel<{ label: string }>;\n");
+  const result = generate({ root, sources: [source], profile: { mobx: false, validation: true } });
+  assert.ok(result.artifacts.some(artifact => artifact.content.includes('TCaféBaseModel')));
+});
+
 test('rejects missing sources and profile-mismatched manifests before emitting artifacts', (t: TestContext) => {
   const { root, sourceRoot } = project(t);
   const manifest = path.join(root, 'external-model-manifest.json');

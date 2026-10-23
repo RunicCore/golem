@@ -1,10 +1,11 @@
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 export {
-  emitCodecRuntime,
+  emitCodecRuntimeCode,
   emitGraphStringify,
   emitStringifyFunction,
   fillFunctionName,
   fromWireFunctionName,
+  MODULE_CONSTANT_HELPERS,
   parseFunctionName,
   reachesItself,
   reachesRecursiveNode,
@@ -16,9 +17,14 @@ export {
   type NestedImportedSerde,
   type StringifySerdeResolver,
 } from './stringify-emitter.js';
-export { presentKeysSource } from '../presence.js';
-export { pruneGeneratedImports } from './generated-imports.js';
-export { FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
+export { calleeOf, FIELD_CONVERSION_INPUT, type TupleConversionDescriptor } from './sequence-conversion.js';
+export { presentKeysCode } from './union-conversion.js';
+/** The Code values and the functions that build, join and render them: generators write their files from these. */
+export {
+  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importLines, importSet, ImportSource, inputOf, inputSlot, join, lineBreak, literal, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
+  type Code, type Helper, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
+} from './code.js';
+export { rt, rtType, type RuntimeModule } from './rt.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
 export {
   composeObjects,
@@ -33,9 +39,12 @@ export {
   type Rejected,
   type SlotRule,
 } from './composition.js';
-import { presentKeysSource, presentValueSource } from '../presence.js';
+import { blockComment, bindInput, code, identifier, inputOf, inputSlot, join, literal, sameCode, type Code } from './code.js';
+import { rt } from './rt.js';
+import { MODEL_MANIFEST_FILENAME, MODEL_MANIFEST_MARKER } from './model-manifest.js';
+export { assertUniqueExportNames, type PublicModule } from './names.js';
 import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
-import { FIELD_CONVERSION_INPUT, emitArrayConversion, emitTupleConversion, singleCallConverter, type SequenceItems } from './sequence-conversion.js';
+import { FIELD_CONVERSION_INPUT, calleeOf, emitArrayConversion, emitTupleConversion, type SequenceItems } from './sequence-conversion.js';
 import {
   discriminatorMatch,
   literalDiscriminator,
@@ -46,7 +55,9 @@ import {
   presentUnionVariants,
   emitDispatch,
   emitUnionConversion,
+  presentKeysCode,
   presentUnionIndices,
+  presentValueCode,
   unionDispatch,
   type ObjectTypeDescriptor,
   type VariantDispatch,
@@ -63,26 +74,30 @@ const projectionLocal = (index: number): string => `__golemProjected${index}`;
 /** A model's required tag properties and their literal value or values. */
 export type ModelDiscriminators = Readonly<Record<string, DiscriminatorValue | readonly DiscriminatorValue[]>>;
 
+/**
+ * Each answer of a resolver is Code that holds the callee as a part, so the file imports it. A resolver reads the value it
+ * converts as Code, and writes it into its call.
+ */
 export interface FromJsonModelResolver {
-  readonly className: string;
+  readonly className: Code;
   readonly discriminators?: ModelDiscriminators;
   /** The models that this model extends, so a derived model narrows its bases where they judge one property. */
   readonly bases?: readonly string[];
   /** Internal generated-model wire decoder expression. */
-  readonly decode: (value: string) => string;
+  readonly decode: (value: Code) => Code;
   /** Construct a domain model from a nested model initializer. */
-  readonly fromInit?: (value: string) => string;
+  readonly fromInit?: (value: Code) => Code;
   /** A projection whose value converts to itself: a use writes no call. */
   readonly identity?: true;
 }
 
 export interface ToJsonModelResolver {
-  readonly className: string;
+  readonly className: Code;
   readonly discriminators?: ModelDiscriminators;
   /** The models that this model extends, so a derived model narrows its bases where they judge one property. */
   readonly bases?: readonly string[];
   /** Internal generated-model wire encoder expression. */
-  readonly encode?: (value: string) => string;
+  readonly encode?: (value: Code) => Code;
   /** A projection whose value converts to itself: a use writes no call. */
   readonly identity?: true;
 }
@@ -93,8 +108,8 @@ export interface ToJsonModelResolver {
  * the wrapper is applied in a nested conversion tree.
  */
 export interface SerdeResolver {
-  readonly deserialize: (id: string, value: string) => string;
-  readonly serialize: (id: string, value: string) => string;
+  readonly deserialize: (id: string, value: Code) => Code;
+  readonly serialize: (id: string, value: Code) => Code;
 }
 
 type DescriptorMetadata = {
@@ -160,90 +175,115 @@ function inferredBranchDispatch(branches: readonly ModelDiscriminators[]): Varia
   return undefined;
 }
 
-function recordExpression(expression: string): string {
-  return expression === 'data' || expression === 'source' ? expression : `(${expression} as Record<string, unknown>)`;
+/** Whether the code is one input that stands for a record, whose properties a read takes without a cast. */
+function isRecordRead(expression: Code): boolean {
+  const [only, ...more] = expression.parts;
+  return only?.kind === 'input' && more.length === 0 && only.slot.record;
 }
 
-function recordIndex(expression: string, property: string): string {
-  return `${recordExpression(expression)}[${property}]`;
+/** The record view of an expression: a record input as it is, any other expression cast once. */
+function recordExpression(expression: Code): Code {
+  return isRecordRead(expression) ? expression : code`(${expression} as Record<string, unknown>)`;
+}
+
+function recordIndex(expression: Code, property: Code): Code {
+  return code`${recordExpression(expression)}[${property}]`;
 }
 
 /** A decoder's tag read by the JSON view, so an inherited or non-enumerable tag selects no branch. */
-function presentTag(expression: string, property: string): string {
-  const key = JSON.stringify(property);
-  return `(${presentValueSource(expression, key, recordIndex(expression, key))})`;
+function presentTag(expression: Code, property: string): Code {
+  const key = literal(property);
+  return code`(${presentValueCode(expression, key, recordIndex(expression, key))})`;
 }
 
 function taggedObjectExpression(
-  expression: string,
+  expression: Code,
   alternatives: readonly ObjectDescriptor[],
-): string {
+): Code {
   const discriminator = objectDiscriminator(alternatives);
   if (!discriminator) return objectValueExpression(expression);
   const access = presentTag(expression, discriminator.property);
-  return `${objectValueExpression(expression)} && ${discriminatorMatch(access, discriminator.values.flat())}`;
+  return code`${objectValueExpression(expression)} && ${discriminatorMatch(access, discriminator.values.flat())}`;
+}
+
+/** The construction of a model from its initializer: the resolver's own, or `new <class>(<value>)`. */
+function fromInitCall(model: FromJsonModelResolver, expression: Code): Code {
+  return model.fromInit
+    ? model.fromInit(expression)
+    : code`new ${model.className}(${expression})`;
+}
+
+/** The wire encoding of a model: the resolver's own, or `encodeGeneratedModel(<value>)`. */
+function encodeCall(model: { readonly encode?: (value: Code) => Code }, expression: Code): Code {
+  return model.encode
+    ? model.encode(expression)
+    : code`${rt.conversion.encodeGeneratedModel}(${expression})`;
 }
 
 function unionGeneratedFromJson(
   descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }>,
-  expression: string,
+  expression: Code,
   resolveModel: (id: string) => FromJsonModelResolver,
-): string | undefined {
+): Code | undefined {
   const generated = generatedModel(descriptor);
   if (!generated) return undefined;
   const objects = descriptor.variants.filter(
     (variant): variant is ObjectDescriptor => variant.kind === 'object',
   );
   const model = resolveModel(generated.id);
-  const converted = `${expression} instanceof ${model.className} ? ${expression} : ${model.decode(expression)}`;
+  const value = expression;
+  const converted = code`${value} instanceof ${model.className} ? ${value} : ${model.decode(expression)}`;
   if (objects.length === 0) {
-    return `${objectValueExpression(expression)} ? ${converted} : ${expression}`;
+    return code`${objectValueExpression(expression)} ? ${converted} : ${value}`;
   }
   const tagged = taggedObjectExpression(expression, objects);
-  return `${objectValueExpression(expression)} && !(${tagged}) ? ${converted} : ${expression}`;
+  return code`${objectValueExpression(expression)} && !(${tagged}) ? ${converted} : ${value}`;
 }
 
 function unionGeneratedFromInit(
   descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }>,
-  expression: string,
+  expression: Code,
   resolveModel: (id: string) => FromJsonModelResolver,
-): string | undefined {
+): Code | undefined {
   const generated = generatedModel(descriptor);
   if (!generated) return undefined;
   const objects = descriptor.variants.filter(
     (variant): variant is ObjectDescriptor => variant.kind === 'object',
   );
   const model = resolveModel(generated.id);
-  const fromInit = model.fromInit ?? ((value: string) => `new ${model.className}(${value})`);
-  const converted = `${expression} instanceof ${model.className} ? ${expression} : ${fromInit(expression)}`;
-  if (objects.length === 0) return `${objectValueExpression(expression)} ? ${converted} : ${expression}`;
+  const value = expression;
+  const converted = code`${value} instanceof ${model.className} ? ${value} : ${fromInitCall(model, expression)}`;
+  if (objects.length === 0) return code`${objectValueExpression(expression)} ? ${converted} : ${value}`;
   const tagged = taggedObjectExpression(expression, objects);
-  return `${objectValueExpression(expression)} && !(${tagged}) ? ${converted} : ${expression}`;
+  return code`${objectValueExpression(expression)} && !(${tagged}) ? ${converted} : ${value}`;
 }
 
 function unionGeneratedToJson(
   descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }>,
-  expression: string,
+  expression: Code,
   resolveModel: (id: string) => ToJsonModelResolver,
-): string | undefined {
+): Code | undefined {
   const generated = generatedModel(descriptor);
   if (!generated) return undefined;
   const model = resolveModel(generated.id);
-  const encode = model.encode ?? ((value: string) => `encodeGeneratedModel(${value})`);
-  return `${expression} instanceof ${model.className} ? ${encode(expression)} : ${expression}`;
+  const value = expression;
+  return code`${value} instanceof ${model.className} ? ${encodeCall(model, expression)} : ${value}`;
 }
 
+/** The input of a field conversion that is emitted once to find its shape. No nested conversion binds this name. */
+const FIELD_INPUT = identifier(FIELD_CONVERSION_INPUT);
+
 /**
- * A converted value at a nested field. `emit(FIELD_CONVERSION_INPUT)` shows the conversion's shape: a single call
+ * A converted value at a nested field. `emit(FIELD_INPUT)` shows the conversion's shape: a single call
  * passes its function and the value to `convertModelField`; any other conversion becomes a value-taking arrow,
  * so no conversion captures the enclosing loop.
  */
-function atField(emit: (value: string) => string, input: string, field: string, direction: 'fromJSON' | 'toJSON' | 'fromInit'): string {
+function atField(emit: (value: Code) => Code, input: Code, field: Code, direction: 'fromJSON' | 'toJSON' | 'fromInit'): Code {
   if (direction === 'fromInit') return emit(input);
-  const converted = emit(FIELD_CONVERSION_INPUT);
-  if (converted === FIELD_CONVERSION_INPUT) return input;
-  const convert = singleCallConverter(converted) ?? `(${FIELD_CONVERSION_INPUT}: unknown) => (${converted})`;
-  return `convertModelField(${JSON.stringify(direction === 'toJSON' ? 'serialize' : 'deserialize')}, ${field}, ${convert}, ${input})`;
+  const converted = emit(FIELD_INPUT);
+  if (sameCode(converted, FIELD_INPUT)) return input;
+  const convert = calleeOf(converted) ?? code`(${FIELD_INPUT}: unknown) => (${converted})`;
+  return code`${rt.conversion.convertModelField}(${literal(direction === 'toJSON' ? 'serialize' : 'deserialize')}, ${field}, ${convert}, ${input})`;
 }
 
 /** The item conversion of a tuple or an array in the model family: `fromInit` has no error paths, the other directions have. */
@@ -256,22 +296,23 @@ function sequenceItems(
     output: 'value',
     ...(direction === 'fromInit' ? {} : { paths: direction === 'toJSON' ? 'serialize' as const : 'deserialize' as const }),
     item: (item, value) => {
-      const code = emitNested(item, value, direction, resolveModel, resolveSerde);
-      return { code, throws: code !== value };
+      const converted = emitNested(item, value, direction, resolveModel, resolveSerde);
+      return { code: converted, throws: !sameCode(converted, value) };
     },
   };
 }
 
 function emitNestedUnion(
   descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }>,
-  expression: string,
+  expression: Code,
   direction: 'fromJSON' | 'toJSON' | 'fromInit',
   resolveModel: (id: string) => FromJsonModelResolver | ToJsonModelResolver,
   resolveSerde?: SerdeResolver,
-): string {
+): Code {
   const indices = presentUnionIndices(descriptor);
   const dispatchDirection = direction === 'toJSON' ? 'encode-value' : 'decode';
-  const convert = (variant: ModelConversionDescriptor): string =>
+  const value = expression;
+  const convert = (variant: ModelConversionDescriptor): Code =>
     emitNested(variant, expression, direction, resolveModel, resolveSerde);
   return emitUnionConversion(descriptor, expression, 'nested', {
     convert,
@@ -333,7 +374,7 @@ function emitNestedUnion(
       const objects = objectIndices.map(index => descriptor.variants[index]).filter(
         (variant): variant is ObjectDescriptor => variant.kind === 'object');
       const convertedObjects = objects.map(object => ({ object, converted: convert(object) }));
-      if (convertedObjects.some(({ converted }) => converted !== expression)) {
+      if (convertedObjects.some(({ converted }) => !sameCode(converted, value))) {
         const discriminator = unionDispatch(descriptor, objectIndices, objectVariant);
         if (!discriminator && (objects.length > 1 || descriptor.variants.some(variant => ['reference', 'generated-model', 'any', 'unknown', 'intersection'].includes(variant.kind)))) {
           throw new ObjectUnionDiscriminatorError(descriptor.variants);
@@ -347,14 +388,14 @@ function emitNestedUnion(
             branches: convertedObjects.map(({ converted }, position) => ({ values: discriminator.values[position], convert: converted })),
           });
         }
-        let converted = result ?? expression;
+        let chain = result ?? value;
         for (let index = convertedObjects.length - 1; index >= 0; index--) {
           const guard = discriminator
-            ? `${objectValueExpression(expression)} && ${discriminatorMatch(presentTag(expression, discriminator.property), discriminator.values[index])}`
+            ? code`${objectValueExpression(expression)} && ${discriminatorMatch(presentTag(expression, discriminator.property), discriminator.values[index])}`
             : objectValueExpression(expression);
-          converted = `${guard} ? (${convertedObjects[index].converted}) : (${converted})`;
+          chain = code`${guard} ? (${convertedObjects[index].converted}) : (${chain})`;
         }
-        return converted;
+        return chain;
       }
       return result;
     },
@@ -363,36 +404,39 @@ function emitNestedUnion(
 
 function emitNested(
   descriptor: ModelConversionDescriptor,
-  expression: string,
+  expression: Code,
   direction: 'fromJSON' | 'toJSON' | 'fromInit',
   resolveModel: (id: string) => FromJsonModelResolver | ToJsonModelResolver,
   resolveSerde?: SerdeResolver,
-): string {
+): Code {
+  const value = expression;
   const tags = metadata(descriptor);
   if (tags.serde && resolveSerde) {
     return direction === 'fromJSON'
-      ? resolveSerde.deserialize(tags.serde.id, expression)
+      ? resolveSerde.deserialize(tags.serde.id, value)
       : direction === 'toJSON'
-        ? resolveSerde.serialize(tags.serde.id, expression)
-        : expression;
+        ? resolveSerde.serialize(tags.serde.id, value)
+        : value;
   }
   if (descriptor.kind === 'date' || tags.date) {
     return direction === 'fromJSON'
-      ? `deserializeDate(${expression})`
+      ? code`${rt.conversion.deserializeDate}(${value})`
       : direction === 'toJSON'
-        ? `serializeDate(${expression})`
-        : expression;
+        ? code`${rt.conversion.serializeDate}(${value})`
+        : value;
   }
   if (descriptor.kind === 'intersection') {
     const bases: ModelBases = { basesOf: (id) => resolveModel(id).bases ?? [] };
     const merged = descriptor.variants.every(variant => !metadata(variant).serde) ? requireComposedObject(descriptor.variants, bases) : undefined;
     if (merged) return emitNested(merged, expression, direction, resolveModel, resolveSerde);
     // A scalar intersection converts by its one converting part.
-    const conversions = [...new Set(descriptor.variants
-      .map(variant => emitNested(variant, expression, direction, resolveModel, resolveSerde))
-      .filter(converted => converted !== expression))];
+    const conversions: Code[] = [];
+    for (const variant of descriptor.variants) {
+      const converted = emitNested(variant, expression, direction, resolveModel, resolveSerde);
+      if (!sameCode(converted, value) && !conversions.some(known => sameCode(known, converted))) conversions.push(converted);
+    }
     if (conversions.length > 1) throw new CompositionConflictError('two parts convert it differently');
-    return conversions[0] ?? expression;
+    return conversions[0] ?? value;
   }
   if (descriptor.kind === 'union') {
     return emitNestedUnion(descriptor, expression, direction, resolveModel, resolveSerde);
@@ -402,37 +446,26 @@ function emitNested(
     if (direction === 'fromJSON' || direction === 'fromInit') {
       const fromJson = model;
       if (!('decode' in fromJson)) throw new Error(`Missing decode resolver for generated model ${descriptor.id}.`);
-      const convert = direction === 'fromInit'
-        ? fromJson.fromInit ?? ((value: string) => `new ${fromJson.className}(${value})`)
-        : fromJson.decode;
-      return `${expression} == null || ${expression} instanceof ${fromJson.className} ? ${expression} : ${convert(expression)}`;
+      const convert = direction === 'fromInit' ? fromInitCall(fromJson, expression) : fromJson.decode(expression);
+      return code`${value} == null || ${value} instanceof ${fromJson.className} ? ${value} : ${convert}`;
     }
-    const toJson = model;
-    const encode = ('encode' in toJson && toJson.encode)
-      ? toJson.encode
-      : (value: string) => `encodeGeneratedModel(${value})`;
-    return `${expression} instanceof ${toJson.className} ? ${encode(expression)} : ${expression}`;
+    return code`${value} instanceof ${model.className} ? ${encodeCall('encode' in model ? model : {}, expression)} : ${value}`;
   }
   if (descriptor.kind === 'reference') {
     const model = resolveModel(descriptor.name);
     if (descriptor.projection) {
-      if (model.identity) return expression;
-      if (direction === 'toJSON') return 'encode' in model ? model.encode?.(expression) ?? expression : expression;
+      if (model.identity) return value;
+      if (direction === 'toJSON') return 'encode' in model && model.encode ? model.encode(expression) : value;
       if (!('decode' in model)) throw new Error(`Missing projected conversion for ${descriptor.name}.`);
       return direction === 'fromInit' ? (model.fromInit ?? model.decode)(expression) : model.decode(expression);
     }
     if (direction === 'fromJSON' || direction === 'fromInit') {
       const fromJson = model;
       if (!('decode' in fromJson)) throw new Error(`Missing decode resolver for generated model ${descriptor.name}.`);
-      const convert = direction === 'fromInit'
-        ? fromJson.fromInit ?? ((value: string) => `new ${fromJson.className}(${value})`)
-        : fromJson.decode;
-      return `${expression} == null || ${expression} instanceof ${fromJson.className} ? ${expression} : ${convert(expression)}`;
+      const convert = direction === 'fromInit' ? fromInitCall(fromJson, expression) : fromJson.decode(expression);
+      return code`${value} == null || ${value} instanceof ${fromJson.className} ? ${value} : ${convert}`;
     }
-    const encode = ('encode' in model && model.encode)
-      ? model.encode
-      : (value: string) => `encodeGeneratedModel(${value})`;
-    return `${expression} instanceof ${model.className} ? ${encode(expression)} : ${expression}`;
+    return code`${value} instanceof ${model.className} ? ${encodeCall('encode' in model ? model : {}, expression)} : ${value}`;
   }
   if (descriptor.kind === 'array') {
     return emitArrayConversion(descriptor.item, expression, sequenceItems(direction, resolveModel, resolveSerde));
@@ -442,26 +475,32 @@ function emitNested(
   }
   if (descriptor.kind === 'object') {
     // A projection copies its fields inside a function whose `source` parameter is the record.
-    const fieldSource = descriptor.projection ? 'source' : expression;
+    const source = identifier('source');
+    const sourceRecord = inputSlot('source', 'name', true);
+    const fieldSource = descriptor.projection ? inputOf(sourceRecord) : expression;
     const assignments = Object.entries(descriptor.properties).map(([name, item], index) => {
-      const property = JSON.stringify(name);
-      // `data` and `source` are already record bindings. Other expressions are cast once here.
+      const property = literal(name);
+      // A record is read as it is. Another expression is cast once here, so its read is not a chain.
+      const slot = inputSlot(name, isRecordRead(fieldSource) ? 'chain' : 'other');
       const sourceValue = recordIndex(fieldSource, property);
-      const convert = (input: string): string => atField(value => emitNested(item, value, direction, resolveModel, resolveSerde), input, property, direction);
-      return { name, property, sourceValue, value: convert(sourceValue), presentValue: convert(projectionLocal(index)) };
+      const convert = (input: Code): Code => atField(nested => emitNested(item, nested, direction, resolveModel, resolveSerde), input, property, direction);
+      const piece = convert(inputOf(slot));
+      return { name, property, sourceValue, unchanged: sameCode(piece, inputOf(slot)), value: bindInput(piece, slot, sourceValue), presentValue: convert(identifier(projectionLocal(index))) };
     });
     const additionalItem = descriptor.additionalProperties;
+    const plainValue = identifier('value');
     const additional = typeof additionalItem === 'object'
-      ? atField(value => emitNested(additionalItem, value, direction, resolveModel, resolveSerde), 'value', 'key', direction)
-      : 'value';
+      ? atField(nested => emitNested(additionalItem, nested, direction, resolveModel, resolveSerde), plainValue, identifier('key'), direction)
+      : plainValue;
     // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do.
     const omitsUndefined = (name: string): boolean => direction === 'toJSON' && !descriptor.required.includes(name);
-    const additionalChanged = additional !== 'value';
-    const knownChanged = assignments.some(({ sourceValue, value }) => value !== sourceValue);
+    const additionalChanged = !sameCode(additional, plainValue);
+    const knownChanged = assignments.some(({ unchanged }) => !unchanged);
+    const knownKeys = join(Object.keys(descriptor.properties).map(name => literal(name)), code`, `);
+    const defineProperty = rt.conversion.defineModelProperty;
     // A decoder reads the declared fields of any object by the JSON view, so it builds the copy from one Object.keys pass.
     // A projection does so in both directions, and also drops the keys it does not declare.
     if (descriptor.projection || (direction !== 'toJSON' && (knownChanged || additionalChanged))) {
-      const knownKeys = Object.keys(descriptor.properties).map(name => JSON.stringify(name)).join(', ');
       // An additionalProperties tag declares the other keys of a projection as data: they are copied as they are or by
       // the tag's type. Another object keeps its other keys the same way.
       const hasExtras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
@@ -470,43 +509,47 @@ function emitNested(
       // The same pass collects the other keys, and the copy writes them after the fields, in key order.
       const collectExtras = hasExtras && captured;
       const capture = captured
-        ? [`${collectExtras ? 'let __golemExtra: string[] | undefined; ' : ''}${presentKeysSource('source', assignments.map(({ name }, index) => [name, projectionLocal(index)] as const), local => `${local}: unknown`, collectExtras ? '(__golemExtra ??= []).push(__golemKey);' : undefined)}`]
+        ? [code`${collectExtras ? code`let __golemExtra: string[] | undefined; ` : code``}${presentKeysCode(source, assignments.map(({ name }, index) => [name, identifier(projectionLocal(index))] as const), {
+          declare: (local) => code`${local}: unknown`,
+          ...(collectExtras ? { otherwise: code`(__golemExtra ??= []).push(__golemKey);` } : {}),
+        })}`]
         : [];
       const extras = !hasExtras
-        ? ''
+        ? join([])
         : collectExtras
-          ? `if (__golemExtra !== undefined) for (const key of __golemExtra) { const value = source[key]; if (value !== undefined) defineModelProperty(out, key, ${additional}); }`
-          : `for (const [key, value] of Object.entries(source)) if (value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)) defineModelProperty(out, key, ${additional});`;
-      const fields = assignments.map(({ name, property, sourceValue, value, presentValue }, index) => direction !== 'toJSON'
-        ? `if (${projectionLocal(index)} !== undefined) defineModelProperty(out, ${property}, ${presentValue});`
+          ? code`if (__golemExtra !== undefined) for (const key of __golemExtra) { const value = source[key]; if (value !== undefined) ${defineProperty}(out, key, ${additional}); }`
+          : code`for (const [key, value] of Object.entries(source)) if (value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)) ${defineProperty}(out, key, ${additional});`;
+      const fields = assignments.map(({ name, property, sourceValue, value: converted, presentValue }, index) => direction !== 'toJSON'
+        ? code`if (${identifier(projectionLocal(index))} !== undefined) ${defineProperty}(out, ${property}, ${presentValue});`
         : omitsUndefined(name)
-          ? `if (${sourceValue} !== undefined) defineModelProperty(out, ${property}, ${value});`
-          : `if (Object.hasOwn(source, ${property})) defineModelProperty(out, ${property}, ${sourceValue} === undefined ? undefined : (${value}));`);
-      return `${objectValueExpression(expression)} ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; ${[...capture, ...fields, extras].filter(Boolean).join(' ')} return out; })(${recordExpression(expression)}) : ${expression}`;
+          ? code`if (${sourceValue} !== undefined) ${defineProperty}(out, ${property}, ${converted});`
+          : code`if (Object.hasOwn(source, ${property})) ${defineProperty}(out, ${property}, ${sourceValue} === undefined ? undefined : (${converted}));`);
+      const body = bindInput(join([...capture, ...fields, extras].filter(piece => piece.parts.length > 0), code` `), sourceRecord, source);
+      return code`${objectValueExpression(expression)} ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; ${body} return out; })(${recordExpression(expression)}) : ${value}`;
     }
-    if (!knownChanged && !additionalChanged) return expression;
-    const knownKeys = Object.keys(descriptor.properties).map((name) => JSON.stringify(name)).join(', ');
+    if (!knownChanged && !additionalChanged) return value;
+    const record = recordExpression(expression);
     const base = additionalChanged
-      ? `Object.fromEntries(Object.entries(${recordExpression(expression)}).filter(([key, value]) => value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)).map(([key, value]) => [key, ${additional}]))`
-      : recordExpression(expression);
-    const fields = assignments.map(({ name, property, sourceValue, value }) => {
-      if (omitsUndefined(name)) return `...(${sourceValue} !== undefined ? { [${property}]: ${value} } : undefined)`;
-      const guarded = value === sourceValue
+      ? code`Object.fromEntries(Object.entries(${record}).filter(([key, value]) => value !== undefined && !([${knownKeys}] as readonly string[]).includes(key)).map(([key, value]) => [key, ${additional}]))`
+      : record;
+    const fields = assignments.map(({ name, property, sourceValue, unchanged, value: converted }) => {
+      if (omitsUndefined(name)) return code`...(${sourceValue} !== undefined ? { [${property}]: ${converted} } : undefined)`;
+      const guarded = unchanged
         ? sourceValue
-        : `${sourceValue} === undefined ? ${sourceValue} : (${value})`;
-      return `[${property}]: ${guarded}`;
+        : code`${sourceValue} === undefined ? ${sourceValue} : (${converted})`;
+      return code`[${property}]: ${guarded}`;
     });
-    return `${objectValueExpression(expression)} ? { ...${base}, ${fields.join(', ')} } : ${expression}`;
+    return code`${objectValueExpression(expression)} ? { ...${base}, ${join(fields, code`, `)} } : ${value}`;
   }
-  return expression;
+  return value;
 }
 
 export function emitModelFromJSON(
   descriptor: ModelConversionDescriptor,
-  expression: string,
+  expression: Code,
   resolveModel: (id: string) => FromJsonModelResolver,
   resolveSerde?: SerdeResolver,
-): string {
+): Code {
   return emitNested(descriptor, expression, 'fromJSON', resolveModel, resolveSerde);
 }
 
@@ -538,19 +581,24 @@ function holdsUnknown(descriptor: ModelConversionDescriptor): boolean {
  */
 export function emitModelToJSON(
   descriptor: ModelConversionDescriptor,
-  expression: string,
+  expression: Code,
   resolveModel: (id: string) => ToJsonModelResolver,
   resolveSerde?: SerdeResolver,
-): string {
+): Code {
   const converted = emitNested(descriptor, expression, 'toJSON', resolveModel, resolveSerde);
-  return holdsUnknown(descriptor) ? `withoutInstanceState(${converted})` : converted;
+  return holdsUnknown(descriptor) ? code`${rt.serde.withoutInstanceState}(${converted})` : converted;
 }
 
 /** Emit nested construction of domain models from partial model initializers. */
 export function emitModelFromInit(
   descriptor: ModelConversionDescriptor,
-  expression: string,
+  expression: Code,
   resolveModel: (id: string) => FromJsonModelResolver,
-): string {
+): Code {
   return emitNested(descriptor, expression, 'fromInit', resolveModel);
+}
+
+/** The marker comment of a file that names its model manifest, as Code. */
+export function manifestMarkerComment(relative = `./${MODEL_MANIFEST_FILENAME}`): Code {
+  return blockComment(`${MODEL_MANIFEST_MARKER} ${relative}`);
 }

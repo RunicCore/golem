@@ -3,12 +3,12 @@ import test from 'node:test';
 import { transformSync } from 'esbuild';
 
 import * as conversion from '@exprtlabs/golem/conversion';
-import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON } from '@exprtlabs/golem/internal/emitter';
+import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render, code, identifier, type Code } from '@exprtlabs/golem/internal/emitter';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import * as serde from '@exprtlabs/golem/serde';
-import { instantiateRuntime, type RuntimeFunction } from './emitted-runtime.js';
+import { instantiateRuntime, type RuntimeFunction, emitCodecRuntimeText } from './emitted-runtime.js';
 
 function failsWith(kind: LibErrorKind, message: RegExp): (error: unknown) => boolean {
   return (error) => error instanceof LibError && error.kind === kind && message.test(error.message);
@@ -63,11 +63,11 @@ function ownerRuntime(
   }), `${prefix}Owner`);
   graph.seal();
   const classes = options.classes ?? options.constructed ?? {};
-  const source = emitCodecRuntime(graph, {
+  const source = emitCodecRuntimeText(graph, {
     validationEnabled: false,
-    ...(options.classes ? { nestedGenerated: (id: string) => `${id}Model` } : {}),
+    ...(options.classes ? { nestedGenerated: (id: string) => identifier(`${id}Model`) } : {}),
     ...(options.constructed
-      ? { nestedConstruct: (codecId: string) => `${prefix}${codecId.startsWith(`${prefix}Cat`) ? 'Cat' : 'Dog'}Model` }
+      ? { nestedConstruct: (codecId: string) => identifier(`${prefix}${codecId.startsWith(`${prefix}Cat`) ? 'Cat' : 'Dog'}Model`) }
       : {}),
   });
   const runtime = instantiateRuntime(source, {
@@ -172,10 +172,10 @@ test('model conversion writes a variant instance by class and rejects unknown or
   };
   const classNames: Record<string, string> = { Cat: 'ModelCat', Dog: 'ModelDog' };
   const resolveModel = (id: string) => ({
-    className: classNames[id],
-    decode: (value: string) => `Object.assign(new ${classNames[id]}(), ${value})`,
-    fromInit: (value: string) => `Object.assign(new ${classNames[id]}(), ${value})`,
-    encode: (value: string) => `({ ...${value} })`,
+    className: identifier(classNames[id]),
+    decode: (value: Code) => code`Object.assign(new ${identifier(classNames[id])}(), ${value})`,
+    fromInit: (value: Code) => code`Object.assign(new ${identifier(classNames[id])}(), ${value})`,
+    encode: (value: Code) => code`({ ...${value} })`,
   });
   const compile = (code: string, direction: 'serialize' | 'deserialize'): RuntimeFunction => {
     const expression = transformSync(`(${code})`, { loader: 'ts', target: 'es2022' }).code.trim().replace(/;$/, '');
@@ -184,8 +184,8 @@ test('model conversion writes a variant instance by class and rejects unknown or
     return (value) => convert(ModelCat, ModelDog, conversion.unknownDiscriminatorValue, conversion.withDiscriminatorValue,
       conversion.convertModelField, value);
   };
-  const toJson = compile(emitModelToJSON(union, 'value', resolveModel), 'serialize');
-  const fromJson = compile(emitModelFromJSON(union, 'value', resolveModel), 'deserialize');
+  const toJson = compile(render(emitModelToJSON(union, identifier('value'), resolveModel)), 'serialize');
+  const fromJson = compile(render(emitModelFromJSON(union, identifier('value'), resolveModel)), 'deserialize');
   const cat = Object.assign(new ModelCat(), { name: 'Miso' });
   const wire = toJson(cat);
   assert.deepEqual(wire, { kind: 'cat', name: 'Miso' }, 'an untagged instance writes the canonical tag');
@@ -197,7 +197,7 @@ test('model conversion writes a variant instance by class and rejects unknown or
   assert.throws(() => toJson({ name: 'Miso' }), failsWith(LibErrorKind.Serialization, /discriminator value/));
 
   for (const emit of [emitModelFromJSON, emitModelFromInit]) {
-    const decode = compile(emit(union, 'value', resolveModel), 'deserialize');
+    const decode = compile(render(emit(union, identifier('value'), resolveModel)), 'deserialize');
     const decodedKitty = decode({ kind: 'kitty' });
     assert.ok(decodedKitty instanceof ModelCat, emit.name);
     assert.ok(!(decodedKitty instanceof ModelDog), emit.name);
@@ -224,12 +224,12 @@ test('inferred literal tags require the tag on an instance too', () => {
     variants: [{ kind: 'reference', name: 'Cat' }, { kind: 'reference', name: 'Dog' }],
   };
   const resolveModel = (id: string) => ({
-    className: id === 'Cat' ? 'LiteralCat' : 'LiteralDog',
+    className: identifier(id === 'Cat' ? 'LiteralCat' : 'LiteralDog'),
     discriminators: { kind: id === 'Cat' ? 'cat' : 'dog' },
-    decode: (value: string) => value,
-    encode: (value: string) => `({ ...${value} })`,
+    decode: (value: Code) => value,
+    encode: (value: Code) => code`({ ...${value} })`,
   });
-  const expression = transformSync(`(${emitModelToJSON(union, 'value', resolveModel)})`, { loader: 'ts', target: 'es2022' })
+  const expression = transformSync(`(${render(emitModelToJSON(union, identifier('value'), resolveModel))})`, { loader: 'ts', target: 'es2022' })
     .code.trim().replace(/;$/, '');
   const toJson = new Function('LiteralCat', 'LiteralDog', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'value',
     `return ${expression};`) as RuntimeFunction;

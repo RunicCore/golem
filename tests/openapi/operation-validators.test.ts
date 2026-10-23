@@ -331,3 +331,24 @@ test('an OpenAPI format golem does not check stops generation by default, and un
   assert.ok(warned.artifacts.length > 0);
   assert.ok((warned.diagnostics ?? []).some(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT' && entry.severity === GolemDiagnosticSeverity.Warning));
 });
+
+test('an unknown format in an inline operation schema is reported with the operation name, not a crash', () => {
+  // protects: T-290 the place of an inline operation schema is a message built from a Code value
+  const document = {
+    openapi: '3.1.0', info: { title: 'Ledger', version: '1' },
+    paths: { '/credit': { post: {
+      operationId: 'credit',
+      requestBody: { required: true, content: { 'application/json': { schema: { type: 'string', format: 'money' } } } },
+      responses: { 200: { description: 'ok' } },
+    } } },
+  };
+  const output = path.join(tmpdir(), 'golem-unknown-format-inline');
+  const stopped = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true } });
+  assert.deepEqual(stopped.artifacts, []);
+  const errors = (stopped.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT');
+  assert.deepEqual(errors.map(entry => entry.severity), [GolemDiagnosticSeverity.Error]);
+  assert.match(errors[0].message, /^operation "credit" at \/input\/properties\/body\/format: /);
+  const warned = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
+  assert.ok(warned.artifacts.length > 0);
+  assert.ok((warned.diagnostics ?? []).some(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT' && entry.severity === GolemDiagnosticSeverity.Warning));
+});

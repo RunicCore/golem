@@ -1,14 +1,14 @@
 import assert from 'node:assert/strict';
+import { identifier } from '@exprtlabs/golem/internal/emitter';
 import { test } from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { ModelValidationContext } from '@exprtlabs/golem/model';
-import { emitCodecRuntime } from '@exprtlabs/golem/internal/emitter';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { assertModelValue, IssueRepresentation, IssueSource } from '@exprtlabs/golem/serde';
 import type { SchemaIssue, Validator } from '@exprtlabs/golem/validation-runtime';
 
-import { instantiateRuntime, type RuntimeFunction } from './emitted-runtime.js';
+import { instantiateRuntime, type RuntimeFunction, emitCodecRuntimeText } from './emitted-runtime.js';
 
 // The order of every generated model assert and validate site (spec 7.1): a validation context decides alone; else the
 // fast check answers a valid value; else the validator's route runs as before. The generated sites of a model `User`
@@ -47,7 +47,7 @@ function generatedSites(model: Recorded): Record<string, RuntimeFunction> {
   const graph = createSchemaGraph();
   graph.intern({ kind: 'object', properties: { name: { kind: 'string' } }, required: ['name'], additionalProperties: false }, 'User');
   graph.seal();
-  const source = emitCodecRuntime(graph, { validatorName: () => 'userValidator', fastCheckName: () => 'userFastCheck' });
+  const source = emitCodecRuntimeText(graph, { validatorName: () => identifier('userValidator'), fastCheckName: () => identifier('userFastCheck') });
   return instantiateRuntime(source, { userValidator: model.validator, userFastCheck: model.isValid });
 }
 
