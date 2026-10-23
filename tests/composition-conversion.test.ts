@@ -4,6 +4,7 @@ import { transformSync } from 'esbuild';
 
 import { convertModelField, convertModelItems, convertModelTupleItems, defineModelProperty, deserializeDate, serializeDate, withDiscriminatorValue } from '@exprtlabs/golem/conversion';
 import {
+  code,
   emitModelFromInit,
   emitModelFromJSON,
   emitModelToJSON,
@@ -116,8 +117,8 @@ function encodeToken(value: unknown): string {
 }
 
 const serde: SerdeResolver = {
-  deserialize: (_id, value) => `decodeToken(${value})`,
-  serialize: (_id, value) => `encodeToken(${value})`,
+  deserialize: (_id, value) => code`decodeToken(${value})`,
+  serialize: (_id, value) => code`encodeToken(${value})`,
 };
 
 const bindings: Readonly<Record<string, unknown>> = {

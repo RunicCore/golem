@@ -11,7 +11,11 @@ import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { modelName, requireComposedObject, type ModelBases } from './composition.js';
-import { legacyText, render, type Code } from './code.js';
+import {
+  bindInput, bindRead, code, emittedCode, identifier, inputCount, inputOf, inputSlot, join, legacyText, literal, readShape, render, sameCode,
+  type Code, type Emitted, type JsonValue, type ReadShape,
+} from './code.js';
+import { rt } from './rt.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR_ITEM, singleCallConverter } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
@@ -160,19 +164,23 @@ function trustedOptions(ctx: EmitCtx): string {
 }
 
 /** A nested stringify call that skips validation: the node's Core function when this module emits it. */
-function nestedStringifyCall(id: string, expression: string, ctx: EmitCtx): string {
+function nestedStringifyCall(id: string, expression: Emitted, ctx: EmitCtx): Code {
+  const value = emittedCode(expression);
   if (ctx.localCoreIds?.has(id) && !(ctx.lenientRoot && ctx.strictCoreIds?.has(id))) {
-    return `${stringifyFunctionName(id)}Core(${expression} as never)`;
+    return code`${identifier(`${stringifyFunctionName(id)}Core`)}(${value} as never)`;
   }
-  const options = ctx.trustedOptions !== undefined && !ctx.lenientRoot ? CHECKED_CONSTANT : trustedOptions(ctx);
-  return `${stringifyFunctionName(id)}(${expression} as never, ${options})`;
+  // migration door, deleted in step 3d (T-286): the options of a nested call are text that the module gives
+  const options = legacyText(ctx.trustedOptions !== undefined && !ctx.lenientRoot ? CHECKED_CONSTANT : trustedOptions(ctx));
+  return code`${identifier(stringifyFunctionName(id))}(${value} as never, ${options})`;
 }
 
 /** A nested toWireFormat call that skips validation: the node's Core function when this module emits it. */
-function nestedToWireCall(id: string, expression: string, ctx: EmitCtx): string {
+function nestedToWireCall(id: string, expression: Emitted, ctx: EmitCtx): Code {
+  const value = emittedCode(expression);
+  // migration door, deleted in step 3d (T-286): the options of a nested call are text that the module gives
   return ctx.localCoreIds?.has(id)
-    ? `${toWireFunctionName(id)}Core(${expression} as never)`
-    : `${toWireFunctionName(id)}(${expression} as never, ${trustedOptions(ctx)})`;
+    ? code`${identifier(`${toWireFunctionName(id)}Core`)}(${value} as never)`
+    : code`${identifier(toWireFunctionName(id))}(${value} as never, ${legacyText(trustedOptions(ctx))})`;
 }
 
 export function stringifyFunctionName(id: string): string {
@@ -207,28 +215,42 @@ export function validateFunctionName(id: string): string {
   return `validate${id}`;
 }
 
-function access(expression: string, name: string): string {
-  const record = expression === 'value' || expression === 'wire' || expression === 'record'
-    || / as Record<string, unknown>\)$/.test(expression)
-    ? expression
-    : `(${expression} as Record<string, unknown>)`;
-  return `${record}[${JSON.stringify(name)}]`;
+// migration door, deleted in step 3d (T-286): compares the text of an expression that a caller wrote
+function isRecordExpression(expression: Emitted): boolean {
+  const { parts } = emittedCode(expression);
+  const last = parts.at(-1);
+  if (last?.kind !== 'text') return false;
+  return (parts.length === 1 && ['value', 'wire', 'record'].includes(last.text)) || last.text.endsWith(' as Record<string, unknown>)');
 }
 
-function emitJsonLiteral(value: unknown): string {
-  if (value === null) return "'null'";
-  if (value === true) return "'true'";
-  if (value === false) return "'false'";
+/**
+ * The read of a property of `expression`, and the shape of that read. A record that is not a plain name is cast first.
+ * `bare` says the expression is already a record; a caller that reads through an input part of its own passes it.
+ */
+function accessRead(expression: Emitted, name: string, bare: boolean = isRecordExpression(expression)): { readonly read: Code; readonly shape: ReadShape } {
+  const value = emittedCode(expression);
+  const read = code`${bare ? value : code`(${value} as Record<string, unknown>)`}[${literal(name)}]`;
+  return { read, shape: bare && readShape(value) === 'name' ? 'chain' : 'other' };
+}
+
+function access(expression: string, name: string): string {
+  return render(accessRead(expression, name).read);
+}
+
+function emitJsonLiteral(value: unknown): Code {
+  if (value === null) return code`'null'`;
+  if (value === true) return code`'true'`;
+  if (value === false) return code`'false'`;
   if (typeof value === 'number') {
     if (!Number.isFinite(value)) throw new TypeError('JSON literal numbers must be finite.');
-    return String(value);
+    return literal(value);
   }
-  if (typeof value === 'string') return JSON.stringify(JSON.stringify(value));
-  return `stringifyJsonScalar(${JSON.stringify(value)} as never)`;
+  if (typeof value === 'string') return literal(JSON.stringify(value));
+  return code`${rt.serde.stringifyJsonScalar}(${literal(value as JsonValue)} as never)`;
 }
 
-function memberPrefix(name: string, leadingComma: boolean): string {
-  return JSON.stringify(`${leadingComma ? ',' : ''}${JSON.stringify(name)}:`);
+function memberPrefix(name: string, leadingComma: boolean): Code {
+  return literal(`${leadingComma ? ',' : ''}${JSON.stringify(name)}:`);
 }
 
 function serdeTags(descriptor: ModelTypeDescriptor): {
@@ -247,9 +269,9 @@ function isObjectish(descriptor: ModelTypeDescriptor): boolean {
 
 function emitRequiredObjectConcat(
   properties: ReadonlyArray<readonly [string, ModelTypeDescriptor]>,
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-): string {
+): Code {
   const chunks = properties.map(([name, property], index) => emitInlineObjectField(
     name,
     property,
@@ -259,44 +281,32 @@ function emitRequiredObjectConcat(
     index > 0,
     ctx,
   ));
-  return `${chunks.join(' + ')} + '}'`;
+  return code`${join(chunks, code` + `)} + '}'`;
 }
 
-function occurrenceCount(source: string, value: string): number {
-  if (value.length === 0) return 0;
-  let count = 0;
-  let from = 0;
-  while (true) {
-    const next = source.indexOf(value, from);
-    if (next < 0) return count;
-    count++;
-    from = next + value.length;
-  }
-}
-
+/** The member of one field. Its piece reads the field as an input; the piece reads a local when it reads it more than once. */
 function emitInlineObjectField(
   name: string,
   property: ModelTypeDescriptor,
   required: boolean,
-  expression: string,
+  expression: Emitted,
   index: number,
   leadingComma: boolean,
   ctx: EmitCtx,
-): string {
-  const read = access(expression, name);
-  const value = emitValue(property, read, ctx);
-  const repeated = occurrenceCount(value, read) + (required ? 0 : 1) > 1;
-  if (!repeated) {
-    const member = `${memberPrefix(name, leadingComma)} + ${value}`;
-    return required ? member : `(${read} !== undefined ? ${member} : '')`;
-  }
-  const local = `__golemInlineField${ctx.inlineLocals?.size ?? index}`;
-  ctx.inlineLocals?.add(local);
-  const converted = value.replaceAll(read, local);
-  const member = `${memberPrefix(name, leadingComma)} + ${converted}`;
+): Code {
+  const { read, shape } = accessRead(expression, name);
+  const input = inputSlot(name, shape);
+  const piece = emitValue(property, inputOf(input), ctx);
+  const localName = `__golemInlineField${ctx.inlineLocals?.size ?? index}`;
+  const local = identifier(localName);
+  // An optional field reads its input once more, in the `!== undefined` test.
+  const bound = bindRead(piece, input, read, local, required ? 0 : 1);
+  const member = code`${memberPrefix(name, leadingComma)} + ${bound.code}`;
+  if (!bound.local) return required ? member : code`(${read} !== undefined ? ${member} : '')`;
+  ctx.inlineLocals?.add(localName);
   return required
-    ? `(${local} = ${read}, ${member})`
-    : `(${local} = ${read}, (${local} !== undefined ? ${member} : ''))`;
+    ? code`(${local} = ${read}, ${member})`
+    : code`(${local} = ${read}, (${local} !== undefined ? ${member} : ''))`;
 }
 
 function inlineLocalDeclarations(ctx: EmitCtx): string[] {
@@ -307,8 +317,8 @@ function inlineLocalDeclarations(ctx: EmitCtx): string[] {
  * The wire write of a recursive model met again inside its own inline write. A model of another module has its wire
  * stringify imported; one with no encoded value under it writes as the model does; any other has no function to call.
  */
-function emitRecursiveWireCall(named: SchemaNode, expression: string, ctx: EmitCtx): string {
-  if (ctx.siblingWireCodecIds?.has(named.codecId)) return `${wireStringifyExportName(named.codecId)}(${expression} as never)`;
+function emitRecursiveWireCall(named: SchemaNode, expression: Emitted, ctx: EmitCtx): Code {
+  if (ctx.siblingWireCodecIds?.has(named.codecId)) return code`${identifier(wireStringifyExportName(named.codecId))}(${emittedCode(expression)} as never)`;
   if (named.sameSchema && !reachesEncodedValue(named.descriptor, ctx)) return nestedStringifyCall(named.id, expression, ctx);
   throw new Error(named.validationEnabled === false
     ? `Recursive model ${named.name} has validation turned off, so its wire form has no function to write it; turn validation on for it.`
@@ -331,31 +341,32 @@ function reachesEncodedValue(descriptor: ModelTypeDescriptor, ctx: Pick<EmitCtx,
 
 function emitValue(
   descriptor: ModelTypeDescriptor,
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-): string {
+): Code {
+  const value = emittedCode(expression);
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
     if (named) {
-      return nestedStringifyCall(named.id, expression, ctx);
+      return nestedStringifyCall(named.id, value, ctx);
     }
-    return `stringifyJsonScalar(encodeGeneratedModel(${expression}) as never)`;
+    return code`${rt.serde.stringifyJsonScalar}(encodeGeneratedModel(${value}) as never)`;
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
     const wire = serdeWireDescriptor(descriptor) ?? { kind: 'unknown' as const };
-    if (ctx.wireIdentity) return emitValue(wire, expression, ctx);
+    if (ctx.wireIdentity) return emitValue(wire, value, ctx);
     const serialized = ctx.serde
-      ? render(ctx.serde.serialize(tags.serde.id, legacyText(expression))) // migration door, deleted in step 3a (T-283)
-      : expression;
+      ? ctx.serde.serialize(tags.serde.id, value)
+      : value;
     return emitValue(wire, serialized, ctx);
   }
   const named = ctx.graph.nodeFor(descriptor);
   if (named?.siblingCodec && ctx.wireIdentity) {
     // An encoded wire value of a sibling codec: its companion's wire stringify writes it.
     return ctx.siblingWireCodecIds?.has(named.codecId)
-      ? `${wireStringifyExportName(named.codecId)}(${expression} as never)`
-      : nestedStringifyCall(named.id, expression, ctx);
+      ? code`${identifier(wireStringifyExportName(named.codecId))}(${value} as never)`
+      : nestedStringifyCall(named.id, value, ctx);
   }
   if (named && isObjectish(descriptor)) {
     if (
@@ -365,81 +376,82 @@ function emitValue(
     ) {
       // Call the node's own wire stringify: inlining would repeat the child for
       // every path to it and never terminate for a recursive model.
-      if (ctx.wireStringifyIds?.has(named.id)) return `${stringifyFunctionName(named.id)}Wire(${expression} as never)`;
-      if (ctx.wireInlining?.has(named.id)) return emitRecursiveWireCall(named, expression, ctx);
+      if (ctx.wireStringifyIds?.has(named.id)) return code`${identifier(`${stringifyFunctionName(named.id)}Wire`)}(${value} as never)`;
+      if (ctx.wireInlining?.has(named.id)) return emitRecursiveWireCall(named, value, ctx);
       const inlining = { ...ctx, wireInlining: new Set([...(ctx.wireInlining ?? []), named.id]) };
       return named.descriptor.kind === 'object'
-        ? emitObjectInline(named.descriptor, expression, inlining)
-        : emitValue(named.descriptor, expression, inlining);
+        ? emitObjectInline(named.descriptor, value, inlining)
+        : emitValue(named.descriptor, value, inlining);
     }
-    return nestedStringifyCall(named.id, expression, ctx);
+    return nestedStringifyCall(named.id, value, ctx);
   }
   if (descriptor.kind === 'date' || tags.date) {
-    if (ctx.wireIdentity) return `stringifyJsonString(${expression} as string)`;
-    return `stringifyJsonString(serializeDate(${expression}))`;
+    if (ctx.wireIdentity) return code`${rt.serde.stringifyJsonString}(${value} as string)`;
+    return code`${rt.serde.stringifyJsonString}(serializeDate(${value}))`;
   }
-  if (descriptor.kind === 'string') return `stringifyJsonString(${expression} as string)`;
-  if (descriptor.kind === 'number') return `stringifyJsonNumber(${expression} as number)`;
-  if (descriptor.kind === 'boolean') return `stringifyJsonBoolean(${expression} as boolean)`;
-  if (descriptor.kind === 'null') return "'null'";
+  if (descriptor.kind === 'string') return code`${rt.serde.stringifyJsonString}(${value} as string)`;
+  if (descriptor.kind === 'number') return code`${rt.serde.stringifyJsonNumber}(${value} as number)`;
+  if (descriptor.kind === 'boolean') return code`${rt.serde.stringifyJsonBoolean}(${value} as boolean)`;
+  if (descriptor.kind === 'null') return code`'null'`;
   if (descriptor.kind === 'literal') return emitJsonLiteral(descriptor.value);
   if (descriptor.kind === 'array') {
-    return render(emitArrayConversion(descriptor.item, expression, {
+    return emitArrayConversion(descriptor.item, value, {
       output: 'json',
-      item: (item, value) => {
+      item: (item, itemValue) => {
         const itemNode = ctx.graph.nodeFor(item);
         return {
           code: itemNode && isObjectish(item) && !ctx.wireIdentity
-            ? nestedStringifyCall(itemNode.id, value, ctx)
-            : emitValue(item, value, ctx),
+            ? nestedStringifyCall(itemNode.id, itemValue, ctx)
+            : emitValue(item, itemValue, ctx),
           throws: false,
         };
       },
-    }));
+    });
   }
   if (descriptor.kind === 'tuple') {
-    return render(emitTupleConversion(descriptor, expression, {
+    return emitTupleConversion(descriptor, value, {
       output: 'json',
-      item: (item, value) => ({ code: emitValue(item, value, ctx), throws: false }),
-    }));
+      item: (item, itemValue) => ({ code: emitValue(item, itemValue, ctx), throws: false }),
+    });
   }
-  if (descriptor.kind === 'union') return emitUnionValue(descriptor, expression, ctx);
+  if (descriptor.kind === 'union') return emitUnionValue(descriptor, value, ctx);
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);
-    if (node) return nestedStringifyCall(node.id, expression, ctx);
-    return emitObjectInline(descriptor, expression, ctx);
+    if (node) return nestedStringifyCall(node.id, value, ctx);
+    return emitObjectInline(descriptor, value, ctx);
   }
-  return `stringifyJsonScalar(${expression} as never)`;
+  return code`${rt.serde.stringifyJsonScalar}(${value} as never)`;
 }
 
 function emitObjectInline(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-): string {
+): Code {
+  const value = emittedCode(expression);
   const required = new Set(descriptor.required);
   const properties = Object.entries(descriptor.properties);
   const hasExtras = typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
   // An object with no declared field writes `{}`, unless it declares its other names as data.
-  if (properties.length === 0 && !hasExtras) return "'{}'";
-  if (isPlainDataMap(descriptor)) return `stringifyJsonScalar(${expression} as never)`;
+  if (properties.length === 0 && !hasExtras) return code`'{}'`;
+  if (isPlainDataMap(descriptor)) return code`${rt.serde.stringifyJsonScalar}(${value} as never)`;
   if (hasExtras) {
     // The other names are data: the encoded record keeps them, and a wire value is already encoded.
-    return `stringifyJsonScalar(${ctx.wireIdentity ? expression : emitEncodedRecord(descriptor, expression, ctx)} as never)`;
+    return code`${rt.serde.stringifyJsonScalar}(${ctx.wireIdentity ? value : emitEncodedRecord(descriptor, value, ctx)} as never)`;
   }
   if (properties.every(([name]) => required.has(name))) {
-    return `'{' + ${emitRequiredObjectConcat(properties, expression, ctx)}`;
+    return code`'{' + ${emitRequiredObjectConcat(properties, value, ctx)}`;
   }
   const parts = properties.map(([name, property], index) => emitInlineObjectField(
     name,
     property,
     required.has(name),
-    expression,
+    value,
     index,
     false,
     ctx,
   ));
-  return `'{' + [${parts.join(', ')}].filter(Boolean).join(',') + '}'`;
+  return code`'{' + [${join(parts, code`, `)}].filter(Boolean).join(',') + '}'`;
 }
 
 function stringifyParameters(value: string, ctx: EmitCtx): string {
@@ -491,14 +503,15 @@ function emitLenientObjectStringify(
   ctx: EmitCtx,
 ): string {
   const properties = Object.entries(descriptor.properties);
-  const lines: string[] = [`function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`];
+  const header = `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`;
+  const lines: string[] = [];
   const fields = properties.map(([name, property], index) => {
     const read = access('value', name);
     const field = `__golemField${index}`;
     const piece = `__golemPiece${index}`;
     lines.push(
       `  const ${field} = ${read};`,
-      `  const ${piece} = ${field} !== undefined ? ${emitValue(property, field, ctx)} : undefined;`,
+      `  const ${piece} = ${field} !== undefined ? ${render(emitValue(property, field, ctx))} : undefined;`,
     );
     return { name: JSON.stringify(name), piece, required: descriptor.required.includes(name) };
   });
@@ -524,9 +537,8 @@ function emitLenientObjectStringify(
       '  }',
     );
   }
-  lines.splice(1, 0, ...inlineLocalDeclarations(ctx));
   lines.push("  return out + '}';", '}', '');
-  return lines.join('\n');
+  return [header, ...inlineLocalDeclarations(ctx), ...lines].join('\n');
 }
 
 function emitObjectStringify(
@@ -547,7 +559,7 @@ function emitObjectStringify(
     return `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {\n  return stringifyJsonScalar(value as never);\n}\n`;
   }
   if (!additional && properties.every(([name]) => required.has(name))) {
-    const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
+    const concatenated = render(emitRequiredObjectConcat(properties, 'value', ctx));
     return [
       `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
       ...inlineLocalDeclarations(ctx),
@@ -557,8 +569,8 @@ function emitObjectStringify(
     ].join('\n');
   }
   if (ctx.lenientRoot && !additional && properties.some(([name]) => descriptor.required.includes(name))) return emitLenientObjectStringify(fn, descriptor, ctx);
+  const header = `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`;
   const lines: string[] = [
-    `function ${fn}(${stringifyParameters('value: Record<string, unknown>', ctx)}): string {`,
     // The native writer calls a `toJSON` of the value, which the per-entry writer below never does: a value that has one takes that writer.
     ...(isNumberMap(descriptor) ? [
       "  if (typeof value['toJSON'] !== 'function') {",
@@ -572,14 +584,16 @@ function emitObjectStringify(
     '  let sep = false;',
   ];
   for (const [index, [name, property]] of properties.entries()) {
-    const read = access('value', name);
-    const value = emitValue(property, read, ctx);
+    const { read, shape } = accessRead('value', name);
+    const input = inputSlot(name, shape);
+    const piece = emitValue(property, inputOf(input), ctx);
     const local = `__golemValue${index}`;
-    const needsSnapshot = occurrenceCount(value, read) + (required.has(name) ? 0 : 1) > 1;
-    const valueExpr = needsSnapshot ? value.replaceAll(read, local) : value;
-    const fieldExpr = needsSnapshot ? local : read;
+    // An optional field reads its input once more, in the `!== undefined` test.
+    const bound = bindRead(piece, input, read, identifier(local), required.has(name) ? 0 : 1);
+    const valueExpr = render(bound.code);
+    const fieldExpr = bound.local ? local : render(read);
     const key = JSON.stringify(`${JSON.stringify(name)}:`);
-    if (needsSnapshot) lines.push(`  const ${local} = ${read};`);
+    if (bound.local) lines.push(`  const ${local} = ${render(read)};`);
     if (required.has(name)) {
       lines.push(
         '  if (sep) out += ",";',
@@ -607,14 +621,13 @@ function emitObjectStringify(
       '    const __golemExtra = value[key];',
       '    if (__golemExtra === undefined) continue;',
       '    if (sep) out += ",";',
-      `    out += stringifyJsonString(key) + ":" + ${emitValue(additional, '__golemExtra', ctx)};`,
+      `    out += stringifyJsonString(key) + ":" + ${render(emitValue(additional, '__golemExtra', ctx))};`,
       '    sep = true;',
       '  }',
     );
   }
-  lines.splice(1, 0, ...inlineLocalDeclarations(ctx));
   lines.push("  return out + '}';", '}', '');
-  return lines.join('\n');
+  return [header, ...inlineLocalDeclarations(ctx), ...lines].join('\n');
 }
 
 export function emitStringifyFunction(
@@ -656,7 +669,7 @@ export function emitStringifyFunction(
   else if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') {
     source = `function ${fn}(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {\n  return requireObjectCodec(${JSON.stringify(node.codecId)}).stringify(value as never, options);\n}\n`;
   } else {
-    const value = emitValue(node.descriptor, '(value as never)', ctx);
+    const value = render(emitValue(node.descriptor, '(value as never)', ctx));
     source = [
       `function ${fn}(${stringifyParameters('value: unknown', ctx)}): string {`,
       ...inlineLocalDeclarations(ctx),
@@ -676,6 +689,10 @@ export function emitGraphStringify(graph: SchemaGraph, serde?: StringifySerdeRes
 
 function asRecord(expression: string): string {
   return `(${expression} as Record<string, unknown>)`;
+}
+
+function asRecordCode(expression: Code): Code {
+  return code`(${expression} as Record<string, unknown>)`;
 }
 
 function shouldConstructNested(descriptor: ModelTypeDescriptor, ctx: EmitCtx): boolean {
@@ -1026,8 +1043,8 @@ function resolveObjectDescriptor(
   return undefined;
 }
 
-function tagAccess(expression: string, property: string): string {
-  return `((${expression}) as Record<string, unknown>)[${JSON.stringify(property)}]`;
+function tagAccess(expression: Emitted, property: string): Code {
+  return code`((${emittedCode(expression)}) as Record<string, unknown>)[${literal(property)}]`;
 }
 
 /**
@@ -1038,34 +1055,38 @@ function tagAccess(expression: string, property: string): string {
 function emitTaggedVariantUnion(
   union: UnionTypeDescriptor,
   indices: readonly number[],
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-  convert: (variant: ModelTypeDescriptor) => string,
+  convert: (variant: ModelTypeDescriptor) => Emitted,
   direction: DispatchOptions['direction'],
   options?: { readonly unresolved?: 'throw' | 'skip' },
-): string | undefined {
+): Code | undefined {
+  const value = emittedCode(expression);
   const variants = indices.map((index) => union.variants[index]);
   const objectFor = (variant: ModelTypeDescriptor) => resolveObjectDescriptor(variant, ctx);
   if (variants.length === 0 || (!union.discriminator && variants.some((variant) => !objectFor(variant)))) return undefined;
   const dispatch = unionDispatch(union, indices, objectFor);
   // A decoder in a function that declares its locals reads the tag once and reuses it in the variant's copy.
-  const tagRead = dispatch ? access(expression, dispatch.property) : undefined;
-  const tagLocal = dispatch && direction === 'decode' && ctx.decodeLocals && /^[A-Za-z_$][\w$]*$/.test(expression)
+  // migration door, deleted in step 3c (T-285): a decoder gives its expression and its variants as text
+  const decoderName = typeof expression === 'string' && /^[A-Za-z_$][\w$]*$/.test(expression) ? expression : undefined;
+  const tagLocal = dispatch && direction === 'decode' && ctx.decodeLocals && decoderName !== undefined
     && variants.every((variant) => variantClassName(variant, ctx) === undefined)
     ? `__golemTag${ctx.decodeLocals.length}`
     : undefined;
+  const tagRead = tagLocal && dispatch && decoderName !== undefined ? access(decoderName, dispatch.property) : undefined;
   if (tagLocal) ctx.decodeLocals?.push(tagLocal);
   const conversions = variants.map((variant) => {
     const converted = convert(variant);
-    return tagLocal && tagRead ? converted.split(tagRead).join(tagLocal) : converted;
+    // migration door, deleted in step 3c (T-285)
+    return tagLocal && tagRead && typeof converted === 'string' ? converted.split(tagRead).join(tagLocal) : converted;
   });
   if (!dispatch) {
-    if (direction !== 'encode-json' && conversions.every((converted) => converted === expression)) return expression;
+    if (direction !== 'encode-json' && conversions.every((converted) => sameCode(emittedCode(converted), value))) return value;
     if (options?.unresolved === 'skip') return undefined;
     throw new ObjectUnionDiscriminatorError(variants);
   }
-  return render(emitDispatch({
-    expression,
+  return emitDispatch({
+    expression: value,
     property: dispatch.property,
     direction,
     tagLocal,
@@ -1080,7 +1101,7 @@ function emitTaggedVariantUnion(
         return object ? object.properties[dispatch.property] !== undefined : undefined;
       })(),
     })),
-  }));
+  });
 }
 
 /**
@@ -1101,11 +1122,11 @@ function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx): string | 
 /** Object variants of a union mixed with one generated model; their literal tags must dispatch. */
 function emitTaggedObjects(
   union: UnionTypeDescriptor,
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-  convert: (variant: ModelTypeDescriptor) => string,
+  convert: (variant: ModelTypeDescriptor) => Emitted,
   direction: DispatchOptions['direction'],
-): string {
+): Code {
   const indices = presentUnionIndices(union).filter((index) => union.variants[index].kind === 'object');
   const converted = emitTaggedVariantUnion(union, indices, expression, ctx, convert, direction);
   if (converted === undefined) throw new ObjectUnionDiscriminatorError(union.variants);
@@ -1113,59 +1134,62 @@ function emitTaggedObjects(
 }
 
 /** Match any required literal tag of `objects`, for mixing them with one generated model. */
-function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: string, decode: boolean): string[] {
+function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: Emitted, decode: boolean): Code[] {
   // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag matches no object.
-  const read = (name: string): string => decode
-    ? `(${presentValueSource(expression, JSON.stringify(name), tagAccess(expression, name))})`
+  // migration door, deleted in step 3c (T-285): presentValueSource takes the text of the expression, which a decoder gives as text
+  const read = (name: string): Code => decode
+    ? code`(${legacyText(presentValueSource(render(emittedCode(expression)), JSON.stringify(name), render(tagAccess(expression, name))))})`
     : tagAccess(expression, name);
-  return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) => render(discriminatorMatch(read(name), values))));
+  return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) => discriminatorMatch(read(name), values)));
 }
 
 /**
  * The branch of a recursive union that writes an inline array, tuple or object registers its value while it writes, so a
  * value that holds itself throws at its first repeat. A named node guards itself.
  */
-function inlineBranchGuard(ctx: EmitCtx, expression: string): UnionConversion['guard'] {
+function inlineBranchGuard(ctx: EmitCtx, expression: Emitted): UnionConversion['guard'] {
   if (!ctx.guardInline) return undefined;
-  return (variant, code) => ctx.graph.nodeFor(variant)
-    ? code
-    : `(() => { beginEncode(${expression}); try { return ${code}; } finally { endEncode(${expression}); } })()`;
+  const value = emittedCode(expression);
+  return (variant, converted) => ctx.graph.nodeFor(variant)
+    ? converted
+    : code`(() => { beginEncode(${value}); try { return ${converted}; } finally { endEncode(${value}); } })()`;
 }
 
 function emitUnionValue(
   descriptor: UnionTypeDescriptor,
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-): string {
+): Code {
+  const value = emittedCode(expression);
   let itemsUnchanged = true;
-  const plain = `stringifyJsonScalar(${expression} as never)`;
-  return render(emitUnionConversion(descriptor, expression, 'stringify', {
-    guard: inlineBranchGuard(ctx, expression),
-    convert: (variant) => emitValue(variant, expression, ctx),
+  const plain = code`${rt.serde.stringifyJsonScalar}(${value} as never)`;
+  return emitUnionConversion(descriptor, value, 'stringify', {
+    guard: inlineBranchGuard(ctx, value),
+    convert: (variant) => emitValue(variant, value, ctx),
     items: {
       output: 'json',
-      item: (item, value) => {
-        const code = emitValue(item, value, ctx);
-        if (code !== JSON_SCALAR_ITEM) itemsUnchanged = false;
-        return { code, throws: false };
+      item: (item, itemValue) => {
+        const converted = emitValue(item, itemValue, ctx);
+        if (!sameCode(converted, legacyText(JSON_SCALAR_ITEM))) itemsUnchanged = false;
+        return { code: converted, throws: false };
       },
     },
-    joinSequence: (items, scalar) => itemsUnchanged && scalar === plain
+    joinSequence: (items, scalar) => itemsUnchanged && sameCode(scalar, plain)
       ? plain
-      : `(Array.isArray(${expression}) ? ${items} : (${scalar}))`,
+      : code`(Array.isArray(${value}) ? ${items} : (${scalar}))`,
     tagged: () => emitTaggedVariantUnion(
       descriptor,
       presentUnionIndices(descriptor),
-      expression,
+      value,
       ctx,
       (variant) => {
         if (!ctx.wireIdentity) {
           const node = ctx.graph.nodeFor(variant);
           if (node && isObjectish(variant)) {
-            return nestedStringifyCall(node.id, expression, ctx);
+            return nestedStringifyCall(node.id, value, ctx);
           }
         }
-        return emitValue(variant, expression, ctx);
+        return emitValue(variant, value, ctx);
       },
       'encode-json',
       { unresolved: 'skip' },
@@ -1182,13 +1206,13 @@ function emitUnionValue(
       return present.every(isScalarishDescriptor) ? plain : undefined;
     },
     generated: {
-      text: (generated) => emitValue(generated, expression, ctx),
-      tagMatch: (objects) => objectTagMatch(objects, expression, false),
+      text: (generated) => emitValue(generated, value, ctx),
+      tagMatch: (objects) => objectTagMatch(objects, value, false),
       objects: (objects) => objects.length === 1
-        ? emitValue(objects[0], expression, ctx)
-        : emitTaggedObjects(descriptor, expression, ctx, (object) => emitValue(object, expression, ctx), 'encode-json'),
+        ? emitValue(objects[0], value, ctx)
+        : emitTaggedObjects(descriptor, value, ctx, (object) => emitValue(object, value, ctx), 'encode-json'),
     },
-  }));
+  });
 }
 
 function emitUnionDecode(
@@ -1243,7 +1267,7 @@ function emitUnionDecode(
         if (!object) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
         const tags = objectTagMatch([object], expression, true);
         if (tags.length === 0) throw new ObjectUnionDiscriminatorError(present);
-        branches.push(`${tags.join(' && ')} ? ${emitDecodeValue(ref, expression, ctx)}`);
+        branches.push(`${render(join(tags, code` && `))} ? ${emitDecodeValue(ref, expression, ctx)}`);
       }
       return `(${render(objectValueExpression(expression))} ? ${[...branches, expression].join(' : ')} : ${expression})`;
     },
@@ -1252,31 +1276,32 @@ function emitUnionDecode(
 
 function emitUnionEncode(
   descriptor: UnionTypeDescriptor,
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-): string {
-  return render(emitUnionConversion(descriptor, expression, 'encode', {
-    guard: inlineBranchGuard(ctx, expression),
-    convert: (variant) => emitEncodeValue(variant, expression, ctx),
+): Code {
+  const value = emittedCode(expression);
+  return emitUnionConversion(descriptor, value, 'encode', {
+    guard: inlineBranchGuard(ctx, value),
+    convert: (variant) => emitEncodeValue(variant, value, ctx),
     items: {
       output: 'value',
-      item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
+      item: (item, itemValue) => ({ code: emitEncodeValue(item, itemValue, ctx), throws: false }),
     },
     tagged: () => emitTaggedVariantUnion(
       descriptor,
       presentUnionIndices(descriptor),
-      expression,
+      value,
       ctx,
-      (variant) => emitEncodeValue(variant, expression, ctx),
+      (variant) => emitEncodeValue(variant, value, ctx),
       'encode-value',
       { unresolved: 'skip' },
     ),
     generated: {
-      text: (generated) => emitEncodeValue(generated, expression, ctx),
-      tagMatch: (objects) => objectTagMatch(objects, expression, false),
+      text: (generated) => emitEncodeValue(generated, value, ctx),
+      tagMatch: (objects) => objectTagMatch(objects, value, false),
       objects: (objects) => objects.length === 1
-        ? emitEncodeValue(objects[0], expression, ctx)
-        : emitTaggedObjects(descriptor, expression, ctx, (object) => emitEncodeValue(object, expression, ctx), 'encode-value'),
+        ? emitEncodeValue(objects[0], value, ctx)
+        : emitTaggedObjects(descriptor, value, ctx, (object) => emitEncodeValue(object, value, ctx), 'encode-value'),
     },
     afterGenerated: (present) => {
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
@@ -1285,7 +1310,7 @@ function emitUnionEncode(
       }
       return undefined;
     },
-  }));
+  });
 }
 
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ctx: EmitCtx): string {
@@ -1601,96 +1626,112 @@ function emitFillFunction(
   return { source: source.join('\n'), copyIdentity, needsFill, fallible };
 }
 
-function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ctx: EmitCtx): string {
+function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Emitted, ctx: EmitCtx): Code {
+  const value = emittedCode(expression);
   if (descriptor.kind === 'generated-model') {
     const named = ctx.graph.nodeFor(descriptor);
     if (named) {
-      return nestedToWireCall(named.id, expression, ctx);
+      return nestedToWireCall(named.id, value, ctx);
     }
-    return `encodeGeneratedModel(${expression})`;
+    return code`encodeGeneratedModel(${value})`;
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
-    // migration door, deleted in step 3b (T-284)
-    return ctx.serde ? render(ctx.serde.serialize(tags.serde.id, legacyText(expression))) : expression;
+    return ctx.serde ? ctx.serde.serialize(tags.serde.id, value) : value;
   }
-  if (descriptor.kind === 'date' || tags.date) return `serializeDate(${expression})`;
+  if (descriptor.kind === 'date' || tags.date) return code`serializeDate(${value})`;
   const named = ctx.graph.nodeFor(descriptor);
   if (named && isObjectish(descriptor)) {
-    return nestedToWireCall(named.id, expression, ctx);
+    return nestedToWireCall(named.id, value, ctx);
   }
   if (descriptor.kind === 'array') {
-    return render(emitArrayConversion(descriptor.item, expression, {
+    return emitArrayConversion(descriptor.item, value, {
       output: 'value',
-      item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
-    }));
+      item: (item, itemValue) => ({ code: emitEncodeValue(item, itemValue, ctx), throws: false }),
+    });
   }
   if (descriptor.kind === 'tuple') {
-    return render(emitTupleConversion(descriptor, expression, {
+    return emitTupleConversion(descriptor, value, {
       output: 'value',
-      item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
-    }));
+      item: (item, itemValue) => ({ code: emitEncodeValue(item, itemValue, ctx), throws: false }),
+    });
   }
   const encodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, graphModelBases(ctx.graph)) : undefined;
-  if (encodedMerge) return emitEncodeValue(encodedMerge, expression, ctx);
+  if (encodedMerge) return emitEncodeValue(encodedMerge, value, ctx);
   if (descriptor.kind === 'union') {
-    return emitUnionEncode(descriptor, expression, ctx);
+    return emitUnionEncode(descriptor, value, ctx);
   }
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);
-    if (node) return nestedToWireCall(node.id, expression, ctx);
-    return emitEncodedRecord(descriptor, expression, ctx);
+    if (node) return nestedToWireCall(node.id, value, ctx);
+    return emitEncodedRecord(descriptor, value, ctx);
   }
   // An intersection with a member that is no object is written as it is, without the program state of a model instance.
-  if (descriptor.kind === 'intersection') return `withoutInstanceState(${expression})`;
+  if (descriptor.kind === 'intersection') return code`withoutInstanceState(${value})`;
   // A value of unknown type can hold a model instance at any depth.
-  if (descriptor.kind === 'unknown' || descriptor.kind === 'any') return `withoutInstanceState(${expression})`;
-  return expression;
+  if (descriptor.kind === 'unknown' || descriptor.kind === 'any') return code`withoutInstanceState(${value})`;
+  return value;
+}
+
+/** Whether an entry is a spread, which stands for several fields and is written as it is. */
+function isSpread(entry: Code): boolean {
+  const [first] = entry.parts;
+  return first?.kind === 'text' && first.text.startsWith('...');
 }
 
 function emitEncodedRecord(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
-  expression: string,
+  expression: Emitted,
   ctx: EmitCtx,
-): string {
+): Code {
+  const value = emittedCode(expression);
   const fields = Object.entries(descriptor.properties);
   const required = new Set(descriptor.required);
+  // The record reads its own input: the expression is read once per field, and bound to a local when that is more than once.
+  const bare = isRecordExpression(value);
+  const self = inputSlot('record', readShape(value));
   const values = fields.map(([name, property], index) => {
-    const read = access(expression, name);
-    const value = emitEncodeValue(property, read, ctx);
+    const { read, shape } = accessRead(inputOf(self), name, bare);
+    const input = inputSlot(name, shape);
+    const encoded = emitEncodeValue(property, inputOf(input), ctx);
     // An optional field whose value is undefined is omitted, as stringify and JSON.stringify do.
-    if (!required.has(name) && !value.startsWith('...')) {
-      const local = allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`;
-      const entry = `(${local} !== undefined ? { [${JSON.stringify(name)}]: ${value.replaceAll(read, local)} } : undefined)`;
-      return [name, ctx.inlineLocals ? `...(${local} = ${read}, ${entry})` : `...((${local}) => ${entry})(${read})`] as const;
+    if (!required.has(name) && !isSpread(encoded)) {
+      const local = identifier(allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`);
+      const entry = code`(${local} !== undefined ? { [${literal(name)}]: ${bindInput(encoded, input, local)} } : undefined)`;
+      return [name, ctx.inlineLocals ? code`...(${local} = ${read}, ${entry})` : code`...((${local}) => ${entry})(${read})`] as const;
     }
-    if (occurrenceCount(value, read) <= 1) return [name, value] as const;
-    const local = allocateInlineLocal(ctx, '__golemField');
-    if (!local) {
-      const fallbackLocal = `__golemField${index}`;
-      return [name, `((${fallbackLocal}) => ${value.replaceAll(read, fallbackLocal)})(${read})`] as const;
+    if (inputCount(encoded, input) <= 1) return [name, bindInput(encoded, input, read)] as const;
+    const allocated = allocateInlineLocal(ctx, '__golemField');
+    if (!allocated) {
+      const fallbackLocal = identifier(`__golemField${index}`);
+      return [name, code`((${fallbackLocal}) => ${bindInput(encoded, input, fallbackLocal)})(${read})`] as const;
     }
-    return [name, `(${local} = ${read}, ${value.replaceAll(read, local)})`] as const;
+    const local = identifier(allocated);
+    return [name, code`(${local} = ${read}, ${bindInput(encoded, input, local)})`] as const;
   });
   // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
   // keeps them as they are. Any other object writes its listed names only.
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
+  const keyParameter = fields.length === 0 ? code`` : code`key`;
+  const unlisted = fields.length === 0 ? code`` : code` && !${literal(fields.map(([name]) => name))}.includes(key)`;
   const extras = additional || descriptor.additionalPropertiesDeclared
-    ? [`...Object.fromEntries(Object.entries(${asRecord(expression)}).filter(([${fields.length === 0 ? '' : 'key'}, extra]) => extra !== undefined${fields.length === 0 ? '' : ` && !${JSON.stringify(fields.map(([name]) => name))}.includes(key)`}).map(([key, extra]) => [key, ${emitEncodeValue(additional ?? { kind: 'unknown' }, 'extra', ctx)}]))`]
+    ? [code`...Object.fromEntries(Object.entries(${asRecordCode(inputOf(self))}).filter(([${keyParameter}, extra]) => extra !== undefined${unlisted}).map(([key, extra]) => [key, ${emitEncodeValue(additional ?? { kind: 'unknown' }, 'extra', ctx)}]))`]
     : [];
-  const entries = [...extras, ...values.map(([name, value]) => value.startsWith('...')
-    ? value
-    : `[${JSON.stringify(name)}]: ${value}`)];
-  const record = entries.length === 0 ? '{}' : `{ ${entries.join(', ')} }`;
+  const entries = [...extras, ...values.map(([name, entry]) => isSpread(entry)
+    ? entry
+    : code`[${literal(name)}]: ${entry}`)];
+  const record = entries.length === 0 ? code`{}` : code`{ ${join(entries, code`, `)} }`;
   // Inline nested records can receive a getter expression from their parent.
   // Bind that object only when its expression would otherwise be evaluated
   // more than once; ordinary top-level `value`/`record` paths stay direct.
-  if (/^[A-Za-z_$][\w$]*$/.test(expression) || occurrenceCount(record, expression) <= 1) return record;
-  const local = allocateInlineLocal(ctx, '__golemRecord');
-  if (!local) {
-    return `((__golemRecord) => (${record.replaceAll(expression, '__golemRecord')}))(${expression})`;
+  if (readShape(value) === 'name' || inputCount(record, self) <= 1) return bindInput(record, self, value);
+  const allocated = allocateInlineLocal(ctx, '__golemRecord');
+  if (!allocated) {
+    const fallbackLocal = identifier('__golemRecord');
+    return code`((${fallbackLocal}) => (${bindInput(record, self, fallbackLocal)}))(${value})`;
   }
-  return `(${local} = ${expression}, ${record.replaceAll(expression, local)})`;
+  const local = identifier(allocated);
+  return code`(${local} = ${value}, ${bindInput(record, self, local)})`;
 }
 
 function allocateInlineLocal(
@@ -1824,11 +1865,11 @@ function emitNodeRuntime(
   const encodedStringifyContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline };
   const encodedWireContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline };
   const encodedExpr = objectDescriptor
-    ? emitEncodedRecord(objectDescriptor, 'value', encodedStringifyContext)
-    : emitEncodeValue(node.descriptor, '(value as never)', encodedStringifyContext);
+    ? render(emitEncodedRecord(objectDescriptor, 'value', encodedStringifyContext))
+    : render(emitEncodeValue(node.descriptor, '(value as never)', encodedStringifyContext));
   const encodedRecordExpr = objectDescriptor
-    ? emitEncodedRecord(objectDescriptor, 'record', encodedWireContext)
-    : emitEncodeValue(node.descriptor, '(value as never)', encodedWireContext);
+    ? render(emitEncodedRecord(objectDescriptor, 'record', encodedWireContext))
+    : render(emitEncodeValue(node.descriptor, '(value as never)', encodedWireContext));
   const wireStringifySrc = emitsValidatedWire
     ? `${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true })
       .replace(`function ${stringifyName}(`, `function ${stringifyName}Wire(`)}${exported !== '' && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true)

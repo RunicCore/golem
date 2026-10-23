@@ -5,7 +5,7 @@
 
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
 import { presentValueSource } from '../presence.js';
-import { code, join, legacyText, literal, render, sameCode, type Code } from './code.js';
+import { code, emittedCode as asCode, join, legacyText, literal, render, sameCode, type Code, type Emitted } from './code.js';
 import { rt } from './rt.js';
 import {
   emitArrayItems,
@@ -34,18 +34,8 @@ function describeVariant(variant: ModelTypeDescriptor): string {
 export const AMBIGUOUS_UNION_CONVERSION_ERROR =
   'Union has ambiguous conversions. Use a discriminated object union or one serde pair for the value.';
 
-/**
- * Code that an emitter wrote, or the text of a walker that does not return Code yet. A string is wrapped as one text part.
- */
-export type Emitted = string | Code;
-
-// migration door, deleted in steps 3a to 3d (T-283, T-284, T-285, T-286) for stringify-emitter and in steps 5 and 6 (T-288, T-289) for the resolvers of golem-model and golem-openapi
-function asCode(emitted: Emitted): Code {
-  return typeof emitted === 'string' ? legacyText(emitted) : emitted;
-}
-
-export function objectValueExpression(expression: string): Code {
-  const value = legacyText(expression);
+export function objectValueExpression(expression: Emitted): Code {
+  const value = asCode(expression);
   return code`typeof ${value} === 'object' && ${value} !== null && !Array.isArray(${value})`;
 }
 
@@ -172,7 +162,7 @@ interface DispatchBranch {
 }
 
 export interface DispatchOptions {
-  readonly expression: string;
+  readonly expression: Emitted;
   readonly property: string;
   readonly branches: readonly DispatchBranch[];
   /** decode: wire to model. encode-value: model to wire object. encode-json: model to JSON text. */
@@ -204,13 +194,14 @@ export interface DispatchOptions {
  */
 export function emitDispatch(options: DispatchOptions): Code {
   const { expression, property, branches, direction, tagLocal } = options;
-  const value = legacyText(expression);
+  const value = asCode(expression);
   const encode = direction !== 'decode';
-  const propertyReadText = `(${expression} as unknown as Record<string, unknown>)[${JSON.stringify(property)}]`;
+  const propertyRead = code`(${value} as unknown as Record<string, unknown>)[${literal(property)}]`;
   // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag selects no branch.
+  // migration door, deleted in step 3c (T-285): presentValueSource takes the text of the expression, which a decoder gives as text
   const tagRead = encode
-    ? legacyText(propertyReadText)
-    : code`(${legacyText(presentValueSource(expression, JSON.stringify(property), propertyReadText))})`;
+    ? propertyRead
+    : code`(${legacyText(presentValueSource(render(value), JSON.stringify(property), render(propertyRead)))})`;
   const tag = tagLocal ? legacyText(tagLocal) : tagRead;
   const reject = code`${rt.conversion.unknownDiscriminatorValue}(${literal(property)}, ${tag}, ${encode ? code`'serialize'` : code`'deserialize'`})`;
   const key = literal(property);
@@ -301,7 +292,7 @@ export function scalarArrayObject(
  */
 export function emitSequenceBranch(
   sequence: ScalarOrArray['sequence'],
-  expression: string,
+  expression: Emitted,
   items: SequenceItems,
 ): Code {
   return sequence.kind === 'array'
@@ -323,11 +314,11 @@ export function scalarBranchVariant(scalars: readonly ModelTypeDescriptor[]): Mo
 }
 
 export function emitScalarOrArrayConversion(
-  expression: string,
+  expression: Emitted,
   mappedArray: Code,
   scalar: Code,
 ): Code {
-  const value = legacyText(expression);
+  const value = asCode(expression);
   if (sameCode(mappedArray, value) && sameCode(scalar, value)) return value;
   return code`Array.isArray(${value}) ? (${mappedArray}) : (${scalar})`;
 }
@@ -359,14 +350,14 @@ export interface UnionConversion {
   /** The item conversion of the array or tuple of a scalar-or-array union. */
   readonly items: SequenceItems;
   /** Joins the converted sequence and scalar; defaults to the value form. */
-  readonly joinSequence?: (mapped: string, scalar: string) => Emitted;
+  readonly joinSequence?: (mapped: Code, scalar: Code) => Emitted;
   /** Dispatch by tag (and class); undefined when the variants carry no tag to dispatch on. */
   readonly tagged: () => Emitted | undefined;
   /**
    * Wraps the conversion of an inline array, tuple or object branch, so a value that holds itself is found at its first
    * repeat. A branch that is a named node guards itself, and the union guards nothing at its entry: it hands the same value on.
    */
-  readonly guard?: (variant: ModelTypeDescriptor, code: string) => Emitted;
+  readonly guard?: (variant: ModelTypeDescriptor, converted: Code) => Emitted;
   /** A step before the generated-model one, which returns the whole conversion or undefined. */
   readonly beforeGenerated?: (present: readonly ModelTypeDescriptor[]) => Emitted | undefined;
   readonly generated?: GeneratedWithObjects;
@@ -385,16 +376,16 @@ const PLAIN_VARIANT_KINDS = ['string', 'number', 'boolean', 'bigint', 'literal']
  */
 export function emitUnionConversion(
   descriptor: UnionTypeDescriptor,
-  expression: string,
+  expression: Emitted,
   direction: UnionDirection,
   conversion: UnionConversion,
 ): Code {
   const json = direction === 'stringify';
-  const value = legacyText(expression);
+  const value = asCode(expression);
   const convert = (variant: ModelTypeDescriptor): Code => asCode(conversion.convert(variant));
   // A branch that converts nothing stays the value itself, so it has nothing to guard.
   const guarded = (variant: ModelTypeDescriptor, converted: Code): Code =>
-    sameCode(converted, value) || !conversion.guard ? converted : asCode(conversion.guard(variant, render(converted)));
+    sameCode(converted, value) || !conversion.guard ? converted : asCode(conversion.guard(variant, converted));
   const plain = json ? code`${rt.serde.stringifyJsonScalar}(${value} as never)` : value;
   const present = presentUnionVariants(descriptor);
   if (present.length === 1 && present.length !== descriptor.variants.length) {
@@ -465,13 +456,13 @@ export function emitUnionConversion(
 
 /** The walker's own join of the sequence and the scalar, when it gives one. */
 function joined(conversion: UnionConversion, mapped: Code, scalar: Code): Code | undefined {
-  const result = conversion.joinSequence?.(render(mapped), render(scalar));
+  const result = conversion.joinSequence?.(mapped, scalar);
   return result === undefined ? undefined : asCode(result);
 }
 
 function generatedWithObjects(
   present: readonly ModelTypeDescriptor[],
-  expression: string,
+  expression: Emitted,
   plain: Code,
   options: GeneratedWithObjects,
 ): Code | undefined {

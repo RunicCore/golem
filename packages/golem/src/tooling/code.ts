@@ -10,8 +10,18 @@ import { RUNTIME_MODULE_RANK, type RuntimeModule } from './rt.js';
 /** A name the file decides. The slot is its identity: two slots with one label are two names. */
 export interface NameSlot { readonly label: string }
 
+/**
+ * How a read expression composes into larger code, which only the code that builds the read knows: a bare `name`, a `chain`
+ * of property and index reads (`value["a"]`), or `other` (a call, a cast, a parenthesized expression). A piece that puts
+ * its input before `as` or `.` wraps it in parentheses unless it is a name or a chain.
+ */
+export type ReadShape = 'name' | 'chain' | 'other';
+
 /** The expression a code piece reads. The caller of the piece binds it. */
-export interface InputSlot { readonly label: string }
+export interface InputSlot {
+  readonly label: string;
+  readonly shape: ReadShape;
+}
 
 /**
  * A function that a file holds once, because code calls it. The definition may name other helpers, and may name this
@@ -119,12 +129,63 @@ export function nameOf(slot: NameSlot): Code {
   return fromParts([{ kind: 'name', slot }]);
 }
 
-export function inputSlot(label: string): InputSlot {
-  return { label };
+export function inputSlot(label: string, shape: ReadShape = 'other'): InputSlot {
+  return { label, shape };
+}
+
+/** Code that an emitter wrote, or the text of a walker that does not return Code yet. */
+export type Emitted = string | Code;
+
+/** A string is wrapped as one text part. */
+// migration door, deleted in steps 3b to 3d (T-284, T-285, T-286) for stringify-emitter and in steps 5 and 6 (T-288, T-289) for golem-model and golem-openapi
+export function emittedCode(emitted: Emitted): Code {
+  return typeof emitted === 'string' ? legacyText(emitted) : emitted;
+}
+
+const NAME_TEXT = /^[A-Za-z_$][\w$]*$/;
+const CHAIN_TEXT = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[(?:\d+|"[^"\\]*"|'[^'\\]*')\])*$/;
+
+/**
+ * The shape of an expression. An input part has the shape its slot was made with, so a piece never reads its text. Text
+ * from a walker that does not give a slot is tested, and any other code is `other`.
+ */
+export function readShape(expression: Emitted): ReadShape {
+  const [only, ...more] = emittedCode(expression).parts;
+  if (only === undefined || more.length > 0) return 'other';
+  if (only.kind === 'input') return only.slot.shape;
+  if (only.kind === 'name') return 'name';
+  // migration door, deleted in steps 3b to 3d (T-284, T-285, T-286): tests the text of a read that a caller wrote as a string
+  if (only.kind === 'text') return NAME_TEXT.test(only.text) ? 'name' : CHAIN_TEXT.test(only.text) ? 'chain' : 'other';
+  return 'other';
 }
 
 export function inputOf(slot: InputSlot): Code {
   return fromParts([{ kind: 'input', slot }]);
+}
+
+/** How many times a piece reads the input `slot`: the number of its input parts for that slot. */
+export function inputCount(root: Code, slot: InputSlot): number {
+  return root.parts.filter((part) => part.kind === 'input' && part.slot === slot).length;
+}
+
+/** The piece with each input part of `slot` replaced by `value`. */
+export function bindInput(root: Code, slot: InputSlot, value: Code): Code {
+  return fromParts(root.parts.flatMap((part) => (part.kind === 'input' && part.slot === slot ? value.parts : [part])));
+}
+
+/** The result of `bindRead`: the bound piece, and whether it reads the local. */
+export interface BoundRead {
+  readonly code: Code;
+  readonly local: boolean;
+}
+
+/**
+ * Bind the input of a piece the way its caller needs. A piece that reads its input more than once, counting the
+ * `otherReads` the caller adds around it, reads the `local` that the caller sets to `read`; any other piece reads `read`.
+ */
+export function bindRead(piece: Code, slot: InputSlot, read: Code, local: Code, otherReads: number = 0): BoundRead {
+  const repeated = inputCount(piece, slot) + otherReads > 1;
+  return { code: bindInput(piece, slot, repeated ? local : read), local: repeated };
 }
 
 /** The names a file decided, by slot. A file builds it before it writes the bodies. */

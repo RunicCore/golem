@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  NameTable, code, helper, helperBlock, helperName, helperSet, identifier, importSet, inputOf, inputSlot, join, literal,
+  NameTable, bindRead, code, helper, helperBlock, helperName, helperSet, identifier, importSet, inputOf, inputSlot, join, literal,
   nameOf, nameSlot, render, runtimeImports, sameCode, legacyText,
 } from '#golem/code';
 import { rt } from '#golem/rt';
@@ -66,4 +66,18 @@ test('sameCode matches parts one by one, and a runtime part equals the text of i
   assert.equal(sameCode(nameOf(first), nameOf(second)), false);
   assert.equal(sameCode(inputOf(inputSlot('value')), nameOf(first)), false);
   assert.equal(render(code`${rt.serde.parseJson}(x)`), 'parseJson(x)');
+});
+
+test('a piece that reads its input twice gets a local, and one that reads it once gets the expression', () => {
+  // protects: T-283 an emitter counts the input parts of a piece and binds a local for more than one read
+  const input = inputSlot('field');
+  const local = identifier('__local');
+  const once = code`${rt.serde.stringifyJsonString}(${inputOf(input)} as string)`;
+  const twice = code`${inputOf(input)} === null ? 'null' : ${rt.serde.stringifyJsonNumber}(${inputOf(input)} as number)`;
+  const bound = bindRead(once, input, code`value["a"]`, local);
+  assert.deepEqual([render(bound.code), bound.local], ['stringifyJsonString(value["a"] as string)', false]);
+  const repeated = bindRead(twice, input, code`value["a"]`, local);
+  assert.deepEqual([render(repeated.code), repeated.local], ["__local === null ? 'null' : stringifyJsonNumber(__local as number)", true]);
+  // an optional field also reads its input in the `!== undefined` check
+  assert.equal(render(bindRead(once, input, code`value["a"]`, local, 1).code), 'stringifyJsonString(__local as string)');
 });

@@ -5,7 +5,7 @@ import { LibError } from '@exprtlabs/golem/errors';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { registerIModelClass } from '@exprtlabs/golem/serde';
-import { emitCodecRuntime, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
+import { code, emitCodecRuntime, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 
@@ -33,8 +33,8 @@ class Bytes {
 }
 
 const BYTES_SERDE: StringifySerdeResolver = {
-  deserialize: (id, value) => id === 'bytes' ? `new Bytes(${value} as string)` : `Number(${value})`,
-  serialize: (id, value) => id === 'bytes' ? `(${value} as Bytes).text` : `String(${value})`,
+  deserialize: (id, value) => id === 'bytes' ? code`new Bytes(${value} as string)` : code`Number(${value})`,
+  serialize: (id, value) => id === 'bytes' ? code`(${value} as Bytes).text` : code`String(${value})`,
 };
 
 interface Routes {
