@@ -16,6 +16,9 @@ import {
   literal,
   docComment,
   documentLiteral,
+  exportedName,
+  renderModule,
+  type RenderedModule,
   propertyKey,
   render,
   rt,
@@ -140,7 +143,7 @@ function literalType(value: unknown): Code {
 }
 
 interface GeneratedClientModules {
-  readonly client: string;
+  readonly client: RenderedModule;
   /** Module paths are relative to the generated package root. */
   readonly operations: ReadonlyMap<string, string>;
 }
@@ -385,6 +388,7 @@ function emitSecurityTypes(
   const entries = objectEntries(rawSecuritySchemes);
   const contextSchemes = entries.filter(([, scheme]) => isJsonObject(scheme) && !scheme.$ref && scheme.type !== 'mutualTLS');
   const named = (suffix: string): Code => identifierPart(`${clientName}${suffix}`);
+  const exported = (suffix: string): Code => exportedName(`${clientName}${suffix}`);
   const schemeNames = entries.map(([name]) => literal(name));
   const nameType = schemeNames.length ? join(schemeNames, code` | `) : code`never`;
   const flowCases = contextSchemes.map(([name, scheme]) =>
@@ -403,7 +407,7 @@ function emitSecurityTypes(
     const scopeType = scopes.length
       ? code`readonly (${join(scopes.map((scope) => literal(scope)), code` | `)})[]`
       : code`readonly string[]`;
-    return code`export type ${named(`${identifier(name)}Context`)} =
+    return code`export type ${exported(`${identifier(name)}Context`)} =
   Omit<${named('AuthContext')}, 'scheme' | 'type' | 'scopes' | 'flows' | 'openIdConnectUrl'> & {
     readonly scheme: ${literal(name)};
     readonly type: ${documentLiteral(record.type)};
@@ -423,32 +427,32 @@ function emitSecurityTypes(
   if (!entries.length) return BLANK;
   const otherwise = code`  Name extends ${named('SecuritySchemeName')} ? undefined : never;`;
 
-  return code`export type ${named('AuthContext')} = ${runtime}.AuthContext;
+  return code`export type ${exported('AuthContext')} = ${runtime}.AuthContext;
 
-export type ${named('SecuritySchemeName')} = ${nameType};
+export type ${exported('SecuritySchemeName')} = ${nameType};
 
-export type ${named('SecuritySchemeFlows')}<
+export type ${exported('SecuritySchemeFlows')}<
   Name extends ${named('SecuritySchemeName')},
 > =
 ${flowCases.length ? code`${join(flowCases, code`\n`)}  undefined;` : otherwise}
 
-export type ${named('SecuritySchemeOpenIdConnectUrl')}<
+export type ${exported('SecuritySchemeOpenIdConnectUrl')}<
   Name extends ${named('SecuritySchemeName')},
 > =
 ${urlCases.length ? code`${join(urlCases, code`\n`)}  undefined;` : otherwise}
 
 ${join(contexts, code`\n\n`)}
 
-export type ${named('TokenAuthValue')}<
+export type ${exported('TokenAuthValue')}<
   Context extends ${named('AuthContext')} = ${named('AuthContext')},
 > = ${runtime}.TokenAuthValue<Context>;
 
-export type ${named('BasicCredentials')} = ${runtime}.BasicCredentials;
-export type ${named('BasicAuthValue')}<
+export type ${exported('BasicCredentials')} = ${runtime}.BasicCredentials;
+export type ${exported('BasicAuthValue')}<
   Context extends ${named('AuthContext')} = ${named('AuthContext')},
 > = ${runtime}.BasicAuthValue<Context>;
 
-export interface ${named('Auth')} {
+export interface ${exported('Auth')} {
 ${join(properties, code`\n`)}
 }
 `;
@@ -460,7 +464,7 @@ function emitClient(
   profile: OpenApiGenerationProfile,
   plan: EmissionPlan,
   rawSecuritySchemes: Readonly<Record<string, unknown>>,
-): string {
+): RenderedModule {
   const scope = new NameScope(`${clientName}Client`);
   const surfaces = plan.clientSurfaces;
   scope.claim('ClientRuntime', 'shared client runtime');
@@ -495,7 +499,6 @@ function emitClient(
       securityAliases.set(operation.name, securityAlias);
     }
   });
-  const metadataCode = identifierPart(metadataName);
   // Each operation module is imported under the aliases that the scope decided; a name is imported when the code calls it.
   const operationSources = operations.map((operation) => new ImportSource(`./operations/${operation.name}.js`));
   const factoryCodes = operations.map((operation, index) => operationSources[index]?.name(operationFactoryName(operation), { alias: aliases.get(operation.name) ?? '' }) ?? BLANK);
@@ -504,7 +507,7 @@ function emitClient(
     return securityAlias ? [operationSources[index]?.name('__golemSecuritySchemes', { alias: securityAlias }) ?? BLANK] : [];
   });
   const metadata = plan.clientSurfaces.auth || plan.clientSurfaces.mutualTls
-    ? code`export const ${metadataCode} = {
+    ? code`export const ${exportedName(metadataName)} = {
 ${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
 } as const;`
     : BLANK;
@@ -514,6 +517,7 @@ ${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
   const runtimeNamespace = runtimeTypes.namespace();
   const typesNamespace = typesModule.namespace();
   const named = (suffix: string): Code => identifierPart(`${clientName}${suffix}`);
+  const exported = (suffix: string): Code => exportedName(`${clientName}${suffix}`);
   const inputTypeOf = (operation: NormalizedOperation): Code => code`${typesNamespace}.${identifierPart(`${operation.typeName}OperationInput`)}`;
   const responseTypeOf = (operation: NormalizedOperation): Code => code`${typesNamespace}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}`;
   const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
@@ -543,41 +547,41 @@ ${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
   ];
   const optionsType = code`Omit<${runtimeNamespace}.ClientOptions, ${join(omittedOptions.map((name) => literal(name)), code` | `)}>${optionExtensions.length ? code` & {\n${join(optionExtensions, code`\n`)}\n}` : BLANK}`;
   const aliases_ = join([
-    code`export type ${named('ClientOptions')} = ${optionsType};`,
-    code`export type ${named('RequestOptions')} = ${runtimeNamespace}.RequestOptions;`,
+    code`export type ${exported('ClientOptions')} = ${optionsType};`,
+    code`export type ${exported('RequestOptions')} = ${runtimeNamespace}.RequestOptions;`,
     ...(undeclared ? [
-      code`export type ${named('UndeclaredResponseError')} = ${runtimeNamespace}.UndeclaredResponseError;`,
-      code`export function ${identifierPart(`is${clientName}UndeclaredResponseError`)}(error: unknown): error is ${runtimeNamespace}.UndeclaredResponseError {\n  return ${rt.client.isUndeclaredResponseError}(error, ${literal(clientName)});\n}`,
+      code`export type ${exported('UndeclaredResponseError')} = ${runtimeNamespace}.UndeclaredResponseError;`,
+      code`export function ${exportedName(`is${clientName}UndeclaredResponseError`)}(error: unknown): error is ${runtimeNamespace}.UndeclaredResponseError {\n  return ${rt.client.isUndeclaredResponseError}(error, ${literal(clientName)});\n}`,
     ] : []),
-    ...(surfaces.mutualTls ? [code`export type ${named('MutualTlsTransport')} = ${runtimeNamespace}.MutualTlsTransport;`] : []),
+    ...(surfaces.mutualTls ? [code`export type ${exported('MutualTlsTransport')} = ${runtimeNamespace}.MutualTlsTransport;`] : []),
     ...(surfaces.streamDecoders ? [
-      code`export type ${named('StreamDecoderContext')} = ${runtimeNamespace}.StreamDecoderContext;`,
-      code`export type ${named('StreamDecoder')} = ${runtimeNamespace}.StreamDecoder;`,
+      code`export type ${exported('StreamDecoderContext')} = ${runtimeNamespace}.StreamDecoderContext;`,
+      code`export type ${exported('StreamDecoder')} = ${runtimeNamespace}.StreamDecoder;`,
     ] : []),
     ...(surfaces.parameterSerializers ? [
-      code`export type ${named('ParameterSerializerContext')} = ${runtimeNamespace}.ParameterSerializerContext;`,
-      code`export type ${named('ParameterSerializer')} = ${runtimeNamespace}.ParameterSerializer;`,
+      code`export type ${exported('ParameterSerializerContext')} = ${runtimeNamespace}.ParameterSerializerContext;`,
+      code`export type ${exported('ParameterSerializer')} = ${runtimeNamespace}.ParameterSerializer;`,
     ] : []),
     ...(surfaces.responseHeaderDecoders ? [
-      code`export type ${named('ResponseHeaderDecoderContext')} = ${runtimeNamespace}.ResponseHeaderDecoderContext;`,
-      code`export type ${named('ResponseHeaderDecoder')} = ${runtimeNamespace}.ResponseHeaderDecoder;`,
+      code`export type ${exported('ResponseHeaderDecoderContext')} = ${runtimeNamespace}.ResponseHeaderDecoderContext;`,
+      code`export type ${exported('ResponseHeaderDecoder')} = ${runtimeNamespace}.ResponseHeaderDecoder;`,
     ] : []),
     ...(surfaces.bodyEncoders ? [
-      code`export type ${named('EncodedBody')} = ${runtimeNamespace}.EncodedBody;`,
-      code`export type ${named('EncodingMetadata')} = ${runtimeNamespace}.EncodingMetadata;`,
-      code`export type ${named('BodyEncoderContext')} = ${runtimeNamespace}.BodyEncoderContext;`,
-      code`export type ${named('BodyEncoder')} = ${runtimeNamespace}.BodyEncoder;`,
+      code`export type ${exported('EncodedBody')} = ${runtimeNamespace}.EncodedBody;`,
+      code`export type ${exported('EncodingMetadata')} = ${runtimeNamespace}.EncodingMetadata;`,
+      code`export type ${exported('BodyEncoderContext')} = ${runtimeNamespace}.BodyEncoderContext;`,
+      code`export type ${exported('BodyEncoder')} = ${runtimeNamespace}.BodyEncoder;`,
     ] : []),
   ], code`\n`);
   const tail = code`
 ${profile.validation ? code`\n${operationNameType('__GolemOperationName', operations)}\n` : BLANK}
 ${aliases_}
 ${usesAuth ? code`\n${emitSecurityTypes(clientName, rawSecuritySchemes, runtimeNamespace)}` : BLANK}
-export interface ${named('ClientPort')} {
+export interface ${exported('ClientPort')} {
 ${methods}
 }
 
-export class ${named('Client')} implements ${named('ClientPort')} {
+export class ${exported('Client')} implements ${named('ClientPort')} {
   private readonly runtime: ${clientRuntime};
 
   constructor(options: ${named('ClientOptions')}) {
@@ -611,7 +615,7 @@ ${metadata}
     if (entry.names.length > 0 && !written.has(`${module} values`)) throw new Error(`Internal error: the client file uses the ${module} runtime values ${entry.names.map(({ name }) => name).join(', ')}, which its import list does not write.`);
     if (entry.types.length > 0 && !written.has(`${module} types`)) throw new Error(`Internal error: the client file uses the ${module} runtime types ${entry.types.map(({ name }) => name).join(', ')}, which its import list does not write.`);
   }
-  return render(code`${join([generatedBannerComment(), ...importLinesOfFile], code`\n`)}
+  return renderModule(code`${join([generatedBannerComment(), ...importLinesOfFile], code`\n`)}
 ${rest}`);
 }
 

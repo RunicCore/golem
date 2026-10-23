@@ -1,12 +1,12 @@
 import path from 'node:path';
-import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult, type PublicModule } from '@exprtlabs/golem/generator-api';
 import { isRecord, stableJson } from '@exprtlabs/golem/generator-api';
 import { buildOperationValidationSchemas, generateClientModules } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes } from './document.js';
 import { buildEmissionPlan, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
-import { assertPortableFilenames, assertUniquePublicExports, identifier } from '@exprtlabs/golem/generator-api';
-import { code, docComment, documentLiteral, identifier as identifierPart, join, render, type Code } from '@exprtlabs/golem/internal/emitter';
+import { assertPortableFilenames, assertUniqueExportNames, identifier } from '@exprtlabs/golem/generator-api';
+import { code, docComment, documentLiteral, exportedName, identifier as identifierPart, join, renderModule, type Code, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
 import { operationName, operationNameType } from './names.js';
 import type { NormalizedOperation } from './normalize.js';
 import { generatedBannerComment } from './package-info.js';
@@ -36,7 +36,7 @@ interface WriteSdkOptions {
   readonly locate?: OriginLocator;
 }
 
-function generateLinks(operations: readonly NormalizedOperation[]): string {
+function generateLinks(operations: readonly NormalizedOperation[]): RenderedModule {
   const operationNames = new Set(operations.map((operation) => operation.name));
   const links: Record<string, Record<string, Record<string, unknown>>> = {};
   for (const operation of operations) {
@@ -73,10 +73,10 @@ function generateLinks(operations: readonly NormalizedOperation[]): string {
     }
     if (Object.keys(responses).length) links[operation.name] = responses;
   }
-  return render(code`${generatedBannerComment()}
+  return renderModule(code`${generatedBannerComment()}
 ${operationNameType('OperationName', operations)}
 
-export interface LinkServer {
+export interface ${exportedName('LinkServer')} {
   readonly url: string;
   readonly description?: string;
   readonly variables?: Readonly<Record<string, {
@@ -86,18 +86,18 @@ export interface LinkServer {
   }>>;
 }
 
-export type ResponseLinkTarget =
+export type ${exportedName('ResponseLinkTarget')} =
   | { readonly operationId: OperationName; readonly operationRef?: never }
   | { readonly operationRef: string; readonly operationId?: never };
 
-export type ResponseLink = ResponseLinkTarget & {
+export type ${exportedName('ResponseLink')} = ResponseLinkTarget & {
   readonly parameters: Readonly<Record<string, unknown>>;
   readonly requestBody?: unknown;
   readonly description?: string;
   readonly server?: LinkServer;
 };
 
-export type ResponseLinkRegistry = Readonly<Record<
+export type ${exportedName('ResponseLinkRegistry')} = Readonly<Record<
   OperationName,
   Readonly<Record<string, Readonly<Record<string, ResponseLink>>>>
 >>;
@@ -107,18 +107,18 @@ export type ResponseLinkRegistry = Readonly<Record<
  * status key, and link name. Runtime expressions are preserved verbatim for
  * application-owned workflow/navigation code to evaluate.
  */
-export const responseLinks = ${documentLiteral(links, 2)} as const satisfies Partial<ResponseLinkRegistry>;
+export const ${exportedName('responseLinks')} = ${documentLiteral(links, 2)} as const satisfies Partial<ResponseLinkRegistry>;
 `);
 }
 
-function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan, modelReexports: Code = code``): string {
+function generateIndex(profile: OpenApiGenerationProfile, plan?: EmissionPlan, modelReexports: Code = code``): RenderedModule {
   requireProfile(profile);
   const artifacts = plan?.artifacts;
   const include = (name: ArtifactFile): boolean => artifacts ? artifacts.has(name) : true;
-  return render(code`${generatedBannerComment()}
+  return renderModule(code`${generatedBannerComment()}
 export * from './types.js';
-${include('input-schemas.ts') ? code`export type * as InputSchemas from './input-schemas.js';` : code``}
-${include('output-schemas.ts') ? code`export type * as OutputSchemas from './output-schemas.js';` : code``}
+${include('input-schemas.ts') ? code`export type * as ${exportedName('InputSchemas')} from './input-schemas.js';` : code``}
+${include('output-schemas.ts') ? code`export type * as ${exportedName('OutputSchemas')} from './output-schemas.js';` : code``}
 ${modelReexports}
 ${include('client.ts') ? code`export * from './client.js';` : code``}
 ${include('inbound.ts') ? code`export * from './inbound.js';` : code``}
@@ -126,18 +126,18 @@ ${include('links.ts') ? code`export * from './links.js';` : code``}
 `);
 }
 
-function generateInbound(clientName: string, operations: readonly NormalizedOperation[]): string {
+function generateInbound(clientName: string, operations: readonly NormalizedOperation[]): RenderedModule {
   const methods = join(operations.map((operation) =>
     code`  ${docComment(`${operation.sourceKind} ${operation.sourceName}: ${operation.method} ${operation.route}`)}\n  ${identifierPart(operation.name)}(input: Types.${identifierPart(`${operation.typeName}OperationInput`)}): Promise<Types.${identifierPart(`${operation.typeName}OperationHttpResponse`)}>;`,
   ), code`\n\n`);
-  return render(code`${generatedBannerComment()}
+  return renderModule(code`${generatedBannerComment()}
 import type * as Types from './types.js';
 
 /**
  * Application-owned handlers for inbound OpenAPI callbacks and webhooks.
  * This contract intentionally does not choose an HTTP server framework.
  */
-export interface ${identifierPart(`${clientName}InboundPort`)} {
+export interface ${exportedName(`${clientName}InboundPort`)} {
 ${methods}
 }
 `);
@@ -171,7 +171,11 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
     ? buildSchemaData(document, ir)
     : undefined;
   const files = new Map<string, string>();
-  files.set('types.ts', generateTypes(document, [...operations, ...inboundOperations], plan));
+  // The names that each module of the index exports come from its Code, and the index re-exports the whole modules it stars.
+  const modules = new Map<string, PublicModule>();
+  const types = generateTypes(document, [...operations, ...inboundOperations], plan);
+  files.set('types.ts', types.source);
+  modules.set('types.ts', { exports: types.exports, stars: [] });
   if (plan.artifacts.has('input-schemas.ts')) {
     files.set('input-schemas.ts', generateDirectionalSchemas(document, 'input'));
   }
@@ -226,17 +230,25 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
         ? { schemas: operationValidation, validatorExports: validators.compiled.exports }
         : undefined,
     );
-    files.set('client.ts', clientModules.client);
+    files.set('client.ts', clientModules.client.source);
+    modules.set('client.ts', { exports: clientModules.client.exports, stars: [] });
     for (const [name, source] of clientModules.operations) files.set(name, source);
   }
   if (plan.artifacts.has('inbound.ts')) {
-    files.set('inbound.ts', generateInbound(clientName, inboundOperations));
+    const inbound = generateInbound(clientName, inboundOperations);
+    files.set('inbound.ts', inbound.source);
+    modules.set('inbound.ts', { exports: inbound.exports, stars: [] });
   }
   if (plan.artifacts.has('links.ts')) {
-    files.set('links.ts', generateLinks(operations));
+    const links = generateLinks(operations);
+    files.set('links.ts', links.source);
+    modules.set('links.ts', { exports: links.exports, stars: [] });
   }
-  files.set('index.ts', generateIndex(profile, plan, modelReexports));
-  assertUniquePublicExports(files);
+  const index = generateIndex(profile, plan, modelReexports);
+  files.set('index.ts', index.source);
+  const starred = ['types.ts', 'client.ts', 'inbound.ts', 'links.ts'].filter((name) => name === 'types.ts' || plan.artifacts.has(name as ArtifactFile));
+  modules.set('index.ts', { exports: index.exports, stars: starred });
+  assertUniqueExportNames(modules);
   assertPortableFilenames(files.keys());
   return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
 }

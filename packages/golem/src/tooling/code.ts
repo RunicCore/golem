@@ -43,6 +43,8 @@ export type Part =
   | { readonly kind: 'imported'; readonly source: ImportSource; readonly name: string; readonly typeOnly?: true; readonly alias?: string }
   | { readonly kind: 'helper'; readonly helper: Helper }
   | { readonly kind: 'name'; readonly slot: NameSlot }
+  /** A name that the file exports. It is written as the name; the exports of a file are the export parts of its Code. */
+  | { readonly kind: 'export'; readonly name: string }
   | { readonly kind: 'input'; readonly slot: InputSlot }
   /** A line end. Render writes it with the indentation that the `indent` parts before it set. */
   | { readonly kind: 'line' }
@@ -227,6 +229,17 @@ export function helper(id: string, define: () => Code, rank?: number): Helper {
 /** A call site of a helper: the name of the helper, and a request that the file holds its definition. */
 export function helperName(target: Helper): Code {
   return fromParts([{ kind: 'helper', helper: target }]);
+}
+
+/** The name in an `export` declaration or an export list. `exportedNames` reads the exports of a file from these parts. */
+export function exportedName(name: string): Code {
+  return fromParts([{ kind: 'export', name: checkedIdentifier(name, 'export name') }]);
+}
+
+/** The names that a Code exports, and its helpers export, once each in order of appearance. */
+export function exportedNames(root: Code): readonly string[] {
+  const pieces = [root, ...helperDefinitions(root)];
+  return [...new Set(pieces.flatMap((piece) => piece.parts.flatMap((part) => part.kind === 'export' ? [part.name] : [])))];
 }
 
 export function nameSlot(label: string): NameSlot {
@@ -543,12 +556,16 @@ export function sideEffectImport(specifier: string, quote: "'" | '"' = "'"): Cod
 
 /** A re-export statement: each name as the module exports it, or `[local, exported]` for a name it exports under another name. */
 export function exportFrom(names: readonly (string | readonly [local: string, exported: string])[], specifier: string, typeOnly: boolean = false): Code {
-  const spelled = names.map((entry) => {
-    if (typeof entry === 'string') return checkedIdentifier(entry, 'export name');
+  const members = names.map((entry): Code => {
+    if (typeof entry === 'string') return exportedName(entry);
     const [local, exported] = entry;
-    return local === exported ? checkedIdentifier(local, 'export name') : `${checkedIdentifier(local, 'export name')} as ${checkedIdentifier(exported, 'export name')}`;
+    return local === exported ? exportedName(exported) : fromParts([...identifier(local).parts, { kind: 'text', text: ' as ' }, ...exportedName(exported).parts]);
   });
-  return plainText(`export ${typeOnly ? 'type ' : ''}{ ${spelled.join(', ')} } from '${checkedSingleQuoted(specifier)}';`);
+  return fromParts([
+    { kind: 'text', text: `export ${typeOnly ? 'type ' : ''}{ ` },
+    ...join(members, plainText(', ')).parts,
+    { kind: 'text', text: ` } from '${checkedSingleQuoted(specifier)}';` },
+  ]);
 }
 
 /** The names of `source` that the code uses, as the module exports them, in the order of the declaration. */
@@ -607,6 +624,7 @@ export function codeKey(root: Code): string {
       case 'imported': key.push(['imported', identityOf(part.source), part.name, part.alias ?? null, part.typeOnly === true]); break;
       case 'helper': key.push(['helper', identityOf(part.helper)]); break;
       case 'name': key.push(['name', identityOf(part.slot)]); break;
+      case 'export': key.push(['export', part.name]); break;
       case 'input': key.push(['input', identityOf(part.slot)]); break;
       case 'line': key.push(['line']); break;
       case 'indent': key.push(['indent', part.by]); break;
@@ -648,6 +666,7 @@ export function render(root: Code, names: NameTable = new NameTable()): string {
       case 'imported': write(part.alias ?? part.name); break;
       case 'helper': write(part.helper.id); break;
       case 'name': write(names.resolve(part.slot)); break;
+      case 'export': write(part.name); break;
       case 'input': throw new Error(`the input "${part.slot.label}" is not bound`);
       case 'line': write('\n'); lineStart = true; break;
       case 'indent': depth += part.by; break;
@@ -655,6 +674,17 @@ export function render(root: Code, names: NameTable = new NameTable()): string {
     }
   }
   return text;
+}
+
+/** A rendered file, and the names it exports. */
+export interface RenderedModule {
+  readonly source: string;
+  readonly exports: readonly string[];
+}
+
+/** `render`, and the exports of the Code. */
+export function renderModule(root: Code, names: NameTable = new NameTable()): RenderedModule {
+  return { source: render(root, names), exports: exportedNames(root) };
 }
 
 /**

@@ -1608,6 +1608,7 @@ function bodyKey(body: Code, slots: FunctionSlots, groups: ReadonlyMap<number, n
       case 'runtime': key.push(['runtime', part.module, part.name, part.typeOnly === true, part.alias ?? null]); break;
       case 'imported': key.push(['imported', part.source.specifier, part.name, part.typeOnly === true, part.alias ?? null]); break;
       case 'helper': key.push(['helper', part.helper.id]); break;
+      case 'export': key.push(['export', part.name]); break;
       case 'input': key.push(['input', inputNumber(part.slot)]); break;
       case 'line': key.push(['line']); break;
       case 'indent': key.push(['indent', part.by]); break;

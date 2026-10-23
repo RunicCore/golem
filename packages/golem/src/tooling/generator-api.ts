@@ -4,6 +4,7 @@ import YAML from 'yaml';
 /** Shared API-1 contracts. Providers return contents; the CLI owns all writes. */
 export {
   assertPortableFilenames,
+  assertUniqueExportNames,
   assertUniquePublicExports,
   bindingName,
   camelIdentifier,
@@ -12,6 +13,7 @@ export {
   propertyName,
   RESERVED_BINDING_NAMES,
   RESERVED_MODEL_MEMBERS,
+  type PublicModule,
 } from './names.js';
 
 /** Canonical text order: by UTF-16 code unit, so output does not depend on the machine's locale or ICU data. */

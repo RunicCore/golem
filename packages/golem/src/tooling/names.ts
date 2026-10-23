@@ -107,6 +107,30 @@ export function assertPortableFilenames(paths: Iterable<string>): void {
   }
 }
 
+/** A generated module as the generator holds it: the names it exports, and the modules it re-exports whole (`export * from`). */
+export interface PublicModule {
+  readonly exports: readonly string[];
+  readonly stars: readonly string[];
+}
+
+/**
+ * Check the public namespace of generated modules from the export names the generator holds for each module, with no text
+ * read. A name that two modules reachable from `entry` export is a collision.
+ */
+export function assertUniqueExportNames(modules: ReadonlyMap<string, PublicModule>, entry = 'index.ts'): void {
+  const scope = new NameScope(`public exports of ${entry}`);
+  const seen = new Set<string>();
+  const visit = (filename: string): void => {
+    if (seen.has(filename)) return;
+    seen.add(filename);
+    const module = modules.get(filename);
+    if (module === undefined) throw new Error(`Generated public module is missing: ${filename}`);
+    for (const name of module.exports) scope.claim(name, `${filename} export ${name}`);
+    module.stars.forEach(visit);
+  };
+  visit(entry);
+}
+
 /**
  * Check the public namespace of generator-owned, declaration-only templates.
  * This reads our emitted declarations, never arbitrary consumer TypeScript.

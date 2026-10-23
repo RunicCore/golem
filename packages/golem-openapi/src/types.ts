@@ -1,7 +1,7 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/generator-api';
-import { code, codeKey, docComment, fileImports, identifier as identifierPart, ImportSource, join, lineBreak, literal, nest, propertyKey, render, sameCode, trimEnd, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { code, codeKey, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, trimEnd, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { refName } from './names.js';
 import {
   effectiveSchemaTypes,
@@ -821,7 +821,7 @@ export function generateTypes(
     readonly typesUsesInputSchemas: boolean;
     readonly typesUsesOutputSchemas: boolean;
   },
-): string {
+): RenderedModule {
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
   const scope = new ComponentNameScope('types.ts');
   const useInput = plan ? plan.typesUsesInputSchemas : Object.keys(schemas).length > 0 && operations.length > 0;
@@ -846,7 +846,7 @@ export function generateTypes(
     const description = isJsonObject(schema) && schema.description
       ? code`${descriptionComment(schema.description)}${lineBreak}`
       : BLANK;
-    body.push(code`${description}export type ${identifierPart(typeName)} = ${type.code};`, BLANK);
+    body.push(code`${description}export type ${exportedName(typeName)} = ${type.code};`, BLANK);
   }
   if (Object.keys(schemas).length === 0 && operations.length === 0) body.push(code`export {};`);
   for (const operation of operations) {
@@ -864,11 +864,11 @@ export function generateTypes(
     scope.claim(`${operation.typeName}OperationSuccessBody`, `operation ${JSON.stringify(operation.name)} success body`);
     scope.claim(`${operation.typeName}OperationErrorBody`, `operation ${JSON.stringify(operation.name)} error body`);
     scope.claim(`${operation.typeName}OperationHttpResponse`, `operation ${JSON.stringify(operation.name)} http response`);
-    body.push(code`export type ${identifierPart(`${operation.typeName}OperationInput`)} = ${inputType(operation, inputContext).code};`, BLANK);
-    body.push(code`export type ${identifierPart(`${operation.typeName}OperationSuccessBody`)} = ${operationBodyType(operation, true, outputContext).code};`, BLANK);
-    body.push(code`export type ${identifierPart(`${operation.typeName}OperationErrorBody`)} = ${operationBodyType(operation, false, outputContext).code};`, BLANK);
+    body.push(code`export type ${exportedName(`${operation.typeName}OperationInput`)} = ${inputType(operation, inputContext).code};`, BLANK);
+    body.push(code`export type ${exportedName(`${operation.typeName}OperationSuccessBody`)} = ${operationBodyType(operation, true, outputContext).code};`, BLANK);
+    body.push(code`export type ${exportedName(`${operation.typeName}OperationErrorBody`)} = ${operationBodyType(operation, false, outputContext).code};`, BLANK);
     body.push(
-      code`export type ${identifierPart(`${operation.typeName}OperationHttpResponse`)} =${responseUnion(operation.responses.flatMap((response) => responseVariantTypes(document, response, outputContext)))};`,
+      code`export type ${exportedName(`${operation.typeName}OperationHttpResponse`)} =${responseUnion(operation.responses.flatMap((response) => responseVariantTypes(document, response, outputContext)))};`,
       BLANK,
     );
   }
@@ -882,7 +882,7 @@ export function generateTypes(
     BLANK,
     types,
   ], lineBreak);
-  return render(code`${trimEnd(output)}\n`);
+  return renderModule(code`${trimEnd(output)}\n`);
 }
 
 export function generateDirectionalSchemas(document: unknown, direction: 'input' | 'output'): string {
