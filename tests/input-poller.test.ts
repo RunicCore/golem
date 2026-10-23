@@ -98,3 +98,19 @@ test('a folder created below a descent root is polled, so a source added to it l
   fs.writeFileSync(path.join(root, 'lib/pet.model.ts'), 'export type TPet = 1;\n');
   assert.deepEqual(changedPaths(previous, poller.snapshot()), [path.join(root, 'lib/pet.model.ts')]);
 });
+
+test('a hidden folder that an input lies in is polled, and a folder under node_modules is not', (t) => {
+  // protects: T-308 a tsconfig that includes .vitepress/**/*.ts still sees a new file there
+  const { root } = projectFolders(t);
+  const config = path.join(root, '.vitepress/config.ts');
+  const dependency = path.join(root, 'node_modules/pkg/index.ts');
+  fs.mkdirSync(path.dirname(config));
+  fs.mkdirSync(path.dirname(dependency), { recursive: true });
+  fs.writeFileSync(config, 'export default {};\n');
+  fs.writeFileSync(dependency, 'export {};\n');
+  const poller = new InputPoller([config, dependency], { root, outsideDirectories: new Set<string>() });
+  const previous = poller.snapshot();
+  fs.writeFileSync(path.join(root, '.vitepress/theme.ts'), 'export {};\n');
+  fs.writeFileSync(path.join(root, 'node_modules/pkg/other.ts'), 'export {};\n');
+  assert.deepEqual(changedPaths(previous, poller.snapshot()), [path.join(root, '.vitepress/theme.ts')]);
+});

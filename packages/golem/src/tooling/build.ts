@@ -18,8 +18,8 @@ import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
-import { changedPaths, InputPoller, ownDirectories, RunBaseline } from './input-poller.js';
-import { OwnedOutputIndex } from './watch.js';
+import { changedPaths, InputPoller, OwnedOutputIndex, RunBaseline } from './input-poller.js';
+import type { InputSnapshot } from './input-poller.js';
 
 interface BuildOptions {
   /**
@@ -649,12 +649,8 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
 
   let exitCode = 0;
   const pollerOf = (): InputPoller => new InputPoller(inputs, { root, outsideDirectories: state.outsideDirectories });
-  // The build's own names, which come and go with the build itself: the directories it writes, the files it generates and the directories it created for them.
-  const ownership = (): ((filename: string) => boolean) => {
-    const own = ownDirectories(root, outputs);
-    const generated = new OwnedOutputIndex(state.owned);
-    return (filename) => own.has(filename) || generated.covers(filename);
-  };
+  // The build's own names, which come and go with the build itself: the directories it writes, the files it generates and the directories it created for them. It changes only when a build ends.
+  let own = new OwnedOutputIndex();
   let poller = pollerOf();
   let previous = poller.snapshot();
   const attempt = async (changed: readonly string[] | undefined, before = poller.snapshot()): Promise<void> => {
@@ -664,7 +660,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     state.baseline = baseline;
     const record = (): void => {
       // A file the generate step wrote, and the directory it created for it, is the build's own: its signature after the build is the one the next build compares with.
-      const own = new OwnedOutputIndex(state.owned);
+      own = new OwnedOutputIndex([...outputs, ...state.owned]);
       poller = pollerOf();
       previous = baseline.settle(poller.snapshot(), (file) => own.covers(file));
     };
@@ -682,17 +678,29 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   process.stdout.write('Watching for changes.\n');
   await new Promise<void>((resolve) => {
     let busy = false;
+    // A folder or file the poll cannot read (a permission, too many open files) is reported once; the watch keeps polling.
+    let unreadable: string | undefined;
     const timer = setInterval(() => {
       if (busy) return;
-      const current = poller.snapshot();
-      const changed = changedPaths(previous, current, ownership());
+      let current: InputSnapshot;
+      let changed: string[];
+      try {
+        current = poller.snapshot();
+        changed = changedPaths(previous, current, (filename) => own.covers(filename));
+        unreadable = undefined;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message !== unreadable) process.stderr.write(`${message}\n`);
+        unreadable = message;
+        return;
+      }
       if (changed.length === 0 && !(wrote && !outputsPresent())) {
         options.onIdlePoll?.();
         return;
       }
       busy = true;
       session.inputsChanged(changed);
-      void attempt(changed, current).finally(() => { busy = false; if (options.signal?.aborted) { clearInterval(timer); resolve(); } });
+      void attempt(changed, current).catch((error: unknown) => { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); }).finally(() => { busy = false; if (options.signal?.aborted) { clearInterval(timer); resolve(); } });
     }, POLL_MS);
     const stop = (): void => { clearInterval(timer); if (!busy) resolve(); };
     if (options.signal?.aborted) stop();

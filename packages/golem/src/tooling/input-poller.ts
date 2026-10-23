@@ -4,6 +4,8 @@ import { hasErrorCode, isInsideDirectory } from './generator-api.js';
 
 /** The signature of a path that does not exist. */
 const MISSING = 'missing';
+/** The folder golem keeps its own state in, which is never an input folder. */
+const GOLEM_DIRECTORY = '.golem';
 
 /** Content signature of a watched path: `missing`, `directory` (a directory's mtime also moves on output writes), or mtime, ctime and size. */
 export function signature(filename: string): string {
@@ -50,14 +52,14 @@ function isIgnoredDirectory(name: string): boolean {
   return name.startsWith('.') || name === 'node_modules';
 }
 
-/** The names in a folder and its subfolders, or undefined when it cannot be read. */
+/** The names in a folder and its subfolders, or undefined when the folder does not exist. Any other failure (a permission, too many open files) is the loop's to report. */
 function readFolder(directory: string): { readonly names: string[]; readonly directories: string[] } | undefined {
   let entries: fs.Dirent[];
   try {
     entries = fs.readdirSync(directory, { withFileTypes: true });
-  } catch {
-    // A folder that is gone, or that cannot be read, has no names: its names count as removed.
-    return undefined;
+  } catch (error) {
+    if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR')) return undefined;
+    throw error;
   }
   const names: string[] = [];
   const directories: string[] = [];
@@ -69,11 +71,12 @@ function readFolder(directory: string): { readonly names: string[]; readonly dir
   return { names: names.sort(), directories };
 }
 
-/** The folders from the input's own up to the root, without those under `node_modules` or a hidden folder. */
+/** The folders from the input's own up to the root, without those under `node_modules` or the root's `.golem`. */
 function foldersAbove(root: string, input: string): string[] {
   const found: string[] = [];
   for (let directory = path.dirname(input); isInsideDirectory(root, directory); directory = path.dirname(directory)) {
-    if (path.relative(root, directory).split(path.sep).some(isIgnoredDirectory)) break;
+    const [first, ...rest] = path.relative(root, directory).split(path.sep);
+    if (first === GOLEM_DIRECTORY || [first, ...rest].includes('node_modules')) break;
     found.push(directory);
   }
   return found;
@@ -91,13 +94,36 @@ function watchedDirectories(root: string, inputs: readonly string[], outsideDire
   return directories;
 }
 
-/** The directories the loop writes, and the directories between the root and those: names that come and go with its own runs. */
-export function ownDirectories(root: string, outputs: ReadonlySet<string>): Set<string> {
-  const own = new Set<string>();
-  for (const output of outputs) {
-    for (let directory = output; isInsideDirectory(root, directory) && directory !== root; directory = path.dirname(directory)) own.add(directory);
+function pathKey(filename: string): string {
+  const resolved = path.resolve(filename);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+/**
+ * Owned outputs and every directory above them, so an input that is an
+ * output or contains one is recognized with one lookup per input.
+ */
+export class OwnedOutputIndex {
+  private readonly covered = new Set<string>();
+
+  constructor(filenames: Iterable<string> = []) {
+    for (const filename of filenames) this.add(filename);
   }
-  return own;
+
+  add(filename: string): void {
+    let current = pathKey(filename);
+    while (!this.covered.has(current)) {
+      this.covered.add(current);
+      const parent = path.dirname(current);
+      if (parent === current) break;
+      current = parent;
+    }
+  }
+
+  /** Whether the input is an owned output or a directory containing one. */
+  covers(input: string): boolean {
+    return this.covered.has(pathKey(input));
+  }
 }
 
 /**
@@ -203,7 +229,7 @@ export class RunBaseline {
   }
 
   private recordFolder(directory: string): void {
-    const listed = readFolder(directory);
-    if (listed !== undefined) this.firstFolders.set(directory, listed.names);
+    // A folder that does not exist yet had no names: every name it has later is new.
+    this.firstFolders.set(directory, readFolder(directory)?.names ?? []);
   }
 }

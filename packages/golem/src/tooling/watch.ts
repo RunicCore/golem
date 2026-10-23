@@ -1,7 +1,8 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemConfig } from './config.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, isInsideDirectory, suffixPattern } from './generator-api.js';
-import { changedPaths, InputPoller, RunBaseline } from './input-poller.js';
+import { changedPaths, InputPoller, OwnedOutputIndex, RunBaseline } from './input-poller.js';
 import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, PipelineState } from './pipeline.js';
 
@@ -14,42 +15,9 @@ function sourcePatterns(config: GolemConfig | undefined): readonly { readonly ki
   });
 }
 
-function pathKey(filename: string): string {
-  const resolved = path.resolve(filename);
-  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-}
-
-/**
- * Owned outputs and every directory above them, so an input that is an
- * output or contains one is recognized with one lookup per input.
- */
-export class OwnedOutputIndex {
-  private readonly covered = new Set<string>();
-
-  constructor(filenames: Iterable<string> = []) {
-    for (const filename of filenames) this.add(filename);
-  }
-
-  add(filename: string): void {
-    let current = pathKey(filename);
-    while (!this.covered.has(current)) {
-      this.covered.add(current);
-      const parent = path.dirname(current);
-      if (parent === current) break;
-      current = parent;
-    }
-  }
-
-  /** Whether the input is an owned output or a directory containing one. */
-  covers(input: string): boolean {
-    return this.covered.has(pathKey(input));
-  }
-}
-
-/** The folder of a source outside the root, which a source added beside it joins; undefined for any other input. */
-function outsideSourceFolder(root: string, sources: ReturnType<typeof sourcePatterns>, input: string): string | undefined {
-  if (isInsideDirectory(root, input) || input.split(path.sep).includes('node_modules')) return undefined;
-  return sources.some(source => source.pattern.test(path.basename(input))) ? path.dirname(input) : undefined;
+/** The folder of an input outside the root, which a source added beside it joins; undefined for an input inside the root or under `node_modules`. */
+function outsideFolder(root: string, input: string): string | undefined {
+  return isInsideDirectory(root, input) || input.split(path.sep).includes('node_modules') ? undefined : path.dirname(input);
 }
 
 /** What one watch polls between two runs. */
@@ -108,8 +76,8 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
     const outputs = (config?.jobs ?? []).flatMap(job => job.kind === 'openapi' || job.kind === 'controllers' ? [job.options.output] : []);
     const outsideDirectories = new Set<string>();
     for (const input of kinds.keys()) {
-      const folder = outsideSourceFolder(root, sources, input);
-      if (folder !== undefined) outsideDirectories.add(folder);
+      const folder = outsideFolder(root, input);
+      if (folder !== undefined && fs.existsSync(input)) outsideDirectories.add(folder);
     }
     const poller = new InputPoller(kinds.keys(), {
       root, outsideDirectories, descend,
@@ -146,7 +114,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
           onInput: (input, kind) => {
             latestAttempt.set(input, strongestInputKind(latestAttempt.get(input), kind));
             baseline.observe(input);
-            const folder = outsideSourceFolder(watched.root, watched.sources, input);
+            const folder = outsideFolder(watched.root, input);
             if (folder !== undefined) baseline.observeFolder(folder);
           },
           onOwned: filenames => { for (const filename of filenames) owned.add(filename); },

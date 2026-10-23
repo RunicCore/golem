@@ -6,7 +6,7 @@ import path from 'node:path';
 import { runPipeline, watchPipeline } from '#golem/cli';
 import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
-import { OwnedOutputIndex } from '#golem/watch';
+import { OwnedOutputIndex } from '#golem/input-poller';
 import { workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
 import { until } from './support/watch-wait.js';
@@ -298,6 +298,26 @@ for (const [way, include] of [['outside the root', '../shared/**/*.ts'], ['behin
     }
   });
 }
+
+test('watch generates a new model file in a shared folder that holds only a helper so far', async (t: TestContext) => {
+  // protects: T-308 an outside folder is polled for every input in it, not only for a model
+  const { root, config } = sharedModelFixture(t, '../shared/**/*.ts');
+  fs.rmSync(path.join(root, 'shared/money.model.ts'));
+  fs.mkdirSync(path.join(root, 'shared/billing'));
+  fs.writeFileSync(path.join(root, 'shared/billing/rules.ts'), 'export type Rate = number;\n');
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  try {
+    await until(() => runs() === 1, () => `initial generation (errors=${errors.map(String).join('; ')})`);
+    fs.writeFileSync(path.join(root, 'shared/billing/invoice.model.ts'), newModel('Invoice'));
+    const companion = path.join(root, 'app/src/generated/models/shared/billing/invoice.model.generated.ts');
+    await until(() => fs.existsSync(companion), () => `the model beside the helper is generated (errors=${errors.map(String).join('; ')})`);
+  } finally {
+    stop();
+  }
+  assert.deepEqual(errors, []);
+});
 
 test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
