@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitepress';
 import { stageDocsPublicAssets } from '../../scripts/docs-examples.js';
+import { buildBenchmarkSiteProjection } from '../../scripts/benchmark/site-projection.js';
 import { buildSupportProjection } from '../../scripts/support-projection.js';
 import { readWorkspaceReleaseVersion } from '../../scripts/release-version.js';
 import { NAV, SIDEBAR } from './sidebar.js';
@@ -46,10 +47,12 @@ export default defineConfig({
     },
   },
   vite: {
-    // Only this consumer projection enters the browser bundle. The source
-    // registry also contains evidence and workspace paths and stays server-side.
+    // Only these consumer projections enter the browser bundle. The source
+    // registry also contains evidence and workspace paths and stays server-side;
+    // the benchmark results file holds every library and stays internal.
     define: {
       __GOLEM_SUPPORT_PROJECTION__: JSON.stringify(buildSupportProjection()),
+      __GOLEM_BENCHMARK_PROJECTION__: JSON.stringify(buildBenchmarkSiteProjection(workspaceRoot)),
     },
     publicDir: stageDocsPublicAssets(workspaceRoot),
     build: {

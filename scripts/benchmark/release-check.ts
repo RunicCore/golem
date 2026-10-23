@@ -3,15 +3,13 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:
 import { loadavg } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BENCH_ADAPTERS, CONTROL_ID, type AdapterId, type PayloadId } from './cases.js';
+import { CONTROL_ID, GOLEM_ADAPTERS, type AdapterId, type PayloadId } from './cases.js';
 import { prepareProjects, root } from './project.js';
 import { environment, gitState, summarize, writeFilesTogether, type BatchSample, type MeasuredCase, type Settings } from './results.js';
 import { adapterRounds, BenchmarkUsageError, measureAdapter, parseRunArguments, planRun, verifyAdapter } from './run.js';
 import { formatReleaseRows, formatReleaseVerdict, releaseBand, releaseVerdict, type ReleasePair, type ReleaseTiming } from './tables.js';
 
 const USAGE = 'Usage: npm run bench:release -- --base <git ref> [--adapters <id>,<id>] [--payloads <id>,<id>]';
-/** The release check times golem against golem; the other libraries have no base. */
-const GOLEM_ADAPTERS: readonly AdapterId[] = BENCH_ADAPTERS.filter(a => a.library === '@exprtlabs/golem').map(a => a.id);
 const releaseDirectory = path.join(root, '.cache/benchmark/release');
 const BUILT_MARK = '.release-built';
 /**

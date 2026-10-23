@@ -4,7 +4,6 @@ import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import { Checkout, CheckoutPlain, LineItem, PlainLineItem, PlainMoney, SdkMoney } from './features-class-transformer.models.js';
 import { assertFeatureWire, checkoutInput, checkoutPlainInput, featureComparison } from './payloads.js';
 
-// #region calls
 const toModel = (value: unknown): Checkout => plainToInstance(Checkout, value);
 const toPlain = (model: Checkout): unknown => instanceToPlain(model);
 
@@ -17,7 +16,6 @@ export async function createClassTransformerFeatureFixtures(adapter: Adapter): P
     'model-to-object': () => toPlain(model),
     'text-to-model': () => toModel(JSON.parse(input.text)),
     'model-to-text': () => JSON.stringify(toPlain(model)),
-// #endregion calls
   }, async () => {
     const original = structuredClone(input.payload);
     const fromObject = toModel(input.payload);
@@ -49,11 +47,9 @@ function checkModel(checkout: Checkout): void {
 /** The checkout without conversion: class-transformer builds the nested instances and keeps the strings. */
 function checkoutPlainFixture(): ComparisonFixture {
   const input = checkoutPlainInput();
-  // #region checkout-plain-calls
   const toModel = (value: unknown): CheckoutPlain => plainToInstance(CheckoutPlain, value);
   const toPlain = (value: CheckoutPlain): unknown => instanceToPlain(value);
   const model = toModel(input.payload);
-  // #endregion checkout-plain-calls
   return featureComparison(input.name, input.payload, {
     'object-to-model': () => toModel(input.payload),
     'model-to-object': () => toPlain(model),

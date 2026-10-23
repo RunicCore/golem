@@ -1,7 +1,6 @@
 import { Transform, Type } from 'class-transformer';
 import 'reflect-metadata';
 
-// #region checkout
 export class LineItem {
   sku!: string;
   quantity!: number;
@@ -74,9 +73,7 @@ export class Checkout {
 
   memo?: string;
 }
-// #endregion checkout
 
-// #region checkout-plain
 // Dates stay date-time strings, and nothing converts.
 export class PlainLineItem {
   sku!: string;
@@ -142,4 +139,3 @@ export class CheckoutPlain {
 
   memo?: string;
 }
-// #endregion checkout-plain

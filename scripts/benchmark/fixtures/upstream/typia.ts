@@ -31,7 +31,6 @@ interface TypiaFunctions {
   readonly is: (value: unknown) => boolean;
 }
 
-// #region calls
 // Exact variants: unknown properties are rejected, as Golem and Zod do.
 function createFunctions(shape: 'simple' | 'constrained' | 'collection'): TypiaFunctions {
   switch (shape) {
@@ -52,7 +51,6 @@ function createFunctions(shape: 'simple' | 'constrained' | 'collection'): TypiaF
     }
   }
 }
-// #endregion calls
 
 interface TypiaFunctionTable {
   readonly simple: TypiaFunctions;
@@ -123,7 +121,6 @@ function verifyChecked(input: FixtureInput, model: TypiaModel, functions: TypiaF
 /** The checkout without conversion: Typia checks every rule and keeps the wire value as the model. */
 function checkoutPlainFixture(): ComparisonFixture {
   const input = checkoutPlainInput();
-  // #region checkout-plain-calls
   // Exact, like the other variants: unknown properties are rejected.
   const assertEquals = typia.createAssertEquals<CheckoutPlain>();
   const stringify = typia.json.createStringify<CheckoutPlain>();
@@ -131,7 +128,6 @@ function checkoutPlainFixture(): ComparisonFixture {
   const parse = (text: string): CheckoutPlain => assertEquals(JSON.parse(text));
   const serialize = (value: unknown): string => stringify(assertEquals(value));
   const model = parse(input.text);
-  // #endregion checkout-plain-calls
   return {
     name: input.name,
     payload: input.payload,

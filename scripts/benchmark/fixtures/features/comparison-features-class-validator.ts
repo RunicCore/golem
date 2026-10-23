@@ -10,7 +10,6 @@ function isValidationFailure(error: unknown): boolean {
   return Array.isArray(error) && error.length > 0 && error.every(item => item instanceof ValidationError) && error.some(hasConstraint);
 }
 
-// #region calls
 async function toModel(value: unknown): Promise<Checkout> {
   const model = plainToInstance(Checkout, value);
   await validateOrReject(model);
@@ -35,7 +34,6 @@ export async function createClassValidatorFeatureFixtures(adapter: Adapter): Pro
       await validateOrReject(model);
       return true;
     },
-// #endregion calls
   }, async () => {
     const original = structuredClone(input.payload);
     const checkout = await toModel(input.payload);
@@ -62,7 +60,6 @@ export async function createClassValidatorFeatureFixtures(adapter: Adapter): Pro
  */
 async function checkoutPlainFixture(): Promise<ComparisonFixture> {
   const input = checkoutPlainInput();
-  // #region checkout-plain-calls
   const toModel = async (value: unknown): Promise<CheckoutPlain> => {
     const checkout = plainToInstance(CheckoutPlain, value);
     await validateOrReject(checkout);
@@ -74,7 +71,6 @@ async function checkoutPlainFixture(): Promise<ComparisonFixture> {
   };
   const model = plainToInstance(CheckoutPlain, input.payload);
   await validateOrReject(model);
-  // #endregion checkout-plain-calls
   return featureComparison(input.name, input.payload, {
     'object-to-model': () => toModel(input.payload),
     'model-to-object': () => toPlain(model),

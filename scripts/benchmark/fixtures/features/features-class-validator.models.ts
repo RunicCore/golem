@@ -22,7 +22,6 @@ import {
 } from 'class-validator';
 import 'reflect-metadata';
 
-// #region checkout
 export class LineItem {
   @IsString()
   @MinLength(3)
@@ -157,9 +156,7 @@ export class Checkout {
   @IsString()
   memo?: string;
 }
-// #endregion checkout
 
-// #region checkout-plain
 // Dates stay date-time strings, and nothing converts.
 export class PlainLineItem {
   @IsString()
@@ -268,4 +265,3 @@ export class CheckoutPlain {
   @IsString()
   memo?: string;
 }
-// #endregion checkout-plain

@@ -1,6 +1,5 @@
 import type { tags } from 'typia';
 
-// #region simple
 export interface Point3D {
   x: number;
   y: number;
@@ -13,7 +12,6 @@ export interface ObjectSimple {
   rotate: Point3D;
   pivot: Point3D;
 }
-// #endregion simple
 
 export interface Account {
   id: number;
@@ -48,7 +46,6 @@ export interface Member {
   authorized: boolean;
 }
 
-// #region array
 export interface Timestamp {
   time: number;
   zone: number;
@@ -81,10 +78,8 @@ export interface Company {
 export interface Collection {
   data: Company[];
 }
-// #endregion array
 
 /** The same nested fixture with Typia's native constraint tags. */
-// #region nested
 export interface ConstrainedTimestamp {
   time: number;
   zone: number;
@@ -133,9 +128,7 @@ export interface ConstrainedObjectHierarchical {
   ip: [number, number, number, number];
   created_at: ConstrainedTimestamp;
 }
-// #endregion nested
 
-// #region checkout-plain
 export interface CheckoutPlain {
   money: { amount: number & tags.Minimum<0>; currency: string & tags.Pattern<'^[A-Z]{3}$'> };
   note: string & tags.MinLength<1>;
@@ -150,4 +143,3 @@ export interface CheckoutPlain {
   bag?: { lane: string };
   memo?: string;
 }
-// #endregion checkout-plain

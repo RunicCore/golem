@@ -4,16 +4,13 @@ import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import { checkoutPlainInput, checkoutPlainInvalidWires, consumeFeatureValue } from './payloads.js';
 import { consumeValue, createFixtureInputs, invalidIpLength, invalidVariants, missingNullable, nullableVariant, unknownPropertyVariants, type FixtureInput } from './shared.js';
 
-// #region simple
 // `object` lists every property as required and rejects unknown ones, as Golem, Typia and Zod do.
 const object = (properties: Record<string, SchemaObject>): SchemaObject =>
   ({ type: 'object', properties, required: Object.keys(properties), additionalProperties: false });
 const nullable = (schema: SchemaObject): SchemaObject => ({ anyOf: [schema, { type: 'null' }] });
 const point = object({ x: { type: 'number' }, y: { type: 'number' }, z: { type: 'number' } });
 const objectSimple = object({ scale: point, position: point, rotate: point, pivot: point });
-// #endregion simple
 
-// #region nested
 // `object` and `nullable` are declared with the Simple object schema.
 const int1: SchemaObject = { type: 'integer', minimum: 1 };
 const timestamp = object({ time: { type: 'number' }, zone: { type: 'number' } });
@@ -33,9 +30,7 @@ const constrainedHierarchical = object({
   href: { type: 'string', minLength: 8, pattern: '^https://' }, referrer: { type: 'string', minLength: 8, pattern: '^https://' },
   ip: { type: 'array', items: { type: 'number' }, minItems: 4, maxItems: 4 }, created_at: timestamp,
 });
-// #endregion nested
 
-// #region array
 // `object` is declared with the Simple object schema, `timestamp` with the Nested object schema.
 const employee = object({ id: { type: 'number' }, name: { type: 'string' }, age: { type: 'number' }, grade: { type: 'number' }, employed_at: timestamp });
 const department = object({
@@ -47,9 +42,7 @@ const company = object({
   departments: { type: 'array', items: department },
 });
 const collection = object({ data: { type: 'array', items: company } });
-// #endregion array
 
-// #region checkout-plain
 // `object` is declared with the Simple object schema. Dates stay date-time strings, and nothing converts.
 const dateTime: SchemaObject = { type: 'string', format: 'date-time' };
 const checkoutPlain: SchemaObject = {
@@ -69,7 +62,6 @@ const checkoutPlain: SchemaObject = {
   }),
   required: ['money', 'note', 'code', 'when', 'items', 'primary', 'flags', 'channel', 'span', 'hold'],
 };
-// #endregion checkout-plain
 
 // Ajv has no built-in date-time format: it takes a format as a function or an expression (its documented `formats` option).
 const dateTimeFormat = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/i;
@@ -95,7 +87,6 @@ function fixture(input: FixtureInput): ComparisonFixture {
   return {
     name: input.name,
     payload: input.payload,
-    // #region calls
     operations: {
       'text-to-model': () => {
         const value: unknown = JSON.parse(input.text);
@@ -104,7 +95,6 @@ function fixture(input: FixtureInput): ComparisonFixture {
       'model-to-text': () => validate(model) ? JSON.stringify(model) : fail(),
       validate: () => validate(model),
     },
-    // #endregion calls
     consume: consumeValue,
     verify: async () => verifyChecked(input, validate, parse, stringify, model),
   };
@@ -140,7 +130,6 @@ function checkoutPlainFixture(): ComparisonFixture {
   return {
     name: input.name,
     payload: input.payload,
-    // #region checkout-plain-calls
     operations: {
       'text-to-model': () => {
         const value: unknown = JSON.parse(input.text);
@@ -149,7 +138,6 @@ function checkoutPlainFixture(): ComparisonFixture {
       'model-to-text': () => validate(model) ? JSON.stringify(model) : fail(),
       validate: () => validate(model),
     },
-    // #endregion checkout-plain-calls
     consume: consumeFeatureValue,
     verify: async () => {
       const original = structuredClone(input.payload);

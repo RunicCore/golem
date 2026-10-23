@@ -21,8 +21,6 @@ export interface OperationSpec<Id extends OperationId = OperationId> { readonly 
 export interface GroupSpec {
   readonly id: GroupId; readonly label: string; readonly description: string;
   readonly operations: Readonly<Record<CompareOperationId, readonly AdapterId[]>>;
-  /** What each operation does in this group, shown beside the operation name. */
-  readonly operationDescriptions: Readonly<Partial<Record<CompareOperationId, string>>>;
 }
 /**
  * `group` is the compare group of the adapter; an adapter with no group is in no compare table and only the cost table times it.
@@ -37,7 +35,7 @@ export const PAYLOADS: readonly PayloadSpec[] = [
   { id: 'nested', fixture: 'ObjectHierarchical-Constrained', label: 'Nested object', description: 'A nested API record with integer, length, pattern and array-size constraints.', sourceFile: 'scripts/benchmark/fixtures/upstream/shared.ts' },
   { id: 'array', fixture: 'ArrayHierarchical-1000', label: 'Large array', description: 'One company, 10 departments, 1,000 employees.', sourceFile: 'scripts/benchmark/fixtures/upstream/shared.ts' },
   { id: 'checkout', fixture: 'sdk-extend', label: 'Checkout', description: 'Money from a generated SDK type, hex code, dates, nested line items, flags, a union and optional fields, with value conversion.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
-  { id: 'checkout-plain', fixture: 'checkout-plain', label: 'Checkout, no conversion', description: 'The checkout fields with dates as date-time strings, no value conversion and no custom rule, so every library runs it. It keeps the union, the tuple, the map and the optional and nullable fields.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
+  { id: 'checkout-plain', fixture: 'checkout-plain', label: 'Checkout, no conversion', description: 'The checkout fields with dates as date-time strings, no value conversion and no custom rule. It keeps the union, the tuple, the map and the optional and nullable fields.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
 ];
 
 /**
@@ -69,14 +67,11 @@ const F = 'scripts/benchmark/fixtures/upstream';
 /** Libraries are compared only within a group, where every adapter does the same job. */
 export const GROUPS: readonly GroupSpec[] = [
   { id: 'plain', label: 'Plain objects, validated', description: 'JSON text to validated plain objects and back. Golem uses an IObject declaration.',
-    operations: { parse: ['golem-object', 'typia', 'zod', 'ajv'], stringify: ['golem-object', 'typia', 'zod', 'ajv'], validate: ['golem-object', 'typia', 'zod', 'ajv'] },
-    operationDescriptions: { parse: 'JSON text to a checked plain object', stringify: 'plain object, checked, to JSON text', validate: 'check a plain object' } },
+    operations: { parse: ['golem-object', 'typia', 'zod', 'ajv'], stringify: ['golem-object', 'typia', 'zod', 'ajv'], validate: ['golem-object', 'typia', 'zod', 'ajv'] } },
   { id: 'classes', label: 'Class instances', description: 'JSON text to class instances and back, without validation. Golem uses an IModel declaration.',
-    operations: { parse: ['golem', 'class-transformer'], stringify: ['golem', 'class-transformer'], validate: [] },
-    operationDescriptions: { parse: 'JSON text to instances of your classes', stringify: 'instances of your classes to JSON text' } },
+    operations: { parse: ['golem', 'class-transformer'], stringify: ['golem', 'class-transformer'], validate: [] } },
   { id: 'validated-classes', label: 'Validated class instances', description: 'Class instances checked against their constraints.',
-    operations: { parse: ['golem-validated', 'class-validator'], stringify: ['golem-validated', 'class-validator'], validate: ['golem-validated', 'class-validator'] },
-    operationDescriptions: { parse: 'JSON text to checked instances of your classes', stringify: 'instances, checked, to JSON text', validate: 'check an instance' } },
+    operations: { parse: ['golem-validated', 'class-validator'], stringify: ['golem-validated', 'class-validator'], validate: ['golem-validated', 'class-validator'] } },
 ];
 
 export const BENCH_ADAPTERS: readonly AdapterSpec[] = [
@@ -91,6 +86,9 @@ export const BENCH_ADAPTERS: readonly AdapterSpec[] = [
   { id: 'golem-validated', fixtureAdapter: 'golem-validated', project: 'validating', group: 'validated-classes', label: 'Golem (IModel, validated)', library: '@exprtlabs/golem', checked: true, sourceFile: `${F}/golem.ts` },
   { id: 'class-validator', fixtureAdapter: 'class-validator', project: 'plain', group: 'validated-classes', label: 'class-transformer + class-validator', library: 'class-validator', checked: true, lessWork: 'does not reject unknown properties', sourceFile: `${F}/class-validator.ts` },
 ];
+
+/** The golem adapters. The site and the release check show and time these only; no other library has a number there. */
+export const GOLEM_ADAPTERS: readonly AdapterId[] = BENCH_ADAPTERS.filter(a => a.library === '@exprtlabs/golem').map(a => a.id);
 
 const noConversion = (library: string): string => `${library} checks every rule but does not convert values, so the hex code and the dates would stay strings.`;
 const UNSUPPORTED: readonly CaseSpec[] = (['typia', 'ajv'] as const).flatMap(adapter => BENCH_OPERATIONS.map(o =>

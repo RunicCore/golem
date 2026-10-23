@@ -1,3 +1,9 @@
+/**
+ * The committed file of the full run, every library included. It lives beside the benchmark scripts and not under docs/,
+ * so nothing serves it: the site gets only the golem projection that `site-projection.ts` builds from it.
+ */
+export const FULL_RESULTS_FILE = 'scripts/benchmark/results.json';
+
 export interface OpsPerSec { readonly median: number; readonly min: number; readonly max: number }
 
 export interface ResultCase {
@@ -10,7 +16,7 @@ export interface ResultCase {
 }
 
 export interface BenchmarkResults {
-  /** 3 requires `cost`, `noise` and `invalid`. A file of schema 2 (measured before them) still passes `isBenchmarkResults`, so the page keeps working until a full run writes schema 3. */
+  /** 3 requires `cost`, `noise` and `invalid`. A file of schema 2 (measured before them) still passes `isBenchmarkResults`. */
   readonly schema: 2 | 3;
   readonly measuredAt: string;
   readonly git: { readonly sha: string; readonly dirty: boolean };
@@ -73,7 +79,7 @@ function hasMetadata(value: Record<string, unknown>): boolean {
     && isObject(settings) && [settings.warmupMs, settings.batchMs, settings.batches, settings.rounds ?? 1].every(isCount);
 }
 
-/** Structural check used by the docs page before trusting a file. */
+/** Structural check used before trusting a results file. */
 export function isBenchmarkResults(value: unknown): value is BenchmarkResults {
   if (!isObject(value) || (value.schema !== 2 && value.schema !== 3) || !hasMetadata(value)) return false;
   if (value.schema === 3 && (value.cost === undefined || value.noise === undefined || value.invalid === undefined)) return false;

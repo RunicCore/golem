@@ -3,6 +3,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { BENCH_SERIES_COUNT } from '../scripts/benchmark/cases.js';
+import { buildBenchmarkSiteProjection } from '../scripts/benchmark/site-projection.js';
 import { PAGE_LINKS } from '../docs/.vitepress/sidebar.js';
 
 const root = path.resolve(import.meta.dirname, '../..');
@@ -96,46 +97,39 @@ test('home stage, how-it-works text (4.5:1) and benchmark series colors (3:1) ar
   }
 });
 
-test('no two libraries of one benchmark group share a series color', () => {
-  const results = JSON.parse(readFileSync(path.join(docs, 'public/benchmarks/results.json'), 'utf8')) as { adapters: { group: string }[] };
-  const largest = Math.max(...[...new Set(results.adapters.map(a => a.group))].map(group => results.adapters.filter(a => a.group === group).length));
-  assert.ok(largest <= BENCH_SERIES_COUNT, `a group has ${largest} libraries and the page defines ${BENCH_SERIES_COUNT} series colors`);
+test('each golem setup on the benchmarks page has its own series color', () => {
+  const { columns } = buildBenchmarkSiteProjection(root);
+  assert.ok(columns.length <= BENCH_SERIES_COUNT, `the page shows ${columns.length} golem setups and defines ${BENCH_SERIES_COUNT} series colors`);
 });
 
 test('the guide index mounts the How it works illustration', () => {
   assert.match(readFileSync(path.join(docs, 'guide/index.md'), 'utf8'), /## How it works\n\n<HowItWorks \/>\n/);
 });
 
-test('the benchmark page is disclaimed, grouped by tabs, and explained in markdown', () => {
+test('the benchmark page is disclaimed, shown by tabs, and explained in markdown', () => {
   const page = readFileSync(path.join(docs, 'benchmarks.md'), 'utf8');
   assert.match(page, /Benchmarks are for reference purposes only\./);
-  for (const group of ['plain', 'classes', 'validated-classes']) assert.match(page, new RegExp(`<template #${group}>`), `explanation for ${group}`);
+  assert.match(page, /<template #speed>/, 'explanation of the speed table');
   const chart = readFileSync(path.join(docs, '.vitepress/theme/BenchmarkChart.vue'), 'utf8');
   assert.match(chart, /role="tablist"/);
   assert.match(chart, /role="tab"/);
-  assert.match(chart, /<slot :name="group\.id"/, 'group explanations come from the page');
+  assert.match(chart, /<slot name="speed"/, 'the explanation comes from the page');
 });
 
-test('each benchmark group shows, per payload, the declarations and timed calls of every library it times', () => {
+// protects: R-30 the page shows golem's own declarations and timed calls, for each payload it shows numbers for
+test('the benchmarks page shows, per payload, the declarations and timed calls of each golem setup it times', () => {
   const page = readFileSync(path.join(docs, 'benchmarks.md'), 'utf8');
-  const results = JSON.parse(readFileSync(path.join(docs, 'public/benchmarks/results.json'), 'utf8')) as {
-    groups: { id: string }[]; payloads: { id: string }[]; adapters: { id: string; group: string; label: string }[];
-    cases: { payload: string; adapter: string; opsPerSec?: unknown }[];
-  };
+  const { columns, speeds } = buildBenchmarkSiteProjection(root);
   const chart = readFileSync(path.join(docs, '.vitepress/theme/BenchmarkChart.vue'), 'utf8');
-  assert.match(chart, /<slot :name="`\$\{group\.id\}-\$\{p\.id\}-code`"/, 'the chart renders one code slot per group and payload');
-  for (const group of results.groups) {
-    for (const payload of results.payloads) {
-      const start = page.indexOf(`<template #${group.id}-${payload.id}-code>`);
-      assert.ok(start >= 0, `code for ${group.id}/${payload.id}`);
-      const block = page.slice(start, page.indexOf('</template>', start));
-      // Golem IModel adapters of a group share one declaration and one call snippet.
-      const timed = results.adapters.filter(a => a.group === group.id
-        && results.cases.some(c => c.adapter === a.id && c.payload === payload.id && c.opsPerSec !== undefined));
-      const labels = new Set(timed.map(a => a.label.startsWith('Golem (IModel') ? 'Golem (IModel)' : a.label));
-      for (const label of labels) {
-        assert.equal((block.match(new RegExp(`\\[${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]`, 'g')) ?? []).length, 2, `${group.id}/${payload.id}: declarations and calls for ${label}`);
-      }
+  assert.match(chart, /<slot :name="`\$\{payload\.id\}-code`"/, 'the chart renders one code slot per payload');
+  for (const { payload, rows } of speeds) {
+    const start = page.indexOf(`<template #${payload.id}-code>`);
+    assert.ok(start >= 0, `code for ${payload.id}`);
+    const block = page.slice(start, page.indexOf('</template>', start));
+    // The IModel setups share one declaration and one call snippet.
+    const timed = columns.filter((_, index) => rows.some(row => row.cells[index] !== null));
+    for (const label of new Set(timed.map(column => column.label.startsWith('Golem (IModel') ? 'Golem (IModel)' : column.label))) {
+      assert.equal(block.split(`[${label}]`).length - 1, 2, `${payload.id}: declarations and calls for ${label}`);
     }
   }
   for (const [, file, region] of page.matchAll(/^<<< @\/(\S+?)#(\S+)/gm)) {

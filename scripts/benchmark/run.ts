@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { adapterSpec, BENCH_ADAPTERS, BENCH_OPERATIONS, ALL_PAYLOADS, CASES, CONTROL_ID, COST_OPERATIONS, INVALID_CASES, PAYLOADS, operationSpec, payloadSpec, timedCases, type AdapterId, type AdapterSpec, type CaseSpec, type PayloadId, type PayloadSpec, type ProjectKind } from './cases.js';
 import { prepareProjects, root } from './project.js';
-import type { BenchmarkResults } from './results-schema.js';
+import { FULL_RESULTS_FILE, type BenchmarkResults } from './results-schema.js';
 import { buildResults, environment, gitState, packageVersions, summarize, writeFilesTogether, type MeasuredCase, type Settings } from './results.js';
 import { compareTable, costTable, formatCompareTable, formatCostTable } from './tables.js';
 import { parseWorkerOutput, type WorkerJob, type WorkerOutput } from './worker-protocol.js';
@@ -203,7 +203,7 @@ const USAGE = 'Usage: npm run bench -- [--adapters <id>,<id>] [--payloads <id>,<
 
 /**
  * Reads `--adapters a,b` and `--payloads a,b`, each also as `--name=a,b`. Any other argument, or a name that no adapter
- * or payload has, is a usage error. A run with a filter writes under `.cache`, not to the published results.
+ * or payload has, is a usage error. A run with a filter writes under `.cache`, not to the committed results.
  */
 export function parseRunArguments(args: readonly string[]): { readonly adapters?: readonly AdapterId[]; readonly payloads?: readonly PayloadId[] } {
   const lists = new Map<string, string>();
@@ -222,10 +222,10 @@ export function parseRunArguments(args: readonly string[]): { readonly adapters?
   };
 }
 
-/** A run of some adapters or payloads must not replace the published results of all of them: it writes under `.cache`. */
+/** A run of some adapters or payloads must not replace the committed results of all of them: it writes under `.cache`. */
 export function outputFileOf(selection: ReturnType<typeof parseRunArguments>): string {
   const filtered = selection.adapters !== undefined || selection.payloads !== undefined;
-  return path.join(root, filtered ? '.cache/benchmark/results.json' : 'docs/public/benchmarks/results.json');
+  return path.join(root, filtered ? '.cache/benchmark/results.json' : FULL_RESULTS_FILE);
 }
 
 export function main(args: readonly string[] = process.argv.slice(2)): void {

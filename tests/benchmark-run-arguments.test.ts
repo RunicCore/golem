@@ -21,9 +21,9 @@ test('the benchmark refuses a payload no case has, and names the payloads it has
     (error: unknown) => error instanceof BenchmarkUsageError && error.message.startsWith('No payload named. Valid payloads: simple, nested, array, checkout'));
 });
 
-// protects: T-234 a filtered run never overwrites the published results
-test('a run with no filter writes the published results, and a run with any filter writes under .cache', () => {
-  assert.match(outputFileOf({}), /docs\/public\/benchmarks\/results\.json$/);
+// protects: T-234 a filtered run never overwrites the committed results
+test('a run with no filter writes the committed results, and a run with any filter writes under .cache', () => {
+  assert.match(outputFileOf({}), /scripts\/benchmark\/results\.json$/);
   assert.match(outputFileOf({ adapters: ['golem'] }), /\.cache\/benchmark\/results\.json$/);
   assert.match(outputFileOf({ payloads: ['simple'] }), /\.cache\/benchmark\/results\.json$/);
 });

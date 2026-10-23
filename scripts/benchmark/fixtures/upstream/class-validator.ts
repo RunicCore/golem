@@ -36,7 +36,6 @@ function isValidationFailure(error: unknown): boolean {
 
 type ValidatedModel = ObjectSimple | ConstrainedObjectHierarchical | Collection;
 
-// #region calls
 function transform(input: FixtureInput, value: unknown): ValidatedModel {
   switch (input.name) {
     case 'ObjectSimple': return plainToInstance(ObjectSimple, value);
@@ -60,7 +59,6 @@ async function toPlain(model: ValidatedModel): Promise<unknown> {
   await validateOrReject(model);
   return instanceToPlain(model);
 }
-// #endregion calls
 
 function assertNestedInstances(input: FixtureInput, value: ValidatedModel): void {
   switch (input.name) {
