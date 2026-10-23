@@ -526,9 +526,9 @@ import type { GolemProvider, ModelContext } from '@exprtlabs/golem/generator-api
 
 The contracts, `resolveProfile` and `GolemDiagnosticSeverity` for tools that embed a generator are in the [generator API](/reference/generator-api).
 
-Used by the generators: `discoverSources`, `compareText`, `isRecord`, `errorMessage`, `hasErrorCode`, `identifier`, `camelIdentifier`, `bindingName`, `propertyName`, `NameScope`, `assertPortableFilenames`, `assertUniquePublicExports`, `RESERVED_BINDING_NAMES`, `RESERVED_MODEL_MEMBERS`, `stableJson`, `stableValue`, `isInsideDirectory`.
+Used by the generators: `discoverSources`, `compareText`, `isRecord`, `errorMessage`, `hasErrorCode`, `identifier`, `camelIdentifier`, `bindingName`, `propertyName`, `NameScope`, `assertPortableFilenames`, `assertUniquePublicExports`, `RESERVED_BINDING_NAMES`, `RESERVED_MODEL_MEMBERS`, `stableJson`, `stableValue`, `isInsideDirectory`, `parseYamlFile`, `YamlFileError`.
 
-`stableJson(value)` returns indented JSON text with the keys sorted at every depth. `stableValue(value)` returns the same value as a copy with sorted keys. `isInsideDirectory(directory, filename)` is true when `filename` is `directory` or lies inside it.
+`stableJson(value)` returns indented JSON text with the keys sorted at every depth. `stableValue(value)` returns the same value as a copy with sorted keys. `isInsideDirectory(directory, filename)` is true when `filename` is `directory` or lies inside it. `parseYamlFile(text, filename, options?)` parses YAML text that came from `filename`. When the text is not valid YAML it throws a `YamlFileError` whose message starts with `<file>:<line>:<column>`, the file relative to the working directory, and whose `cause` is the parser's error.
 
 ## `@exprtlabs/golem/manifest` {#manifest}
 
