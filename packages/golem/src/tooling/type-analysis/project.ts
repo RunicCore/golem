@@ -617,6 +617,22 @@ export function createOverlayProgram(
   });
 }
 
+/** The files of the program that a model file can be: every file but the TypeScript libraries. Installed packages are included. */
+export function programFilenames(program: ts.Program): string[] {
+  return program.getSourceFiles()
+    .filter((sourceFile) => !program.isSourceFileDefaultLibrary(sourceFile))
+    .map((sourceFile) => sourceFile.fileName);
+}
+
+/**
+ * Stops with the compiler's own message when one of `files` has a syntax error. The analysis reads a broken type as any and would
+ * report RUNM1011 for it instead. `files` are the sources of one job, not every file of the program: a type error in any other file does not stop generation.
+ */
+export function assertNoSyntaxErrors(program: ts.Program, files: readonly string[], root: string): void {
+  const errors = files.flatMap((file) => program.getSyntacticDiagnostics(file));
+  if (errors.length > 0) throw new Error(formatDiagnostics(errors, root));
+}
+
 /** `unwritten` are the texts of program files that are not on disk yet, such as the companions of a run, by path. */
 export function formatDiagnostics(
   diagnostics: readonly ts.Diagnostic[],
