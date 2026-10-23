@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph, emitCodecDeclarationTable, codecPublicId } from '@exprtlabs/golem/internal/schema-graph';
-import { emitGraphStringify, identifier } from '@exprtlabs/golem/internal/emitter';
+import { emitGraphStringify, identifier, render } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import * as serde from '@exprtlabs/golem/serde';
@@ -55,7 +55,7 @@ test('schema graph interns nested objects once and stringify composes by call', 
   assert.equal(names.filter((name) => name === 'Money').length, 1);
   const moneyNode = [...graph.nodes.values()].find((node) => node.name === 'Money');
   assert.equal(moneyNode?.sameSchema, true);
-  const source = emitGraphStringify(graph);
+  const source = render(emitGraphStringify(graph));
   const paymentBody = source.slice(source.indexOf('function stringifyPayment'), source.indexOf('function stringify', source.indexOf('function stringifyPayment') + 1) === -1
     ? source.length
     : source.indexOf('\nfunction stringify', source.indexOf('function stringifyPayment') + 1));

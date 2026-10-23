@@ -102,9 +102,7 @@ import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView } from './m
 const TEMPORAL_CODECS = rt.temporal as unknown as Readonly<Record<string, Code>>;
 
 function temporalCodec(direction: 'deserialize' | 'serialize', id: string): Code {
-  const codec = TEMPORAL_CODECS[`${direction}${temporalCodecName(id)}`];
-  if (!codec) throw new Error(`Internal error: no temporal codec for ${id}.`);
-  return codec;
+  return TEMPORAL_CODECS[`${direction}${temporalCodecName(id)}`];
 }
 
 const TEMPORAL_SERDE = {
@@ -349,27 +347,25 @@ function modelToJSONCode(
   ));
 }
 
-/** The conversion as text, for the check that a schema converts. */
-export function modelFromJSONExpression(
+/** Builds the conversion of a schema and writes nothing: it throws when the schema does not convert. */
+export function checkModelFromJSON(
   schema: unknown,
   expression: string,
   definitions: ModelDefinitions,
   env: ModelResolveEnv,
   owner: string | CompositionSite,
-): string {
-  const context = checkContext();
-  return render(modelFromJSONCode(schema, identifier(expression), definitions, env, owner, context), context.names.table);
+): void {
+  modelFromJSONCode(schema, identifier(expression), definitions, env, owner, checkContext());
 }
 
-export function modelToJSONExpression(
+export function checkModelToJSON(
   schema: unknown,
   expression: string,
   definitions: ModelDefinitions,
   env: ModelResolveEnv,
   owner: string | CompositionSite,
-): string {
-  const context = checkContext();
-  return render(modelToJSONCode(schema, identifier(expression), definitions, env, owner, context), context.names.table);
+): void {
+  modelToJSONCode(schema, identifier(expression), definitions, env, owner, checkContext());
 }
 
 /**

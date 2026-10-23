@@ -9,7 +9,7 @@ import {
   stringifyJsonString,
 } from '@exprtlabs/golem/serde';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { emitGraphStringify } from '@exprtlabs/golem/internal/emitter';
+import { emitGraphStringify, render } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { instantiate, instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
@@ -90,7 +90,7 @@ test('generated stringify matches JSON.stringify for required, optional and arra
   graph.intern(point, 'Point3D');
   graph.intern(box, 'Box');
   graph.seal();
-  const source = emitGraphStringify(graph);
+  const source = render(emitGraphStringify(graph));
   assert.doesNotMatch(source, /if \(true\)/, 'budget: no unconditionally-true guard is emitted for a required field');
   const boxBody = source.slice(source.indexOf('function stringifyBox'));
   assert.match(boxBody, /stringifyPoint3D\(/, 'one stringify function per interned node: Box calls stringifyPoint3D instead of inlining scale');
@@ -167,7 +167,7 @@ test('nullable nested objects stringify both populated and null values', () => {
   graph.intern(account, 'Account');
   graph.intern(customer, 'Customer');
   graph.seal();
-  const source = emitGraphStringify(graph);
+  const source = render(emitGraphStringify(graph));
   const { stringifyCustomer } = instantiate(source);
   const present = { id: 101, account: { id: 601, code: 'customer-account-601' }, href: 'https://example.test/customers/101' };
   assert.equal(stringifyCustomer(present as never), JSON.stringify(present));
@@ -213,7 +213,7 @@ test('tagged generated-model unions stringify the selected interned branch', () 
   graph.intern(phone, 'Phone');
   graph.intern(book, 'ContactBook');
   graph.seal();
-  const source = emitGraphStringify(graph);
+  const source = render(emitGraphStringify(graph));
   const contactBookBody = source.slice(source.indexOf('function stringifyContactBook'));
   assert.match(contactBookBody, /stringifyEmail\(/, 'one stringify function per interned node: ContactBook calls stringifyEmail instead of inlining it');
   assert.match(contactBookBody, /stringifyPhone\(/, 'one stringify function per interned node: ContactBook calls stringifyPhone instead of inlining it');

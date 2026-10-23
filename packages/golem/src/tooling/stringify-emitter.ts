@@ -11,7 +11,7 @@ import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { modelName, requireComposedObject, type ModelBases } from './composition.js';
 import {
-  aliased, asObjectLiteral, bindInput, bindRead, code, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, join, literal, readShape, render, sameCode,
+  aliased, asObjectLiteral, bindInput, bindRead, code, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, join, literal, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
 import { rt, rtType } from './rt.js';
@@ -697,17 +697,8 @@ function emitObjectStringify(
   return stringifyFunction(header, [...inlineLocalLines(ctx), ...lines], guard, valueSlot);
 }
 
-/** The stringify function of a node, as the file's text: the entry point for a caller that is not Code yet. */
+/** The stringify function of a node. */
 export function emitStringifyFunction(
-  node: SchemaNode,
-  graph: SchemaGraph,
-  serde?: StringifySerdeResolver,
-  extra?: Partial<EmitCtx>,
-): string {
-  return render(stringifyCode(node, graph, serde, extra));
-}
-
-function stringifyCode(
   node: SchemaNode,
   graph: SchemaGraph,
   serde?: StringifySerdeResolver,
@@ -760,8 +751,9 @@ function stringifyCode(
   return stringifyFunction(header, [...inlineLocalLines(ctx), code`  return ${value};`], guard, valueSlot);
 }
 
-export function emitGraphStringify(graph: SchemaGraph, serde?: StringifySerdeResolver): string {
-  return graph.topo().map((node) => emitStringifyFunction(node, graph, serde)).join('\n');
+/** The stringify functions of every node of a graph, in dependency order. */
+export function emitGraphStringify(graph: SchemaGraph, serde?: StringifySerdeResolver): Code {
+  return join(graph.topo().map((node) => emitStringifyFunction(node, graph, serde)), code`\n`);
 }
 
 function asRecordCode(expression: Code): Code {
@@ -1905,7 +1897,7 @@ function emitNodeRuntime(
     if (imported) return code``;
     const id = literal(node.codecId);
     return rowsToText([
-      stringifyCode(node, moduleCtx.graph, moduleCtx.serde),
+      emitStringifyFunction(node, moduleCtx.graph, moduleCtx.serde),
       code`export function ${names.fromWire}(wire: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
       code`  return ${rt.serde.requireObjectCodec}(${id}).fromWireFormat(wire, options);`,
       code`}`,
@@ -1935,11 +1927,11 @@ function emitNodeRuntime(
   const coreId = identifier(`${stringifyName}Core`);
   const lenientId = identifier(`${stringifyName}Lenient`);
   const wireId = identifier(`${stringifyName}Wire`);
-  const stringifySrc = stringifyCode(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: !checkedCore, functionName: `${stringifyName}Core` });
-  const lenientCore = checkedCore ? stringifyCode(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Core` }) : stringifySrc;
+  const stringifySrc = emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: !checkedCore, functionName: `${stringifyName}Core` });
+  const lenientCore = checkedCore ? emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Core` }) : stringifySrc;
   const lenientStringify = sameCode(lenientCore, stringifySrc)
     ? undefined
-    : stringifyCode(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Lenient` });
+    : emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Lenient` });
   const fillId = identifier(fillFunctionName(node.id));
   const toWireCoreId = identifier(`${toWireFunctionName(node.id)}Core`);
   const validateId = identifier(validateFunctionName(node.id));
@@ -1980,7 +1972,7 @@ function emitNodeRuntime(
     : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encodedWireContext), inputOf(toWireValue));
   const exportsWire = isExported && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true);
   const wireStringifySrc = emitsValidatedWire
-    ? code`${stringifyCode(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true, functionName: `${stringifyName}Wire` })}${exportsWire
+    ? code`${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true, functionName: `${stringifyName}Wire` })}${exportsWire
       ? code`export { ${wireId} as ${identifier(wireStringifyExportName(node.codecId))} };\n`
       : code``}`
     : code``;
