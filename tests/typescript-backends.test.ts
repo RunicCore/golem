@@ -5,6 +5,7 @@ import test, { type TestContext } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import type * as Six from '#golem/typescript-ts6';
 import type * as Seven from '#golem/typescript-ts7';
+import { createProgramFromSources, isTypeAliasDeclaration } from '#golem/typescript-ts7';
 import type { TypeScriptBackend } from '#golem/typescript-types';
 import { createFixtureProject } from './fixture-project.js';
 import { pathMappedProject } from './support/path-mapped-project.js';
@@ -376,3 +377,50 @@ for (const hinted of [false, true]) {
     assert.equal(project.mappingOf(next), 'second');
   });
 }
+
+/** A TypeScript 7 program over one source, with counters on the compiler requests of its checker. */
+function countedChecker(t: TestContext, root: string) {
+  const source = path.join(root, 'main.ts');
+  const program = createProgramFromSources({ root, sources: [source] });
+  t.after(() => program.close());
+  const checker = program.getTypeChecker();
+  const requests = { typeToString: 0, isTypeAssignableTo: 0 };
+  const inner = (checker as unknown as { inner: Record<keyof typeof requests, (...args: unknown[]) => unknown> }).inner;
+  for (const name of Object.keys(requests) as (keyof typeof requests)[]) {
+    const original = inner[name]!.bind(inner);
+    Object.defineProperty(inner, name, {
+      value: (...args: unknown[]) => {
+        requests[name]++;
+        return original(...args);
+      },
+    });
+  }
+  const statements = program.getSourceFile(source)!.statements;
+  const alias = (name: string) => statements.filter(isTypeAliasDeclaration).find((statement) => statement.name.text === name)!;
+  return { checker, requests, string: checker.getStringType(), number: checker.getNumberType(), union: checker.getTypeFromTypeNode(alias('Union').type), nodes: [alias('Union'), alias('Other')] as const };
+}
+
+test('the checker asks the compiler once for each distinct typeToString and isTypeAssignableTo question', t => {
+  // protects: F-37 the answers stay the same as on TypeScript 6; T-349 a repeated question costs no compiler request
+  const root = createFixtureProject(t, 'golem-checker-memo-');
+  fs.writeFileSync(path.join(root, 'main.ts'), 'export type Union = string | number;\nexport type Other = boolean;\n');
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { noEmit: true, skipLibCheck: true }, include: ['main.ts'] }));
+  const first = countedChecker(t, root);
+  const [one, two] = first.nodes;
+  const ask = (flags: number, node: Seven.Node) => first.checker.typeToString(first.union, node, flags);
+  const combinations: [number, Seven.Node][] = [[0, one], [64, one], [0, two], [64, two]];
+  const texts = combinations.map(([flags, node]) => ask(flags, node));
+  assert.equal(first.requests.typeToString, 4, 'each flags and enclosing node pair asks the compiler');
+  assert.deepEqual(combinations.map(([flags, node]) => ask(flags, node)), texts, 'a repeat gives the same text');
+  assert.equal(first.requests.typeToString, 4, 'a repeat of the same arguments asks nothing');
+
+  const { checker, string, number, union } = first;
+  const answers = [checker.isTypeAssignableTo(string, union), checker.isTypeAssignableTo(union, string), checker.isTypeAssignableTo(string, number), checker.isTypeAssignableTo(string, union), checker.isTypeAssignableTo(union, string)];
+  assert.deepEqual(answers, [true, false, false, true, false], 'the order of the two types is part of the question');
+  assert.equal(first.requests.isTypeAssignableTo, 3, 'the repeats ask nothing');
+
+  const second = countedChecker(t, root);
+  assert.equal(second.checker.typeToString(second.union, second.nodes[0], 0), texts[0]);
+  assert.equal(second.requests.typeToString, 1, 'another program starts with no answers');
+  assert.equal(first.requests.typeToString, 4);
+});
