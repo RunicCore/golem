@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
 import {
   mkdirSync,
-  realpathSync,
   writeFileSync,
 } from 'node:fs';
-import { registerHooks } from 'node:module';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { deduplicateTagSchemas, type TagSchema } from '#model/emit';
@@ -19,6 +17,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { findCodecIdForConstructor, requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
+import { spyOnBuild } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } = {}) {
@@ -27,42 +26,6 @@ function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } 
     name: 'model-efficiency',
     ...(options.noUnusedLocals ? { compilerOptions: { noUnusedLocals: true } } : {}),
   });
-}
-
-interface SpiedCall { readonly name: string; readonly args: readonly unknown[] }
-
-/**
- * Redirect the runtime exports named in `spied` (by subpath) that the built modules of a project import to wrappers that
- * record each call and run the real function; the test's own imports reach the real exports. `requests` lists the module
- * requests of the built modules. Start it after the build and before the first import of a built module.
- */
-async function spyOnBuild(root: string, spied: Readonly<Record<string, readonly string[]>>) {
-  writeFileSync(path.join(root, 'spy-calls.mjs'), 'export const calls = [];\n');
-  const redirects = new Map<string, string>();
-  Object.entries(spied).forEach(([specifier, names], index) => {
-    const file = path.join(root, `spy-${index}.mjs`);
-    writeFileSync(file, [
-      `import * as real from '${specifier}';`,
-      "import { calls } from './spy-calls.mjs';",
-      `export * from '${specifier}';`,
-      ...names.map((name) => `export const ${name} = (...args) => { calls.push({ name: '${name}', args }); return real.${name}(...args); };`),
-    ].join('\n'));
-    redirects.set(specifier, pathToFileURL(file).href);
-  });
-  const built = pathToFileURL(path.join(realpathSync(root), 'build') + path.sep).href;
-  const requests: { readonly specifier: string; readonly importer: string }[] = [];
-  const hooks = registerHooks({
-    resolve(specifier, context, nextResolve) {
-      if (context.parentURL?.startsWith(built)) {
-        requests.push({ specifier, importer: path.basename(fileURLToPath(context.parentURL)) });
-        const redirect = redirects.get(specifier);
-        if (redirect !== undefined) return { url: redirect, format: 'module', shortCircuit: true };
-      }
-      return nextResolve(specifier, context);
-    },
-  });
-  const { calls } = await import(pathToFileURL(path.join(root, 'spy-calls.mjs')).href) as { calls: SpiedCall[] };
-  return { calls, requests, stop: () => hooks.deregister() };
 }
 
 test('equivalent tag schemas share compilation while metadata and callback identities stay distinct', () => {

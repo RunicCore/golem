@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { registerHooks } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { command, workspace } from './support/process.js';
+import { spyOnBuild } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { marker } from '#golem/outputs';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
@@ -36,38 +36,6 @@ function profileCases(): readonly [{ mobx: boolean; validation: boolean }, { mob
     [{ mobx: false, validation: true }, { mobx: false, validation: true }],
     [{ mobx: true, validation: true }, { mobx: true, validation: true }],
   ];
-}
-
-interface SpiedCall { readonly name: string; readonly args: readonly unknown[] }
-
-/**
- * Redirect the runtime exports named in `spied` (by subpath) that the built modules of a project import to wrappers that
- * record each call and run the real function; the test's own imports reach the real exports. Start it after the build and
- * before the first import of a built module.
- */
-async function spyOnBuild(root: string, spied: Readonly<Record<string, readonly string[]>>) {
-  fs.writeFileSync(path.join(root, 'spy-calls.mjs'), 'export const calls = [];\n');
-  const redirects = new Map<string, string>();
-  Object.entries(spied).forEach(([specifier, names], index) => {
-    const file = path.join(root, `spy-${index}.mjs`);
-    fs.writeFileSync(file, [
-      `import * as real from '${specifier}';`,
-      "import { calls } from './spy-calls.mjs';",
-      `export * from '${specifier}';`,
-      ...names.map((name) => `export const ${name} = (...args) => { calls.push({ name: '${name}', args }); return real.${name}(...args); };`),
-    ].join('\n'));
-    redirects.set(specifier, pathToFileURL(file).href);
-  });
-  const built = pathToFileURL(path.join(fs.realpathSync(root), 'build') + path.sep).href;
-  const hooks = registerHooks({
-    resolve(specifier, context, nextResolve) {
-      const redirect = redirects.get(specifier);
-      if (redirect !== undefined && context.parentURL?.startsWith(built)) return { url: redirect, format: 'module', shortCircuit: true };
-      return nextResolve(specifier, context);
-    },
-  });
-  const { calls } = await import(pathToFileURL(path.join(root, 'spy-calls.mjs')).href) as { calls: SpiedCall[] };
-  return { calls, stop: () => hooks.deregister() };
 }
 
 const isValidationUnavailable = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable;

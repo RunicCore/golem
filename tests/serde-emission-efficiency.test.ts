@@ -1,9 +1,8 @@
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import assert from 'node:assert/strict';
-import { mkdirSync, realpathSync, writeFileSync } from 'node:fs';
-import { registerHooks } from 'node:module';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
@@ -13,44 +12,13 @@ import { generateModels } from '#openapi/models';
 import { writeSdk } from '#openapi/generator';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 import { writeGeneratedSdk } from './openapi/helpers.js';
+import { spyOnBuild } from './support/build-spy.js';
 import { command } from './support/process.js';
 
 const fixture = (t: TestContext) => createModelProject(t, {
   prefix: 'golem-serde-emission-',
   name: 'serde-emission-efficiency',
 });
-
-interface SpiedCall { readonly name: string; readonly args: readonly unknown[] }
-
-/**
- * Redirect the runtime exports named in `spied` (by subpath) that the built modules of a project import to wrappers that
- * record each call and run the real function; the test's own imports reach the real exports. Start it after the build and
- * before the first import of a built module.
- */
-async function spyOnBuild(root: string, spied: Readonly<Record<string, readonly string[]>>) {
-  writeFileSync(path.join(root, 'spy-calls.mjs'), 'export const calls = [];\n');
-  const redirects = new Map<string, string>();
-  Object.entries(spied).forEach(([specifier, names], index) => {
-    const file = path.join(root, `spy-${index}.mjs`);
-    writeFileSync(file, [
-      `import * as real from '${specifier}';`,
-      "import { calls } from './spy-calls.mjs';",
-      `export * from '${specifier}';`,
-      ...names.map((name) => `export const ${name} = (...args) => { calls.push({ name: '${name}', args }); return real.${name}(...args); };`),
-    ].join('\n'));
-    redirects.set(specifier, pathToFileURL(file).href);
-  });
-  const built = pathToFileURL(path.join(realpathSync(root), 'build') + path.sep).href;
-  const hooks = registerHooks({
-    resolve(specifier, context, nextResolve) {
-      const redirect = redirects.get(specifier);
-      if (redirect !== undefined && context.parentURL?.startsWith(built)) return { url: redirect, format: 'module', shortCircuit: true };
-      return nextResolve(specifier, context);
-    },
-  });
-  const { calls } = await import(pathToFileURL(path.join(root, 'spy-calls.mjs')).href) as { calls: SpiedCall[] };
-  return { calls, stop: () => hooks.deregister() };
-}
 
 function modelArtifact(artifacts: readonly { readonly path: string; readonly content: string }[], name: string): string {
   return artifacts.find((artifact) => artifact.path.endsWith(`/${name}.model.generated.ts`))?.content ?? '';
@@ -343,7 +311,23 @@ export class Note extends TNoteBaseModel {}
 `);
   writeModelGolemYaml(value.root, { mobx: false, validation: false });
   await buildModelProject(value.root);
-  // An absent field that is added and then deleted turns the result into a dictionary-mode object.
+  const { Note } = await import(pathToFileURL(path.join(value.root, 'build/note.model.js')).href);
+  const keys = (init: object) => Object.keys(encodeGeneratedModel(new Note(init) as never));
+  assert.deepEqual(keys({ title: 't', pinned: true }), ['title', 'pinned']);
+  assert.deepEqual(keys({ title: 't', body: undefined, pinned: true }), ['title', 'pinned'], 'an undefined optional field is omitted');
+  assert.deepEqual(keys({ pinned: false, body: 'b', title: 't' }), ['title', 'body', 'pinned'], 'declaration order, not initializer order');
+  assert.deepEqual(encodeGeneratedModel(new Note({ title: 't', body: 'b', pinned: false }) as never), { title: 't', body: 'b', pinned: false });
+  assert.equal(Object.hasOwn(encodeGeneratedModel(new Note({ title: 't', pinned: true }) as never) as object, 'body'), false, 'an absent field is not an own key');
+
+  // Only V8 property shape shows whether an absent field was added and then deleted, which turns the result into a
+  // dictionary-mode object. No portable check proves it, so the probe runs where V8 accepts its flag.
+  const natives = process.versions.v8 === undefined
+    ? undefined
+    : await command(value.root, process.execPath, ['--allow-natives-syntax', '-e', 'console.log(%HasFastProperties({}))'], { allowFailure: true });
+  if (natives?.stdout.trim() !== 'true') {
+    t.diagnostic('skipped the property-shape probe: this runtime has no V8 --allow-natives-syntax');
+    return;
+  }
   const probe = path.join(value.root, 'fast-properties.mjs');
   writeFileSync(probe, [
     "import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';",
@@ -351,13 +335,6 @@ export class Note extends TNoteBaseModel {}
     "console.log(%HasFastProperties(encodeGeneratedModel(new Note({ title: 't', pinned: true }))));",
   ].join('\n'));
   assert.equal((await command(value.root, process.execPath, ['--allow-natives-syntax', probe])).stdout.trim(), 'true', 'budget: the encoded object keeps fast properties when a middle field is absent');
-
-  const { Note } = await import(pathToFileURL(path.join(value.root, 'build/note.model.js')).href);
-  const keys = (init: object) => Object.keys(encodeGeneratedModel(new Note(init) as never));
-  assert.deepEqual(keys({ title: 't', pinned: true }), ['title', 'pinned']);
-  assert.deepEqual(keys({ title: 't', body: undefined, pinned: true }), ['title', 'pinned'], 'an undefined optional field is omitted');
-  assert.deepEqual(keys({ pinned: false, body: 'b', title: 't' }), ['title', 'body', 'pinned'], 'declaration order, not initializer order');
-  assert.deepEqual(encodeGeneratedModel(new Note({ title: 't', body: 'b', pinned: false }) as never), { title: 't', body: 'b', pinned: false });
 });
 
 test('a map whose values need no conversion is written by the native JSON writer, and a map of dates still converts', async (t) => {
