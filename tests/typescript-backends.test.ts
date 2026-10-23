@@ -256,11 +256,11 @@ test('a source that exists only as an overlay is part of the program and its err
   const listed = new Set(program.getSourceFiles().map(file => file.fileName));
   for (const file of [onDisk, inside, outside]) assert.ok(listed.has(file), `${file} is part of the program`);
   const reported = ts.getPreEmitDiagnostics(program)
-    .map(diagnostic => ts.formatDiagnosticsWithColorAndContext([diagnostic], { getCanonicalFileName: name => name, getCurrentDirectory: () => root, getNewLine: () => '\n' }));
+    .map(diagnostic => ts.formatDiagnostics([diagnostic], { getCanonicalFileName: name => name, getCurrentDirectory: () => root, getNewLine: () => '\n' }));
   for (const file of [inside, outside]) {
-    assert.ok(reported.some(text => text.includes(file) && text.includes('TS2322')), `${file} has its type error reported`);
+    assert.ok(reported.some(text => text.startsWith(`${path.relative(root, file)}(`) && text.includes('TS2322')), `${file} has its type error reported`);
   }
-  assert.equal(reported.some(text => text.includes(onDisk)), false);
+  assert.equal(reported.some(text => text.startsWith(`${path.relative(root, onDisk)}(`)), false);
 });
 
 test('a diagnostic names the line and column of the compiler line map, also for a source that is not on disk', t => {
@@ -281,12 +281,12 @@ test('a diagnostic names the line and column of the compiler line map, also for 
   fs.writeFileSync(onDisk, 'export const a = 1;\rexport const b = 2;\u2028export const c: string = 3;\n');
   using session = new ts.ProgramSession({ cwd: root });
   using program = session.openProgram({ root, sources: [onDisk, unwritten, wide], overlays: new Map([[unwritten, 'export const a = 1;\u2029export const b = 2;\r\nexport const c = 3;\rexport const d: string = 4;\n']]) });
-  const host = { getCanonicalFileName: (name: string) => path.relative(root, name), getCurrentDirectory: () => root, getNewLine: () => '\n' };
-  const printed = ts.getPreEmitDiagnostics(program).map(diagnostic => ts.formatDiagnosticsWithColorAndContext([diagnostic], host));
+  const host = { getCanonicalFileName: (name: string) => name, getCurrentDirectory: () => root, getNewLine: () => '\n' };
+  const printed = ts.getPreEmitDiagnostics(program).map(diagnostic => ts.formatDiagnostics([diagnostic], host));
   assert.deepEqual(printed, [
-    "src/breaks.ts:3:14 - error TS2322: Type 'number' is not assignable to type 'string'.",
-    "src/unwritten.generated.ts:4:14 - error TS2322: Type 'number' is not assignable to type 'string'.",
-    "src/wide.ts:1:37 - error TS2322: Type 'number' is not assignable to type 'string'.",
+    "src/breaks.ts(3,14): error TS2322: Type 'number' is not assignable to type 'string'.\n",
+    "src/unwritten.generated.ts(4,14): error TS2322: Type 'number' is not assignable to type 'string'.\n",
+    "src/wide.ts(1,37): error TS2322: Type 'number' is not assignable to type 'string'.\n",
   ]);
 });
 

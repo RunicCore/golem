@@ -18,7 +18,7 @@ const HALF_TYPED = [
   '}>;',
   '',
 ].join('\n');
-const SYNTAX_ERROR = /cart\.model\.ts:6:1 - error TS1110: Type expected/;
+const SYNTAX_ERROR = /cart\.model\.ts\(6,1\): error TS1110: Type expected/;
 
 /** A project whose valid model has been generated once, then edited to a half-typed field. */
 async function brokenProject(t: TestContext): Promise<{ root: string; config: string }> {

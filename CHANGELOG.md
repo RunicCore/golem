@@ -45,6 +45,7 @@ in the sections below.
 
 ### Generation
 
+- A TypeScript error that stops generation, in a model source or a file a job writes, prints in the compiler's plain form, `src/a.ts(3,7): error TS2322: ...`, the form `tsc` prints without `--pretty`. Golem uses the compiler's own formatter on TypeScript 6 and 7.1. Before, they printed as `src/a.ts:3:7 - error TS2322: ...`.
 - **Breaking:** golem supports TypeScript 6.0+ and 7.1+ (7.1.0-beta included) and loads the TypeScript 7.1 compiler API (`typescript/sync`, `typescript/ast`, `typescript/fs`). TypeScript 7.0 fails at load with a message that golem 1.0 supports it. The `typescript` peer range is `>=6.0.0 <7 || >=7.1.0-0 <8`. Install TypeScript 7.1 or 6, or stay on golem 1.0 for TypeScript 7.0.
 - Generated files import only the runtime names, helpers and models that their code uses, and hold only the helpers that their code calls. A field named like a runtime export, such as `parseJson`, now compiles with `noUnusedLocals`. Before, the unused import stayed.
 - A generated `stringify` function whose body reads no value names its parameter `_value`, so it compiles with `noUnusedParameters`.

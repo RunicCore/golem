@@ -628,9 +628,9 @@ export function programFilenames(program: ts.Program): string[] {
  * Stops with the compiler's own message when one of `files` has a syntax error. The analysis reads a broken type as any and would
  * report RUNM1011 for it instead. `files` are the sources of one job, not every file of the program: a type error in any other file does not stop generation.
  */
-export function assertNoSyntaxErrors(program: ts.Program, files: readonly string[], root: string): void {
+export function assertNoSyntaxErrors(program: ts.Program, files: readonly string[]): void {
   const errors = files.flatMap((file) => program.getSyntacticDiagnostics(file));
-  if (errors.length > 0) throw new Error(formatDiagnostics(errors, root));
+  if (errors.length > 0) throw new Error(formatDiagnostics(errors));
 }
 
 /** The first TypeScript error that starts inside `node`, as `TS2304: Cannot find name 'strin'.`; undefined when the file has none there. Reads the semantic diagnostics of one file, so a caller uses it on a failure path only. */
@@ -643,13 +643,13 @@ export function typeScriptErrorAt(program: ts.Program, node: ts.Node): string | 
   return found?.text === undefined ? undefined : `TS${found.code}: ${found.text}`;
 }
 
-export function formatDiagnostics(diagnostics: readonly ts.Diagnostic[], root: string): string {
-  return ts.formatDiagnosticsWithColorAndContext(diagnostics, {
+export function formatDiagnostics(diagnostics: readonly ts.Diagnostic[]): string {
+  return ts.formatDiagnostics(diagnostics, {
     // Paths read from the working directory, as tsc prints them.
-    getCanonicalFileName: (filename) => relative(process.cwd(), filename),
-    getCurrentDirectory: () => root,
+    getCanonicalFileName: (filename) => filename,
+    getCurrentDirectory: () => process.cwd(),
     getNewLine: () => '\n',
-  });
+  }).trimEnd();
 }
 
 /**

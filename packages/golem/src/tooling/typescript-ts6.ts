@@ -141,7 +141,7 @@ interface ParsedConfigHost {
 
 // Names that this module implements itself; every other seam name is the classic API's own member.
 type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources'
-  | 'formatDiagnosticsWithColorAndContext' | 'getPreEmitDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
+  | 'getPreEmitDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
 
 interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'ObjectFlags' | 'SignatureKind'> {
   readonly SignatureKind: Golem.TypeScriptBackend['SignatureKind'] & { readonly Construct: Golem.SignatureKind };
@@ -199,6 +199,7 @@ export const {
   createCompilerHost,
   findConfigFile,
   forEachChild,
+  formatDiagnostics,
   getDecorators,
   getModifiers,
   isArrayLiteralExpression,
@@ -638,23 +639,6 @@ export function getPreEmitDiagnostics(program: Golem.Program): readonly Golem.Di
 // Object.create returns `any`; the result is the classic diagnostic with `text` added.
 function withText(diagnostic: ClassicDiagnostic): Golem.Diagnostic & ClassicDiagnostic {
   return Object.create(diagnostic, { text: { value: headText(diagnostic.messageText), enumerable: true }, pos: { value: diagnostic.start, enumerable: true }, fileName: { value: diagnostic.file?.fileName, enumerable: true } }) as Golem.Diagnostic & ClassicDiagnostic;
-}
-
-/** Format diagnostics as `path:line:col - error TS1234: message`, with chained messages indented below, as the TypeScript 7 backend does. */
-export function formatDiagnosticsWithColorAndContext(
-  diagnostics: readonly ClassicDiagnostic[],
-  host: { getCanonicalFileName(filename: string): string; getCurrentDirectory(): string; getNewLine(): string },
-): string {
-  const categories = ['warning', 'error', 'suggestion', 'message'];
-  return diagnostics.map((diagnostic) => {
-    let location = '';
-    if (diagnostic.file) {
-      const { line, character } = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start ?? 0);
-      location = `${host.getCanonicalFileName(diagnostic.file.fileName)}:${line + 1}:${character + 1} - `;
-    }
-    const code = diagnostic.code ? ` TS${diagnostic.code}` : '';
-    return [`${location}${categories[diagnostic.category] ?? 'error'}${code}: ${headText(diagnostic.messageText)}`, ...chainTexts(diagnostic.messageText, 1)].join(host.getNewLine());
-  }).join(host.getNewLine());
 }
 
 const MISSING = 'missing';

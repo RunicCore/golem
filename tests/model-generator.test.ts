@@ -421,7 +421,7 @@ export { wrong };
 `);
   assert.throws(
     () => generate({ root, profile: { mobx: false, validation: false } }),
-    (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), broken)}:2:7 - error TS2322: Type 'number' is not assignable to type 'string'.`),
+    (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), broken)}(2,7): error TS2322: Type 'number' is not assignable to type 'string'.`),
   );
 });
 
@@ -433,7 +433,7 @@ test('a type error in a handwritten file that is not a model source does not sto
   assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('item.model.generated.ts')), 'the companion is generated; the compiler reports the other file');
 });
 
-test('a type error in a generated companion stops generation and is reported with path:line:col', (t: TestContext) => {
+test('a type error in a generated companion stops generation and is reported with path(line,col)', (t: TestContext) => {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-companion-error-', linkTypescript: true });
   writeModelSources(sourceRoot, { 'item.model.ts': taggedModelSource({ name: 'Item', fields: tsSource`id: string` }) });
   // A handwritten module augmentation makes the generated class stop implementing the interface it implements, so the error sits in the companion.
@@ -445,7 +445,7 @@ export {};
 `);
   assert.throws(
     () => generate({ root, profile: { mobx: false, validation: false } }),
-    /item\.model\.generated\.ts:\d+:\d+ - error TS2420: Class 'TItemBaseModel' incorrectly implements interface 'GeneratedModel/,
+    /item\.model\.generated\.ts\(\d+,\d+\): error TS2420: Class 'TItemBaseModel' incorrectly implements interface 'GeneratedModel/,
   );
 });
 

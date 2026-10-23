@@ -75,7 +75,7 @@ After you change a declaration, generate again:
 npx golem generate
 ```
 
-Generation type-checks the project first. It stops on a TypeScript error in a model source or in a file the job writes, and reports it as `file:line:column`. A type error in any other file does not stop generation. Then generation replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`). Your classes do not change.
+Generation type-checks the project first. It stops on a TypeScript error in a model source or in a file the job writes, and reports it in the compiler's form, `file(line,column): error TSnnnn: message`. A type error in any other file does not stop generation. Then generation replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`). Your classes do not change.
 
 `golem build` generates first, so a build needs no separate `golem generate`. In CI, run `golem build`, or run `golem generate` and then `npx golem check` ([Generate, watch and check](/guide/watch)). [Ignore the generated files](/reference/generated-files#gitignore) in git.
 

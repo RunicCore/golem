@@ -646,7 +646,8 @@ export interface TypeScriptBackend {
   createProgramFromSources(options: OpenProgramOptions): Program;
   findConfigFile(searchPath: string, fileExists: (filename: string) => boolean, configName?: string): string | undefined;
   forEachChild<T>(node: Node, callback: (node: Node) => T | undefined): T | undefined;
-  formatDiagnosticsWithColorAndContext(
+  /** The compiler's plain form, `path(line,col): error TS1234: message`, one line each with chained messages indented below. */
+  formatDiagnostics(
     diagnostics: readonly Diagnostic[],
     host: { getCanonicalFileName(filename: string): string; getCurrentDirectory(): string; getNewLine(): string },
   ): string;

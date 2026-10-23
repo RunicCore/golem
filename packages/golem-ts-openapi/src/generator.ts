@@ -238,7 +238,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   using program = programInfo.program;
   const checker = program.getTypeChecker();
   // The controllers job analyses the models its controllers use, so a syntax error in a model file stops here too.
-  assertNoSyntaxErrors(program, [...sources, ...includedModelSources(programFilenames(program), normalized.boundary?.suffixes ?? DEFAULT_MODEL_SUFFIXES)], normalized.root);
+  assertNoSyntaxErrors(program, [...sources, ...includedModelSources(programFilenames(program), normalized.boundary?.suffixes ?? DEFAULT_MODEL_SUFFIXES)]);
   const contractAnalysis = createContractAnalysis(program, {
     root: normalized.root,
     allowAny: normalized.profile.allowAny,

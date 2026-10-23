@@ -465,7 +465,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // A model file that an SDK manifest lists stays an SDK file: the SDK's generated code serves it.
   const sdkFiles = sharedModelFiles.length === 0 ? new Set<string>() : sdkModelFiles(manifests());
   const sharedCandidates = sharedModelFiles.filter((source) => !sdkFiles.has(canonicalPath(source)));
-  assertNoSyntaxErrors(program, [...ownCandidates, ...sharedCandidates], normalized.root);
+  assertNoSyntaxErrors(program, [...ownCandidates, ...sharedCandidates]);
   const { checker, specifications } = collectSpecifications(program, [...ownCandidates, ...sharedCandidates], normalized.exact, (file) => companionFilename(boundary, file));
   // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
   // A file that `models.sources` names must have one.
@@ -489,7 +489,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const tsconfigDirectory = programInfo.configPath === undefined ? normalized.root : dirname(programInfo.configPath);
   if (specifications.length === 0) {
     const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(programInfo.program), sources.map(companionOf), sources);
-    if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics, normalized.root));
+    if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics));
     throw new Error('No exported IModel<...> type aliases were found.');
   }
 
@@ -611,7 +611,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   );
   // The write gate: an error in a model source or in what this job writes. Any other handwritten file is the compiler's to report.
   const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(prospective), artifacts.map((artifact) => artifact.path).concat(sources.map(companionOf)), sources);
-  if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics, normalized.root));
+  if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics));
 
   return {
     artifacts,

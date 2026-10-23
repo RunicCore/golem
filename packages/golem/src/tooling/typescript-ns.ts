@@ -34,7 +34,7 @@ export const {
   createProgramFromSources,
   findConfigFile,
   forEachChild,
-  formatDiagnosticsWithColorAndContext,
+  formatDiagnostics,
   getDecorators,
   getModifiers,
   getPreEmitDiagnostics,

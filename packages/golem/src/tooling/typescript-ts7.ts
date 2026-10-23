@@ -32,7 +32,6 @@ import {
   API,
   CheckFlags as SyncCheckFlags,
   Checker,
-  DiagnosticCategory,
   ElementFlags,
   ModuleKind,
   NodeBuilderFlags,
@@ -46,6 +45,7 @@ import {
   type CompilerOptions,
   type CreateSnapshotParams,
   type Diagnostic as SyncDiagnostic,
+  formatDiagnostics,
   type ModuleResolver,
   type ResolutionMode,
   type Signature as SyncSignature,
@@ -56,6 +56,7 @@ import type { Node, SourceFile, TypeNode } from 'typescript/ast';
 
 export {
   API,
+  formatDiagnostics,
   ElementFlags,
   ModuleKind,
   NodeBuilderFlags,
@@ -772,39 +773,6 @@ export function findConfigFile(
     if (parent === current) return undefined;
     current = parent;
   }
-}
-
-function flattenDiagnosticMessageText(message: string | Diagnostic | undefined, _newLine = '\n'): string {
-  if (message === undefined) return '';
-  if (typeof message === 'string') return message;
-  return message.text ?? flattenDiagnosticMessageText(message.messageText);
-}
-
-const DIAGNOSTIC_CATEGORY_NAMES: Readonly<Record<number, string>> = {
-  [DiagnosticCategory.Warning]: 'warning',
-  [DiagnosticCategory.Error]: 'error',
-  [DiagnosticCategory.Suggestion]: 'suggestion',
-  [DiagnosticCategory.Message]: 'message',
-};
-
-/** Format diagnostics as `path:line:col - error TS1234: message`, with chained messages indented below. */
-export function formatDiagnosticsWithColorAndContext(
-  diagnostics: readonly Diagnostic[] | readonly SyncDiagnostic[],
-  host: { getCanonicalFileName(filename: string): string; getCurrentDirectory(): string; getNewLine(): string },
-): string {
-  const chain = (message: SyncDiagnostic, depth: number): string[] => (message.messageChain ?? [])
-    .flatMap((next) => [`${'  '.repeat(depth)}${next.text}`, ...chain(next, depth + 1)]);
-  return diagnostics.map((diagnostic) => {
-    const record = diagnostic as Diagnostic & SyncDiagnostic & { file?: SourceFile };
-    const text = record.text ?? flattenDiagnosticMessageText(record.messageText);
-    const fileName = record.fileName ?? record.file?.fileName;
-    // The compiler gives each diagnostic its own zero-based line and character, counted with its line map.
-    const start = record.startPosition;
-    const location = fileName ? `${host.getCanonicalFileName(fileName)}${start ? `:${start.line + 1}:${start.character + 1}` : ''} - ` : '';
-    const category = record.category === undefined ? 'error' : DIAGNOSTIC_CATEGORY_NAMES[record.category] ?? 'error';
-    const code = record.code ? ` TS${record.code}` : '';
-    return [`${location}${category}${code}: ${text}`, ...chain(record, 1)].join(host.getNewLine());
-  }).join(host.getNewLine());
 }
 
 export function getPreEmitDiagnostics(program: Program): readonly SyncDiagnostic[] {

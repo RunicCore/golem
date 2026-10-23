@@ -8,6 +8,7 @@ Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+
 
 - **Breaking:** TypeScript 7.0 fails at load. Install TypeScript 7.1 or 6, or stay on Golem 1.0 with TypeScript 7.0. Read [Upgrade to 1.1](/upgrade-1-1) before you update a `^1.0.0` dependency.
 - Run generation on TypeScript 6.0+ and 7.1+, including 7.1.0-beta ([Compatibility](/compatibility#ts)).
+- **Breaking:** a TypeScript error that stops generation prints in the compiler's plain form, `src/a.ts(3,7): error TS2322: ...`, as `tsc` prints them without `--pretty`. Before, they printed as `src/a.ts:3:7 - error TS2322: ...`.
 - An untagged `anyOf` whose branches state different JSON types checks a value only with the branches of its type.
 
 Read the [CHANGELOG](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#unreleased) for every change.
