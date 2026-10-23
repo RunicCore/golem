@@ -10,7 +10,7 @@ import type {
   ModelManifest,
   ModelManifestEntry,
 } from '../model-manifest.js';
-import { canonicalPath, type GolemProfile, type InputObserver } from '../generator-api.js';
+import { canonicalPath, displayPath, type GolemProfile, type InputObserver } from '../generator-api.js';
 import type { CodecSchemaClosureEntry } from '../validation-plan.js';
 import { canonicalFilename, effectiveConfigPath } from './project.js';
 import type { ProgramInfo } from './project.js';
@@ -184,7 +184,7 @@ export function advertisedModelManifests(program: ts.Program, onInput?: InputObs
     onInput?.(filename);
     if (!existsSync(filename)) {
       throw new Error(
-        `${sourceFile.fileName}: generated types advertise a missing model manifest: ${filename}`,
+        `${displayPath(sourceFile.fileName)}: generated types advertise a missing model manifest: ${displayPath(filename)}`,
       );
     }
     advertised.add(filename);

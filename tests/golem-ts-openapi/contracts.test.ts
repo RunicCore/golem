@@ -488,6 +488,6 @@ export class OrdersController {
 
   await assert.rejects(
     generateFixture(root),
-    (error: unknown) => String(error).includes(`RUNM1074: ${declaration}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.`),
+    (error: unknown) => String(error).includes(`RUNM1074: ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.`),
   );
 });

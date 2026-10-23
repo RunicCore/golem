@@ -567,7 +567,7 @@ export const text = stringify<TPkgMoney>(money);
   await runPipeline(config);
   await assert.rejects(
     runPipeline(config, { check: true }),
-    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:4:21): ${declaration}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
+    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:4:21): ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
   );
 });
 
@@ -666,6 +666,23 @@ function bareProject(t: TestContext, files: Readonly<Record<string, string>>, ke
   writeGeneratedArtifacts(Object.entries(files).map(([relative, content]) => ({ path: path.join(root, 'src', relative), content })));
   return root;
 }
+
+test('RUNM1067 for a model whose generated file is missing says to wait for golem generate or golem watch', (t) => {
+  // protects: T-314 the hint says what to wait for when the generated file is not there yet
+  const root = bareProject(t, {
+    'a.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TA = IModel<{ id: string }>;\n",
+    'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TA } from './a.model.js';\ndeclare const text: string;\nexport const a = parse<TA>(text);\n",
+  });
+  const messages = (): string[] => scan(root).diagnostics.map(({ message }) => message);
+
+  assert.deepEqual(messages(), ['parse<TA> has no unique codec id. src/a.model.generated.ts is missing. Wait for golem generate or golem watch to write it.']);
+
+  // A generated file that exists but lacks the key is not something to wait for, however old it is.
+  const companion = path.join(root, 'src/a.model.generated.ts');
+  fs.writeFileSync(companion, 'export {};\n');
+  fs.utimesSync(companion, new Date(1_000_000), new Date(1_000_000));
+  assert.deepEqual(messages(), ['parse<TA> has no unique codec id']);
+});
 
 test('a class registers under the id its own file keys, never under a same-named declaration of another file', (t) => {
   const root = bareProject(t, {

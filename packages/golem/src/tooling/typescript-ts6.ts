@@ -88,6 +88,7 @@ interface ClassicProgram {
   isSourceFileDefaultLibrary(file: Golem.SourceFile): boolean;
   getCompilerOptions(): Golem.CompilerOptions;
   getSyntacticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
+  getSemanticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
 }
 
 interface ClassicMessageChain {
@@ -591,6 +592,11 @@ class CompatProgram implements Golem.Program {
     const file = this.program.getSourceFile(filename);
     return file ? this.program.getSyntacticDiagnostics(file).map(withText) : [];
   }
+
+  getSemanticDiagnostics(filename: string): readonly Golem.Diagnostic[] {
+    const file = this.program.getSourceFile(filename);
+    return file ? this.program.getSemanticDiagnostics(file).map(withText) : [];
+  }
 }
 
 function canonical(filename: string): string {
@@ -619,7 +625,7 @@ export function getPreEmitDiagnostics(program: Golem.Program): readonly Golem.Di
 
 // Object.create returns `any`; the result is the classic diagnostic with `text` added.
 function withText(diagnostic: ClassicDiagnostic): Golem.Diagnostic & ClassicDiagnostic {
-  return Object.create(diagnostic, { text: { value: headText(diagnostic.messageText), enumerable: true }, fileName: { value: diagnostic.file?.fileName, enumerable: true } }) as Golem.Diagnostic & ClassicDiagnostic;
+  return Object.create(diagnostic, { text: { value: headText(diagnostic.messageText), enumerable: true }, pos: { value: diagnostic.start, enumerable: true }, fileName: { value: diagnostic.file?.fileName, enumerable: true } }) as Golem.Diagnostic & ClassicDiagnostic;
 }
 
 /** Format diagnostics as `path:line:col - error TS1234: message`, with chained messages indented below, as the TypeScript 7 backend does. */

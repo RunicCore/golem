@@ -6,6 +6,7 @@ import { spawn } from 'node:child_process';
 import { workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
 import { until } from './support/watch-wait.js';
+import { runLines } from './support/watch-runs.js';
 
 test('watch reuses one compiler across edits and tsconfig path-mapping changes', { skip: process.platform === 'win32' }, async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
@@ -38,7 +39,7 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
   let stderr = '';
   child.stdout.on('data', (data: Buffer) => { stdout += data.toString(); });
   child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
-  const runs = (): number => stdout.split('Generated configured outputs.').length - 1;
+  const runs = (): number => runLines(stdout).length;
   const context = (): string => `(stdout=${stdout}, stderr=${stderr})`;
   const failsAfter = async (edit: () => void, pattern: RegExp, message: string): Promise<void> => {
     const reported = stderr.length;

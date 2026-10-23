@@ -41,6 +41,12 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 Arguments after it are passed to the child process unchanged. `--watch` is
 valid only with `exec`; unknown options fail before generation starts.
 
+Each good run of `watch` prints one line: the result of each job, then the time of the run. A job shows the files it updated or removed. A job that did not run, or wrote nothing new, shows `unchanged`. The first good run after a failed run starts with `Recovered:`. `exec --watch` prints the same line for its first run. A failed run prints its error. When a job fails before it writes, the run also says that the job wrote no files and that its last good output stays in place; a job that finished earlier in the same run has written its files.
+
+```text
+models: 2 files updated · openapi:sdk: unchanged · 412 ms
+```
+
 ## Build
 
 `golem build` rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) while it compiles. It generates the code `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite while it loads your TypeScript instead: use the [Vite plugin](/reference/runtime-api#vite), the [esbuild plugin](/reference/runtime-api#esbuild) or the [Node loader](/reference/runtime-api#loader). Each of them opens your project from `golem.yaml`, and scans each file itself.
@@ -61,7 +67,7 @@ A build runs three steps:
 
 The build starts from `golem.yaml`: the one in the working directory, or the one `--config` names. Without one it stops with `golem build needs a golem.yaml; run it next to one or pass --config`, and it never searches the folders above. It builds the tsconfig that `golem.yaml` names with [`tsconfig`](/reference/config#root-keys), which is the `tsconfig.json` beside `golem.yaml` by default, so `golem generate` and `golem build` always agree on the project.
 
-`-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`, and it must lie in the directory of the tsconfig that `golem.yaml` names; any other location is an error. With `--watch` the build repeats when a source, tsconfig or `golem.yaml` changes: it generates first, so editing a model source regenerates its file and rebuilds once. The models job reads every source of the project, so editing any other source runs it again before the rebuild. A job that reads no changed input, such as a generator that reads only the models, does not run. Deleting `outDir` while it runs starts one build that writes it again.
+`-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`, and it must lie in the directory of the tsconfig that `golem.yaml` names; any other location is an error. With `--watch` the build repeats when a source, tsconfig or `golem.yaml` changes: it generates first, so editing a model source regenerates its file and rebuilds once. The models job reads every source of the project, so editing any other source runs it again before the rebuild. A job that reads no changed input, such as a generator that reads only the models, does not run. Deleting `outDir` while it runs starts one build that writes it again. When you delete a source, the build removes the files it emitted for that source, its JavaScript, declaration and map files, from `outDir` and `declarationDir`, and the folders that become empty. It removes no file that it did not write.
 
 A build never edits your source files. It writes the generated files `golem.yaml` configures, the declarations and JavaScript the tsconfig asks for into `outDir`, and its own files into `.golem/`: per tsconfig under `.golem/build/<tsconfig name>/`, the incremental state and a copy of your sources with the calls rewritten and the import paths changed. Two tsconfig files in one directory never share that state. Ignore the generated files and `.golem/` ([ignore generated files](/reference/generated-files#gitignore)). Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
 

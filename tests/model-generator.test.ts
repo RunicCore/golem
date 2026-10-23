@@ -401,16 +401,18 @@ test('a project root reached through a symlink opens its own project', (t: TestC
   assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('item.model.generated.ts')));
 });
 
-test('model generation reports source type errors with path:line:col and TS code', (t: TestContext) => {
+test('model generation reports source type errors with the path relative to the working directory, the line, the column and the TS code', (t: TestContext) => {
+  // protects: T-312 diagnostics print paths relative to the working directory, as tsc does
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-diagnostics-', linkTypescript: true });
-  fs.writeFileSync(path.join(sourceRoot, 'broken.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+  const broken = path.join(sourceRoot, 'broken.model.ts');
+  fs.writeFileSync(broken, `import type { IModel } from '@exprtlabs/golem/model';
 const wrong: string = 5;
 export type TBroken = IModel<{ id: string }>;
 export { wrong };
 `);
   assert.throws(
     () => generate({ root, profile: { mobx: false, validation: false } }),
-    /broken\.model\.ts:2:7 - error TS2322: Type 'number' is not assignable to type 'string'\./,
+    (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), broken)}:2:7 - error TS2322: Type 'number' is not assignable to type 'string'.`),
   );
 });
 
@@ -783,7 +785,7 @@ for (const [shape, { position, source }] of Object.entries(PACKAGE_MODEL_FIELDS)
 
     assert.throws(
       () => generate({ root, profile: { mobx: false, validation: true } }),
-      { code: 'RUNM1074', message: `${path.join(root, 'src/order.model.ts')}:${position} RUNM1074: ${declaration}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
+      { code: 'RUNM1074', message: `${path.relative(process.cwd(), path.join(root, 'src/order.model.ts'))}:${position} RUNM1074: ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
     );
   });
 }
