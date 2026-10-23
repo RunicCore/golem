@@ -129,7 +129,7 @@ To convert `@Body()` and `@Query()` models and stringify `IModel` or `IObject` r
 
 <<< ../../examples/payments/server/src/application.ts#global-model-http
 
-[`NestModelInterceptor`](/guide/nestjs-in-depth#nestmodelinterceptor) has the full request and response contract.
+[`NestModelInterceptor`](/guide/nestjs-requests#nestmodelinterceptor) has the full request and response contract.
 
 ## Run the example
 

@@ -30,7 +30,7 @@ document to the SDK and model generators in the same workflow
 
 Nested model references keep their classes, and derived types such as
 `Omit<TAddress, 'id'>` produce plain objects
-([Composing models](/guide/model-composition#nested-models-and-derived-types)).
+([Composing models](/guide/field-types#nested-models-and-derived-types)).
 
 ## TypeScript 6 and 7
 

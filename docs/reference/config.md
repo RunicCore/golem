@@ -110,7 +110,7 @@ openapi:
 
 - The `backend` folder in this example has its own `tsconfig.json`, so `tsconfig` names it. Without one, leave `tsconfig` out to use the one beside `golem.yaml`.
 - A controller job writes only its configured document file.
-- Route helper return values over 1 MiB are rejected ([route helpers](/guide/nestjs-in-depth#route-helpers)).
+- Route helper return values over 1 MiB are rejected ([route helpers](/guide/nestjs-requests#route-helpers)).
 
 ### Query compatibility
 

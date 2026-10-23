@@ -17,7 +17,7 @@ Both stop at the first issue by default. Pass `{ failFast: false }` to collect e
 
 Constructors and field assignments do not validate. You can keep an incomplete model while someone edits it.
 
-[Using NestJS? `@Body()` / `@Query()` convert through `NestModelInterceptor`.](/guide/nestjs-in-depth#nestmodelinterceptor)
+[Using NestJS? `@Body()` / `@Query()` convert through `NestModelInterceptor`.](/guide/nestjs-requests#nestmodelinterceptor)
 
 ## Choose a check
 

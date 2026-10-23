@@ -126,7 +126,7 @@ HTTP query values are strings, and repeated keys arrive as string arrays. Declar
 - `GET /api/payments/transactions?limit=10&status=paid` yields `{ limit: 10, status: 'paid' }`.
 - Repeated `status=paid&status=pending` yields `{ status: ['paid', 'pending'] }`.
 - `limit=abc`, `status=refunded`, and undeclared keys (`exact: true`) return HTTP 400 before the handler.
-- `PaymentStatus | PaymentStatus[]` is the [supported query union](/guide/model-composition#unions). Arbitrary object unions are not converted on `@Query()` or `@Body()`.
+- `PaymentStatus | PaymentStatus[]` is the [supported query union](/guide/field-types#unions). Arbitrary object unions are not converted on `@Query()` or `@Body()`.
 
 OpenAPI 3.2 emits the whole query schema; its SDK uses `.execute({ querystring: { limit: 10, status: ['paid'] } })`. OpenAPI 3.1.2 flattens a query object into independent named parameters when the [contract survives](/reference/openapi-support#nest-controller-generation) and the values fit [query compatibility](/reference/config#query-compatibility).
 

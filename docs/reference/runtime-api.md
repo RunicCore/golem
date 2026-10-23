@@ -425,9 +425,9 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 - A one-field `@Body('field')` or `@Query('field')` with a model type converts that field, and HTTP 400 answers a missing or invalid field. A one-field `@Query` model needs a nested query parser, for example Express `query parser` set to `extended`. A handler cannot take a whole and a one-field parameter of the same source. The interceptor throws a `TypeError`.
 - A `@Body()` or `@Query()` parameter, whole or one field such as `@Body('name')`, that is not an `IModel` or `IObject` throws a `TypeError` that names the controller, the method and the parameter. Nest answers HTTP 500. For plain types, write your own interceptor.
 - `@Param()` and `@Headers()` stay as Nest received them.
-- Query strings are decoded to the schema's scalar and array types before `fromWireFormat` ([query objects](/guide/nestjs-in-depth#query-objects)).
+- Query strings are decoded to the schema's scalar and array types before `fromWireFormat` ([query objects](/guide/nestjs-requests#query-objects)).
 
-For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. The request and response contract is in [NestModelInterceptor](/guide/nestjs-in-depth#nestmodelinterceptor).
+For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. The request and response contract is in [NestModelInterceptor](/guide/nestjs-requests#nestmodelinterceptor).
 
 ## `@exprtlabs/golem/rewrite` {#rewrite}
 
