@@ -333,10 +333,23 @@ export function indentation(spaces: number): Code {
 /** A Code is never changed, so the code of each width is made once. */
 const indentations = new Map<number, Code>();
 
-/** The code with `spaces` spaces before it: `code\`${indentation(spaces)}${body}\`` in one step, for the writer that makes a line at a time. */
-export function indented(spaces: number, body: Code): Code {
+/** A line of code and the spaces before it. */
+export interface IndentedLine {
+  readonly spaces: number;
+  readonly body: Code;
+}
+
+/** The lines with `separator` between them, each after its spaces: `join` of `code\`${indentation(spaces)}${body}\``, without a Code for each line. */
+export function joinIndented(lines: readonly IndentedLine[], separator: Code): Code {
   const out: Part[] = [];
-  return finish(out, append(out, ' '.repeat(spaces), body.parts));
+  let pending = '';
+  for (let index = 0; index < lines.length; index += 1) {
+    if (index > 0) pending = append(out, pending, separator.parts);
+    const { spaces, body } = lines[index]!;
+    pending += ' '.repeat(spaces);
+    pending = append(out, pending, body.parts);
+  }
+  return finish(out, pending);
 }
 
 /**

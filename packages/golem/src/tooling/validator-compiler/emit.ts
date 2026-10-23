@@ -2,8 +2,8 @@ import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModul
 
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
 import {
-  code, codeKey, helper, helperDefinitions, helperName, identifier as identifierCode, indented, join, literal as literalCode, nameOf, nameSlot, NameTable, render, runtimeImports,
-  type Code, type Helper, type InputSlot, type NameSlot,
+  code, codeKey, helper, helperDefinitions, helperName, identifier as identifierCode, join, joinIndented, literal as literalCode, nameOf, nameSlot, NameTable, render, runtimeImports,
+  type Code, type Helper, type IndentedLine, type InputSlot, type NameSlot,
 } from '../code.js';
 import { compareText } from '../generator-api.js';
 import { rt, rtType } from '../rt.js';
@@ -622,7 +622,7 @@ function patternExpression(state: ModuleState, pattern: string): Code {
 
 /** Writes one function in the given mode: the mode decides what a failed check writes and how a declared key is read. */
 class FunctionWriter {
-  private readonly lines: Code[] = [];
+  private readonly lines: IndentedLine[] = [];
   private depth = 1;
   private counter = 0;
   /** The record that checks of the value being checked fill; undefined when this function keeps none, or while a child value is checked. */
@@ -658,12 +658,12 @@ class FunctionWriter {
     if (this.fn.collects && this.fn.receives) this.line(code`if (ok && ${INHERITED} !== undefined) ${localName('mergeEvaluation')}(${INHERITED}, ${EVALUATION});`);
     // A `false` schema has already left the function in a mode that leaves at a failure.
     if (this.fn.body.kind !== 'never' || !this.mode.fail.leaves) this.line(this.mode.fail.end);
-    this.lines.push(code`}`);
-    return join(this.lines, NEWLINE);
+    this.lines.push({ spaces: 0, body: code`}` });
+    return joinIndented(this.lines, NEWLINE);
   }
 
   public line(statement: Code): void {
-    this.lines.push(indented(this.depth * 2, statement));
+    this.lines.push({ spaces: this.depth * 2, body: statement });
   }
 
   /** Opens a block; no `head` opens a bare scope. */
