@@ -18,7 +18,7 @@ import {
 import { rt } from './rt.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR_ITEM, singleCallConverter } from './sequence-conversion.js';
 import {
-  AMBIGUOUS_UNION_CONVERSION_ERROR,
+  AmbiguousUnionConversionError,
   descriptorNeedsConversion,
   isScalarishDescriptor,
   discriminatorMatch,
@@ -1264,7 +1264,7 @@ function emitUnionDecode(
       for (const ref of refs) {
         const node = ctx.graph.nodeFor(ref);
         const object = node?.descriptor.kind === 'object' ? node.descriptor : undefined;
-        if (!object) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
+        if (!object) throw new AmbiguousUnionConversionError(present);
         const tags = objectTagMatch([object], expression, true);
         if (tags.length === 0) throw new ObjectUnionDiscriminatorError(present);
         branches.push(`${render(join(tags, code` && `))} ? ${emitDecodeValue(ref, expression, ctx)}`);

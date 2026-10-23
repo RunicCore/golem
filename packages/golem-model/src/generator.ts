@@ -11,7 +11,7 @@ import type {
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, isInsideDirectory, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
-import { ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
+import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
 import {
   analyzeSourceGraph,
@@ -33,6 +33,7 @@ import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import {
   assertAbsolute,
   assertDistinctCompanions,
+  assertNoSyntaxErrors,
   byRealPath,
   canonicalFilename,
   companionFilename,
@@ -44,6 +45,7 @@ import {
   ignoredSharedFileWarnings,
   includedModelSources,
   isOrphanCompanion,
+  programFilenames,
   isModelSource,
   isOwnModelFile,
   modelBoundary,
@@ -153,13 +155,6 @@ const SESSION_OWNER = '@exprtlabs/golem-model';
 function emptyResult(info: ProgramInfo, program: ts.Program, root: string): GolemModelResult {
   const watchInputs = projectWatchInputs(info, program, [], discoverModelManifests(root));
   return { artifacts: [], manifestPaths: [], watchInputs };
-}
-
-/** The files of the program that a model file can be: every file but the TypeScript libraries. Installed packages are included. */
-function programFilenames(program: ts.Program): string[] {
-  return program.getSourceFiles()
-    .filter((sourceFile) => !program.isSourceFileDefaultLibrary(sourceFile))
-    .map((sourceFile) => sourceFile.fileName);
 }
 
 function referencedManifestFiles(
@@ -359,14 +354,20 @@ function ownDiagnostics(diagnostics: readonly ts.Diagnostic[], outputs: readonly
 }
 
 const CODE_UNION_DISCRIMINATOR_MISSING = 'RUNM1080';
+const CODE_UNION_CONVERSION_AMBIGUOUS = 'RUNM1082';
 
-/** An object union with no literal tag stops generation with its code, the model file and the fix. */
+/** A union that golem cannot convert without trying its variants stops generation with its code, the model file and the fix. */
 function withUnionDiscriminatorCode(source: string, emit: () => string | undefined): string | undefined {
   try {
     return emit();
   } catch (thrown) {
-    if (!(thrown instanceof ObjectUnionDiscriminatorError)) throw thrown;
-    throw new Error(`${source} ${CODE_UNION_DISCRIMINATOR_MISSING}: ${thrown.message} Give each variant a required literal tag, such as \`kind: 'cat'\`, so that golem can pick the variant from the JSON.`, { cause: thrown });
+    if (thrown instanceof ObjectUnionDiscriminatorError) {
+      throw new Error(`${source} ${CODE_UNION_DISCRIMINATOR_MISSING}: ${thrown.message} Give each variant a required literal tag, such as \`kind: 'cat'\`, so that golem can pick the variant from the JSON.`, { cause: thrown });
+    }
+    if (thrown instanceof AmbiguousUnionConversionError) {
+      throw new Error(`${source} ${CODE_UNION_CONVERSION_AMBIGUOUS}: ${thrown.message}`, { cause: thrown });
+    }
+    throw thrown;
   }
 }
 
@@ -464,6 +465,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // A model file that an SDK manifest lists stays an SDK file: the SDK's generated code serves it.
   const sdkFiles = sharedModelFiles.length === 0 ? new Set<string>() : sdkModelFiles(manifests());
   const sharedCandidates = sharedModelFiles.filter((source) => !sdkFiles.has(canonicalPath(source)));
+  assertNoSyntaxErrors(program, [...ownCandidates, ...sharedCandidates], normalized.root);
   const { checker, specifications } = collectSpecifications(program, [...ownCandidates, ...sharedCandidates], normalized.exact, (file) => companionFilename(boundary, file));
   // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
   // A file that `models.sources` names must have one.

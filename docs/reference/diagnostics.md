@@ -350,11 +350,15 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1080
 
-**Object union with no literal tag.** A model field is a union of objects that golem must convert (a variant holds a `Date`, a `TSerde` value or a model), and the variants have no required literal tag that picks one variant from the JSON. Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. **Fix:** Give each variant a required field with a literal type that differs between variants, such as `kind: 'cat'` and `kind: 'dog'`. A tag may be a union of literals when the values do not overlap.
+**Object union with no literal tag.** A model field is a union of objects, named object types or models that golem must convert (a variant holds a `Date`, a `TSerde` value or a model), and the variants have no required literal tag that picks one variant from the JSON. Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. **Fix:** Give each variant a required field with a literal type that differs between variants, such as `kind: 'cat'` and `kind: 'dog'`. A tag may be a union of literals when the values do not overlap.
 
 ### RUNM1081
 
 **Body or query parameter that is not a model.** A `@Body()` or `@Query()` parameter, whole or one field such as `@Body('name')` or `@Query('page')`, has a type that is no `IModel` or `IObject` and no class that extends a generated model class: a plain interface, a plain class, an inline object type, a primitive, a union, or an array of arrays. [`NestModelInterceptor`](/guide/nestjs-in-depth#nestmodelinterceptor) throws on such a parameter and Nest answers HTTP 500. By default this is an error, and `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader stop before a request arrives. With `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys) it is a warning: generation continues. `golem build` and `golem check` print the warning, and the message ends with `Generation continues, because golem.yaml sets nonModelInputs: warn.` The plugins and the loader continue and print nothing. The message shows the type and the decorator, such as `NoteInput is not a golem model, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type`, and the position of the type. **Fix:** Declare the input as an `IModel` or `IObject`, or bind one field whose type is a model, such as `@Body('address') address: Address`. An app that handles these parameters with its own interceptor sets `nonModelInputs: warn`.
+
+### RUNM1082
+
+**Union that golem cannot convert.** A model field is a union that needs a conversion, such as a `Date` or a `TSerde` value, and the JSON value cannot tell which variant it is: for example two scalar variants where one converts, or a model reference that is no object. Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no literal tag has its own code, [RUNM1080](#runm1080). **Fix:** Give the field one variant that needs a conversion, make the variants objects with a required literal tag, or declare the whole value with one `TSerde` pair.
 
 ## Validators (VALIDATE)
 

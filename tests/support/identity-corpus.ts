@@ -76,6 +76,7 @@ const SDK_SPEC = /\.ya?ml$/;
  * and a setup fault in a rejection case (a missing file, an unresolved module) does not carry its fragment, so none can pass as the claim.
  */
 export const EXPECTED_REJECTIONS: Readonly<Record<string, string>> = {
+  'identity/half-typed-field': 'error TS1110: Type expected',
   'model-composition/a-projected-child-applies-the-containing-model-allowany-policy': 'RUNM1011: Model TContainer contains any. Replace it with a concrete type, or allow it with',
   'model-composition/anonymous-nested-imodel-declarations-fail-with-an-actionable-diagnostic': 'RUNM1053: Nested IModel definitions need a named, exported declaration',
   'model-composition/generic-model-templates-require-a-concrete-named-declaration': 'RUNM1057: IModel declarations must have concrete fields',

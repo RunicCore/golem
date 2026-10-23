@@ -31,8 +31,12 @@ function describeVariant(variant: ModelTypeDescriptor): string {
   return variant.kind === 'generated-model' ? variant.id : variant.kind;
 }
 
-export const AMBIGUOUS_UNION_CONVERSION_ERROR =
-  'Union has ambiguous conversions. Use a discriminated object union or one serde pair for the value.';
+/** A union with no object tag needs a conversion that the wire value cannot select: generation stops, and a generator adds its code, location and fix. */
+export class AmbiguousUnionConversionError extends Error {
+  constructor(variants: readonly ModelTypeDescriptor[]) {
+    super(`Union has ambiguous conversions. Use a discriminated object union or one serde pair for the value. The variants are ${variants.map(describeVariant).join(' | ')}.`);
+  }
+}
 
 export function objectValueExpression(expression: Emitted): Code {
   const value = asCode(expression);
@@ -309,7 +313,7 @@ export function emitSequenceBranch(
 export function scalarBranchVariant(scalars: readonly ModelTypeDescriptor[]): ModelTypeDescriptor | undefined {
   const converting = scalars.filter((scalar) => descriptorNeedsConversion(scalar));
   if (converting.length === 0) return undefined;
-  if (scalars.length > 1) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
+  if (scalars.length > 1) throw new AmbiguousUnionConversionError(scalars);
   return converting[0];
 }
 
@@ -451,7 +455,8 @@ export function emitUnionConversion(
   if (direction === 'decode' || direction === 'encode') {
     if (!descriptorNeedsConversion(descriptor)) return value;
   }
-  throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
+  if (objectsOrModels.length > 1) throw new ObjectUnionDiscriminatorError(present);
+  throw new AmbiguousUnionConversionError(present);
 }
 
 /** The walker's own join of the sequence and the scalar, when it gives one. */

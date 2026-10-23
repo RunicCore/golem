@@ -133,6 +133,8 @@ One `golem.yaml` serves one tsconfig. `generate`, `check` and `build` fail on a 
 
 `build` exits with the compiler's own code when the check finds errors, and with `1` for any other error.
 
+A `golem.yaml` or an OpenAPI input that is not valid YAML fails the run with a message that starts with `<file>:<line>:<column>`, the file relative to the working directory, followed by the parse error. `watch` and `build --watch` report it and run again when the file changes.
+
 `exec` returns the child command's own exit code. If the child was killed by a
 signal instead, `golem` re-raises that signal on itself, so the shell
 sees the same signal exit (`130` for `SIGINT`, `143` for `SIGTERM`).

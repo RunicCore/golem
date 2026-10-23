@@ -57,7 +57,7 @@ import {
 } from './union-conversion.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
-export { descriptorNeedsConversion, literalValues, ObjectUnionDiscriminatorError } from './union-conversion.js';
+export { AmbiguousUnionConversionError, descriptorNeedsConversion, literalValues, ObjectUnionDiscriminatorError } from './union-conversion.js';
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
