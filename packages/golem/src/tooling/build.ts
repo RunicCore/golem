@@ -18,8 +18,8 @@ import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
-import { changedPaths, InputPoller, OwnedOutputIndex, RunBaseline } from './input-poller.js';
-import type { InputSnapshot } from './input-poller.js';
+import { changedPaths, InputScan, OwnedOutputIndex, RunBaseline } from './input-watcher.js';
+import type { InputSnapshot } from './input-watcher.js';
 
 interface BuildOptions {
   /**
@@ -727,7 +727,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   if (!options.watch) return { exitCode: await run() };
 
   let exitCode = 0;
-  const pollerOf = (): InputPoller => new InputPoller(inputs, { root, outsideDirectories: state.outsideDirectories });
+  const pollerOf = (): InputScan => new InputScan(inputs, { root, outsideDirectories: state.outsideDirectories });
   // The build's own names, which come and go with the build itself: the directories it writes, the files it generates and the directories it created for them. It changes only when a build ends.
   let own = new OwnedOutputIndex();
   let poller = pollerOf();

@@ -7,10 +7,10 @@ import YAML from 'yaml';
 import { runPipeline, watchPipeline } from '#golem/cli';
 import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
-import { OwnedOutputIndex } from '#golem/input-poller';
+import { OwnedOutputIndex } from '#golem/input-watcher';
 import { workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
-import { until } from './support/watch-wait.js';
+import { quietly, trackWatchers, until } from './support/watch-wait.js';
 import { isRunLine } from './support/watch-runs.js';
 
 test('owned output index excludes exactly the outputs and the directories containing them', () => {
@@ -283,7 +283,7 @@ test('watch generates a new file that a run in flight did not read', async (t: T
   assert.deepEqual(errors, []);
 });
 
-test('a file that is no source, added to a polled folder, starts no run', async (t: TestContext) => {
+test('a file that is no source, added to a watched folder, starts no run', async (t: TestContext) => {
   // protects: T-307 only a source name added to a folder starts a run
   const { root, config } = generationWatchFixture(t);
   const runs = countRuns(t);
@@ -301,6 +301,107 @@ test('a file that is no source, added to a polled folder, starts no run', async 
   } finally {
     stop();
   }
+  assert.deepEqual(errors, []);
+});
+
+test('an editor save by renaming over the file, a save through a backup file and a delete each start one run', async (t: TestContext) => {
+  // protects: T-331 the events of an editor's save and of a delete reach the watch as one run each
+  const { root, config } = generationWatchFixture(t);
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const source = path.join(root, 'src/cart.model.ts');
+  const companion = path.join(root, 'src/cart.model.generated.ts');
+  const pet = path.join(root, 'src/pet.model.ts');
+  const original = fs.readFileSync(source, 'utf8');
+  const edited = (field: string): string => original.replace('note: string', `note: string; ${field}?: boolean`);
+  const generated = (): string => fs.existsSync(companion) ? fs.readFileSync(companion, 'utf8') : '';
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  const context = (): string => `(errors=${errors.map(String).join('; ')})`;
+  try {
+    await until(() => runs() === 1, `initial generation ${context()}`);
+    fs.writeFileSync(`${source}.new`, edited('renamedOver'));
+    fs.renameSync(`${source}.new`, source);
+    await until(() => generated().includes('renamedOver'), `the rename over the file is generated ${context()}`);
+    assert.equal(runs(), 2, 'one run for the save');
+
+    fs.renameSync(source, `${source}~`);
+    fs.writeFileSync(source, edited('throughBackup'));
+    await until(() => generated().includes('throughBackup'), `the save through a backup is generated ${context()}`);
+    assert.equal(runs(), 3, 'one run for the save');
+
+    fs.writeFileSync(pet, newModel('Pet'));
+    const petCompanion = path.join(root, 'src/pet.model.generated.ts');
+    await until(() => fs.existsSync(petCompanion), `the new model is generated ${context()}`);
+    fs.rmSync(pet);
+    await until(() => !fs.existsSync(petCompanion), `the output of the deleted model is removed ${context()}`);
+  } finally {
+    stop();
+  }
+  assert.deepEqual(errors, []);
+});
+
+test('a package manager marker starts one full run, and a change inside node_modules alone starts none', async (t: TestContext) => {
+  // protects: T-331 installed packages are not watched; an install is told by its marker and reads everything again
+  const { root, config } = generationWatchFixture(t);
+  const schema = path.join(root, 'node_modules/shared-schemas/user.json');
+  const sdk = path.join(root, 'sdk');
+  const text = (): string => fs.readdirSync(sdk, { recursive: true, encoding: 'utf8' }).map((name) => path.join(sdk, name)).filter((file) => fs.statSync(file).isFile()).map((file) => fs.readFileSync(file, 'utf8')).join('\n');
+  fs.mkdirSync(path.dirname(schema), { recursive: true });
+  const user = (field: string): string => JSON.stringify({ type: 'object', properties: { [field]: { type: 'string' } } });
+  fs.writeFileSync(schema, user('firstName'));
+  const api = path.join(root, 'api.json');
+  const document = JSON.parse(fs.readFileSync(api, 'utf8')) as { paths: Record<string, unknown> };
+  document.paths['/user'] = { get: { operationId: 'getUser', responses: { 200: { description: 'User', content: { 'application/json': { schema: { $ref: './node_modules/shared-schemas/user.json' } } } } } } };
+  fs.writeFileSync(api, JSON.stringify(document));
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  const context = (): string => `(errors=${errors.map(String).join('; ')})`;
+  try {
+    await until(() => runs() === 1, () => `initial generation runs=${runs()} ${context()}`);
+    assert.match(text(), /firstName/);
+
+    fs.writeFileSync(schema, user('lastName'));
+    await quietly();
+    assert.equal(runs(), 1, 'the installed file changed and nothing ran');
+    assert.doesNotMatch(text(), /lastName/);
+
+    fs.writeFileSync(path.join(root, 'node_modules/.package-lock.json'), '{}');
+    await until(() => runs() === 2, `the marker starts a run ${context()}`);
+    assert.match(text(), /lastName/, 'the run read the installed file again');
+    await quietly();
+    assert.equal(runs(), 2, 'one run for the marker');
+  } finally {
+    stop();
+  }
+  assert.deepEqual(errors, []);
+});
+
+test('an idle watch reads no file, and stopping it closes its file watches', async (t: TestContext) => {
+  // protects: R-31 an idle watch costs nothing; the stop closes every watcher
+  const { config } = generationWatchFixture(t);
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const watchers = trackWatchers(t);
+  let reads = 0;
+  for (const name of ['statSync', 'readdirSync', 'lstatSync'] as const) {
+    const original = fs[name].bind(fs) as (...args: unknown[]) => unknown;
+    t.mock.method(fs, name, (...args: unknown[]) => { reads += 1; return original(...args); });
+  }
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  try {
+    await until(() => runs() === 1, 'initial generation');
+    assert.ok(watchers.open() > 0, 'the folders are watched');
+    // The first run's own writes cause ticks that find nothing; they end within the quiet period.
+    await quietly(1_000);
+    const settled = reads;
+    await quietly(1_000);
+    assert.equal(reads, settled, 'a quiet watch reads no file');
+    assert.equal(runs(), 1);
+  } finally {
+    stop();
+  }
+  assert.equal(watchers.open(), 0, 'every watcher is closed');
   assert.deepEqual(errors, []);
 });
 
@@ -348,7 +449,7 @@ for (const [way, include] of [['outside the root', '../shared/**/*.ts'], ['behin
 }
 
 test('watch generates a new model file in a shared folder that holds only a helper so far', async (t: TestContext) => {
-  // protects: T-308 an outside folder is polled for every input in it, not only for a model
+  // protects: T-308 an outside folder is scanned for every input in it, not only for a model
   const { root, config } = sharedModelFixture(t, '../shared/**/*.ts');
   fs.rmSync(path.join(root, 'shared/money.model.ts'));
   fs.mkdirSync(path.join(root, 'shared/billing'));
@@ -412,7 +513,7 @@ function countRuns(t: TestContext): () => number {
   return () => lines.length;
 }
 
-test('edits that land between two polls produce one run with the final content', async (t: TestContext) => {
+test('edits that land between two ticks produce one run with the final content', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
   const runs = countRuns(t);
   const errors: unknown[] = [];
@@ -424,7 +525,7 @@ test('edits that land between two polls produce one run with the final content',
   const stop = watchPipeline(config, error => { errors.push(error); });
   try {
     await until(() => runs() === 1, 'initial generation');
-    // Both writes run in one turn of the event loop, so no poll can observe the first alone.
+    // Both writes run in one turn of the event loop, so no tick can observe the first alone.
     edit('firstBurstEdit');
     edit('finalBurstEdit');
     await until(() => generated().includes('finalBurstEdit'), 'the final edit is generated');
