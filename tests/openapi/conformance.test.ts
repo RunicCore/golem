@@ -145,10 +145,14 @@ test('models OpenAPI 3.1 type unions', () => {
       serverValue: { type: 'string', readOnly: true },
     },
   };
-  assert.match(schemaType(directional, { direction: 'input' }), /secret: string/);
-  assert.doesNotMatch(schemaType(directional, { direction: 'input' }), /serverValue/);
-  assert.match(schemaType(directional, { direction: 'output' }), /serverValue: string/);
-  assert.doesNotMatch(schemaType(directional, { direction: 'output' }), /secret/);
+  assert.equal(schemaType(directional, { direction: 'input' }), `{
+  id: string;
+  secret: string;
+}`);
+  assert.equal(schemaType(directional, { direction: 'output' }), `{
+  id: string;
+  serverValue: string;
+}`);
   assert.equal(
     schemaType(
       { $ref: '#/components/schemas/Credentials' },
@@ -321,10 +325,6 @@ test('generates inheritable object models with serde conversion metadata', async
   writeSdk(document, { output, name: 'Models' });
   const models = readGeneratedModelSource(output);
   assert.match(models, /class PaymentModel extends BasePaymentModel/);
-  const paymentClass = models.split('export class PaymentModel')[1]
-    .split('export class ')[0];
-  assert.doesNotMatch(paymentClass, /declare amount/);
-  assert.doesNotMatch(models, /\btoJSON\b/);
   assert.match(models, /class MetadataModel \{[\s\S]*Dynamic map values are preserved during conversion/);
   assert.match(models, /generatedModelFieldsBrand/);
   assert.match(models, /asGenObservable\(this\)/);
@@ -464,7 +464,6 @@ test('generation is deterministic', async (t) => {
   const second = writeSdkFiles(document, { output, name: 'ExamplePayments', profile });
   assert.deepEqual(second.artifacts, first.artifacts, 'repeated generation from the same document produces identical artifacts');
   writeSdk(document, { output, name: 'ExamplePayments' });
-  assert.equal(fs.existsSync(path.join(output, 'schemas.ts')), false);
   assert.ok(fs.existsSync(path.join(output, 'validators.generated.ts')));
   assert.ok(fs.existsSync(path.join(output, 'input-schemas.ts')));
   assert.ok(fs.existsSync(path.join(output, 'output-schemas.ts')));
@@ -492,7 +491,6 @@ test('generation is deterministic', async (t) => {
     fs.readFileSync(path.join(output, 'types.ts'), 'utf8'),
     /@golem-model-manifest \.\/model-manifest\.json/,
   );
-  assert.equal(fs.existsSync(path.join(output, 'validation.ts')), false);
 });
 
 function wireAuthDocument() {

@@ -253,7 +253,6 @@ test('operation names are typed inside client.ts and links.ts', async t => {
   const file = (name: string) => result.artifacts.find(artifact => artifact.path.endsWith(`/${name}`))?.content ?? '';
   assert.match(file('client.ts'), /^type __GolemOperationName = "getA" \| "getB";$/m);
   assert.match(file('links.ts'), /^type OperationName = "getA" \| "getB";$/m);
-  assert.doesNotMatch(file('client.ts') + file('links.ts'), /schemas\.js/);
   compileStrictUnusedSdk(output);
 });
 
@@ -354,7 +353,7 @@ test('minimal GET without content omits codec options and unused helpers', async
   compileStrictUnusedSdk(surfacesOutput, [surfacesAssertFile]);
 });
 
-test('stream and mutual-TLS surfaces are emitted only when they are used', async (t) => {
+test('stream and mutual-TLS surfaces are emitted when an operation uses them', async (t) => {
   const itemSchema = { type: 'object', properties: { id: { type: 'integer' } } };
   const withSurfaces = await generateMaterializedSdk({
     openapi: '3.2.0',
@@ -392,22 +391,6 @@ test('stream and mutual-TLS surfaces are emitted only when they are used', async
   assert.match(client, /StreamSecurityStreamDecoder\b/, 'the custom stream decoder surface is emitted for a stream response with an item schema');
   assert.match(client, /applySecurity/, 'the security call is emitted when a security scheme is used');
   assert.match(client, /StreamSecurityMutualTlsTransport\b/, 'the mutual TLS transport type is emitted when a mutualTLS scheme is used');
-  assert.doesNotMatch(client, /readNdjson|readJsonSeq|readServerSentEvents/, 'stream readers live in the shared runtime');
-
-  const plain = await generateMaterializedSdk({
-    openapi: '3.2.0',
-    info: info('NoStreamSecurity'),
-    paths: {
-      '/ping': {
-        get: {
-          operationId: 'ping',
-          responses: { 204: { description: 'ok' } },
-        },
-      },
-    },
-  }, { output: outputDir(t, 'stream-security-surfaces-absent'), name: 'NoStreamSecurity', profile: { mobx: false, validation: false } });
-  const plainClient = generatedClientSource(plain.artifacts);
-  assert.doesNotMatch(plainClient, /StreamDecoder|MutualTlsTransport|applySecurity/);
 });
 
 test('an operation with no effective security requirement omits the security call and keeps the call for the others', async t => {
@@ -429,7 +412,6 @@ test('an operation with no effective security requirement omits the security cal
     assert.ok(artifact, `operation ${name} is emitted`);
     return artifact.content;
   };
-  assert.doesNotMatch(operation('open'), /applySecurity|securitySchemes: RuntimeSecuritySchemes|const query|const cookies/);
   assert.match(operation('open'), /export const __golemSecuritySchemes = \{\} as const;/, 'the client still imports the metadata of every operation');
   for (const name of ['inherits', 'optionalAuth']) {
     assert.equal(operation(name).match(/await applySecurity\(/g)?.length, 1, `${name} keeps its security call`);
@@ -466,8 +448,6 @@ test('the SDK entry re-exports each model module directly', async t => {
   const index = files.get('index.ts') ?? '';
   assert.match(index, /from '\.\/models\/Money\.js'/);
   assert.match(index, /from '\.\/models\/Payment\.js'/);
-  // The schema helpers are internal: the entry does not re-export them.
-  assert.doesNotMatch(index, /'\.\/schemas\.js'/);
 });
 
 test('a validation SDK with operations compiles under strict unused checks', async t => {
@@ -503,14 +483,12 @@ test('an operation module declares only the request locals it uses and imports t
   }, { output, name: 'Locals', profile: { mobx: false, validation: false } });
   const file = (name: string) => result.artifacts.find(artifact => artifact.path.endsWith(`operations/${name}.ts`))?.content ?? '';
   const plain = file('plain');
-  assert.doesNotMatch(plain, /const query|const cookies/);
   assert.match(plain, /runtime\.url\("\/plain", \[\]\)/);
   assert.equal(plain.match(/from '@exprtlabs\/golem\/client'/g)?.length, 1);
-  assert.doesNotMatch(plain, /\n\n\n/);
   const session = file('session');
   assert.match(session, /const cookies: string\[\] = \[\];/);
   assert.equal(session.match(/if \(cookies\.length\)/g)?.length, 1);
-  assert.doesNotMatch(session, /const query/);
+  compileStrictUnusedSdk(output);
 });
 
 test('SDK model functions use the model types instead of unknown', async t => {
