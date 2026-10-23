@@ -32,7 +32,7 @@ Golem uses the `typescript` package that resolves from the directory of the tsco
 
 Set `GOLEM_TYPESCRIPT_ROOT` to a directory to use the `typescript` installed there instead. It overrides every project. Library use outside a host looks in `GOLEM_TYPESCRIPT_ROOT`, or in the current directory when the variable is not set.
 
-A process loads one TypeScript. When a host opens a second project whose `typescript` is a different install, it fails and tells you to run one host for each TypeScript install. Projects that share one install, through a link or a hoisted `node_modules`, can open in one process.
+A process loads one TypeScript. A host fails when it opens a second project whose `typescript` is a different install. The message tells you to run one host for each TypeScript install. Projects that share one install, through a link or a hoisted `node_modules`, can open in one process.
 
 A `typescript` version outside the range in the table fails at load:
 

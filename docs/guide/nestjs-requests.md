@@ -47,17 +47,14 @@ The interceptor converts HTTP handlers. A handler of another context, such as RP
 
 `@Param()` and `@Headers()` stay as Nest received them.
 
-## Arrays and one-field parameters
+## Parameter types and arrays
 
 Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. For any other type, the interceptor throws a `TypeError` that names the controller, the method and the parameter, and Nest answers HTTP 500. This holds for a plain interface, a plain class, a primitive and a parameter with no type. The interceptor throws on each request to the handler, not at startup. Return types are not affected. `golem build` and `golem check` report [`RUNM1081`](/reference/diagnostics#runm1081) for a typed parameter of that kind. If your own interceptor handles those parameters, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys) to turn the error into a warning.
 
-An array of models, such as `@Body() items: Item[]` or `@Body('items') items: Item[]`, converts item by item. An invalid item returns HTTP 400. Each issue path starts with the field name, if any, and the item index, such as `['items', 1, 'name']`. A value that is not an array returns HTTP 400 with a `type` issue. A whole `@Query()` is an object, so declare it as one model and not as an array.
+A whole `@Body() items: Item[]` converts item by item. An invalid item returns HTTP 400. Each issue path starts with the item index, such as `[1, 'name']`. A value that is not an array returns HTTP 400 with a `type` issue. A whole `@Query()` is an object, so declare it as one model and not as an array.
 
-A one-field parameter with a model type, such as `@Body('address') address: Address`, converts that field with the same checks as a whole body. A missing field or a field that fails validation returns HTTP 400. Each issue path starts with the field name, such as `['address', 'street']`.
-
-- Use a whole `@Body()` or a one-field `@Body()` in a handler, not both. The same rule holds for `@Query()`.
 - Give all whole `@Body()` parameters of a handler one model type. The same rule holds for whole `@Query()` parameters.
-- The `controllers` job reports [`NEST1103`](/reference/diagnostics#nest1103) for `@Body('field')`. It reports [`NEST1107`](/reference/diagnostics#nest1107) for a named `@Query('field')` with a model type. Declare the whole parameter in a project with that job.
+- Declare the whole parameter. The `controllers` job reports [`NEST1103`](/reference/diagnostics#nest1103) for `@Body('field')` and [`NEST1107`](/reference/diagnostics#nest1107) for a named `@Query('field')` with a model type.
 
 ## Query objects
 
