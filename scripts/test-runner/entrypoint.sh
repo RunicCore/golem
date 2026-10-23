@@ -37,7 +37,8 @@ manifest_hash="$(node -e '
   const fs = require("node:fs");
   const crypto = require("node:crypto");
   const install_fields = ["name", "version", "dependencies", "devDependencies", "optionalDependencies",
-    "peerDependencies", "overrides", "workspaces", "packageManager"];
+    "peerDependencies", "peerDependenciesMeta", "bundleDependencies", "bundledDependencies", "overrides", "workspaces",
+    "packageManager"];
   const sorted = (value) => Array.isArray(value) ? value.map(sorted)
     : value !== null && typeof value === "object"
       ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, sorted(value[key])]))
