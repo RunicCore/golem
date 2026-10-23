@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { runBuild } from '#golem/build';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
-import { write, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot } from './support/build-project.js';
+import { write, serdeProject, sourceOnlyProject, countingGenerator, editTsconfig, USE, snapshot } from './support/build-project.js';
 import { workspace } from './support/process.js';
 import { count, watching } from './support/build-watching.js';
 import { until } from './support/watch-wait.js';
@@ -130,4 +130,29 @@ test('a source fixed while the first build is still running starts the next buil
   await runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal });
   assert.ok(fixed, 'the first build reported the type error');
   assert.ok(built, 'the fix made during the first build started a second build');
+});
+
+test('golem build --watch removes the output of a source that is deleted, and nothing else', async (t) => {
+  // protects: T-315 the output of a deleted source leaves outDir
+  const root = serdeProject(t, 'build-watch-delete');
+  editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.declarationMap = true; });
+  write(root, 'src/use.ts', USE);
+  write(root, 'src/extra/helper.ts', 'export const helper = 1;\n');
+  const watcher = watching(t, root);
+  await until(() => count(watcher.output(), /^Built /) === 1, 'the first build');
+  const outputs = (name: string): string[] => ['.js', '.js.map', '.d.ts', '.d.ts.map'].map((ending) => path.join(root, 'build', `${name}${ending}`));
+  for (const file of [...outputs('use'), ...outputs('extra/helper')]) assert.ok(fs.existsSync(file), `${file} is built`);
+  // A file in outDir that the build did not write.
+  write(root, 'build/notes.txt', 'mine');
+
+  fs.rmSync(path.join(root, 'src/use.ts'));
+  await until(() => count(watcher.output(), /^Built /) === 2, 'the build after the source was deleted');
+  assert.deepEqual(outputs('use').filter((file) => fs.existsSync(file)), [], 'the output of the deleted source is gone');
+  assert.ok([...outputs('money.model'), ...outputs('extra/helper')].every((file) => fs.existsSync(file)), 'the output of the other sources stays');
+  assert.equal(fs.readFileSync(path.join(root, 'build/notes.txt'), 'utf8'), 'mine');
+
+  fs.rmSync(path.join(root, 'src/extra/helper.ts'));
+  await until(() => count(watcher.output(), /^Built /) === 3, 'the build after the last source of a folder was deleted');
+  assert.equal(fs.existsSync(path.join(root, 'build/extra')), false, 'the folder the deletion left empty is gone');
+  assert.equal(await watcher.stop(), 130);
 });
