@@ -20,7 +20,7 @@ export { presentKeysSource } from '../presence.js';
 export { pruneGeneratedImports } from './generated-imports.js';
 export { FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
 /** The one function that turns the Code of an emitter into text, for generators that still build text. */
-export { render, type Code } from './code.js';
+export { code, identifier, legacyText, render, type Code } from './code.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
 export {
   composeObjects,
@@ -97,8 +97,8 @@ export interface ToJsonModelResolver {
  * the wrapper is applied in a nested conversion tree.
  */
 export interface SerdeResolver {
-  readonly deserialize: (id: string, value: string) => string;
-  readonly serialize: (id: string, value: string) => string;
+  readonly deserialize: (id: string, value: Code) => Code;
+  readonly serialize: (id: string, value: Code) => Code;
 }
 
 type DescriptorMetadata = {
@@ -393,9 +393,9 @@ function emitNested(
   const tags = metadata(descriptor);
   if (tags.serde && resolveSerde) {
     return direction === 'fromJSON'
-      ? legacyText(resolveSerde.deserialize(tags.serde.id, expression))
+      ? resolveSerde.deserialize(tags.serde.id, value)
       : direction === 'toJSON'
-        ? legacyText(resolveSerde.serialize(tags.serde.id, expression))
+        ? resolveSerde.serialize(tags.serde.id, value)
         : value;
   }
   if (descriptor.kind === 'date' || tags.date) {

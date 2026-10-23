@@ -4,7 +4,10 @@ import * as ts from '@exprtlabs/golem/internal/ts';
 import { PACKAGE_VERSION } from './package-info.js';
 import {
   emitModelFromJSON,
+  code,
+  identifier,
   render,
+  type Code,
   emitModelFromInit,
   emitModelToJSON,
   emitCodecRuntime,
@@ -1266,10 +1269,10 @@ function discriminatorsOf(context: EmitContext, name: string): ModelDiscriminato
   }));
 }
 
-function serdeExpression(context: EmitContext, id: string, direction: 'serialize' | 'deserialize', value: string): string {
+function serdeExpression(context: EmitContext, id: string, direction: 'serialize' | 'deserialize', value: Code): Code {
   const names = context.serdeNames.get(id);
   if (names === undefined) throw new Error(`The generated model file of ${context.source} has no ${direction} function for the serde id ${JSON.stringify(id)}.`);
-  return `${names[direction]}(${value})`;
+  return code`${identifier(names[direction])}(${value})`;
 }
 
 /** The serde functions of the file in both directions. */
@@ -1463,7 +1466,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
   const { checker, specifications, manifestIndex, profile, identityRoot } = context;
   const { definitions } = context.graph;
   const { fromAny: resolveFromAny, toJsonAny: resolveToJsonAny } = resolvers;
-  const serdeExpressionOf = (id: string, direction: 'serialize' | 'deserialize', value: string): string => serdeExpression(context, id, direction, value);
+  const serdeExpressionOf = (id: string, direction: 'serialize' | 'deserialize', value: Code): Code => serdeExpression(context, id, direction, value);
   return context.local.map((specification) => {
     const definition = definitions[specification.name];
     // Phantom tag members are part of the type-level intersection and must

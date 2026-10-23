@@ -2,7 +2,10 @@ import {
   CompositionConflictError,
   ObjectUnionDiscriminatorError,
   emitModelFromJSON,
+  code,
+  identifier,
   render,
+  type Code,
   FIELD_CONVERSION_INPUT,
   singleCallConverter,
   emitModelFromInit,
@@ -60,8 +63,8 @@ import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView } from './m
  * Conversion code holds values as `unknown`; wire validation has already checked them, so the call casts.
  */
 const TEMPORAL_SERDE = {
-  deserialize: (id: string, value: string) => `deserialize${temporalCodecName(id)}((${value}) as never)`,
-  serialize: (id: string, value: string) => `serialize${temporalCodecName(id)}((${value}) as never)`,
+  deserialize: (id: string, value: Code) => code`${identifier(`deserialize${temporalCodecName(id)}`)}((${value}) as never)`,
+  serialize: (id: string, value: Code) => code`${identifier(`serialize${temporalCodecName(id)}`)}((${value}) as never)`,
 };
 
 function temporalCodecName(id: string): string {

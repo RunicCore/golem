@@ -11,7 +11,7 @@ import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { modelName, requireComposedObject, type ModelBases } from './composition.js';
-import { render } from './code.js';
+import { legacyText, render, type Code } from './code.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR_ITEM, singleCallConverter } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
@@ -32,8 +32,8 @@ import {
 } from './union-conversion.js';
 
 export interface StringifySerdeResolver {
-  readonly deserialize: (id: string, value: string) => string;
-  readonly serialize: (id: string, value: string) => string;
+  readonly deserialize: (id: string, value: Code) => Code;
+  readonly serialize: (id: string, value: Code) => Code;
 }
 
 export interface NestedImportedSerde {
@@ -346,7 +346,7 @@ function emitValue(
     const wire = serdeWireDescriptor(descriptor) ?? { kind: 'unknown' as const };
     if (ctx.wireIdentity) return emitValue(wire, expression, ctx);
     const serialized = ctx.serde
-      ? ctx.serde.serialize(tags.serde.id, expression)
+      ? render(ctx.serde.serialize(tags.serde.id, legacyText(expression))) // migration door, deleted in step 3a (T-283)
       : expression;
     return emitValue(wire, serialized, ctx);
   }
@@ -1295,7 +1295,8 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
-    const deserialized = ctx.serde ? fallibleConversion(ctx, ctx.serde.deserialize(tags.serde.id, expression)) : expression;
+    // migration door, deleted in step 3c (T-285)
+    const deserialized = ctx.serde ? fallibleConversion(ctx, render(ctx.serde.deserialize(tags.serde.id, legacyText(expression)))) : expression;
     const wire = serdeWireDescriptor(descriptor);
     if (wire?.kind === 'string') {
       return `(typeof ${expression} === 'string' ? ${deserialized} : ${expression})`;
@@ -1610,7 +1611,8 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
-    return ctx.serde ? ctx.serde.serialize(tags.serde.id, expression) : expression;
+    // migration door, deleted in step 3b (T-284)
+    return ctx.serde ? render(ctx.serde.serialize(tags.serde.id, legacyText(expression))) : expression;
   }
   if (descriptor.kind === 'date' || tags.date) return `serializeDate(${expression})`;
   const named = ctx.graph.nodeFor(descriptor);
