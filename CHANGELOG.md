@@ -46,7 +46,7 @@ in the sections below.
 - `golem watch` and `golem build --watch` use one input poller. A hidden file or an editor's temporary file (a name that ends in `~`) no longer starts a run or a build.
 - `golem watch` and `golem exec --watch` print one line after each good run: the result of each job (files updated or removed, or `unchanged`) and the time. The first good run after a failed run starts with `Recovered:`. A failed run says that the job that failed wrote no files. A compiler error in a model source prints its file relative to the working directory.
 - The Vite plugin sends one full reload for the file events of one watch run (events within 100 ms), not one for each file. [`RUNM1067`](docs/reference/diagnostics.md#runm1067) says to wait for `golem generate` or `golem watch` when the generated file of the model is missing or older than its model file.
-- `golem build --watch` removes the JavaScript, declaration and map files of a source that you delete from `outDir`. It removes no other file.
+- `golem build --watch` removes the files it wrote for a source that you delete: the JavaScript, declaration and map files in `outDir` and `declarationDir`, and the folders that become empty. It removes only files it wrote for that source.
 - `golem exec --watch` generates a model file that you create while its first run is in progress.
 - A `golem.yaml` or an OpenAPI input that is not valid YAML stops the run with a message that starts with the file, the line and the column. `@exprtlabs/golem/generator-api` exports `parseYamlFile` and `YamlFileError`.
 
