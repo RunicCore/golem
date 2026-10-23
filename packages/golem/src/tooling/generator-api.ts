@@ -257,6 +257,11 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/** `filename` as a message prints it: an absolute path relative to the working directory, any other name (a URL, a relative path) as written. */
+export function displayPath(filename: string): string {
+  return path.isAbsolute(filename) ? path.relative(process.cwd(), filename) : filename;
+}
+
 /** A YAML file that does not parse: the developer's input to fix. The message starts with `<file>:<line>:<column>`; `cause` is the parser's error. */
 export class YamlFileError extends Error {
   constructor(message: string, options: { cause: unknown }) {
@@ -275,7 +280,7 @@ export function parseYamlFile(text: string, filename: string, options?: YAML.Doc
     return YAML.parse(text, options);
   } catch (error) {
     if (!(error instanceof YAML.YAMLParseError)) throw error;
-    const file = path.isAbsolute(filename) ? path.relative(process.cwd(), filename) : filename;
+    const file = displayPath(filename);
     const start = error.linePos?.[0];
     // The parser's message ends its first line with the position; the prefix already says it.
     const reason = error.message.replace(/ at line \d+, column \d+:/, ':').trimEnd();

@@ -785,7 +785,7 @@ for (const [shape, { position, source }] of Object.entries(PACKAGE_MODEL_FIELDS)
 
     assert.throws(
       () => generate({ root, profile: { mobx: false, validation: true } }),
-      { code: 'RUNM1074', message: `${path.join(root, 'src/order.model.ts')}:${position} RUNM1074: ${declaration}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
+      { code: 'RUNM1074', message: `${path.relative(process.cwd(), path.join(root, 'src/order.model.ts'))}:${position} RUNM1074: ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
     );
   });
 }

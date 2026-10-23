@@ -6,7 +6,7 @@ import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
-import { compareText } from '../generator-api.js';
+import { compareText, displayPath } from '../generator-api.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey } from '../schema.js';
 import type {
   ModelConversionDescriptor,
@@ -594,7 +594,7 @@ export function descriptorBuilder(
   const sourceLocation = (at: ts.Node): string => {
     const sourceFile = at.getSourceFile();
     const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
-    return `${sourceFile.fileName}:${position.line + 1}:${position.character + 1}`;
+    return `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1}`;
   };
   const modelNames = new Map(
     specifications.map((specification) => [specification.declaration, nameFor?.(specification) ?? specification.name] as const),

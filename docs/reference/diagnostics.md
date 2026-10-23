@@ -2,7 +2,7 @@
 
 Find what a generator error code means and how to fix it.
 
-An error prints its code, location when known, and message, then stops generation; a warning prints the same and lets generation continue, as its entry below notes. The printed line may also carry a severity word next to the code.
+An error prints its code, location when known, and message, then stops generation; a warning prints the same and lets generation continue, as its entry below notes. The printed line may also carry a severity word next to the code. A file in a message is relative to the working directory.
 
 ## Controller generator (NEST)
 
