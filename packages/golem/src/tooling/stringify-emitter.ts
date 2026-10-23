@@ -137,6 +137,8 @@ interface EmitCtx {
   readonly decodeLocals?: string[];
   /** Reads a union above holds in a local; a decoder below reads the input of the read where it would read the property. */
   readonly knownReads?: readonly KnownRead[];
+  /** The name of the function a stringify emitter writes, when it is not `stringify<Id>`: the module decides it before the body. */
+  readonly functionName?: string;
   /** The root of a decoder whose wire is `unknown`: a property of `wire` is cast where it is read. */
   readonly castWire?: boolean;
 }
@@ -689,7 +691,7 @@ export function emitStringifyFunction(
     inlineLocals: new Set(),
     guardInline: !extra?.wireIdentity && node.descriptor.kind === 'union' && reachesNode(node.descriptor, node.id, { graph }),
   };
-  const fn = stringifyFunctionName(node.id);
+  const fn = extra?.functionName ?? stringifyFunctionName(node.id);
   // An intersection (allOf) is one merged object: the root writes its declared fields, as decode and encode do. With
   // validation off a required field can be missing, so a lenient root writes each field that is present. A checked
   // root, such as the validated wire stringify, keeps the all-required fast path.
@@ -978,17 +980,6 @@ export function reachesItself(graph: SchemaGraph, node: SchemaNode): boolean {
  */
 function passesValueOn(descriptor: ModelTypeDescriptor, writesMergedObject: boolean): boolean {
   return descriptor.kind === 'union' || (descriptor.kind === 'intersection' && !writesMergedObject);
-}
-
-/**
- * Wraps the body of a generated encoder function of `value` so that a value already being written is a cycle.
- * Only a recursive model's encoders carry it; the other encoders keep their speed.
- */
-// migration door, deleted in step 3d (T-286): splices the guard into the text of a function that is not Code yet
-function guardEncodeCycle(source: string): string {
-  const bodyStart = source.indexOf('{\n') + 2;
-  const bodyEnd = source.lastIndexOf('}');
-  return `${source.slice(0, bodyStart)}  beginEncode(value);\n  try {\n${source.slice(bodyStart, bodyEnd)}  } finally {\n    endEncode(value);\n  }\n}\n`;
 }
 
 function emitInternedObjectDecode(
@@ -1491,22 +1482,22 @@ interface FillValue {
  */
 function emitFillValue(
   property: ModelTypeDescriptor,
-  read: string,
+  read: Code,
+  shape: ReadShape,
   field: string,
   local: string,
   ctx: EmitCtx,
 ): FillValue {
   const before = fallibleCount(ctx);
-  // The fill reads the property through a local that the caller declared, so its input is a name.
-  const readInput = inputSlot(read, 'name');
+  const readInput = inputSlot('read', shape);
   const decoded = emitDecodeValue(property, inputOf(readInput), { ...ctx, decodeLocals: undefined });
   const fallible = emittedFallible(before, decoded, ctx);
   const checked = sharesInput(property, ctx);
   const converted = !sameCode(decoded, inputOf(readInput));
   if (!checked && !fallible && inputCount(decoded, readInput) <= 1) {
-    return { statements: [], value: render(bindInput(decoded, readInput, identifier(read))), converted, checked, fallible };
+    return { statements: [], value: render(bindInput(decoded, readInput, read)), converted, checked, fallible };
   }
-  const input = checked ? `assertPropertyAcyclic(wire, ${field}, ${read})` : read;
+  const input = checked ? `assertPropertyAcyclic(wire, ${field}, ${render(read)})` : render(read);
   if (fallible) {
     return { statements: [], value: render(emitFieldConversion(field, local, property, input, ctx)), converted, checked, fallible };
   }
@@ -1560,10 +1551,8 @@ function emitFillFunction(
     // The JSON view: a wire field is present when it is own, enumerable and not undefined. Where a write depends on
     // presence, the field is read into a local by the one Object.keys pass; a carried required field reads the wire.
     const optional = !required.has(name);
-    const direct = access('wire', name);
     const present = `__golemPresent${index}`;
-    const readDirect = (line: string): string => line.replaceAll(present, direct);
-    const fill = emitFillValue(property, present, field, `__golemWire${index}`, ctx);
+    const fill = emitFillValue(property, identifier(present), 'name', field, `__golemWire${index}`, ctx);
     const proto = name === '__proto__';
     if (fill.converted || fill.checked || proto) needsFill = true;
     if (fill.fallible || fill.checked) fallible = true;
@@ -1583,7 +1572,12 @@ function emitFillFunction(
       const write = (value: string): string[] => ['  if (copyIdentity) {', emitFillPropertyWrite(name, value, '    '), '  }'];
       if (optional) captured.push([name, present]);
       propertyWrites.push(...(!optional
-        ? [...fill.statements.map((line) => `  ${readDirect(line)}`), ...write(readDirect(fill.value))]
+        ? (() => {
+          // A required field that is carried reads the wire itself, so it is written against that read.
+          const direct = accessRead('wire', name);
+          const carried = emitFillValue(property, direct.read, direct.shape, field, `__golemWire${index}`, ctx);
+          return [...carried.statements.map((line) => `  ${line}`), ...write(carried.value)];
+        })()
         : [
           `  if (${present} !== undefined) {`,
           ...[...fill.statements, ...write(fill.value)].map((line) => line.startsWith('  ') ? `  ${line}` : `    ${line}`),
@@ -1603,7 +1597,6 @@ function emitFillFunction(
     ? `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>, copyIdentity = true): Record<string, unknown> {`
     : `${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {`;
   const lines: string[] = [
-    declaration,
     ...(captured.length > 0 ? [`  ${presentKeysSource('wire', captured, local => `${local}: unknown`)}`] : []),
     ...(identityWrites.length > 0
       ? ['  if (copyIdentity) {', ...identityWrites, '  }']
@@ -1623,7 +1616,7 @@ function emitFillFunction(
       // A pattern without a field schema carries the value by reference.
       const value = schema === undefined
         ? { statements: [], value: 'assertPropertyAcyclic(wire, key, __golemExtra)', converted: false, checked: true, fallible: true }
-        : emitFillValue(schema, '__golemExtra', 'key', '__golemValue', ctx);
+        : emitFillValue(schema, identifier('__golemExtra'), 'name', 'key', '__golemValue', ctx);
       if (value.converted || value.checked) needsFill = true;
       if (value.fallible || value.checked) fallible = true;
       return [
@@ -1650,10 +1643,9 @@ function emitFillFunction(
     lines.push('  }');
   }
   lines.push('  return out;');
-  const body = lines.splice(1);
   const source = recursive
-    ? [declaration, '  beginDecode(wire);', '  try {', ...body.map((line) => `  ${line}`), '  } finally {', '    endDecode(wire);', '  }', '}', '']
-    : [declaration, ...body, '}', ''];
+    ? [declaration, '  beginDecode(wire);', '  try {', ...lines.map((line) => `  ${line}`), '  } finally {', '    endDecode(wire);', '  }', '}', '']
+    : [declaration, ...lines, '}', ''];
   return { source: source.join('\n'), copyIdentity, needsFill, fallible };
 }
 
@@ -1865,10 +1857,10 @@ function emitNodeRuntime(
   // The validated call of a codec whose wire and model schemas agree runs this function after its check, so it keeps the
   // all-required fast path and a call with validation off runs a lenient copy. Any other call is lenient.
   const checkedCore = validationEnabled && node.sameSchema;
-  const stringifySrc = emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: !checkedCore });
-  const lenientSource = checkedCore ? emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true }) : stringifySrc;
-  const lenientStringify = lenientSource === stringifySrc ? '' : lenientSource.replace(`function ${stringifyFunctionName(node.id)}(`, `function ${stringifyFunctionName(node.id)}Lenient(`);
   const stringifyName = stringifyFunctionName(node.id);
+  const stringifySrc = emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: !checkedCore, functionName: `${stringifyName}Core` });
+  const lenientCore = checkedCore ? emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Core` }) : stringifySrc;
+  const lenientStringify = lenientCore === stringifySrc ? '' : emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Lenient` });
   const fillName = fillFunctionName(node.id);
   const fromWire = fromWireFunctionName(node.id);
   const toWire = toWireFunctionName(node.id);
@@ -1902,14 +1894,13 @@ function emitNodeRuntime(
     ? render(emitEncodedRecord(objectDescriptor, 'record', encodedWireContext))
     : render(emitEncodeValue(node.descriptor, '(value as never)', encodedWireContext));
   const wireStringifySrc = emitsValidatedWire
-    ? `${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true })
-      .replace(`function ${stringifyName}(`, `function ${stringifyName}Wire(`)}${exported !== '' && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true)
+    ? `${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true, functionName: `${stringifyName}Wire` })}${exported !== '' && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true)
       ? `export { ${stringifyName}Wire as ${wireStringifyExportName(node.codecId)} };\n`
       : ''}`
     : '';
 
   const wrappedStringify = [
-    stringifySrc.replace(`function ${stringifyName}(`, `function ${stringifyName}Core(`),
+    stringifySrc,
     lenientStringify,
     wireStringifySrc,
     `${exported}function ${stringifyName}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
@@ -2009,16 +2000,19 @@ function emitNodeRuntime(
   const toWireCore = `${toWire}Core`;
   // A model with no field and no extra names writes `{}` and reads nothing from the value.
   const readsRecord = objectDescriptor !== undefined && encodedRecordExpr !== '{}';
-  const toWireCoreSource = [
-    `function ${toWireCore}(${readsRecord || !objectDescriptor ? 'value' : '_value'}: ${fieldsType ?? 'unknown'}): ${wireType ?? 'unknown'} {`,
+  const toWireCoreBody = [
     ...(readsRecord ? ['  const record = value as Record<string, unknown>;'] : []),
     ...inlineLocalDeclarations(encodedWireContext),
     `  const wire = ${encodedRecordExpr};`,
     wireType ? `  return wire as ${wireType};` : '  return wire;',
+  ];
+  // A recursive node registers the value while the body writes it, so a value that holds itself throws at its first repeat.
+  const toWireCoreLines = [[
+    `function ${toWireCore}(${readsRecord || !objectDescriptor ? 'value' : '_value'}: ${fieldsType ?? 'unknown'}): ${wireType ?? 'unknown'} {`,
+    ...(recursiveNode ? ['  beginEncode(value);', '  try {', ...toWireCoreBody, '  } finally {', '    endEncode(value);', '  }'] : toWireCoreBody),
     '}',
     '',
-  ].join('\n');
-  const toWireCoreLines = [recursiveNode ? guardEncodeCycle(toWireCoreSource) : toWireCoreSource];
+  ].join('\n')];
   const toWireLines = [
     ...toWireCoreLines,
     `${exported}function ${toWire}(value: ${fieldsType ?? 'unknown'}, options?: ${SERDE_OPTIONS}): ${wireType ?? 'unknown'} {`,
