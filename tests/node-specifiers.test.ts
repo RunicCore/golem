@@ -163,13 +163,15 @@ test('a source phase import and import attributes keep their form while a relati
   // protects: T-350 TypeScript 7.1 import forms (source phase, with attributes) survive the specifier edits
   const root = createNodeSpecifierProject(t, { prefix: 'golem-node-specifiers-forms-', compilerOptions: { lib: ['es2026', 'esnext.modulesource'] } });
   writeModelSources(path.join(root, 'src'), {
-    'x.ts': 'export const x = 1;\n',
+    'x.ts': 'export const x = 1;\nexport const y = 2;\n',
     'config.json': '{"mode":"strict"}\n',
     'wasm.d.ts': "declare module '*.wasm' {}\n",
     'forms.ts': `import source wasmSource from './mod.wasm';
 import config from './config.json' with { type: 'json' };
 import { x } from './x' with { 'resolution-mode': 'import' };
 export const lazy = () => import('./x', { with: { 'resolution-mode': 'import' } });
+export { y } from './x' with { 'resolution-mode': 'import' };
+export { default as data } from './config.json' with { type: 'json' };
 export { config, wasmSource, x };
 `,
   });
@@ -178,6 +180,8 @@ export { config, wasmSource, x };
 import config from './config.json' with { type: 'json' };
 import { x } from './x.js' with { 'resolution-mode': 'import' };
 export const lazy = () => import('./x.js', { with: { 'resolution-mode': 'import' } });
+export { y } from './x.js' with { 'resolution-mode': 'import' };
+export { default as data } from './config.json' with { type: 'json' };
 export { config, wasmSource, x };
 `);
 });

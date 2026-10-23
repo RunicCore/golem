@@ -174,14 +174,19 @@ test('a call next to a source phase import and import attributes is rewritten an
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
   const code = rewritten(root, result, 'import-phases.ts');
-  assertLines(code, [
-    "import source wasmSource from './mod.wasm';",
-    "import config from './config.json' with { type: 'json' };",
-    "import type { Payment } from './payment.model.js' with { 'resolution-mode': 'import' };",
-    "import { Payment as __golem_Payment } from './payment.model.js';",
-    "export const lazyConfig = () => import('./config.json', { with: { type: 'json' } });",
-    'export const payment = __golem_requireObjectCodec("TPayment_22222222").parse(text, { construct: __golem_Payment });',
-  ]);
+  assert.equal(code, `import './payment.model.generated.js';
+import { Payment as __golem_Payment } from './payment.model.js';
+import { requireObjectCodec as __golem_requireObjectCodec } from '@exprtlabs/golem/serde';
+import { parse } from '@exprtlabs/golem/serde';
+import source wasmSource from './mod.wasm';
+import config from './config.json' with { type: 'json' };
+import type { Payment } from './payment.model.js' with { 'resolution-mode': 'import' };
+
+declare const text: string;
+export const payment = __golem_requireObjectCodec("TPayment_22222222").parse(text, { construct: __golem_Payment });
+export const lazyConfig = () => import('./config.json', { with: { type: 'json' } });
+export { config, wasmSource };
+`);
 });
 
 test('a call on a model named only as a type imports the generated module that registers its codec, once', (t) => {
