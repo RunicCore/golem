@@ -506,7 +506,8 @@ export function isOrphanCompanion(companion: string, suffixes: readonly string[]
 /**
  * The names of the class models a model file declares: the exported aliases `type Name = IModel<...>`, where `IModel` is
  * the name the file imports it by (`import { IModel as Model }` too) or a member of a namespace import. The text is read
- * with patterns; a name it misses keeps the companion on disk for the analysis.
+ * with patterns. A file where it finds no name gets no stub: its own companion stays as it is on disk, and a companion in
+ * `models.output`, which golem owns, reads as `export {}`.
  */
 export function classModelNames(text: string): string[] {
   const local = new Set<string>();
