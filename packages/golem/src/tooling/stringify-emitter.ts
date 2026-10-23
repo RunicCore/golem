@@ -479,14 +479,30 @@ function stringifyParameters(value: Code, ctx: EmitCtx): Code {
   return ctx.withoutOptions ? value : code`${value}, ${STRINGIFY_OPTIONS}`;
 }
 
-/**
- * A stringify function: its header, its body lines, and the cycle guard around the body when the node reaches itself.
- * The guard registers the value while the body writes it, so a value that holds itself throws at its first repeat.
- */
-function stringifyFunction(header: Code, body: readonly Code[], guard: boolean, value: InputSlot): Code {
+/** The header of a stringify function, given the name of its value parameter. */
+type StringifyHeader = (parameter: Code) => Code;
+
+function stringifyHeader(name: Code, type: Code, ctx: EmitCtx): StringifyHeader {
+  return (parameter) => code`function ${name}(${stringifyParameters(code`${parameter}: ${type}`, ctx)}): string {`;
+}
+
+/** The body lines of a stringify function with the cycle guard around them when the node reaches itself. */
+function guardedBody(body: readonly Code[], guard: boolean, value: InputSlot): Code[] {
   const open = guard ? [code`  ${rt.conversion.beginEncode}(${inputOf(value)});`, code`  try {`] : [];
   const close = guard ? [code`  } finally {`, code`    ${rt.conversion.endEncode}(${inputOf(value)});`, code`  }`] : [];
-  return bindInput(functionCode(header, [...open, ...body, ...close]), value, code`value`);
+  return [...open, ...body, ...close];
+}
+
+/**
+ * A stringify function: its header, its body lines, and the cycle guard around the body when the node reaches itself.
+ * The guard registers the value while the body writes it, so a value that holds itself throws at its first repeat. The
+ * parameter is `value` when the body reads it and `_value` when it does not: the callers pass it either way, and a
+ * parameter that nothing reads fails a build with noUnusedParameters.
+ */
+function stringifyFunction(header: StringifyHeader, body: readonly Code[], guard: boolean, value: InputSlot): Code {
+  const lines = guardedBody(body, guard, value);
+  const parameter = identifier(lines.some((line) => inputCount(line, value) > 0) ? 'value' : '_value');
+  return bindInput(functionCode(header(parameter), lines), value, parameter);
 }
 
 /** A function: its header, its body lines and the closing brace. */
@@ -547,7 +563,7 @@ function emitLenientObjectStringify(
   value: InputSlot,
 ): Code {
   const properties = Object.entries(descriptor.properties);
-  const header = code`function ${identifier(fn)}(${stringifyParameters(code`value: Record<string, unknown>`, ctx)}): string {`;
+  const header = stringifyHeader(identifier(fn), code`Record<string, unknown>`, ctx);
   const lines: Code[] = [];
   const fields = properties.map(([name, property], index) => {
     const { read } = accessRead(inputOf(value), name);
@@ -601,9 +617,9 @@ function emitObjectStringify(
     : descriptor.additionalPropertiesDeclared ? { kind: 'unknown' as const } : undefined;
   const name = identifier(fn);
   if (properties.length === 0 && !additional) {
-    return stringifyFunction(code`function ${name}(${stringifyParameters(code`_value: Record<string, unknown>`, ctx)}): string {`, [code`  return '{}';`], guard, valueSlot);
+    return stringifyFunction(stringifyHeader(name, code`Record<string, unknown>`, ctx), [code`  return '{}';`], guard, valueSlot);
   }
-  const header = code`function ${name}(${stringifyParameters(code`value: Record<string, unknown>`, ctx)}): string {`;
+  const header = stringifyHeader(name, code`Record<string, unknown>`, ctx);
   if (isPlainDataMap(descriptor)) {
     return stringifyFunction(header, [code`  return ${rt.serde.stringifyJsonScalar}(${value} as never);`], guard, valueSlot);
   }
@@ -721,14 +737,14 @@ function stringifyCode(
   if (root) return emitObjectStringify(fn, root, ctx, guard, valueSlot);
   if (delegates) {
     return stringifyFunction(
-      code`function ${identifier(fn)}(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {`,
+      (parameter) => code`function ${identifier(fn)}(${parameter}: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {`,
       [code`  return ${rt.serde.requireObjectCodec}(${literal(node.codecId)}).stringify(${inputOf(valueSlot)} as never, options);`],
       false,
       valueSlot,
     );
   }
   const value = onCastValue((cast) => emitValue(node.descriptor, cast, ctx), inputOf(valueSlot));
-  const header = code`function ${identifier(fn)}(${stringifyParameters(code`value: unknown`, ctx)}): string {`;
+  const header = stringifyHeader(identifier(fn), code`unknown`, ctx);
   return stringifyFunction(header, [...inlineLocalLines(ctx), code`  return ${value};`], guard, valueSlot);
 }
 
@@ -2074,11 +2090,14 @@ function emitNodeRuntime(
     wireCode ? code`  return wire as ${wireCode};` : code`  return wire;`,
   ];
   // A recursive node registers the value while the body writes it, so a value that holds itself throws at its first repeat.
-  const toWireCoreSource = stringifyFunction(
-    code`function ${toWireCoreId}(${identifier(readsRecord || !objectDescriptor ? 'value' : '_value')}: ${fieldsOrUnknown}): ${wireOrUnknown} {`,
-    toWireCoreBody,
-    recursiveNode,
-    inputSlot('value', 'name', true),
+  const toWireValue = inputSlot('value', 'name', true);
+  const toWireCoreSource = bindInput(
+    functionCode(
+      code`function ${toWireCoreId}(${identifier(readsRecord || !objectDescriptor ? 'value' : '_value')}: ${fieldsOrUnknown}): ${wireOrUnknown} {`,
+      guardedBody(toWireCoreBody, recursiveNode, toWireValue),
+    ),
+    toWireValue,
+    identifier('value'),
   );
   const toWireLines = [
     toWireCoreSource,

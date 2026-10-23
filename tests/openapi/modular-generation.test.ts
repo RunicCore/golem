@@ -707,6 +707,7 @@ test('10 and 100 operations share one validators module and the generated source
 });
 
 test('sequential same-title generation jobs keep schema and resource contexts isolated', async t => {
+  // protects: T-295 a stringify core of a const-only model compiles under noUnusedParameters
   const alpha = fixture(t).source;
   const beta = fixture(t).source;
   const sdks = [
@@ -714,8 +715,8 @@ test('sequential same-title generation jobs keep schema and resource contexts is
     writeGeneratedSdk(writeSdk, contextDocument('beta'), { output: beta, name: 'Context', profile: { mobx: false, validation: true } }),
   ];
   assert.deepEqual(sdks.map(sdk => sdkValidatorArtifacts(sdk.artifacts).length), [1, 1]);
-  compileGeneratedSdk(alpha, [], { strict: true });
-  compileGeneratedSdk(beta, [], { strict: true });
+  compileGeneratedSdk(alpha, [], STRICT_OPTIONS);
+  compileGeneratedSdk(beta, [], STRICT_OPTIONS);
   // An operation module imports its validators by operation and slot, so it carries no schema context of the job.
   const accepted = async (source: string, value: string): Promise<boolean> => {
     const { operation } = await loadOperation(source, 'putEnvelope');
@@ -731,7 +732,7 @@ test('the SDK validators module exports one named function per root and no recor
   const { source } = fixture(t);
   const result = writeGeneratedSdk(writeSdk, contextDocument('alpha'), { output: source, name: 'Context', profile: { mobx: false, validation: true } });
   assert.equal(sdkValidatorArtifacts(result.artifacts).length, 1);
-  compileGeneratedSdk(source, [], { strict: true });
+  compileGeneratedSdk(source, [], STRICT_OPTIONS);
   const module = requireRecord(await import(pathToFileURL(path.join(source, 'dist/validators.generated.js')).href), 'validators module');
   // A model root's fast check is exported as the function itself; the operation roots get none.
   assert.deepEqual(Object.keys(module).map(name => name.replace(/_[0-9a-f]{8}$/, '_<hash>')).sort(), [
