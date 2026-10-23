@@ -401,22 +401,9 @@ test('a project root reached through a symlink opens its own project', (t: TestC
   assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('item.model.generated.ts')));
 });
 
-test('model generation reports source type errors with path:line:col and TS code', (t: TestContext) => {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-diagnostics-', linkTypescript: true });
-  fs.writeFileSync(path.join(sourceRoot, 'broken.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-const wrong: string = 5;
-export type TBroken = IModel<{ id: string }>;
-export { wrong };
-`);
-  assert.throws(
-    () => generate({ root, profile: { mobx: false, validation: false } }),
-    /broken\.model\.ts:2:7 - error TS2322: Type 'number' is not assignable to type 'string'\./,
-  );
-});
-
-test('a compiler error prints its file relative to the working directory', (t: TestContext) => {
+test('model generation reports source type errors with the path relative to the working directory, the line, the column and the TS code', (t: TestContext) => {
   // protects: T-312 diagnostics print paths relative to the working directory, as tsc does
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-relative-', linkTypescript: true });
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-generate-diagnostics-', linkTypescript: true });
   const broken = path.join(sourceRoot, 'broken.model.ts');
   fs.writeFileSync(broken, `import type { IModel } from '@exprtlabs/golem/model';
 const wrong: string = 5;
@@ -425,7 +412,7 @@ export { wrong };
 `);
   assert.throws(
     () => generate({ root, profile: { mobx: false, validation: false } }),
-    (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), broken)}:2:7 - error TS2322`),
+    (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), broken)}:2:7 - error TS2322: Type 'number' is not assignable to type 'string'.`),
   );
 });
 

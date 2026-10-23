@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { GolemConfig } from './config.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, isInsideDirectory, suffixPattern } from './generator-api.js';
 import { changedPaths, InputPoller, OwnedOutputIndex, RunBaseline } from './input-poller.js';
-import { GeneratorSessionResources, runPipeline, strongestInputKind } from './pipeline.js';
+import { GeneratorSessionResources, jobFailedBeforeWriting, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, JobReport, PipelineState } from './pipeline.js';
 
 /** The names a job reads as sources, and what they are: a path with one of these endings is a source whether or not a run has read it. */
@@ -165,8 +165,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       } catch (error) {
         retryFull = true;
         failed = true;
-        reportError(error);
-        process.stderr.write('The run failed. The job that failed wrote no files; its last good output stays in place.\n');
+        reportError(jobFailedBeforeWriting(error) ? new Error(`${errorMessage(error)}\nThe job that failed wrote no files; its last good output stays in place.`, { cause: error }) : error);
       }
       attempted = latestAttempt;
       // Keep pre-read signatures so edits during work trigger the next serialized run.

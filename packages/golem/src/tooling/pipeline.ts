@@ -463,6 +463,16 @@ type JobOutcome =
     readonly loadedProviders: ReadonlyMap<string, LoadedProvider>;
   };
 
+/** The errors `applyJob` threw. */
+const failedWhileWriting = new WeakSet<object>();
+/** The errors of a job that failed before it wrote anything. */
+const failedBeforeWriting = new WeakSet<object>();
+
+/** Whether `error` came from a job that failed before it wrote a file: that job's output is as its last good run left it. */
+export function jobFailedBeforeWriting(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && failedBeforeWriting.has(error);
+}
+
 /** Two generators emitting one output is an error, also within one job. */
 function assertUnowned(owned: ReadonlySet<string>, outputs: readonly string[]): void {
   const seen = new Set<string>();
@@ -629,7 +639,14 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
   writeWarnings(result.diagnostics ?? []);
   assertUnowned(progress.owned, result.artifacts.map(artifact => artifact.path));
   options.onOwned?.(result.artifacts.map(artifact => artifact.path));
-  const changes = applyJob(config, inventory, job, result.artifacts, Boolean(options.check));
+  let changes: FileChanges;
+  try {
+    changes = applyJob(config, inventory, job, result.artifacts, Boolean(options.check));
+  } catch (error) {
+    // The write loop may have changed files before it threw, so this failure is not one that left the job's output as it was.
+    if (typeof error === 'object' && error !== null) failedWhileWriting.add(error);
+    throw error;
+  }
   // The job's record and its written output change together: a later job's failure leaves a record that matches the files.
   if (nextRecord) saveJobRecords(config, new Map(progress.nextRecords).set(job.id, nextRecord));
   for (const input of result.watchInputs) observer.observe(input, job.kind, job.id);
@@ -721,7 +738,13 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
   const progress = startProgress(plan, providers);
   for (const job of plan.config.jobs) {
     const started = performance.now();
-    const outcome = await runJob(job, run, plan, progress);
+    let outcome: JobOutcome;
+    try {
+      outcome = await runJob(job, run, plan, progress);
+    } catch (error) {
+      if (typeof error === 'object' && error !== null && !failedWhileWriting.has(error)) failedBeforeWriting.add(error);
+      throw error;
+    }
     absorbOutcome(progress, job, outcome, Math.round(performance.now() - started));
   }
   return await finalizePipeline(run, plan, progress);

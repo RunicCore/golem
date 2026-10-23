@@ -41,7 +41,7 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 Arguments after it are passed to the child process unchanged. `--watch` is
 valid only with `exec`; unknown options fail before generation starts.
 
-Each good run of `watch` prints one line: the result of each job, then the time of the run. A job shows the files it updated or removed. A job that did not run, or wrote nothing new, shows `unchanged`. The first good run after a failed run starts with `Recovered:`. A failed run prints its error. The job that failed writes no files, so its last good output stays in place; a job that finished earlier in the same run has written its files.
+Each good run of `watch` prints one line: the result of each job, then the time of the run. A job shows the files it updated or removed. A job that did not run, or wrote nothing new, shows `unchanged`. The first good run after a failed run starts with `Recovered:`. `exec --watch` prints the same line for its first run. A failed run prints its error. When a job fails before it writes, the run also says that the job wrote no files and that its last good output stays in place; a job that finished earlier in the same run has written its files.
 
 ```text
 models: 2 files updated · openapi:sdk: unchanged · 412 ms
