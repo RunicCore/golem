@@ -62,7 +62,7 @@ export function calleeOf(converted: Code, input: string = FIELD_CONVERSION_INPUT
     return name === undefined ? undefined : identifier(name);
   }
   if (more.length > 0 || second.kind !== 'text' || second.text !== `(${input})`) return undefined;
-  return first.kind === 'runtime' || first.kind === 'helper' || first.kind === 'name' ? { parts: [first] } : undefined;
+  return first.kind === 'runtime' || first.kind === 'imported' || first.kind === 'helper' || first.kind === 'name' ? { parts: [first] } : undefined;
 }
 
 const ITEM = identifier('item');

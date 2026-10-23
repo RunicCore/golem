@@ -1618,6 +1618,7 @@ function bodyKey(body: Code, slots: FunctionSlots, groups: ReadonlyMap<number, n
         return [callee.fast, groups.get(callee.id) ?? -1];
       }
       case 'runtime': return ['runtime', part.module, part.name, part.typeOnly === true, part.alias ?? null];
+      case 'imported': return ['imported', part.source.specifier, part.name, part.typeOnly === true, part.alias ?? null];
       case 'helper': return ['helper', part.helper.id];
       case 'input': return ['input', inputNumber(part.slot)];
     }

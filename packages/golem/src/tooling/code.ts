@@ -39,9 +39,40 @@ export interface Helper {
 export type Part =
   | { readonly kind: 'text'; readonly text: string }
   | { readonly kind: 'runtime'; readonly module: RuntimeModule; readonly name: string; readonly typeOnly?: true; readonly alias?: string }
+  | { readonly kind: 'imported'; readonly source: ImportSource; readonly name: string; readonly typeOnly?: true; readonly alias?: string }
   | { readonly kind: 'helper'; readonly helper: Helper }
   | { readonly kind: 'name'; readonly slot: NameSlot }
   | { readonly kind: 'input'; readonly slot: InputSlot };
+
+/**
+ * A module that a file imports names from, other than a runtime module: a companion, a handwritten class, a generated
+ * validators module. The file declares each name in the order its import statement lists it; the name is imported only if
+ * the code holds its part, so the import holds exactly the names the code uses.
+ */
+export class ImportSource {
+  readonly #declared = new Map<string, Code>();
+
+  /** `typeStatement` writes `import type { … }`, for a module that is imported for types only. */
+  public constructor(public readonly specifier: string, public readonly typeStatement: boolean = false) {}
+
+  /** The Code of `name`, which the code writes as `alias` when it has one. The first call of a name decides its place in the statement. */
+  public name(name: string, options: { readonly alias?: string; readonly typeOnly?: true } = {}): Code {
+    const key = `${name}\0${options.alias ?? ''}\0${options.typeOnly === true}`;
+    let declared = this.#declared.get(key);
+    if (!declared) {
+      checkedIdentifier(name, 'imported name');
+      if (options.alias !== undefined) checkedIdentifier(options.alias, 'alias');
+      declared = fromParts([{ kind: 'imported', source: this, name, ...(options.typeOnly ? { typeOnly: true as const } : {}), ...(options.alias === undefined ? {} : { alias: options.alias }) }]);
+      this.#declared.set(key, declared);
+    }
+    return declared;
+  }
+
+  /** The declared names that `used` holds, in the order of their declaration. */
+  public statement(used: ReadonlySet<Code>): readonly Part[] {
+    return [...this.#declared.values()].filter((declared) => used.has(declared)).map((declared) => declared.parts[0]);
+  }
+}
 
 export interface Code {
   readonly parts: readonly Part[];
@@ -196,7 +227,7 @@ export function readShape(expression: Emitted): ReadShape {
   const [only, ...more] = emittedCode(expression).parts;
   if (only === undefined || more.length > 0) return 'other';
   if (only.kind === 'input') return only.slot.shape;
-  if (only.kind === 'name') return 'name';
+  if (only.kind === 'name' || only.kind === 'imported') return 'name';
   // migration door, deleted in steps 5 and 6 (T-288, T-289): tests the text of a read that a caller wrote as a string
   if (only.kind === 'text') return NAME_TEXT.test(only.text) ? 'name' : CHAIN_TEXT.test(only.text) ? 'chain' : 'other';
   return 'other';
@@ -265,6 +296,8 @@ interface ImportedName { readonly name: string; readonly alias?: string }
 
 interface Collected {
   readonly runtime: Map<RuntimeModule, RuntimeNames>;
+  /** The imported parts of each source, by the Code that `ImportSource.name` made. */
+  readonly imported: Map<ImportSource, Set<Code>>;
   /** The helpers by id, in the order a file can define them: a helper comes after the helpers its definition names. */
   readonly helpers: Map<string, { readonly helper: Helper; readonly definition: Code }>;
 }
@@ -276,6 +309,7 @@ function compareHelpers(left: Helper, right: Helper): number {
 
 function collect(root: Code): Collected {
   const runtime = new Map<RuntimeModule, RuntimeNames>();
+  const imported = new Map<ImportSource, Set<Code>>();
   const found = new Map<string, { readonly helper: Helper; readonly definition: Code; readonly needs: readonly Helper[] }>();
   const scan = (piece: Code): readonly Helper[] => {
     const needs = new Map<string, Helper>();
@@ -284,6 +318,10 @@ function collect(root: Code): Collected {
         const names = runtime.get(part.module) ?? { values: new Map<string, ImportedName>(), types: new Map<string, ImportedName>() };
         (part.typeOnly ? names.types : names.values).set(`${part.name}\0${part.alias ?? ''}`, { name: part.name, ...(part.alias === undefined ? {} : { alias: part.alias }) });
         runtime.set(part.module, names);
+      } else if (part.kind === 'imported') {
+        const used = imported.get(part.source) ?? new Set<Code>();
+        used.add(part.source.name(part.name, { ...(part.alias === undefined ? {} : { alias: part.alias }), ...(part.typeOnly ? { typeOnly: true as const } : {}) }));
+        imported.set(part.source, used);
       } else if (part.kind === 'helper') {
         needs.set(part.helper.id, part.helper);
       }
@@ -315,7 +353,7 @@ function collect(root: Code): Collected {
     helpers.set(next.id, { helper: entry.helper, definition: entry.definition });
   };
   [...found.values()].map(({ helper: each }) => each).sort(compareHelpers).forEach(visit);
-  return { runtime, helpers };
+  return { runtime, imported, helpers };
 }
 
 export interface RuntimeImport {
@@ -335,9 +373,14 @@ function inOrder(names: ReadonlyMap<string, ImportedName>, listed: readonly stri
 }
 
 /** The runtime parts of a Code and of the helpers it needs, grouped by module in the fixed module order. */
-export function importSet(root: Code, order: ImportOptions['order'] = {}): readonly RuntimeImport[] {
-  return [...collect(root).runtime]
-    .sort(([left], [right]) => RUNTIME_MODULE_RANK[left] - RUNTIME_MODULE_RANK[right])
+export function importSet(root: Code, options: Pick<ImportOptions, 'order' | 'modules'> = {}): readonly RuntimeImport[] {
+  const { order = {}, modules } = options;
+  const position = (module: RuntimeModule): number => modules ? modules.indexOf(module) : RUNTIME_MODULE_RANK[module];
+  const found = [...collect(root).runtime];
+  const unlisted = found.find(([module]) => position(module) < 0);
+  if (unlisted) throw new Error(`the code uses the runtime module "${unlisted[0]}", which the file does not list in its module order`);
+  return found
+    .sort(([left], [right]) => position(left) - position(right))
     .map(([module, { values, types }]) => ({ module, names: inOrder(values, order[module]), types: inOrder(types, order[module]) }));
 }
 
@@ -353,6 +396,8 @@ export interface ImportOptions {
    */
   readonly typeNames?: 'separate' | 'inline';
   /** The names of a module that a file with a fixed order lists: they come first, in this order, for values and types alike; the others follow in code point order. */
+  /** The runtime modules this call writes, in this order; a module that the code uses and the list lacks is an error. Without it, every module in the fixed order. */
+  readonly modules?: readonly RuntimeModule[];
   readonly order?: Partial<Readonly<Record<RuntimeModule, readonly string[]>>>;
 }
 
@@ -361,7 +406,7 @@ export interface ImportOptions {
  * `import type` statement before the value statement, or after the values as `type Name` when the file asks for `inline`.
  */
 export function runtimeImports(root: Code, options: ImportOptions = {}): readonly Code[] {
-  return importSet(root, options.order).flatMap(({ module, names, types }) => {
+  return importSet(root, options).flatMap(({ module, names, types }) => {
     const specifier = options.specifiers?.[module] ?? `@exprtlabs/golem/${module}`;
     const quoted = options.quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`;
     if (options.typeNames === 'inline') {
@@ -372,6 +417,27 @@ export function runtimeImports(root: Code, options: ImportOptions = {}): readonl
       ...(types.length > 0 ? [plainText(`import type { ${types.join(', ')} } from ${quoted};`)] : []),
       ...(names.length > 0 ? [plainText(`import { ${names.join(', ')} } from ${quoted};`)] : []),
     ];
+  });
+}
+
+/**
+ * The import statements of the names that code takes from `sources`, one statement per source, in the order of `sources`.
+ * A source with no used name writes none. Code that holds a name of a source not listed is an error.
+ */
+export function fileImports(root: Code, sources: readonly ImportSource[], options: Pick<ImportOptions, 'quote'> = {}): readonly Code[] {
+  const { imported } = collect(root);
+  const unlisted = [...imported.keys()].find((source) => !sources.includes(source));
+  if (unlisted) throw new Error(`the code uses names of "${unlisted.specifier}", which the file does not list among its import sources`);
+  return sources.flatMap((source) => {
+    const used = imported.get(source);
+    if (!used) return [];
+    const quoted = options.quote === '"' ? jsonText(source.specifier) : `'${checkedSingleQuoted(source.specifier)}'`;
+    const names = source.statement(used).map((part) => {
+      if (part.kind !== 'imported') throw new Error('an import source declared a part that is not a name');
+      const spelled = part.alias === undefined ? part.name : `${part.name} as ${part.alias}`;
+      return part.typeOnly && !source.typeStatement ? `type ${spelled}` : spelled;
+    });
+    return [plainText(`import ${source.typeStatement ? 'type ' : ''}{ ${names.join(', ')} } from ${quoted};`)];
   });
 }
 
@@ -401,7 +467,7 @@ function plainText(text: string): Code {
  */
 export function sameCode(left: Code, right: Code): boolean {
   const flat = (root: Code): readonly Part[] => fromParts(root.parts.map((part): Part =>
-    part.kind === 'runtime' ? { kind: 'text', text: part.alias ?? part.name }
+    part.kind === 'runtime' || part.kind === 'imported' ? { kind: 'text', text: part.alias ?? part.name }
       : part.kind === 'helper' ? { kind: 'text', text: part.helper.id }
         : part)).parts;
   const [first, second] = [flat(left), flat(right)];
@@ -425,7 +491,8 @@ export function render(root: Code, names: NameTable = new NameTable()): string {
   for (const part of root.parts) {
     switch (part.kind) {
       case 'text': text += part.text; break;
-      case 'runtime': text += part.alias ?? part.name; break;
+      case 'runtime':
+      case 'imported': text += part.alias ?? part.name; break;
       case 'helper': text += part.helper.id; break;
       case 'name': text += names.resolve(part.slot); break;
       case 'input': throw new Error(`the input "${part.slot.label}" is not bound`);

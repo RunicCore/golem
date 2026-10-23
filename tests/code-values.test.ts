@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  NameTable, aliased, bindRead, code, helper, helperDefinitions, helperName, helperSet, identifier, importSet, inputOf, inputSlot, join, literal,
+  ImportSource, NameTable, aliased, bindRead, fileImports, code, helper, helperDefinitions, helperName, helperSet, identifier, importSet, inputOf, inputSlot, join, literal,
   nameOf, nameSlot, render, runtimeImports, sameCode, legacyText,
 } from '#golem/code';
 import { rt, rtType } from '#golem/rt';
@@ -85,6 +85,30 @@ test('a file writes value and type names on one line, a type under a local name,
   );
   assert.equal(render(body), 'assertModelValue(IssueSource, parseJson) as __GolemSerdeOptions & generatedModelFieldsBrand & generatedModelWireBrand & GeneratedModel');
   assert.throws(() => aliased(code`a ${rt.serde.parseJson}`, 'x'), /one runtime part/);
+});
+
+test('a file imports the names it uses from its own sources, in the order it declares them, and lists the runtime modules it writes', () => {
+  // protects: T-288 the import of a companion or a handwritten class holds the names the code uses, in the order of the file (SC-2, SC-3)
+  const companion = new ImportSource('./order.golem.ts');
+  const orderBase = companion.name('OrderBaseModel');
+  const orderJson = companion.name('OrderJSON', { typeOnly: true });
+  const orderInit = companion.name('OrderInit', { typeOnly: true });
+  const money = new ImportSource('./money.js', true);
+  const moneyAlias = money.name('Money', { alias: '__golemClass0' });
+  const unused = new ImportSource('./unused.js');
+  unused.name('Never');
+  const body = code`new ${orderBase}() as ${orderInit}; ${rt.serde.parseJson}(${rt.model.registerGeneratedModel}) as ${moneyAlias}`;
+  assert.equal(
+    render(join(fileImports(body, [money, unused, companion], { quote: '"' }), code`\n`)),
+    'import type { Money as __golemClass0 } from "./money.js";\nimport { OrderBaseModel, type OrderInit } from "./order.golem.ts";',
+  );
+  assert.throws(() => fileImports(body, [companion]), /does not list among its import sources/);
+  assert.equal(render(orderJson), 'OrderJSON');
+  assert.equal(
+    render(join(runtimeImports(body, { modules: ['serde', 'model'] }), code`\n`)),
+    "import { parseJson } from '@exprtlabs/golem/serde';\nimport { registerGeneratedModel } from '@exprtlabs/golem/model';",
+  );
+  assert.throws(() => runtimeImports(body, { modules: ['serde'] }), /does not list in its module order/);
 });
 
 test('a helper that a file reads while it loads comes after the helper it names', () => {
