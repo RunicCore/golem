@@ -720,7 +720,7 @@ export type TOrder = IModel<{ count: number & TValidation<typeof isEven> }>;
     return new Map(artifacts.map(artifact => [path.relative(root, artifact.path), artifact.content]));
   };
   const first = generateAtNewLocation();
-  assert.ok(first.has('src/order.model.generated.ts'));
+  assert.match(first.get('src/order.model.generated.ts') ?? '', /\[\\"\.\.\/shared\/rules\.ts#isEven\\"\]/, 'the id is the path from the root of the app to the function');
   assert.deepEqual(generateAtNewLocation(), first);
 });
 
