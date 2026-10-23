@@ -5,7 +5,7 @@
  * `emitTupleItems` have none. It imports no walker.
  */
 import type { ModelTypeDescriptor } from '../model.js';
-import { code, emittedCode, identifier, literal, readShape, sameCode, type Code, type Emitted } from './code.js';
+import { code, identifier, literal, readShape, sameCode, type Code } from './code.js';
 import { rt } from './rt.js';
 
 export type TupleConversionDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'tuple' }>;
@@ -14,8 +14,7 @@ export type TupleConversionDescriptor = Extract<ModelTypeDescriptor, { readonly 
 export interface SequenceItem {
   /**
    * The item code, written against the value expression. It is the value expression itself when the item needs no
-   * conversion. For `json` output, an item that needs none is `stringifyJsonScalar(<value> as never)`. A string is the
-   * text of a walker that does not return Code yet.
+   * conversion. For `json` output, an item that needs none is `stringifyJsonScalar(<value> as never)`.
    */
   readonly code: Code;
   /** The item code can throw, so it runs under the item index in the error path. */
@@ -28,7 +27,7 @@ export interface SequenceItems {
   /** The error kind for the path of an item that throws. Absent: no paths. */
   readonly paths?: 'serialize' | 'deserialize';
   /** The conversion of one item, written against `value`. */
-  readonly item: (descriptor: ModelTypeDescriptor, value: string) => SequenceItem;
+  readonly item: (descriptor: ModelTypeDescriptor, value: Code) => SequenceItem;
 }
 
 /**
@@ -54,9 +53,8 @@ const TUPLE = identifier('tuple');
 export const JSON_SCALAR = code`${rt.serde.stringifyJsonScalar}(${ITEM} as never)`;
 
 /** The array argument of a runtime loop function. A name or a chain of reads needs no parentheses before `as`. */
-function asArray(expression: Emitted): Code {
-  const value = emittedCode(expression);
-  return readShape(expression) !== 'other' ? code`${value} as readonly unknown[]` : code`(${value} as readonly unknown[])`;
+function asArray(value: Code): Code {
+  return readShape(value) !== 'other' ? code`${value} as readonly unknown[]` : code`(${value} as readonly unknown[])`;
 }
 
 /** An arrow body that is an object literal needs parentheses, or it parses as a block. */
@@ -85,9 +83,8 @@ interface Converted {
  * A whole array conversion, with its guard. An unchanged `value` array is a `slice`; a `json` array has no guard and
  * always writes its items.
  */
-export function emitArrayConversion(item: ModelTypeDescriptor, expression: Emitted, items: SequenceItems): Code {
-  const value = emittedCode(expression);
-  const { code: converted, unchanged } = arrayItems(item, expression, items);
+export function emitArrayConversion(item: ModelTypeDescriptor, value: Code, items: SequenceItems): Code {
+  const { code: converted, unchanged } = arrayItems(item, value, items);
   if (items.output === 'json') return converted;
   return code`Array.isArray(${value}) ? ${unchanged ? code`(${value} as readonly unknown[]).slice()` : converted} : ${value}`;
 }
@@ -97,20 +94,19 @@ export function emitArrayConversion(item: ModelTypeDescriptor, expression: Emitt
  * throws runs under its index in `convertModelItems`, which takes the item conversion as a function name when it is
  * one call, so a loop makes no function inside its own body.
  */
-export function emitArrayItems(item: ModelTypeDescriptor, expression: Emitted, items: SequenceItems): Code {
-  return arrayItems(item, expression, items).code;
+export function emitArrayItems(item: ModelTypeDescriptor, value: Code, items: SequenceItems): Code {
+  return arrayItems(item, value, items).code;
 }
 
-function arrayItems(item: ModelTypeDescriptor, expression: Emitted, items: SequenceItems): Converted {
-  const value = emittedCode(expression);
-  const converted = convertedItem(items.item(item, 'item'));
+function arrayItems(item: ModelTypeDescriptor, value: Code, items: SequenceItems): Converted {
+  const converted = convertedItem(items.item(item, ITEM));
   if (items.output === 'json') {
     return { code: code`${rt.serde.stringifyJsonArray}(${value} as ArrayLike<unknown>, (${ITEM}) => ${arrowBody(converted.code)})`, unchanged: false };
   }
   if (sameCode(converted.code, ITEM)) return { code: value, unchanged: true };
   if (items.paths && converted.throws) {
     return {
-      code: code`${rt.conversion.convertModelItems}(${literal(items.paths)}, ${converted.callee ?? code`(${ITEM}) => (${converted.code})`}, ${asArray(expression)})`,
+      code: code`${rt.conversion.convertModelItems}(${literal(items.paths)}, ${converted.callee ?? code`(${ITEM}) => (${converted.code})`}, ${asArray(value)})`,
       unchanged: false,
     };
   }
@@ -121,9 +117,8 @@ function arrayItems(item: ModelTypeDescriptor, expression: Emitted, items: Seque
  * A whole tuple conversion, with its guard: the items of `emitTupleItems` for an array, the input for anything else.
  * An unchanged `value` tuple is a `slice`; a `json` tuple writes its items, or a non-array as a scalar.
  */
-export function emitTupleConversion(descriptor: TupleConversionDescriptor, expression: Emitted, items: SequenceItems): Code {
-  const value = emittedCode(expression);
-  const { code: converted, unchanged } = tupleItems(descriptor, expression, items);
+export function emitTupleConversion(descriptor: TupleConversionDescriptor, value: Code, items: SequenceItems): Code {
+  const { code: converted, unchanged } = tupleItems(descriptor, value, items);
   if (items.output === 'json') return code`(Array.isArray(${value}) ? ${converted} : ${rt.serde.stringifyJsonScalar}(${value} as never))`;
   return code`Array.isArray(${value}) ? ${unchanged ? code`(${value} as readonly unknown[]).slice()` : converted} : ${value}`;
 }
@@ -134,12 +129,11 @@ export function emitTupleConversion(descriptor: TupleConversionDescriptor, expre
  * It returns `expression` when no item changes (`value` output). A callback finds the region of an item (before the
  * rest, the rest, after the rest) with `index` and `tuple`, and declares each one only when its own code reads it.
  */
-export function emitTupleItems(descriptor: TupleConversionDescriptor, expression: Emitted, items: SequenceItems): Code {
-  return tupleItems(descriptor, expression, items).code;
+export function emitTupleItems(descriptor: TupleConversionDescriptor, value: Code, items: SequenceItems): Code {
+  return tupleItems(descriptor, value, items).code;
 }
 
-function tupleItems(descriptor: TupleConversionDescriptor, expression: Emitted, items: SequenceItems): Converted {
-  const value = emittedCode(expression);
+function tupleItems(descriptor: TupleConversionDescriptor, value: Code, items: SequenceItems): Converted {
   const json = items.output === 'json';
   const unchanged: ConvertedItem = { code: json ? JSON_SCALAR : ITEM, throws: false };
   const isUnchanged = (converted: ConvertedItem): boolean => sameCode(converted.code, unchanged.code);
@@ -148,7 +142,7 @@ function tupleItems(descriptor: TupleConversionDescriptor, expression: Emitted, 
   let pathed = false;
 
   const convert = (item: ModelTypeDescriptor): ConvertedItem => {
-    const converted = convertedItem(items.item(item, 'item'));
+    const converted = convertedItem(items.item(item, ITEM));
     if (!isUnchanged(converted) && items.paths && converted.throws) pathed = true;
     return converted;
   };
@@ -207,7 +201,7 @@ function tupleItems(descriptor: TupleConversionDescriptor, expression: Emitted, 
   if (pathed && items.paths) {
     // An item that throws runs under its index. A loop that selects by position gets the index and the array.
     const direction = literal(items.paths);
-    const array = asArray(expression);
+    const array = asArray(value);
     return {
       code: usesIndex
         ? code`${rt.conversion.convertModelTupleItems}(${direction}, (${usesTuple ? code`${params}, ${TUPLE}` : params}) => ${arrowBody(selected.code)}, ${array})`

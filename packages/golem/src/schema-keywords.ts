@@ -16,7 +16,7 @@ export const MODEL_INSTANCE_KEYWORD = 'golemModelInstance';
 export const MODEL_CODEC_IDS_KEY = '@exprtlabs/golem:modelCodecIds';
 /**
  * Registry key of the declared field names a generated model lists on its own prototype: a frozen array, or `null` for
- * a model that allows additional keys. `instanceFields` and `instanceFieldsSource` (presence.ts) read it to tell a
+ * a model that allows additional keys. `instanceFields` (presence.ts) and `instanceFieldsCode` (tooling/union-conversion.ts) read it to tell a
  * declared key from program state.
  */
 export const MODEL_FIELDS_KEY = '@exprtlabs/golem:modelFields';

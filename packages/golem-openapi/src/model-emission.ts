@@ -35,7 +35,7 @@ import {
   emitModelFromInit,
   emitModelToJSON,
   fillFunctionName,
-  presentKeysSource,
+  presentKeysCode,
   propertyKey,
   sideEffectImport,
   reachesItself,
@@ -223,8 +223,8 @@ function modelResolver(reference: string, definitions: ModelDefinitions, env: Mo
     // A use of a recursive alias calls its node. A model-layer value is not a wire value, so init builds only the models.
     return {
       className: identifier(alias.name),
-      decode: (value) => code`${context.nodeFunction(aliasNodeId(alias), 'fromWire')}(${legacyText(value)})`,
-      fromInit: aliasInitsModel(alias, definitions, env) ? (value) => code`${context.aliasInit(alias)}(${legacyText(value)})` : (value) => legacyText(value),
+      decode: (value) => code`${context.nodeFunction(aliasNodeId(alias), 'fromWire')}(${value})`,
+      fromInit: aliasInitsModel(alias, definitions, env) ? (value) => code`${context.aliasInit(alias)}(${value})` : (value) => value,
       ...(aliasConvertsValue(alias, definitions, env) ? {} : { identity: true as const }),
     };
   }
@@ -232,10 +232,10 @@ function modelResolver(reference: string, definitions: ModelDefinitions, env: Mo
   const bases = modelBases(definitions.get(reference));
   return {
     className: context.models.model(reference),
-    decode: (value) => code`${rt.conversion.decodeGeneratedModelTrusted}(${context.models.model(reference)}, ${legacyText(value)})`,
+    decode: (value) => code`${rt.conversion.decodeGeneratedModelTrusted}(${context.models.model(reference)}, ${value})`,
     fromInit: (value) => definitions.get(reference)?.isUnion
-      ? code`${context.initializer(reference)}(${legacyText(value)})`
-      : code`new ${context.models.model(reference)}(${legacyText(value)} as ${context.models.init(reference)})`,
+      ? code`${context.initializer(reference)}(${value})`
+      : code`new ${context.models.model(reference)}(${value} as ${context.models.init(reference)})`,
     ...(discriminators ? { discriminators } : {}),
     ...(bases.length ? { bases } : {}),
   };
@@ -270,6 +270,11 @@ function withConflictCode<Result>(owner: string | CompositionSite, emit: () => R
   }
 }
 
+// migration door, deleted in T-330: a caller gives the read of a walker as the text of one name
+function readOf(name: string): Code {
+  return identifier(name);
+}
+
 function modelFromJSONCode(
   schema: unknown,
   expression: string,
@@ -280,7 +285,7 @@ function modelFromJSONCode(
 ): Code {
   return withConflictCode(owner, () => emitModelFromJSON(
     modelConversionDescriptor(schema, definitions, env, 'from'),
-    expression,
+    readOf(expression),
     (reference) => modelResolver(reference, definitions, env, context),
     TEMPORAL_SERDE,
   ));
@@ -295,7 +300,7 @@ function modelInitCode(
   context: ConversionContext,
 ): Code {
   const descriptor = modelConversionDescriptor(schema, definitions, env, 'from');
-  return withConflictCode(owner, () => emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions, env, context)));
+  return withConflictCode(owner, () => emitModelFromInit(descriptor, readOf(expression), reference => modelResolver(reference, definitions, env, context)));
 }
 
 function modelToJSONCode(
@@ -308,18 +313,18 @@ function modelToJSONCode(
 ): Code {
   return withConflictCode(owner, () => emitModelToJSON(
     modelConversionDescriptor(schema, definitions, env, 'to'),
-    expression,
+    readOf(expression),
     (reference) => {
       const alias = definitions.aliases.get(reference);
       if (alias) {
         return {
           className: identifier(alias.name),
-          encode: value => code`${context.nodeFunction(aliasNodeId(alias), 'toWire')}(${legacyText(value)})`,
+          encode: value => code`${context.nodeFunction(aliasNodeId(alias), 'toWire')}(${value})`,
           ...(aliasConvertsValue(alias, definitions, env) ? {} : { identity: true as const }),
         };
       }
       const bases = modelBases(definitions.get(reference));
-      return { className: context.models.model(reference), encode: value => code`${rt.conversion.encodeGeneratedModel}(${legacyText(value)})`, ...(bases.length ? { bases } : {}) };
+      return { className: context.models.model(reference), encode: value => code`${rt.conversion.encodeGeneratedModel}(${value})`, ...(bases.length ? { bases } : {}) };
     },
     TEMPORAL_SERDE,
   ));
@@ -363,7 +368,7 @@ function rootFieldConversion(
   inputType: string,
 ): Code {
   const converted = emit(FIELD_CONVERSION_INPUT);
-  if (sameCode(converted, legacyText(FIELD_CONVERSION_INPUT))) return legacyText(input);
+  if (sameCode(converted, readOf(FIELD_CONVERSION_INPUT))) return legacyText(input);
   let convert = calleeOf(converted);
   if (!convert) {
     const name = helperName(helpers.length);
@@ -396,13 +401,14 @@ function modelPresentLocal(index: number): string {
 }
 
 /**
- * The statement that reads the captured fields of `target` in the JSON view (`presentKeysSource`): one own-key pass, so an
+ * The statement that reads the captured fields of `target` in the JSON view (`presentKeysCode`): one own-key pass, so an
  * inherited value never counts and a getter runs once. Empty when no field is captured. Constructor and decode use it.
  */
 function modelPresentRead(indent: string, target: string, captures: readonly (readonly [name: string, type: string])[]): Code[] {
   if (captures.length === 0) return [];
-  const types = new Map(captures.map(([, type], index) => [modelPresentLocal(index), type]));
-  return [legacyText(`${indent}${presentKeysSource(target, captures.map(([name], index) => [name, modelPresentLocal(index)] as const), local => `${local}: ${types.get(local)} | undefined`)}`)];
+  const locals = captures.map(([name, type], index) => ({ name, type, local: identifier(modelPresentLocal(index)) }));
+  const typeOf = (local: Code): string => locals.find((entry) => entry.local === local)?.type ?? 'unknown';
+  return [code`${legacyText(indent)}${presentKeysCode(identifier(target), locals.map(({ name, local }) => [name, local] as const), { declare: (local) => code`${local}: ${legacyText(typeOf(local))} | undefined` })}`];
 }
 
 /**
@@ -658,8 +664,8 @@ function unionConversion(
   const resolve = (reference: string) => modelResolver(reference, definitions, env, context);
   try {
     return direction === 'fromJSON'
-      ? emitModelFromJSON(descriptor, 'value', resolve, TEMPORAL_SERDE)
-      : emitModelFromInit(descriptor, 'value', resolve);
+      ? emitModelFromJSON(descriptor, readOf('value'), resolve, TEMPORAL_SERDE)
+      : emitModelFromInit(descriptor, readOf('value'), resolve);
   } catch (thrown) {
     const error = codedConflict(thrown);
     const message = error instanceof Error ? error.message : String(error);
@@ -1033,7 +1039,7 @@ export function generateModels(
     body.push(code`export type ${identifier(aliasType)} = ${modelFieldType(alias.rawSchema, definitions, componentEnv(sharedModelEnv, alias.schemaName, alias.rawSchema))};`, BLANK);
     if (aliasInitsModel(alias, definitions, sharedModelEnv)) {
       moduleScope.claim(aliasInitName(alias), `initializer of the recursive component ${JSON.stringify(alias.schemaName)}`, alias.schemaName);
-      const aliasBody = withConflictCode(alias.schemaName, () => emitModelFromInit(aliasDescriptor(alias, definitions, sharedModelEnv), 'value', (reference) => modelResolver(reference, definitions, sharedModelEnv, context)));
+      const aliasBody = withConflictCode(alias.schemaName, () => emitModelFromInit(aliasDescriptor(alias, definitions, sharedModelEnv), readOf('value'), (reference) => modelResolver(reference, definitions, sharedModelEnv, context)));
       body.push(
         code`export function ${identifier(aliasInitName(alias))}(value: unknown): ${identifier(aliasType)} {`,
         code`  return (${aliasBody}) as ${identifier(aliasType)};`,
@@ -1061,7 +1067,7 @@ export function generateModels(
       const name = helpers.fastCheckExports?.get(id);
       return name === undefined ? undefined : validatorsSource?.name(name);
     } } : {}),
-    ...(helpers.resolvedSchemas ? { resolvedSchemasExpr: 'modelSchemas' } : {}),
+    ...(helpers.resolvedSchemas ? { resolvedSchemasExpr: identifier('modelSchemas') } : {}),
     issueSource: 'OpenAPI',
     exportWireStringify: (node) => exportsWireStringify(analysis.schemaGraph, node, profile),
     siblingWireCodecIds: new Set([...(helpers.dependencyNodeIds ?? [])].flatMap((id) => {

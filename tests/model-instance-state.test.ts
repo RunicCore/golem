@@ -12,7 +12,9 @@ import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { compileValidatorModule } from './support/compiled-validators.js';
-import { instanceFields, instanceFieldsSource } from '../packages/golem/src/presence.js';
+import { instanceFields } from '../packages/golem/src/presence.js';
+import { render } from '#golem/code';
+import { instanceFieldsCode } from '#golem/union-conversion';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 // An own key of a golem model instance that its own model does not declare is program state, never an unknown key
 // (T-148). A key that the instance's own model declares is judged as before, and so is a value without a model.
@@ -145,7 +147,7 @@ for (const root of ['valued', 'patterned'] as const) {
 
 test('the runtime walk of the field entry and the walk the validators generate return the same names', () => {
   // protects: T-150 review the allowGetter copy and the generated validators decide program state by one rule
-  const generated = new Function(`${instanceFieldsSource()}\nreturn instanceFields;`)() as (value: object) => readonly string[] | undefined;
+  const generated = new Function(`${render(instanceFieldsCode())}\nreturn instanceFields;`)() as (value: object) => readonly string[] | undefined;
   const values = [
     instance(Task, { cache: 1 }), instance(Kid, {}), instance(Bag, {}), Object.create(Task.prototype), new (class extends Task {})(),
     { title: 'a' }, Object.create(null), Object.create({ inherited: 1 }), [],

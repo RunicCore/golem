@@ -284,20 +284,15 @@ export function emittedCode(emitted: Emitted): Code {
   return typeof emitted === 'string' ? legacyText(emitted) : emitted;
 }
 
-const NAME_TEXT = /^[A-Za-z_$][\w$]*$/;
-const CHAIN_TEXT = /^[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*|\[(?:\d+|"[^"\\]*"|'[^'\\]*')\])*$/;
-
 /**
- * The shape of an expression. An input part has the shape its slot was made with, so a piece never reads its text. Text
- * from a walker that does not give a slot is tested, and any other code is `other`.
+ * The shape of an expression. An input part has the shape its slot was made with, so a piece never reads its text. A name,
+ * an import and a checked identifier are names; any other code is `other`.
  */
-export function readShape(expression: Emitted): ReadShape {
-  const [only, ...more] = emittedCode(expression).parts;
+export function readShape(expression: Code): ReadShape {
+  const [only, ...more] = expression.parts;
   if (only === undefined || more.length > 0) return 'other';
   if (only.kind === 'input') return only.slot.shape;
-  if (only.kind === 'name' || only.kind === 'imported') return 'name';
-  // migration door, deleted in steps 6 and 7 (T-289, and P-22 step 7): tests the text of a read that a caller wrote as a string
-  if (only.kind === 'text') return NAME_TEXT.test(only.text) ? 'name' : CHAIN_TEXT.test(only.text) ? 'chain' : 'other';
+  if (only.kind === 'name' || only.kind === 'imported' || (only.kind === 'text' && only.identifier === true)) return 'name';
   return 'other';
 }
 
@@ -567,25 +562,23 @@ function plainText(text: string): Code {
 }
 
 /**
- * Whether two Codes write the same code: their parts match one by one, and a runtime or helper part counts as the text of
- * its name, so `rt.serde.parseJson` equals the text `parseJson` that a caller wrote by hand.
+ * Whether two Codes write the same code: their parts match one by one, and each part matches by kind. A runtime part is the
+ * same runtime export, an imported part the same name of the same source, a helper part the same helper, a name part the
+ * same slot and an input part the same slot; none equals the text of its name. Two text parts match by their text.
  */
 export function sameCode(left: Code, right: Code): boolean {
-  const flat = (root: Code): readonly Part[] => fromParts(root.parts.map((part): Part =>
-    part.kind === 'runtime' || part.kind === 'imported' ? { kind: 'text', text: part.alias ?? part.name }
-      : part.kind === 'helper' ? { kind: 'text', text: part.helper.id }
-        : part.kind === 'text' ? { kind: 'text', text: part.text }
-          : part)).parts;
-  const [first, second] = [flat(left), flat(right)];
+  const [first, second] = [left, right].map((root) => fromParts(root.parts.map((part): Part => part.kind === 'text' ? { kind: 'text', text: part.text } : part)).parts);
   return first.length === second.length && first.every((part, index) => {
     const other = second[index];
     switch (part.kind) {
       case 'text': return other.kind === 'text' && other.text === part.text;
+      case 'runtime': return other.kind === 'runtime' && other.module === part.module && other.name === part.name && other.alias === part.alias && other.typeOnly === part.typeOnly;
+      case 'imported': return other.kind === 'imported' && other.source === part.source && other.name === part.name && other.alias === part.alias && other.typeOnly === part.typeOnly;
+      case 'helper': return other.kind === 'helper' && other.helper === part.helper;
       case 'name': return other.kind === 'name' && other.slot === part.slot;
       case 'input': return other.kind === 'input' && other.slot === part.slot;
       case 'line': return other.kind === 'line';
       case 'indent': return other.kind === 'indent' && other.by === part.by;
-      default: return false;
     }
   });
 }
