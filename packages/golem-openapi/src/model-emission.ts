@@ -8,7 +8,14 @@ import {
   exportFrom,
   fileImports,
   helper,
+  bindInput,
+  docComment,
   helperName,
+  indentation,
+  inputCount,
+  inputOf,
+  inputSlot,
+  type InputSlot,
   identifier,
   importedNames,
   MODULE_CONSTANT_HELPERS,
@@ -17,7 +24,6 @@ import {
   importSet,
   ImportSource,
   join,
-  legacyText,
   lineBreak,
   literal,
   nameOf,
@@ -55,7 +61,7 @@ import { isJsonObject } from './json.js';
 import { compareText, NameScope, RESERVED_MODEL_MEMBERS, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { componentOrigin, componentPlace, ComponentNameScope, LocatedError, type OriginLocator } from './origin.js';
 import { COMPOSITION_CONVERSION_CONFLICT, conflictMessage } from './composition.js';
-import { generatedBanner } from './package-info.js';
+import { generatedBannerComment } from './package-info.js';
 import type { OpenApiGenerationProfile } from './profile.js';
 import { requireProfile } from './profile.js';
 import { descriptionComment, schemaContext } from './types.js';
@@ -271,14 +277,26 @@ function withConflictCode<Result>(owner: string | CompositionSite, emit: () => R
   }
 }
 
-// migration door, deleted in T-330: a caller gives the read of a walker as the text of one name
-function readOf(name: string): Code {
-  return identifier(name);
-}
+/** The copy of the properties a model does not declare. A file defines it when its code calls it. */
+const COPY_ADDITIONAL_PROPERTIES = helper('copyAdditionalProperties', () => join([
+  code`function copyAdditionalProperties(target: object, source: object, known: readonly string[], convert?: (value: unknown) => unknown): void {`,
+  code`  for (const [name, value] of Object.entries(source)) {`,
+  code`    if (known.includes(name)) continue;`,
+  code`    Object.defineProperty(target, name, { value: convert ? convert(value) : value, enumerable: true, configurable: true, writable: true });`,
+  code`  }`,
+  code`}`,
+  code``,
+], code`\n`));
+
+/** The input the model conversions read in the constructor and in encode; the constructor names it `values` or `_values`, encode `model` or `_model`, by whether the code reads it. */
+const VALUES = inputSlot('values', 'name');
+const MODEL = inputSlot('model', 'name');
+const VALUE = identifier('value');
+const FIELD_INPUT = identifier(FIELD_CONVERSION_INPUT);
 
 function modelFromJSONCode(
   schema: unknown,
-  expression: string,
+  expression: Code,
   definitions: ModelDefinitions,
   env: ModelResolveEnv,
   owner: string | CompositionSite,
@@ -286,7 +304,7 @@ function modelFromJSONCode(
 ): Code {
   return withConflictCode(owner, () => emitModelFromJSON(
     modelConversionDescriptor(schema, definitions, env, 'from'),
-    readOf(expression),
+    expression,
     (reference) => modelResolver(reference, definitions, env, context),
     TEMPORAL_SERDE,
   ));
@@ -294,19 +312,19 @@ function modelFromJSONCode(
 
 function modelInitCode(
   schema: unknown,
-  expression: string,
+  expression: Code,
   definitions: ModelDefinitions,
   env: ModelResolveEnv,
   owner: string | CompositionSite,
   context: ConversionContext,
 ): Code {
   const descriptor = modelConversionDescriptor(schema, definitions, env, 'from');
-  return withConflictCode(owner, () => emitModelFromInit(descriptor, readOf(expression), reference => modelResolver(reference, definitions, env, context)));
+  return withConflictCode(owner, () => emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions, env, context)));
 }
 
 function modelToJSONCode(
   schema: unknown,
-  expression: string,
+  expression: Code,
   definitions: ModelDefinitions,
   env: ModelResolveEnv,
   owner: string | CompositionSite,
@@ -314,7 +332,7 @@ function modelToJSONCode(
 ): Code {
   return withConflictCode(owner, () => emitModelToJSON(
     modelConversionDescriptor(schema, definitions, env, 'to'),
-    readOf(expression),
+    expression,
     (reference) => {
       const alias = definitions.aliases.get(reference);
       if (alias) {
@@ -340,7 +358,7 @@ export function modelFromJSONExpression(
   owner: string | CompositionSite,
 ): string {
   const context = checkContext();
-  return render(modelFromJSONCode(schema, expression, definitions, env, owner, context), context.names.table);
+  return render(modelFromJSONCode(schema, identifier(expression), definitions, env, owner, context), context.names.table);
 }
 
 export function modelToJSONExpression(
@@ -351,7 +369,7 @@ export function modelToJSONExpression(
   owner: string | CompositionSite,
 ): string {
   const context = checkContext();
-  return render(modelToJSONCode(schema, expression, definitions, env, owner, context), context.names.table);
+  return render(modelToJSONCode(schema, identifier(expression), definitions, env, owner, context), context.names.table);
 }
 
 /**
@@ -364,19 +382,19 @@ function rootFieldConversion(
   helperName: (index: number) => string,
   direction: 'deserialize' | 'serialize',
   field: string,
-  input: string,
-  emit: (value: string) => Code,
-  inputType: string,
+  input: Code,
+  emit: (value: Code) => Code,
+  inputType: Code,
 ): Code {
-  const converted = emit(FIELD_CONVERSION_INPUT);
-  if (sameCode(converted, readOf(FIELD_CONVERSION_INPUT))) return legacyText(input);
+  const converted = emit(FIELD_INPUT);
+  if (sameCode(converted, FIELD_INPUT)) return input;
   let convert = calleeOf(converted);
   if (!convert) {
     const name = helperName(helpers.length);
-    helpers.push(code`function ${identifier(name)}(${identifier(FIELD_CONVERSION_INPUT)}: ${legacyText(inputType)}) { return ${converted}; }`);
+    helpers.push(code`function ${identifier(name)}(${FIELD_INPUT}: ${inputType}) { return ${converted}; }`);
     convert = identifier(name);
   }
-  return code`${rt.conversion.convertModelField}(${literal(direction)}, ${literal(field)}, ${convert}, ${legacyText(input)})`;
+  return code`${rt.conversion.convertModelField}(${literal(direction)}, ${literal(field)}, ${convert}, ${input})`;
 }
 
 function modelFieldDeclaration(
@@ -392,36 +410,36 @@ function modelFieldDeclaration(
   return code`${description}  declare ${propertyKey(name)}${required ? code`` : code`?`}: ${modelFieldType(schema, definitions, env)};`;
 }
 
-function modelPropertyAccess(name: string): string {
-  return `[${JSON.stringify(name)}]`;
+function modelPropertyAccess(name: string): Code {
+  return code`[${literal(name)}]`;
 }
 
 /** The local that holds one field's value, read once. */
-function modelPresentLocal(index: number): string {
-  return `__golemValue${index}`;
+function modelPresentLocal(index: number): Code {
+  return identifier(`__golemValue${index}`);
 }
 
 /**
  * The statement that reads the captured fields of `target` in the JSON view (`presentKeysCode`): one own-key pass, so an
  * inherited value never counts and a getter runs once. Empty when no field is captured. Constructor and decode use it.
  */
-function modelPresentRead(indent: string, target: string, captures: readonly (readonly [name: string, type: string])[]): Code[] {
+function modelPresentRead(indent: number, target: Code, captures: readonly (readonly [name: string, type: Code])[]): Code[] {
   if (captures.length === 0) return [];
-  const locals = captures.map(([name, type], index) => ({ name, type, local: identifier(modelPresentLocal(index)) }));
-  const typeOf = (local: Code): string => locals.find((entry) => entry.local === local)?.type ?? 'unknown';
-  return [code`${legacyText(indent)}${presentKeysCode(identifier(target), locals.map(({ name, local }) => [name, local] as const), { declare: (local) => code`${local}: ${legacyText(typeOf(local))} | undefined` })}`];
+  const locals = captures.map(([name, type], index) => ({ name, type, local: modelPresentLocal(index) }));
+  const typeOf = (local: Code): Code => locals.find((entry) => entry.local === local)?.type ?? code`unknown`;
+  return [code`${indentation(indent)}${presentKeysCode(target, locals.map(({ name, local }) => [name, local] as const), { declare: (local) => code`${local}: ${typeOf(local)} | undefined` })}`];
 }
 
 /**
  * The statement that reads the declared fields of `model` for encode: one plain property access each, so a getter or an
  * inherited value supplies a field as it does in stringify, and a getter runs once. Empty when no field is captured.
  */
-function modelDeclaredRead(indent: string, model: string, captures: readonly (readonly [name: string, type: string])[]): Code[] {
-  return captures.map(([name, type], index) => legacyText(`${indent}const ${modelPresentLocal(index)}: ${type} | undefined = ${model}${modelPropertyAccess(name)};`));
+function modelDeclaredRead(indent: number, model: Code, captures: readonly (readonly [name: string, type: Code])[]): Code[] {
+  return captures.map(([name, type], index) => code`${indentation(indent)}const ${modelPresentLocal(index)}: ${type} | undefined = ${model}${modelPropertyAccess(name)};`);
 }
 
 function modelPropertyAssignment(target: string, name: string, value: Code): Code {
-  return code`${legacyText(`${target}${modelPropertyAccess(name)}`)} = ${value};`;
+  return code`${identifier(target)}${modelPropertyAccess(name)} = ${value};`;
 }
 
 /** Whether a model's group module exports its wire stringify: another group writes a recursive model under it in place and meets it again. */
@@ -515,7 +533,7 @@ export function generateOpenApiModelArtifacts(
     const external = initializerOwner(group.id);
     const context = localConversion((reference) => external(reference)?.name(`initialize${reference}`) ?? identifier(`initialize${reference}`));
     const initializerCalls = join(groupDefinitions.flatMap((definition) =>
-      [...definition.properties.values()].map((schema) => modelInitCode(schema, 'value', definitions, sharedModelEnv, definition.schemaName, context)),
+      [...definition.properties.values()].map((schema) => modelInitCode(schema, VALUE, definitions, sharedModelEnv, definition.schemaName, context)),
     ), code`\n`);
     const called = [...groupModules].flatMap(([groupId, source]) => {
       if (groupId === group.id) return [];
@@ -636,7 +654,7 @@ export function generateOpenApiModelArtifacts(
     for (const name of group.models) {
       const filename = `models/${name}.ts`;
       files.set(filename, render(code`${join([
-        legacyText(generatedBanner()),
+        generatedBannerComment(),
         exportFrom([`${name}Model`, ...codecExports(name)], `./_${group.id}.js`),
         exportFrom([`${name}Fields`, `${name}JSON`, `${name}Init`], `./_${group.id}.js`, true),
       ], lineBreak)}\n`));
@@ -665,8 +683,8 @@ function unionConversion(
   const resolve = (reference: string) => modelResolver(reference, definitions, env, context);
   try {
     return direction === 'fromJSON'
-      ? emitModelFromJSON(descriptor, readOf('value'), resolve, TEMPORAL_SERDE)
-      : emitModelFromInit(descriptor, readOf('value'), resolve);
+      ? emitModelFromJSON(descriptor, VALUE, resolve, TEMPORAL_SERDE)
+      : emitModelFromInit(descriptor, VALUE, resolve);
   } catch (thrown) {
     const error = codedConflict(thrown);
     const message = error instanceof Error ? error.message : String(error);
@@ -852,15 +870,7 @@ export function generateModels(
       code`}`,
       BLANK,
     ] : []),
-    ...(emitCopy ? [
-      legacyText('function copyAdditionalProperties(target: object, source: object, known: readonly string[], convert?: (value: unknown) => unknown): void {'),
-      legacyText('  for (const [name, value] of Object.entries(source)) {'),
-      legacyText('    if (known.includes(name)) continue;'),
-      legacyText('    Object.defineProperty(target, name, { value: convert ? convert(value) : value, enumerable: true, configurable: true, writable: true });'),
-      legacyText('  }'),
-      legacyText('}'),
-      BLANK,
-    ] : []),
+    COPY_ADDITIONAL_PROPERTIES,
   ];
 
   for (const definition of ordered) {
@@ -894,9 +904,9 @@ export function generateModels(
       modelFieldDeclaration(name, schema, definition.required.has(name), definitions, fieldEnv),
     );
     const assignments = [
-      ...modelPresentRead('    ', 'values', fields.map(([name]) => [name, `${typeName}Init[${JSON.stringify(name)}]`] as const)),
+      ...modelPresentRead(4, inputOf(VALUES), fields.map(([name]) => [name, code`${identifier(`${typeName}Init`)}${modelPropertyAccess(name)}`] as const)),
       ...fields.map(([name, schema], index) =>
-        code`    if (${legacyText(modelPresentLocal(index))} !== undefined) ${modelPropertyAssignment('this', name, code`(${modelInitCode(schema, modelPresentLocal(index), definitions, fieldEnv, definition.schemaName, context)}) as ${modelFieldType(schema, definitions, fieldEnv)}`)}`),
+        code`    if (${modelPresentLocal(index)} !== undefined) ${modelPropertyAssignment('this', name, code`(${modelInitCode(schema, modelPresentLocal(index), definitions, fieldEnv, definition.schemaName, context)}) as ${modelFieldType(schema, definitions, fieldEnv)}`)}`),
     ];
     const fieldHelpers: Code[] = [];
     const fieldHelperName = (direction: 'encode' | 'decode') => (index: number): string => {
@@ -910,46 +920,79 @@ export function generateModels(
         fieldHelpers, fieldHelperName('encode'), 'serialize', name, input,
         (value) => modelToJSONCode(schema, value, definitions, fieldEnv, definition.schemaName, context),
         // The guard on the property excludes an undefined value before the conversion runs.
-        `Exclude<${className}${modelPropertyAccess(name)}, undefined>`,
+        code`Exclude<${identifier(className)}${modelPropertyAccess(name)}, undefined>`,
       );
-      return code`  if (${legacyText(input)} !== undefined) ${modelPropertyAssignment('result', name, converted)}`;
+      return code`  if (${input} !== undefined) ${modelPropertyAssignment('result', name, converted)}`;
     });
-    const jsonRead = modelDeclaredRead('  ', 'model', fields.map(([name]) => [name, `${className}${modelPropertyAccess(name)}`] as const));
+    const jsonRead = modelDeclaredRead(2, inputOf(MODEL), fields.map(([name]) => [name, code`${identifier(className)}${modelPropertyAccess(name)}`] as const));
     const allProperties = modelSchemaProperties(fieldEnv, definition.rawSchema);
     const allFieldNames = [...allProperties.keys()];
-    const fieldNames = legacyText(allFieldNames.map(name => JSON.stringify(name)).join(', '));
+    const fieldNames = join(allFieldNames.map((name) => literal(name)), code`, `);
     const additionalConverter = (direction: 'from' | 'init' | 'to'): Code | undefined => {
       if (!isJsonObject(definition.additionalProperties)) return undefined;
       const emit = direction === 'from' ? modelFromJSONCode : direction === 'init' ? modelInitCode : modelToJSONCode;
-      const expression = emit(definition.additionalProperties, 'value', definitions, fieldEnv, definition.schemaName, context);
-      return sameCode(expression, legacyText('value')) ? undefined : code`, (value) => ${expression}`;
+      const expression = emit(definition.additionalProperties, VALUE, definitions, fieldEnv, definition.schemaName, context);
+      return sameCode(expression, VALUE) ? undefined : code`, (${VALUE}) => ${expression}`;
     };
-    // The constructor reads `values`, and encode reads `model`, through a base class, a declared field or the copy of additional
-    // properties. A class with none of the three declares the parameter under an underscore name.
-    const readsInstance = baseClass !== null || fields.length > 0 || additionalPropertyType !== null;
-    const decodeCaptures: (readonly [name: string, type: string])[] = [];
+    const decodeCaptures: (readonly [name: string, type: Code])[] = [];
     const decodeConversions: Code[] = [];
     for (const [name, schema] of allProperties) {
       const expression = modelPresentLocal(decodeCaptures.length);
       const rootConverted = rootFieldConversion(
         fieldHelpers, fieldHelperName('decode'), 'deserialize', name, expression,
         (input) => modelFromJSONCode(schema, input, definitions, fieldEnv, definition.schemaName, context),
-        'unknown',
+        code`unknown`,
       );
       // `result` already contains every own enumerable input property.  Keep
       // the initializer copy as-is for fields with no wire conversion and
       // only replace values that must become model instances or pass through
       // a codec.  The constructor remains the sole model-instance writer.
-      if (sameCode(rootConverted, legacyText(expression))) continue;
-      decodeCaptures.push([name, 'unknown']);
-      decodeConversions.push(code`  if (${legacyText(expression)} !== undefined) ${modelPropertyAssignment('result', name, rootConverted)}`);
+      if (sameCode(rootConverted, expression)) continue;
+      decodeCaptures.push([name, code`unknown`]);
+      decodeConversions.push(code`  if (${expression} !== undefined) ${modelPropertyAssignment('result', name, rootConverted)}`);
     }
     // Read the own copy in `result`, so a getter of the input runs once, in the spread.
-    const decodeLines = [...modelPresentRead('  ', 'result', decodeCaptures), ...decodeConversions];
+    const decodeLines = [...modelPresentRead(2, identifier('result'), decodeCaptures), ...decodeConversions];
     const additionalFrom = additionalConverter('from');
     const identityDeserialize = decodeLines.length === 0 && additionalFrom === undefined;
     const initializer = unionInitializers.get(typeName);
     const optionalCopy = (direction: 'from' | 'init' | 'to'): Code => additionalConverter(direction) ?? BLANK;
+    // The constructor reads `values`, and encode reads `model`, through a base class, a declared field or the copy of additional
+    // properties. A class whose code does not read the input declares the parameter under an underscore name.
+    const named = (lines: readonly Code[], slot: InputSlot, used: string): { readonly lines: readonly Code[]; readonly parameter: Code } => {
+      const parameter = identifier(lines.some((line) => inputCount(line, slot) > 0) ? used : `_${used}`);
+      return { lines: lines.map((line) => bindInput(line, slot, parameter)), parameter };
+    };
+    const constructorBody = named([
+      ...(baseClass ? [code`    super(${inputOf(VALUES)});`] : []),
+      ...assignments,
+      ...(additionalPropertyType
+        ? [code`    if (${rt.model.findGeneratedModelDefinition}(this) === ${rt.model.findGeneratedModelDefinitionForConstructor}(${identifier(className)})) ${helperName(COPY_ADDITIONAL_PROPERTIES)}(this, ${inputOf(VALUES)}, [${fieldNames}]${optionalCopy('init')});`]
+        : []),
+      ...(profile.mobx && !definition.isUnion ? [
+        code`    if (new.target === ${identifier(className)}) ${rt.mobx.asGenObservable}(this);`,
+      ] : []),
+    ], VALUES, 'values');
+    const constructorLines = [
+      code`  constructor(${constructorBody.parameter}: ${identifier(`${typeName}Init`)} = {}) {`,
+      ...constructorBody.lines,
+    ];
+    const encodeBody = named([
+      encodeBase
+        ? code`  const result: Record<string, unknown> = { ...${encodeBase}(${inputOf(MODEL)}) };`
+        : code`  const result: Record<string, unknown> = {};`,
+      ...jsonRead,
+      ...jsonProperties,
+      ...(additionalPropertyType
+        ? [code`  if (${rt.model.findGeneratedModelDefinition}(${inputOf(MODEL)}) === ${rt.model.findGeneratedModelDefinitionForConstructor}(${identifier(className)})) ${helperName(COPY_ADDITIONAL_PROPERTIES)}(result, ${inputOf(MODEL)}, [${fieldNames}]${optionalCopy('to')});`]
+        : []),
+    ], MODEL, 'model');
+    const encodeLines = [
+      code`${helpers.moduleFile ? code`export ` : code``}function ${identifier(`encode${typeName}`)}(${encodeBody.parameter}: ${identifier(className)}): ${typesNamespace}.${identifier(typeName)} {`,
+      ...encodeBody.lines,
+      code`  return result as ${typesNamespace}.${identifier(typeName)};`,
+      code`}`,
+    ];
     body.push(
       code`export type ${identifier(`${typeName}Fields`)} = ${definition.baseName ? code`${models.fields(definition.baseName)} & ` : code``}{`,
       ...fields.map(([name, schema]) => code`  ${propertyKey(name)}${definition.required.has(name) ? code`` : code`?`}: ${modelFieldType(schema, definitions, fieldEnv)};`),
@@ -967,29 +1010,21 @@ export function generateModels(
           : [
             code`  const result: Record<string, unknown> = { ...value };`,
             ...decodeLines,
-            ...(additionalFrom ? [code`  copyAdditionalProperties(result, value, [${fieldNames}]${additionalFrom});`] : []),
+            ...(additionalFrom ? [code`  ${helperName(COPY_ADDITIONAL_PROPERTIES)}(result, value, [${fieldNames}]${additionalFrom});`] : []),
             code`  return result as ${identifier(`${typeName}Init`)};`,
           ]),
         code`}`,
         BLANK,
       ] : initializer ? [initializer] : []),
-      code`export ${legacyText(definition.isUnion ? 'abstract ' : '')}class ${identifier(className)}${baseClass ? code` extends ${baseClass}` : code``}${implementsType} {`,
+      code`export ${definition.isUnion ? code`abstract ` : code``}class ${identifier(className)}${baseClass ? code` extends ${baseClass}` : code``}${implementsType} {`,
       ...(additionalPropertyType && !additionalIsUnknown
-        ? [legacyText('  /** Dynamic map values are preserved during conversion. */')]
-        : additionalPropertyType ? [legacyText('  [key: string]: unknown;')] : []),
+        ? [code`  ${docComment('Dynamic map values are preserved during conversion.')}`]
+        : additionalPropertyType ? [code`  [key: string]: unknown;`] : []),
       ...declarations,
       code`  declare readonly [${rtType.model.generatedModelWireBrand}]: ${typesNamespace}.${identifier(typeName)};`,
       code`  declare readonly [${rtType.model.generatedModelFieldsBrand}]: ${identifier(`${typeName}Fields`)};`,
       ...(definition.isUnion ? [code`  declare static readonly [${rtType.model.generatedModelResultBrand}]: ${variantUnion};`] : []),
-      code`  constructor(${identifier(readsInstance ? 'values' : '_values')}: ${identifier(`${typeName}Init`)} = {}) {`,
-      ...(baseClass ? [code`    super(values);`] : []),
-      ...assignments,
-      ...(additionalPropertyType
-        ? [code`    if (${rt.model.findGeneratedModelDefinition}(this) === ${rt.model.findGeneratedModelDefinitionForConstructor}(${identifier(className)})) copyAdditionalProperties(this, values, [${fieldNames}]${optionalCopy('init')});`]
-        : []),
-      ...(profile.mobx && !definition.isUnion ? [
-        code`    if (new.target === ${identifier(className)}) ${rt.mobx.asGenObservable}(this);`,
-      ] : []),
+      ...constructorLines,
       code`  }`,
       BLANK,
       code`}`,
@@ -1006,21 +1041,11 @@ export function generateModels(
         code`}`,
       ]),
       BLANK,
-      code`${helpers.moduleFile ? code`export ` : code``}function ${identifier(`encode${typeName}`)}(${identifier(readsInstance ? 'model' : '_model')}: ${identifier(className)}): ${typesNamespace}.${identifier(typeName)} {`,
-      encodeBase
-        ? code`  const result: Record<string, unknown> = { ...${encodeBase}(model) };`
-        : code`  const result: Record<string, unknown> = {};`,
-      ...jsonRead,
-      ...jsonProperties,
-      ...(additionalPropertyType
-        ? [code`  if (${rt.model.findGeneratedModelDefinition}(model) === ${rt.model.findGeneratedModelDefinitionForConstructor}(${identifier(className)})) copyAdditionalProperties(result, model, [${fieldNames}]${optionalCopy('to')});`]
-        : []),
-      code`  return result as ${typesNamespace}.${identifier(typeName)};`,
-      code`}`,
+      ...encodeLines,
       BLANK,
       BLANK,
       code`${rt.model.registerGeneratedModel}(${identifier(className)}, {`,
-      code`  fields: [${legacyText(allFieldNames.map((name) => JSON.stringify(name)).join(', '))}] as const,`,
+      code`  fields: [${fieldNames}] as const,`,
       code`  conversion: { decode: ${identifier(`decode${typeName}`)}, encode: ${identifier(`encode${typeName}`)} },`,
       code`  codecId: ${literal(codecIdFor(definition.name))},`,
       code`  profile: { validation: ${literal(profile.validation)} },`,
@@ -1040,7 +1065,7 @@ export function generateModels(
     body.push(code`export type ${identifier(aliasType)} = ${modelFieldType(alias.rawSchema, definitions, componentEnv(sharedModelEnv, alias.schemaName, alias.rawSchema))};`, BLANK);
     if (aliasInitsModel(alias, definitions, sharedModelEnv)) {
       moduleScope.claim(aliasInitName(alias), `initializer of the recursive component ${JSON.stringify(alias.schemaName)}`, alias.schemaName);
-      const aliasBody = withConflictCode(alias.schemaName, () => emitModelFromInit(aliasDescriptor(alias, definitions, sharedModelEnv), readOf('value'), (reference) => modelResolver(reference, definitions, sharedModelEnv, context)));
+      const aliasBody = withConflictCode(alias.schemaName, () => emitModelFromInit(aliasDescriptor(alias, definitions, sharedModelEnv), VALUE, (reference) => modelResolver(reference, definitions, sharedModelEnv, context)));
       body.push(
         code`export function ${identifier(aliasInitName(alias))}(value: unknown): ${identifier(aliasType)} {`,
         code`  return (${aliasBody}) as ${identifier(aliasType)};`,
@@ -1050,7 +1075,7 @@ export function generateModels(
     }
   }
   if (helpers.resolvedSchemas) {
-    body.push(legacyText(`const modelSchemas = JSON.parse(${JSON.stringify(JSON.stringify(helpers.resolvedSchemas))}) as Readonly<Record<string, object>>;`), BLANK);
+    body.push(code`const modelSchemas = JSON.parse(${literal(JSON.stringify(helpers.resolvedSchemas))}) as Readonly<Record<string, object>>;`, BLANK);
   }
   const validatorsSource = helpers.validatorsSource;
   const aliasesByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
@@ -1126,7 +1151,7 @@ export function generateModels(
   const moduleSources = helpers.moduleSources?.() ?? [];
   const validatorSources = validatorsSource ? [validatorsSource] : [];
   const lines: readonly Code[] = [
-    legacyText(generatedBanner()),
+    generatedBannerComment(),
     ...runtimeLines('mobx-validation', 'model', 'conversion', 'temporal', 'serde', 'mobx'),
     ...fileImports(bodyCode, [typesModule], { elsewhere: [...moduleSources, ...validatorSources] }),
     ...fileImports(bodyCode, moduleSources, { quote: '"', elsewhere: [typesModule, ...validatorSources] }),
