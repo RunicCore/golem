@@ -455,40 +455,70 @@ function collect(root: Code): Collected {
   return known;
 }
 
-function collectFrom(root: Code): Collected {
+/** What the parts of one Code name: the runtime names, the imported names, and the helpers. */
+interface Scanned {
+  readonly runtime: Map<RuntimeModule, RuntimeNames>;
+  readonly imported: Map<ImportSource, Set<Code>>;
+  readonly needs: readonly Helper[];
+}
+
+function scanParts(piece: Code): Scanned {
   const runtime = new Map<RuntimeModule, RuntimeNames>();
   const imported = new Map<ImportSource, Set<Code>>();
-  const found = new Map<string, { readonly helper: Helper; readonly definition: Code; readonly needs: readonly Helper[] }>();
-  const scan = (piece: Code): readonly Helper[] => {
-    let needs: Map<string, Helper> | undefined;
-    for (const part of piece.parts) {
-      if (part.kind === 'runtime') {
-        let names = runtime.get(part.module);
-        if (!names) { names = { values: new Map<string, ImportedName>(), types: new Map<string, ImportedName>() }; runtime.set(part.module, names); }
-        const kept = part.typeOnly ? names.types : names.values;
-        const key = runtimeKey(part);
-        if (!kept.has(key)) kept.set(key, { name: part.name, ...(part.alias === undefined ? {} : { alias: part.alias }), ...(part.typeOnly ? { typeOnly: true as const } : {}) });
-      } else if (part.kind === 'imported') {
-        let used = imported.get(part.source);
-        if (!used) { used = new Set<Code>(); imported.set(part.source, used); }
-        used.add(part.source.declaredFor(part));
-      } else if (part.kind === 'helper') {
-        (needs ??= new Map<string, Helper>()).set(part.helper.id, part.helper);
-      }
+  let needs: Map<string, Helper> | undefined;
+  for (const part of piece.parts) {
+    if (part.kind === 'runtime') {
+      let names = runtime.get(part.module);
+      if (!names) { names = { values: new Map<string, ImportedName>(), types: new Map<string, ImportedName>() }; runtime.set(part.module, names); }
+      const kept = part.typeOnly ? names.types : names.values;
+      const key = runtimeKey(part);
+      if (!kept.has(key)) kept.set(key, { name: part.name, ...(part.alias === undefined ? {} : { alias: part.alias }), ...(part.typeOnly ? { typeOnly: true as const } : {}) });
+    } else if (part.kind === 'imported') {
+      let used = imported.get(part.source);
+      if (!used) { used = new Set<Code>(); imported.set(part.source, used); }
+      used.add(part.source.declaredFor(part));
+    } else if (part.kind === 'helper') {
+      (needs ??= new Map<string, Helper>()).set(part.helper.id, part.helper);
     }
-    return needs ? [...needs.values()].sort(compareHelpers) : [];
-  };
-  const pending: Helper[] = [...scan(root)];
+  }
+  return { runtime, imported, needs: needs ? [...needs.values()].sort(compareHelpers) : [] };
+}
+
+/** The definition of a helper and what it names, found once: many roots name the same helper, and a Code is never changed. */
+const definitions = new WeakMap<Helper, { readonly definition: Code; readonly scanned: Scanned }>();
+
+function collectFrom(root: Code): Collected {
+  const rootScan = scanParts(root);
+  const runtime = rootScan.runtime;
+  const imported = rootScan.imported;
+  const found = new Map<string, { readonly helper: Helper; readonly definition: Code; readonly needs: readonly Helper[] }>();
+  const pending: Helper[] = [...rootScan.needs];
   for (let next = pending.pop(); next; next = pending.pop()) {
     const known = found.get(next.id);
     if (known) {
       if (known.helper !== next) throw new Error(`two helpers are named "${next.id}"`);
       continue;
     }
-    const definition = next.define();
-    const needs = scan(definition);
-    found.set(next.id, { helper: next, definition, needs });
-    pending.push(...needs);
+    let defined = definitions.get(next);
+    if (!defined) {
+      const definition = next.define();
+      defined = { definition, scanned: scanParts(definition) };
+      definitions.set(next, defined);
+    }
+    const { definition, scanned } = defined;
+    for (const [module, names] of scanned.runtime) {
+      const into = runtime.get(module);
+      if (!into) { runtime.set(module, { values: new Map(names.values), types: new Map(names.types) }); continue; }
+      for (const [key, name] of names.values) if (!into.values.has(key)) into.values.set(key, name);
+      for (const [key, name] of names.types) if (!into.types.has(key)) into.types.set(key, name);
+    }
+    for (const [source, names] of scanned.imported) {
+      const into = imported.get(source);
+      if (into) names.forEach((name) => into.add(name));
+      else imported.set(source, new Set(names));
+    }
+    found.set(next.id, { helper: next, definition, needs: scanned.needs });
+    pending.push(...scanned.needs);
   }
   // A helper that a file reads while it loads, such as a constant, must come after the helpers its definition names.
   // The order is the post-order of the names, each level in code point order of the ids. A cycle is functions only.
