@@ -20,11 +20,13 @@ A response holds the HTTP `status` and the decoded `body`. This includes declare
 
 | Option | Value |
 | --- | --- |
-| `baseUrl` | Required. An empty string is an error. |
-| `fetchImpl` | The `fetch` function for requests. Defaults to the global `fetch`. |
-| `headers` | Headers that the client sends with every request. |
-| `auth` | Credentials or functions that return them, keyed by security-scheme name ([Authentication](/guide/auth)). |
-| `operationValidators` | Replacements for the generated validators of named operations ([Runtime API](/reference/runtime-api#runtime-validators)). |
+| `baseUrl` | the required base URL |
+| `fetchImpl` | the `fetch` function, global `fetch` by default |
+| `headers` | headers for every request |
+| `auth` | credentials by security-scheme name ([Authentication](/guide/auth)) |
+| `operationValidators` | validators that replace generated ones ([Runtime API](/reference/runtime-api#runtime-validators)) |
+
+An empty `baseUrl` is an error. `auth` values can be functions that return the credentials. `operationValidators` replaces the generated validator of each named operation.
 
 ## Pass parameters and a body
 

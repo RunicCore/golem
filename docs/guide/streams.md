@@ -34,11 +34,11 @@ For the same `readEvents` operation, `provider/events.ts` reads one item. Leavin
 
 | Content type | Items returned |
 | --- | --- |
-| `application/x-ndjson`, `application/ndjson`, `application/jsonl`, or a media type that ends with `+jsonl` | One decoded JSON value per line |
-| `application/json-seq`, or a media type that ends with `+json-seq` | One decoded JSON value per record. A record can span lines |
-| `text/event-stream` | `{ data: string, event?, id?, retry? }` for each event |
+| `application/x-ndjson`, `application/ndjson`, `application/jsonl`, or a media type that ends with `+jsonl` | a decoded JSON value per line |
+| `application/json-seq`, or a media type that ends with `+json-seq` | a decoded JSON value per record |
+| `text/event-stream` | an event object, `{ data: string, event?, id?, retry? }` |
 
-SSE `data` stays a string. Parse it in your application if the server sends JSON in that field. A malformed or truncated JSON-seq body fails the iteration and releases the reader. Any other framing needs a `streamDecoders` entry.
+A JSON-seq record can span lines. SSE `data` stays a string. Parse it in your application if the server sends JSON in that field. A malformed or truncated JSON-seq body fails the iteration and releases the reader. Any other framing needs a `streamDecoders` entry.
 
 ## Connect a custom stream decoder
 

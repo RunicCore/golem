@@ -25,7 +25,7 @@ Set the profile and regenerate:
 
 <<< ../../examples/payments/web/golem.yaml
 
-`mobx: true` applies to every generator in the configuration. The example also sets `validation: true`. Validation is independent of MobX ([Validate models](/guide/validation)). An OpenAPI client also gains observable operation loading ([SDK loading state](/guide/client-usage#observe-loading-with-mobx)).
+`mobx: true` applies to every generator in the configuration. The example also sets `validation: true`. Validation is independent of MobX ([Validate models](/guide/validation)). An OpenAPI client also gains observable operation loading ([Call operations](/guide/client-usage#observe-loading-with-mobx)).
 
 ## Initialize your class
 
@@ -68,7 +68,7 @@ With `mobx: false`, generated files import no MobX.
 
 ## Use it in React
 
-A React component imports a generated model or client like any other module. Wrap a component that reads observable fields in `observer` from `mobx-react-lite`. It re-renders when a field it read changes. Operation `loading` is in [SDK clients](/guide/client-usage#observe-loading-with-mobx).
+A React component imports a generated model or client like any other module. Wrap a component that reads observable fields in `observer` from `mobx-react-lite`. It re-renders when a field it read changes. Operation `loading` is observable too ([Call operations](/guide/client-usage#observe-loading-with-mobx)).
 
 The amount field in [`src/App.tsx`](https://github.com/RunicCore/golem/blob/master/examples/payments/web/src/App.tsx), which wraps every field of the form the same way:
 

@@ -38,7 +38,7 @@ features:
   - title: Validated by default
     details: Validation is on for models and for client requests and responses. Turn on MobX when React needs observable models.
     link: /guide/validation
-    linkText: Validation
+    linkText: Validate models
 ---
 
 ## One toolchain instead of a stack
@@ -59,7 +59,7 @@ A typical TypeScript API stack assembles a library for each job and keeps their 
 - Have an OpenAPI document? Generate a [typed client](/guide/client).
 - Have NestJS controllers? Generate the [OpenAPI document](/guide/nestjs) from them, then the client.
 
-Golem needs Node.js 22.15 or newer and TypeScript 6 or 7 ([requirements](/guide/install#requirements)).
+Golem supports the Node.js and TypeScript versions in [Compatibility](/compatibility).
 
 ## Your types are the schema
 
@@ -69,7 +69,7 @@ Golem needs Node.js 22.15 or newer and TypeScript 6 or 7 ([requirements](/guide/
 
 ## One model, start to finish
 
-Declare the fields, run `npx golem generate`, then extend the generated class. Generation writes `task.model.generated.ts`, a file you can leave out of git, and never touches your class.
+Declare the fields, run `npx golem generate`, then extend the generated class. Generation writes `task.model.generated.ts`, a file you [ignore in git](/reference/generated-files#gitignore), and never touches your class.
 
 ::: code-group
 

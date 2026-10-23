@@ -69,7 +69,7 @@ test('quick start toggles a task, serializes it and validates it', async () => {
 });
 
 test('a LibError of input lists the failed checks by path', () => {
-  // protects: docs Validate models, Errors and issues
+  // protects: fact F-83 LibError issues and causedByInput
   assert.deepEqual(explainTaskText('{"title":"Plan","done":false,"priority":"low"}'), []);
   const failed = explainTaskText('{"title":"","done":"no","priority":"low"}');
   assert.deepEqual(failed.map(line => line.split(':')[0]).sort(), ['done', 'title']);

@@ -6,8 +6,8 @@ Pick the TypeScript shape of a field and see how golem constructs, converts and 
 
 | TypeScript shape | Runtime and JSON |
 | --- | --- |
-| `string`, `number`, `boolean`, `null`, `undefined` | stored as is; an `undefined` property is left out of JSON |
-| `bigint` | needs a [`TSerde`](/guide/serialization#change-the-json-form) codec that writes it as JSON, such as a string; without one, `stringify` rejects it |
+| `string`, `number`, `boolean`, `null`, `undefined` | stored as is |
+| `bigint` | needs a [`TSerde`](/guide/serialization#change-the-json-form) codec |
 | string, number and boolean literals | kept and checked |
 | arrays and tuples | items convert recursively; tuple length and optional or rest positions are checked |
 | object types | known properties convert; extra properties fail validation unless [`exact` is `false`](#objects-and-exact) |
@@ -19,6 +19,8 @@ Pick the TypeScript shape of a field and see how golem constructs, converts and 
 | `TemporalInstant`, `TemporalPlainDate` and the other [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) types | an ISO 8601 string in JSON ([Dates and times](/guide/dates)) |
 | a [recursive type alias](#recursive-type-aliases) | converted and validated at every level |
 | `any`, `unknown` | accepted only when [`allowAny` is `true`](#any-and-unknown) |
+
+An `undefined` property is left out of JSON. `bigint` needs a codec that writes it as JSON, such as a string. Without one, `stringify` rejects it.
 
 [Validation tags](/guide/tags) add checks to these shapes, such as a format check on a `Date`.
 

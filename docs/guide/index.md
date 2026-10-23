@@ -33,4 +33,4 @@ For an OpenAPI 3.1 or 3.2 document, Golem resolves its `$ref`s across local file
 
 ## What you need
 
-You need Node.js 22.15 or newer and TypeScript 6 or 7 ([requirements](/guide/install#requirements)). Validation is on and MobX is off by default.
+Golem supports the Node.js and TypeScript versions in [Compatibility](/compatibility). Validation is on and MobX is off by default.

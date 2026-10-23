@@ -1,4 +1,4 @@
-# Run your own generator
+# Write a generator
 
 Write a generator package that emits source files, and let `golem generate` run it before the model job.
 

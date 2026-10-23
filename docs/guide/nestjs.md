@@ -6,7 +6,7 @@ A controller in your NestJS project, `src/payment-notes.controller.ts`:
 
 <<< ../../examples/payments/server/src/payment-notes.controller.ts#payment-note-controller
 
-`@exprtlabs/golem-ts-openapi` reads this file. It does not start Nest or call handlers. NestJS 11 is supported.
+`@exprtlabs/golem-ts-openapi` reads this file. It does not start Nest or call handlers. It supports the NestJS version in [Compatibility](/compatibility).
 
 ## Install
 
