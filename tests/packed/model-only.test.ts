@@ -5,6 +5,7 @@ import path from 'node:path';
 import { build } from 'esbuild';
 import { command, npm, cli } from '../support/process.js';
 import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
+import { distTagForVersion } from '../../packages/golem/src/tooling/dist-tag.js';
 import { copyFixture, copyFixtureFile } from '../fixture-project.js';
 
 let registry: PackedRegistry;
@@ -36,5 +37,5 @@ test('packed manifests and tarballs carry the release contract', () => {
     assert.ok(entry.pack.files.some(file => file.path === 'LICENSE'));
     assert.ok(entry.pack.files.every(file => !/(?:^|\/)(?:docs?|assets?|\.vitepress|vitepress|vue|node_modules)(?:\/|$)/i.test(file.path)), name);
   }
-  assert.deepEqual(registry.distTags, { latest: registry.workspaceVersion });
+  assert.deepEqual(registry.distTags, { [distTagForVersion(registry.workspaceVersion)]: registry.workspaceVersion });
 });

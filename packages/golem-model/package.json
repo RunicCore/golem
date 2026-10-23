@@ -1,6 +1,6 @@
 {
   "name": "@exprtlabs/golem-model",
-  "version": "1.0.0",
+  "version": "1.1.0-rc.0",
   "description": "Generate TypeScript model bases from IModel definitions",
   "keywords": [
     "typescript",
@@ -24,7 +24,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "tag": "latest"
+    "tag": "rc"
   },
   "type": "module",
   "engines": {
@@ -43,7 +43,7 @@
     }
   },
   "dependencies": {
-    "@exprtlabs/golem": "1.0.0"
+    "@exprtlabs/golem": "1.1.0-rc.0"
   },
   "peerDependencies": {
     "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8"
