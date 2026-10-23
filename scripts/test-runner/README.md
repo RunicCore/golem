@@ -8,7 +8,7 @@ Run tests in the golem test-runner image. Tier runs are offline.
 | `npm run test:full` | 5 min | Unit tests, the TypeScript 6 lane and the packed model-only smoke test. Run before a commit. Pack and the smoke test run beside the TypeScript 6 lane. |
 | `npm run test:acceptance` | 10 min | Full, the public-source and OpenAPI compliance checks, the acceptance unit tests, and the packed and browser tests. Run before a release. |
 | `npm run test:prepare` | 5 min (plus a first-time image build), online | Builds the image and fills the npm, packed and typia plugin caches. Runs no tests. Run it first, and again after a lockfile or image change. |
-| `npm run docs:check` | 2 min | Builds the documentation site and checks it. |
+| `npm run docs:check` | 2 min | Checks the docs prose rules and page inventory, then builds the documentation site and checks it. |
 
 Pass a test source path, such as `tests/serde.test.ts`, or a `node --test` flag for the test files, such as `--test-name-pattern`. The run rejects the flags that set up the run itself (`--test-reporter`, `--test-concurrency`, `--test-timeout`, `--test-shard`) with exit 2. A path that names no file fails the step. A `*` works in the file name only, not in a directory (`tests/*.test.ts`, not `tests/**/x.test.ts`).
 
