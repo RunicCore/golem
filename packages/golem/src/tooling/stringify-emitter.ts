@@ -134,6 +134,15 @@ interface EmitCtx {
   readonly fillThrows?: Map<string, boolean>;
   /** Locals a decoder assigns; the function that holds the decoder declares them. Without it the decoder re-reads. */
   readonly decodeLocals?: string[];
+  /** Reads a union above already made into a local; a decoder below uses the local where it would read the property. */
+  readonly knownReads?: readonly KnownRead[];
+}
+
+/** The read of `property` of the decoded `expression`, held by `local`. */
+interface KnownRead {
+  readonly expression: string;
+  readonly property: string;
+  readonly local: string;
 }
 
 interface HoistedConverters {
@@ -235,6 +244,11 @@ function accessRead(expression: Emitted, name: string, bare: boolean = isRecordE
 
 function access(expression: string, name: string): string {
   return render(accessRead(expression, name).read);
+}
+
+/** The read of a property of a decoded expression: the local that a union above holds it in, or the read itself. */
+function decodeRead(ctx: EmitCtx, expression: string, name: string): string {
+  return ctx.knownReads?.find((known) => known.expression === expression && known.property === name)?.local ?? access(expression, name);
 }
 
 function emitJsonLiteral(value: unknown): Code {
@@ -764,13 +778,14 @@ function isScalarDescriptor(descriptor: ModelTypeDescriptor): boolean {
 function emitClosedIdentityObject(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   expression: string,
+  ctx: EmitCtx,
 ): string | undefined {
   const required = new Set(descriptor.required);
   const names = Object.keys(descriptor.properties);
   if (names.length === 0) return undefined;
   if (names.some((name) => name === '__proto__' || !required.has(name))) return undefined;
   if (names.some((name) => !isScalarDescriptor(descriptor.properties[name]))) return undefined;
-  return `(${emitComputedRecord(names.map((name) => [name, access(expression, name)]))})`;
+  return `(${emitComputedRecord(names.map((name) => [name, decodeRead(ctx, expression, name)]))})`;
 }
 
 /**
@@ -981,7 +996,7 @@ function emitInternedObjectDecode(
     && !descriptorNeedsConversion(node.descriptor)
   ) {
     // An open object or a map is copied by its `fill*`; only a closed object of scalars is one literal.
-    const closed = extrasAllowed(node.descriptor) ? undefined : emitClosedIdentityObject(node.descriptor, expression);
+    const closed = extrasAllowed(node.descriptor) ? undefined : emitClosedIdentityObject(node.descriptor, expression, ctx);
     if (closed) return closed;
   }
   if (node.kind === 'object') {
@@ -1060,7 +1075,7 @@ function emitTaggedVariantUnion(
   indices: readonly number[],
   expression: Emitted,
   ctx: EmitCtx,
-  convert: (variant: ModelTypeDescriptor) => Emitted,
+  convert: (variant: ModelTypeDescriptor, scope: EmitCtx) => Emitted,
   direction: DispatchOptions['direction'],
   options?: { readonly unresolved?: 'throw' | 'skip' },
 ): Code | undefined {
@@ -1069,20 +1084,18 @@ function emitTaggedVariantUnion(
   const objectFor = (variant: ModelTypeDescriptor) => resolveObjectDescriptor(variant, ctx);
   if (variants.length === 0 || (!union.discriminator && variants.some((variant) => !objectFor(variant)))) return undefined;
   const dispatch = unionDispatch(union, indices, objectFor);
-  // A decoder in a function that declares its locals reads the tag once and reuses it in the variant's copy.
-  // migration door, deleted in step 3c (T-285): a decoder gives its expression and its variants as text
-  const decoderName = typeof expression === 'string' && /^[A-Za-z_$][\w$]*$/.test(expression) ? expression : undefined;
+  // A decoder in a function that declares its locals reads the tag once and reuses it in the variant's copy: the variants
+  // are decoded with that read known, so they use the local where they would read the tag.
+  const decoderName = typeof expression === 'string' && readShape(expression) === 'name' ? expression : undefined;
   const tagLocal = dispatch && direction === 'decode' && ctx.decodeLocals && decoderName !== undefined
     && variants.every((variant) => variantClassName(variant, ctx) === undefined)
     ? `__golemTag${ctx.decodeLocals.length}`
     : undefined;
-  const tagRead = tagLocal && dispatch && decoderName !== undefined ? access(decoderName, dispatch.property) : undefined;
   if (tagLocal) ctx.decodeLocals?.push(tagLocal);
-  const conversions = variants.map((variant) => {
-    const converted = convert(variant);
-    // migration door, deleted in step 3c (T-285)
-    return tagLocal && tagRead && typeof converted === 'string' ? converted.split(tagRead).join(tagLocal) : converted;
-  });
+  const scope: EmitCtx = tagLocal && dispatch && decoderName !== undefined
+    ? { ...ctx, knownReads: [...(ctx.knownReads ?? []), { expression: decoderName, property: dispatch.property, local: tagLocal }] }
+    : ctx;
+  const conversions = variants.map((variant) => convert(variant, scope));
   if (!dispatch) {
     if (direction !== 'encode-json' && conversions.every((converted) => sameCode(emittedCode(converted), value))) return value;
     if (options?.unresolved === 'skip') return undefined;
@@ -1127,7 +1140,7 @@ function emitTaggedObjects(
   union: UnionTypeDescriptor,
   expression: Emitted,
   ctx: EmitCtx,
-  convert: (variant: ModelTypeDescriptor) => Emitted,
+  convert: (variant: ModelTypeDescriptor, scope: EmitCtx) => Emitted,
   direction: DispatchOptions['direction'],
 ): Code {
   const indices = presentUnionIndices(union).filter((index) => union.variants[index].kind === 'object');
@@ -1139,7 +1152,7 @@ function emitTaggedObjects(
 /** Match any required literal tag of `objects`, for mixing them with one generated model. */
 function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: Emitted, decode: boolean): Code[] {
   // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag matches no object.
-  // migration door, deleted in step 3c (T-285): presentValueSource takes the text of the expression, which a decoder gives as text
+  // migration door, deleted in step 3d (T-286): presentValueSource takes the text of the expression, which a decoder gives as text
   const read = (name: string): Code => decode
     ? code`(${legacyText(presentValueSource(render(emittedCode(expression)), JSON.stringify(name), render(tagAccess(expression, name))))})`
     : tagAccess(expression, name);
@@ -1245,7 +1258,7 @@ function emitUnionDecode(
       presentUnionIndices(descriptor),
       expression,
       ctx,
-      (variant) => emitDecodeValue(variant, expression, ctx),
+      (variant, scope) => emitDecodeValue(variant, expression, scope),
       'decode',
     ),
     generated: {
@@ -1323,7 +1336,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
-    // migration door, deleted in step 3c (T-285)
+    // migration door, deleted in step 3d (T-286)
     const deserialized = ctx.serde ? fallibleConversion(ctx, render(ctx.serde.deserialize(tags.serde.id, legacyText(expression)))) : expression;
     const wire = serdeWireDescriptor(descriptor);
     if (wire?.kind === 'string') {
@@ -1420,7 +1433,7 @@ function emitDecodedRecord(
   if (fields.length === 0) return expression;
   const required = new Set(descriptor.required);
   return emitComputedRecord(fields.map(([name, property]) => {
-    const source = access(expression, name);
+    const source = decodeRead(ctx, expression, name);
     const before = fallibleCount(ctx);
     const decoded = emitDecodeValue(property, source, { ...ctx, decodeLocals: undefined });
     // A source property is read once: a conversion that can throw runs under its field's path with the

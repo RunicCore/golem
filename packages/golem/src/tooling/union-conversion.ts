@@ -202,7 +202,7 @@ export function emitDispatch(options: DispatchOptions): Code {
   const encode = direction !== 'decode';
   const propertyRead = code`(${value} as unknown as Record<string, unknown>)[${literal(property)}]`;
   // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag selects no branch.
-  // migration door, deleted in step 3c (T-285): presentValueSource takes the text of the expression, which a decoder gives as text
+  // migration door, deleted in step 3d (T-286): presentValueSource takes the text of the expression, which a decoder gives as text
   const tagRead = encode
     ? propertyRead
     : code`(${legacyText(presentValueSource(render(value), JSON.stringify(property), render(propertyRead)))})`;
