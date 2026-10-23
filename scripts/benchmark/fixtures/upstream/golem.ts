@@ -277,7 +277,7 @@ export async function createGolemFixtures(adapter: Adapter): Promise<readonly Co
   for (const input of inputs) {
     const model = await decode(input, validation);
     // #region calls
-    // Resolve the codec and options once, as the other libraries' fixtures do; timed calls do only the conversion.
+    // Resolve the codec and options once; timed calls do only the conversion.
     const codec = requireObjectCodec(codecId(input));
     // parse builds instances of this class: ObjectSimple, ConstrainedObjectHierarchical or Collection.
     const construct = constructFor(input);

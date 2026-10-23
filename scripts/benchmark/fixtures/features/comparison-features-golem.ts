@@ -66,7 +66,7 @@ function invalidOperationsOf(codec: ReturnType<typeof requireObjectCodec>, const
 function checkoutPlainFixture(validation: boolean): ComparisonFixture {
   const input = checkoutPlainInput();
   // #region checkout-plain-calls
-  // Resolve the codec and options once, as the other libraries' fixtures do; timed calls do only the conversion.
+  // Resolve the codec and options once; timed calls do only the conversion.
   const checkout = requireObjectCodec('TCheckoutPlain');
   const decodeOptions = options(validation, CheckoutPlain);
   const encodeOptions = options(validation);
@@ -150,7 +150,7 @@ export async function createGolemFeatureFixtures(adapter: Adapter): Promise<read
   const validation = validationFor(adapter);
   const input = checkoutInput();
   // #region calls
-  // Resolve the codec and options once, as the other libraries' fixtures do; timed calls do only the conversion.
+  // Resolve the codec and options once; timed calls do only the conversion.
   const checkout = codec();
   const decodeOptions = options(validation, Checkout);
   const encodeOptions = options(validation);

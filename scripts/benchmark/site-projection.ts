@@ -22,7 +22,7 @@ export interface BenchmarkSiteProjection {
     readonly payload: { readonly id: string; readonly label: string; readonly bytes: number; readonly description: string; readonly sourceUrl: string };
     readonly rows: readonly { readonly operation: { readonly id: string; readonly label: string }; readonly cells: readonly (number | null)[] }[];
   }[];
-  /** The cost table (Table 2), one block for each payload with a row. It reads golem adapters only. */
+  /** The cost table, one block for each payload with a row. It reads golem adapters only. */
   readonly cost: readonly {
     readonly payload: { readonly id: string; readonly label: string; readonly description: string };
     readonly rows: readonly { readonly operation: { readonly id: string; readonly label: string }; readonly cells: CostCells }[];

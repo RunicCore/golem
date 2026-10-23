@@ -146,7 +146,7 @@ Hand-written code copies each field and converts each date, and checks nothing. 
 | Tuple | 0.44 | 0.76 | 0.71 | 0.85 |
 | Optional fields | 0.64 | 0.85 | 0.77 | 0.84 |
 
-They were measured at commit c7513ad.
+They were measured at commit c7513ad. To measure them on your machine, run `npm run bench:handwritten`.
 
 ## What is measured
 

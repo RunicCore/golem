@@ -17,12 +17,12 @@ import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFacto
  * process, interleaved, so host load moves both sides together; read the ratios, not the absolute numbers.
  * Writes nothing under docs/: the committed results.json belongs to `npm run bench`.
  *
- * `npm run bench:typia`              validation, twins, failing values, decode, encode, parse and stringify (one window)
- * `npm run bench:typia -- --toggles` the cost toggles on the scratch validators beside the generated fast checks and
- *                                    the codec call chain (one window)
- * `npm run bench:typia -- --verify`  the checks only, no timing
- * `npm run bench:typia -- --json-value` a model with a recursive JSON value field: the ordered branch test of its untagged
- *                                    union against a typeof dispatch, and the acyclic pre-walk of a validated encode (one window)
+ * `npm run bench:handwritten`                validation, twins, failing values, decode, encode, parse and stringify (one window)
+ * `npm run bench:handwritten -- --toggles`   the cost toggles on the scratch validators beside the generated fast checks and
+ *                                            the codec call chain (one window)
+ * `npm run bench:handwritten -- --verify`    the checks only, no timing
+ * `npm run bench:handwritten -- --json-value` a model with a recursive JSON value field: the ordered branch test of its untagged
+ *                                            union against a typeof dispatch, and the acyclic pre-walk of a validated encode (one window)
  */
 const SETTINGS = { warmupMs: 30, batchMs: 18, batches: 5 };
 const TYPIA_FIXTURES = path.join(root, 'scripts/benchmark/fixtures/typia');
