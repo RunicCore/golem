@@ -198,6 +198,18 @@ function fromParts(parts: readonly Part[]): Code {
  * error, so text enters through `literal`, `identifier` and this tag's own text, and nowhere else.
  */
 export function code(strings: TemplateStringsArray, ...values: readonly Code[]): Code {
+  if (values.length === 0) {
+    // The text of a tag with no value is fixed at its place in the source, and a Code is never changed: it is made once.
+    let constant = constants.get(strings);
+    if (!constant) {
+      constant = fromParts([{ kind: 'text', text: strings[0]! }]);
+      constants.set(strings, constant);
+    }
+    return constant;
+  }
+  const only = values[0];
+  // `${value}` alone is the value, unless the mark of an object literal would carry over (see `asObjectLiteral`).
+  if (values.length === 1 && only && strings[0] === '' && strings[1] === '' && !only.objectLiteral) return only;
   const out: Part[] = [];
   let pending = strings[0]!;
   for (let index = 0; index < values.length; index += 1) {
@@ -207,6 +219,8 @@ export function code(strings: TemplateStringsArray, ...values: readonly Code[]):
   }
   return finish(out, pending);
 }
+
+const constants = new WeakMap<TemplateStringsArray, Code>();
 
 /** Code from the pieces of a list, with `separator` between them. */
 export function join(pieces: readonly Code[], separator: Code = fromParts([])): Code {
