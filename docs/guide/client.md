@@ -13,7 +13,7 @@ npm install @exprtlabs/golem
 npm install --save-dev @exprtlabs/golem-openapi typescript@~7.0.2
 ```
 
-Requests and responses are validated by default. Build with `npx golem build`, which generates first, the Vite or esbuild plugin, or the Node loader ([TypeScript setup](/guide/install#typescript-setup)). Include the generated `sdk/` directory in the TypeScript program that builds your app, and ignore it in git with the other generated files ([ignore generated files](/reference/generated-files#gitignore)).
+Requests and responses are validated by default. Choose how to build in [Build your app](/guide/build). Include the generated `sdk/` directory in the TypeScript program that builds your app, and ignore it in git with the other generated files ([ignore generated files](/reference/generated-files#gitignore)).
 
 ## Point to your OpenAPI document
 

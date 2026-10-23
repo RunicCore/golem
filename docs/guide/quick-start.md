@@ -9,7 +9,7 @@ npm install @exprtlabs/golem
 npm install --save-dev @exprtlabs/golem-model typescript@~7.0.2
 ```
 
-Add `"type": "module"` to `package.json` and this to `tsconfig.json`:
+Check the [requirements](/guide/install#requirements). Add `"type": "module"` to `package.json` and this to `tsconfig.json`:
 
 ```json
 {
@@ -39,11 +39,11 @@ Then mark a type with `IModel` in `src/task.model.ts`; `TSerde` ties `priority` 
 
 The generator reads `src/**/*.model.ts` and `src/**/*.models.ts`; [`models.suffixes`](/reference/config#typescript-models) changes the endings and `models.sources` names the files.
 
-An `IObject` gives plain objects with the same validation and conversion; an `IModel` also gives you a class ([IObject or IModel](/guide/models#iobject-or-imodel)).
+Declare an `IObject` instead to keep plain objects ([IObject or IModel](/guide/models#iobject-or-imodel)).
 
 ## Generate the base
 
-Add `golem.yaml` at the project root and run the generator. `golem build` starts from this file and builds the `tsconfig.json` beside it. `golem generate` writes the generated code your editor needs; `golem build` generates first on its own:
+Add `golem.yaml` at the project root and run the generator. Your editor needs the generated code now. `golem build` generates it again later.
 
 <<< ../../examples/models/golem.yaml
 
@@ -55,7 +55,7 @@ npx golem generate
 Generated configured outputs.
 ```
 
-You get `src/task.model.generated.ts` beside the declaration, with the generated class `TTaskBaseModel` and the `TTaskFields` type. Shared files go to `models.output` (default `src/generated/models/`). Golem also keeps its state in `.golem/`. Add the generated files and `.golem/` to `.gitignore` ([ignore generated files](/reference/generated-files#gitignore)):
+You get `src/task.model.generated.ts` beside the declaration, with the generated class `TTaskBaseModel` and the `TTaskFields` type. Shared files go to `models.output` (default `src/generated/models/`). Add the generated files and `.golem/` to `.gitignore` ([ignore generated files](/reference/generated-files#gitignore)):
 
 ```text
 .golem/
@@ -77,7 +77,7 @@ Create `src/main.ts`:
 
 <<< ../../examples/models/src/main.ts#use-task
 
-`@exprtlabs/golem/serde` also exports `parse` and `stringify`. `parse<Task>(text)` builds a `Task`; `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
+`toWireFormat<Task>(task)` returns the JSON form of the task as an object. `@exprtlabs/golem/serde` also exports `parse` and `stringify`. `parse<Task>(text)` builds a `Task`. `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
 
 ## Run it
 
@@ -86,10 +86,11 @@ npx golem build && node .build/src/main.js
 ```
 
 ```
+Built tsconfig.json.
 { title: 'Review the draft', done: true, priority: 'normal' }
 []
 ```
 
-`golem build` generates first, checks your sources, then writes JavaScript with `parse` and `stringify` calls rewritten into `.build/`. A bundler plugin or the Node loader can rewrite the calls instead ([TypeScript setup](/guide/install#typescript-setup)).
+`golem build` generates first, checks your sources, and writes JavaScript with the `toWireFormat` call rewritten into `.build/`. A bundler plugin or the Node loader can rewrite the calls instead ([Build your app](/guide/build)). Edit and regenerate in the loop of [Generate, watch and check](/guide/watch).
 
-Your `main.ts` holds only the code above, so this is all it prints. The full example's `main.ts` continues with one line per feature; `npm start` in [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models) prints them all.
+Your `main.ts` holds only the code above, so this is all it prints. The full example's `main.ts` continues with one line per feature. `npm start` in [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models) prints them all.

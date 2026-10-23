@@ -117,7 +117,7 @@ Add these options to the `tsconfig.json` from [Quick start](/guide/quick-start):
 }
 ```
 
-With a `controllers` job in `golem.yaml`, the rewrite records `@Body()`, `@Query()` and return types for Nest. Every host applies it: [`golem build`](/reference/cli#build), the [loader](/reference/runtime-api#loader) and the [Vite](/reference/runtime-api#vite) and [esbuild](/reference/runtime-api#esbuild) plugins. `npx golem build` generates first and then compiles.
+With a `controllers` job in `golem.yaml`, the rewrite records `@Body()`, `@Query()` and return types for Nest. Every host applies it ([Build your app](/guide/build)).
 
 Node's type stripping rejects the parameter decorators of a NestJS controller. To run the app through the Node loader, register a loader that compiles decorators after golem's: `node --import @exprtlabs/golem/register --import ./decorators.mjs src/main.ts`. Its `load` hook calls `nextLoad` to get the file as golem rewrote it, then compiles the decorators ([loader](/reference/runtime-api#register)).
 

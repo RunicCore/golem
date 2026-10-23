@@ -6,7 +6,7 @@ runs the configured generators, and writes their artifacts to the configured
 destinations. The inventory (`.golem/outputs.json`) records which
 generated files each job produced.
 
-`golem build` compiles your project the way `tsc -p` does and rewrites `parse<T>()` on the way. `golem generate` writes the generated code that your editor and your bundler need. It does not scan or rewrite your calls.
+`golem build` compiles your project and rewrites the calls that a build host rewrites ([Build your app](/guide/build)).
 
 A job replaces a file at one of its output paths only when the inventory
 records it or the file starts with that generator's marker comment. Any other
@@ -43,7 +43,7 @@ valid only with `exec`; unknown options fail before generation starts.
 
 ## Build
 
-`golem build` rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) while it compiles. It generates the code `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite while it loads your TypeScript instead: use the [Vite plugin](/reference/runtime-api#vite), the [esbuild plugin](/reference/runtime-api#esbuild) or the [Node loader](/reference/runtime-api#loader). Each of them opens your project from `golem.yaml`, and scans each file itself.
+`golem build` rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) while it compiles. It generates the code `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite while it loads your TypeScript instead ([Build your app](/guide/build)).
 
 ```sh
 npx golem build
@@ -156,4 +156,4 @@ after the first successful generation.
 ## Runtime and imports
 
 The CLI requires Node.js 22.15 or newer. Generated application code needs the
-ESM and `NodeNext` settings in [run compiled code](/guide/install#run-compiled-code).
+ESM and `NodeNext` settings in [project settings](/guide/install#project-settings).

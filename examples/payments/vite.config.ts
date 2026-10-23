@@ -1,3 +1,4 @@
+// #region vite-config
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { golem } from '@exprtlabs/golem/vite';
@@ -11,3 +12,4 @@ export default defineConfig({
     proxy: { '/api': `http://127.0.0.1:${process.env.API_PORT ?? '3000'}` },
   },
 });
+// #endregion vite-config
