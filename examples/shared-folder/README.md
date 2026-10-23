@@ -11,7 +11,7 @@ The example depends on `1.0.0` of `@exprtlabs/golem*`. Run it from this reposito
 - `apps/worker` reaches the folder through `apps/worker/shared`, a folder link to `../../shared`. It has `validation: false`. It reads and writes `TCustomer` and loads its own `src/generated/models/shared/customer.model.generated.ts`.
 - Each app generates the model in its own `models.output`, in the folder of the shared package (here `shared`, the folder name, because the `package.json` has no `name`). The shared folder stays as its author wrote it.
 - An empty city and a currency that `isCurrencyCode` refuses fail in the web app. An empty city passes in the worker.
-- [Configuration](../../docs/reference/config.md#a-folder-shared-by-several-apps) states the rules.
+- [Share models between apps](../../docs/guide/shared-models.md) states the rules.
 
 ## Install and run
 

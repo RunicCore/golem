@@ -1,6 +1,6 @@
 # Generated files
 
-Know which generated paths and names you can import, and which may change.
+Know which generated paths and names you can import, and which files to ignore.
 
 ## Public paths
 
@@ -13,21 +13,11 @@ Know which generated paths and names you can import, and which may change.
 | `<models.output>/<package name>/<name>.model.generated.ts` | The generated base of a shared model file | Yes |
 | `golem.yaml` | Your configuration keys | Yes |
 
-The SDK folder is the `sdk` output you configure. Import only from the paths above.
+The SDK folder is the `sdk` output that you configure. Import only from the paths above.
 
 ## Ignore generated files {#gitignore}
 
 Never commit generated files. Put them and `.golem/` in `.gitignore`, so a clone has neither. `golem build` generates first, so a fresh clone builds with one command. Run `golem generate` or `golem build` in CI. Your editor needs one `golem generate`, or a running `golem watch`, to see the generated files.
-
-Golem writes these generated files:
-
-- `<name>.model.generated.ts` beside each model file, and the validators under `models.output` (default `src/generated/models/`)
-- the generated file of each shared model file, under `models.output`
-- the SDK folders, the OpenAPI document of a `controllers` job, and the files of a `generators` job
-
-The `.golem/` folder holds the state of golem on your machine: the list of files that golem owns, the codec keys, what each job read the last time it ran, and the incremental state of `golem build`. Ignore the whole folder. Any run of `golem generate`, `golem build` or `golem watch` writes it again.
-
-An example `.gitignore`:
 
 ```text
 .golem/
@@ -36,48 +26,37 @@ src/generated/
 sdk/
 ```
 
-A model suffix such as `.entity.mts` or `.entity.cts` makes `.generated.mts` or `.generated.cts` files; add a line for each extension your suffixes use.
+`.golem/` holds the state of golem on your machine. Any run of `golem generate`, `golem build` or `golem watch` writes it again. A model suffix such as `.entity.mts` or `.entity.cts` makes `.generated.mts` or `.generated.cts` files. Add a line for each extension that your suffixes use.
 
-List every other generated path by name: the OpenAPI document that a `controllers` job writes, and the files of a `generators` job. A tool that imports such a file needs it generated first, so run `golem generate` before it.
+Add every other generated path by name: the OpenAPI document that a `controllers` job writes, and the files of a `generators` job. A tool that imports such a file needs it generated first, so run `golem generate` before it.
 
 ## Default locations
 
 | Output | Location |
 | --- | --- |
-| Model files | `src/generated/models/` |
-| Operation codecs | `src/generated/operation-codecs.ts` |
+| Model files | `src/generated/models/`, below the `root` of the models job |
+| Operation codecs | `src/generated/operation-codecs.ts`, below the `root` of the controllers job |
 | OpenAPI document and SDK | The paths you configure |
 
 `models.output` overrides the model location. The operation codecs path is fixed.
 
-## Internal SDK files
+## Generated names
 
-Every other file in an SDK is internal and may change in a minor release. Do not import them:
+Each `<name>.model.generated.ts` file is public for the models that its source declares. `<Alias>` is the exact type alias.
 
-- `models/_group-*.ts`
-- `types.ts`
-- `input-schemas.ts`
-- `output-schemas.ts`
-- `client.ts`
-- `inbound.ts` and `links.ts` (their names are public through `sdk/index.js`)
-- `model-manifest.json`
-- `validators.generated.ts` (the validators of every model and operation)
+| Name | What it is |
+| --- | --- |
+| `<Alias>BaseModel` | The class that your class extends, for an `IModel` |
+| `<Alias>Fields` | Field values, with nested model instances |
+| `<Alias>Init` | Constructor input |
+| `<Alias>JSON` | The plain data that `toWireFormat` returns |
+| `parse<Alias>`, `stringify<Alias>`, `validate<Alias>`, `assert<Alias>`, `toWireFormat<Alias>`, `fromWireFormat<Alias>` | Functions for the model |
 
-## Internal model files
+`type TPayment = IModel<…>` gives `TPaymentBaseModel` and `parseTPayment`. `type Payment = IModel<…>` gives `PaymentBaseModel`. `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. A class links to its model through `extends <Alias>BaseModel` and can have any name. Exports that start with `__golem` are not part of the public API.
 
-In the model output (`src/generated/models/` by default), the file `models.validators.generated.ts` is internal. It holds the validators of the models. Each `<name>.model.generated.ts` is public for the models its source declares: `<Alias>BaseModel` for an `IModel`, the `<Alias>Fields`, `<Alias>JSON` and `<Alias>Init` types, and `parse<Alias>`, `stringify<Alias>`, `validate<Alias>`, `assert<Alias>`, `toWireFormat<Alias>` and `fromWireFormat<Alias>` functions. `<Alias>` is the exact type alias: `type TPayment = IModel<…>` gives `TPaymentBaseModel` and `parseTPayment`, `type Payment = IModel<…>` gives `PaymentBaseModel`, and `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. A class links to its model through `extends <Alias>BaseModel` and can have any name; a file can't export two classes that extend the same generated class directly. Codecs of [derived types](#derived-type-names) and exports that start with `__golem` are internal.
+Golem writes a generated file beside a model file inside `models.root`. Each app writes the generated file of a [shared model file](/guide/shared-models#where-each-app-writes) in its own `models.output`. The models job skips a discovered model file that has no `IModel` or `IObject` alias. A file that `models.sources` names is never skipped ([rules](/reference/config#typescript-models)).
 
-Each `<name>.model.generated.ts` file holds the profile of the app (`mobx` and `validation`) and the schemas of its own models. With `validation: true`, it imports only the validators of its own models from `models.validators.generated.ts`. The import is a relative path, so the file needs no alias or `imports` entry. With `validation: false`, it imports no validator.
-
-Golem writes a generated file beside a model file inside `models.root`. A model file outside the root is a shared model file, such as one in a [shared folder](/reference/config#a-folder-shared-by-several-apps) or an installed package. Each app that uses it writes its generated file in its own `models.output`, at `<models.output>/<package name>/<path of the file in the package>.generated.ts`: `shared/customer.model.ts` in the package `@acme/shared` gives `src/generated/models/@acme/shared/customer.model.generated.ts`. Golem writes nothing in the shared folder, and two apps never write one file.
-
-The models job writes a generated file only for a model file that has an `IModel` or `IObject` alias. It skips a discovered model file that has none, and it leaves the file beside it as it is. A file that `models.sources` names is never skipped ([rules](/reference/config#typescript-models)).
-
-The first line of a generated model file names the golem version that wrote it, for example `/* Generated by @exprtlabs/golem-model 1.0.0. Do not edit. */`.
-
-The models job also writes `.golem/codec-keys.json`, in the directory of `golem.yaml`. It lists the generated codec each model and class uses, for `golem build`, the loader and the bundler plugins. An SDK lists the same in the `codecId` of each entry in `models[]` of its `model-manifest.json`.
-
-The generator no longer writes `validation.ts`, `client-runtime.ts` or `models.ts`. Their code lives in `@exprtlabs/golem`.
+The first line of a generated model file names the version of golem that wrote it, for example `/* Generated by @exprtlabs/golem-model 1.0.0. Do not edit. */`.
 
 ## Derived type names
 
@@ -106,16 +85,6 @@ Equal shapes from different expressions merge into one schema. The alphabeticall
 
 Two different shapes that get the same name fail generation with [RUNM1059](/reference/diagnostics#runm1059), as does a derived name that equals a model name. The message names both source locations. Declare a named type alias to choose the name.
 
-## Schema file names
-
-Each SDK writes its validation schemas as `<Component>.<input|output>.ts`. Characters in the component name other than letters, digits, `_`, `$` and `-` become `_`, and the name is cut at 64 characters. When two names are equal ignoring case, both get a six-character hex suffix.
-
-## Codec identity
-
-The id of a codec is the model name plus eight hex characters. The hash covers the contract shape and how the codec builds values: its source (`typescript` or `openapi`) and whether it builds a plain object or a class. A hand-written model and an SDK model with the same name and shape have different ids. Import order does not decide which codec `parse` uses.
-
-A model that both the model job and an SDK generate has two independent codecs: the functions in `<name>.model.generated.ts` return your class or its plain fields, and the SDK's functions return the SDK's values.
-
 ## Runtime version
 
-Install `@exprtlabs/golem` at or above the version of each generator package the configuration uses, with the same major version. `generate`, `check`, `exec` and `watch` compare the installed `@exprtlabs/golem` with each of those generator packages and fail before they write when the runtime is older or has a different major version. The message names both packages and versions. The SDK manifest records `runtime.minimumVersion` for reference.
+Install `@exprtlabs/golem` at or above the version of each built-in generator package that the configuration uses, with the same major version. `generate`, `check`, `exec`, `watch` and `build` compare the installed `@exprtlabs/golem` with `@exprtlabs/golem-model`, `@exprtlabs/golem-openapi` and `@exprtlabs/golem-ts-openapi`. They fail before they write when the runtime is older or has a different major version. The message names both packages and versions. A third-party generator has its own version and is not compared.

@@ -1,12 +1,12 @@
 # Runtime API
 
-Find every `@exprtlabs/golem` import your application, NestJS app or tool can use, with its signature and behavior.
+Find every `@exprtlabs/golem` subpath that your application, NestJS app or build tool imports, with its signatures.
 
 | Subpath | Use | Extra dependency |
 | --- | --- | --- |
 | [`model`](#model) | `IModel`, `IObject`, generated-model types and guards | none |
 | [`validation`](#validation) | `validate<T>`, `validateInstance`, `getValidator`, `ModelValidator` | none |
-| [`validation-runtime`](#validation-runtime) | Helpers that generated validators import; generated code only | none |
+| [`validation-runtime`](#validation-runtime) | Helpers that generated validators import | none |
 | [`mobx`](#mobx) | `asGenObservable` and observable API operations | `mobx` |
 | [`mobx-validation`](#mobx-validation) | Observable validator state | `mobx` |
 | [`errors`](#errors) | `LibError`, `LibErrorKind` and the `Issue` type | none |
@@ -15,18 +15,18 @@ Find every `@exprtlabs/golem` import your application, NestJS app or tool can us
 | [`tags`](#tags) | Type-only validation constraints, `TValidation`, `TSerde` | none |
 | [`temporal`](#temporal) | Temporal field types and their codecs | a `Temporal` global, such as `temporal-polyfill` |
 | [`serde`](#serde) | `parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` | none |
-| [`nest`](#nest) | `NestModelInterceptor` and the decorators the rewrite inserts | `@nestjs/common`, `rxjs` |
-| [`generator-api`](#generator-api) | Contracts shared by the generators | none |
-| [`manifest`](#manifest) | Read and find `model-manifest.json` files | none |
-| [`rewrite`](#rewrite) | Apply a file's rewrite edits to its text and get its source map | none |
+| [`nest`](#nest) | `NestModelInterceptor` and the helpers for your own interceptor | `@nestjs/common`, `rxjs` |
+| [`generator-api`](/reference/generator-api#generator-api) | Contracts shared by the generators | none |
+| [`manifest`](/reference/generator-api#manifest) | Read and find `model-manifest.json` files | none |
+| [`rewrite`](/reference/generator-api#rewrite) | Apply a file's rewrite edits to its text and get its source map | none |
 | [`loader`](#loader) | Node `load` hook that rewrites TypeScript as Node loads it | none |
 | [`register`](#register) | `node --import` entry that installs the loader | none |
 | [`vite`](#vite) | Vite plugin that rewrites TypeScript before Vite strips its types | `vite` |
 | [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
 
-A path that starts with `internal/` is for the generators and may change in any release. Don't import it ([Compatibility and stability](/compatibility#public-api)).
+A path that starts with `internal/` is for the generators and may change in any release. Do not import it ([Compatibility](/compatibility#public-api)).
 
-With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)).
+With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). Generated files also import the names in [Exports for generated code](#generated-code).
 
 ## `@exprtlabs/golem/model` {#model}
 
@@ -50,17 +50,20 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 
 | `IModelOptions` key | Default | Effect |
 | --- | --- | --- |
-| `exact` | root `exact`, `true` | `false` admits keys the declaration does not list; `true` tightens a root `false`. |
-| `allowAny` | root `allowAny`, `false` | Permits `any` and `unknown` fields in this declaration; `false` tightens a root `true`. |
+| `exact` | root `exact`, `true` | Controls extra keys ([Objects and exact](/guide/field-types#objects-and-exact)). |
+| `allowAny` | root `allowAny`, `false` | Controls `any` and `unknown` fields ([`any` and `unknown`](/guide/field-types#any-and-unknown)). |
 | `validation` | root `validation`, `true` | Generates checks for this named `IObject` or `IModel`. A nested declaration uses its own setting. |
 
-`allowAny` does not remove validation constraints or skip JSON checks. A field typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`.
+Generation also writes [derived type names](/reference/generated-files#derived-type-names), such as `TTaskFields`, `TTaskJSON` and `TTaskInit`.
 
-Generation writes `task.model.generated.ts` with `TTaskBaseModel`, `TTaskFields` (field types), `TTaskJSON` (JSON shape) and `TTaskInit` (constructor values). The `TTaskBaseModel` constructor copies the values it receives and does not validate, so an incomplete draft is valid state.
+Types that describe generated metadata:
 
-Used by generated code: `registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelConstructor`, `ModelInit` and the `generatedModel*Brand` symbols.
-
-Also exported types: `GeneratedModelFields<Model>` is the field types of a generated model. `GeneratedModelResult<Constructor>` is the instance type of a generated class. `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile` and `GeneratedModelValidatorEnhancer` describe the metadata that `registerGeneratedModel` stores for a class. `ModelTypeMetadata`, `ModelTypeDescriptor`, `ModelConstraint`, `ConstraintSchemaValue`, `UnionDiscriminator` and `DiscriminatorValue` describe the type information that generation records for a field.
+| Type | Describes |
+| --- | --- |
+| `GeneratedModelFields<Model>` | The field types of a generated model. |
+| `GeneratedModelResult<Constructor>` | The instance type of a generated class. |
+| `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile`, `GeneratedModelValidatorEnhancer` | The metadata that a generated class registers. |
+| `ModelTypeMetadata`, `ModelTypeDescriptor`, `ModelConstraint`, `ConstraintSchemaValue`, `UnionDiscriminator`, `DiscriminatorValue` | The type information that generation records for a field. |
 
 ## `@exprtlabs/golem/validation` {#validation}
 
@@ -76,19 +79,18 @@ function getValidator<Fields extends object, Owner extends object>(
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
-| `getValidator` | `(model): ModelValidator<Fields, Owner>` | Returns the same stateful validator for a model instance every time. `Fields` are the generated field types, so methods of your class are not fields. |
+| `getValidator` | `(model): ModelValidator<Fields, Owner>` | Returns the same stateful validator for a model instance every time. `Fields` are the generated field types. |
 | `validateInstance` | `(model, options?: ValidateOptions): Promise<readonly Issue[]>` | Returns the current issues without changing the stored state ([validation](/guide/validation)). |
-| `validate` | `<T>(value: unknown, options?: ValidateOptions & AllowGetterOptions): value is T` | Checks a value against a named `IObject` or `IModel` and narrows it. Needs a [build that rewrites it](/guide/install#typescript-setup). |
-| `ModelValidator` | `class ModelValidator<Fields, Owner = Fields>` | The stateful validator; members below. |
+| `validate` | `<T>(value: unknown, options?: ValidateOptions & AllowGetterOptions): value is T` | Checks a value against a named `IObject` or `IModel` and narrows it. Needs a [build that rewrites it](/guide/build). |
+| `ModelValidator` | `class ModelValidator<Fields, Owner = Fields>` | The stateful validator. Members are below. |
 
-`validateInstance`, `validate` and `ModelValidator.validate` stop at the first issue unless you pass `{ failFast: false }`. An invalid value is an ordinary result. They throw `LibError` when validation can't run: the model was generated with `validation: false` (`ValidationUnavailable`), generated metadata is missing, or a converter throws.
+`validateInstance`, `validate` and `ModelValidator.validate` stop at the first issue unless you pass `{ failFast: false }`. An invalid value is an ordinary result. They throw `LibError` when validation cannot run, for example when the model was generated with `validation: false` (`ValidationUnavailable`).
 
 ### `ModelValidator` members {#model-validator}
 
-`new ModelValidator(model)` attaches a validator to a model instance; `getValidator(model)` does that once and caches it.
-
 | Member | Signature | Behavior |
 | --- | --- | --- |
+| `constructor` | `(model, cache = true)` | Attaches a validator to a model instance. `cache: false` does not store it for `getValidator`. |
 | `validate` | `(options?: ValidateOptions): Promise<boolean>` | Runs generated checks, then instance rules, and stores the issues. A newer call wins over an older one. |
 | `issues` | `readonly Issue[]` | Stored issues, frozen. |
 | `errors` | `Readonly<Record<string, readonly string[]>>` | Messages keyed by escaped JSON Pointer, such as `/items/0/sku`. |
@@ -96,19 +98,15 @@ function getValidator<Fields extends object, Owner extends object>(
 | `pending` | `boolean` | `true` while `validate` runs. |
 | `error` | `(field): string \| undefined` | First message for a field name or path array such as `['items', 0, 'sku']`. |
 | `errorsFor` | `(field): readonly string[]` | All messages for that field name or path. |
-| `extend` | `(rules: ModelValidationRules<Fields, Owner>): this` | Adds rules for this instance. A rule returns `true`, a message, `{ message }`, or a promise of any of them. A rejecting rule reports a `custom` issue. |
+| `extend` | `(rules: ModelValidationRules<Fields, Owner>): this` | Adds rules for this instance ([instance rules](/guide/validation#instance-rules)). |
 | `messages` | `(messages: ValidationMessages<Fields>): this` | Replaces generated messages by code (`'tooSmall'`) or field and code (`'title.tooSmall'`). |
 | `setErrors` | `(errors): void` | Stores messages from outside, such as a server response, as `external` issues. Takes a field map or `{ path, message }[]`. |
 | `clear` | `(): void` | Removes stored issues and resets `pending`. |
 | `setIssues` | `(issues: readonly Issue[]): void` | Replaces the stored issues. |
 | `setPending` | `(pending: boolean): void` | Sets `pending`. |
-| `formatIssue` | `(issue: Issue, explicit: boolean): Issue` | Applies `messages()` overrides unless `explicit`. Used by nested validation. |
+| `formatIssue` | `(issue: Issue, explicit: boolean): Issue` | Applies `messages()` overrides unless `explicit`. |
 
 Types for these members: `ModelValidationRules`, `ValidationRule`, `ValidationRuleResult`, `ValidationMessages`, `ValidationMessage`, `ValidationMessageKey`, `FieldValidationMessage`, `ExternalFieldError`, `ValidationMode`, `Issue` and `IssuePath`.
-
-Used by generated code, in operation modules: `operationValidators` (resolves an operation's input and response validators once per client), `validateOperationInput` and `responseCheck` (the response check `ClientRuntime.readResponse` runs on each decoded body or stream item).
-
-Also exported: `runValidation(validator, value, all = true)` runs a `Validator` and returns a `Promise` of a `ValidationResult`. It throws `TypeError` when the validator does not return an array.
 
 ### Runtime validators {#runtime-validators}
 
@@ -116,15 +114,16 @@ Also exported: `runValidation(validator, value, all = true)` runs a `Validator` 
 function validateWith(validator: Validator, value: unknown, all = true): Promise<ValidationResult>;
 ```
 
-`validateWith` runs one validator and returns `{ valid, issues }`. `all` defaults to `true`, which reports every issue; pass `false` to stop at the first. A validator that does not return an array throws `TypeError`.
-
-Types: `OperationRuntimeValidators`, `ValidationResult`, `Validator`, `SchemaIssue` and `SchemaIssueDetail`. `OperationRuntimeValidators` is the value type of a client's `operationValidators` option: the input validator and the response validators keyed `status:contentType`. Each validator is a `Validator`: `(value, all) => readonly SchemaIssue[]`, empty when the value is valid.
+| Member | Behavior |
+| --- | --- |
+| `validateWith`, `runValidation` | Run one `Validator` and return `{ valid, issues }`. `all` defaults to `true`, which reports every issue. `false` stops at the first. A validator that does not return an array throws `TypeError`. |
+| `Validator` | `(value, all) => readonly SchemaIssue[]`, empty when the value is valid. |
+| `OperationRuntimeValidators` | The value type of a client's `operationValidators` option: the input validator and the response validators keyed `status:contentType`. |
+| `ValidationResult`, `SchemaIssue`, `SchemaIssueDetail` | Result and issue types of a `Validator`. |
 
 ## `@exprtlabs/golem/validation-runtime` {#validation-runtime}
 
-Generated validator files import this subpath. Your code must not import it.
-
-Semver covers the names that generated validators import.
+Generated validators import this subpath. Your code does not. Semver covers the names that generated validators import.
 
 ## `@exprtlabs/golem/mobx` {#mobx}
 
@@ -136,12 +135,10 @@ import { asGenObservable } from '@exprtlabs/golem/mobx';
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
-| `asGenObservable` | `(model, annotations?: ModelAnnotations<Model>): void` | Makes every generated field observable, then nested generated models. Extra MobX annotations override field defaults. A second call on the same instance throws. |
-| `ModelAnnotations` | `AnnotationsMap<Model, never>` | MobX annotations for your class members. |
+| `asGenObservable` | `(model, annotations?: ModelAnnotations<Model>): void` | Makes every generated field observable, then nested generated models ([MobX](/guide/mobx#initialize-your-class)). A second call on the same instance throws. |
+| `ModelAnnotations` | `AnnotationsMap<Model, never>` | MobX annotations for your class members. They override the field defaults. |
 | `ObservableApiOperation` | `ApiOperation` plus `readonly loading: boolean` | `loading` is observable and stays `true` until every execution settles. |
-| `createObservableApiOperation` | `(name: string, run): ObservableApiOperation` | [`createApiOperation`](#client) with `loading`. |
-
-Call `asGenObservable(this)` in your class constructor after `super(values)` and your field initializers ([MobX](/guide/mobx#initialize-your-class)). Generated clients with `mobx: true` return `ObservableApiOperation`.
+| `createObservableApiOperation` | `(name: string, run): ObservableApiOperation` | [`createApiOperation`](#client) with `loading`. Generated clients with `mobx: true` return it. |
 
 ## `@exprtlabs/golem/mobx-validation` {#mobx-validation}
 
@@ -155,7 +152,7 @@ import { getValidator } from '@exprtlabs/golem/mobx-validation';
 | `enhanceValidatorWithMobX` | `(validator): validator` | Makes `issues`, `errors`, `valid` and `pending` computed, and `setIssues`, `setPending`, `clear` and `setErrors` actions. Repeated calls change nothing. |
 | `ModelValidator` | `class extends ModelValidator` | A validator that is observable from construction. |
 
-Models generated with `mobx: true` and `validation: true` register `enhanceValidatorWithMobX`, so `getValidator` from `validation` already returns an observable validator for them. The module also re-exports the validation types.
+The module re-exports the types `ModelField`, `ModelValidationRules`, `Issue`, `ValidationMessage` and `ValidationMessages`.
 
 ## `@exprtlabs/golem/errors` {#errors}
 
@@ -170,19 +167,19 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 | `constructor` | `(kind, message, issues?, options?: LibErrorOptions)` | `options` takes `cause` and `causedByInput`. |
 | `kind` | `LibErrorKind` | The failure category. |
 | `issues` | `readonly Issue[]` | Frozen copy of the issues. |
-| `causedByInput` | `boolean` | `true` when the rejected value is at fault; `false` for a program fault. Defaults to `true` for `Validation` and `InvalidJson`. `NestModelInterceptor` returns HTTP 400 when it is `true`. |
+| `causedByInput` | `boolean` | `true` when the rejected value is at fault, `false` for a program fault. Defaults to `true` for `Validation` and `InvalidJson`. |
 | `cause` | `unknown` | The original exception a `LibError` wraps. |
 
 | `LibErrorKind` | Value | Thrown when |
 | --- | --- | --- |
 | `Validation` | `validation` | A checked call rejects a value. |
-| `Serialization` | `serialization` | A value can't be written as JSON, such as an invalid `Date` or a value that holds itself. |
-| `Deserialization` | `deserialization` | JSON can't be decoded, such as an unparsable date. |
+| `Serialization` | `serialization` | A value cannot be written as JSON, such as an invalid `Date` or a value that holds itself. |
+| `Deserialization` | `deserialization` | JSON cannot be decoded, such as an unparsable date. |
 | `InvalidJson` | `invalid_json` | `parse` receives text that is not JSON. |
 | `ValidationUnavailable` | `validation_unavailable` | Checks were not generated, no build rewrote a call, or a validation context lacks a validator. |
 | `Response` | `response` | A generated client receives a status or media type the operation does not declare. |
 
-`ModelValidator.validate()` returns `false` for an invalid value. Checked serde calls and generated client checks throw `LibError` instead. A predicate, codec or native call that throws is wrapped once with its `cause`; a thrown `LibError` passes through unchanged. Network failures reject with the `fetch` error.
+`ModelValidator.validate()` returns `false` for an invalid value. Checked serde calls and generated client checks throw `LibError` instead. A predicate, codec or native call that throws is wrapped once with its `cause`. A thrown `LibError` passes through unchanged. [Errors and issues](/guide/validation#errors-and-issues) shows how to read them.
 
 | `Issue` field | Type | Meaning |
 | --- | --- | --- |
@@ -203,11 +200,11 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 | `invalidKey` | `key` | A property name is not allowed. `path` points at the object. |
 | `literal` | `expected` | The value is not one of the allowed constants, including an `anyOf` or `oneOf` whose alternatives are all constants. |
 | `union` | `matched` | The value matches no alternative (`0`) or more than one where one is required. |
-| `tooSmall`, `tooBig` | `measure`, `limit`, `inclusive` | A limit is crossed. `measure` is `length`, `items`, `properties`, `value` or `matches`; `inclusive` is `false` for an exclusive bound. |
+| `tooSmall`, `tooBig` | `measure`, `limit`, `inclusive` | A limit is crossed. `measure` is `length`, `items`, `properties`, `value` or `matches`. `inclusive` is `false` for an exclusive bound. |
 | `pattern` | `pattern` | A string does not match the pattern. |
 | `format` | `format` | A string is not in the named format. |
 | `multipleOf` | `divisor` | A number is not a multiple of `divisor`. |
-| `unique` | `indexes` | Two items are equal; `indexes` gives their positions. |
+| `unique` | `indexes` | Two items are equal. `indexes` gives their positions. |
 | `not` | none | The value matches a shape that is excluded. |
 | `never` | none | The schema allows no value here. |
 | `custom` | `reason` (optional) | A `TValidation` function or an instance rule rejected the value. `reason` holds the message the rule returned. |
@@ -216,7 +213,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 
 The default `message` is golem's English text built from these fields. `messages()` overrides replace it by code.
 
-`toIssue(issue, source, representation?)` adds the default message to a validator's issue, and `snapshotIssues` freezes a list of issues.
+Other exports: `toIssue(issue, source, representation?)` adds the default message to a validator's issue. `snapshotIssues(issues)` freezes a list of issues. `LibErrorOptions`, `IssueDetail`, `JsonValue` and the enums `IssueSource` and `IssueRepresentation` are exported too.
 
 ## `@exprtlabs/golem/client` {#client}
 
@@ -232,14 +229,258 @@ interface ApiOperation<Input, Result, Options = unknown> {
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
-| `ApiOperation` | `{ execute(input, options?) }` | Generated client methods return one. Creating it sends nothing; each `execute` sends a new request. |
+| `ApiOperation` | `{ execute(input, options?) }` | Generated client methods return one. Creating it sends nothing. Each `execute` sends a new request. |
 | `ApiOperationRun` | `(input, options?) => Promise<Result>` | The work `execute` runs. |
 | `createApiOperation` | `(name: string, run: ApiOperationRun): ApiOperation` | Wraps your own asynchronous call in the same interface. |
 
-- Overlapping `execute` calls all run; each one after the first logs `Concurrent execute() invocation for <name>`.
+- Overlapping `execute` calls all run. Each one after the first logs `Concurrent execute() invocation for <name>`.
 - An operation caches no results or errors.
 
-Generated SDKs call the request runtime. Application code rarely does.
+[Create a client](/guide/client-usage#create-a-client) shows the generated client options. Generated SDKs call the request runtime in [Exports for generated code](#generated-code).
+
+## `@exprtlabs/golem/conversion` {#conversion}
+
+```ts
+import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+```
+
+| Member | Signature | Behavior |
+| --- | --- | --- |
+| `encodeGeneratedModel` | `(model): GeneratedModelWire<Model>` | A detached JSON-shaped copy of a generated model. Does not validate. |
+| `decodeGeneratedModel` | `(constructor, value: unknown): GeneratedModelResult<Constructor>` | Builds an instance from `value` without copying it first. Fields without conversion are the input's own values. Returns an existing instance unchanged. Does not validate. |
+| `assertAcyclicValue` | `(value, kind?)` | Throws `LibError` when `value` holds a cycle. Shared references are allowed. `kind` is `LibErrorKind.Serialization` or `LibErrorKind.Deserialization` (the default). |
+| `readRootFields` | `(value: unknown, fields: readonly string[]): unknown` | Copies the root of `value`, reading each listed field once through its getter. |
+
+Use `encodeGeneratedModel` and `decodeGeneratedModel` when the type is known only at runtime:
+
+```ts
+import { isGeneratedModel } from '@exprtlabs/golem/model';
+import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+
+export function responseBody(value: unknown): unknown {
+  return isGeneratedModel(value) ? encodeGeneratedModel(value) : value;
+}
+```
+
+Both throw `LibError` for missing generated metadata or cyclic input. With a known type, use [`toWireFormat<T>`](#serde) and `fromWireFormat<T>`, which also validate.
+
+## `@exprtlabs/golem/tags` {#tags}
+
+```ts
+import type { MinLength, TSerde, TValidation } from '@exprtlabs/golem/tags';
+```
+
+Every export is a type. Intersect a tag with a field type. Assignment is unchanged and generation never runs your code.
+
+| Member | Signature | Behavior |
+| --- | --- | --- |
+| Built-in constraints | `Integer`, `Minimum<N>`, `MinLength<N>`, `Pattern<S>`, `Format<S>`, … | JSON Schema keywords ([built-in constraints](/guide/tags#built-in-validation-constraints)). |
+| Short names | `Min`, `Max`, `ExclusiveMin`, `ExclusiveMax`, `MinProps`, `MaxProps` | Aliases of `Minimum`, `Maximum`, `ExclusiveMinimum`, `ExclusiveMaximum`, `MinProperties`, `MaxProperties`. |
+| `TValidation` | `TValidation<typeof predicate>` | Runs an exported synchronous function that returns `true` or an error message ([custom rule](/guide/tags#add-a-custom-field-rule)). |
+| `TSerde` | `TSerde<typeof serialize, typeof deserialize>` | Converts the field between model value and JSON value ([serialize formatter](/guide/serialization#change-the-json-form)). |
+| `TSerdeWire` | `TSerdeWire<Value>` | `[Wire]`, the deserializer's input type, or `[]` without `TSerde`. |
+| `BuiltinModelTag` | union type | Every built-in constraint. |
+| `ModelValidationFunction`, `ModelSerializeFunction`, `ModelDeserializeFunction` | function types | The function shapes that `TValidation` and `TSerde` accept. |
+
+The `TSerde` deserializer's parameter type sets the JSON schema of the field ([which type controls validation](/guide/serialization#which-type-controls-validation)).
+
+## `@exprtlabs/golem/temporal` {#temporal}
+
+Temporal field types for models. Each converts to an ISO 8601 string on the wire. [Use Temporal fields](/guide/dates#use-temporal-fields) shows the setup.
+
+| Tag | Model type | Wire string |
+| --- | --- | --- |
+| `TemporalInstant` | `Temporal.Instant` | `2025-01-02T03:04:05.123Z` |
+| `TemporalZonedDateTime` | `Temporal.ZonedDateTime` | `2025-01-02T03:04:05+01:00[Europe/Paris]` |
+| `TemporalPlainDate` | `Temporal.PlainDate` | `2025-01-02` |
+| `TemporalPlainDateTime` | `Temporal.PlainDateTime` | `2025-01-02T03:04:05` |
+| `TemporalPlainTime` | `Temporal.PlainTime` | `03:04:05.123` |
+| `TemporalDuration` | `Temporal.Duration` | `P1DT2H` |
+
+The wire string has a four-digit year and no calendar annotation.
+
+Each tag `TemporalX` has the functions `serializeTemporalX` and `deserializeTemporalX` and the type `TemporalXWire`. Its `TSerde` uses the two functions.
+
+## `@exprtlabs/golem/serde` {#serde}
+
+```ts
+import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem/serde';
+```
+
+<<< ../../examples/models/src/read-json.ts#read-json
+
+::: warning Build with golem
+`parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` and `validate<T>` throw `ValidationUnavailable` unless a [build host](/guide/build) rewrote them. `tsc` does not rewrite them.
+:::
+
+`T` names a generated `IObject` or `IModel`. A type alias returns a plain object. Your class returns an instance of it.
+
+| Member | Signature | Behavior |
+| --- | --- | --- |
+| `parse` | `<T>(text: string, options?: SerdeOptions): T` | JSON text to a value. Checks the JSON, runs `TSerde` decoders, checks the result. |
+| `stringify` | `<T>(value: T, options?: SerdeOptions & AllowGetterOptions): string` | Value to JSON text of the declared fields, with `TSerde` applied and both sides checked. |
+| `fromWireFormat` | `<T>(wire: unknown, options?: SerdeOptions): T` | `parse` for a plain object instead of text. |
+| `toWireFormat` | `<T>(value: T, options?: SerdeOptions & AllowGetterOptions): WireFormat<T>` | `stringify` that returns the plain object, such as `TTaskJSON`. |
+| `assertValue` | `<T>(value: unknown, options?: ValidateOptions & AllowGetterOptions): T` | Checks the value and returns it unchanged, typed as `T`. Throws `LibError` `Validation` with the issues. |
+
+| Option | In | Default | Effect |
+| --- | --- | --- | --- |
+| `validate` | `SerdeOptions` | `true` when generated | `false` skips the checks. `true` throws `ValidationUnavailable` if checks were not generated. |
+| `failFast` | both | `true` | `false` reports every issue. It does not skip checks. |
+| `validationContext` | both | none | Resolves validators from your own function ([validation context](#validation-context)). |
+| `allowGetter` | `AllowGetterOptions` | `false` | `true` reads declared root fields through getters and inherited values ([below](#allow-getter)). |
+
+`ValidateOptions` has `failFast` and `validationContext`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. Each call runs the checks in the table of [Checks during conversion](/guide/serialization#checks-during-conversion).
+
+### `allowGetter` {#allow-getter}
+
+`AllowGetterOptions` has `allowGetter?: boolean`. `stringify`, `toWireFormat`, `validate` and `assertValue` take it, and so do the same calls of an `ObjectCodec`.
+
+```ts
+stringify<TTask>(task, { allowGetter: true });
+```
+
+By default a field counts when it is an own enumerable property, as in `JSON.stringify`. With `allowGetter: true`, a declared field of the root object also counts when a getter or an inherited value supplies it.
+
+- It applies to the root value of an `IObject` or `IModel` codec. Nested values are judged as without it.
+- `parse`, `fromWireFormat`, `validateInstance` and `ModelValidator` do not take it.
+
+### Validation context {#validation-context}
+
+Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `ModelValidator.validate` calls to reuse resolved validators.
+
+| Field | Behavior |
+| --- | --- |
+| `resolve(reference, mode)` | Returns the `Validator` for a schema reference and `'first'` or `'all'` mode, or `undefined` when it has none. |
+
+`objectCodecValidationReference(codec, plane)` returns the reference for one `ValidationPlane`.
+
+| `ValidationPlane` | Checks | Used by |
+| --- | --- | --- |
+| `model` | the model value | `validate`, `validateInstance`, and `stringify` / `toWireFormat` before encoding |
+| `wire` | the JSON value | `parse` / `fromWireFormat` before decoding |
+| `model-only` | converted fields and `TValidation` rules on the model value | `parse` / `fromWireFormat` after decoding |
+| `wire-only` | the JSON written for converted fields | `stringify` / `toWireFormat` after encoding |
+
+- A context is authoritative. A missing validator throws `ValidationUnavailable` instead of using the generated one.
+- Resolved validators are cached per context object, reference and mode. Create a new context when schemas change.
+- A validator returns an array of issues, empty when the value is valid. Any other result throws `TypeError`. A promise throws `ValidationUnavailable` in synchronous serde calls.
+
+### Codec registry
+
+| Member | Signature | Behavior |
+| --- | --- | --- |
+| `registerObjectCodec` | `(codec: ObjectCodec): void` | Stores a codec under its id. |
+| `getObjectCodec` | `(id): ObjectCodec \| undefined` | Returns the codec for an id. |
+| `getIModelClass` | `(name): class \| undefined` | Returns the registered `IModel` class for a name. |
+| `findCodecIdForConstructor` | `(constructor): string \| undefined` | Returns the id that the codec of a generated class is registered under. |
+| `resolveModelValidationContextValidator` | `(context, reference, mode): Validator` | Returns the validator that a `ModelValidationContext` gives for a reference. Caches it per context. |
+| `validationFailure` | `(issues): never` | Throws `LibError` `Validation` with the issues. |
+| `serdeFailFast` | `(options): boolean` | Returns `false` only when `failFast` is `false`. |
+| `resolveGeneratedModelSchemaRefs` | `(schema, plane): object` | Replaces the model `$ref` placeholders in a schema with registered schema ids. |
+
+Types: `AllowGetterOptions`, `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`. `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
+
+## `@exprtlabs/golem/nest` {#nest}
+
+```ts
+import { NestModelInterceptor } from '@exprtlabs/golem/nest';
+```
+
+<<< ../../examples/payments/server/src/application.ts#global-model-http
+
+| Member | Signature | Behavior |
+| --- | --- | --- |
+| `NestModelInterceptor` | `class NestModelInterceptor implements NestInterceptor` | Converts model-typed `@Body()` and `@Query()` parameters before the handler and writes model returns ([request contract](/guide/nestjs-requests#what-happens-to-a-request)). |
+| `nestModelStringifyInterceptor` | `(codec: ObjectCodec): NestInterceptor` | Writes every non-null result with that codec's `stringify`, an array item by item. |
+| `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that `nestModelCodec` placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
+| `nestModelConstruct` | `(metatype: unknown)` | The class that token constructs, or `undefined`. |
+
+For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`.
+
+## `@exprtlabs/golem/loader` {#loader}
+
+A Node `load` hook that rewrites TypeScript files as Node loads them. Install it through [`register`](#register). Import `loader` only to call `module.register` yourself ([Node loader](/guide/build#node-loader)).
+
+- It rewrites only `.ts`, `.mts` and `.cts` files outside `node_modules`. A `.tsx` file goes to Node unchanged.
+- It needs ES modules. A `.cts` file, or a `.ts` file under a CommonJS `package.json`, that holds a call to rewrite throws `golem rewrites need ES modules`. The message names the file.
+- A call that cannot be rewritten fails the load with the file, the line and the instruction to run `golem generate`.
+- Without a `golem.yaml`, the load fails with `golem needs a golem.yaml to rewrite parse<T>() calls; set config or GOLEM_CONFIG`.
+
+## `@exprtlabs/golem/register` {#register}
+
+```sh
+node --import @exprtlabs/golem/register src/main.ts
+```
+
+Every later import of the process goes through the loader. The loader opens your project from the file that `GOLEM_CONFIG` names, else `./golem.yaml` in the working directory ([Node loader](/guide/build#node-loader)).
+
+## `@exprtlabs/golem/vite` {#vite}
+
+```ts
+import { golem } from '@exprtlabs/golem/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({ plugins: [golem()] });
+```
+
+| Option | Type | Behavior |
+| --- | --- | --- |
+| `config` | `string` | The `golem.yaml` to open, relative to Vite's `root`. Without it the plugin uses `GOLEM_CONFIG`, else `./golem.yaml` in `root`. |
+
+The plugin rewrites TypeScript in memory before Vite strips its types ([Vite](/guide/build#vite)). Put `golem()` before plugins that transform TypeScript.
+
+- An id with a query, such as `?raw`, is not rewritten.
+- The dev server rewrites a module again when a file its rewrite depends on, or a generated model file, changes.
+- The page reloads once for the file events of one run. The first event opens a 100 ms window, and the events in that window share one reload.
+- Without a `golem.yaml`, or for a call that cannot be rewritten, the build fails with the same messages as the [loader](#loader).
+
+## `@exprtlabs/golem/esbuild` {#esbuild}
+
+```ts
+import { golem } from '@exprtlabs/golem/esbuild';
+import { build } from 'esbuild';
+
+await build({ entryPoints: ['src/main.ts'], bundle: true, outfile: 'dist/main.js', plugins: [golem()] });
+```
+
+| Option | Type | Behavior |
+| --- | --- | --- |
+| `config` | `string` | The `golem.yaml` to open, relative to `absWorkingDir` (default: the current directory). Without it the plugin uses `GOLEM_CONFIG`, else `./golem.yaml` in `absWorkingDir`. |
+
+The plugin rewrites TypeScript in memory before esbuild strips its types and chains the source map into the bundle's ([esbuild](/guide/build#esbuild)). A plugin that needs the TypeScript files goes before `golem()`.
+
+- Watch mode builds a file again when a file its rewrite depends on changes.
+- Without a `golem.yaml`, or for a call that cannot be rewritten, the build fails with the same messages as the [loader](#loader).
+
+## Exports for generated code {#generated-code}
+
+Generated files import these names. Application code does not call them. They follow semver ([Compatibility](/compatibility#public-api)).
+
+### From `model`
+
+`registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelConstructor`, `ModelInit` and the `generatedModel*Brand` symbols.
+
+### From `validation`
+
+`operationValidators` resolves the input and response validators of an operation once per client. `validateOperationInput` checks a request input. `responseCheck` is the response check that `ClientRuntime.readResponse` runs on each decoded body or stream item.
+
+### From `conversion`
+
+`encodeGeneratedModel`, `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelTupleItems`, `defineModelProperty`, `requireModelObject`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
+
+### From `serde`
+
+`createObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `requireIModelClass`, `assertModelValue`, `isValidModelValue`, `modelValueIssues`, `parseJson`, `serdeValidates`, `validationUnavailable`, `withoutInstanceState` and the `stringifyJson*` writers.
+
+### From `nest`
+
+| Member | Signature | Behavior |
+| --- | --- | --- |
+| `nestModelCodec` | `(id: string, array?: boolean): ParameterDecorator` | The rewrite inserts it on `@Body()` and `@Query()` parameters typed with a model or an array of one. It replaces the parameter type with a token that carries the codec and class of the model. |
+| `nestModelReturn` | `(id: string, array?: boolean): MethodDecorator` | The rewrite inserts it on a handler that returns a model. `NestModelInterceptor` reads it. |
+
+### From `client`
 
 | Member | Behavior |
 | --- | --- |
@@ -257,293 +498,4 @@ Generated SDKs call the request runtime. Application code rarely does.
 | `applySecurity` | Adds credentials for the operation's security requirements |
 | `encode` | Percent-encodes a value |
 
-The module also exports the types these functions use, including `ClientOptions`, `RequestOptions`, `ParameterSerializer`, `EncodedBody`, `BodyEncoder`, `MutualTlsTransport`, `ResponseHeaderDecoder`, `StreamDecoder`, `ResponseDecoder`, `UndeclaredResponseError`, `AuthContext`, `TokenAuthValue`, `BasicCredentials`, `BasicAuthValue` and `RuntimeSecuritySchemes`. Each SDK aliases the option types with its client name, such as `PaymentsClientOptions`.
-
-Generated client options are in [Create a client](/guide/client-usage#create-a-client).
-
-## `@exprtlabs/golem/conversion` {#conversion}
-
-```ts
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-```
-
-| Member | Signature | Behavior |
-| --- | --- | --- |
-| `encodeGeneratedModel` | `(model): GeneratedModelWire<Model>` | A detached JSON-shaped copy of a generated model. Does not validate. |
-| `decodeGeneratedModel` | `(constructor, value: unknown): GeneratedModelResult<Constructor>` | Builds an instance from `value` without copying it first; fields without conversion are the input's own values. Returns an existing instance unchanged. Does not validate. |
-
-Use them when the type is known only at runtime:
-
-```ts
-import { isGeneratedModel } from '@exprtlabs/golem/model';
-import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-
-export function responseBody(value: unknown): unknown {
-  return isGeneratedModel(value) ? encodeGeneratedModel(value) : value;
-}
-```
-
-Both throw `LibError` for missing generated metadata or cyclic input. With a known type, use [`toWireFormat<T>`](#serde) and `fromWireFormat<T>`, which also validate.
-
-Used by generated code: `encodeGeneratedModel`, `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelTupleItems`, `defineModelProperty`, `requireModelObject`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
-
-Also exported: `assertAcyclicValue(value, kind?)` throws `LibError` when `value` holds a cycle. Shared references are allowed. `kind` is `LibErrorKind.Serialization` or `LibErrorKind.Deserialization` (the default).
-
-## `@exprtlabs/golem/tags` {#tags}
-
-```ts
-import type { MinLength, TSerde, TValidation } from '@exprtlabs/golem/tags';
-```
-
-Every export is a type. Intersect a tag with a field type; assignment is unchanged and generation never runs your code.
-
-| Member | Signature | Behavior |
-| --- | --- | --- |
-| Built-in constraints | `Integer`, `Minimum<N>`, `MinLength<N>`, `Pattern<S>`, `Format<S>`, … | JSON Schema keywords ([built-in constraints](/guide/tags#built-in-validation-constraints)). |
-| Short names | `Min`, `Max`, `ExclusiveMin`, `ExclusiveMax`, `MinProps`, `MaxProps` | Aliases of `Minimum`, `Maximum`, `ExclusiveMinimum`, `ExclusiveMaximum`, `MinProperties`, `MaxProperties`. |
-| `TValidation` | `TValidation<typeof predicate>` | Runs an exported synchronous function that returns `true` or an error message ([custom rule](/guide/tags#add-a-custom-field-rule)). |
-| `TSerde` | `TSerde<typeof serialize, typeof deserialize>` | Converts the field between model value and JSON value ([serialize formatter](/guide/tags#convert-a-field-to-a-different-json-value)). |
-| `TSerdeWire` | `TSerdeWire<Value>` | `[Wire]`, the deserializer's input type, or `[]` without `TSerde`. |
-| `BuiltinModelTag` | union type | Every built-in constraint. |
-
-The `TSerde` deserializer's parameter type sets the JSON schema of the field ([which type controls validation](/guide/tags#which-type-controls-validation)). A parameter typed `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`.
-
-Also exported: `ModelValidationFunction`, `ModelSerializeFunction`, `ModelDeserializeFunction`.
-
-## `@exprtlabs/golem/temporal` {#temporal}
-
-Temporal field types for models. Each converts to an ISO 8601 string on the wire.
-
-| Tag | Model type | Wire string |
-| --- | --- | --- |
-| `TemporalInstant` | `Temporal.Instant` | `2025-01-02T03:04:05.123Z` |
-| `TemporalZonedDateTime` | `Temporal.ZonedDateTime` | `2025-01-02T03:04:05+01:00[Europe/Paris]` |
-| `TemporalPlainDate` | `Temporal.PlainDate` | `2025-01-02` |
-| `TemporalPlainDateTime` | `Temporal.PlainDateTime` | `2025-01-02T03:04:05` |
-| `TemporalPlainTime` | `Temporal.PlainTime` | `03:04:05.123` |
-| `TemporalDuration` | `Temporal.Duration` | `P1DT2H` |
-
-- Add `"esnext.temporal"` to `compilerOptions.lib`.
-- Load a `Temporal` before converting, for example `import 'temporal-polyfill/global'`. Without one, conversion fails with "Temporal is not available".
-- Calendar annotations such as `[u-ca=japanese]` and years outside 0000-9999 are rejected.
-
-## `@exprtlabs/golem/serde` {#serde}
-
-```ts
-import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem/serde';
-```
-
-<<< ../../examples/models/src/read-json.ts#read-json
-
-::: warning Build with golem
-`parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` and `validate<T>` throw `ValidationUnavailable` unless a build rewrote them: run `golem generate`, then [`golem build`](/reference/cli#build), the [Vite](#vite) or [esbuild](#esbuild) plugin, or the [Node loader](#loader). `tsc` does not rewrite them. They work on TypeScript 6 and 7.
-:::
-
-`T` names a generated `IObject` or `IModel`. A type alias returns a plain object; your class returns an instance of it.
-
-| Member | Signature | Behavior |
-| --- | --- | --- |
-| `parse` | `<T>(text: string, options?: SerdeOptions): T` | JSON text to a value. Checks the JSON, runs `TSerde` decoders, checks the result. |
-| `stringify` | `<T>(value: T, options?: SerdeOptions & AllowGetterOptions): string` | Value to JSON text of the declared fields, with `TSerde` applied and both sides checked. |
-| `fromWireFormat` | `<T>(wire: unknown, options?: SerdeOptions): T` | `parse` for a plain object instead of text. |
-| `toWireFormat` | `<T>(value: T, options?: SerdeOptions & AllowGetterOptions): WireFormat<T>` | `stringify` that returns the plain object, such as `TTaskJSON`. |
-| `assertValue` | `<T>(value: unknown, options?: ValidateOptions & AllowGetterOptions): T` | Checks the value and returns it unchanged, typed as `T`. Throws `LibError` `Validation` with the issues. |
-
-| Option | In | Default | Effect |
-| --- | --- | --- | --- |
-| `validate` | `SerdeOptions` | `true` when generated | `false` skips the checks. `true` throws `ValidationUnavailable` if checks were not generated. |
-| `failFast` | both | `true` | `false` reports every issue. It does not skip checks. |
-| `validationContext` | both | none | Resolves validators from your own function ([validation context](#validation-context)). |
-| `allowGetter` | `AllowGetterOptions` | `false` | `true` reads declared root fields through getters and inherited values ([below](#allow-getter)). |
-
-`ValidateOptions` has `failFast` and `validationContext`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. The call order and checks per call are in [Validation during conversion](/guide/serialization#validation-during-conversion).
-
-### `allowGetter` {#allow-getter}
-
-`AllowGetterOptions` has `allowGetter?: boolean`. `stringify`, `toWireFormat`, `validate` and `assertValue` take it, and so do the same calls of an `ObjectCodec`.
-
-```ts
-stringify<TTask>(task, { allowGetter: true });
-```
-
-By default a field counts when it is an own enumerable property, as in `JSON.stringify`. With `allowGetter: true`, a declared field of the root object also counts when a getter or an inherited value supplies it.
-
-- It applies to the root value of an `IObject` or `IModel` codec. Nested values are judged as without it.
-- `parse`, `fromWireFormat`, `validateInstance` and `ModelValidator` do not take it.
-- With `allowGetter`, a field can also come from a polluted `Object.prototype`.
-
-- `JSON.stringify(model)` does not convert or validate.
-- A `Date` field decodes with ECMAScript `Date` parsing; a non-string or unparsable value throws `Deserialization` with `causedByInput: true`. Put format rules on `Format<'date-time'>` or `TValidation`.
-- A `Date` encodes as UTC ISO text with milliseconds; years outside 0000–9999 throw `Serialization`.
-- Conversion rejects non-finite numbers, `bigint`, functions, symbols, cycles, array holes and non-plain objects, except in a field whose [`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value) codec converts the value.
-
-### Validation context {#validation-context}
-
-Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `ModelValidator.validate` calls to reuse resolved validators.
-
-| Field | Behavior |
-| --- | --- |
-| `resolve(reference, mode)` | Returns the `Validator` for a schema reference and `'first'` or `'all'` mode, or `undefined` when it has none. |
-
-| Reference | Checks | Used by |
-| --- | --- | --- |
-| `Id` | the model value | `validate`, `validateInstance`, and `stringify` / `toWireFormat` before encoding |
-| `Id#wire` | the JSON value | `parse` / `fromWireFormat` before decoding |
-| `Id#model-only` | converted fields and `TValidation` rules on the model value | `parse` / `fromWireFormat` after decoding |
-| `Id#wire-only` | the JSON written for converted fields | `stringify` / `toWireFormat` after encoding |
-
-- `objectCodecValidationReference(codec, plane)` returns the reference for one `ValidationPlane`.
-- A context is authoritative: a missing validator throws `ValidationUnavailable` instead of using the generated one.
-- Resolved validators are cached per context object, reference and mode. Create a new context when schemas change.
-- A validator must return an array of issues, empty when the value is valid. Any other result throws `TypeError`, and a promise throws `ValidationUnavailable` in synchronous serde calls.
-
-Types: `AllowGetterOptions`, `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`; `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
-
-Used by generated code: `createObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `requireIModelClass`, `assertModelValue`, `isValidModelValue`, `parseJson`, `serdeValidates`, `validationUnavailable`, `withoutInstanceState` and the `stringifyJson*` writers.
-
-Also exported: `registerObjectCodec(codec)` stores an `ObjectCodec` under its id. `getObjectCodec(id)` returns the codec for an id, or `undefined`. `getIModelClass(name)` returns the registered `IModel` class for a name, or `undefined`. `findCodecIdForConstructor(constructor)` returns the id that the codec of a generated class is registered under, or `undefined`. `resolveModelValidationContextValidator(context, reference, mode)` returns the `Validator` that a `ModelValidationContext` gives for a reference, and caches it per context. `validationFailure(issues)` throws `LibError` `Validation` with the issues. `serdeFailFast(options)` returns `false` only when `failFast` is `false`. `resolveGeneratedModelSchemaRefs(schema, plane)` replaces the model `$ref` placeholders in a schema with registered schema ids.
-
-## `@exprtlabs/golem/nest` {#nest}
-
-```ts
-import { NestModelInterceptor } from '@exprtlabs/golem/nest';
-```
-
-<<< ../../examples/payments/server/src/application.ts#global-model-http
-
-| Member | Signature | Behavior |
-| --- | --- | --- |
-| `NestModelInterceptor` | `class NestModelInterceptor implements NestInterceptor` | Runs `fromWireFormat` with fail-fast checks on a whole `@Body()` or `@Query()` model before the handler. Converts a model-typed one-field `@Body('field')` or `@Query('field')` the same way. Throws a `TypeError` for a `@Body()` or `@Query()` parameter that has no model type. Writes a declared `IModel` or `IObject` return, a `Promise` of one or an array of one with `stringify`. |
-| `nestModelStringifyInterceptor` | `(codec: ObjectCodec): NestInterceptor` | Writes every non-null result with that codec's `stringify`, an array item by item. |
-| `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that `nestModelCodec` placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
-| `nestModelConstruct` | `(metatype: unknown)` | The class that token constructs, or `undefined`. |
-| `nestModelCodec` | `(id: string, array?: boolean): ParameterDecorator` | Inserted by the rewrite on `@Body()` and `@Query()` parameters typed with a model or an array of one (`array` is `true`). Replaces the parameter type with a token carrying the model's codec and class. |
-| `nestModelReturn` | `(id: string, array?: boolean): MethodDecorator` | Inserted by the rewrite on a handler that returns a model. `NestModelInterceptor` reads it. |
-
-- A `LibError` with `causedByInput: true` becomes HTTP 400 with `{ issues }`. Other errors, such as missing generated metadata or a throwing converter, stay HTTP 500.
-- An array of models in `@Body()` or `@Body('field')` converts item by item; HTTP 400 answers an invalid item or a value that is not an array. Each issue path starts with the field name, if any, and the item index.
-- A one-field `@Body('field')` or `@Query('field')` with a model type converts that field, and HTTP 400 answers a missing or invalid field. A one-field `@Query` model needs a nested query parser, for example Express `query parser` set to `extended`. A handler cannot take a whole and a one-field parameter of the same source. The interceptor throws a `TypeError`.
-- A `@Body()` or `@Query()` parameter, whole or one field such as `@Body('name')`, that is not an `IModel` or `IObject` throws a `TypeError` that names the controller, the method and the parameter. Nest answers HTTP 500. For plain types, write your own interceptor.
-- `@Param()` and `@Headers()` stay as Nest received them.
-- Query strings are decoded to the schema's scalar and array types before `fromWireFormat` ([query objects](/guide/nestjs-in-depth#query-objects)).
-
-For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. The request and response contract is in [NestModelInterceptor](/guide/nestjs-in-depth#nestmodelinterceptor).
-
-## `@exprtlabs/golem/rewrite` {#rewrite}
-
-```ts
-import { applyRewrites } from '@exprtlabs/golem/rewrite';
-```
-
-Every host scans each TypeScript file it compiles or loads with your project's own TypeScript, and edits the file's text before its types are stripped. The edits are:
-
-| Call | Becomes |
-| --- | --- |
-| `stringify<T>(value)` | the generated `stringify` for `T` |
-| `parse<T>(text)` | the generated `parse` for `T`, constructing your class when `T` is a class |
-| `validate<T>(value)` | the generated `validate` for `T` |
-| `assertValue<T>(value)` | the generated `assert` for `T` |
-| `toWireFormat<T>(value)` | the generated `toWireFormat` for `T` |
-| `fromWireFormat<T>(wire)` | the generated `fromWireFormat` for `T`, constructing your class when `T` is a class |
-
-A host fails with the file, the line and what to run when `T` is not a single type name or `typeof` expression, or has no generated code. `golem check` reports the same sites. With a `controllers` job in `golem.yaml`, the rewrite also inserts [`nestModelCodec`](#nest) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model. Nest also needs `experimentalDecorators` and `emitDecoratorMetadata` ([Set up TypeScript](/guide/nestjs#set-up-typescript)).
-
-`golem build`, [`loader`](#loader), [`vite`](#vite) and [`esbuild`](#esbuild) use this subpath to apply their edits.
-
-| Member | Signature | Behavior |
-| --- | --- | --- |
-| `applyRewrites` | `(text: string, rewrite: FileRewrite, file?: string): { code: string; map: SourceMapV3 }` | Applies the edits and the imports they need to the file's `text`, and returns the new `code` with its source `map`. Offsets are UTF-16 units of the text without a leading byte order mark, which the output keeps. The map has one source, named `''`; set `sources` on it when you know the file name. Throws an error that names `file` and the line when an edit is out of range, overlaps another edit, or no longer matches the text it expects. |
-| `REWRITE_IMPORT_PREFIX` | `'__golem_'` | The prefix of the names that the rewrite imports. Each name is imported as `__golem_<name>`, so edit text cannot clash with an import of your file. |
-
-Types: `FileRewrite` (`{ edits, imports }`), `RewriteEdit` (`{ start, end, expect, text }`) and `RewriteImport` (`{ from, names }`).
-
-## `@exprtlabs/golem/loader` {#loader}
-
-A Node `load` hook that rewrites TypeScript files as Node loads them. Install it through [`register`](#register); import `loader` only to call `module.register` yourself.
-
-## `@exprtlabs/golem/register` {#register}
-
-```sh
-node --import @exprtlabs/golem/register src/main.ts
-```
-
-Every later import of the process goes through the loader. The loader needs a `golem.yaml`: it opens your project from the file that `GOLEM_CONFIG` names, else `./golem.yaml` in the working directory. With neither, a TypeScript file outside `node_modules` fails to load with a message that says so. It scans each file itself, so no `golem generate` run refreshes anything for it; run `golem generate` once so the generated files exist.
-
-- Node before 22.18 needs `--experimental-strip-types` as well: Node strips the types after the loader rewrites the file. Node 22.18 and later, including Node 24, strip types by default.
-- A call that cannot be rewritten fails the load with the file and the line.
-- A workspace package symlinked into `node_modules` loads from its real path, and its calls are rewritten wherever that path lies, inside the directory of your tsconfig or outside it. With `preserveSymlinks` in TypeScript or in your bundler, the package keeps its `node_modules` path, so the host skips it, and the call fails at run time with `parse<T> was not rewritten`.
-- Rewrites need ES modules. A `.cts` file, or a `.ts` file under a CommonJS `package.json`, that holds a call to rewrite fails with a message that names the file. Use `.mts`, `"type": "module"`, or `golem build`.
-- `.tsx` is not supported: Node cannot strip it.
-- Only `.ts`, `.mts` and `.cts` files are rewritten.
-- A NestJS app needs a second loader. Node's type stripping rejects parameter decorators, so a loader that compiles decorators must run after golem's: register it later, as in `node --import @exprtlabs/golem/register --import ./decorators.mjs src/main.ts`. Its `load` hook calls `nextLoad` to get the file as golem rewrote it, then compiles the decorators.
-
-## `@exprtlabs/golem/vite` {#vite}
-
-```ts
-import { golem } from '@exprtlabs/golem/vite';
-import { defineConfig } from 'vite';
-
-export default defineConfig({ plugins: [golem()] });
-```
-
-The plugin rewrites TypeScript in memory before Vite strips its types, in the dev server and in builds.
-
-| Option | Type | Behavior |
-| --- | --- | --- |
-| `config` | `string` | The `golem.yaml` to open, relative to Vite's `root`. Without it the plugin uses `GOLEM_CONFIG`, else `./golem.yaml` in `root`. |
-
-- Put `golem()` before plugins that transform TypeScript. It runs first (`enforce: 'pre'`) and must see the file text as it is on disk.
-- Without a `golem.yaml`, a TypeScript file outside `node_modules` fails the build. A call that cannot be rewritten fails with the file and the line; if its model has no generated code, run `golem generate`. An id with a query, such as `?raw`, passes through.
-- Vite does not strip `.cts` files.
-- The dev server watches the files each rewrite depends on, and a build adds them to its watch set. When one changes, or a generated model file of the project does, the plugin scans again and transforms only the modules whose rewrite came out different. The page reloads once for the file events of one run: the first event opens a 100 ms window, and the events inside it share one reload.
-- A workspace package symlinked into `node_modules` follows the rule of the [loader](#register), including the `preserveSymlinks` limit.
-
-## `@exprtlabs/golem/esbuild` {#esbuild}
-
-```ts
-import { golem } from '@exprtlabs/golem/esbuild';
-import { build } from 'esbuild';
-
-await build({ entryPoints: ['src/main.ts'], bundle: true, outfile: 'dist/main.js', plugins: [golem()] });
-```
-
-The plugin rewrites TypeScript in memory before esbuild strips its types and chains the source map into the bundle's.
-
-| Option | Type | Behavior |
-| --- | --- | --- |
-| `config` | `string` | The `golem.yaml` to open, relative to `absWorkingDir` (default: the current directory). Without it the plugin uses `GOLEM_CONFIG`, else `./golem.yaml` in `absWorkingDir`. |
-
-- Its `onLoad` takes every TypeScript file outside `node_modules`, so a plugin that needs those files must come before `golem()` in `plugins`. A file with no rewrite goes on to the plugins after it.
-- Without a `golem.yaml`, a TypeScript file outside `node_modules` fails the build with an error located at the file. A call that cannot be rewritten does the same, with the line.
-- The files a rewrite depends on are watched, so esbuild's watch mode builds again when one changes. A failed file watches the key tables that `golem generate` writes, so the build runs again when they appear.
-- A workspace package symlinked into `node_modules` follows the rule of the [loader](#register), including the `preserveSymlinks` limit.
-
-## `@exprtlabs/golem/generator-api` {#generator-api}
-
-```ts
-import type { GolemProvider, ModelContext } from '@exprtlabs/golem/generator-api';
-```
-
-The contracts, `resolveProfile` and `GolemDiagnosticSeverity` for tools that embed a generator are in the [generator API](/reference/generator-api).
-
-Used by the generators: `discoverSources`, `compareText`, `isRecord`, `errorMessage`, `hasErrorCode`, `identifier`, `camelIdentifier`, `bindingName`, `propertyName`, `NameScope`, `assertPortableFilenames`, `assertUniquePublicExports`, `RESERVED_BINDING_NAMES`, `RESERVED_MODEL_MEMBERS`, `stableJson`, `stableValue`, `isInsideDirectory`, `parseYamlFile`, `YamlFileError`.
-
-`stableJson(value)` returns indented JSON text with the keys sorted at every depth. `stableValue(value)` returns the same value as a copy with sorted keys. `isInsideDirectory(directory, filename)` is true when `filename` is `directory` or lies inside it. `parseYamlFile(text, filename, options?)` parses YAML text that came from `filename`. When the text is not valid YAML it throws a `YamlFileError` whose message starts with `<file>:<line>:<column>`, the file relative to the working directory, and whose `cause` is the parser's error.
-
-## `@exprtlabs/golem/manifest` {#manifest}
-
-```ts
-import { discoverModelManifests, readModelManifest } from '@exprtlabs/golem/manifest';
-```
-
-An OpenAPI job writes `model-manifest.json` beside its SDK; a model job reads it to use the SDK models in your declarations.
-
-| Member | Signature | Behavior |
-| --- | --- | --- |
-| `discoverModelManifests` | `(root = process.cwd(), onInput?): string[]` | Sorted absolute paths of `model-manifest.json` files below `<root>/src`, skipping `dist` and `build`. |
-| `readModelManifest` | `(filename: string, onInput?): ModelManifest` | Reads and checks one manifest. Throws with the file name when it is unreadable or invalid. |
-| `validateModelManifest` | `(manifest: unknown, filename?): ModelManifest` | Checks a parsed manifest. |
-| `ModelManifest` | `{ profile, models, validationSchemaClosure? }` | The generation profile, one `ModelManifestEntry` per model, and the schemas a project needs to validate those models. |
-| `MODEL_MANIFEST_FILENAME` | `'model-manifest.json'` | The file name. |
-
-Used by the generators: `ModelManifestEntry`, `ModelManifestProvenance`, `MODEL_MANIFEST_MARKER`, `manifestMarker`, `modelManifestProfile`, `validateModelProfile`, `stableJson`, `stableIdentity`, `sourceDigest`.
+The module also exports the types these functions use: `ClientOptions`, `RequestOptions`, `ParameterSerializer`, `EncodedBody`, `BodyEncoder`, `MutualTlsTransport`, `ResponseHeaderDecoder`, `StreamDecoder`, `ResponseDecoder`, `UndeclaredResponseError`, `AuthContext`, `TokenAuthValue`, `BasicCredentials`, `BasicAuthValue` and `RuntimeSecuritySchemes`. Each SDK aliases the option types with its client name, such as `PaymentsClientOptions`.

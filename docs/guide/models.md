@@ -1,6 +1,6 @@
-# Defining models
+# Define models
 
-Declare fields as a type, generate validation and JSON conversion, and add behavior in your own class.
+Declare fields as a type, generate the class, and add behavior in your own class.
 
 ::: code-group
 
@@ -10,7 +10,7 @@ Declare fields as a type, generate validation and JSON conversion, and add behav
 
 :::
 
-`priority` is a number in your class and a word in JSON; `TSerde` converts between them ([Type tags](/guide/tags#convert-a-field-to-a-different-json-value)).
+`priority` is a number in your class and a word in JSON. [`TSerde`](/guide/serialization#change-the-json-form) converts between them.
 
 ## IObject or IModel
 
@@ -18,7 +18,7 @@ Both declare fields. `IObject` stops there: values stay plain objects, and you c
 
 <<< ../../examples/models/src/comment.model.ts#object-and-model
 
-`TComment` is an `IObject`: `parse<TComment>` returns a plain object. `TThread` is an `IModel` nesting it: `parse<Thread>` builds a `Thread` whose `comments` array holds those plain objects.
+`TComment` is an `IObject`: `parse<TComment>` returns a plain object. `TThread` is an `IModel` that nests it: `parse<Thread>` builds a `Thread` whose `comments` array holds those plain objects.
 
 | | `IObject` | `IModel` |
 | --- | --- | --- |
@@ -30,7 +30,11 @@ Both declare fields. `IObject` stops there: values stay plain objects, and you c
 
 ## Declare fields
 
-Put declarations in `src/**/*.model.ts` or `src/**/*.models.ts`. Set [`models.suffixes`](/reference/config#typescript-models) to use other endings, such as `.entity.ts`, and `models.sources` to name files directly. Generation writes the generated file `task.model.generated.ts` beside each declaration file, with these exports:
+Put declarations in `src/**/*.model.ts` or `src/**/*.models.ts`. Set [`models.suffixes`](/reference/config#typescript-models) to use other endings, such as `.entity.ts`, and `models.sources` to name files directly. A field can have any of the [supported shapes](/guide/field-types) and carry [validation tags](/guide/tags).
+
+## Generated names
+
+Generation writes the generated file `task.model.generated.ts` beside each declaration file. It exports these names:
 
 | Export | What it is |
 | --- | --- |
@@ -39,64 +43,29 @@ Put declarations in `src/**/*.model.ts` or `src/**/*.models.ts`. Set [`models.su
 | `TTaskInit` | constructor input, with optional fields and nested initializers |
 | `TTaskJSON` | the plain data `toWireFormat` returns |
 
-Each name is the exact type alias plus a suffix: nothing is dropped from the alias. `type TTask = IModel<…>` gives `TTaskBaseModel`, `TTaskFields`, `TTaskInit` and `TTaskJSON`; `type Task = IModel<…>` gives `TaskBaseModel`; `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. The generated functions use the alias too, such as `parseTTask`.
+Each name is the exact type alias plus a suffix. `type TTask = IModel<…>` gives `TTaskBaseModel`, `TTaskFields`, `TTaskInit` and `TTaskJSON`. `type Task = IModel<…>` gives `TaskBaseModel`. `type TPermissionModel = IModel<…>` gives `TPermissionModelBaseModel`. The generated functions use the alias too, such as `parseTTask`.
 
-Your class links to its model through `extends <Alias>BaseModel`, so it can have any name: `class PurchaseOrder extends TOrderBaseModel`. A file can export several classes that extend the generated class directly: each links to the model, and `parse<AdminPayment>` builds an `AdminPayment`. With one class, the model uses it as its default class. With several, the model has no default class, so decoding builds the generated class unless the type names one. A class that extends another linked class does not link.
+Your class links to its model through `extends <Alias>BaseModel`, so it can have any name: `class PurchaseOrder extends TOrderBaseModel`. A file can export several classes that extend the generated class directly. Each links to the model, and `parse<AdminPayment>` builds an `AdminPayment`.
 
-The generated file puts `.generated` before the final extension of its source: `order.entity.ts` gets `order.entity.generated.ts`, and `order.entity.mts` gets `order.entity.generated.mts`. Don't edit the generated file; generation replaces it.
+With one class, the model uses it as its default class. With several, the model has no default class, so decoding builds the generated class unless the type names one. A class that extends another linked class does not link.
+
+The generated file puts `.generated` before the final extension of its source: `order.entity.ts` gets `order.entity.generated.ts`, and `order.entity.mts` gets `order.entity.generated.mts`. Do not edit the generated file. Generation replaces it.
 
 ## Add behavior
 
 Your class holds methods, getters, defaults and extra constructor state. The base constructor assigns the supplied values, so call `super(values)` before you read a field. With [MobX](/guide/mobx) on, call `asGenObservable(this)` right after `super(values)`.
 
-`toWireFormat` emits declared fields only. Getters and other state on your class stay on the instance. A key on an instance that its own model does not declare is program state: codecs never report it as an unknown key and never write it to JSON. This holds at any depth inside an `unknown` or `any` field. Declared keys are judged as always, and input from JSON or a request stays exact.
+`toWireFormat` emits declared fields only. Getters and other state on your class stay on the instance. A key on an instance that its model does not declare is program state, and codecs ignore it ([Objects and exact](/guide/field-types#objects-and-exact)).
 
 ## Type-only model files
 
-A file that exports only types, such as `export type TLabel = IObject<{ text: string }>`, needs no import of its generated file. The build that rewrites your calls ([`golem build`](/reference/cli#build), the Vite or esbuild plugin, or the Node loader) loads the generated file of each model that a `parse`, `stringify`, `validate` or wire-format call names. It does the same for each model of a Nest `@Body()` or `@Query()` parameter and of a handler return, so a model named only as a type works.
+A file that exports only types, such as `export type TLabel = IObject<{ text: string }>`, needs no import of its generated file. The [build host](/guide/build) loads the generated file of each model that a `parse`, `stringify`, `validate` or wire-format call names. It does the same for each model of a Nest `@Body()` or `@Query()` parameter and of a handler return.
 
 A codec that is still missing at run time throws an error that starts with `golem fault`. Run `golem generate`, then build again.
 
-## Read and write JSON
+## Field names you cannot use
 
-`stringify` and `parse` work with JSON text; `toWireFormat` and `fromWireFormat` work with plain objects. The type argument picks the result: `parse<TTask>` returns a plain object, `parse<Task>` builds a `Task`.
-
-<<< ../../examples/models/src/read-json.ts#read-json
-
-Each call takes [serde options](/guide/serialization) such as `{ validate: false }`.
-
-## Field names you can't use
-
-Declared fields can't use names from `Object.prototype`, such as `__proto__`, `constructor`, `toString` or `hasOwnProperty`. Generation reports the field; rename it in the declaration or the OpenAPI schema.
-
-## Field types
-
-The field type decides construction, conversion and validation.
-
-| TypeScript shape | Runtime and JSON |
-| --- | --- |
-| `string`, `number`, `boolean`, `null`, `undefined` | stored as is; an `undefined` property is left out of JSON |
-| `bigint` | needs a [`TSerde`](/guide/tags#convert-a-field-to-a-different-json-value) codec that writes it as JSON, such as a string; without one, `stringify` rejects it |
-| string, number and boolean literals | kept and checked |
-| arrays and tuples | items convert recursively; tuple length and optional or rest positions are checked |
-| object types | known properties convert; extra properties fail validation unless [`exact` is `false`](/guide/model-composition#strict-objects-and-any) |
-| unions and intersections | intersections merge fields; [supported unions](/guide/model-composition#unions) |
-| another type-only `IModel` | a nested plain object, still converted |
-| your class (extends a `*Base`) | a nested instance of that class |
-| `Date` | an ISO date-time string in JSON, restored with `Date` parsing; add format checks with [tags](/guide/tags) |
-| `TemporalInstant`, `TemporalPlainDate` and the other [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) types | an ISO 8601 string in JSON; needs a `Temporal` global ([Dates and times](/guide/dates)) |
-| a [recursive type alias](#recursive-type-aliases) | converted and validated at every level |
-| `unknown` | accepted without structural checks only when `allowAny` is `true` |
-
-`any` and `unknown` are accepted only when `allowAny` is `true`, set in `golem.yaml` or per model; otherwise generation fails with [`RUNM1011`](/reference/diagnostics#runm1011) ([strict objects](/guide/model-composition#strict-objects-and-any)).
-
-## Recursive type aliases
-
-A type alias can refer to itself, in any shape: a union, an array, a tuple or a record. Golem generates one function for the alias, so a recursive alias needs no model around it. For example, `type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }` is a valid type for a model field, beside `IModel<{ payload: JsonValue }>`.
-
-Use the alias as a field type, as an optional field or as an array item. Golem validates and converts every level. `stringify` and `toWireFormat` throw an error for a value that contains itself.
-
-A type alias that does not refer to itself stays part of the field type. A recursive alias that holds a `Date` or a model converts the `Date` or the model at every level. A cycle that golem cannot name stops generation with [`RUNM1056`](/reference/diagnostics#runm1056).
+A declared field cannot use a name from `Object.prototype`, such as `__proto__`, `constructor`, `toString` or `hasOwnProperty`. Generation reports the field. Rename it in the declaration or the OpenAPI schema.
 
 ## Regenerate
 
@@ -106,6 +75,8 @@ After you change a declaration, generate again:
 npx golem generate
 ```
 
-Generation type-checks the project first. It stops on a TypeScript error in a model source or in a file the job writes, reported as `file:line:column`. A type error in any other file does not stop generation; `tsc` and `golem build` report it. Generation then replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`); your classes don't change. `golem build` generates first, so a build needs no separate `golem generate`. In CI, run `golem build`, or run `golem generate` and then `npx golem check` ([Generate, watch and check](/guide/watch), [ignore generated files](/reference/generated-files#gitignore)).
+Generation type-checks the project first. It stops on a TypeScript error in a model source or in a file the job writes, and reports it as `file:line:column`. A type error in any other file does not stop generation. Then generation replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`). Your classes do not change.
+
+`golem build` generates first, so a build needs no separate `golem generate`. In CI, run `golem build`, or run `golem generate` and then `npx golem check` ([Generate, watch and check](/guide/watch)). [Ignore the generated files](/reference/generated-files#gitignore) in git.
 
 Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

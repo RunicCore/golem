@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { buildBenchmarkSiteProjection } from '../scripts/benchmark/site-projection.js';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const docs = path.join(root, 'docs');
@@ -48,12 +49,43 @@ test('the How it works illustration server-renders its final state', () => {
 });
 
 const benchmarksHtml = path.join(dist, 'benchmarks.html');
-test('the built benchmarks page server-renders the first group table', () => {
+const projection = buildBenchmarkSiteProjection(root);
+// protects: R-30 the built page renders the speed table of the golem setups; R-24 it says benchmarks are for reference only
+test('the built benchmarks page server-renders the disclaimer and the speed table of the golem setups', () => {
   assert.ok(existsSync(benchmarksHtml), 'run npm run docs:build first');
   const html = readFileSync(benchmarksHtml, 'utf8');
   const table = html.slice(html.indexOf('bench-table'));
-  assert.ok(html.includes('bench-table'), 'combined table rendered');
-  for (const text of ['Golem (IObject)', 'Typia', 'Zod', 'not supported', 'Parse', 'Stringify', 'Validate']) assert.ok(table.includes(text), `table lacks "${text}"`);
+  assert.ok(html.includes('Benchmarks are for reference purposes only.'), 'the disclaimer is on the page');
+  assert.ok(html.includes('bench-table'), 'speed table rendered');
+  for (const text of [...projection.columns.map(column => column.label), 'Parse', 'Stringify', 'Validate']) assert.ok(table.includes(text), `table lacks "${text}"`);
+});
+
+// protects: R-30 the speed table draws the projection's numbers, one row for each payload and operation, in column order
+test('the built benchmarks page shows the number of each golem setup, and a dash where a setup has no operation', () => {
+  assert.ok(existsSync(benchmarksHtml), 'run npm run docs:build first');
+  const html = readFileSync(benchmarksHtml, 'utf8').replace(/ data-v-[0-9a-f]+/g, '');
+  const start = html.indexOf('<table class="bench-table"');
+  const table = html.slice(start, html.indexOf('</table>', start));
+  const shown = [...table.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map(m => m[1].replace(/<span class="visually-hidden">.*?<\/span>/g, '').replace(/<[^>]*>/g, ''));
+  const derived = projection.speeds.flatMap(block => block.rows.flatMap(row => row.cells.map(cell => cell === null ? '\u2014' : Math.round(cell).toLocaleString('en-US'))));
+  assert.deepEqual(shown, derived);
+  assert.ok(derived.includes('\u2014'), 'the committed results give a dash');
+});
+
+// protects: T-246 the cost tab shows the cost table's cells, ratios and dashes in the order of its columns
+test('the built benchmarks page has the tab "What each feature costs" with the cost table of the results', () => {
+  assert.ok(existsSync(benchmarksHtml), 'run npm run docs:build first');
+  const html = readFileSync(benchmarksHtml, 'utf8').replace(/ data-v-[0-9a-f]+/g, '');
+  assert.match(html, /role="tab"[^>]*>What each feature costs<\/button>/);
+  const start = html.indexOf('<table class="cost-table"');
+  const table = html.slice(start, html.indexOf('</table>', start));
+  const shown = [...table.matchAll(/<td[^>]*>(.*?)<\/td>/g)].map(m => m[1].replace(/<span class="visually-hidden">.*?<\/span>/g, '').replace(/<[^>]*>/g, ''));
+  const derived = projection.cost.flatMap(block => block.rows).flatMap(({ cells: r }) => [r.imodelOff, r.imodelOn, r.imodelOnOverOff, r.iobjectOff, r.iobjectOn, r.iobjectOnOverOff, r.imodelOverIobject, r.serdeManyOverNone, r.invalidOverValid]
+    .map(c => c.kind === 'ops' ? Math.round(c.value).toLocaleString('en-US') : c.kind === 'ratio' ? `${c.value.toFixed(2)}x` : c.kind === 'not-applicable' ? '\u2014' : 'not run'));
+  assert.deepEqual(shown, derived);
+  assert.ok(derived.includes('\u2014') && derived.some(cell => cell.endsWith('x')), 'the committed results give both a dash and a ratio');
+  const columnHeaders = [...table.matchAll(/<th[^>]*scope="col"[^>]*>/g)].length - 1;
+  assert.equal(columnHeaders, Object.keys(projection.cost[0].rows[0].cells).length, 'one column header for each cost column, after the first');
 });
 
 test('built pages never render #region markers from imported snippets', () => {

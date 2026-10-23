@@ -2,7 +2,6 @@ import { Type } from 'class-transformer';
 import * as cv from 'class-validator';
 import 'reflect-metadata';
 
-// #region simple
 export class Point3D {
   @cv.IsNumber()
   x!: number;
@@ -35,9 +34,7 @@ export class ObjectSimple {
   @Type(() => Point3D)
   pivot!: Point3D;
 }
-// #endregion simple
 
-// #region array
 export class Timestamp {
   @cv.IsNumber()
   time!: number;
@@ -116,9 +113,7 @@ export class Collection {
   @cv.ValidateNested({ each: true })
   data!: Company[];
 }
-// #endregion array
 
-// #region nested
 // Timestamp is declared with the Large array classes.
 export class Account {
   @cv.IsNumber()
@@ -387,4 +382,3 @@ export class ConstrainedObjectHierarchical extends ObjectHierarchical {
   @cv.IsNumber({}, { each: true })
   ip = undefined as unknown as [number, number, number, number];
 }
-// #endregion nested

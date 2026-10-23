@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { pathToFileURL } from 'node:url';
 import { BENCH_ADAPTERS } from './cases.js';
-import { ADAPTERS, type Adapter, type ComparisonFixture, type ComparisonModule } from './fixture-contract.js';
+import { ADAPTERS, type Adapter, type ComparisonFixture, type ComparisonModule, type InvalidOperations } from './fixture-contract.js';
 import type { BatchSample } from './results.js';
 import { sampleAsync, sampleSync, schedule } from './sampling.js';
 import { parseWorkerJob, type WorkerCaseResult, type WorkerJob, type WorkerOutput } from './worker-protocol.js';
@@ -11,20 +11,27 @@ if (!modulePath || !fixtureAdapter || !jobText) throw new Error('Usage: worker.j
 const job = parseWorkerJob(jobText);
 const isAdapter = (value: string): value is Adapter => (ADAPTERS as readonly string[]).includes(value);
 if (!isAdapter(fixtureAdapter)) throw new Error(`Unknown fixture adapter: ${fixtureAdapter}`);
-// The 'plain' group parses to plain objects (an IObject declaration, or a peer library's plain-object mode);
-// other groups produce class instances, so this check applies only there.
-const parsesToPlainObject = BENCH_ADAPTERS.find(a => a.fixtureAdapter === fixtureAdapter)?.group === 'plain';
+// The 'plain' group parses to plain objects (an IObject declaration, or a peer library's plain-object mode), and so
+// does an adapter marked `plainObjects`; other groups produce class instances, so this check applies only there.
+const adapterSpec = BENCH_ADAPTERS.find(a => a.fixtureAdapter === fixtureAdapter);
+const parsesToPlainObject = adapterSpec?.group === 'plain' || adapterSpec?.plainObjects === true;
 const suite: ComparisonModule = await import(pathToFileURL(modulePath).href);
 const wanted = new Set(job.cases.map(c => c.fixture));
 const fixtures = (await suite.createComparisonFixtures(fixtureAdapter)).filter(f => wanted.has(f.name));
 
 let checksum = 0;
+// A broken value is built only here, in `invalid` mode (R5); once for each fixture.
+const invalidOperations = new Map<ComparisonFixture, InvalidOperations | undefined>();
+const invalidOperationsOf = (fixture: ComparisonFixture) => {
+  if (!invalidOperations.has(fixture)) invalidOperations.set(fixture, fixture.invalidOperations?.());
+  return invalidOperations.get(fixture);
+};
 interface Runnable { readonly fixture: ComparisonFixture; readonly key: string; readonly operation: WorkerJob['cases'][number]['operation']; readonly run: () => unknown }
 const runnables: Runnable[] = job.cases.map(c => {
   const fixture = fixtures.find(f => f.name === c.fixture);
   if (!fixture) throw new Error(`${fixtureAdapter}: fixture ${c.fixture} not provided`);
-  const run = fixture.operations[c.operation];
-  if (!run) throw new Error(`${fixtureAdapter}: ${c.fixture} has no ${c.operation}`);
+  const run = (job.mode === 'invalid' ? invalidOperationsOf(fixture) : fixture.operations)?.[c.operation];
+  if (!run) throw new Error(`${fixtureAdapter}: ${c.fixture} has no ${job.mode === 'invalid' ? 'invalid ' : ''}${c.operation}`);
   return { fixture, key: `${c.fixture}/${c.operation}`, operation: c.operation, run };
 });
 
@@ -40,6 +47,8 @@ async function verifyCalls(): Promise<void> {
     const value = await call(item);
     const consumed = item.fixture.consume(value);
     assert.ok(Number.isFinite(consumed) && consumed > 0, `Unconsumed result: ${fixtureAdapter}/${item.key}`);
+    // An invalid call returns a number once the input was rejected; the valid-result checks below do not apply.
+    if (job.mode === 'invalid') continue;
     if (item.operation === 'validate') assert.equal(value, true, `Validate rejected a valid fixture: ${fixtureAdapter}/${item.key}`);
     if (item.operation === 'text-to-model' && parsesToPlainObject) {
       assert.equal(Object.getPrototypeOf(value), Object.prototype, `Parse did not return a plain object: ${fixtureAdapter}/${item.key}`);

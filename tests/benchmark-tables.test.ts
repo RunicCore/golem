@@ -1,0 +1,216 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import type { ResultCase } from '../scripts/benchmark/results-schema.js';
+import { compareTable, costTable, formatCompareTable, rankSpeeds, releaseBand, releaseVerdict } from '../scripts/benchmark/tables.js';
+
+const timed = (payload: string, operation: string, adapter: string, median: number): ResultCase =>
+  ({ payload, operation, adapter, support: 'full', opsPerSec: { median, min: median, max: median } });
+const row = (results: Parameters<typeof costTable>[0], payload: string, operation: string) =>
+  costTable(results).find(r => r.payload === payload && r.operation === operation);
+const ops = (value: number) => ({ kind: 'ops', value });
+const ratio = (value: number) => ({ kind: 'ratio', value });
+
+// protects: T-235 each ratio cell of the validation columns, read from compare and cost timings together
+test('the cost table divides validation on by validation off and IModel by IObject, from both timing lists', () => {
+  const results = {
+    cases: [timed('simple', 'parse', 'golem', 200), timed('simple', 'parse', 'golem-validated', 100), timed('simple', 'parse', 'golem-object', 40)],
+    cost: { cases: [timed('simple', 'parse', 'golem-object-off', 80), timed('simple', 'decode', 'golem', 90), timed('simple', 'decode', 'golem-validated', 45)] },
+  };
+  assert.deepEqual(row(results, 'simple', 'parse'), {
+    payload: 'simple', operation: 'parse',
+    imodelOff: ops(200), imodelOn: ops(100), imodelOnOverOff: ratio(0.5),
+    iobjectOff: ops(80), iobjectOn: ops(40), iobjectOnOverOff: ratio(0.5), imodelOverIobject: ratio(2.5), serdeManyOverNone: { kind: 'not-applicable' }, invalidOverValid: { kind: 'not-run' },
+  });
+  assert.deepEqual(row(results, 'simple', 'decode'), {
+    payload: 'simple', operation: 'decode',
+    imodelOff: ops(90), imodelOn: ops(45), imodelOnOverOff: ratio(0.5),
+    iobjectOff: { kind: 'not-run' }, iobjectOn: { kind: 'not-run' }, iobjectOnOverOff: { kind: 'not-run' }, imodelOverIobject: { kind: 'not-run' }, serdeManyOverNone: { kind: 'not-applicable' }, invalidOverValid: { kind: 'not-run' },
+  });
+});
+
+// protects: T-235 validate has no off mode
+test('the cost table shows validate off and both on/off ratios as not applicable, and still divides IModel by IObject', () => {
+  const results = { cases: [timed('nested', 'validate', 'golem-validated', 100), timed('nested', 'validate', 'golem-object', 50)] };
+  assert.deepEqual(row(results, 'nested', 'validate'), {
+    payload: 'nested', operation: 'validate',
+    imodelOff: { kind: 'not-applicable' }, imodelOn: ops(100), imodelOnOverOff: { kind: 'not-applicable' },
+    iobjectOff: { kind: 'not-applicable' }, iobjectOn: ops(50), iobjectOnOverOff: { kind: 'not-applicable' }, imodelOverIobject: ratio(2), serdeManyOverNone: { kind: 'not-applicable' }, invalidOverValid: { kind: 'not-run' },
+  });
+});
+
+// protects: T-235 a row exists only for a pair that a run timed
+test('the cost table has no row for a payload or operation that no run timed', () => {
+  const results = { cases: [timed('simple', 'parse', 'golem', 200)] };
+  assert.deepEqual(costTable(results).map(r => `${r.payload}/${r.operation}`), ['simple/parse']);
+});
+
+// protects: T-237 the serde column divides serde-many by serde-none on the serde-many rows only, IModel with validation on
+test('the cost table divides serde-many by serde-none for the same operation on the serde-many rows, and nowhere else', () => {
+  const results = {
+    cases: [],
+    cost: { cases: [
+      timed('serde-many', 'decode', 'golem-validated', 30), timed('serde-none', 'decode', 'golem-validated', 120),
+      timed('serde-many', 'decode', 'golem', 60), timed('serde-many', 'encode', 'golem-validated', 50),
+    ] },
+  };
+  assert.deepEqual(costTable(results).map(r => [r.payload, r.operation, r.serdeManyOverNone]), [
+    ['serde-none', 'decode', { kind: 'not-applicable' }],
+    ['serde-many', 'decode', ratio(0.25)],
+    ['serde-many', 'encode', { kind: 'not-run' }],
+  ]);
+});
+
+// protects: T-239 order, shared rank inside the noise band, separate rank outside it
+test('rank orders the libraries by speed and lets a library inside the band share the rank of the fastest of its run', () => {
+  assert.deepEqual(rankSpeeds([80, 100, 96], 0.05), [3, 1, 1]);
+  assert.deepEqual(rankSpeeds([100, 90], 0.05), [1, 2]);
+  assert.deepEqual(rankSpeeds([100, 95], 0.05), [1, 1], 'a ratio of exactly 1 - band is a tie');
+});
+
+// protects: T-239 the tie chain rule: a tie is anchored at the fastest library of the run, never chained
+test('a library inside the band of its neighbour but outside the band of the fastest starts the next run', () => {
+  // 96 ties 100, and 92 ties 96 (0.958), but 92 is outside the band of 100 (0.92 < 0.95): it takes its own rank.
+  assert.deepEqual(rankSpeeds([100, 96, 92], 0.05), [1, 1, 3]);
+  assert.deepEqual(rankSpeeds([100, 96, 92, 91], 0.05), [1, 1, 3, 3]);
+});
+
+// protects: T-239 a file with no noise band ranks without ties
+test('rank gives every library its own rank when the results have no noise band', () => {
+  assert.deepEqual(rankSpeeds([100, 99.9], undefined), [1, 2]);
+});
+
+const adapters = ['typia', 'zod'].map(id => ({ id, group: 'plain', label: id, library: id, checked: true, sourceUrl: '' }));
+const payloads = ['simple', 'checkout'].map(id => ({ id, label: id, bytes: 1, description: '', sourceUrl: '' }));
+const unsupported = (payload: string, operation: string, adapter: string): ResultCase => ({ payload, operation, adapter, support: 'none', note: 'no conversion' });
+
+// protects: T-239 the compare table ranks per row inside the group, skips unsupported cells and sums up with n of m
+test('the compare table ranks each row, leaves an unsupported row out of the summary, and scores with n of m', () => {
+  const cases = [
+    timed('simple', 'parse', 'typia', 400), timed('simple', 'parse', 'zod', 100),
+    timed('simple', 'stringify', 'typia', 100), timed('simple', 'stringify', 'zod', 98),
+    unsupported('checkout', 'parse', 'typia'), timed('checkout', 'parse', 'zod', 50),
+  ];
+  const table = compareTable({ cases, adapters, payloads, noise: { loadAverage: { start: [0, 0, 0], end: [0, 0, 0] }, controlSpread: 0.05 } });
+  assert.equal(table.band, 0.05);
+  assert.deepEqual(table.groups.map(g => g.id), ['plain']);
+  const [plain] = table.groups;
+  assert.deepEqual(plain.rows.map(r => [r.payload, r.operation, r.cells.map(c => c.cell.kind === 'ops' ? c.cell.rank : c.cell.kind)]), [
+    ['simple', 'parse', [1, 2]],
+    ['simple', 'stringify', [1, 1]],
+    ['checkout', 'parse', ['not-supported', 1]],
+  ]);
+  const zod = plain.summary.find(s => s.adapter === 'zod');
+  // Zod's speed over the leader: 100 / 400 = 0.25 and 98 / 100 = 0.98; the geometric mean is sqrt(0.245).
+  assert.ok(zod?.score !== undefined && Math.abs(zod.score - Math.sqrt(0.245)) < 1e-12);
+  assert.deepEqual([zod?.rows, zod?.of], [2, 3]);
+  assert.deepEqual(plain.summary.find(s => s.adapter === 'typia')?.rows, 2);
+});
+
+// protects: T-239 a library that does less work carries a mark
+test('the compare table marks the cells of a library that does less work', () => {
+  const classValidator = [{ id: 'class-validator', group: 'validated-classes', label: 'class-validator', library: 'class-validator', checked: true, sourceUrl: '' }];
+  const table = compareTable({ cases: [timed('simple', 'parse', 'class-validator', 100)], adapters: classValidator, payloads, noise: undefined });
+  const cell = table.groups[0].rows[0].cells[0].cell;
+  assert.deepEqual(cell, { kind: 'ops', value: 100, rank: 1, mark: 'does not reject unknown properties' });
+  assert.equal(table.band, undefined);
+});
+
+// protects: T-239 the console gives each reason that a library does less work its own symbol and footnote
+test('the console compare table marks two different reasons with two symbols, and a repeated reason with the same one', () => {
+  const ops = (value: number, mark?: string) => ({ kind: 'ops' as const, value, rank: 1, ...(mark ? { mark } : {}) });
+  const table = {
+    band: undefined,
+    groups: [{
+      id: 'plain' as const, label: 'Plain',
+      summary: (['typia', 'zod'] as const).map(adapter => ({ adapter, label: adapter, score: 1, rows: 2, of: 2 })),
+      rows: [
+        { payload: 'simple', operation: 'parse', cells: [{ adapter: 'typia' as const, cell: ops(300, 'skips unknown keys') }, { adapter: 'zod' as const, cell: ops(200, 'skips dates') }] },
+        { payload: 'simple', operation: 'stringify', cells: [{ adapter: 'typia' as const, cell: ops(100, 'skips unknown keys') }, { adapter: 'zod' as const, cell: ops(90) }] },
+      ],
+    }],
+  };
+  const text = formatCompareTable(table, new Map());
+  assert.match(text, /300 #1\*\s+200 #1\u2020/);
+  assert.match(text, /100 #1\*\s+90 #1\n/);
+  assert.match(text, /\* skips unknown keys\n\n\u2020 skips dates/);
+});
+
+// protects: R-24 the console keeps the reason of an unsupported cell
+test('the console compare table gives an unsupported cell a footnote with its reason', () => {
+  const table = {
+    band: undefined,
+    groups: [{
+      id: 'plain' as const, label: 'Plain',
+      summary: [{ adapter: 'typia' as const, label: 'typia', rows: 0, of: 1 }, { adapter: 'zod' as const, label: 'zod', score: 1, rows: 1, of: 1 }],
+      rows: [{ payload: 'checkout', operation: 'parse', cells: [{ adapter: 'typia' as const, cell: { kind: 'not-supported' as const, note: 'typia keeps dates as strings' } }, { adapter: 'zod' as const, cell: { kind: 'ops' as const, value: 50, rank: 1 } }] }],
+    }],
+  };
+  const text = formatCompareTable(table, new Map());
+  assert.match(text, /no conversion\*\s+50 #1\n/);
+  assert.match(text, /\* typia keeps dates as strings/);
+});
+
+// protects: T-242 the invalid/valid column divides the invalid timing by the valid one for the reading operations only
+test('the cost table divides invalid input by valid input for parse, decode and validate, and shows not applicable for stringify and encode', () => {
+  const results = {
+    cases: [timed('simple', 'parse', 'golem-validated', 100), timed('simple', 'stringify', 'golem-validated', 100), timed('simple', 'validate', 'golem-validated', 80)],
+    cost: { cases: [timed('simple', 'decode', 'golem-validated', 200), timed('simple', 'encode', 'golem-validated', 300)] },
+    invalid: { cases: [timed('simple', 'parse', 'golem-validated', 25), timed('simple', 'decode', 'golem-validated', 50), timed('simple', 'validate', 'golem-validated', 80)] },
+  };
+  assert.deepEqual(costTable(results).map(r => [r.operation, r.invalidOverValid]), [
+    ['parse', ratio(0.25)],
+    ['stringify', { kind: 'not-applicable' }],
+    ['decode', ratio(0.25)],
+    ['encode', { kind: 'not-applicable' }],
+    ['validate', ratio(1)],
+  ]);
+  assert.deepEqual(costTable({ ...results, invalid: undefined }).map(r => r.invalidOverValid.kind), ['not-run', 'not-applicable', 'not-run', 'not-applicable', 'not-run']);
+});
+
+const pair = (base: number, head: number) => ({ base, head });
+/** A case whose two halves run at `first` and `second` of the base (base 100), and the session at their mean. */
+const release = (key: string, first: number, second: number = first) =>
+  ({ key, ...pair(100, (first + second) / 2), halves: [pair(100, first), pair(100, second)] });
+
+// protects: T-243 the release check stops on a valid-path drop beyond the noise band in both halves, and passes inside it
+test('the release verdict stops when a case runs below the base by more than the band in both halves, and names it', () => {
+  const verdict = releaseVerdict([release('simple/parse/golem', 101), release('simple/decode/golem', 80)], 0.1);
+  assert.equal(verdict.verdict, 'stop');
+  assert.deepEqual(verdict.failing.map(r => [r.key, r.ratio, r.halfRatios]), [['simple/decode/golem', 0.8, [0.8, 0.8]]]);
+  assert.deepEqual(verdict.rows.map(r => [r.key, r.slower]), [['simple/parse/golem', false], ['simple/decode/golem', true]]);
+});
+
+// protects: T-243 a drop in one half of the rounds is noise, not a stop
+test('the release verdict passes a drop that shows in one half only', () => {
+  const verdict = releaseVerdict([release('simple/parse/golem', 70, 100), release('simple/encode/golem', 100, 70)], 0.1);
+  assert.equal(verdict.verdict, 'pass');
+  assert.deepEqual(verdict.failing, []);
+});
+
+// protects: T-243 the band edge: inside it and any gain pass, beyond it stops
+test('the release verdict passes a drop inside the band, any gain, and a ratio exactly at one minus the band', () => {
+  assert.equal(releaseVerdict([release('a/b/golem', 95), release('a/c/golem', 50), release('a/d/golem', 300)], 0.5).verdict, 'pass');
+  assert.equal(releaseVerdict([release('a/b/golem', 49.9)], 0.5).verdict, 'stop');
+});
+
+// protects: T-243 the release check's per-adapter means
+test('the release verdict gives the geometric mean of each adapter over the session and in each half', () => {
+  const { means } = releaseVerdict([release('p/parse/golem', 50, 100), release('p/encode/golem', 200, 100), release('p/parse/golem-validated', 100)], 0.9);
+  const fixed = (value: number): string => value.toFixed(3);
+  assert.deepEqual(means.map(m => [m.adapter, fixed(m.ratio), m.halfRatios.map(fixed)]), [['golem', '1.061', ['1.000', '1.000']], ['golem-validated', '1.000', ['1.000', '1.000']]]);
+});
+
+// protects: T-243 the release check never passes on no data or a bad band
+test('the release verdict refuses to pass a check that compared nothing or has no usable band', () => {
+  assert.throws(() => releaseVerdict([], 0.1), /no case was timed on both sides/);
+  assert.throws(() => releaseVerdict([release('a/b/golem', 100)], Number.NaN), /noise band is NaN/);
+  assert.throws(() => releaseVerdict([{ key: 'a/b/golem', ...pair(0, 100), halves: [pair(0, 100)] }], 0.1), /invalid timing for a\/b\/golem/);
+});
+
+// protects: T-243 the release band comes from the control timed on both sides
+test('the release band is the largest distance from 1 of the control ratios, either way, with its 90th percentile', () => {
+  const { band, p90 } = releaseBand([1.02, 0.97, 1, 1, 1, 1, 1, 1, 1, 1]);
+  assert.deepEqual([band.toFixed(3), p90.toFixed(3)], ['0.030', '0.020']);
+  assert.equal(releaseBand([1.25, 1]).band.toFixed(3), '0.250');
+  assert.throws(() => releaseBand([]), /no control ratio/);
+});

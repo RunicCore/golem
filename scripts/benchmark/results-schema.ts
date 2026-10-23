@@ -1,3 +1,9 @@
+/**
+ * The committed file of the full run, every library included. It lives beside the benchmark scripts and not under docs/,
+ * so nothing serves it: the site gets only the golem projection that `site-projection.ts` builds from it.
+ */
+export const FULL_RESULTS_FILE = 'scripts/benchmark/results.json';
+
 export interface OpsPerSec { readonly median: number; readonly min: number; readonly max: number }
 
 export interface ResultCase {
@@ -10,7 +16,8 @@ export interface ResultCase {
 }
 
 export interface BenchmarkResults {
-  readonly schema: 2;
+  /** 3 requires `cost`, `noise` and `invalid`. A file of schema 2 (measured before them) still passes `isBenchmarkResults`. */
+  readonly schema: 2 | 3;
   readonly measuredAt: string;
   readonly git: { readonly sha: string; readonly dirty: boolean };
   readonly environment: { readonly node: string; readonly os: string; readonly arch: string; readonly cpu: string; readonly cpus: number };
@@ -22,6 +29,18 @@ export interface BenchmarkResults {
   readonly operations: readonly { readonly id: 'parse' | 'stringify' | 'validate'; readonly label: string; readonly description: string }[];
   readonly adapters: readonly { readonly id: string; readonly group: string; readonly label: string; readonly library: string; readonly checked: boolean; readonly sourceUrl: string }[];
   readonly cases: readonly ResultCase[];
+  /**
+   * The timings that only the golem cost table needs, in the same shape as `cases` (operations `decode` and `encode`
+   * included). The cost table is derived from `cases` and `cost.cases` together (`tables.ts`). Required from schema 3.
+   */
+  readonly cost?: { readonly cases: readonly ResultCase[] };
+  /**
+   * The timings of invalid input (parse, decode and validate of IModel with validation on), each taken in a process of its own.
+   * The cost table divides them by the valid timings. Required from schema 3.
+   */
+  readonly invalid?: { readonly cases: readonly ResultCase[] };
+  /** The noise of the run: the host load average (1, 5 and 15 minutes) at the start and the end, and the control's spread (`controlSpread` in results.ts). Required from schema 3. */
+  readonly noise?: { readonly loadAverage: { readonly start: readonly number[]; readonly end: readonly number[] }; readonly controlSpread: number };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -35,6 +54,22 @@ function isOps(value: unknown): value is OpsPerSec {
 const isString = (value: unknown): value is string => typeof value === 'string';
 const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value) && value >= 0;
 
+function isResultCase(c: unknown): boolean {
+  return isObject(c)
+    && typeof c.payload === 'string' && typeof c.operation === 'string' && typeof c.adapter === 'string'
+    && (c.support === 'full' || c.support === 'none')
+    && (c.support === 'full' || typeof c.note === 'string')
+    && (c.support === 'none' ? c.opsPerSec === undefined : isOps(c.opsPerSec));
+}
+
+function isLoad(value: unknown): boolean {
+  return Array.isArray(value) && value.length === 3 && value.every(isCount);
+}
+
+function isNoise(value: unknown): boolean {
+  return isObject(value) && isCount(value.controlSpread) && isObject(value.loadAverage) && isLoad(value.loadAverage.start) && isLoad(value.loadAverage.end);
+}
+
 function hasMetadata(value: Record<string, unknown>): boolean {
   const { git, environment: env, packages, settings } = value;
   return isString(value.measuredAt)
@@ -44,16 +79,18 @@ function hasMetadata(value: Record<string, unknown>): boolean {
     && isObject(settings) && [settings.warmupMs, settings.batchMs, settings.batches, settings.rounds ?? 1].every(isCount);
 }
 
-/** Structural check used by the docs page and bench:compare before trusting a file. */
+/** Structural check used before trusting a results file. */
 export function isBenchmarkResults(value: unknown): value is BenchmarkResults {
-  if (!isObject(value) || value.schema !== 2 || !hasMetadata(value)) return false;
+  if (!isObject(value) || (value.schema !== 2 && value.schema !== 3) || !hasMetadata(value)) return false;
+  if (value.schema === 3 && (value.cost === undefined || value.noise === undefined || value.invalid === undefined)) return false;
   if (!Array.isArray(value.groups) || !Array.isArray(value.payloads) || !Array.isArray(value.operations) || !Array.isArray(value.adapters) || !Array.isArray(value.cases)) return false;
   if (!value.groups.every(g => isObject(g) && isString(g.id) && isString(g.label) && isString(g.description))) return false;
   const groupIds = new Set(value.groups.map(g => (g as { id: string }).id));
-  if (!value.adapters.every(a => isObject(a) && isString(a.group) && groupIds.has(a.group))) return false;
-  return value.cases.every(c => isObject(c)
-    && typeof c.payload === 'string' && typeof c.operation === 'string' && typeof c.adapter === 'string'
-    && (c.support === 'full' || c.support === 'none')
-    && (c.support === 'full' || typeof c.note === 'string')
-    && (c.support === 'none' ? c.opsPerSec === undefined : isOps(c.opsPerSec)));
+  if (!value.payloads.every(p => isObject(p) && [p.id, p.label, p.description, p.sourceUrl].every(isString) && isCount(p.bytes))) return false;
+  if (!value.adapters.every(a => isObject(a) && [a.id, a.label, a.library, a.sourceUrl].every(isString) && typeof a.checked === 'boolean' && isString(a.group) && groupIds.has(a.group))) return false;
+  if (value.noise !== undefined && !isNoise(value.noise)) return false;
+  for (const section of [value.cost, value.invalid]) {
+    if (section !== undefined && !(isObject(section) && Array.isArray(section.cases) && section.cases.every(isResultCase))) return false;
+  }
+  return value.cases.every(isResultCase);
 }

@@ -33,7 +33,6 @@ type TransformModel =
   | ConstrainedObjectHierarchical
   | Collection;
 
-// #region calls
 function transform(input: FixtureInput, value: unknown): TransformModel {
   switch (input.name) {
     case 'ObjectSimple': return plainToInstance(ObjectSimple, value);
@@ -46,7 +45,6 @@ function transform(input: FixtureInput, value: unknown): TransformModel {
 function toPlain(model: TransformModel): unknown {
   return instanceToPlain(model);
 }
-// #endregion calls
 
 function assertNestedInstances(input: FixtureInput, value: TransformModel): void {
   switch (input.name) {

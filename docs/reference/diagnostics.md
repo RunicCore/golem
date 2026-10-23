@@ -8,11 +8,11 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1001
 
-**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or point `context.sources` at the files that declare it.
+**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or list the files that declare it in `sources` of the controller job.
 
 ### NEST1002
 
-**No controller sources.** No `*.controller.ts` file exists under `src`, and `context.sources` was not provided. **Fix:** Add a `*.controller.ts` file, or pass `context.sources` explicitly.
+**No controller sources.** No file that ends in one of the controller `suffixes` (default `.controller.ts`) exists under `src` of the job `root`, and the controller job has no `sources`. **Fix:** Add a controller file, or list the controller files in `sources` of the controller job.
 
 ### NEST1101
 
@@ -48,7 +48,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1202
 
-**Version without URI routing.** A method or class declares `@Version()`, but the generator's `uriVersioning` option isn't URI versioning, so the version has no distinct OpenAPI path. **Fix:** Set `uriVersioning: { type: 'URI' }` in the generation context, or remove `@Version()`.
+**Version without URI routing.** A method or class declares `@Version()`, but `uriVersioning` of the controller job isn't URI versioning, so the version has no distinct OpenAPI path. **Fix:** Set `uriVersioning: { type: URI }` in the controller job, or remove `@Version()`.
 
 ### NEST1203
 
@@ -120,27 +120,27 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1401
 
-**Invalid info.** `context.info`, or its `title`/`version` field, is missing, not an object, or not a non-empty string. **Fix:** Pass `info: { title, version }` with non-empty strings.
+**Invalid info.** `info` of the controller job, or its `title` or `version` field, is missing, not an object, or not a non-empty string. **Fix:** Set `info` with a `title` and a `version` that are non-empty strings.
 
 ### NEST1402
 
-**Unsupported OpenAPI version.** `context.openapiVersion` names something other than `'3.2.0'` or `'3.1.2'`. **Fix:** Set `openapiVersion` to `'3.2.0'` or `'3.1.2'`, or omit it to use the default.
+**Unsupported OpenAPI version.** `openapiVersion` of the controller job names something other than `'3.2.0'` or `'3.1.2'`. **Fix:** Set `openapiVersion` to `'3.2.0'` or `'3.1.2'`, or omit it to use the default.
 
 ### NEST1403
 
-**Invalid server.** A `context.servers` entry doesn't match the OpenAPI Server Object shape — a non-object entry, an unsupported property, a missing or empty `url`, or a `variables` entry whose `default` isn't a string included in its `enum`. **Fix:** Shape each server as `{ url, description?, variables? }`, and make sure a variable's `default` is one of its `enum` values.
+**Invalid server.** A `servers` entry of the controller job doesn't match the OpenAPI Server Object shape — a non-object entry, an unsupported property, a missing or empty `url`, or a `variables` entry whose `default` isn't a string included in its `enum`. **Fix:** Shape each server as `{ url, description?, variables? }`, and make sure a variable's `default` is one of its `enum` values.
 
 ### NEST1404
 
-**Invalid security scheme.** A security scheme in `context.securitySchemes` doesn't match its type's OpenAPI shape — an unsupported `type`, an unsupported property for that type, or an OAuth2 flow missing a required URL or `scopes`. **Fix:** Match the OpenAPI Security Scheme Object for the chosen `type` (`apiKey`, `http`, `mutualTLS`, `oauth2`, or `openIdConnect`).
+**Invalid security scheme.** A security scheme in `securitySchemes` of the controller job doesn't match its type's OpenAPI shape — an unsupported `type`, an unsupported property for that type, or an OAuth2 flow missing a required URL or `scopes`. **Fix:** Match the OpenAPI Security Scheme Object for the chosen `type` (`apiKey`, `http`, `mutualTLS`, `oauth2`, or `openIdConnect`).
 
 ### NEST1405
 
-**Invalid security requirement.** A route's security requirement names a scheme that isn't in `context.securitySchemes`, its scopes aren't an array of strings, or `@ApiSecurity()` doesn't resolve to a scheme name or a record of scheme scopes. **Fix:** Add the scheme to `context.securitySchemes`, or fix the `@ApiSecurity()` or security requirement shape.
+**Invalid security requirement.** A route's security requirement names a scheme that isn't in `securitySchemes` of the controller job, its scopes aren't an array of strings, or `@ApiSecurity()` doesn't resolve to a scheme name or a record of scheme scopes. **Fix:** Add the scheme to `securitySchemes`, or fix the `@ApiSecurity()` or security requirement shape.
 
 ### NEST1501
 
-**No schema resolver.** The document builder needs a canonical schema for a type, but no `schemaResolver` was supplied in the build context. **Fix:** Pass a `schemaResolver`, or generate through `@exprtlabs/golem-ts-openapi/generator`, which always supplies one.
+**No schema resolver.** The document builder needs a canonical schema for a type, but no `schemaResolver` was supplied in the build context. A `golem.yaml` job never causes this error, because the generator always supplies one. Only a tool that calls the builder without a `schemaResolver` sees it. **Fix:** Pass a `schemaResolver`, or generate through `@exprtlabs/golem-ts-openapi/generator`.
 
 ### NEST1502
 
@@ -157,6 +157,16 @@ An error prints its code, location when known, and message, then stops generatio
 ### NEST1505
 
 **Unresolved schema reference.** The generated OpenAPI document has a `$ref` to a component schema that isn't present among the document's schemas. **Fix:** Make sure the referenced class, or `getSchemaPath()` name, is used by (or explicitly referenced from) a controller route.
+
+## Route evaluation (RUNT)
+
+### RUNT2101
+
+**Unsupported route expression.** A route path or version in a controller decorator is neither a string literal nor a simple route helper that golem can fold at generation time. **Fix:** Write the path as a string literal, an array of string literals, or a helper that returns one value, as in [route helpers](/reference/nestjs#route-helpers).
+
+### RUNT2106
+
+**Route result too large.** A route path or version folds to a value larger than 1 MiB when written as JSON. **Fix:** Use a shorter path or version value.
 
 ## Model generator (RUNM)
 
@@ -326,7 +336,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1074
 
-**Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `models.suffixes`. Golem reads a model from a model file only. A shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts` ([shared folder](/reference/config#a-folder-shared-by-several-apps)). The message names the alias as `file#export`. **Fix:** Move the alias into a file whose name ends in a model suffix.
+**Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `models.suffixes`. Golem reads a model from a model file only. A shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts` ([shared folder](/guide/shared-models)). The message names the alias as `file#export`. **Fix:** Move the alias into a file whose name ends in a model suffix.
 
 ### RUNM1075
 
@@ -354,7 +364,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1081
 
-**Body or query parameter that is not a model.** A `@Body()` or `@Query()` parameter, whole or one field such as `@Body('name')` or `@Query('page')`, has a type that is no `IModel` or `IObject` and no class that extends a generated model class: a plain interface, a plain class, an inline object type, a primitive, a union, or an array of arrays. [`NestModelInterceptor`](/guide/nestjs-in-depth#nestmodelinterceptor) throws on such a parameter and Nest answers HTTP 500. By default this is an error, and `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader stop before a request arrives. With `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys) it is a warning: generation continues. `golem build` and `golem check` print the warning, and the message ends with `Generation continues, because golem.yaml sets nonModelInputs: warn.` The plugins and the loader continue and print nothing. The message shows the type and the decorator, such as `NoteInput is not a golem model, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type`, and the position of the type. **Fix:** Declare the input as an `IModel` or `IObject`, or bind one field whose type is a model, such as `@Body('address') address: Address`. An app that handles these parameters with its own interceptor sets `nonModelInputs: warn`.
+**Body or query parameter that is not a model.** A `@Body()` or `@Query()` parameter, whole or one field such as `@Body('name')` or `@Query('page')`, has a type that is no `IModel` or `IObject` and no class that extends a generated model class: a plain interface, a plain class, an inline object type, a primitive, a union, or an array of arrays. [`NestModelInterceptor`](/guide/nestjs-requests#what-happens-to-a-request) throws on such a parameter and Nest answers HTTP 500. By default this is an error, and `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader stop before a request arrives. With `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys) it is a warning: generation continues. `golem build` and `golem check` print the warning, and the message ends with `Generation continues, because golem.yaml sets nonModelInputs: warn.` The plugins and the loader continue and print nothing. The message shows the type and the decorator, such as `NoteInput is not a golem model, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type`, and the position of the type. **Fix:** Declare the input as an `IModel` or `IObject`, or bind one field whose type is a model, such as `@Body('address') address: Address`. An app that handles these parameters with its own interceptor sets `nonModelInputs: warn`.
 
 ### RUNM1082
 
@@ -374,7 +384,7 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 
 ### VALIDATE_UNKNOWN_FORMAT
 
-**Format golem does not check.** A `format` keyword names a format that golem does not implement. golem checks `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `byte`, `json-pointer`, `relative-json-pointer`, `int32`, `int64`, `float` and `double`; the OpenAPI formats `password` and `binary` are known and check nothing. By default this is an error and generation stops. With `unknownFormats: warn` in [golem.yaml](/reference/config#root-keys) it is a warning: generation continues and values are not checked against that format. The message names the place that declares the format, such as `schemas/money.json#/properties/amount/format`, and the generator reports it once however many operations use the schema. **Fix:** Use an implemented format, or remove the `format` keyword and state the rule with `pattern`. To keep the format and skip its check, set `unknownFormats: warn`.
+**Format golem does not check.** A `format` keyword names a format that golem does not implement. The formats that golem checks are listed in [validation profiles](/reference/config#validation-profiles). By default this is an error and generation stops. With `unknownFormats: warn` in [golem.yaml](/reference/config#root-keys) it is a warning: generation continues and values are not checked against that format. The message names the place that declares the format, such as `schemas/money.json#/properties/amount/format`, and the generator reports it once however many operations use the schema. **Fix:** Use an implemented format, or remove the `format` keyword and state the rule with `pattern`. To keep the format and skip its check, set `unknownFormats: warn`.
 
 ### VALIDATE_UNKNOWN_VALIDATION
 

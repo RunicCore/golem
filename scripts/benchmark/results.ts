@@ -2,11 +2,12 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { arch, cpus, platform } from 'node:os';
 import path from 'node:path';
-import { BENCH_ADAPTERS, BENCH_OPERATIONS, CASES, GROUPS, PAYLOADS, REPOSITORY_BLOB_URL, type AdapterId, type OperationId, type PayloadId } from './cases.js';
+import { ALL_PAYLOADS, BENCH_ADAPTERS, BENCH_OPERATIONS, COMPARE_CASES, CONTROL_ID, COST_CASES, GROUPS, INVALID_CASES, PAYLOADS, REPOSITORY_BLOB_URL, type AdapterId, type CaseSpec, type OperationId, type PayloadId } from './cases.js';
 import type { BenchmarkResults, OpsPerSec, ResultCase } from './results-schema.js';
 
 export interface BatchSample { readonly iterations: number; readonly elapsedMs: number }
-export interface MeasuredCase { readonly payload: PayloadId; readonly operation: OperationId; readonly adapter: AdapterId; readonly payloadBytes: number; readonly samples: readonly BatchSample[] }
+/** `invalid` marks a timing of invalid input, taken in a process of its own. */
+export interface MeasuredCase { readonly payload: PayloadId; readonly operation: OperationId; readonly adapter: AdapterId; readonly payloadBytes: number; readonly samples: readonly BatchSample[]; readonly invalid?: true }
 /** `batches` is the total per case, split evenly across `rounds`; each round runs every adapter once, in alternating order. */
 export interface Settings { readonly warmupMs: number; readonly batchMs: number; readonly batches: number; readonly rounds: number }
 export interface BuildInput {
@@ -18,6 +19,10 @@ export interface BuildInput {
   readonly measuredAt: string;
   /** The adapters that ran; the default is every adapter. Cases, payloads and adapters of the results cover only these. */
   readonly adapters?: readonly AdapterId[];
+  /** The payloads that ran; the default is every payload. Cases and payloads of the results cover only these. */
+  readonly payloads?: readonly PayloadId[];
+  /** The host load average at the start and the end of the run. With it, and with control timings in `measured`, the results carry the noise band. */
+  readonly loadAverage?: { readonly start: readonly number[]; readonly end: readonly number[] };
 }
 
 export const PACKAGE_NAMES = ['@exprtlabs/golem', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', 'typescript', 'typia', 'class-transformer', 'class-validator', 'zod', 'ajv'] as const;
@@ -38,34 +43,59 @@ export function summarize(samples: readonly BatchSample[]): OpsPerSec {
   return { median, min: values[0], max: values[values.length - 1] };
 }
 
+/**
+ * The spread of one case: the range of its batch speeds (max - min) over their median.
+ * The control's spread is the median of this over its cases, so one odd case does not set the noise band.
+ */
+export function controlSpread(control: readonly Pick<MeasuredCase, 'samples'>[]): number {
+  if (control.length === 0) throw new Error('Cannot take the control spread: no control case');
+  const spreads = control.map(c => { const { median, min, max } = summarize(c.samples); return (max - min) / median; }).sort((a, b) => a - b);
+  const middle = spreads.length >> 1;
+  return spreads.length % 2 ? spreads[middle] : (spreads[middle - 1] + spreads[middle]) / 2;
+}
+
 export function buildResults(input: BuildInput): BenchmarkResults {
-  const byKey = new Map(input.measured.map(m => [`${m.payload}/${m.operation}/${m.adapter}`, m]));
+  const byKey = new Map(input.measured.map(m => [`${m.payload}/${m.operation}/${m.adapter}${m.invalid ? '/invalid' : ''}`, m]));
   const ran = new Set<AdapterId>(input.adapters ?? BENCH_ADAPTERS.map(a => a.id));
-  const partial = ran.size < BENCH_ADAPTERS.length;
-  const cases: ResultCase[] = CASES.filter(c => ran.has(c.adapter)).map(c => {
+  const ranPayloads = new Set<PayloadId>(input.payloads ?? ALL_PAYLOADS.map(p => p.id));
+  const partial = ran.size < BENCH_ADAPTERS.length || ranPayloads.size < ALL_PAYLOADS.length;
+  const resultCase = (c: CaseSpec, invalid = false): ResultCase => {
     const base = { payload: c.payload, operation: c.operation, adapter: c.adapter, support: c.support, ...(c.note ? { note: c.note } : {}) };
     if (c.support === 'none') return base;
-    const measured = byKey.get(`${c.payload}/${c.operation}/${c.adapter}`);
-    if (!measured) throw new Error(`Benchmark is missing measurement ${c.payload}/${c.operation}/${c.adapter}`);
+    const key = `${c.payload}/${c.operation}/${c.adapter}${invalid ? '/invalid' : ''}`;
+    const measured = byKey.get(key);
+    if (!measured) throw new Error(`Benchmark is missing measurement ${key}`);
     return { ...base, opsPerSec: summarize(measured.samples) };
-  });
+  };
+  const timedHere = (c: CaseSpec): boolean => ran.has(c.adapter) && ranPayloads.has(c.payload);
+  const cases = COMPARE_CASES.filter(timedHere).map(c => resultCase(c));
+  const cost = COST_CASES.filter(timedHere).map(c => resultCase(c));
+  const invalid = INVALID_CASES.filter(timedHere).map(c => resultCase(c, true));
+  const control = input.measured.filter(m => m.adapter === CONTROL_ID);
+  // Schema 3: the noise band is part of every run, so a run without the host load or the control timing is refused.
+  if (!input.loadAverage) throw new Error('Benchmark is missing the host load average');
+  if (control.length === 0) throw new Error('Benchmark is missing the control timing');
+  const noise = { loadAverage: input.loadAverage, controlSpread: controlSpread(control) };
   const bytes = (id: PayloadId): number => {
     const found = input.measured.find(m => m.payload === id);
     if (!found) throw new Error(`Benchmark is missing measurement for payload ${id}`);
     return found.payloadBytes;
   };
   return {
-    schema: 2,
+    schema: 3,
     measuredAt: input.measuredAt,
     git: input.git,
     environment: input.environment,
     packages: input.packages,
     settings: input.settings,
     groups: GROUPS.map(g => ({ id: g.id, label: g.label, description: g.description })),
-    payloads: PAYLOADS.filter(p => !partial || input.measured.some(m => m.payload === p.id)).map(p => ({ id: p.id, label: p.label, bytes: bytes(p.id), description: p.description, sourceUrl: `${REPOSITORY_BLOB_URL}/${p.sourceFile}` })),
+    payloads: PAYLOADS.filter(p => ranPayloads.has(p.id) && (!partial || input.measured.some(m => m.payload === p.id))).map(p => ({ id: p.id, label: p.label, bytes: bytes(p.id), description: p.description, sourceUrl: `${REPOSITORY_BLOB_URL}/${p.sourceFile}` })),
     operations: BENCH_OPERATIONS.map(o => ({ id: o.id, label: o.label, description: o.description })),
-    adapters: BENCH_ADAPTERS.filter(a => ran.has(a.id)).map(a => ({ id: a.id, group: a.group, label: a.label, library: a.library, checked: a.checked, sourceUrl: `${REPOSITORY_BLOB_URL}/${a.sourceFile}` })),
+    adapters: BENCH_ADAPTERS.flatMap(a => a.group !== null && ran.has(a.id) ? [{ id: a.id, group: a.group, label: a.label, library: a.library, checked: a.checked, sourceUrl: `${REPOSITORY_BLOB_URL}/${a.sourceFile}` }] : []),
     cases,
+    cost: { cases: cost },
+    invalid: { cases: invalid },
+    noise,
   };
 }
 

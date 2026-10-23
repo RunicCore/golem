@@ -65,7 +65,6 @@ export interface SupportProjection {
   readonly profiles: readonly SupportProjectionProfile[];
   readonly statuses: readonly SupportProjectionStatus[];
   readonly capabilities: readonly SupportProjectionRecord[];
-  readonly representationBoundaries: readonly string[];
 }
 
 function profileLabel(profile: GenerationProfileId): string {
@@ -129,6 +128,5 @@ export function buildSupportProjection(source: ComplianceMetadata = complianceMe
         limitations: [...record.limitations],
       };
     }),
-    representationBoundaries: [...metadata.representationBoundaries],
   };
 }

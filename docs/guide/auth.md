@@ -1,10 +1,8 @@
 # Authentication
 
-Pass credentials once and let each operation apply what its security requirement asks for.
+Pass credentials once, and each operation applies what its security requirement asks for.
 
-This page uses a `ProviderClient` for the example's payment provider, whose document declares a bearer security scheme.
-
-Add the security scheme to `provider.yaml`:
+This page uses the `ProviderClient` of the example's payment provider. Its document declares a bearer security scheme. Add the scheme to `provider.yaml`:
 
 ```yaml
 components:
@@ -16,54 +14,45 @@ security:
   - bearerAuth: []
 ```
 
-After saving the security scheme, run:
+Run `npx golem generate`. The client then has an `auth` option, keyed by security-scheme name. A client whose operations reference no security scheme has no `auth` option.
 
-```sh
-npx golem generate
-```
+## Pass a token
 
 `provider/client.ts`:
 
 <<< ../../examples/payments/server/provider/client.ts#send-payment
 
-- A callback is evaluated for each `.execute()` call, for example `auth: { oauth: ({ scopes }) => tokens.get(scopes) }`.
-- Your application obtains and stores the token. Return `undefined` when no credential is available; the client then tries the next security requirement.
-
-Only credentials declared directly on the `auth` object are used; inherited properties are ignored. A client whose document references no security scheme has no generated `auth` option.
+- Your application gets and stores the token.
+- To give no credential for a scheme, leave that key out of `auth`. The client then tries the next security requirement.
 
 ## Read the current token for each request
 
-Pass a callback when the token can change while the client is alive.
+Pass a function when the token can change while the client is alive. The client calls it on each `.execute()`.
+
 `provider/client.ts` again:
 
 <<< ../../examples/payments/server/provider/client.ts#current-token
 
-An async callback works too. Token refresh and sign-in remain application
-responsibilities.
+The function can be async. Your application refreshes tokens and signs users in.
 
 ## Other schemes
 
 | OpenAPI scheme | Value in `auth` | Request credential |
 | --- | --- | --- |
-| API key | String or callback returning a string | Named header, query parameter or cookie |
-| HTTP bearer | String or callback returning a string | Bearer authorization header |
-| HTTP Basic | `{ username, password }` or callback returning it | Basic authorization header |
-| OAuth2 / OpenID Connect | Access token or callback returning it | Bearer authorization header |
+| API key | String, or function that returns a string | Named header, query parameter or cookie |
+| HTTP bearer | String, or function that returns a string | Bearer authorization header |
+| HTTP Basic | `{ username, password }`, or function that returns it | Basic authorization header |
+| OAuth2 and OpenID Connect | Access token, or function that returns it | Bearer authorization header |
 
-- OAuth callbacks receive the requested scopes and declared flow information.
-- OpenID Connect callbacks receive the discovery URL; the client does not perform discovery.
+- An OAuth function receives the requested scopes and the declared flows.
+- An OpenID Connect function receives the `openIdConnectUrl` of the scheme.
 - Schemes in one security requirement apply together. Separate requirements are alternatives.
 - An empty requirement allows anonymous access. Operation-level security overrides document-level security.
 
 ## Missing credentials
 
-If no security requirement can be satisfied, `.execute()` rejects before
-calling `fetch`. It rejects with a plain `Error` (not `LibError`) whose
-message starts `No configured credentials satisfy`.
+If no security requirement has all its credentials, `.execute()` rejects before it calls `fetch`. The rejection is a plain `Error`, not a `LibError`. Its message starts with `No configured credentials satisfy`.
 
 ## Mutual TLS
 
-For a declared `mutualTLS` scheme, pass `mutualTls: { fetchImpl }`. The
-transport must already be configured with the client certificate. Mutual TLS
-does not use a token. `mutualTls.fetchImpl` becomes the transport for every
-request from this client.
+For a declared `mutualTLS` scheme, pass `mutualTls: { fetchImpl }`. Configure that transport with the client certificate first. Mutual TLS uses no token. The client sends every request through `mutualTls.fetchImpl`.

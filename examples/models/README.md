@@ -18,6 +18,8 @@ The example depends on `1.0.0` of `@exprtlabs/golem*`. Run it from this reposito
 npm run generate   # write the generated model classes, for your editor
 npm test           # offline: one case per feature; golem build generates first
 npm start          # the walkthrough below
+npm run bundle     # the same walkthrough, bundled with the esbuild plugin
+npm run start:loader  # the same walkthrough, run through the Node loader
 ```
 
 `npm start` prints:
@@ -49,6 +51,7 @@ blank title: Enter a title.
 | `src/comment.model.ts`, `estimate.model.ts`, `estimate-json.ts` | Plain-object `IObject` comments and a decimal-string estimate |
 | `src/attachment.model.ts`, `attachment-json.ts`, `base64-codec.ts` | Attachments as base64 bytes |
 | `src/reminder.model.ts`, `read-reminder.ts`, `schedule.model.ts`, `read-schedule.ts` | `Date` and Temporal fields |
+| `bundle.mjs` | The esbuild plugin bundles `src/main.ts` for `npm run bundle` |
 | `src/app.test.ts` | One offline case per feature |
 
 ## Edit and regenerate

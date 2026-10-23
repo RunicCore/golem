@@ -1,15 +1,12 @@
 import assert from 'node:assert/strict';
 import { z } from 'zod';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
-import { checkoutInput, consumeFeatureValue } from './payloads.js';
+import { checkoutInput, checkoutPlainInput, checkoutPlainInvalidWires, consumeFeatureValue } from './payloads.js';
 import { consumeValue, createFixtureInputs, invalidIpLength, invalidVariants, missingNullable, nullableVariant, unknownPropertyVariants, type FixtureInput } from './shared.js';
 
-// #region simple
 const point = z.strictObject({ x: z.number(), y: z.number(), z: z.number() });
 const objectSimple = z.strictObject({ scale: point, position: point, rotate: point, pivot: point });
-// #endregion simple
 
-// #region nested
 const int1 = z.number().int().min(1);
 const timestamp = z.strictObject({ time: z.number(), zone: z.number() });
 const account = z.strictObject({ id: int1, code: z.string().min(3), created_at: timestamp });
@@ -27,17 +24,13 @@ const constrainedHierarchical = z.strictObject({
   href: z.string().min(8).regex(/^https:\/\//), referrer: z.string().min(8).regex(/^https:\/\//),
   ip: z.tuple([z.number(), z.number(), z.number(), z.number()]), created_at: timestamp,
 });
-// #endregion nested
 
-// #region array
 // timestamp is declared with the Nested object schema.
 const employee = z.strictObject({ id: z.number(), name: z.string(), age: z.number(), grade: z.number(), employed_at: timestamp });
 const department = z.strictObject({ id: z.number(), code: z.string(), sales: z.number(), created_at: timestamp, employees: z.array(employee) });
 const company = z.strictObject({ id: z.number(), serial: z.number(), name: z.string(), established_at: timestamp, departments: z.array(department) });
 const collection = z.strictObject({ data: z.array(company) });
-// #endregion array
 
-// #region checkout
 const isoDate = z.codec(z.iso.datetime(), z.date(), { decode: text => new Date(text), encode: date => date.toISOString() });
 const hexNumber = z.codec(z.string().regex(/^[0-9a-fA-F]+$/), z.number().positive(), {
   decode: text => Number.parseInt(text, 16), encode: value => value.toString(16),
@@ -56,7 +49,23 @@ const checkout = z.strictObject({
   bag: z.strictObject({ lane: z.string() }).optional(),
   memo: z.string().optional(),
 });
-// #endregion checkout
+
+// Dates stay date-time strings, and nothing converts.
+const dateTime = z.iso.datetime();
+const checkoutPlain = z.strictObject({
+  money: z.strictObject({ amount: z.number().min(0), currency: z.string().regex(/^[A-Z]{3}$/) }),
+  note: z.string().min(1),
+  code: z.string().regex(/^[0-9a-f]+$/),
+  when: dateTime,
+  items: z.array(z.strictObject({ sku: z.string().min(3) })),
+  primary: z.strictObject({ sku: z.string().min(3), quantity: z.number().int().min(0), price: z.number().min(0) }),
+  flags: z.record(z.string(), z.string()),
+  channel: z.discriminatedUnion('kind', [z.strictObject({ kind: z.literal('open') }), z.strictObject({ kind: z.literal('hold'), until: dateTime })]),
+  span: z.tuple([dateTime, dateTime]),
+  hold: dateTime.nullable(),
+  bag: z.strictObject({ lane: z.string() }).optional(),
+  memo: z.string().optional(),
+});
 
 type Schema = z.ZodType;
 
@@ -65,13 +74,11 @@ function fixture(name: string, payload: unknown, text: string, schema: Schema, c
   return {
     name,
     payload,
-    // #region calls
     operations: {
       'text-to-model': () => schema.parse(JSON.parse(text)),
       'model-to-text': () => JSON.stringify(z.encode(schema, model)),
       validate: () => z.safeEncode(schema, model).success,
     },
-    // #endregion calls
     consume,
     async verify() {
       const decoded = schema.parse(JSON.parse(text));
@@ -135,6 +142,10 @@ export async function createZodFixtures(adapter: Adapter): Promise<readonly Comp
     { ...structuredClone(base), extra: 1 },
   ];
   const checkoutModel = checkout.parse(JSON.parse(sdk.text)) as Record<string, unknown>;
+  const plain = checkoutPlainInput();
+  const plainInvalid = checkoutPlainInvalidWires();
+  fixtures.push(fixture(plain.name, plain.payload, plain.text, checkoutPlain, consumeFeatureValue, [...plainInvalid.broken, plainInvalid.unknownProperty],
+    { ...checkoutPlain.parse(JSON.parse(plain.text)), note: '' }, () => assert.deepEqual(checkoutPlain.parse(JSON.parse(plain.text)), plain.payload)));
   fixtures.push(fixture('sdk-extend', sdk.payload, sdk.text, checkout, consumeFeatureValue, invalid, { ...checkoutModel, note: '  ' }, () => checkCheckout(sdk.text)));
   return fixtures;
 }

@@ -1,7 +1,6 @@
 import { Type } from 'class-transformer';
 import 'reflect-metadata';
 
-// #region simple
 export class Point3D {
   x!: number;
   y!: number;
@@ -21,9 +20,7 @@ export class ObjectSimple {
   @Type(() => Point3D)
   pivot!: Point3D;
 }
-// #endregion simple
 
-// #region array
 export class Timestamp {
   time!: number;
   zone!: number;
@@ -67,9 +64,7 @@ export class Collection {
   @Type(() => Company)
   data!: Company[];
 }
-// #endregion array
 
-// #region nested
 // Timestamp is declared with the Large array classes.
 export class Account {
   id!: number;
@@ -171,4 +166,3 @@ export class ConstrainedObjectHierarchical extends ObjectHierarchical {
   @Type(() => Account)
   account = undefined as unknown as Account | null;
 }
-// #endregion nested
