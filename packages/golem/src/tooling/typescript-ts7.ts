@@ -700,20 +700,6 @@ function flattenDiagnosticMessageText(message: string | Diagnostic | undefined, 
   return message.text ?? flattenDiagnosticMessageText(message.messageText);
 }
 
-/** One-based line and column of a UTF-16 offset in `text`. */
-function lineAndColumn(text: string, position: number): { readonly line: number; readonly column: number } {
-  let line = 1;
-  let lineStart = 0;
-  const end = Math.min(Math.max(position, 0), text.length);
-  for (let index = 0; index < end; index++) {
-    if (text.charCodeAt(index) === 10) {
-      line++;
-      lineStart = index + 1;
-    }
-  }
-  return { line, column: end - lineStart + 1 };
-}
-
 const DIAGNOSTIC_CATEGORY_NAMES: Readonly<Record<number, string>> = {
   [DiagnosticCategory.Warning]: 'warning',
   [DiagnosticCategory.Error]: 'error',
@@ -724,43 +710,17 @@ const DIAGNOSTIC_CATEGORY_NAMES: Readonly<Record<number, string>> = {
 /** Format diagnostics as `path:line:col - error TS1234: message`, with chained messages indented below. */
 export function formatDiagnosticsWithColorAndContext(
   diagnostics: readonly Diagnostic[] | readonly SyncDiagnostic[],
-  host: { getCanonicalFileName(filename: string): string; getCurrentDirectory(): string; getNewLine(): string; readFile?(filename: string): string | undefined },
+  host: { getCanonicalFileName(filename: string): string; getCurrentDirectory(): string; getNewLine(): string },
 ): string {
-  const texts = new Map<string, string | undefined>();
-  const sourceText = (fileName: string, file: SourceFile | undefined): string | undefined => {
-    if (file?.text !== undefined) return file.text;
-    if (!texts.has(fileName)) {
-      // The host knows files that exist only in the program, such as a companion a run has not written.
-      let text: string | undefined = host.readFile?.(fileName);
-      if (text === undefined) {
-        try {
-          text = readFileSync(fileName, 'utf8');
-        } catch {
-          text = undefined;
-        }
-      }
-      texts.set(fileName, text);
-    }
-    return texts.get(fileName);
-  };
   const chain = (message: SyncDiagnostic, depth: number): string[] => (message.messageChain ?? [])
     .flatMap((next) => [`${'  '.repeat(depth)}${next.text}`, ...chain(next, depth + 1)]);
   return diagnostics.map((diagnostic) => {
     const record = diagnostic as Diagnostic & SyncDiagnostic & { file?: SourceFile };
     const text = record.text ?? flattenDiagnosticMessageText(record.messageText);
     const fileName = record.fileName ?? record.file?.fileName;
-    const pos = record.pos ?? record.start ?? 0;
-    let location = '';
-    if (fileName) {
-      const source = sourceText(fileName, record.file);
-      const shown = host.getCanonicalFileName(fileName);
-      if (source === undefined) {
-        location = `${shown} - `;
-      } else {
-        const { line, column } = lineAndColumn(source, pos);
-        location = `${shown}:${line}:${column} - `;
-      }
-    }
+    // The compiler gives each diagnostic its own zero-based line and character, counted with its line map.
+    const start = record.startPosition;
+    const location = fileName ? `${host.getCanonicalFileName(fileName)}${start ? `:${start.line + 1}:${start.character + 1}` : ''} - ` : '';
     const category = record.category === undefined ? 'error' : DIAGNOSTIC_CATEGORY_NAMES[record.category] ?? 'error';
     const code = record.code ? ` TS${record.code}` : '';
     return [`${location}${category}${code}: ${text}`, ...chain(record, 1)].join(host.getNewLine());

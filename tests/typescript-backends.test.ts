@@ -168,6 +168,29 @@ test('a source that exists only as an overlay is part of the program and its err
   assert.equal(reported.some(text => text.includes(onDisk)), false);
 });
 
+test('a diagnostic names the line and column of the compiler line map, also for a source that is not on disk', t => {
+  // protects: F-37 both TypeScript lanes print the same line for a lone CR or a U+2028 line break
+  const root = createFixtureProject(t, 'golem-diagnostic-line-');
+  fs.mkdirSync(path.join(root, 'src'));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'diagnostic-line', private: true, type: 'module' }));
+  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, skipLibCheck: true, noEmit: true, module: 'NodeNext', moduleResolution: 'NodeNext' },
+    include: ['src/**/*.ts'],
+  }));
+  // TypeScript ends a line at \n, \r\n, a lone \r, U+2028 and U+2029; the error sits on line 3 or 4, never on line 1.
+  const onDisk = path.join(root, 'src/breaks.ts');
+  const unwritten = path.join(root, 'src/unwritten.generated.ts');
+  fs.writeFileSync(onDisk, 'export const a = 1;\rexport const b = 2;\u2028export const c: string = 3;\n');
+  using session = new ts.ProgramSession({ cwd: root });
+  using program = session.openProgram({ root, sources: [onDisk, unwritten], overlays: new Map([[unwritten, 'export const a = 1;\u2029export const b = 2;\r\nexport const c = 3;\rexport const d: string = 4;\n']]) });
+  const host = { getCanonicalFileName: (name: string) => path.relative(root, name), getCurrentDirectory: () => root, getNewLine: () => '\n' };
+  const printed = ts.getPreEmitDiagnostics(program).map(diagnostic => ts.formatDiagnosticsWithColorAndContext([diagnostic], host));
+  assert.deepEqual(printed, [
+    "src/breaks.ts:3:14 - error TS2322: Type 'number' is not assignable to type 'string'.",
+    "src/unwritten.generated.ts:4:14 - error TS2322: Type 'number' is not assignable to type 'string'.",
+  ]);
+});
+
 test('an overlay-only source keeps the ambient declarations that the configuration lists in files', t => {
   const root = createFixtureProject(t, 'golem-overlay-ambient-');
   fs.mkdirSync(path.join(root, 'src'));

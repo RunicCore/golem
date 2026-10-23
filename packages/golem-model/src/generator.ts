@@ -613,7 +613,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   );
   // The write gate: an error in a model source or in what this job writes. Any other handwritten file is the compiler's to report.
   const diagnostics = ownDiagnostics(ts.getPreEmitDiagnostics(prospective), artifacts.map((artifact) => artifact.path).concat(sources.map(companionOf)), sources);
-  if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics, normalized.root, artifacts));
+  if (diagnostics.length > 0) throw new Error(formatDiagnostics(diagnostics, normalized.root));
 
   return {
     artifacts,

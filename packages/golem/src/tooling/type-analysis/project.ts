@@ -643,19 +643,12 @@ export function typeScriptErrorAt(program: ts.Program, node: ts.Node): string | 
   return found?.text === undefined ? undefined : `TS${found.code}: ${found.text}`;
 }
 
-/** `unwritten` are the texts of program files that are not on disk yet, such as the companions of a run, by path. */
-export function formatDiagnostics(
-  diagnostics: readonly ts.Diagnostic[],
-  root: string,
-  unwritten: readonly { readonly path: string; readonly content: string }[] = [],
-): string {
-  const texts = new Map(unwritten.map((file) => [canonicalFilename(file.path), file.content]));
+export function formatDiagnostics(diagnostics: readonly ts.Diagnostic[], root: string): string {
   return ts.formatDiagnosticsWithColorAndContext(diagnostics, {
     // Paths read from the working directory, as tsc prints them.
     getCanonicalFileName: (filename) => relative(process.cwd(), filename),
     getCurrentDirectory: () => root,
     getNewLine: () => '\n',
-    readFile: (filename) => texts.get(canonicalFilename(filename)),
   });
 }
 
