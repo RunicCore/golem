@@ -4,7 +4,7 @@ import { resolveConfig } from './config.js';
 import { GeneratorSessionResources, runPipeline } from './pipeline.js';
 import type { PipelineState } from './pipeline.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
-import { watchPipeline } from './watch.js';
+import { baselineBeforeRun, watchPipeline } from './watch.js';
 export { providersFor, runPipeline } from './pipeline.js';
 export { watchPipeline } from './watch.js';
 export type { PipelineOptions, PipelineState } from './pipeline.js';
@@ -118,14 +118,16 @@ export async function main(argv = process.argv.slice(2)) {
   // A watching command keeps one session from its first run on, so the compilers of the first run stay warm for the watch.
   const watchSession = options.watch ? new GeneratorSessionResources() : undefined;
   let state: PipelineState;
+  // What the first run reads first, so a source added during it starts the watch's first run.
+  const firstRun = watchSession === undefined ? undefined : baselineBeforeRun(options.config);
   try {
-    state = await runPipeline(options.config, { check: options.action === 'check', ...(watchSession === undefined ? {} : { session: watchSession }) });
+    state = await runPipeline(options.config, { check: options.action === 'check', ...(watchSession === undefined ? {} : { session: watchSession }), ...(firstRun === undefined ? {} : { onInput: firstRun.onInput }) });
   } catch (error) {
     watchSession?.[Symbol.dispose]();
     throw error;
   }
   process.stdout.write(`${options.action === 'check' ? 'Checked' : 'Generated'} configured outputs.\n`);
-  const stop = watchSession === undefined ? () => {} : watchPipeline(state, undefined, watchSession);
+  const stop = watchSession === undefined ? () => {} : watchPipeline(state, undefined, watchSession, firstRun?.baseline);
   if (options.action === 'exec') {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(options.command[0], options.command.slice(1), { stdio: 'inherit', shell: process.platform === 'win32' });

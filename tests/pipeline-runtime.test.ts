@@ -434,6 +434,40 @@ test('exec --watch does not start its child or watcher when initial generation f
   }
 });
 
+test('exec --watch generates a model file that was created during its first run', async (t: TestContext) => {
+  // protects: T-316 the watch started by exec compares with the disk as it was before the first run
+  const { root, config } = combinedFixture(t);
+  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
+  const created = path.join(root, 'src/pet.model.ts');
+  // In the exec process: the first run publishes the cart companion, after it read the sources; create a model file at that moment.
+  const hook = path.join(root, 'create-during-first-run.cjs');
+  fs.writeFileSync(hook, [
+    "const fs = require('node:fs');",
+    'let created = false;',
+    'const rename = fs.renameSync;',
+    'fs.renameSync = (from, to) => {',
+    "  if (!created && String(to).endsWith('cart.model.generated.ts')) {",
+    '    created = true;',
+    `    fs.writeFileSync(${JSON.stringify(created)}, "import type { IModel } from '@exprtlabs/golem/model';\\n\\nexport type TPet = IModel<{ id: string }>;\\n");`,
+    '  }',
+    '  return rename(from, to);',
+    '};',
+  ].join('\n'));
+  const parent = spawn(process.execPath, ['--require', hook, binary, 'exec', '--watch', '--config', config, '--', process.execPath, '-e', 'setInterval(() => {}, 1000)'], {
+    cwd: root,
+    env: { ...process.env, NODE_PATH: '' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let stderr = '';
+  parent.stderr?.on('data', (value: Buffer) => { stderr += value.toString(); });
+  try {
+    await until(() => fs.existsSync(path.join(root, 'src/pet.model.generated.ts')), () => `the model created during the first run is generated (stderr=${stderr})`);
+    assert.ok(fs.existsSync(created));
+  } finally {
+    await stopChild(parent);
+  }
+});
+
 test('exec --watch exits with its child and releases the watcher', async (t: TestContext) => {
   const { root, config } = combinedFixture(t);
   const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
