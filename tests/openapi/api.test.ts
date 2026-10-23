@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import { writeFileSync, existsSync, cpSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import YAML from 'yaml';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
 import { command, workspace } from '../support/process.js';
@@ -143,6 +144,17 @@ test('SDK generated with mobx and validation disabled loads and runs an operatio
   });
   const response = await client.getValue().execute({});
   assert.deepEqual(response.body, { ok: true });
+});
+
+test('an input document that is not YAML fails with its path relative to the working directory, the line and the column', async (t) => {
+  // protects: T-311 a YAML parse error names the file
+  const directory = createFixtureProject(t, 'golem-openapi-broken-');
+  const input = path.join(directory, 'broken.yaml');
+  writeFileSync(input, 'openapi: 3.1.0\ninfo:\n  title: a: b\npaths: {}\n');
+  await assert.rejects(
+    () => generate({ input, output: path.join(directory, 'out'), profile: { mobx: false, validation: false } }),
+    (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), input)}:3:10 `) && error.cause instanceof YAML.YAMLParseError,
+  );
 });
 
 test('profile is mandatory and source validation remains enabled for all profiles', async (t) => {

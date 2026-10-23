@@ -9,9 +9,9 @@ import type {
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, isInsideDirectory, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
-import { reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
+import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
 import {
   analyzeSourceGraph,
@@ -33,18 +33,20 @@ import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import {
   assertAbsolute,
   assertDistinctCompanions,
+  assertNoSyntaxErrors,
   byRealPath,
   canonicalFilename,
   companionFilename,
+  createModelStubProgram,
   createOverlayProgram,
-  createProgram,
   discoverModelSources,
   formatDiagnostics,
   generatedFilename,
   ignoredSharedFileWarnings,
   includedModelSources,
+  isOrphanCompanion,
+  programFilenames,
   isModelSource,
-  isOutside,
   isOwnModelFile,
   modelBoundary,
   nestedModelsJobs,
@@ -153,13 +155,6 @@ const SESSION_OWNER = '@exprtlabs/golem-model';
 function emptyResult(info: ProgramInfo, program: ts.Program, root: string): GolemModelResult {
   const watchInputs = projectWatchInputs(info, program, [], discoverModelManifests(root));
   return { artifacts: [], manifestPaths: [], watchInputs };
-}
-
-/** The files of the program that a model file can be: every file but the TypeScript libraries. Installed packages are included. */
-function programFilenames(program: ts.Program): string[] {
-  return program.getSourceFiles()
-    .filter((sourceFile) => !program.isSourceFileDefaultLibrary(sourceFile))
-    .map((sourceFile) => sourceFile.fileName);
 }
 
 function referencedManifestFiles(
@@ -358,10 +353,22 @@ function ownDiagnostics(diagnostics: readonly ts.Diagnostic[], outputs: readonly
   return diagnostics.filter((diagnostic) => diagnostic.fileName === undefined || own.has(canonicalFilename(diagnostic.fileName)));
 }
 
-/** A companion of a model-suffixed source that no longer exists; any other `*.generated.ts` is not golem's. */
-function isOrphanCompanion(companion: string, suffixes: readonly string[]): boolean {
-  const source = companion.replace(/\.generated(\.[cm]?ts)$/, '$1');
-  return source !== companion && suffixPattern(suffixes).test(basename(source)) && !existsSync(source);
+const CODE_UNION_DISCRIMINATOR_MISSING = 'RUNM1080';
+const CODE_UNION_CONVERSION_AMBIGUOUS = 'RUNM1082';
+
+/** A union that golem cannot convert without trying its variants stops generation with its code, the model file and the fix. */
+function withUnionDiscriminatorCode(source: string, emit: () => string | undefined): string | undefined {
+  try {
+    return emit();
+  } catch (thrown) {
+    if (thrown instanceof ObjectUnionDiscriminatorError) {
+      throw new Error(`${displayPath(source)} ${CODE_UNION_DISCRIMINATOR_MISSING}: ${thrown.message} Give each variant a required literal tag, such as \`kind: 'cat'\`, so that golem can pick the variant from the JSON.`, { cause: thrown });
+    }
+    if (thrown instanceof AmbiguousUnionConversionError) {
+      throw new Error(`${displayPath(source)} ${CODE_UNION_CONVERSION_AMBIGUOUS}: ${thrown.message}`, { cause: thrown });
+    }
+    throw thrown;
+  }
 }
 
 /** Names a field type's own schema, which is compiled apart from the model that holds the field. */
@@ -383,7 +390,7 @@ function withoutRepeatedFieldTypeWarnings(diagnostics: readonly GolemDiagnostic[
 /** A `sources` entry is a file of this job: one outside the models root, in node_modules or a declaration file stops generation. */
 function assertListedSourceIsOwn(boundary: ModelBoundary, source: string): void {
   const real = canonicalPath(source);
-  if (isOutside(boundary.root, real)) throw new Error(outsideModelsRootMessage(real, boundary.root));
+  if (!isInsideDirectory(boundary.root, real)) throw new Error(outsideModelsRootMessage(real, boundary.root));
   if (!isOwnModelFile(boundary, source)) {
     throw new Error(real.split(sep).includes('node_modules')
       ? `models.sources entry ${real} is in node_modules. Golem does not generate models in node_modules.`
@@ -415,13 +422,15 @@ export function generate(context: GolemModelContext): GolemModelResult {
     if (listed) assertListedSourceIsOwn(boundary, source);
   }
 
-  // Phase one intentionally tolerates diagnostics from stale companions.  It
-  // only supplies a checker for model-specification discovery.  The generated
-  // companions are then overlaid in phase two, whose unsuppressed diagnostics
-  // are the write gate and preserve genuine handwritten-source failures.
-  const programInfo = createProgram(
+  // Phase one reads the job's model files and reports what they declare. The program it opens reads each generated base class
+  // as a stub with the fields of its model, so a class that is not generated yet, or is stale, still has its fields. The
+  // handwritten sources can still fail on a companion export other than the base: phase two's unsuppressed diagnostics are
+  // the write gate and preserve genuine handwritten-source failures.
+  const programInfo = createModelStubProgram(
     discovered,
     normalized.root,
+    boundary,
+    discovered,
     normalized.onInput,
     retainedProgramSession(normalized.session, SESSION_OWNER, normalized.root),
   );
@@ -456,6 +465,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   // A model file that an SDK manifest lists stays an SDK file: the SDK's generated code serves it.
   const sdkFiles = sharedModelFiles.length === 0 ? new Set<string>() : sdkModelFiles(manifests());
   const sharedCandidates = sharedModelFiles.filter((source) => !sdkFiles.has(canonicalPath(source)));
+  assertNoSyntaxErrors(program, [...ownCandidates, ...sharedCandidates], normalized.root);
   const { checker, specifications } = collectSpecifications(program, [...ownCandidates, ...sharedCandidates], normalized.exact, (file) => companionFilename(boundary, file));
   // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
   // A file that `models.sources` names must have one.
@@ -558,7 +568,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   }
   for (const { graph, schemaGraph, siblingWireCodecIds, siblingRecursion, cyclicSiblings } of graphSchemaPairs) {
     const { source, output } = graph;
-    const content = emitSource(
+    const content = withUnionDiscriminatorCode(source, () => emitSource(
       source,
       output,
       checker,
@@ -573,7 +583,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
         ...(planSchemas ? { planSchemas } : {}),
         ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports } } : {}),
       },
-    );
+    ));
     if (content !== undefined) artifacts.push({ path: output, content });
   }
   // The keys name each source by its path from the tsconfig's directory, which is the root a rewrite resolves files from.

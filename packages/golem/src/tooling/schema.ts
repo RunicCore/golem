@@ -17,11 +17,12 @@ import {
   MODEL_INSTANCE_KEYWORD,
   VALIDATION_KEYWORD,
 } from '../schema-keywords.js';
-import { compareText } from './generator-api.js';
+import { canonicalSchemaKey } from './canonical-schema-key.js';
+import { compareText, isRecord } from './generator-api.js';
 
 export { assertSupportedModelFieldName } from '../model-field-names.js';
 export { escapePointerToken, unescapePointerToken } from '../json-pointer.js';
-export { compareText };
+export { canonicalSchemaKey };
 export type { ConstraintSchemaValue, ModelConstraint } from '../model.js';
 export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CODEC_IDS_KEY, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
 export { validationTagKey, validationTagSchemaDescriptor, type ValidationTagGroup } from './validation-tags.js';
@@ -152,25 +153,6 @@ export function constraintHasExecutableValidation(
   options: SchemaDescriptorOptions = {},
 ): boolean {
   return constraintSchemaValues(constraint).some(schema => hasExecutableValidation(schema, options));
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function canonicalValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (isRecord(value)) {
-    return Object.fromEntries(
-      Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]),
-    );
-  }
-  return value;
-}
-
-/** Stable key used when deduplicating equivalent generated tag schemas. */
-export function canonicalSchemaKey(value: unknown): string {
-  return JSON.stringify(canonicalValue(value));
 }
 
 function canonicalDescriptorValue(value: unknown): unknown {

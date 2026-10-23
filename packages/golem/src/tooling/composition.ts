@@ -123,7 +123,7 @@ function combineDescriptors(children: readonly ModelTypeDescriptor[], models: Mo
   const sequence = combineSequences(distinct, models);
   if (sequence) return sequence;
   if (distinct.every((child) => child.kind === 'object')) return composeObjectDescriptors(distinct, models) ?? NEVER;
-  const converting = distinct.filter(descriptorNeedsConversion);
+  const converting = distinct.filter((part) => descriptorNeedsConversion(part));
   const [decider] = converting;
   if (decider) {
     const conversion = conversionKey(decider);

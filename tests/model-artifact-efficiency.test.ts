@@ -17,6 +17,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { findCodecIdForConstructor, requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
+import { spyOnBuild } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 
 function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } = {}) {
@@ -74,12 +75,18 @@ test('equivalent MinLength tags of two companions compile to one validators modu
   await buildModelProject(fixtureValue.root);
   const artifacts = generatedModelFiles(fixtureValue.root);
   assert.equal(artifacts.filter((item) => item.path.endsWith('.validators.generated.ts')).length, 1, 'one validators module serves every companion');
-  const companions = artifacts.filter((item) => item.path.endsWith('.model.generated.ts')).map((item) => item.content);
-  assert.equal(companions.length, 2);
-  for (const companion of companions) assert.match(companion, /import \{ [^}]*validate_\w+_[0-9a-f]{8}[^}]*\} from "[^"]*models\.validators\.generated\.js";/, 'each companion imports its validators');
-  const { Item } = await import(`${pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href}`) as {
-    Item: new (values?: { value?: string; extra?: string }) => { value: string; extra: string };
-  };
+  assert.equal(artifacts.filter((item) => item.path.endsWith('.model.generated.ts')).length, 2);
+  const spy = await spyOnBuild(fixtureValue.root, {});
+  let Item: new (values?: { value?: string; extra?: string }) => { value: string; extra: string };
+  try {
+    ({ Item } = await import(pathToFileURL(path.join(fixtureValue.root, 'build/item.model.js')).href));
+    await import(pathToFileURL(path.join(fixtureValue.root, 'build/other.model.js')).href);
+  } finally { spy.stop(); }
+  assert.deepEqual(
+    spy.requests.filter((request) => request.specifier.endsWith('models.validators.generated.js')).map((request) => request.importer).sort(),
+    ['item.model.generated.js', 'other.model.generated.js'],
+    'each companion loads the one validators module',
+  );
   const { getValidator } = await import('@exprtlabs/golem/validation');
   const valid = new Item({ value: 'ab', extra: 'wxyz' });
   const invalid = new Item({ value: 'x', extra: 'wxyz' });
@@ -203,14 +210,23 @@ test('shared projection helpers retain distinct validators', async t => {
   assert.deepEqual(getValidator(invalid).issues.map((issue: { path: readonly (string | number)[] }) => issue.path), [['second', 'value']]);
 });
 
-test('validation-disabled serde artifacts omit executable predicate bindings', t => {
-  const value = fixture(t);
+test('validation-disabled serde artifacts omit executable predicate bindings', async t => {
+  // An import the companion does not use fails the strict unused compile.
+  const value = fixture(t, { noUnusedLocals: true });
   writeFileSync(path.join(value.sourceRoot, 'codecs.ts'), readFixture("models/model-artifact-efficiency/validation-disabled-serde-artifacts-omit-executable-predicate-bindings/codecs.ts"));
   writeFileSync(path.join(value.sourceRoot, 'item.model.ts'), readFixture("models/model-artifact-efficiency/validation-disabled-serde-artifacts-omit-executable-predicate-bindings/item.model.ts"));
-  const result = generate({ root: value.root, profile: { mobx: false, validation: false } });
-  const output = result.artifacts.filter(item => item.path.endsWith('.ts')).map(item => item.content).join('\n');
-  assert.doesNotMatch(output, /modelValidationBindings|import\s*\{\s*accepts\b|\/validation['"]/);
-  assert.match(output, /const __golemSerialize0 = \(value: unknown\): unknown => \(\(__golemSerialize0Source\)/);
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  await buildModelProject(value.root);
+  // The deployed codecs module has no predicate: a companion that still referenced it would not link.
+  writeFileSync(path.join(value.root, 'build/codecs.js'), 'export const encode = (value) => String(value);\nexport const decode = (value) => Number(value);\n');
+  const { Item } = await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);
+  const item = new Item({ value: -5 });
+  assert.deepEqual(encodeGeneratedModel(item), { value: '-5' });
+  assert.equal(decodeGeneratedModel(Item, { value: '7' }).value, 7);
+  const codec = requireObjectCodec<{ value: number }>(generatedCodecIdFromRoot(value.root, 'TItem'));
+  assert.equal(codec.stringify(item), '{"value":"-5"}');
+  assert.equal(codec.parse('{"value":"7"}').value, 7);
+  assert.throws(() => getValidator(item), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable);
 });
 
 test('array item models validate at their full path, recursive ones included', async (t) => {
@@ -282,40 +298,70 @@ test('an array item model from OpenAPI reports the issue source of the model tha
   );
 });
 
-test('converted model fields call their converter without a per-field closure', (t) => {
+test('converted model fields call their converter without a per-field closure', async (t) => {
   const project = fixture(t);
   writeModelSources(project.sourceRoot, {
     'wallet.model.ts': [
       "import type { IModel, IObject } from '@exprtlabs/golem/model';",
+      "import { TWalletBaseModel } from './wallet.model.generated.js';",
       'export type TMoney = IObject<{ amount: string; currency: string }>;',
       'export type TWallet = IModel<{ balance: TMoney; rebate: TMoney | null }>;',
+      'export class Wallet extends TWalletBaseModel {}',
     ].join('\n'),
   });
-  const result = generate({ root: project.root, profile: { mobx: false, validation: false } });
-  const generated = result.artifacts.find((item) => item.path.endsWith('wallet.model.generated.ts'));
-  assert.ok(generated);
-  const source = generated.content;
-  assert.match(source, /convertModelField\("deserialize", "balance", decodeTMoney, /);
-  assert.match(source, /convertModelField\("serialize", "balance", encodeTMoney, /);
-  // A composite conversion is a module-level function, so no field allocates a closure.
-  assert.match(source, /convertModelField\("deserialize", "rebate", __convert_TWallet_\d+_decode, /);
-  assert.match(source, /convertModelField\("serialize", "rebate", __convert_TWallet_\d+_encode, /);
-  assert.doesNotMatch(source, /convertModelField\([^\n]*\(\) =>/);
+  writeModelGolemYaml(project.root, { mobx: false, validation: false });
+  await buildModelProject(project.root);
+  const spy = await spyOnBuild(project.root, { '@exprtlabs/golem/conversion': ['convertModelField'] });
+  try {
+    const { Wallet } = await import(pathToFileURL(path.join(project.root, 'build/wallet.model.js')).href);
+    const wire = { balance: { amount: '1', currency: 'USD' }, rebate: { amount: '2', currency: 'EUR' } };
+    // One decode and one encode: the converter each field passes, by direction and field.
+    const round = () => {
+      spy.calls.length = 0;
+      encodeGeneratedModel(decodeGeneratedModel(Wallet, wire));
+      return new Map(spy.calls.map((call) => [`${String(call.args[0])} ${String(call.args[1])}`, call.args[2]]));
+    };
+    const first = round();
+    const second = round();
+    assert.deepEqual([...first.keys()].sort(), ['deserialize balance', 'deserialize rebate', 'serialize balance', 'serialize rebate']);
+    for (const [key, convert] of first) {
+      assert.equal(typeof convert, 'function', key);
+      assert.strictEqual(second.get(key), convert, `${key} passes one function on every call, not a closure made per call`);
+    }
+  } finally { spy.stop(); }
 });
 
-test('converted model items inside an array call their converter without a per-item closure', (t) => {
+test('converted model items inside an array call their converter without a per-item closure', async (t) => {
   const project = fixture(t);
   writeModelSources(project.sourceRoot, {
     'wallet.model.ts': [
       "import type { IModel, IObject } from '@exprtlabs/golem/model';",
+      "import { TWalletBaseModel } from './wallet.model.generated.js';",
       'export type TMoney = IObject<{ amount: string; currency: string }>;',
       'export type TWallet = IModel<{ history: TMoney[] }>;',
+      'export class Wallet extends TWalletBaseModel {}',
     ].join('\n'),
   });
-  const result = generate({ root: project.root, profile: { mobx: false, validation: false } });
-  const generated = result.artifacts.find((item) => item.path.endsWith('wallet.model.generated.ts'));
-  assert.ok(generated);
-  assert.match(generated.content, /convertModelItems\("deserialize", decodeTMoney, \w+ as readonly unknown\[\]\)/);
-  assert.match(generated.content, /convertModelItems\("serialize", encodeTMoney, \w+ as readonly unknown\[\]\)/);
-  assert.doesNotMatch(generated.content, /convertModelField\([^\n]*\(\) =>/);
+  writeModelGolemYaml(project.root, { mobx: false, validation: false });
+  await buildModelProject(project.root);
+  const spy = await spyOnBuild(project.root, { '@exprtlabs/golem/conversion': ['convertModelField', 'convertModelItems'] });
+  try {
+    const { Wallet } = await import(pathToFileURL(path.join(project.root, 'build/wallet.model.js')).href);
+    const wire = { history: [{ amount: '1', currency: 'USD' }, { amount: '2', currency: 'EUR' }, { amount: '3', currency: 'GBP' }] };
+    const round = () => {
+      spy.calls.length = 0;
+      const wallet = decodeGeneratedModel(Wallet, wire);
+      assert.deepEqual(encodeGeneratedModel(wallet), wire);
+      return spy.calls.map((call) => ({ call: `${call.name} ${String(call.args[0])}`, convert: call.args.find((arg) => typeof arg === 'function') }));
+    };
+    const first = round();
+    const second = round();
+    // One call per direction converts every item, so no item gets a converter of its own.
+    assert.deepEqual(first.map((entry) => entry.call).filter((call) => call.startsWith('convertModelItems')).sort(), ['convertModelItems deserialize', 'convertModelItems serialize']);
+    assert.equal(first.length, second.length);
+    first.forEach((entry, index) => {
+      assert.equal(typeof entry.convert, 'function', entry.call);
+      assert.strictEqual(second[index].convert, entry.convert, `${entry.call} passes one function on every call, not a closure made per call`);
+    });
+  } finally { spy.stop(); }
 });

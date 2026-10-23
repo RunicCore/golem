@@ -40,6 +40,8 @@ export const TYPESCRIPT6_FILES = [
   // Checker guards: the controller generator and the rewrite code it uses run the checker in this process:
   '.build/tests/golem-ts-openapi/*.test.js',
 ] as const;
+// The docs tier checks the documentation: its prose rules and its page inventory read the markdown, not golem.
+export const DOCS_FILES = ['.build/tests/docs-voice.site-test.js', '.build/tests/docs-structure.site-test.js'] as const;
 export const BROWSER_FILES = ['.build/tests/browser/*.test.js'] as const;
 // Unit-level tests too slow for Full are named *.acceptance.ts and run only in Acceptance.
 export const ACCEPTANCE_UNIT_FILES = ['.build/tests/*.acceptance.js', '.build/tests/openapi/*.acceptance.js'] as const;
@@ -58,7 +60,7 @@ const tiers: Readonly<Record<Tier, { readonly budget: string; readonly purpose: 
   focused: { budget: '≤1 min', purpose: 'Did my change break what I touched?' },
   full: { budget: '≤5 min', purpose: 'Did I break anything anywhere?' },
   acceptance: { budget: '≤10 min, needs a stated reason', purpose: 'Is this releasable?' },
-  docs: { budget: 'about 2 min', purpose: 'Does the documentation site build and pass its checks?' },
+  docs: { budget: 'about 2 min', purpose: 'Do the docs pass their prose and inventory checks, and does the site build and pass its checks?' },
 };
 
 const RUNNER_FLAGS = ['--test-shard', '--test-timeout', '--test-concurrency', '--test-reporter'] as const;
@@ -240,6 +242,7 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
   }
   if (tier === 'docs') {
     return inOrder(
+      nodeTest('docs prose and structure', DOCS_FILES, 1),
       npmRun('docs build', 'docs:build'),
       nodeTest('docs site', ['.build/tests/docs-site.site-test.js'], 1),
       { label: 'docs public content', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'scan', 'docs/.vitepress/dist']) },
@@ -302,7 +305,12 @@ function assertContainer(tier: Tier, native: boolean): void {
   if (mismatches.length) throw new Error(`The test image is stale: ${mismatches.join('; ')}. Run: npm run test:prepare`);
 }
 
-interface StepTiming { readonly label: string; readonly seconds: number; readonly status: number; file_seconds?: Record<string, number> }
+/** `load_start` and `load_end` are the 1, 5 and 15 minute load averages when the step began and ended. */
+interface StepTiming { readonly label: string; readonly seconds: number; readonly status: number; readonly load_start: readonly number[]; readonly load_end: readonly number[]; file_seconds?: Record<string, number> }
+
+/** The load averages of the kernel this process runs on: in the test container that is the kernel of the container's host or Docker VM, not the machine's own. */
+const loadAverages = (): number[] => os.loadavg().map(value => Math.round(value * 100) / 100);
+const formatLoad = (load: readonly number[]): string => load.map(value => value.toFixed(2)).join(' ');
 
 /**
  * Reads the lines of the test-file reporter. A step with no lines is reported, never read as zero files.
@@ -344,6 +352,7 @@ async function main(argv: readonly string[]): Promise<void> {
   const tier = tierArg as Tier;
   assertContainer(tier, native);
   const { budget, purpose } = tiers[tier];
+  const loadLabel = native ? 'load (host)' : 'load (container kernel)';
   process.stdout.write(`golem ${tier} tier (${budget}): ${purpose}\n`);
   if (resultsDir) {
     fs.mkdirSync(resultsDir, { recursive: true });
@@ -368,6 +377,8 @@ async function main(argv: readonly string[]): Promise<void> {
   const runStep = async (step: Step): Promise<void> => {
     running.add(step.label);
     writeTimings();
+    const loadStart = loadAverages();
+    process.stdout.write(`${tier} ${step.label}: started, ${loadLabel} ${formatLoad(loadStart)}\n`);
     const stepStarted = Date.now();
     let status: number;
     try {
@@ -377,9 +388,10 @@ async function main(argv: readonly string[]): Promise<void> {
     }
     const seconds = Math.round((Date.now() - stepStarted) / 1000);
     // The verdict of the step is recorded before its file timings are read, so a bad timings file cannot lose it.
-    const entry: StepTiming = { label: step.label, seconds, status };
+    const loadEnd = loadAverages();
+    const entry: StepTiming = { label: step.label, seconds, status, load_start: loadStart, load_end: loadEnd };
     timings.push(entry);
-    process.stdout.write(`${tier} ${step.label}: ${status === 0 ? 'passed' : 'FAILED'} in ${seconds}s\n`);
+    process.stdout.write(`${tier} ${step.label}: ${status === 0 ? 'passed' : 'FAILED'} in ${seconds}s, ${loadLabel} ${formatLoad(loadEnd)}\n`);
     writeTimings();
     const fileSeconds = step.fileTimings && status !== STEP_FAULT && readFileSeconds(step.fileTimings, step.label, () => { timingsFault = true; });
     if (fileSeconds) {

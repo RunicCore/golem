@@ -23,20 +23,45 @@ if [ "$tier" != prepare ]; then export npm_config_offline=true GOPROXY=off; fi
 
 # The checked-in package-lock.json is generated on macOS and lacks the Linux
 # platform binaries (typescript, esbuild, rollup). The container resolves its
-# own Linux lockfile online during `prepare`, keeps it in the cache volume, and
-# reuses it while the workspace manifests are unchanged. The checked-in
-# lockfile is never edited. rsync restores it on every run, so copy each time.
+# own Linux lockfile online during `prepare` and keeps it in the cache volume.
+# The checked-in lockfile is never edited. rsync restores it on every run, so copy each time.
+#
+# The slot is named by a hash of the fields of each package.json that change the
+# install (see install_fields). A change to scripts, files, exports or any other field
+# keeps the slot. Each hash has its own folder, so branches with different
+# dependencies never overwrite each other. The older single slot
+# (/cache/linux-lock/package-lock.json and manifests.sha256) is neither read nor
+# written: a branch that still runs the old entrypoint keeps using it.
 linux_lock=/cache/linux-lock
-manifest_hash="$(printf '%s\n' package.json packages/*/package.json examples/payments/package.json \
-  | LC_ALL=C sort | xargs sha256sum | sha256sum | cut -c1-64)"
-if [ -f "$linux_lock/package-lock.json" ] && [ "$(cat "$linux_lock/manifests.sha256" 2>/dev/null || true)" = "$manifest_hash" ]; then
-  cp "$linux_lock/package-lock.json" package-lock.json
+manifest_hash="$(node -e '
+  const fs = require("node:fs");
+  const crypto = require("node:crypto");
+  const install_fields = ["name", "version", "dependencies", "devDependencies", "optionalDependencies",
+    "peerDependencies", "peerDependenciesMeta", "bundleDependencies", "bundledDependencies", "overrides", "workspaces",
+    "packageManager"];
+  const sorted = (value) => Array.isArray(value) ? value.map(sorted)
+    : value !== null && typeof value === "object"
+      ? Object.fromEntries(Object.keys(value).sort().map((key) => [key, sorted(value[key])]))
+      : value;
+  const hash = crypto.createHash("sha256");
+  for (const file of process.argv.slice(1).sort()) {
+    const manifest = JSON.parse(fs.readFileSync(file, "utf8"));
+    const picked = Object.fromEntries(install_fields.filter((field) => field in manifest).map((field) => [field, sorted(manifest[field])]));
+    hash.update(JSON.stringify([file, picked]) + "\n");
+  }
+  process.stdout.write(hash.digest("hex").slice(0, 32));
+' package.json packages/*/package.json examples/payments/package.json)"
+lock_slot="$linux_lock/deps-$manifest_hash"
+if [ -f "$lock_slot/package-lock.json" ]; then
+  cp "$lock_slot/package-lock.json" package-lock.json
 elif [ "$tier" = prepare ]; then
-  rm -rf package-lock.json node_modules packages/*/node_modules examples/*/node_modules "$linux_lock/manifests.sha256"
+  rm -rf package-lock.json node_modules packages/*/node_modules examples/*/node_modules
   npm install --no-audit --no-fund || {
     echo "npm install failed while resolving the Linux lockfile; check the network and run: npm run test:prepare" >&2; exit 2; }
-  cp package-lock.json "$linux_lock/package-lock.json"
-  echo "$manifest_hash" > "$linux_lock/manifests.sha256"
+  # Written whole through a temporary file, so a kill never leaves half a slot.
+  mkdir -p "$lock_slot"
+  cp package-lock.json "$lock_slot/package-lock.json.tmp"
+  mv "$lock_slot/package-lock.json.tmp" "$lock_slot/package-lock.json"
 else
   echo "No Linux lockfile for the current package.json files. Run: npm run test:prepare" >&2
   exit 2

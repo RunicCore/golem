@@ -22,23 +22,23 @@ features:
   - title: TypeScript is the schema
     details: Tags on a field's type drive both its validation, such as <code>string & MinLength&lt;2&gt;</code>, and its JSON form, with <code>TSerde</code>. No decorators, no schema language, no second copy of your fields.
     link: /guide/tags
-    linkText: Type tags
+    linkText: Validation tags
   - title: Fast
     details: Parsing, stringifying and validation run as generated code, with no decorator metadata or reflection at runtime.
     link: /guide/serialization
-    linkText: Serialization
+    linkText: JSON conversion
   - title: Your code survives regeneration
     details: Generation owns the generated class, <code>TTaskBaseModel</code>. Your class, <code>Task</code>, extends it and keeps its methods.
     link: /guide/models
-    linkText: Defining models
+    linkText: Define models
   - title: Types end to end
     details: NestJS controllers produce the OpenAPI document. The client generator turns it back into typed operations and models.
     link: /guide/nestjs
-    linkText: Generate OpenAPI
+    linkText: OpenAPI from controllers
   - title: Validated by default
     details: Validation is on for models and for client requests and responses. Turn on MobX when React needs observable models.
     link: /guide/validation
-    linkText: Validation
+    linkText: Validate models
 ---
 
 ## One toolchain instead of a stack
@@ -59,17 +59,17 @@ A typical TypeScript API stack assembles a library for each job and keeps their 
 - Have an OpenAPI document? Generate a [typed client](/guide/client).
 - Have NestJS controllers? Generate the [OpenAPI document](/guide/nestjs) from them, then the client.
 
-Golem runs on TypeScript 6 or 7 and Node.js 22.15 or newer ([Installation](/guide/install)).
+Golem supports the Node.js and TypeScript versions in [Compatibility](/compatibility).
 
 ## Your types are the schema
 
-`MinLength`, `Pattern` and `MaxLength` are types. Golem turns them into validation, OpenAPI constraints and client-side checks. An `IObject` stays a plain object; an `IModel` also gets a generated class ([IObject or IModel](/guide/models#iobject-or-imodel)).
+`MinLength`, `Pattern` and `MaxLength` are types. Golem turns them into validation, OpenAPI constraints and client-side checks.
 
 <<< ../examples/payments/server/src/payment.model.ts#payment-types
 
 ## One model, start to finish
 
-Declare the fields, run `npx golem generate`, then extend the generated class. Generation rewrites `task.model.generated.ts`, a file you can leave out of git, and never touches your class.
+Declare the fields, run `npx golem generate`, then extend the generated class. Generation writes `task.model.generated.ts`, a file you [ignore in git](/reference/generated-files#gitignore), and never touches your class.
 
 ::: code-group
 
@@ -85,7 +85,7 @@ Declare the fields, run `npx golem generate`, then extend the generated class. G
 
 ## One contract, backend to frontend
 
-The controller returns plain types. The server configuration writes the OpenAPI document from the controller; the web configuration builds the SDK from it and your models.
+The controller returns plain types. The server configuration writes the OpenAPI document from the controller. The web configuration builds the SDK from it and your models.
 
 ::: code-group
 
@@ -101,11 +101,9 @@ The controller returns plain types. The server configuration writes the OpenAPI 
 
 ## Get started
 
-Golem needs Node.js 22.15 or newer and TypeScript 6 or 7. `golem build` compiles your project the way `tsc -p` does and rewrites `parse<T>()` on the way; `golem generate` writes the generated code your editor and bundler need. The Vite or esbuild plugin, or the Node loader, can rewrite the calls instead ([Installation](/guide/install)).
+Install the runtime and the model generator, then follow the [quick start](/guide/quick-start).
 
 ```bash
 npm install @exprtlabs/golem
 npm install --save-dev @exprtlabs/golem-model typescript@~7.0.2
 ```
-
-The [quick start](/guide/quick-start) takes one model from declaration to JSON.

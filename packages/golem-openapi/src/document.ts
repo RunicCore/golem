@@ -1,11 +1,10 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import YAML from 'yaml';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { assertSupportedModelFieldName } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError, type OriginLocator } from './origin.js';
 import { normalizeDocument, resolveLocalPointer, type NormalizedDocument, type NormalizedOperation } from './normalize.js';
-import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, parseYamlFile, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import {
   collectCanonicalResources,
   lookupCanonicalResource,
@@ -122,7 +121,7 @@ export function parseSourceDocument(filename: string): unknown {
   const source = readFileSync(filename, 'utf8');
   return path.extname(filename).toLowerCase() === '.json'
     ? JSON.parse(source)
-    : YAML.parse(source);
+    : parseYamlFile(source, filename);
 }
 
 export function expandOas32MediaTypes(document: unknown): unknown {

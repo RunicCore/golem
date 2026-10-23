@@ -1,3 +1,4 @@
+import { isRecord } from '@exprtlabs/golem/generator-api';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,
@@ -9,7 +10,6 @@ import { evaluateStaticValue, isStaticArray, resolveValueSymbol, singleReturnExp
 import { hasDecorator, isTypeScriptBuiltinConstructor, unwrapAsyncType } from './analysis-utils.js';
 import {
   isAssertionFormat,
-  isRecord,
   mergeSchemaMetadata,
   normalizeNullable,
   resolvedSchema,

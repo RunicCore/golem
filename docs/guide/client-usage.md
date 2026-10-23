@@ -1,20 +1,18 @@
-# Using the client
+# Call operations
 
-Create a client, pass parameters and bodies, read responses and failures, and share or cancel requests.
+Create a client, send requests, read responses and errors, and share or cancel requests.
 
-These examples use this contract, generated as `ProviderClient` from the [client guide](/guide/client) or equivalent operations from your API.
+These examples use the `ProviderClient` that [Generate a client](/guide/client) creates. You can use the same operations from your own API.
 
 | Operation | Request | Declared responses |
 | --- | --- | --- |
-| `listCharges` | `GET /charges`, optional `limit` / `cursor` query | `200`: array of charges |
-| `getCharge` | `GET /charges/{id}` | `200`: charge; `404`: `{ message }` |
+| `listCharges` | `GET /charges`, optional `limit` and `cursor` query | `200`: array of charges |
+| `getCharge` | `GET /charges/{id}` | `200`: charge. `404`: `{ message }` |
 | `createCharge` | `POST /charges`, body `{ amount, currency }` | `201`: charge |
 
 <<< ../../examples/payments/server/provider/charges.ts#list-charge-ids
 
-- Responses contain the HTTP `status` and decoded `body`, including declared error statuses.
-- Requests and responses are validated when `validation: true` (the default) in `golem.yaml`.
-- With MobX enabled, each operation exposes observable `loading` state.
+A response holds the HTTP `status` and the decoded `body`. This includes declared error statuses.
 
 ## Create a client
 
@@ -22,54 +20,53 @@ These examples use this contract, generated as `ProviderClient` from the [client
 
 | Option | Value |
 | --- | --- |
-| `baseUrl` | Required, trimmed; rejects an empty string. |
-| `fetchImpl` | Defaults to the environment's `fetch`, called without a receiver. |
-| `headers` | Merged into every request from this client. |
-| `auth` | Values or lazy providers keyed by security-scheme name ([authentication](/guide/auth)). |
-| `operationValidators` | Overrides generated validators for individual operations. |
+| `baseUrl` | the required base URL |
+| `fetchImpl` | the `fetch` function, global `fetch` by default |
+| `headers` | headers for every request |
+| `auth` | credentials by security-scheme name ([Authentication](/guide/auth)) |
+| `operationValidators` | validators that replace generated ones ([Runtime API](/reference/runtime-api#runtime-validators)) |
 
-Response bodies are plain data; call `fromWireFormat<T>(response.body)` for a model instance.
+An empty `baseUrl` is an error. `auth` values can be functions that return the credentials. `operationValidators` replaces the generated validator of each named operation.
 
 ## Pass parameters and a body
 
 <<< ../../examples/payments/server/provider/charges.ts#request-arguments
 
-- `path`, `query`, `header` and `cookie` contain the operation's parameters; `body` contains request data, encoded by the operation's [body codec](/guide/codecs).
-- Request validation constraints are checked before `fetch` runs when validation is enabled.
-- Only parameter groups declared by the operation appear in its input type; pass `{}` when there are none.
-- When sending a model, first call `toWireFormat<T>(model)` to get the plain JSON request body.
+- `path`, `query`, `header` and `cookie` hold the operation's parameters. `body` holds the request data, encoded by the [body format](/guide/codecs) of the operation.
+- The input type has a group only when the operation declares it. A group is optional when none of its members is required. Pass `{}` when nothing is required.
+- When the operation accepts several media types, set `body` to `{ contentType, value }`.
+- To send a model, call `toWireFormat<T>(model)` first. The result is the plain JSON request body.
+- With validation on, the client checks the input before it calls `fetch`.
 
 ## Import one operation or model
 
-A feature that uses one endpoint can import its factory directly:
+A feature that uses one endpoint imports its operation factory:
 
 <<< ../../examples/payments/server/provider/charges.ts#standalone-operation
 
-The factory has the existing operation name and accepts client options. It returns the same reusable operation interface as `client.getCharge()`, including MobX loading state when enabled. Keep the operation for repeated requests so its setup and validators can be reused.
+The factory has the name of the operation and takes the client options. It returns the same operation as `client.getCharge()`, with `loading` when MobX is on. Create the operation once and call `.execute()` for each request. If `.execute()` fails with a `ValidationUnavailable` error and the message `Missing generated input validator for <operation>`, run `golem generate` again.
 
-A client resolves an operation's validators when that operation is first created and reuses them for later calls from the same client instance. A standalone factory builds its own runtime, so it does not share validators with `client.getCharge()`. A generated operation without its validator fails at that first call with a `ValidationUnavailable` error that names the operation.
-
-Models have corresponding public entries:
+For a schema named `Charge`, the SDK has `Charge`, the JSON data type, and `ChargeModel`, its runtime class. A response body is plain data. Call `fromWireFormat<T>` to get a model instance:
 
 <<< ../../examples/payments/server/provider/charges.ts#charge-model
 
-Each entry loads the models, schemas and runtime helpers its dependency graph needs. `index.js` re-exports every client, operation type and model; per-file imports let a bundler drop unused ones. Operation factories are exported from their individual operation modules.
+`sdk/index.js` exports every client, operation type and model. Import a model or an operation from its own file to let your bundler drop what you do not use. Find the paths in [Generated files](/reference/generated-files#public-paths).
 
 ## Read responses and handle failures
 
-Assume `getCharge` declares `200` (charge) and `404` (`{ message: string }`).
+`getCharge` declares `200` (charge) and `404` (`{ message: string }`).
 
 <<< ../../examples/payments/server/provider/charges.ts#read-charge
 
-- Read response data from `body`; `contentType` and declared response `headers` are available too.
-- Connection failures, undeclared status/media types and validation failures reject `.execute()`.
-- Several declared responses can match one request; [status and media-type selection follow a fixed order](/reference/openapi-support#response-matching).
+- Read response data from `body`. The response also holds `contentType` and the declared response `headers`.
+- Connection failures, undeclared status or media types, and validation failures reject `.execute()`.
+- When several declared responses fit one reply, the client picks one in [a fixed order](/reference/openapi-support#response-matching).
 
 `Money.amount` declares a decimal `pattern`, so `'12,50'` fails before `fetch` runs:
 
 <<< ../../examples/payments/server/provider/charges.ts#invalid-charge
 
-Choose the validation profile in [validation](/guide/validation); find issue shapes and codes in the [runtime API](/reference/runtime-api#errors).
+Turn the checks on or off with the [`validation` key](/reference/config#validation-profiles). [Errors and issues](/guide/validation#errors-and-issues) shows how to read `error.issues`. The [runtime API](/reference/runtime-api#errors) holds the issue codes.
 
 ## Handle errors
 
@@ -77,14 +74,14 @@ An undeclared status or media type rejects `.execute()` with `LibErrorKind.Respo
 
 <<< ../../examples/payments/server/provider/charges.ts#handle-errors
 
-Network failures reject with the underlying `fetch` error.
+A network failure rejects with the `fetch` error.
 
 ## Reuse an operation
 
 <<< ../../examples/payments/server/provider/charges.ts#reuse-request
 
-- Every `.execute()` sends a fresh request and reads current authentication. No responses or errors are cached.
-- Concurrent calls are allowed. A second `.execute()` that starts before the first finishes logs `Concurrent execute() invocation for <operation>`. The requests still run. Wait for the first call to finish if you do not want that warning.
+- Each `.execute()` sends a new request and reads the current credentials. The client caches no responses or errors.
+- You can call `.execute()` again before the first call ends. The client then logs `Concurrent execute() invocation for <operation>` and sends both requests. To avoid the warning, wait for the first call.
 - A second `client.getCharge()` creates an independent operation.
 
 ## Observe loading with MobX
@@ -93,21 +90,21 @@ Set `mobx: true` in `golem.yaml`, install `mobx`, and generate again.
 
 <<< ../../examples/payments/web/src/payment-store.ts#loading
 
-- `loading` is observable without further setup.
-- It stays true until every pending execution settles, including failures and cancellation.
-- With MobX disabled, the property is absent.
-- For a streaming response, `loading` ends when `execute` resolves, before you read the body as shown in [streams](/guide/streams).
+- `loading` is observable without more setup.
+- It stays true until every pending call ends, including failed and cancelled calls.
+- With MobX off, the operation has no `loading` property.
+- For a streaming response, `loading` ends when `execute` resolves, before you read the body ([Streaming responses](/guide/streams)).
 
 ## Share headers
 
 <<< ../../examples/payments/server/provider/client.ts#shared-headers
 
-For a header parameter declared in the API document, use the operation's `header` argument. For credentials, use [authentication](/guide/auth).
+For a header parameter in the API document, use the `header` argument of the operation. For credentials, use [Authentication](/guide/auth).
 
 ## Cancel a request
 
 <<< ../../examples/payments/server/provider/charges.ts#cancel-request
 
-Check `controller.signal.aborted` before rethrowing a caught error; a failure unrelated to the abort should still propagate.
+Check `controller.signal.aborted` before you rethrow a caught error. An error that has nothing to do with the abort must still propagate.
 
 Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)

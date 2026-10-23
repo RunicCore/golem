@@ -334,19 +334,91 @@ test('a recursive inline discriminated union generates with validation on and ju
   assert.throws(() => codecs.parseTBranch(JSON.stringify(tree(1))), (error: unknown) => error instanceof LibError && error.causedByInput === true);
 });
 
-const nonObjectAliasSources = {
-  'shelf.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+// A recursive alias of any shape is one named function: a union, a tuple, a record, and the JSON value type.
+const aliasSources = {
+  'alias.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 export type TItem = string | TItem[];
+export type Tree = [string, Tree[]];
+export type Registry = { [key: string]: Registry };
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+export type TLeaf = IModel<{ name: string }>;
+export type Mixed = TLeaf | Mixed[];
 export type TShelf = IModel<{ item: TItem }>;
+export type TDoc = IModel<{ tree: Tree; registry: Registry; payload: JsonValue; extra?: JsonValue; list: JsonValue[]; items: JsonValue[][] }>;
+export type TBox = IModel<{ mixed: Mixed }>;
 `,
+};
+const shelfWire = { item: ['a', ['b', ['c']], 'd'] };
+const docWire = {
+  tree: ['root', [['left', []], ['right', [['leaf', []]]]]],
+  registry: { a: { b: {} }, c: {} },
+  payload: { n: [1, 'two', null, true, { deep: [false] }] },
+  extra: [null, { k: 'v' }],
+  list: [1, 'x', [2], { y: 3 }],
+  items: [[1], ['a', { b: null }]],
 };
 
 for (const [label, profile] of profiles) {
-  test(`a model field typed with an alias that reaches itself without a model stops the build with a diagnostic (${label})`, async (t: TestContext) => {
-    // protects: T-213 a recursive non-object alias gives a golem diagnostic, not a stack overflow
+  test(`a recursive alias of a union, a tuple, a record and a JSON value generates and round-trips (${label})`, async (t: TestContext) => {
+    // protects: T-221 a recursive type alias of any shape generates, validates and converts
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-alias-', linkTypescript: true });
-    writeModelSources(sourceRoot, nonObjectAliasSources);
+    writeModelSources(sourceRoot, aliasSources);
     writeModelGolemYaml(root, profile);
-    await assert.rejects(buildModelProject(root), /RUNM1003: Recursive alias TItem in field "item" of TShelf must resolve to an object model\. Golem supports recursion only through an IObject or IModel, so change the shape to pass through one, for example type TNode = IObject<\{ value: string; children: TNode\[\] \}>\./);
+    await buildModelProject(root);
+    const codecs = await import(pathToFileURL(path.join(root, 'build/alias.model.generated.js')).href) as Codecs;
+    const generated = fs.readFileSync(path.join(root, 'src/alias.model.generated.ts'), 'utf8');
+
+    for (const [wire, name] of [[shelfWire, 'TShelf'], [docWire, 'TDoc']] as const) {
+      const model = codecs[`fromWireFormat${name}`](wire);
+      assert.deepEqual(json(model), wire, `${name} decodes`);
+      assert.deepEqual(json(codecs[`toWireFormat${name}`](model)), wire, `${name} encodes`);
+      assert.equal(codecs[`stringify${name}`](model), JSON.stringify(wire), `${name} stringifies`);
+      assert.deepEqual(json(codecs[`parse${name}`](JSON.stringify(wire))), wire, `${name} parses`);
+    }
+    if (profile.validation) {
+      const validators = await import(pathToFileURL(path.join(root, 'build/generated/models/models.validators.generated.js')).href) as Record<string, (value: unknown, collectAll?: boolean) => unknown>;
+      const jsonId = Object.keys(validators).find((name) => /^is_JsonValue_/.test(name))!.slice('is_'.length);
+      const isJson = validators[`is_${jsonId}`] as (value: unknown) => boolean;
+      const issuesOf = validators[`validate_${jsonId}`] as (value: unknown, collectAll: boolean) => readonly unknown[];
+      const deep = (leaf: unknown): unknown => ({ a: [{ b: leaf }] });
+      assert.equal(isJson(deep('ok')), true);
+      assert.equal(issuesOf(deep('ok'), true).length, 0);
+      for (const bad of [() => 1, Symbol('x'), 5n]) {
+        assert.equal(isJson(deep(bad)), false, 'a bad leaf three levels deep fails the fast check');
+        assert.equal(issuesOf(deep(bad), true).length > 0, true, 'and the collecting validator');
+      }
+      assert.equal(codecs.validateTDoc(codecs.fromWireFormatTDoc(docWire)), true);
+      assert.throws(() => codecs.fromWireFormatTDoc({ ...docWire, payload: deep(Symbol('x')) }));
+      assert.throws(() => codecs.fromWireFormatTDoc({ ...docWire, tree: ['root', [['left', [1]]]] }), 'a tuple slot of the wrong type fails');
+      assert.throws(() => codecs.fromWireFormatTShelf({ item: ['a', [3]] }));
+    }
+  });
+
+  test(`a cyclic value in a field of a recursive alias throws a Serialization LibError, and a union of a named model and an array encodes (${label})`, async (t: TestContext) => {
+    // protects: T-221 a recursive alias never overflows the stack on a cyclic value, and encodes a valid named model beside an array
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-alias-cycle-', linkTypescript: true });
+    writeModelSources(sourceRoot, aliasSources);
+    writeModelGolemYaml(root, profile);
+    await buildModelProject(root);
+    const codecs = await import(pathToFileURL(path.join(root, 'build/alias.model.generated.js')).href) as Codecs;
+    const doc = (payload: unknown) => ({ tree: ['t', []], registry: {}, payload, list: [], items: [] });
+
+    const cyclicList: unknown[] = [1];
+    cyclicList.push(cyclicList);
+    const cyclicRecord: Record<string, unknown> = { a: 1 };
+    cyclicRecord.back = { inner: [cyclicRecord] };
+    for (const payload of [cyclicList, cyclicRecord]) {
+      for (const encode of [codecs.stringifyTDoc, codecs.toWireFormatTDoc]) {
+        assert.throws(() => encode(doc(payload)), isSerializationError, 'a cyclic payload');
+      }
+    }
+    const shared = { n: 1 };
+    const dag = doc({ left: shared, right: [shared, shared] });
+    assert.equal(codecs.stringifyTDoc(dag), JSON.stringify(dag));
+
+    const mixed = [{ name: 'a' }, [{ name: 'b' }, [{ name: 'c' }]]];
+    const model = codecs.fromWireFormatTBox({ mixed });
+    assert.deepEqual(json(codecs.toWireFormatTBox(model)), { mixed });
+    assert.equal(codecs.stringifyTBox({ mixed }), JSON.stringify({ mixed }));
   });
 }

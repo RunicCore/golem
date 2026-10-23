@@ -180,9 +180,12 @@ test('a declaration-only project with a declarationDir rebuilds nothing when not
   const first = mtimes(path.join(root, 'types'), '.d.ts');
   assert.ok(first.has('use.d.ts'));
   assert.equal(fs.existsSync(path.join(root, 'build')), false, 'no JavaScript, so no outDir');
-  await new Promise((resolve) => setTimeout(resolve, 50));
+  // A rewrite stamps a file with the current time, so a stamp 2 s ahead shows it without waiting for the clock.
+  const ahead = new Date(Date.now() + 2_000);
+  for (const file of first.keys()) fs.utimesSync(path.join(root, 'types', file), ahead, ahead);
+  const stamped = mtimes(path.join(root, 'types'), '.d.ts');
   assert.equal((await build(root)).exitCode, 0);
-  assert.deepEqual(mtimes(path.join(root, 'types'), '.d.ts'), first, 'a build with no change writes no declaration');
+  assert.deepEqual(mtimes(path.join(root, 'types'), '.d.ts'), stamped, 'a build with no change writes no declaration');
 
   // The declarations directory is what a build writes: deleting it restores it.
   fs.rmSync(path.join(root, 'types'), { recursive: true });

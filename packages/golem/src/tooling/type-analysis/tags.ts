@@ -1054,5 +1054,10 @@ export function analyzeNode(
   if (isDateType(context.checker, type)) {
     return { baseNode: result.baseNode ?? node, metadata: { ...metadata, date: true } };
   }
-  return { baseNode: result.baseNode, metadata };
+  // Tags that only the checker type carries mean the node is not where this type comes from (the declaration a
+  // mapped property inherits is not the type its template computes), so the node is no untagged base.
+  const nodeCarriesTags = result.metadata.validations.length > 0
+    || result.metadata.serde !== undefined
+    || result.metadata.constraints.length > 0;
+  return { baseNode: nodeCarriesTags ? result.baseNode : undefined, metadata };
 }

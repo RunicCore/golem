@@ -30,6 +30,7 @@
     "docs:build": "npm run generate:openapi-compliance && vitepress build docs",
     "docs:check": "bash scripts/test-runner/run.sh docs",
     "docs:preview": "vitepress preview docs",
+    "lint": "npm run build && npm run build:scripts && node .build/scripts/check-imports.js",
     "public:check": "npm run build:scripts && node .build/scripts/public-source.js check",
     "public:export": "npm run build:scripts && node .build/scripts/public-source.js export"
   },

@@ -409,6 +409,11 @@ export interface LiteralTypeNode extends TypeNode {
   readonly kind: KindOf<'LiteralTypeNode'>;
   readonly literal: Node;
 }
+/** `import("x").T` and `typeof import("x")`: the argument is a literal type that holds the specifier. */
+export interface ImportTypeNode extends TypeNode {
+  readonly kind: KindOf<'ImportTypeNode'>;
+  readonly argument: TypeNode;
+}
 export interface TypeLiteralNode extends TypeNode {
   readonly kind: KindOf<'TypeLiteralNode'>;
   readonly members: readonly Node[];
@@ -510,6 +515,10 @@ export interface CompilerOptions {
 
 export interface Diagnostic {
   readonly text?: string;
+  /** The TypeScript error number, such as 2304. */
+  readonly code?: number;
+  /** Where the diagnostic starts in its file. */
+  readonly pos?: number;
   /** The file the diagnostic is about; absent for a diagnostic about the program as a whole. */
   readonly fileName?: string;
 }
@@ -533,6 +542,10 @@ export interface Program extends Disposable {
   isSourceFileFromExternalLibrary(file: SourceFile): boolean;
   isSourceFileDefaultLibrary(file: SourceFile): boolean;
   getCompilerOptions(): CompilerOptions;
+  /** The parse errors of one file, read without a type check. */
+  getSyntacticDiagnostics(filename: string): readonly Diagnostic[];
+  /** The type errors of one file, found by checking that file. */
+  getSemanticDiagnostics(filename: string): readonly Diagnostic[];
   readonly session: ProgramSession;
 }
 
@@ -667,6 +680,7 @@ export interface TypeScriptBackend {
   isImportDeclaration(node: Node): node is ImportDeclaration;
   isImportEqualsDeclaration(node: Node): node is ImportEqualsDeclaration;
   isImportSpecifier(node: Node): node is ImportSpecifier;
+  isImportTypeNode(node: Node): node is ImportTypeNode;
   isIndexSignatureDeclaration(node: Node): node is IndexSignatureDeclaration;
   isIndexedAccessTypeNode(node: Node): node is IndexedAccessTypeNode;
   isInterfaceDeclaration(node: Node): node is InterfaceDeclaration;

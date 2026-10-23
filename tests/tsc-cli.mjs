@@ -1,17 +1,19 @@
 #!/usr/bin/env node
 /**
  * tsc launcher for tests that type-check generated SDKs and consumers outside any project root. It accepts a short
- * tsc-style file list by writing a temporary tsconfig and invoking `tsc -p`. These sources hold no rewrite sites, so they
- * need no `golem build`.
+ * tsc-style file list by writing a temporary tsconfig and invoking `tsc -p`, with the TypeScript of the lane. These sources
+ * hold no rewrite sites, so they need no `golem build`.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveTypeScript } from '#golem/typescript-version';
 
 const repoRoot = dirname(fileURLToPath(new URL('.', import.meta.url)));
-const tsc = join(repoRoot, 'node_modules/typescript/bin/tsc');
+// The lane's compiler, chosen as tests/support/build-project.ts chooses it: GOLEM_TYPESCRIPT_ROOT, else the workspace TypeScript.
+const tsc = join(resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? repoRoot).packageDir, 'bin/tsc');
 const args = process.argv.slice(2);
 const env = { ...process.env, NODE_PATH: join(repoRoot, 'node_modules') };
 

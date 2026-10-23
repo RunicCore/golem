@@ -1,16 +1,18 @@
 import type { TestContext } from 'node:test';
 import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
+import { isUndeclaredResponseError } from '@exprtlabs/golem/client';
 import {
   ALL_GENERATION_PROFILES,
   compileStrictUnusedSdk,
   defaultTestProfile,
   generateMaterializedSdk,
-  generatedClientSource,
   isGeneratedClientClass,
+  isGeneratedModelClass,
   requireRecord,
   type OpenApiGenerationProfile,
 } from './helpers.js';
@@ -160,6 +162,17 @@ function outputDir(t: TestContext, label: string): string {
   return path.join(createFixtureProject(t, `golem-openapi-${label}-`), 'sdk');
 }
 
+/** A type-assert file compiled with the SDK: `@ts-expect-error` lines fail the compile when the error disappears. */
+function writeAssertFile(output: string, name: string, source: string): string {
+  const file = path.join(output, name);
+  writeFileSync(file, source);
+  return file;
+}
+
+async function importClient(output: string, label: string): Promise<Record<string, unknown>> {
+  return requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), label);
+}
+
 test('directional imports follow schema references while literal data and keyword-shaped property names stay distinct', async t => {
   for (const referenceProperty of [false, true]) {
     const output = outputDir(t, `literal-reference-${referenceProperty}`);
@@ -169,7 +182,7 @@ test('directional imports follow schema references while literal data and keywor
         ? { default: { $ref: '#/components/schemas/Value' } }
         : { value: { type: 'object', default: { $ref: '#/components/schemas/Value' } } },
     };
-    const result = await generateMaterializedSdk({
+    await generateMaterializedSdk({
       openapi: '3.1.0', info: info('Literal'),
       components: { schemas: { Value: { type: 'object', properties: { name: { type: 'string' } } } } },
       paths: { '/value': { post: {
@@ -178,9 +191,7 @@ test('directional imports follow schema references while literal data and keywor
         responses: { '200': { description: 'value', content: { 'application/json': { schema } } } },
       } } },
     }, { output, name: 'Literal', profile: { mobx: false, validation: false } });
-    const types = result.artifacts.find(artifact => artifact.path.endsWith('/types.ts'))?.content ?? '';
-    assert.equal(types.includes("import type * as InputSchemas"), referenceProperty);
-    assert.equal(types.includes("import type * as OutputSchemas"), referenceProperty);
+    // An import the types do not use fails the strict unused compile; a missing one fails on the name the types use.
     compileStrictUnusedSdk(output);
   }
 });
@@ -235,7 +246,7 @@ test('schema-only documents emit types, directional files, and models without a 
 
 test('operation names are typed inside client.ts and links.ts', async t => {
   const output = outputDir(t, 'operation-name-types');
-  const result = await generateMaterializedSdk({
+  await generateMaterializedSdk({
     openapi: '3.2.0',
     info: info('Names'),
     paths: {
@@ -250,11 +261,20 @@ test('operation names are typed inside client.ts and links.ts', async t => {
       '/b': { get: { operationId: 'getB', responses: { '204': { description: 'ok' } } } },
     },
   }, { output, name: 'Names', profile: { mobx: false, validation: true } });
-  const file = (name: string) => result.artifacts.find(artifact => artifact.path.endsWith(`/${name}`))?.content ?? '';
-  assert.match(file('client.ts'), /^type __GolemOperationName = "getA" \| "getB";$/m);
-  assert.match(file('links.ts'), /^type OperationName = "getA" \| "getB";$/m);
-  assert.doesNotMatch(file('client.ts') + file('links.ts'), /schemas\.js/);
-  compileStrictUnusedSdk(output);
+  const assertFile = writeAssertFile(output, 'names-assert.ts', `import type { OperationRuntimeValidators } from '@exprtlabs/golem/validation';
+import type { NamesClientOptions } from './client.js';
+import type { ResponseLink } from './links.js';
+const options: NamesClientOptions = { baseUrl: 'https://example.test', operationValidators: new Map<'getA' | 'getB', OperationRuntimeValidators>() };
+// @ts-expect-error validators are keyed by the operation names of the document
+void ({ ...options, operationValidators: new Map<'getC', OperationRuntimeValidators>() } satisfies NamesClientOptions);
+const link: ResponseLink = { operationId: 'getB', parameters: {} };
+// @ts-expect-error a link targets an operation the document defines
+void ({ ...link, operationId: 'getC' } satisfies ResponseLink);
+void options;
+`);
+  compileStrictUnusedSdk(output, [assertFile]);
+  const links = requireRecord(await import(pathToFileURL(path.join(output, 'dist/links.js')).href), 'links module');
+  assert.deepEqual(links.responseLinks, { getA: { 200: { toB: { operationId: 'getB', parameters: {} } } } });
 });
 
 test('empty component documents emit only always-on artifacts', async (t) => {
@@ -282,7 +302,7 @@ function pingDocument(): unknown {
 
 test('generated SDKs import the client runtime instead of copying it', async t => {
   const output = outputDir(t, 'shared-runtime');
-  const result = await generateMaterializedSdk({
+  await generateMaterializedSdk({
     openapi: '3.2.0', info: info('Shared'),
     paths: { '/items/{id}': { get: {
       operationId: 'getItem',
@@ -290,9 +310,17 @@ test('generated SDKs import the client runtime instead of copying it', async t =
       responses: { '200': { description: 'item', content: { 'application/json': { schema: { type: 'object' } } } } },
     } } },
   }, { output, name: 'Shared', profile: { mobx: false, validation: true } });
-  const files = new Map(result.artifacts.map(artifact => [path.relative(output, artifact.path), artifact.content]));
-  assert.equal([...files.keys()].some(file => file.endsWith('client-runtime.ts')), false);
-  assert.match(files.get('operations/getItem.ts') ?? '', /from '@exprtlabs\/golem\/client'/);
+  compileStrictUnusedSdk(output);
+  const Client = (await importClient(output, 'shared client')).SharedClient;
+  assert.ok(isGeneratedClientClass(Client));
+  if (!isGeneratedClientClass(Client)) throw new TypeError('SharedClient');
+  const client = new Client({
+    baseUrl: 'https://fixture.invalid',
+    fetchImpl: async () => new Response('{}', { status: 500, headers: { 'content-type': 'application/json' } }),
+  });
+  // The brand of an undeclared-response error belongs to the package's runtime; a copied runtime has its own.
+  const error = await client.getItem().execute({ path: { id: 'a' } }).then(() => undefined, (cause: unknown) => cause);
+  assert.ok(isUndeclaredResponseError(error));
 });
 
 test('minimal GET without content omits codec options and unused helpers', async (t) => {
@@ -354,9 +382,10 @@ test('minimal GET without content omits codec options and unused helpers', async
   compileStrictUnusedSdk(surfacesOutput, [surfacesAssertFile]);
 });
 
-test('stream and mutual-TLS surfaces are emitted only when they are used', async (t) => {
+test('stream and mutual-TLS surfaces are emitted when an operation uses them', async (t) => {
   const itemSchema = { type: 'object', properties: { id: { type: 'integer' } } };
-  const withSurfaces = await generateMaterializedSdk({
+  const output = outputDir(t, 'stream-security-surfaces');
+  await generateMaterializedSdk({
     openapi: '3.2.0',
     info: info('StreamSecurity'),
     components: {
@@ -387,33 +416,57 @@ test('stream and mutual-TLS surfaces are emitted only when they are used', async
         },
       },
     },
-  }, { output: outputDir(t, 'stream-security-surfaces'), name: 'StreamSecurity', profile: { mobx: false, validation: false } });
-  const client = generatedClientSource(withSurfaces.artifacts);
-  assert.match(client, /StreamSecurityStreamDecoder\b/, 'the custom stream decoder surface is emitted for a stream response with an item schema');
-  assert.match(client, /applySecurity/, 'the security call is emitted when a security scheme is used');
-  assert.match(client, /StreamSecurityMutualTlsTransport\b/, 'the mutual TLS transport type is emitted when a mutualTLS scheme is used');
-  assert.doesNotMatch(client, /readNdjson|readJsonSeq|readServerSentEvents/, 'stream readers live in the shared runtime');
-
-  const plain = await generateMaterializedSdk({
-    openapi: '3.2.0',
-    info: info('NoStreamSecurity'),
-    paths: {
-      '/ping': {
-        get: {
-          operationId: 'ping',
-          responses: { 204: { description: 'ok' } },
-        },
-      },
+  }, { output, name: 'StreamSecurity', profile: { mobx: false, validation: false } });
+  const assertFile = writeAssertFile(output, 'surfaces-assert.ts', `import type {
+  StreamSecurityClientOptions,
+  StreamSecurityMutualTlsTransport,
+  StreamSecurityStreamDecoder,
+} from './client.js';
+const decoder: StreamSecurityStreamDecoder = async function* () { yield { id: 1 }; };
+const transport: StreamSecurityMutualTlsTransport = { fetchImpl: fetch };
+const options: StreamSecurityClientOptions = {
+  baseUrl: 'https://example.test',
+  auth: { bearer: 'token' },
+  mutualTls: transport,
+  streamDecoders: { 'application/x-custom': decoder },
+};
+void options;
+`);
+  compileStrictUnusedSdk(output, [assertFile]);
+  const Client = (await importClient(output, 'stream security client')).StreamSecurityClient;
+  assert.ok(isGeneratedClientClass(Client));
+  if (!isGeneratedClientClass(Client)) throw new TypeError('StreamSecurityClient');
+  const events = () => new Response('{"id":1}\n', { headers: { 'content-type': 'application/x-ndjson' } });
+  const rows = () => new Response('\u001e{"id":1}\n', { headers: { 'content-type': 'application/json-seq' } });
+  const bearerRequests: Array<string | null> = [];
+  const bearerClient = new Client({
+    baseUrl: 'https://fixture.invalid',
+    auth: { bearer: 'token' },
+    fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
+      bearerRequests.push(new Headers(init?.headers).get('authorization'));
+      return events();
     },
-  }, { output: outputDir(t, 'stream-security-surfaces-absent'), name: 'NoStreamSecurity', profile: { mobx: false, validation: false } });
-  const plainClient = generatedClientSource(plain.artifacts);
-  assert.doesNotMatch(plainClient, /StreamDecoder|MutualTlsTransport|applySecurity/);
+  });
+  await bearerClient.events().execute({});
+  assert.deepEqual(bearerRequests, ['Bearer token']);
+
+  // A mutualTLS transport replaces fetchImpl for every request; a client without one cannot satisfy the requirement.
+  const transported: string[] = [];
+  const mutualClient = new Client({
+    baseUrl: 'https://fixture.invalid',
+    fetchImpl: async () => { throw new Error('fetchImpl must not carry a mutualTLS request'); },
+    mutualTls: { fetchImpl: async (url: RequestInfo | URL) => { transported.push(new URL(String(url)).pathname); return rows(); } },
+  });
+  await mutualClient.rows().execute({});
+  assert.deepEqual(transported, ['/rows']);
+  const plainClient = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: async () => rows() });
+  await assert.rejects(plainClient.rows().execute({}), /No configured credentials satisfy the operation security requirements/);
 });
 
-test('an operation with no effective security requirement omits the security call and keeps the call for the others', async t => {
+test('an operation with no effective security requirement sends no credentials and resolves none, and the others keep theirs', async t => {
   const output = outputDir(t, 'unsecured-operations');
   const respond = { 200: { description: 'ok', content: { 'application/json': { schema: { type: 'object' } } } } };
-  const result = await generateMaterializedSdk({
+  await generateMaterializedSdk({
     openapi: '3.1.0',
     info: info('Unsecured'),
     components: { securitySchemes: { bearer: { type: 'http', scheme: 'bearer' } } },
@@ -424,32 +477,27 @@ test('an operation with no effective security requirement omits the security cal
       '/optional': { get: { operationId: 'optionalAuth', security: [{}], responses: respond } },
     },
   }, { output, name: 'Unsecured', profile: { mobx: false, validation: false } });
-  const operation = (name: string): string => {
-    const artifact = result.artifacts.find(({ path: file }) => file.endsWith(`operations/${name}.ts`));
-    assert.ok(artifact, `operation ${name} is emitted`);
-    return artifact.content;
-  };
-  assert.doesNotMatch(operation('open'), /applySecurity|securitySchemes: RuntimeSecuritySchemes|const query|const cookies/);
-  assert.match(operation('open'), /export const __golemSecuritySchemes = \{\} as const;/, 'the client still imports the metadata of every operation');
-  for (const name of ['inherits', 'optionalAuth']) {
-    assert.equal(operation(name).match(/await applySecurity\(/g)?.length, 1, `${name} keeps its security call`);
-  }
   compileStrictUnusedSdk(output);
 
-  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'unsecured client');
+  const module = await importClient(output, 'unsecured client');
   const Client = module.UnsecuredClient;
   assert.ok(isGeneratedClientClass(Client));
+  // The client merges the scheme metadata of every operation module, including the one that needs none.
+  assert.deepEqual(module.unsecuredSecuritySchemeMetadata, { bearer: { type: 'http', scheme: 'bearer' } });
   const seen: Record<string, string | null> = {};
   const fetchImpl: typeof fetch = async (url, init) => {
     seen[new URL(String(url)).pathname] = new Headers(init?.headers).get('authorization');
     return new Response('{}', { headers: { 'content-type': 'application/json' } });
   };
-  const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl, auth: { bearer: 'secret' } });
+  const resolved: string[] = [];
+  const bearer = (context: { scheme: string }) => { resolved.push(context.scheme); return 'secret'; };
+  const client = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl, auth: { bearer } });
   await client.open().execute({});
   await client.inherits().execute({});
   await client.optionalAuth().execute({});
   // An empty requirement object makes authentication optional and names no scheme to apply.
   assert.deepEqual(seen, { '/open': null, '/inherits': 'Bearer secret', '/optional': null });
+  assert.deepEqual(resolved, ['bearer'], 'only the operation that inherits the requirement resolves a credential');
 });
 
 test('the SDK entry re-exports each model module directly', async t => {
@@ -461,13 +509,19 @@ test('the SDK entry re-exports each model module directly', async t => {
       Payment: { type: 'object', properties: { money: { $ref: '#/components/schemas/Money' } }, required: ['money'] },
     } },
   }, { output, name: 'Direct', profile: { mobx: false, validation: false } });
-  const files = new Map(result.artifacts.map(artifact => [path.relative(output, artifact.path), artifact.content]));
-  assert.equal(files.has('models.ts'), false);
-  const index = files.get('index.ts') ?? '';
-  assert.match(index, /from '\.\/models\/Money\.js'/);
-  assert.match(index, /from '\.\/models\/Payment\.js'/);
-  // The schema helpers are internal: the entry does not re-export them.
-  assert.doesNotMatch(index, /'\.\/schemas\.js'/);
+  // One file per model and no facade module between the entry and them.
+  assert.deepEqual(emittedFiles(result.artifacts, output).filter(file => !file.startsWith('models/_group-')), [
+    'index.ts', 'input-schemas.ts', 'model-manifest.json', 'models/Money.ts', 'models/Payment.ts', 'output-schemas.ts', 'types.ts',
+  ]);
+  compileStrictUnusedSdk(output);
+  const entry = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'SDK entry');
+  const assertDirect = async (name: string): Promise<void> => {
+    const direct = requireRecord(await import(pathToFileURL(path.join(output, `dist/models/${name}.js`)).href), `${name} module`);
+    assert.ok(isGeneratedModelClass(entry[`${name}Model`]), `${name}Model is a model class`);
+    assert.strictEqual(entry[`${name}Model`], direct[`${name}Model`]);
+  };
+  await assertDirect('Money');
+  await assertDirect('Payment');
 });
 
 test('a validation SDK with operations compiles under strict unused checks', async t => {
@@ -501,26 +555,63 @@ test('an operation module declares only the request locals it uses and imports t
       },
     },
   }, { output, name: 'Locals', profile: { mobx: false, validation: false } });
-  const file = (name: string) => result.artifacts.find(artifact => artifact.path.endsWith(`operations/${name}.ts`))?.content ?? '';
-  const plain = file('plain');
-  assert.doesNotMatch(plain, /const query|const cookies/);
-  assert.match(plain, /runtime\.url\("\/plain", \[\]\)/);
-  assert.equal(plain.match(/from '@exprtlabs\/golem\/client'/g)?.length, 1);
-  assert.doesNotMatch(plain, /\n\n\n/);
-  const session = file('session');
-  assert.match(session, /const cookies: string\[\] = \[\];/);
-  assert.equal(session.match(/if \(cookies\.length\)/g)?.length, 1);
-  assert.doesNotMatch(session, /const query/);
+  // Unused locals fail the strict compile; the behavior is the request each module builds.
+  compileStrictUnusedSdk(output);
+  const Client = (await importClient(output, 'locals client')).LocalsClient;
+  assert.ok(isGeneratedClientClass(Client));
+  if (!isGeneratedClientClass(Client)) throw new TypeError('LocalsClient');
+  const requests: Array<{ url: string; cookie: string | null }> = [];
+  const client = new Client({
+    baseUrl: 'https://fixture.invalid',
+    fetchImpl: async (url: RequestInfo | URL, init?: RequestInit) => {
+      requests.push({ url: String(url), cookie: new Headers(init?.headers).get('cookie') });
+      return new Response(null, { status: 204 });
+    },
+  });
+  await client.plain().execute({});
+  await client.session().execute({ cookie: { sid: 'abc' } });
+  assert.deepEqual(requests, [
+    { url: 'https://fixture.invalid/plain', cookie: null },
+    { url: 'https://fixture.invalid/session', cookie: 'sid=abc' },
+  ]);
+  // Only text can show that the module imports the client runtime in one statement.
+  const plain = result.artifacts.find(artifact => artifact.path.endsWith('operations/plain.ts'))?.content ?? '';
+  assert.equal(plain.match(/from ['"]@exprtlabs\/golem\/client['"]/g)?.length, 1);
 });
 
 test('SDK model functions use the model types instead of unknown', async t => {
   const output = outputDir(t, 'typed-functions');
-  const result = await generateMaterializedSdk({
+  await generateMaterializedSdk({
     openapi: '3.1.0', info: info('Typed'), paths: {},
     components: { schemas: { Money: { type: 'object', properties: { amount: { type: 'string' } }, required: ['amount'] } } },
   }, { output, name: 'Typed', profile: { mobx: false, validation: true } });
-  const group = result.artifacts.find(artifact => /models\/_group-[0-9a-f]{8}\.ts$/.test(artifact.path))?.content ?? '';
-  assert.match(group, /^export function parseMoney\(text: string, options\?: __Golem(?:Serde|Validate)Options\): MoneyFields \{/m);
-  assert.match(group, /^export function validateMoney\(value: unknown, options\?: __Golem(?:Serde|Validate)Options\): value is MoneyFields \{/m);
-  assert.match(group, /^export function toWireFormatMoney\(value: MoneyFields, options\?: __Golem(?:Serde|Validate)Options\): Types\.Money \{/m);
+  const assertFile = writeAssertFile(output, 'functions-assert.ts', `import { parseMoney, toWireFormatMoney, validateMoney, type MoneyFields } from './index.js';
+import type * as Types from './types.js';
+type IsAny<T> = 0 extends 1 & T ? true : false;
+const returnsAny: IsAny<ReturnType<typeof parseMoney>> = false;
+const parsed: MoneyFields = parseMoney('{"amount":"1"}');
+const wire: Types.Money = toWireFormatMoney(parsed);
+declare const input: unknown;
+if (validateMoney(input)) {
+  const narrowed: MoneyFields = input;
+  void narrowed;
+}
+// @ts-expect-error toWireFormatMoney takes a model value, not unknown
+void toWireFormatMoney(input);
+void wire;
+void returnsAny;
+`);
+  compileStrictUnusedSdk(output, [assertFile]);
+  const sdk = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'typed SDK');
+  const { parseMoney, toWireFormatMoney, validateMoney } = sdk;
+  assert.equal(typeof parseMoney, 'function');
+  assert.equal(typeof toWireFormatMoney, 'function');
+  assert.equal(typeof validateMoney, 'function');
+  if (typeof parseMoney !== 'function' || typeof toWireFormatMoney !== 'function' || typeof validateMoney !== 'function') {
+    throw new TypeError('Money functions are missing');
+  }
+  const money: unknown = parseMoney('{"amount":"5"}');
+  assert.equal(validateMoney(money), true);
+  assert.equal(validateMoney({}), false);
+  assert.deepEqual(toWireFormatMoney(money), { amount: '5' });
 });

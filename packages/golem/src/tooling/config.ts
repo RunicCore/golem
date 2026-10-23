@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import YAML from 'yaml';
-import { GolemDiagnosticSeverity, canonicalPath, isRecord, outsideModelsRootMessage, resolveProfile } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, isInsideDirectory, isRecord, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-api.js';
 import { defaultModelOutput } from './generated-paths.js';
 import type {
   GolemDiagnostic,
@@ -29,6 +28,8 @@ export interface GolemConfig {
   /** Whether the yaml sets `tsconfig`, as opposed to the default beside it. */
   readonly tsconfigNamed: boolean;
   readonly profile: GolemProfile;
+  /** What the rewrite scan does with a `@Body()` or `@Query()` parameter that is no golem model: `error` (the default) stops, `warn` reports and continues. Not part of the profile: no generated file records it. */
+  readonly nonModelInputs?: 'error' | 'warn';
   readonly jobs: readonly GolemJob[];
   readonly inventoryFile: string;
 }
@@ -152,11 +153,6 @@ export function canonicalFile(filename: string): string {
   return path.join(canonicalPath(path.dirname(resolved)), path.basename(resolved));
 }
 
-export function contains(directory: string, filename: string): boolean {
-  const relative = path.relative(directory, filename);
-  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
-}
-
 /** The tsconfig the models and controllers analysis finds from a job root: the nearest `tsconfig.json` upward, as `tsc` does. */
 function tsconfigFoundFrom(root: string): string | undefined {
   for (let directory = root; ; directory = path.dirname(directory)) {
@@ -195,7 +191,7 @@ function assertJobsMatchTsconfig(configFile: string, tsconfig: string, declared:
   for (const job of jobs) {
     if (job.kind !== 'models' && job.kind !== 'controllers') continue;
     const { root } = job.options;
-    if (!contains(directory, root)) throw new Error(`job root ${root} is outside ${directory}; use one golem.yaml per tsconfig.`);
+    if (!isInsideDirectory(directory, root)) throw new Error(`job root ${root} is outside ${directory}; use one golem.yaml per tsconfig.`);
     const found = tsconfigFoundFrom(root);
     if (found !== undefined && found !== tsconfig) {
       throw new Error(
@@ -208,7 +204,7 @@ function assertJobsMatchTsconfig(configFile: string, tsconfig: string, declared:
   }
   for (const job of jobs) {
     // The output is a real path already, so an output that leaves through a link shows as the place it reaches.
-    if (job.kind === 'models' && job.options.output !== undefined && !contains(directory, job.options.output)) {
+    if (job.kind === 'models' && job.options.output !== undefined && !isInsideDirectory(directory, job.options.output)) {
       throw new Error(`Job ${job.id}: output ${job.options.output} is outside the tsconfig directory ${directory}. Move it inside.`);
     }
   }
@@ -221,10 +217,11 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   const configFile = fs.realpathSync.native(requested);
   onInput?.(configFile);
   const directory = path.dirname(configFile);
-  const value: unknown = YAML.parse(fs.readFileSync(configFile, 'utf8'), { uniqueKeys: true });
-  keys(value, ['version', 'tsconfig', 'mobx', 'validation', 'allowAny', 'exact', 'unknownFormats', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
+  const value: unknown = parseYamlFile(fs.readFileSync(configFile, 'utf8'), configFile, { uniqueKeys: true });
+  keys(value, ['version', 'tsconfig', 'mobx', 'validation', 'allowAny', 'exact', 'unknownFormats', 'nonModelInputs', 'generators', 'controllers', 'openapi', 'models'], 'configuration');
   if (value.version !== 1) throw new Error('Configuration version must be 1.');
   if (value.unknownFormats !== undefined && value.unknownFormats !== 'warn' && value.unknownFormats !== 'error') throw new Error('unknownFormats must be "warn" or "error".');
+  if (value.nonModelInputs !== undefined && value.nonModelInputs !== 'warn' && value.nonModelInputs !== 'error') throw new Error('nonModelInputs must be "warn" or "error".');
   const profile = resolveProfile({
     mobx: boolean(value.mobx, false, 'mobx'), validation: boolean(value.validation, true, 'validation'),
     allowAny: boolean(value.allowAny, false, 'allowAny'),
@@ -259,7 +256,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
       for (const previous of outputs) {
-        if (contains(previous, output) || contains(output, previous)) throw new Error(`Overlapping generated outputs: ${previous} and ${output}`);
+        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${previous} and ${output}`);
       }
       outputs.push(output);
       jobs.push({ id: `generator:${path.relative(directory, output) || '.'}`, kind: 'generator', package: packageName, options: { directory, output, options: entry.options ?? {}, profile } });
@@ -279,7 +276,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       if (!/\.(?:json|ya?ml)$/i.test(output)) throw new Error(`${label}.output must be a JSON or YAML file.`);
       if (fs.existsSync(output) && !fs.statSync(output).isFile()) throw new Error(`${label}.output must be a file.`);
       for (const previous of outputs) {
-        if (contains(previous, output) || contains(output, previous)) throw new Error(`Overlapping generated outputs: ${previous} and ${output}`);
+        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${previous} and ${output}`);
       }
       outputs.push(output);
       const sourceValues = entry.sources === undefined
@@ -327,7 +324,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
       for (const previous of outputs) {
-        if (contains(previous, output) || contains(output, previous)) throw new Error(`Overlapping OpenAPI outputs: ${previous} and ${output}`);
+        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping OpenAPI outputs: ${previous} and ${output}`);
       }
       outputs.push(output);
       const allowRemoteRefs = boolean(entry.allowRemoteRefs, false, `${label}.allowRemoteRefs`);
@@ -353,7 +350,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       : path.resolve(directory, nonempty(value.models.output, 'models.output')));
     if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error('models.output must be a directory.');
     for (const previous of outputs) {
-      if (contains(previous, output) || contains(output, previous)) throw new Error(`Overlapping generated outputs: ${previous} and ${output}`);
+      if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${previous} and ${output}`);
     }
     let sources: string[] | undefined;
     if (value.models.sources !== undefined) {
@@ -362,7 +359,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       if (new Set(sources).size !== sources.length) throw new Error('Duplicate model source paths.');
       // The paths are real paths already, so a link to a file outside the root shows as that file.
       for (const source of sources) {
-        if (!contains(root, source)) {
+        if (!isInsideDirectory(root, source)) {
           throw new Error(outsideModelsRootMessage(source, root));
         }
       }
@@ -387,7 +384,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       }
     }
   }
-  return { configFile, directory, tsconfig, tsconfigNamed: value.tsconfig !== undefined, profile, jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
+  return { configFile, directory, tsconfig, tsconfigNamed: value.tsconfig !== undefined, profile, nonModelInputs: value.nonModelInputs ?? 'error', jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
 }
 
 /** The `models.root` of the config's models job: where its own model sources are. Without a models job, the directory of the golem.yaml. */
@@ -400,7 +397,7 @@ export function modelsRootOf(config: Pick<GolemConfig, 'directory' | 'jobs'>): s
 function producesInput(producer: GolemJob, input: string): boolean {
   const output = producer.options.output;
   if (!output) return false;
-  return producer.kind === 'controllers' ? canonicalPath(input) === canonicalPath(output) : contains(canonicalPath(output), canonicalPath(input));
+  return producer.kind === 'controllers' ? canonicalPath(input) === canonicalPath(output) : isInsideDirectory(canonicalPath(output), canonicalPath(input));
 }
 
 export function validateConfigInputs(config: GolemConfig): void {

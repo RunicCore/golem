@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import YAML from 'yaml';
 import { loadConfig, resolveConfig } from '#golem/config';
+import { YamlFileError } from '#golem/generator-api';
 import { parseArguments, providersFor } from '#golem/cli';
 
 function fixture(t: TestContext, yaml: string): { root: string; filename: string } {
@@ -19,6 +21,7 @@ test('defaults and relative paths are anchored to the config rather than process
   const { root, filename } = fixture(t, 'version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\nmodels:\n  root: .\n');
   const config = loadConfig(filename);
   assert.deepEqual(config.profile, { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' });
+  assert.equal(config.nonModelInputs, 'error');
   const job0 = config.jobs[0];
   const job1 = config.jobs[1];
   assert.ok(job0 && job0.kind === 'openapi');
@@ -34,6 +37,7 @@ test('defaults and relative paths are anchored to the config rather than process
     'validation: true',
     'allowAny: true',
     'unknownFormats: warn',
+    'nonModelInputs: warn',
     'models:',
     '  root: project',
     '  output: generated/models',
@@ -42,6 +46,7 @@ test('defaults and relative paths are anchored to the config rather than process
   fs.mkdirSync(path.join(explicit.root, 'project'), { recursive: true });
   const explicitConfig = loadConfig(explicit.filename);
   assert.deepEqual(explicitConfig.profile, { mobx: true, validation: true, allowAny: true, unknownFormats: 'warn' });
+  assert.equal(explicitConfig.nonModelInputs, 'warn');
   const modelJob = explicitConfig.jobs.find((job) => job.kind === 'models');
   assert.ok(modelJob && modelJob.kind === 'models');
   assert.equal(modelJob.options.root, path.join(explicit.root, 'project'));
@@ -203,6 +208,7 @@ test('configuration errors reject unknown overrides, duplicate keys and overlapp
     ['version: 1\nopenapi: [{input: api.yaml, output: sdk, maxRefBytes: 0}]', /positive/],
     ['version: 1\nallowAny: maybe\nmodels: {}\n', /allowAny must be a boolean/],
     ['version: 1\nunknownFormats: strict\nmodels: {}\n', /unknownFormats must be "warn" or "error"/],
+    ['version: 1\nnonModelInputs: strict\nmodels: {}\n', /nonModelInputs must be "warn" or "error"/],
     ['version: 1\nretiredOption: true\nmodels: {}\n', /Unknown configuration key: retiredOption\./],
     ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\n    retiredOption: true\n', /Unknown openapi\[0\] key/],
     ['version: 1\nopenapi:\n  - input: api.yaml\n    output: sdk\nmodels:\n  root: .\n  output: sdk/models\n', /Overlapping/],
@@ -212,6 +218,17 @@ test('configuration errors reject unknown overrides, duplicate keys and overlapp
     const { filename } = fixture(t, yaml);
     assert.throws(() => loadConfig(filename), error);
   }
+});
+
+test('a golem.yaml that is not YAML fails with its path relative to the working directory, the line, the column and the parse error as its cause', (t: TestContext) => {
+  // protects: T-311 a YAML parse error names the file
+  const { filename } = fixture(t, 'version: 1\nversion: 1\nmodels: {}\n');
+  assert.throws(() => loadConfig(filename), (error: unknown) => {
+    assert.ok(error instanceof YamlFileError);
+    assert.ok(error.message.startsWith(`${path.relative(process.cwd(), filename)}:2:1 `), error.message);
+    assert.ok(error.cause instanceof YAML.YAMLParseError);
+    return true;
+  });
 });
 
 test('configured provider absence and incompatible API have distinct actionable errors', async (t: TestContext) => {

@@ -15,7 +15,7 @@ The page has two tabs.
 <BenchmarkChart>
 <template #plain>
 
-Each library turns JSON into plain objects, checks every rule and rejects unknown properties. Golem uses an [`IObject` declaration](/guide/models#iobject-or-imodel) and also converts dates and [`TSerde` fields](/guide/tags#convert-a-field-to-a-different-json-value); Typia and [Ajv](https://ajv.js.org) check every rule but do not convert values, so they cannot run the Checkout payload; all four run Checkout, no conversion, where dates stay strings and Ajv checks the date-time format with an expression. Ajv is an outside library, here for comparison. It compiles a JSON Schema to a function, and the timed calls pair that function with `JSON.parse` and `JSON.stringify`.
+Each library turns JSON into plain objects, checks every rule and rejects unknown properties. Golem uses an [`IObject` declaration](/guide/models#iobject-or-imodel) and also converts dates and [`TSerde` fields](/guide/serialization#change-the-json-form); Typia and [Ajv](https://ajv.js.org) check every rule but do not convert values, so they cannot run the Checkout payload; all four run Checkout, no conversion, where dates stay strings and Ajv checks the date-time format with an expression. Ajv is an outside library, here for comparison. It compiles a JSON Schema to a function, and the timed calls pair that function with `JSON.parse` and `JSON.stringify`.
 
 </template>
 <template #classes>

@@ -1,0 +1,292 @@
+import { assertSupportedModelFieldName } from '@exprtlabs/golem/internal/schema';
+import { asRecord, isJsonObject, objectEntries } from './json.js';
+import { GolemDiagnosticSeverity, identifier, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { ComponentNameScope } from './origin.js';
+import { resolveLocal } from './normalize.js';
+import type { ResourceIndex } from './schema-projection.js';
+import {
+  type ModelDefinition,
+  type RecursiveAlias,
+  ModelDefinitions,
+  type DiscriminatorSelections,
+  type ModelResolveEnv,
+  modelEnv,
+  withSchemaBase,
+  directComponentSchemaRef,
+  componentSchemaTarget,
+  modelSchemaProperties,
+  hasAllOfMembers,
+  componentSite,
+  discriminatorSelection,
+  checkComposition,
+} from './model-resolution.js';
+
+function isModelSchema(env: ModelResolveEnv, schema: unknown, visiting = new Set<unknown>()): boolean {
+  if (!isJsonObject(schema) || visiting.has(schema)) return false;
+  visiting.add(schema);
+  const nested = withSchemaBase(env, schema);
+  const target = componentSchemaTarget(schema, nested);
+  if (target !== undefined && target !== schema) return isModelSchema(nested, target, visiting);
+  // An allOf beside the schema's own union, or with a union member, is a union of objects, not a class that extends the allOf.
+  if (hasAllOfMembers(schema) && (schema.oneOf !== undefined || schema.anyOf !== undefined || schema.allOf.some(isInlineUnion))) return false;
+  if (schema.type === 'object' || schema.properties || schema.additionalProperties !== undefined) return true;
+  if (Array.isArray(schema.allOf) && schema.allOf.length) {
+    return schema.allOf.some((item) => isModelSchema(nested, item, visiting));
+  }
+  return false;
+}
+
+function isInlineUnion(schema: unknown): boolean {
+  return isJsonObject(schema) && (schema.oneOf !== undefined || schema.anyOf !== undefined);
+}
+
+/**
+ * The non-model components that reach themselves through `$ref`, found once before the type and conversion walks.
+ * A model reference ends a path, as it ends the walks; only the keywords the walks follow count. A non-recursive
+ * non-model component is not named: each use inlines it.
+ */
+function findRecursiveAliases(env: ModelResolveEnv): ReadonlyMap<string, RecursiveAlias> {
+  const schemas = asRecord(asRecord(asRecord(env.document).components).schemas);
+  const components = new Map<string, { readonly schemaName: string; readonly rawSchema: unknown }>();
+  for (const [schemaName, rawSchema] of objectEntries(schemas)) {
+    if (!isModelSchema(env, resolveLocal(env.document, rawSchema))) components.set(identifier(schemaName), { schemaName, rawSchema });
+  }
+  const edgesOf = new Map<string, ReadonlySet<string>>();
+  const collect = (schema: unknown, scope: ModelResolveEnv, edges: Set<string>): void => {
+    if (!isJsonObject(schema)) return;
+    const nested = withSchemaBase(scope, schema);
+    const reference = directComponentSchemaRef(schema, nested);
+    if (reference) {
+      if (components.has(reference)) edges.add(reference);
+      return;
+    }
+    for (const keyword of ['allOf', 'oneOf', 'anyOf', 'prefixItems'] as const) {
+      for (const item of Array.isArray(schema[keyword]) ? schema[keyword] : []) collect(item, nested, edges);
+    }
+    for (const [, child] of objectEntries(schema.properties)) collect(child, nested, edges);
+    collect(schema.items, nested, edges);
+    collect(schema.additionalProperties, nested, edges);
+  };
+  const edges = (name: string): ReadonlySet<string> => {
+    let found = edgesOf.get(name);
+    if (!found) {
+      const collected = new Set<string>();
+      collect(components.get(name)?.rawSchema, env, collected);
+      edgesOf.set(name, found = collected);
+    }
+    return found;
+  };
+  const reachesOwnName = (name: string): boolean => {
+    const visited = new Set<string>();
+    const pending = [...edges(name)];
+    for (let next = pending.pop(); next !== undefined; next = pending.pop()) {
+      if (next === name) return true;
+      if (visited.has(next)) continue;
+      visited.add(next);
+      pending.push(...edges(next));
+    }
+    return false;
+  };
+  return new Map([...components].filter(([name]) => reachesOwnName(name)).map(([name, { schemaName, rawSchema }]) => [name, { name, schemaName, rawSchema }]));
+}
+
+/** The component schemas that the allOf refers to, in order. */
+function modelBaseSchemaNames(schema: unknown, env: ModelResolveEnv): string[] {
+  const record = asRecord(schema);
+  const nested = withSchemaBase(env, schema);
+  const candidates = Array.isArray(record.allOf) ? record.allOf : [schema];
+  return candidates.flatMap((candidate) => directComponentSchemaRef(candidate, nested) ?? []);
+}
+
+function modelAdditionalProperties(
+  env: ModelResolveEnv,
+  rawSchema: unknown,
+): unknown {
+  let result: unknown;
+  const visiting = new Set<string>();
+  const visit = (schema: unknown, current: ModelResolveEnv): void => {
+    if (!isJsonObject(schema)) return;
+    const nested = withSchemaBase(current, schema);
+    const reference = directComponentSchemaRef(schema, nested);
+    if (reference) {
+      if (visiting.has(reference)) return;
+      const target = componentSchemaTarget(schema, nested);
+      if (!target) return;
+      visiting.add(reference);
+      visit(target, nested);
+      visiting.delete(reference);
+      return;
+    }
+    for (const item of Array.isArray(schema.allOf) ? schema.allOf : []) visit(item, nested);
+    if (schema.additionalProperties !== undefined) result = schema.additionalProperties;
+  };
+  visit(rawSchema, env);
+  return result;
+}
+
+/** One JSON Pointer token. */
+export function collectOpenApiModelDefinitions(document: unknown, resources?: ResourceIndex): {
+  definitions: ModelDefinitions;
+  ordered: ModelDefinition[];
+  diagnostics: GolemDiagnostic[];
+  selections: DiscriminatorSelections;
+} {
+  const diagnostics: GolemDiagnostic[] = [];
+  const selections: DiscriminatorSelections = new Map();
+  const warn = (code: string, message: string): void => {
+    diagnostics.push({ code, severity: GolemDiagnosticSeverity.Warning, message });
+  };
+  const schemas = asRecord(asRecord(asRecord(document).components).schemas);
+  const env = modelEnv(document, undefined, undefined, resources, selections);
+  const definitions = new ModelDefinitions(findRecursiveAliases(env));
+  const schemaScope = new ComponentNameScope('models.ts schema identifiers');
+  for (const [rawName, rawSchema] of objectEntries(schemas)) {
+    const name = identifier(rawName);
+    const schema = resolveLocal(document, rawSchema);
+    if (!isModelSchema(env, schema)) continue;
+    schemaScope.claim(name, `component schema ${JSON.stringify(rawName)}`, rawName);
+    definitions.set(name, {
+      name,
+      schemaName: rawName,
+      schema,
+      rawSchema,
+      baseName: null,
+      otherBaseNames: [],
+      properties: new Map(),
+      additionalProperties: null,
+      required: new Set(),
+    });
+  }
+
+  for (const definition of definitions.values()) {
+    const [requestedBase, ...others] = modelBaseSchemaNames(definition.rawSchema, env);
+    definition.baseName = requestedBase && definitions.has(requestedBase) && requestedBase !== definition.name
+      ? requestedBase
+      : null;
+    definition.otherBaseNames = others.filter((name) => definitions.has(name) && name !== definition.name && name !== definition.baseName);
+    definition.properties = modelSchemaProperties(env, definition.rawSchema, definition.baseName);
+    for (const propertyName of definition.properties.keys()) assertSupportedModelFieldName(propertyName);
+    definition.additionalProperties = modelAdditionalProperties(
+      env,
+      definition.rawSchema,
+    );
+    definition.required = new Set();
+    const collectRequired = (schema: unknown, visiting = new Set<string>(), current = env): void => {
+      if (!isJsonObject(schema)) return;
+      const nested = withSchemaBase(current, schema);
+      const reference = directComponentSchemaRef(schema, nested);
+      if (reference) {
+        if (visiting.has(reference)) return;
+        const target = componentSchemaTarget(schema, nested);
+        if (target) {
+          // Base `required` fields still constrain a derived allOf schema when
+          // that schema redeclares the field to narrow its type (for example,
+          // a discriminator const). Collect them so the derived declaration
+          // cannot become optional in the emitted TypeScript class.
+          visiting.add(reference);
+          collectRequired(target, visiting, nested);
+          visiting.delete(reference);
+        }
+        return;
+      }
+      for (const item of Array.isArray(schema.allOf) ? schema.allOf : []) collectRequired(item, visiting, nested);
+      for (const property of Array.isArray(schema.required) ? schema.required : []) {
+        definition.required.add(String(property));
+      }
+    };
+    collectRequired(definition.rawSchema);
+  }
+  for (const [rawName, rawSchema] of objectEntries(schemas)) {
+    const definition = definitions.get(identifier(rawName));
+    const model = definition?.schemaName === rawName ? definition : undefined;
+    checkComposition(componentSite(rawName), model ? model.rawSchema : rawSchema, model, definitions, document, resources, warn);
+  }
+
+  // Union models are decided against declared inheritance only, so the result
+  // does not depend on component order. A union model class requires its
+  // variants to extend it, so a union with a variant that another union also
+  // selects stays a plain union type (decoded through its tag table).
+  const unions: ModelDefinition[] = [];
+  for (const [rawName, rawSchema] of objectEntries(schemas)) {
+    if (!isJsonObject(rawSchema)) continue;
+    // A discriminator makes anyOf select exactly one variant, as oneOf does.
+    const alternatives = Array.isArray(rawSchema.oneOf)
+      ? rawSchema.oneOf
+      : Array.isArray(rawSchema.anyOf) && isJsonObject(rawSchema.discriminator) ? rawSchema.anyOf : undefined;
+    if (!alternatives) continue;
+    const name = identifier(rawName);
+    if (definitions.has(name)) continue;
+    const variants = alternatives
+      .map((item) => directComponentSchemaRef(item, env))
+      .filter((variant): variant is string => Boolean(variant && definitions.has(variant)));
+    if (variants.length !== alternatives.length || variants.length === 0) continue;
+    const commonBase = definitions.get(variants[0] ?? '')?.baseName ?? null;
+    if (!commonBase || !variants.every((variant) => definitions.get(variant)?.baseName === commonBase)) continue;
+    unions.push({
+      name,
+      schemaName: rawName,
+      schema: rawSchema,
+      rawSchema,
+      baseName: commonBase,
+      otherBaseNames: [],
+      properties: new Map(),
+      additionalProperties: null,
+      required: new Set(),
+      variants,
+      discriminator: rawSchema.discriminator,
+      isUnion: true,
+    });
+  }
+  const claims = new Map<string, number>();
+  for (const union of unions) {
+    for (const variant of union.variants ?? []) claims.set(variant, (claims.get(variant) ?? 0) + 1);
+  }
+  for (const union of unions) {
+    const shared = (union.variants ?? []).filter((variant) => claims.get(variant) !== 1);
+    if (shared.length) {
+      warn('OPENAPI_UNION_SHARED_VARIANT', `schema ${JSON.stringify(union.schemaName)} gets no union model class because ${shared.map((variant) => definitions.get(variant)?.schemaName ?? variant).map((name) => JSON.stringify(name)).join(', ')} is also a variant of another union; values typed by it still decode to the variant models`);
+      continue;
+    }
+    schemaScope.claim(union.name, `union schema ${JSON.stringify(union.schemaName)}`, union.schemaName);
+    definitions.set(union.name, union);
+    for (const variant of union.variants ?? []) {
+      const child = definitions.get(variant);
+      if (child) child.baseName = union.name;
+    }
+  }
+
+  for (const [rawName, rawSchema] of objectEntries(schemas)) {
+    const schema = resolveLocal(document, rawSchema);
+    if (!isJsonObject(schema) || !isJsonObject(schema.discriminator)) continue;
+    if (!Array.isArray(schema.oneOf) && !Array.isArray(schema.anyOf)) {
+      warn('OPENAPI_DISCRIMINATOR_INHERITANCE_UNSUPPORTED', `schema ${JSON.stringify(rawName)} declares a discriminator without oneOf/anyOf; subtypes that extend it through allOf are not selected when it is decoded`);
+      continue;
+    }
+    const selection = discriminatorSelection(rawName, schema, definitions, env, warn);
+    selections.set(schema, selection ?? null);
+    if (isJsonObject(rawSchema)) selections.set(rawSchema, selection ?? null);
+    if (!selection) {
+      warn('OPENAPI_DISCRIMINATOR_NOT_LOWERED', `schema ${JSON.stringify(rawName)} has a discriminator, but not every oneOf/anyOf variant is a component model; its discriminator is not used for conversion`);
+      continue;
+    }
+  }
+
+  const ordered: ModelDefinition[] = [];
+  const visiting = new Set<string>();
+  const visit = (definition: ModelDefinition): void => {
+    if (ordered.includes(definition)) return;
+    if (visiting.has(definition.name)) {
+      throw new Error(`circular allOf model inheritance involving ${definition.name}`);
+    }
+    visiting.add(definition.name);
+    if (definition.baseName) {
+      const base = definitions.get(definition.baseName);
+      if (base) visit(base);
+    }
+    visiting.delete(definition.name);
+    ordered.push(definition);
+  };
+  for (const definition of definitions.values()) visit(definition);
+
+  return { definitions, ordered, diagnostics, selections };
+}

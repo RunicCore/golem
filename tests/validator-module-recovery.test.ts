@@ -7,6 +7,8 @@ import { test, type TestContext } from 'node:test';
 import { runPipeline } from '#golem/pipeline';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
+import { until } from './support/watch-wait.js';
+import { runLines } from './support/watch-runs.js';
 
 /** A validators module: `validators.generated.ts` of an SDK, or `<name>.validators.generated.ts` of a model job. */
 const VALIDATOR_MODULE = /(?:^|\/)(?:[^/]*\.)?validators\.generated\.ts$/;
@@ -78,10 +80,9 @@ test('watch regenerates SDK then frontend without output loops', async t => {
   child.stderr.on('data', chunk => { errors += String(chunk); });
   const exited = new Promise<void>(resolve => child.once('close', () => resolve()));
   t.after(async () => { child.kill('SIGTERM'); await exited; });
-  const runs = () => output.split('Generated configured outputs.').length - 1;
+  const runs = () => runLines(output).length;
   const untilRun = async (count: number) => {
-    const deadline = Date.now() + 30_000;
-    while (runs() < count && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 50));
+    await until(() => runs() >= count, () => `run ${count} (runs=${runs()}, stderr=${errors})`);
     assert.equal(runs(), count, errors || output);
   };
   await untilRun(1);

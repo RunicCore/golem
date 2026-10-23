@@ -4,11 +4,16 @@ import * as ts from '@exprtlabs/golem/internal/ts';
 import { operationCodecRegistryPath } from '@exprtlabs/golem/internal/generated-paths';
 import {
   assertAbsolute,
+  assertNoSyntaxErrors,
   canonicalFilename,
   createContractAnalysis,
+  createModelStubProgram,
   createProgram,
+  discoverModelSources,
+  includedModelSources,
   loadModelManifests,
   modelBoundary,
+  programFilenames,
   retainedProgramSession,
   projectWatchInputs,
   type ModelBoundary,
@@ -22,7 +27,7 @@ import type {
   InputObserver,
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
-import { DEFAULT_CONTROLLER_SUFFIXES, resolveProfile } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, resolveProfile } from '@exprtlabs/golem/generator-api';
 import {
   GolemDiagnosticSeverity,
   diagnostic,
@@ -224,14 +229,16 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     observe(source);
     if (!existsSync(source) || !statSync(source).isFile()) throw new Error(`Controller source does not exist: ${source}`);
   }
-  const programInfo = createProgram(
-    sources,
-    normalized.root,
-    observe,
-    retainedProgramSession(context.session, '@exprtlabs/golem-ts-openapi', normalized.root),
-  );
+  const session = retainedProgramSession(context.session, '@exprtlabs/golem-ts-openapi', normalized.root);
+  // With the models job known, a generated base class is a stub of its model, as in that job's program: the generated file on
+  // disk is missing on the first run and stale until the models job rewrites it, which runs after this job.
+  const programInfo = normalized.boundary
+    ? createModelStubProgram(sources, normalized.root, normalized.boundary, discoverModelSources(normalized.boundary.root, undefined, normalized.boundary.suffixes), observe, session)
+    : createProgram(sources, normalized.root, observe, session);
   using program = programInfo.program;
   const checker = program.getTypeChecker();
+  // The controllers job analyses the models its controllers use, so a syntax error in a model file stops here too.
+  assertNoSyntaxErrors(program, [...sources, ...includedModelSources(programFilenames(program), normalized.boundary?.suffixes ?? DEFAULT_MODEL_SUFFIXES)], normalized.root);
   const contractAnalysis = createContractAnalysis(program, {
     root: normalized.root,
     allowAny: normalized.profile.allowAny,

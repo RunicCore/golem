@@ -10,7 +10,7 @@ A `Date` field is an ISO date-time string in JSON. `parse` and `fromWireFormat` 
 
 <<< ../../examples/models/src/read-reminder.ts#read-reminder
 
-Add format checks with [type tags](/guide/tags).
+[Validation tags](/guide/tags) add format checks.
 
 ## Use Temporal fields
 

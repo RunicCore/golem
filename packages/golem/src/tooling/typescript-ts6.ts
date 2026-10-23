@@ -87,6 +87,8 @@ interface ClassicProgram {
   isSourceFileFromExternalLibrary(file: Golem.SourceFile): boolean;
   isSourceFileDefaultLibrary(file: Golem.SourceFile): boolean;
   getCompilerOptions(): Golem.CompilerOptions;
+  getSyntacticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
+  getSemanticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
 }
 
 interface ClassicMessageChain {
@@ -225,6 +227,7 @@ export const {
   isImportDeclaration,
   isImportEqualsDeclaration,
   isImportSpecifier,
+  isImportTypeNode,
   isIndexSignatureDeclaration,
   isIndexedAccessTypeNode,
   isInterfaceDeclaration,
@@ -584,6 +587,16 @@ class CompatProgram implements Golem.Program {
   getCompilerOptions(): Golem.CompilerOptions {
     return this.program.getCompilerOptions();
   }
+
+  getSyntacticDiagnostics(filename: string): readonly Golem.Diagnostic[] {
+    const file = this.program.getSourceFile(filename);
+    return file ? this.program.getSyntacticDiagnostics(file).map(withText) : [];
+  }
+
+  getSemanticDiagnostics(filename: string): readonly Golem.Diagnostic[] {
+    const file = this.program.getSourceFile(filename);
+    return file ? this.program.getSemanticDiagnostics(file).map(withText) : [];
+  }
 }
 
 function canonical(filename: string): string {
@@ -607,9 +620,12 @@ function chainTexts(message: string | ClassicMessageChain, depth: number): strin
 /** The classic compiler's diagnostics for the program, each reading `text` as the head message. */
 export function getPreEmitDiagnostics(program: Golem.Program): readonly Golem.Diagnostic[] {
   if (!(program instanceof CompatProgram)) throw new TypeError('getPreEmitDiagnostics needs a program opened by the TypeScript 6 backend.');
-  return classic.getPreEmitDiagnostics(program.program)
-    // Object.create returns `any`; the result is the classic diagnostic with `text` added.
-    .map((diagnostic) => Object.create(diagnostic, { text: { value: headText(diagnostic.messageText), enumerable: true }, fileName: { value: diagnostic.file?.fileName, enumerable: true } }) as Golem.Diagnostic & ClassicDiagnostic);
+  return classic.getPreEmitDiagnostics(program.program).map(withText);
+}
+
+// Object.create returns `any`; the result is the classic diagnostic with `text` added.
+function withText(diagnostic: ClassicDiagnostic): Golem.Diagnostic & ClassicDiagnostic {
+  return Object.create(diagnostic, { text: { value: headText(diagnostic.messageText), enumerable: true }, pos: { value: diagnostic.start, enumerable: true }, fileName: { value: diagnostic.file?.fileName, enumerable: true } }) as Golem.Diagnostic & ClassicDiagnostic;
 }
 
 /** Format diagnostics as `path:line:col - error TS1234: message`, with chained messages indented below, as the TypeScript 7 backend does. */

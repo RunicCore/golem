@@ -8,7 +8,7 @@ Run tests in the golem test-runner image. Tier runs are offline.
 | `npm run test:full` | 5 min | Unit tests, the TypeScript 6 lane and the packed model-only smoke test. Run before a commit. Pack and the smoke test run beside the TypeScript 6 lane. |
 | `npm run test:acceptance` | 10 min | Full, the public-source and OpenAPI compliance checks, the acceptance unit tests, and the packed and browser tests. Run before a release. |
 | `npm run test:prepare` | 5 min (plus a first-time image build), online | Builds the image and fills the npm, packed and typia plugin caches. Runs no tests. Run it first, and again after a lockfile or image change. |
-| `npm run docs:check` | 2 min | Builds the documentation site and checks it. |
+| `npm run docs:check` | 2 min | Checks the docs prose rules and page inventory, then builds the documentation site and checks it. |
 
 Pass a test source path, such as `tests/serde.test.ts`, or a `node --test` flag for the test files, such as `--test-name-pattern`. The run rejects the flags that set up the run itself (`--test-reporter`, `--test-concurrency`, `--test-timeout`, `--test-shard`) with exit 2. A path that names no file fails the step. A `*` works in the file name only, not in a directory (`tests/*.test.ts`, not `tests/**/x.test.ts`).
 
@@ -25,6 +25,10 @@ Name a unit test that is too slow for Full `tests/<name>.acceptance.ts` or `test
 The benchmark's typia adapter compiles with `ttsc`, which builds typia's Go plugin from source on first use and fetches its Go modules. Prepare compiles one small typia project so the plugin and the modules are cached. The entrypoint keeps them in `/cache/ttsc` (`TTSC_CACHE_DIR`) and `/cache/gomod` (`GOMODCACHE`), outside the work tree that each run resets, and sets `GOPROXY=off` in the offline tiers. A missing module then fails the run at once with a Go error: run `npm run test:prepare`.
 
 After you change what a test installs, run `npm run test:prepare` before the next tier run. The TypeScript 6 lane changed the runner image, so every other checkout needs one `npm run test:prepare` after it updates to this change.
+
+## Linux lockfile
+
+The checked-in `package-lock.json` comes from macOS and lacks the Linux platform binaries. `test:prepare` resolves a Linux lockfile online and keeps it in the cache volume at `/cache/linux-lock/deps-<hash>/package-lock.json`; the other tiers copy it and install offline. The hash covers only the fields of the root, `packages/*` and `examples/payments` `package.json` files that change the install: `name`, `version`, `dependencies`, `devDependencies`, `optionalDependencies`, `peerDependencies`, `peerDependenciesMeta`, `bundleDependencies`, `bundledDependencies`, `overrides`, `workspaces` and `packageManager`. A change to `scripts` or another field keeps the lockfile. Branches with different dependencies keep separate slots. When a tier reports `No Linux lockfile for the current package.json files`, run `npm run test:prepare`.
 
 ## Failure messages
 
@@ -57,7 +61,8 @@ A step starts its files longest first, so one slow file does not start last and 
 
 Results land in `.cache/test-results/`: one TAP file for each test step, and `<tier>-timings.json`. The runner writes the timings file when a step starts and again when it ends, so a run that the ceiling stops keeps every finished step. Its fields:
 
-- `timings`: one entry for each finished step, with `label`, `seconds`, `status` and `file_seconds`.
+- `timings`: one entry for each finished step, with `label`, `seconds`, `status`, `load_start`, `load_end` and `file_seconds`.
+- `load_start` and `load_end`: the 1, 5 and 15 minute load averages when the step began and ended, also printed on the step's start and end lines as `load (container kernel)`. `run.sh` prints `load (host)` once, at the start of the run, before the container starts. The container line shows the load of the container's kernel only (on Docker Desktop, the Linux VM); the host line shows the machine, including processes outside Docker. Read both before you take a ceiling hit for a regression.
 - `file_seconds`: the seconds of each test file, keyed by source path (`tests/serde.test.ts`), summed over the steps. A file that the TypeScript 6 lane reruns counts both runs. The entries in `timings` hold the seconds of each step alone; steps that run beside each other overlap, so their seconds add up to more than the total.
 - `running`: the steps that were running at the last write. It is absent when every step ended.
 

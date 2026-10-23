@@ -1,3 +1,4 @@
+import { compareText } from '../generator-api.js';
 import * as ts from '../typescript-ns.js';
 import { resolveSymbol } from './symbols.js';
 
@@ -84,7 +85,7 @@ function readable(
  * parameters, not declared in a `.d.ts` file (so lib aliases such as `Record` never name),
  * and a name that survives the same identifier check as keys. `TBilling` stays `TBilling`.
  */
-function aliasProjectionName(declaration: ts.TypeAliasDeclaration): string | undefined {
+export function aliasProjectionName(declaration: ts.TypeAliasDeclaration): string | undefined {
   if (declaration.typeParameters?.length || declaration.getSourceFile().isDeclarationFile) return undefined;
   return pascalIdentifier(declaration.name.text);
 }
@@ -195,8 +196,7 @@ export function unionVariantNaming(
   }
   const matched = named.every(variant => indexOf(variant) >= 0);
   const order = matched ? undefined : [...named].sort((left, right) => {
-    const a = checker.typeToString(left), b = checker.typeToString(right);
-    return a < b ? -1 : a > b ? 1 : 0;
+    return compareText(checker.typeToString(left), checker.typeToString(right));
   });
   named.forEach(variant => {
     const position = order ? order.indexOf(variant) : indexOf(variant);

@@ -7,16 +7,16 @@ explain the examples and show source regions from these maintained files.
 
 | Example | Shows |
 | --- | --- |
-| [models](models/) | An offline task tracker: models, tags, validation, serialization, composition and dates. Start here to define models without a server. |
+| [models](models/) | An offline task tracker: models, tags, validation, serialization, field types and dates. Start here to define models without a server. |
 | [shared-folder](shared-folder/) | A shared folder that declares a model, used by two apps, one through a plain include and one through a folder link. Each app generates the model in its own output. The web app extends it and validates; the worker does not. |
 | [payments](payments/) | A merchant payments app: NestJS controllers that produce an OpenAPI document, a typed client, a React and MobX editor, and a client for a third-party provider with auth, streams, codecs and dates. |
 
-The guides walk through them: [models](../docs/guide/models.md),
-[a shared folder](../docs/reference/config.md#a-folder-shared-by-several-apps),
-[type tags](../docs/guide/tags.md),
-[NestJS](../docs/guide/nestjs.md),
-[an API client](../docs/guide/client.md),
-[models with a client](../docs/guide/models-and-client.md) and
+The guides walk through them: [Define models](../docs/guide/models.md),
+[Share models between apps](../docs/guide/shared-models.md),
+[Validation tags](../docs/guide/tags.md),
+[OpenAPI from controllers](../docs/guide/nestjs.md),
+[Generate a client](../docs/guide/client.md),
+[SDK types in your models](../docs/guide/models-and-client.md) and
 [MobX and React](../docs/guide/mobx.md).
 
 ## Install and run
@@ -39,6 +39,6 @@ npm test           # offline; golem build generates first
 
 Files under `sdk/`, the `*.model.generated.ts` files, `src/generated/` and `.golem/` are generated output, and each example's `.gitignore` lists them.
 Edit the authored contract or handwritten source, then run `npm run generate`.
-See [Installation](../docs/guide/install.md) for the packages and profiles.
+The [Install](../docs/guide/install.md) page lists the packages and profiles.
 
 [Quick start](../docs/guide/quick-start.md) shows how to add the packages to an existing application.

@@ -59,3 +59,44 @@ test('union members are emitted in canonical order whichever order the checker c
   assert.ok(fromA.some(line => /\blink\b/.test(line)), 'the model-reference union must be among the compared aliases');
   assert.deepEqual(fromA, fieldLines('b'));
 });
+
+for (const validation of [false, true]) {
+  test(`an object union with no literal tag stops generation with RUNM1080, the model file and the fix, with validation ${validation ? 'on' : 'off'}`, t => {
+    // protects: T-232 coded diagnostic for an untagged object union (golem-model path)
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-untagged-union-', name: 'untagged-union' });
+    writeFileSync(path.join(sourceRoot, 'pets.model.ts'), readFixture('models/untagged-union/pets.model.ts'));
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation } }),
+      /pets\.model\.ts RUNM1080: Object union conversions require a unique, required literal discriminator\. The variants are \{ bark, born \} \| \{ name, born \}\. Give each variant a required literal tag, such as `kind: 'cat'`/,
+    );
+  });
+}
+
+for (const validation of [false, true]) {
+  for (const [fixture, variants] of [
+    ['named-objects', /The variants are TCat \| TDog\./],
+    ['models', /The variants are Item0 \| Item1\./],
+  ] as const) {
+    test(`two ${fixture} with no literal tag stop generation with RUNM1080, the model file and the variants, with validation ${validation ? 'on' : 'off'}`, t => {
+      // protects: T-309 coded diagnostic for a union of named objects or models with no tag
+      const { root, sourceRoot } = createModelProject(t, { prefix: `golem-untagged-${fixture}-`, name: `untagged-${fixture}` });
+      writeFileSync(path.join(sourceRoot, 'pets.model.ts'), readFixture(`models/untagged-union/${fixture}.model.ts`));
+      assert.throws(
+        () => generate({ root, profile: { mobx: false, validation } }),
+        error => error instanceof Error
+          && /pets\.model\.ts RUNM1080: Object union conversions require a unique, required literal discriminator\. The variants are /.test(error.message)
+          && variants.test(error.message),
+      );
+    });
+  }
+}
+
+test('a union whose scalar variants cannot be told apart stops generation with RUNM1082 and the model file', t => {
+  // protects: T-309 coded diagnostic for an ambiguous scalar union
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-ambiguous-scalars-', name: 'ambiguous-scalars' });
+  writeFileSync(path.join(sourceRoot, 'when.model.ts'), readFixture('models/untagged-union/scalars.model.ts'));
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    /when\.model\.ts RUNM1082: Union has ambiguous conversions\. Use a discriminated object union or one serde pair for the value\. The variants are /,
+  );
+});

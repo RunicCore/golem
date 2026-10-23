@@ -526,3 +526,39 @@ export class HiddenController {
   }));
   assert.deepEqual(Object.keys(document.paths), ['/shown']);
 });
+
+test('writes a recursive alias of a response as one component that refers to itself', async (t: TestContext) => {
+  // protects: T-221 a recursive type alias becomes one self-referencing OpenAPI component, not an inlined or rejected schema
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+
+@Controller('json')
+export class JsonController {
+  @Get('value')
+  value(): JsonValue {
+    return { a: [1] };
+  }
+
+  @Get('wrapped')
+  wrapped(): { data: JsonValue } {
+    return { data: null };
+  }
+}
+`);
+  const document = documentOf(await generate({
+    root,
+    output: path.join(root, 'openapi.json'),
+    info: { title: 'Json', version: '1' },
+    profile: { mobx: false, validation: false },
+  }));
+  const components = (document as unknown as { readonly components: { readonly schemas: Readonly<Record<string, OpenApiSchema>> } }).components.schemas;
+  const names = Object.keys(components).filter((name) => name.startsWith('JsonValue'));
+  assert.equal(names.length, 1, 'one component for the alias');
+  const reference = { $ref: `#/components/schemas/${names[0]}` };
+  const branches = expectValue(expectValue(components[names[0]], 'the JsonValue component').anyOf, 'JsonValue anyOf') as readonly OpenApiSchema[];
+  assert.deepEqual(expectValue(branches.find((branch) => branch.type === 'array'), 'the array branch').items, reference);
+  assert.deepEqual(expectValue(branches.find((branch) => branch.type === 'object'), 'the record branch').additionalProperties, reference);
+  assert.deepEqual(responseSchema(document, '/json/value', 'get', '200'), components[names[0]], 'the response holds the alias body, which refers to the component');
+  assert.deepEqual(propertySchema(responseSchema(document, '/json/wrapped', 'get', '200'), 'data'), reference);
+});

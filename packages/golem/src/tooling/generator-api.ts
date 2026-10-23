@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import YAML from 'yaml';
 /** Shared API-1 contracts. Providers return contents; the CLI owns all writes. */
 export {
   assertPortableFilenames,
@@ -16,6 +17,26 @@ export {
 /** Canonical text order: by UTF-16 code unit, so output does not depend on the machine's locale or ICU data. */
 export function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/** Whether `filename` is `directory` or lies inside it, by path alone: the path from `directory` is not `..`, does not start with `..` and the separator, and is not absolute. */
+export function isInsideDirectory(directory: string, filename: string): boolean {
+  const relative = path.relative(directory, filename);
+  return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+/** A copy of a JSON-like value with its object keys sorted at every depth. */
+export function stableValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.keys(value).sort().map((key) => [key, stableValue(value[key])]),
+  );
+}
+
+/** Indented JSON text with sorted keys and a final line end, so equal values give equal text. */
+export function stableJson(value: unknown): string {
+  return `${JSON.stringify(stableValue(value), null, 2)}\n`;
 }
 
 export interface GolemProfile {
@@ -236,6 +257,37 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/** `filename` as a message prints it: an absolute path relative to the working directory, any other name (a URL, a relative path) as written. */
+export function displayPath(filename: string): string {
+  return path.isAbsolute(filename) ? path.relative(process.cwd(), filename) : filename;
+}
+
+/** A YAML file that does not parse: the developer's input to fix. The message starts with `<file>:<line>:<column>`; `cause` is the parser's error. */
+export class YamlFileError extends Error {
+  constructor(message: string, options: { cause: unknown }) {
+    super(message, options);
+    this.name = 'YamlFileError';
+  }
+}
+
+/**
+ * The parsed YAML of `text`, which came from `filename`. A parse error becomes a `YamlFileError` whose message starts with
+ * the file, line and column: the path relative to the working directory for an absolute `filename`, or `filename` as written
+ * for a URL. Any other failure passes through.
+ */
+export function parseYamlFile(text: string, filename: string, options?: YAML.DocumentOptions & YAML.ParseOptions): unknown {
+  try {
+    return YAML.parse(text, options);
+  } catch (error) {
+    if (!(error instanceof YAML.YAMLParseError)) throw error;
+    const file = displayPath(filename);
+    const start = error.linePos?.[0];
+    // The parser's message ends its first line with the position; the prefix already says it.
+    const reason = error.message.replace(/ at line \d+, column \d+:/, ':').trimEnd();
+    throw new YamlFileError(`${file}${start === undefined ? '' : `:${start.line}:${start.col}`} ${reason}`, { cause: error });
+  }
+}
+
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -299,5 +351,5 @@ export function discoverSources(root: string, options: SourceDiscoveryOptions): 
     }
   };
   visit(root);
-  return [...found].sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+  return [...found].sort(compareText);
 }

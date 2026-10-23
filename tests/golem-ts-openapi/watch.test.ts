@@ -9,6 +9,7 @@ import { runPipeline } from '#golem/cli';
 import { workspace } from '../support/process.js';
 import { readGeneratedClientSource } from '../openapi/helpers.js';
 import { until } from '../support/watch-wait.js';
+import { runLines } from '../support/watch-runs.js';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 
 interface RealFixture {
@@ -115,7 +116,7 @@ async function stopChild(child: ChildProcess): Promise<void> {
 }
 
 function successCount(stdout: string): number {
-  return (stdout.match(/Generated configured outputs\./g) ?? []).length;
+  return runLines(stdout).length;
 }
 
 test('real Nest watch follows helper dependencies through OpenAPI, SDK, and models and recovers after controller errors', async (t: TestContext) => {

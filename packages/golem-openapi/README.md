@@ -15,8 +15,8 @@ npm install --save-dev @exprtlabs/golem-openapi typescript@~7.0.2
 ```
 
 [Generate a client](../../docs/guide/client.md) walks through calling the
-generated SDK. [Compatibility and stability](../../docs/compatibility.md) has
-supported versions. Feature support by OpenAPI version and profile is in
+generated SDK. [Compatibility](../../docs/compatibility.md) has supported
+versions. Feature support by OpenAPI version and profile is in
 [MATRIX.md](MATRIX.md); third-party attribution is in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 

@@ -2,10 +2,10 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { canonicalFile, contains, modelsRootOf, resolveConfig } from './config.js';
+import { canonicalFile, modelsRootOf, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
-import { GolemDiagnosticSeverity, isRecord } from './generator-api.js';
+import { GolemDiagnosticSeverity, isInsideDirectory, isRecord } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { nodeSpecifierEdits } from './node-specifiers.js';
 import { atomicWrite } from './outputs.js';
@@ -17,8 +17,9 @@ import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.
 import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
-import { resolveTypeScript } from './typescript-version.js';
-import { signature } from './watch.js';
+import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
+import { changedPaths, InputPoller, OwnedOutputIndex, RunBaseline } from './input-poller.js';
+import type { InputSnapshot } from './input-poller.js';
 
 interface BuildOptions {
   /**
@@ -35,6 +36,8 @@ interface BuildOptions {
   readonly tscArguments?: readonly string[];
   /** Called after the generate step of each build with the ids of the jobs that executed; a job its record showed to be current is not among them. */
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
+  /** Called after each poll of a watching build that found nothing to build, so a caller knows the watcher has looked since the last build. */
+  readonly onIdlePoll?: () => void;
 }
 
 export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
@@ -54,7 +57,7 @@ interface Project {
   readonly rootDir?: string;
   readonly baseUrl?: string;
   readonly paths?: Readonly<Record<string, readonly string[]>>;
-  /** The original configuration emits declarations, so the check writes them from the original sources. */
+  /** The original configuration emits declarations, so the check writes them from the original sources and the build changes their import paths. */
   readonly declaration: boolean;
   /** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: the build is the check alone. */
   readonly emitsJavaScript: boolean;
@@ -149,28 +152,40 @@ function rebasePaths(paths: Readonly<Record<string, readonly string[]>>, base: s
   return Object.fromEntries(Object.entries(paths).map(([pattern, targets]) => [pattern, targets.map((target) => posix(path.resolve(base, target)))]));
 }
 
-/** The compiler CLI of the TypeScript the seam loaded: a different install would check with one compiler and emit with another. */
+/** The compiler CLI of the TypeScript the seam loaded: a project on a different install would check with one compiler and emit with another. */
 function compilerCli(root: string): string {
-  const selected = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? root);
-  if (selected.version !== ts.typescriptVersion) {
-    throw new Error(`golem build would run TypeScript ${selected.version} from ${selected.packageDir}, but golem loaded TypeScript ${ts.typescriptVersion}; run golem from the project directory.`);
-  }
-  return path.join(selected.packageDir, 'bin', 'tsc');
+  requestTypeScriptRoot(root);
+  return path.join(selectedTypeScript().packageDir, 'bin', 'tsc');
 }
 
 interface TscResult { readonly code: number; readonly stdout: string; readonly stderr: string }
 
 /** Run the compiler CLI; `forward` prints its output as it arrives, exactly as the compiler wrote it. */
-function runTsc(cli: string, cwd: string, args: readonly string[], forward: boolean): Promise<TscResult> {
+function runTsc(cli: string, cwd: string, args: readonly string[], forward: boolean, hideEmittedList = false): Promise<TscResult> {
   return new Promise((resolve, reject) => {
     const pretty = forward && process.stdout.isTTY ? ['--pretty'] : [];
     const child = spawn(process.execPath, [cli, ...args, ...pretty], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk; if (forward) process.stdout.write(chunk); });
+    // The list of emitted files is for the build, not for its user: the forwarded output leaves its lines out.
+    let partial = '';
+    const forwardLines = (text: string): void => {
+      const lines = (partial + text).split('\n');
+      partial = lines.pop() ?? '';
+      for (const line of lines) if (!line.startsWith(EMITTED_LINE)) process.stdout.write(`${line}\n`);
+    };
+    child.stdout.on('data', (chunk: Buffer) => {
+      stdout += chunk;
+      if (!forward) return;
+      if (hideEmittedList) forwardLines(chunk.toString());
+      else process.stdout.write(chunk);
+    });
     child.stderr.on('data', (chunk: Buffer) => { stderr += chunk; if (forward) process.stderr.write(chunk); });
     child.once('error', reject);
-    child.once('close', (code) => resolve({ code: code ?? 1, stdout, stderr }));
+    child.once('close', (code) => {
+      if (partial !== '' && !partial.startsWith(EMITTED_LINE)) process.stdout.write(partial);
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
   });
 }
 
@@ -234,7 +249,7 @@ function scanFailure(errors: readonly GolemDiagnostic[]): Error {
 
 /** The stage's own guard: nothing is written, linked or removed outside the stage directory, whatever computed the path. */
 function insideStage(stageDirectory: string, target: string): string {
-  if (!contains(stageDirectory, target)) throw new Error(`golem build would change ${target}, which is outside its stage ${stageDirectory}.`);
+  if (!isInsideDirectory(stageDirectory, target)) throw new Error(`golem build would change ${target}, which is outside its stage ${stageDirectory}.`);
   return target;
 }
 
@@ -250,6 +265,14 @@ function commonDirectory(directories: readonly string[]): string {
   }
   if (length === 0) throw new Error(`golem build cannot stage sources that share no directory: ${directories.join(', ')}.`);
   return path.resolve(`${first.slice(0, length).join(path.sep)}${path.sep}`);
+}
+
+/**
+ * The directory the compiler writes outputs relative to: the common directory of the tsconfig's directory, the `rootDir` and every source.
+ * With a `rootDir` the output layout starts at that directory instead.
+ */
+function sourceBase(project: Project, sources: readonly ts.SourceFile[]): string {
+  return commonDirectory([project.root, ...sources.map((source) => path.dirname(source.fileName)), ...project.rootDir === undefined ? [] : [project.rootDir]]);
 }
 
 /** The `package.json` that governs `directory`: its own, or the nearest one above. */
@@ -309,7 +332,7 @@ interface StageResult {
 function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrites: ReadonlyMap<string, FileRewrite>): StageResult {
   const { root } = project;
   const stageDirectory = path.join(project.buildDirectory, 'stage');
-  const base = commonDirectory([root, ...sources.map((source) => path.dirname(source.fileName)), ...project.rootDir === undefined ? [] : [project.rootDir]]);
+  const base = sourceBase(project, sources);
   const stagePath = (original: string): string => insideStage(stageDirectory, path.join(stageDirectory, path.relative(base, original)));
   const keyOf = (original: string): string => posix(path.relative(base, original));
   const maps = new Map<string, SourceMapV3>();
@@ -348,17 +371,15 @@ function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrite
   }
   pruneStage(stageDirectory, keep);
 
-  const stageOf = (absolute: string): string => (contains(base, absolute) ? posix(stagePath(absolute)) : absolute);
+  const stageOf = (absolute: string): string => (isInsideDirectory(base, absolute) ? posix(stagePath(absolute)) : absolute);
   const configFile = path.join(stageDirectory, 'tsconfig.json');
   const stageConfig = {
     extends: posix(path.relative(stageDirectory, project.configFile)),
     compilerOptions: {
       outDir: project.outDir,
       ...(project.rootDir === undefined ? {} : { rootDir: stageOf(project.rootDir) }),
-      // Declarations follow the original, so the stage reports what the original reports. The real ones come from the check;
-      // these go where nothing reads them.
-      declaration: project.declaration,
-      ...(project.declaration ? { declarationDir: path.join(project.buildDirectory, 'stage-declarations') } : {}),
+      // The stage's text has the calls rewritten, so its types differ from the original's: the declarations come from the check.
+      declaration: false,
       declarationMap: false,
       composite: false,
       noEmit: false,
@@ -397,12 +418,111 @@ function withNodeSpecifiers(root: string, sources: readonly ts.SourceFile[], che
   return rewrites;
 }
 
+/** How the compiler names the declaration file of a source by its extension, and the extension of the file that holds that declaration's text in the program that reads it. */
+const DECLARATION_FILES: Readonly<Record<string, { readonly declaration: string; readonly module: string }>> = {
+  '.ts': { declaration: '.d.ts', module: '.ts' },
+  '.tsx': { declaration: '.d.ts', module: '.ts' },
+  '.js': { declaration: '.d.ts', module: '.ts' },
+  '.jsx': { declaration: '.d.ts', module: '.ts' },
+  '.mts': { declaration: '.d.mts', module: '.mts' },
+  '.mjs': { declaration: '.d.mts', module: '.mts' },
+  '.cts': { declaration: '.d.cts', module: '.cts' },
+  '.cjs': { declaration: '.d.cts', module: '.cts' },
+};
+
+/**
+ * Give the declarations the check wrote from the original sources the import paths Node resolves, as the emitted JavaScript has
+ * them (`nodeSpecifierEdits`): a NodeNext consumer reads these files. A declaration's text is read as a module beside its source, so
+ * a specifier resolves from where the source's own does, and the edits apply to the declaration. A declaration that needs no edit
+ * is not written, so the incremental state of the check keeps it.
+ */
+function rewriteDeclarations(session: ts.ProgramSession, project: Project, sources: readonly ts.SourceFile[], rootNames: readonly string[]): void {
+  const layoutRoot = project.rootDir ?? sourceBase(project, sources);
+  const directory = project.declarationDir ?? project.outDir;
+  const declarations = new Map<string, { readonly file: string; readonly text: string }>();
+  for (const source of sources.filter((candidate) => !candidate.isDeclarationFile)) {
+    const extension = Object.keys(DECLARATION_FILES).find((candidate) => source.fileName.endsWith(candidate));
+    if (extension === undefined) continue;
+    const kind = DECLARATION_FILES[extension]!;
+    const stem = source.fileName.slice(0, source.fileName.length - extension.length);
+    const file = path.join(directory, `${path.relative(layoutRoot, stem)}${kind.declaration}`);
+    const text = fs.statSync(file, { throwIfNoEntry: false })?.isFile() ? fs.readFileSync(file, 'utf8') : undefined;
+    if (text !== undefined) declarations.set(`${stem}.golem-declaration${kind.module}`, { file, text });
+  }
+  if (declarations.size === 0) return;
+  const overlays = new Map([...declarations].map(([module, { text }]) => [module, text]));
+  using program = session.openProgram({ root: project.root, sources: [...rootNames, ...overlays.keys()], configFile: project.configFile, overlays });
+  const checker = program.getTypeChecker();
+  const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(sources.map((source) => source.fileName)) };
+  for (const [module, { file, text }] of declarations) {
+    const declaration = program.getSourceFile(module);
+    if (declaration === undefined) throw new Error(`golem build could not read the declaration ${file} to change its import paths.`);
+    const { edits } = nodeSpecifierEdits(declaration, checker, options);
+    if (edits.length > 0) atomicWrite(file, applyRewrites(text, { edits, imports: [] }, file).code);
+  }
+}
+
+/** The endings of the files the compiler writes for a source, longest first: the JavaScript, the declaration and their maps. */
+const EMITTED_ENDINGS = ['.d.ts.map', '.d.mts.map', '.d.cts.map', '.d.ts', '.d.mts', '.d.cts', '.js.map', '.mjs.map', '.cjs.map', '.jsx.map', '.js', '.mjs', '.cjs', '.jsx'] as const;
+
+/**
+ * The source an emitted file belongs to: the one whose path, without its extension, is the file's path under the output directory,
+ * from a folder that holds every source. Undecided when none or several do, so the file is not attributed and not removed later.
+ */
+function sourceOfEmitted(project: Project, local: readonly ts.SourceFile[], file: string): string | undefined {
+  const ending = EMITTED_ENDINGS.find((candidate) => file.endsWith(candidate));
+  if (ending === undefined) return undefined;
+  const stem = file.slice(0, file.length - ending.length);
+  const directory = ending.startsWith('.d.') ? project.declarationDir ?? project.outDir : project.outDir;
+  const relative = path.relative(directory, stem);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) return undefined;
+  const matches = local.filter((source) => {
+    const extension = Object.keys(DECLARATION_FILES).find((candidate) => source.fileName.endsWith(candidate));
+    if (extension === undefined) return false;
+    const sourceStem = source.fileName.slice(0, source.fileName.length - extension.length);
+    if (sourceStem !== relative && !sourceStem.endsWith(`${path.sep}${relative}`)) return false;
+    const layoutRoot = sourceStem.slice(0, sourceStem.length - relative.length);
+    return local.every((other) => isInsideDirectory(layoutRoot, other.fileName));
+  });
+  return matches.length === 1 ? matches[0]!.fileName : undefined;
+}
+
+/**
+ * Keep the files the compiler emitted for each source of the program, and remove those of a source that left the program since
+ * the build before: its JavaScript, declaration and maps, and the directories that leave empty inside the output. A file that a
+ * source still in the program owns stays. Only the files recorded here are removed: a file another tool wrote is never touched.
+ */
+function settleOutputs(run: BuildRun, project: Project, sources: readonly ts.SourceFile[], emitted: readonly string[]): void {
+  const { emitted: record } = run;
+  if (record === undefined) return;
+  const local = sources.filter((source) => !source.isDeclarationFile);
+  for (const file of emitted) {
+    const source = sourceOfEmitted(project, local, path.resolve(file));
+    if (source !== undefined) record.set(source, new Set([...record.get(source) ?? [], path.resolve(file)]));
+  }
+  const present = new Set(local.map((source) => source.fileName));
+  const kept = new Set([...record].filter(([source]) => present.has(source)).flatMap(([, files]) => [...files]));
+  for (const [source, files] of [...record]) {
+    if (present.has(source)) continue;
+    record.delete(source);
+    for (const file of [...files].filter((candidate) => !kept.has(candidate))) {
+      fs.rmSync(file, { force: true });
+      // Directories that this leaves empty go too, but never the output directory itself or anything above it.
+      const inOutput = (directory: string): boolean => [project.outDir, project.declarationDir].some((output) => output !== undefined && output !== directory && isInsideDirectory(output, directory));
+      for (let directory = path.dirname(file); inOutput(directory) && fs.existsSync(directory) && fs.readdirSync(directory).length === 0; directory = path.dirname(directory)) fs.rmdirSync(directory);
+    }
+  }
+}
+
+/** The start of each line of the list that `--listEmittedFiles` prints. */
+const EMITTED_LINE = 'TSFILE: ';
+
 /** The emitted files the compiler listed (`--listEmittedFiles`), and its output without those lines. */
 function emittedFiles(output: string): { readonly files: readonly string[]; readonly rest: string } {
   const files: string[] = [];
   const rest: string[] = [];
   for (const line of output.split('\n')) {
-    if (line.startsWith('TSFILE: ')) files.push(line.slice('TSFILE: '.length));
+    if (line.startsWith(EMITTED_LINE)) files.push(line.slice(EMITTED_LINE.length));
     else rest.push(line);
   }
   return { files, rest: rest.join('\n').trim() };
@@ -417,7 +537,7 @@ function remapSourceMap(mapFile: string, stage: StageResult): void {
   const [source] = emitted.sources;
   if (emitted.sources.length !== 1 || source === undefined) return;
   const staged = path.resolve(path.dirname(mapFile), source);
-  if (!contains(stage.directory, staged)) return;
+  if (!isInsideDirectory(stage.directory, staged)) return;
   const relative = posix(path.relative(stage.directory, staged));
   const original = posix(path.relative(path.dirname(mapFile), path.join(stage.base, relative)));
   const inner = stage.maps.get(relative);
@@ -451,10 +571,12 @@ interface BuildRun {
   readonly outputs: Set<string>;
   /** The files the generate step wrote or kept. Generating one is the build's own doing, so it is no change to watch for. */
   readonly owned: Set<string>;
+  /** For a watching build: the files the compiler emitted for each source, over all its builds. A source that leaves the program takes them with it. */
+  readonly emitted?: Map<string, Set<string>>;
   /** The directories that hold the program's sources outside the tsconfig's directory: a source added beside one is a change to build for. */
   readonly outsideDirectories: Set<string>;
-  /** For a watching build, each file's signature when the build first reads it, which is the only baseline a file the build has not met before can have. */
-  readonly baselines?: Map<string, string>;
+  /** For a watching build, what the build reads first and what it was then: the only baseline a file the build has not met before can have. */
+  baseline?: RunBaseline;
   readonly generation: GeneratorSessionResources;
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
   /** The last generate run that finished: the next run reruns only the jobs a changed input reaches. Empty after a failed run. */
@@ -467,7 +589,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const observe = (filename: string): void => {
     const file = path.resolve(filename);
     inputs.add(file);
-    if (run.baselines !== undefined && !run.baselines.has(file)) run.baselines.set(file, signature(file));
+    run.baseline?.observe(file);
   };
   const golemConfig = readGolemConfig(run.config, observe);
   const configFile = resolveProject(run.project, golemConfig);
@@ -495,7 +617,10 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   outsideDirectories.clear();
   const observeSource = (filename: string): void => {
     observe(filename);
-    if (!contains(root, filename)) outsideDirectories.add(path.dirname(filename));
+    if (!isInsideDirectory(root, filename)) {
+      outsideDirectories.add(path.dirname(filename));
+      run.baseline?.observeFolder(path.dirname(filename));
+    }
   };
   for (const filename of parsed.fileNames) observeSource(filename);
   const checkState = path.join(project.buildDirectory, 'check.tsbuildinfo');
@@ -513,21 +638,32 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     '-p', configFile,
     '--incremental', '--tsBuildInfoFile', checkState,
     project.declaration && !project.noEmit ? '--emitDeclarationOnly' : '--noEmit',
+    ...run.emitted === undefined ? [] : ['--listEmittedFiles'],
     ...run.tscArguments,
-  ], true);
+  ], true, run.emitted !== undefined);
   // Like the compiler: a failed check still emits unless noEmitOnError is set, and the exit status stays the check's.
   if (check.code !== 0 && project.noEmitOnError) return check.code;
-  if (!project.emitsJavaScript) return check.code;
+  const writesDeclarations = project.declaration && !project.noEmit;
+  if (!project.emitsJavaScript && !writesDeclarations) return check.code;
 
   using program = session.openProgram({ root, sources: parsed.fileNames, configFile, onInput: observe });
   const sources = projectSources(program);
   for (const source of sources) observeSource(source.fileName);
+  if (writesDeclarations) rewriteDeclarations(session, project, sources, parsed.fileNames);
+  const checkFiles = run.emitted === undefined ? [] : emittedFiles(check.stdout).files;
+  if (!project.emitsJavaScript) {
+    settleOutputs(run, project, sources, checkFiles);
+    return check.code;
+  }
   const checker = program.getTypeChecker();
   const models = golemConfig.jobs.find((job) => job.kind === 'models');
-  const scanned = new RewriteScanner({ root, directory: golemConfig.directory, modelsRoot: modelsRootOf(golemConfig), suffixes: models?.options.suffixes, output: models?.options.output, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers') })
+  const scanned = new RewriteScanner({ root, directory: golemConfig.directory, modelsRoot: modelsRootOf(golemConfig), suffixes: models?.options.suffixes, output: models?.options.output, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers'), nonModelInputs: golemConfig.nonModelInputs })
     .scanFiles(sources.map((source) => source.fileName));
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw scanFailure(errors);
+  for (const warning of scanned.diagnostics) {
+    if (warning.severity === GolemDiagnosticSeverity.Warning) process.stderr.write(`${warning.code} (${warning.file}:${warning.line}:${warning.column}): ${warning.message}\n`);
+  }
 
   const stage = writeStage(project, sources, withNodeSpecifiers(root, sources, checker, program.getCompilerOptions(), scanned.files));
   // The stage holds copies of these: a change to one is a change to build for.
@@ -537,51 +673,18 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     '--noCheck', '--listEmittedFiles',
     '--incremental', '--tsBuildInfoFile', emitState,
     ...run.tscArguments,
+    // A forwarded --declaration or --declarationMap beats the stage's configuration: the emit run writes JavaScript alone.
+    '--declaration', 'false', '--declarationMap', 'false',
   ], false);
   const { files, rest } = emittedFiles(emit.stdout);
   for (const file of files.filter((candidate) => /\.[cm]?jsx?\.map$/.test(candidate))) remapSourceMap(file, stage);
+  settleOutputs(run, project, sources, [...checkFiles, ...files]);
   // After a failed check the compiler already reported what the emit run would report.
   if (emit.code !== 0 && check.code === 0) {
     if (rest !== '') process.stdout.write(`${rest}\n`);
     process.stderr.write(emit.stderr);
   }
   return check.code !== 0 ? check.code : emit.code;
-}
-
-/**
- * The names in a directory, without the build's own: what a watching build compares to notice a source that was added or
- * removed. Its output and state directories and the files it generates come and go with the build itself, which is no reason to build again.
- */
-function directorySignature(directory: string, ownDirectories: ReadonlySet<string>, generated: ReadonlySet<string>): string {
-  try {
-    return fs.readdirSync(directory).filter((name) => !ownDirectories.has(path.join(directory, name)) && !generated.has(path.join(directory, name))).sort().join('\n');
-  } catch {
-    return 'missing';
-  }
-}
-
-/**
- * The directories above each input up to the root: a file added beside an input changes one of them. A source outside the root adds its own
- * directory and no other: what lies above it may be a whole monorepo.
- */
-function watchedDirectories(root: string, inputs: ReadonlySet<string>, outsideDirectories: ReadonlySet<string>): Set<string> {
-  const directories = new Set<string>(outsideDirectories);
-  for (const input of inputs) {
-    for (let directory = path.dirname(input); contains(root, directory) && !directories.has(directory); directory = path.dirname(directory)) {
-      if (directory.split(path.sep).includes('node_modules') || directory === path.join(root, GOLEM_DIRECTORY)) break;
-      directories.add(directory);
-    }
-  }
-  return directories;
-}
-
-/** The build's own directories: `.golem`, every directory it writes, and the directories between the root and those. */
-function ownDirectories(root: string, outputs: ReadonlySet<string>): Set<string> {
-  const own = new Set([path.join(root, GOLEM_DIRECTORY)]);
-  for (const output of outputs) {
-    for (let directory = output; contains(root, directory) && directory !== root; directory = path.dirname(directory)) own.add(directory);
-  }
-  return own;
 }
 
 /**
@@ -600,7 +703,6 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   // Whether the directories the build writes existed when it ended: one that vanishes afterwards, such as a deleted outDir, is rebuilt once.
   // Taken before "Built" is printed, so a deletion that follows that line is seen.
   let wrote = true;
-  const baselines = options.watch ? new Map<string, string>() : undefined;
   const state: BuildRun = {
     project: options.project,
     config: options.config,
@@ -608,10 +710,10 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     inputs,
     outputs,
     owned: new Set<string>(),
+    ...(options.watch ? { emitted: new Map<string, Set<string>>() } : {}),
     outsideDirectories: new Set<string>(),
     generation,
     ...(options.onGenerated === undefined ? {} : { onGenerated: options.onGenerated }),
-    ...(baselines === undefined ? {} : { baselines }),
   };
   const run = async (changed?: readonly string[], beforeAnnouncing: () => void = () => {}): Promise<number> => {
     const exitCode = await buildOnce(session, state, changed);
@@ -625,23 +727,21 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   if (!options.watch) return { exitCode: await run() };
 
   let exitCode = 0;
-  let previous = new Map<string, string>();
-  let directories = new Map<string, string>();
-  const fingerprints = (): Map<string, string> => new Map([...inputs].map((input) => [input, signature(input)]));
-  const directorySignatures = (): Map<string, string> => {
-    const own = ownDirectories(root, outputs);
-    return new Map([...watchedDirectories(root, inputs, state.outsideDirectories)].map((directory) => [directory, directorySignature(directory, own, state.owned)]));
-  };
-  const attempt = async (changed?: readonly string[]): Promise<void> => {
-    // Signatures from before the build, so an edit or a new file made during it starts the next build. The first build has no
+  const pollerOf = (): InputPoller => new InputPoller(inputs, { root, outsideDirectories: state.outsideDirectories });
+  // The build's own names, which come and go with the build itself: the directories it writes, the files it generates and the directories it created for them. It changes only when a build ends.
+  let own = new OwnedOutputIndex();
+  let poller = pollerOf();
+  let previous = poller.snapshot();
+  const attempt = async (changed: readonly string[] | undefined, before = poller.snapshot()): Promise<void> => {
+    // The poll from before the build, so an edit or a new file made during it starts the next build. The first build has no
     // inputs yet: its files carry the signature they had when the build first read them.
-    const before = fingerprints();
-    const directoriesBefore = directorySignatures();
-    baselines?.clear();
+    const baseline = new RunBaseline(before, root);
+    state.baseline = baseline;
     const record = (): void => {
-      // A file the generate step wrote is the build's own: its signature after the build is the one the next build compares with.
-      previous = new Map([...fingerprints()].map(([input, value]) => [input, state.owned.has(input) ? value : before.get(input) ?? baselines?.get(input) ?? value]));
-      directories = new Map([...directorySignatures()].map(([directory, value]) => [directory, directoriesBefore.get(directory) ?? value]));
+      // A file the generate step wrote, and the directory it created for it, is the build's own: its signature after the build is the one the next build compares with.
+      own = new OwnedOutputIndex([...outputs, ...state.owned]);
+      poller = pollerOf();
+      previous = baseline.settle(poller.snapshot(), (file) => own.covers(file));
     };
     try {
       exitCode = await run(changed, record);
@@ -653,19 +753,33 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       record();
     }
   };
-  await attempt();
+  await attempt(undefined);
   process.stdout.write('Watching for changes.\n');
   await new Promise<void>((resolve) => {
     let busy = false;
+    // A folder or file the poll cannot read (a permission, too many open files) is reported once; the watch keeps polling.
+    let unreadable: string | undefined;
     const timer = setInterval(() => {
       if (busy) return;
-      const changed = [...fingerprints()].filter(([input, value]) => previous.get(input) !== value).map(([input]) => input);
-      const own = ownDirectories(root, outputs);
-      const added = [...directories].some(([directory, value]) => directorySignature(directory, own, state.owned) !== value);
-      if (changed.length === 0 && !added && !(wrote && !outputsPresent())) return;
+      let current: InputSnapshot;
+      let changed: string[];
+      try {
+        current = poller.snapshot();
+        changed = changedPaths(previous, current, (filename) => own.covers(filename));
+        unreadable = undefined;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (message !== unreadable) process.stderr.write(`${message}\n`);
+        unreadable = message;
+        return;
+      }
+      if (changed.length === 0 && !(wrote && !outputsPresent())) {
+        options.onIdlePoll?.();
+        return;
+      }
       busy = true;
       session.inputsChanged(changed);
-      void attempt(changed).finally(() => { busy = false; if (options.signal?.aborted) { clearInterval(timer); resolve(); } });
+      void attempt(changed, current).catch((error: unknown) => { process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`); }).finally(() => { busy = false; if (options.signal?.aborted) { clearInterval(timer); resolve(); } });
     }, POLL_MS);
     const stop = (): void => { clearInterval(timer); if (!busy) resolve(); };
     if (options.signal?.aborted) stop();

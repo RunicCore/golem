@@ -1,5 +1,5 @@
 // golem build writes the import paths Node loads: a Bundler project (no `.js` on its relative imports, an alias with no `baseUrl`,
-// deep paths into packages with no `exports` map) builds to JavaScript that Node runs as ESM. The unit text of each specifier is
+// deep paths into packages with no `exports` map) builds to JavaScript that Node runs as ESM and to declarations that a NodeNext consumer resolves. The unit text of each specifier is
 // tests/node-specifiers.test.ts; this file proves the build applies it, in the emitted code and in its source maps.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -8,7 +8,7 @@ import test from 'node:test';
 import { decodeMappings } from '#golem/source-map';
 import { copyFixture, fileFixtureScope, linkProjectPackages, onceShared } from './fixture-project.js';
 import { MINIMAL_GOLEM_YAML, writeModelSources } from './model-project.js';
-import { build } from './support/build-project.js';
+import { build, editTsconfig, TSC } from './support/build-project.js';
 import { createNodeSpecifierProject } from './support/node-specifiers-project.js';
 import { command, workspace } from './support/process.js';
 
@@ -28,17 +28,63 @@ const item = parse<Item>('{"title":"built"}');
 console.log(\`\${item.constructor.name}:\${item.title}\`);
 `;
 
+// The declarations of a Bundler project. `thing` is inferred from `make`, so declaration emit writes the specifier of `./widget` itself.
+const DECLARED_SOURCES = {
+  'widget.ts': 'export interface Widget { readonly size: number }\n',
+  'factory.ts': "import type { Widget } from './widget';\nexport function make(): Widget { return { size: 3 }; }\n",
+  'api.ts': `import { id } from '@lib/ids';
+import { debounce } from 'lodashy/debounce';
+import { make } from './factory';
+export { chain } from './reexport';
+export * from './dir';
+export const identifier: typeof id = id;
+export const debounced: typeof debounce = debounce;
+export const thing = make();
+export const loadLazy = () => import('./lazy');
+`,
+};
+// A NodeNext consumer of the built package: every import of its declarations needs the extension Node loads, and a package deep path needs its file.
+const consumerSource = (declarations: string): string => `import { chain, debounced, dirValue, identifier, loadLazy, thing } from '../${declarations}/api.js';
+
+export const size: number = thing.size;
+// @ts-expect-error The size of a widget is a number.
+export const wrongSize: string = thing.size;
+export const values: [string, string, string, string] = [chain, debounced, dirValue, identifier];
+export const lazy: Promise<{ readonly lazyValue: string }> = loadLazy();
+`;
+
 /** The fixture project with a golem build over it. The fixture holds the user sources; the tests read what the build wrote. */
-const built = onceShared(async () => {
-  const root = createNodeSpecifierProject(scope, { prefix: 'golem-build-node-specifiers-', compilerOptions: { sourceMap: true } });
+function fixtureProject(compilerOptions: Readonly<Record<string, unknown>>): string {
+  const root = createNodeSpecifierProject(scope, { prefix: 'golem-build-node-specifiers-', compilerOptions });
   copyFixture(path.join(root, 'src'), 'node-specifiers/src');
-  writeModelSources(path.join(root, 'src'), { 'item.model.ts': ITEM_MODEL, 'construct.ts': CONSTRUCT_SITE });
+  writeModelSources(path.join(root, 'src'), { 'item.model.ts': ITEM_MODEL, 'construct.ts': CONSTRUCT_SITE, ...DECLARED_SOURCES });
   fs.writeFileSync(path.join(root, 'golem.yaml'), MINIMAL_GOLEM_YAML);
   linkProjectPackages(root, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
+  return root;
+}
+
+async function buildFixture(compilerOptions: Readonly<Record<string, unknown>>) {
+  const root = fixtureProject(compilerOptions);
   const main = fs.readFileSync(path.join(root, 'src/main.ts'), 'utf8');
   const result = await build(root);
   return { root, result, main };
-});
+}
+
+const built = onceShared(() => buildFixture({ sourceMap: true, declaration: true }));
+const declarationsOnly = onceShared(() => buildFixture({ emitDeclarationOnly: true, declaration: true, declarationDir: 'types' }));
+
+/** Type-check a NodeNext consumer of the declarations in `declarations` under the root, with `skipLibCheck` off so the declarations themselves are checked. */
+async function checkConsumer(root: string, declarations: string): Promise<{ readonly code: number | null; readonly output: string }> {
+  const consumer = path.join(root, 'consumer');
+  fs.mkdirSync(consumer, { recursive: true });
+  fs.writeFileSync(path.join(consumer, 'index.mts'), consumerSource(declarations));
+  fs.writeFileSync(path.join(consumer, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', noEmit: true, skipLibCheck: false, types: [] },
+    files: ['index.mts'],
+  }));
+  const checked = await command(consumer, process.execPath, [TSC, '-p', 'tsconfig.json'], { allowFailure: true });
+  return { code: checked.code, output: `${checked.stdout}${checked.stderr}` };
+}
 
 async function runBuilt(file: string): Promise<string> {
   const { root } = await built();
@@ -75,4 +121,29 @@ test('a second golem build keeps the codec key of the class model that imports i
   const { root } = await built();
   assert.equal((await build(root)).exitCode, 0);
   assert.equal(await runBuilt('construct.js'), 'Item:built');
+});
+
+test('a NodeNext consumer type-checks against the declarations that golem build writes for a Bundler project', async () => {
+  // protects: T-144 the declarations carry the specifiers Node resolves, as the JavaScript does
+  const { root } = await built();
+  assert.deepEqual(await checkConsumer(root, 'build'), { code: 0, output: '' });
+});
+
+test('a declarations-only build writes the same Node-resolvable declarations into its declarationDir', async () => {
+  // protects: T-144 the emitDeclarationOnly branch changes the import paths too
+  const { root, result } = await declarationsOnly();
+  assert.equal(result.exitCode, 0);
+  assert.equal(fs.existsSync(path.join(root, 'build')), false, 'no JavaScript and no declaration lands in the outDir');
+  assert.deepEqual(await checkConsumer(root, 'types'), { code: 0, output: '' });
+});
+
+test('a build with no rootDir rewrites the declarations where the compiler wrote them, below the tsconfig directory', async () => {
+  // protects: T-144 the declaration path follows tsc's rule: below the tsconfig directory when the sources share no deeper folder
+  const root = fixtureProject({ declaration: true, rootDir: undefined });
+  // With sources in two folders the compiler's output root is the tsconfig directory, so the declarations land in build/src/ and build/tools/.
+  writeModelSources(root, { 'tools/probe.ts': "export { thing } from '../src/api';\n" });
+  editTsconfig(root, tsconfig => { tsconfig.include = ['src/**/*.ts', 'src/**/*.js', 'tools/**/*.ts']; });
+  assert.equal((await build(root)).exitCode, 0);
+  assert.ok(fs.existsSync(path.join(root, 'build/tools/probe.d.ts')));
+  assert.deepEqual(await checkConsumer(root, 'build/src'), { code: 0, output: '' });
 });

@@ -1,13 +1,12 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
-import YAML from 'yaml';
 import * as ts from '../typescript-ns.js';
 import { readManifest } from './package-specifier.js';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, discoverSources, hasErrorCode, suffixPattern, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
-import { canonicalFilename, isOutside } from './path-identity.js';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
+import { canonicalFilename } from './path-identity.js';
 
-export { canonicalFilename, isOutside };
+export { canonicalFilename };
 
 export interface ProgramInfo {
   readonly configPath?: string;
@@ -37,7 +36,7 @@ export function commonDirectory(filenames: readonly string[]): string {
   let current = dirname(canonicalFilename(filenames[0]));
   for (const filename of filenames.slice(1)) {
     const directory = dirname(canonicalFilename(filename));
-    while (relative(current, directory).startsWith(`..${sep}`) || relative(current, directory) === '..') {
+    while (!isInsideDirectory(current, directory)) {
       const parent = dirname(current);
       if (parent === current) break;
       current = parent;
@@ -82,7 +81,7 @@ export function includedModelSources(files: readonly string[], suffixes: readonl
   const pattern = modelFilePattern(suffixes);
   return uniqueFilenames(files)
     .filter((filename) => pattern.test(filename) && !isGeneratedCompanion(filename))
-    .sort((left, right) => left < right ? -1 : left > right ? 1 : 0);
+    .sort(compareText);
 }
 
 /** `files` without a second name for one file: a file reached through a folder link counts once, by its real path when the program holds it. */
@@ -126,7 +125,7 @@ export function isModelFileName(boundary: Pick<ModelBoundary, 'suffixes'>, filen
  */
 export function isOwnModelFile(boundary: ModelBoundary, filename: string): boolean {
   const real = canonicalPath(filename);
-  return !isOutside(boundary.root, real)
+  return isInsideDirectory(boundary.root, real)
     && !relative(boundary.root, real).split(sep).includes('node_modules')
     && !isAmbientDeclaration(real);
 }
@@ -147,7 +146,7 @@ export function nestedModelsJobs(root: string, own: string, files: readonly stri
   };
   const found = new Set<string>();
   for (const file of files) {
-    for (let directory = dirname(canonicalPath(file)); !isOutside(root, directory); directory = dirname(directory)) {
+    for (let directory = dirname(canonicalPath(file)); isInsideDirectory(root, directory); directory = dirname(directory)) {
       if (directory === own || own.startsWith(`${directory}${sep}`)) break;
       if (directoryHasModelsJob(directory)) found.add(join(directory, 'golem.yaml'));
       if (directory === root || dirname(directory) === directory) break;
@@ -163,7 +162,7 @@ const JOB_KEYS = ['generators', 'controllers', 'openapi', 'models'] as const;
 function readGolemYaml(golemYaml: string, onInput?: InputObserver): unknown {
   onInput?.(golemYaml);
   if (!existsSync(golemYaml)) return undefined;
-  return YAML.parse(readFileSync(golemYaml, 'utf8'));
+  return parseYamlFile(readFileSync(golemYaml, 'utf8'), golemYaml);
 }
 
 /** Whether `configuration` has a value under one of `keys`. */
@@ -172,14 +171,9 @@ function declaresAny(configuration: unknown, keys: readonly string[]): boolean {
     && keys.some((key) => Reflect.get(configuration, key) !== null && Reflect.get(configuration, key) !== undefined);
 }
 
-/** Whether `golemYaml` exists and has a `models` job. A file that is not YAML is the project's to fix. */
+/** Whether `golemYaml` exists and has a `models` job. A file that is not YAML is the project's to fix: its parse error stops the run. */
 function declaresModelsJob(golemYaml: string, onInput?: InputObserver): boolean {
-  try {
-    return declaresAny(readGolemYaml(golemYaml, onInput), ['models']);
-  } catch (error) {
-    if (error instanceof YAML.YAMLParseError) throw new Error(`${golemYaml} is not valid YAML: ${error.message}`);
-    throw error;
-  }
+  return declaresAny(readGolemYaml(golemYaml, onInput), ['models']);
 }
 
 /**
@@ -261,7 +255,7 @@ export function ignoredSharedFileWarnings(sharedFiles: readonly string[], appDir
   };
   for (const modelFile of sharedFiles) {
     const packageFolder = packageFolderOf(modelFile, appDirectory);
-    for (let directory = dirname(modelFile); packageFolder !== undefined && !isOutside(packageFolder, directory); directory = dirname(directory)) {
+    for (let directory = dirname(modelFile); packageFolder !== undefined && isInsideDirectory(packageFolder, directory); directory = dirname(directory)) {
       const golemYaml = join(directory, 'golem.yaml');
       onInput?.(golemYaml);
       if (existsSync(golemYaml) && !warnings.has(golemYaml)) {
@@ -286,7 +280,7 @@ function ignoredGolemYamlMessage(golemYaml: string, modelFile: string): string {
     belongsToAnApp = declaresAny(readGolemYaml(golemYaml), JOB_KEYS);
   } catch (error) {
     // Golem ignores this file, so a file that is not YAML or that it cannot read is ignored like any other.
-    if (!(error instanceof YAML.YAMLParseError || ['EACCES', 'EPERM', 'EISDIR', 'ENOENT'].some((code) => hasErrorCode(error, code)))) throw error;
+    if (!(error instanceof YamlFileError || ['EACCES', 'EPERM', 'EISDIR', 'ENOENT'].some((code) => hasErrorCode(error, code)))) throw error;
   }
   return belongsToAnApp
     ? `${ignored} It configures another app that generates ${basename(modelFile)}. Move the model into a shared package that holds no golem.yaml, and have each app use it from there.`
@@ -309,6 +303,16 @@ export function projectFilesImportedBy(file: ts.SourceFile, compilerOptions: ts.
     found.add(canonicalFilename(resolved));
   }
   return [...found];
+}
+
+/** The import specifier that `output` writes for `source`: relative, with the extension the emitted file has. */
+export function sourceImportPath(source: string, output: string): string {
+  const relativePath = relative(dirname(output), source)
+    .replace(/\\/g, '/')
+    .replace(/\.ts$/, '.js')
+    .replace(/\.mts$/, '.mjs')
+    .replace(/\.cts$/, '.cjs');
+  return relativePath.startsWith('.') ? relativePath : `./${relativePath}`;
 }
 
 /** The companion of a source: `.generated` before its final extension. */
@@ -441,12 +445,14 @@ function openParsedProgram(
   parsed: ReturnType<typeof parsedProject>,
   rootNames: readonly string[],
   onInput?: InputObserver,
+  overlays?: ReadonlyMap<string, string>,
 ): ProgramInfo {
   const programConfig = effectiveConfigPath(parsed);
   const program = session.openProgram({
     root,
     sources: rootNames,
     ...(programConfig ? { configFile: programConfig } : {}),
+    ...(overlays ? { overlays } : {}),
     onInput,
   });
   const host = ts.createCompilerHost(parsed.options, true);
@@ -485,6 +491,100 @@ export function createProjectProgram(
   return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput);
 }
 
+/** Whether a generated companion is left over: its model source no longer exists. */
+export function isOrphanCompanion(companion: string, suffixes: readonly string[]): boolean {
+  const source = companion.replace(/\.generated(\.[cm]?ts)$/, '$1');
+  return source !== companion && suffixPattern(suffixes).test(basename(source)) && !existsSync(source);
+}
+
+/**
+ * The names of the class models a model file declares: the exported aliases `type Name = IModel<...>`, where `IModel` is
+ * the name the file imports it by (`import { IModel as Model }` too) or a member of a namespace import. The text is read
+ * with patterns. A file where it finds no name gets no stub: its own companion stays as it is on disk, and a companion in
+ * `models.output`, which golem owns, reads as `export {}`.
+ */
+export function classModelNames(text: string): string[] {
+  const local = new Set<string>();
+  const namespaces = new Set<string>();
+  for (const [, clause = ''] of text.matchAll(/\bimport\s+(?:type\s+)?([^'";]*?)\s*\bfrom\s*['"][^'"]*['"]/g)) {
+    for (const [, members = ''] of clause.matchAll(/\{([^}]*)\}/g)) {
+      for (const member of members.split(',')) {
+        const [imported, alias] = member.trim().replace(/^type\s+/, '').split(/\s+as\s+/);
+        if (imported === 'IModel') local.add(alias ?? imported);
+      }
+    }
+    const namespace = /\*\s*as\s+([\w$]+)/.exec(clause)?.[1];
+    if (namespace !== undefined) namespaces.add(namespace);
+  }
+  const names: string[] = [];
+  for (const [, name = '', owner, member = ''] of text.matchAll(/\bexport\s+type\s+([\w$]+)\s*=\s*(?:([\w$]+)\s*\.\s*)?([\w$]+)\s*</g)) {
+    if (owner === undefined ? local.has(member) : namespaces.has(owner) && member === 'IModel') names.push(name);
+  }
+  return [...new Set(names)];
+}
+
+/**
+ * A program whose generated base classes are stubs. A generated companion on disk is missing on the first run and stale
+ * after a model change, so the program reads each class model's base from an overlay instead: an empty abstract class that
+ * has the fields of the model (`IModel<F>` is `F`). The checker then resolves every use of an app class, and every utility
+ * type over it, from the model as it is now. A companion that no model declares any more reads as `export {}`.
+ * The stubs come from the model files of `modelFiles`, read before the program opens; a model file that only the
+ * program reaches (a shared folder) gets its stub from a second program opened from the same session.
+ */
+export function createModelStubProgram(
+  sources: readonly string[],
+  root: string,
+  boundary: ModelBoundary,
+  modelFiles: readonly string[],
+  onInput?: InputObserver,
+  retained?: ts.ProgramSession,
+): ProgramInfo {
+  const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
+  const parsed = parsedProject(root, sources, session, onInput);
+  const stubbed = new Set<string>();
+  const stubsOf = (files: readonly string[]): Map<string, string> => {
+    const stubs = new Map<string, string>();
+    for (const file of files) {
+      const real = canonicalFilename(file);
+      if (stubbed.has(real) || !existsSync(file)) continue;
+      stubbed.add(real);
+      const names = classModelNames(readFileSync(file, 'utf8'));
+      if (names.length === 0) continue;
+      const companion = canonicalFilename(companionFilename(boundary, file));
+      stubs.set(companion, `import type { ${names.join(', ')} } from ${JSON.stringify(sourceImportPath(real, companion))};\n`
+        + names.map((name) => `export declare abstract class ${name}BaseModel {}\nexport interface ${name}BaseModel extends ${name} {}\n`).join(''));
+    }
+    return stubs;
+  };
+  const open = (stubs: ReadonlyMap<string, string>): ProgramInfo => {
+    const overlays = new Map(stubs);
+    for (const filename of parsed.projectFiles) {
+      const companion = canonicalFilename(filename);
+      const underOutput = boundary.companions !== undefined && isInsideDirectory(boundary.companions.output, companion);
+      if (isGeneratedCompanion(companion) && !overlays.has(companion) && (underOutput || isOrphanCompanion(companion, boundary.suffixes))) {
+        overlays.set(companion, 'export {}\n');
+      }
+    }
+    return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput, overlays);
+  };
+  const stubs = stubsOf(modelFiles);
+  const info = open(stubs);
+  let next: ProgramInfo;
+  try {
+    const reached = stubsOf(byRealPath(includedModelSources(info.program.getSourceFiles()
+      .filter((file) => !info.program.isSourceFileDefaultLibrary(file))
+      .map((file) => file.fileName), boundary.suffixes)));
+    if (reached.size === 0) return info;
+    next = open(new Map([...stubs, ...reached]));
+  } catch (error) {
+    // The first program holds the session; a failed second pass would leave it held.
+    info.program[Symbol.dispose]();
+    throw error;
+  }
+  info.program[Symbol.dispose]();
+  return next;
+}
+
 export function createOverlayProgram(
   info: ProgramInfo,
   sources: readonly string[],
@@ -517,6 +617,32 @@ export function createOverlayProgram(
   });
 }
 
+/** The files of the program that a model file can be: every file but the TypeScript libraries. Installed packages are included. */
+export function programFilenames(program: ts.Program): string[] {
+  return program.getSourceFiles()
+    .filter((sourceFile) => !program.isSourceFileDefaultLibrary(sourceFile))
+    .map((sourceFile) => sourceFile.fileName);
+}
+
+/**
+ * Stops with the compiler's own message when one of `files` has a syntax error. The analysis reads a broken type as any and would
+ * report RUNM1011 for it instead. `files` are the sources of one job, not every file of the program: a type error in any other file does not stop generation.
+ */
+export function assertNoSyntaxErrors(program: ts.Program, files: readonly string[], root: string): void {
+  const errors = files.flatMap((file) => program.getSyntacticDiagnostics(file));
+  if (errors.length > 0) throw new Error(formatDiagnostics(errors, root));
+}
+
+/** The first TypeScript error that starts inside `node`, as `TS2304: Cannot find name 'strin'.`; undefined when the file has none there. Reads the semantic diagnostics of one file, so a caller uses it on a failure path only. */
+export function typeScriptErrorAt(program: ts.Program, node: ts.Node): string | undefined {
+  const file = node.getSourceFile();
+  const start = node.getStart(file);
+  const end = node.end;
+  const found = program.getSemanticDiagnostics(file.fileName)
+    .find((error) => error.pos !== undefined && error.pos >= start && error.pos < end);
+  return found?.text === undefined ? undefined : `TS${found.code}: ${found.text}`;
+}
+
 /** `unwritten` are the texts of program files that are not on disk yet, such as the companions of a run, by path. */
 export function formatDiagnostics(
   diagnostics: readonly ts.Diagnostic[],
@@ -525,7 +651,8 @@ export function formatDiagnostics(
 ): string {
   const texts = new Map(unwritten.map((file) => [canonicalFilename(file.path), file.content]));
   return ts.formatDiagnosticsWithColorAndContext(diagnostics, {
-    getCanonicalFileName: (filename) => filename,
+    // Paths read from the working directory, as tsc prints them.
+    getCanonicalFileName: (filename) => relative(process.cwd(), filename),
     getCurrentDirectory: () => root,
     getNewLine: () => '\n',
     readFile: (filename) => texts.get(canonicalFilename(filename)),

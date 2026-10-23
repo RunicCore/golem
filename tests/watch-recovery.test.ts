@@ -3,13 +3,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import YAML from 'yaml';
 import { runPipeline, watchPipeline } from '#golem/cli';
-import { contains } from '#golem/config';
+import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
-import { OwnedOutputIndex } from '#golem/watch';
+import { OwnedOutputIndex } from '#golem/input-poller';
 import { workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
 import { until } from './support/watch-wait.js';
+import { isRunLine } from './support/watch-runs.js';
 
 test('owned output index excludes exactly the outputs and the directories containing them', () => {
   const root = path.resolve(os.tmpdir(), 'owned-index');
@@ -31,7 +33,7 @@ test('owned output index excludes exactly the outputs and the directories contai
     path.join(root, 'src/sub/../cart.model.generated.ts'),
   ];
   for (const input of inputs) {
-    assert.equal(index.covers(input), owned.some(output => contains(input, output)), input);
+    assert.equal(index.covers(input), owned.some(output => isInsideDirectory(input, output)), input);
   }
   assert.equal(index.covers(path.join(root, 'sdk2/models.ts')), false, 'a sibling with a shared prefix is not owned');
 });
@@ -80,6 +82,73 @@ test('watch recovers when a referenced local schema file is introduced after the
       () => fs.existsSync(path.join(root, 'sdk/client.ts')) && fs.readFileSync(path.join(root, 'sdk/client.ts'), 'utf8').includes('getUser'),
       () => `watcher recovers after missing schema is created (errors=${errors.map(String).join('; ')})`,
     );
+  } finally {
+    stop();
+  }
+  await until(() => compilerChildren(process.pid).length === 0, 'the compiler closes with the watch');
+});
+
+test('watch started on a golem.yaml that is not YAML reports its file, line and column, and runs again once the file is fixed', async (t: TestContext) => {
+  // protects: T-311 a YAML parse error names the file; a failed run does not stop watch
+  const { config } = generationWatchFixture(t);
+  const valid = fs.readFileSync(config, 'utf8');
+  fs.writeFileSync(config, `${valid}version: 1\n`);
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  try {
+    await until(() => errors.length > 0, 'the broken golem.yaml is reported');
+    assert.ok(errors[0] instanceof Error);
+    assert.ok(errors[0].message.startsWith(`${path.relative(process.cwd(), config)}:`), errors[0].message);
+    assert.match(errors[0].message, /^\S+:\d+:\d+ /);
+    assert.ok(errors[0].cause instanceof YAML.YAMLParseError);
+    fs.writeFileSync(config, valid);
+    await until(() => runs() === 1, () => `the fixed golem.yaml runs (errors=${errors.map(String).join('; ')})`);
+  } finally {
+    stop();
+  }
+  await until(() => compilerChildren(process.pid).length === 0, 'the compiler closes with the watch');
+});
+
+test('each watch run prints the result of every job and its time; the run after a failure starts with Recovered:', async (t: TestContext) => {
+  // protects: T-312 each watch run says what it did; only a job that failed before writing says its last good output stays
+  const { root, config } = generationWatchFixture(t);
+  const valid = fs.readFileSync(config, 'utf8');
+  const lines = watchRunLines(t);
+  const errors: unknown[] = [];
+  const reported = (): string => errors.map(String).join('; ');
+  const results = (line: string): string[] => line.replace(/^Recovered: /, '').split(' · ').slice(0, -1);
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  try {
+    await until(() => lines.length === 1, 'the first run is summarized');
+    assert.match(lines[0], / · \d+ ms$/);
+    assert.ok(results(lines[0]).length >= 2, lines[0]);
+    for (const result of results(lines[0])) assert.match(result, /^\S+: \d+ files? updated$/);
+
+    // The same golem.yaml again: every job reruns and writes nothing.
+    fs.writeFileSync(config, valid);
+    await until(() => lines.length === 2, 'the run that changes nothing is summarized');
+    for (const result of results(lines[1])) assert.match(result, /^\S+: unchanged$/);
+    assert.ok(!lines[1].startsWith('Recovered:'), lines[1]);
+
+    // No job failed: the configuration did not load, so the error stands alone.
+    fs.writeFileSync(config, `${valid}version: 1\n`);
+    await until(() => errors.length === 1, 'the broken golem.yaml is reported');
+    assert.doesNotMatch(String(errors[0]), /wrote no files/);
+    fs.writeFileSync(config, valid);
+    await until(() => lines.length === 3, () => `the fixed golem.yaml runs (errors=${reported()})`);
+    assert.ok(lines[2].startsWith('Recovered: '), lines[2]);
+    for (const result of results(lines[2])) assert.match(result, /^\S+: unchanged$/);
+
+    // A job that throws before it writes says its last good output stays.
+    const model = path.join(root, 'src/cart.model.ts');
+    const goodModel = fs.readFileSync(model, 'utf8');
+    fs.writeFileSync(model, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCart = IModel<{ half: string & }>;\n");
+    await until(() => errors.length === 2, () => `the broken model is reported (errors=${reported()})`);
+    assert.match(errors[1] instanceof Error ? errors[1].message : '', /error TS\d+:[^]*\nThe job that failed wrote no files; its last good output stays in place\.$/);
+    fs.writeFileSync(model, goodModel);
+    await until(() => lines.length === 4, () => `the fixed model runs (errors=${reported()})`);
+    assert.ok(lines[3].startsWith('Recovered: '), lines[3]);
   } finally {
     stop();
   }
@@ -185,6 +254,119 @@ test('watch generates a new model file in a folder of the models root outside sr
   assert.deepEqual(errors, []);
 });
 
+test('watch generates a new file that a run in flight did not read', async (t: TestContext) => {
+  // protects: T-307 a model file created during a run is generated without another edit
+  const { root, config } = generationWatchFixture(t);
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const companion = path.join(root, 'src/cart.model.generated.ts');
+  let createWhileRunning = false;
+  const rename = fs.renameSync.bind(fs);
+  // The companion is published by rename after the run read its sources: create a model file at that moment.
+  t.mock.method(fs, 'renameSync', (from: fs.PathLike, to: fs.PathLike): void => {
+    if (createWhileRunning && path.resolve(String(to)) === companion) {
+      createWhileRunning = false;
+      fs.writeFileSync(path.join(root, 'src/pet.model.ts'), newModel('Pet'));
+    }
+    rename(from, to);
+  });
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  try {
+    await until(() => runs() === 1, 'initial generation');
+    createWhileRunning = true;
+    fs.writeFileSync(path.join(root, 'src/cart.model.ts'), fs.readFileSync(path.join(root, 'src/cart.model.ts'), 'utf8').replace('note: string', 'note: string; edited?: boolean'));
+    await until(() => fs.existsSync(path.join(root, 'src/pet.model.generated.ts')), () => `the model created during the run is generated (errors=${errors.map(String).join('; ')})`);
+    assert.equal(createWhileRunning, false, 'the file was created while the triggered run was writing');
+  } finally {
+    stop();
+  }
+  assert.deepEqual(errors, []);
+});
+
+test('a file that is no source, added to a polled folder, starts no run', async (t: TestContext) => {
+  // protects: T-307 only a source name added to a folder starts a run
+  const { root, config } = generationWatchFixture(t);
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const source = path.join(root, 'src/cart.model.ts');
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  try {
+    await until(() => runs() === 1, 'initial generation');
+    fs.writeFileSync(path.join(root, 'src/style.css'), 'a { color: red }\n');
+    fs.writeFileSync(path.join(root, 'src/cart.model.ts~'), 'editor backup');
+    // The sentinel edit starts run 2 only if the files above started none before it.
+    fs.writeFileSync(source, fs.readFileSync(source, 'utf8').replace('note: string', 'note: string; sentinel?: boolean'));
+    await until(() => fs.readFileSync(path.join(root, 'src/cart.model.generated.ts'), 'utf8').includes('sentinel'), 'the sentinel edit is generated');
+    assert.equal(runs(), 2);
+  } finally {
+    stop();
+  }
+  assert.deepEqual(errors, []);
+});
+
+/** An app whose tsconfig includes the `shared` folder beside it; `linked` in the app is a folder link to it. */
+function sharedModelFixture(t: TestContext, include: string): { root: string; config: string } {
+  const { root, config } = generationWatchFixture(t);
+  const app = path.join(root, 'app');
+  const shared = path.join(root, 'shared');
+  fs.mkdirSync(path.join(app, 'src'), { recursive: true });
+  fs.mkdirSync(shared);
+  fs.rmSync(path.join(root, 'src'), { recursive: true, force: true });
+  fs.symlinkSync('../shared', path.join(app, 'linked'), 'dir');
+  fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true },
+    include: ['src/**/*.ts', include],
+  }));
+  fs.writeFileSync(path.join(shared, 'package.json'), '{"type":"module"}');
+  fs.writeFileSync(path.join(app, 'src/cart.model.ts'), newModel('Cart'));
+  fs.writeFileSync(path.join(shared, 'money.model.ts'), newModel('Money'));
+  fs.writeFileSync(config, `tsconfig: app/tsconfig.json\n${fs.readFileSync(config, 'utf8').replace('root: .', 'root: app')}`);
+  return { root, config };
+}
+
+function newModel(name: string): string {
+  return `import type { IModel } from '@exprtlabs/golem/model';\n\nexport type T${name} = IModel<{ id: string }>;\n`;
+}
+
+for (const [way, include] of [['outside the root', '../shared/**/*.ts'], ['behind a folder link', 'linked/**/*.ts']] as const) {
+  test(`watch generates a new model file in a shared folder ${way}`, async (t: TestContext) => {
+    // protects: T-308 a model file added to a shared folder is generated by golem watch
+    const { root, config } = sharedModelFixture(t, include);
+    const errors: unknown[] = [];
+    const stop = watchPipeline(config, error => { errors.push(error); });
+    const context = (): string => `(errors=${errors.map(String).join('; ')})`;
+    try {
+      // The app writes the companion of a shared model into its own output, in the folder of the shared package.
+      const companion = (name: string): string => path.join(root, 'app/src/generated/models/shared', `${name}.model.generated.ts`);
+      await until(() => fs.existsSync(companion('money')), () => `initial generation ${context()}`);
+      fs.writeFileSync(path.join(root, 'shared/order.model.ts'), newModel('Order'));
+      await until(() => fs.existsSync(companion('order')), () => `the new shared model is generated ${context()}`);
+    } finally {
+      stop();
+    }
+  });
+}
+
+test('watch generates a new model file in a shared folder that holds only a helper so far', async (t: TestContext) => {
+  // protects: T-308 an outside folder is polled for every input in it, not only for a model
+  const { root, config } = sharedModelFixture(t, '../shared/**/*.ts');
+  fs.rmSync(path.join(root, 'shared/money.model.ts'));
+  fs.mkdirSync(path.join(root, 'shared/billing'));
+  fs.writeFileSync(path.join(root, 'shared/billing/rules.ts'), 'export type Rate = number;\n');
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  try {
+    await until(() => runs() === 1, () => `initial generation (errors=${errors.map(String).join('; ')})`);
+    fs.writeFileSync(path.join(root, 'shared/billing/invoice.model.ts'), newModel('Invoice'));
+    const companion = path.join(root, 'app/src/generated/models/shared/billing/invoice.model.generated.ts');
+    await until(() => fs.existsSync(companion), () => `the model beside the helper is generated (errors=${errors.map(String).join('; ')})`);
+  } finally {
+    stop();
+  }
+  assert.deepEqual(errors, []);
+});
+
 test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
   const errors: unknown[] = [];
@@ -210,18 +392,24 @@ test('a pipeline session closes the compiler of a removed job', { skip: process.
   await until(() => compilerChildren(process.pid).length === 0, 'the removed job closes its compiler');
 });
 
-/** Count completed watch runs by the line the watch prints after each successful generation. */
-function countRuns(t: TestContext): () => number {
-  let runs = 0;
+/** The lines the watch prints after each successful generation, in order. */
+function watchRunLines(t: TestContext): string[] {
+  const lines: string[] = [];
   const write = process.stdout.write.bind(process.stdout);
   t.mock.method(process.stdout, 'write', (chunk: string | Uint8Array, ...rest: never[]): boolean => {
-    if (String(chunk) === 'Generated configured outputs.\n') {
-      runs++;
+    if (isRunLine(String(chunk))) {
+      lines.push(String(chunk).trimEnd());
       return true;
     }
     return write(chunk, ...rest);
   });
-  return () => runs;
+  return lines;
+}
+
+/** Count completed watch runs by the line the watch prints after each successful generation. */
+function countRuns(t: TestContext): () => number {
+  const lines = watchRunLines(t);
+  return () => lines.length;
 }
 
 test('edits that land between two polls produce one run with the final content', async (t: TestContext) => {

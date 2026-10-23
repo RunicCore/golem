@@ -2,17 +2,17 @@
 
 Find what a generator error code means and how to fix it.
 
-An error prints its code, location when known, and message, then stops generation; a warning prints the same and lets generation continue, as its entry below notes. The printed line may also carry a severity word next to the code.
+An error prints its code, location when known, and message, then stops generation; a warning prints the same and lets generation continue, as its entry below notes. The printed line may also carry a severity word next to the code. A file in a message is relative to the working directory.
 
 ## Controller generator (NEST)
 
 ### NEST1001
 
-**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or point `context.sources` at the files that declare it.
+**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or list the files that declare it in `sources` of the controller job.
 
 ### NEST1002
 
-**No controller sources.** No `*.controller.ts` file exists under `src`, and `context.sources` was not provided. **Fix:** Add a `*.controller.ts` file, or pass `context.sources` explicitly.
+**No controller sources.** No file that ends in one of the controller `suffixes` (default `.controller.ts`) exists under `src` of the job `root`, and the controller job has no `sources`. **Fix:** Add a controller file, or list the controller files in `sources` of the controller job.
 
 ### NEST1101
 
@@ -48,7 +48,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1202
 
-**Version without URI routing.** A method or class declares `@Version()`, but the generator's `uriVersioning` option isn't URI versioning, so the version has no distinct OpenAPI path. **Fix:** Set `uriVersioning: { type: 'URI' }` in the generation context, or remove `@Version()`.
+**Version without URI routing.** A method or class declares `@Version()`, but `uriVersioning` of the controller job isn't URI versioning, so the version has no distinct OpenAPI path. **Fix:** Set `uriVersioning: { type: URI }` in the controller job, or remove `@Version()`.
 
 ### NEST1203
 
@@ -120,27 +120,27 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1401
 
-**Invalid info.** `context.info`, or its `title`/`version` field, is missing, not an object, or not a non-empty string. **Fix:** Pass `info: { title, version }` with non-empty strings.
+**Invalid info.** `info` of the controller job, or its `title` or `version` field, is missing, not an object, or not a non-empty string. **Fix:** Set `info` with a `title` and a `version` that are non-empty strings.
 
 ### NEST1402
 
-**Unsupported OpenAPI version.** `context.openapiVersion` names something other than `'3.2.0'` or `'3.1.2'`. **Fix:** Set `openapiVersion` to `'3.2.0'` or `'3.1.2'`, or omit it to use the default.
+**Unsupported OpenAPI version.** `openapiVersion` of the controller job names something other than `'3.2.0'` or `'3.1.2'`. **Fix:** Set `openapiVersion` to `'3.2.0'` or `'3.1.2'`, or omit it to use the default.
 
 ### NEST1403
 
-**Invalid server.** A `context.servers` entry doesn't match the OpenAPI Server Object shape — a non-object entry, an unsupported property, a missing or empty `url`, or a `variables` entry whose `default` isn't a string included in its `enum`. **Fix:** Shape each server as `{ url, description?, variables? }`, and make sure a variable's `default` is one of its `enum` values.
+**Invalid server.** A `servers` entry of the controller job doesn't match the OpenAPI Server Object shape — a non-object entry, an unsupported property, a missing or empty `url`, or a `variables` entry whose `default` isn't a string included in its `enum`. **Fix:** Shape each server as `{ url, description?, variables? }`, and make sure a variable's `default` is one of its `enum` values.
 
 ### NEST1404
 
-**Invalid security scheme.** A security scheme in `context.securitySchemes` doesn't match its type's OpenAPI shape — an unsupported `type`, an unsupported property for that type, or an OAuth2 flow missing a required URL or `scopes`. **Fix:** Match the OpenAPI Security Scheme Object for the chosen `type` (`apiKey`, `http`, `mutualTLS`, `oauth2`, or `openIdConnect`).
+**Invalid security scheme.** A security scheme in `securitySchemes` of the controller job doesn't match its type's OpenAPI shape — an unsupported `type`, an unsupported property for that type, or an OAuth2 flow missing a required URL or `scopes`. **Fix:** Match the OpenAPI Security Scheme Object for the chosen `type` (`apiKey`, `http`, `mutualTLS`, `oauth2`, or `openIdConnect`).
 
 ### NEST1405
 
-**Invalid security requirement.** A route's security requirement names a scheme that isn't in `context.securitySchemes`, its scopes aren't an array of strings, or `@ApiSecurity()` doesn't resolve to a scheme name or a record of scheme scopes. **Fix:** Add the scheme to `context.securitySchemes`, or fix the `@ApiSecurity()` or security requirement shape.
+**Invalid security requirement.** A route's security requirement names a scheme that isn't in `securitySchemes` of the controller job, its scopes aren't an array of strings, or `@ApiSecurity()` doesn't resolve to a scheme name or a record of scheme scopes. **Fix:** Add the scheme to `securitySchemes`, or fix the `@ApiSecurity()` or security requirement shape.
 
 ### NEST1501
 
-**No schema resolver.** The document builder needs a canonical schema for a type, but no `schemaResolver` was supplied in the build context. **Fix:** Pass a `schemaResolver`, or generate through `@exprtlabs/golem-ts-openapi/generator`, which always supplies one.
+**No schema resolver.** The document builder needs a canonical schema for a type, but no `schemaResolver` was supplied in the build context. A `golem.yaml` job never causes this error, because the generator always supplies one. Only a tool that calls the builder without a `schemaResolver` sees it. **Fix:** Pass a `schemaResolver`, or generate through `@exprtlabs/golem-ts-openapi/generator`.
 
 ### NEST1502
 
@@ -158,6 +158,16 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Unresolved schema reference.** The generated OpenAPI document has a `$ref` to a component schema that isn't present among the document's schemas. **Fix:** Make sure the referenced class, or `getSchemaPath()` name, is used by (or explicitly referenced from) a controller route.
 
+## Route evaluation (RUNT)
+
+### RUNT2101
+
+**Unsupported route expression.** A route path or version in a controller decorator is neither a string literal nor a simple route helper that golem can fold at generation time. **Fix:** Write the path as a string literal, an array of string literals, or a helper that returns one value, as in [route helpers](/reference/nestjs#route-helpers).
+
+### RUNT2106
+
+**Route result too large.** A route path or version folds to a value larger than 1 MiB when written as JSON. **Fix:** Use a shorter path or version value.
+
 ## Model generator (RUNM)
 
 ### RUNM1001
@@ -170,7 +180,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1003
 
-**Unsupported TypeScript type.** A model or field type isn't one of the shapes this generator can convert — none of the recognized primitive, literal, array, tuple, object, or union forms. A type alias that contains itself through arrays, tuples, or unions, with no model between, also gives this code. The message names the alias and the field. **Fix:** Replace it with a supported shape, such as a plain object, array, primitive, or named model reference. A recursive shape works only through an `IObject` or `IModel`, so change the shape to pass through one, for example `type TNode = IObject<{ value: string; children: TNode[] }>`.
+**Unsupported TypeScript type.** A model or field type isn't one of the shapes this generator can convert — none of the recognized primitive, literal, array, tuple, object, or union forms. The message names the type and the field. **Fix:** Replace it with a supported shape, such as a plain object, array, primitive, or named model reference.
 
 ### RUNM1004
 
@@ -246,7 +256,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1053
 
-**Unnamed nested IModel.** A field's type traces to an `IModel`/`IObject` definition that isn't a named, exported declaration. **Fix:** Give the nested model its own named, exported type alias.
+**Unnamed nested IModel.** A field's type traces to an `IModel`/`IObject` definition that isn't a named, exported declaration, such as `IObject<{ text: string }>` written inside a union. The message gives the position of that definition and shows its text. **Fix:** Give the nested model its own named, exported type alias.
 
 ### RUNM1054
 
@@ -258,7 +268,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1056
 
-**Unresolvable recursive object.** An anonymous object type refers back to itself with nothing to break the cycle: no named model, and no derived-type contract for it. **Fix:** Give the recursive shape a named model, or declare it as an explicit derived type.
+**Unresolvable recursive type.** A type refers back to itself, and golem cannot give the cycle a name. A recursive type alias gets its name from the alias, so the cycle needs a type alias that you wrote. **Fix:** Declare the recursive shape as a named type alias, for example `type Tree = { children: Tree[] }`, or as a named model.
 
 ### RUNM1057
 
@@ -266,7 +276,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1058
 
-**Unresolved contract type.** A field has TypeScript's internal error type, because golem could not resolve a declaration or an import. Golem also reports this code when a `Pick` names a member that its source type does not declare. Golem also reports this code when a mapped type that you wrote, such as `{ [K in keyof Customer]: Customer[K] }`, maps over a model class. Golem reads no members of the class in that type. **Fix:** Fix the declaration, the import, or the key, then generate again. For a mapped type over a model class, use `Pick`, `Omit`, `Partial`, `Required`, or `Readonly`, or name the keys.
+**Unresolved contract type.** A field has TypeScript's internal error type, because golem could not resolve a declaration or an import. The message adds the first TypeScript error at that position, such as `(TS2304: Cannot find name 'strin'.)`, when there is one. Golem also reports this code when a `Pick` names a member that its source type does not declare. Golem also reports this code when a model is defined by a mapped type over its own class, such as `IModel<{ [K in keyof Customer]: Customer[K] }>` where `Customer` extends the generated base of that model: the base is generated from the model, so the type has no members. **Fix:** Fix the declaration, the import, or the key, then generate again. For a model over its own class, declare the fields in the model.
 
 ### RUNM1059
 
@@ -302,7 +312,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1067
 
-**Serde type argument has no codec.** The type argument of a serde call names something that is no model: a type parameter, a type that no `IModel` or `IObject` declares, or a name that several models share. The message shows the call, such as `parse<T> has no unique codec id`. **Fix:** Name an exported `IModel` or `IObject` alias. Inside a generic function, take the codec as a parameter instead of a type parameter; golem rewrites a call only where the model is known when it generates.
+**Serde type argument has no codec.** The type argument of a serde call names something that is no model: a type parameter, a type that no `IModel` or `IObject` declares, or a name that several models share. The message shows the call, such as `parse<T> has no unique codec id`. When the generated file of the model is missing, the message adds that file and says to wait for `golem generate` or `golem watch` to write it. **Fix:** Name an exported `IModel` or `IObject` alias. Inside a generic function, take the codec as a parameter instead of a type parameter; golem rewrites a call only where the model is known when it generates.
 
 ### RUNM1068
 
@@ -326,7 +336,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1074
 
-**Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `models.suffixes`. Golem reads a model from a model file only. A shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts` ([shared folder](/reference/config#a-folder-shared-by-several-apps)). The message names the alias as `file#export`. **Fix:** Move the alias into a file whose name ends in a model suffix.
+**Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `models.suffixes`. Golem reads a model from a model file only. A shared folder or an installed package declares its models in model files too, such as `customer.model.ts` or `customer.model.d.ts` ([shared folder](/guide/shared-models)). The message names the alias as `file#export`. **Fix:** Move the alias into a file whose name ends in a model suffix.
 
 ### RUNM1075
 
@@ -348,6 +358,18 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Serde function used as a value or as an optional call.** A `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` with type arguments is not the callee of a plain call. Examples are `const decode = parse<TPayment>`, `texts.map(parse<TPayment>)` and `parse?.<TPayment>(text)`. Golem rewrites a call only, so this code stays as you wrote it and throws when it runs. The message names the function, the form, and the position. `golem build`, `golem check` and every host report it. **Fix:** Call the function directly with its type arguments, such as `parse<TPayment>(text)`. To pass it as a value, write an arrow function: `texts.map((text) => parse<TPayment>(text))`.
 
+### RUNM1080
+
+**Object union with no literal tag.** A model field is a union of objects, named object types or models that golem must convert (a variant holds a `Date`, a `TSerde` value or a model), and the variants have no required literal tag that picks one variant from the JSON. Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. **Fix:** Give each variant a required field with a literal type that differs between variants, such as `kind: 'cat'` and `kind: 'dog'`. A tag may be a union of literals when the values do not overlap.
+
+### RUNM1081
+
+**Body or query parameter that is not a model.** A `@Body()` or `@Query()` parameter, whole or one field such as `@Body('name')` or `@Query('page')`, has a type that is no `IModel` or `IObject` and no class that extends a generated model class: a plain interface, a plain class, an inline object type, a primitive, a union, or an array of arrays. [`NestModelInterceptor`](/guide/nestjs-requests#what-happens-to-a-request) throws on such a parameter and Nest answers HTTP 500. By default this is an error, and `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader stop before a request arrives. With `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys) it is a warning: generation continues. `golem build` and `golem check` print the warning, and the message ends with `Generation continues, because golem.yaml sets nonModelInputs: warn.` The plugins and the loader continue and print nothing. The message shows the type and the decorator, such as `NoteInput is not a golem model, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type`, and the position of the type. **Fix:** Declare the input as an `IModel` or `IObject`, or bind one field whose type is a model, such as `@Body('address') address: Address`. An app that handles these parameters with its own interceptor sets `nonModelInputs: warn`.
+
+### RUNM1082
+
+**Union that golem cannot convert.** A model field is a union that needs a conversion, such as a `Date` or a `TSerde` value, and the JSON value cannot tell which variant it is: for example two scalar variants where one converts, or a model reference that is no object. Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no literal tag has its own code, [RUNM1080](#runm1080). **Fix:** Give the field one variant that needs a conversion, make the variants objects with a required literal tag, or declare the whole value with one `TSerde` pair.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.
@@ -362,7 +384,7 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 
 ### VALIDATE_UNKNOWN_FORMAT
 
-**Format golem does not check.** A `format` keyword names a format that golem does not implement. golem checks `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `byte`, `json-pointer`, `relative-json-pointer`, `int32`, `int64`, `float` and `double`; the OpenAPI formats `password` and `binary` are known and check nothing. By default this is an error and generation stops. With `unknownFormats: warn` in [golem.yaml](/reference/config#root-keys) it is a warning: generation continues and values are not checked against that format. The message names the place that declares the format, such as `schemas/money.json#/properties/amount/format`, and the generator reports it once however many operations use the schema. **Fix:** Use an implemented format, or remove the `format` keyword and state the rule with `pattern`. To keep the format and skip its check, set `unknownFormats: warn`.
+**Format golem does not check.** A `format` keyword names a format that golem does not implement. The formats that golem checks are listed in [validation profiles](/reference/config#validation-profiles). By default this is an error and generation stops. With `unknownFormats: warn` in [golem.yaml](/reference/config#root-keys) it is a warning: generation continues and values are not checked against that format. The message names the place that declares the format, such as `schemas/money.json#/properties/amount/format`, and the generator reports it once however many operations use the schema. **Fix:** Use an implemented format, or remove the `format` keyword and state the rule with `pattern`. To keep the format and skip its check, set `unknownFormats: warn`.
 
 ### VALIDATE_UNKNOWN_VALIDATION
 
@@ -396,6 +418,8 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 
 **allOf that no object satisfies.** A required property of an `allOf` cannot hold a value, for the reasons that [OPENAPI_COMPOSITION_PROPERTY_NEVER](#openapi-composition-property-never) gives, so the schema accepts no object. Generation stops. The message names each such property, its cause and the fix. **Fix:** Apply the fix of OPENAPI_COMPOSITION_PROPERTY_NEVER to each property that the message names.
 
+**allOf members with no common type.** The members of an `allOf` declare JSON types that share no value, such as `type: string` (also `format: date-time`) beside a `$ref` to an object schema, or `type: string` beside `type: number`. An `integer` member and a `number` member share the integers. No value satisfies the schema. Generation stops. A member that declares no `type` makes no claim. The message names each member that declares a type. **Fix:** Give the members a type that they share, or remove the member that does not fit.
+
 ### OPENAPI_DISCRIMINATOR_IMPLICIT_VALUE
 
 **Implicit discriminator value.** A discriminated-union variant has no explicit `discriminator.mapping` entry, so it's selected by its raw component name — which differs from the generated model name. This is a warning: generation continues, and decoding still works using the raw component name as the implicit value. **Fix:** Add an explicit `mapping` entry if the wire value should differ from the raw component name.
@@ -411,6 +435,10 @@ The validator compiler writes the checks that generated models and SDKs run. Its
 ### OPENAPI_OPERATION_RENAMED
 
 **Operation renamed.** The generated operation name is a JavaScript reserved word or an existing client member name (such as `constructor`), so the generator appends its allocator's suffix to make it distinct. This is a warning: generation continues, but the operation's exported name no longer matches its `operationId` or inferred name. **Fix:** Give the operation an `operationId` that isn't a JavaScript reserved word or client member name, if you need the two to match exactly.
+
+### OPENAPI_UNION_DISCRIMINATOR_MISSING
+
+**Object union with no literal tag.** A `oneOf`/`anyOf` of objects needs a conversion (a variant holds a `date-time` string, or a model), and no property tells the variants apart: the union has no `discriminator`, and the variants have no required `const` or single-value `enum` property that differs between variants. Generation does not try the variants in turn, so it stops. The message names the schema, where it sits in the document, and lists the variants. **Fix:** Add a required `const` or `enum` property with a different value to each variant, or add a `discriminator` (`propertyName` and `mapping`) to the `oneOf`/`anyOf` and make each variant a component schema that carries that property.
 
 ### OPENAPI_UNION_SHARED_VARIANT
 

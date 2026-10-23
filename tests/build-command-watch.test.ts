@@ -5,7 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import { runBuild } from '#golem/build';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
-import { write, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot } from './support/build-project.js';
+import { write, serdeProject, sourceOnlyProject, countingGenerator, editTsconfig, USE, snapshot } from './support/build-project.js';
 import { workspace } from './support/process.js';
 import { count, watching } from './support/build-watching.js';
 import { until } from './support/watch-wait.js';
@@ -50,9 +50,16 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
     if (typeof chunk === 'string' && chunk.startsWith('Built ')) built += 1;
     return (stdout as (chunk: string | Uint8Array, ...rest: unknown[]) => boolean)(chunk, ...rest);
   });
-  const finished = runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal, onGenerated: (jobs) => ran.push([...jobs].sort()) });
+  let idle = 0;
+  // A poll that found nothing to build has looked at every file since the last build, so a rebuild that build's own writes caused has started by then.
+  const settled = async (): Promise<void> => {
+    const seen = idle;
+    await until(() => idle > seen, 'a poll that found nothing to build');
+  };
+  const finished = runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal, onGenerated: (jobs) => ran.push([...jobs].sort()), onIdlePoll: () => { idle += 1; } });
   await until(() => built === 1, 'the first build');
-  assert.deepEqual(ran, [['generator:out', 'models:.']], 'the first build ran every job');
+  await settled();
+  assert.deepEqual(ran, [['generator:out', 'models:.']], 'the first build ran every job and its writes started no rebuild');
   const companion = path.join(root, 'src/money.model.generated.ts');
   assert.ok(fs.existsSync(companion), 'the first build generated the file');
 
@@ -60,21 +67,20 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
   const model = path.join(root, 'src/money.model.ts');
   fs.writeFileSync(model, fs.readFileSync(model, 'utf8').replace('note: string', 'note: string; extra?: string'));
   await until(() => built === 2, 'the rebuild after a model edit');
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  assert.equal(built, 2, 'one model edit triggers one rebuild, though the generate step wrote a file');
-  assert.deepEqual(ran.slice(1), [['generator:out', 'models:.']], 'both jobs read the model source');
+  await settled();
+  assert.deepEqual(ran.slice(1), [['generator:out', 'models:.']], 'both jobs read the model source, and one model edit triggers one rebuild though the generate step wrote a file');
   assert.match(fs.readFileSync(companion, 'utf8'), /extra/);
   assert.match(fs.readFileSync(path.join(root, 'build/money.model.generated.js'), 'utf8'), /extra/, 'the build compiled the regenerated file');
 
   // The models job's program reads the whole project, so `use.ts` is one of its inputs; the generator reads only the model.
   write(root, 'src/use.ts', `${USE}export const second = 2;\n`);
   await until(() => built === 3, 'the rebuild after a source edit');
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  assert.equal(built, 3, 'one edit triggers one rebuild');
-  assert.deepEqual(ran.slice(2), [['models:.']], 'the models job ran again and the generator did not');
+  await settled();
+  assert.deepEqual(ran.slice(1), [['generator:out', 'models:.'], ['models:.']], 'one source edit triggers one rebuild; the models job ran again and the generator did not');
   assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /second = 2/);
   controller.abort();
   assert.equal((await finished).exitCode, 0);
+  assert.equal(built, 3, 'no edit started a build beyond the three');
 
   const after = snapshot(root);
   for (const file of ['golem.yaml', 'package.json', 'tsconfig.json']) assert.equal(after.get(file), before.get(file), `${file} is not a file golem build owns`);
@@ -124,4 +130,55 @@ test('a source fixed while the first build is still running starts the next buil
   await runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal });
   assert.ok(fixed, 'the first build reported the type error');
   assert.ok(built, 'the fix made during the first build started a second build');
+});
+
+test('golem build --watch removes the output of a source that is deleted, and nothing else', async (t) => {
+  // protects: T-315 the output of a deleted source leaves outDir
+  const root = serdeProject(t, 'build-watch-delete');
+  editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.declarationMap = true; });
+  write(root, 'src/use.ts', USE);
+  write(root, 'src/extra/helper.ts', 'export const helper = 1;\n');
+  const watcher = watching(t, root);
+  await until(() => count(watcher.output(), /^Built /) === 1, 'the first build');
+  const outputs = (name: string): string[] => ['.js', '.js.map', '.d.ts', '.d.ts.map'].map((ending) => path.join(root, 'build', `${name}${ending}`));
+  for (const file of [...outputs('use'), ...outputs('extra/helper')]) assert.ok(fs.existsSync(file), `${file} is built`);
+  // A file in outDir that the build did not write.
+  write(root, 'build/notes.txt', 'mine');
+
+  fs.rmSync(path.join(root, 'src/use.ts'));
+  await until(() => count(watcher.output(), /^Built /) === 2, 'the build after the source was deleted');
+  assert.deepEqual(outputs('use').filter((file) => fs.existsSync(file)), [], 'the output of the deleted source is gone');
+  assert.ok([...outputs('money.model'), ...outputs('extra/helper')].every((file) => fs.existsSync(file)), 'the output of the other sources stays');
+  assert.equal(fs.readFileSync(path.join(root, 'build/notes.txt'), 'utf8'), 'mine');
+
+  fs.rmSync(path.join(root, 'src/extra/helper.ts'));
+  await until(() => count(watcher.output(), /^Built /) === 3, 'the build after the last source of a folder was deleted');
+  assert.equal(fs.existsSync(path.join(root, 'build/extra')), false, 'the folder the deletion left empty is gone');
+  assert.doesNotMatch(watcher.output(), /TSFILE/, 'the list of emitted files is for the build, not for its output');
+  assert.equal(await watcher.stop(), 130);
+});
+
+test('golem build --watch without a rootDir removes the output of a deleted source from build/src, and leaves a file another tool wrote', async (t) => {
+  // protects: T-315 only the files the build emitted for the deleted source are removed
+  const root = serdeProject(t, 'build-watch-delete-layout');
+  // Sources in two folders: with no rootDir, the compiler lays out from the tsconfig folder, so outputs land in build/src and build/tools.
+  editTsconfig(root, (tsconfig) => { delete tsconfig.compilerOptions.rootDir; tsconfig.include = ['src/**/*.ts', 'tools/**/*.ts']; });
+  write(root, 'tools/probe.ts', 'export const probe = 1;\n');
+  write(root, 'src/use.ts', USE);
+  write(root, 'src/index.ts', 'export const index = 1;\n');
+  const watcher = watching(t, root);
+  await until(() => count(watcher.output(), /^Built /) === 1, () => `the first build (output=${watcher.output()})`);
+  const outputs = (name: string): string[] => ['.js', '.js.map', '.d.ts'].map((ending) => path.join(root, 'build/src', `${name}${ending}`));
+  for (const file of [...outputs('index'), ...outputs('use')]) assert.ok(fs.existsSync(file), `${file} is built`);
+  // Files of another tool, at the path a layout from the sources' folder would give to src/index.ts.
+  write(root, 'build/index.js', 'other tool');
+  write(root, 'build/index.js.map', 'other tool');
+
+  fs.rmSync(path.join(root, 'src/index.ts'));
+  await until(() => count(watcher.output(), /^Built /) === 2, 'the build after the source was deleted');
+  assert.deepEqual(outputs('index').filter((file) => fs.existsSync(file)), [], 'the output of the deleted source is gone');
+  assert.ok(outputs('use').every((file) => fs.existsSync(file)), 'the output of the other source stays');
+  assert.equal(fs.readFileSync(path.join(root, 'build/index.js'), 'utf8'), 'other tool');
+  assert.equal(fs.readFileSync(path.join(root, 'build/index.js.map'), 'utf8'), 'other tool');
+  assert.equal(await watcher.stop(), 130);
 });

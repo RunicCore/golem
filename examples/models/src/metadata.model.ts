@@ -7,8 +7,6 @@ export type TIntegrationEvent = IModel<{ payload: any }, { allowAny: true }>;
 // #endregion exact-and-any
 
 import { parse } from '@exprtlabs/golem/serde';
-// Registers the generated codecs; the types above have no class that imports them.
-import './metadata.model.generated.js';
 
 export function readLabelName(text: string): string {
   return parse<TOpenLabel>(text).name;

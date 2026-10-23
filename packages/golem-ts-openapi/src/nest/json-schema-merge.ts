@@ -1,3 +1,4 @@
+import { isRecord, stableJson } from '@exprtlabs/golem/generator-api';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,
@@ -74,10 +75,6 @@ export function isAssertionFormat(value: unknown): value is string {
   return typeof value === 'string' && ASSERTION_FORMATS.has(value);
 }
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 export function throwSchemaDiagnostic(
   node: ts.Node,
   code: TsToOpenApiDiagnosticCode,
@@ -92,14 +89,8 @@ export function throwSchemaDiagnostic(
   ));
 }
 
-function canonicalValue(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalValue);
-  if (!isRecord(value)) return value;
-  return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalValue(value[key])]));
-}
-
 export function sameValue(left: unknown, right: unknown): boolean {
-  return JSON.stringify(canonicalValue(left)) === JSON.stringify(canonicalValue(right));
+  return stableJson(left) === stableJson(right);
 }
 
 export function schemaReference(value: unknown): string | undefined {

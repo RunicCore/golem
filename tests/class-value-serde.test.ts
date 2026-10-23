@@ -85,6 +85,42 @@ test('bigint TSerde fields round-trip: plain, array, nullable and optional', asy
   assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, { ...wire, maybeBig: '3', optBig: '4' })), { ...wire, maybeBig: '3', optBig: '4' });
 });
 
+// A model over a mapped, conditional or Pick type: the bigint TSerde of `amount` comes through `Final['order']`.
+for (const item of [
+  { name: 'a mapped type', model: 'Final[\'order\']' },
+  { name: 'a Pick over a mapped type', model: 'Pick<Final[\'order\'], \'id\' | \'amount\'>' },
+] as const) {
+  test(`bigint TSerde field of ${item.name} round-trips`, async t => {
+    // protects: T-253 a model over a mapped type keeps the TSerde conversion of a field
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), `export function encodeBig(value: bigint): string { return value.toString(); }
+export function decodeBig(value: string): bigint { return BigInt(value); }
+`);
+    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), `import type { IObject } from '@exprtlabs/golem/model';
+import type { TSerde } from '@exprtlabs/golem/tags';
+import { encodeBig, decodeBig } from './codecs.js';
+type Amount = bigint & TSerde<typeof encodeBig, typeof decodeBig>;
+type Entities = { order: { id: string; amount: string }; user: { name: string } };
+type DbOverrides = { order: { amount: Amount } };
+type Column<T extends keyof Entities, C extends keyof Entities[T]> = T extends keyof DbOverrides
+  ? C extends keyof DbOverrides[T] ? DbOverrides[T][C] : Entities[T][C]
+  : Entities[T][C];
+type Final = { [T in keyof Entities]: { [C in keyof Entities[T]]: Column<T, C> } };
+export type TA = IObject<${item.model}>;
+`);
+    writeModelGolemYaml(root, { mobx: false, validation: true });
+    await buildModelProject(root);
+    const codecs = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js'))) as {
+      parseTA: (text: string) => { amount: bigint };
+      stringifyTA: (value: unknown) => string;
+    };
+    const text = '{"id":"o1","amount":"9007199254740993"}';
+    const model = codecs.parseTA(text);
+    assert.equal(model.amount, 9007199254740993n);
+    assert.equal(codecs.stringifyTA(model), text);
+  });
+}
+
 test('optional class-value field', async t => {
   const { A } = await build(t, tsSource`bytes?: Bytes`);
   assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, {})), {});

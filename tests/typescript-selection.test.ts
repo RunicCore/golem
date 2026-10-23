@@ -86,6 +86,18 @@ console.log(JSON.stringify({ before, version, after }));`, { GOLEM_TYPESCRIPT_RO
   assert.deepEqual(answer, { before: null, version: '6.0.3', after: null });
 });
 
+test('two copies of the module in one process share one TypeScript choice', async () => {
+  // protects: T-8 regression, a nested copy of golem (the generators depend on it) did not see the golem command's choice
+  const requested = fakeInstall('6.0.3');
+  const working = fakeInstall('6.0.4');
+  const copy = (name: string): string => `${tooling('typescript-selection.js')}?copy=${name}`;
+  const answer = await run(working, `const first = await import('${copy('first')}');
+const second = await import('${copy('second')}');
+first.requestTypeScriptRoot(${JSON.stringify(requested)});
+console.log(JSON.stringify({ version: second.selectedTypeScript().version, same: first.selectedTypeScript().version }));`);
+  assert.deepEqual(answer, { version: '6.0.3', same: '6.0.3' });
+});
+
 /** A project of a golem.yaml and a tsconfig whose directory holds the TypeScript at `node_modules/typescript`, a link to `typescript` or a directory of the given fake version. */
 function project(typescript: string | { readonly version: string }): string {
   const root = typeof typescript === 'string' ? directory() : fakeInstall(typescript.version);
@@ -125,4 +137,11 @@ test('a host opened from a directory without TypeScript loads the TypeScript bes
 test('two projects that share one TypeScript install both open in one process', async () => {
   const shared = path.join(workspace, 'node_modules/typescript');
   assert.deepEqual(await opened(directory(), [project(shared), project(shared)]), [{ rewritten: false }, { rewritten: false }]);
+});
+
+test('a project whose TypeScript failed to load does not block the next project', async () => {
+  // protects: T-8 a request that never took effect is replaced, not compared
+  const [first, second] = await opened(directory(), [project({ version: '5.9.0' }), project(path.join(workspace, 'node_modules/typescript'))]) as [{ error?: string }, unknown];
+  assert.match(first.error ?? '', /found 5\.9\.0/);
+  assert.deepEqual(second, { rewritten: false });
 });

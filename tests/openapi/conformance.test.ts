@@ -9,6 +9,8 @@ import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { validateModelManifest } from '@exprtlabs/golem/manifest';
+import { reaction, runInAction } from 'mobx';
 import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { generatedCodecId } from '../support/consumer.js';
@@ -145,10 +147,14 @@ test('models OpenAPI 3.1 type unions', () => {
       serverValue: { type: 'string', readOnly: true },
     },
   };
-  assert.match(schemaType(directional, { direction: 'input' }), /secret: string/);
-  assert.doesNotMatch(schemaType(directional, { direction: 'input' }), /serverValue/);
-  assert.match(schemaType(directional, { direction: 'output' }), /serverValue: string/);
-  assert.doesNotMatch(schemaType(directional, { direction: 'output' }), /secret/);
+  assert.equal(schemaType(directional, { direction: 'input' }), `{
+  id: string;
+  secret: string;
+}`);
+  assert.equal(schemaType(directional, { direction: 'output' }), `{
+  id: string;
+  serverValue: string;
+}`);
   assert.equal(
     schemaType(
       { $ref: '#/components/schemas/Credentials' },
@@ -252,7 +258,7 @@ test('OpenAPI 3.1 generation preserves its dialect', async (t) => {
   await assert.rejects(() => respond({ value: 'x', extra: 1 }).getValues().execute({}), /validation failed/i);
 });
 
-test('component-root dynamic anchors retain their local recursive scope', (t) => {
+test('component-root dynamic anchors retain their local recursive scope', async (t) => {
   const recursiveObject = (valueType: string) => ({
     $dynamicAnchor: 'node',
     type: 'object',
@@ -277,16 +283,33 @@ test('component-root dynamic anchors retain their local recursive scope', (t) =>
   };
   const output = createFixtureProject(t, 'golem-openapi-dynamic-anchor-');
   writeSdk(document, { output, name: 'RecursiveAnchors' });
-  const types = fs.readFileSync(path.join(output, 'types.ts'), 'utf8');
-  const models = readGeneratedModelSource(output);
-  const stringType = types.split('export type StringTree = ')[1].split('export type ')[0];
-  const numberType = types.split('export type NumberTree = ')[1].split('export type ')[0];
-  const stringModel = models.split('export class StringTreeModel')[1].split('export class ')[0];
-  const numberModel = models.split('export class NumberTreeModel')[1].split('export class ')[0];
-  assert.match(stringType, /children\?: StringTree\[\]/);
-  assert.match(numberType, /children\?: NumberTree\[\]/);
-  assert.match(stringModel, /children\?: Array<StringTreeModel>/);
-  assert.match(numberModel, /children\?: Array<NumberTreeModel>/);
+  // The recursive child type of each component is that same component, in its type and in its model.
+  const assertFile = path.join(output, 'recursive-assert.ts');
+  fs.writeFileSync(assertFile, `import type { StringTree, NumberTree } from './types.js';
+import type { StringTreeModel, NumberTreeModel } from './index.js';
+declare const stringTree: StringTree;
+declare const numberTree: NumberTree;
+declare const stringModel: StringTreeModel;
+declare const numberModel: NumberTreeModel;
+export const stringChildren: StringTree[] | undefined = stringTree.children;
+export const numberChildren: NumberTree[] | undefined = numberTree.children;
+export const stringModelChildren: StringTreeModel[] | undefined = stringModel.children;
+export const numberModelChildren: NumberTreeModel[] | undefined = numberModel.children;
+// @ts-expect-error the children of a StringTree are StringTree values, not NumberTree values
+export const mixedChildren: NumberTree[] | undefined = stringTree.children;
+// @ts-expect-error the children of a NumberTreeModel are NumberTreeModel values, not StringTreeModel values
+export const mixedModelChildren: StringTreeModel[] | undefined = numberModel.children;
+`);
+  compileGeneratedSdk(output, [assertFile], { strict: true });
+  const exports = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'recursive models');
+  const { StringTreeModel, NumberTreeModel } = exports;
+  if (!isGeneratedModelClass(StringTreeModel) || !isGeneratedModelClass(NumberTreeModel)) {
+    throw new TypeError('expected generated model classes');
+  }
+  const stringTree = requireRecord(decodeGeneratedModel(StringTreeModel, { value: 'a', children: [{ value: 'b' }] }), 'string tree');
+  const numberTree = requireRecord(decodeGeneratedModel(NumberTreeModel, { value: 1, children: [{ value: 2 }] }), 'number tree');
+  assert.ok(Array.isArray(stringTree.children) && stringTree.children[0] instanceof StringTreeModel);
+  assert.ok(Array.isArray(numberTree.children) && numberTree.children[0] instanceof NumberTreeModel);
 });
 
 test('generates inheritable object models with serde conversion metadata', async (t) => {
@@ -320,16 +343,15 @@ test('generates inheritable object models with serde conversion metadata', async
   const output = createFixtureProject(t, 'golem-openapi-models-');
   writeSdk(document, { output, name: 'Models' });
   const models = readGeneratedModelSource(output);
-  assert.match(models, /class PaymentModel extends BasePaymentModel/);
-  const paymentClass = models.split('export class PaymentModel')[1]
-    .split('export class ')[0];
-  assert.doesNotMatch(paymentClass, /declare amount/);
-  assert.doesNotMatch(models, /\btoJSON\b/);
-  assert.match(models, /class MetadataModel \{[\s\S]*Dynamic map values are preserved during conversion/);
-  assert.match(models, /generatedModelFieldsBrand/);
-  assert.match(models, /asGenObservable\(this\)/);
 
   copyFixtureFile(output, "openapi/conformance/consumer.ts", "consumer.ts");
+  // A rule of a handwritten subclass names the generated fields through the exported brand.
+  fs.writeFileSync(path.join(output, 'brand-assert.ts'), `import type { generatedModelFieldsBrand } from '@exprtlabs/golem/model';
+import type { PaymentModel } from './index.js';
+export const amountField: keyof PaymentModel[typeof generatedModelFieldsBrand] = 'amount';
+// @ts-expect-error a field the Payment schema does not declare is not a key of its fields
+export const missingField: keyof PaymentModel[typeof generatedModelFieldsBrand] = 'missing';
+`);
   const compiled = spawnSync(process.execPath, [tscBin(), 
     '--target', 'ES2022',
     '--module', 'NodeNext',
@@ -337,6 +359,7 @@ test('generates inheritable object models with serde conversion metadata', async
     '--lib', 'ES2023,ESNext.Collection,DOM,DOM.Iterable',
     '--outDir', path.join(output, 'dist'),
     path.join(output, 'consumer.ts'),
+    path.join(output, 'brand-assert.ts'),
   ], { encoding: 'utf8' });
   assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
 
@@ -358,6 +381,12 @@ test('generates inheritable object models with serde conversion metadata', async
   assert.deepEqual(encodeGeneratedModel(generated(payment)), { amount: 125, id: 'pay_7', note: 'memo' });
   assert.throws(() => requireObjectCodec(generatedCodecId(models, 'Payment')).assert( ['not', 'an', 'object']), /validation|deserial/i);
   assert.deepEqual(encodeGeneratedModel(generated(decodeGeneratedModel(MetadataModel, { traceId: 'trace_7' }))), { traceId: 'trace_7' });
+  // The mobx profile makes a decoded model observable: a reaction sees a field change.
+  const seen: unknown[] = [];
+  const stop = reaction(() => Reflect.get(payment, 'amount'), (amount) => seen.push(amount));
+  runInAction(() => Reflect.set(payment, 'amount', 200));
+  stop();
+  assert.deepEqual(seen, [200]);
 });
 
 test('normalizes callbacks and webhooks into typed inbound contracts', (t) => {
@@ -438,10 +467,8 @@ test('normalizes callbacks and webhooks into typed inbound contracts', (t) => {
   const output = createFixtureProject(t, 'golem-openapi-inbound-');
   writeSdk(document, { output, name: 'Inbound' });
   const inbound = fs.readFileSync(path.join(output, 'inbound.ts'), 'utf8');
-  assert.match(inbound, /interface InboundInboundPort/);
-  assert.match(inbound, /webhook paymentSettled: POST paymentSettled/);
-  assert.match(inbound, /callback createSubscription onStatus: POST/);
-  assert.match(inbound, /OperationInput/);
+  // Only text shows the doc line that names each method's source in the port file.
+  assert.match(inbound, /^(?=[\s\S]*webhook paymentSettled: POST paymentSettled)(?=[\s\S]*callback createSubscription onStatus: POST)/);
 
   copyFixtureFile(output, 'openapi/conformance/inbound-assert.ts', 'inbound-assert.ts');
   const compiled = spawnSync(process.execPath, [tscBin(),
@@ -464,13 +491,13 @@ test('generation is deterministic', async (t) => {
   const second = writeSdkFiles(document, { output, name: 'ExamplePayments', profile });
   assert.deepEqual(second.artifacts, first.artifacts, 'repeated generation from the same document produces identical artifacts');
   writeSdk(document, { output, name: 'ExamplePayments' });
-  assert.equal(fs.existsSync(path.join(output, 'schemas.ts')), false);
   assert.ok(fs.existsSync(path.join(output, 'validators.generated.ts')));
   assert.ok(fs.existsSync(path.join(output, 'input-schemas.ts')));
   assert.ok(fs.existsSync(path.join(output, 'output-schemas.ts')));
   const manifestText = fs.readFileSync(path.join(output, 'model-manifest.json'), 'utf8');
   const manifest = requireRecord(JSON.parse(manifestText), 'manifest');
-  assert.equal(Object.hasOwn(manifest, 'manifestVersion'), false);
+  // golem's own reader accepts the generated manifest.
+  assert.doesNotThrow(() => validateModelManifest(manifest));
   assert.deepEqual(manifest.profile, { mobx: true, validation: true, allowAny: false, unknownFormats: 'error' });
   const source = requireRecord(manifest.source, 'source');
   assert.equal(source.dialect, requireRecord(document, 'document').openapi);
@@ -482,17 +509,16 @@ test('generation is deterministic', async (t) => {
     const type = requireRecord(record.type, 'type');
     const generated = requireRecord(record.generated, 'generated');
     return record.sourceKind === 'openapi'
-      && !Object.hasOwn(record, 'validation')
       && type.module === './types.ts'
       && generated.module === `./models/${String(type.export)}.ts`
       && generated.export === `${String(type.export)}Model`
       && fs.existsSync(path.join(output, String(generated.module)));
   }));
+  // Only text shows the marker comment that tooling follows from types.ts to the manifest.
   assert.match(
     fs.readFileSync(path.join(output, 'types.ts'), 'utf8'),
     /@golem-model-manifest \.\/model-manifest\.json/,
   );
-  assert.equal(fs.existsSync(path.join(output, 'validation.ts')), false);
 });
 
 function wireAuthDocument() {
@@ -566,6 +592,31 @@ function wireAuthDocument() {
           },
         },
       },
+      '/money/{id}': {
+        post: {
+          operationId: 'putMoney',
+          parameters: [{
+            name: 'id',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', pattern: '^pay_[0-9]+$' },
+          }],
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/Money' } },
+            },
+          },
+          responses: {
+            200: {
+              description: 'ok',
+              content: {
+                'application/json': { schema: { $ref: '#/components/schemas/Money' } },
+              },
+            },
+          },
+        },
+      },
       '/xml': {
         post: {
           operationId: 'xmlRoundTrip',
@@ -626,6 +677,17 @@ function wireAuthDocument() {
       },
     },
     components: {
+      schemas: {
+        Money: {
+          type: 'object',
+          required: ['amount', 'currency'],
+          properties: {
+            amount: { type: 'integer', minimum: 1 },
+            currency: { type: 'string', pattern: '^[A-Z]{3}$' },
+          },
+          additionalProperties: false,
+        },
+      },
       securitySchemes: {
         apiKey: { type: 'apiKey', in: 'query', name: 'key' },
         oauth: {
@@ -721,170 +783,211 @@ test('generated client serializes path, repeated query, form body and API-key au
     'amount=125&memo=invoice%207&tags=urgent,merchant&state=settled&rail=NPS&redirect=https://merchant.example/payments/7',
   );
   assert.equal(request.init.signal, controller.signal);
-});
 
-test('generated client applies OAuth/OIDC, mTLS, XML and undeclared-response handling', async () => {
-  const WireClient = await compileWireClient();
-  let request: CapturedRequest | undefined;
-  const authContexts: unknown[] = [];
-  const responseHeaderContexts: unknown[] = [];
-  let mutualTlsFetchCount = 0;
-  const mutualTlsFetch = async (url: string | URL | Request, init?: RequestInit) => {
-    mutualTlsFetchCount += 1;
-    request = captureRequest(url, init);
-    if (new URL(String(url)).pathname === '/xml') {
-      return new Response('<value>decoded</value>', {
-        status: 200,
-        headers: {
-          'content-type': 'application/xml; charset=utf-8',
-          'X-Rate': '25',
-          'X-Flags': 'true,false',
-          'X-Meta': 'count=3,active=true',
-          'X-Envelope': '<value>header</value>',
-        },
-      });
-    }
-    return new Response('{}', {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  };
-  const client = new WireClient({
-    baseUrl: 'https://api.example',
-    auth: {
-      apiKey: 'secret',
-      oauth: (context: unknown) => {
-        authContexts.push(context);
-        return 'oauth-token';
-      },
-      oidc: (context: unknown) => {
-        authContexts.push(context);
-        return 'oidc-token';
-      },
-    },
-    mutualTls: { fetchImpl: mutualTlsFetch },
-    bodyEncoders: {
-      'application/xml': (value: { value: string }) => `<value>${value.value}</value>`,
-    },
-    responseDecoders: {
-      'application/xml': async (response: Response) => ({
-        value: (await response.text()).replace(/^<value>|<\/value>$/g, ''),
-      }),
-    },
-    responseHeaderDecoders: {
-      'application/xml': (value: string, context: unknown) => {
-        responseHeaderContexts.push(context);
-        return { value: value.replace(/^<value>|<\/value>$/g, '') };
-      },
-    },
-    fetchImpl: async () => {
-      throw new Error('fallback fetch must not be used when mutualTLS is configured');
-    },
-  });
-  await client.secure().execute({});
-  assert.ok(request);
-  assert.equal(request.url, 'https://api.example/secure');
-  assert.equal(request.init.headers.get('authorization'), 'Bearer oauth-token');
-  await client.openIdProfile().execute({});
-  assert.ok(request);
-  assert.equal(request.url, 'https://api.example/oidc');
-  assert.equal(request.init.headers.get('authorization'), 'Bearer oidc-token');
-  assert.deepEqual(authContexts, [
-    {
-      scheme: 'oauth',
-      type: 'oauth2',
-      scopes: ['payments:read'],
-      flows: {
-        clientCredentials: {
-          tokenUrl: 'https://identity.example/token',
-          scopes: {
-            'payments:read': 'Read payments',
-            'payments:write': 'Write payments',
+  // OAuth/OIDC, mTLS, XML and undeclared-response handling on the same Wire client.
+  {
+    let request: CapturedRequest | undefined;
+    const authContexts: unknown[] = [];
+    const responseHeaderContexts: unknown[] = [];
+    let mutualTlsFetchCount = 0;
+    const mutualTlsFetch = async (url: string | URL | Request, init?: RequestInit) => {
+      mutualTlsFetchCount += 1;
+      request = captureRequest(url, init);
+      if (new URL(String(url)).pathname === '/xml') {
+        return new Response('<value>decoded</value>', {
+          status: 200,
+          headers: {
+            'content-type': 'application/xml; charset=utf-8',
+            'X-Rate': '25',
+            'X-Flags': 'true,false',
+            'X-Meta': 'count=3,active=true',
+            'X-Envelope': '<value>header</value>',
           },
-        },
-      },
-      openIdConnectUrl: undefined,
-    },
-    {
-      scheme: 'oidc',
-      type: 'openIdConnect',
-      scopes: ['openid', 'profile'],
-      flows: undefined,
-      openIdConnectUrl: 'https://identity.example/.well-known/openid-configuration',
-    },
-  ]);
-  const xml = await client.xmlRoundTrip().execute({ body: { value: 'encoded' } });
-  assert.ok(request);
-  assert.equal(request.init.headers.get('content-type'), 'application/xml');
-  assert.equal(request.init.body, '<value>encoded</value>');
-  assert.equal(xml.status, 200);
-  assert.deepEqual(xml.body, { value: 'decoded' });
-  assert.deepEqual(xml.headers, {
-    'X-Rate': 25,
-    'X-Flags': [true, false],
-    'X-Meta': { count: 3, active: true },
-    'X-Envelope': { value: 'header' },
-  });
-  assert.deepEqual(responseHeaderContexts, [{
-    operation: 'xmlRoundTrip',
-    name: 'X-Envelope',
-    contentType: 'application/xml',
-  }]);
-  assert.equal(mutualTlsFetchCount, 3);
-
-  const missingHeaderDecoderClient = new WireClient({
-    baseUrl: 'https://api.example',
-    auth: { apiKey: 'secret' },
-    fetchImpl: async () => new Response('<value>decoded</value>', {
-      status: 200,
-      headers: {
-        'content-type': 'application/xml',
-        'X-Envelope': '<value>header</value>',
-      },
-    }),
-    bodyEncoders: { 'application/xml': () => '<value>encoded</value>' },
-    responseDecoders: {
-      'application/xml': async () => ({ value: 'decoded' }),
-    },
-  });
-  await assert.rejects(
-    () => missingHeaderDecoderClient.xmlRoundTrip().execute({ body: { value: 'encoded' } }),
-    /No response header decoder configured/,
-  );
-
-  let insecureFetchCalled = false;
-  const missingMutualTlsClient = new WireClient({
-    baseUrl: 'https://api.example',
-    auth: { oauth: 'oauth-token' },
-    fetchImpl: async () => {
-      insecureFetchCalled = true;
+        });
+      }
       return new Response('{}', {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
-    },
-  });
-  await assert.rejects(
-    () => missingMutualTlsClient.secure().execute({}),
-    /No configured credentials satisfy/,
-  );
-  assert.equal(insecureFetchCalled, false);
+    };
+    const client = new WireClient({
+      baseUrl: 'https://api.example',
+      auth: {
+        apiKey: 'secret',
+        oauth: (context: unknown) => {
+          authContexts.push(context);
+          return 'oauth-token';
+        },
+        oidc: (context: unknown) => {
+          authContexts.push(context);
+          return 'oidc-token';
+        },
+      },
+      mutualTls: { fetchImpl: mutualTlsFetch },
+      bodyEncoders: {
+        'application/xml': (value: { value: string }) => `<value>${value.value}</value>`,
+      },
+      responseDecoders: {
+        'application/xml': async (response: Response) => ({
+          value: (await response.text()).replace(/^<value>|<\/value>$/g, ''),
+        }),
+      },
+      responseHeaderDecoders: {
+        'application/xml': (value: string, context: unknown) => {
+          responseHeaderContexts.push(context);
+          return { value: value.replace(/^<value>|<\/value>$/g, '') };
+        },
+      },
+      fetchImpl: async () => {
+        throw new Error('fallback fetch must not be used when mutualTLS is configured');
+      },
+    });
+    await client.secure().execute({});
+    assert.ok(request);
+    assert.equal(request.url, 'https://api.example/secure');
+    assert.equal(request.init.headers.get('authorization'), 'Bearer oauth-token');
+    await client.openIdProfile().execute({});
+    assert.ok(request);
+    assert.equal(request.url, 'https://api.example/oidc');
+    assert.equal(request.init.headers.get('authorization'), 'Bearer oidc-token');
+    assert.deepEqual(authContexts, [
+      {
+        scheme: 'oauth',
+        type: 'oauth2',
+        scopes: ['payments:read'],
+        flows: {
+          clientCredentials: {
+            tokenUrl: 'https://identity.example/token',
+            scopes: {
+              'payments:read': 'Read payments',
+              'payments:write': 'Write payments',
+            },
+          },
+        },
+        openIdConnectUrl: undefined,
+      },
+      {
+        scheme: 'oidc',
+        type: 'openIdConnect',
+        scopes: ['openid', 'profile'],
+        flows: undefined,
+        openIdConnectUrl: 'https://identity.example/.well-known/openid-configuration',
+      },
+    ]);
+    const xml = await client.xmlRoundTrip().execute({ body: { value: 'encoded' } });
+    assert.ok(request);
+    assert.equal(request.init.headers.get('content-type'), 'application/xml');
+    assert.equal(request.init.body, '<value>encoded</value>');
+    assert.equal(xml.status, 200);
+    assert.deepEqual(xml.body, { value: 'decoded' });
+    assert.deepEqual(xml.headers, {
+      'X-Rate': 25,
+      'X-Flags': [true, false],
+      'X-Meta': { count: 3, active: true },
+      'X-Envelope': { value: 'header' },
+    });
+    assert.deepEqual(responseHeaderContexts, [{
+      operation: 'xmlRoundTrip',
+      name: 'X-Envelope',
+      contentType: 'application/xml',
+    }]);
+    assert.equal(mutualTlsFetchCount, 3);
 
-  const undeclaredClient = new WireClient({
-    baseUrl: 'https://api.example',
-    auth: { apiKey: 'secret' },
-    fetchImpl: async () => new Response('{}', {
-      status: 201,
-      headers: { 'content-type': 'application/json' },
-    }),
-  });
-  await assert.rejects(
-    () => undeclaredClient.submitForm().execute({
-      path: { id: 'pay_1' },
-      body: { amount: 1 },
-    }),
-    /Undeclared OpenAPI response/,
-  );
+    const missingHeaderDecoderClient = new WireClient({
+      baseUrl: 'https://api.example',
+      auth: { apiKey: 'secret' },
+      fetchImpl: async () => new Response('<value>decoded</value>', {
+        status: 200,
+        headers: {
+          'content-type': 'application/xml',
+          'X-Envelope': '<value>header</value>',
+        },
+      }),
+      bodyEncoders: { 'application/xml': () => '<value>encoded</value>' },
+      responseDecoders: {
+        'application/xml': async () => ({ value: 'decoded' }),
+      },
+    });
+    await assert.rejects(
+      () => missingHeaderDecoderClient.xmlRoundTrip().execute({ body: { value: 'encoded' } }),
+      /No response header decoder configured/,
+    );
+
+    let insecureFetchCalled = false;
+    const missingMutualTlsClient = new WireClient({
+      baseUrl: 'https://api.example',
+      auth: { oauth: 'oauth-token' },
+      fetchImpl: async () => {
+        insecureFetchCalled = true;
+        return new Response('{}', {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+    await assert.rejects(
+      () => missingMutualTlsClient.secure().execute({}),
+      /No configured credentials satisfy/,
+    );
+    assert.equal(insecureFetchCalled, false);
+
+    const undeclaredClient = new WireClient({
+      baseUrl: 'https://api.example',
+      auth: { apiKey: 'secret' },
+      fetchImpl: async () => new Response('{}', {
+        status: 201,
+        headers: { 'content-type': 'application/json' },
+      }),
+    });
+    await assert.rejects(
+      () => undeclaredClient.submitForm().execute({
+        path: { id: 'pay_1' },
+        body: { amount: 1 },
+      }),
+      /Undeclared OpenAPI response/,
+    );
+  }
+
+  // Operation validators and the client enforce request/response schema constraints at runtime.
+  {
+    let fetchCount = 0;
+    let responseBody = { amount: 0, currency: 'vnd' };
+    const client = new WireClient({
+      baseUrl: 'https://api.example',
+      auth: { apiKey: 'secret' },
+      fetchImpl: async () => {
+        fetchCount += 1;
+        return new Response(JSON.stringify(responseBody), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+    await assert.rejects(
+      () => client.putMoney().execute({
+        path: { id: 'invalid' },
+        body: { amount: 0, currency: 'vnd' },
+      }),
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
+    );
+    assert.equal(fetchCount, 0);
+    await assert.rejects(
+      () => client.putMoney().execute({
+        path: { id: 'pay_7' },
+        body: { amount: 25, currency: 'VND' },
+      }),
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
+    );
+    assert.equal(fetchCount, 1);
+    responseBody = { amount: 25, currency: 'VND' };
+    const putMoneyResponse = await client.putMoney().execute({
+      path: { id: 'pay_7' },
+      body: { amount: 25, currency: 'VND' },
+    });
+    assert.equal(putMoneyResponse.status, 200);
+    assert.deepEqual(putMoneyResponse.body, responseBody);
+    assert.equal(fetchCount, 2);
+  }
 });
 
 test('generated client implements path and query style/explode serialization', async (t) => {
@@ -1378,108 +1481,6 @@ test('generated client implements path and query style/explode serialization', a
     }),
     /No parameter serializer configured/,
   );
-});
-
-test('generated SDK operation validators and client enforce request/response schema constraints at runtime', async (t) => {
-  const sdkOutput = createFixtureProject(t, 'golem-openapi-operation-validation-');
-  writeSdk({
-    openapi: '3.2.0',
-    info: { title: 'Runtime operations', version: '1' },
-    paths: {
-      '/money/{id}': {
-        post: {
-          operationId: 'putMoney',
-          parameters: [{
-            name: 'id',
-            in: 'path',
-            required: true,
-            schema: { type: 'string', pattern: '^pay_[0-9]+$' },
-          }],
-          requestBody: {
-            required: true,
-            content: {
-              'application/json': { schema: { $ref: '#/components/schemas/Money' } },
-            },
-          },
-          responses: {
-            200: {
-              description: 'ok',
-              content: {
-                'application/json': { schema: { $ref: '#/components/schemas/Money' } },
-              },
-            },
-          },
-        },
-      },
-    },
-    components: {
-      schemas: {
-        Money: {
-          type: 'object',
-          required: ['amount', 'currency'],
-          properties: {
-            amount: { type: 'integer', minimum: 1 },
-            currency: { type: 'string', pattern: '^[A-Z]{3}$' },
-          },
-          additionalProperties: false,
-        },
-      },
-    },
-  }, { output: sdkOutput, name: 'RuntimeOperations' });
-  const compiled = spawnSync(process.execPath, [tscBin(),
-    '--target', 'ES2022',
-    '--module', 'NodeNext',
-    '--moduleResolution', 'NodeNext',
-    '--lib', 'ES2023,ESNext.Collection,DOM,DOM.Iterable',
-    '--outDir', path.join(sdkOutput, 'dist'),
-    path.join(sdkOutput, 'index.ts'),
-  ], { encoding: 'utf8' });
-  assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
-  const runtimeClientModule = requireRecord(
-    await import(pathToFileURL(path.join(sdkOutput, 'dist/client.js')).href),
-    'runtime client',
-  );
-  assert.equal(isGeneratedClientClass(runtimeClientModule.RuntimeOperationsClient), true);
-  if (!isGeneratedClientClass(runtimeClientModule.RuntimeOperationsClient)) {
-    throw new TypeError('RuntimeOperationsClient');
-  }
-  const RuntimeOperationsClient = runtimeClientModule.RuntimeOperationsClient;
-  let fetchCount = 0;
-  let responseBody = { amount: 0, currency: 'vnd' };
-  const client = new RuntimeOperationsClient({
-    baseUrl: 'https://api.example',
-    fetchImpl: async () => {
-      fetchCount += 1;
-      return new Response(JSON.stringify(responseBody), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
-    },
-  });
-  await assert.rejects(
-    () => client.putMoney().execute({
-      path: { id: 'invalid' },
-      body: { amount: 0, currency: 'vnd' },
-    }),
-    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
-  );
-  assert.equal(fetchCount, 0);
-  await assert.rejects(
-    () => client.putMoney().execute({
-      path: { id: 'pay_7' },
-      body: { amount: 25, currency: 'VND' },
-    }),
-    (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation && error.issues.some(issue => issue.source === IssueSource.OpenAPI),
-  );
-  assert.equal(fetchCount, 1);
-  responseBody = { amount: 25, currency: 'VND' };
-  const putMoneyResponse = await client.putMoney().execute({
-    path: { id: 'pay_7' },
-    body: { amount: 25, currency: 'VND' },
-  });
-  assert.equal(putMoneyResponse.status, 200);
-  assert.deepEqual(putMoneyResponse.body, responseBody);
-  assert.equal(fetchCount, 2);
 });
 
 test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on the wire', async (t) => {

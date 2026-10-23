@@ -2,10 +2,10 @@ import { copyFixtureFile, createFixtureProject, readFixture, linkProjectPackages
 import assert from 'node:assert/strict';
 import {
   mkdirSync,
+  readdirSync,
   readFileSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { build as bundle } from 'esbuild';
@@ -313,6 +313,26 @@ function contextDocument(marker: string): Record<string, unknown> {
       },
     },
   };
+}
+
+const STRICT_OPTIONS = { strict: true, noUnusedLocals: true, noUnusedParameters: true, exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true } as const;
+
+type Operation = { execute(input: unknown): Promise<{ readonly body: unknown }> };
+
+/** An operation factory of the compiled SDK, run against a fetch that records the requests it gets and answers with the request body. */
+async function loadOperation(source: string, name: string): Promise<{ operation: Operation; requests: string[] }> {
+  const module = requireRecord(await import(pathToFileURL(path.join(source, `dist/operations/${name}.js`)).href), `${name} operation`);
+  const factory = module[name];
+  if (typeof factory !== 'function') throw new TypeError(`${name} factory is missing`);
+  const requests: string[] = [];
+  const operation = factory({
+    baseUrl: 'https://fixture.invalid',
+    fetchImpl: async (_input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(String(init?.body));
+      return new Response(String(init?.body), { headers: { 'content-type': 'application/json' } });
+    },
+  }) as Operation;
+  return { operation, requests };
 }
 
 /** The one validators module of an SDK: its models and its operations share it. */
@@ -653,86 +673,75 @@ test('a Nest-style Payment keeps canonical codec identity across repeated compac
   );
 });
 
-test('10 and 100 operations share one validators module and the generated source grows linearly', () => {
+test('10 and 100 operations share one validators module and the generated source grows linearly', async t => {
+  const { root } = fixture(t);
   const sizes: number[] = [];
   for (const count of [10, 100]) {
-    const output = path.join(tmpdir(), `openapi-scale-${count}`);
-    const result = writeSdk(scaleDocument(count), {
-      output,
+    const result = writeGeneratedSdk(writeSdk, scaleDocument(count), {
+      output: path.join(root, `src-${count}`),
       name: 'Scale',
       profile: { mobx: false, validation: true },
     });
     const operationArtifacts = result.artifacts.filter(artifact => artifact.path.includes(`${path.sep}operations${path.sep}`)
       && artifact.path.endsWith('.ts'));
     assert.equal(operationArtifacts.length, count);
-    const [shared, ...others] = sdkValidatorArtifacts(result.artifacts);
-    assert.deepEqual(others, [], 'one validators module');
-    assert.equal([...(shared?.content.matchAll(/^export function validate_\w+_input\(/gm) ?? [])].length, count, 'one input validator for each operation');
+    assert.equal(sdkValidatorArtifacts(result.artifacts).length, 1, 'one validators module');
+    // Only the size of the emitted source shows that it grows in proportion to the operations.
     sizes.push(result.artifacts.reduce((total, artifact) => total + Buffer.byteLength(artifact.content), 0));
   }
   assert.ok(sizes[1] !== undefined && sizes[0] !== undefined && sizes[1] <= sizes[0] * 12,
     `100-operation source set remains proportional to 10 operations: ${sizes.join(', ')}`);
+
+  // Each of the ten operations checks its own input against the shared module.
+  const source = path.join(root, 'src-10');
+  compileGeneratedSdk(source, [], STRICT_OPTIONS);
+  const valid = { group: { items: [{ label: 'a' }] }, history: [] };
+  const runs = await Promise.all(Array.from({ length: 10 }, async (_, index) => {
+    const { operation, requests } = await loadOperation(source, `sendEntry${index}`);
+    await assert.rejects(operation.execute({ body: { group: { items: [] } } }), { name: 'LibError', causedByInput: true });
+    const rejected = requests.length;
+    await operation.execute({ body: valid });
+    return { rejected, sent: requests.length };
+  }));
+  assert.deepEqual(runs, Array.from({ length: 10 }, () => ({ rejected: 0, sent: 1 })));
 });
 
-test('sequential same-title generation jobs keep schema and resource contexts isolated', () => {
-  const first = writeSdk(contextDocument('alpha'), {
-    output: path.join(tmpdir(), 'openapi-context-alpha'),
-    name: 'Context',
-    profile: { mobx: false, validation: true },
-  });
-  const second = writeSdk(contextDocument('beta'), {
-    output: path.join(tmpdir(), 'openapi-context-beta'),
-    name: 'Context',
-    profile: { mobx: false, validation: true },
-  });
-  const firstShared = sdkValidatorArtifacts(first.artifacts);
-  const secondShared = sdkValidatorArtifacts(second.artifacts);
-  assert.equal(firstShared.length, 1);
-  assert.equal(secondShared.length, 1);
-  assert.ok(firstShared.every(artifact => !artifact.content.includes('beta')));
-  assert.ok(secondShared.every(artifact => !artifact.content.includes('alpha')));
-  assert.ok(firstShared.some(artifact => artifact.content.includes('alpha')));
-  assert.ok(secondShared.some(artifact => artifact.content.includes('beta')));
+test('sequential same-title generation jobs keep schema and resource contexts isolated', async t => {
+  const alpha = fixture(t).source;
+  const beta = fixture(t).source;
+  const sdks = [
+    writeGeneratedSdk(writeSdk, contextDocument('alpha'), { output: alpha, name: 'Context', profile: { mobx: false, validation: true } }),
+    writeGeneratedSdk(writeSdk, contextDocument('beta'), { output: beta, name: 'Context', profile: { mobx: false, validation: true } }),
+  ];
+  assert.deepEqual(sdks.map(sdk => sdkValidatorArtifacts(sdk.artifacts).length), [1, 1]);
+  compileGeneratedSdk(alpha, [], { strict: true });
+  compileGeneratedSdk(beta, [], { strict: true });
   // An operation module imports its validators by operation and slot, so it carries no schema context of the job.
-});
-
-test('the SDK validators module exports one named function per root and no record', () => {
-  const result = writeSdk(contextDocument('alpha'), {
-    output: path.join(tmpdir(), 'openapi-schema-exports'),
-    name: 'Context',
-    profile: { mobx: false, validation: true },
-  });
-  const [module, ...others] = sdkValidatorArtifacts(result.artifacts);
-  assert.ok(module);
-  assert.deepEqual(others, []);
-  const exported = [...module.content.matchAll(/^export (?:function|const) (\w+)/gm)].map(match => match[1]);
-  assert.ok(exported.includes('validate_putEnvelope_input'), 'the operation roots are named by operation and slot');
-  assert.ok(exported.includes('validate_putEnvelope_response_200_application_json'));
-  for (const name of exported) assert.match(name, /^(?:validate|is)_\w+$/);
-  // A model root's fast check is exported as the function itself; the operation roots get none.
-  assert.deepEqual(exported.filter(name => name.startsWith('is_putEnvelope')), []);
-});
-
-test('schemas whose names the codec rule shortens still get output files and exports', t => {
-  const { source } = fixture(t);
-  const object = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
-  const operation = (name: string) => ({ operationId: `get${name.replace(/[^A-Za-z]/g, '')}`, responses: { '200': { description: 'ok', content: { 'application/json': { schema: { $ref: `#/components/schemas/${name}` } } } } } });
-  const names = ['PaymentModel', 'TPayment', 'Pay$ment'];
-  const document = {
-    openapi: '3.1.0',
-    info: { title: 'Shortened', version: '1' },
-    paths: Object.fromEntries(names.map((name, index) => [`/p${index}`, { get: operation(name) }])),
-    components: { schemas: { PaymentModel: object, TPayment: { ...object, properties: { amount: { type: 'number' } }, required: ['amount'] }, 'Pay$ment': object } },
+  const accepted = async (source: string, value: string): Promise<boolean> => {
+    const { operation } = await loadOperation(source, 'putEnvelope');
+    return operation.execute({ body: { value } }).then(() => true, () => false);
   };
-  const result = writeGeneratedSdk(writeSdk, document, { output: source, name: 'Shortened', profile: { mobx: false, validation: false } });
-  const files = new Set(result.artifacts.map((artifact) => artifact.path));
-  const index = result.artifacts.find((artifact) => artifact.path.endsWith(`${path.sep}index.ts`))?.content ?? '';
-  const exported = [...index.matchAll(/from '\.\/models\/([^']+)\.js'/g)].map((match) => match[1]!);
-  assert.ok(exported.length > 0, 'the index re-exports models');
-  for (const name of exported) assert.ok(files.has(path.join(source, 'models', `${name}.ts`)), `models/${name}.ts is written`);
+  assert.deepEqual(
+    [await accepted(alpha, 'alpha'), await accepted(alpha, 'beta'), await accepted(beta, 'alpha'), await accepted(beta, 'beta')],
+    [true, false, false, true],
+  );
 });
 
-const SHORTENED_OPTIONS = { strict: true, noUnusedLocals: true, noUnusedParameters: true, exactOptionalPropertyTypes: true, noUncheckedIndexedAccess: true } as const;
+test('the SDK validators module exports one named function per root and no record', async t => {
+  const { source } = fixture(t);
+  const result = writeGeneratedSdk(writeSdk, contextDocument('alpha'), { output: source, name: 'Context', profile: { mobx: false, validation: true } });
+  assert.equal(sdkValidatorArtifacts(result.artifacts).length, 1);
+  compileGeneratedSdk(source, [], { strict: true });
+  const module = requireRecord(await import(pathToFileURL(path.join(source, 'dist/validators.generated.js')).href), 'validators module');
+  // A model root's fast check is exported as the function itself; the operation roots get none.
+  assert.deepEqual(Object.keys(module).map(name => name.replace(/_[0-9a-f]{8}$/, '_<hash>')).sort(), [
+    'is_Envelope_<hash>',
+    'validate_Envelope_<hash>',
+    'validate_putEnvelope_input',
+    'validate_putEnvelope_response_200_application_json',
+  ]);
+  assert.ok(Object.values(module).every(value => typeof value === 'function'), 'every export is a function, not a record');
+});
 
 function shortenedDocument(schemas: Record<string, unknown>): Record<string, unknown> {
   const operation = (name: string) => ({
@@ -753,9 +762,9 @@ const amountObject = { type: 'object', properties: { amount: { type: 'number' } 
 async function generateShortened(t: TestContext, schemas: Record<string, unknown>) {
   const { source } = fixture(t);
   const result = writeGeneratedSdk(writeSdk, shortenedDocument(schemas), { output: source, name: 'Shortened', profile: { mobx: false, validation: false } });
-  compileGeneratedSdk(source, [], SHORTENED_OPTIONS);
+  compileGeneratedSdk(source, [], STRICT_OPTIONS);
   const sdk = requireRecord(await import(pathToFileURL(path.join(source, 'dist/index.js')).href), 'shortened sdk');
-  return { result, sdk };
+  return { result, sdk, source };
 }
 
 function roundTrip(sdk: Record<string, unknown>, model: string, klass: string, value: Record<string, unknown>): void {
@@ -769,15 +778,24 @@ function roundTrip(sdk: Record<string, unknown>, model: string, klass: string, v
   assert.deepEqual(JSON.parse(stringify(parsed)), value);
 }
 
+test('schemas whose names the codec rule shortens still get output files and exports', async t => {
+  const { result, sdk, source } = await generateShortened(t, { PaymentModel: idObject, TPayment: amountObject, 'Pay$ment': idObject });
+  const written = new Set(result.artifacts.map(artifact => artifact.path));
+  const assertExported = async (schema: string, klass: string): Promise<void> => {
+    assert.ok(written.has(path.join(source, 'models', `${schema}.ts`)), `models/${schema}.ts is written`);
+    const direct = requireRecord(await import(pathToFileURL(path.join(source, `dist/models/${schema}.js`)).href), `${schema} module`);
+    assert.ok(isGeneratedModelClass(sdk[klass]), `${klass} is exported by the SDK entry`);
+    assert.strictEqual(sdk[klass], direct[klass]);
+  };
+  await assertExported('PaymentModel', 'PaymentModelModel');
+  await assertExported('TPayment', 'TPaymentModel');
+  await assertExported('Pay$ment', 'Pay$mentModel');
+});
+
 test('a model that references schemas with shortened names imports their own classes', async t => {
   const holder = { type: 'object', properties: { a: { $ref: '#/components/schemas/PaymentModel' }, b: { $ref: '#/components/schemas/Pay$ment' } }, required: ['a', 'b'] };
   const { sdk } = await generateShortened(t, { PaymentModel: idObject, 'Pay$ment': amountObject, Holder: holder });
   roundTrip(sdk, 'Holder', 'HolderModel', { a: { id: 'a' }, b: { amount: 2 } });
-});
-
-test('a single schema with a shortened name generates and round-trips', async t => {
-  const model = await generateShortened(t, { PaymentModel: idObject });
-  roundTrip(model.sdk, 'PaymentModel', 'PaymentModelModel', { id: 'a' });
 });
 
 test('a single schema with a dollar sign in its name generates and round-trips', async t => {
@@ -813,15 +831,15 @@ function assertHolderRoundTrip(
 }
 
 test('a holder of both compiles and round-trips its nested classes', async t => {
-  const { result, sdk } = await generateShortened(t, { PaymentModel: idObject, TPayment: amountObject, Holder: holderOf('PaymentModel', 'TPayment') });
+  const { result, sdk, source } = await generateShortened(t, { PaymentModel: idObject, TPayment: amountObject, Holder: holderOf('PaymentModel', 'TPayment') });
   const manifest = JSON.parse(result.artifacts.find((artifact) => artifact.path.endsWith('/model-manifest.json'))?.content ?? '{}') as { models: { codecId: string; generated: { export: string } }[] };
   const classes = manifest.models.map((model) => model.generated.export).sort();
   assert.deepEqual(classes, ['HolderModel', 'PaymentModelModel', 'TPaymentModel'], 'the manifest names the emitted class of each exact component name');
   assert.equal(new Set(manifest.models.map((model) => model.codecId)).size, 3, 'three codec ids');
-  for (const name of classes) {
-    const declaring = result.artifacts.filter((artifact) => /\/models\/_group-[0-9a-f]+\.ts$/.test(artifact.path) && new RegExp(`export class ${name}\\b`).test(artifact.content));
-    assert.equal(declaring.length, 1, `${name} is declared in one group file`);
-  }
+  const groupDirectory = path.join(source, 'dist/models');
+  const groups = await Promise.all(readdirSync(groupDirectory).filter(file => /^_group-[0-9a-f]+\.js$/.test(file))
+    .map(async file => requireRecord(await import(pathToFileURL(path.join(groupDirectory, file)).href), file)));
+  assert.deepEqual(classes.map(name => groups.filter(group => typeof group[name] === 'function').length), [1, 1, 1], 'each class is declared in one group module');
   roundTrip(sdk, 'PaymentModel', 'PaymentModelModel', { id: 'a' });
   roundTrip(sdk, 'TPayment', 'TPaymentModel', { amount: 3 });
   assertHolderRoundTrip(sdk, ['PaymentModelModel', 'TPaymentModel'], [{ id: 'a' }, { amount: 2 }]);

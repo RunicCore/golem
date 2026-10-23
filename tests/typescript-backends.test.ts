@@ -57,6 +57,24 @@ test('a paths alias without an extension resolves to the source file or the inde
   assert.equal(resolve('@app/models'), path.join(root, 'src/models/index.ts'));
 });
 
+test('a package subpath that the exports map hides does not resolve, and a package without an exports map resolves any file', t => {
+  // protects: T-259 on TypeScript 7 the exports map decides alone, as on TypeScript 6; a hidden file is not found by a node_modules walk
+  const root = createFixtureProject(t, 'golem-hidden-subpath-');
+  const main = path.join(root, 'main.ts');
+  fs.mkdirSync(path.join(root, 'node_modules/guarded'), { recursive: true });
+  fs.mkdirSync(path.join(root, 'node_modules/open'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'node_modules/guarded/package.json'), JSON.stringify({ name: 'guarded', version: '1.0.0', exports: { './shown': { types: './shown.d.ts' } } }));
+  fs.writeFileSync(path.join(root, 'node_modules/guarded/shown.d.ts'), 'export declare const value: number;\n');
+  fs.writeFileSync(path.join(root, 'node_modules/guarded/hidden.d.ts'), 'export declare const value: number;\n');
+  fs.writeFileSync(path.join(root, 'node_modules/open/package.json'), JSON.stringify({ name: 'open', version: '1.0.0' }));
+  fs.writeFileSync(path.join(root, 'node_modules/open/deep.d.ts'), 'export declare const value: number;\n');
+  const resolve = (specifier: string): string | undefined => ts.resolveModuleName(specifier, main, { module: ts.ModuleKind.NodeNext, moduleResolution: ts.ModuleResolutionKind.NodeNext }, ts.sys).resolvedModule?.resolvedFileName;
+  const real = (file: string): string => fs.realpathSync(path.join(root, file));
+  assert.equal(resolve('guarded/shown'), real('node_modules/guarded/shown.d.ts'));
+  assert.equal(resolve('guarded/hidden'), undefined);
+  assert.equal(resolve('open/deep'), real('node_modules/open/deep.d.ts'));
+});
+
 for (const [place, specifier, manifest] of [
   ['a # import reads the package.json above the importer', '#helper', 'package.json'],
   ['a package name reads the package.json of the installed package', 'dep/helper', 'node_modules/dep/package.json'],

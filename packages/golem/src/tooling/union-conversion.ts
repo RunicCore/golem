@@ -16,10 +16,25 @@ export type ObjectTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind:
 type ArrayTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'array' }>;
 export type UnionTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'union' }>;
 
-export const OBJECT_UNION_DISCRIMINATOR_ERROR =
-  'Object union conversions require a unique, required literal discriminator.';
-export const AMBIGUOUS_UNION_CONVERSION_ERROR =
-  'Union has ambiguous conversions. Use a discriminated object union or one serde pair for the value.';
+/** An object union that needs conversion has no unique, required literal tag: generation stops, and a generator adds its code, location and fix. */
+export class ObjectUnionDiscriminatorError extends Error {
+  constructor(variants: readonly ModelTypeDescriptor[]) {
+    super(`Object union conversions require a unique, required literal discriminator. The variants are ${variants.map(describeVariant).join(' | ')}.`);
+  }
+}
+
+function describeVariant(variant: ModelTypeDescriptor): string {
+  if (variant.kind === 'object') return `{ ${Object.keys(variant.properties).join(', ')} }`;
+  if (variant.kind === 'reference') return variant.name;
+  return variant.kind === 'generated-model' ? variant.id : variant.kind;
+}
+
+/** A union with no object tag needs a conversion that the wire value cannot select: generation stops, and a generator adds its code, location and fix. */
+export class AmbiguousUnionConversionError extends Error {
+  constructor(variants: readonly ModelTypeDescriptor[]) {
+    super(`Union has ambiguous conversions. Use a discriminated object union or one serde pair for the value. The variants are ${variants.map(describeVariant).join(' | ')}.`);
+  }
+}
 
 export function objectValueExpression(expression: string): string {
   return `typeof ${expression} === 'object' && ${expression} !== null && !Array.isArray(${expression})`;
@@ -247,6 +262,25 @@ export function scalarOrArray(
   return { sequence: sequences[0], scalars };
 }
 
+/** The variants of a `scalar | T[] | object` union: its one sequence, its one object or model, and the scalar variants beside them. */
+interface ScalarArrayObject extends ScalarOrArray {
+  readonly object: ModelTypeDescriptor;
+}
+
+/**
+ * A union of scalar variants, one array or tuple, and one object or model: the shape of a JSON value. The value tells
+ * the three apart without a tag: `Array.isArray`, then a non-null object, then a scalar.
+ */
+export function scalarArrayObject(
+  present: readonly ModelTypeDescriptor[],
+): ScalarArrayObject | undefined {
+  const objects = present.filter((variant) =>
+    variant.kind === 'object' || variant.kind === 'reference' || variant.kind === 'generated-model');
+  if (objects.length !== 1) return undefined;
+  const pair = scalarOrArray(present.filter((variant) => variant !== objects[0]));
+  return pair ? { ...pair, object: objects[0] } : undefined;
+}
+
 /**
  * The sequence branch of a scalar-or-array union, converted by item and with no guard: the union tests
  * `Array.isArray` once. A tuple converts each position as it does outside the union.
@@ -268,9 +302,9 @@ export function emitSequenceBranch(
  * value cannot tell it from its siblings, so the union is rejected.
  */
 export function scalarBranchVariant(scalars: readonly ModelTypeDescriptor[]): ModelTypeDescriptor | undefined {
-  const converting = scalars.filter(descriptorNeedsConversion);
+  const converting = scalars.filter((scalar) => descriptorNeedsConversion(scalar));
   if (converting.length === 0) return undefined;
-  if (scalars.length > 1) throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
+  if (scalars.length > 1) throw new AmbiguousUnionConversionError(scalars);
   return converting[0];
 }
 
@@ -283,7 +317,168 @@ export function emitScalarOrArrayConversion(
   return `Array.isArray(${expression}) ? (${mappedArray}) : (${scalar})`;
 }
 
-export function descriptorNeedsConversion(descriptor: ModelTypeDescriptor): boolean {
+/** Which walker asks for the conversion. `stringify` writes JSON text; the others write a value. */
+export type UnionDirection = 'decode' | 'encode' | 'stringify' | 'nested';
+
+type GeneratedModelTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'generated-model' }>;
+
+/** A union of one generated model and tagged objects, or scalars: the model takes the objects whose tag does not match. */
+export interface GeneratedWithObjects {
+  /** The conversion of the model; undefined when this walker emits no class for it. */
+  readonly text: (generated: GeneratedModelTypeDescriptor) => string | undefined;
+  /** The tag tests of the object variants. */
+  readonly tagMatch: (objects: readonly ObjectTypeDescriptor[]) => string[];
+  /** The conversion of the object variants whose tag matches. */
+  readonly objects: (objects: readonly ObjectTypeDescriptor[]) => string;
+  /** With no tagged object, the model takes every object whatever the other variants are. */
+  readonly takesEveryObject?: boolean;
+}
+
+/** What a walker gives the shared union emitter: its conversions, and the steps that only its direction has. */
+export interface UnionConversion {
+  /** The conversion of one variant, written against the union's expression. */
+  readonly convert: (variant: ModelTypeDescriptor) => string;
+  /** The item conversion of the array or tuple of a scalar-or-array union. */
+  readonly items: SequenceItems;
+  /** Joins the converted sequence and scalar; defaults to the value form. */
+  readonly joinSequence?: (mapped: string, scalar: string) => string;
+  /** Dispatch by tag (and class); undefined when the variants carry no tag to dispatch on. */
+  readonly tagged: () => string | undefined;
+  /**
+   * Wraps the conversion of an inline array, tuple or object branch, so a value that holds itself is found at its first
+   * repeat. A branch that is a named node guards itself, and the union guards nothing at its entry: it hands the same value on.
+   */
+  readonly guard?: (variant: ModelTypeDescriptor, code: string) => string;
+  /** A step before the generated-model one, which returns the whole conversion or undefined. */
+  readonly beforeGenerated?: (present: readonly ModelTypeDescriptor[]) => string | undefined;
+  readonly generated?: GeneratedWithObjects;
+  /** A step after the generated-model one, which returns the whole conversion or undefined. */
+  readonly afterGenerated?: (present: readonly ModelTypeDescriptor[]) => string | undefined;
+}
+
+/** The variant kinds that sit beside one object or model in a value conversion and need no conversion. */
+const PLAIN_VARIANT_KINDS = ['string', 'number', 'boolean', 'bigint', 'literal'];
+
+/**
+ * The one conversion of a union, shared by the stringify, decode and encode walkers and the model walker. The order is
+ * fixed: a nullable single variant, a scalar-or-array pair, tagged dispatch, a generated model beside tagged objects,
+ * one object or model beside plain variants, and the ambiguity error. Each walker gives its conversions and its own
+ * steps through `UnionConversion`. A stringify walker needs no work for a valid value beyond the tests it emits here.
+ */
+export function emitUnionConversion(
+  descriptor: UnionTypeDescriptor,
+  expression: string,
+  direction: UnionDirection,
+  conversion: UnionConversion,
+): string {
+  const json = direction === 'stringify';
+  // A branch that converts nothing stays the value itself, so it has nothing to guard.
+  const guarded = (variant: ModelTypeDescriptor, code: string): string =>
+    code === expression || !conversion.guard ? code : conversion.guard(variant, code);
+  const plain = json ? `stringifyJsonScalar(${expression} as never)` : expression;
+  const present = presentUnionVariants(descriptor);
+  if (present.length === 1 && present.length !== descriptor.variants.length) {
+    const converted = conversion.convert(present[0]);
+    if (json) return `(${expression} == null ? 'null' : (${converted}))`;
+    return converted === expression ? expression : `${expression} == null ? ${expression} : (${converted})`;
+  }
+  const pair = scalarOrArray(present);
+  if (pair) {
+    const { sequence, scalars } = pair;
+    const scalarVariant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
+    const scalar = scalarVariant ? conversion.convert(scalarVariant) : plain;
+    const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
+    return conversion.joinSequence?.(mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
+  }
+  const jsonValue = scalarArrayObject(present);
+  if (jsonValue) {
+    const { sequence, scalars, object } = jsonValue;
+    const scalarVariant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
+    const scalar = scalarVariant ? conversion.convert(scalarVariant) : plain;
+    const converted = guarded(object, conversion.convert(object));
+    const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
+    const rest = converted === plain && scalar === plain
+      ? plain
+      : json
+        ? `(${objectValueExpression(expression)} ? ${converted} : ${scalar})`
+        : `${objectValueExpression(expression)} ? (${converted}) : ${scalar}`;
+    return conversion.joinSequence?.(mapped, rest) ?? emitScalarOrArrayConversion(expression, mapped, rest);
+  }
+  const tagged = conversion.tagged();
+  if (tagged !== undefined) return tagged;
+  const before = conversion.beforeGenerated?.(present);
+  if (before !== undefined) return before;
+  const withObjects = conversion.generated && generatedWithObjects(present, expression, plain, conversion.generated);
+  if (withObjects) return withObjects;
+  const after = conversion.afterGenerated?.(present);
+  if (after !== undefined) return after;
+  // A stringify walker converts the one object or model before it compares all conversions; the others compare first.
+  const unchanged = (): string | undefined => {
+    const conversions = present.map(conversion.convert);
+    return conversions.every((converted) => converted === plain) ? plain : undefined;
+  };
+  if (!json) {
+    const same = unchanged();
+    if (same !== undefined) return same;
+  }
+  const objectsOrModels = present.filter((variant) =>
+    variant.kind === 'object' || variant.kind === 'reference' || variant.kind === 'generated-model');
+  if (
+    objectsOrModels.length === 1
+    && present.every((variant) => variant === objectsOrModels[0]
+      || (json ? isScalarishDescriptor(variant) : PLAIN_VARIANT_KINDS.includes(variant.kind)))
+  ) {
+    const converted = conversion.convert(objectsOrModels[0]);
+    return json
+      ? `(${objectValueExpression(expression)} ? ${converted} : ${plain})`
+      : `${objectValueExpression(expression)} ? (${converted}) : ${expression}`;
+  }
+  if (json) {
+    const same = unchanged();
+    if (same !== undefined) return same;
+  }
+  if (direction === 'decode' || direction === 'encode') {
+    if (!descriptorNeedsConversion(descriptor)) return expression;
+  }
+  if (objectsOrModels.length > 1) throw new ObjectUnionDiscriminatorError(present);
+  throw new AmbiguousUnionConversionError(present);
+}
+
+function generatedWithObjects(
+  present: readonly ModelTypeDescriptor[],
+  expression: string,
+  plain: string,
+  options: GeneratedWithObjects,
+): string | undefined {
+  const generated = present.filter((variant): variant is GeneratedModelTypeDescriptor => variant.kind === 'generated-model');
+  if (generated.length !== 1) return undefined;
+  const generatedText = options.text(generated[0]);
+  if (generatedText === undefined) return undefined;
+  const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
+  if (objects.length > 0 && !objectDiscriminator(objects)) throw new ObjectUnionDiscriminatorError(objects);
+  const tagged = options.tagMatch(objects);
+  if (tagged.length) {
+    return `(${objectValueExpression(expression)} && !(${tagged.join(' || ')}) ? ${generatedText} : ${options.objects(objects)})`;
+  }
+  if (options.takesEveryObject || present.every((variant) => variant === generated[0] || isScalarishDescriptor(variant))) {
+    return `(${objectValueExpression(expression)} ? ${generatedText} : ${plain})`;
+  }
+  return undefined;
+}
+
+/** The descriptor a projection reference names, for the identity test to follow. */
+export type ProjectionBodyLookup = (name: string) => ModelTypeDescriptor | undefined;
+
+/**
+ * Whether a value of `descriptor` changes when it is converted. A reference needs conversion when the codec constructs a
+ * class for it. With `lookup`, a reference to a projection is followed to its body, once per name, so a recursive alias that
+ * reaches no date, serde value or model needs none. A projected object copies its declared keys, so it always converts.
+ */
+export function descriptorNeedsConversion(
+  descriptor: ModelTypeDescriptor,
+  lookup?: ProjectionBodyLookup,
+  visited: Set<string> = new Set(),
+): boolean {
   const tags = descriptor as ModelTypeDescriptor & {
     readonly serde?: { readonly id: string };
     readonly date?: true;
@@ -291,19 +486,25 @@ export function descriptorNeedsConversion(descriptor: ModelTypeDescriptor): bool
   if (tags.serde || tags.date || descriptor.kind === 'date' || descriptor.kind === 'generated-model') {
     return true;
   }
-  if (descriptor.kind === 'reference') return descriptor.construct === true;
-  if (descriptor.kind === 'array') return descriptorNeedsConversion(descriptor.item);
+  const needs = (held: ModelTypeDescriptor): boolean => descriptorNeedsConversion(held, lookup, visited);
+  if (descriptor.kind === 'reference') {
+    if (descriptor.construct === true) return true;
+    if (!lookup || !descriptor.projection || visited.has(descriptor.name)) return false;
+    visited.add(descriptor.name);
+    const body = lookup(descriptor.name);
+    return body !== undefined && ((body.kind === 'object' && body.projection === true) || needs(body));
+  }
+  if (descriptor.kind === 'array') return needs(descriptor.item);
   if (descriptor.kind === 'tuple') {
-    return descriptor.items.some(descriptorNeedsConversion)
-      || (descriptor.rest !== undefined && descriptorNeedsConversion(descriptor.rest.item));
+    return descriptor.items.some(needs)
+      || (descriptor.rest !== undefined && needs(descriptor.rest.item));
   }
   if (descriptor.kind === 'object') {
-    return Object.values(descriptor.properties).some(descriptorNeedsConversion)
-      || (typeof descriptor.additionalProperties === 'object'
-        && descriptorNeedsConversion(descriptor.additionalProperties));
+    return Object.values(descriptor.properties).some(needs)
+      || (typeof descriptor.additionalProperties === 'object' && needs(descriptor.additionalProperties));
   }
   if (descriptor.kind === 'union' || descriptor.kind === 'intersection') {
-    return descriptor.variants.some(descriptorNeedsConversion);
+    return descriptor.variants.some(needs);
   }
   return false;
 }

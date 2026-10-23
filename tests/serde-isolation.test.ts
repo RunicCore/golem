@@ -35,14 +35,14 @@ registerGeneratedModel(RecordModel, {
   },
 });
 
-async function loadCodecs(t: TestContext, name: string): Promise<Record<string, FromWire>> {
+async function loadCodecs(t: TestContext, name: string, validation = false): Promise<Record<string, FromWire>> {
   const { root, sourceRoot } = createModelProject(t, {
     prefix: 'golem-serde-isolation-',
     name: 'serde-isolation',
     linkWorkspaceNodeModules: true,
   });
   fs.writeFileSync(path.join(sourceRoot, `${name}.model.ts`), readFixture(`models/serde-isolation/${name}.model.ts`));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { mobx: false, validation });
   await buildModelProject(root);
   return await import(pathToFileURL(path.join(root, `build/${name}.model.generated.js`)).href) as Record<string, FromWire>;
 }
@@ -271,11 +271,29 @@ test('generated decode of a recursive model rejects a cycle instead of overflowi
   assert.deepEqual(fromWireFormatTNode({ label: 'root', children: [shared, shared] }, { validate: false }), { label: 'root', children: [shared, shared] });
 });
 
-test('generated decode of a recursive object rejects a cycle instead of overflowing the stack', async (t) => {
-  const { fromWireFormatTTree } = await loadCodecs(t, 'recursive');
-  const tree: { next?: unknown } = {};
-  tree.next = tree;
-  assert.throws(() => fromWireFormatTTree(tree, { validate: false }), cycleAt(['next']));
+class Construct { constructor(public fields: unknown) {} }
+
+for (const [name, options] of [['default options', undefined], ['validate: true', { validate: true }], ['validate: true with construct', { validate: true, construct: Construct }]] as const) {
+  test(`validated decode of a cyclic recursive value throws a deserialization error instead of overflowing the stack, with ${name}`, async (t) => {
+    // protects: T-278 a cyclic value decoded with validation on throws a deserialization LibError, not a RangeError
+    const { fromWireFormatTTree, fromWireFormatTNode } = await loadCodecs(t, 'recursive', true);
+    const self: { next?: unknown } = {};
+    self.next = self;
+    const toRoot: { next?: unknown } = { next: {} };
+    (toRoot.next as { next?: unknown }).next = toRoot;
+    const node: { label: string; children: unknown[] } = { label: 'root', children: [] };
+    node.children = [node];
+    assert.throws(() => fromWireFormatTTree(self, options as never), cycleAt(['next']));
+    assert.throws(() => fromWireFormatTTree(toRoot, options as never), cycleAt(['next', 'next']));
+    assert.throws(() => fromWireFormatTNode(node, options as never), cycleAt(['children', 0]));
+  });
+}
+
+test('validated decode of a recursive value that holds no cycle succeeds', async (t) => {
+  // protects: T-278 the cycle check leaves a value without a cycle decoding as before
+  const { fromWireFormatTTree, fromWireFormatTNode } = await loadCodecs(t, 'recursive', true);
+  assert.deepEqual(fromWireFormatTNode({ label: 'root', children: [] }, { validate: true }), { label: 'root', children: [] });
+  assert.deepEqual(fromWireFormatTTree({ next: { next: {} } }, { validate: true }), { next: { next: {} } });
 });
 
 /** A chain of `length` objects linked by `next` whose getter counts every read, standing in for the visits of one decode. */

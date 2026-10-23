@@ -3432,13 +3432,5 @@
       "profile": "mobx-on-validation-on",
       "status": "partial"
     }
-  ],
-  "representationBoundaries": [
-    "General negation and conditional schemas are not faithfully representable as TypeScript structural types; generated runtime validation remains authoritative.",
-    "TypeScript does not provide exact unevaluated-property semantics across composition; generated runtime validation enforces them when validation is enabled.",
-    "Callbacks and webhooks are inbound contracts only: they are generated as types, and your app implements the handlers.",
-    "Response Link Objects are metadata only; evaluating runtime expressions remains application-owned.",
-    "A schema format that golem does not implement stops generation, or is skipped with a warning when unknownFormats is warn.",
-    "OpenAPI 3.1 does not define the itemSchema stream surface used by this generator. Streams need OpenAPI 3.2."
   ]
 }

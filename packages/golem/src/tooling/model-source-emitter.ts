@@ -37,19 +37,15 @@ import { presentKeysSource, presentValueSource } from '../presence.js';
 import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
 import { FIELD_CONVERSION_INPUT, emitArrayConversion, emitTupleConversion, singleCallConverter, type SequenceItems } from './sequence-conversion.js';
 import {
-  AMBIGUOUS_UNION_CONVERSION_ERROR,
-  OBJECT_UNION_DISCRIMINATOR_ERROR,
   discriminatorMatch,
-  emitScalarOrArrayConversion,
-  emitSequenceBranch,
   literalDiscriminator,
   objectDiscriminator,
+  ObjectUnionDiscriminatorError,
   objectValueExpression,
   objectVariant,
   presentUnionVariants,
-  scalarBranchVariant,
-  scalarOrArray,
   emitDispatch,
+  emitUnionConversion,
   presentUnionIndices,
   unionDispatch,
   type ObjectTypeDescriptor,
@@ -57,7 +53,7 @@ import {
 } from './union-conversion.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
-export { descriptorNeedsConversion, literalValues } from './union-conversion.js';
+export { AmbiguousUnionConversionError, descriptorNeedsConversion, literalValues, ObjectUnionDiscriminatorError } from './union-conversion.js';
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
@@ -76,6 +72,8 @@ export interface FromJsonModelResolver {
   readonly decode: (value: string) => string;
   /** Construct a domain model from a nested model initializer. */
   readonly fromInit?: (value: string) => string;
+  /** A projection whose value converts to itself: a use writes no call. */
+  readonly identity?: true;
 }
 
 export interface ToJsonModelResolver {
@@ -85,6 +83,8 @@ export interface ToJsonModelResolver {
   readonly bases?: readonly string[];
   /** Internal generated-model wire encoder expression. */
   readonly encode?: (value: string) => string;
+  /** A projection whose value converts to itself: a use writes no call. */
+  readonly identity?: true;
 }
 
 /**
@@ -262,6 +262,105 @@ function sequenceItems(
   };
 }
 
+function emitNestedUnion(
+  descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }>,
+  expression: string,
+  direction: 'fromJSON' | 'toJSON' | 'fromInit',
+  resolveModel: (id: string) => FromJsonModelResolver | ToJsonModelResolver,
+  resolveSerde?: SerdeResolver,
+): string {
+  const indices = presentUnionIndices(descriptor);
+  const dispatchDirection = direction === 'toJSON' ? 'encode-value' : 'decode';
+  const convert = (variant: ModelConversionDescriptor): string =>
+    emitNested(variant, expression, direction, resolveModel, resolveSerde);
+  return emitUnionConversion(descriptor, expression, 'nested', {
+    convert,
+    items: sequenceItems(direction, resolveModel, resolveSerde),
+    tagged: () => {
+      const present = presentUnionVariants(descriptor);
+      const modelBranches = present.filter(variant => variant.kind === 'reference' || variant.kind === 'generated-model');
+      if (modelBranches.length === 0 || !present.every(variant =>
+        variant.kind === 'reference' || variant.kind === 'generated-model' || variant.kind === 'object')) return undefined;
+      const dispatch = descriptor.discriminator
+        ? unionDispatch(descriptor, indices, objectVariant)
+        : inferredBranchDispatch(present.map(variant => variant.kind === 'reference'
+          ? resolveModel(variant.name).discriminators ?? {}
+          : variant.kind === 'generated-model'
+            ? resolveModel(variant.id).discriminators ?? {}
+            : variant.kind === 'object' ? Object.fromEntries(literalDiscriminator(variant)) : {}));
+      if (!dispatch) return undefined;
+      return emitDispatch({
+        expression,
+        property: dispatch.property,
+        direction: dispatchDirection,
+        canonicalTag: descriptor.discriminator !== undefined,
+        branches: present.map((variant, position) => ({
+          values: dispatch.values[position],
+          className: variant.kind === 'generated-model' ? resolveModel(variant.id).className
+            : variant.kind === 'reference' && !variant.projection ? resolveModel(variant.name).className
+              : undefined,
+          convert: convert(variant),
+        })),
+      });
+    },
+    afterGenerated: (present) => {
+      const fromJsonResolver = (id: string): FromJsonModelResolver => {
+        const model = resolveModel(id);
+        if (!('decode' in model)) throw new Error(`Missing decode resolver for generated model ${id}.`);
+        return model;
+      };
+      const toJsonResolver = (id: string): ToJsonModelResolver => {
+        return resolveModel(id);
+      };
+      const result = direction === 'fromJSON'
+        ? unionGeneratedFromJson(
+          descriptor,
+          expression,
+          fromJsonResolver,
+        )
+        : direction === 'fromInit'
+          ? unionGeneratedFromInit(
+            descriptor,
+            expression,
+            fromJsonResolver,
+          )
+          : unionGeneratedToJson(
+          descriptor,
+          expression,
+          toJsonResolver,
+        );
+      const objectIndices = indices.filter(index => descriptor.variants[index].kind === 'object');
+      const objects = objectIndices.map(index => descriptor.variants[index]).filter(
+        (variant): variant is ObjectDescriptor => variant.kind === 'object');
+      const convertedObjects = objects.map(object => ({ object, converted: convert(object) }));
+      if (convertedObjects.some(({ converted }) => converted !== expression)) {
+        const discriminator = unionDispatch(descriptor, objectIndices, objectVariant);
+        if (!discriminator && (objects.length > 1 || descriptor.variants.some(variant => ['reference', 'generated-model', 'any', 'unknown', 'intersection'].includes(variant.kind)))) {
+          throw new ObjectUnionDiscriminatorError(descriptor.variants);
+        }
+        if (discriminator && result === undefined && objects.length === present.length) {
+          return emitDispatch({
+            expression,
+            property: discriminator.property,
+            direction: dispatchDirection,
+            canonicalTag: descriptor.discriminator !== undefined,
+            branches: convertedObjects.map(({ converted }, position) => ({ values: discriminator.values[position], convert: converted })),
+          });
+        }
+        let converted = result ?? expression;
+        for (let index = convertedObjects.length - 1; index >= 0; index--) {
+          const guard = discriminator
+            ? `${objectValueExpression(expression)} && ${discriminatorMatch(presentTag(expression, discriminator.property), discriminator.values[index])}`
+            : objectValueExpression(expression);
+          converted = `${guard} ? (${convertedObjects[index].converted}) : (${converted})`;
+        }
+        return converted;
+      }
+      return result;
+    },
+  });
+}
+
 function emitNested(
   descriptor: ModelConversionDescriptor,
   expression: string,
@@ -296,111 +395,7 @@ function emitNested(
     return conversions[0] ?? expression;
   }
   if (descriptor.kind === 'union') {
-    const present = presentUnionVariants(descriptor);
-    if (present.length === 1 && present.length !== descriptor.variants.length) {
-      const converted = emitNested(present[0], expression, direction, resolveModel, resolveSerde);
-      return converted === expression ? expression : `${expression} == null ? ${expression} : (${converted})`;
-    }
-    const scalarOrArrayUnion = scalarOrArray(present);
-    if (scalarOrArrayUnion) {
-      const { sequence, scalars } = scalarOrArrayUnion;
-      const scalarVariant = scalarBranchVariant(scalars);
-      const scalar = scalarVariant ? emitNested(scalarVariant, expression, direction, resolveModel, resolveSerde) : expression;
-      const mapped = emitSequenceBranch(sequence, expression, sequenceItems(direction, resolveModel, resolveSerde));
-      return emitScalarOrArrayConversion(expression, mapped, scalar);
-    }
-    const indices = presentUnionIndices(descriptor);
-    const dispatchDirection = direction === 'toJSON' ? 'encode-value' : 'decode';
-    const modelBranches = present.filter(variant => variant.kind === 'reference' || variant.kind === 'generated-model');
-    if (modelBranches.length > 0 && present.every(variant =>
-      variant.kind === 'reference' || variant.kind === 'generated-model' || variant.kind === 'object')) {
-      const dispatch = descriptor.discriminator
-        ? unionDispatch(descriptor, indices, objectVariant)
-        : inferredBranchDispatch(present.map(variant => variant.kind === 'reference'
-          ? resolveModel(variant.name).discriminators ?? {}
-          : variant.kind === 'generated-model'
-            ? resolveModel(variant.id).discriminators ?? {}
-            : variant.kind === 'object' ? Object.fromEntries(literalDiscriminator(variant)) : {}));
-      if (dispatch) {
-        return emitDispatch({
-          expression,
-          property: dispatch.property,
-          direction: dispatchDirection,
-          canonicalTag: descriptor.discriminator !== undefined,
-          branches: present.map((variant, position) => ({
-            values: dispatch.values[position],
-            className: variant.kind === 'generated-model' ? resolveModel(variant.id).className
-              : variant.kind === 'reference' && !variant.projection ? resolveModel(variant.name).className
-                : undefined,
-            convert: emitNested(variant, expression, direction, resolveModel, resolveSerde),
-          })),
-        });
-      }
-    }
-    const fromJsonResolver = (id: string): FromJsonModelResolver => {
-      const model = resolveModel(id);
-      if (!('decode' in model)) throw new Error(`Missing decode resolver for generated model ${id}.`);
-      return model;
-    };
-    const toJsonResolver = (id: string): ToJsonModelResolver => {
-      return resolveModel(id);
-    };
-    const result = direction === 'fromJSON'
-      ? unionGeneratedFromJson(
-        descriptor,
-        expression,
-        fromJsonResolver,
-      )
-      : direction === 'fromInit'
-        ? unionGeneratedFromInit(
-          descriptor,
-          expression,
-          fromJsonResolver,
-        )
-        : unionGeneratedToJson(
-        descriptor,
-        expression,
-        toJsonResolver,
-      );
-    const objectIndices = indices.filter(index => descriptor.variants[index].kind === 'object');
-    const objects = objectIndices.map(index => descriptor.variants[index]).filter(
-      (variant): variant is ObjectDescriptor => variant.kind === 'object');
-    const convertedObjects = objects.map(object => ({ object, converted: emitNested(object, expression, direction, resolveModel, resolveSerde) }));
-    if (convertedObjects.some(({ converted }) => converted !== expression)) {
-      const discriminator = unionDispatch(descriptor, objectIndices, objectVariant);
-      if (!discriminator && (objects.length > 1 || descriptor.variants.some(variant => ['reference', 'generated-model', 'any', 'unknown', 'intersection'].includes(variant.kind)))) {
-        throw new Error(OBJECT_UNION_DISCRIMINATOR_ERROR);
-      }
-      if (discriminator && result === undefined && objects.length === present.length) {
-        return emitDispatch({
-          expression,
-          property: discriminator.property,
-          direction: dispatchDirection,
-          canonicalTag: descriptor.discriminator !== undefined,
-          branches: convertedObjects.map(({ converted }, position) => ({ values: discriminator.values[position], convert: converted })),
-        });
-      }
-      let converted = result ?? expression;
-      for (let index = convertedObjects.length - 1; index >= 0; index--) {
-        const guard = discriminator
-          ? `${objectValueExpression(expression)} && ${discriminatorMatch(presentTag(expression, discriminator.property), discriminator.values[index])}`
-          : objectValueExpression(expression);
-        converted = `${guard} ? (${convertedObjects[index].converted}) : (${converted})`;
-      }
-      return converted;
-    }
-    if (result !== undefined) return result;
-    // Conversion must not probe alternatives by executing application codecs.
-    // Structurally ambiguous branches need an explicit discriminator or codec.
-    const conversions = descriptor.variants.map(variant => emitNested(variant, expression, direction, resolveModel, resolveSerde));
-    if (conversions.some(converted => converted !== expression)) {
-      const objectsOrReferences = descriptor.variants.filter(variant => variant.kind === 'object' || variant.kind === 'reference' || variant.kind === 'generated-model');
-      if (objectsOrReferences.length === 1 && descriptor.variants.every(variant => objectsOrReferences.some(candidate => candidate === variant) || ['null', 'undefined', 'string', 'number', 'boolean', 'bigint', 'literal'].includes(variant.kind))) {
-        const converted = emitNested(objectsOrReferences[0], expression, direction, resolveModel, resolveSerde);
-        return `${objectValueExpression(expression)} ? (${converted}) : ${expression}`;
-      }
-      throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
-    }
+    return emitNestedUnion(descriptor, expression, direction, resolveModel, resolveSerde);
   }
   if (descriptor.kind === 'generated-model') {
     const model = resolveModel(descriptor.id);
@@ -421,6 +416,7 @@ function emitNested(
   if (descriptor.kind === 'reference') {
     const model = resolveModel(descriptor.name);
     if (descriptor.projection) {
+      if (model.identity) return expression;
       if (direction === 'toJSON') return 'encode' in model ? model.encode?.(expression) ?? expression : expression;
       if (!('decode' in model)) throw new Error(`Missing projected conversion for ${descriptor.name}.`);
       return direction === 'fromInit' ? (model.fromInit ?? model.decode)(expression) : model.decode(expression);
