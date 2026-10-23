@@ -515,11 +515,13 @@ test('the SDK entry re-exports each model module directly', async t => {
   ]);
   compileStrictUnusedSdk(output);
   const entry = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'SDK entry');
-  for (const name of ['Money', 'Payment']) {
+  const assertDirect = async (name: string): Promise<void> => {
     const direct = requireRecord(await import(pathToFileURL(path.join(output, `dist/models/${name}.js`)).href), `${name} module`);
     assert.ok(isGeneratedModelClass(entry[`${name}Model`]), `${name}Model is a model class`);
     assert.strictEqual(entry[`${name}Model`], direct[`${name}Model`]);
-  }
+  };
+  await assertDirect('Money');
+  await assertDirect('Payment');
 });
 
 test('a validation SDK with operations compiles under strict unused checks', async t => {
