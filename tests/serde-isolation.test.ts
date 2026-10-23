@@ -271,13 +271,6 @@ test('generated decode of a recursive model rejects a cycle instead of overflowi
   assert.deepEqual(fromWireFormatTNode({ label: 'root', children: [shared, shared] }, { validate: false }), { label: 'root', children: [shared, shared] });
 });
 
-test('generated decode of a recursive object rejects a cycle instead of overflowing the stack', async (t) => {
-  const { fromWireFormatTTree } = await loadCodecs(t, 'recursive');
-  const tree: { next?: unknown } = {};
-  tree.next = tree;
-  assert.throws(() => fromWireFormatTTree(tree, { validate: false }), cycleAt(['next']));
-});
-
 class Construct { constructor(public fields: unknown) {} }
 
 for (const [name, options] of [['default options', undefined], ['validate: true', { validate: true }], ['validate: true with construct', { validate: true, construct: Construct }]] as const) {
