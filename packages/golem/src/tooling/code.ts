@@ -156,7 +156,10 @@ export function aliased(named: Code, alias: string): Code {
 /** A value that `literal` writes as a JSON literal. */
 export type JsonValue = string | number | boolean | null | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
-const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
+/** A bare object key: ASCII only, so the same name stays a string literal key in every emitted file. */
+const PROPERTY_NAME = /^[A-Za-z_$][\w$]*$/;
+/** An identifier of the language: a name a user writes in a model file can hold any Unicode letter. */
+const IDENTIFIER = /^[\p{ID_Start}_$][\p{ID_Continue}$\u200c\u200d]*$/u;
 
 function checkedIdentifier(name: string, what: string): string {
   if (!IDENTIFIER.test(name)) throw new TypeError(`${what} must be an identifier, got ${JSON.stringify(name)}`);
@@ -292,7 +295,7 @@ export function docComment(text: string): Code {
 
 /** An object member key: bare when it is an identifier name, otherwise a string literal. */
 export function propertyKey(name: string): Code {
-  return IDENTIFIER.test(name) ? identifier(name) : literal(name);
+  return PROPERTY_NAME.test(name) ? identifier(name) : literal(name);
 }
 
 /** A line end. Render writes the line break and the indentation of the `nest` that holds it. */
