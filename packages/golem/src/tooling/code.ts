@@ -202,24 +202,6 @@ export function inputSlot(label: string, shape: ReadShape = 'other', record: boo
   return { label, shape, record };
 }
 
-/**
- * The code with each run of blank lines cut to one blank line. A run stays inside one text part: a part that is not text
- * ends it.
- */
-// migration door, deleted when the block spacing of the stringify emitter is exact (a follow-up of P-22 step 7): golem-model files have always had this normalization
-export function collapseBlankLines(root: Code): Code {
-  return fromParts(root.parts.map((part): Part => {
-    if (part.kind !== 'text') return part;
-    let text = '';
-    let run = 0;
-    for (const char of part.text) {
-      run = char === '\n' ? run + 1 : 0;
-      if (run <= 2) text += char;
-    }
-    return { kind: 'text', text };
-  }));
-}
-
 /** A block comment. The text cannot end the comment. */
 export function blockComment(text: string): Code {
   if (text.includes('*/')) throw new TypeError(`a comment cannot hold "*/", got ${JSON.stringify(text)}`);

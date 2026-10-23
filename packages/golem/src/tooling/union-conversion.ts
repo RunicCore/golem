@@ -4,7 +4,7 @@
  */
 
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
-import { code, emittedCode as asCode, join, legacyText, literal, render, sameCode, type Code, type Emitted } from './code.js';
+import { code, emittedCode as asCode, join, legacyText, literal, sameCode, type Code, type Emitted } from './code.js';
 import { rt } from './rt.js';
 import {
   emitArrayItems,

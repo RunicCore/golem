@@ -1,5 +1,4 @@
 import { deduplicateProjections, exportedConcreteClass, linkedClassNames } from '@exprtlabs/golem/internal/type-analysis';
-import { dirname, relative } from 'node:path';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { PACKAGE_VERSION } from './package-info.js';
 import {
@@ -7,7 +6,6 @@ import {
   blockComment,
   calleeOf,
   code,
-  collapseBlankLines,
   emitCodecRuntimeCode,
   fileImports,
   helper,
@@ -2115,7 +2113,7 @@ export function emitSource(
     BLANK,
     ...pieces.flatMap((piece): readonly Code[] => isCode(piece) ? [piece] : defined.has(piece) ? [piece.define()] : []),
   ];
-  return render(code`${collapseBlankLines(trimEnd(join(lines, code`\n`)))}\n`);
+  return render(code`${trimEnd(join(lines, code`\n`))}\n`);
 }
 
 /**

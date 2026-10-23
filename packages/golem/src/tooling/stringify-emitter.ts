@@ -1896,6 +1896,11 @@ function rowsToText(rows: readonly Code[]): Code {
   return join(rows, code`\n`);
 }
 
+/** The blocks of a file, one after another. A block that writes nothing leaves no blank line. */
+function blocksToText(blocks: readonly Code[]): Code {
+  return join(blocks.filter((block) => block.parts.length > 0), code`\n`);
+}
+
 function emitNodeRuntime(
   node: SchemaNode,
   moduleCtx: EmitCtx,
@@ -1994,9 +1999,7 @@ function emitNodeRuntime(
     : code``;
 
   const wrappedStringify = rowsToText([
-    stringifySrc,
-    lenientStringify ?? code``,
-    wireStringifySrc,
+    blocksToText([stringifySrc, lenientStringify ?? code``, wireStringifySrc]),
     code`${exported}function ${stringifyId}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
     emitSerdeValidates(validationEnabled),
     ...(emitsValidatedWire ? inlineLocalLines(encodedStringifyContext) : []),
@@ -2214,7 +2217,7 @@ function emitNodeRuntime(
     code``,
   ];
 
-  return rowsToText([rowsToText(ctx.hoisted?.sources ?? []), fillSrc, wrappedStringify, rowsToText(convertLines), rowsToText(fromWireLines), rowsToText(toWireLines), rowsToText(parseLines), rowsToText(validateLines), rowsToText(wireAssertLines), rowsToText(codec)]);
+  return blocksToText([rowsToText(ctx.hoisted?.sources ?? []), fillSrc, wrappedStringify, rowsToText(convertLines), rowsToText(fromWireLines), rowsToText(toWireLines), rowsToText(parseLines), rowsToText(validateLines), rowsToText(wireAssertLines), rowsToText(codec)]);
 }
 
 function schemaPayload(schema: JsonSchema, id: string): object {
@@ -2290,7 +2293,7 @@ export function emitCodecRuntimeCode(
     const runtime = emitNodeRuntime(node, ctx, validates(node));
     if (runtime.parts.length > 0) runtimes.push(runtime);
   }
-  return withModuleConstants(join(runtimes, code`\n`));
+  return withModuleConstants(blocksToText(runtimes));
 }
 
 /** One frozen object of each kind serves every nested call that passes options to another module's function. */

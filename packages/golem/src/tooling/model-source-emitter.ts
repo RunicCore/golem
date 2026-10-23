@@ -22,7 +22,7 @@ export { pruneGeneratedImports } from './generated-imports.js';
 export { calleeOf, FIELD_CONVERSION_INPUT, singleCallConverter, type TupleConversionDescriptor } from './sequence-conversion.js';
 /** The one function that turns the Code of an emitter into text, for generators that still build text. */
 export {
-  aliased, blockComment, code, collapseBlankLines, fileImports, helper, helperName, helperSet, identifier, importedNames, importLines, importSet, ImportSource, join, legacyText, literal, render, sameCode, trimEnd,
+  aliased, blockComment, code, fileImports, helper, helperName, helperSet, identifier, importedNames, importLines, importSet, ImportSource, join, legacyText, literal, render, sameCode, trimEnd,
   type Code, type Emitted, type Helper, type ImportOptions, type JsonValue,
 } from './code.js';
 export { rt, rtType, type RuntimeModule } from './rt.js';
