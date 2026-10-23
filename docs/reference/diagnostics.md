@@ -140,7 +140,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1501
 
-**No schema resolver.** The document builder needs a canonical schema for a type, but no `schemaResolver` was supplied in the build context. **Fix:** Pass a `schemaResolver`, or generate through `@exprtlabs/golem-ts-openapi/generator`, which always supplies one.
+**No schema resolver.** The document builder needs a canonical schema for a type, but no `schemaResolver` was supplied in the build context. A `golem.yaml` job never causes this error, because the generator always supplies one. Only a tool that calls the builder without a `schemaResolver` sees it. **Fix:** Pass a `schemaResolver`, or generate through `@exprtlabs/golem-ts-openapi/generator`.
 
 ### NEST1502
 

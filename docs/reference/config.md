@@ -46,7 +46,11 @@ models:
 
 ## Output paths
 
-Each job writes only below its `output`. Golem replaces only files that it generated ([files Golem owns](/guide/watch#files-golem-owns)).
+The `output` of a job marks where it writes its main files. Golem replaces only files that it generated ([files Golem owns](/guide/watch#files-golem-owns)).
+
+- A `generators` or `openapi` job writes only below its `output` directory.
+- A `controllers` job writes its `output` document and `src/generated/operation-codecs.ts` below its `root`.
+- A `models` job writes `models.validators.generated.ts` and the generated files of shared model files below its `output`. It writes the generated file of each model source beside that source inside `root`.
 
 - An `output` is relative to `golem.yaml`. For example, `output: ../shared-sdk` writes an SDK to a sibling folder.
 - Outputs of different jobs must not overlap. An output inside another output stops loading `golem.yaml`.
@@ -107,8 +111,7 @@ openapi:
 ```
 
 - The `backend` folder in this example has its own `tsconfig.json`, so `tsconfig` names it. Without one, leave `tsconfig` out to use the file beside `golem.yaml`.
-- A controller job writes its configured document and `src/generated/operation-codecs.ts` below `root`.
-- How controller constructs become OpenAPI, including route helpers and query objects, is in [NestJS controllers](/reference/nestjs). Query objects on each OpenAPI version are in [query compatibility](/reference/nestjs#query-compatibility).
+- Route helpers and query objects follow the rules of [NestJS controllers](/reference/nestjs). A query object on each OpenAPI version follows [query compatibility](/reference/nestjs#query-compatibility).
 
 ## OpenAPI jobs
 
@@ -127,6 +130,8 @@ Install `@exprtlabs/golem-openapi` to use `openapi`. Each job reads one YAML or 
 | `dates` | `date` or `temporal` | No | `date` | `temporal` maps `format: date-time` to `Temporal.Instant`, `date` to `Temporal.PlainDate` and `duration` to `Temporal.Duration`. [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) converts them. `time` stays a string. Encoding a `Temporal.Instant` writes `Z`, so the original offset is lost. |
 
 The generator assembles local and allowed remote `$ref`s into one document. Local references stay within the directory of the input document. Schemas from other files become components named after their path, such as `schemas/user.json` → `schemas.user` (model `SchemasUser`). A root component that is only a `$ref` to an external file keeps its own name, such as `components.schemas.Money: { $ref: './money.json' }`. A root component with a `$ref` and other keys is not an alias, so its target gets the path-based name. Two sources with the same name stop generation, and the message names both locations.
+
+Reference limits (`maxRefBytes`, `maxRefDocuments` and `refTimeoutMs`) apply also with `validation: false`. That flag controls only the generated runtime checks.
 
 ## TypeScript models {#typescript-models}
 

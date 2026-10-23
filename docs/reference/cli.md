@@ -95,7 +95,7 @@ Like `tsc`, the build emits JavaScript after a failed check unless `noEmitOnErro
 - Every source file the tsconfig includes builds, inside the directory of the tsconfig or outside it, such as `../shared/*.ts`. The output under `outDir` has the layout that `tsc` emits. As with `tsc`, a `rootDir` must contain every included file. A tsconfig that includes `../shared` sets `rootDir` to a common parent such as `..`.
 - The tsconfig emits one file for each source. `outFile` stops the build with `golem build does not support outFile (<tsconfig>).` Emit per file, then bundle with esbuild or Vite and the golem plugin.
 - The tsconfig names one directory tree. `rootDirs` stops the build with a message of the same form. Merge the directories, or build each package separately.
-- Source maps are `sourceMap`. `inlineSourceMap` and `sourceRoot` stop the build with a message of the same form, because the build writes its own map files.
+- Set `sourceMap` for source maps. `inlineSourceMap` and `sourceRoot` stop the build with a message of the same form, because the build writes its own map files.
 - `extends` may name a file anywhere. `paths` and `baseUrl` targets under the directory work as they do for `tsc`.
 - `golem build --watch` or `-w` watches. The `tsc --watch` file watcher does not start.
 
@@ -139,4 +139,4 @@ npx golem exec --watch -- npm run dev
 
 ## Runtime and imports
 
-The CLI needs Node.js 22.15 or newer. The settings that generated code needs are in [project settings](/guide/install#project-settings). Hosts that rewrite the serde calls are in [Build your app](/guide/build).
+The CLI needs Node.js 22.15 or newer. Generated code needs the [project settings](/guide/install#project-settings), and the serde calls need a [build host](/guide/build).

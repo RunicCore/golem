@@ -275,15 +275,6 @@ export interface CapabilityRecord {
   readonly evidenceIds: readonly EvidenceId[];
 }
 
-export const REPRESENTATION_BOUNDARIES = [
-  'General negation and conditional schemas are not faithfully representable as TypeScript structural types; generated runtime validation remains authoritative.',
-  'TypeScript does not provide exact unevaluated-property semantics across composition; generated runtime validation enforces them when validation is enabled.',
-  'Callbacks and webhooks are inbound contracts only: they are generated as types, and your app implements the handlers.',
-  'Response Link Objects are metadata only; evaluating runtime expressions remains application-owned.',
-  'A schema format that golem does not implement stops generation, or is skipped with a warning when unknownFormats is warn.',
-  'OpenAPI 3.1 does not define the itemSchema stream surface used by this generator. Streams need OpenAPI 3.2.',
-] as const;
-
 export const CAPABILITY_TITLES: Readonly<Record<string, string>> = {
   'document-input-and-structural-validation': 'OpenAPI document validation',
   'standard-http-operations': 'HTTP client methods',
@@ -517,7 +508,6 @@ export interface ComplianceMetadata {
   readonly profiles: Readonly<Record<GenerationProfileId, { readonly mobx: boolean; readonly validation: boolean }>>;
   readonly evidence: readonly EvidenceDeclaration[];
   readonly capabilities: readonly CapabilityRecord[];
-  readonly representationBoundaries: readonly string[];
 }
 
 export function validateCapabilitySource(): void {
@@ -550,6 +540,5 @@ export function complianceMetadata(): ComplianceMetadata {
     profiles: GENERATION_PROFILES,
     evidence: EVIDENCE_DECLARATIONS,
     capabilities: CAPABILITY_RECORDS,
-    representationBoundaries: REPRESENTATION_BOUNDARIES,
   };
 }
