@@ -4,6 +4,7 @@
  */
 
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
+import { MODEL_FIELDS_KEY } from '../schema-keywords.js';
 import { code, emittedCode as asCode, join, legacyText, literal, sameCode, type Code, type Emitted } from './code.js';
 import { rt } from './rt.js';
 import {
@@ -39,10 +40,37 @@ export class AmbiguousUnionConversionError extends Error {
 
 /**
  * Code of `presentValue` (presence.ts): `object` and `key` are expressions, and `read` reads the field from `object`.
- * The template is the one of `presentValueSource`; T-290 makes the two one.
+ * The template is the one of `presentValueSource`; T-329 makes the two one.
  */
 export function presentValueCode(object: Code, key: Code, read: Code): Code {
   return code`Object.prototype.propertyIsEnumerable.call(${object}, ${key}) ? ${read} : undefined`;
+}
+
+/**
+ * Code of `presentKeysSource` (presence.ts) without its `declare` and `otherwise` forms: one `Object.keys` pass that gives
+ * each `[key, local]` pair its value in a `let` local. The template is the one of `presentKeysSource`; T-329 makes the two one.
+ */
+export function presentKeysCode(object: Code, captures: readonly (readonly [key: string, local: Code])[]): Code {
+  const cases = join(captures.map(([key, local]) => code`case ${literal(key)}: ${local} = ${object}[${literal(key)}]; break;`), code` `);
+  return code`let ${join(captures.map(([, local]) => local), code`, `)}; for (const __golemKey of Object.keys(${object})) switch (__golemKey) { ${cases} }`;
+}
+
+/**
+ * Code of `instanceFieldsSource` (presence.ts): the declaration of the `instanceFields` function and its key. The text is
+ * the one of `instanceFieldsSource`; T-329 makes the two one.
+ */
+export function instanceFieldsCode(): Code {
+  return join([
+    code`const fieldsKey = /*#__PURE__*/ Symbol.for(${literal(MODEL_FIELDS_KEY)});`,
+    code`function instanceFields(value) {`,
+    code`  let prototype = Object.getPrototypeOf(value);`,
+    code`  if (prototype === Object.prototype) return undefined;`,
+    code`  for (; prototype !== null; prototype = Object.getPrototypeOf(prototype)) {`,
+    code`    if (Object.prototype.hasOwnProperty.call(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;`,
+    code`  }`,
+    code`  return undefined;`,
+    code`}`,
+  ], code`\n`);
 }
 
 export function objectValueExpression(expression: Emitted): Code {
