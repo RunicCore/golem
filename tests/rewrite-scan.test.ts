@@ -10,7 +10,7 @@ import { decodeMappings } from '#golem/source-map';
 import { createProjectProgram } from '@exprtlabs/golem/internal/type-analysis';
 import { writeSdk } from '#openapi/generator';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
-import { createModelProject } from './model-project.js';
+import { createModelProject, writeModelSources } from './model-project.js';
 import { writeFixture } from './support/consumer.js';
 import { workspace } from './support/process.js';
 
@@ -159,6 +159,29 @@ test('a class named through a type-only namespace import is constructed through 
     'export const book = __golem_requireObjectCodec("TLedger_33333333").parse(text, { construct: __golem_Ledger });',
   ]);
   assert.ok(code.includes("import type * as models from './payment.model.js';"), 'the type-only import stays as the user wrote it');
+});
+
+test('a call next to a source phase import and import attributes is rewritten and the other imports keep their text', (t) => {
+  // protects: T-350 TypeScript 7.1 import forms (source phase, with attributes) survive the rewrite
+  const { root } = createModelProject(t, {
+    prefix: 'golem-rewrite-scan-',
+    linkTypescript: true,
+    compilerOptions: { module: 'ESNext', moduleResolution: 'Bundler', resolveJsonModule: true, lib: ['es2026', 'esnext.modulesource'] },
+  });
+  for (const file of [...BASE, 'import-phases.ts']) copyFixtureFile(root, `rewrite/${file}`, `src/${file}`);
+  copyFixtureFile(root, 'rewrite/codec-keys.json', CODEC_KEYS);
+  writeModelSources(path.join(root, 'src'), { 'mod.d.ts': "declare module '*.wasm' {}\n", 'config.json': '{"mode":"strict"}\n' });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  const code = rewritten(root, result, 'import-phases.ts');
+  assertLines(code, [
+    "import source wasmSource from './mod.wasm';",
+    "import config from './config.json' with { type: 'json' };",
+    "import type { Payment } from './payment.model.js' with { 'resolution-mode': 'import' };",
+    "import { Payment as __golem_Payment } from './payment.model.js';",
+    "export const lazyConfig = () => import('./config.json', { with: { type: 'json' } });",
+    'export const payment = __golem_requireObjectCodec("TPayment_22222222").parse(text, { construct: __golem_Payment });',
+  ]);
 });
 
 test('a call on a model named only as a type imports the generated module that registers its codec, once', (t) => {

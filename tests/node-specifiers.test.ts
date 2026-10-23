@@ -158,3 +158,26 @@ test('a specifier whose new text holds the quote of its literal keeps its text',
   assert.equal(results.get('src/single.ts')?.code, "import './it\\'s';\n");
   assert.equal(results.get('src/double.ts')?.code, 'import "./it\'s.js";\n');
 });
+
+test('a source phase import and import attributes keep their form while a relative specifier next to them changes', t => {
+  // protects: T-350 TypeScript 7.1 import forms (source phase, with attributes) survive the specifier edits
+  const root = createNodeSpecifierProject(t, { prefix: 'golem-node-specifiers-forms-', compilerOptions: { lib: ['es2026', 'esnext.modulesource'] } });
+  writeModelSources(path.join(root, 'src'), {
+    'x.ts': 'export const x = 1;\n',
+    'config.json': '{"mode":"strict"}\n',
+    'wasm.d.ts': "declare module '*.wasm' {}\n",
+    'forms.ts': `import source wasmSource from './mod.wasm';
+import config from './config.json' with { type: 'json' };
+import { x } from './x' with { 'resolution-mode': 'import' };
+export const lazy = () => import('./x', { with: { 'resolution-mode': 'import' } });
+export { config, wasmSource, x };
+`,
+  });
+  const forms = editProjectSources(root).get('src/forms.ts');
+  assert.equal(forms?.code, `import source wasmSource from './mod.wasm';
+import config from './config.json' with { type: 'json' };
+import { x } from './x.js' with { 'resolution-mode': 'import' };
+export const lazy = () => import('./x.js', { with: { 'resolution-mode': 'import' } });
+export { config, wasmSource, x };
+`);
+});

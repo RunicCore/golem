@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { decodeMappings } from '#golem/source-map';
+import { resolveTypeScript } from '#golem/typescript-version';
 import { copyFixture, fileFixtureScope, linkProjectPackages, onceShared } from './fixture-project.js';
 import { MINIMAL_GOLEM_YAML, writeModelSources } from './model-project.js';
 import { build, editTsconfig, TSC } from './support/build-project.js';
@@ -146,4 +147,59 @@ test('a build with no rootDir rewrites the declarations where the compiler wrote
   assert.equal((await build(root)).exitCode, 0);
   assert.ok(fs.existsSync(path.join(root, 'build/tools/probe.d.ts')));
   assert.deepEqual(await checkConsumer(root, 'build/src'), { code: 0, output: '' });
+});
+
+// The TypeScript 7.1 forms: es2026 is a target there, and `import source` and import attributes are syntax there. The TypeScript 6 lane does not know them.
+const skipOnTypeScript6 = resolveTypeScript(process.env.GOLEM_TYPESCRIPT_ROOT ?? workspace).major === 6 && 'TypeScript 6 has no es2026 target and no source phase import';
+const FORMS_SITE = `import { parse } from '@exprtlabs/golem/serde';
+import source wasmSource from './mod.wasm';
+import config from './config.json' with { type: 'json' };
+import { label } from './label';
+import type { Item } from './item.model';
+
+export const item = parse<Item>('{"title":"built"}');
+export { config, label, wasmSource };
+`;
+const DATA_SITE = `import { parse } from '@exprtlabs/golem/serde';
+import config from './config.json' with { type: 'json' };
+import { label } from './label';
+import type { Item } from './item.model';
+
+const item = parse<Item>('{"title":"built"}');
+console.log(\`\${item.constructor.name}:\${item.title}:\${config.mode}:\${label}\`);
+`;
+
+function formsProject(compilerOptions: Readonly<Record<string, unknown>>): string {
+  const root = createNodeSpecifierProject(scope, { prefix: 'golem-build-forms-', compilerOptions });
+  writeModelSources(path.join(root, 'src'), {
+    'item.model.ts': ITEM_MODEL,
+    'label.ts': "export const label = 'label';\n",
+    'config.json': '{"mode":"strict"}\n',
+    'wasm.d.ts': "declare module '*.wasm' {}\n",
+    'forms.ts': FORMS_SITE,
+    'data.ts': DATA_SITE,
+  });
+  fs.writeFileSync(path.join(root, 'golem.yaml'), MINIMAL_GOLEM_YAML);
+  linkProjectPackages(root, { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
+  return root;
+}
+
+test('a build keeps a source phase import and import attributes, rewrites the parse site and the relative specifier beside them, and Node runs the result', { skip: skipOnTypeScript6 }, async () => {
+  // protects: T-350 TypeScript 7.1 import forms survive golem build
+  const root = formsProject({ lib: ['es2026', 'dom', 'esnext.modulesource'] });
+  assert.equal((await build(root)).exitCode, 0);
+  const emitted = fs.readFileSync(path.join(root, 'build/forms.js'), 'utf8');
+  assert.match(emitted, /^import source wasmSource from '\.\/mod\.wasm';$/m);
+  assert.match(emitted, /^import config from '\.\/config\.json' with \{ type: 'json' \};$/m);
+  assert.match(emitted, /^import \{ label \} from '\.\/label\.js';$/m);
+  assert.match(emitted, /requireObjectCodec\("[^"]+"\)\.parse\('\{"title":"built"\}', \{ construct: __golem_Item \}\)/);
+  assert.equal((await command(root, process.execPath, [path.join('build', 'data.js')])).stdout.trim(), 'Item:built:strict:label');
+});
+
+test('a build accepts "target": "es2026"', { skip: skipOnTypeScript6 }, async () => {
+  // protects: T-350 TypeScript 7.1 adds es2026 as a stable target
+  const root = formsProject({ target: 'es2026' });
+  fs.rmSync(path.join(root, 'src/forms.ts'));
+  assert.equal((await build(root)).exitCode, 0);
+  assert.equal((await command(root, process.execPath, [path.join('build', 'data.js')])).stdout.trim(), 'Item:built:strict:label');
 });
