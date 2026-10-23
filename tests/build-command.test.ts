@@ -86,16 +86,19 @@ test('a second build with no change runs no job and emits nothing again', async 
   assert.equal(first.exitCode, 0);
   assert.deepEqual(first.ran, ['generator:out', 'models:.'], 'the first build ran every job');
   const companion = path.join(root, 'src/money.model.generated.ts');
-  const generatedAt = fs.statSync(companion, { bigint: true }).mtimeNs;
   const emitted = mtimes(path.join(root, 'build'), '.js');
   assert.ok(emitted.size > 0);
 
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  // A rewrite stamps a file with the current time, so a stamp 2 s ahead shows it without waiting for the clock.
+  const ahead = new Date(Date.now() + 2_000);
+  for (const file of [companion, ...[...emitted.keys()].map((name) => path.join(root, 'build', name))]) fs.utimesSync(file, ahead, ahead);
+  const generatedAt = fs.statSync(companion, { bigint: true }).mtimeNs;
+  const emittedAt = mtimes(path.join(root, 'build'), '.js');
   const second = await buildAndListJobs(root);
   assert.equal(second.exitCode, 0);
   assert.deepEqual(second.ran, [], 'no job ran: the build\'s own output is no input of the models job');
   assert.equal(fs.statSync(companion, { bigint: true }).mtimeNs, generatedAt);
-  assert.deepEqual(mtimes(path.join(root, 'build'), '.js'), emitted, 'nothing was emitted again');
+  assert.deepEqual(mtimes(path.join(root, 'build'), '.js'), emittedAt, 'nothing was emitted again');
 });
 
 test('a second build emits only the changed file', async (t) => {
@@ -106,11 +109,14 @@ test('a second build emits only the changed file', async (t) => {
   const first = mtimes(path.join(root, 'build'), '.js');
 
   const edited = `${USE}export const again = stringify<TMoney>({ currency: 'EUR', value: '2' });\n`;
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  // Every emitted file carries a stamp 2 s ahead, so the one the build writes again is the one whose stamp changes.
+  const ahead = new Date(Date.now() + 2_000);
+  for (const file of first.keys()) fs.utimesSync(path.join(root, 'build', file), ahead, ahead);
+  const stamped = mtimes(path.join(root, 'build'), '.js');
   write(root, 'src/use.ts', edited);
   assert.equal((await build(root)).exitCode, 0);
   const second = mtimes(path.join(root, 'build'), '.js');
-  assert.deepEqual([...second].filter(([file, time]) => first.get(file) !== time).map(([file]) => file), ['use.js']);
+  assert.deepEqual([...second].filter(([file, time]) => stamped.get(file) !== time).map(([file]) => file), ['use.js']);
   const built = await importBuilt(root, 'use.js');
   assert.equal(built.again, '{"currency":"EUR","value":"2"}');
 
