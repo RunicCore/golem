@@ -46,6 +46,7 @@ export const SIDEBAR: readonly SidebarGroup[] = [
   ] },
   { text: 'Project', items: [
     { text: 'Compatibility', link: '/compatibility' },
+    { text: 'Upgrade to 1.1', link: '/upgrade-1-1' },
     { text: 'Upgrade to 1.0', link: '/migrating' },
     { text: 'Release notes', link: '/changelog' },
     { text: 'Benchmarks', link: '/benchmarks' },

@@ -48,7 +48,7 @@ Each item names a breaking change and the action to take.
 
 ## Packages
 
-- `typescript` (`>=6.0.0 <8`) is a peer dependency of `@exprtlabs/golem`, `@exprtlabs/golem-model` and `@exprtlabs/golem-ts-openapi`. `@exprtlabs/golem-openapi` needs none. Install it in the consuming project.
+- `typescript` (`>=6.0.0 <7 || >=7.1.0-0 <8`) is a peer dependency of `@exprtlabs/golem`, `@exprtlabs/golem-model` and `@exprtlabs/golem-ts-openapi`. `@exprtlabs/golem-openapi` needs none. Install it in the consuming project. Golem 1.1 drops TypeScript 7.0 ([Upgrade to 1.1](/upgrade-1-1)).
 - `ttsc` and the `@exprtlabs/golem/ttsc-plugin` and `@exprtlabs/golem-ts-openapi/ttsc-plugin` plugins are removed. Delete the `plugins` entry from `tsconfig.json` and the `ttsc` dependency, and build with [`golem build`](/reference/cli#build), the [Vite](/reference/runtime-api#vite) or [esbuild](/reference/runtime-api#esbuild) plugin, or the [Node loader](/reference/runtime-api#loader). `golem.yaml` gains [`tsconfig`](/reference/config#root-keys) and is the entry point for `golem build`.
 - The plugin options move out of `tsconfig.json`. `"nest": true` is a `controllers` job in `golem.yaml`. With one, the rewrite inserts the Nest codec decorators ([`rewrite`](/reference/generator-api#rewrite)). `"serde": false` left the generic serde calls alone and has no replacement. The rewrite always replaces `stringify<T>`, `parse<T>` and the other generic calls it finds. A call whose `T` has no generated code now fails the host and `golem check`, instead of throwing at runtime.
 - Generated files are not committed. Ignore the generated files and `.golem/` ([ignore generated files](/reference/generated-files#gitignore)).

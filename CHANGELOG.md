@@ -3,6 +3,11 @@
 This file is the complete list of changes. The documentation site's
 [release notes](docs/changelog.md) summarize the release.
 
+## Migrating to 1.1
+
+Golem 1.1 is a breaking release that keeps its 1.x number: it drops
+TypeScript 7.0. Read [Upgrade to 1.1](docs/upgrade-1-1.md) before you update.
+
 ## Migrating to 1.0
 
 Every breaking change, one bullet per change, with the action to take:
