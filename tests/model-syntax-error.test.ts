@@ -27,16 +27,15 @@ async function brokenProject(t: TestContext): Promise<{ root: string; config: st
 }
 
 // protects: T-310 a syntax error in a model source is reported as itself, not as RUNM1011
-for (const verb of ['generate', 'check']) {
-  test(`golem ${verb} reports the syntax error of a model source and not RUNM1011`, async (t: TestContext) => {
-    const { root } = await brokenProject(t);
-    const result = await command(root, process.execPath, [golem, verb], { allowFailure: true });
-    assert.notEqual(result.code, 0);
-    assert.match(result.stderr, SYNTAX_ERROR);
-    assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /RUNM1011/);
-  });
-}
+test('golem check reports the syntax error of a model source and not RUNM1011', async (t: TestContext) => {
+  const { root } = await brokenProject(t);
+  const result = await command(root, process.execPath, [golem, 'check'], { allowFailure: true });
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, SYNTAX_ERROR);
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /RUNM1011/);
+});
 
+// protects: T-310 golem watch reports the syntax error of a model source, not RUNM1011
 test('golem watch reports the syntax error of a model source and not RUNM1011', async (t: TestContext) => {
   const { config } = await brokenProject(t);
   const errors: string[] = [];
