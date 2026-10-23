@@ -19,7 +19,9 @@ in the sections below.
 - `golem-ts-openapi` writes a controller response that has a recursive alias type as one component that refers to itself.
 - `golem-openapi` generates a component schema that refers to itself through `$ref`, also when it is not an object, instead of stopping with an error. A model field of it has the type `Types.<Name>`. See [Recursive schemas](docs/reference/openapi-support.md#recursive-schemas).
 - A model over a mapped, conditional or `Pick` type keeps the `TSerde` conversion of a field. Before, the field lost it.
-- A union of objects with no literal tag stops generation with [`RUNM1080`](docs/reference/diagnostics.md#runm1080) when a variant holds a `Date`, a `TSerde` value or a model. The message names the model file and lists the variants. Give each variant a required field with a literal type, such as `kind: 'cat'`.
+- A union of objects with no literal tag stops generation with [`RUNM1080`](docs/reference/diagnostics.md#runm1080) when a variant holds a `Date`, a `TSerde` value or a model. This also holds for a union of two named object types or two models. The message names the model file and lists the variants. Give each variant a required field with a literal type, such as `kind: 'cat'`.
+- Any other union that golem cannot convert without trying its variants stops generation with [`RUNM1082`](docs/reference/diagnostics.md#runm1082). The message names the model file and lists the variants. Before, the message had no code and no file.
+- A syntax error in a model source, such as a half-typed field, stops generation with the compiler's own error and its file and line. Before, it was reported as [`RUNM1011`](docs/reference/diagnostics.md#runm1011).
 - `fromWireFormat` of a cyclic value with validation on throws a `LibError` of kind `deserialization`, not a stack overflow.
 - On the first `golem generate`, a utility type over a class of your app resolves its fields. This holds for an inline mapped type such as `{ [K in keyof Customer]: Customer[K] }`, a utility type that you wrote, `Partial<Pick<Customer, 'name'>>` and an indexed access. Before, these stopped with [`RUNM1058`](docs/reference/diagnostics.md#runm1058) or gave unknown fields until the second run.
 - A model defined by a mapped type over its own class still stops with [`RUNM1058`](docs/reference/diagnostics.md#runm1058). The message now names the model and the class, and tells you to declare the fields in the model.
@@ -38,6 +40,9 @@ in the sections below.
 - A `@Body()` or `@Query()` parameter that `NestModelInterceptor` rejects stops `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader with [`RUNM1081`](docs/reference/diagnostics.md#runm1081). This holds for a whole parameter and for one field, such as `@Body('name')`. If your own interceptor handles these parameters, set `nonModelInputs: warn` in `golem.yaml`; the diagnostic is then a warning. `golem build` and `golem check` print the warning. The plugins and the loader continue and print nothing.
 - On TypeScript 7, a package subpath that the `exports` map of its package hides does not resolve, as on TypeScript 6.
 - `@exprtlabs/golem/generator-api` exports `stableJson`, `stableValue` and `isInsideDirectory` for authors of generators. See the [generator API](docs/reference/runtime-api.md).
+- `golem watch` generates a model file that you create while a run is in progress, and a model file in a shared folder outside the job root or behind a folder link. Before, such a file stayed ungenerated until you saved another file.
+- `golem watch` and `golem build --watch` use one input poller. A hidden file or an editor's temporary file (a name that ends in `~`) no longer starts a run or a build.
+- A `golem.yaml` or an OpenAPI input that is not valid YAML stops the run with a message that starts with the file, the line and the column. `@exprtlabs/golem/generator-api` exports `parseYamlFile` and `YamlFileError`.
 
 ## 1.0.0
 
