@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import { transformSync } from 'esbuild';
+
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile, type CompileOptions } from '@exprtlabs/golem/internal/validator-compiler';
@@ -22,6 +24,8 @@ export interface CompiledValidatorInput {
   readonly modules?: Readonly<Record<string, string>>;
   /** Compiles with `fastPath`, so the module also exports the fast check of each root that has one. */
   readonly fastPath?: boolean;
+  /** Compiles with `typed`, then strips the annotations, so the module runs as the untyped one does. */
+  readonly typed?: boolean;
 }
 
 /** A generated fast check: true exactly when the root's validator reports no issue. */
@@ -35,6 +39,8 @@ export interface CompiledValidatorModule {
   readonly byExport: Readonly<Record<string, Validator>>;
   /** The export name of each root, by root name. */
   readonly exports: ReadonlyMap<string, string>;
+  /** Every name the module exports, sorted. */
+  readonly exportNames: readonly string[];
   /** The fast check of each root that has one, by root name; empty without `fastPath`. */
   readonly fastByRoot: Readonly<Record<string, FastCheck>>;
   /** The emitted module. */
@@ -49,14 +55,14 @@ export async function compileValidatorModule(input: CompiledValidatorInput): Pro
       resources: new Map(Object.entries(input.resources ?? {})),
       validations: new Map(Object.entries(input.validations ?? {})),
     },
-    { unknownFormats: input.unknownFormats ?? 'warn', runtimeModule, ...(input.fastPath ? { fastPath: true } : {}) },
+    { unknownFormats: input.unknownFormats ?? 'warn', runtimeModule, ...(input.fastPath ? { fastPath: true } : {}), ...(input.typed ? { typed: true } : {}) },
   );
   const errors = diagnostics.filter(entry => entry.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw new Error(`Compile failed: ${errors.map(entry => `${entry.code} ${entry.message}`).join('; ')}`);
   const directory = mkdtempSync(path.join(tmpdir(), 'golem-validators-'));
   try {
     const file = path.join(directory, 'validators.mjs');
-    writeFileSync(file, source);
+    writeFileSync(file, input.typed ? transformSync(source, { loader: 'ts' }).code : source);
     for (const [name, text] of Object.entries(input.modules ?? {})) writeFileSync(path.join(directory, name), text);
     const namespace = await import(pathToFileURL(file).href);
     const loaded: Readonly<Record<string, Validator>> = namespace;
@@ -66,6 +72,7 @@ export async function compileValidatorModule(input: CompiledValidatorInput): Pro
       byRoot: Object.fromEntries([...exports].map(([root, exported]) => [root, loaded[exported]] as const)),
       byExport,
       exports,
+      exportNames: Object.keys(namespace).sort(),
       fastByRoot: Object.fromEntries([...fastExports].map(([root, exported]) => [root, fastChecks[exported]] as const)),
       source,
     };

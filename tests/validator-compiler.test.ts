@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import vm from 'node:vm';
 
 import { build } from 'esbuild';
 
@@ -817,20 +818,6 @@ async function compileRules(schema: unknown, ids: readonly string[]): Promise<Va
   return (await compileValidators({ roots: { root: schema }, validations, modules: { 'rules.mjs': RULES_MODULE } })).root;
 }
 
-test('exprtValidation imports each bound function and calls it inline', async () => {
-  const result = compile(
-    { roots: new Map([['root', { exprtValidation: { schema: true, bindings: ['rules.isEven', 'rules.isSmall'] } }]]), validations: new Map([
-      ['rules.isEven', { importPath: RULES_PATH, exportName: 'isEven' }],
-      ['rules.isSmall', { importPath: RULES_PATH, exportName: 'isSmall' }],
-    ]) },
-    { unknownFormats: 'warn' },
-  );
-  assert.deepEqual(result.diagnostics, []);
-  assert.match(result.source, /^import \{ isEven as v0 \} from "\.\/rules\.mjs";$/m);
-  assert.match(result.source, /^import \{ isSmall as v1 \} from "\.\/rules\.mjs";$/m);
-  assert.match(result.source, /v0\(v\)/);
-});
-
 test('a validation function that returns false is one custom issue, and a string is its reason', async () => {
   const validate = await compileRules({ exprtValidation: { schema: { type: 'integer' }, bindings: ['rules.isEven'] } }, ['rules.isEven']);
   assert.deepEqual(validate(4, true), []);
@@ -983,10 +970,14 @@ test('const and enum accept a value with an extra undefined-valued key', async (
   await assertIssues({ enum: [{ a: 1 }, 2] }, { a: 1, b: undefined }, []);
 });
 
-test('compile with typed types each exported validator and imports the issue type', () => {
+test('compile with typed emits the same validator with its issue type', async () => {
+  // protects: P-22 typed output keeps its behavior and its signature when the emitter changes
+  const { byRoot } = await compileValidatorModule({ roots: { root: { type: 'string' } }, typed: true });
+  assert.deepEqual(byRoot.root('a', true), []);
+  assert.deepEqual(byRoot.root(5, true), [{ path: [], code: 'type', expected: ['string'] }]);
+  // Only text can prove the annotations: a type is erased before the module runs.
   const { source } = compile({ roots: new Map([['root', { type: 'string' }]]) }, { unknownFormats: 'warn', typed: true });
-  assert.match(source, /^import type \{ SchemaIssue \} from "@exprtlabs\/golem\/validation-runtime";$/m);
-  assert.match(source, /^export function validate_root\(value: unknown, all: boolean\): readonly SchemaIssue\[\] \{$/m);
+  assert.match(source, /^import type \{ SchemaIssue \} from "@exprtlabs\/golem\/validation-runtime";$[\s\S]*^export function validate_root\(value: unknown, all: boolean\): readonly SchemaIssue\[\] \{$/m);
 });
 
 const MODEL_ROOTS = new Map<string, unknown>([
@@ -996,27 +987,21 @@ const MODEL_ROOTS = new Map<string, unknown>([
   ['getPayment:response:200:application/json', { type: 'array', items: { type: 'string' }, uniqueItems: true }],
 ]);
 
-test('every root is exported as a named function under the name the compile reports', () => {
-  const { source, exports } = compile({ roots: MODEL_ROOTS }, { unknownFormats: 'warn' });
+test('every root is exported as a named function under the name the compile reports, and runs its own root', async () => {
+  // protects: P-22 the module exports one validator for each root under the name the compile reports
+  const { exports, exportNames, byRoot } = await compileValidatorModule({ roots: Object.fromEntries(MODEL_ROOTS) });
   assert.deepEqual([...exports], [
     ['PaymentDraft_8be34727', 'validate_PaymentDraft_8be34727'],
     ['PaymentDraft_8be34727#wire', 'validate_PaymentDraft_8be34727_wire'],
     ['getPayment:input', 'validate_getPayment_input'],
     ['getPayment:response:200:application/json', 'validate_getPayment_response_200_application_json'],
   ].sort(([first], [second]) => (first < second ? -1 : 1)));
-  assert.deepEqual([...source.matchAll(/^export (?:function|const|let|class) (\w+)/gm)].map(match => match[1]).sort(), [...exports.values()].sort());
-});
-
-test('every top-level constant initializer that is a call or a new expression is annotated as pure', () => {
-  const { source } = compile({ roots: MODEL_ROOTS }, { unknownFormats: 'warn' });
-  const constants = [...source.matchAll(/^const (\w+) = (.*)$/gm)].filter(([, , initializer]) => /\bnew\b|\w\(/.test(initializer ?? '') && !/^(?:\w+|\([^)]*\)) =>/.test(initializer ?? ''));
-  assert.ok(constants.some(([, , initializer]) => /new RegExp\(/.test(initializer ?? '')), 'the fixture emits a pattern constant');
-  assert.ok(constants.some(([, , initializer]) => /Object\.freeze\(\/\*#__PURE__\*\/ JSON\.parse\(/.test(initializer ?? '')), 'the fixture emits a literal constant');
-  assert.ok(constants.some(([, , initializer]) => /new Set\(/.test(initializer ?? '')), 'the fixture emits a known-keys constant');
-  for (const [line, name, initializer] of constants) {
-    assert.ok(initializer?.startsWith('/*#__PURE__*/ '), `${name} is pure: ${line}`);
-    assert.doesNotMatch(initializer ?? '', /(?<!\/\*#__PURE__\*\/ )JSON\.parse\(/, `${name} marks its inner call: ${line}`);
-  }
+  assert.deepEqual(exportNames, [...exports.values()].sort());
+  assert.deepEqual(byRoot['PaymentDraft_8be34727']({ note: 'draft-0001' }, true), []);
+  assert.deepEqual(byRoot['PaymentDraft_8be34727']({ note: 'x' }, true), [{ path: ['note'], code: 'pattern', pattern: '^draft-[0-9]{4}$' }]);
+  assert.deepEqual(byRoot['PaymentDraft_8be34727#wire']({ tags: 'c' }, true), [{ path: ['tags'], code: 'literal', expected: ['a', 'b'] }]);
+  assert.deepEqual(byRoot['getPayment:input']({}, true), [{ path: ['id'], code: 'required', key: 'id' }]);
+  assert.deepEqual(byRoot['getPayment:response:200:application/json'](['a', 'a'], true), [{ path: [], code: 'unique', indexes: [0, 1] }]);
 });
 
 test('adding a root renames no other export', () => {
@@ -1036,6 +1021,7 @@ test('roots whose names become one identifier get a number, the others keep thei
 });
 
 test('a bundle of one validator drops an unused validator with its constants', async t => {
+  // protects: P-22 a bundler drops the pattern, set and literal constants of a validator that nothing imports
   const roots = new Map<string, unknown>([
     ['kept', { type: 'string', pattern: '^kept-pattern-[0-9]+$' }],
     ['unused', { type: 'object', properties: { code: { type: 'string', pattern: '^unused-pattern-[0-9]+$' }, kind: { enum: ['unused-literal-a', 'unused-literal-b'] } }, additionalProperties: false }],
@@ -1044,28 +1030,31 @@ test('a bundle of one validator drops an unused validator with its constants', a
   const directory = mkdtempSync(path.join(tmpdir(), 'golem-validators-bundle-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   writeFileSync(path.join(directory, 'validators.js'), source);
-  const bundle = async (names: readonly string[]): Promise<string> => {
+  const runtime = await import('@exprtlabs/golem/validation-runtime');
+  /** Bundles the named validators, runs the bundle in a fresh context and counts the constants it builds while it loads. */
+  const load = async (names: readonly string[]): Promise<{ readonly built: object; readonly validators: readonly Validator[] }> => {
     writeFileSync(path.join(directory, 'entry.js'), `import { ${names.join(', ')} } from './validators.js';\nglobalThis.used = [${names.join(', ')}];\n`);
-    const result = await build({
-      entryPoints: [path.join(directory, 'entry.js')],
-      bundle: true,
-      format: 'esm',
-      write: false,
-      treeShaking: true,
-      external: ['golem-validation-runtime'],
-    });
-    return result.outputFiles[0].text;
+    const result = await build({ entryPoints: [path.join(directory, 'entry.js')], bundle: true, format: 'cjs', write: false, treeShaking: true, external: ['golem-validation-runtime'] });
+    const counts = { RegExp: 0, Set: 0, 'JSON.parse': 0 };
+    const context = vm.createContext({ counts, require: () => runtime });
+    vm.runInContext(`
+      for (const name of ['RegExp', 'Set']) {
+        globalThis[name] = new Proxy(globalThis[name], { construct(target, args, newTarget) { counts[name]++; return Reflect.construct(target, args, newTarget); } });
+      }
+      const parse = JSON.parse;
+      JSON.parse = (...args) => { counts['JSON.parse']++; return parse(...args); };
+    `, context);
+    vm.runInContext(result.outputFiles[0].text, context);
+    return { built: counts, validators: context.used };
   };
   const kept = exports.get('kept') ?? '';
   const unused = exports.get('unused') ?? '';
-  const one = await bundle([kept]);
-  assert.match(one, new RegExp(`function ${kept}\\b`));
-  assert.match(one, /kept-pattern/);
-  assert.doesNotMatch(one, new RegExp(unused));
-  assert.doesNotMatch(one, /unused-pattern|unused-literal/, 'the constants of the dropped validator go with it');
-  const both = await bundle([kept, unused]);
-  assert.match(both, /unused-pattern/);
-  assert.match(both, /unused-literal-a/);
+  const one = await load([kept]);
+  assert.deepEqual(one.built, { RegExp: 1, Set: 0, 'JSON.parse': 0 });
+  assert.deepEqual(JSON.parse(JSON.stringify(one.validators[0]('kept-pattern-7', true))), []);
+  assert.deepEqual(JSON.parse(JSON.stringify(one.validators[0]('other', true))), [{ path: [], code: 'pattern', pattern: '^kept-pattern-[0-9]+$' }]);
+  const both = await load([kept, unused]);
+  assert.deepEqual(both.built, { RegExp: 2, Set: 1, 'JSON.parse': 1 });
 });
 
 test('a diagnostic is placed where the locator says and reported once per place', () => {
