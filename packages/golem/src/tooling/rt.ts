@@ -51,6 +51,7 @@ export interface RuntimeTypeExports {
     readonly RuntimeResponseContract: client.RuntimeResponseContract;
     readonly RuntimeSecuritySchemes: client.RuntimeSecuritySchemes;
   };
+  readonly validation: { readonly OperationRuntimeValidators: validation.OperationRuntimeValidators };
   readonly mobx: { readonly ObservableApiOperation: mobx.ObservableApiOperation<never, never, never> };
   readonly serde: { readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
   readonly 'validation-runtime': { readonly SchemaIssue: validationRuntime.SchemaIssue };

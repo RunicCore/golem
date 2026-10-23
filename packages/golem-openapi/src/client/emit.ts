@@ -505,19 +505,21 @@ function emitClient(
 ${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
 } as const;`
     : '';
-  const methods = operations.map((operation) =>
-    `  ${operation.name}(): ApiOperation<Types.${operation.typeName}OperationInput, Types.${operation.typeName}OperationHttpResponse, ${clientName}RequestOptions>;`,
-  ).join('\n');
-  const implementations = operations.map((operation) =>
-    `  ${operation.name}(): ApiOperation<Types.${operation.typeName}OperationInput, Types.${operation.typeName}OperationHttpResponse, ${clientName}RequestOptions> {
-    return ${aliases.get(operation.name)}(this.runtime);
+  const clientRuntime = rt.client.ClientRuntime;
+  const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
+  const methods = join(operations.map((operation) =>
+    text`  ${operation.name}(): ${apiOperation}<Types.${operation.typeName}OperationInput, Types.${operation.typeName}OperationHttpResponse, ${clientName}RequestOptions>;`,
+  ), code`\n`);
+  const implementations = join(operations.map((operation) =>
+    text`  ${operation.name}(): ${apiOperation}<Types.${operation.typeName}OperationInput, Types.${operation.typeName}OperationHttpResponse, ${clientName}RequestOptions> {
+    return ${String(aliases.get(operation.name))}(this.runtime);
   }`,
-  ).join('\n\n');
+  ), code`\n\n`);
   const undeclared = plan.helpers.has('selectResponse');
   const usesAuth = surfaces.auth || surfaces.mutualTls;
-  const optionExtensions = [
-    ...(surfaces.auth ? [`  /** Values or lazy providers keyed by OpenAPI security-scheme name. */\n  auth?: ${clientName}Auth;`] : []),
-    ...(profile.validation ? ['  /** Overrides generated validators for individual operations. */\n  operationValidators?: ReadonlyMap<__GolemOperationName, __GolemOperationRuntimeValidators>;'] : []),
+  const optionExtensions: Code[] = [
+    ...(surfaces.auth ? [legacyText(`  /** Values or lazy providers keyed by OpenAPI security-scheme name. */\n  auth?: ${clientName}Auth;`)] : []),
+    ...(profile.validation ? [text`  /** Overrides generated validators for individual operations. */\n  operationValidators?: ReadonlyMap<__GolemOperationName, ${aliased(rtType.validation.OperationRuntimeValidators, '__GolemOperationRuntimeValidators')}>;`] : []),
   ];
   const omittedOptions = [
     ...(surfaces.bodyEncoders ? [] : ['bodyEncoders']),
@@ -529,13 +531,13 @@ ${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
     'auth',
     'operationValidators',
   ];
-  const optionsType = `Omit<Runtime.ClientOptions, ${omittedOptions.map((name) => JSON.stringify(name)).join(' | ')}>${optionExtensions.length ? ` & {\n${optionExtensions.join('\n')}\n}` : ''}`;
-  const aliases_ = [
-    `export type ${clientName}ClientOptions = ${optionsType};`,
+  const optionsType = text`Omit<Runtime.ClientOptions, ${omittedOptions.map((name) => JSON.stringify(name)).join(' | ')}>${optionExtensions.length ? text` & {\n${join(optionExtensions, code`\n`)}\n}` : ''}`;
+  const aliases_ = join([
+    text`export type ${clientName}ClientOptions = ${optionsType};`,
     `export type ${clientName}RequestOptions = Runtime.RequestOptions;`,
     ...(undeclared ? [
       `export type ${clientName}UndeclaredResponseError = Runtime.UndeclaredResponseError;`,
-      `export function is${clientName}UndeclaredResponseError(error: unknown): error is Runtime.UndeclaredResponseError {\n  return isUndeclaredResponseError(error, ${JSON.stringify(clientName)});\n}`,
+      text`export function is${clientName}UndeclaredResponseError(error: unknown): error is Runtime.UndeclaredResponseError {\n  return ${rt.client.isUndeclaredResponseError}(error, ${JSON.stringify(clientName)});\n}`,
     ] : []),
     ...(surfaces.mutualTls ? [`export type ${clientName}MutualTlsTransport = Runtime.MutualTlsTransport;`] : []),
     ...(surfaces.streamDecoders ? [
@@ -556,16 +558,8 @@ ${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
       `export type ${clientName}BodyEncoderContext = Runtime.BodyEncoderContext;`,
       `export type ${clientName}BodyEncoder = Runtime.BodyEncoder;`,
     ] : []),
-  ].join('\n');
-  const runtimeValueImports = ['ClientRuntime', ...(undeclared ? ['isUndeclaredResponseError'] : [])];
-  return `${generatedBanner()}
-import { ${runtimeValueImports.join(', ')} } from '@exprtlabs/golem/client';
-import type * as Runtime from '@exprtlabs/golem/client';
-${profile.validation ? "import type { OperationRuntimeValidators as __GolemOperationRuntimeValidators } from '@exprtlabs/golem/validation';\n" : ''}import type * as Types from './types.js';
-${profile.mobx
-    ? "import type { ObservableApiOperation as ApiOperation } from '@exprtlabs/golem/mobx';"
-    : "import type { ApiOperation } from '@exprtlabs/golem/client';"}
-${imports}
+  ].map((item) => typeof item === 'string' ? legacyText(item) : item), code`\n`);
+  const rest = text`${imports}
 ${profile.validation ? `\n${operationNameType('__GolemOperationName', operations)}\n` : ''}
 ${aliases_}
 ${usesAuth ? `\n${emitSecurityTypes(clientName, rawSecuritySchemes)}` : ''}
@@ -574,16 +568,32 @@ ${methods}
 }
 
 export class ${clientName}Client implements ${clientName}ClientPort {
-  private readonly runtime: ClientRuntime;
+  private readonly runtime: ${clientRuntime};
 
   constructor(options: ${clientName}ClientOptions) {
-    this.runtime = new ClientRuntime(${JSON.stringify(clientName)}, options);
+    this.runtime = new ${clientRuntime}(${JSON.stringify(clientName)}, options);
   }
 
 ${implementations}
 }
 ${metadata}
 `;
+  const imports_: ImportOptions = { modules: ['client', 'mobx', 'validation'] };
+  const runtime = new Map(importSet(rest, imports_).map((entry) => [entry.module, entry] as const));
+  const lines = (module: 'client' | 'mobx' | 'validation', parts: { readonly values?: true; readonly types?: true }): readonly Code[] => {
+    const entry = runtime.get(module);
+    return entry ? importLines({ module, names: parts.values ? entry.names : [], types: parts.types ? entry.types : [] }, imports_) : [];
+  };
+  return render(code`${join([
+    legacyText(generatedBanner()),
+    ...lines('client', { values: true }),
+    legacyText("import type * as Runtime from '@exprtlabs/golem/client';"),
+    ...lines('validation', { types: true }),
+    legacyText("import type * as Types from './types.js';"),
+    ...lines('mobx', { types: true }),
+    ...(profile.mobx ? [] : lines('client', { types: true })),
+  ], code`\n`)}
+${rest}`);
 }
 
 type OperationValidationBundle = ReturnType<typeof buildOperationValidationSchemaBundle>;
