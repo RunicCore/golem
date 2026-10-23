@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import YAML from 'yaml';
 import { loadConfig, resolveConfig } from '#golem/config';
+import { YamlFileError } from '#golem/generator-api';
 import { parseArguments, providersFor } from '#golem/cli';
 
 function fixture(t: TestContext, yaml: string): { root: string; filename: string } {
@@ -216,6 +218,17 @@ test('configuration errors reject unknown overrides, duplicate keys and overlapp
     const { filename } = fixture(t, yaml);
     assert.throws(() => loadConfig(filename), error);
   }
+});
+
+test('a golem.yaml that is not YAML fails with its path relative to the working directory, the line, the column and the parse error', (t: TestContext) => {
+  // protects: T-311 a YAML parse error names the file
+  const { filename } = fixture(t, 'version: 1\nversion: 1\nmodels: {}\n');
+  assert.throws(() => loadConfig(filename), (error: unknown) => {
+    assert.ok(error instanceof YamlFileError);
+    assert.ok(error.message.startsWith(`${path.relative(process.cwd(), filename)}:2:1 Map keys must be unique:\n`), error.message);
+    assert.ok(error.cause instanceof YAML.YAMLParseError);
+    return true;
+  });
 });
 
 test('configured provider absence and incompatible API have distinct actionable errors', async (t: TestContext) => {

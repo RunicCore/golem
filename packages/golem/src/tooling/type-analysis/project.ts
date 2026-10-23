@@ -1,10 +1,9 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
-import YAML from 'yaml';
 import * as ts from '../typescript-ns.js';
 import { readManifest } from './package-specifier.js';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, suffixPattern, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
+import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
 import { canonicalFilename } from './path-identity.js';
 
 export { canonicalFilename };
@@ -163,7 +162,7 @@ const JOB_KEYS = ['generators', 'controllers', 'openapi', 'models'] as const;
 function readGolemYaml(golemYaml: string, onInput?: InputObserver): unknown {
   onInput?.(golemYaml);
   if (!existsSync(golemYaml)) return undefined;
-  return YAML.parse(readFileSync(golemYaml, 'utf8'));
+  return parseYamlFile(readFileSync(golemYaml, 'utf8'), golemYaml);
 }
 
 /** Whether `configuration` has a value under one of `keys`. */
@@ -172,14 +171,9 @@ function declaresAny(configuration: unknown, keys: readonly string[]): boolean {
     && keys.some((key) => Reflect.get(configuration, key) !== null && Reflect.get(configuration, key) !== undefined);
 }
 
-/** Whether `golemYaml` exists and has a `models` job. A file that is not YAML is the project's to fix. */
+/** Whether `golemYaml` exists and has a `models` job. A file that is not YAML is the project's to fix: its parse error stops the run. */
 function declaresModelsJob(golemYaml: string, onInput?: InputObserver): boolean {
-  try {
-    return declaresAny(readGolemYaml(golemYaml, onInput), ['models']);
-  } catch (error) {
-    if (error instanceof YAML.YAMLParseError) throw new Error(`${golemYaml} is not valid YAML: ${error.message}`);
-    throw error;
-  }
+  return declaresAny(readGolemYaml(golemYaml, onInput), ['models']);
 }
 
 /**
@@ -286,7 +280,7 @@ function ignoredGolemYamlMessage(golemYaml: string, modelFile: string): string {
     belongsToAnApp = declaresAny(readGolemYaml(golemYaml), JOB_KEYS);
   } catch (error) {
     // Golem ignores this file, so a file that is not YAML or that it cannot read is ignored like any other.
-    if (!(error instanceof YAML.YAMLParseError || ['EACCES', 'EPERM', 'EISDIR', 'ENOENT'].some((code) => hasErrorCode(error, code)))) throw error;
+    if (!(error instanceof YamlFileError || ['EACCES', 'EPERM', 'EISDIR', 'ENOENT'].some((code) => hasErrorCode(error, code)))) throw error;
   }
   return belongsToAnApp
     ? `${ignored} It configures another app that generates ${basename(modelFile)}. Move the model into a shared package that holds no golem.yaml, and have each app use it from there.`

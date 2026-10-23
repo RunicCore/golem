@@ -86,6 +86,27 @@ test('watch recovers when a referenced local schema file is introduced after the
   await until(() => compilerChildren(process.pid).length === 0, 'the compiler closes with the watch');
 });
 
+test('watch started on a golem.yaml that is not YAML reports its file, line and column, and runs again once the file is fixed', async (t: TestContext) => {
+  // protects: T-311 a YAML parse error names the file; a failed run does not stop watch
+  const { config } = generationWatchFixture(t);
+  const valid = fs.readFileSync(config, 'utf8');
+  fs.writeFileSync(config, `${valid}version: 1\n`);
+  const runs = countRuns(t);
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); });
+  try {
+    await until(() => errors.length > 0, 'the broken golem.yaml is reported');
+    assert.ok(errors[0] instanceof Error);
+    assert.ok(errors[0].message.startsWith(`${path.relative(process.cwd(), config)}:`), errors[0].message);
+    assert.match(errors[0].message, /^\S+:\d+:\d+ Map keys must be unique/);
+    fs.writeFileSync(config, valid);
+    await until(() => runs() === 1, () => `the fixed golem.yaml runs (errors=${errors.map(String).join('; ')})`);
+  } finally {
+    stop();
+  }
+  await until(() => compilerChildren(process.pid).length === 0, 'the compiler closes with the watch');
+});
+
 test('watch keeps model dependencies outside the models root after a run that reuses the models job', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
   const app = path.join(root, 'app');

@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import YAML from 'yaml';
 /** Shared API-1 contracts. Providers return contents; the CLI owns all writes. */
 export {
   assertPortableFilenames,
@@ -254,6 +255,32 @@ export interface GolemProvider<Context> {
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** A YAML file that does not parse: the developer's input to fix. The message starts with `<file>:<line>:<column>`; `cause` is the parser's error. */
+export class YamlFileError extends Error {
+  constructor(message: string, readonly file: string, options: { cause: unknown }) {
+    super(message, options);
+    this.name = 'YamlFileError';
+  }
+}
+
+/**
+ * The parsed YAML of `text`, which came from `filename`. A parse error becomes a `YamlFileError` whose message starts with
+ * the file, line and column: the path relative to the working directory for an absolute `filename`, or `filename` as written
+ * for a URL. Any other failure passes through.
+ */
+export function parseYamlFile(text: string, filename: string, options?: YAML.DocumentOptions & YAML.ParseOptions): unknown {
+  try {
+    return YAML.parse(text, options);
+  } catch (error) {
+    if (!(error instanceof YAML.YAMLParseError)) throw error;
+    const file = path.isAbsolute(filename) ? path.relative(process.cwd(), filename) : filename;
+    const start = error.linePos?.[0];
+    // The parser's message ends its first line with the position; the prefix already says it.
+    const reason = error.message.replace(/ at line \d+, column \d+:/, ':').trimEnd();
+    throw new YamlFileError(`${file}${start === undefined ? '' : `:${start.line}:${start.col}`} ${reason}`, file, { cause: error });
+  }
 }
 
 export function errorMessage(error: unknown): string {
