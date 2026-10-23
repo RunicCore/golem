@@ -4,6 +4,7 @@ import * as ts from '@exprtlabs/golem/internal/ts';
 import { PACKAGE_VERSION } from './package-info.js';
 import {
   emitModelFromJSON,
+  render,
   emitModelFromInit,
   emitModelToJSON,
   emitCodecRuntime,
@@ -1378,9 +1379,9 @@ function projectionExpressionsOf(context: EmitContext, resolvers: ModelResolvers
   const descriptor = context.graph.definitions[name];
   const serde = serdeResolver(context);
   return {
-    decode: emitModelFromJSON(descriptor, 'data', resolvers.fromAny, serde),
-    init: emitModelFromInit(descriptor, 'data', resolvers.fromAny),
-    encode: emitModelToJSON(descriptor, 'data', resolvers.toJsonAny, serde),
+    decode: render(emitModelFromJSON(descriptor, 'data', resolvers.fromAny, serde)),
+    init: render(emitModelFromInit(descriptor, 'data', resolvers.fromAny)),
+    encode: render(emitModelToJSON(descriptor, 'data', resolvers.toJsonAny, serde)),
   };
 }
 
@@ -1483,7 +1484,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const input = `model[${name}]`;
       const descriptor = descriptors.get(field.getName());
       if (!descriptor) throw new Error(`Missing descriptor for field ${field.getName()}.`);
-      const emitEncode = (value: string): string => emitModelToJSON(
+      const emitEncode = (value: string): string => render(emitModelToJSON(
         descriptor,
         value,
         resolveToJsonAny,
@@ -1491,7 +1492,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
           deserialize: (_id, value) => value,
           serialize: (id, value) => serdeExpressionOf(id, 'serialize', value),
         },
-      );
+      ));
       const optional = (field.flags & ts.SymbolFlags.Optional) !== 0;
       // The guard below excludes an undefined value of an optional field before the conversion runs.
       const inputType = `${optional ? 'Exclude<' : ''}${specification.name}BaseModel[${name}]${optional ? ', undefined>' : ''}`;
@@ -1513,7 +1514,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const input = `__golemValue${index}`;
       const descriptor = descriptors.get(field.getName());
       if (!descriptor) throw new Error(`Missing descriptor for field ${field.getName()}.`);
-      const emitDecode = (value: string): string => emitModelFromJSON(
+      const emitDecode = (value: string): string => render(emitModelFromJSON(
         descriptor,
         value,
         resolveFromAny,
@@ -1521,8 +1522,8 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
           deserialize: (id, value) => serdeExpressionOf(id, 'deserialize', value),
           serialize: (_id, value) => value,
         },
-      );
-      const fromInit = emitModelFromInit(descriptor, input, resolveFromAny);
+      ));
+      const fromInit = render(emitModelFromInit(descriptor, input, resolveFromAny));
       const converted = wrapRootConversion(helpers, specification.name, 'deserialize', name, input, emitDecode, 'unknown');
       if (converted !== input) {
         decodeCaptures.push([field.getName(), input]);
@@ -1552,9 +1553,9 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const known = `__knownKeys_${specification.name}`;
       helpers.push(`const ${known}: ReadonlySet<string> = new Set<string>([${fields.map((field) => JSON.stringify(field.getName())).join(', ')}]);`);
       const serde = serdeResolver(context);
-      const decodeMapValue = wrapRootConversion(helpers, specification.name, 'deserialize', 'key', 'value', (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), 'unknown');
-      const encodeMapValue = wrapRootConversion(helpers, specification.name, 'serialize', 'key', 'value', (value) => emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value }), fieldsValue);
-      const initMapValue = emitModelFromInit(mapValue, 'value', resolveFromAny);
+      const decodeMapValue = wrapRootConversion(helpers, specification.name, 'deserialize', 'key', 'value', (value) => render(emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value })), 'unknown');
+      const encodeMapValue = wrapRootConversion(helpers, specification.name, 'serialize', 'key', 'value', (value) => render(emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value })), fieldsValue);
+      const initMapValue = render(emitModelFromInit(mapValue, 'value', resolveFromAny));
       if (decodeMapValue !== 'value') {
         decode.push(`  for (const key of Object.keys(result)) if (!${known}.has(key)) { const value = result[key]; if (value !== undefined) defineModelProperty(result, key, ${decodeMapValue}); }`);
       }

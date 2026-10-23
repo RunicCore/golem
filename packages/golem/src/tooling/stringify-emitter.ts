@@ -11,6 +11,7 @@ import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { modelName, requireComposedObject, type ModelBases } from './composition.js';
+import { render } from './code.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR_ITEM, singleCallConverter } from './sequence-conversion.js';
 import {
   AMBIGUOUS_UNION_CONVERSION_ERROR,
@@ -383,7 +384,7 @@ function emitValue(
   if (descriptor.kind === 'null') return "'null'";
   if (descriptor.kind === 'literal') return emitJsonLiteral(descriptor.value);
   if (descriptor.kind === 'array') {
-    return emitArrayConversion(descriptor.item, expression, {
+    return render(emitArrayConversion(descriptor.item, expression, {
       output: 'json',
       item: (item, value) => {
         const itemNode = ctx.graph.nodeFor(item);
@@ -394,13 +395,13 @@ function emitValue(
           throws: false,
         };
       },
-    });
+    }));
   }
   if (descriptor.kind === 'tuple') {
-    return emitTupleConversion(descriptor, expression, {
+    return render(emitTupleConversion(descriptor, expression, {
       output: 'json',
       item: (item, value) => ({ code: emitValue(item, value, ctx), throws: false }),
-    });
+    }));
   }
   if (descriptor.kind === 'union') return emitUnionValue(descriptor, expression, ctx);
   if (descriptor.kind === 'object') {
@@ -1063,7 +1064,7 @@ function emitTaggedVariantUnion(
     if (options?.unresolved === 'skip') return undefined;
     throw new ObjectUnionDiscriminatorError(variants);
   }
-  return emitDispatch({
+  return render(emitDispatch({
     expression,
     property: dispatch.property,
     direction,
@@ -1079,7 +1080,7 @@ function emitTaggedVariantUnion(
         return object ? object.properties[dispatch.property] !== undefined : undefined;
       })(),
     })),
-  });
+  }));
 }
 
 /**
@@ -1117,7 +1118,7 @@ function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: st
   const read = (name: string): string => decode
     ? `(${presentValueSource(expression, JSON.stringify(name), tagAccess(expression, name))})`
     : tagAccess(expression, name);
-  return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) => discriminatorMatch(read(name), values)));
+  return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) => render(discriminatorMatch(read(name), values))));
 }
 
 /**
@@ -1138,7 +1139,7 @@ function emitUnionValue(
 ): string {
   let itemsUnchanged = true;
   const plain = `stringifyJsonScalar(${expression} as never)`;
-  return emitUnionConversion(descriptor, expression, 'stringify', {
+  return render(emitUnionConversion(descriptor, expression, 'stringify', {
     guard: inlineBranchGuard(ctx, expression),
     convert: (variant) => emitValue(variant, expression, ctx),
     items: {
@@ -1187,7 +1188,7 @@ function emitUnionValue(
         ? emitValue(objects[0], expression, ctx)
         : emitTaggedObjects(descriptor, expression, ctx, (object) => emitValue(object, expression, ctx), 'encode-json'),
     },
-  });
+  }));
 }
 
 function emitUnionDecode(
@@ -1195,7 +1196,7 @@ function emitUnionDecode(
   expression: string,
   ctx: EmitCtx,
 ): string {
-  return emitUnionConversion(descriptor, expression, 'decode', {
+  return render(emitUnionConversion(descriptor, expression, 'decode', {
     convert: (variant) => emitDecodeValue(variant, expression, ctx),
     items: {
       output: 'value',
@@ -1244,9 +1245,9 @@ function emitUnionDecode(
         if (tags.length === 0) throw new ObjectUnionDiscriminatorError(present);
         branches.push(`${tags.join(' && ')} ? ${emitDecodeValue(ref, expression, ctx)}`);
       }
-      return `(${objectValueExpression(expression)} ? ${[...branches, expression].join(' : ')} : ${expression})`;
+      return `(${render(objectValueExpression(expression))} ? ${[...branches, expression].join(' : ')} : ${expression})`;
     },
-  });
+  }));
 }
 
 function emitUnionEncode(
@@ -1254,7 +1255,7 @@ function emitUnionEncode(
   expression: string,
   ctx: EmitCtx,
 ): string {
-  return emitUnionConversion(descriptor, expression, 'encode', {
+  return render(emitUnionConversion(descriptor, expression, 'encode', {
     guard: inlineBranchGuard(ctx, expression),
     convert: (variant) => emitEncodeValue(variant, expression, ctx),
     items: {
@@ -1284,7 +1285,7 @@ function emitUnionEncode(
       }
       return undefined;
     },
-  });
+  }));
 }
 
 function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ctx: EmitCtx): string {
@@ -1306,7 +1307,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
       return `(typeof ${expression} === 'boolean' ? ${expression} : ${deserialized})`;
     }
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
-      return `(${objectValueExpression(expression)} ? ${deserialized} : ${expression})`;
+      return `(${render(objectValueExpression(expression))} ? ${deserialized} : ${expression})`;
     }
     return deserialized;
   }
@@ -1341,7 +1342,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     return emitInternedObjectDecode(named, descriptor, expression, ctx);
   }
   if (descriptor.kind === 'array') {
-    return emitArrayConversion(descriptor.item, expression, {
+    return render(emitArrayConversion(descriptor.item, expression, {
       output: 'value',
       paths: 'deserialize',
       item: (item, value) => {
@@ -1355,10 +1356,10 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
         const call = `${converter}(${value})`;
         return { code: singleCallConverter(call, value) === converter ? call : decoded, throws: true };
       },
-    });
+    }));
   }
   if (descriptor.kind === 'tuple') {
-    return emitTupleConversion(descriptor, expression, {
+    return render(emitTupleConversion(descriptor, expression, {
       output: 'value',
       paths: 'deserialize',
       item: (item, value) => {
@@ -1366,7 +1367,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
         const code = emitDecodeValue(item, value, ctx);
         return { code, throws: emittedFallible(before, code, ctx) };
       },
-    });
+    }));
   }
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);
@@ -1617,16 +1618,16 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: string, ct
     return nestedToWireCall(named.id, expression, ctx);
   }
   if (descriptor.kind === 'array') {
-    return emitArrayConversion(descriptor.item, expression, {
+    return render(emitArrayConversion(descriptor.item, expression, {
       output: 'value',
       item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
-    });
+    }));
   }
   if (descriptor.kind === 'tuple') {
-    return emitTupleConversion(descriptor, expression, {
+    return render(emitTupleConversion(descriptor, expression, {
       output: 'value',
       item: (item, value) => ({ code: emitEncodeValue(item, value, ctx), throws: false }),
-    });
+    }));
   }
   const encodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, graphModelBases(ctx.graph)) : undefined;
   if (encodedMerge) return emitEncodeValue(encodedMerge, expression, ctx);

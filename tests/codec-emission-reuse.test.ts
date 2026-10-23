@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON } from '@exprtlabs/golem/internal/emitter';
+import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON, render } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import { instantiateRuntime } from './emitted-runtime.js';
@@ -108,12 +108,12 @@ test('model initializers, fromJSON and toJSON copy an unchanged array with slice
   const strings: ModelTypeDescriptor = { kind: 'array', item: { kind: 'string' } };
   const unusedModel = (id: string): never => { throw new Error(`No model expected: ${id}`); };
   const copied = 'Array.isArray(values) ? (values as readonly unknown[]).slice() : values';
-  assert.equal(emitModelFromInit(strings, 'values', unusedModel), copied);
-  assert.equal(emitModelFromJSON(strings, 'values', unusedModel), copied);
-  assert.equal(emitModelToJSON(strings, 'values', unusedModel), copied);
+  assert.equal(render(emitModelFromInit(strings, 'values', unusedModel)), copied);
+  assert.equal(render(emitModelFromJSON(strings, 'values', unusedModel)), copied);
+  assert.equal(render(emitModelToJSON(strings, 'values', unusedModel)), copied);
   const nested: ModelTypeDescriptor = { kind: 'array', item: strings };
   assert.equal(
-    emitModelFromInit(nested, 'values', unusedModel),
+    render(emitModelFromInit(nested, 'values', unusedModel)),
     'Array.isArray(values) ? (values as readonly unknown[]).map((item) => Array.isArray(item) ? (item as readonly unknown[]).slice() : item) : values',
   );
 });

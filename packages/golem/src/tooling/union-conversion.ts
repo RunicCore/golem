@@ -5,6 +5,8 @@
 
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
 import { presentValueSource } from '../presence.js';
+import { code, join, legacyText, literal, render, sameCode, type Code } from './code.js';
+import { rt } from './rt.js';
 import {
   emitArrayItems,
   emitTupleItems,
@@ -32,8 +34,19 @@ function describeVariant(variant: ModelTypeDescriptor): string {
 export const AMBIGUOUS_UNION_CONVERSION_ERROR =
   'Union has ambiguous conversions. Use a discriminated object union or one serde pair for the value.';
 
-export function objectValueExpression(expression: string): string {
-  return `typeof ${expression} === 'object' && ${expression} !== null && !Array.isArray(${expression})`;
+/**
+ * Code that an emitter wrote, or the text of a walker that does not return Code yet. A string is wrapped as one text part.
+ */
+export type Emitted = string | Code;
+
+// migration door, deleted in steps 3a to 3d (T-283, T-284, T-285, T-286) for stringify-emitter and in steps 5 and 6 (T-288, T-289) for the resolvers of golem-model and golem-openapi
+function asCode(emitted: Emitted): Code {
+  return typeof emitted === 'string' ? legacyText(emitted) : emitted;
+}
+
+export function objectValueExpression(expression: string): Code {
+  const value = legacyText(expression);
+  return code`typeof ${value} === 'object' && ${value} !== null && !Array.isArray(${value})`;
 }
 
 export function presentUnionVariants(
@@ -143,8 +156,9 @@ export function objectVariant(variant: ModelTypeDescriptor): ObjectTypeDescripto
 }
 
 /** `access` equals one of `values`. */
-export function discriminatorMatch(access: string, values: readonly DiscriminatorValue[]): string {
-  return `(${values.map((value) => `${access} === ${JSON.stringify(value)}`).join(' || ')})`;
+export function discriminatorMatch(access: Emitted, values: readonly DiscriminatorValue[]): Code {
+  const read = asCode(access);
+  return code`(${join(values.map((value) => code`${read} === ${literal(value)}`), code` || `)})`;
 }
 
 /** One dispatched variant: its tag values, optional model class and conversion. */
@@ -152,7 +166,7 @@ interface DispatchBranch {
   readonly values: readonly DiscriminatorValue[];
   /** Instances of this class select the branch before any tag test. */
   readonly className?: string;
-  readonly convert: string;
+  readonly convert: Emitted;
   /** JSON output only: whether `convert` writes the tag property; undefined when unknown. */
   readonly writesTag?: boolean;
 }
@@ -164,7 +178,7 @@ export interface DispatchOptions {
   /** decode: wire to model. encode-value: model to wire object. encode-json: model to JSON text. */
   readonly direction: 'decode' | 'encode-value' | 'encode-json';
   /** Encode result for null or undefined. */
-  readonly nullish?: string;
+  readonly nullish?: Emitted;
   /**
    * An explicit tag table lets an instance omit its tag: encoding writes the
    * variant's first value. Inferred tags are declared literals and required.
@@ -188,51 +202,55 @@ export interface DispatchOptions {
  * - An object whose tag selects no branch is rejected. Encoding writes null
  *   or undefined unchanged and rejects every other value.
  */
-export function emitDispatch(options: DispatchOptions): string {
+export function emitDispatch(options: DispatchOptions): Code {
   const { expression, property, branches, direction, tagLocal } = options;
+  const value = legacyText(expression);
   const encode = direction !== 'decode';
-  const propertyRead = `(${expression} as unknown as Record<string, unknown>)[${JSON.stringify(property)}]`;
+  const propertyReadText = `(${expression} as unknown as Record<string, unknown>)[${JSON.stringify(property)}]`;
   // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag selects no branch.
-  const tagRead = encode ? propertyRead : `(${presentValueSource(expression, JSON.stringify(property), propertyRead)})`;
-  const tag = tagLocal ?? tagRead;
-  const reject = `unknownDiscriminatorValue(${JSON.stringify(property)}, ${tag}, ${encode ? "'serialize'" : "'deserialize'"})`;
-  const key = JSON.stringify(property);
-  const injectJson = (convert: string, tagValue: string): string =>
-    `jsonWithDiscriminator(${convert}, ${JSON.stringify(key)}, ${tagValue})`;
+  const tagRead = encode
+    ? legacyText(propertyReadText)
+    : code`(${legacyText(presentValueSource(expression, JSON.stringify(property), propertyReadText))})`;
+  const tag = tagLocal ? legacyText(tagLocal) : tagRead;
+  const reject = code`${rt.conversion.unknownDiscriminatorValue}(${literal(property)}, ${tag}, ${encode ? code`'serialize'` : code`'deserialize'`})`;
+  const key = literal(property);
+  const injectJson = (convert: Code, tagValue: Code): Code =>
+    code`${rt.conversion.jsonWithDiscriminator}(${convert}, ${literal(JSON.stringify(property))}, ${tagValue})`;
   // Encoding always writes the selected tag, so the wire value decodes to the same variant.
-  const encodeBranch = (branch: DispatchBranch, tagValue: string, tagMayBeMissing: boolean): string => {
-    if (!encode) return branch.convert;
-    if (direction === 'encode-value') return `withDiscriminatorValue(${branch.convert}, ${key}, ${tagValue})`;
-    if (branch.writesTag === false) return injectJson(branch.convert, tagValue);
-    return tagMayBeMissing ? `(${tag} === undefined ? ${injectJson(branch.convert, tagValue)} : ${branch.convert})` : branch.convert;
+  const encodeBranch = (branch: DispatchBranch, tagValue: Code, tagMayBeMissing: boolean): Code => {
+    const convert = asCode(branch.convert);
+    if (!encode) return convert;
+    if (direction === 'encode-value') return code`${rt.conversion.withDiscriminatorValue}(${convert}, ${key}, ${tagValue})`;
+    if (branch.writesTag === false) return injectJson(convert, tagValue);
+    return tagMayBeMissing ? code`(${tag} === undefined ? ${injectJson(convert, tagValue)} : ${convert})` : convert;
   };
   let converted = encode
-    ? `(${expression} == null ? ${options.nullish ?? expression} : ${reject})`
-    : `(${objectValueExpression(expression)} ? ${reject} : ${expression})`;
+    ? code`(${value} == null ? ${options.nullish === undefined ? value : asCode(options.nullish)} : ${reject})`
+    : code`(${objectValueExpression(expression)} ? ${reject} : ${value})`;
   for (let index = branches.length - 1; index >= 0; index--) {
     const branch = branches[index];
     // The first test that runs reads the tag; every path through the chain starts there.
     const guard = tagLocal && index === 0
-      ? `${objectValueExpression(expression)} && (${tagLocal} = ${tagRead}, ${discriminatorMatch(tagLocal, branch.values)})`
-      : `${objectValueExpression(expression)} && ${discriminatorMatch(tag, branch.values)}`;
-    converted = `${guard} ? (${encodeBranch(branch, tag, false)}) : (${converted})`;
+      ? code`${objectValueExpression(expression)} && (${tag} = ${tagRead}, ${discriminatorMatch(tag, branch.values)})`
+      : code`${objectValueExpression(expression)} && ${discriminatorMatch(tag, branch.values)}`;
+    converted = code`${guard} ? (${encodeBranch(branch, tag, false)}) : (${converted})`;
   }
   const classes = branches.flatMap((branch) => branch.className ? [branch.className] : []);
   for (let index = branches.length - 1; index >= 0; index--) {
     const branch = branches[index];
     if (!branch.className) continue;
-    const self = branch.className;
-    const subclasses = classes.filter((other) => other !== self)
-      .map((other) => ` && !((${expression} as object) instanceof ${other} && ${other}.prototype instanceof ${self})`);
-    const guard = `(${expression} as object) instanceof ${self}${subclasses.join('')}`;
-    const ownTag = options.canonicalTag ? `(${tag} === undefined ? ${JSON.stringify(branch.values[0])} : ${tag})` : tag;
+    const self = legacyText(branch.className);
+    const subclasses = classes.filter((other) => other !== branch.className)
+      .map((other) => code` && !((${value} as object) instanceof ${legacyText(other)} && ${legacyText(other)}.prototype instanceof ${self})`);
+    const guard = code`(${value} as object) instanceof ${self}${join(subclasses)}`;
+    const ownTag = options.canonicalTag ? code`(${tag} === undefined ? ${literal(branch.values[0])} : ${tag})` : tag;
     const accepted = options.canonicalTag
-      ? `${tag} === undefined || ${discriminatorMatch(tag, branch.values)}`
+      ? code`${tag} === undefined || ${discriminatorMatch(tag, branch.values)}`
       : discriminatorMatch(tag, branch.values);
-    const body = `${accepted} ? (${encodeBranch(branch, ownTag, options.canonicalTag)}) : ${reject}`;
-    converted = `${guard} ? (${body}) : (${converted})`;
+    const body = code`${accepted} ? (${encodeBranch(branch, ownTag, options.canonicalTag)}) : ${reject}`;
+    converted = code`${guard} ? (${body}) : (${converted})`;
   }
-  return `(${converted})`;
+  return code`(${converted})`;
 }
 
 /** The variants of a `scalar | scalar[]` or `scalar | [T, ...]` union: its one sequence, and the scalar variants beside it. */
@@ -285,7 +303,7 @@ export function emitSequenceBranch(
   sequence: ScalarOrArray['sequence'],
   expression: string,
   items: SequenceItems,
-): string {
+): Code {
   return sequence.kind === 'array'
     ? emitArrayItems(sequence.item, expression, items)
     : emitTupleItems(sequence, expression, items);
@@ -306,11 +324,12 @@ export function scalarBranchVariant(scalars: readonly ModelTypeDescriptor[]): Mo
 
 export function emitScalarOrArrayConversion(
   expression: string,
-  mappedArray: string,
-  scalar: string,
-): string {
-  if (mappedArray === expression && scalar === expression) return expression;
-  return `Array.isArray(${expression}) ? (${mappedArray}) : (${scalar})`;
+  mappedArray: Code,
+  scalar: Code,
+): Code {
+  const value = legacyText(expression);
+  if (sameCode(mappedArray, value) && sameCode(scalar, value)) return value;
+  return code`Array.isArray(${value}) ? (${mappedArray}) : (${scalar})`;
 }
 
 /** Which walker asks for the conversion. `stringify` writes JSON text; the others write a value. */
@@ -321,35 +340,38 @@ type GeneratedModelTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind
 /** A union of one generated model and tagged objects, or scalars: the model takes the objects whose tag does not match. */
 export interface GeneratedWithObjects {
   /** The conversion of the model; undefined when this walker emits no class for it. */
-  readonly text: (generated: GeneratedModelTypeDescriptor) => string | undefined;
+  readonly text: (generated: GeneratedModelTypeDescriptor) => Emitted | undefined;
   /** The tag tests of the object variants. */
-  readonly tagMatch: (objects: readonly ObjectTypeDescriptor[]) => string[];
+  readonly tagMatch: (objects: readonly ObjectTypeDescriptor[]) => Emitted[];
   /** The conversion of the object variants whose tag matches. */
-  readonly objects: (objects: readonly ObjectTypeDescriptor[]) => string;
+  readonly objects: (objects: readonly ObjectTypeDescriptor[]) => Emitted;
   /** With no tagged object, the model takes every object whatever the other variants are. */
   readonly takesEveryObject?: boolean;
 }
 
-/** What a walker gives the shared union emitter: its conversions, and the steps that only its direction has. */
+/**
+ * What a walker gives the shared union emitter: its conversions, and the steps that only its direction has. A walker that
+ * has not moved to Code returns strings and takes the emitted pieces as strings.
+ */
 export interface UnionConversion {
   /** The conversion of one variant, written against the union's expression. */
-  readonly convert: (variant: ModelTypeDescriptor) => string;
+  readonly convert: (variant: ModelTypeDescriptor) => Emitted;
   /** The item conversion of the array or tuple of a scalar-or-array union. */
   readonly items: SequenceItems;
   /** Joins the converted sequence and scalar; defaults to the value form. */
-  readonly joinSequence?: (mapped: string, scalar: string) => string;
+  readonly joinSequence?: (mapped: string, scalar: string) => Emitted;
   /** Dispatch by tag (and class); undefined when the variants carry no tag to dispatch on. */
-  readonly tagged: () => string | undefined;
+  readonly tagged: () => Emitted | undefined;
   /**
    * Wraps the conversion of an inline array, tuple or object branch, so a value that holds itself is found at its first
    * repeat. A branch that is a named node guards itself, and the union guards nothing at its entry: it hands the same value on.
    */
-  readonly guard?: (variant: ModelTypeDescriptor, code: string) => string;
+  readonly guard?: (variant: ModelTypeDescriptor, code: string) => Emitted;
   /** A step before the generated-model one, which returns the whole conversion or undefined. */
-  readonly beforeGenerated?: (present: readonly ModelTypeDescriptor[]) => string | undefined;
+  readonly beforeGenerated?: (present: readonly ModelTypeDescriptor[]) => Emitted | undefined;
   readonly generated?: GeneratedWithObjects;
   /** A step after the generated-model one, which returns the whole conversion or undefined. */
-  readonly afterGenerated?: (present: readonly ModelTypeDescriptor[]) => string | undefined;
+  readonly afterGenerated?: (present: readonly ModelTypeDescriptor[]) => Emitted | undefined;
 }
 
 /** The variant kinds that sit beside one object or model in a value conversion and need no conversion. */
@@ -366,52 +388,54 @@ export function emitUnionConversion(
   expression: string,
   direction: UnionDirection,
   conversion: UnionConversion,
-): string {
+): Code {
   const json = direction === 'stringify';
+  const value = legacyText(expression);
+  const convert = (variant: ModelTypeDescriptor): Code => asCode(conversion.convert(variant));
   // A branch that converts nothing stays the value itself, so it has nothing to guard.
-  const guarded = (variant: ModelTypeDescriptor, code: string): string =>
-    code === expression || !conversion.guard ? code : conversion.guard(variant, code);
-  const plain = json ? `stringifyJsonScalar(${expression} as never)` : expression;
+  const guarded = (variant: ModelTypeDescriptor, converted: Code): Code =>
+    sameCode(converted, value) || !conversion.guard ? converted : asCode(conversion.guard(variant, render(converted)));
+  const plain = json ? code`${rt.serde.stringifyJsonScalar}(${value} as never)` : value;
   const present = presentUnionVariants(descriptor);
   if (present.length === 1 && present.length !== descriptor.variants.length) {
-    const converted = conversion.convert(present[0]);
-    if (json) return `(${expression} == null ? 'null' : (${converted}))`;
-    return converted === expression ? expression : `${expression} == null ? ${expression} : (${converted})`;
+    const converted = convert(present[0]);
+    if (json) return code`(${value} == null ? 'null' : (${converted}))`;
+    return sameCode(converted, value) ? value : code`${value} == null ? ${value} : (${converted})`;
   }
   const pair = scalarOrArray(present);
   if (pair) {
     const { sequence, scalars } = pair;
     const scalarVariant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
-    const scalar = scalarVariant ? conversion.convert(scalarVariant) : plain;
+    const scalar = scalarVariant ? convert(scalarVariant) : plain;
     const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
-    return conversion.joinSequence?.(mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
+    return joined(conversion, mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
   }
   const jsonValue = scalarArrayObject(present);
   if (jsonValue) {
     const { sequence, scalars, object } = jsonValue;
     const scalarVariant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
-    const scalar = scalarVariant ? conversion.convert(scalarVariant) : plain;
-    const converted = guarded(object, conversion.convert(object));
+    const scalar = scalarVariant ? convert(scalarVariant) : plain;
+    const converted = guarded(object, convert(object));
     const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
-    const rest = converted === plain && scalar === plain
+    const rest = sameCode(converted, plain) && sameCode(scalar, plain)
       ? plain
       : json
-        ? `(${objectValueExpression(expression)} ? ${converted} : ${scalar})`
-        : `${objectValueExpression(expression)} ? (${converted}) : ${scalar}`;
-    return conversion.joinSequence?.(mapped, rest) ?? emitScalarOrArrayConversion(expression, mapped, rest);
+        ? code`(${objectValueExpression(expression)} ? ${converted} : ${scalar})`
+        : code`${objectValueExpression(expression)} ? (${converted}) : ${scalar}`;
+    return joined(conversion, mapped, rest) ?? emitScalarOrArrayConversion(expression, mapped, rest);
   }
   const tagged = conversion.tagged();
-  if (tagged !== undefined) return tagged;
+  if (tagged !== undefined) return asCode(tagged);
   const before = conversion.beforeGenerated?.(present);
-  if (before !== undefined) return before;
+  if (before !== undefined) return asCode(before);
   const withObjects = conversion.generated && generatedWithObjects(present, expression, plain, conversion.generated);
   if (withObjects) return withObjects;
   const after = conversion.afterGenerated?.(present);
-  if (after !== undefined) return after;
+  if (after !== undefined) return asCode(after);
   // A stringify walker converts the one object or model before it compares all conversions; the others compare first.
-  const unchanged = (): string | undefined => {
-    const conversions = present.map(conversion.convert);
-    return conversions.every((converted) => converted === plain) ? plain : undefined;
+  const unchanged = (): Code | undefined => {
+    const conversions = present.map(convert);
+    return conversions.every((converted) => sameCode(converted, plain)) ? plain : undefined;
   };
   if (!json) {
     const same = unchanged();
@@ -424,39 +448,46 @@ export function emitUnionConversion(
     && present.every((variant) => variant === objectsOrModels[0]
       || (json ? isScalarishDescriptor(variant) : PLAIN_VARIANT_KINDS.includes(variant.kind)))
   ) {
-    const converted = conversion.convert(objectsOrModels[0]);
+    const converted = convert(objectsOrModels[0]);
     return json
-      ? `(${objectValueExpression(expression)} ? ${converted} : ${plain})`
-      : `${objectValueExpression(expression)} ? (${converted}) : ${expression}`;
+      ? code`(${objectValueExpression(expression)} ? ${converted} : ${plain})`
+      : code`${objectValueExpression(expression)} ? (${converted}) : ${value}`;
   }
   if (json) {
     const same = unchanged();
     if (same !== undefined) return same;
   }
   if (direction === 'decode' || direction === 'encode') {
-    if (!descriptorNeedsConversion(descriptor)) return expression;
+    if (!descriptorNeedsConversion(descriptor)) return value;
   }
   throw new Error(AMBIGUOUS_UNION_CONVERSION_ERROR);
+}
+
+/** The walker's own join of the sequence and the scalar, when it gives one. */
+function joined(conversion: UnionConversion, mapped: Code, scalar: Code): Code | undefined {
+  const result = conversion.joinSequence?.(render(mapped), render(scalar));
+  return result === undefined ? undefined : asCode(result);
 }
 
 function generatedWithObjects(
   present: readonly ModelTypeDescriptor[],
   expression: string,
-  plain: string,
+  plain: Code,
   options: GeneratedWithObjects,
-): string | undefined {
+): Code | undefined {
   const generated = present.filter((variant): variant is GeneratedModelTypeDescriptor => variant.kind === 'generated-model');
   if (generated.length !== 1) return undefined;
-  const generatedText = options.text(generated[0]);
-  if (generatedText === undefined) return undefined;
+  const generatedEmitted = options.text(generated[0]);
+  if (generatedEmitted === undefined) return undefined;
+  const generatedCode = asCode(generatedEmitted);
   const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
   if (objects.length > 0 && !objectDiscriminator(objects)) throw new ObjectUnionDiscriminatorError(objects);
   const tagged = options.tagMatch(objects);
   if (tagged.length) {
-    return `(${objectValueExpression(expression)} && !(${tagged.join(' || ')}) ? ${generatedText} : ${options.objects(objects)})`;
+    return code`(${objectValueExpression(expression)} && !(${join(tagged.map(asCode), code` || `)}) ? ${generatedCode} : ${asCode(options.objects(objects))})`;
   }
   if (options.takesEveryObject || present.every((variant) => variant === generated[0] || isScalarishDescriptor(variant))) {
-    return `(${objectValueExpression(expression)} ? ${generatedText} : ${plain})`;
+    return code`(${objectValueExpression(expression)} ? ${generatedCode} : ${plain})`;
   }
   return undefined;
 }

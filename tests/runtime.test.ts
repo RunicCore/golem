@@ -297,15 +297,15 @@ test('shared emitter emits exact generated-model conversion expressions', () => 
     encode: (expression: string) => `encodeGeneratedModel(${expression})`,
   });
   assert.equal(
-    emitter.emitModelFromJSON(
+    emitter.render(emitter.emitModelFromJSON(
       { kind: 'array', item: { kind: 'generated-model', id: 'money' } },
       'value',
       resolveModel,
-    ),
+    )),
     'Array.isArray(value) ? convertModelItems("deserialize", (item) => (item == null || item instanceof MoneyModel ? item : decodeGeneratedModel(MoneyModel, item)), value as readonly unknown[]) : value',
   );
   assert.equal(
-    emitter.emitModelToJSON({ kind: 'generated-model', id: 'money' }, 'value', resolveModel),
+    emitter.render(emitter.emitModelToJSON({ kind: 'generated-model', id: 'money' }, 'value', resolveModel)),
     'value instanceof MoneyModel ? encodeGeneratedModel(value) : value',
   );
 });

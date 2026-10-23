@@ -3,7 +3,7 @@ import test from 'node:test';
 import { transformSync } from 'esbuild';
 
 import * as conversion from '@exprtlabs/golem/conversion';
-import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON } from '@exprtlabs/golem/internal/emitter';
+import { emitCodecRuntime, emitModelFromInit, emitModelFromJSON, emitModelToJSON, render } from '@exprtlabs/golem/internal/emitter';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
@@ -184,8 +184,8 @@ test('model conversion writes a variant instance by class and rejects unknown or
     return (value) => convert(ModelCat, ModelDog, conversion.unknownDiscriminatorValue, conversion.withDiscriminatorValue,
       conversion.convertModelField, value);
   };
-  const toJson = compile(emitModelToJSON(union, 'value', resolveModel), 'serialize');
-  const fromJson = compile(emitModelFromJSON(union, 'value', resolveModel), 'deserialize');
+  const toJson = compile(render(emitModelToJSON(union, 'value', resolveModel)), 'serialize');
+  const fromJson = compile(render(emitModelFromJSON(union, 'value', resolveModel)), 'deserialize');
   const cat = Object.assign(new ModelCat(), { name: 'Miso' });
   const wire = toJson(cat);
   assert.deepEqual(wire, { kind: 'cat', name: 'Miso' }, 'an untagged instance writes the canonical tag');
@@ -197,7 +197,7 @@ test('model conversion writes a variant instance by class and rejects unknown or
   assert.throws(() => toJson({ name: 'Miso' }), failsWith(LibErrorKind.Serialization, /discriminator value/));
 
   for (const emit of [emitModelFromJSON, emitModelFromInit]) {
-    const decode = compile(emit(union, 'value', resolveModel), 'deserialize');
+    const decode = compile(render(emit(union, 'value', resolveModel)), 'deserialize');
     const decodedKitty = decode({ kind: 'kitty' });
     assert.ok(decodedKitty instanceof ModelCat, emit.name);
     assert.ok(!(decodedKitty instanceof ModelDog), emit.name);
@@ -229,7 +229,7 @@ test('inferred literal tags require the tag on an instance too', () => {
     decode: (value: string) => value,
     encode: (value: string) => `({ ...${value} })`,
   });
-  const expression = transformSync(`(${emitModelToJSON(union, 'value', resolveModel)})`, { loader: 'ts', target: 'es2022' })
+  const expression = transformSync(`(${render(emitModelToJSON(union, 'value', resolveModel))})`, { loader: 'ts', target: 'es2022' })
     .code.trim().replace(/;$/, '');
   const toJson = new Function('LiteralCat', 'LiteralDog', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'value',
     `return ${expression};`) as RuntimeFunction;

@@ -7,6 +7,7 @@ import {
   emitModelFromInit,
   emitModelFromJSON,
   emitModelToJSON,
+  render,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
   type SerdeResolver,
@@ -160,11 +161,11 @@ test('intersection conversion merges object fields and runs overlapping conversi
   };
 
   const fromJSON = compileConversion(
-    emitModelFromJSON(descriptor, 'value', () => fromChild, serde),
+    render(emitModelFromJSON(descriptor, 'value', () => fromChild, serde)),
     bindings,
   );
   const toJSON = compileConversion(
-    emitModelToJSON(descriptor, 'value', () => toChild, serde),
+    render(emitModelToJSON(descriptor, 'value', () => toChild, serde)),
     bindings,
   );
 
@@ -207,11 +208,11 @@ test('intersection and nullable fromInit preserve domain Date values while const
     ],
   };
   const fromInit = compileConversion(
-    emitModelFromInit(descriptor, 'value', () => fromChild),
+    render(emitModelFromInit(descriptor, 'value', () => fromChild)),
     bindings,
   );
   const nullableDate = compileConversion(
-    emitModelFromInit({ kind: 'union', variants: [{ kind: 'date' }, { kind: 'null' }] }, 'value', () => fromChild),
+    render(emitModelFromInit({ kind: 'union', variants: [{ kind: 'date' }, { kind: 'null' }] }, 'value', () => fromChild)),
     bindings,
   );
 
@@ -247,11 +248,11 @@ test('discriminated plain object unions convert only the selected branch', () =>
     ],
   };
   const fromJSON = compileConversion(
-    emitModelFromJSON(descriptor, 'value', () => fromChild, serde),
+    render(emitModelFromJSON(descriptor, 'value', () => fromChild, serde)),
     bindings,
   );
   const toJSON = compileConversion(
-    emitModelToJSON(descriptor, 'value', () => toChild, serde),
+    render(emitModelToJSON(descriptor, 'value', () => toChild, serde)),
     bindings,
   );
 
@@ -341,7 +342,7 @@ test('ambiguous union conversions fail generation instead of probing codecs', ()
     },
   ];
   for (const { name, descriptor, message } of cases) {
-    assert.throws(() => emitModelFromJSON(descriptor, 'value', () => fromChild, serde), message, name);
+    assert.throws(() => render(emitModelFromJSON(descriptor, 'value', () => fromChild, serde)), message, name);
   }
 });
 
@@ -354,9 +355,9 @@ test('scalar-or-array unions convert the scalar and the array items without doub
       { kind: 'array', item: { kind: 'union', variants: [{ kind: 'literal', value: 'paid' }, { kind: 'literal', value: 'pending' }] } },
     ],
   };
-  assert.equal(emitModelFromJSON(status, 'value', () => fromChild), 'value', 'identity unions emit no Array.isArray map');
-  assert.equal(emitModelToJSON(status, 'value', () => toChild), 'value');
-  assert.doesNotMatch(emitModelFromJSON(status, 'value', () => fromChild), /Array\.isArray/);
+  assert.equal(render(emitModelFromJSON(status, 'value', () => fromChild)), 'value', 'identity unions emit no Array.isArray map');
+  assert.equal(render(emitModelToJSON(status, 'value', () => toChild)), 'value');
+  assert.doesNotMatch(render(emitModelFromJSON(status, 'value', () => fromChild)), /Array\.isArray/);
   resetCounters();
   const token: ModelConversionDescriptor = {
     kind: 'number',
@@ -369,7 +370,7 @@ test('scalar-or-array unions convert the scalar and the array items without doub
       { kind: 'array', item: token },
     ],
   };
-  const source = emitModelFromJSON(descriptor, 'value', () => fromChild, serde);
+  const source = render(emitModelFromJSON(descriptor, 'value', () => fromChild, serde));
   assert.match(source, /Array\.isArray\(value\)/, 'the scalar-or-array union branches on Array.isArray');
   assert.equal(
     source.match(/Array\.isArray/g)?.length,

@@ -2,6 +2,7 @@ import {
   CompositionConflictError,
   ObjectUnionDiscriminatorError,
   emitModelFromJSON,
+  render,
   FIELD_CONVERSION_INPUT,
   singleCallConverter,
   emitModelFromInit,
@@ -177,12 +178,12 @@ export function modelFromJSONExpression(
   env: ModelResolveEnv,
   owner: string | CompositionSite,
 ): string {
-  return withConflictCode(owner, () => emitModelFromJSON(
+  return withConflictCode(owner, () => render(emitModelFromJSON(
     modelConversionDescriptor(schema, definitions, env, 'from'),
     expression,
     (reference) => modelResolver(reference, definitions, env),
     TEMPORAL_SERDE,
-  ));
+  )));
 }
 
 function modelInitExpression(
@@ -193,7 +194,7 @@ function modelInitExpression(
   owner: string | CompositionSite,
 ): string {
   const descriptor = modelConversionDescriptor(schema, definitions, env, 'from');
-  return withConflictCode(owner, () => emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions, env)));
+  return withConflictCode(owner, () => render(emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions, env))));
 }
 
 export function modelToJSONExpression(
@@ -203,7 +204,7 @@ export function modelToJSONExpression(
   env: ModelResolveEnv,
   owner: string | CompositionSite,
 ): string {
-  return withConflictCode(owner, () => emitModelToJSON(
+  return withConflictCode(owner, () => render(emitModelToJSON(
     modelConversionDescriptor(schema, definitions, env, 'to'),
     expression,
     (reference) => {
@@ -219,7 +220,7 @@ export function modelToJSONExpression(
       return { className: `${reference}Model`, encode: value => `encodeGeneratedModel(${value})`, ...(bases.length ? { bases } : {}) };
     },
     TEMPORAL_SERDE,
-  ));
+  )));
 }
 
 /**
@@ -541,8 +542,8 @@ function unionConversion(
   const resolve = (reference: string) => modelResolver(reference, definitions, env);
   try {
     return direction === 'fromJSON'
-      ? emitModelFromJSON(descriptor, 'value', resolve, TEMPORAL_SERDE)
-      : emitModelFromInit(descriptor, 'value', resolve);
+      ? render(emitModelFromJSON(descriptor, 'value', resolve, TEMPORAL_SERDE))
+      : render(emitModelFromInit(descriptor, 'value', resolve));
   } catch (thrown) {
     const error = codedConflict(thrown);
     const message = error instanceof Error ? error.message : String(error);
@@ -857,7 +858,7 @@ export function generateModels(
     output.push(`export type ${aliasType} = ${modelFieldType(alias.rawSchema, definitions, componentEnv(sharedModelEnv, alias.schemaName, alias.rawSchema))};`, '');
     if (aliasInitsModel(alias, definitions, sharedModelEnv)) {
       moduleScope.claim(aliasInitName(alias), `initializer of the recursive component ${JSON.stringify(alias.schemaName)}`, alias.schemaName);
-      const body = withConflictCode(alias.schemaName, () => emitModelFromInit(aliasDescriptor(alias, definitions, sharedModelEnv), 'value', (reference) => modelResolver(reference, definitions, sharedModelEnv)));
+      const body = withConflictCode(alias.schemaName, () => render(emitModelFromInit(aliasDescriptor(alias, definitions, sharedModelEnv), 'value', (reference) => modelResolver(reference, definitions, sharedModelEnv))));
       output.push(`export function ${aliasInitName(alias)}(value: unknown): ${aliasType} {`, `  return (${body}) as ${aliasType};`, '}', '');
     }
   }
