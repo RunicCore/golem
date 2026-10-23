@@ -60,8 +60,6 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
   const model = path.join(root, 'src/money.model.ts');
   fs.writeFileSync(model, fs.readFileSync(model, 'utf8').replace('note: string', 'note: string; extra?: string'));
   await until(() => built === 2, 'the rebuild after a model edit');
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  assert.equal(built, 2, 'one model edit triggers one rebuild, though the generate step wrote a file');
   assert.deepEqual(ran.slice(1), [['generator:out', 'models:.']], 'both jobs read the model source');
   assert.match(fs.readFileSync(companion, 'utf8'), /extra/);
   assert.match(fs.readFileSync(path.join(root, 'build/money.model.generated.js'), 'utf8'), /extra/, 'the build compiled the regenerated file');
@@ -69,12 +67,18 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
   // The models job's program reads the whole project, so `use.ts` is one of its inputs; the generator reads only the model.
   write(root, 'src/use.ts', `${USE}export const second = 2;\n`);
   await until(() => built === 3, 'the rebuild after a source edit');
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  assert.equal(built, 3, 'one edit triggers one rebuild');
-  assert.deepEqual(ran.slice(2), [['models:.']], 'the models job ran again and the generator did not');
+  // Builds run one after another: a rebuild the generate step's write caused would have finished before build 3, and its jobs would show in `ran`.
+  assert.deepEqual(ran.slice(1), [['generator:out', 'models:.'], ['models:.']], 'one model edit triggers one rebuild, though the generate step wrote a file; the models job ran again and the generator did not');
   assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /second = 2/);
+
+  // The sentinel edit starts build 4 only if the edit before it started exactly one rebuild.
+  write(root, 'src/use.ts', `${USE}export const second = 2;\nexport const third = 3;\n`);
+  await until(() => built === 4, 'the rebuild after the sentinel edit');
+  assert.deepEqual(ran.slice(3), [['models:.']], 'the sentinel edit started the fourth build');
+  assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /third = 3/);
   controller.abort();
   assert.equal((await finished).exitCode, 0);
+  assert.equal(built, 4, 'the sentinel edit started the last build');
 
   const after = snapshot(root);
   for (const file of ['golem.yaml', 'package.json', 'tsconfig.json']) assert.equal(after.get(file), before.get(file), `${file} is not a file golem build owns`);

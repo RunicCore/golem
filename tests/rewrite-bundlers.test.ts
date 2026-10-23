@@ -15,9 +15,16 @@ import { golem as vitePlugin } from '#golem/vite';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
+import { until } from './support/watch-wait.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
 
 const SERDE = '@exprtlabs/golem/serde';
+
+/** Vite caches a transform only when it starts after the module's invalidation, to the millisecond: returns once the clock has left the millisecond of the call. */
+function pastThisMillisecond(): void {
+  const start = Date.now();
+  while (Date.now() === start);
+}
 
 /** Bundlers resolve `.js` specifiers to their `.ts` files, so the imports are the ones tsc accepts. */
 const MAIN = `import { parse, stringify } from '${SERDE}';
@@ -368,7 +375,7 @@ test('vite serve: regenerating a model transforms again the module that used it,
   assert.equal(reloads(), 1);
 
   // Vite caches a transform only when it starts after the module's invalidation, to the millisecond.
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  pastThisMillisecond();
   const code = (await server.transformRequest('/src/main.ts'))?.code ?? '';
   assert.match(code, new RegExp(`"${newId}"`));
   assert.doesNotMatch(code, new RegExp(`"${oldId}"`));
@@ -432,7 +439,7 @@ test('vite serve: a module whose model had no generated code transforms again on
   await runPipeline(path.join(root, 'golem.yaml'));
   server.watcher.emit('add', keyTable(root));
   assert.equal(send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length, 1);
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  pastThisMillisecond();
   assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
 });
 
@@ -444,7 +451,7 @@ test('vite serve: a generated model file outside the project root transforms aga
   await runPipeline(path.join(root, 'golem.yaml'));
   server.watcher.emit('add', path.join(createFixtureProject(t, 'golem-bundler-outside-'), 'shared.model.generated.ts'));
   assert.equal(send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length, 1);
-  await new Promise((resolve) => setTimeout(resolve, 5));
+  pastThisMillisecond();
   assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
 });
 
@@ -467,8 +474,7 @@ async function watching(t: TestContext, root: string, entry: string): Promise<{ 
   return {
     bundle,
     async built(count) {
-      for (const deadline = Date.now() + 15_000; results.length < count && Date.now() < deadline;) await new Promise((resolve) => setTimeout(resolve, 50));
-      assert.ok(results.length >= count, `no build ${count}`);
+      await until(() => results.length >= count, `build ${count}`);
       return results[count - 1]!;
     },
   };

@@ -16,13 +16,13 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
 
   write(root, 'src/use.ts', `${USE}export const second = 2;\n`);
   await until(() => count(watcher.output(), /^Built /) === 2, 'the rebuild after one edit');
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  assert.equal(count(watcher.output(), /^Built /), 2, 'one edit triggers one rebuild');
   assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /second = 2/);
 
   write(root, 'src/use.ts', `${USE}export const broken: number = 'text';\n`);
   await until(() => count(watcher.output(), /^Build failed/) === 1, 'the failed build');
   assert.match(watcher.output(), /src\/use\.ts\(\d+,\d+\): error TS2322/);
+  // Builds run one after another: an extra rebuild after the first edit would have finished before this failed build.
+  assert.equal(count(watcher.output(), /^Built /), 2, 'one edit triggers one rebuild');
 
   write(root, 'src/use.ts', `${USE}export const third = 3;\n`);
   await until(() => count(watcher.output(), /^Built /) === 3, 'the build after the fix');
@@ -43,10 +43,14 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
   // Deleting the output starts one rebuild that writes it again; writing it is not a change.
   fs.rmSync(path.join(root, 'build'), { recursive: true });
   await until(() => count(watcher.output(), /^Built /) === 6, 'the rebuild after outDir was deleted');
-  await new Promise((resolve) => setTimeout(resolve, 1_000));
-  assert.equal(count(watcher.output(), /^Built /), 6, 'deleting outDir triggers exactly one rebuild');
   assert.ok(fs.existsSync(path.join(root, 'build/use.js')));
+
+  // The sentinel edit starts build 7 only if deleting outDir started exactly one rebuild; a build the output writes caused would come before it.
+  write(root, 'src/use.ts', `${USE}export const fourth = 4;\n`);
+  await until(() => count(watcher.output(), /^Built /) === 7, 'the rebuild after the sentinel edit');
+  assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /fourth = 4/, 'build 7 is the sentinel edit, not a rebuild of the deleted output');
   assert.equal(await watcher.stop(), 130);
+  assert.equal(count(watcher.output(), /^Built /), 7, 'deleting outDir triggers exactly one rebuild');
 
   // The edited model, the new files and the files the model edit regenerated are the changes this test made or caused.
   const changed = new Set(['src/added.ts', 'src/use.ts', 'src/money.model.ts', 'src/money.model.generated.ts', 'src/generated/models/models.validators.generated.ts']);
