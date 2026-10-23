@@ -18,7 +18,7 @@ import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
-import { signature } from './watch.js';
+import { changedPaths, InputPoller, ownDirectories, RunBaseline } from './input-poller.js';
 
 interface BuildOptions {
   /**
@@ -500,8 +500,8 @@ interface BuildRun {
   readonly owned: Set<string>;
   /** The directories that hold the program's sources outside the tsconfig's directory: a source added beside one is a change to build for. */
   readonly outsideDirectories: Set<string>;
-  /** For a watching build, each file's signature when the build first reads it, which is the only baseline a file the build has not met before can have. */
-  readonly baselines?: Map<string, string>;
+  /** For a watching build, what the build reads first and what it was then: the only baseline a file the build has not met before can have. */
+  baseline?: RunBaseline;
   readonly generation: GeneratorSessionResources;
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
   /** The last generate run that finished: the next run reruns only the jobs a changed input reaches. Empty after a failed run. */
@@ -514,7 +514,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const observe = (filename: string): void => {
     const file = path.resolve(filename);
     inputs.add(file);
-    if (run.baselines !== undefined && !run.baselines.has(file)) run.baselines.set(file, signature(file));
+    run.baseline?.observe(file);
   };
   const golemConfig = readGolemConfig(run.config, observe);
   const configFile = resolveProject(run.project, golemConfig);
@@ -542,7 +542,10 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   outsideDirectories.clear();
   const observeSource = (filename: string): void => {
     observe(filename);
-    if (!isInsideDirectory(root, filename)) outsideDirectories.add(path.dirname(filename));
+    if (!isInsideDirectory(root, filename)) {
+      outsideDirectories.add(path.dirname(filename));
+      run.baseline?.observeFolder(path.dirname(filename));
+    }
   };
   for (const filename of parsed.fileNames) observeSource(filename);
   const checkState = path.join(project.buildDirectory, 'check.tsbuildinfo');
@@ -604,42 +607,6 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
 }
 
 /**
- * The names in a directory, without the build's own: what a watching build compares to notice a source that was added or
- * removed. Its output and state directories and the files it generates come and go with the build itself, which is no reason to build again.
- */
-function directorySignature(directory: string, ownDirectories: ReadonlySet<string>, generated: ReadonlySet<string>): string {
-  try {
-    return fs.readdirSync(directory).filter((name) => !ownDirectories.has(path.join(directory, name)) && !generated.has(path.join(directory, name))).sort().join('\n');
-  } catch {
-    return 'missing';
-  }
-}
-
-/**
- * The directories above each input up to the root: a file added beside an input changes one of them. A source outside the root adds its own
- * directory and no other: what lies above it may be a whole monorepo.
- */
-function watchedDirectories(root: string, inputs: ReadonlySet<string>, outsideDirectories: ReadonlySet<string>): Set<string> {
-  const directories = new Set<string>(outsideDirectories);
-  for (const input of inputs) {
-    for (let directory = path.dirname(input); isInsideDirectory(root, directory) && !directories.has(directory); directory = path.dirname(directory)) {
-      if (directory.split(path.sep).includes('node_modules') || directory === path.join(root, GOLEM_DIRECTORY)) break;
-      directories.add(directory);
-    }
-  }
-  return directories;
-}
-
-/** The build's own directories: `.golem`, every directory it writes, and the directories between the root and those. */
-function ownDirectories(root: string, outputs: ReadonlySet<string>): Set<string> {
-  const own = new Set([path.join(root, GOLEM_DIRECTORY)]);
-  for (const output of outputs) {
-    for (let directory = output; isInsideDirectory(root, directory) && directory !== root; directory = path.dirname(directory)) own.add(directory);
-  }
-  return own;
-}
-
-/**
  * Generate the golem.yaml's code, check the original sources of its tsconfig and emit the rewritten ones into its outDir. The project's
  * own compiler does both, incrementally. With `watch`, the build repeats when an input changes and ends on `signal`.
  */
@@ -655,7 +622,6 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   // Whether the directories the build writes existed when it ended: one that vanishes afterwards, such as a deleted outDir, is rebuilt once.
   // Taken before "Built" is printed, so a deletion that follows that line is seen.
   let wrote = true;
-  const baselines = options.watch ? new Map<string, string>() : undefined;
   const state: BuildRun = {
     project: options.project,
     config: options.config,
@@ -666,7 +632,6 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     outsideDirectories: new Set<string>(),
     generation,
     ...(options.onGenerated === undefined ? {} : { onGenerated: options.onGenerated }),
-    ...(baselines === undefined ? {} : { baselines }),
   };
   const run = async (changed?: readonly string[], beforeAnnouncing: () => void = () => {}): Promise<number> => {
     const exitCode = await buildOnce(session, state, changed);
@@ -680,23 +645,23 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   if (!options.watch) return { exitCode: await run() };
 
   let exitCode = 0;
-  let previous = new Map<string, string>();
-  let directories = new Map<string, string>();
-  const fingerprints = (): Map<string, string> => new Map([...inputs].map((input) => [input, signature(input)]));
-  const directorySignatures = (): Map<string, string> => {
+  const pollerOf = (): InputPoller => new InputPoller(inputs, { root, outsideDirectories: state.outsideDirectories });
+  // The build's own names, which come and go with the build itself: the directories it writes and the files it generates.
+  const ownership = (): ((filename: string) => boolean) => {
     const own = ownDirectories(root, outputs);
-    return new Map([...watchedDirectories(root, inputs, state.outsideDirectories)].map((directory) => [directory, directorySignature(directory, own, state.owned)]));
+    return (filename) => own.has(filename) || state.owned.has(filename);
   };
-  const attempt = async (changed?: readonly string[]): Promise<void> => {
-    // Signatures from before the build, so an edit or a new file made during it starts the next build. The first build has no
+  let poller = pollerOf();
+  let previous = poller.snapshot();
+  const attempt = async (changed: readonly string[] | undefined, before = poller.snapshot()): Promise<void> => {
+    // The poll from before the build, so an edit or a new file made during it starts the next build. The first build has no
     // inputs yet: its files carry the signature they had when the build first read them.
-    const before = fingerprints();
-    const directoriesBefore = directorySignatures();
-    baselines?.clear();
+    const baseline = new RunBaseline(before, root);
+    state.baseline = baseline;
     const record = (): void => {
       // A file the generate step wrote is the build's own: its signature after the build is the one the next build compares with.
-      previous = new Map([...fingerprints()].map(([input, value]) => [input, state.owned.has(input) ? value : before.get(input) ?? baselines?.get(input) ?? value]));
-      directories = new Map([...directorySignatures()].map(([directory, value]) => [directory, directoriesBefore.get(directory) ?? value]));
+      poller = pollerOf();
+      previous = baseline.settle(poller.snapshot(), (file) => state.owned.has(file));
     };
     try {
       exitCode = await run(changed, record);
@@ -708,19 +673,18 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       record();
     }
   };
-  await attempt();
+  await attempt(undefined);
   process.stdout.write('Watching for changes.\n');
   await new Promise<void>((resolve) => {
     let busy = false;
     const timer = setInterval(() => {
       if (busy) return;
-      const changed = [...fingerprints()].filter(([input, value]) => previous.get(input) !== value).map(([input]) => input);
-      const own = ownDirectories(root, outputs);
-      const added = [...directories].some(([directory, value]) => directorySignature(directory, own, state.owned) !== value);
-      if (changed.length === 0 && !added && !(wrote && !outputsPresent())) return;
+      const current = poller.snapshot();
+      const changed = changedPaths(previous, current, ownership());
+      if (changed.length === 0 && !(wrote && !outputsPresent())) return;
       busy = true;
       session.inputsChanged(changed);
-      void attempt(changed).finally(() => { busy = false; if (options.signal?.aborted) { clearInterval(timer); resolve(); } });
+      void attempt(changed, current).finally(() => { busy = false; if (options.signal?.aborted) { clearInterval(timer); resolve(); } });
     }, POLL_MS);
     const stop = (): void => { clearInterval(timer); if (!busy) resolve(); };
     if (options.signal?.aborted) stop();
