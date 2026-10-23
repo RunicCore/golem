@@ -5,7 +5,7 @@
  * `emitTupleItems` have none. It imports no walker.
  */
 import type { ModelTypeDescriptor } from '../model.js';
-import { code, emittedCode, identifier, legacyText, literal, readShape, sameCode, type Code, type Emitted } from './code.js';
+import { asObjectLiteral, code, emittedCode, identifier, legacyText, literal, readShape, sameCode, type Code, type Emitted } from './code.js';
 import { rt } from './rt.js';
 
 export type TupleConversionDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'tuple' }>;
@@ -69,8 +69,7 @@ const ITEM = identifier('item');
 const INDEX = identifier('index');
 const TUPLE = identifier('tuple');
 /** What a `json` tuple writes for an item past the declared items, and for an item that needs no conversion. */
-export const JSON_SCALAR_ITEM = 'stringifyJsonScalar(item as never)';
-const JSON_SCALAR = code`${rt.serde.stringifyJsonScalar}(${ITEM} as never)`;
+export const JSON_SCALAR = code`${rt.serde.stringifyJsonScalar}(${ITEM} as never)`;
 
 /** The array argument of a runtime loop function. A name or a chain of reads needs no parentheses before `as`. */
 function asArray(expression: Emitted): Code {
@@ -80,8 +79,7 @@ function asArray(expression: Emitted): Code {
 
 /** An arrow body that is an object literal needs parentheses, or it parses as a block. */
 function arrowBody(body: Code): Code {
-  const first = body.parts[0];
-  return first?.kind === 'text' && first.text.startsWith('{') ? code`(${body})` : body;
+  return body.objectLiteral ? code`(${body})` : body;
 }
 
 /** An item as the loop uses it: its code, the function when the code is one call on the item, and whether it can throw. */
@@ -92,7 +90,8 @@ interface ConvertedItem {
 }
 
 function convertedItem(item: SequenceItem): ConvertedItem {
-  const converted = typeof item.code === 'string' ? legacyText(item.code) : item.code;
+  // migration door, deleted in steps 5 and 6 (T-288, T-289): the text of a walker that gives a string says it is an object literal by its first character
+  const converted = typeof item.code !== 'string' ? item.code : item.code.startsWith('{') ? asObjectLiteral(legacyText(item.code)) : legacyText(item.code);
   return { code: converted, callee: calleeOf(converted, 'item'), throws: item.throws };
 }
 

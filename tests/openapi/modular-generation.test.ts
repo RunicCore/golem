@@ -728,6 +728,35 @@ test('sequential same-title generation jobs keep schema and resource contexts is
   );
 });
 
+test('a model with a constant field only and a model with no field compile under noUnusedParameters and still write their JSON', async t => {
+  // protects: T-295 a stringify core that reads no value declares it as _value
+  const { source } = fixture(t);
+  const operation = (operationId: string, schema: Record<string, unknown>) => ({
+    post: {
+      operationId,
+      requestBody: { required: true, content: { 'application/json': { schema } } },
+      responses: { 200: { description: 'echo', content: { 'application/json': { schema } } } },
+    },
+  });
+  writeGeneratedSdk(writeSdk, {
+    openapi: '3.1.0',
+    info: { title: 'Fieldless Models', version: '1' },
+    components: { schemas: {
+      Fixed: { type: 'object', required: ['kind'], properties: { kind: { const: 'only' } }, additionalProperties: false },
+    } },
+    paths: {
+      '/fixed': operation('putFixed', { $ref: '#/components/schemas/Fixed' }),
+      '/empty': operation('putEmpty', { type: 'object', properties: {}, additionalProperties: false }),
+    },
+  }, { output: source, name: 'Fieldless', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(source, [], STRICT_OPTIONS);
+  const fixed = await loadOperation(source, 'putFixed');
+  await fixed.operation.execute({ body: { kind: 'only' } });
+  const empty = await loadOperation(source, 'putEmpty');
+  await empty.operation.execute({ body: {} });
+  assert.deepEqual([fixed.requests, empty.requests], [['{"kind":"only"}'], ['{}']]);
+});
+
 test('the SDK validators module exports one named function per root and no record', async t => {
   const { source } = fixture(t);
   const result = writeGeneratedSdk(writeSdk, contextDocument('alpha'), { output: source, name: 'Context', profile: { mobx: false, validation: true } });
