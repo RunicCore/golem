@@ -60,7 +60,7 @@ npm install --save-dev typescript@~7.0.2
 - `"outDir": ".build"`
 - `"rootDir": "."`
 
-`golem.yaml` names the project with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. The `@exprtlabs/*` package subpaths are ESM-only. Import them from ESM application code, or invoke the CLI directly. A NestJS app needs more compiler settings ([set up TypeScript](/guide/nestjs#set-up-typescript)). Choose how the build rewrites your calls in [Build your app](/guide/build).
+`golem.yaml` names the project with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. The `@exprtlabs/*` package subpaths are ESM-only. Import them from ESM application code, or invoke the CLI directly. A NestJS app needs more compiler settings ([set up TypeScript](/guide/nestjs-requests#set-up-typescript)). Choose how the build rewrites your calls in [Build your app](/guide/build).
 
 ## Runtime dependencies
 

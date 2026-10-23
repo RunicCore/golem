@@ -1,6 +1,6 @@
 # OpenAPI client support
 
-Check what the client generator supports for each OpenAPI version, feature and profile. The page also lists limits on NestJS controller generation.
+Check what the client generator supports for each OpenAPI version, feature and profile. The generator turns the validation keywords of a schema into model and client validation, whichever tool produced the document.
 
 The table opens on OpenAPI 3.1 with MobX off and validation on. Each row names the feature, whether it is available, and the limitation that still applies.
 
@@ -8,7 +8,7 @@ These limits show up often:
 
 - Callbacks and webhooks get TypeScript types. The application implements the handlers.
 - The client does not choose an OpenAPI `servers` URL. Pass `baseUrl`.
-- A whole query object stays one schema on OpenAPI 3.2. OpenAPI 3.1.2 flattens independent fields and rejects a contract whose constraints would be lost ([query compatibility](/reference/config#query-compatibility)).
+- A whole query object stays one schema on OpenAPI 3.2. OpenAPI 3.1.2 flattens independent fields and rejects a contract whose constraints would be lost ([query compatibility](/reference/nestjs#query-compatibility)).
 - A cookie parameter, or an API key sent through a cookie, reaches the server as a `Cookie` header from Node, but browsers don't let scripts set that header ([`OPENAPI_BROWSER_COOKIE`](/reference/diagnostics#openapi-browser-cookie)).
 
 <SupportTable>
@@ -55,11 +55,7 @@ OpenAPI 3.1 does not provide the `itemSchema` streaming contract; it needs OpenA
 
 ## Nest controller generation
 
-A whole query object stays one schema on OpenAPI 3.2. OpenAPI 3.1.2 flattens it into independent named parameters only when no contract rule is lost; when it can't, generation fails with a loss diagnostic naming the field and the rule it would drop.
-
-Class-level Swagger response decorators, such as `@ApiOkResponse()`, apply to every route on the class, including inherited routes. A method-level decorator for the same status replaces the class one. Repeated decorators on the same class or method apply from bottom to top, following `@nestjs/swagger`'s own merge order. Named helpers such as `@ApiTooManyRequestsResponse()` are supported, along with exact statuses, `1XX` through `5XX`, and `default`. A range or fallback response keeps the inferred `200` or `201` response.
-
-`@ApiExcludeEndpoint()` and `@ApiExcludeEndpoint(true)` omit a route; `false` keeps it. `@ApiOperation({ hidden: false })` cannot restore an explicitly excluded endpoint.
+The controller generator is described in [NestJS controllers](/reference/nestjs).
 
 ## Full compliance matrix
 

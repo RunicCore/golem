@@ -110,18 +110,7 @@ openapi:
 
 - The `backend` folder in this example has its own `tsconfig.json`, so `tsconfig` names it. Without one, leave `tsconfig` out to use the one beside `golem.yaml`.
 - A controller job writes only its configured document file.
-- Route helper return values over 1 MiB are rejected ([route helpers](/guide/nestjs-requests#route-helpers)).
-
-### Query compatibility
-
-| Target | Whole-query contract |
-| --- | --- |
-| OpenAPI 3.2 | Emits `in: querystring` with form content and the complete query schema. |
-| OpenAPI 3.1.2 | Flattens independent fields into named parameters and rejects contracts whose constraints would be lost. |
-
-Named `@Query('name')` parameters remain ordinary query parameters. Whole-query
-form encoding supports flat scalars and scalar arrays; arbitrary nested
-objects, dictionaries and nullable form values are rejected.
+- How controller constructs become OpenAPI, including route helpers and query objects, is in [NestJS controllers](/reference/nestjs).
 
 ## OpenAPI jobs
 

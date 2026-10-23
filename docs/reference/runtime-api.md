@@ -427,7 +427,7 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 - `@Param()` and `@Headers()` stay as Nest received them.
 - Query strings are decoded to the schema's scalar and array types before `fromWireFormat` ([query objects](/guide/nestjs-requests#query-objects)).
 
-For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. The request and response contract is in [NestModelInterceptor](/guide/nestjs-requests#nestmodelinterceptor).
+For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. The request and response contract is in [NestModelInterceptor](/guide/nestjs-requests#what-happens-to-a-request).
 
 ## `@exprtlabs/golem/rewrite` {#rewrite}
 
@@ -446,7 +446,7 @@ Every host scans each TypeScript file it compiles or loads with your project's o
 | `toWireFormat<T>(value)` | the generated `toWireFormat` for `T` |
 | `fromWireFormat<T>(wire)` | the generated `fromWireFormat` for `T`, constructing your class when `T` is a class |
 
-A host fails with the file, the line and what to run when `T` is not a single type name or `typeof` expression, or has no generated code. `golem check` reports the same sites. With a `controllers` job in `golem.yaml`, the rewrite also inserts [`nestModelCodec`](#nest) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model. Nest also needs `experimentalDecorators` and `emitDecoratorMetadata` ([Set up TypeScript](/guide/nestjs#set-up-typescript)).
+A host fails with the file, the line and what to run when `T` is not a single type name or `typeof` expression, or has no generated code. `golem check` reports the same sites. With a `controllers` job in `golem.yaml`, the rewrite also inserts [`nestModelCodec`](#nest) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model. Nest also needs `experimentalDecorators` and `emitDecoratorMetadata` ([Set up TypeScript](/guide/nestjs-requests#set-up-typescript)).
 
 `golem build`, [`loader`](#loader), [`vite`](#vite) and [`esbuild`](#esbuild) use this subpath to apply their edits.
 
