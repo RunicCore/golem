@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render } from '@exprtlabs/golem/internal/emitter';
+import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render, identifier } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import { instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
@@ -40,7 +40,7 @@ function paymentGraph(): ReturnType<typeof createSchemaGraph> {
 
 /** The runtime source; a test that only reads the text names each validator after its root. */
 function paymentRuntimeSource(options: Parameters<typeof emitCodecRuntimeText>[1] = {}): string {
-  return emitCodecRuntimeText(paymentGraph(), { validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}`, ...options });
+  return emitCodecRuntimeText(paymentGraph(), { validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`), ...options });
 }
 
 /** The generated validators the payment runtime imports, compiled from the same graph, and the names the runtime source must use. */
@@ -68,7 +68,7 @@ test('validate makes one check through the generated validator of the model', ()
 
 test('stringify checks the model, builds the wire, checks the wire and writes it in one guarded block', async () => {
   const validators = await paymentValidators();
-  const source = paymentRuntimeSource({ validatorName: validators.validatorName });
+  const source = paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) });
   const body = functionBody(source, 'stringifyPayment');
   assert.equal(occurrences(body, 'if (validates)'), 1, 'one guard');
   const order = ['assertPayment(value, options)', 'const wire =', '__golemAssertWireOnly_Payment(wire, options)', 'stringifyPaymentWire(wire']
@@ -108,12 +108,12 @@ test('model initializers, fromJSON and toJSON copy an unchanged array with slice
   const strings: ModelTypeDescriptor = { kind: 'array', item: { kind: 'string' } };
   const unusedModel = (id: string): never => { throw new Error(`No model expected: ${id}`); };
   const copied = 'Array.isArray(values) ? (values as readonly unknown[]).slice() : values';
-  assert.equal(render(emitModelFromInit(strings, 'values', unusedModel)), copied);
-  assert.equal(render(emitModelFromJSON(strings, 'values', unusedModel)), copied);
-  assert.equal(render(emitModelToJSON(strings, 'values', unusedModel)), copied);
+  assert.equal(render(emitModelFromInit(strings, identifier('values'), unusedModel)), copied);
+  assert.equal(render(emitModelFromJSON(strings, identifier('values'), unusedModel)), copied);
+  assert.equal(render(emitModelToJSON(strings, identifier('values'), unusedModel)), copied);
   const nested: ModelTypeDescriptor = { kind: 'array', item: strings };
   assert.equal(
-    render(emitModelFromInit(nested, 'values', unusedModel)),
+    render(emitModelFromInit(nested, identifier('values'), unusedModel)),
     'Array.isArray(values) ? (values as readonly unknown[]).map((item) => Array.isArray(item) ? (item as readonly unknown[]).slice() : item) : values',
   );
 });
@@ -136,7 +136,7 @@ test('a nested trusted call to a model of the same module runs its core and pass
 
 test('the public toWireFormat validates, builds the wire through its core and checks the wire-only schema last', async () => {
   const validators = await paymentValidators();
-  const source = paymentRuntimeSource({ validatorName: validators.validatorName });
+  const source = paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) });
   const body = functionBody(source, 'toWireFormatPayment');
   const order = ['assertPayment(value, options)', 'const wire = toWireFormatPaymentCore(value);', '__golemAssertWireOnly_Payment(wire, options)', 'return wire;']
     .map((step) => body.indexOf(step));
@@ -164,7 +164,7 @@ test('a nested trusted call to a model of another module shares one frozen optio
   graph.intern({ kind: 'generated-model', id: 'Pet' }, 'Pet');
   graph.intern(owner, 'Owner');
   graph.seal();
-  const source = emitCodecRuntimeText(graph, { validationEnabled: false, nestedGenerated: (id) => `${id}Model` });
+  const source = emitCodecRuntimeText(graph, { validationEnabled: false, nestedGenerated: (id) => identifier(`${id}Model`) });
   assert.equal(occurrences(source, TRUSTED_LITERAL), 1, 'the options literal appears once, in the constant');
   assert.match(source, /^const __golemTrusted = Object\.freeze\(\{ validate: false \}\);\n/);
   assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(__golem\w+ as never, __golemTrusted\)/);
@@ -174,7 +174,7 @@ test('a nested trusted call to a model of another module shares one frozen optio
 
 test('a codec that does not validate publishes its own schemas, not the plan entries it has none of', () => {
   // The profile is off and no node chose: the plan compiles none of them, so `modelSchemas` holds no entry to read.
-  const source = paymentRuntimeSource({ validationEnabled: false, resolvedSchemasExpr: 'modelSchemas' });
+  const source = paymentRuntimeSource({ validationEnabled: false, resolvedSchemasExpr: identifier('modelSchemas') });
   assert.doesNotMatch(source, /modelSchemas\[/);
   assert.match(source, /schema: JSON\.parse\(/);
   assert.doesNotMatch(source, /schemaRefsResolved/);

@@ -123,12 +123,13 @@ test('a helper that a file reads while it loads comes after the helper it names'
   assert.equal(loaded[Symbol.for('t286:mark')], true);
 });
 
-test('sameCode matches parts one by one, and a runtime part equals the text of its name', () => {
-  // protects: T-282 an emitter decides "unchanged" from Code, also against the text a caller still writes by hand
+test('sameCode matches parts one by one by kind, so a runtime part is not the text of its name', () => {
+  // protects: T-329 an emitter decides "unchanged" from Code parts; a local named like a runtime export is not that export
   const first = nameSlot('first');
   const second = nameSlot('second');
   const written = code`${rt.serde.stringifyJsonScalar}(item as never)`;
-  assert.equal(sameCode(written, legacyText('stringifyJsonScalar(item as never)')), true);
+  assert.equal(sameCode(written, code`${rt.serde.stringifyJsonScalar}(item as never)`), true);
+  assert.equal(sameCode(written, legacyText('stringifyJsonScalar(item as never)')), false);
   assert.equal(sameCode(written, legacyText('stringifyJsonString(item as never)')), false);
   assert.equal(sameCode(nameOf(first), nameOf(first)), true);
   assert.equal(sameCode(nameOf(first), nameOf(second)), false);

@@ -8,6 +8,7 @@ import {
   emitModelFromInit,
   emitModelFromJSON,
   emitModelToJSON,
+  identifier,
   render,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
@@ -91,14 +92,14 @@ class ChildModel {
 }
 
 const fromChild: FromJsonModelResolver = {
-  className: 'ChildModel',
-  decode: (value) => `decodeGeneratedModel(ChildModel, ${value})`,
-  fromInit: (value) => `ChildModel.fromInit(${value})`,
+  className: identifier('ChildModel'),
+  decode: (value) => code`decodeGeneratedModel(ChildModel, ${value})`,
+  fromInit: (value) => code`ChildModel.fromInit(${value})`,
 };
 
 const toChild: ToJsonModelResolver = {
-  className: 'ChildModel',
-  encode: (value) => `encodeGeneratedModel(${value})`,
+  className: identifier('ChildModel'),
+  encode: (value) => code`encodeGeneratedModel(${value})`,
 };
 
 let decodeCalls = 0;
@@ -162,11 +163,11 @@ test('intersection conversion merges object fields and runs overlapping conversi
   };
 
   const fromJSON = compileConversion(
-    render(emitModelFromJSON(descriptor, 'value', () => fromChild, serde)),
+    render(emitModelFromJSON(descriptor, identifier('value'), () => fromChild, serde)),
     bindings,
   );
   const toJSON = compileConversion(
-    render(emitModelToJSON(descriptor, 'value', () => toChild, serde)),
+    render(emitModelToJSON(descriptor, identifier('value'), () => toChild, serde)),
     bindings,
   );
 
@@ -209,11 +210,11 @@ test('intersection and nullable fromInit preserve domain Date values while const
     ],
   };
   const fromInit = compileConversion(
-    render(emitModelFromInit(descriptor, 'value', () => fromChild)),
+    render(emitModelFromInit(descriptor, identifier('value'), () => fromChild)),
     bindings,
   );
   const nullableDate = compileConversion(
-    render(emitModelFromInit({ kind: 'union', variants: [{ kind: 'date' }, { kind: 'null' }] }, 'value', () => fromChild)),
+    render(emitModelFromInit({ kind: 'union', variants: [{ kind: 'date' }, { kind: 'null' }] }, identifier('value'), () => fromChild)),
     bindings,
   );
 
@@ -249,11 +250,11 @@ test('discriminated plain object unions convert only the selected branch', () =>
     ],
   };
   const fromJSON = compileConversion(
-    render(emitModelFromJSON(descriptor, 'value', () => fromChild, serde)),
+    render(emitModelFromJSON(descriptor, identifier('value'), () => fromChild, serde)),
     bindings,
   );
   const toJSON = compileConversion(
-    render(emitModelToJSON(descriptor, 'value', () => toChild, serde)),
+    render(emitModelToJSON(descriptor, identifier('value'), () => toChild, serde)),
     bindings,
   );
 
@@ -343,7 +344,7 @@ test('ambiguous union conversions fail generation instead of probing codecs', ()
     },
   ];
   for (const { name, descriptor, message } of cases) {
-    assert.throws(() => render(emitModelFromJSON(descriptor, 'value', () => fromChild, serde)), message, name);
+    assert.throws(() => render(emitModelFromJSON(descriptor, identifier('value'), () => fromChild, serde)), message, name);
   }
 });
 
@@ -356,9 +357,9 @@ test('scalar-or-array unions convert the scalar and the array items without doub
       { kind: 'array', item: { kind: 'union', variants: [{ kind: 'literal', value: 'paid' }, { kind: 'literal', value: 'pending' }] } },
     ],
   };
-  assert.equal(render(emitModelFromJSON(status, 'value', () => fromChild)), 'value', 'identity unions emit no Array.isArray map');
-  assert.equal(render(emitModelToJSON(status, 'value', () => toChild)), 'value');
-  assert.doesNotMatch(render(emitModelFromJSON(status, 'value', () => fromChild)), /Array\.isArray/);
+  assert.equal(render(emitModelFromJSON(status, identifier('value'), () => fromChild)), 'value', 'identity unions emit no Array.isArray map');
+  assert.equal(render(emitModelToJSON(status, identifier('value'), () => toChild)), 'value');
+  assert.doesNotMatch(render(emitModelFromJSON(status, identifier('value'), () => fromChild)), /Array\.isArray/);
   resetCounters();
   const token: ModelConversionDescriptor = {
     kind: 'number',
@@ -371,7 +372,7 @@ test('scalar-or-array unions convert the scalar and the array items without doub
       { kind: 'array', item: token },
     ],
   };
-  const source = render(emitModelFromJSON(descriptor, 'value', () => fromChild, serde));
+  const source = render(emitModelFromJSON(descriptor, identifier('value'), () => fromChild, serde));
   assert.match(source, /Array\.isArray\(value\)/, 'the scalar-or-array union branches on Array.isArray');
   assert.equal(
     source.match(/Array\.isArray/g)?.length,

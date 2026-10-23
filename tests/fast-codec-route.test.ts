@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { identifier } from '@exprtlabs/golem/internal/emitter';
 import { test } from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -46,7 +47,7 @@ function generatedSites(model: Recorded): Record<string, RuntimeFunction> {
   const graph = createSchemaGraph();
   graph.intern({ kind: 'object', properties: { name: { kind: 'string' } }, required: ['name'], additionalProperties: false }, 'User');
   graph.seal();
-  const source = emitCodecRuntimeText(graph, { validatorName: () => 'userValidator', fastCheckName: () => 'userFastCheck' });
+  const source = emitCodecRuntimeText(graph, { validatorName: () => identifier('userValidator'), fastCheckName: () => identifier('userFastCheck') });
   return instantiateRuntime(source, { userValidator: model.validator, userFastCheck: model.isValid });
 }
 

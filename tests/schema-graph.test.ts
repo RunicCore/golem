@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph, emitCodecDeclarationTable, codecPublicId } from '@exprtlabs/golem/internal/schema-graph';
-import { emitGraphStringify } from '@exprtlabs/golem/internal/emitter';
+import { emitGraphStringify, identifier } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import * as serde from '@exprtlabs/golem/serde';
@@ -33,7 +33,7 @@ const payment: ModelTypeDescriptor = {
 
 /** Emits the runtime with each validator named after its root, as the text a test reads needs no validators module. */
 function emitRuntime(graph: Parameters<typeof emitCodecRuntimeText>[0]): string {
-  return emitCodecRuntimeText(graph, { validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}` });
+  return emitCodecRuntimeText(graph, { validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`) });
 }
 
 test('schema graph interns nested objects once and stringify composes by call', () => {
@@ -507,7 +507,7 @@ test('wire schema drops model-only Not predicates and IObject assert checks the 
     validations: { positive: { importPath: './rules.mjs', exportName: 'positive' } },
     modules: { 'rules.mjs': "export const positive = value => typeof value === 'number' && value > 0;" },
   });
-  const source = emitCodecRuntimeText(graph, { validatorName: validators.validatorName });
+  const source = emitCodecRuntimeText(graph, { validatorName: (id) => identifier(validators.validatorName(id)) });
   const { assertA, fromWireFormatA, parseA } = instantiateRuntime(source, validators.scope);
   assert.throws(
     () => assertA({ neg: 5 }),
@@ -545,8 +545,8 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
   }, 'Checkout', true);
   graph.seal();
   const source = emitCodecRuntimeText(graph, {
-    validatorName: (id) => `validate_${id.replace(/[^\w$]/g, '_')}`,
-    nestedGenerated: (id) => id === 'Money' ? 'MoneyModel' : id,
+    validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`),
+    nestedGenerated: (id) => identifier(id === 'Money' ? 'MoneyModel' : id),
   });
   // The fill reads each field once by the JSON view, then copies a present one.
   assert.match(source, /if \(copyIdentity\) \{\n    if \(__golemPresent\d+ !== undefined\) \{\n      out\["note"\] = __golemPresent\d+;/, 'budget: defineModelProperty is heavier than a plain assignment, so an ordinary field is copied with a direct assignment');

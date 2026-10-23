@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { LibError } from '@exprtlabs/golem/errors';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
-import { legacyText, render } from '#golem/code';
+import { code, identifier, render, type Code } from '#golem/code';
 import { emitArrayConversion, emitArrayItems, emitTupleConversion, type SequenceItem, type TupleConversionDescriptor } from '#golem/sequence-conversion';
 import { instantiateRuntime } from './emitted-runtime.js';
 
@@ -14,22 +14,22 @@ const date: ModelTypeDescriptor = { kind: 'date' };
 const nothing: ModelTypeDescriptor = { kind: 'null' };
 
 /** Strings upper-case, numbers double and booleans flip, so each item shows which conversion ran on it. */
-function valueItem(descriptor: ModelTypeDescriptor, value: string): SequenceItem {
-  if (descriptor.kind === 'string') return { code: legacyText(`(${value} as string).toUpperCase()`), throws: false };
-  if (descriptor.kind === 'number') return { code: legacyText(`(${value} as number) * 2`), throws: false };
-  if (descriptor.kind === 'boolean') return { code: legacyText(`!${value}`), throws: false };
-  return { code: legacyText(value), throws: false };
+function valueItem(descriptor: ModelTypeDescriptor, value: Code): SequenceItem {
+  if (descriptor.kind === 'string') return { code: code`(${value} as string).toUpperCase()`, throws: false };
+  if (descriptor.kind === 'number') return { code: code`(${value} as number) * 2`, throws: false };
+  if (descriptor.kind === 'boolean') return { code: code`!${value}`, throws: false };
+  return { code: value, throws: false };
 }
 
-function jsonItem(descriptor: ModelTypeDescriptor, value: string): SequenceItem {
-  if (descriptor.kind === 'string') return { code: legacyText(`stringifyJsonString(${value} as string)`), throws: false };
-  if (descriptor.kind === 'number') return { code: legacyText(`stringifyJsonNumber(${value} as number)`), throws: false };
-  if (descriptor.kind === 'boolean') return { code: legacyText(`stringifyJsonBoolean(${value} as boolean)`), throws: false };
-  return { code: legacyText(`stringifyJsonScalar(${value} as never)`), throws: false };
+function jsonItem(descriptor: ModelTypeDescriptor, value: Code): SequenceItem {
+  if (descriptor.kind === 'string') return { code: code`stringifyJsonString(${value} as string)`, throws: false };
+  if (descriptor.kind === 'number') return { code: code`stringifyJsonNumber(${value} as number)`, throws: false };
+  if (descriptor.kind === 'boolean') return { code: code`stringifyJsonBoolean(${value} as boolean)`, throws: false };
+  return { code: code`stringifyJsonScalar(${value} as never)`, throws: false };
 }
 
-function dateItem(descriptor: ModelTypeDescriptor, value: string): SequenceItem {
-  return descriptor.kind === 'date' ? { code: legacyText(`deserializeDate(${value})`), throws: true } : { code: legacyText(value), throws: false };
+function dateItem(descriptor: ModelTypeDescriptor, value: Code): SequenceItem {
+  return descriptor.kind === 'date' ? { code: code`deserializeDate(${value})`, throws: true } : { code: value, throws: false };
 }
 
 function tuple(items: TupleConversionDescriptor['items'], rest?: TupleConversionDescriptor['rest'], optionalFrom?: number): TupleConversionDescriptor {
@@ -43,15 +43,15 @@ function compile(text: string): (input: unknown) => unknown {
 }
 
 function valueConversion(descriptor: TupleConversionDescriptor) {
-  return compile(render(emitTupleConversion(descriptor, 'input', { output: 'value', item: valueItem })));
+  return compile(render(emitTupleConversion(descriptor, identifier('input'), { output: 'value', item: valueItem })));
 }
 
 function jsonConversion(descriptor: TupleConversionDescriptor) {
-  return compile(render(emitTupleConversion(descriptor, 'input', { output: 'json', item: jsonItem })));
+  return compile(render(emitTupleConversion(descriptor, identifier('input'), { output: 'json', item: jsonItem })));
 }
 
 function deserializeConversion(descriptor: TupleConversionDescriptor) {
-  return compile(render(emitTupleConversion(descriptor, 'input', { output: 'value', paths: 'deserialize', item: dateItem })));
+  return compile(render(emitTupleConversion(descriptor, identifier('input'), { output: 'value', paths: 'deserialize', item: dateItem })));
 }
 
 function issuePath(action: () => unknown): readonly (string | number)[] | undefined {
@@ -138,13 +138,13 @@ test('a failing tuple item names its position in the error path, before and afte
 });
 
 test('an array converts each item and keeps a non-array as it is', () => {
-  const convert = compile(render(emitArrayConversion(string, 'input', { output: 'value', item: valueItem })));
+  const convert = compile(render(emitArrayConversion(string, identifier('input'), { output: 'value', item: valueItem })));
   assert.deepEqual(convert(['a', 'b']), ['A', 'B']);
   assert.equal(convert('text'), 'text');
 });
 
 test('an array that needs no conversion returns a new array of the same items', () => {
-  const convert = compile(render(emitArrayConversion(nothing, 'input', { output: 'value', item: valueItem })));
+  const convert = compile(render(emitArrayConversion(nothing, identifier('input'), { output: 'value', item: valueItem })));
   const input = [null, 'x'];
   const output = convert(input);
   assert.deepEqual(output, [null, 'x']);
@@ -152,20 +152,20 @@ test('an array that needs no conversion returns a new array of the same items', 
 });
 
 test('an array writes JSON with no guard', () => {
-  const convert = compile(render(emitArrayConversion(string, 'input', { output: 'json', item: jsonItem })));
+  const convert = compile(render(emitArrayConversion(string, identifier('input'), { output: 'json', item: jsonItem })));
   assert.equal(convert(['a', 'b']), '["a","b"]');
 });
 
 test('the items of a scalar-or-array union change the array and leave an unchanged array as it is', () => {
-  const changed = compile(render(emitArrayItems(string, 'input', { output: 'value', item: valueItem })));
+  const changed = compile(render(emitArrayItems(string, identifier('input'), { output: 'value', item: valueItem })));
   assert.deepEqual(changed(['a']), ['A']);
-  const unchanged = compile(render(emitArrayItems(nothing, 'input', { output: 'value', item: valueItem })));
+  const unchanged = compile(render(emitArrayItems(nothing, identifier('input'), { output: 'value', item: valueItem })));
   const input = [null];
   assert.strictEqual(unchanged(input), input);
 });
 
 test('a failing array item names its index, and the date converter keeps its default path', () => {
-  const convert = compile(render(emitArrayConversion(date, 'input', { output: 'value', paths: 'deserialize', item: dateItem })));
+  const convert = compile(render(emitArrayConversion(date, identifier('input'), { output: 'value', paths: 'deserialize', item: dateItem })));
   const good = '2024-05-06T07:08:09.000Z';
   assert.deepEqual(convert([good]), [new Date(good)]);
   assert.deepEqual(issuePath(() => convert([good, 'bad'])), [1]);

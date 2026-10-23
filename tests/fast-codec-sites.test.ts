@@ -5,7 +5,7 @@ import { LibError } from '@exprtlabs/golem/errors';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { registerIModelClass } from '@exprtlabs/golem/serde';
-import { code, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
+import { code, type StringifySerdeResolver, identifier } from '@exprtlabs/golem/internal/emitter';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 
@@ -93,7 +93,7 @@ async function orderCodec(descriptor: ModelTypeDescriptor, fastPath: boolean, ne
     ...Object.fromEntries(Object.entries(binding.scope).map(([name, run]) => [name, countValidator(name, run)])),
     ...Object.fromEntries(Object.entries(binding.fastScope).map(([name, run]) => [name, countFast(name, run)])),
   };
-  const source = emitCodecRuntimeText(graph, { validatorName: binding.validatorName, fastCheckName: binding.fastCheckName, serde: BYTES_SERDE });
+  const source = emitCodecRuntimeText(graph, { validatorName: (id) => identifier(binding.validatorName(id)), fastCheckName: (id) => { const name = binding.fastCheckName(id); return name === undefined ? undefined : identifier(name); }, serde: BYTES_SERDE });
   return { functions: instantiateRuntime(source, scope), calls, binding, codecId: root.codecId };
 }
 
