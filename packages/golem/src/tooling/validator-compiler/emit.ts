@@ -2,7 +2,7 @@ import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrModul
 
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
 import {
-  code, helper, helperDefinitions, helperName, identifier as identifierCode, indentation, join, literal as literalCode, nameOf, nameSlot, NameTable, render, runtimeImports,
+  code, helper, helperDefinitions, helperName, identifier as identifierCode, indented, join, literal as literalCode, nameOf, nameSlot, NameTable, render, runtimeImports,
   type Code, type Helper, type InputSlot, type NameSlot,
 } from '../code.js';
 import { compareText } from '../generator-api.js';
@@ -663,7 +663,7 @@ class FunctionWriter {
   }
 
   public line(statement: Code): void {
-    this.lines.push(code`${indentation(this.depth * 2)}${statement}`);
+    this.lines.push(indented(this.depth * 2, statement));
   }
 
   /** Opens a block; no `head` opens a bare scope. */
@@ -1584,38 +1584,63 @@ function writeFastCheck(state: ModuleState, module: IrModule, target: (id: numbe
   return { body: writer.write(), calls: writer.calls, fastCalls: writer.fastCalls };
 }
 
+/** The function a name part calls, and whether it calls the fast check. */
+type Callee = { readonly id: number; readonly fast: boolean };
+
 /**
- * The key of a body: its text parts, and for each name part the group of the function it calls (and whether it is the
- * fast check). Two bodies with one key are the same code once each call names the group of its callee.
+ * The key of a body: its parts, and for each name part the group of the function it calls (and whether it is the fast
+ * check). Two bodies with one key are the same code once each call names the group of its callee. The key of the parts
+ * that name no callee is made once (`BodyKey`); each round of `groupFunctions` joins it to the groups of the callees.
  */
-function bodyKey(body: Code, slots: FunctionSlots, groups: ReadonlyMap<number, number>): string {
-  const key: unknown[] = [];
+interface BodyKey {
+  /** The key between two callees, and after the last. */
+  readonly pieces: readonly string[];
+  /** The callees in order of appearance: `pieces` has one more entry than `callees`. */
+  readonly callees: readonly Callee[];
+}
+
+function bodyKeyOf(body: Code, slots: FunctionSlots): BodyKey {
+  const pieces: string[] = [];
+  const callees: Callee[] = [];
+  let key = '';
+  let text = '';
   for (const part of body.parts) {
+    if (part.kind === 'text') {
+      // Where the text was split into parts names nothing: adjacent text is one text.
+      text += part.text;
+      continue;
+    }
+    if (text !== '') { key += `${JSON.stringify(text)},`; text = ''; }
     switch (part.kind) {
-      case 'text': {
-        // Where the text was split into parts names nothing: adjacent text is one text.
-        const last = key.at(-1);
-        if (typeof last === 'string') key[key.length - 1] = last + part.text;
-        else key.push(part.text);
-        break;
-      }
       case 'name': {
         const callee = slots.owner(part.slot);
         if (callee === undefined) throw new Error(`The validator compiler body names "${part.slot.label}", which is no function.`);
-        key.push([callee.fast, groups.get(callee.id) ?? -1]);
+        pieces.push(key);
+        key = '';
+        callees.push(callee);
         break;
       }
-      case 'runtime': key.push(['runtime', part.module, part.name, part.typeOnly === true, part.alias ?? null]); break;
-      case 'imported': key.push(['imported', part.source.specifier, part.name, part.typeOnly === true, part.alias ?? null]); break;
-      case 'helper': key.push(['helper', part.helper.id]); break;
-      case 'export': key.push(['export', part.name]); break;
-      case 'input': key.push(['input', inputNumber(part.slot)]); break;
-      case 'line': key.push(['line']); break;
-      case 'indent': key.push(['indent', part.by]); break;
+      case 'runtime': key += `r${JSON.stringify([part.module, part.name, part.typeOnly === true, part.alias ?? null])},`; break;
+      case 'imported': key += `i${JSON.stringify([part.source.specifier, part.name, part.typeOnly === true, part.alias ?? null])},`; break;
+      case 'helper': key += `h${JSON.stringify(part.helper.id)},`; break;
+      case 'export': key += `e${JSON.stringify(part.name)},`; break;
+      case 'input': key += `p${inputNumber(part.slot)},`; break;
+      case 'line': key += 'l,'; break;
+      case 'indent': key += `d${part.by},`; break;
       default: return unreachablePart(part);
     }
   }
-  return JSON.stringify(key);
+  pieces.push(text === '' ? key : key + JSON.stringify(text));
+  return { pieces, callees };
+}
+
+function bodyKey({ pieces, callees }: BodyKey, groups: ReadonlyMap<number, number>): string {
+  let key = pieces[0]!;
+  for (let index = 0; index < callees.length; index += 1) {
+    const callee = callees[index]!;
+    key += `n${callee.fast},${groups.get(callee.id) ?? -1},${pieces[index + 1]!}`;
+  }
+  return key;
 }
 
 function unreachablePart(part: never): never {
@@ -1642,13 +1667,16 @@ function inputNumber(slot: InputSlot): number {
  * fast check is written from a function that has one.
  */
 function groupFunctions(written: readonly WrittenFunction[], fastReached: ReadonlySet<number>, slots: FunctionSlots): ReadonlyMap<number, number> {
+  // The key of a body and the text of its parameters do not change between rounds; only the groups of the callees do.
+  const keyed = new Map(written.map(entry => [entry.id, bodyKeyOf(entry.body, slots)]));
+  const parameters = new Map(written.map(entry => [entry.id, render(entry.parameters)]));
   let groups = new Map<number, number>(written.map(entry => [entry.id, 0]));
   let size = 1;
   for (;;) {
     const keys = new Map<string, number>();
     const next = new Map<number, number>();
     for (const entry of written) {
-      const key = `${groups.get(entry.id)}\n${render(entry.parameters)}\n${bodyKey(entry.body, slots, groups)}`;
+      const key = `${groups.get(entry.id)}\n${parameters.get(entry.id)}\n${bodyKey(keyed.get(entry.id)!, groups)}`;
       if (!keys.has(key)) keys.set(key, keys.size);
       next.set(entry.id, keys.get(key) ?? 0);
     }

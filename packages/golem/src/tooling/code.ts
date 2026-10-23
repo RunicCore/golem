@@ -58,6 +58,7 @@ export type Part =
  */
 export class ImportSource {
   readonly #declared = new Map<string, Code>();
+  readonly #codeOf = new Map<Part, Code>();
 
   /**
    * `typeStatement` writes `import type { … }`, for a module that is imported for types only. `namespace` makes the
@@ -83,15 +84,23 @@ export class ImportSource {
 
   /** The Code of `name`, which the code writes as `alias` when it has one. The first call of a name decides its place in the statement. */
   public name(name: string, options: { readonly alias?: string; readonly typeOnly?: true } = {}): Code {
-    const key = `${name}\0${options.alias ?? ''}\0${options.typeOnly === true}`;
+    // A name with no alias and no type mark is its own key: an identifier holds no NUL.
+    const key = options.alias === undefined && options.typeOnly !== true ? name : `${name}\0${options.alias ?? ''}\0${options.typeOnly === true}`;
     let declared = this.#declared.get(key);
     if (!declared) {
       checkedIdentifier(name, 'imported name');
       if (options.alias !== undefined) checkedIdentifier(options.alias, 'alias');
       declared = fromParts([{ kind: 'imported', source: this, name, ...(options.typeOnly ? { typeOnly: true as const } : {}), ...(options.alias === undefined ? {} : { alias: options.alias }) }]);
       this.#declared.set(key, declared);
+      this.#codeOf.set(declared.parts[0]!, declared);
     }
     return declared;
+  }
+
+  /** The Code that `name` made for one of its parts; a part that `name` did not make is declared now. */
+  public declaredFor(part: Part): Code {
+    if (part.kind !== 'imported') throw new Error('an import source declared a part that is not a name');
+    return this.#codeOf.get(part) ?? this.name(part.name, { ...(part.alias === undefined ? {} : { alias: part.alias }), ...(part.typeOnly ? { typeOnly: true as const } : {}) });
   }
 
   /**
@@ -154,18 +163,31 @@ function checkedIdentifier(name: string, what: string): string {
   return name;
 }
 
+/**
+ * Append `source` to `out`. Adjacent text parts become one, so equal code has one shape: a run of text is held in `pending`
+ * until a part that is not mergeable text arrives, so a run of any length makes one part. A checked identifier stays its own
+ * part. It returns the text still pending; `finish` writes it.
+ */
+function append(out: Part[], pending: string, source: readonly Part[]): string {
+  for (const part of source) {
+    if (part.kind === 'text' && !part.identifier) pending += part.text;
+    else {
+      if (pending !== '') { out.push({ kind: 'text', text: pending }); pending = ''; }
+      out.push(part);
+    }
+  }
+  return pending;
+}
+
+function finish(out: Part[], pending: string): Code {
+  if (pending !== '') out.push({ kind: 'text', text: pending });
+  return new CodeValue(out);
+}
+
 /** Build a Code from parts. Adjacent text parts become one, so equal code has one shape. */
 function fromParts(parts: readonly Part[]): Code {
-  const merged: Part[] = [];
-  for (const part of parts) {
-    const last = merged.at(-1);
-    if (part.kind === 'text') {
-      if (part.text === '') continue;
-      if (last?.kind === 'text' && !last.identifier && !part.identifier) merged[merged.length - 1] = { kind: 'text', text: last.text + part.text };
-      else merged.push(part);
-    } else merged.push(part);
-  }
-  return new CodeValue(merged);
+  const out: Part[] = [];
+  return finish(out, append(out, '', parts));
 }
 
 /**
@@ -173,23 +195,25 @@ function fromParts(parts: readonly Part[]): Code {
  * error, so text enters through `literal`, `identifier` and this tag's own text, and nowhere else.
  */
 export function code(strings: TemplateStringsArray, ...values: readonly Code[]): Code {
-  const parts: Part[] = [];
-  strings.forEach((text, index) => {
-    parts.push({ kind: 'text', text });
+  const out: Part[] = [];
+  let pending = strings[0]!;
+  for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
-    if (value) parts.push(...value.parts);
-  });
-  return fromParts(parts);
+    if (value) pending = append(out, pending, value.parts);
+    pending += strings[index + 1]!;
+  }
+  return finish(out, pending);
 }
 
 /** Code from the pieces of a list, with `separator` between them. */
 export function join(pieces: readonly Code[], separator: Code = fromParts([])): Code {
-  const parts: Part[] = [];
-  pieces.forEach((piece, index) => {
-    if (index > 0) parts.push(...separator.parts);
-    parts.push(...piece.parts);
-  });
-  return fromParts(parts);
+  const out: Part[] = [];
+  let pending = '';
+  for (let index = 0; index < pieces.length; index += 1) {
+    if (index > 0) pending = append(out, pending, separator.parts);
+    pending = append(out, pending, pieces[index]!.parts);
+  }
+  return finish(out, pending);
 }
 
 /** A JSON literal of a value, such as a quoted string. */
@@ -292,7 +316,21 @@ export function trimEnd(root: Code): Code {
 
 /** Spaces at the start of a line. Whitespace names nothing, so it is the one text that needs no check. */
 export function indentation(spaces: number): Code {
-  return fromParts([{ kind: 'text', text: ' '.repeat(spaces) }]);
+  let known = indentations.get(spaces);
+  if (!known) {
+    known = fromParts([{ kind: 'text', text: ' '.repeat(spaces) }]);
+    indentations.set(spaces, known);
+  }
+  return known;
+}
+
+/** A Code is never changed, so the code of each width is made once. */
+const indentations = new Map<number, Code>();
+
+/** The code with `spaces` spaces before it: `code\`${indentation(spaces)}${body}\`` in one step, for the writer that makes a line at a time. */
+export function indented(spaces: number, body: Code): Code {
+  const out: Part[] = [];
+  return finish(out, append(out, ' '.repeat(spaces), body.parts));
 }
 
 /**
@@ -383,6 +421,11 @@ function compareHelpers(left: Helper, right: Helper): number {
 
 const collected = new WeakMap<Code, Collected>();
 
+/** The key of a runtime name among the names of its module: the name, and its alias when it has one. */
+function runtimeKey(part: { readonly name: string; readonly alias?: string }): string {
+  return part.alias === undefined ? part.name : `${part.name}\0${part.alias}`;
+}
+
 /** What a Code needs, found by one walk of the Code and of the definitions of its helpers. A Code is read many times, so the walk runs once for each. */
 function collect(root: Code): Collected {
   let known = collected.get(root);
@@ -398,21 +441,23 @@ function collectFrom(root: Code): Collected {
   const imported = new Map<ImportSource, Set<Code>>();
   const found = new Map<string, { readonly helper: Helper; readonly definition: Code; readonly needs: readonly Helper[] }>();
   const scan = (piece: Code): readonly Helper[] => {
-    const needs = new Map<string, Helper>();
+    let needs: Map<string, Helper> | undefined;
     for (const part of piece.parts) {
       if (part.kind === 'runtime') {
-        const names = runtime.get(part.module) ?? { values: new Map<string, ImportedName>(), types: new Map<string, ImportedName>() };
-        (part.typeOnly ? names.types : names.values).set(`${part.name}\0${part.alias ?? ''}`, { name: part.name, ...(part.alias === undefined ? {} : { alias: part.alias }), ...(part.typeOnly ? { typeOnly: true as const } : {}) });
-        runtime.set(part.module, names);
+        let names = runtime.get(part.module);
+        if (!names) { names = { values: new Map<string, ImportedName>(), types: new Map<string, ImportedName>() }; runtime.set(part.module, names); }
+        const kept = part.typeOnly ? names.types : names.values;
+        const key = runtimeKey(part);
+        if (!kept.has(key)) kept.set(key, { name: part.name, ...(part.alias === undefined ? {} : { alias: part.alias }), ...(part.typeOnly ? { typeOnly: true as const } : {}) });
       } else if (part.kind === 'imported') {
-        const used = imported.get(part.source) ?? new Set<Code>();
-        used.add(part.source.name(part.name, { ...(part.alias === undefined ? {} : { alias: part.alias }), ...(part.typeOnly ? { typeOnly: true as const } : {}) }));
-        imported.set(part.source, used);
+        let used = imported.get(part.source);
+        if (!used) { used = new Set<Code>(); imported.set(part.source, used); }
+        used.add(part.source.declaredFor(part));
       } else if (part.kind === 'helper') {
-        needs.set(part.helper.id, part.helper);
+        (needs ??= new Map<string, Helper>()).set(part.helper.id, part.helper);
       }
     }
-    return [...needs.values()].sort(compareHelpers);
+    return needs ? [...needs.values()].sort(compareHelpers) : [];
   };
   const pending: Helper[] = [...scan(root)];
   for (let next = pending.pop(); next; next = pending.pop()) {
@@ -611,27 +656,27 @@ function identityOf(target: object): number {
  * text, so where the text was split into parts names nothing.
  */
 export function codeKey(root: Code): string {
-  const key: unknown[] = [];
+  let key = '';
+  let text = '';
   for (const part of root.parts) {
+    if (part.kind === 'text') {
+      text += part.text;
+      continue;
+    }
+    if (text !== '') { key += `${JSON.stringify(text)},`; text = ''; }
     switch (part.kind) {
-      case 'text': {
-        const last = key.at(-1);
-        if (typeof last === 'string') key[key.length - 1] = last + part.text;
-        else key.push(part.text);
-        break;
-      }
-      case 'runtime': key.push(['runtime', part.module, part.name, part.alias ?? null, part.typeOnly === true]); break;
-      case 'imported': key.push(['imported', identityOf(part.source), part.name, part.alias ?? null, part.typeOnly === true]); break;
-      case 'helper': key.push(['helper', identityOf(part.helper)]); break;
-      case 'name': key.push(['name', identityOf(part.slot)]); break;
-      case 'export': key.push(['export', part.name]); break;
-      case 'input': key.push(['input', identityOf(part.slot)]); break;
-      case 'line': key.push(['line']); break;
-      case 'indent': key.push(['indent', part.by]); break;
+      case 'runtime': key += `r${JSON.stringify([part.module, part.name, part.alias ?? null, part.typeOnly === true])},`; break;
+      case 'imported': key += `i${JSON.stringify([identityOf(part.source), part.name, part.alias ?? null, part.typeOnly === true])},`; break;
+      case 'helper': key += `h${identityOf(part.helper)},`; break;
+      case 'name': key += `n${identityOf(part.slot)},`; break;
+      case 'export': key += `e${JSON.stringify(part.name)},`; break;
+      case 'input': key += `p${identityOf(part.slot)},`; break;
+      case 'line': key += 'l,'; break;
+      case 'indent': key += `d${part.by},`; break;
       default: return unreachable(part);
     }
   }
-  return JSON.stringify(key);
+  return text === '' ? key : key + JSON.stringify(text);
 }
 
 function unreachable(part: never): never {
