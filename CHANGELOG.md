@@ -38,7 +38,6 @@ in the sections below.
 - A `@Body()` or `@Query()` parameter that `NestModelInterceptor` rejects stops `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader with [`RUNM1081`](docs/reference/diagnostics.md#runm1081). This holds for a whole parameter and for one field, such as `@Body('name')`. If your own interceptor handles these parameters, set `nonModelInputs: warn` in `golem.yaml`; the diagnostic is then a warning. `golem build` and `golem check` print the warning. The plugins and the loader continue and print nothing.
 - On TypeScript 7, a package subpath that the `exports` map of its package hides does not resolve, as on TypeScript 6.
 - `@exprtlabs/golem/generator-api` exports `stableJson`, `stableValue` and `isInsideDirectory` for authors of generators. See the [generator API](docs/reference/runtime-api.md).
-- `golem build -p <tsconfig>` stops when the `typescript` of that project is a different install from the one that golem loaded, also when the version is the same. The message "One golem process loads one TypeScript" names both installs. Run `golem build` once for each TypeScript install.
 
 ## 1.0.0
 
