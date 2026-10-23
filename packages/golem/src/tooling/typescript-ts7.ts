@@ -378,7 +378,45 @@ function wrapSignature(signature: SyncSignature, checker: CompatChecker): Compat
   return proxy;
 }
 
+/**
+ * One answer for each object key. A compiler request costs a round trip, and a snapshot never changes, so a checker asks the compiler
+ * once for an object and reads the answer back after that.
+ */
+class Memo<Key extends object, Value> {
+  private readonly answers = new WeakMap<Key, Value>();
+
+  get(key: Key, compute: () => Value): Value {
+    if (this.answers.has(key)) return this.answers.get(key) as Value;
+    const value = compute();
+    this.answers.set(key, value);
+    return value;
+  }
+}
+
+const objectIds = new WeakMap<object, number>();
+let lastObjectId = 0;
+
+function objectId(value: object | undefined): number {
+  if (!value) return 0;
+  let id = objectIds.get(value);
+  if (id === undefined) {
+    id = ++lastObjectId;
+    objectIds.set(value, id);
+  }
+  return id;
+}
+
 class CompatChecker implements TypeChecker {
+  private readonly symbolsAtLocation = new Memo<Node, CompatSymbol | undefined>();
+  private readonly aliasedSymbols = new Memo<SyncSymbol, CompatSymbol>();
+  private readonly typesAtLocation = new Memo<Node, CompatType>();
+  private readonly typesFromNode = new Memo<Node, CompatType>();
+  private readonly typesOfSymbol = new Memo<SyncSymbol, Memo<Node, CompatType>>();
+  private readonly typeStrings = new Memo<SyncType, Map<string, string>>();
+  private readonly assignable = new Memo<SyncType, Memo<SyncType, boolean>>();
+  private readonly arrayTypes = new Memo<SyncType, boolean>();
+  private readonly intrinsics = new Map<string, CompatType>();
+
   public constructor(
     private readonly inner: Checker,
     readonly project: Project,
@@ -393,28 +431,41 @@ class CompatChecker implements TypeChecker {
     return this.program.resolveImport(specifier, virtualFiles);
   }
 
+  private intrinsic(name: string, ask: () => SyncType): CompatType {
+    let type = this.intrinsics.get(name);
+    if (!type) {
+      type = wrapType(ask(), this);
+      this.intrinsics.set(name, type);
+    }
+    return type;
+  }
+
   getTypeFromTypeNode(node: TypeNode): CompatType {
-    const type = this.inner.getTypeFromTypeNode(node) ?? this.inner.getUnknownType();
-    return wrapType(type, this);
+    return this.typesFromNode.get(node, () => wrapType(this.inner.getTypeFromTypeNode(node) ?? unwrapType(this.getUnknownType()), this));
   }
 
   getTypeAtLocation(node: Node): CompatType {
-    const type = this.inner.getTypeAtLocation(node) ?? this.inner.getUnknownType();
-    return wrapType(type, this);
+    return this.typesAtLocation.get(node, () => wrapType(this.inner.getTypeAtLocation(node) ?? unwrapType(this.getUnknownType()), this));
   }
 
   getSymbolAtLocation(node: Node): CompatSymbol | undefined {
-    const symbol = this.inner.getSymbolAtLocation(node);
-    const resolved = Array.isArray(symbol) ? symbol[0] : symbol;
-    return resolved ? wrapSymbol(resolved, this) : undefined;
+    return this.symbolsAtLocation.get(node, () => {
+      const symbol = this.inner.getSymbolAtLocation(node);
+      const resolved = Array.isArray(symbol) ? symbol[0] : symbol;
+      return resolved ? wrapSymbol(resolved, this) : undefined;
+    });
   }
 
   getAliasedSymbol(symbol: CompatSymbol): CompatSymbol {
-    return wrapSymbol(this.inner.getAliasedSymbol(unwrapSymbol(symbol)), this);
+    const inner = unwrapSymbol(symbol);
+    return this.aliasedSymbols.get(inner, () => wrapSymbol(this.inner.getAliasedSymbol(inner), this));
   }
 
   getTypeOfSymbolAtLocation(symbol: CompatSymbol, location: Node): CompatType {
-    return wrapType(this.inner.getTypeOfSymbolAtLocation(unwrapSymbol(symbol), location), this);
+    const inner = unwrapSymbol(symbol);
+    return this.typesOfSymbol
+      .get(inner, () => new Memo())
+      .get(location, () => wrapType(this.inner.getTypeOfSymbolAtLocation(inner, location), this));
   }
 
   getPropertiesOfType(type: CompatType): readonly CompatSymbol[] {
@@ -431,7 +482,7 @@ class CompatChecker implements TypeChecker {
   }
 
   getReturnTypeOfSignature(signature: CompatSignature): CompatType {
-    const type = this.inner.getReturnTypeOfSignature(unwrapSignature(signature)) ?? this.inner.getUnknownType();
+    const type = this.inner.getReturnTypeOfSignature(unwrapSignature(signature)) ?? unwrapType(this.getUnknownType());
     return wrapType(type, this);
   }
 
@@ -446,11 +497,15 @@ class CompatChecker implements TypeChecker {
   }
 
   isTypeAssignableTo(source: CompatType, target: CompatType): boolean {
-    return this.inner.isTypeAssignableTo(unwrapType(source), unwrapType(target));
+    const to = unwrapType(target);
+    return this.assignable
+      .get(unwrapType(source), () => new Memo())
+      .get(to, () => this.inner.isTypeAssignableTo(unwrapType(source), to));
   }
 
   isArrayType(type: CompatType): boolean {
-    return this.inner.isArrayType(unwrapType(type));
+    const inner = unwrapType(type);
+    return this.arrayTypes.get(inner, () => this.inner.isArrayType(inner));
   }
 
   isTupleType(type: CompatType): boolean {
@@ -458,7 +513,15 @@ class CompatChecker implements TypeChecker {
   }
 
   typeToString(type: CompatType, enclosingDeclaration?: Node, flags?: number): string {
-    return this.inner.typeToString(unwrapType(type), enclosingDeclaration, flags);
+    const inner = unwrapType(type);
+    const strings = this.typeStrings.get(inner, () => new Map());
+    const key = `${objectId(enclosingDeclaration)}:${flags ?? ''}`;
+    let text = strings.get(key);
+    if (text === undefined) {
+      text = this.inner.typeToString(inner, enclosingDeclaration, flags);
+      strings.set(key, text);
+    }
+    return text;
   }
 
   typeToTypeNode(type: CompatType, enclosingDeclaration?: Node, flags?: number): TypeNode | undefined {
@@ -466,35 +529,35 @@ class CompatChecker implements TypeChecker {
   }
 
   getAnyType(): CompatType {
-    return wrapType(this.inner.getAnyType(), this);
+    return this.intrinsic('Any', () => this.inner.getAnyType());
   }
 
   getStringType(): CompatType {
-    return wrapType(this.inner.getStringType(), this);
+    return this.intrinsic('String', () => this.inner.getStringType());
   }
 
   getNumberType(): CompatType {
-    return wrapType(this.inner.getNumberType(), this);
+    return this.intrinsic('Number', () => this.inner.getNumberType());
   }
 
   getBooleanType(): CompatType {
-    return wrapType(this.inner.getBooleanType(), this);
+    return this.intrinsic('Boolean', () => this.inner.getBooleanType());
   }
 
   getUnknownType(): CompatType {
-    return wrapType(this.inner.getUnknownType(), this);
+    return this.intrinsic('Unknown', () => this.inner.getUnknownType());
   }
 
   getNeverType(): CompatType {
-    return wrapType(this.inner.getNeverType(), this);
+    return this.intrinsic('Never', () => this.inner.getNeverType());
   }
 
   getNullType(): CompatType {
-    return wrapType(this.inner.getNullType(), this);
+    return this.intrinsic('Null', () => this.inner.getNullType());
   }
 
   getUndefinedType(): CompatType {
-    return wrapType(this.inner.getUndefinedType(), this);
+    return this.intrinsic('Undefined', () => this.inner.getUndefinedType());
   }
 
   getExportsOfModule(symbol: CompatSymbol): readonly CompatSymbol[] {
@@ -512,7 +575,7 @@ class CompatChecker implements TypeChecker {
 
   getIndexTypeOfType(type: CompatType, kind: IndexKind): CompatType | undefined {
     const infos = this.inner.getIndexInfosOfType(unwrapType(type));
-    const key = kind === IndexKind.String ? this.inner.getStringType() : this.inner.getNumberType();
+    const key = unwrapType(kind === IndexKind.String ? this.getStringType() : this.getNumberType());
     const match = infos.find((info) => this.inner.isTypeAssignableTo(key, info.keyType) || this.inner.isTypeAssignableTo(info.keyType, key));
     return match ? wrapType(match.valueType, this) : undefined;
   }
