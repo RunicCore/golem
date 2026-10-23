@@ -1,5 +1,7 @@
 # CLI
 
+Look up every command, option and exit code.
+
 The `golem` command comes from `@exprtlabs/golem`. Run it from the directory that contains `golem.yaml`. It reads the configuration, runs the configured generators, and writes their files to the configured destinations.
 
 `golem build` compiles your project and rewrites the calls that a build host rewrites ([Build your app](/guide/build)).
@@ -20,12 +22,20 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 
 | Command | What it does |
 | --- | --- |
-| `generate` | Writes all outputs. A job is skipped when its inputs and options did not change since its last run and its outputs exist. A file whose new content is identical keeps its modification time. |
-| `check` | Generates the expected files in memory. It fails when a file is missing, stale or in conflict, or when a file of a removed job remains. It reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run. It checks that the Nest codecs agree with the generated registry. With no earlier `generate` or `build`, it stops with one message that tells you to run one of them first. It writes no file. |
-| `watch` | Generates once. It then runs the affected jobs again when a configuration, API, model, TypeScript or manifest input changes. |
-| `exec -- <command> [args...]` | Generates once, starts the child command after generation succeeds, and forwards its exit status and signals. |
-| `exec --watch -- <command> [args...]` | Does the same and keeps the generator watching until the child exits. |
-| `build [--config golem.yaml] [-p tsconfig.build.json] [--watch] [tsc arguments...]` | Generates, type-checks your TypeScript sources, then emits JavaScript with the generic serde calls rewritten. |
+| `generate` | Writes all outputs |
+| `check` | Compares the expected files with the files on disk and writes nothing |
+| `watch` | Generates once, then generates again when an input changes |
+| `exec -- <command> [args...]` | Generates once, then runs the child command |
+| `exec --watch -- <command> [args...]` | Runs the child command and keeps the generator watching |
+| `build [--config golem.yaml] [-p tsconfig.build.json] [--watch] [tsc arguments...]` | Generates, type-checks your sources, then emits JavaScript with the generic serde calls rewritten |
+
+`generate` skips a job when its inputs and options did not change since its last run and its outputs exist. A file whose new content is identical keeps its modification time.
+
+`check` generates the expected files in memory. It fails when a file is missing, stale or in conflict, or when a file of a removed job remains. It reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run. It checks that the Nest codecs agree with the generated registry. With no earlier `generate` or `build`, it stops with one message that tells you to run one of them first.
+
+`watch` runs the affected jobs again when a configuration, API, model, TypeScript or manifest input changes.
+
+`exec` starts the child command after generation succeeds, and forwards its exit status and signals. With `--watch`, the generator keeps watching until the child exits.
 
 `generate` runs the configured jobs in the order set by [configuration](/reference/config). `exec` needs the `--` separator. Arguments after it go to the child process unchanged. `--watch` is valid only with `exec`. An unknown option fails before generation starts.
 
@@ -44,7 +54,7 @@ npx golem build --declaration --noEmitOnError
 A build runs three steps:
 
 1. It generates the outputs of `golem.yaml`, as `golem generate` does. A job whose inputs, options and generator package are unchanged is skipped, so a second build with no change runs no job. An input change runs the job and each later job that reads its outputs.
-2. It type-checks the sources you wrote with the TypeScript in your project, TypeScript 6.0 or 7. It prints the messages of the compiler unchanged. An error points at your line. The declarations come from your sources, and their import paths change as in [import paths](#import-paths).
+2. It type-checks the sources you wrote with the TypeScript in your project ([supported versions](/compatibility#supported-versions)). It prints the messages of the compiler unchanged. An error points at your line. The declarations come from your sources, and their import paths change as in [import paths](#import-paths).
 3. It emits JavaScript with the calls rewritten and the import paths that Node loads ([import paths](#import-paths)). Source maps point at your sources.
 
 The build starts from `golem.yaml`: the one in the working directory, or the one that `--config` names. Without one it stops with `golem build needs a golem.yaml; run it next to one or pass --config`. It never searches the folders above. It builds the tsconfig that `golem.yaml` names with [`tsconfig`](/reference/config#root-keys), which is the `tsconfig.json` beside `golem.yaml` by default. So `golem generate` and `golem build` always agree on the project.
@@ -139,4 +149,4 @@ npx golem exec --watch -- npm run dev
 
 ## Runtime and imports
 
-The CLI needs Node.js 22.15 or newer. Generated code needs the [project settings](/guide/install#project-settings), and the serde calls need a [build host](/guide/build).
+The CLI runs on the [supported Node.js versions](/compatibility#supported-versions). Generated code needs the [project settings](/guide/install#project-settings), and the serde calls need a [build host](/guide/build).

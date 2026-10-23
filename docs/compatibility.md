@@ -12,7 +12,7 @@ Check which versions Golem supports and which APIs stay stable.
 | OpenAPI input documents | 3.1, 3.2 |
 | OpenAPI output (`openapiVersion`) | `3.2.0` (default) or `3.1.2` |
 
-Generation, `golem build` and the `parse<T>` rewrite write the same files on TypeScript 6 and on TypeScript 7. `golem build`, the Vite plugin, the esbuild plugin and the Node loader are all supported.
+Generation, `golem build` and the `parse<T>` rewrite write the same files on TypeScript 6 and on TypeScript 7. Every build host is supported ([Build your app](/guide/build)).
 
 OpenAPI feature support depends on the document version and generation profile ([OpenAPI support](/reference/openapi-support)).
 
@@ -50,7 +50,7 @@ When neither the project nor Golem has `typescript`, a command that needs the co
 
 ## Defaults
 
-- Validation and `exact` are enabled by default. MobX and `allowAny` are disabled by default ([configuration](/reference/config#root-keys)).
-- `exact` applies to the models job and to the models that controller jobs describe. The other feature flags apply to every job. An individual `IObject` or `IModel` can override `exact`, `allowAny` and `validation`.
+- Validation and `exact` are enabled by default. MobX and `allowAny` are disabled by default ([which jobs each flag covers](/reference/config#root-keys)).
+- An individual `IObject` or `IModel` can override `exact`, `allowAny` and `validation`.
 - Callback and webhook types are generated. Your application implements their handlers.
 - Response links are emitted as metadata. Clients do not follow them automatically.

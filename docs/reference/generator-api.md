@@ -2,8 +2,8 @@
 
 Call a generator from your own tool, apply the files it returns, and use the tool subpaths of `@exprtlabs/golem`.
 
-Application projects use the [CLI](/reference/cli), which writes files, keeps
-the inventory and runs watch mode.
+Application projects use the [CLI](/reference/cli), which writes files, tracks
+the files each job wrote and runs watch mode.
 
 - Providers return file contents. They do not write files.
 - Every context takes absolute paths and a `profile`.
@@ -228,7 +228,7 @@ console.log(apiVersion, result.artifacts.map(artifact => artifact.path));
 | `output` | Yes | — | SDK directory. |
 | `profile` | Yes | — | `GolemProfile`. |
 | `name` | No | the document's `info.title`, else `Api` | Prefix of the client name, such as `PaymentsClient`. |
-| `dates` | No | `'date'` | `'temporal'` maps date and date-time strings to Temporal types ([`dates`](/reference/config)). |
+| `dates` | No | `'date'` | `'temporal'` maps date and date-time strings to Temporal types ([`dates`](/reference/config#openapi-jobs)). |
 | `allowRemoteRefs` | No | `false` | Reads HTTPS `$ref` documents when `true`. |
 | `remoteHosts` | No | `[]` | Hosts remote references may use. Required with `allowRemoteRefs`. |
 | `maxRefBytes` | No | `5242880` | Maximum bytes read from one referenced document. |
@@ -299,6 +299,6 @@ console.log(apiVersion, result.artifacts.length);
 
 A result is an in-memory plan. A host that applies it keeps the artifact
 paths and contents, tracks `manifestPaths` and `watchInputs`, and chooses its
-own write, stale-file and inventory policy. The `golem` CLI applies
+own write policy, stale-file policy and record of written files. The `golem` CLI applies
 results for normal projects, in the [job order](/reference/config) of the
 configuration.

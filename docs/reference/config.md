@@ -1,5 +1,7 @@
 # Configuration
 
+Look up every `golem.yaml` key with its type, default and effect.
+
 Put `golem.yaml` in the project that owns the source files. Paths in the file are relative to its directory. The `--config` value is relative to the current directory.
 
 - `version: 1` selects the configuration format. It is independent of the package release.
@@ -14,18 +16,25 @@ The CLI runs [generator jobs](#generator-jobs) first, then controller jobs, then
 
 | Key | Type | Required | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `version` | literal `1` | Yes | — | Configuration format version. |
-| `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml`. The file must exist when you set the key. One `golem.yaml` serves one tsconfig ([what the tsconfig needs](/reference/cli#what-the-tsconfig-needs)). |
-| `mobx` | boolean | No | `false` | Generate MobX observability hooks. |
-| `validation` | boolean | No | `true` | Generate runtime validation metadata and checks. A named `IObject` or `IModel` with `{ validation: true or false }` overrides this for its declaration. |
-| `allowAny` | boolean | No | `false` | Permit fields typed `any` or `unknown` in models. A declaration can override it ([`any` and `unknown`](/guide/field-types#any-and-unknown)). |
-| `exact` | boolean | No | `true` | Reject extra properties in models. `false` admits keys that a model does not list. A declaration can override it ([Objects and exact](/guide/field-types#objects-and-exact)). |
-| `unknownFormats` | `warn` or `error` | No | `error` | What generation does with a schema `format` that golem does not check. `error` stops generation with [`VALIDATE_UNKNOWN_FORMAT`](/reference/diagnostics#validate-unknown-format). `warn` reports it and skips the check of that format. |
-| `nonModelInputs` | `warn` or `error` | No | `error` | What `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader do with a `@Body()` or `@Query()` parameter whose type is no `IModel` or `IObject`. The parameter can be whole or one field. `error` stops with [`RUNM1081`](/reference/diagnostics#runm1081). `warn` continues. `golem build` and `golem check` print the warning. The plugins and the loader print nothing. Set `warn` when your own interceptor handles those parameters. |
-| `generators` | array of generator jobs | No | — | A non-empty list of [jobs from installed packages](#generator-jobs). |
-| `controllers` | array of controller jobs | No | — | A non-empty list of controller-to-OpenAPI jobs. |
-| `openapi` | array of OpenAPI jobs | No | — | A non-empty list of OpenAPI SDK jobs. |
-| `models` | object | No | — | One TypeScript model job. |
+| `version` | literal `1` | Yes | — | Configuration format version |
+| `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml` |
+| `mobx` | boolean | No | `false` | MobX observability hooks |
+| `validation` | boolean | No | `true` | Runtime validation metadata and checks |
+| `allowAny` | boolean | No | `false` | Fields typed `any` or `unknown` in models |
+| `exact` | boolean | No | `true` | Rejection of extra properties in models |
+| `unknownFormats` | `warn` or `error` | No | `error` | Action for a schema `format` that golem does not check |
+| `nonModelInputs` | `warn` or `error` | No | `error` | Action for a `@Body()` or `@Query()` parameter whose type is no `IModel` or `IObject` |
+| `generators` | array of generator jobs | No | — | Non-empty list of [jobs from installed packages](#generator-jobs) |
+| `controllers` | array of controller jobs | No | — | Non-empty list of controller-to-OpenAPI jobs |
+| `openapi` | array of OpenAPI jobs | No | — | Non-empty list of OpenAPI SDK jobs |
+| `models` | object | No | — | One TypeScript model job |
+
+- `tsconfig` must name an existing file when you set the key. One `golem.yaml` serves one tsconfig ([what the tsconfig needs](/reference/cli#what-the-tsconfig-needs)).
+- A named `IObject` or `IModel` with `{ validation: true or false }` overrides `validation` for its declaration.
+- `allowAny: true` permits those fields. A declaration can override it ([`any` and `unknown`](/guide/field-types#any-and-unknown)).
+- `exact: false` admits keys that a model does not list. A declaration can override it ([Objects and exact](/guide/field-types#objects-and-exact)).
+- `unknownFormats: error` stops generation with [`VALIDATE_UNKNOWN_FORMAT`](/reference/diagnostics#validate-unknown-format). `warn` reports the format and skips its check.
+- `nonModelInputs` covers `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader. The parameter can be whole or one field. `error` stops with [`RUNM1081`](/reference/diagnostics#runm1081). `warn` continues. `golem build` and `golem check` print the warning. The plugins and the loader print nothing. Set `warn` when your own interceptor handles those parameters.
 
 ```yaml
 version: 1
@@ -62,8 +71,12 @@ The `output` of a job marks where it writes its main files. Golem replaces only 
 
 | Profile | Runtime behavior | Application setup |
 | --- | --- | --- |
-| `validation: true` (default) | Generated checks run in TypeScript validator modules beside the models and the SDK. They cover nested models and custom bindings. | None. Compile the generated files with the rest of the project. |
-| `validation: false` | Conversion runs without generated checks. A named `IObject` or `IModel` with `{ validation: true }` still gets them. | Calling serde with `{ validate: true }` on a stub throws `LibErrorKind.ValidationUnavailable`. |
+| `validation: true` (default) | Generated checks in TypeScript validator modules beside the models and the SDK | None |
+| `validation: false` | Conversion without generated checks | No `{ validate: true }` calls on a stub |
+
+With `validation: true`, the checks cover nested models and custom bindings. Compile the generated files with the rest of the project.
+
+With `validation: false`, a named `IObject` or `IModel` with `{ validation: true }` still gets the checks. Calling serde with `{ validate: true }` on a stub throws `LibErrorKind.ValidationUnavailable`.
 
 Custom predicates and serde bindings must be exported functions that the generator can import. An unresolved binding or imported schema stops generation with a diagnostic.
 
