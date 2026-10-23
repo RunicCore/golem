@@ -17,38 +17,6 @@ import {
 } from './helpers.js';
 import { compileValidators } from '../support/compiled-validators.js';
 
-test('equivalent directional resources share a scope while request and response rules remain distinct', async () => {
-  const document = (readOnly: boolean, ownId: boolean) => ({
-    openapi: '3.1.0', info: { title: 'ResourceReuse', version: '1' },
-    components: { schemas: { Item: {
-      ...(ownId ? { $id: 'https://example.test/item' } : {}),
-      type: 'object', required: ['name', 'id'], additionalProperties: false,
-      properties: { name: { type: 'string' }, id: { type: 'string', ...(readOnly ? { readOnly: true } : {}) } },
-    } } },
-    paths: { '/items': { post: { operationId: 'save',
-      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } },
-      responses: { '200': { description: 'Saved', content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } } },
-    } } },
-  });
-  for (const [readOnly, ownId] of [[false, false], [true, false], [false, true]] as const) {
-    const data = buildSchemaData(document(readOnly, ownId));
-    const registry = requireRecord(data.normalizedRegistry, 'registry');
-    assert.equal(Object.keys(requireRecord(registry.$defs, 'directional resources')).length, readOnly || ownId ? 2 : 1);
-    const id = String(registry.$id);
-    const { input, response } = await compileValidators({
-      roots: {
-        input: { $ref: `${id}#/operations/save/input` },
-        response: { $ref: `${id}#/operations/save/responses/200/application~1json` },
-      },
-      resources: { [id]: registry },
-    });
-    assert.equal(input({ body: { name: 'Example', id: '1' } }, true).length === 0, !readOnly);
-    assert.equal(input({ body: { name: 'Example' } }, true).length === 0, readOnly);
-    assert.equal(response({ name: 'Example', id: '1' }, true).length, 0);
-    assert.notEqual(response({ name: 'Example' }, true).length, 0);
-  }
-});
-
 function directionalComponents(openapi: string): Record<string, unknown> {
   return {
     openapi,
@@ -205,6 +173,14 @@ test('repeated readOnly aliases drop every matching property and required entry'
 
 test('public generation validates repeated aliases, sibling allOf required, and required-only control', async (t) => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-alias-'), 'sdk');
+  const json = (name: string) => ({ 'application/json': { schema: { $ref: `#/components/schemas/${name}` } } });
+  const operation = (operationId: string, name: string) => ({
+    post: {
+      operationId,
+      requestBody: { required: true, content: json(name) },
+      responses: { 200: { description: 'ok', content: json(name) } },
+    },
+  });
   const document = {
     openapi: '3.1.0',
     info: { title: 'Aliases', version: '1' },
@@ -224,6 +200,17 @@ test('public generation validates repeated aliases, sibling allOf required, and 
           },
         },
       },
+      '/siblings': operation('createSibling', 'AllOfSibling'),
+      '/pets': operation('createPet', 'CreatePet'),
+      '/plain-pets': operation('createPlainPet', 'Pet'),
+      '/nested-pets': operation('createNestedPet', 'NestedPet'),
+      '/payments': operation('createPayment', 'Payment'),
+      '/referenced-payments': operation('createReferencedPayment', 'ReferencedPayment'),
+      '/nested-payments': operation('createNestedPayment', 'NestedPayment'),
+      '/cards': operation('createCard', 'Card'),
+      '/plain-payments': operation('createPlainPayment', 'PlainPayment'),
+      '/plain-referenced-payments': operation('createPlainReferencedPayment', 'PlainReferencedPayment'),
+      '/any-payments': operation('createAnyPayment', 'AnyPayment'),
       '/control': {
         post: {
           operationId: 'control',
@@ -262,55 +249,6 @@ test('public generation validates repeated aliases, sibling allOf required, and 
           required: ['token'],
           additionalProperties: { type: 'string' },
         },
-      },
-    },
-  };
-  await generateMaterializedSdk(document, { output, name: 'Aliases', profile: validatingProfile });
-  copyFixtureFile(output, "openapi/schema-projection/alias-assert.ts", "alias-assert.ts");
-  compileGeneratedSdk(output, [path.join(output, 'alias-assert.ts')], { strict: true });
-  const probe = await clientProbe(output, 'Aliases');
-  const userModel = await componentValidator(runtimeRegistry(document), 'UserBase');
-
-  const request = { name: 'Ada', secretOne: 'one', secretTwo: 'two' };
-  const reply = { name: 'Ada', first: 'id-1', second: 'id-2' };
-  assert.equal(await probe.acceptsInput('createUser', { body: request }), true);
-  assert.equal(await probe.acceptsInput('createUser', { body: { name: 'Ada', first: 'id-1', second: 'id-2' } }), false);
-  assert.equal(await probe.acceptsResponse('createUser', { body: request }, reply), true);
-  assert.equal(await probe.acceptsResponse('createUser', { body: request }, { name: 'Ada', secretOne: 'one', secretTwo: 'two' }), false);
-  assert.equal(await probe.acceptsInput('control', { body: {} }), false);
-  assert.equal(await probe.acceptsInput('control', { body: { token: 'present' } }), true);
-  assert.equal(await userModel({ name: 'Ada' }), false);
-  assert.equal(await userModel({ ...request, ...reply }), true);
-});
-
-test('allOf required names from any member make the declared property required in the generated type', async (t) => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-required-'), 'sdk');
-  const json = (name: string) => ({ 'application/json': { schema: { $ref: `#/components/schemas/${name}` } } });
-  const operation = (operationId: string, name: string) => ({
-    post: {
-      operationId,
-      requestBody: { required: true, content: json(name) },
-      responses: { 200: { description: 'ok', content: json(name) } },
-    },
-  });
-  const document = {
-    openapi: '3.1.0',
-    info: { title: 'AllOfRequired', version: '1' },
-    paths: {
-      '/siblings': operation('createSibling', 'AllOfSibling'),
-      '/pets': operation('createPet', 'CreatePet'),
-      '/plain-pets': operation('createPlainPet', 'Pet'),
-      '/nested-pets': operation('createNestedPet', 'NestedPet'),
-      '/payments': operation('createPayment', 'Payment'),
-      '/referenced-payments': operation('createReferencedPayment', 'ReferencedPayment'),
-      '/nested-payments': operation('createNestedPayment', 'NestedPayment'),
-      '/cards': operation('createCard', 'Card'),
-      '/plain-payments': operation('createPlainPayment', 'PlainPayment'),
-      '/plain-referenced-payments': operation('createPlainReferencedPayment', 'PlainReferencedPayment'),
-      '/any-payments': operation('createAnyPayment', 'AnyPayment'),
-    },
-    components: {
-      schemas: {
         AllOfSibling: {
           allOf: [
             { properties: { secret: { type: 'string', writeOnly: true } } },
@@ -380,9 +318,23 @@ test('allOf required names from any member make the declared property required i
       },
     },
   };
-  await generateMaterializedSdk(document, { output, name: 'AllOfRequired', profile: validatingProfile });
+  await generateMaterializedSdk(document, { output, name: 'Aliases', profile: validatingProfile });
+  copyFixtureFile(output, "openapi/schema-projection/alias-assert.ts", "alias-assert.ts");
   copyFixtureFile(output, 'openapi/schema-projection/allof-required-assert.ts', 'allof-required-assert.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-required-assert.ts')], { strict: true });
+  compileGeneratedSdk(output, [path.join(output, 'alias-assert.ts'), path.join(output, 'allof-required-assert.ts')], { strict: true });
+  const probe = await clientProbe(output, 'Aliases');
+  const userModel = await componentValidator(runtimeRegistry(document), 'UserBase');
+
+  const request = { name: 'Ada', secretOne: 'one', secretTwo: 'two' };
+  const reply = { name: 'Ada', first: 'id-1', second: 'id-2' };
+  assert.equal(await probe.acceptsInput('createUser', { body: request }), true);
+  assert.equal(await probe.acceptsInput('createUser', { body: { name: 'Ada', first: 'id-1', second: 'id-2' } }), false);
+  assert.equal(await probe.acceptsResponse('createUser', { body: request }, reply), true);
+  assert.equal(await probe.acceptsResponse('createUser', { body: request }, { name: 'Ada', secretOne: 'one', secretTwo: 'two' }), false);
+  assert.equal(await probe.acceptsInput('control', { body: {} }), false);
+  assert.equal(await probe.acceptsInput('control', { body: { token: 'present' } }), true);
+  assert.equal(await userModel({ name: 'Ada' }), false);
+  assert.equal(await userModel({ ...request, ...reply }), true);
 });
 
 function directionalUserEnvelope(userId: string, envelopeId: string, userRef: string) {
@@ -673,6 +625,39 @@ test('directional projection is consistent on OAS 3.1 and 3.2 and keeps neutral 
     const requiredOnly = await componentValidator(generated.registry, 'RequiredOnly');
     assert.equal(await requiredOnly({ ghost: 1 }), true);
     assert.equal(await requiredOnly({}), false);
+  }
+
+  // Equivalent directional resources share a scope while request and response rules remain distinct.
+  {
+    const document = (readOnly: boolean, ownId: boolean) => ({
+      openapi: '3.1.0', info: { title: 'ResourceReuse', version: '1' },
+      components: { schemas: { Item: {
+        ...(ownId ? { $id: 'https://example.test/item' } : {}),
+        type: 'object', required: ['name', 'id'], additionalProperties: false,
+        properties: { name: { type: 'string' }, id: { type: 'string', ...(readOnly ? { readOnly: true } : {}) } },
+      } } },
+      paths: { '/items': { post: { operationId: 'save',
+        requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } },
+        responses: { '200': { description: 'Saved', content: { 'application/json': { schema: { $ref: '#/components/schemas/Item' } } } } },
+      } } },
+    });
+    for (const [readOnly, ownId] of [[false, false], [true, false], [false, true]] as const) {
+      const data = buildSchemaData(document(readOnly, ownId));
+      const registry = requireRecord(data.normalizedRegistry, 'registry');
+      assert.equal(Object.keys(requireRecord(registry.$defs, 'directional resources')).length, readOnly || ownId ? 2 : 1);
+      const id = String(registry.$id);
+      const { input, response } = await compileValidators({
+        roots: {
+          input: { $ref: `${id}#/operations/save/input` },
+          response: { $ref: `${id}#/operations/save/responses/200/application~1json` },
+        },
+        resources: { [id]: registry },
+      });
+      assert.equal(input({ body: { name: 'Example', id: '1' } }, true).length === 0, !readOnly);
+      assert.equal(input({ body: { name: 'Example' } }, true).length === 0, readOnly);
+      assert.equal(response({ name: 'Example', id: '1' }, true).length, 0);
+      assert.notEqual(response({ name: 'Example' }, true).length, 0);
+    }
   }
 });
 

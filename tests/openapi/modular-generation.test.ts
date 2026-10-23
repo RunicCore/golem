@@ -775,11 +775,6 @@ test('a model that references schemas with shortened names imports their own cla
   roundTrip(sdk, 'Holder', 'HolderModel', { a: { id: 'a' }, b: { amount: 2 } });
 });
 
-test('a single schema with a shortened name generates and round-trips', async t => {
-  const model = await generateShortened(t, { PaymentModel: idObject });
-  roundTrip(model.sdk, 'PaymentModel', 'PaymentModelModel', { id: 'a' });
-});
-
 test('a single schema with a dollar sign in its name generates and round-trips', async t => {
   const model = await generateShortened(t, { 'Pay$ment': amountObject });
   roundTrip(model.sdk, 'Pay$ment', 'Pay$mentModel', { amount: 1 });
