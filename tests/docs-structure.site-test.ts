@@ -182,13 +182,14 @@ test('guide TypeScript is imported except on listed pages', () => {
   assert.deepEqual(over, []);
 });
 
-test('the runtime reference has a table row and a section for every public @exprtlabs/golem subpath', () => {
+test('the runtime reference has a table row, and a runtime or generator reference a section, for every public @exprtlabs/golem subpath', () => {
   // protects: F-41 the public subpath list lives in one table that follows package.json
   const exports = Object.keys(JSON.parse(readFileSync(path.join(root, 'packages/golem/package.json'), 'utf8')).exports as Record<string, unknown>).map(key => key.replace(/^\.\//, ''));
   const page = readFileSync(path.join(docs, 'reference/runtime-api.md'), 'utf8');
+  const sections = page + readFileSync(path.join(docs, 'reference/generator-api.md'), 'utf8');
   for (const subpath of exports.filter(name => !name.startsWith('internal/'))) {
     assert.match(page, new RegExp(`^\\| \\[\`${subpath}\`\\]`, 'm'), `no table row for ${subpath}`);
-    assert.match(page, new RegExp(`^## \`@exprtlabs/golem/${subpath}\``, 'm'), `no section for ${subpath}`);
+    assert.match(sections, new RegExp(`^## \`@exprtlabs/golem/${subpath}\``, 'm'), `no section for ${subpath}`);
   }
 });
 
