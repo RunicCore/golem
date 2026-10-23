@@ -447,6 +447,53 @@ function rewriteDeclarations(session: ts.ProgramSession, project: Project, sourc
   }
 }
 
+/** The JavaScript extensions the compiler writes for a source extension. */
+const SCRIPT_FILES: Readonly<Record<string, readonly string[]>> = {
+  '.ts': ['.js'], '.tsx': ['.js', '.jsx'], '.js': ['.js'], '.jsx': ['.js', '.jsx'], '.mts': ['.mjs'], '.mjs': ['.mjs'], '.cts': ['.cjs'], '.cjs': ['.cjs'],
+};
+
+/**
+ * The files of the build's output that exist for each source of the program: where the compiler puts its JavaScript, its declaration
+ * and their maps. These paths belong to the source, so a source that leaves the program takes them with it, and nothing else.
+ */
+function outputsOf(project: Project, sources: readonly ts.SourceFile[]): Map<string, string[]> {
+  const local = sources.filter((source) => !source.isDeclarationFile);
+  // The compiler lays outputs out from `rootDir`, else from the common directory of the sources it emits.
+  const layoutRoot = project.rootDir ?? (local.length === 0 ? project.root : commonDirectory(local.map((source) => path.dirname(source.fileName))));
+  const outputs = new Map<string, string[]>();
+  for (const source of local) {
+    const extension = Object.keys(DECLARATION_FILES).find((candidate) => source.fileName.endsWith(candidate));
+    if (extension === undefined) continue;
+    const stem = path.relative(layoutRoot, source.fileName.slice(0, source.fileName.length - extension.length));
+    const candidates = [
+      ...project.emitsJavaScript ? SCRIPT_FILES[extension]!.map((ending) => path.join(project.outDir, `${stem}${ending}`)) : [],
+      ...project.declaration && !project.noEmit ? [path.join(project.declarationDir ?? project.outDir, `${stem}${DECLARATION_FILES[extension]!.declaration}`)] : [],
+    ];
+    outputs.set(source.fileName, candidates.flatMap((file) => [file, `${file}.map`]).filter((file) => fs.statSync(file, { throwIfNoEntry: false })?.isFile()));
+  }
+  return outputs;
+}
+
+/**
+ * A source that left the program since the build before takes its output with it: its JavaScript, declaration and maps, and the
+ * directories that leave empty inside the output. A file that a source still in the program writes stays.
+ */
+function removeOutputsOfDeletedSources(run: BuildRun, project: Project, sources: readonly ts.SourceFile[]): void {
+  const current = outputsOf(project, sources);
+  const kept = new Set([...current.values()].flat());
+  for (const [source, files] of run.emitted) {
+    if (current.has(source)) continue;
+    for (const file of files.filter((candidate) => !kept.has(candidate))) {
+      fs.rmSync(file, { force: true });
+      // Directories that this leaves empty go too, but never the output directory itself or anything above it.
+      const inOutput = (directory: string): boolean => [project.outDir, project.declarationDir].some((output) => output !== undefined && output !== directory && isInsideDirectory(output, directory));
+      for (let directory = path.dirname(file); inOutput(directory) && fs.existsSync(directory) && fs.readdirSync(directory).length === 0; directory = path.dirname(directory)) fs.rmdirSync(directory);
+    }
+  }
+  run.emitted.clear();
+  for (const [source, files] of current) run.emitted.set(source, files);
+}
+
 /** The emitted files the compiler listed (`--listEmittedFiles`), and its output without those lines. */
 function emittedFiles(output: string): { readonly files: readonly string[]; readonly rest: string } {
   const files: string[] = [];
@@ -501,6 +548,8 @@ interface BuildRun {
   readonly outputs: Set<string>;
   /** The files the generate step wrote or kept. Generating one is the build's own doing, so it is no change to watch for. */
   readonly owned: Set<string>;
+  /** The output files of each source of the last build that finished: a source that leaves the program takes them with it. */
+  readonly emitted: Map<string, readonly string[]>;
   /** The directories that hold the program's sources outside the tsconfig's directory: a source added beside one is a change to build for. */
   readonly outsideDirectories: Set<string>;
   /** For a watching build, what the build reads first and what it was then: the only baseline a file the build has not met before can have. */
@@ -577,7 +626,10 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const sources = projectSources(program);
   for (const source of sources) observeSource(source.fileName);
   if (writesDeclarations) rewriteDeclarations(session, project, sources, parsed.fileNames);
-  if (!project.emitsJavaScript) return check.code;
+  if (!project.emitsJavaScript) {
+    removeOutputsOfDeletedSources(run, project, sources);
+    return check.code;
+  }
   const checker = program.getTypeChecker();
   const models = golemConfig.jobs.find((job) => job.kind === 'models');
   const scanned = new RewriteScanner({ root, directory: golemConfig.directory, modelsRoot: modelsRootOf(golemConfig), suffixes: models?.options.suffixes, output: models?.options.output, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers'), nonModelInputs: golemConfig.nonModelInputs })
@@ -601,6 +653,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   ], false);
   const { files, rest } = emittedFiles(emit.stdout);
   for (const file of files.filter((candidate) => /\.[cm]?jsx?\.map$/.test(candidate))) remapSourceMap(file, stage);
+  removeOutputsOfDeletedSources(run, project, sources);
   // After a failed check the compiler already reported what the emit run would report.
   if (emit.code !== 0 && check.code === 0) {
     if (rest !== '') process.stdout.write(`${rest}\n`);
@@ -632,6 +685,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     inputs,
     outputs,
     owned: new Set<string>(),
+    emitted: new Map<string, readonly string[]>(),
     outsideDirectories: new Set<string>(),
     generation,
     ...(options.onGenerated === undefined ? {} : { onGenerated: options.onGenerated }),

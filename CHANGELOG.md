@@ -43,6 +43,7 @@ in the sections below.
 - `@exprtlabs/golem/generator-api` exports `stableJson`, `stableValue` and `isInsideDirectory` for authors of generators. See the [generator API](docs/reference/runtime-api.md).
 - `golem watch` generates a model file that you create while a run is in progress, and a model file in a shared folder outside the job root or behind a folder link. Before, such a file stayed ungenerated until you saved another file.
 - `golem watch` and `golem build --watch` use one input poller. A hidden file or an editor's temporary file (a name that ends in `~`) no longer starts a run or a build.
+- `golem build --watch` removes the JavaScript, declaration and map files of a source that you delete from `outDir`. It removes no other file.
 - `golem exec --watch` generates a model file that you create while its first run is in progress.
 - A `golem.yaml` or an OpenAPI input that is not valid YAML stops the run with a message that starts with the file, the line and the column. `@exprtlabs/golem/generator-api` exports `parseYamlFile` and `YamlFileError`.
 
