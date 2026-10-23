@@ -86,6 +86,18 @@ console.log(JSON.stringify({ before, version, after }));`, { GOLEM_TYPESCRIPT_RO
   assert.deepEqual(answer, { before: null, version: '6.0.3', after: null });
 });
 
+test('two copies of the module in one process share one TypeScript choice', async () => {
+  // protects: T-8 regression, a nested copy of golem (the generators depend on it) did not see the golem command's choice
+  const requested = fakeInstall('6.0.3');
+  const working = fakeInstall('6.0.4');
+  const copy = (name: string): string => `${tooling('typescript-selection.js')}?copy=${name}`;
+  const answer = await run(working, `const first = await import('${copy('first')}');
+const second = await import('${copy('second')}');
+first.requestTypeScriptRoot(${JSON.stringify(requested)});
+console.log(JSON.stringify({ version: second.selectedTypeScript().version, same: first.selectedTypeScript().version }));`);
+  assert.deepEqual(answer, { version: '6.0.3', same: '6.0.3' });
+});
+
 /** A project of a golem.yaml and a tsconfig whose directory holds the TypeScript at `node_modules/typescript`, a link to `typescript` or a directory of the given fake version. */
 function project(typescript: string | { readonly version: string }): string {
   const root = typeof typescript === 'string' ? directory() : fakeInstall(typescript.version);
