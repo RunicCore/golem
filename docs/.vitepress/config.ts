@@ -32,7 +32,9 @@ export default defineConfig({
   ignoreDeadLinks: false,
   lastUpdated: false,
   appearance: 'dark',
+  head: [['link', { rel: 'icon', href: `${docsBase()}golem-favicon.ico`, sizes: '48x48' }]],
   themeConfig: {
+    logo: { src: '/golem-head.png', alt: 'Golem' },
     siteTitle: `Golem v${releaseVersion}`,
     outline: [2, 3],
     search: {

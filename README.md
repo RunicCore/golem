@@ -1,3 +1,5 @@
+<img src="docs/public/golem.png" alt="Golem, the project mascot" width="160" align="right">
+
 # ExprtLabs Golem
 
 One toolchain for a TypeScript app's API contract. Write models as
