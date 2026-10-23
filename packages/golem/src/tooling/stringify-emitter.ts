@@ -139,8 +139,8 @@ interface EmitCtx {
   readonly knownReads?: readonly KnownRead[];
   /** The name of the function a stringify emitter writes, when it is not `stringify<Id>`: the module decides it before the body. */
   readonly functionName?: string;
-  /** The root of a decoder whose wire is `unknown`: a property of `wire` is cast where it is read. */
-  readonly castWire?: boolean;
+  /** The root input of a decoder whose wire is `unknown`: a property of it is cast where it is read. */
+  readonly castWire?: InputSlot;
 }
 
 /** The read of `property` of the decoded `expression`, which the union above binds to its local once the variants are written. */
@@ -227,10 +227,11 @@ export function validateFunctionName(id: string): string {
   return `validate${id}`;
 }
 
-// migration door, deleted in T-290: compares the text of a root that a caller names as `value`, `wire` or `record`; a root with a record flag on its input slot replaces it
 function isRecordExpression(expression: Emitted): boolean {
   const { parts } = emittedCode(expression);
   const last = parts.at(-1);
+  if (parts.length === 1 && last?.kind === 'input') return last.slot.record;
+  // migration door, deleted in T-290: compares the text of a root that a caller names as `value`, `wire` or `record`; a caller that gives an input slot with the record flag does not reach it
   if (last?.kind !== 'text') return false;
   return (parts.length === 1 && ['value', 'wire', 'record'].includes(last.text)) || last.text.endsWith(' as Record<string, unknown>)');
 }
@@ -253,7 +254,7 @@ function decodeRead(ctx: EmitCtx, expression: Emitted, name: string): { readonly
   const value = emittedCode(expression);
   const known = ctx.knownReads?.find((candidate) => candidate.property === name && sameCode(candidate.expression, value));
   if (known) return { read: inputOf(known.input), shape: known.input.shape };
-  if (ctx.castWire && sameCode(value, code`wire`)) return { read: code`(wire as Record<string, unknown>)[${literal(name)}]`, shape: 'chain' };
+  if (ctx.castWire && sameCode(value, inputOf(ctx.castWire))) return { read: code`(${inputOf(ctx.castWire)} as Record<string, unknown>)[${literal(name)}]`, shape: 'chain' };
   return accessRead(value, name);
 }
 
@@ -482,10 +483,21 @@ function stringifyParameters(value: Code, ctx: EmitCtx): Code {
  * A stringify function: its header, its body lines, and the cycle guard around the body when the node reaches itself.
  * The guard registers the value while the body writes it, so a value that holds itself throws at its first repeat.
  */
-function stringifyFunction(header: Code, body: readonly Code[], guard: boolean): Code {
-  const open = guard ? [code`  ${rt.conversion.beginEncode}(value);`, code`  try {`] : [];
-  const close = guard ? [code`  } finally {`, code`    ${rt.conversion.endEncode}(value);`, code`  }`] : [];
-  return join([header, ...open, ...body, ...close, code`}`, code``], code`\n`);
+function stringifyFunction(header: Code, body: readonly Code[], guard: boolean, value: InputSlot): Code {
+  const open = guard ? [code`  ${rt.conversion.beginEncode}(${inputOf(value)});`, code`  try {`] : [];
+  const close = guard ? [code`  } finally {`, code`    ${rt.conversion.endEncode}(${inputOf(value)});`, code`  }`] : [];
+  return bindInput(functionCode(header, [...open, ...body, ...close]), value, code`value`);
+}
+
+/** A function: its header, its body lines and the closing brace. */
+function functionCode(header: Code, body: readonly Code[]): Code {
+  return join([header, ...body, code`}`, code``], code`\n`);
+}
+
+/** `build` written against the cast read `(value as never)` of `value`, the read of the parameter. */
+function onCastValue(build: (cast: Code) => Code, value: Code = code`value`): Code {
+  const cast = inputSlot('value as never', 'other');
+  return bindInput(build(inputOf(cast)), cast, code`(${value} as never)`);
 }
 
 /** The schema of the values of a map with no declared field, or undefined for any other object. */
@@ -532,12 +544,13 @@ function emitLenientObjectStringify(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   ctx: EmitCtx,
   guard: boolean,
+  value: InputSlot,
 ): Code {
   const properties = Object.entries(descriptor.properties);
   const header = code`function ${identifier(fn)}(${stringifyParameters(code`value: Record<string, unknown>`, ctx)}): string {`;
   const lines: Code[] = [];
   const fields = properties.map(([name, property], index) => {
-    const { read } = accessRead('value', name);
+    const { read } = accessRead(inputOf(value), name);
     const field = identifier(`__golemField${index}`);
     const piece = identifier(`__golemPiece${index}`);
     lines.push(
@@ -569,7 +582,7 @@ function emitLenientObjectStringify(
     );
   }
   lines.push(code`  return out + '}';`);
-  return stringifyFunction(header, [...inlineLocalLines(ctx), ...lines], guard);
+  return stringifyFunction(header, [...inlineLocalLines(ctx), ...lines], guard, value);
 }
 
 function emitObjectStringify(
@@ -577,7 +590,9 @@ function emitObjectStringify(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   ctx: EmitCtx,
   guard: boolean,
+  valueSlot: InputSlot,
 ): Code {
+  const value = inputOf(valueSlot);
   // With validation off a required field can be missing, so a lenient object writes each field that is present.
   const required = new Set(ctx.lenientRoot ? [] : descriptor.required);
   const properties = Object.entries(descriptor.properties);
@@ -586,32 +601,32 @@ function emitObjectStringify(
     : descriptor.additionalPropertiesDeclared ? { kind: 'unknown' as const } : undefined;
   const name = identifier(fn);
   if (properties.length === 0 && !additional) {
-    return stringifyFunction(code`function ${name}(${stringifyParameters(code`_value: Record<string, unknown>`, ctx)}): string {`, [code`  return '{}';`], guard);
+    return stringifyFunction(code`function ${name}(${stringifyParameters(code`_value: Record<string, unknown>`, ctx)}): string {`, [code`  return '{}';`], guard, valueSlot);
   }
   const header = code`function ${name}(${stringifyParameters(code`value: Record<string, unknown>`, ctx)}): string {`;
   if (isPlainDataMap(descriptor)) {
-    return stringifyFunction(header, [code`  return ${rt.serde.stringifyJsonScalar}(value as never);`], guard);
+    return stringifyFunction(header, [code`  return ${rt.serde.stringifyJsonScalar}(${value} as never);`], guard, valueSlot);
   }
   if (!additional && properties.every(([property]) => required.has(property))) {
-    const concatenated = emitRequiredObjectConcat(properties, 'value', ctx);
-    return stringifyFunction(header, [...inlineLocalLines(ctx), code`  return '{' + ${concatenated};`], guard);
+    const concatenated = emitRequiredObjectConcat(properties, value, ctx);
+    return stringifyFunction(header, [...inlineLocalLines(ctx), code`  return '{' + ${concatenated};`], guard, valueSlot);
   }
-  if (ctx.lenientRoot && !additional && properties.some(([property]) => descriptor.required.includes(property))) return emitLenientObjectStringify(fn, descriptor, ctx, guard);
+  if (ctx.lenientRoot && !additional && properties.some(([property]) => descriptor.required.includes(property))) return emitLenientObjectStringify(fn, descriptor, ctx, guard, valueSlot);
   const lines: Code[] = [
     // The native writer calls a `toJSON` of the value, which the per-entry writer below never does: a value that has one takes that writer.
     ...(isNumberMap(descriptor) ? [
-      code`  if (typeof value['toJSON'] !== 'function') {`,
-      code`    for (const entry of Object.values(value)) {`,
+      code`  if (typeof ${value}['toJSON'] !== 'function') {`,
+      code`    for (const entry of Object.values(${value})) {`,
       code`      if (entry !== undefined) ${rt.serde.stringifyJsonNumber}(entry as number);`,
       code`    }`,
-      code`    return JSON.stringify(value);`,
+      code`    return JSON.stringify(${value});`,
       code`  }`,
     ] : []),
     code`  let out = '{';`,
     code`  let sep = false;`,
   ];
   for (const [index, [property, schema]] of properties.entries()) {
-    const { read, shape } = accessRead('value', property);
+    const { read, shape } = accessRead(value, property);
     const input = inputSlot(property, shape);
     const piece = emitValue(schema, inputOf(input), ctx);
     const local = identifier(`__golemValue${index}`);
@@ -641,9 +656,9 @@ function emitObjectStringify(
     // A schema for the other names: they are written after the listed names, each by that schema. Without one, a declared
     // `additionalProperties: true` makes them data of unknown type.
     lines.push(
-      code`  for (const key of Object.keys(value)) {`,
+      code`  for (const key of Object.keys(${value})) {`,
       ...(properties.length === 0 ? [] : [code`    if (${literal(properties.map(([property]) => property))}.includes(key)) continue;`]),
-      code`    const __golemExtra = value[key];`,
+      code`    const __golemExtra = ${value}[key];`,
       code`    if (__golemExtra === undefined) continue;`,
       code`    if (sep) out += ",";`,
       code`    out += ${rt.serde.stringifyJsonString}(key) + ":" + ${emitValue(additional, '__golemExtra', ctx)};`,
@@ -652,7 +667,7 @@ function emitObjectStringify(
     );
   }
   lines.push(code`  return out + '}';`);
-  return stringifyFunction(header, [...inlineLocalLines(ctx), ...lines], guard);
+  return stringifyFunction(header, [...inlineLocalLines(ctx), ...lines], guard, valueSlot);
 }
 
 /** The stringify function of a node, as the file's text: the entry point for a caller that is not Code yet. */
@@ -692,6 +707,7 @@ function stringifyCode(
     guardInline: !extra?.wireIdentity && node.descriptor.kind === 'union' && reachesNode(node.descriptor, node.id, { graph }),
   };
   const fn = extra?.functionName ?? stringifyFunctionName(node.id);
+  const valueSlot = inputSlot('value', 'name', true);
   // An intersection (allOf) is one merged object: the root writes its declared fields, as decode and encode do. With
   // validation off a required field can be missing, so a lenient root writes each field that is present. A checked
   // root, such as the validated wire stringify, keeps the all-required fast path.
@@ -702,17 +718,18 @@ function stringifyCode(
   const delegates = node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference';
   const startsLevel = !passesValueOn(node.descriptor, root !== undefined);
   const guard = !ctx.wireIdentity && !delegates && startsLevel && reachesNode(node.descriptor, node.id, ctx);
-  if (root) return emitObjectStringify(fn, root, ctx, guard);
+  if (root) return emitObjectStringify(fn, root, ctx, guard, valueSlot);
   if (delegates) {
     return stringifyFunction(
       code`function ${identifier(fn)}(value: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {`,
-      [code`  return ${rt.serde.requireObjectCodec}(${literal(node.codecId)}).stringify(value as never, options);`],
+      [code`  return ${rt.serde.requireObjectCodec}(${literal(node.codecId)}).stringify(${inputOf(valueSlot)} as never, options);`],
       false,
+      valueSlot,
     );
   }
-  const value = emitValue(node.descriptor, '(value as never)', ctx);
+  const value = onCastValue((cast) => emitValue(node.descriptor, cast, ctx), inputOf(valueSlot));
   const header = code`function ${identifier(fn)}(${stringifyParameters(code`value: unknown`, ctx)}): string {`;
-  return stringifyFunction(header, [...inlineLocalLines(ctx), code`  return ${value};`], guard);
+  return stringifyFunction(header, [...inlineLocalLines(ctx), code`  return ${value};`], guard, valueSlot);
 }
 
 export function emitGraphStringify(graph: SchemaGraph, serde?: StringifySerdeResolver): string {
@@ -1386,6 +1403,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Emitted, c
       if (named) return emitInternedObjectDecode(named, descriptor, value, ctx);
     }
     const before = fallibleCount(ctx);
+    // migration door, deleted in T-290: the arrow parameter `value` names the local of a hoisted converter, whose key is its text
     const decoded = emitDecodeValue(descriptor.additionalProperties, 'value', { ...ctx, decodeLocals: undefined });
     const entry = emittedFallible(before, decoded, ctx)
       ? emitFieldConversion('key', 'value', descriptor.additionalProperties, 'value', ctx)
@@ -1520,7 +1538,7 @@ function emitFillFunction(
   const exported = ctx.exportedFillFunctionIds?.has(node.id) ? code`export ` : code``;
   if (descriptor.kind !== 'object') {
     return {
-      source: stringifyFunction(code`${exported}function ${fn}(out: Record<string, unknown>, _wire: Record<string, unknown>): Record<string, unknown> {`, [code`  return out;`], false),
+      source: functionCode(code`${exported}function ${fn}(out: Record<string, unknown>, _wire: Record<string, unknown>): Record<string, unknown> {`, [code`  return out;`]),
       copyIdentity: false,
       needsFill: false,
       fallible: false,
@@ -1536,7 +1554,7 @@ function emitFillFunction(
   if (properties.length === 0 && !additionalSchema && patternConstraints.length === 0) {
     // Every property is carried over as it is and checked; an own `__proto__` stays a data property.
     return {
-      source: stringifyFunction(code`${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {`, [
+      source: functionCode(code`${exported}function ${fn}(out: Record<string, unknown>, wire: Record<string, unknown>): Record<string, unknown> {`, [
         code`  for (const key of Object.keys(wire)) {`,
         code`    const extra = wire[key];`,
         code`    if (extra === undefined) continue;`,
@@ -1544,13 +1562,14 @@ function emitFillFunction(
         code`    if (out !== wire) ${rt.conversion.defineModelProperty}(out, key, value);`,
         code`  }`,
         code`  return out;`,
-      ], false),
+      ]),
       copyIdentity: false,
       needsFill: true,
       fallible: true,
     };
   }
   const required = new Set(descriptor.required);
+  const wireRoot = inputSlot('wire', 'name', true);
   // A recursive node registers the wire it decodes, so a cycle in the input stops at the repeated object.
   const recursive = reachesNode(descriptor, node.id, ctx);
   const identityWrites: Code[] = [];
@@ -1589,9 +1608,10 @@ function emitFillFunction(
       if (optional) captured.push([name, present]);
       if (!optional) {
         // A required field that is carried reads the wire itself, so it is written against that read.
-        const direct = accessRead('wire', name);
+        const direct = accessRead(inputOf(wireRoot), name);
         const carried = emitFillValue(property, direct.read, direct.shape, field, `__golemWire${index}`, ctx);
-        propertyWrites.push(...carried.statements.map((row) => indented(row, 2)), ...write(carried.value));
+        const onWire = (piece: Code): Code => bindInput(piece, wireRoot, code`wire`);
+        propertyWrites.push(...carried.statements.map((row) => indented(onWire(row), 2)), ...write(onWire(carried.value)));
       } else {
         propertyWrites.push(
           code`  if (${presentName} !== undefined) {`,
@@ -1664,7 +1684,7 @@ function emitFillFunction(
   const body = recursive
     ? [code`  ${rt.conversion.beginDecode}(wire);`, code`  try {`, ...rows.map((row) => indented(row, 2)), code`  } finally {`, code`    ${rt.conversion.endDecode}(wire);`, code`  }`]
     : rows;
-  return { source: stringifyFunction(declaration, body, false), copyIdentity, needsFill, fallible };
+  return { source: functionCode(declaration, body), copyIdentity, needsFill, fallible };
 }
 
 function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Emitted, ctx: EmitCtx): Code {
@@ -1753,10 +1773,11 @@ function emitEncodedRecord(
   // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
   // keeps them as they are. Any other object writes its listed names only.
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
+  const extra = inputSlot('extra', 'name');
   const keyParameter = fields.length === 0 ? code`` : code`key`;
   const unlisted = fields.length === 0 ? code`` : code` && !${literal(fields.map(([name]) => name))}.includes(key)`;
   const extras = additional || descriptor.additionalPropertiesDeclared
-    ? [code`...Object.fromEntries(Object.entries(${asRecordCode(inputOf(self))}).filter(([${keyParameter}, extra]) => extra !== undefined${unlisted}).map(([key, extra]) => [key, ${emitEncodeValue(additional ?? { kind: 'unknown' }, 'extra', ctx)}]))`]
+    ? [code`...Object.fromEntries(Object.entries(${asRecordCode(inputOf(self))}).filter(([${keyParameter}, extra]) => extra !== undefined${unlisted}).map(([key, extra]) => [key, ${bindInput(emitEncodeValue(additional ?? { kind: 'unknown' }, inputOf(extra), ctx), extra, code`extra`)}]))`]
     : [];
   const entries = [...extras, ...values.map(([name, entry]) => isSpread(entry)
     ? entry
@@ -1926,12 +1947,14 @@ function emitNodeRuntime(
   const guardInline = node.descriptor.kind === 'union' && reachesNode(node.descriptor, node.id, ctx);
   const encodedStringifyContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline };
   const encodedWireContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline };
+  const stringifyValue = inputSlot('value', 'name', true);
+  const toWireRecord = inputSlot('record', 'name', true);
   const encodedExpr = objectDescriptor
-    ? emitEncodedRecord(objectDescriptor, 'value', encodedStringifyContext)
-    : emitEncodeValue(node.descriptor, '(value as never)', encodedStringifyContext);
+    ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(stringifyValue), encodedStringifyContext), stringifyValue, code`value`)
+    : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encodedStringifyContext));
   const encodedRecordExpr = objectDescriptor
-    ? emitEncodedRecord(objectDescriptor, 'record', encodedWireContext)
-    : emitEncodeValue(node.descriptor, '(value as never)', encodedWireContext);
+    ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(toWireRecord), encodedWireContext), toWireRecord, code`record`)
+    : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encodedWireContext));
   const exportsWire = isExported && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true);
   const wireStringifySrc = emitsValidatedWire
     ? code`${stringifyCode(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true, functionName: `${stringifyName}Wire` })}${exportsWire
@@ -1967,11 +1990,12 @@ function emitNodeRuntime(
 
   const fill = objectDescriptor ? emitFillFunction(node, ctx, objectDescriptor) : undefined;
   const fillSrc = fill?.source ?? code``;
-  const rootScope: EmitCtx = { ...ctx, decodeLocals: [], castWire: true };
+  const wireRoot = inputSlot('wire', 'name', true);
+  const rootScope: EmitCtx = { ...ctx, decodeLocals: [], castWire: wireRoot };
   // The wire of a node that is not an object is `unknown`; a read of the root `wire` casts it where it reads.
   const decodedExpr = objectDescriptor
     ? undefined
-    : emitDecodeValue(node.descriptor, 'wire', rootScope);
+    : bindInput(emitDecodeValue(node.descriptor, inputOf(wireRoot), rootScope), wireRoot, code`wire`);
 
   const convertLines: Code[] = [
     code`function ${convertId}(wire: unknown, options: ${SERDE_OPTIONS} | undefined): unknown {`,
@@ -2054,6 +2078,7 @@ function emitNodeRuntime(
     code`function ${toWireCoreId}(${identifier(readsRecord || !objectDescriptor ? 'value' : '_value')}: ${fieldsOrUnknown}): ${wireOrUnknown} {`,
     toWireCoreBody,
     recursiveNode,
+    inputSlot('value', 'name', true),
   );
   const toWireLines = [
     toWireCoreSource,

@@ -21,6 +21,8 @@ export type ReadShape = 'name' | 'chain' | 'other';
 export interface InputSlot {
   readonly label: string;
   readonly shape: ReadShape;
+  /** The input is an object whose properties the piece reads, such as a root `value`, so a property read needs no cast. */
+  readonly record: boolean;
 }
 
 /**
@@ -129,8 +131,8 @@ export function nameOf(slot: NameSlot): Code {
   return fromParts([{ kind: 'name', slot }]);
 }
 
-export function inputSlot(label: string, shape: ReadShape = 'other'): InputSlot {
-  return { label, shape };
+export function inputSlot(label: string, shape: ReadShape = 'other', record: boolean = false): InputSlot {
+  return { label, shape, record };
 }
 
 /** Spaces at the start of a line. Whitespace names nothing, so it is the one text that needs no check. */
