@@ -5,6 +5,7 @@ import {
   calleeOf,
   code,
   emitCodecRuntimeCode,
+  exportFrom,
   fileImports,
   helper,
   helperName,
@@ -524,10 +525,10 @@ export function generateOpenApiModelArtifacts(
   const aliasByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
   const files = new Map<string, string>();
   const diagnostics: GolemDiagnostic[] = [];
-  const codecExports = (name: string): string[] => {
+  const codecExports = (name: string): readonly (readonly [local: string, exported: string])[] => {
     const node = analysis.nodesByName.get(name);
     if (!node) return [];
-    const aliases: readonly (readonly [string, string])[] = [
+    return [
       [`stringify${node.id}`, `stringify${name}`],
       [`parse${node.id}`, `parse${name}`],
       [`fromWireFormat${node.id}`, `fromWireFormat${name}`],
@@ -536,7 +537,6 @@ export function generateOpenApiModelArtifacts(
       [`assert${node.id}`, `assert${name}`],
       [`encode${name}`, `encode${name}`],
     ];
-    return aliases.map(([local, exported]) => local === exported ? local : `${local} as ${exported}`);
   };
   // Every group's validation plan comes first: the companions of a group import their validators by the names the
   // SDK's one validators module gives, and that module compiles every model in one plan.
@@ -628,14 +628,18 @@ export function generateOpenApiModelArtifacts(
     files.set(group.filename, modelModule);
     for (const name of group.models) {
       const filename = `models/${name}.ts`;
-      const runtimeExports = codecExports(name);
-      files.set(filename, `${generatedBanner()}\nexport { ${name}Model${runtimeExports.length ? `, ${runtimeExports.join(', ')}` : ''} } from './_${group.id}.js';\nexport type { ${name}Fields, ${name}JSON, ${name}Init } from './_${group.id}.js';\n`);
+      files.set(filename, render(code`${join([
+        legacyText(generatedBanner()),
+        exportFrom([`${name}Model`, ...codecExports(name)], `./_${group.id}.js`),
+        exportFrom([`${name}Fields`, `${name}JSON`, `${name}Init`], `./_${group.id}.js`, true),
+      ], lineBreak)}\n`));
     }
   }
-  const reexports = ordered.map((definition) =>
-    `export { ${definition.name}Model, ${codecExports(definition.name).map((name) => name.includes(' as ') ? name.slice(name.indexOf(' as ') + 4) : name).join(', ')} } from './models/${definition.name}.js';\nexport type { ${definition.name}Fields, ${definition.name}JSON, ${definition.name}Init } from './models/${definition.name}.js';`,
-  );
-  return { files, entryReexports: reexports.join('\n'), diagnostics: uniqueDiagnostics(diagnostics) };
+  const reexports = ordered.flatMap((definition) => [
+    exportFrom([`${definition.name}Model`, ...codecExports(definition.name).map(([, exported]) => exported)], `./models/${definition.name}.js`),
+    exportFrom([`${definition.name}Fields`, `${definition.name}JSON`, `${definition.name}Init`], `./models/${definition.name}.js`, true),
+  ]);
+  return { files, entryReexports: render(join(reexports, lineBreak)), diagnostics: uniqueDiagnostics(diagnostics) };
 }
 
 /**

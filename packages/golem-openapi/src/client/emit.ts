@@ -8,6 +8,7 @@ import {
   aliased,
   code,
   fileImports,
+  identifier as identifierPart,
   importLines,
   importSet,
   ImportSource,
@@ -266,8 +267,9 @@ function operationSource(
     return name;
   };
   const validationSourcesName = uniqueModuleName('__operationValidationSources', 'operation validation sources');
-  const inputType = `Types.${operation.typeName}OperationInput`;
-  const responseType = `Types.${operation.typeName}OperationHttpResponse`;
+  const typesModule = new ImportSource('../types.js', true, { namespace: 'Types' });
+  const inputType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationInput`)}`;
+  const responseType = code`${typesModule.namespace()}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}`;
   const validatorSetup = validatesWithSources
     ? text`  const validators = ${rt.validation.operationValidators}(runtime, ${JSON.stringify(operation.name)}, ${validationSourcesName});\n  const checkResponse = ${rt.validation.responseCheck}(validators);`
     : BLANK;
@@ -358,13 +360,14 @@ ${validatorSetup.parts.length > 0 ? text`${validatorSetup}\n` : BLANK}${body}
     const entry = runtime.get(module);
     return entry ? importLines(entry, imports) : [];
   };
-  const clientImports = fileImports(file, [clientModule], { elsewhere: [validatorsSource] });
-  const validatorImportLines = fileImports(file, [validatorsSource], { elsewhere: [clientModule] });
+  const clientImports = fileImports(file, [clientModule], { elsewhere: [typesModule, validatorsSource] });
+  const typesImports = fileImports(file, [typesModule], { elsewhere: [clientModule, validatorsSource] });
+  const validatorImportLines = fileImports(file, [validatorsSource], { elsewhere: [typesModule, clientModule] });
   return render(code`${join([
     legacyText(generatedBanner().trimEnd()),
     ...runtimeLines('client'),
     ...clientImports,
-    legacyText(`import type * as Types from '../types.js';`),
+    ...typesImports,
     ...runtimeLines('mobx'),
     ...validatorImportLines,
     ...runtimeLines('validation'),
@@ -378,7 +381,8 @@ ${functions}`);
 function emitSecurityTypes(
   clientName: string,
   rawSecuritySchemes: Readonly<Record<string, unknown>>,
-): string {
+  runtime: Code,
+): Code {
   const entries = objectEntries(rawSecuritySchemes);
   const contextSchemes = entries.filter(([, scheme]) => isJsonObject(scheme) && !scheme.$ref && scheme.type !== 'mutualTLS');
   const schemeNames = entries.map(([name]) => JSON.stringify(name));
@@ -416,9 +420,9 @@ function emitSecurityTypes(
       : `${clientName}TokenAuthValue<${contextType}>`;
     return `  ${propertyName(name)}?: ${valueType};`;
   });
-  if (!entries.length) return '';
+  if (!entries.length) return BLANK;
 
-  return `export type ${clientName}AuthContext = Runtime.AuthContext;
+  return text`export type ${clientName}AuthContext = ${runtime}.AuthContext;
 
 export type ${clientName}SecuritySchemeName = ${nameType};
 
@@ -440,12 +444,12 @@ ${contexts.join('\n\n')}
 
 export type ${clientName}TokenAuthValue<
   Context extends ${clientName}AuthContext = ${clientName}AuthContext,
-> = Runtime.TokenAuthValue<Context>;
+> = ${runtime}.TokenAuthValue<Context>;
 
-export type ${clientName}BasicCredentials = Runtime.BasicCredentials;
+export type ${clientName}BasicCredentials = ${runtime}.BasicCredentials;
 export type ${clientName}BasicAuthValue<
   Context extends ${clientName}AuthContext = ${clientName}AuthContext,
-> = Runtime.BasicAuthValue<Context>;
+> = ${runtime}.BasicAuthValue<Context>;
 
 export interface ${clientName}Auth {
 ${properties.join('\n')}
@@ -506,12 +510,18 @@ ${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
 } as const;`
     : '';
   const clientRuntime = rt.client.ClientRuntime;
+  const runtimeTypes = new ImportSource('@exprtlabs/golem/client', true, { namespace: 'Runtime' });
+  const typesModule = new ImportSource('./types.js', true, { namespace: 'Types' });
+  const runtimeNamespace = runtimeTypes.namespace();
+  const typesNamespace = typesModule.namespace();
+  const inputTypeOf = (operation: NormalizedOperation): Code => code`${typesNamespace}.${identifierPart(`${operation.typeName}OperationInput`)}`;
+  const responseTypeOf = (operation: NormalizedOperation): Code => code`${typesNamespace}.${identifierPart(`${operation.typeName}OperationHttpResponse`)}`;
   const apiOperation = profile.mobx ? aliased(rtType.mobx.ObservableApiOperation, 'ApiOperation') : rtType.client.ApiOperation;
   const methods = join(operations.map((operation) =>
-    text`  ${operation.name}(): ${apiOperation}<Types.${operation.typeName}OperationInput, Types.${operation.typeName}OperationHttpResponse, ${clientName}RequestOptions>;`,
+    text`  ${operation.name}(): ${apiOperation}<${inputTypeOf(operation)}, ${responseTypeOf(operation)}, ${clientName}RequestOptions>;`,
   ), code`\n`);
   const implementations = join(operations.map((operation) =>
-    text`  ${operation.name}(): ${apiOperation}<Types.${operation.typeName}OperationInput, Types.${operation.typeName}OperationHttpResponse, ${clientName}RequestOptions> {
+    text`  ${operation.name}(): ${apiOperation}<${inputTypeOf(operation)}, ${responseTypeOf(operation)}, ${clientName}RequestOptions> {
     return ${String(aliases.get(operation.name))}(this.runtime);
   }`,
   ), code`\n\n`);
@@ -531,38 +541,38 @@ ${[...securityAliases.values()].map((alias) => `  ...${alias},`).join('\n')}
     'auth',
     'operationValidators',
   ];
-  const optionsType = text`Omit<Runtime.ClientOptions, ${omittedOptions.map((name) => JSON.stringify(name)).join(' | ')}>${optionExtensions.length ? text` & {\n${join(optionExtensions, code`\n`)}\n}` : ''}`;
+  const optionsType = text`Omit<${runtimeNamespace}.ClientOptions, ${omittedOptions.map((name) => JSON.stringify(name)).join(' | ')}>${optionExtensions.length ? text` & {\n${join(optionExtensions, code`\n`)}\n}` : ''}`;
   const aliases_ = join([
     text`export type ${clientName}ClientOptions = ${optionsType};`,
-    `export type ${clientName}RequestOptions = Runtime.RequestOptions;`,
+    text`export type ${clientName}RequestOptions = ${runtimeNamespace}.RequestOptions;`,
     ...(undeclared ? [
-      `export type ${clientName}UndeclaredResponseError = Runtime.UndeclaredResponseError;`,
-      text`export function is${clientName}UndeclaredResponseError(error: unknown): error is Runtime.UndeclaredResponseError {\n  return ${rt.client.isUndeclaredResponseError}(error, ${JSON.stringify(clientName)});\n}`,
+      text`export type ${clientName}UndeclaredResponseError = ${runtimeNamespace}.UndeclaredResponseError;`,
+      text`export function is${clientName}UndeclaredResponseError(error: unknown): error is ${runtimeNamespace}.UndeclaredResponseError {\n  return ${rt.client.isUndeclaredResponseError}(error, ${JSON.stringify(clientName)});\n}`,
     ] : []),
-    ...(surfaces.mutualTls ? [`export type ${clientName}MutualTlsTransport = Runtime.MutualTlsTransport;`] : []),
+    ...(surfaces.mutualTls ? [text`export type ${clientName}MutualTlsTransport = ${runtimeNamespace}.MutualTlsTransport;`] : []),
     ...(surfaces.streamDecoders ? [
-      `export type ${clientName}StreamDecoderContext = Runtime.StreamDecoderContext;`,
-      `export type ${clientName}StreamDecoder = Runtime.StreamDecoder;`,
+      text`export type ${clientName}StreamDecoderContext = ${runtimeNamespace}.StreamDecoderContext;`,
+      text`export type ${clientName}StreamDecoder = ${runtimeNamespace}.StreamDecoder;`,
     ] : []),
     ...(surfaces.parameterSerializers ? [
-      `export type ${clientName}ParameterSerializerContext = Runtime.ParameterSerializerContext;`,
-      `export type ${clientName}ParameterSerializer = Runtime.ParameterSerializer;`,
+      text`export type ${clientName}ParameterSerializerContext = ${runtimeNamespace}.ParameterSerializerContext;`,
+      text`export type ${clientName}ParameterSerializer = ${runtimeNamespace}.ParameterSerializer;`,
     ] : []),
     ...(surfaces.responseHeaderDecoders ? [
-      `export type ${clientName}ResponseHeaderDecoderContext = Runtime.ResponseHeaderDecoderContext;`,
-      `export type ${clientName}ResponseHeaderDecoder = Runtime.ResponseHeaderDecoder;`,
+      text`export type ${clientName}ResponseHeaderDecoderContext = ${runtimeNamespace}.ResponseHeaderDecoderContext;`,
+      text`export type ${clientName}ResponseHeaderDecoder = ${runtimeNamespace}.ResponseHeaderDecoder;`,
     ] : []),
     ...(surfaces.bodyEncoders ? [
-      `export type ${clientName}EncodedBody = Runtime.EncodedBody;`,
-      `export type ${clientName}EncodingMetadata = Runtime.EncodingMetadata;`,
-      `export type ${clientName}BodyEncoderContext = Runtime.BodyEncoderContext;`,
-      `export type ${clientName}BodyEncoder = Runtime.BodyEncoder;`,
+      text`export type ${clientName}EncodedBody = ${runtimeNamespace}.EncodedBody;`,
+      text`export type ${clientName}EncodingMetadata = ${runtimeNamespace}.EncodingMetadata;`,
+      text`export type ${clientName}BodyEncoderContext = ${runtimeNamespace}.BodyEncoderContext;`,
+      text`export type ${clientName}BodyEncoder = ${runtimeNamespace}.BodyEncoder;`,
     ] : []),
   ].map((item) => typeof item === 'string' ? legacyText(item) : item), code`\n`);
   const rest = text`${imports}
 ${profile.validation ? `\n${operationNameType('__GolemOperationName', operations)}\n` : ''}
 ${aliases_}
-${usesAuth ? `\n${emitSecurityTypes(clientName, rawSecuritySchemes)}` : ''}
+${usesAuth ? text`\n${emitSecurityTypes(clientName, rawSecuritySchemes, runtimeNamespace)}` : ''}
 export interface ${clientName}ClientPort {
 ${methods}
 }
@@ -587,9 +597,9 @@ ${metadata}
   return render(code`${join([
     legacyText(generatedBanner()),
     ...lines('client', { values: true }),
-    legacyText("import type * as Runtime from '@exprtlabs/golem/client';"),
+    ...fileImports(rest, [runtimeTypes], { elsewhere: [typesModule] }),
     ...lines('validation', { types: true }),
-    legacyText("import type * as Types from './types.js';"),
+    ...fileImports(rest, [typesModule], { elsewhere: [runtimeTypes] }),
     ...lines('mobx', { types: true }),
     ...(profile.mobx ? [] : lines('client', { types: true })),
   ], code`\n`)}
