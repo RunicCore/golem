@@ -38,21 +38,37 @@ export interface TypeAnalysisContext {
   readonly field?: string;
 }
 
-/** What a fields type is when it is no object type, as a phrase for the RUNM1052 message; undefined for an object type. */
+/** A descriptor kind (or a type's kind) as the phrase the RUNM1052 message uses: "an array", "a Date", "any". */
+export function describeRootKind(kind: string): string {
+  if (kind === 'any' || kind === 'unknown') return kind;
+  const noun = kind === 'date' ? 'Date' : kind;
+  return `${/^[aeio]/.test(noun) ? 'an' : 'a'} ${noun}`;
+}
+
+/** RUNM1052: the one message for a root that is no object, whether the type or its descriptor shows it. */
+export function nonObjectRootDiagnostic(
+  sourceFile: ts.SourceFile,
+  declaration: ts.TypeAliasDeclaration,
+  declarationKind: 'IModel' | 'IObject',
+  found: string,
+): Error {
+  return diagnostic(sourceFile, declaration, '1052', `The ${declarationKind} fields type must be an object type, but ${declaration.name.text} has ${found}. Declare the fields in an object type, and put the value in a field of a model.`);
+}
+
+/** What a fields type is when it is no object type, as the RUNM1052 phrase; undefined for an object type. */
 function nonObjectKind(checker: ts.TypeChecker, type: ts.Type): string | undefined {
-  if (isErrorAny(type)) return undefined;
-  if (type.isUnion()) return 'a union';
+  if (type.isUnion()) return describeRootKind('union');
   if (type.isIntersection()) {
     const member = type.types.map((item) => nonObjectKind(checker, item)).find((kind) => kind !== undefined);
     return member && `an intersection with ${member}`;
   }
-  if (checker.isTupleType(type)) return 'a tuple';
-  if (checker.isArrayType(type)) return 'an array';
-  if (isDateType(checker, type)) return 'a Date';
-  if ((type.flags & ts.TypeFlags.Any) !== 0) return 'any';
-  if ((type.flags & ts.TypeFlags.Unknown) !== 0) return 'unknown';
-  if ((type.flags & ts.TypeFlags.Object) === 0) return checker.typeToString(type) === 'object' ? 'the object keyword' : 'a scalar';
-  if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) return 'a function';
+  if (checker.isTupleType(type)) return describeRootKind('tuple');
+  if (checker.isArrayType(type)) return describeRootKind('array');
+  if (isDateType(checker, type)) return describeRootKind('date');
+  if ((type.flags & ts.TypeFlags.Any) !== 0) return describeRootKind('any');
+  if ((type.flags & ts.TypeFlags.Unknown) !== 0) return describeRootKind('unknown');
+  if ((type.flags & ts.TypeFlags.Object) === 0) return checker.typeToString(type) === 'object' ? 'the object keyword' : describeRootKind('scalar');
+  if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) return describeRootKind('function');
   return undefined;
 }
 
@@ -104,10 +120,11 @@ export function collectSpecifications(
       if (!fieldsNode) throw diagnostic(sourceFile, statement, '1001', 'IModel requires a fields type.');
       const optionsNode = statement.type.typeArguments?.[1];
       const fieldsType = checker.getTypeFromTypeNode(fieldsNode);
-      const found = nonObjectKind(checker, fieldsType);
-      if (found) {
-        throw diagnostic(sourceFile, statement, '1052', `The ${declarationKind} fields type must be an object type, but ${statement.name.text} has ${found}. Declare the fields in an object type, and put a union, array or scalar in a named model field.`);
+      if (isErrorAny(fieldsType)) {
+        throw diagnostic(sourceFile, statement, '1058', `The fields type of ${statement.name.text} could not be resolved. Fix its declaration or import.`);
       }
+      const found = nonObjectKind(checker, fieldsType);
+      if (found) throw nonObjectRootDiagnostic(sourceFile, statement, declarationKind, found);
       specifications.push({
         sourceFile,
         declaration: statement,

@@ -79,6 +79,18 @@ for (const { name, declaration, fields, validation, found } of nonObjectRoots) {
   });
 }
 
+// protects: T-425 an unresolved fields type keeps RUNM1058 (it once read as the unknown root of RUNM1052)
+for (const validation of [true, false]) {
+  test(`an IModel whose fields type does not resolve stops with RUNM1058 with validation ${validation ? 'on' : 'off'}`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';\nimport type { Missing } from './missing.js';\nexport type TItem = IModel<Missing>;\n`);
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation } }),
+      /RUNM1058: The fields type of TItem could not be resolved\. Fix its declaration or import\./,
+    );
+  });
+}
+
 // protects: T-425 a whole-object TSerde root stops with RUNM1052 (it once wrote a file that did not compile); an SDK model's fields stay a valid root
 test('an IModel over a type that a TSerde converts as a whole stops with RUNM1052', async t => {
   const { root, sourceRoot } = fixture(t);

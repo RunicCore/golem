@@ -51,7 +51,7 @@ import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, ty
 import { compareText, displayPath, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
-import { descriptorBuilder, diagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';
+import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalFilename,
   commonDirectory,
@@ -680,11 +680,8 @@ function describeRoot(job: JobAnalysis, specification: ModelSpecification): Mode
 function assertRootHasFields(specification: ModelSpecification, definition: ModelConversionDescriptor): void {
   const found = 'serde' in definition ? 'a type that a TSerde converts as a whole'
     : definition.kind === 'object' || definition.kind === 'generated-model' ? undefined
-      : definition.kind === 'any' || definition.kind === 'unknown' ? definition.kind : `a ${definition.kind}`;
-  if (found) {
-    throw diagnostic(specification.sourceFile, specification.declaration, '1052',
-      `The ${specification.emitClass ? 'IModel' : 'IObject'} fields type must be an object type, but ${specification.name} has ${found}. Declare the fields in an object type, and put the value in a field of a model.`);
-  }
+      : describeRootKind(definition.kind);
+  if (found) throw nonObjectRootDiagnostic(specification.sourceFile, specification.declaration, specification.emitClass ? 'IModel' : 'IObject', found);
 }
 
 /** Describe every model of the job once and index the results for lookups. */
