@@ -178,11 +178,14 @@ interface IrDate {
  * `golemModelInstance`: of the model classes `among`, the one the value's encoder selects is the most derived one
  * the value is an instance of. It must be `of`: always when `required`, otherwise when there is one. Without `of`,
  * the value must be an instance of none of them. A failure is one `instance` issue naming `of`, or the first of `among`.
+ * `of` and `among` are the names the issue shows; `ofId` and `amongIds` are the codec ids a registered class matches exactly.
  */
 export interface IrInstance {
   readonly kind: 'instance';
   readonly of?: string;
+  readonly ofId?: string;
   readonly among: readonly string[];
+  readonly amongIds: readonly string[];
   readonly required: boolean;
 }
 

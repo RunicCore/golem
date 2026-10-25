@@ -26,7 +26,7 @@ const DISPATCH_TESTS: Readonly<Record<IrTypeName, (value: Code) => Code>> = {
   number: value => code`typeof ${value} === 'number'`,
 };
 
-/** The model class of `value` among the codec ids `among`, which the module keeps as one frozen list. */
+/** The codec id of the model class of `value` among the codec ids `among`, which the module keeps as one frozen list. */
 function selectedModelCall(state: ModuleState, value: Code, among: readonly string[]): Code {
   return code`${localName('selectedModel')}(${value}, ${state.constant('models', code`Object.freeze(${literalCode(among)})`, JSON.stringify(among))})`;
 }
@@ -304,8 +304,8 @@ export class FunctionWriter {
   /** The class the value's encoder selects must be `of`; see `IrInstance`. */
   private instanceCheck(check: IrInstance, value: Code): void {
     const selected = this.fresh('selected');
-    this.line(code`const ${selected} = ${selectedModelCall(this.state, value, check.among)};`);
-    const expected = check.of === undefined ? code`undefined` : literalCode(check.of);
+    this.line(code`const ${selected} = ${selectedModelCall(this.state, value, check.amongIds)};`);
+    const expected = check.ofId === undefined ? code`undefined` : literalCode(check.ofId);
     this.leaf({
       fails: check.required || check.of === undefined ? code`${selected} !== ${expected}` : code`${selected} !== undefined && ${selected} !== ${expected}`,
       issue: code`code: 'instance', model: ${literalCode(check.of ?? check.among[0])}`,

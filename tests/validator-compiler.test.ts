@@ -11,6 +11,9 @@ import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { MODEL_CODEC_IDS_KEY } from '@exprtlabs/golem/internal/schema';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
+import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 
 import { compileSchema, compileValidatorModule, compileValidators } from './support/compiled-validators.js';
 import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
@@ -816,14 +819,53 @@ test('golemModelInstance without required lets a plain object through when it na
   await assertIssues({ golemModelInstance: { among: ['Dog', 'Cat'], required: false } }, new Dog(), [{ path: [], code: 'instance', model: 'Dog' }]);
 });
 
-test('golemModelInstance matches a hashed codec id exactly and an unhashed name against its hashed ids', async () => {
+test('golemModelInstance matches a registered codec id exactly', async () => {
   const Order = modelClass('Order_1a2b3c4d');
   await assertIssues({ golemModelInstance: { of: 'Order_1a2b3c4d', among: ['Order_1a2b3c4d'], required: true } }, new Order(), []);
-  await assertIssues({ golemModelInstance: { of: 'Order', among: ['Order'], required: true } }, new Order(), []);
   await assertIssues({ golemModelInstance: { of: 'Order_ffffffff', among: ['Order_ffffffff'], required: true } }, new Order(), [
     { path: [], code: 'instance', model: 'Order_ffffffff' },
   ]);
-  await assertIssues({ golemModelInstance: { of: 'Ord', among: ['Ord'], required: true } }, new Order(), [{ path: [], code: 'instance', model: 'Ord' }]);
+  await assertIssues({ golemModelInstance: { of: 'Order', among: ['Order'], required: true } }, new Order(), [{ path: [], code: 'instance', model: 'Order' }]);
+});
+
+test('golemModelInstance reads a name through codecIds and shows the name', async () => {
+  // protects: bug T-294 a model named like a codec id keeps its full name in codec identity
+  const Plain = modelClass('Order_1a2b3c4d');
+  const Suffixed = modelClass('Order_0badc0de_1a2b3c4d');
+  const plain = { golemModelInstance: { of: 'Order', among: ['Order'], required: true, codecIds: { Order: 'Order_1a2b3c4d' } } };
+  await assertIssues(plain, new Plain(), []);
+  await assertIssues(plain, new Suffixed(), [{ path: [], code: 'instance', model: 'Order' }]);
+  const suffixed = { golemModelInstance: { of: 'Order_0badc0de', among: ['Order_0badc0de'], required: true, codecIds: { Order_0badc0de: 'Order_0badc0de_1a2b3c4d' } } };
+  await assertIssues(suffixed, new Suffixed(), []);
+  await assertIssues(suffixed, new Plain(), [{ path: [], code: 'instance', model: 'Order_0badc0de' }]);
+});
+
+test('golemModelInstance of a codec id does not match a model whose name starts with that id', async () => {
+  // protects: bug T-294 a hashed id is never guessed from a name
+  const Named = modelClass('Order_1a2b3c4d_ffffffff');
+  await assertIssues({ golemModelInstance: { of: 'Order_1a2b3c4d', among: ['Order_1a2b3c4d'], required: true } }, new Named(), [
+    { path: [], code: 'instance', model: 'Order_1a2b3c4d' },
+  ]);
+});
+
+test('a validation plan names the codec id of each model name a schema selects among', () => {
+  // protects: bug T-294 the generated check matches registered codec ids, so a model named like a hashed id keeps its own
+  const model = (tag: string): ModelTypeDescriptor => ({
+    kind: 'object',
+    properties: { kind: { kind: 'literal', value: tag } },
+    required: ['kind'],
+    additionalProperties: false,
+  });
+  const graph = createSchemaGraph();
+  const order = graph.intern(model('plain'), 'Order');
+  const suffixed = graph.intern(model('suffixed'), 'Order_0badc0de');
+  graph.seal();
+  const among = { golemModelInstance: { of: 'Order_0badc0de', among: ['Order', 'Order_0badc0de'], required: true } };
+  const plan = buildCodecValidationPlan(graph, [], { Holder: among });
+  assert.deepEqual(JSON.parse(JSON.stringify(plan.schemas.Holder)), {
+    golemModelInstance: { ...among.golemModelInstance, codecIds: { Order: order.codecId, Order_0badc0de: suffixed.codecId } },
+    $id: 'Holder',
+  });
 });
 
 test('golemModelInstance reports at the path of the value it checks', async () => {
@@ -944,6 +986,7 @@ test('a golem keyword with a malformed value is an error naming the keyword, not
     ['golemModelDate', 'yes'],
     ['golemModelInstance', { among: 'Cat', required: true }],
     ['golemModelInstance', { of: 1, among: ['Cat'], required: true }],
+    ['golemModelInstance', { among: ['Cat'], required: true, codecIds: { Cat: 1 } }],
     ['golemModelInstance', { among: ['Cat'] }],
     ['golemModelInstance', 'Cat'],
     ['exprtValidation', 'rules.isEven'],

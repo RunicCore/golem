@@ -136,13 +136,19 @@ function finiteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-/** The value of `golemModelInstance` as an IR node; undefined when it does not have the shape `schema.ts` writes: `{ of?: string, among: string[], required: boolean }`. */
+/**
+ * The value of `golemModelInstance` as an IR node; undefined when it does not have the shape `schema.ts` writes:
+ * `{ of?: string, among: string[], required: boolean }`, and the validation plan adds `codecIds`, the codec id of each name it resolved.
+ * A name without an entry in `codecIds` is its own codec id.
+ */
 function modelInstance(value: unknown): IrInstance | undefined {
   if (!isRecord(value)) return undefined;
-  const { of, among, required } = value;
+  const { of, among, required, codecIds } = value;
   if ((of !== undefined && typeof of !== 'string') || !Array.isArray(among) || typeof required !== 'boolean') return undefined;
   if (!among.every((id): id is string => typeof id === 'string')) return undefined;
-  return { kind: 'instance', ...(of === undefined ? {} : { of }), among, required };
+  if (codecIds !== undefined && (!isRecord(codecIds) || !Object.values(codecIds).every((id) => typeof id === 'string'))) return undefined;
+  const idOf = (name: string): string => (codecIds === undefined || !Object.hasOwn(codecIds, name) ? name : codecIds[name] as string);
+  return { kind: 'instance', ...(of === undefined ? {} : { of, ofId: idOf(of) }), among, amongIds: among.map(idOf), required };
 }
 
 /** The message of the error `new RegExp(source, 'u')` throws, or undefined when it compiles. */
@@ -444,7 +450,7 @@ class Lowering {
     }
     if (Object.hasOwn(node, MODEL_INSTANCE_KEYWORD)) {
       const instance = modelInstance(node[MODEL_INSTANCE_KEYWORD]);
-      if (instance === undefined) malformed(MODEL_INSTANCE_KEYWORD, 'expected an object with an optional string "of", a list of strings "among" and a boolean "required"');
+      if (instance === undefined) malformed(MODEL_INSTANCE_KEYWORD, 'expected an object with an optional string "of", a list of strings "among", a boolean "required" and optional "codecIds" of strings"');
       else checks.push(instance);
     }
 
