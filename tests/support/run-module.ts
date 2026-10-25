@@ -18,3 +18,12 @@ export function runModule(
   const body = `${stripTypes(source, options.format)}\nreturn { ${(options.exports ?? []).join(', ')} };`;
   return new Function(...names, body)(...names.map((name) => scope[name])) as Record<string, unknown>;
 }
+
+/**
+ * A stand-in for any module a generated file imports: every property read, call and construct on it gives the same stand-in again.
+ * A name in `known` gives its own value instead, so a test sees the one call it asks about.
+ */
+export function openScope(known: Readonly<Record<string, unknown>> = {}): unknown {
+  const open: unknown = new Proxy(function stub() {}, { get: () => open, apply: () => open, construct: () => open as object });
+  return new Proxy(open as object, { get: (_target, name) => (typeof name === 'string' && Object.hasOwn(known, name) ? known[name] : open) });
+}

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { runModule } from './run-module.js';
+import { openScope, runModule } from './run-module.js';
 
 /** What a rewritten module did when it ran with every import stubbed: the codec ids it asked the runtime for, in call order, and the modules it imported. */
 export interface RewrittenRun {
@@ -17,13 +17,10 @@ export function runRewritten(code: string | undefined): RewrittenRun {
   const codecIds: string[] = [];
   const imports: string[] = [];
   const registered: Array<readonly [string, string]> = [];
-  const open: unknown = new Proxy(function stub() {}, { get: () => open, apply: () => open, construct: () => open as object });
-  const imported = new Proxy({}, {
-    get: (_target, name) => {
-      if (name === 'requireObjectCodec') return (id: string) => { codecIds.push(id); return open; };
-      if (name === 'registerIModelClass') return (id: string, constructor: { readonly name: string }) => { registered.push([id, constructor.name]); };
-      return open;
-    },
+  const open = openScope();
+  const imported = openScope({
+    requireObjectCodec: (id: string) => { codecIds.push(id); return open; },
+    registerIModelClass: (id: string, constructor: { readonly name: string }) => { registered.push([id, constructor.name]); },
   });
   // A name the module uses but a test fixture leaves undeclared (a `declare const`) reads as a stub: run again with it declared.
   const stubbed: string[] = [];
