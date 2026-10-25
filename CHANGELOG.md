@@ -18,7 +18,9 @@ in the sections below.
 
 ### Models
 
+- A field typed `Date | Date[]` or `Date | string[]` generates and converts by its wire value: a string is the Date, an array is the array. Before, it stopped with [`RUNM1082`](docs/reference/diagnostics.md#runm1082). A nullable form such as `Date | Date[] | null` keeps `null`.
 - A type alias that refers to itself now works in any shape: a union, an array, a tuple or a record. `type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }` is a valid field type. Golem generates one function for the alias. [`RUNM1003`](docs/reference/diagnostics.md#runm1003) no longer reports a recursive alias, and [`RUNM1056`](docs/reference/diagnostics.md#runm1056) now means a cycle that golem cannot name.
+- A recursive interface or class, such as `interface Tree { kids: Tree[] }`, now generates one schema that refers to itself through `$ref`. Before, generation stopped with a stack overflow. A clash of two such types with one name stops with [`RUNM1059`](docs/reference/diagnostics.md#runm1059).
 - A union of scalars, one array and one object converts and validates without a tag.
 - `ModelInit` accepts a value of a type that holds itself through an array, such as `JsonValue`, and no longer stops the compiler with "Type instantiation is excessively deep". A tuple keeps its exact shape.
 - `golem-ts-openapi` writes a controller response that has a recursive alias type as one component that refers to itself.
@@ -46,6 +48,7 @@ in the sections below.
 - The generated codec code holds no runs of two blank lines. An SDK that you commit shows blank-line changes after you generate it again.
 - `schemaType()` from `@exprtlabs/golem-openapi/generator` accepts a qualifier only as identifiers that each end in a dot, such as `InputSchemas.`.
 - `golem-ts-openapi` treats a query or path parameter type as a branded primitive only when its extra members are golem tags. A brand from another library, such as a `tag` key, now stops generation with [`NEST1107`](docs/reference/diagnostics.md#nest1107). Before, golem took any member whose name held `tag`, `serde`, `validation` or `constraint` as a brand.
+- The `controllers` job accepts a one-field `@Body('payment')` or `@Query('filter')` parameter with an `IModel` or `IObject` type, the form `NestModelInterceptor` converts. The OpenAPI document writes the body fields as the properties of one object request body and the query model as a `deepObject` parameter, and the operation-codec registry holds their models, so `golem check` agrees with the rewrite. Before, [`NEST1103`](docs/reference/diagnostics.md#nest1103) and [`NEST1107`](docs/reference/diagnostics.md#nest1107) stopped generation. A one-field `@Body` of another type, an optional one-field model, or a `@Body` beside a whole `@Body()` stops with `NEST1103`. A one-field `@Query` model that is optional, holds an array field at any depth, or sits beside a whole `@Query()` stops with `NEST1107`.
 
 ### Generation
 

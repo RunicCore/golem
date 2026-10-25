@@ -8,11 +8,11 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1001
 
-**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or list the files that declare it in `sources` of the controller job.
+**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or list the files that declare it in `sources` of the controller job. When you call `generate` in code, pass them as its `sources` option.
 
 ### NEST1002
 
-**No controller sources.** No file that ends in one of the controller `suffixes` (default `.controller.ts`) exists under `src` of the job `root`, and the controller job has no `sources`. **Fix:** Add a controller file, or list the controller files in `sources` of the controller job.
+**No controller sources.** No file that ends in one of the controller `suffixes` (default `.controller.ts`) exists under `src` of the job `root`, and the controller job has no `sources`. **Fix:** Add a controller file, or list the controller files in `sources` of the controller job. When you call `generate` in code, pass them as its `sources` option.
 
 ### NEST1101
 
@@ -24,7 +24,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1103
 
-**Named body parameter.** `@Body('field')` names a single field instead of the whole request body. **Fix:** Use `@Body()` for the whole object and declare an explicit request-body contract.
+**Named body parameter.** A one-field `@Body('field')` has a type that is no `IModel` or `IObject`, is optional, or shares an operation with a whole `@Body()`. `NestModelInterceptor` converts only a model field, and it cannot convert a whole body and a field of it together. **Fix:** Give the field a required `IModel` or `IObject` type, or use `@Body()` for the whole object and declare an explicit request-body contract. Use one-field parameters only, or one whole parameter only.
 
 ### NEST1105
 
@@ -36,7 +36,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1107
 
-**Non-portable parameter.** A parameter's OpenAPI mapping isn't portable for the shape or version involved: flattening it would need a non-primitive property, a named parameter isn't primitive, a whole `@Query()` object collides with another query parameter, or a `querystring` parameter needs OpenAPI 3.2.0. **Fix:** Use a named primitive parameter or an explicit Swagger contract, keep a single whole-object query parameter, or generate against OpenAPI 3.2.0 for a `querystring` parameter.
+**Non-portable parameter.** A parameter's OpenAPI mapping isn't portable for the shape or version involved: flattening it would need a non-primitive property, a named parameter is neither primitive nor, for `@Query('name')`, an `IModel` or `IObject`, a one-field `@Query('name')` model is optional or holds an array field, a whole `@Query()` object shares an operation with a one-field model or collides with another query parameter, or a `querystring` parameter needs OpenAPI 3.2.0. **Fix:** Use a named primitive parameter or an explicit Swagger contract, keep a single whole-object query parameter, or generate against OpenAPI 3.2.0 for a `querystring` parameter.
 
 ### NEST1108
 
@@ -268,7 +268,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1056
 
-**Unresolvable recursive type.** A type refers back to itself, and golem cannot give the cycle a name. A recursive type alias gets its name from the alias, so the cycle needs a type alias that you wrote. **Fix:** Declare the recursive shape as a named type alias, for example `type Tree = { children: Tree[] }`, or as a named model.
+**Unresolvable recursive type.** A type refers back to itself, and golem cannot give the cycle a name. A recursive type gets its name from its interface, class or type alias, so the cycle needs one of them. **Fix:** Declare the recursive shape as a named interface, class or type alias, for example `type Tree = { children: Tree[] }`, or as a named model.
 
 ### RUNM1057
 
@@ -280,7 +280,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1059
 
-**Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. The message lists both places. **Fix:** Declare a named type alias for one of the inline types, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field.
+**Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. A recursive interface, class or type alias derives its name from its own, so two of them with one name clash too. The message lists both places. **Fix:** For an inline type, declare a named type alias, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field. For a recursive interface, class or type alias, rename one of the two types.
 
 ### RUNM1060
 

@@ -3,7 +3,7 @@ import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
 import { instanceFieldsCode, ownEnumerableCode } from '../union-conversion.js';
 import { NEWLINE } from './function-names.js';
 
-type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOf' | 'hashedId' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
+type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOf' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
 
 /** A helper function of a generated module: the file holds its definition once, where the code that names it asks for it. */
 function localHelper(id: LocalHelper, rank: number, define: (self: Code) => Code): Helper {
@@ -14,13 +14,6 @@ function localHelper(id: LocalHelper, rank: number, define: (self: Code) => Code
 /** The name of a local helper, and the request that the file defines it. */
 export function localName(name: LocalHelper): Code {
   return helperName(HELPERS[name]);
-}
-
-/** True when the registered codec id `registered` is the model `id`, in the code of `selectedModel`. */
-function modelIdMatches(): Code {
-  const hashedId = localName('hashedId');
-  return code`registered === id
-    || (!${hashedId}.test(id) && registered.length === id.length + 9 && registered.startsWith(id + "_") && ${hashedId}.test(registered))`;
 }
 
 // The rank of a helper is its place in the module: helpers come in this order, after the helpers their definitions name.
@@ -46,20 +39,18 @@ const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
     code`  return nearest !== 0 && Math.abs(quotient - nearest) <= 4 * Number.EPSILON * Math.abs(nearest);`,
     code`}`,
   ], NEWLINE)),
-  hashedId: localHelper('hashedId', 7, self => code`const ${self} = /_[0-9a-f]{8}$/;`),
   // The registered model class a value is an instance of, as `golemModelInstance` reads it. The symbol key is
   // `MODEL_CODEC_IDS_KEY`, which object-codec.ts registers under: the generated module imports nothing that registers classes. The most derived
-  // registered prototype on the chain wins. A hashed codec id (`Name_1a2b3c4d`) matches exactly; an unhashed name also
-  // matches the hashed ids of that name. The key is read once at load and no function is made per call.
+  // registered prototype on the chain wins. A codec id matches exactly: the validation plan has resolved each name to the
+  // id the class registers under. The key is read once at load and no function is made per call.
   selectedModel: localHelper('selectedModel', 8, self => join([
     code`const modelIdsKey = Symbol.for(${literalCode(MODEL_CODEC_IDS_KEY)});`,
-    code`const modelIdMatches = (registered, id) => ${modelIdMatches()};`,
     code`function ${self}(value, among) {`,
     code`  if (typeof value !== 'object' || value === null) return undefined;`,
     code`  for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {`,
     code`    if (!Object.prototype.hasOwnProperty.call(prototype, modelIdsKey)) continue;`,
     code`    const registered = prototype[modelIdsKey];`,
-    code`    for (let x = 0; x < among.length; x++) for (let y = 0; y < registered.length; y++) if (modelIdMatches(registered[y], among[x])) return among[x];`,
+    code`    for (let x = 0; x < among.length; x++) for (let y = 0; y < registered.length; y++) if (registered[y] === among[x]) return among[x];`,
     code`  }`,
     code`  return undefined;`,
     code`}`,

@@ -406,8 +406,9 @@ export function generate(context: GolemModelContext): GolemModelResult {
     : [...normalized.sources].sort();
   if (listed && discovered.length === 0) {
     throw new Error(
-      `No model sources found under ${join(normalized.root, 'src')}. `
-      + `Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
+      '`sources` is empty, so there is no model file to generate. '
+      + 'List at least one model file in `sources`, or leave `sources` out '
+      + `to use the files below ${join(normalized.root, 'src')} that end in ${normalized.suffixes.join(' or ')}.`,
     );
   }
   const boundary = modelBoundary(normalized.root, normalized.suffixes, { directory: normalized.directory, output: normalized.output });
