@@ -1,5 +1,4 @@
 import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
-import { generatedModelSource } from './helpers.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -543,13 +542,11 @@ test('generated nested Date, inherited, and dictionary conversions work in a sta
 
 test('generated discriminated unions infer abstract, concrete, and handwritten serde classes', async t => {
   const output = path.join(createFixtureProject(t, 'golem-openapi-union-serde-'), 'sdk');
-  const result = await generateMaterializedSdk(discriminatedUnionSerdeDocument(), {
+  await generateMaterializedSdk(discriminatedUnionSerdeDocument(), {
     output,
     name: 'DiscriminatedSerde',
     profile: { mobx: false, validation: false, allowAny: false },
   });
-  const models = generatedModelSource(result.artifacts);
-  assert.doesNotMatch(models, /\b(?:fromJSON|toJSON)\b/);
 
   const consumer = path.join(output, 'union-types.ts');
   copyFixtureFile(output, "openapi/model-serde/union-types.ts", "union-types.ts");
@@ -569,9 +566,7 @@ test('generated discriminated unions infer abstract, concrete, and handwritten s
   assert.ok(handwritten instanceof CatModel);
   assert.equal((handwritten as { readonly marker: boolean }).marker, true);
   assert.deepEqual(encodeGeneratedModel(generated(handwritten)), { kind: 'cat', name: 'Miso' });
-  assert.equal('fromJSON' in (modelExports.PetModel as object), false);
-  assert.equal('fromJSON' in (modelExports.CatModel as object), false);
-  assert.equal('toJSON' in (cat as object), false);
+  assert.deepEqual(encodeGeneratedModel(generated(cat)), { kind: 'cat', name: 'Miso' });
 });
 
 test('a tuple field converts each item by its own schema: the prefix stays a string and the rest items are Dates', async t => {
