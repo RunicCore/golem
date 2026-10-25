@@ -134,7 +134,7 @@ async function checkThenApply(
   const before = snapshotFilesystem(fixtureValue.root);
   assert.throws(
     () => applyJob(fixtureValue.config, loadInventory(fixtureValue.config), fixtureValue.job, result.artifacts, true),
-    /stale/,
+    /^Error: Generated outputs are stale for \S+:\n/,
   );
   assert.deepEqual(snapshotFilesystem(fixtureValue.root), before);
   applyJob(fixtureValue.config, loadInventory(fixtureValue.config), fixtureValue.job, result.artifacts);
