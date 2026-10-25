@@ -103,6 +103,34 @@ export function projectionBaseName(
   return (node && readable(checker, node, modelNameOf, 0)) || fallback;
 }
 
+/** The first declaration of the alias, interface or class that declares a type. */
+function declarationOf(type: ts.Type): ts.Declaration | undefined {
+  return (type.aliasSymbol ?? type.getSymbol())?.declarations?.[0];
+}
+
+/** The type arguments of a generic instance: those of its alias, else those of its reference to a generic interface or class. */
+function instanceArguments(checker: ts.TypeChecker, type: ts.Type): readonly ts.Type[] {
+  if (type.aliasSymbol) return type.aliasTypeArguments ?? [];
+  const declaration = declarationOf(type);
+  const generic = declaration !== undefined && (ts.isInterfaceDeclaration(declaration) || ts.isClassDeclaration(declaration))
+    && (declaration.typeParameters?.length ?? 0) > 0;
+  return generic ? checker.getTypeArguments(type) : [];
+}
+
+/**
+ * The stem of a recursive type whose declared name another type already uses: the stem and the type arguments of a generic instance
+ * (`Page<number>` after `Page<string>` gives `PageNumber`), else the stem and the file stem (`b.model.ts` gives `NodeB`).
+ * Undefined when the type has neither.
+ */
+export function qualifiedHeadStem(checker: ts.TypeChecker, type: ts.Type, stem: string): string | undefined {
+  const argumentParts = instanceArguments(checker, type).map(argument => pascalIdentifier(checker.typeToString(argument)));
+  if (argumentParts.length > 0 && argumentParts.every((part): part is string => part !== undefined)) return `${stem}${argumentParts.join('')}`;
+  const fileName = declarationOf(type)?.getSourceFile().fileName;
+  const base = fileName?.slice(fileName.lastIndexOf('/') + 1).replace(/(?:\.models?)?(?:\.d)?\.[cm]?tsx?$/, '');
+  const filePart = base === undefined ? undefined : pascalIdentifier(base);
+  return filePart === undefined ? undefined : `${stem}${filePart}`;
+}
+
 const PROJECTION_NAME = /^[A-Za-z][A-Za-z0-9]*$/;
 
 export function isProjectionName(name: string): boolean {

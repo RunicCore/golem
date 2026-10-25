@@ -3,7 +3,7 @@ import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPro
 import * as ts from '../typescript-ns.js';
 import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
-import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
+import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, qualifiedHeadStem, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { compareText, displayPath } from '../generator-api.js';
@@ -262,6 +262,11 @@ function isObjectLikeIntersection(checker: ts.TypeChecker, type: ts.Type): boole
 function userAliasName(type: ts.Type): string | undefined {
   const declaration = type.aliasSymbol?.declarations?.find(ts.isTypeAliasDeclaration);
   return declaration ? aliasProjectionName(declaration) : undefined;
+}
+
+/** A recursive type found that its name is used by another type: the walk starts over with `stem`, the name that tells the two apart. */
+class ProjectionNameClash extends Error {
+  constructor(readonly type: ts.Type, readonly stem: string) { super(`Projection name clash: ${stem}`); }
 }
 
 /** How many levels of one generic declaration a walk may hold at once. A type that makes a new type argument on each level never repeats, so this bound ends it. */
@@ -572,10 +577,19 @@ export function descriptorBuilder(
   const projectionCache = new Map<ts.Type, Map<string, string>>();
   // Where each projection name was first minted, for the clash diagnostic.
   const projectionSources = new Map<string, string>();
+  // What a walk added to the three maps above, so a recursive type that must change its name can start over without leftovers.
+  const undo: (() => void)[] = [];
+  // The recursive types that already took a qualified name; a second clash of one of them is a real RUNM1059.
+  const qualifiedHeads = new Set<ts.Type>();
   const sourceLocation = (at: ts.Node): string => {
     const sourceFile = at.getSourceFile();
     const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
     return `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1}`;
+  };
+  // A recursive type is told apart by its declaration and its type arguments; any other projection by where it is written.
+  const placeOf = (type: ts.Type): string | undefined => {
+    const declaration = (type.aliasSymbol ?? type.getSymbol())?.declarations?.[0];
+    return declaration && `${checker.typeToString(type)} declared at ${sourceLocation(declaration)}`;
   };
   const modelNames = new Map(
     specifications.map((specification) => [specification.declaration, nameFor?.(specification) ?? specification.name] as const),
@@ -892,6 +906,7 @@ export function descriptorBuilder(
     // array, tuple or object that holds itself with no model between.
     const recursive = !isRoot && isCycleHead(type, context.declaration);
     let projectionName: string | undefined;
+    let projectionStem: string | undefined;
     if ((projection && objectShape && !isRoot) || recursive) {
       const nameAt = node ?? nameNode;
       // A cycle head keeps the name its first lap gave it, so a declared name that is not a plain identifier (non-ASCII) still ends the cycle,
@@ -902,6 +917,7 @@ export function descriptorBuilder(
         stem = safeNameHint((declaredHead ? userAliasName(type) ?? declaredTypeName(type) : undefined) ?? projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint);
         if (recursive) cycleStems.set(type, stem);
       }
+      projectionStem = stem;
       const candidate = `${stem}${policySuffix({
         exact: context.exact, allowAny: context.allowAny ?? allowAny, representation,
       })}`;
@@ -909,6 +925,8 @@ export function descriptorBuilder(
       const here = sourceLocation(nameAt ?? context.declaration);
       const modelLocation = modelLocations.get(candidate);
       if (modelLocation) {
+        const qualifiedStem = recursive && !qualifiedHeads.has(type) ? qualifiedHeadStem(checker, type, stem) : undefined;
+        if (qualifiedStem !== undefined) throw new ProjectionNameClash(type, qualifiedStem);
         throw diagnostic(context.sourceFile, nameAt ?? context.declaration, '1059',
           `Projection name ${candidate} is used by a projection and a model: ${here} and ${modelLocation}. Rename one of them, or declare a named type alias for the projection.`);
       }
@@ -917,9 +935,14 @@ export function descriptorBuilder(
       projectionName = cached.get(policy);
       if (projectionName) return { kind: 'reference', name: projectionName, projection: true };
       projectionName = candidate;
+      const freshType = !projectionCache.has(type);
       cached.set(policy, projectionName);
       projectionCache.set(type, cached);
-      if (!projectionSources.has(candidate)) projectionSources.set(candidate, here);
+      undo.push(() => { cached.delete(policy); if (freshType) projectionCache.delete(type); });
+      if (!projectionSources.has(candidate)) {
+        projectionSources.set(candidate, recursive ? placeOf(type) ?? here : here);
+        undo.push(() => { projectionSources.delete(candidate); });
+      }
     }
     if ((sequence || objectShape) && seen.has(type) && !projectionName) {
       throw diagnostic(context.sourceFile, node ?? context.declaration, '1056', 'Recursive anonymous object conversion needs a named model or projected type.');
@@ -1139,17 +1162,34 @@ export function descriptorBuilder(
       const lookup = (name: string): ModelConversionDescriptor | undefined => projections.get(name);
       if (projectionIdentity(lookup, projectionName, existing) !== projectionIdentity(lookup, projectionName, described)) {
         const nameAt = node ?? nameNode ?? context.declaration;
+        const qualified = recursive && !qualifiedHeads.has(type) ? qualifiedHeadStem(checker, type, projectionStem!) : undefined;
+        if (qualified !== undefined) throw new ProjectionNameClash(type, qualified);
+        const second = (recursive ? placeOf(type) : undefined) ?? sourceLocation(nameAt);
         throw diagnostic(context.sourceFile, nameAt, '1059',
-          `Projection name ${projectionName} is used by two different types: ${projectionSources.get(projectionName)} and ${sourceLocation(nameAt)}. Rename one of the two types; a distinct type alias name also works.`);
+          `Projection name ${projectionName} is used by two different types: ${projectionSources.get(projectionName)} and ${second}. Rename one of the two types; a distinct type alias name also works.`);
       }
       return { kind: 'reference', name: projectionName, projection: true };
     }
     projections.set(projectionName, described);
+    const registered = projectionName;
+    undo.push(() => { projections.delete(registered); });
     return { kind: 'reference', name: projectionName, projection: true };
   };
   const describe: typeof describeType = (originalType, context, ...rest) => {
     const leave = enterExpansion(originalType, context.declaration);
-    try { return describeType(originalType, context, ...rest); } finally { leave(); }
+    const mark = undo.length;
+    try {
+      try {
+        return describeType(originalType, context, ...rest);
+      } catch (error) {
+        if (!(error instanceof ProjectionNameClash)) throw error;
+        // The type met another type of its name only after its body was read: drop what that read added and read it again under the qualified name.
+        while (undo.length > mark) undo.pop()!();
+        qualifiedHeads.add(error.type);
+        cycleStems.set(error.type, error.stem);
+        return describeType(originalType, context, ...rest);
+      }
+    } finally { leave(); }
   };
   return Object.assign(describe, { projections });
 }
