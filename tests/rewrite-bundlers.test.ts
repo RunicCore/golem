@@ -1,3 +1,4 @@
+// lane: typescript6 ProgramSession resolution updates in the bundler rewrite plugins
 // The Vite and esbuild plugins scan each TypeScript file with the project's own types and rewrite it in memory; the bundler then strips the types.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

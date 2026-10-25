@@ -1,3 +1,4 @@
+// lane: typescript6 the `golem build` driver: `tsc --showConfig` options and declaration remapping
 // golem build: the golem.yaml, its tsconfig and the build state of each tsconfig.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

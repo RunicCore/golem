@@ -1,3 +1,4 @@
+// lane: typescript6 the `golem build` manifest lookup for shared model files
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
