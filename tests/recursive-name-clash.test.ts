@@ -8,7 +8,7 @@ import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelS
 const HEAD = "import type { IModel } from '@exprtlabs/golem/model';\n";
 
 /** Builds the sources, sends each value through the wire codecs of the named model in the named file, and checks that the generated files name each projection in `names`. */
-async function roundTrips(t: TestContext, sources: Record<string, string>, values: readonly (readonly [file: string, model: string, value: unknown])[], names: readonly string[]): Promise<void> {
+async function roundTrips(t: TestContext, sources: Record<string, string>, values: readonly (readonly [file: string, model: string, value: unknown])[], names: readonly string[], absent: readonly string[] = []): Promise<void> {
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-names-', name: 'recursive-names' });
   writeModelSources(sourceRoot, sources);
   writeModelGolemYaml(root, { mobx: false, validation: true });
@@ -16,6 +16,7 @@ async function roundTrips(t: TestContext, sources: Record<string, string>, value
   assert.equal(built.code, 0, `${built.stdout}${built.stderr}`);
   const generated = fs.readdirSync(sourceRoot).filter(file => file.endsWith('.generated.ts')).map(file => fs.readFileSync(path.join(sourceRoot, file), 'utf8')).join('\n');
   for (const name of names) assert.match(generated, new RegExp(`\\b${name}Fields\\b`), `${name} is a projection name`);
+  for (const name of absent) assert.doesNotMatch(generated, new RegExp(`\\b${name}Fields\\b`), `${name} is no projection name`);
   for (const [file, model, value] of values) {
     const codecs = await import(pathToFileURL(path.join(root, `build/${file}.model.generated.js`)).href) as Record<string, (value: unknown) => unknown>;
     assert.deepEqual(JSON.parse(JSON.stringify(codecs[`toWireFormat${model}`]!(codecs[`fromWireFormat${model}`]!(value)))), value);
@@ -63,4 +64,14 @@ test('a recursive type named like a model once the policy suffix is added takes 
     'a.model.ts': `${HEAD}export type NodeLoose = IModel<{ label: string }>;\n`,
     'b.model.ts': `${HEAD}export interface Node { id: string; next?: Node }\nexport type TB = IModel<{ n: Node }, { exact: false }>;\n`,
   }, [['b', 'TB', { n: { id: 'x', next: { id: 'y' } } }]], ['NodeBLoose']);
+});
+
+test('recursive types with one name and the same shape share one projection, and different shapes do not', async (t: TestContext) => {
+  // protects: T-439 two files that declare the same recursive type give one projection, as the structural check always did
+  const same = (field: string): string => `${HEAD}export type Node = { ${field}: string; next?: Node };\n`;
+  await roundTrips(t, {
+    'a.model.ts': `${same('id')}export type TA = IModel<{ n: Node }>;\n`,
+    'b.model.ts': `${same('id')}export type TB = IModel<{ n: Node }>;\n`,
+    'c.model.ts': `${same('label')}export type TC = IModel<{ n: Node }>;\n`,
+  }, [['a', 'TA', { n: { id: 'x', next: { id: 'y' } } }], ['b', 'TB', { n: { id: 'x' } }], ['c', 'TC', { n: { label: 'x', next: { label: 'y' } } }]], ['Node', 'NodeC'], ['NodeB']);
 });

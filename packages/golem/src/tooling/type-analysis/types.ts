@@ -579,9 +579,23 @@ export function descriptorBuilder(
   // The type that minted each projection name. A recursive type that asks for a name another type holds takes a qualified name before its body is read.
   const projectionOwners = new Map<string, ts.Type>();
   const headNames = new Map<ts.Type, Map<string, string>>();
+  // The arguments of the `describe` calls that are open, so a name claim can read the type once under another name.
+  const openCalls: Parameters<typeof describeType>[] = [];
+  const snapshotNames = (): (() => void) => {
+    const copy = <K, V>(source: Map<K, V>, inner: (value: V) => V = (value) => value): Map<K, V> =>
+      new Map([...source].map(([key, value]) => [key, inner(value)] as const));
+    const saved = {
+      projections: copy(projections), cache: copy(projectionCache, (value) => new Map(value)), owners: copy(projectionOwners),
+      heads: copy(headNames, (value) => new Map(value)), sources: copy(projectionSources), stems: copy(cycleStems),
+    };
+    const restore = <K, V>(target: Map<K, V>, source: Map<K, V>): void => { target.clear(); source.forEach((value, key) => target.set(key, value)); };
+    return () => {
+      restore(projections, saved.projections); restore(projectionCache, saved.cache); restore(projectionOwners, saved.owners);
+      restore(headNames, saved.heads); restore(projectionSources, saved.sources); restore(cycleStems, saved.stems);
+    };
+  };
   const claimHeadName = (type: ts.Type, stem: string, suffix: string): string => {
-    const named = headNames.get(type) ?? new Map<string, string>();
-    const known = named.get(suffix);
+    const known = headNames.get(type)?.get(suffix);
     if (known !== undefined) return known;
     const free = (name: string): boolean => !modelLocations.has(name) && (projectionOwners.get(name) ?? type) === type;
     const qualifiers = headQualifiers(checker, type);
@@ -592,8 +606,27 @@ export function descriptorBuilder(
       const numbered = `${options[options.length - 1]}${number}${suffix}`;
       if (free(numbered)) name = numbered;
     }
-    named.set(suffix, name);
-    headNames.set(type, named);
+    const plain = `${stem}${suffix}`;
+    const setName = (value: string): void => {
+      headNames.set(type, (headNames.get(type) ?? new Map<string, string>()).set(suffix, value));
+    };
+    setName(name);
+    // A finished projection of another type holds the plain name: when this type reads the same under its own name, the two share the plain name.
+    const owner = projectionOwners.get(plain);
+    if (name !== plain && owner !== undefined && owner !== type && projections.has(plain) && !modelLocations.has(plain)) {
+      const restore = snapshotNames();
+      describeType(...openCalls[openCalls.length - 1]!);
+      const lookup = (projection: string): ModelConversionDescriptor | undefined => projections.get(projection);
+      const read = (projection: string): string | undefined => {
+        const descriptor = projections.get(projection);
+        return descriptor && projectionIdentity(lookup, projection, descriptor);
+      };
+      if (read(name) === read(plain)) {
+        restore();
+        setName(plain);
+        return plain;
+      }
+    }
     return name;
   };
   const sourceLocation = (at: ts.Node): string => {
@@ -1178,7 +1211,8 @@ export function descriptorBuilder(
   };
   const describe: typeof describeType = (originalType, context, ...rest) => {
     const leave = enterExpansion(originalType, context.declaration);
-    try { return describeType(originalType, context, ...rest); } finally { leave(); }
+    openCalls.push([originalType, context, ...rest]);
+    try { return describeType(originalType, context, ...rest); } finally { openCalls.pop(); leave(); }
   };
   return Object.assign(describe, { projections });
 }
