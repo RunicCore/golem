@@ -413,13 +413,14 @@ export function parseParameters(
         parameters.push({ node: parameter, type: field.type, location: 'body', name, required: true });
         return;
       }
-      const items = oneFieldKind(context, parameter, parameterType);
+      // Only an array body names an item model; describing any other body here would read a generic base's `T` too early.
+      const items = context.checker.isArrayType(parameterType.type) ? oneFieldKind(context, parameter, parameterType) : undefined;
       body = {
         node: parameter,
         type: parameterType,
         location: 'body',
         required,
-        ...(items.array && items.type.modelContractName !== undefined ? { bodyItemModel: items.type.modelContractName } : {}),
+        ...(items?.array && items.type.modelContractName !== undefined ? { bodyItemModel: items.type.modelContractName } : {}),
       };
       return;
     }
