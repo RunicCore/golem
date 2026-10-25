@@ -307,8 +307,8 @@ interface ScalarOrArray {
 }
 
 /**
- * A union of one array or tuple and scalar variants (a JSON scalar or a literal union),
- * the query-style shape. Date, generated models, and untagged objects are not scalarish.
+ * A union of one array or tuple and scalar variants (a JSON scalar or a literal union), the query-style shape, or one
+ * Date: the wire value tells a string from an array. Generated models and untagged objects are not scalarish.
  */
 export function scalarOrArray(
   present: readonly ModelTypeDescriptor[],
@@ -319,7 +319,7 @@ export function scalarOrArray(
   );
   if (sequences.length !== 1) return undefined;
   const scalars = present.filter((variant) => variant !== sequences[0]);
-  if (!scalars.every(isScalarishDescriptor)) return undefined;
+  if (!scalars.every(isScalarishDescriptor) && !(scalars.length === 1 && scalars[0].kind === 'date')) return undefined;
   return { sequence: sequences[0], scalars };
 }
 
@@ -448,19 +448,26 @@ export function emitUnionConversion(
     if (json) return code`(${value} == null ? 'null' : (${converted}))`;
     return sameCode(converted, value) ? value : code`${value} == null ? ${value} : (${converted})`;
   }
+  const nullable = present.length !== descriptor.variants.length;
+  // A Date converts no null or undefined, so the nullish variants of the union stop at a guard before its conversion.
+  const scalarBranch = (scalars: readonly ModelTypeDescriptor[]): Code => {
+    const variant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
+    if (!variant) return plain;
+    const converted = convert(variant);
+    if (!nullable || variant.kind !== 'date') return converted;
+    return json ? code`(${value} == null ? 'null' : (${converted}))` : code`(${value} == null ? ${value} : (${converted}))`;
+  };
   const pair = scalarOrArray(present);
   if (pair) {
     const { sequence, scalars } = pair;
-    const scalarVariant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
-    const scalar = scalarVariant ? convert(scalarVariant) : plain;
+    const scalar = scalarBranch(scalars);
     const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
     return joined(conversion, mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
   }
   const jsonValue = scalarArrayObject(present);
   if (jsonValue) {
     const { sequence, scalars, object } = jsonValue;
-    const scalarVariant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
-    const scalar = scalarVariant ? convert(scalarVariant) : plain;
+    const scalar = scalarBranch(scalars);
     const converted = guarded(object, convert(object));
     const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
     const rest = sameCode(converted, plain) && sameCode(scalar, plain)
