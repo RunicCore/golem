@@ -140,6 +140,7 @@ function assertArtifactInventory(
     assert.ok(inbound, 'inbound contract artifact');
     for (const operation of ir.inboundOperations) {
       const escapedName = operation.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      // Kept pin: inbound.ts holds types only, so no value runs; the name is the contract's member.
       assert.match(inbound, new RegExp(`\\b${escapedName}\\b`));
     }
     const client = result.artifacts.find(({ path: filename }) => filename.endsWith('/client.ts'))?.content;

@@ -36,6 +36,7 @@ import { validate } from './validators.js';`,
   const firstArtifacts = generatedModelFiles(first.root);
   const firstShared = firstArtifacts.filter((artifact) => artifact.path.endsWith('.model.generated.ts')).map((artifact) => artifact.content).join('\n');
   assert.ok(firstShared);
+  // protects: security: generated files do not leak the absolute path of the build machine
   assert.doesNotMatch(firstShared, new RegExp(first.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   const firstValidators = firstArtifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.ts'))?.content ?? '';
   assert.doesNotMatch(firstValidators, new RegExp(first.root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
@@ -66,7 +67,7 @@ type ValueArray = Array<string>;`,
     'contains', 'minContains', 'maxContains', 'minProperties', 'maxProperties',
     'propertyNames', 'patternProperties', 'additionalProperties', 'unevaluatedProperties',
     'dependentRequired', 'dependentSchemas', 'oneOf', 'not', 'if', 'then', 'else',
-  ]) assert.match(shared, new RegExp(`\\b${keyword}\\b`), keyword);
+  ]) assert.match(shared, new RegExp(`\\b${keyword}\\b`), keyword); // Kept pins (here and below): the generated JSON Schema data is an artifact tools read; the cases below prove the checks run.
   assert.match(generatedJsonData(shared), /"contains"[\s\S]*"(?:minContains"[\s\S]*"maxContains|maxContains"[\s\S]*"minContains)/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const valid = new A({ values: ['ok'], objectValue: { bar: 'yes', x_value: 1 } });

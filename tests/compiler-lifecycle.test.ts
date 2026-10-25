@@ -534,7 +534,7 @@ test('a program stays consistent while a sibling program opens with different ov
       sources: [main],
       overlays: new Map([[main, 'export type A = { a: string };\nexport const x: A = { a: "1" };\n']]),
     });
-    assert.match(sibling.getSourceFile(main)?.text ?? '', /a: string/);
+    assert.equal(sibling.getSourceFile(main)?.text, 'export type A = { a: string };\nexport const x: A = { a: "1" };\n');
   }
   assert.equal(first.getSourceFile(main), file, 'nodes of an open program keep their identity');
 });
