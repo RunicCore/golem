@@ -1,4 +1,4 @@
-// lane: typescript6 the `golem build --watch` driver: ProgramSession, watch ticks and unwatchable inputs
+// lane: typescript6 ProgramSession resolution updates in the `golem build --watch` driver
 // golem build --watch: sources outside the tsconfig directory, model edits, and edits made while a build runs.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

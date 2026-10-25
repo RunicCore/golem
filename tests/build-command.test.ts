@@ -1,4 +1,3 @@
-// lane: typescript6 the `golem build` driver: `tsc --showConfig` options, declaration remapping and scan failures
 // golem build: type-checks the original sources with the project's own tsc, emits the rewritten ones from a staging copy.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

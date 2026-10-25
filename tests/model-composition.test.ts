@@ -1,4 +1,3 @@
-// lane: typescript6 the `golem build` path rebasing of a composed project
 import { readFixture } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

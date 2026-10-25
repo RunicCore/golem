@@ -1,4 +1,3 @@
-// lane: typescript6 the `golem build` driver: forwarded tsc configurations, path rebasing and unsupported options
 // golem build: the configurations it emits, rejects or leaves alone, and the decorator metadata it keeps.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
