@@ -753,6 +753,12 @@ export class ProgramSession implements Disposable {
     return held;
   }
 
+  /** Parse one source text on its own, without a program. */
+  parseSourceFile(filename: string, text: string): Golem.SourceFile {
+    this.assertOpen();
+    return classic.createSourceFile(filename, text, classic.ScriptTarget.ES2022);
+  }
+
   /**
    * Resolve a module name that no program imports, such as one an SDK manifest names. The lookup sees the disk and `virtualFiles`, the
    * same files as on the TypeScript 7 lane. The classic resolver takes the mode after its cache and redirect arguments.

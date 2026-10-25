@@ -994,6 +994,23 @@ export class ProgramSession implements Disposable {
   }
 
   /**
+   * Parse one source text on its own, without a program. The syntax tree reads from its own buffer, so the compiler's lease on
+   * the file ends here.
+   */
+  parseSourceFile(filename: string, text: string): SourceFile {
+    return this.withCompiler('parse', (api) => {
+      // The tree reads from the response buffer that this call owns; dispose only releases the server's copy, so a syntax walk
+      // may read the tree after it. Asking the server about a node (a symbol or a type) after dispose is not valid.
+      const retained = api.createSourceFile(filename, text);
+      try {
+        return retained.sourceFile;
+      } finally {
+        retained.dispose();
+      }
+    });
+  }
+
+  /**
    * Resolve a module name for a file at `containingFile` with the compiler's own resolver, for a module that is no import of a
    * program, such as one an SDK manifest names. The lookup sees the disk and `virtualFiles`, the same files as on the TypeScript 6
    * lane, and no overlay of a program.

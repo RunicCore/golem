@@ -310,6 +310,7 @@ export interface ReturnStatement extends Node {
 // Imports and exports
 export interface ImportDeclaration extends Node {
   readonly kind: KindOf<'ImportDeclaration'>;
+  readonly importClause?: ImportClause;
   readonly moduleSpecifier: Expression;
 }
 export interface ImportClause extends Node {
@@ -318,9 +319,11 @@ export interface ImportClause extends Node {
   readonly isTypeOnly?: boolean;
   readonly phaseModifier?: SyntaxKind;
   readonly name?: Identifier;
+  readonly namedBindings?: NamedImports | NamespaceImport;
 }
 export interface NamedImports extends Node {
   readonly kind: KindOf<'NamedImports'>;
+  readonly elements: readonly ImportSpecifier[];
 }
 export interface ImportSpecifier extends Node {
   readonly kind: KindOf<'ImportSpecifier'>;
@@ -330,6 +333,7 @@ export interface ImportSpecifier extends Node {
 }
 export interface NamespaceImport extends Node {
   readonly kind: KindOf<'NamespaceImport'>;
+  readonly name: Identifier;
 }
 export interface ImportEqualsDeclaration extends Node {
   readonly kind: KindOf<'ImportEqualsDeclaration'>;
@@ -572,6 +576,8 @@ export interface ProgramSession extends Disposable {
   inputsChanged(filenames: Iterable<string>): void;
   parseConfigFile(configPath: string, onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] };
   openProgram(options: OpenProgramOptions): Program;
+  /** Parse one source text on its own, without a program: its syntax tree, with no types and no diagnostics. */
+  parseSourceFile(filename: string, text: string): SourceFile;
   /** Resolve a module name that no program imports, such as one an SDK manifest names, as the compiler resolves an import of `containingFile`: the disk and `virtualFiles` count. */
   resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles?: ReadonlySet<string>): { resolvedModule?: ResolvedModule };
 }
