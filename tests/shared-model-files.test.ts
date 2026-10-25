@@ -71,7 +71,7 @@ test('type analysis reads the tags of an alias in the .model.d.ts file of an ins
   const order = path.join(root, 'src/order.model.ts');
   const info = createProgram([order], root);
   const { checker, specifications } = collectSpecifications(info.program, [order, declaration]);
-  const job = createJobAnalysis(checker, specifications, loadModelManifests(root, info, [], PROFILE), PROFILE, [order], root);
+  const job = createJobAnalysis(checker, specifications, loadModelManifests(root, info, [], PROFILE), PROFILE, [order], file => info.program.isSourceFileDefaultLibrary(file), root);
   const describe = (name: string): { properties: Record<string, object> } => {
     const specification = specifications.find((item) => item.name === name);
     assert.ok(specification);

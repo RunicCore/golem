@@ -593,3 +593,32 @@ export class ItemsController {
     /RUNM1070: Model SearchDto has the property \[sym\] with a symbol key\. JSON cannot carry a symbol key\. Use a string key, or remove the property\./,
   );
 });
+
+test('a DTO field typed with a built-in type keeps its schema and gains no field from the type\'s symbol keys', async t => {
+  // protects: F-39 RUNM1070 is for symbol keys the user wrote; the [Symbol.toStringTag] of a library type is no field and no error
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse, ApiProperty } from '@nestjs/swagger';
+
+class BlobDto {
+  @ApiProperty({ type: 'string', format: 'binary' })
+  file!: Uint8Array;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  at!: Date;
+
+  @ApiProperty({ type: 'object', additionalProperties: { type: 'string' } })
+  tags!: Map<string, string>;
+}
+
+@Controller('blobs')
+export class BlobsController {
+  @Get()
+  @ApiOkResponse({ type: BlobDto })
+  get(): BlobDto { throw new Error('not implemented'); }
+}
+`);
+  const document = documentOf(await generateFixture(root));
+  const schema = expectSchema(responseOf(document, '/blobs', 'get', '200').content?.['application/json']?.schema, 'BlobDto');
+  assert.deepEqual(Object.keys(schema.properties ?? {}).sort(), ['at', 'file', 'tags']);
+  assert.deepEqual(schema.properties?.file, { format: 'binary', type: 'string' });
+});

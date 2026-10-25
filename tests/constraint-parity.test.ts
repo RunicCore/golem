@@ -8,7 +8,7 @@ import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
-import { analyzeSourceGraph } from '#model/emit';
+import { analyzeSourceGraph, createJobAnalysis } from '#model/emit';
 import { generate } from '#model/generator';
 import { collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';
 import { loadModelManifests } from '@exprtlabs/golem/internal/type-analysis';
@@ -109,6 +109,7 @@ function canonicalModelSchema(root: string, sourceRoot: string): unknown {
     manifestIndex,
     profile,
     root,
+    createJobAnalysis(checker, specifications, manifestIndex, profile, [source], file => programInfo.program.isSourceFileDefaultLibrary(file), root),
   );
   assert.ok(graph, 'model source graph');
   const descriptor = graph.definitions.TA;

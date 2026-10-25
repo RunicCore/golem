@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
-import { assertNoSymbolKey, declaredModelAlias, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
+import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
@@ -540,16 +540,18 @@ export function descriptorBuilder(
   manifestIndex: ManifestIndex,
   validationEnabled: boolean,
   allowAny = false,
-  identityRoot?: string,
+  identityRoot: string | undefined,
   allowUnresolved = true,
   /** Name that references to a model and its derived projections use; the model's own name when omitted. */
-  nameFor?: (specification: ModelSpecification) => string,
+  nameFor: ((specification: ModelSpecification) => string) | undefined,
   /** Canonical model source files of the job, which have a generated companion; omitted when the analysis emits none. */
-  modelSources?: ReadonlySet<string>,
+  modelSources: ReadonlySet<string> | undefined,
   /** The models-job boundary, for the diagnostic of a field that nests a model this job does not own. */
-  boundary?: ModelBoundary,
+  boundary: ModelBoundary | undefined,
   /** The first TypeScript error that starts inside a node, for the diagnostic of a type that did not resolve. */
-  typeErrorAt?: (node: ts.Node) => string | undefined,
+  typeErrorAt: ((node: ts.Node) => string | undefined) | undefined,
+  /** Whether a source file is a default library file: a symbol key it declares is the built-in type's own metadata, not a field. */
+  isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
@@ -999,6 +1001,7 @@ export function descriptorBuilder(
         for (const mapped of checker.getPropertiesOfType(type)) {
           const name = mapped.getName();
           if (sourceObject && isGeneratedBrandKey(checker, mapped)) continue;
+          if (isSymbolKeyedProperty(checker, mapped) && isDefaultLibraryProperty(mapped, isDefaultLibraryFile)) continue;
           members.push({ name, property: mapped, absentFromSource: sourceObject !== undefined && !sourceObject.getProperty(name) });
         }
         // A model defined by a mapped type over its own class has no members: the base of the class is a stub of this very model.
