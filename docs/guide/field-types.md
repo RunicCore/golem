@@ -53,7 +53,7 @@ Supported:
 - scalar types only, such as `string | number`, and literal unions, such as `'paid' | 'pending'`
 - optional and nullish values: `T | undefined`, `T | null`
 - one object, model or class beside scalars: `string | TPlace`
-- strings, numbers, booleans or literals beside one array or one tuple, as in query objects (`status?: Status | Status[]`). The items can convert: `string | Date[]`
+- strings, numbers, booleans or literals beside one array or one tuple, as in query objects (`status?: Status | Status[]`). The items can convert: `string | Date[]`. A Date can be the only scalar beside the array: `Date | Date[]`, `Date | string[]`
 - a model beside an array of that model: `TPlace | TPlace[]`
 - strings, numbers, booleans or literals beside one array and one object or model: `string | string[] | TPlace`. The `JsonValue` alias under [Recursive type aliases](#recursive-type-aliases) has this shape
 - object unions with one unique, required literal discriminator

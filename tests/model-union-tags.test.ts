@@ -4,8 +4,10 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generate } from '#model/generator';
 import { copyFixtureFile, readFixture } from './fixture-project.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { isGeneratedModelClass, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 
@@ -99,4 +101,33 @@ test('a union whose scalar variants cannot be told apart stops generation with R
     () => generate({ root, profile: { mobx: false, validation: true } }),
     /when\.model\.ts RUNM1082: Union has ambiguous conversions\. Use a discriminated object union or one serde pair for the value\. The variants are /,
   );
+});
+
+test('a Date beside an array converts by the wire form: a string is the Date, an array is the array', async (t) => {
+  // protects: T-320 `Date | Date[]` once stopped generation with RUNM1082; the JSON string and the JSON array tell the two apart
+  const day = '2024-05-06T07:08:09.000Z';
+  const moment = new Date(day);
+  const cases = [
+    [{ at: day, from: day, maybe: day }, { at: moment, from: moment, maybe: moment }],
+    [{ at: [day], from: ['a'], maybe: [day] }, { at: [moment], from: ['a'], maybe: [moment] }],
+    [{ at: day, from: day, maybe: null }, { at: moment, from: moment, maybe: null }],
+  ] as const;
+  for (const validation of [false, true]) {
+    const { root } = createModelProject(t, { prefix: 'golem-date-or-dates-', name: 'date-or-dates', linkWorkspaceNodeModules: true });
+    copyFixtureFile(root, 'models/date-or-dates/when.model.ts', 'src/when.model.ts');
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const { When } = await import(pathToFileURL(path.join(root, 'build/when.model.js')).href) as { When: GeneratedModelClass };
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TWhen'));
+    const options = { validate: validation };
+    for (const [wire, value] of cases) {
+      for (const decoded of [codec.fromWireFormat(wire, options), codec.parse(JSON.stringify(wire), options), decodeGeneratedModel(When, wire)]) {
+        assert.deepEqual({ ...requireRecord(decoded, 'decoded') }, value, `validation=${validation}`);
+      }
+      const model = new When(value as never);
+      assert.deepEqual(codec.toWireFormat(model, options), wire, `validation=${validation}`);
+      assert.deepEqual(encodeGeneratedModel(model), wire, `validation=${validation}`);
+      assert.equal(codec.stringify(model, options), JSON.stringify(wire), `validation=${validation}`);
+    }
+  }
 });
