@@ -9,7 +9,7 @@
 
 export type JsonSchema = boolean | Readonly<Record<string, unknown>>;
 
-import type { ModelConstraint } from '../model.js';
+import type { ConstraintSchemaValue, ModelConstraint } from '../model.js';
 import {
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
   MODEL_DATE_KEYWORD,
@@ -96,6 +96,38 @@ export function constraintSchemaValues(constraint: ModelConstraint): readonly un
       return [constraint.if, ...(constraint.then === undefined ? [] : [constraint.then]), ...(constraint.else === undefined ? [] : [constraint.else])];
     default:
       return [];
+  }
+}
+
+/** The constraint with each schema value replaced by `map`: the one switch over the constraint kinds that hold schemas, beside `constraintSchemaValues`. */
+export function mapConstraintSchemaValues(
+  constraint: ModelConstraint,
+  map: (value: ConstraintSchemaValue) => ConstraintSchemaValue,
+): ModelConstraint {
+  switch (constraint.kind) {
+    case 'contains':
+    case 'propertyNames':
+    case 'additionalProperties':
+    case 'unevaluatedProperties':
+    case 'items':
+    case 'unevaluatedItems':
+    case 'not':
+    case 'patternProperties':
+      return { ...constraint, schema: map(constraint.schema) };
+    case 'dependentSchemas':
+      return { ...constraint, value: Object.fromEntries(Object.entries(constraint.value).map(([name, value]) => [name, map(value)])) };
+    case 'oneOf':
+    case 'allOf':
+      return { ...constraint, schemas: constraint.schemas.map(map) };
+    case 'ifThenElse':
+      return {
+        ...constraint,
+        if: map(constraint.if),
+        ...(constraint.then === undefined ? {} : { then: map(constraint.then) }),
+        ...(constraint.else === undefined ? {} : { else: map(constraint.else) }),
+      };
+    default:
+      return constraint;
   }
 }
 

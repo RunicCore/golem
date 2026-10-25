@@ -61,7 +61,6 @@ import {
   sourceImportPath,
 } from '@exprtlabs/golem/internal/type-analysis';
 import type {
-  ConstraintSchemaValue,
   ModelConstraint,
   SerdeBinding,
   ValidationBinding,
@@ -69,7 +68,9 @@ import type {
 import {
   canonicalSchemaKey,
   canonicalConstraintKey,
+  constraintSchemaValues,
   createExecutableValidationMemo,
+  mapConstraintSchemaValues,
   projectPortableConstraints,
   type ExecutableValidationMemo,
   schemaForDescriptor,
@@ -104,55 +105,10 @@ function jsonDataExpression(value: unknown): Code {
   return code`JSON.parse(${literal(json)}) as object`;
 }
 
-function isModelDescriptor(value: ConstraintSchemaValue): value is ModelConversionDescriptor {
+function isModelDescriptor(value: unknown): value is ModelConversionDescriptor {
   return typeof value === 'object'
     && value !== null
     && typeof Reflect.get(value, 'kind') === 'string';
-}
-
-/**
- * The constraint with each schema that is a descriptor replaced by `map`: the one place that knows which constraint kinds
- * hold schemas. A walk collects the schemas through it, and a projection maps them.
- */
-function mapConstraintSchemas(
-  constraint: ModelConstraint,
-  map: (descriptor: ModelConversionDescriptor) => ConstraintSchemaValue,
-): ModelConstraint {
-  const project = (value: ConstraintSchemaValue): ConstraintSchemaValue => isModelDescriptor(value) ? map(value) : value;
-  switch (constraint.kind) {
-    case 'contains':
-    case 'propertyNames':
-    case 'additionalProperties':
-    case 'unevaluatedProperties':
-    case 'items':
-    case 'unevaluatedItems':
-    case 'not':
-    case 'patternProperties':
-      return { ...constraint, schema: project(constraint.schema) };
-    case 'dependentSchemas':
-      return { ...constraint, value: Object.fromEntries(Object.entries(constraint.value).map(([name, value]) => [name, project(value)])) };
-    case 'oneOf':
-    case 'allOf':
-      return { ...constraint, schemas: constraint.schemas.map(project) };
-    case 'ifThenElse':
-      return {
-        ...constraint,
-        if: project(constraint.if),
-        ...(constraint.then === undefined ? {} : { then: project(constraint.then) }),
-        ...(constraint.else === undefined ? {} : { else: project(constraint.else) }),
-      };
-    default:
-      return constraint;
-  }
-}
-
-function constraintSchemas(constraint: ModelConstraint): ModelConversionDescriptor[] {
-  const found: ModelConversionDescriptor[] = [];
-  mapConstraintSchemas(constraint, (descriptor) => {
-    found.push(descriptor);
-    return descriptor;
-  });
-  return found;
 }
 
 function mapConstraint(
@@ -163,7 +119,8 @@ function mapConstraint(
   definitions: Readonly<Record<string, ModelConversionDescriptor>>,
 ): ModelConstraint {
   if (!validationEnabled) return constraint;
-  return mapConstraintSchemas(constraint, (descriptor) => projectDescriptor(descriptor, validationEnabled, wire, retainPredicates, definitions));
+  return mapConstraintSchemaValues(constraint, (value) =>
+    isModelDescriptor(value) ? projectDescriptor(value, validationEnabled, wire, retainPredicates, definitions) : value);
 }
 
 /**
@@ -179,14 +136,14 @@ interface DescriptorVisitor {
   readonly leave?: (descriptor: ModelConversionDescriptor) => void;
 }
 
-/** The one walk over a descriptor tree for every reader of it: the wire descriptor, then the constraint schemas, then the structure. */
+/** The one read-only walk over a descriptor tree: below each descriptor it reaches the wire descriptor, then the constraint schemas, then the structure. */
 function walkDescriptor(descriptor: ModelConversionDescriptor, visitor: DescriptorVisitor, reach: DescriptorReach = 'all'): void {
   const rich = richDescriptor(descriptor);
   const walk = (child: ModelConversionDescriptor): void => walkDescriptor(child, visitor, reach);
   visitor.enter?.(descriptor);
   if (reach !== 'structure' && rich.serde?.wireDescriptor) walk(rich.serde.wireDescriptor);
   if (reach === 'all') {
-    for (const constraint of rich.constraints ?? []) constraintSchemas(constraint).forEach(walk);
+    for (const constraint of rich.constraints ?? []) constraintSchemaValues(constraint).filter(isModelDescriptor).forEach(walk);
   }
   switch (descriptor.kind) {
     case 'array': walk(descriptor.item); break;
