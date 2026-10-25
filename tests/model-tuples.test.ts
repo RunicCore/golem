@@ -42,7 +42,7 @@ const trustedTuple = onceShared(() => buildTuple(fileScope, 'tuple-trusted', fal
 
 test('generated optional and rest tuples retain exact lengths through every serde direction with validation on and off', async t => {
   for (const validation of [false, true]) {
-    const { Tuple, codec } = await buildTuple(t, `tuple-${validation ? 'validated' : 'trusted'}`, validation);
+    const { Tuple, codec } = validation ? await buildTuple(t, 'tuple-validated', true) : await trustedTuple();
     const omitted = new Tuple({ required: ['required', 9], maybe: ['x'], rest: ['prefix', true] });
     const full = new Tuple({ required: ['required', 9], maybe: ['x', 2], nested: ['inner'], rest: ['prefix', 1, 2, true] });
     const options = { validate: validation };

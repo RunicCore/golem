@@ -115,7 +115,7 @@ test('a field typed with an app class from its own file builds, parses and write
   const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { Customer: new () => object; order: { customer: object }; text: string };
   assert.ok(loaded.order.customer instanceof loaded.Customer);
   assert.equal(loaded.text, '{"id":"o1","customer":{"name":"Ada"}}');
-  await buildModelProject(root);
+  await generateModels(root);
   assert.deepEqual(generatedModelFiles(root), firstFiles);
 });
 
@@ -170,7 +170,7 @@ test('a field typed with a projection of an app class builds on the first run, k
   const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { order: { id: string; summary: { name: string } }; text: string };
   assert.deepEqual({ ...loaded.order.summary }, { name: 'Ada' });
   assert.equal(loaded.text, '{"id":"o1","summary":{"name":"Ada"}}');
-  await buildModelProject(root);
+  await generateModels(root);
   assert.deepEqual(generatedModelFiles(root), firstFiles);
 });
 
@@ -199,7 +199,7 @@ for (const row of [
     assert.doesNotMatch(companion, /Brand@/);
     const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { text: string };
     assert.equal(loaded.text, `{"id":"o1","summary":${row.json}}`);
-    await buildModelProject(root);
+    await generateModels(root);
     assert.deepEqual(generatedModelFiles(root), firstFiles);
   });
 }
@@ -227,10 +227,15 @@ async function acceptedSummaries(root: string, candidates: readonly string[], bu
   return candidates.filter(candidate => loaded.accepts(candidate));
 }
 
+/** Runs golem generate on the project: a second run whose claim is the generated files needs no compile. */
+async function generateModels(root: string): Promise<void> {
+  await command(root, process.execPath, [golem, 'generate', '--config', path.join(root, 'golem.yaml')]);
+}
+
 /** Generates again from the same sources, as a second run over the first run's companions does. */
-async function buildAgain(root: string): Promise<void> {
+async function generateAgain(root: string): Promise<void> {
   fs.rmSync(path.join(root, '.golem/jobs.json'));
-  await buildModelProject(root);
+  await generateModels(root);
 }
 
 for (const row of [
@@ -248,7 +253,7 @@ for (const row of [
     const firstFiles = generatedModelFiles(root);
     const candidates = [...row.accepted, ...row.rejected];
     assert.deepEqual(await acceptedSummaries(root, candidates, 1), row.accepted);
-    await buildAgain(root);
+    await generateAgain(root);
     assert.deepEqual(generatedModelFiles(root), firstFiles);
   });
 }
@@ -299,7 +304,9 @@ test('a tagged field picked from an app class keeps its tag on the first run and
   await buildModelProject(root);
   const firstFiles = generatedModelFiles(root);
   assert.deepEqual(await acceptedSummaries(root, ['{"name":"Ada"}', '{"name":"Al"}'], 1), ['{"name":"Ada"}']);
-  await buildAgain(root);
+  // The second run also runs its built output, so it builds.
+  fs.rmSync(path.join(root, '.golem/jobs.json'));
+  await buildModelProject(root);
   assert.deepEqual(generatedModelFiles(root), firstFiles);
   assert.deepEqual(await acceptedSummaries(root, ['{"name":"Ada"}', '{"name":"Al"}'], 2), ['{"name":"Ada"}']);
 });
