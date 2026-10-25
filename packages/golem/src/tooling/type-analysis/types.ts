@@ -3,7 +3,7 @@ import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPro
 import * as ts from '../typescript-ns.js';
 import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
-import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
+import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { compareText, displayPath } from '../generator-api.js';
@@ -576,6 +576,26 @@ export function descriptorBuilder(
   const projectionCache = new Map<ts.Type, Map<string, string>>();
   // Where each projection name was first minted, for the clash diagnostic.
   const projectionSources = new Map<string, string>();
+  // The type that minted each projection name. A recursive type that asks for a name another type holds takes a qualified name before its body is read.
+  const projectionOwners = new Map<string, ts.Type>();
+  const headNames = new Map<ts.Type, Map<string, string>>();
+  const claimHeadName = (type: ts.Type, stem: string, suffix: string): string => {
+    const named = headNames.get(type) ?? new Map<string, string>();
+    const known = named.get(suffix);
+    if (known !== undefined) return known;
+    const free = (name: string): boolean => !modelLocations.has(name) && (projectionOwners.get(name) ?? type) === type;
+    const qualifiers = headQualifiers(checker, type);
+    const options = [stem, ...qualifiers.map((part) => `${stem}${part}`)];
+    let name = options.map((option) => `${option}${suffix}`).find(free);
+    // Names that stay equal after qualifying get a number, so every valid program generates.
+    for (let number = 2; name === undefined; number += 1) {
+      const numbered = `${options[options.length - 1]}${number}${suffix}`;
+      if (free(numbered)) name = numbered;
+    }
+    named.set(suffix, name);
+    headNames.set(type, named);
+    return name;
+  };
   const sourceLocation = (at: ts.Node): string => {
     const sourceFile = at.getSourceFile();
     const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
@@ -911,9 +931,8 @@ export function descriptorBuilder(
         stem = safeNameHint((declaredHead ? userAliasName(type) ?? declaredTypeName(type) : undefined) ?? projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint);
         if (recursive) cycleStems.set(type, stem);
       }
-      const candidate = `${stem}${policySuffix({
-        exact: context.exact, allowAny: context.allowAny ?? allowAny, representation,
-      })}`;
+      const suffix = policySuffix({ exact: context.exact, allowAny: context.allowAny ?? allowAny, representation });
+      const candidate = recursive ? claimHeadName(type, stem, suffix) : `${stem}${suffix}`;
       if (!isProjectionName(candidate)) throw new Error(`Internal error: projection name "${candidate}" is not a plain identifier.`);
       const here = sourceLocation(nameAt ?? context.declaration);
       const modelLocation = modelLocations.get(candidate);
@@ -928,6 +947,7 @@ export function descriptorBuilder(
       projectionName = candidate;
       cached.set(policy, projectionName);
       projectionCache.set(type, cached);
+      if (!projectionOwners.has(candidate)) projectionOwners.set(candidate, type);
       if (!projectionSources.has(candidate)) projectionSources.set(candidate, here);
     }
     if ((sequence || objectShape) && seen.has(type) && !projectionName) {
