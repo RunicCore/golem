@@ -27,7 +27,7 @@ import {
   sep,
 } from 'node:path';
 import * as ast from 'typescript/ast';
-import { fileSignature, MISSING } from './input-watcher.js';
+import { assertConfigParsed, fileSignature, MISSING } from './input-watcher.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
@@ -847,17 +847,6 @@ function directoryEntries(directory: string): string {
   }
 }
 
-/** The diagnostic code of a configuration that matches no file. */
-const NO_INPUTS_FOUND = 18003;
-
-/** A configuration with errors fails with them. Golem names its own roots, so a configuration that lists no files is not an error here. */
-function assertConfigParsed(configPath: string, parsed: { readonly errors: readonly { readonly code: number; readonly text: string }[] }): void {
-  const errors = parsed.errors.filter((diagnostic) => diagnostic.code !== NO_INPUTS_FOUND);
-  if (errors.length > 0) {
-    throw new Error([`The TypeScript configuration ${configPath} has errors:`, ...errors.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
-  }
-}
-
 /** A change to a package manifest or an installed package invalidates cached module resolution. */
 function affectsResolution(filename: string): boolean {
   return basename(filename) === 'package.json' || filename.split(sep).includes('node_modules');
@@ -997,7 +986,7 @@ export class ProgramSession implements Disposable {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
       const result = api.parseConfigFile(configPath);
-      assertConfigParsed(configPath, result);
+      assertConfigParsed(configPath, result.errors);
       return result;
     });
     return { options: parsed.options as CompilerOptions, fileNames: parsed.fileNames };
@@ -1091,21 +1080,22 @@ export class ProgramSession implements Disposable {
    * The compiler builds a project only from a configuration, so a requested root outside the configuration's own files (an
    * external model root, or a file that exists only as an overlay) needs a derived configuration. It extends the project's
    * own and lists exactly what the TypeScript 6 backend gives the compiler: the files the project's configuration parses to,
-   * plus the requested roots. `include` is emptied so the list is the whole project.
+   * plus the requested roots. `include` is emptied so the list is the whole project. A program with no requested root still parses
+   * the configuration here, so a configuration with errors fails the same way on both backends.
    */
   private withRequestedRoots(api: API, base: ProgramRequest, onInput: ((filename: string) => void) | undefined): ProgramRequest {
-    if (base.files.length === 0) return base;
     const previous = this.overlays;
     this.setOverlays(base.overlays);
     this.observe(onInput, base.hidden);
     let parsed: { readonly fileNames: readonly string[] };
     try {
       const result = api.parseConfigFile(base.configPath);
-      assertConfigParsed(base.configPath, result);
+      assertConfigParsed(base.configPath, result.errors);
       parsed = result;
     } finally {
       this.setOverlays(previous);
     }
+    if (base.files.length === 0) return base;
     const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}.roots.json`);
     const files = [...new Set([...parsed.fileNames.map(canonical), ...base.files])];
     const overlays = new Map(base.overlays);

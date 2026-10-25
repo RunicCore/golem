@@ -61,6 +61,7 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
   const companion = path.join(root, 'src/money.model.generated.ts');
   await until(() => ran.length === 1 && built('use.js') !== '' && fs.existsSync(companion), 'the first build');
 
+  hinted.length = 0;
   // The model source is what both jobs read: its edit regenerates the companion, and the build that follows sees it.
   const model = path.join(root, 'src/money.model.ts');
   fs.writeFileSync(model, fs.readFileSync(model, 'utf8').replace('note: string', 'note: string; extra?: string'));
