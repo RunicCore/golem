@@ -18,6 +18,7 @@ in the sections below.
 
 ### Models
 
+- A field typed `Date | Date[]` or `Date | string[]` generates and converts by its wire value: a string is the Date, an array is the array. Before, it stopped with [`RUNM1082`](docs/reference/diagnostics.md#runm1082). A nullable form such as `Date | Date[] | null` keeps `null`.
 - A type alias that refers to itself now works in any shape: a union, an array, a tuple or a record. `type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }` is a valid field type. Golem generates one function for the alias. [`RUNM1003`](docs/reference/diagnostics.md#runm1003) no longer reports a recursive alias, and [`RUNM1056`](docs/reference/diagnostics.md#runm1056) now means a cycle that golem cannot name.
 - A recursive interface or class, such as `interface Tree { kids: Tree[] }`, now generates one schema that refers to itself through `$ref`. Before, generation stopped with a stack overflow. A clash of two such types with one name stops with [`RUNM1059`](docs/reference/diagnostics.md#runm1059).
 - A union of scalars, one array and one object converts and validates without a tag.
