@@ -245,6 +245,7 @@ function flattenParameter(
       location,
       name: property.name,
       required: !(property.flags & ts.SymbolFlags.Optional) && !containsUndefined(propertyType),
+      ...(parameterType.modelContractName === undefined ? {} : { wholeQueryModel: parameterType.modelContractName }),
     } satisfies ControllerParameter;
   });
 }
