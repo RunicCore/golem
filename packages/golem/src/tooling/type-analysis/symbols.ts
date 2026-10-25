@@ -3,6 +3,7 @@ import * as ts from '../typescript-ns.js';
 import { DEFAULT_MODEL_SUFFIXES, canonicalPath, displayPath } from '../generator-api.js';
 import { canonicalFilename, generatedFilename, isModelFileName, type ModelBoundary } from './project.js';
 import type { ModelSpecification } from './models.js';
+import { isGolemSourceFile, isGolemTagKey } from './tags.js';
 
 /** A located model-analysis error with its RUNM code. */
 export function diagnostic(
@@ -52,8 +53,7 @@ export function modelDeclarationKind(checker: ts.TypeChecker, node: ts.TypeNode)
 }
 
 function isGolemModelSource(declaration: ts.Declaration): boolean {
-  const filename = declaration.getSourceFile().fileName.replace(/\\/g, '/');
-  return /\/(?:@exprtlabs\/)?golem\/(?:src|dist)\/model\.(?:d\.)?ts$/.test(filename);
+  return isGolemSourceFile(declaration.getSourceFile().fileName, 'model');
 }
 
 /** The unique symbols model.ts declares for the type-only members of a generated model. */
@@ -169,4 +169,25 @@ export function exportedConcreteClass(
 ): string | undefined {
   const linked = linkedClassNames(checker, specification, specifications);
   return linked.length === 1 ? linked[0] : undefined;
+}
+
+/**
+ * Whether `property` is a data property keyed by a symbol, such as `[sym]: string`. A generated-model brand key and a golem tag
+ * key are type-only members that no model or parameter carries, so they are not counted. JSON cannot carry a symbol key.
+ */
+export function isUnsupportedSymbolKey(checker: ts.TypeChecker, property: ts.Symbol): boolean {
+  if ((property.flags & ts.SymbolFlags.Method) !== 0) return false;
+  const declaration = property.valueDeclaration ?? property.declarations?.[0];
+  const key = declaration && (declaration as ts.NamedDeclaration).name;
+  if (key === undefined || !ts.isComputedPropertyName(key)) return false;
+  return (checker.getTypeAtLocation(key.expression).flags & ts.TypeFlags.UniqueESSymbol) !== 0
+    && !isGeneratedBrandKey(checker, property)
+    && !isGolemTagKey(checker, property);
+}
+
+/** Stops generation when `property` has a symbol key; `owner` names the model or parameter and `node` is where the error points. */
+export function assertNoSymbolKey(checker: ts.TypeChecker, property: ts.Symbol, owner: string, sourceFile: ts.SourceFile, node: ts.Node): void {
+  if (!isUnsupportedSymbolKey(checker, property)) return;
+  const key = ((property.valueDeclaration ?? property.declarations?.[0]) as ts.NamedDeclaration).name!.getText();
+  throw diagnostic(sourceFile, node, '1070', `${owner} has the property ${key} with a symbol key. JSON cannot carry a symbol key. Use a string key, or remove the property.`);
 }

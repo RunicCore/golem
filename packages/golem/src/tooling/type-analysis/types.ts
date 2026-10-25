@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
-import { declaredModelAlias, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
+import { assertNoSymbolKey, declaredModelAlias, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
@@ -1014,7 +1014,10 @@ export function descriptorBuilder(
           const optional = (property.flags & ts.SymbolFlags.Optional) !== 0;
           const isMethod = (property.flags & ts.SymbolFlags.Method) !== 0
             || property.declarations?.some(declaration => ts.isMethodDeclaration(declaration) || ts.isMethodSignature(declaration)) === true;
-          if (!context.schemaData && !isMethod) assertSupportedModelFieldName(name);
+          if (!context.schemaData && !isMethod) {
+            assertNoSymbolKey(checker, property, `Model ${context.name}`, context.sourceFile, node ?? context.declaration);
+            assertSupportedModelFieldName(name);
+          }
           if (context.dto && isMethod) continue;
           const valueType = propertyType(checker, property, context.declaration);
           // A member the source type lacks makes the checker's picked type `unknown`; the field is not typed unknown, so `allowAny` is no fix.

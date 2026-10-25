@@ -299,7 +299,7 @@ test('a model that projects an SDK model with an unknown field is rejected by de
 });
 
 test('a projection over a source object drops the brand keys of an SDK model and keeps a field spelled like one', async t => {
-  // protects: F-164 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
+  // protects: F-213 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
   const { root, writeView } = await envelopeSdkProject(t);
   writeView('Omit<Envelope, \'payload\'>');
   const built = await buildModelProject(root, [], { allowFailure: true });
@@ -309,7 +309,7 @@ test('a projection over a source object drops the brand keys of an SDK model and
 });
 
 test('a projection keeps a source field whose string key is spelled like a brand key', async t => {
-  // protects: F-164 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
+  // protects: F-213 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
   const { root, sourceRoot } = fixture(t);
   writeModelGolemYaml(root, { mobx: false, validation: true });
   writeModelSources(sourceRoot, {

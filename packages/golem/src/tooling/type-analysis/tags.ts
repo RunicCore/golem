@@ -223,15 +223,15 @@ function canonicalIdentity(declaration: ts.Declaration, exportName: string, iden
   return `${portableRelativeFilename(declaration.getSourceFile().fileName, identityRoot)}#${exportName}`;
 }
 
-function isGolemTagsSource(filename: string): boolean {
+/** Whether `filename` is the golem source or declaration file named `stem` (`tags`, `model`), in a package install or in this workspace. */
+export function isGolemSourceFile(filename: string, stem: 'tags' | 'model'): boolean {
   const normalized = filename.replace(/\\/g, '/');
-  return /(?:^|\/)node_modules\/@exprtlabs\/golem\/(?:src|dist)\/tags(?:\.d)?\.(?:c|m)?ts$/.test(normalized)
-    || /(?:^|\/)packages\/golem\/(?:src|dist)\/tags(?:\.d)?\.(?:c|m)?ts$/.test(normalized);
+  return new RegExp(`(?:^|/)(?:node_modules/@exprtlabs/golem|packages/golem)/(?:src|dist)/${stem}(?:\\.d)?\\.(?:c|m)?ts$`).test(normalized);
 }
 
 function isGolemTagSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): boolean {
   const target = targetSymbol(checker, symbol);
-  return Boolean(target?.declarations?.some((declaration) => isGolemTagsSource(declaration.getSourceFile().fileName)));
+  return Boolean(target?.declarations?.some((declaration) => isGolemSourceFile(declaration.getSourceFile().fileName, 'tags')));
 }
 
 /** Whether `property` is the key of a golem tag: a property named by one of the unique symbols that tags.ts declares. */

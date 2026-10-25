@@ -627,6 +627,7 @@ export interface TypeScriptBackend {
     readonly TemplateLiteral: TypeFlags;
     readonly TypeParameter: TypeFlags;
     readonly Undefined: TypeFlags;
+    readonly UniqueESSymbol: TypeFlags;
     readonly Unknown: TypeFlags;
     readonly Void: TypeFlags;
   };

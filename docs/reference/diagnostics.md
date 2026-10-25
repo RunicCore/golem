@@ -322,6 +322,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Class imported from two modules.** A file holds `parse` or `fromWireFormat` calls whose type arguments are type-only imports of two classes with the same exported name from different modules. golem imports each of them by name for the call, and a name has one module. **Fix:** Import one of the classes as a value, or give the two classes different names.
 
+### RUNM1070
+
+**Symbol-keyed property.** A model, a nested object of a model, or the type of a controller parameter has a property whose key is a symbol, such as `[sym]: string`. JSON cannot carry a symbol key. The message names the model or the type and the key. **Fix:** Use a string key, or remove the property.
+
 ### RUNM1071
 
 **Nest parameter type has no codec.** A `@Body()` or `@Query()` parameter's type is a model (an `IModel` or `IObject` alias, or a class that extends a generated base class), but golem finds no single generated model for it. Either the model is new and `golem generate` has not run since, or two models in different files share the name and the type is not one of them. The message shows the decorator and the type, such as `@Body() type Payment has no unique codec id; run golem generate`. **Fix:** Run `golem generate`. If the error stays, type the parameter with the exported `IModel` or `IObject` alias or the model class, imported from the file that declares it.
