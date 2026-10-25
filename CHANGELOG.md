@@ -44,6 +44,7 @@ in the sections below.
 
 ### OpenAPI
 
+- A controller body or return typed `readonly TPayment[]` refers to the `TPayment` component in the OpenAPI document, as `TPayment[]` does. Before, it held an inline copy of the model's schema.
 - A `oneOf` or `anyOf` of objects that needs a conversion, and has no `discriminator` and no required `const` or single-value `enum` property that differs between variants, stops generation with [`OPENAPI_UNION_DISCRIMINATOR_MISSING`](docs/reference/diagnostics.md#openapi-union-discriminator-missing). The message names the schema and lists the variants. Add the property to each variant, or add a `discriminator`.
 - An `allOf` whose members declare types with no common value, such as `allOf: [{ type: string }, { type: number }]`, stops generation with [`OPENAPI_COMPOSITION_UNSATISFIABLE`](docs/reference/diagnostics.md#openapi-composition-unsatisfiable). Before, it generated code. Give the members a type that they share.
 - `golem-ts-openapi` sees a model change on the same run. After you edit a model, the generated OpenAPI is right on the first `golem generate`. Before, it showed the previous model until the next run.

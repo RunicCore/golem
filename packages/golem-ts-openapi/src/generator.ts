@@ -235,8 +235,11 @@ class ComponentSchemas {
     // re-entering the subclass's runtime fields as an anonymous object.
     if (this.checker.isArrayType(type)) {
       const itemType = this.checker.getTypeArguments(type as ts.TypeReference)[0] ?? this.checker.getAnyType();
-      const itemNode = typeNode && ts.isArrayTypeNode(typeNode) ? typeNode.elementType
-        : typeNode && ts.isTypeReferenceNode(typeNode) ? typeNode.typeArguments?.[0]
+      // `readonly T[]` and `(T[])` write the same array as `T[]`; its item node keeps the model's name.
+      let written = typeNode;
+      while (written && (ts.isParenthesizedTypeNode(written) || (ts.isTypeOperatorNode(written) && written.operator === ts.SyntaxKind.ReadonlyKeyword))) written = written.type;
+      const itemNode = written && ts.isArrayTypeNode(written) ? written.elementType
+        : written && ts.isTypeReferenceNode(written) ? written.typeArguments?.[0]
           : undefined;
       return { kind: 'array', item: this.describe(itemType, sourceNode, itemNode) };
     }
