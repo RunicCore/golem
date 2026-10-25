@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
-import { assertNoSymbolKey, declaredModelAlias, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
+import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
@@ -550,6 +550,8 @@ export function descriptorBuilder(
   boundary?: ModelBoundary,
   /** The first TypeScript error that starts inside a node, for the diagnostic of a type that did not resolve. */
   typeErrorAt?: (node: ts.Node) => string | undefined,
+  /** Whether a source file is a default library file: a symbol key it declares is the built-in type's own metadata, not a field. */
+  isDefaultLibraryFile: (file: ts.SourceFile) => boolean = () => false,
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
@@ -999,6 +1001,7 @@ export function descriptorBuilder(
         for (const mapped of checker.getPropertiesOfType(type)) {
           const name = mapped.getName();
           if (sourceObject && isGeneratedBrandKey(checker, mapped)) continue;
+          if (isSymbolKeyedProperty(checker, mapped) && isDefaultLibraryProperty(mapped, isDefaultLibraryFile)) continue;
           members.push({ name, property: mapped, absentFromSource: sourceObject !== undefined && !sourceObject.getProperty(name) });
         }
         // A model defined by a mapped type over its own class has no members: the base of the class is a stub of this very model.

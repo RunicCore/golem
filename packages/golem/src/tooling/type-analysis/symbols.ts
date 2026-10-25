@@ -171,18 +171,27 @@ export function exportedConcreteClass(
   return linked.length === 1 ? linked[0] : undefined;
 }
 
-/**
- * Whether `property` is a data property keyed by a symbol, such as `[sym]: string`. A generated-model brand key and a golem tag
- * key are type-only members that no model or parameter carries, so they are not counted. JSON cannot carry a symbol key.
- */
-export function isUnsupportedSymbolKey(checker: ts.TypeChecker, property: ts.Symbol): boolean {
+/** Whether `property` is a data property keyed by a symbol, such as `[sym]: string` or the `[Symbol.toStringTag]` of a built-in type. */
+export function isSymbolKeyedProperty(checker: ts.TypeChecker, property: ts.Symbol): boolean {
   if ((property.flags & ts.SymbolFlags.Method) !== 0) return false;
   const declaration = property.valueDeclaration ?? property.declarations?.[0];
   const key = declaration && (declaration as ts.NamedDeclaration).name;
   if (key === undefined || !ts.isComputedPropertyName(key)) return false;
-  return (checker.getTypeAtLocation(key.expression).flags & ts.TypeFlags.UniqueESSymbol) !== 0
-    && !isGeneratedBrandKey(checker, property)
-    && !isGolemTagKey(checker, property);
+  return (checker.getTypeAtLocation(key.expression).flags & ts.TypeFlags.UniqueESSymbol) !== 0;
+}
+
+/**
+ * Whether a symbol-keyed property is one that the user wrote and JSON cannot carry. A generated-model brand key and a golem tag
+ * key are type-only members that no model or parameter carries, so they are not counted.
+ */
+export function isUnsupportedSymbolKey(checker: ts.TypeChecker, property: ts.Symbol): boolean {
+  return isSymbolKeyedProperty(checker, property) && !isGeneratedBrandKey(checker, property) && !isGolemTagKey(checker, property);
+}
+
+/** Whether only a default library file declares `property`: the built-in type's own metadata, such as the `[Symbol.toStringTag]` of `Uint8Array`. */
+export function isDefaultLibraryProperty(property: ts.Symbol, isDefaultLibraryFile: (file: ts.SourceFile) => boolean): boolean {
+  const declarations = property.declarations ?? [];
+  return declarations.length > 0 && declarations.every(declaration => isDefaultLibraryFile(declaration.getSourceFile()));
 }
 
 /** Stops generation when `property` has a symbol key; `owner` names the model or parameter and `node` is where the error points. */
