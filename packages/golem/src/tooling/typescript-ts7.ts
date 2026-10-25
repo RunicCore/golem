@@ -27,6 +27,7 @@ import {
   sep,
 } from 'node:path';
 import * as ast from 'typescript/ast';
+import { fileSignature, MISSING } from './input-watcher.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
@@ -838,23 +839,22 @@ interface ProgramRequest {
   readonly hidden: ReadonlySet<string>;
 }
 
-const MISSING = 'missing';
-
-function fileSignature(filename: string): string {
-  try {
-    const stat = statSync(filename, { throwIfNoEntry: false });
-    if (!stat) return MISSING;
-    return stat.isDirectory() ? 'directory' : `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
-  } catch {
-    return MISSING;
-  }
-}
-
 function directoryEntries(directory: string): string {
   try {
     return readdirSync(directory).sort().join('\0');
   } catch {
     return '';
+  }
+}
+
+/** The diagnostic code of a configuration that matches no file. */
+const NO_INPUTS_FOUND = 18003;
+
+/** A configuration with errors fails with them. Golem names its own roots, so a configuration that lists no files is not an error here. */
+function assertConfigParsed(configPath: string, parsed: { readonly errors: readonly { readonly code: number; readonly text: string }[] }): void {
+  const errors = parsed.errors.filter((diagnostic) => diagnostic.code !== NO_INPUTS_FOUND);
+  if (errors.length > 0) {
+    throw new Error([`The TypeScript configuration ${configPath} has errors:`, ...errors.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
   }
 }
 
@@ -996,7 +996,9 @@ export class ProgramSession implements Disposable {
   parseConfigFile(configPath: string, onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] } {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
-      return api.parseConfigFile(configPath);
+      const result = api.parseConfigFile(configPath);
+      assertConfigParsed(configPath, result);
+      return result;
     });
     return { options: parsed.options as CompilerOptions, fileNames: parsed.fileNames };
   }
@@ -1098,7 +1100,9 @@ export class ProgramSession implements Disposable {
     this.observe(onInput, base.hidden);
     let parsed: { readonly fileNames: readonly string[] };
     try {
-      parsed = api.parseConfigFile(base.configPath);
+      const result = api.parseConfigFile(base.configPath);
+      assertConfigParsed(base.configPath, result);
+      parsed = result;
     } finally {
       this.setOverlays(previous);
     }

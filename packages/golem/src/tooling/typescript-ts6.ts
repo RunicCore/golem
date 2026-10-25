@@ -6,9 +6,9 @@
  * module adds only what the classic objects lack: the `ProgramSession` overlay and input-observation contract, and
  * wrappers that give types, symbols and signatures the members golem reads.
  */
-import { statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
+import { fileSignature, MISSING } from './input-watcher.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
@@ -162,7 +162,7 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     configFilename: string,
     optionsToExtend: Golem.CompilerOptions | undefined,
     host: ParsedConfigHost,
-  ): { readonly options: Golem.CompilerOptions; readonly fileNames: string[] } | undefined;
+  ): { readonly options: Golem.CompilerOptions; readonly fileNames: string[]; readonly errors: readonly ClassicDiagnostic[] } | undefined;
   getPreEmitDiagnostics(program: ClassicProgram): readonly ClassicDiagnostic[];
   resolveModuleName(
     moduleName: string,
@@ -641,17 +641,8 @@ function withText(diagnostic: ClassicDiagnostic): Golem.Diagnostic & ClassicDiag
   return Object.create(diagnostic, { text: { value: headText(diagnostic.messageText), enumerable: true }, pos: { value: diagnostic.start, enumerable: true }, fileName: { value: diagnostic.file?.fileName, enumerable: true } }) as Golem.Diagnostic & ClassicDiagnostic;
 }
 
-const MISSING = 'missing';
-
-function fileSignature(filename: string): string {
-  try {
-    const stat = statSync(filename, { throwIfNoEntry: false });
-    if (!stat) return MISSING;
-    return stat.isDirectory() ? 'directory' : `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
-  } catch {
-    return MISSING;
-  }
-}
+/** The diagnostic code of a configuration that matches no file. */
+const NO_INPUTS_FOUND = 18003;
 
 /** A change to a package manifest or an installed package invalidates cached module resolution. */
 function affectsResolution(filename: string): boolean {
@@ -847,6 +838,11 @@ export class ProgramSession implements Disposable {
       },
     });
     if (!parsed) throw new Error(`The TypeScript configuration ${configPath} could not be parsed.`);
+    // Golem names its own roots, so a configuration that lists no files is not an error here.
+    const errors = parsed.errors.filter((diagnostic) => diagnostic.code !== NO_INPUTS_FOUND);
+    if (errors.length > 0) {
+      throw new Error([`The TypeScript configuration ${configPath} has errors:`, ...errors.map((diagnostic) => `  TS${diagnostic.code}: ${classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n')}`)].join('\n'));
+    }
     return { options: parsed.options, fileNames: parsed.fileNames };
   }
 

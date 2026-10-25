@@ -238,6 +238,28 @@ test('a disk edit that changes a file signature gives a new SourceFile without i
   assert.equal(after.text, 'export const value = 22;\n');
 });
 
+test('a configuration with errors fails to parse with the compiler messages, and one that lists no file does not', t => {
+  // protects: E-34 the errors of a parsed configuration are reported, not dropped
+  const root = createFixtureProject(t, 'golem-config-errors-');
+  fs.writeFileSync(path.join(root, 'a.ts'), 'export const a = 1;\n');
+  fs.writeFileSync(path.join(root, 'tsconfig.bad.json'), JSON.stringify({ compilerOptions: { nope: 1 }, include: ['a.ts'] }));
+  fs.writeFileSync(path.join(root, 'tsconfig.empty.json'), JSON.stringify({ include: [] }));
+  using session = new ts.ProgramSession({ cwd: root });
+  assert.throws(() => session.parseConfigFile(path.join(root, 'tsconfig.bad.json')), (error: unknown) => error instanceof Error
+    && error.message === `The TypeScript configuration ${path.join(root, 'tsconfig.bad.json')} has errors:\n  TS5023: Unknown compiler option 'nope'.`);
+  assert.deepEqual(session.parseConfigFile(path.join(root, 'tsconfig.empty.json')).fileNames, []);
+});
+
+test('a path whose state cannot be read fails the program with the file-system error; a missing path does not', t => {
+  // protects: E-34 a failed stat is reported, not taken for a missing file
+  const { root, main, dependency } = sessionOnDiskDependency(t);
+  fs.rmSync(dependency);
+  using session = new ts.ProgramSession({ cwd: root });
+  session.openProgram({ root, sources: [main] }).close();
+  fs.symlinkSync('dependency.ts', dependency);
+  assert.throws(() => session.openProgram({ root, sources: [main] }), /ELOOP/);
+});
+
 test('a source that exists only as an overlay is part of the program and its errors are reported', t => {
   const root = createFixtureProject(t, 'golem-overlay-only-');
   fs.mkdirSync(path.join(root, 'src'));
