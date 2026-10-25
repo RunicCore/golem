@@ -1,5 +1,5 @@
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
+import { isGolemTagKey, resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
 import {
   isTypeScriptLibFile,
   resolveValueSymbol,
@@ -295,7 +295,7 @@ export function isFlatParameterType(checker: ts.TypeChecker, type: ts.Type): boo
     const metadataMembers = type.types.filter(member => {
       if ((member.flags & ts.TypeFlags.Object) === 0) return false;
       const properties = checker.getPropertiesOfType(member);
-      return properties.length > 0 && properties.every(property => /(?:serde|validation|constraint|tag)/i.test(property.name));
+      return properties.length > 0 && properties.every(property => isGolemTagKey(checker, property));
     });
     return valueMembers.length > 0 && valueMembers.length + metadataMembers.length === type.types.length;
   }

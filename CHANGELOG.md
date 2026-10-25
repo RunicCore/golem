@@ -43,6 +43,7 @@ in the sections below.
 - A generated model with no fields, no base model and no additional properties names its constructor parameter `_values` and its encode parameter `_model`, so the SDK compiles with `noUnusedParameters`.
 - The generated codec code holds no runs of two blank lines. An SDK that you commit shows blank-line changes after you generate it again.
 - `schemaType()` from `@exprtlabs/golem-openapi/generator` accepts a qualifier only as identifiers that each end in a dot, such as `InputSchemas.`.
+- `golem-ts-openapi` treats a query or path parameter type as a branded primitive only when its extra members are golem tags. A brand from another library, such as a `tag` key, now stops generation with [`NEST1107`](docs/reference/diagnostics.md#nest1107). Before, golem took any member whose name held `tag`, `serde`, `validation` or `constraint` as a brand.
 
 ### Generation
 
