@@ -131,6 +131,40 @@ export type TItem = IModel<Money>;
   assert.match(generated.content, /declare amount: TItemFields\["amount"\];\s+declare currency: TItemFields\["currency"\];/);
 });
 
+test('an IModel over an SDK model keeps a field spelled like a brand key and drops the real brand keys', async t => {
+  // protects: F-164 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'odd.yaml'), `openapi: 3.1.0
+info: { title: Odd, version: "1" }
+paths: {}
+components:
+  schemas:
+    Odd:
+      type: object
+      required: [amount, "__@generatedModelWireBrand@1"]
+      additionalProperties: false
+      properties:
+        amount: { type: number }
+        "__@generatedModelWireBrand@1": { type: string }
+`);
+  writeGeneratedArtifacts((await generateOpenApi({
+    input: path.join(sourceRoot, 'odd.yaml'),
+    output: path.join(sourceRoot, 'sdk'),
+    name: 'Odd',
+    profile: { mobx: false, validation: true },
+  })).artifacts);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Odd } from './sdk/index.js';
+export type TItem = IModel<Odd>;
+`,
+  });
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'));
+  assert.ok(generated);
+  const declared = [...generated.content.matchAll(/^\s*declare (\S+?): TItemFields\[/gm)].map(match => match[1]);
+  assert.deepEqual(declared, ['amount', '"__@generatedModelWireBrand@1"']);
+});
+
 test('generated readonly fields remain readonly to TypeScript consumers', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/generated-readonly-fields-remain-readonly-to-typescript-consumers/item.model.ts"));

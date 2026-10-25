@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
-import { declaredModelAlias, diagnostic, foreignModelReason, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
+import { declaredModelAlias, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
@@ -518,9 +518,6 @@ function withMetadata(
   } as RichModelConversionDescriptor;
 }
 
-/** The type-only brand members that a generated base class declares; they are no fields of its model. */
-const GENERATED_BRAND_KEY = /^__@generatedModel(?:Wire|Fields)Brand@\d+$/;
-
 /** The type a mapped projection reads its members from: `Customer` in `Pick<Customer, 'name'>` or in `{ [K in 'name']: Customer[K] }`. */
 function projectedSourceType(checker: ts.TypeChecker, type: ts.Type): ts.Type | undefined {
   const aliased = type.aliasTypeArguments?.[0];
@@ -1001,7 +998,7 @@ export function descriptorBuilder(
         const members: { readonly name: string; readonly property: ts.Symbol; readonly absentFromSource: boolean }[] = [];
         for (const mapped of checker.getPropertiesOfType(type)) {
           const name = mapped.getName();
-          if (sourceObject && GENERATED_BRAND_KEY.test(name)) continue;
+          if (sourceObject && isGeneratedBrandKey(checker, mapped)) continue;
           members.push({ name, property: mapped, absentFromSource: sourceObject !== undefined && !sourceObject.getProperty(name) });
         }
         // A model defined by a mapped type over its own class has no members: the base of the class is a stub of this very model.
@@ -1058,7 +1055,9 @@ export function descriptorBuilder(
           properties[name] = described;
           if (!optional) required.push(name);
         }
-        const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => !(sourceObject && GENERATED_BRAND_KEY.test(name)));
+        // The members kept above exclude the brand keys of an SDK base; a readonly modifier counts only for a kept member.
+        const memberNames = new Set(members.map(member => member.name));
+        const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => memberNames.has(name));
         const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
         const taggedAdditional = indexType ? undefined : additionalPropertiesFromTags(metadata.constraints);
         const descriptor = withMetadata({

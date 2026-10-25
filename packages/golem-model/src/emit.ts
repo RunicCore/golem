@@ -1,4 +1,4 @@
-import { deduplicateProjections, exportedConcreteClass, linkedClassNames } from '@exprtlabs/golem/internal/type-analysis';
+import { deduplicateProjections, exportedConcreteClass, isGeneratedBrandKey, isGolemTagKey, linkedClassNames } from '@exprtlabs/golem/internal/type-analysis';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { PACKAGE_VERSION } from './package-info.js';
 import {
@@ -555,7 +555,7 @@ function fieldDescriptors(
   checker: ts.TypeChecker,
   specification: ModelSpecification,
   describe: (type: ts.Type, context: ModelSpecification, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode) => ModelConversionDescriptor,
-  fields = checker.getPropertiesOfType(specification.fieldsType).filter((field) => !field.getName().startsWith('__@')),
+  fields: readonly ts.Symbol[],
 ): Map<string, ModelConversionDescriptor> {
   return new Map(
     fields.map((field) => [
@@ -1586,7 +1586,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
     const fields = checker.getPropertiesOfType(specification.fieldsType).filter((field) =>
       definition.kind === 'object'
         ? Object.prototype.hasOwnProperty.call(definition.properties, field.getName())
-        : !field.getName().startsWith('__@'),
+        : !isGeneratedBrandKey(checker, field) && !isGolemTagKey(checker, field),
     );
     const descriptors = definition.kind === 'object'
       ? new Map(Object.entries(definition.properties))

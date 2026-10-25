@@ -519,3 +519,27 @@ export class ItemsController {
     (error: unknown) => String(error).includes('NEST1107'),
   );
 });
+
+test('a model with a model-level tag flattens into header parameters without its tag key', async t => {
+  // protects: F-213 a golem tag key is found by its symbol; the old wide filter dropped it from a tagged model's parameters
+  const root = fixture(t, `import { Controller, Get, Headers } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+import type { TFilter } from './filter.model.js';
+
+@Controller('items')
+export class ItemsController {
+  @Get()
+  @ApiOkResponse({ description: 'ok' })
+  list(@Headers() filter: TFilter): void {}
+}
+`, {
+    files: {
+      'src/filter.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinProperties } from '@exprtlabs/golem/tags';
+export type TFilter = IModel<{ term: string; page?: number } & MinProperties<1>>;
+`,
+    },
+  });
+  const document = documentOf(await generateFixture(root));
+  assert.deepEqual(operationOf(document, '/items', 'get').parameters?.map(parameter => `${parameter.in}:${parameter.name}`), ['header:term', 'header:page']);
+});
