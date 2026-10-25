@@ -312,8 +312,8 @@ test('initial model watch failures retain missing manifests and declarations in 
   }
 });
 
-test('exec forwards SIGTERM and SIGINT to its child and preserves the signal result', async (t: TestContext) => {
-  for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+for (const signal of ['SIGTERM', 'SIGINT'] as const) {
+  test(`exec forwards ${signal} to its child and preserves the signal result`, async (t: TestContext) => {
     const { root, config } = combinedFixture(t);
     const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
     const ready = path.join(root, `${signal.toLowerCase()}.ready`);
@@ -343,8 +343,8 @@ test('exec forwards SIGTERM and SIGINT to its child and preserves the signal res
     } finally {
       if (parent.exitCode === null && parent.signalCode === null) await stopChild(parent);
     }
-  }
-});
+  });
+}
 
 test('exec --watch keeps its child alive through generation failure, recovers, and cleans up on signal', async (t: TestContext) => {
   const { root, config } = combinedFixture(t);
