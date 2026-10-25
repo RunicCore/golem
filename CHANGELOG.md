@@ -19,6 +19,7 @@ in the sections below.
 ### Models
 
 - A type alias that refers to itself now works in any shape: a union, an array, a tuple or a record. `type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }` is a valid field type. Golem generates one function for the alias. [`RUNM1003`](docs/reference/diagnostics.md#runm1003) no longer reports a recursive alias, and [`RUNM1056`](docs/reference/diagnostics.md#runm1056) now means a cycle that golem cannot name.
+- A recursive interface or class, such as `interface Tree { kids: Tree[] }`, now generates one schema that refers to itself through `$ref`. Before, generation stopped with a stack overflow. A clash of two such types with one name stops with [`RUNM1059`](docs/reference/diagnostics.md#runm1059).
 - A union of scalars, one array and one object converts and validates without a tag.
 - `ModelInit` accepts a value of a type that holds itself through an array, such as `JsonValue`, and no longer stops the compiler with "Type instantiation is excessively deep". A tuple keeps its exact shape.
 - `golem-ts-openapi` writes a controller response that has a recursive alias type as one component that refers to itself.

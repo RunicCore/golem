@@ -636,6 +636,8 @@ export function descriptorBuilder(
   // (an interface or a class has no alias) an object type. The walk keeps the alias types of a cycle, so one name per
   // alias gives the same projection from any entry type.
   const cycleHeads = new Map<ts.Type, boolean>();
+  // The name each cycle head without a projection was given on its first lap.
+  const cycleStems = new Map<ts.Type, string>();
   const probeCycles = (root: ts.Type, location: ts.Node): void => {
     const index = new Map<ts.Type, number>();
     const low = new Map<ts.Type, number>();
@@ -869,8 +871,14 @@ export function descriptorBuilder(
     let projectionName: string | undefined;
     if ((projection && objectShape && !isRoot) || recursive) {
       const nameAt = node ?? nameNode;
-      const base = recursive && !projection ? userAliasName(type) ?? declaredTypeName(type) : undefined;
-      const candidate = `${safeNameHint(base ?? projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint)}${policySuffix({
+      // A cycle head keeps the name its first lap gave it, so a declared name that is not a plain identifier (non-ASCII) still ends the cycle.
+      const cycleHead = recursive && !projection;
+      let stem = cycleHead ? cycleStems.get(type) : undefined;
+      if (stem === undefined) {
+        stem = safeNameHint((cycleHead ? userAliasName(type) ?? declaredTypeName(type) : undefined) ?? projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint);
+        if (cycleHead) cycleStems.set(type, stem);
+      }
+      const candidate = `${stem}${policySuffix({
         exact: context.exact, allowAny: context.allowAny ?? allowAny, representation,
       })}`;
       if (!isProjectionName(candidate)) throw new Error(`Internal error: projection name "${candidate}" is not a plain identifier.`);
@@ -878,7 +886,7 @@ export function descriptorBuilder(
       const modelLocation = modelLocations.get(candidate);
       if (modelLocation) {
         throw diagnostic(context.sourceFile, nameAt ?? context.declaration, '1059',
-          `Projection name ${candidate} is used by a projection and a model: ${here} and ${modelLocation}. Declare a named type alias for the projection.`);
+          `Projection name ${candidate} is used by a projection and a model: ${here} and ${modelLocation}. Rename one of them, or declare a named type alias for the projection.`);
       }
       const policy = `${context.exact}:${context.allowAny ?? allowAny}:${representation}:${candidate}`;
       const cached = projectionCache.get(type) ?? new Map<string, string>();
@@ -1108,7 +1116,7 @@ export function descriptorBuilder(
       if (projectionIdentity(lookup, projectionName, existing) !== projectionIdentity(lookup, projectionName, described)) {
         const nameAt = node ?? nameNode ?? context.declaration;
         throw diagnostic(context.sourceFile, nameAt, '1059',
-          `Projection name ${projectionName} is used by two different types: ${projectionSources.get(projectionName)} and ${sourceLocation(nameAt)}. Declare a named type alias for one of them.`);
+          `Projection name ${projectionName} is used by two different types: ${projectionSources.get(projectionName)} and ${sourceLocation(nameAt)}. Rename one of the two types; a distinct type alias name also works.`);
       }
       return { kind: 'reference', name: projectionName, projection: true };
     }
