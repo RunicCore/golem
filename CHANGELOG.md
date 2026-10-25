@@ -32,6 +32,7 @@ in the sections below.
 - On the first `golem generate`, a utility type over a class of your app resolves its fields. This holds for an inline mapped type such as `{ [K in keyof Customer]: Customer[K] }`, a utility type that you wrote, `Partial<Pick<Customer, 'name'>>` and an indexed access. Before, these stopped with [`RUNM1058`](docs/reference/diagnostics.md#runm1058) or gave unknown fields until the second run.
 - A model defined by a mapped type over its own class still stops with [`RUNM1058`](docs/reference/diagnostics.md#runm1058). The message now names the model and the class, and tells you to declare the fields in the model.
 - A tagged field that you reach through `Pick` keeps its validation tag on every run. Before, the second run dropped the tag.
+- `TValidation` and `TSerde` accept functions that you declare as typed consts, such as `export const check: (v: string) => boolean = ...`. A nullable union member that you write through a tag alias, such as `Inner<5> & string | null`, now stops generation with [`RUNM1064`](docs/reference/diagnostics.md#runm1064). Before, it generated a validator that rejected every plain string.
 - Validation of an object type with no named properties is faster, and `stringify` of a map of numbers, such as `{ [key: string]: number }`, is faster. The results are the same.
 
 ### OpenAPI

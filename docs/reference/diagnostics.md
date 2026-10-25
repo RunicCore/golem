@@ -204,7 +204,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1040
 
-**Unresolvable tag function.** `TValidation`'s predicate, or `TSerde`'s `serialize`/`deserialize` argument, names a declaration the checker can't resolve, or the resolved function isn't exported. **Fix:** Point the tag at an exported function.
+**Unresolvable tag function.** `TValidation`'s predicate, or `TSerde`'s `serialize`/`deserialize` argument, names a declaration the checker can't resolve, or the resolved function isn't exported. Two functions in one field can also share one function type, such as two consts typed by the same alias, so golem cannot tell which one the tag names. **Fix:** Point the tag at an exported function. When two functions share a type, declare one with `function` or give it its own type.
 
 ### RUNM1041
 

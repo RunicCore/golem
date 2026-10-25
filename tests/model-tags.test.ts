@@ -358,26 +358,12 @@ for (const [name, rules] of Object.entries(typedRules)) {
     fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
       name: 'A',
       imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { check, other, read, write } from './rules.js';`,
-      fields: tsSource`valid: string & TValidation<typeof check>; coded: string & TSerde<typeof write, typeof read>`,
+      fields: tsSource`valid: string & TValidation<typeof check>; second: string & TValidation<typeof other>; coded: string & TSerde<typeof write, typeof read>`,
     }).text);
     const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
-    for (const bound of ['check', 'write', 'read']) assert.ok(importsOf(generated, bound) > 0, `${bound} is bound`);
-    assert.equal(importsOf(generated, 'other'), 0, 'a function no tag names is not bound');
+    for (const bound of ['check', 'other', 'write', 'read']) assert.ok(importsOf(generated, bound) > 0, `${bound} is bound`);
   });
 }
-
-test('two consts that share one type alias are both bound, each by its own tag', t => {
-  // protects: F-31 consts sharing a type alias share a type; a tag still binds the function it names (T-430)
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), typedRules['consts that share one type alias'].text);
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
-    name: 'A',
-    imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { check, other, read, write } from './rules.js';`,
-    fields: tsSource`first: string & TValidation<typeof check>; second: string & TValidation<typeof other>; coded: string & TSerde<typeof write, typeof read>`,
-  }).text);
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
-  for (const bound of ['check', 'other', 'write', 'read']) assert.ok(importsOf(generated, bound) > 0, `${bound} is bound`);
-});
 
 test('two validators that share one type alias in one field are refused, not bound by guess', t => {
   // protects: F-31 a function the checker cannot name from its type is not guessed from a shared alias (T-430)
@@ -388,7 +374,18 @@ test('two validators that share one type alias in one field are refused, not bou
     imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { check, other } from './rules.js';`,
     fields: tsSource`both: string & TValidation<typeof check> & TValidation<typeof other>`,
   }).text);
-  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1040/);
+  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1040.*shares its type with another function in this field/);
+});
+
+test('a nullable member written through a tag alias is refused, not given a phantom-key validator', t => {
+  // protects: fixed bug (T-430): at 75548ea this generated a validator that rejected every plain string
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { MaxLength } from '@exprtlabs/golem/tags';\ntype Inner<N extends number> = MaxLength<N>;`,
+    fields: tsSource`name: Inner<5> & string | null`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1064/);
 });
 
 for (const [form, field] of [['optional', tsSource`email?: string & TValidation<typeof check>`], ['nullable', tsSource`email: (string & TValidation<typeof check>) | null`]] as const) {

@@ -362,7 +362,11 @@ function functionBinding(
     : undefined;
   const named = variable?.name
     ?? (declaration && (declaration as ts.NamedDeclaration).name);
-  const symbol = (named ? context.checker.getSymbolAtLocation(named) : undefined) ?? context.writtenFunctions?.[kind].get(fn.type) ?? undefined;
+  const written = context.writtenFunctions?.[kind].get(fn.type);
+  if (written === null && !named) {
+    throw context.diagnostic(fn.owner, '1040', `${kind} function shares its type with another function in this field, so golem cannot tell which one the tag names. Declare it with \`function\` or give it its own type.`);
+  }
+  const symbol = (named ? context.checker.getSymbolAtLocation(named) : undefined) ?? written ?? undefined;
   return valueBindingForSymbol(context, symbol, kind, fn.owner);
 }
 
