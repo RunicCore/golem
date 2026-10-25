@@ -93,7 +93,7 @@ Install `@exprtlabs/golem-ts-openapi` to use `controllers`. A job reads static N
 | `framework` | literal `'nestjs'` | No | `nestjs` (NestJS 11) | Controller framework that the job reads. |
 | `root` | path | No | `.` | TypeScript project directory. |
 | `sources` | array of paths | No | — | Config-relative controller files. Without it, the job scans `src/**` below `root` for the `suffixes`. |
-| `suffixes` | array of strings | No | `[".controller.ts"]` | File-name endings that make a file below `root/src` a controller source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. |
+| `suffixes` | array of strings | No | `[".controller.ts"]` | File-name endings that make a file below `root/src` a controller source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. A suffix does not end in `.d.ts`, `.d.mts` or `.d.cts`, because a declaration file is not a source. |
 | `output` | path | Yes | — | One config-relative `.json`, `.yaml` or `.yml` document. |
 | `openapiVersion` | `'3.2.0'` or `'3.1.2'` | No | `3.2.0` | Document dialect. Use `3.1.2` for consumers that need it. A contract that `3.1.2` cannot represent stops generation. |
 | `info` | object | Yes | — | OpenAPI information object with the API `title` and `version`. |
@@ -154,7 +154,7 @@ Install `@exprtlabs/golem-model` to use `models`.
 | --- | --- | --- | --- | --- |
 | `root` | path | No | `.` | TypeScript project directory. |
 | `sources` | array of paths | No | — | Config-relative model files with any `.ts`, `.mts` or `.cts` name. Each file must export an `IModel` or `IObject` alias and must lie inside `root` ([RUNM1075](/reference/diagnostics#runm1075)). Without `sources`, every file below `<root>/src` and every file that the tsconfig includes or imports is a model source when it ends in one of the `suffixes`. A model source outside `root` is a [shared model file](/guide/shared-models#where-each-app-writes). The job skips a discovered file that has no `IModel` or `IObject` alias. |
-| `suffixes` | array of strings | No | `[".model.ts", ".models.ts"]` | File-name endings that make a file a model source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. |
+| `suffixes` | array of strings | No | `[".model.ts", ".models.ts"]` | File-name endings that make a file a model source. Each entry starts with `.`, ends in `.ts`, `.mts` or `.cts`, appears once, and does not end in `.generated.<ext>`. A suffix does not end in `.d.ts`, `.d.mts` or `.d.cts`, because the declaration form of each suffix is a model source already. |
 | `output` | path | No | `<root>/src/generated/models` | The folder of `models.validators.generated.ts` and of the generated files of shared model files. It must lie inside the tsconfig directory and must not overlap another job. |
 
 The generated file for each model source stays beside it and puts `.generated` before the final extension: `order.entity.ts` gets `order.entity.generated.ts`. Explicit `sources` must be non-empty and must not repeat a path. A source file may be one that an earlier job writes.
