@@ -210,6 +210,7 @@ test('a model named with a non-ASCII letter generates a companion that keeps the
 });
 
 test('rejects missing sources and profile-mismatched manifests before emitting artifacts', (t: TestContext) => {
+  // protects: T-326 an empty sources list stops with a message that names `sources`, not context.sources
   const { root, sourceRoot } = project(t);
   const manifest = path.join(root, 'external-model-manifest.json');
   fs.writeFileSync(manifest, JSON.stringify({
@@ -218,7 +219,7 @@ test('rejects missing sources and profile-mismatched manifests before emitting a
   }));
   assert.throws(
     () => generate({ root, profile: { mobx: false, validation: false }, manifestInputs: [manifest], sources: [] }),
-    /No model sources found/,
+    (error: Error) => /`sources` is empty.*List at least one model file in `sources`/.test(error.message) && !/context\./.test(error.message),
   );
   const source = copyFixtureFile(root, 'models/model-generator/api-profiles/src/payment.model.ts', 'src/x.model.ts');
   assert.throws(
