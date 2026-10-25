@@ -8,11 +8,17 @@ import { buildModelProject, createModelProject, writeModelGolemYaml } from './mo
 
 import {
   assertValue as publicAssertValue,
+  findCodecIdForConstructor,
   fromWireFormat as publicFromWireFormat,
+  getIModelClass,
+  getObjectCodec,
   parse as publicParse,
+  registerIModelClass,
+  registerObjectCodec,
   requireObjectCodec,
   stringify as publicStringify,
   toWireFormat as publicToWireFormat,
+  type ObjectCodec,
 } from '@exprtlabs/golem/serde';
 import { validate as publicValidate } from '@exprtlabs/golem/validation';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -343,12 +349,32 @@ test('fromWireFormat copies identity arrays and tuples instead of aliasing the i
   assert.deepEqual(encoded.ip, wire.ip);
 });
 
-test('a codec that is not registered is a golem fault that names its id and model', () => {
+test('a codec that is not registered is a golem fault that names its id', () => {
   // protects: R-18 the rewrite loads each codec module, so a missing codec is golem's fault, not advice to the user
-  assert.throws(() => requireObjectCodec('TOrder_0badc0de'), (error: unknown) => {
+  assert.throws(() => requireObjectCodec('TOrder_0badc0de_ffffffff'), (error: unknown) => {
     assert.ok(error instanceof LibError);
     assert.equal(error.kind, LibErrorKind.ValidationUnavailable);
-    assert.match(error.message, /^golem fault: the IObject codec "TOrder_0badc0de" for model TOrder is not registered\./);
+    assert.match(error.message, /^golem fault: the IObject codec "TOrder_0badc0de_ffffffff" is not registered\./);
     return true;
   });
+});
+
+test('the registry matches codec ids exactly, so a model named like Order_0badc0de keeps its own entries', () => {
+  // protects: T-444 a lookup never links a model to a codec key by the text shape of its name
+  class Suffixed {}
+  class Plain {}
+  class Short {}
+  registerIModelClass('TNamedOrder_0badc0de_09e04ca7', Suffixed);
+  registerIModelClass('TNamedOrder_68b0adb3', Plain);
+  registerIModelClass('TNamedOrder_0badc0de', Short);
+  registerIModelClass('TNamedOrder', Short);
+  assert.equal(getIModelClass('TNamedOrder_0badc0de_09e04ca7'), Suffixed);
+  assert.equal(getIModelClass('TNamedOrder_68b0adb3'), Plain, 'a short name links no other key');
+  assert.equal(getIModelClass('TNamedOrder_0badc0de'), Short);
+  assert.equal(findCodecIdForConstructor(Suffixed), 'TNamedOrder_0badc0de_09e04ca7');
+  const codec = { id: 'TNamedOrder_0badc0de_09e04ca7' } as ObjectCodec;
+  registerObjectCodec(codec);
+  assert.equal(getObjectCodec('TNamedOrder_0badc0de_09e04ca7'), codec);
+  assert.equal(getObjectCodec('TNamedOrder'), undefined, 'a short name finds no codec');
+  assert.equal(getObjectCodec('TNamedOrder_0badc0de'), undefined);
 });

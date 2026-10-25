@@ -55,6 +55,7 @@ A whole `@Body() items: Item[]` converts item by item. An invalid item returns H
 
 - Give all whole `@Body()` parameters of a handler one model type. The same rule holds for whole `@Query()` parameters.
 - Name one field with `@Body('payment') payment: TPayment` or `@Query('filter') filter: TFilter` when the model sits under one key. Its type is an `IModel` or `IObject`, and the parameter is required: an optional `payment?: TPayment` stops the `controllers` job, because the interceptor answers HTTP 400 for a missing value.
+- A one-field `@Body('items') items: TPayment[]` takes an array of models. The interceptor converts it item by item, and an invalid item returns HTTP 400 with the path `['items', 1, 'name']`. A one-field `@Query` cannot be an array of models: the `controllers` job reports [`NEST1107`](/reference/diagnostics#nest1107).
 - Do not mix a whole `@Body()` and a one-field `@Body('field')` in one handler. The same rule holds for `@Query()`. The `controllers` job reports [`NEST1103`](/reference/diagnostics#nest1103) for a mixed body and [`NEST1107`](/reference/diagnostics#nest1107) for a mixed query.
 - A one-field `@Query` model has no array field at any depth. OpenAPI does not define arrays in a `deepObject` parameter, and the `controllers` job reports [`NEST1107`](/reference/diagnostics#nest1107). Send an array in a `@Body`, or in a whole `@Query()` on OpenAPI 3.2.
 

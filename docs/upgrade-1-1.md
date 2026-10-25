@@ -14,6 +14,16 @@ Golem 1.1 keeps a 1.x number and drops TypeScript 7.0. A range such as `^1.0.0` 
 
 Run `npm ls typescript` to read the version that your project resolves.
 
+## Pass the exact id to the codec registry {#codec-ids}
+
+`getObjectCodec`, `getIModelClass`, `requireObjectCodec`, `requireIModelClass` and `registerIModelClass` from `@exprtlabs/golem/serde` match the id exactly. In 1.0 a short model name such as `TOrder` also found the codec `TOrder_<8 hex digits>`. In 1.1 it finds nothing. Generated files and the build rewrite already pass the exact id, so only your own calls change.
+
+Get the exact id from one of these:
+
+- `findCodecIdForConstructor(Order)` for a class that is registered.
+- The `.golem/codec-keys.json` file in the directory of `golem.yaml`, which maps each `<file>#<name>` to its id.
+- The `codecId` of a model in the `model-manifest.json` of an SDK.
+
 ## Move to TypeScript 7.1 or 6
 
 Install one of the supported versions, then update the Golem packages:

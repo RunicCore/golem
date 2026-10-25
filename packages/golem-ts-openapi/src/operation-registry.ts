@@ -31,7 +31,9 @@ function collectOperationCodecs(routes: readonly ControllerRoute[]): OperationCo
     const inputName = route.body?.type.modelContractName
       ?? route.requestBody?.declaredType?.modelContractName
       ?? route.requestBody?.type?.modelContractName;
-    const queryName = route.parameters.find((parameter) => parameter.location === 'querystring')?.type.modelContractName;
+    // OpenAPI 3.2 keeps a whole @Query() model as one querystring parameter; 3.1 flattens it, and each flattened parameter names the model.
+    const queryName = route.parameters.find((parameter) => parameter.location === 'querystring')?.type.modelContractName
+      ?? route.parameters.find((parameter) => parameter.wholeQueryModel !== undefined)?.wholeQueryModel;
     const fieldNames = Object.fromEntries(route.parameters.flatMap((parameter) => parameter.name !== undefined
       && (parameter.location === 'body' || parameter.location === 'query') && parameter.type.modelContractName !== undefined
       ? [[`${parameter.location}:${parameter.name}`, parameter.type.modelContractName] as const]

@@ -6,6 +6,7 @@
 
 import type { ModelTypeDescriptor } from '../model.js';
 import type { ValidationPlane } from '../object-codec.js';
+import { GENERATED_MODEL_SCHEMA_REF_PREFIX } from '../schema-keywords.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
@@ -67,6 +68,8 @@ export interface CodecRuntimeOptions {
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Code;
   readonly nestedGenerated?: (id: string) => Code | undefined;
+  /** The codec id of the model that a schema placeholder names, so the runtime resolves it by an exact lookup. */
+  readonly generatedModelCodecId?: (name: string) => string | undefined;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
   /** The name of the wire stringify that the companion of a sibling codec exports; without it, `wireStringifyExportName`. */
   readonly siblingWireName?: (codecId: string) => Code;
@@ -98,6 +101,7 @@ interface EmitCtx {
   readonly resolvedSchemasExpr?: Code;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Code;
+  readonly generatedModelCodecId?: (name: string) => string | undefined;
   readonly nestedGenerated?: (id: string) => Code | undefined;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
   readonly siblingWireName?: (codecId: string) => Code;
@@ -2249,17 +2253,17 @@ function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
   const resolved = (id: string): Code | undefined => ctx.resolvedSchemasExpr !== undefined && validationEnabled
     ? code`${ctx.resolvedSchemasExpr}[${literal(id)}] as object`
     : undefined;
-  const modelSchemaExpr = resolved(node.codecId)
-    ?? code`${jsonDataExpression(schemaPayload(node.modelJsonSchema ?? node.jsonSchema, node.codecId))} as object`;
+  const payload = (schema: JsonSchema, id: string): Code => code`${jsonDataExpression(withCodecIdRefs(schemaPayload(schema, id), ctx.generatedModelCodecId))} as object`;
+  const modelSchemaExpr = resolved(node.codecId) ?? payload(node.modelJsonSchema ?? node.jsonSchema, node.codecId);
   const wireSchemaExpr = node.sameSchema
     ? undefined
     : resolved(`${node.codecId}#wire`)
-      ?? code`${jsonDataExpression(schemaPayload(node.jsonSchema, `${node.codecId}#wire`))} as object`;
+      ?? payload(node.jsonSchema, `${node.codecId}#wire`);
   const residualSchemaExpr = (plane: 'model-only' | 'wire-only'): Code | undefined => {
     const residual = plane === 'model-only' ? node.modelOnlyJsonSchema : node.wireOnlyJsonSchema;
     if (residual === undefined || !validationEnabled) return undefined;
     const id = `${node.codecId}#${plane}`;
-    return resolved(id) ?? code`${jsonDataExpression(schemaPayload(residual, id))} as object`;
+    return resolved(id) ?? payload(residual, id);
   };
   const modelOnlySchemaExpr = residualSchemaExpr('model-only');
   const wireOnlySchemaExpr = residualSchemaExpr('wire-only');
@@ -2307,6 +2311,23 @@ function schemaPayload(schema: JsonSchema, id: string): object {
   return { $id: id, ...schema };
 }
 
+/** Names the codec id in each generated-model placeholder `$ref` of a schema; a name the module cannot map stays as it is. */
+function withCodecIdRefs(value: unknown, codecIdOf: ((name: string) => string | undefined) | undefined): unknown {
+  if (codecIdOf === undefined) return value;
+  const walk = (current: unknown): unknown => {
+    if (Array.isArray(current)) return current.map(walk);
+    if (current === null || typeof current !== 'object') return current;
+    return Object.fromEntries(Object.entries(current).map(([key, item]) => {
+      if (key !== '$ref' || typeof item !== 'string' || !item.startsWith(GENERATED_MODEL_SCHEMA_REF_PREFIX)) return [key, walk(item)];
+      const reference = item.slice(GENERATED_MODEL_SCHEMA_REF_PREFIX.length);
+      const hash = reference.indexOf('#');
+      const name = hash < 0 ? reference : reference.slice(0, hash);
+      return [key, `${GENERATED_MODEL_SCHEMA_REF_PREFIX}${codecIdOf(name) ?? name}${hash < 0 ? '' : reference.slice(hash)}`];
+    }));
+  };
+  return walk(value);
+}
+
 function jsonDataExpression(value: unknown): Code {
   const json = JSON.stringify(value);
   if (json === undefined) throw new TypeError('Generated schema data is not JSON serializable.');
@@ -2351,6 +2372,7 @@ export function emitCodecRuntimeCode(
     nestedConstruct: options.nestedConstruct,
     siblingWireName: options.siblingWireName,
     nestedGenerated: options.nestedGenerated,
+    generatedModelCodecId: options.generatedModelCodecId,
     nestedImportedSerde: options.nestedImportedSerde,
     exportedFillFunctionIds: options.exportedFillFunctionIds,
     issueSource: options.issueSource ?? 'TypeScript',

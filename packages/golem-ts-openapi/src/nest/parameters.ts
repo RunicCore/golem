@@ -245,6 +245,7 @@ function flattenParameter(
       location,
       name: property.name,
       required: !(property.flags & ts.SymbolFlags.Optional) && !containsUndefined(propertyType),
+      ...(location !== 'query' || parameterType.modelContractName === undefined ? {} : { wholeQueryModel: parameterType.modelContractName }),
     } satisfies ControllerParameter;
   });
 }
@@ -298,17 +299,41 @@ function assertDistinctParameters(context: NestAnalysisContext, parameters: read
   ));
 }
 
-/**
- * What a one-field `@Body('x')` or `@Query('x')` parameter is for NestModelInterceptor: a model, an optional model
- * (`x?: TModel`, which it answers HTTP 400 for when the value is missing) or another type.
- */
-function oneFieldKind(context: NestAnalysisContext, parameter: ts.ParameterDeclaration, parameterType: TypeReference): 'model' | 'optional model' | 'other' {
+/** The item type node of `T[]`, `Array<T>`, `ReadonlyArray<T>` or a qualified spelling such as `globalThis.Array<T>`, through parentheses and `readonly`: the array forms the rewrite stamps with a model. */
+function arrayItemNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined {
+  if (node === undefined) return undefined;
+  if (ts.isParenthesizedTypeNode(node)) return arrayItemNode(node.type);
+  if (ts.isTypeOperatorNode(node)) return node.operator === ts.SyntaxKind.ReadonlyKeyword ? arrayItemNode(node.type) : undefined;
+  let item: ts.TypeNode | undefined;
+  if (ts.isArrayTypeNode(node)) item = node.elementType;
+  else if (ts.isTypeReferenceNode(node) && ['Array', 'ReadonlyArray'].includes(ts.isIdentifier(node.typeName) ? node.typeName.text : node.typeName.right.text)) item = node.typeArguments?.length === 1 ? node.typeArguments[0] : undefined;
+  while (item !== undefined && ts.isParenthesizedTypeNode(item)) item = item.type;
+  return item;
+}
+
+interface OneFieldKind {
+  /** A model, an array of models, or an optional one of them (`x?: TModel`, which NestModelInterceptor answers HTTP 400 for when the value is missing). */
+  readonly kind: 'model' | 'optional model' | 'other';
+  readonly array: boolean;
+  /** The parameter's type; an array of models carries the model id of its items. */
+  readonly type: TypeReference;
+}
+
+/** What a one-field `@Body('x')` or `@Query('x')` parameter is for NestModelInterceptor: a model, an array of models (one `T[]` level), or another type. */
+function oneFieldKind(context: NestAnalysisContext, parameter: ts.ParameterDeclaration, parameterType: TypeReference): OneFieldKind {
   // `x?: TModel` has the declared type node `TModel`; `x: TModel | undefined` is a union with one member besides undefined.
   const declared = parameter.type ? typeReference(context.checker, parameter, parameter.type) : parameterType;
   const members = declared.type.isUnion() ? declared.type.types.filter(item => (item.flags & ts.TypeFlags.Undefined) === 0) : [];
-  const bare = authoritativeTypeReference(context, members.length === 1 ? typeReference(context.checker, parameter, undefined, members[0]) : declared);
-  if (bare?.modelContractName === undefined) return 'other';
-  return isOptionalParameter(parameter, parameterType.type) ? 'optional model' : 'model';
+  const bare = authoritativeTypeReference(context, members.length === 1 ? typeReference(context.checker, parameter, undefined, members[0]) : declared)!;
+  // The model of an item comes from the item's type node: the checker's type argument has lost the alias that names the model.
+  const item = bare.modelContractName === undefined ? arrayItemNode(parameter.type) : undefined;
+  const itemModel = item === undefined ? undefined : authoritativeTypeReference(context, typeReference(context.checker, parameter, item))!.modelContractName;
+  if (bare.modelContractName === undefined && itemModel === undefined) return { kind: 'other', array: false, type: parameterType };
+  return {
+    kind: isOptionalParameter(parameter, parameterType.type) ? 'optional model' : 'model',
+    array: itemModel !== undefined,
+    type: itemModel === undefined ? parameterType : { ...parameterType, modelContractName: itemModel },
+  };
 }
 
 /** The path of the first array or tuple field at any depth of an object type, such as `tags` or `inner.tags`. */
@@ -379,13 +404,13 @@ export function parseParameters(
         throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, `@Body(${name === undefined ? '' : `"${name}"`}) cannot share an operation with ${name === undefined ? 'a one-field @Body("field")' : 'a whole @Body()'}: both read the request body. Declare the whole body as one model, or use one-field parameters only.`));
       }
       if (name !== undefined) {
-        const kind = oneFieldKind(context, parameter, parameterType);
-        if (kind !== 'model') {
-          throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, kind === 'optional model'
-            ? `@Body("${name}") is an optional one-field model, which NestModelInterceptor does not support: it answers HTTP 400 for a missing value. Make the parameter required.`
-            : `@Body("${name}") must be an IModel or IObject; any other type needs a whole @Body() or an explicit request-body contract.`));
+        const field = oneFieldKind(context, parameter, parameterType);
+        if (field.kind !== 'model') {
+          throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, field.kind === 'optional model'
+            ? `@Body("${name}") is an optional one-field model or array of models, which NestModelInterceptor does not support: it answers HTTP 400 for a missing value. Make the parameter required.`
+            : `@Body("${name}") must be an IModel or IObject, or an array of one written as a type, such as TPayment[]; any other type needs a whole @Body() or an explicit request-body contract.`));
         }
-        parameters.push({ node: parameter, type: parameterType, location: 'body', name, required: true });
+        parameters.push({ node: parameter, type: field.type, location: 'body', name, required: true });
         return;
       }
       body = {
@@ -398,7 +423,11 @@ export function parseParameters(
     }
     if (name !== undefined) {
       // A model in a named query parameter is a deepObject (`name[field]=value`), which the interceptor reads and converts.
-      const kind = location.location === 'query' ? oneFieldKind(context, parameter, parameterType) : 'other';
+      const field = location.location === 'query' ? oneFieldKind(context, parameter, parameterType) : undefined;
+      const kind = field?.kind ?? 'other';
+      if (field?.array) {
+        throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `@Query("${name}") is an array of models, and OpenAPI does not define arrays in a deepObject query parameter. Send the array in a @Body.`));
+      }
       if (kind === 'optional model') {
         throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `@Query("${name}") is an optional one-field model, which NestModelInterceptor does not support: it answers HTTP 400 for a missing value. Make the parameter required.`));
       }

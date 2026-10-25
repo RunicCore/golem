@@ -116,7 +116,7 @@ type ValidatorExports = Readonly<Record<string, unknown>>;
 
 /** The generated `is_X` or `validate_X` of a codec id: the export of that name, with or without the hash suffix. */
 function generatedFunction(exports: ValidatorExports, prefix: 'is' | 'validate', codecId: string): Function {
-  const pattern = new RegExp(`^${prefix}_${codecId}(_[0-9a-f]{8})?$`);
+  const pattern = new RegExp(`^${prefix}_${codecId}$`);
   const names = Object.keys(exports).filter(name => pattern.test(name));
   if (names.length !== 1) throw new Error(`The validator module has ${names.length} exports for ${prefix}_${codecId}: ${names.join(', ')}`);
   const found = exports[names[0]];

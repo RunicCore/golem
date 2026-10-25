@@ -1811,14 +1811,16 @@ function emitCodecSection(context: EmitContext): CodecSection {
     return code`${rt.serde.requireIModelClass}(${literal(id)})`;
   };
   const nestedGenerated = (id: string): Code => externalModel(context, id).cls;
+  /** The manifest id of the SDK model that a generated-model descriptor names by its short name, class name or manifest id. */
+  const externalManifestId = (name: string): string | undefined => [...graph.externalNames.entries()].find(([manifestId, className]) => (
+    manifestId === name
+    || className === name
+    || codecShortName(manifestId) === name
+  ))?.[0];
   const nestedImportedSerde = (id: string) => {
-    const match = [...graph.externalNames.entries()].find(([manifestId, className]) => (
-      manifestId === id
-      || className === id
-      || codecShortName(manifestId) === id
-    ));
+    const match = externalManifestId(id);
     if (!match) return undefined;
-    const { stringify, fromWire, toWire } = externalModel(context, match[0]);
+    const { stringify, fromWire, toWire } = externalModel(context, match);
     return { stringify, fromWire, toWire };
   };
   // The validators the codecs use: the model file imports those and no others.
@@ -1860,6 +1862,10 @@ function emitCodecSection(context: EmitContext): CodecSection {
       } : {}),
       ...(hasPlanSchemas ? { resolvedSchemasExpr: identifier('modelSchemas') } : {}),
       serde: serdeResolver(context),
+      generatedModelCodecId: (name) => {
+        const manifestId = externalManifestId(name);
+        return manifestId === undefined ? undefined : imports.external.get(manifestId)?.model.codecId;
+      },
       nestedConstruct,
       nestedGenerated,
       nestedImportedSerde,

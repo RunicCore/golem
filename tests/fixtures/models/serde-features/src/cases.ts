@@ -1,7 +1,8 @@
 // The consumer app of tests/serde-features.acceptance.ts. It runs in the built project, in its own process, because it registers
 // codecs in the process-wide registry. A failed claim throws; a run that passes prints the names of its cases as a JSON array.
 import assert from 'node:assert/strict';
-import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/serde';
+import fs from 'node:fs';
+import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
 import {
   Address,
@@ -32,20 +33,14 @@ import './sdk/index.js';
 
 const validation = process.argv[2] === 'validating';
 
-registerIModelClass('TReuseContact', ReuseContact);
-registerIModelClass('TAddress', Address);
-registerIModelClass('TCustomer', Customer);
-registerIModelClass('TLineItem', LineItem);
-registerIModelClass('TContactEmail', ContactEmail);
-registerIModelClass('TContactPhone', ContactPhone);
-registerIModelClass('TContact', Contact);
-registerIModelClass('TNestedOrder', NestedOrder);
-registerIModelClass('TComposeCustomer', ComposeCustomer);
-registerIModelClass('TaggedMember', TaggedMember);
-registerIModelClass('TaggedAccess', TaggedAccess);
-registerIModelClass('TaggedLineItem', TaggedLineItem);
-registerIModelClass('TCombinedOrder', CombinedOrder);
-registerIModelClass('TCheckout', Checkout);
+/** The codec id of a model by its declared name, read from the key table `golem generate` wrote; the process runs in the project root. */
+const codecKeys = (JSON.parse(fs.readFileSync('.golem/codec-keys.json', 'utf8')) as { keys: Record<string, string> }).keys;
+const codecIdOf = (name: string): string => {
+  const key = Object.keys(codecKeys).find((declaration) => declaration.endsWith(`#${name}`));
+  if (key === undefined) throw new Error(`No codec id for ${name}.`);
+  return codecKeys[key]!;
+};
+
 
 const reuseWire = {
   givenName: 'Ada',
@@ -126,7 +121,7 @@ const names: string[] = [];
 
 /** Decodes the wire from an object and from text, encodes it back, and checks that the codec changed no input and kept no alias. */
 function roundTrip<Model extends object>(name: string, codecName: string, wire: object, assertModel: (model: Model) => void): void {
-  const objectCodec = requireObjectCodec(codecName);
+  const objectCodec = requireObjectCodec(codecIdOf(codecName));
   const original = structuredClone(wire);
   const text = JSON.stringify(wire);
   const fromObject = objectCodec.fromWireFormat(wire, { validate: false }) as Model;
@@ -221,7 +216,7 @@ roundTrip<TJsonCheckout>('sdk-extend', 'TJsonCheckout', checkoutWire, model => {
 });
 
 if (validation) {
-  const checkoutCodec = requireObjectCodec('TJsonCheckout');
+  const checkoutCodec = requireObjectCodec(codecIdOf('TJsonCheckout'));
   const decode = (wire: object) => checkoutCodec.fromWireFormat(wire, { validate: false }) as TJsonCheckout;
   assert.equal(checkoutCodec.validate(decode({ ...checkoutWire, money: { amount: 12, currency: 'XXX' } }), { failFast: false }), false);
   assert.equal(checkoutCodec.validate(decode({ ...checkoutWire, money: { amount: 12, currency: 'usd' } }), { failFast: false }), false);
@@ -231,14 +226,14 @@ if (validation) {
 }
 
 const invalid = { ...taggedWire, permissions: '0x4' };
-const draft = requireObjectCodec('TTaggedAccess').fromWireFormat(invalid, { validate: false, construct: TaggedAccess }) as InstanceType<typeof TaggedAccess>;
+const draft = requireObjectCodec(codecIdOf('TTaggedAccess')).fromWireFormat(invalid, { validate: false, construct: TaggedAccess }) as InstanceType<typeof TaggedAccess>;
 assert.ok(draft instanceof TaggedAccess);
 assert.ok(draft.member instanceof TaggedMember);
 if (validation) {
   assert.equal(await getValidator(draft).validate(), false);
 } else {
   assert.equal(draft.permissions, 4);
-  assert.deepEqual(JSON.parse(JSON.stringify(requireObjectCodec('TTaggedAccess').toWireFormat(draft, { validate: false }))), invalid);
+  assert.deepEqual(JSON.parse(JSON.stringify(requireObjectCodec(codecIdOf('TTaggedAccess')).toWireFormat(draft, { validate: false }))), invalid);
 }
 
 process.stdout.write(JSON.stringify(names));

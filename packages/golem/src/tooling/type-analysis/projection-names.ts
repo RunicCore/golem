@@ -103,6 +103,36 @@ export function projectionBaseName(
   return (node && readable(checker, node, modelNameOf, 0)) || fallback;
 }
 
+/** A type argument as part of a name: `string[]` is `StringArray`, so `Page<string[]>` and `Page<string[][]>` differ. Undefined when nothing identifier-like remains. */
+function typeArgumentName(checker: ts.TypeChecker, argument: ts.Type): string | undefined {
+  if (checker.isArrayType(argument)) {
+    const item = checker.getTypeArguments(argument as ts.TypeReference)[0];
+    const name = item && typeArgumentName(checker, item);
+    return name && `${name}Array`;
+  }
+  if (checker.isTupleType(argument)) {
+    const names = checker.getTypeArguments(argument as ts.TypeReference).map(item => typeArgumentName(checker, item));
+    return names.every((name): name is string => name !== undefined) ? `Tuple${names.join('')}` : undefined;
+  }
+  return pascalIdentifier(checker.typeToString(argument));
+}
+
+/**
+ * The parts that tell a recursive type from another one of its declared name, best first: the type arguments of a generic instance
+ * (`Page<number>` gives `Number`), the name of its file without `.model.ts` or `.ts` (`b.model.ts` gives `B`), and both together.
+ */
+export function headQualifiers(checker: ts.TypeChecker, type: ts.Type): readonly string[] {
+  const declaration = (type.aliasSymbol ?? type.getSymbol())?.declarations?.[0];
+  const generic = declaration !== undefined && (ts.isTypeAliasDeclaration(declaration) || ts.isInterfaceDeclaration(declaration) || ts.isClassDeclaration(declaration))
+    && (declaration.typeParameters?.length ?? 0) > 0;
+  const argumentNames = !generic ? [] : (type.aliasSymbol ? type.aliasTypeArguments ?? [] : checker.getTypeArguments(type)).map(argument => typeArgumentName(checker, argument));
+  const argumentPart = argumentNames.length > 0 && argumentNames.every((name): name is string => name !== undefined) ? argumentNames.join('') : undefined;
+  const fileName = declaration?.getSourceFile().fileName;
+  const filePart = fileName === undefined ? undefined : pascalIdentifier(fileName.slice(fileName.lastIndexOf('/') + 1).replace(/(?:\.models?)?(?:\.d)?\.[cm]?tsx?$/, ''));
+  return [argumentPart, filePart, argumentPart !== undefined && filePart !== undefined ? `${argumentPart}${filePart}` : undefined]
+    .filter((part): part is string => part !== undefined);
+}
+
 const PROJECTION_NAME = /^[A-Za-z][A-Za-z0-9]*$/;
 
 export function isProjectionName(name: string): boolean {

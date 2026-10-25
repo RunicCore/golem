@@ -371,8 +371,8 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 | Member | Signature | Behavior |
 | --- | --- | --- |
 | `registerObjectCodec` | `(codec: ObjectCodec): void` | Stores a codec under its id. |
-| `getObjectCodec` | `(id): ObjectCodec \| undefined` | Returns the codec for an id. |
-| `getIModelClass` | `(name): class \| undefined` | Returns the registered `IModel` class for a name. |
+| `getObjectCodec` | `(id): ObjectCodec \| undefined` | Returns the codec whose id is exactly `id`. A short model name finds nothing. |
+| `getIModelClass` | `(id): class \| undefined` | Returns the `IModel` class registered under the exact id `id`. |
 | `findCodecIdForConstructor` | `(constructor): string \| undefined` | Returns the id that the codec of a generated class is registered under. |
 | `resolveModelValidationContextValidator` | `(context, reference, mode): Validator` | Returns the validator that a `ModelValidationContext` gives for a reference. Caches it per context. |
 | `validationFailure` | `(issues): never` | Throws `LibError` `Validation` with the issues. |
