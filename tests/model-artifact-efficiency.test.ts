@@ -30,6 +30,7 @@ function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } 
 }
 
 test('equivalent tag schemas share compilation while callback identities and reference definitions stay distinct', () => {
+  // protects: F-164 equal tag schemas compile once, and callback and reference variants keep their own validator
   const tag = (schema: TagSchema['schema']): TagSchema => ({ key: canonicalSchemaKey(schema), schema });
   const number = { type: 'number' };
   const schemas = [

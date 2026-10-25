@@ -82,6 +82,7 @@ async function loadModel(project: ScenarioProject, directory: string, file: stri
 }
 
 test('tag schemas keep user fields named like descriptor metadata', () => {
+  // protects: T-431 a user field named date or serde is a field of the tag schema, not descriptor metadata
   const schema = (property: string, value: ModelTypeDescriptor): ModelTypeDescriptor => ({
     kind: 'object',
     properties: { [property]: value },
