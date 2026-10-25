@@ -264,6 +264,15 @@ function userAliasName(type: ts.Type): string | undefined {
   return declaration ? aliasProjectionName(declaration) : undefined;
 }
 
+/**
+ * The name of the interface, class or generic type alias that declares a type. A recursive type with no concrete alias takes it,
+ * so every lap of the cycle names the projection the same and the second lap ends in a reference.
+ */
+function declaredTypeName(type: ts.Type): string | undefined {
+  const name = (type.aliasSymbol ?? type.getSymbol())?.getName();
+  return name === undefined || name.startsWith('__') ? undefined : name;
+}
+
 /** The `any` of a type that did not resolve, such as a failed import. */
 export function isErrorAny(type: ts.Type): boolean {
   return (type.flags & ts.TypeFlags.Any) !== 0
@@ -860,7 +869,7 @@ export function descriptorBuilder(
     let projectionName: string | undefined;
     if ((projection && objectShape && !isRoot) || recursive) {
       const nameAt = node ?? nameNode;
-      const base = recursive && !projection ? userAliasName(type) : undefined;
+      const base = recursive && !projection ? userAliasName(type) ?? declaredTypeName(type) : undefined;
       const candidate = `${safeNameHint(base ?? projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint)}${policySuffix({
         exact: context.exact, allowAny: context.allowAny ?? allowAny, representation,
       })}`;
