@@ -14,6 +14,7 @@ import {
   generateMaterializedSdk,
   generatedModelSource,
 } from './openapi/helpers.js';
+import { runModule } from './support/run-module.js';
 
 function validatedDocument(): Record<string, unknown> {
   return {
@@ -88,6 +89,14 @@ const profile = Object.freeze({
   allowAny: false,
 });
 
+/** The values a generated TypeScript module exports, with every import stubbed. */
+function exportsOf(source: string): Record<string, unknown> {
+  const open: unknown = new Proxy(function stub() {}, { get: () => open, apply: () => open, construct: () => open as object });
+  const holder = { exports: {} as Record<string, unknown> };
+  runModule(source, { require: () => open, exports: holder.exports, module: holder }, { format: 'cjs' });
+  return holder.exports;
+}
+
 function compileValidatedSdk(output: string): string {
   const outDir = path.join(output, 'dist');
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true, outDir });
@@ -103,6 +112,7 @@ test('OpenAPI SDKs emit one validators module that the models and the operations
   const names = artifactBasenames(result.artifacts);
   assert.equal(names.includes('validators.generated.ts'), true);
   const models = generatedModelSource(result.artifacts);
+  // Kept pins: the module specifier and the runtime export that the models name are the contract between the SDK files and golem. The models text joins several files, so it cannot run as one module.
   assert.match(models, /validators\.generated\.js/);
   assert.match(models, /createObjectCodec/);
   const manifest = JSON.parse(result.artifacts.find(item => item.path.endsWith('/model-manifest.json'))?.content ?? '{}') as {
@@ -128,11 +138,12 @@ test('SDK compiles a no-content operation with no response validators', async t 
       },
     },
   }, { output, name: 'NoContent', profile });
-  const operation = result.artifacts.find(artifact => artifact.path.endsWith('/operations/deleteTask.ts'));
-  assert.ok(operation);
-  assert.match(operation.content, /responses: \[\],/);
-  assert.doesNotMatch(operation.content, /for \(const item of \[\]/);
-  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+  assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('/operations/deleteTask.ts')));
+  const compiled = compileValidatedSdk(output);
+  const { NoContentClient } = await import(pathToFileURL(path.join(compiled, 'client.js')).href);
+  const deleted = await new NoContentClient({ baseUrl: 'https://api.example', fetchImpl: async () => new Response(null, { status: 204 }) })
+    .deleteTask().execute({ path: { id: 'task-1' } });
+  assert.equal(deleted.status, 204);
 });
 
 test('SDK operation validators expose every operation reference and validate through the client', async t => {
@@ -145,6 +156,7 @@ test('SDK operation validators expose every operation reference and validate thr
   });
   const compiled = compileValidatedSdk(output);
   const generatedCode = readFileSync(path.join(output, 'validators.generated.ts'), 'utf8');
+  // protects: security: generated validators contain no eval or new Function (CSP-safe, no dynamic code)
   assert.doesNotMatch(generatedCode, /new\s+Function|\beval\s*\(/);
   assert.ok(result.artifacts.some(item => item.path === path.join(output, 'validators.generated.ts')), 'the SDK carries one validators module');
 
@@ -288,8 +300,9 @@ test('a model that an operation response and a model group both validate has its
   // Each check function holds its pattern twice: the compiled expression and the issue it reports.
   assert.equal(module.content.split(JSON.stringify(pattern)).length - 1, 2, 'one check function serves the model and the operation');
   assert.equal(module.content.split('new RegExp(').length - 1, 1, 'one compiled expression');
-  assert.match(module.content, /export function validate_getItem_response_200_application_json\(/);
-  assert.match(module.content, /export function validate_Item_[0-9a-f]{8}\(/);
+  const exported = Object.keys(exportsOf(module.content));
+  assert.ok(exported.includes('validate_getItem_response_200_application_json'), 'the operation root is exported');
+  assert.equal(exported.filter(name => /^validate_Item_[0-9a-f]{8}$/.test(name)).length, 1, 'the model root is exported once');
 });
 
 test('a validation-off SDK writes no validators module and no import of one', () => {

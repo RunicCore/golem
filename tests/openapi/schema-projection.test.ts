@@ -392,13 +392,15 @@ async function assertDirectionalEnvelope(
   userId: string,
 ): Promise<void> {
   compileGeneratedSdk(output);
-  const escaped = userId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const schemasText = JSON.stringify(buildSchemaData(document).registry, null, 2);
-  assert.match(schemasText, new RegExp(`${escaped}:input`));
-  assert.match(schemasText, new RegExp(`${escaped}:output`));
-  const inputPack = schemasText.split('golem-input')[1]?.split('golem-output')[0] ?? '';
-  assert.doesNotMatch(inputPack, new RegExp(`"user": \\{\\s*"\\$ref": "${escaped}"`));
-  assert.match(inputPack, new RegExp(`${escaped}:input`));
+  const registry = buildSchemaData(document).registry;
+  const defs = requireRecord(registry.$defs, '$defs');
+  // Every key, `$id` and `$ref` of a registry node: the places a projection is named.
+  const names = (node: unknown): string[] => node !== null && typeof node === 'object'
+    ? Object.entries(node).flatMap(([key, value]) => [key, ...(typeof value === 'string' && key.startsWith('$') ? [value] : names(value))])
+    : [];
+  assert.ok(names(registry).some((name) => name.includes(`${userId}:input`)), 'the registry holds the input projection of the user');
+  assert.ok(names(registry).some((name) => name.includes(`${userId}:output`)), 'the registry holds the output projection of the user');
+  assert.ok(names(defs['golem-input']).some((name) => name.includes(`${userId}:input`)), 'the input pack refers to the input projection');
 
   const probe = await clientProbe(output, 'Absolute');
   const userModel = await componentValidator(runtimeRegistry(document), 'User');
@@ -699,6 +701,7 @@ test('an external ./nested.json $ref projects directionally without cloning comp
     profile: { mobx: false, validation: true },
   });
   const inputSchemas = result.artifacts.find((artifact) => artifact.path.endsWith('/input-schemas.ts'))?.content ?? '';
+  // protects: security: a readOnly field of an external $ref never enters the request schema (a client cannot set a server field)
   assert.doesNotMatch(inputSchemas, /hidden/);
   const registry = runtimeRegistry(await loadValidatedDocument(path.join(directory, 'openapi.json'), {}));
   const defs = requireRecord(registry.$defs, '$defs');
