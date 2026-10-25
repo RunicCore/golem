@@ -295,12 +295,14 @@ test('ambiguous union conversions fail generation instead of probing codecs', ()
       message: /unique|required literal discriminator|ambiguous/i,
     },
     {
-      name: 'date or date array',
+      // `Date | Date[]` converts by its wire value (T-320); a plain string beside the Date makes the string ambiguous.
+      name: 'date beside a string and an array of strings',
       descriptor: {
         kind: 'union',
         variants: [
           { kind: 'date' },
-          { kind: 'array', item: { kind: 'date' } },
+          { kind: 'string' },
+          { kind: 'array', item: { kind: 'string' } },
         ],
       },
       message: /ambiguous conversions/i,
