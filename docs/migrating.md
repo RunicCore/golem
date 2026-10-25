@@ -11,7 +11,7 @@ Each item names a breaking change and the action to take.
 - `LibErrorKind` gains `response`. Add a case to exhaustive `switch` statements over the kind.
 - `NestModelInterceptor` answers input failures (`causedByInput`) with HTTP 400 instead of 500. A custom validation rule that rejects input returns `false` or a message instead of throwing ([what happens to a request](/guide/nestjs-requests#what-happens-to-a-request)).
 - `NestModelInterceptor` throws a `TypeError`, and Nest answers HTTP 500, for a `@Body()` or `@Query()` parameter whose type is not an `IModel` or `IObject`. Declare the input as an `IModel` or `IObject`, or write your own interceptor ([Convert requests](/guide/nestjs-requests#parameter-types-and-arrays)).
-- Removed exports: replace `getModelValidator` with `getValidator(model)` (also in `mobx-validation`), `isIModelReference` with `isModelDeclarationReference(checker, node)`, and `createProgram` with `createProgramFromSources`. `validationTagKey` and `validationTagSchemaDescriptor` are internal to Golem.
+- Removed exports: replace `getModelValidator` with `getValidator(model)` (also in `mobx-validation`), `isIModelReference` with `isModelDeclarationReference(checker, node)`, and `createProgram` with `createProgramFromSources`. `validationTagSchemaDescriptor` is internal to Golem.
 
 ## Controllers
 
