@@ -1,4 +1,3 @@
-// lane: typescript6 diagnostics from the TypeScript 6 program and ProgramSession resolution updates
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';

@@ -1,4 +1,3 @@
-// lane: typescript6 ProgramSession resolution updates when a validator module recovers
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
