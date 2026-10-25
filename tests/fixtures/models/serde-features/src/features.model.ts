@@ -1,12 +1,14 @@
 import type { IModel } from '@exprtlabs/golem/model';
-import type { Integer, MinLength, Minimum, TSerde, TValidation } from '@exprtlabs/golem/tags';
+import type { Integer, MinLength, Minimum, Pattern, TSerde, TValidation } from '@exprtlabs/golem/tags';
 import type { PermissionBits, ProjectName } from './access-rules.js';
 import type { Email, Money, Phone } from './feature-tags.js';
+import type { HexCode, PlainHexCode, PlainMoney, PlainPermissions, PlainYesNo, Stamp, YesNo } from './feature-tags.js';
 import { decodeHex, encodeHex, extraMoney, notBlank, positive } from './feature-tags.js';
 import type { Money as PaymentMoney } from './sdk/index.js';
 import {
   TAddressBaseModel,
   TCheckoutBaseModel,
+  TCheckoutPlainBaseModel,
   TCombinedOrderBaseModel,
   TComposeCustomerBaseModel,
   TContactBaseModel,
@@ -16,6 +18,10 @@ import {
   TLineItemBaseModel,
   TNestedOrderBaseModel,
   TReuseContactBaseModel,
+  TSerdeManyBaseModel,
+  TSerdeManyLineBaseModel,
+  TSerdeNoneBaseModel,
+  TSerdeNoneLineBaseModel,
   TTaggedAccessBaseModel,
   TTaggedLineItemBaseModel,
   TTaggedMemberBaseModel,
@@ -101,6 +107,7 @@ export type TCombinedOrder = IModel<{
 }>;
 export class CombinedOrder extends TCombinedOrderBaseModel {}
 
+// #region checkout
 export type TLineItem = IModel<{
   sku: string & MinLength<3>;
   quantity: number & Integer & Minimum<0>;
@@ -123,3 +130,82 @@ export type TCheckout = IModel<{
   memo?: string;
 }>;
 export class Checkout extends TCheckoutBaseModel {}
+// #endregion checkout
+
+// #region checkout-plain
+// LineItem is declared with the Checkout payload. Stamp is `string & Format<'date-time'>`: dates stay strings, and nothing converts.
+export type TCheckoutPlain = IModel<{
+  money: { amount: number & Minimum<0>; currency: string & Pattern<'^[A-Z]{3}$'> };
+  note: string & MinLength<1>;
+  code: string & Pattern<'^[0-9a-f]+$'>;
+  when: Stamp;
+  items: Array<{ sku: string & MinLength<3> }>;
+  primary: LineItem;
+  flags: Record<string, string>;
+  channel: { kind: 'open' } | { kind: 'hold'; until: Stamp };
+  span: [Stamp, Stamp];
+  hold: Stamp | null;
+  bag?: { lane: string };
+  memo?: string;
+}>;
+export class CheckoutPlain extends TCheckoutPlainBaseModel {}
+// #endregion checkout-plain
+
+// The serde payloads: one shape of 21 fields. In serde-many every field converts; serde-none has the same rules on plain strings and numbers.
+export type TSerdeManyLine = IModel<{
+  amount: Money;
+  due: Date;
+  ok: YesNo;
+  hits: HexCode;
+}>;
+export class SerdeManyLine extends TSerdeManyLineBaseModel {}
+
+export type TSerdeMany = IModel<{
+  price: Money;
+  tax: Money;
+  fee: Money;
+  total: Money;
+  code: HexCode;
+  retry: HexCode;
+  perms: PermissionBits;
+  admin: PermissionBits;
+  active: YesNo;
+  archived: YesNo;
+  created: Date;
+  updated: Date;
+  expires: Date;
+  shipped: Date;
+  window: [Date, Date];
+  review: [Date, Date];
+  lines: SerdeManyLine[];
+}>;
+export class SerdeMany extends TSerdeManyBaseModel {}
+
+export type TSerdeNoneLine = IModel<{
+  amount: PlainMoney;
+  due: Stamp;
+  ok: PlainYesNo;
+  hits: PlainHexCode;
+}>;
+export class SerdeNoneLine extends TSerdeNoneLineBaseModel {}
+
+export type TSerdeNone = IModel<{
+  price: PlainMoney;
+  tax: PlainMoney;
+  fee: PlainMoney;
+  total: PlainMoney;
+  code: PlainHexCode;
+  retry: PlainHexCode;
+  perms: PlainPermissions;
+  admin: PlainPermissions;
+  active: PlainYesNo;
+  archived: PlainYesNo;
+  created: Stamp;
+  updated: Stamp;
+  expires: Stamp;
+  shipped: Stamp;
+  window: [Stamp, Stamp];
+  review: [Stamp, Stamp];
+  lines: SerdeNoneLine[];
+}>;
+export class SerdeNone extends TSerdeNoneBaseModel {}

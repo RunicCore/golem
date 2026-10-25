@@ -94,8 +94,8 @@ A column is one setup of Golem. Each setup turns JSON text into a value and back
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/features/features.iobject.model.ts#checkout [Golem (IObject)]
-<<< @/../scripts/benchmark/fixtures/features/features.model.ts#checkout [Golem (IModel)]
+<<< @/../tests/fixtures/models/serde-features/src/features.iobject.model.ts#checkout [Golem (IObject)]
+<<< @/../tests/fixtures/models/serde-features/src/features.model.ts#checkout [Golem (IModel)]
 
 :::
 
@@ -116,8 +116,8 @@ A column is one setup of Golem. Each setup turns JSON text into a value and back
 
 ::: code-group
 
-<<< @/../scripts/benchmark/fixtures/features/features.iobject.model.ts#checkout-plain [Golem (IObject)]
-<<< @/../scripts/benchmark/fixtures/features/features.model.ts#checkout-plain [Golem (IModel)]
+<<< @/../tests/fixtures/models/serde-features/src/features.iobject.model.ts#checkout-plain [Golem (IObject)]
+<<< @/../tests/fixtures/models/serde-features/src/features.model.ts#checkout-plain [Golem (IModel)]
 
 :::
 

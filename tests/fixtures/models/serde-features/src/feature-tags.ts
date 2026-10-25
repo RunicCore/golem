@@ -49,3 +49,23 @@ export function encodeHex(value: number): string {
 export function decodeHex(value: string & TValidation<typeof isHex>): number {
   return Number.parseInt(value, 16);
 }
+
+export type HexCode = number & TValidation<typeof positive> & TSerde<typeof encodeHex, typeof decodeHex>;
+
+export type YesNoWire = string & Pattern<'^(yes|no)$'>;
+export type YesNo = boolean & TSerde<typeof encodeYesNo, typeof decodeYesNo>;
+
+export function encodeYesNo(value: boolean): YesNoWire {
+  return (value ? 'yes' : 'no') as YesNoWire;
+}
+
+export function decodeYesNo(value: YesNoWire): boolean {
+  return value === 'yes';
+}
+
+/* The plain twins of the converting tags: the same rules on the wire value, with nothing to convert (the serde-none payload). */
+export type PlainMoney = number & Integer & Minimum<0> & Maximum<1_000_000_000>;
+export type PlainHexCode = number & TValidation<typeof positive>;
+export type PlainPermissions = number & Integer & Minimum<0> & Maximum<255> & TValidation<typeof hasReadPermission>;
+export type PlainYesNo = YesNoWire;
+export type Stamp = string & Format<'date-time'>;

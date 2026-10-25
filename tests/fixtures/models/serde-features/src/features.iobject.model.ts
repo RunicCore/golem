@@ -1,7 +1,7 @@
 import type { IObject } from '@exprtlabs/golem/model';
-import type { Integer, MinLength, Minimum, TSerde, TValidation } from '@exprtlabs/golem/tags';
+import type { Integer, MinLength, Minimum, Pattern, TSerde, TValidation } from '@exprtlabs/golem/tags';
 import type { PermissionBits, ProjectName } from './access-rules.js';
-import type { Email, Money, Phone } from './feature-tags.js';
+import type { Email, HexCode, Money, Phone, PlainHexCode, PlainMoney, PlainPermissions, PlainYesNo, Stamp, YesNo } from './feature-tags.js';
 import { decodeHex, encodeHex, extraMoney, notBlank, positive } from './feature-tags.js';
 import type { Money as PaymentMoney } from './sdk/index.js';
 
@@ -73,6 +73,7 @@ export type TJsonCombinedOrder = IObject<{
   items: TJsonTaggedLineItem[];
 }>;
 
+// #region checkout
 export type TJsonLineItem = IObject<{
   sku: string & MinLength<3>;
   quantity: number & Integer & Minimum<0>;
@@ -92,4 +93,78 @@ export type TJsonCheckout = IObject<{
   hold: Date | null;
   bag?: { lane: string };
   memo?: string;
+}>;
+// #endregion checkout
+
+// #region checkout-plain
+// Stamp is `string & Format<'date-time'>`: dates stay strings, and nothing converts.
+export type TJsonCheckoutPlain = IObject<{
+  money: { amount: number & Minimum<0>; currency: string & Pattern<'^[A-Z]{3}$'> };
+  note: string & MinLength<1>;
+  code: string & Pattern<'^[0-9a-f]+$'>;
+  when: Stamp;
+  items: Array<{ sku: string & MinLength<3> }>;
+  primary: TJsonLineItem;
+  flags: Record<string, string>;
+  channel: { kind: 'open' } | { kind: 'hold'; until: Stamp };
+  span: [Stamp, Stamp];
+  hold: Stamp | null;
+  bag?: { lane: string };
+  memo?: string;
+}>;
+// #endregion checkout-plain
+
+// The serde payloads: one shape of 21 fields. In serde-many every field converts; serde-none has the same rules on plain strings and numbers.
+export type TJsonSerdeManyLine = IObject<{
+  amount: Money;
+  due: Date;
+  ok: YesNo;
+  hits: HexCode;
+}>;
+
+export type TJsonSerdeMany = IObject<{
+  price: Money;
+  tax: Money;
+  fee: Money;
+  total: Money;
+  code: HexCode;
+  retry: HexCode;
+  perms: PermissionBits;
+  admin: PermissionBits;
+  active: YesNo;
+  archived: YesNo;
+  created: Date;
+  updated: Date;
+  expires: Date;
+  shipped: Date;
+  window: [Date, Date];
+  review: [Date, Date];
+  lines: TJsonSerdeManyLine[];
+}>;
+
+export type TJsonSerdeNoneLine = IObject<{
+  amount: PlainMoney;
+  due: Stamp;
+  ok: PlainYesNo;
+  hits: PlainHexCode;
+}>;
+
+export type TJsonSerdeNone = IObject<{
+  price: PlainMoney;
+  tax: PlainMoney;
+  fee: PlainMoney;
+  total: PlainMoney;
+  code: PlainHexCode;
+  retry: PlainHexCode;
+  perms: PlainPermissions;
+  admin: PlainPermissions;
+  active: PlainYesNo;
+  archived: PlainYesNo;
+  created: Stamp;
+  updated: Stamp;
+  expires: Stamp;
+  shipped: Stamp;
+  window: [Stamp, Stamp];
+  review: [Stamp, Stamp];
+  lines: TJsonSerdeNoneLine[];
 }>;
