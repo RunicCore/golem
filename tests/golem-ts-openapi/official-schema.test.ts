@@ -1,12 +1,17 @@
 // lane: typescript6 Checker guards: the controller generator and the rewrite code it uses run the checker in this process
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { generate } from '#controllers/generator';
 import { formatOpenApiProblems, validateOpenApiDocument } from '#openapi/openapi-validator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 
 type Version = '3.2.0' | '3.1.2';
+
+/** The part of a generated document the querystring test reads. */
+interface GeneratedDocument {
+  readonly paths: Readonly<Record<string, Readonly<Record<string, { readonly parameters?: readonly { readonly name: string; readonly in: string; readonly required?: boolean; readonly content?: object }[] }>>>>;
+}
 
 const VERSIONS: readonly Version[] = ['3.2.0', '3.1.2'];
 
@@ -203,29 +208,43 @@ export class OverlaysController {
 `,
 };
 
+async function documentFor(t: TestContext, source: string, openapiVersion: Version): Promise<GeneratedDocument> {
+  const root = createControllerFixture(t, {
+    prefix: 'golem-ts-openapi-official-schema-',
+    packageName: 'golem-ts-openapi-official-schema-fixture',
+    source,
+  });
+  const result = await generate({
+    root,
+    output: path.join(root, 'openapi.json'),
+    openapiVersion,
+    info: { title: 'Official schema', version: '1' },
+    securitySchemes: SECURITY_SCHEMES,
+    servers: [{ url: 'https://api.example.com/{base}', description: 'Production', variables: { base: { default: 'v1', enum: ['v1', 'v2'] } } }],
+    tags: [{ name: 'metadata', description: 'Metadata', externalDocs: { url: 'https://example.com/docs' } }],
+    profile: { mobx: false, validation: false },
+  });
+  const artifact = result.artifacts[0];
+  assert.ok(artifact);
+  return JSON.parse(artifact.content) as GeneratedDocument;
+}
+
 for (const [name, source] of Object.entries(CONTROLLERS)) {
   for (const openapiVersion of VERSIONS) {
     test(`the ${name} document passes the official OpenAPI check on ${openapiVersion}`, async t => {
       // protects: F-163 golem-ts-openapi output passes the official OpenAPI schema check on both versions
-      const root = createControllerFixture(t, {
-        prefix: 'golem-ts-openapi-official-schema-',
-        packageName: 'golem-ts-openapi-official-schema-fixture',
-        source,
-      });
-      const result = await generate({
-        root,
-        output: path.join(root, 'openapi.json'),
-        openapiVersion,
-        info: { title: 'Official schema', version: '1' },
-        securitySchemes: SECURITY_SCHEMES,
-        servers: [{ url: 'https://api.example.com/{base}', description: 'Production', variables: { base: { default: 'v1', enum: ['v1', 'v2'] } } }],
-        tags: [{ name: 'metadata', description: 'Metadata', externalDocs: { url: 'https://example.com/docs' } }],
-        profile: { mobx: false, validation: false },
-      });
-      const artifact = result.artifacts[0];
-      assert.ok(artifact);
-      const problems = validateOpenApiDocument(JSON.parse(artifact.content));
+      const problems = validateOpenApiDocument(await documentFor(t, source, openapiVersion));
       assert.deepEqual(problems, [], formatOpenApiProblems(problems, pointer => pointer));
     });
   }
 }
+
+test('the parameters document on 3.2.0 writes a model query as one querystring parameter', async t => {
+  // protects: F-163 the official check accepts the 3.2 querystring parameter golem writes
+  const document = await documentFor(t, CONTROLLERS.parameters!, '3.2.0');
+  const parameters = document.paths['/parameters/model']?.get?.parameters ?? [];
+  assert.deepEqual(
+    parameters.map(({ name, in: location, required, content }) => ({ name, in: location, required, contentTypes: Object.keys(content ?? {}) })),
+    [{ name: 'filter', in: 'querystring', required: true, contentTypes: ['application/x-www-form-urlencoded'] }],
+  );
+});
