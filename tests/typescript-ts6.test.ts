@@ -1,3 +1,4 @@
+// lane: typescript6 the type-parameter default, ProgramSession, and the `tsc --showConfig` and `--listEmittedFiles` parsing of `golem build`
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';

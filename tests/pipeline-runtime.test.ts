@@ -1,3 +1,4 @@
+// lane: typescript6 ProgramSession resolution updates in the pipeline runtime
 import { copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

@@ -20,26 +20,29 @@ export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.tes
 // The model-only smoke file runs in Full; Acceptance runs the others so it runs once.
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
-// The TypeScript 6 lane runs these files with GOLEM_TYPESCRIPT_ROOT at the container's TypeScript 6 install. The identity test
-// (typescript-identity, unit step) proves that TypeScript 6 and 7 write the same bytes for its corpus and compiles that corpus
-// once on TypeScript 6, so the lane reruns only the tests that reach a place of the TypeScript 6 shim (typescript-ts6.ts, build.ts).
-// A new version-path claim adds an identity fixture, not a file here. Each entry names the shim place it proves:
-export const TYPESCRIPT6_FILES = [
-  ...[
-    // Diagnostics, and ProgramSession (the in-process program and its incremental updates):
-    'typescript-backends',
-    // The type-parameter default, ProgramSession, and the `tsc --showConfig` and `--listEmittedFiles` parsing of `golem build`:
-    'typescript-ts6',
-    // ProgramSession: a watch reuses one program across edits and tsconfig path-mapping changes:
-    'watch-compiler-reuse',
-    // ProgramSession in the `golem build --watch` driver, where users run it:
-    'build-watch-rebuild-recovery',
-    // The build.ts emit of the edited stage through the TypeScript 6 `tsc`: Node runs what a Bundler project builds to:
-    'build-node-specifiers',
-  ].map(name => `.build/tests/${name}.test.js`),
-  // Checker guards: the controller generator and the rewrite code it uses run the checker in this process:
-  '.build/tests/golem-ts-openapi/*.test.js',
-] as const;
+// The TypeScript 6 lane runs the test files whose first line is `// lane: typescript6 <the shim place the file proves>`, with
+// GOLEM_TYPESCRIPT_ROOT at the container's TypeScript 6 install. The identity test (typescript-identity, unit step) proves that
+// TypeScript 6 and 7 write the same bytes for its corpus and compiles that corpus once on TypeScript 6, so the lane reruns only
+// the tests that reach a place of the TypeScript 6 shim that the identity test does not (typescript-ts6.ts, build.ts). A test
+// file that reaches such a place carries the tag, so the lane cannot miss it.
+const LANE_TAG = /^\/\/ lane: typescript6 \S/;
+/** The compiled files of the tagged test sources under tests/, in path order. */
+export function typescript6Files(): readonly string[] {
+  const tagged = (file: string): boolean => {
+    const descriptor = fs.openSync(path.join(root, file), 'r');
+    try {
+      const head = Buffer.alloc(200);
+      return LANE_TAG.test(head.toString('utf8', 0, fs.readSync(descriptor, head, 0, head.length, 0)));
+    } finally { fs.closeSync(descriptor); }
+  };
+  const files = (fs.readdirSync(path.join(root, 'tests'), { recursive: true }) as string[])
+    .map(file => `tests/${file.split(path.sep).join('/')}`)
+    .filter(file => file.endsWith('.test.ts') && !file.includes('/fixtures/') && tagged(file))
+    .sort()
+    .map(file => `.build/${file.replace(/\.ts$/, '.js')}`);
+  if (!files.length) throw new Error('No test file carries the `// lane: typescript6` tag on its first line, so the TypeScript 6 lane has nothing to run.');
+  return files;
+}
 // The docs tier checks the documentation: its prose rules and its page inventory read the markdown, not golem.
 export const DOCS_FILES = ['.build/tests/docs-voice.site-test.js', '.build/tests/docs-structure.site-test.js'] as const;
 export const BROWSER_FILES = ['.build/tests/browser/*.test.js'] as const;
@@ -86,7 +89,7 @@ export function selectFocused(args: readonly string[], lane6 = false): { readonl
   if (!lane6 && !files.length && !passThrough.some(flag => flag.startsWith('--test-name-pattern'))) {
     throw new Error('Select test files or --test-name-pattern, for example: npm run test -- tests/serde.test.ts');
   }
-  const selected = files.length ? files : [...(lane6 ? TYPESCRIPT6_FILES : UNIT_FILES)];
+  const selected = files.length ? files : [...(lane6 ? typescript6Files() : UNIT_FILES)];
   return { files: selected, passThrough, needsPack: selected.some(file => /\/tests\/(?:packed|browser)\//.test(file)) };
 }
 
@@ -253,7 +256,7 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
     if (native) return inOrder(unit);
     // Pack and the smoke test read the workspace and /cache/packed, never a file that the lane writes. The lane's last files
     // leave cores idle, so they run beside it and add no time of their own.
-    return [...inOrder(unit), [[nodeTest('typescript 6', TYPESCRIPT6_FILES, CONCURRENCY.unit, [], typescript6Env())], [pack, nodeTest('packed smoke', [SMOKE_FILE], 1)]]];
+    return [...inOrder(unit), [[nodeTest('typescript 6', typescript6Files(), CONCURRENCY.unit, [], typescript6Env())], [pack, nodeTest('packed smoke', [SMOKE_FILE], 1)]]];
   }
   return [
     ...inOrder(

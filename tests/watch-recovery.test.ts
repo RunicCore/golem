@@ -1,3 +1,4 @@
+// lane: typescript6 ProgramSession resolution updates and the compiler process of a watch
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
