@@ -13,6 +13,9 @@ import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 
 import { compileSchema, compileValidatorModule, compileValidators } from './support/compiled-validators.js';
+import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
+import { TSC } from './support/build-project.js';
+import { command, workspace } from './support/process.js';
 
 /** Asserts the all-errors result, then that fast-fail returns only the first of those issues. */
 async function assertIssues(schema: unknown, value: unknown, expected: readonly object[]): Promise<void> {
@@ -1012,14 +1015,26 @@ test('const and enum accept a value with an extra undefined-valued key', async (
   await assertIssues({ enum: [{ a: 1 }, 2] }, { a: 1, b: undefined }, []);
 });
 
-test('compile with typed emits the same validator with its issue type', async () => {
+test('compile with typed emits the same validator with its issue type', async (t) => {
   // protects: value the typed validator reports the same issues as the untyped one and returns SchemaIssue[]
   const { byRoot } = await compileValidatorModule({ roots: { root: { type: 'string' } }, typed: true });
   assert.deepEqual(byRoot.root('a', true), []);
   assert.deepEqual(byRoot.root(5, true), [{ path: [], code: 'type', expected: ['string'] }]);
-  // Only text can prove the annotations: a type is erased before the module runs.
+  // A type is erased before the module runs, so the compiler proves the annotation: the validator returns `readonly SchemaIssue[]`, not `any`.
+  const project = createFixtureProject(t, 'golem-typed-validator-');
+  linkProjectPackages(project, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   const { source } = compile({ roots: new Map([['root', { type: 'string' }]]) }, { unknownFormats: 'warn', typed: true });
-  assert.match(source, /^import type \{ SchemaIssue \} from "@exprtlabs\/golem\/validation-runtime";$[\s\S]*^export function validate_root\(value: unknown, all: boolean\): readonly SchemaIssue\[\] \{$/m);
+  writeFileSync(path.join(project, 'validators.ts'), source);
+  writeFileSync(path.join(project, 'probe.ts'), [
+    "import type { SchemaIssue } from '@exprtlabs/golem/validation-runtime';",
+    "import { validate_root } from './validators.js';",
+    "export const issues: readonly SchemaIssue[] = validate_root('a', true);",
+    '// @ts-expect-error an item is a SchemaIssue; an unannotated validator would give any',
+    "export const notNumber: number = validate_root('a', true)[0];",
+    '',
+  ].join('\n'));
+  writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({ compilerOptions: { strict: true, noImplicitAny: false, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true }, include: ['*.ts'] }));
+  await command(project, process.execPath, [TSC, '-p', 'tsconfig.json']);
 });
 
 const MODEL_ROOTS = new Map<string, unknown>([
