@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import type { BenchmarkResults, ResultCase } from '../scripts/benchmark/results-schema.js';
-import { benchmarkSiteProjection } from '../scripts/benchmark/site-projection.js';
+import { FULL_RESULTS_FILE } from '../scripts/benchmark/results-schema.js';
+import { benchmarkSiteProjection, buildBenchmarkSiteProjection } from '../scripts/benchmark/site-projection.js';
 
 const timed = (payload: string, operation: string, adapter: string, median: number): ResultCase =>
   ({ payload, operation, adapter, support: 'full', opsPerSec: { median, min: median, max: median } });
@@ -67,4 +71,43 @@ test('the site projection holds the golem columns, golem rows per payload and th
     iobjectOff: { kind: 'ops', value: 800 }, iobjectOn: { kind: 'ops', value: 400 }, iobjectOnOverOff: { kind: 'ratio', value: 0.5 },
     imodelOverIobject: { kind: 'ratio', value: 0.25 }, serdeManyOverNone: { kind: 'not-applicable' }, invalidOverValid: { kind: 'not-run' },
   });
+});
+
+const committed = JSON.parse(readFileSync(path.resolve(import.meta.dirname, '../..', FULL_RESULTS_FILE), 'utf8'));
+/** The workspace root that docs/.vitepress/config.ts hands to buildBenchmarkSiteProjection, holding the given results file. */
+const workspaceWith = (results: unknown): string => {
+  const workspace = mkdtempSync(path.join(tmpdir(), 'golem-results-'));
+  mkdirSync(path.dirname(path.join(workspace, FULL_RESULTS_FILE)), { recursive: true });
+  writeFileSync(path.join(workspace, FULL_RESULTS_FILE), typeof results === 'string' ? results : JSON.stringify(results));
+  return workspace;
+};
+const corrupt = {
+  'a payload size that is not a number': { ...committed, payloads: [{ ...committed.payloads[0], bytes: 'big' }, ...committed.payloads.slice(1)] },
+  'a payload size that NaN left as null': { ...committed, payloads: [{ ...committed.payloads[0], bytes: null }, ...committed.payloads.slice(1)] },
+  'an adapter without its label': { ...committed, adapters: [{ ...committed.adapters[0], label: undefined }, ...committed.adapters.slice(1)] },
+  'a schema 3 file without its cost section': { ...committed, cost: undefined },
+  'a file cut off in the middle': JSON.stringify(committed).slice(0, 400),
+};
+for (const [name, results] of Object.entries(corrupt)) {
+  // protects: R-30 a corrupt results file stops the docs build before the page shows "NaN B"
+  test(`the docs build reads results.json and stops on ${name}`, () => {
+    const workspace = workspaceWith(results);
+    try {
+      assert.throws(() => buildBenchmarkSiteProjection(workspace), typeof results === 'string' ? SyntaxError : /is not a valid results file/);
+    } finally {
+      rmSync(workspace, { recursive: true, force: true });
+    }
+  });
+}
+
+// protects: R-30 the committed results file passes the docs build and every size on the page is a number
+test('the docs build projects the committed results.json with a finite size for every payload', () => {
+  const workspace = workspaceWith(committed);
+  try {
+    const projection = buildBenchmarkSiteProjection(workspace);
+    assert.ok(projection.speeds.length > 0);
+    assert.deepEqual(projection.speeds.filter(block => !Number.isFinite(block.payload.bytes)), []);
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
