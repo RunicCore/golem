@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { ChildProcess } from 'node:child_process';
+import { type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
@@ -16,72 +16,74 @@ import {
 } from './fixture-templates/models/compiler-lifecycle.js';
 import { workspace } from './support/process.js';
 import { pathMappedProject } from './support/path-mapped-project.js';
+import { compilerChildren } from './support/generation-watch.js';
 
 interface Fixture {
   readonly root: string;
   readonly sourceRoot: string;
 }
 
-interface ChildProcessSpawnPrototype {
-  spawn(options: { readonly args?: readonly string[]; readonly [key: string]: unknown }): ChildProcess;
-}
-
 interface ApiChildTracker {
+  /** How many compilers the sessions started. */
   readonly seen: () => number;
-  readonly live: () => readonly ChildProcess[];
+  /** The process ids of the compilers of this test that are still alive. */
+  readonly live: () => readonly number[];
+  /** The compilers the sessions started, in start order. */
+  readonly started: () => readonly API[];
   readonly assertClosed: (label: string) => Promise<void>;
+  /** Waits until one compiler is gone. */
+  readonly gone: (pid: number) => Promise<void>;
 }
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
+// A program session starts its compiler through its `compiler` method, golem's own seam: a test sees each compiler the
+// session starts without a patch on a Node or TypeScript type. The hook is added once and each test adds its own.
+const compilerHooks = new Set<(api: API) => void>();
+{
+  const sessionPrototype = ProgramSession.prototype as unknown as { compiler(this: ProgramSession): API };
+  const sessionCompiler = sessionPrototype.compiler;
+  sessionPrototype.compiler = function hookedCompiler(this: ProgramSession): API {
+    const api = sessionCompiler.call(this);
+    for (const hook of compilerHooks) hook(api);
+    return api;
+  };
+}
+
+function onCompiler(t: TestContext, hook: (api: API) => void): void {
+  compilerHooks.add(hook);
+  t.after(() => { compilerHooks.delete(hook); });
+}
+
 function trackApiChildren(t: TestContext): ApiChildTracker {
-  const prototype = ChildProcess.prototype as unknown as ChildProcessSpawnPrototype;
-  const original = prototype.spawn;
-  const live = new Set<ChildProcess>();
-  let count = 0;
-  prototype.spawn = function trackedSpawn(
-    this: ChildProcess,
-    options: { readonly args?: readonly string[]; readonly [key: string]: unknown },
-  ): ChildProcess {
-    const args = options.args ?? [];
-    const api = args.includes('--api');
-    if (api) {
-      count += 1;
-      live.add(this);
-      const release = (): void => { live.delete(this); };
-      this.once('close', release);
-      this.once('error', release);
-    }
-    try {
-      return original.call(this, options);
-    } catch (error) {
-      if (api) live.delete(this);
-      throw error;
-    }
-  };
-
-  const stopLive = async (): Promise<void> => {
-    for (const child of live) {
-      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
-    }
+  // Compilers that were alive before this test belong to nobody here: the operating system's process list is the evidence.
+  const before = new Set(compilerChildren(process.pid));
+  const started = new Set<API>();
+  onCompiler(t, api => { started.add(api); });
+  const live = (): number[] => compilerChildren(process.pid).filter(pid => !before.has(pid));
+  const waitUntilGone = async (pids: readonly number[]): Promise<void> => {
     const deadline = Date.now() + 2_000;
-    while (live.size > 0 && Date.now() < deadline) await delay(20);
+    while (live().some(pid => pids.includes(pid)) && Date.now() < deadline) await delay(20);
   };
-
   t.after(async () => {
-    prototype.spawn = original;
-    await stopLive();
+    const left = live();
+    for (const pid of left) process.kill(pid, 'SIGTERM');
+    await waitUntilGone(left);
   });
 
   return {
-    seen: () => count,
-    live: () => [...live],
+    seen: () => started.size,
+    live,
+    started: () => [...started],
     assertClosed: async (label: string): Promise<void> => {
-      const deadline = Date.now() + 2_000;
-      while (live.size > 0 && Date.now() < deadline) await delay(20);
-      assert.equal(live.size, 0, `${label} left TypeScript --api children alive while the parent remained alive`);
+      await waitUntilGone(live());
+      assert.deepEqual(live(), [], `${label} left TypeScript --api children alive while the parent remained alive`);
+    },
+    gone: async (pid: number): Promise<void> => {
+      await waitUntilGone([pid]);
+      assert.equal(live().includes(pid), false, `compiler ${pid} exited`);
     },
   };
 }
@@ -162,31 +164,28 @@ function wrapSnapshotRequests(t: TestContext, wrap: (api: API, params: unknown, 
 }
 
 function throwAfterRealClose(t: TestContext, failure: Error): () => number {
-  // TypeScript 7.1 defines `close` as a prototype getter that returns the method, so the getter is wrapped.
-  const descriptor = Object.getOwnPropertyDescriptor(API.prototype, 'close');
-  assert.ok(descriptor?.get, 'API.prototype.close is a getter');
-  const realClose = descriptor.get;
   const owned = new WeakSet<API>();
+  const failing = new WeakSet<API>();
   let calls = 0;
   wrapSnapshotRequests(t, (api, _params, send) => {
     owned.add(api);
     return send();
   });
-  Object.defineProperty(API.prototype, 'close', {
-    ...descriptor,
-    get(this: API) {
-      const close = realClose.call(this) as () => void;
-      return () => {
-        const isOwned = owned.has(this);
-        close();
-        if (!isOwned) return;
+  // The failing close sits on the compiler a session started, not on a TypeScript prototype. TypeScript 7.1 defines `close`
+  // as a prototype getter that returns the method, so the compiler's own property shadows it.
+  onCompiler(t, api => {
+    if (failing.has(api)) return;
+    failing.add(api);
+    const realClose = api.close.bind(api);
+    Object.defineProperty(api, 'close', {
+      configurable: true,
+      value: () => {
+        realClose();
+        if (!owned.has(api)) return;
         calls += 1;
         throw failure;
-      };
-    },
-  });
-  t.after(() => {
-    Object.defineProperty(API.prototype, 'close', descriptor);
+      },
+    });
   });
   return () => calls;
 }
@@ -388,12 +387,8 @@ test('a reused program session replays recorded inputs, sees file changes and re
 
   const [compiler] = tracker.live();
   assert.ok(compiler);
-  compiler.kill('SIGKILL');
-  // TypeScript unrefs its compiler child, so awaiting only its exit event lets
-  // the event loop drain; a ref'd timer keeps the test alive while it exits.
-  const deadline = Date.now() + 2_000;
-  while (compiler.exitCode === null && compiler.signalCode === null && Date.now() < deadline) await delay(20);
-  assert.equal(compiler.signalCode, 'SIGKILL');
+  process.kill(compiler, 'SIGKILL');
+  await tracker.gone(compiler);
   assert.ok(open().inputs.has(imported), 'the replacement compiler opens the program');
   assert.equal(tracker.seen(), 2, 'an exited compiler is replaced once');
   session[Symbol.dispose]();
@@ -414,8 +409,10 @@ test('closing a program session ends the compiler with a signal it cannot report
     using program = session.openProgram({ root: fixture.root, sources: [source] });
     assert.deepEqual(ts.getPreEmitDiagnostics(program), []);
   }
-  const [compiler] = tracker.live();
-  assert.ok(compiler);
+  // The exit signal is only on the child object, which golem itself reads at this place to end the compiler.
+  const [api] = tracker.started();
+  const compiler = (api as unknown as { readonly client: { readonly channel: { readonly child: ChildProcess } } }).client.channel.child;
+  assert.equal(tracker.live().length, 1);
   const exited = new Promise<{ readonly code: number | null; readonly signal: NodeJS.Signals | null }>(resolve => {
     compiler.once('exit', (code, signal) => resolve({ code, signal }));
   });
@@ -470,7 +467,7 @@ test('a compiler that exits during a snapshot update is replaced and the program
   let updates = 0;
   const restore = wrapSnapshotRequests(t, (_api, _params, send) => {
     updates++;
-    if (updates === 1) compiler.kill('SIGKILL');
+    if (updates === 1) process.kill(compiler, 'SIGKILL');
     return send();
   });
 
@@ -479,9 +476,7 @@ test('a compiler that exits during a snapshot update is replaced and the program
   assert.match(diagnostics(), /'"first"' is not assignable to type '"second"'/, 'the replacement compiler reads the edited file');
   assert.equal(updates, 2, 'the failed update is retried once on a new compiler');
   // The exit event of the unref'd child arrives on a later turn; the loop bounds the wait, it is not a delay.
-  const deadline = Date.now() + 2_000;
-  while (compiler.exitCode === null && compiler.signalCode === null && Date.now() < deadline) await delay(20);
-  assert.equal(compiler.signalCode, 'SIGKILL');
+  await tracker.gone(compiler);
   assert.equal(tracker.seen(), 2, 'one replacement compiler');
   restore();
   assert.equal(diagnostics().length > 0, true, 'the replacement stays warm for the next program');
