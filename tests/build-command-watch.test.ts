@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { pathToFileURL } from 'node:url';
 import { runBuild } from '#golem/build';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
 import { write, serdeProject, sourceOnlyProject, countingGenerator, editTsconfig, USE, snapshot } from './support/build-project.js';
@@ -212,18 +213,13 @@ for (const [where, base] of [['outside the tsconfig directory', '../tsconfig.bas
 test('golem build --watch that can watch no folder reports it and ends with exit code 1', async (t) => {
   // protects: R-31 no working watcher ends the watch with a failure instead of an idle process
   const root = serdeProject(t, 'build-watch-unwatchable');
-  t.mock.method(fs, 'watch', () => { throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' }); });
-  let errorText = '';
-  const stderr = process.stderr.write.bind(process.stderr);
-  t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array, ...rest: unknown[]) => {
-    errorText += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
-    return (stderr as (chunk: string | Uint8Array, ...rest: unknown[]) => boolean)(chunk, ...rest);
-  });
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20_000);
-  t.after(() => clearTimeout(timer));
-  const result = await runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal });
-  assert.equal(result.exitCode, 1);
-  assert.equal(controller.signal.aborted, false, 'it ended by itself');
-  assert.match(errorText, /fs\.inotify\.max_user_watches/);
+  // The file system refuses every watch: the preload makes `fs.watch` throw in the build process, not in this one.
+  const refuse = path.join(root, 'refuse-watch.mjs');
+  fs.writeFileSync(refuse, "import fs from 'node:fs';\nfs.watch = () => { throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' }); };\n");
+  const watcher = watching(t, root, { NODE_OPTIONS: `--import=${pathToFileURL(refuse).href}` });
+  let code: number | null | undefined;
+  void watcher.exited.then((value) => { code = value; });
+  await until(() => code !== undefined, () => `the watch ends by itself (output=${watcher.output()})`);
+  assert.equal(code, 1);
+  assert.match(watcher.output(), /fs\.inotify\.max_user_watches/);
 });
