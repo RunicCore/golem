@@ -8,12 +8,15 @@ import { generateFeatureMoneySdk } from './generate-sdk.js';
 export const root = fileURLToPath(new URL('../../../', import.meta.url));
 const upstreamDirectory = path.join(root, 'scripts/benchmark/fixtures/upstream');
 const featureDirectory = path.join(root, 'scripts/benchmark/fixtures/features');
+/** The feature models and rules the benchmark shares with tests/serde-features.acceptance.ts; both read them as data. */
+const sharedFeatureDirectory = path.join(root, 'tests/fixtures/models/serde-features/src');
 const featureSources = [
-  'payloads.ts', 'feature-tags.ts', 'features.model.ts', 'features.iobject.model.ts',
+  'payloads.ts',
   'features-class-transformer.models.ts', 'features-class-validator.models.ts',
   'comparison-features-golem.ts', 'comparison-features-golem-object.ts',
-  'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts', 'access-rules.ts',
+  'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts',
 ];
+const sharedFeatureSources = ['feature-tags.ts', 'features.model.ts', 'features.iobject.model.ts', 'access-rules.ts'];
 
 /** Runs the model generator that `golemRoot` built, in a process of its own: the generator is an ES module with top-level await, so a synchronous caller cannot load it. */
 function generateModels(golemRoot: string, project: string, profile: { readonly mobx: boolean; readonly validation: boolean }, manifest: string): void {
@@ -46,6 +49,7 @@ export function prepare(directory: string, kind: ProjectKind, extraFixtures: rea
   writeFileSync(path.join(project, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   copyFileSync(path.join(root, 'scripts/benchmark/fixture-contract.ts'), path.join(src, 'fixture-contract.ts'));
   for (const name of featureSources) copyFileSync(path.join(featureDirectory, name), path.join(src, name));
+  for (const name of sharedFeatureSources) copyFileSync(path.join(sharedFeatureDirectory, name), path.join(src, name));
   writeFileSync(path.join(project, 'tsconfig.json'), JSON.stringify({
     compilerOptions: {
       target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true,

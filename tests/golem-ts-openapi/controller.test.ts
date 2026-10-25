@@ -389,16 +389,17 @@ test('resolves HttpStatus enum members and preserves Nest URI version concatenat
     info: { title: 'Status', version: '1' },
     profile: { mobx: false, validation: false },
   }));
-  assert.ok(operationOf(document, '/v1/status/get', 'get'));
-  assert.ok(operationOf(document, '/v1/status/post', 'post'));
-  assert.ok(operationOf(document, '/v1/status/put', 'put'));
-  assert.ok(operationOf(document, '/v1/status/patch', 'patch'));
-  assert.ok(operationOf(document, '/v1/status/delete', 'delete'));
-  assert.ok(operationOf(document, '/v1/status/options', 'options'));
-  assert.ok(operationOf(document, '/v1/status/head', 'head'));
-  assert.ok(operationOf(document, '/status/neutral', 'get'));
-  assert.ok(responseOf(document, '/status/empty', 'get', '204'));
-  assert.equal(operationOf(document, '/status/empty', 'get').responses['200'], undefined);
+  assert.deepEqual(document.paths, {
+    '/v1/status/get': { get: { operationId: 'StatusController_get', responses: { '200': { description: 'Success' } } } },
+    '/v1/status/post': { post: { operationId: 'StatusController_post', responses: { '201': { description: 'Created' } } } },
+    '/v1/status/put': { put: { operationId: 'StatusController_put', responses: { '200': { description: 'Success' } } } },
+    '/v1/status/patch': { patch: { operationId: 'StatusController_patch', responses: { '200': { description: 'Success' } } } },
+    '/v1/status/delete': { delete: { operationId: 'StatusController_remove', responses: { '200': { description: 'Success' } } } },
+    '/v1/status/options': { options: { operationId: 'StatusController_options', responses: { '200': { description: 'Success' } } } },
+    '/v1/status/head': { head: { operationId: 'StatusController_head', responses: { '200': { description: 'Success' } } } },
+    '/status/neutral': { get: { operationId: 'StatusController_neutral', responses: { '200': { description: 'Success' } } } },
+    '/status/empty': { get: { operationId: 'StatusController_empty', responses: { '204': { description: 'No Content' } } } },
+  });
 });
 
 test('rejects @HostParam routes', async (t: TestContext) => {
