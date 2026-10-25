@@ -27,7 +27,8 @@ import {
   sep,
 } from 'node:path';
 import * as ast from 'typescript/ast';
-import { assertConfigParsed, fileSignature, MISSING } from './input-watcher.js';
+import { fileSignature, MISSING } from './input-watcher.js';
+import { assertConfigParsed } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,

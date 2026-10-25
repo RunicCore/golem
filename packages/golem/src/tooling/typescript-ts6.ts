@@ -8,7 +8,8 @@
  */
 import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
-import { assertConfigParsed, fileSignature, MISSING } from './input-watcher.js';
+import { fileSignature, MISSING } from './input-watcher.js';
+import { assertConfigParsed } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
