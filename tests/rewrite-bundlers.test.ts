@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { build as esbuild, context as esbuildContext, transformSync, type BuildFailure } from 'esbuild';
+import { build as esbuild, context as esbuildContext, type BuildFailure } from 'esbuild';
 import { build as vite, createServer, type ViteDevServer } from 'vite';
 
 import { runPipeline } from '#golem/cli';
@@ -15,6 +15,7 @@ import { golem as vitePlugin } from '#golem/vite';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
+import { runRewritten } from './support/rewritten-module.js';
 import { until } from './support/watch-wait.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
 
@@ -117,20 +118,9 @@ async function generatedProject(t: TestContext, name: string, options: { readonl
   return root;
 }
 
-/**
- * The codec ids a rewritten module asks the runtime for when it runs, in call order, with every import stubbed:
- * what the rewrite did, without reading the text it wrote.
- */
-function requestedCodecIds(code: string | undefined): string[] {
-  assert.ok(code, 'the module was rewritten');
-  const ids: string[] = [];
-  const open: unknown = new Proxy(function stub() {}, { get: () => open, apply: () => open, construct: () => open as object });
-  const imported = new Proxy({}, {
-    get: (_target, name) => (name === 'requireObjectCodec' ? (id: string) => { ids.push(id); return open; } : open),
-  });
-  const { code: commonJs } = transformSync(code, { loader: 'ts', format: 'cjs', target: 'es2022' });
-  new Function('require', 'exports', 'module', 'console', commonJs)(() => imported, {}, { exports: {} }, { log: () => undefined });
-  return ids;
+/** The codec ids a rewritten module asks the runtime for when it runs, in call order. */
+function requestedCodecIds(code: string | undefined): readonly string[] {
+  return runRewritten(code).codecIds;
 }
 
 function lineOf(source: string, prefix: string): number {
@@ -424,7 +414,7 @@ test('vite serve: retargeting an alias or an export * that a module reaches thro
   write(root, 'src/barrel.ts', "export * from './alias.js';\n");
   write(root, 'src/use-barrel.ts', `import { parse } from '${SERDE}';\nimport type { TAlias } from './barrel.js';\n\nexport const value = parse<TAlias>('{}');\n`);
   const server = await serve(t, root);
-  const idsIn = async (): Promise<string[]> => requestedCodecIds((await server.transformRequest('/src/use-barrel.ts'))?.code);
+  const idsIn = async (): Promise<readonly string[]> => requestedCodecIds((await server.transformRequest('/src/use-barrel.ts'))?.code);
   const changed = (file: string): void => { server.watcher.emit('change', path.join(root, file)); };
   const moneyId = codecId(root, 'TMoney');
   const tagId = codecId(root, 'TTag');
