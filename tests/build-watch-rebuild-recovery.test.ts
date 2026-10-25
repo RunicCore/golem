@@ -12,7 +12,7 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
   const root = serdeProject(t, 'build-watch');
   write(root, 'src/use.ts', USE);
   const before = snapshot(root);
-  // In this process, so the output of the build can be read.
+  // In this process, so the compiler's report can be read and each finished build is counted through onBuilt.
   const controller = new AbortController();
   t.after(() => controller.abort());
   let output = '';
@@ -23,10 +23,14 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
       return (forward as (chunk: string | Uint8Array, ...rest: unknown[]) => boolean)(chunk, ...rest);
     });
   }
-  // The test runner writes its own events to the same stream, so a golem line is found by its shape, not by the start of a line.
-  const built = (): number => output.match(/Built \S+\n/g)?.length ?? 0;
-  const failed = (): number => output.match(/Build failed\.\n/g)?.length ?? 0;
-  const finished = runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal });
+  let builtCount = 0;
+  let failedCount = 0;
+  const built = (): number => builtCount;
+  const failed = (): number => failedCount;
+  const finished = runBuild({
+    watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal,
+    onBuilt: ({ exitCode }) => { if (exitCode === 0) builtCount += 1; else failedCount += 1; },
+  });
   await until(() => built() === 1, 'the first build');
 
   write(root, 'src/use.ts', `${USE}export const second = 2;\n`);
