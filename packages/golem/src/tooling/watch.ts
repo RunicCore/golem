@@ -1,8 +1,10 @@
-import fs from 'node:fs';
 import path from 'node:path';
 import type { GolemConfig } from './config.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, isInsideDirectory, suffixPattern } from './generator-api.js';
-import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, RunBaseline } from './input-watcher.js';
+import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
+import type { InputFiles } from './input-watcher.js';
+import { realOutputFiles } from './outputs.js';
+import type { OutputFiles } from './outputs.js';
 import { GeneratorSessionResources, jobFailedBeforeWriting, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, JobReport, PipelineState } from './pipeline.js';
 
@@ -60,17 +62,33 @@ export function summarizeRun(state: PipelineState, ms: number): string {
   return [...jobs, `${ms} ms`].join(' · ');
 }
 
+/** What a caller passes to `watchPipeline` besides the config and the error report; each field is optional. */
+export interface WatchOptions {
+  /** A `session` from the first run of the same command is kept; the watch closes it when it stops. Without one, the watch opens its own. */
+  readonly session?: GeneratorSessionResources;
+  /** The first comparison is with this, taken before the run that made the state (`baselineBeforeRun`), else with the disk as it is now. */
+  readonly firstBaseline?: RunBaseline;
+  /** Called once when not one folder can be watched: the watch has stopped. */
+  readonly onUnwatchable?: () => void;
+  /** Called with the line of each good run. */
+  readonly onRun?: (line: string) => void;
+  /** The file-system calls of the watch and of its runs' output writes: internal, for tests that fault or count them. */
+  readonly files?: Partial<InputFiles> & Partial<OutputFiles>;
+}
+
 /**
  * Serialized runs on file-system events for specific inputs, including reads attempted by failed runs, and for the folders around
  * them, so a source added to one of them starts a run. An event only wakes the watch: it then compares the inputs with what the last
- * run left. A package manager's install starts a full run. A `session` from the first run of the same command is kept; the watch
- * closes it when it stops. Without one, the watch opens its own. With a `PipelineState`, the first comparison is with `firstBaseline`,
- * taken before the run that made the state (`baselineBeforeRun`), else with the disk as it is now. A failure to watch goes to
- * `reportError` once; the watch goes on unless not one folder can be watched: then it stops, and `onUnwatchable` is called.
- * `onRun` gets the line of each good run (`summarizeRun`, with `Recovered: ` before it after a failed run) once the watch has recorded what the run
- * read. The watch prints nothing about its runs; the caller says it. An exception from `onRun` goes to `reportError`, and the watch goes on.
+ * run left. A package manager's install starts a full run. With a `PipelineState`, the first comparison is with
+ * `options.firstBaseline`. A failure to watch goes to `reportError` once; the watch goes on unless not one folder can be watched: then
+ * it stops, and `options.onUnwatchable` is called. `options.onRun` gets the line of each good run (`summarizeRun`, with `Recovered: `
+ * before it after a failed run) once the watch has recorded what the run read. The watch prints nothing about its runs; the caller
+ * says it. An exception from `onRun` goes to `reportError`, and the watch goes on.
  */
-export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, session: GeneratorSessionResources = new GeneratorSessionResources(), firstBaseline?: RunBaseline, onUnwatchable: () => void = () => {}, onRun: (line: string) => void = () => {}): () => void {
+export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, options: WatchOptions = {}): () => void {
+  const { session = new GeneratorSessionResources(), firstBaseline, onUnwatchable = () => {}, onRun = () => {} } = options;
+  const inputFiles: InputFiles = { ...realInputFiles, ...options.files };
+  const outputFiles: OutputFiles = { ...realOutputFiles, ...options.files };
   let state = typeof initial === 'string' ? undefined : initial;
   const filename = path.resolve(typeof initial === 'string' ? initial : initial.config.configFile);
   let config = state?.config;
@@ -80,7 +98,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
   let first = !state;
   let busy = false;
   let stopped = false;
-  const watcher = new InputWatcher({ root: () => watched.root, tick: installed => tick(installed), onError: reportError,
+  const watcher = new InputWatcher({ root: () => watched.root, tick: installed => tick(installed), onError: reportError, files: inputFiles,
     onUnwatchable: () => {
       // It can come while the watch is built, before it can return its stop.
       stopped = true;
@@ -124,7 +142,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
     const scan = new InputScan(kinds.keys(), {
       root, descend,
       skipDescent: directory => outputs.some(output => isInsideDirectory(output, directory)),
-    });
+    }, inputFiles);
     return { root, sources, kinds, scan };
   };
   let watched = watch();
@@ -156,7 +174,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       try {
         const started = performance.now();
         const next = await runPipeline(filename, {
-          modelOnly, previous: state, session,
+          modelOnly, previous: state, session, files: outputFiles,
           ...(!retryFull ? { changedInputs: changed } : {}),
           onConfig: value => { config = value; },
           onInput: (input, kind) => {

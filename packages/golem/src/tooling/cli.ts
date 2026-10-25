@@ -119,7 +119,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   if (options.action === 'watch') {
     // With no folder to watch the watch ends by itself, and the exit code says it failed.
-    const stop = watchPipeline(options.config, undefined, undefined, undefined, () => { process.exitCode = 1; }, printRun);
+    const stop = watchPipeline(options.config, undefined, { onUnwatchable: () => { process.exitCode = 1; }, onRun: printRun });
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { stop(); process.exitCode = signal === 'SIGINT' ? 130 : 143; });
     return;
   }
@@ -137,7 +137,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   // A watching command prints the line every run of its watch prints; the other commands name what they did.
   process.stdout.write(watchSession === undefined ? `${options.action === 'check' ? 'Checked' : 'Generated'} configured outputs.\n` : `${summarizeRun(state, Math.round(performance.now() - started))}\n`);
-  const stop = watchSession === undefined ? () => {} : watchPipeline(state, undefined, watchSession, firstRun?.baseline, undefined, printRun);
+  const stop = watchSession === undefined ? () => {} : watchPipeline(state, undefined, { session: watchSession, ...(firstRun === undefined ? {} : { firstBaseline: firstRun.baseline }), onRun: printRun });
   if (options.action === 'exec') {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(options.command[0], options.command.slice(1), { stdio: 'inherit', shell: process.platform === 'win32' });
