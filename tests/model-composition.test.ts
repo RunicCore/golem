@@ -50,10 +50,30 @@ test('IModel exposes fields and rejects root unions before emitting artifacts', 
   await buildModelProject(root);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts/item.model.ts"));
   for (const validation of [true, false]) {
-    assert.throws(() => generate({ root, profile: { mobx: false, validation } }), /RUNM1052.*Root IModel unions/);
+    assert.throws(() => generate({ root, profile: { mobx: false, validation } }), /RUNM1052.*The IModel fields type must be an object type, but TItem has a union/);
   }
   assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
 });
+
+// protects: T-425 a non-object IModel root stops with RUNM1052 (Date[] once generated an invalid file, string[] a false RUNM1004)
+const nonObjectRoots = [
+  { name: 'an array of dates with validation off', fields: 'Date[]', validation: false, found: 'an array' },
+  { name: 'an array of strings with validation on', fields: 'string[]', validation: true, found: 'an array' },
+  { name: 'a tuple', fields: '[string, Date]', validation: true, found: 'a tuple' },
+  { name: 'a scalar', fields: 'string', validation: true, found: 'a scalar' },
+  { name: 'an object intersected with a scalar', fields: '{ a: string } & string', validation: false, found: 'an intersection with a scalar' },
+] as const;
+for (const { name, fields, validation, found } of nonObjectRoots) {
+  test(`an IModel with ${name} as its fields type stops with RUNM1052`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';\nexport type TItem = IModel<${fields}>;\n`);
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation } }),
+      new RegExp(`RUNM1052: The IModel fields type must be an object type, but TItem has ${found}\\.`),
+    );
+    assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
+  });
+}
 
 test('generated readonly fields remain readonly to TypeScript consumers', async t => {
   const { root, sourceRoot } = fixture(t);

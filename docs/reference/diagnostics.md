@@ -252,7 +252,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1052
 
-**Root IModel union.** `IModel`'s fields type is a union, such as `IModel<TEmail | TPhone>`. **Fix:** Put the union in a named field instead of at the model's root, or declare separate models.
+**IModel fields type is not an object type.** `IModel`'s or `IObject`'s fields type is a union, an array, a tuple, a `Date`, a function, a scalar, or an intersection with one of these, such as `IModel<TEmail | TPhone>` or `IModel<string[]>`. The message names what it found. **Fix:** Declare the fields in an object type. Put the union, array or scalar in a named field, or declare separate models.
 
 ### RUNM1053
 

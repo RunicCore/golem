@@ -51,7 +51,7 @@ import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, ty
 import { compareText, displayPath, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
-import { descriptorBuilder, propertyType } from '@exprtlabs/golem/internal/type-analysis';
+import { descriptorBuilder } from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalFilename,
   commonDirectory,
@@ -551,30 +551,6 @@ function descriptorType(
   return code`unknown`;
 }
 
-function fieldDescriptors(
-  checker: ts.TypeChecker,
-  specification: ModelSpecification,
-  describe: (type: ts.Type, context: ModelSpecification, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode) => ModelConversionDescriptor,
-  fields = checker.getPropertiesOfType(specification.fieldsType).filter((field) => !field.getName().startsWith('__@')),
-): Map<string, ModelConversionDescriptor> {
-  return new Map(
-    fields.map((field) => [
-      field.getName(),
-      describe(
-        propertyType(checker, field, specification.declaration),
-        specification,
-        undefined,
-        (() => {
-          const declaration = field.valueDeclaration ?? field.declarations?.[0];
-          return declaration && (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration))
-            ? declaration.type
-            : undefined;
-        })(),
-      ),
-    ]),
-  );
-}
-
 function descriptorReferences(
   descriptor: ModelConversionDescriptor,
   found = new Set<string>(),
@@ -1032,10 +1008,8 @@ interface EmitContext {
   readonly source: string;
   readonly output: string;
   readonly checker: ts.TypeChecker;
-  readonly specifications: readonly ModelSpecification[];
   readonly manifestIndex: ManifestIndex;
   readonly profile: GolemProfile;
-  readonly identityRoot: string | undefined;
   readonly siblingCodecs: SiblingCodecOptions;
   readonly appOutputs: AppOutputs;
   readonly graph: SourceModelGraph;
@@ -1184,7 +1158,6 @@ function buildEmitContext(
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
   profile: GolemProfile,
-  identityRoot: string | undefined,
   graph: SourceModelGraph,
   preparedSchemaGraph: SchemaGraph | undefined,
   siblingCodecs: SiblingCodecOptions,
@@ -1258,7 +1231,7 @@ function buildEmitContext(
     cyclicSiblings, serdeBindings, serdeNames, classEntries, classNames,
   );
   return {
-    source, output, checker, specifications, manifestIndex, profile, identityRoot, siblingCodecs, appOutputs, graph, schemaGraph,
+    source, output, checker, manifestIndex, profile, siblingCodecs, appOutputs, graph, schemaGraph,
     local, localNames, fileLocalNames, classModelNames, objectOnlyNames, siblingObjects, siblingObjectNames, localImports,
     concreteNames, linkedByName, referenceNames, projectionNames, identityProjections, imports,
     serdeBindings, serdeNames,
@@ -1562,25 +1535,21 @@ function wrapRootConversion(
 }
 
 function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): ModelFieldEmission[] {
-  const { checker, specifications, manifestIndex, profile, identityRoot } = context;
+  const { checker } = context;
   const { definitions } = context.graph;
   const { fromAny: resolveFromAny, toJsonAny: resolveToJsonAny } = resolvers;
   const serdeExpressionOf = (id: string, direction: 'serialize' | 'deserialize', value: Code): Code => serdeExpression(context, id, direction, value);
   return context.local.map((specification) => {
     const definition = definitions[specification.name];
     const baseName = identifier(`${specification.name}BaseModel`);
+    if (definition.kind !== 'object') throw new Error(`Internal error: the root of ${specification.name} is a ${definition.kind}, not an object.`);
     // Phantom tag members are part of the type-level intersection and must
     // remain in the root descriptor, but they are not model fields.  Emitting
     // them would make conversion look for descriptors that intentionally do
     // not exist.
     const fields = checker.getPropertiesOfType(specification.fieldsType).filter((field) =>
-      definition.kind === 'object'
-        ? Object.prototype.hasOwnProperty.call(definition.properties, field.getName())
-        : !field.getName().startsWith('__@'),
-    );
-    const descriptors = definition.kind === 'object'
-      ? new Map(Object.entries(definition.properties))
-      : fieldDescriptors(checker, specification, descriptorBuilder(checker, specifications, manifestIndex, profile.validation, profile.allowAny ?? false, identityRoot), fields);
+      Object.prototype.hasOwnProperty.call(definition.properties, field.getName()));
+    const descriptors = new Map(Object.entries(definition.properties));
     const helpers: Code[] = [];
     const encode = fields.map((field) => {
       const name = literal(field.getName());
@@ -1958,7 +1927,7 @@ export function emitSource(
 ): string | undefined {
   const graph = preparedGraph ?? analyzeSourceGraph(source, output, checker, specifications, manifestIndex, profile, identityRoot);
   if (!graph) return undefined;
-  const context = buildEmitContext(source, output, checker, specifications, manifestIndex, profile, identityRoot, graph, preparedSchemaGraph, siblingCodecs, appOutputs);
+  const context = buildEmitContext(source, output, checker, specifications, manifestIndex, profile, graph, preparedSchemaGraph, siblingCodecs, appOutputs);
   const projections = buildProjections(context);
   const emissions = buildFieldEmissions(context, modelResolvers(context, projections.helpers));
   const codecs = emitCodecSection(context);
