@@ -64,6 +64,7 @@ in the sections below.
 - The Vite plugin sends one full reload for the file events of one watch run (the first event opens a 100 ms window and the events inside it share one reload), not one for each file. [`RUNM1067`](docs/reference/diagnostics.md#runm1067) says to wait for `golem generate` or `golem watch` when the generated file of the model is missing.
 - `golem build --watch` removes the files it wrote for a source that you delete: the JavaScript, declaration and map files in `outDir` and `declarationDir`, and the folders that become empty. It removes only files it wrote for that source.
 - `golem exec --watch` generates a model file that you create while its first run is in progress.
+- A `tsconfig.json` with errors, such as an unknown option or a bad value, stops `golem generate` and `golem build` with the compiler's messages. Before, golem dropped them. In `golem build --watch`, the run fails and the watch goes on; fixing the file starts a new build. `golem generate` no longer lists the output folders; only `golem check` looks for files golem did not write.
 - A `golem.yaml` or an OpenAPI input that is not valid YAML stops the run with a message that starts with the file, the line and the column. `@exprtlabs/golem/generator-api` exports `parseYamlFile` and `YamlFileError`.
 
 ## 1.0.0
