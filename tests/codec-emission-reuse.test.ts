@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { transformSync } from 'esbuild';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render, identifier } from '@exprtlabs/golem/internal/emitter';
@@ -9,6 +8,7 @@ import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import { instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
+import { runModule } from './support/run-module.js';
 
 /** A parent that nests a model with a date, so the wire differs from the model and validation is on. */
 function paymentGraph(): ReturnType<typeof createSchemaGraph> {
@@ -63,6 +63,7 @@ const value = { id: 'p1', amount: { currency: 'USD', at: new Date(0), tags: ['a'
 const wire = { id: 'p1', amount: { currency: 'USD', at: '1970-01-01T00:00:00.000Z', tags: ['a'] }, list: [['x']] };
 
 test('validate makes one check through the generated validator of the model', async () => {
+  // protects: T-363 the emitted validate runs the model's validator once per call
   const validators = await paymentValidators();
   const counted = countingScope(validators.scope);
   const runtime = instantiateRuntime(paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) }), counted.scope);
@@ -73,6 +74,7 @@ test('validate makes one check through the generated validator of the model', as
 });
 
 test('stringify checks the model, builds the wire, checks the wire and writes it', async () => {
+  // protects: T-363 the emitted stringify runs the model check and the wire check once each, none for trusted input
   const validators = await paymentValidators();
   const counted = countingScope(validators.scope);
   const runtime = instantiateRuntime(paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) }), counted.scope);
@@ -102,7 +104,7 @@ test('model initializers, fromJSON and toJSON copy an unchanged array and pass a
   const strings: ModelTypeDescriptor = { kind: 'array', item: { kind: 'string' } };
   const unusedModel = (id: string): never => { throw new Error(`No model expected: ${id}`); };
   const nested: ModelTypeDescriptor = { kind: 'array', item: strings };
-  const run = (expression: string, input: unknown): unknown => new Function('values', `return ${transformSync(`(${expression})`, { loader: 'ts' }).code}`)(input);
+  const run = (expression: string, input: unknown): unknown => runModule(`const result = (${expression});`, { values: input }, { exports: ['result'] }).result;
   const input = ['a', 'b'];
   for (const emit of [emitModelFromInit, emitModelFromJSON, emitModelToJSON]) {
     const expression = render(emit(strings, identifier('values'), unusedModel));
@@ -119,6 +121,7 @@ test('model initializers, fromJSON and toJSON copy an unchanged array and pass a
 });
 
 test('a nested call to a model of the same module runs unvalidated inside the one outer check', async () => {
+  // protects: T-363 a nested model call inside one outer check runs no validator of its own
   const validators = await paymentValidators();
   const counted = countingScope(validators.scope);
   const runtime = instantiateRuntime(paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) }), counted.scope);

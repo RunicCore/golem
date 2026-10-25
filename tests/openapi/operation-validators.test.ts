@@ -96,6 +96,7 @@ test('a response body that fails its schema is rejected for its status and conte
 });
 
 test('a validator override on one client leaves other clients of the same generated SDK on the generated validators', async () => {
+  // protects: F-139 a validator override on one client never reaches another client's validators
   const Client = await loadPayloadClass('S');
   const rejectAll: Validator = () => [{ code: 'custom', path: [] }];
   const overrides = new Map([['sendPayload', { input: rejectAll, responses: new Map() }]]);

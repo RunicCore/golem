@@ -382,6 +382,7 @@ test('recognizes Nest decorators through local reexports of public package expor
 });
 
 test('resolves HttpStatus enum members and preserves Nest URI version concatenation', async (t: TestContext) => {
+  // protects: T-362 HttpStatus members give the Nest response codes, and a URI version prefixes only the versioned routes
   const root = fixture(t, readFixture("controllers/controller/resolves-httpstatus-enum-members-and-preserves-nest-uri-version-concatenation/controller.ts"));
   const document = documentOf(await generate({
     root,
