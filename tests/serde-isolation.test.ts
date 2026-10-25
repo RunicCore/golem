@@ -217,7 +217,7 @@ test('a union tag that is inherited or not enumerable selects no branch', async 
   assert.throws(() => fromWireFormatTContact({ value: hidden }, { validate: false }), unknownTag);
 });
 
-test('a conversion that fails inside a nested model reports the outer field, the index and the inner field', async (t) => {
+test('a conversion that fails inside a nested model reports the outer field, the index and the inner field', async () => {
   const { fromWireFormatTCalendar } = await loadCodecs('calendar');
   const note = {};
   assert.throws(() => fromWireFormatTCalendar({ title: 't', event: { at: 'not a date' }, events: [] }, { validate: false }), (error: unknown) => {

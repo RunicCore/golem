@@ -211,7 +211,7 @@ test('an object with no declared field writes the same in stringify and toWireFo
 });
 
 for (const validation of [true, false]) {
-  test(`a model instance at any depth in an unknown field writes no program state (validation ${validation ? 'on' : 'off'})`, async (t) => {
+  test(`a model instance at any depth in an unknown field writes no program state (validation ${validation ? 'on' : 'off'})`, async () => {
     // protects: bug T-164 only the top value of an unknown field lost its program state; an instance inside an array or object kept it
     const { Task: TaskModel, Note, note } = await buildState(false);
     const task = () => Object.assign(new TaskModel({ title: 't' }), { cache: new Map<string, string>(), hits: 3 });
@@ -231,7 +231,7 @@ for (const validation of [true, false]) {
   });
 }
 
-test('the class-level encode of a model writes no program state of an instance inside its unknown field', async (t) => {
+test('the class-level encode of a model writes no program state of an instance inside its unknown field', async () => {
   // protects: bug T-164 a model nested as a field of another model is encoded by the class-level encode, which kept the state of an instance in its unknown field
   const { Task: TaskModel, Note } = await buildState(false);
   const task = Object.assign(new TaskModel({ title: 't' }), { cache: new Map<string, string>(), hits: 3 });
