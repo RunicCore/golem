@@ -28,7 +28,7 @@ test('a model file created while a run is in flight is reported by the next scan
   const added = path.join(root, 'src/b.model.ts');
   const elsewhere = path.join(path.dirname(root), 'elsewhere.model.ts');
   const scope = { root };
-  const before = new InputScan([known], scope).snapshot();
+  const before = new InputScan([known], scope, realInputFiles).snapshot();
   const baseline = new RunBaseline(before, root, realInputFiles);
   baseline.observe(known);
   // The folder of an input outside the root is recorded when the run first reads it.
@@ -37,11 +37,11 @@ test('a model file created while a run is in flight is reported by the next scan
   fs.writeFileSync(added, 'export type TB = 1;\n');
   // A file outside every scanned folder is seen only as an input.
   fs.writeFileSync(elsewhere, 'export type TE = 1;\n');
-  const after = new InputScan([known, added, elsewhere], scope).snapshot();
+  const after = new InputScan([known, added, elsewhere], scope, realInputFiles).snapshot();
 
   const previous = baseline.settle(after);
   assert.deepEqual(changedPaths(previous, after).sort(), [added, elsewhere].sort());
-  const folderOnly = new InputScan([known], scope).snapshot();
+  const folderOnly = new InputScan([known], scope, realInputFiles).snapshot();
   assert.deepEqual(changedPaths(baseline.settle(folderOnly), folderOnly), [added], 'the names in the folder report it when it is no input yet');
 });
 
@@ -53,12 +53,12 @@ test('an input the run read first takes the state it had then, and a file the ru
   const written = path.join(root, 'src/a.model.generated.ts');
   const scope = { root };
   fs.writeFileSync(read, '1');
-  const before = new InputScan([known], scope).snapshot();
+  const before = new InputScan([known], scope, realInputFiles).snapshot();
   const baseline = new RunBaseline(before, root, realInputFiles);
   baseline.observe(read);
   fs.writeFileSync(read, '22');
   fs.writeFileSync(written, 'generated');
-  const after = new InputScan([known, read, written], scope).snapshot();
+  const after = new InputScan([known, read, written], scope, realInputFiles).snapshot();
 
   const previous = baseline.settle(after, (file) => file === written);
   assert.deepEqual(changedPaths(previous, after, (file) => file === written), [read], 'the edit after the first read is a change; the generated file is not');
@@ -69,7 +69,7 @@ test('a name added to a scanned folder outside the root is reported, and a name 
   const { root, shared } = projectFolders(t);
   const outside = path.join(shared, 'money.model.ts');
   const scope = { root };
-  const scan = new InputScan([outside], scope);
+  const scan = new InputScan([outside], scope, realInputFiles);
   const previous = scan.snapshot();
   fs.writeFileSync(path.join(shared, 'order.model.ts'), 'export type TOrder = 1;\n');
   fs.writeFileSync(path.join(shared, 'order.model.generated.ts'), 'generated');
@@ -84,7 +84,7 @@ test('editor temporary files and hidden files are not reported', (t) => {
   // protects: T-307 editor temp files must not start a run
   const { root } = projectFolders(t);
   const scope = { root };
-  const scan = new InputScan([path.join(root, 'src/a.model.ts')], scope);
+  const scan = new InputScan([path.join(root, 'src/a.model.ts')], scope, realInputFiles);
   const previous = scan.snapshot();
   fs.writeFileSync(path.join(root, 'src/a.model.ts~'), 'backup');
   fs.writeFileSync(path.join(root, 'src/.#a.model.ts'), 'lock');
@@ -96,7 +96,7 @@ test('a folder created below a descent root is scanned, so a source added to it 
   // protects: T-29 a source in a folder that held no input is found
   const { root } = projectFolders(t);
   const scope = { root, descend: [root] };
-  const scan = new InputScan([path.join(root, 'src/a.model.ts')], scope);
+  const scan = new InputScan([path.join(root, 'src/a.model.ts')], scope, realInputFiles);
   fs.mkdirSync(path.join(root, 'lib'));
   const previous = scan.snapshot();
   fs.writeFileSync(path.join(root, 'lib/pet.model.ts'), 'export type TPet = 1;\n');
@@ -112,7 +112,7 @@ test('a hidden folder that an input lies in is scanned, and a folder under node_
   fs.mkdirSync(path.dirname(dependency), { recursive: true });
   fs.writeFileSync(config, 'export default {};\n');
   fs.writeFileSync(dependency, 'export {};\n');
-  const scan = new InputScan([config, dependency], { root });
+  const scan = new InputScan([config, dependency], { root }, realInputFiles);
   const previous = scan.snapshot();
   fs.writeFileSync(path.join(root, '.vitepress/theme.ts'), 'export {};\n');
   fs.writeFileSync(path.join(root, 'node_modules/pkg/other.ts'), 'export {};\n');
@@ -134,7 +134,7 @@ test('an installed package is no scanned input, and a file linked from outside n
   fs.symlinkSync(shared, path.dirname(linked), 'dir');
   fs.symlinkSync(path.join(root, 'node_modules/.pnpm/store'), path.join(root, 'node_modules/alias'), 'dir');
 
-  const scan = new InputScan([path.join(root, 'src/a.model.ts'), installed, linked, missing, path.join(root, 'node_modules/alias/index.ts')], { root });
+  const scan = new InputScan([path.join(root, 'src/a.model.ts'), installed, linked, missing, path.join(root, 'node_modules/alias/index.ts')], { root }, realInputFiles);
 
   assert.deepEqual([...scan.files], [path.join(root, 'src/a.model.ts'), linked]);
   assert.deepEqual([...scan.linkedFolders], [shared], 'a change to the linked file happens in its real folder');
@@ -318,7 +318,7 @@ test('an event for an input with a hidden name starts a tick, and another hidden
   const { root } = projectFolders(t);
   const base = path.join(root, '.tsconfig.base.json');
   fs.writeFileSync(base, '{}');
-  const scan = new InputScan([base], { root });
+  const scan = new InputScan([base], { root }, realInputFiles);
   const { ticks, watcher } = ticking(t, root, []);
   watcher.snapshotWatching(scan);
   fs.writeFileSync(path.join(root, '.other.json'), '{}');
@@ -336,7 +336,7 @@ test('the folder of every input outside the root is scanned, a missing one inclu
   fs.writeFileSync(base, '{}');
   const missingInShared = path.join(shared, 'later.ts');
   const missingAbove = path.join(outer, 'package.json');
-  const scan = new InputScan([path.join(root, 'src/a.model.ts'), base, missingInShared, missingAbove, path.join(outer, 'absent/new.ts')], { root });
+  const scan = new InputScan([path.join(root, 'src/a.model.ts'), base, missingInShared, missingAbove, path.join(outer, 'absent/new.ts')], { root }, realInputFiles);
   const folders = scan.snapshot().folders;
   assert.deepEqual([...folders.keys()].filter((folder) => !isInside(root, folder)).sort(), [outer, shared].sort());
   assert.deepEqual(folders.get(shared), ['money.model.ts']);

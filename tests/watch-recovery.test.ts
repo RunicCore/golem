@@ -8,10 +8,8 @@ import YAML from 'yaml';
 import { runPipeline, watchPipeline } from '#golem/cli';
 import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
-import { runBuild } from '#golem/build';
 import { OwnedOutputIndex, realInputFiles } from '#golem/input-watcher';
 import type { InputFiles } from '#golem/input-watcher';
-import { serdeProject, USE, write } from './support/build-project.js';
 import { workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
 import { countingInputFiles, quietly, until } from './support/watch-wait.js';
@@ -192,35 +190,6 @@ test('a scan that fails after a good run is reported, and the run keeps its line
   } finally {
     stop();
   }
-});
-
-test('golem build --watch with an onBuilt that throws on the first build still says it is watching, reports the error and builds the next edit', async (t: TestContext) => {
-  // protects: T-429 a throwing onBuilt must not end the first tick before the watch is announced
-  const root = serdeProject(t, 'build-watch-onbuilt');
-  write(root, 'src/use.ts', USE);
-  const controller = new AbortController();
-  t.after(() => controller.abort());
-  let output = '';
-  for (const stream of [process.stdout, process.stderr]) {
-    t.mock.method(stream, 'write', (chunk: string | Uint8Array) => {
-      output += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
-      return true;
-    });
-  }
-  let built = 0;
-  const finished = runBuild({
-    watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal,
-    onBuilt: () => {
-      built += 1;
-      if (built === 1) throw new Error('the caller failed to print');
-    },
-  });
-  await until(() => output.includes('Watching for changes.'), () => `the watch is announced (output=${output})`);
-  assert.match(output, /the caller failed to print/);
-  write(root, 'src/use.ts', `${USE}export const second = 2;\n`);
-  await until(() => built === 2, 'the build after an edit');
-  controller.abort();
-  assert.equal((await finished).exitCode, 0);
 });
 
 test('watch keeps model dependencies outside the models root after a run that reuses the models job', async (t: TestContext) => {

@@ -3,18 +3,13 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { runBuild } from '#golem/build';
 import { write, serdeProject, USE, snapshot } from './support/build-project.js';
 import { quietly, until } from './support/watch-wait.js';
 
-test('golem build --watch rebuilds once per edit, reports an error, recovers, and sees a new file', async (t) => {
-  const root = serdeProject(t, 'build-watch');
-  write(root, 'src/use.ts', USE);
-  const before = snapshot(root);
-  // In this process, so the compiler's report can be read and each finished build is counted through onBuilt.
-  const controller = new AbortController();
-  t.after(() => controller.abort());
+/** Collects what the code under test writes to stdout and stderr, and still lets it through. */
+function capturedOutput(t: TestContext): () => string {
   let output = '';
   for (const stream of [process.stdout, process.stderr]) {
     const forward = stream.write.bind(stream);
@@ -23,6 +18,17 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
       return (forward as (chunk: string | Uint8Array, ...rest: unknown[]) => boolean)(chunk, ...rest);
     });
   }
+  return () => output;
+}
+
+test('golem build --watch rebuilds once per edit, reports an error, recovers, and sees a new file', async (t) => {
+  const root = serdeProject(t, 'build-watch');
+  write(root, 'src/use.ts', USE);
+  const before = snapshot(root);
+  // In this process, so the compiler's report can be read and each finished build is counted through onBuilt.
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const printed = capturedOutput(t);
   let builtCount = 0;
   let failedCount = 0;
   const built = (): number => builtCount;
@@ -39,7 +45,7 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
 
   write(root, 'src/use.ts', `${USE}export const broken: number = 'text';\n`);
   await until(() => failed() === 1, 'the failed build');
-  assert.match(output, /src\/use\.ts\(\d+,\d+\): error TS2322/);
+  assert.match(printed(), /src\/use\.ts\(\d+,\d+\): error TS2322/);
 
   write(root, 'src/use.ts', `${USE}export const third = 3;\n`);
   await until(() => built() === 3, 'the build after the fix');
@@ -73,4 +79,34 @@ test('golem build --watch rebuilds once per edit, reports an error, recovers, an
   const after = withoutChanged(snapshot(root));
   const expected = withoutChanged(before);
   assert.deepEqual(after, expected, 'a watching build changes no file it does not own');
+});
+
+test('golem build --watch with an onBuilt that throws on the first build says it is watching, reports the error and builds an edit made during that build', async (t) => {
+  // protects: T-429 a throwing onBuilt must not end the first tick before the watch is announced and asked for its next look
+  const root = serdeProject(t, 'build-watch-onbuilt');
+  write(root, 'src/use.ts', USE);
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const printed = capturedOutput(t);
+  const model = path.join(root, 'src/money.model.ts');
+  // The outputs exist already, so the watching build creates no folder that a watcher on the root would hear.
+  await runBuild({ watch: false, config: path.join(root, 'golem.yaml') });
+  let built = 0;
+  const finished = runBuild({
+    watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal,
+    // The generate step has read the model, and no watcher is on its folder yet: only the baseline of the first build tells of this edit.
+    onGenerated: () => {
+      if (built > 0) return;
+      fs.appendFileSync(model, '// edited during the first build\n');
+    },
+    onBuilt: () => {
+      built += 1;
+      if (built === 1) throw new Error('the caller failed to print');
+    },
+  });
+  await until(() => built === 2, () => `the edit made during the first build is built (output=${printed()})`);
+  assert.match(printed(), /the caller failed to print/);
+  assert.match(printed(), /Watching for changes\./);
+  controller.abort();
+  assert.equal((await finished).exitCode, 0);
 });

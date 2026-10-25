@@ -3,8 +3,8 @@ import path from 'node:path';
 import { errorMessage, hasErrorCode, isInsideDirectory } from './generator-api.js';
 
 /**
- * The calls a watch makes between two runs. A watch uses the real ones; a test passes its own to fault a folder watch (ENOSPC, EMFILE)
- * or to count the reads of an idle watch. An error from a call is the error the real call would raise.
+ * The stat, listing and folder-watch calls a watch makes between two runs. A watch uses the real ones; a test passes its own to fault a
+ * folder watch (ENOSPC, EMFILE) or to count the reads of an idle watch. An error from a call is the error the real call would raise.
  */
 export interface InputFiles {
   /** The stat of a path, or undefined when it does not exist. */
@@ -169,7 +169,7 @@ export class InputScan {
   private readonly fileSet: ReadonlySet<string>;
   private readonly directories: ReadonlySet<string>;
 
-  constructor(inputs: Iterable<string>, private readonly scope: ScanScope, private readonly reader: InputFiles = realInputFiles) {
+  constructor(inputs: Iterable<string>, private readonly scope: ScanScope, private readonly reader: InputFiles) {
     const files: string[] = [];
     const linked = new Set<string>();
     const realFolders = new Map<string, string | undefined>();
