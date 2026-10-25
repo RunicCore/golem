@@ -317,11 +317,7 @@ class ComponentSchemas {
       {
         authoritative: reference.modelContractName !== undefined,
         resolveReference: this.resolveReference,
-        isAuthoritativeType: (type, node) => {
-          const described = this.contractAnalysis.describe(type, node ?? reference.sourceNode ?? reference.sourceFile);
-          return described.kind === 'reference'
-            && this.contractAnalysis.specFor(described.name) !== undefined;
-        },
+        isAuthoritativeType: (type, node) => this.contractAnalysis.isModel(type, node ?? reference.sourceNode ?? reference.sourceFile),
         location: schemaContext.location,
         onWarning: this.report,
         registerSchemaComponent: this.registerSchemaComponent,

@@ -77,3 +77,23 @@ test('a controller with a self-referencing class DTO and interface documents a r
     TLeafBox: { type: 'object', additionalProperties: false, required: ['leaf'], properties: { leaf: loop('Leaf') } },
   });
 });
+
+const RECURSIVE_ROOTS: Record<string, readonly [declarations: string, components: readonly string[]]> = {
+  interface: ['export interface Folder { kids: Record<string, Folder>; size: number }\nexport interface Menu { kids: Record<string, Menu>; label: string }\n', ['FolderLoose', 'FoldersReadResponseKidsLoose', 'MenuLoose', 'MenusReadResponseKidsLoose']],
+  alias: ['export type Folder = { kids: Record<string, Folder>; size: number };\nexport type Menu = { kids: Record<string, Menu>; label: string };\n',
+    ['FolderLoose', 'FolderLooseKidsLoose', 'FoldersReadResponseKidsLoose', 'MenuLoose', 'MenuLooseKidsLoose', 'MenusReadResponseKidsLoose']],
+};
+
+for (const [form, [declarations, components]] of Object.entries(RECURSIVE_ROOTS)) {
+  test(`two controllers that return different recursive types with a Record child document both (${form})`, async (t: TestContext) => {
+    // protects: T-441 two recursive controller roots with index-signature children no longer stop with RUNM1059 on ControllerResponseLoose, in the interface and the alias form
+    const source = `import { Controller, Get } from '@nestjs/common';\n${declarations}`
+      + "@Controller('folders') export class FoldersController { @Get() read(): Folder { return {} as Folder; } }\n"
+      + "@Controller('menus') export class MenusController { @Get() read(): Menu { return {} as Menu; } }\n";
+    const root = createControllerFixture(t, { prefix: 'golem-ts-openapi-recursive-roots-', packageName: 'golem-ts-openapi-recursive-roots-fixture', sourceFile: 'src/roots.controller.ts', source });
+    const result = await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion: '3.1.2', info: { title: 'Roots', version: '1' }, profile: { mobx: false, validation: false } });
+    const document = JSON.parse(result.artifacts[0]!.content) as { components: { schemas: Record<string, unknown> } };
+    assert.deepEqual(validateOpenApiDocument(document), []);
+    assert.deepEqual(Object.keys(document.components.schemas).sort(), components);
+  });
+}

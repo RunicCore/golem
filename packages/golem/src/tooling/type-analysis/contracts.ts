@@ -18,6 +18,8 @@ export interface ContractAnalysis {
   readonly codecIds: Readonly<Record<string, string>>;
   describe(type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): ModelConversionDescriptor;
   codecId(name: string): string | undefined;
+  /** Whether a controller type is a model of the project. It reads the type without leaving a projection name behind. */
+  isModel(type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): boolean;
   /** Codec id of the model a controller type is, even when other models share its component name. */
   modelCodecId(type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): string | undefined;
   /** Resolve a unique short name or a hashed codec id to its model spec. */
@@ -126,7 +128,23 @@ export function createContractAnalysis(
     return sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, specifications) : undefined;
   };
 
-  return {
+  const describeController = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): ModelConversionDescriptor => {
+    const syntax = typeNode ?? (ts.isTypeNode(node) ? node : undefined);
+    const location = syntax ?? checker.typeToTypeNode(type, node, ts.NodeBuilderFlags.NoTruncation);
+    if (!location) throw new Error('The controller field has no representable TypeScript type. Add an explicit type annotation.');
+    // Actual source nodes carry diagnostics. The checker-generated node is
+    // only a root marker when inferred controller returns lack an annotation.
+    const context: TypeAnalysisContext = {
+      sourceFile: node.getSourceFile(), declaration: node,
+      name: type.aliasSymbol?.getName() ?? type.getSymbol()?.getName() ?? 'controller field',
+      ownerName: controllerOwnerName(node),
+      fieldsNode: location, fieldsType: type,
+      exact: false, allowAny: undefined, dto: true,
+    };
+    return describe(type, context, undefined, syntax);
+  };
+
+  const analysis: ContractAnalysis = {
     specifications,
     definitions,
     codecIds,
@@ -147,26 +165,20 @@ export function createContractAnalysis(
       return intact ? codecBySpec.get(intact) : undefined;
     },
     describe(type, node, typeNode) {
-      const syntax = typeNode ?? (ts.isTypeNode(node) ? node : undefined);
       const intact = intactModel(type, node, typeNode);
       if (intact) {
         return { kind: 'reference', name: componentName(intact) };
       }
-      const location = syntax ?? checker.typeToTypeNode(type, node, ts.NodeBuilderFlags.NoTruncation);
-      if (!location) throw new Error('The controller field has no representable TypeScript type. Add an explicit type annotation.');
-      // Actual source nodes carry diagnostics. The checker-generated node is
-      // only a root marker when inferred controller returns lack an annotation.
-      const context: TypeAnalysisContext = {
-        sourceFile: node.getSourceFile(), declaration: node,
-        name: type.aliasSymbol?.getName() ?? type.getSymbol()?.getName() ?? 'controller field',
-        ownerName: controllerOwnerName(node),
-        fieldsNode: location, fieldsType: type,
-        exact: false, allowAny: undefined, dto: true,
-      };
-      const descriptor = describe(type, context, undefined, syntax);
+      const descriptor = describeController(type, node, typeNode);
       return syncProjections(descriptor) ?? descriptor;
     },
+    isModel(type, node, typeNode) {
+      if (intactModel(type, node, typeNode)) return true;
+      const descriptor = describe.isolated(() => describeController(type, node, typeNode));
+      return descriptor.kind === 'reference' && analysis.specFor(descriptor.name) !== undefined;
+    },
   };
+  return analysis;
 }
 
 /** `PaymentsCreateBody` for the body of `PaymentsController.create`; `PaymentsCreateResponse` for what it returns. */
