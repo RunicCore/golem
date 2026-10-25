@@ -1,6 +1,7 @@
 import test from 'node:test';
 
-import { assertWireClaimBuilds, wireClaimProject, type WireClaim } from './support/wire-claim-project.js';
+import { fileFixtureScope, onceShared } from './fixture-project.js';
+import { assertWireClaimHolds, buildWireClaims, wireClaimsProject, type WireClaim } from './support/wire-claim-project.js';
 
 const MODEL_CLAIMS: readonly WireClaim[] = [
   { claim: 'tags drop and literals stay literal, for the alias and the handwritten class', fixture: 'kinds' },
@@ -15,8 +16,12 @@ const MODEL_CLAIMS: readonly WireClaim[] = [
   { claim: 'constraint tags on objects and arrays are dropped', fixture: 'constraint-tags' },
 ];
 
+// One build checks every claim; each test reads the compiler errors of its own fixture folder.
+const fileScope = fileFixtureScope();
+const claimsBuild = onceShared(() => buildWireClaims(wireClaimsProject(fileScope, MODEL_CLAIMS.map(({ fixture }) => fixture), false).root));
+
 for (const { claim, fixture } of MODEL_CLAIMS) {
-  test(`WireFormat<T> equals the emitted JSON type: ${claim}`, async t => {
-    await assertWireClaimBuilds(wireClaimProject(t, fixture, false).root);
+  test(`WireFormat<T> equals the emitted JSON type: ${claim}`, async () => {
+    assertWireClaimHolds(await claimsBuild(), fixture);
   });
 }
