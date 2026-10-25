@@ -280,7 +280,16 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1059
 
-**Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. A recursive interface, class or type alias derives its name from its own, so two of them with one name clash too. The message lists both places. **Fix:** For an inline type, declare a named type alias, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field. For a recursive interface, class or type alias, rename one of the two types.
+**Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. The message lists both places. **Fix:** Declare a named type alias, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field.
+
+A recursive interface, class or type alias never gives this error. It takes its declared name. A copy with the same shape, such as one `Node` declared in two files, shares one schema and the plain name. A type of another shape gets a longer name when another type already holds the plain name. Golem takes the first free name of these:
+
+- the type arguments of a generic instance: `Page<number>` becomes `PageNumber`, and `Page<string[]>` becomes `PageStringArray`;
+- the file name: `Node` in `b.model.ts` becomes `NodeB`;
+- both together: `PageNumberB`;
+- a number: `NodeB2`.
+
+The type that keeps the plain name is the one read first: the model source files in path order, then the models of a file in declaration order.
 
 ### RUNM1060
 
@@ -373,6 +382,10 @@ An error prints its code, location when known, and message, then stops generatio
 ### RUNM1082
 
 **Union that golem cannot convert.** A model field is a union that needs a conversion, such as a `Date` or a `TSerde` value, and the JSON value cannot tell which variant it is: for example two scalar variants where one converts, or a model reference that is no object. Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no literal tag has its own code, [RUNM1080](#runm1080). **Fix:** Give the field one variant that needs a conversion, make the variants objects with a required literal tag, or declare the whole value with one `TSerde` pair.
+
+### RUNM1083
+
+**Generic type that expands without end.** A generic interface, class or type alias holds itself with other type arguments on each level, such as `interface Box<T> { next?: Box<Box<T>> }`. Each level is a new type, so no finite schema describes it. The message names the generic type. Golem stops when the 101st open instance of one generic declaration starts. This bound is golem's own. Arrays, tuples and library types do not count. **Fix:** Pass the same type arguments back, such as `next?: Box<T>`, or end the nesting with a named type.
 
 ## Validators (VALIDATE)
 

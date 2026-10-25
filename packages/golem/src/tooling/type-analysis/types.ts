@@ -3,7 +3,7 @@ import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPro
 import * as ts from '../typescript-ns.js';
 import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
-import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
+import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { compareText, displayPath } from '../generator-api.js';
@@ -263,6 +263,13 @@ function userAliasName(type: ts.Type): string | undefined {
   const declaration = type.aliasSymbol?.declarations?.find(ts.isTypeAliasDeclaration);
   return declaration ? aliasProjectionName(declaration) : undefined;
 }
+
+/**
+ * How many different instances of one generic declaration a walk may hold at once. A type that makes a new type argument on each
+ * level never repeats, so the walk stops when the next instance would be one more than this. It is golem's own bound; the
+ * `maxExpansionDepth` option of `descriptorBuilder` sets another.
+ */
+const DEFAULT_MAX_EXPANSION_DEPTH = 100;
 
 /**
  * The name of the interface, class or generic type alias that declares a type. A recursive type with no concrete alias takes it,
@@ -561,6 +568,8 @@ export function descriptorBuilder(
   typeErrorAt: ((node: ts.Node) => string | undefined) | undefined,
   /** Whether a source file is a default library file: a symbol key it declares is the built-in type's own metadata, not a field. */
   isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
+  /** How many instances of one generic declaration may be open at once before the walk stops with RUNM1083. */
+  maxExpansionDepth = DEFAULT_MAX_EXPANSION_DEPTH,
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
@@ -569,6 +578,68 @@ export function descriptorBuilder(
   const projectionCache = new Map<ts.Type, Map<string, string>>();
   // Where each projection name was first minted, for the clash diagnostic.
   const projectionSources = new Map<string, string>();
+  // The type that minted each projection name. A recursive type that asks for a name another type holds takes a qualified name before its body is read.
+  const projectionOwners = new Map<string, ts.Type>();
+  const headNames = new Map<ts.Type, Map<string, string>>();
+  // Whether a recursive type reads the same as the holder of its plain name, per policy suffix. Kept across `snapshotNames`, so each type is read once for it.
+  const sharesPlainName = new Map<ts.Type, Map<string, boolean>>();
+  // The arguments of the `describe` calls that are open, so a name claim can read the type once under another name.
+  const openCalls: Parameters<typeof describeType>[] = [];
+  const snapshotNames = (): (() => void) => {
+    const copy = <K, V>(source: Map<K, V>, inner: (value: V) => V = (value) => value): Map<K, V> =>
+      new Map([...source].map(([key, value]) => [key, inner(value)] as const));
+    const saved = {
+      projections: copy(projections), cache: copy(projectionCache, (value) => new Map(value)), owners: copy(projectionOwners),
+      heads: copy(headNames, (value) => new Map(value)), sources: copy(projectionSources), stems: copy(cycleStems),
+    };
+    const restore = <K, V>(target: Map<K, V>, source: Map<K, V>): void => { target.clear(); source.forEach((value, key) => target.set(key, value)); };
+    return () => {
+      restore(projections, saved.projections); restore(projectionCache, saved.cache); restore(projectionOwners, saved.owners);
+      restore(headNames, saved.heads); restore(projectionSources, saved.sources); restore(cycleStems, saved.stems);
+    };
+  };
+  const claimHeadName = (type: ts.Type, stem: string, suffix: string): string => {
+    const known = headNames.get(type)?.get(suffix);
+    if (known !== undefined) return known;
+    const free = (name: string): boolean => !modelLocations.has(name) && (projectionOwners.get(name) ?? type) === type;
+    const qualifiers = headQualifiers(checker, type);
+    const options = [stem, ...qualifiers.map((part) => `${stem}${part}`)];
+    let name = options.map((option) => `${option}${suffix}`).find(free);
+    // Names that stay equal after qualifying get a number, so every valid program generates.
+    for (let number = 2; name === undefined; number += 1) {
+      const numbered = `${options[options.length - 1]}${number}${suffix}`;
+      if (free(numbered)) name = numbered;
+    }
+    const plain = `${stem}${suffix}`;
+    const setName = (value: string): void => {
+      headNames.set(type, (headNames.get(type) ?? new Map<string, string>()).set(suffix, value));
+    };
+    setName(name);
+    // A finished projection of another type holds the plain name: when this type reads the same under its own name, the two share the plain name.
+    const owner = projectionOwners.get(plain);
+    if (name !== plain && owner !== undefined && owner !== type && projections.has(plain) && !modelLocations.has(plain)) {
+      const verdicts = sharesPlainName.get(type) ?? new Map<string, boolean>();
+      sharesPlainName.set(type, verdicts);
+      let shares = verdicts.get(suffix);
+      if (shares === undefined) {
+        const restore = snapshotNames();
+        describeType(...openCalls[openCalls.length - 1]!);
+        const lookup = (projection: string): ModelConversionDescriptor | undefined => projections.get(projection);
+        const read = (projection: string): string | undefined => {
+          const descriptor = projections.get(projection);
+          return descriptor && projectionIdentity(lookup, projection, descriptor);
+        };
+        shares = read(name) === read(plain);
+        verdicts.set(suffix, shares);
+        if (shares) restore();
+      }
+      if (shares) {
+        setName(plain);
+        return plain;
+      }
+    }
+    return name;
+  };
   const sourceLocation = (at: ts.Node): string => {
     const sourceFile = at.getSourceFile();
     const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
@@ -636,14 +707,35 @@ export function descriptorBuilder(
   // (an interface or a class has no alias) an object type. The walk keeps the alias types of a cycle, so one name per
   // alias gives the same projection from any entry type.
   const cycleHeads = new Map<ts.Type, boolean>();
-  // The name each cycle head without a projection was given on its first lap.
+  // A generic type that holds itself with a new type argument on each level, such as `interface Box<T> { next?: Box<Box<T>> }`, makes a
+  // new type on each level, so no cycle head repeats. The walks count the instances of each generic declaration they are in and stop at the bound.
+  // Only an interface, class or type alias of the project with type parameters counts: arrays, tuples, library types and anonymous types do not.
+  const activeInstances = new Map<ts.Symbol, ts.Type[]>();
+  const enterExpansion = (type: ts.Type, location: ts.Node): (() => void) => {
+    const symbol = isStructured(type) ? type.aliasSymbol ?? type.getSymbol() : undefined;
+    const declaration = symbol?.declarations?.find((candidate) =>
+      (ts.isInterfaceDeclaration(candidate) || ts.isClassDeclaration(candidate) || ts.isTypeAliasDeclaration(candidate))
+      && (candidate.typeParameters?.length ?? 0) > 0);
+    if (symbol === undefined || declaration === undefined || isDefaultLibraryFile(declaration.getSourceFile())) return () => undefined;
+    const instances = activeInstances.get(symbol) ?? [];
+    if (instances.includes(type)) return () => undefined;
+    if (instances.length >= maxExpansionDepth) {
+      const name = symbol.getName();
+      throw diagnostic(location.getSourceFile(), location, '1083',
+        `The generic type ${name} expands without end: each level holds ${name} with other type arguments, and more than ${maxExpansionDepth} levels are open, so no finite schema describes it. `
+        + `Pass the same type arguments back, for example ${name}<T> inside ${name}<T>.`);
+    }
+    activeInstances.set(symbol, [...instances, type]);
+    return () => { activeInstances.set(symbol, instances); };
+  };
+  // The name each cycle head was given on its first lap.
   const cycleStems = new Map<ts.Type, string>();
   const probeCycles = (root: ts.Type, location: ts.Node): void => {
     const index = new Map<ts.Type, number>();
     const low = new Map<ts.Type, number>();
     const stack: ts.Type[] = [];
     const onStack = new Set<ts.Type>();
-    const visit = (type: ts.Type): void => {
+    const visitType = (type: ts.Type): void => {
       index.set(type, index.size);
       low.set(type, index.get(type)!);
       stack.push(type);
@@ -670,6 +762,10 @@ export function descriptorBuilder(
         (member.flags & ts.TypeFlags.Object) !== 0 && !checker.isArrayType(member) && !checker.isTupleType(member)));
       for (const member of component) cycleHeads.set(member, heads.has(member));
     };
+    const visit = (type: ts.Type): void => {
+      const leave = enterExpansion(type, location);
+      try { visitType(type); } finally { leave(); }
+    };
     visit(root);
   };
   const isCycleHead = (type: ts.Type, location: ts.Node): boolean => {
@@ -690,7 +786,7 @@ export function descriptorBuilder(
     );
   };
 
-  const describe = (
+  const describeType = (
     originalType: ts.Type,
     context: TypeAnalysisContext,
     seen: ReadonlySet<ts.Type> = new Set<ts.Type>(),
@@ -871,16 +967,16 @@ export function descriptorBuilder(
     let projectionName: string | undefined;
     if ((projection && objectShape && !isRoot) || recursive) {
       const nameAt = node ?? nameNode;
-      // A cycle head keeps the name its first lap gave it, so a declared name that is not a plain identifier (non-ASCII) still ends the cycle.
-      const cycleHead = recursive && !projection;
-      let stem = cycleHead ? cycleStems.get(type) : undefined;
+      // A cycle head keeps the name its first lap gave it, so a declared name that is not a plain identifier (non-ASCII) still ends the cycle,
+      // and a projection that holds itself, such as `Partial<Cfg>` inside `Cfg`, does not take a longer owner-and-field name on each lap.
+      const declaredHead = recursive && !projection;
+      let stem = recursive ? cycleStems.get(type) : undefined;
       if (stem === undefined) {
-        stem = safeNameHint((cycleHead ? userAliasName(type) ?? declaredTypeName(type) : undefined) ?? projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint);
-        if (cycleHead) cycleStems.set(type, stem);
+        stem = safeNameHint((declaredHead ? userAliasName(type) ?? declaredTypeName(type) : undefined) ?? projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint);
+        if (recursive) cycleStems.set(type, stem);
       }
-      const candidate = `${stem}${policySuffix({
-        exact: context.exact, allowAny: context.allowAny ?? allowAny, representation,
-      })}`;
+      const suffix = policySuffix({ exact: context.exact, allowAny: context.allowAny ?? allowAny, representation });
+      const candidate = recursive ? claimHeadName(type, stem, suffix) : `${stem}${suffix}`;
       if (!isProjectionName(candidate)) throw new Error(`Internal error: projection name "${candidate}" is not a plain identifier.`);
       const here = sourceLocation(nameAt ?? context.declaration);
       const modelLocation = modelLocations.get(candidate);
@@ -895,6 +991,7 @@ export function descriptorBuilder(
       projectionName = candidate;
       cached.set(policy, projectionName);
       projectionCache.set(type, cached);
+      if (!projectionOwners.has(candidate)) projectionOwners.set(candidate, type);
       if (!projectionSources.has(candidate)) projectionSources.set(candidate, here);
     }
     if ((sequence || objectShape) && seen.has(type) && !projectionName) {
@@ -1122,6 +1219,11 @@ export function descriptorBuilder(
     }
     projections.set(projectionName, described);
     return { kind: 'reference', name: projectionName, projection: true };
+  };
+  const describe: typeof describeType = (originalType, context, ...rest) => {
+    const leave = enterExpansion(originalType, context.declaration);
+    openCalls.push([originalType, context, ...rest]);
+    try { return describeType(originalType, context, ...rest); } finally { openCalls.pop(); leave(); }
   };
   return Object.assign(describe, { projections });
 }
