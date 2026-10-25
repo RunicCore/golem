@@ -46,6 +46,7 @@ in the sections below.
 - The generated codec code holds no runs of two blank lines. An SDK that you commit shows blank-line changes after you generate it again.
 - `schemaType()` from `@exprtlabs/golem-openapi/generator` accepts a qualifier only as identifiers that each end in a dot, such as `InputSchemas.`.
 - `golem-ts-openapi` treats a query or path parameter type as a branded primitive only when its extra members are golem tags. A brand from another library, such as a `tag` key, now stops generation with [`NEST1107`](docs/reference/diagnostics.md#nest1107). Before, golem took any member whose name held `tag`, `serde`, `validation` or `constraint` as a brand.
+- The `controllers` job accepts a one-field `@Body('payment')` or `@Query('filter')` parameter with an `IModel` or `IObject` type, the form `NestModelInterceptor` converts. The OpenAPI document writes the body fields as the properties of one object request body and the query model as a `deepObject` parameter, and the operation-codec registry holds their models, so `golem check` agrees with the rewrite. Before, [`NEST1103`](docs/reference/diagnostics.md#nest1103) and [`NEST1107`](docs/reference/diagnostics.md#nest1107) stopped generation. A one-field `@Body` of another type, or beside a whole `@Body()`, still stops with `NEST1103`.
 
 ### Generation
 

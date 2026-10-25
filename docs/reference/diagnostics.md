@@ -24,7 +24,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1103
 
-**Named body parameter.** `@Body('field')` names a single field instead of the whole request body. **Fix:** Use `@Body()` for the whole object and declare an explicit request-body contract.
+**Named body parameter.** A one-field `@Body('field')` has a type that is no `IModel` or `IObject`, or it shares an operation with a whole `@Body()`. `NestModelInterceptor` converts only a model field, and it cannot convert a whole body and a field of it together. **Fix:** Give the field an `IModel` or `IObject` type, or use `@Body()` for the whole object and declare an explicit request-body contract. Use one-field parameters only, or one whole parameter only.
 
 ### NEST1105
 
@@ -36,7 +36,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1107
 
-**Non-portable parameter.** A parameter's OpenAPI mapping isn't portable for the shape or version involved: flattening it would need a non-primitive property, a named parameter isn't primitive, a whole `@Query()` object collides with another query parameter, or a `querystring` parameter needs OpenAPI 3.2.0. **Fix:** Use a named primitive parameter or an explicit Swagger contract, keep a single whole-object query parameter, or generate against OpenAPI 3.2.0 for a `querystring` parameter.
+**Non-portable parameter.** A parameter's OpenAPI mapping isn't portable for the shape or version involved: flattening it would need a non-primitive property, a named parameter is neither primitive nor, for `@Query('name')`, an `IModel` or `IObject`, a whole `@Query()` object collides with another query parameter, or a `querystring` parameter needs OpenAPI 3.2.0. **Fix:** Use a named primitive parameter or an explicit Swagger contract, keep a single whole-object query parameter, or generate against OpenAPI 3.2.0 for a `querystring` parameter.
 
 ### NEST1108
 

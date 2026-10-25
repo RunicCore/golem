@@ -54,7 +54,10 @@ Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. Fo
 A whole `@Body() items: Item[]` converts item by item. An invalid item returns HTTP 400. Each issue path starts with the item index, such as `[1, 'name']`. A value that is not an array returns HTTP 400 with a `type` issue. A whole `@Query()` is an object, so declare it as one model and not as an array.
 
 - Give all whole `@Body()` parameters of a handler one model type. The same rule holds for whole `@Query()` parameters.
-- Declare the whole parameter. The `controllers` job reports [`NEST1103`](/reference/diagnostics#nest1103) for `@Body('field')` and [`NEST1107`](/reference/diagnostics#nest1107) for a named `@Query('field')` with a model type.
+- Name one field with `@Body('payment') payment: TPayment` or `@Query('filter') filter: TFilter` when the model sits under one key. Its type is an `IModel` or `IObject`.
+- Do not mix a whole `@Body()` and a one-field `@Body('field')` in one handler. The same rule holds for `@Query()`. The `controllers` job reports [`NEST1103`](/reference/diagnostics#nest1103) for a mixed body and, on OpenAPI 3.2, [`NEST1107`](/reference/diagnostics#nest1107) for a mixed query.
+
+The `controllers` job writes the one-field `@Body` parameters as the properties of one object request body. It writes a one-field `@Query` model as a `deepObject` query parameter, such as `?filter[status]=paid`. Nest needs a query parser for nested keys: Express 5 needs the `query parser` setting `extended`.
 
 ## Query objects
 
