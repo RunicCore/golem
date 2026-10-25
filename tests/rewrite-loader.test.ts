@@ -192,6 +192,13 @@ test('GOLEM_CONFIG names the golem.yaml when the working directory has none', as
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
 });
 
+test('an empty GOLEM_CONFIG is no setting: the golem.yaml of the working directory is used', async (t) => {
+  // protects: T-27 GOLEM_CONFIG="" resolved to the working directory and failed on a directory
+  const root = await project(t, 'loader-empty-env-config');
+  const result = await run(root, 'src/main.ts', { env: { GOLEM_CONFIG: '' } });
+  assert.equal(result.code, 0, result.stderr);
+});
+
 /** A source that starts with a byte order mark, has CRLF line ends and Vietnamese text. */
 const BOM_CRLF = `﻿${[
   '// Thanh toán — đơn hàng',

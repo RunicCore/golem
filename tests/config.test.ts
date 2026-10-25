@@ -292,6 +292,7 @@ test('a suffix that is empty, malformed, repeated or names a generated file is a
     [models('[.model.ts, model.ts]'), form('models.suffixes[1]')],
     [models('[.model.js]'), form('models.suffixes[0]')],
     [models('[.model.ts, 3]'), form('models.suffixes[1]')],
+    [models('[.d.ts]'), 'models.suffixes[0] must not end in .d.ts, .d.mts or .d.cts: a declaration file cannot be a source.'],
     [models('[.model.generated.ts]'), generated('models.suffixes[0]')],
     [models('[.model.generated.cts]'), generated('models.suffixes[0]')],
     [models('[.model.ts, .models.ts, .model.ts]'), 'models.suffixes lists .model.ts twice.'],

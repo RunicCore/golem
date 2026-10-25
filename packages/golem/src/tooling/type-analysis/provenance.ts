@@ -170,7 +170,7 @@ export function advertisedModelManifests(program: ts.Program, onInput?: InputObs
     onInput?.(filename);
     if (!existsSync(filename)) {
       throw new Error(
-        `${displayPath(sourceFile.fileName)}: generated types advertise a missing model manifest: ${displayPath(filename)}`,
+        `${displayPath(sourceFile.fileName)}: generated types advertise a missing model manifest: ${displayPath(filename)}. Run golem generate to write it, or reinstall the package that ships it.`,
       );
     }
     advertised.add(filename);
