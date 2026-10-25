@@ -8,6 +8,9 @@ import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
+import { writeGeneratedArtifacts } from './fixture-project.js';
+import { command } from './support/process.js';
+import { TSC } from './support/build-project.js';
 
 function fixture(t: TestContext) {
   return createModelProject(t, { prefix: 'golem-class-value-', name: 'class-value', linkWorkspaceNodeModules: true });
@@ -42,6 +45,24 @@ const TEMPORAL_RUNTIME = `globalThis.Temporal = { Instant: class Instant {
 } };
 export {};
 `;
+
+/**
+ * Type-checks `probe.ts`, which assigns each field type of the generated `TAFields` to the class it must name.
+ * A field typed `unknown` or `string` fails the assignments, and the `@ts-expect-error` line fails when the field is not a class.
+ */
+async function assertFieldClasses(root: string, sourceRoot: string, imports: readonly string[], fields: Readonly<Record<string, string>>): Promise<void> {
+  const lines = Object.entries(fields).map(([field, type]) => `export const ${field}: ${type} = null as unknown as TAFields['${field}'];`);
+  const [firstField] = Object.keys(fields);
+  fs.writeFileSync(path.join(sourceRoot, 'probe.ts'), [
+    "import type { TAFields } from './a.model.generated.js';",
+    ...imports,
+    ...lines,
+    '// @ts-expect-error the field is a class instance, not a string',
+    `export const notString: string = null as unknown as TAFields['${firstField}'];`,
+    '',
+  ].join('\n'));
+  await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
+}
 
 async function build(t: TestContext, fields: SourceFragment) {
   const { root, sourceRoot } = fixture(t);
@@ -136,10 +157,8 @@ test('invalid wire value is rejected before decoding', async t => {
 });
 
 test('generated model type names the class', async t => {
-  const { generatedSource: generated } = await build(t, tsSource`price: Price; when: When; bytes: Bytes`);
-  assert.match(generated, /import type \{ Money as __golemClass\d+ \} from "\.\/money\.js"/);
-  assert.match(generated, /Temporal\.Instant/);
-  assert.match(generated, /Uint8Array/);
+  const { root } = await build(t, tsSource`price: Price; when: When; bytes: Bytes`);
+  await assertFieldClasses(root, path.join(root, 'src'), ["import type { Money } from './money.js';"], { price: 'Money', when: 'Temporal.Instant', bytes: 'Uint8Array' });
 });
 
 test('class-value field under the MobX profile', async t => {
@@ -173,10 +192,8 @@ export function decodeMoney(value: string): Money { return Money.parse(value); }
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
 import { type Money, encodeMoney, decodeMoney } from '@fixture/money';
 type Price = Money & TSerde<typeof encodeMoney, typeof decodeMoney>;`, fields: tsSource`price: Price` }).text);
-  const result = generate({ root, profile: { mobx: false, validation: true } });
-  const generated = result.artifacts.find(a => a.path.endsWith('a.model.generated.ts'))?.content ?? '';
-  assert.match(generated, /import type \{ Money as __golemClass\d+ \} from "@fixture\/money"/);
-  assert.doesNotMatch(generated, /import type \{ Price \}/);
+  writeGeneratedArtifacts(generate({ root, profile: { mobx: false, validation: true } }).artifacts);
+  await assertFieldClasses(root, sourceRoot, ["import type { Money } from '@fixture/money';"], { price: 'Money' });
 });
 
 test('class field without TSerde is still rejected', t => {
@@ -277,10 +294,11 @@ type Second = SecondMoney & TSerde<typeof encodeSecond, typeof decodeSecond>;
 type Third = ThirdMoney & TSerde<typeof encodeThird, typeof decodeThird>;`, fields: tsSource`first: First; second: Second; third: Third` }).text);
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
-  const generated = fs.readFileSync(path.join(sourceRoot, 'a.model.generated.ts'), 'utf8');
-  assert.match(generated, /import type \{ Cash as __golemClass\d+ \} from "\.\/first\/money\.js"/);
-  assert.match(generated, /import type \{ default as __golemClass\d+ \} from "\.\/second\/money\.js"/);
-  assert.match(generated, /import type \{ Money as __golemClass\d+ \} from "\.\/third\.js"/);
+  await assertFieldClasses(root, sourceRoot, [
+    "import type { Cash } from './first/money.js';",
+    "import type SecondMoney from './second/money.js';",
+    "import type { Money as ThirdMoney } from './third.js';",
+  ], { first: 'Cash', second: 'SecondMoney', third: 'ThirdMoney' });
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const wire = { first: 'a', second: 'b', third: 'c' };
   assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, wire)), wire);

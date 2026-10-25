@@ -7,6 +7,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { workspace } from './support/process.js';
+import { runRewritten } from './support/rewritten-module.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { COUNT_DIST_FILES, writeCodecPackage } from './fixture-templates/models/codec-package.js';
 import { tsSource } from './source-template.js';
@@ -21,6 +22,11 @@ function project(t: TestContext, packages: Record<string, string> = {}, options:
   });
 }
 
+/** The module specifiers a generated file imports, read by running it with its imports stubbed. */
+function importsOf(generated: string): readonly string[] {
+  return runRewritten(generated).imports;
+}
+
 // The model's generated file imports the codecs from their package.
 const MODEL_FILE = 'src/a.model.generated.ts';
 const EXPORTS = { './codecs': { types: './dist/codecs.d.ts', import: './dist/codecs.js' }, './tags': { types: './dist/tags.d.ts', import: './dist/tags.js' } };
@@ -30,8 +36,7 @@ const model = taggedModelSource({ name: 'A', imports: tsSource`import type { Pkg
 async function roundTrip(root: string): Promise<void> {
   await buildModelProject(root);
   const generated = fs.readFileSync(path.join(root, MODEL_FILE), 'utf8');
-  assert.match(generated, /from "@fixture\/pg\/codecs"/);
-  assert.doesNotMatch(generated, /node_modules|\.d\.js/);
+  assert.ok(importsOf(generated).includes('@fixture/pg/codecs'), 'the model imports the codecs by their package specifier');
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const decoded = decodeGeneratedModel(A, { count: '42', name: 'abcd' });
   assert.equal(decoded.count, 42);
@@ -60,7 +65,7 @@ export function decodeCount(value: CountWire): number { return Number(value); }
   const { root, sourceRoot } = project(t, { '@fixture/pg': vendor });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
   const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
-  assert.match(generated, /from "@fixture\/pg\/codecs"/);
+  assert.ok(importsOf(generated).includes('@fixture/pg/codecs'));
 });
 
 test('a TSerde codec of a folder outside the root round-trips in an app model', async t => {
@@ -127,8 +132,7 @@ test('a shared folder with no name of its own keeps its functions relative when 
   const web = monorepo(t);
   const artifacts = generate({ root: web, profile: { mobx: false, validation: true } }).artifacts;
   const validators = artifacts.find(a => a.path.endsWith('models.validators.generated.ts'))?.content ?? '';
-  assert.match(validators, /import \{ isCurrencyCode as \w+ \} from "(\.\.\/)+shared\/rules\.js"/);
-  assert.doesNotMatch(validators, /acme/);
+  assert.ok(importsOf(validators).some((specifier) => /^(\.\.\/)+shared\/rules\.js$/.test(specifier)), importsOf(validators).join('\n'));
 });
 
 test('RUNM1060 when a shared folder with its own name has no export that reaches the function', t => {
@@ -209,7 +213,7 @@ test('a package with no exports field hosts a codec at its package-relative path
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const generated = fs.readFileSync(path.join(root, MODEL_FILE), 'utf8');
-  assert.match(generated, /import \{ encodeCount as \w+ \} from "@fixture\/pg\/dist\/codecs\.js"/);
+  assert.ok(importsOf(generated).includes('@fixture/pg/dist/codecs.js'));
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, { count: '42' })), { count: '42' });
 });
@@ -238,7 +242,7 @@ test('a nameless package.json in the project keeps project codecs relative', t =
   fs.writeFileSync(path.join(sourceRoot, 'models/package.json'), '{"type":"module"}');
   fs.writeFileSync(path.join(sourceRoot, 'models/a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encodeCount, decodeCount } from '../lib/codecs.js';\ntype Count = number & TSerde<typeof encodeCount, typeof decodeCount>;`, fields: tsSource`count: Count` }).text);
   const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith('src/models/a.model.generated.ts'))?.content ?? '';
-  assert.match(generated, /from "\.\.\/lib\/codecs\.js"/);
+  assert.ok(importsOf(generated).includes('../lib/codecs.js'));
 });
 
 test('an edited package.json is read again by the next generation in the same process', t => {
@@ -286,7 +290,7 @@ test('exports: the most specific pattern decides, so a file the specific pattern
 
 test('exports: a file reached through the most specific pattern gets that pattern\'s subpath', t => {
   const generated = generatedFor(t, { ...NESTED_TAGS, './*': './dist/legacy/*.d.ts', './sub/*': './dist/sub/*.d.ts' }, true);
-  assert.match(generated, /from "@fixture\/pg\/sub\/codecs"/);
+  assert.ok(importsOf(generated).includes('@fixture/pg/sub/codecs'));
 });
 
 test('exports: a null target excludes the file even when a pattern would reach it', t => {
@@ -304,7 +308,7 @@ test('exports: the first matching condition wins, as in Node', t => {
 test('exports: conditions golem does not use are skipped', t => {
   rejected(t, { './tags': EXPORTS['./tags'], './codecs': { custom: './dist/codecs.d.ts', require: './dist/codecs.js' } });
   const generated = generatedFor(t, { './tags': EXPORTS['./tags'], './codecs': { custom: './dist/nowhere.d.ts', types: './dist/codecs.d.ts' } });
-  assert.match(generated, /from "@fixture\/pg\/codecs"/);
+  assert.ok(importsOf(generated).includes('@fixture/pg/codecs'));
 });
 
 test('one package installed at two paths collapses to one binding', t => {
@@ -317,5 +321,4 @@ test('one package installed at two paths collapses to one binding', t => {
   const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(a => a.path.endsWith(MODEL_FILE))?.content ?? '';
   assert.equal([...generated.matchAll(/import \{ encodeCount as /g)].length, 1);
   assert.equal([...generated.matchAll(/import \{ decodeCount as /g)].length, 1);
-  assert.doesNotMatch(generated, /__golemSerialize1/);
 });

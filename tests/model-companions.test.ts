@@ -16,6 +16,7 @@ import {
   writeModelSources,
 } from './model-project.js';
 import { copyFixtureFile, fileFixtureScope, onceShared, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { runRewritten } from './support/rewritten-module.js';
 import { tsSource } from './source-template.js';
 import { generate } from '#model/generator';
 
@@ -103,10 +104,9 @@ test('generated model names are scoped to their companion modules', (t) => {
 });
 
 test('same-file aliases that differ only by the T prefix generate two separate models', async () => {
-  const { artifacts } = await trustedProject();
-  const companion = artifacts.find((artifact) => artifact.path.endsWith('payment.model.generated.ts'))?.content ?? '';
-  assert.match(companion, /export abstract class TPaymentBaseModel\b/);
-  assert.match(companion, /export abstract class PaymentBaseModel\b/);
+  const { root, artifacts } = await trustedProject();
+  const built = await import(path.toNamespacedPath(path.join(root, 'build/payment.model.generated.js'))) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(built).filter((name) => name.endsWith('BaseModel')).sort(), ['PaymentBaseModel', 'TPaymentBaseModel']);
   const keys = artifacts.find((artifact) => artifact.path.endsWith('codec-keys.json'))?.content ?? '';
   const tId = keys.match(/payment\.model\.ts#TPayment": "([^"]+)"/)?.[1];
   const id = keys.match(/payment\.model\.ts#Payment": "([^"]+)"/)?.[1];
@@ -231,9 +231,8 @@ export type TOrder = IObject<{ id: string; money: Money | null; history: (Money 
 test('re-exported IModel and IObject symbols preserve class versus plain-object generation', async () => {
   const { root, sourceRoot, artifacts } = await trustedProject();
   const sourceFile = path.join(sourceRoot, 'provenance.model.ts');
-  const generated = artifacts.find(artifact => artifact.path.endsWith('provenance.model.generated.ts'))?.content ?? '';
-  assert.match(generated, /export abstract class TProvenanceBaseModel/);
-  assert.doesNotMatch(generated, /export abstract class PlainBaseModel/);
+  const built = await import(path.toNamespacedPath(path.join(root, 'build/provenance.model.generated.js'))) as Record<string, unknown>;
+  assert.deepEqual(Object.keys(built).filter((name) => name.endsWith('BaseModel')), ['TProvenanceBaseModel'], 'only the IModel alias gets a class');
   {
     using program = ts.createProgramFromSources({ root, sources: [sourceFile] });
     const aliases = program.getSourceFile(sourceFile)?.statements.filter(ts.isTypeAliasDeclaration) ?? [];
@@ -298,8 +297,7 @@ export type TItem = IModel<{ count: number & TValidation<typeof isEven> }>;
   const result = generate({ root, profile: { mobx: false, validation: true } });
   const validators = result.artifacts.find(artifact => artifact.path.endsWith('models.validators.generated.ts'));
   assert.ok(validators, 'the validators file is written');
-  assert.match(validators.content, /import \{ isEven as \w+ \} from "[^"]*rules\.js"/);
+  assert.ok(runRewritten(validators.content).imports.some((specifier) => specifier.endsWith('rules.js')), 'the validators module imports the user function');
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'));
-  assert.match(companion?.content ?? '', /^import \{ (?:is|validate)_TItem_\w+(, (?:is|validate)_TItem_\w+)* \} from "\.\/generated\/models\/models\.validators\.generated\.js";$/m);
-  assert.doesNotMatch(companion?.content ?? '', /rules\.js/);
+  assert.deepEqual(runRewritten(companion?.content).imports.filter((specifier) => specifier.includes('validators') || specifier.endsWith('rules.js')), ['./generated/models/models.validators.generated.js'], 'the companion reaches the user function only through the validators module');
 });

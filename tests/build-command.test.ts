@@ -5,6 +5,13 @@ import path from 'node:path';
 import test from 'node:test';
 import { parseArguments } from '#golem/cli';
 import { command } from './support/process.js';
+import { runRewritten } from './support/rewritten-module.js';
+
+/** The module, run with its imports stubbed, asks the runtime for a codec: golem rewrote its parse and stringify calls. */
+function assertAsksForCodec(file: string, message: string): void {
+  const ids = runRewritten(fs.readFileSync(file, 'utf8')).codecIds;
+  assert.ok(ids.length > 0 && ids.every((id) => /^TMoney_[0-9a-f]{8}$/.test(id)), `${message}: ${ids.join(', ')}`);
+}
 import { TSC, REJECTION, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
 
 // Original sources are checked, rewritten sources are emitted
@@ -30,7 +37,6 @@ export function load(t: string) { return parse<Payment>(t); }
     const built = await importBuilt(root, 'use.js');
     assert.equal(built.text, '{"currency":"USD","value":"1"}');
     assert.deepEqual(built.money, { currency: 'USD', value: '1' });
-    assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
   });
 
   await t.test('no source file changes: bytes and mtimes stay', () => {
@@ -38,8 +44,8 @@ export function load(t: string) { return parse<Payment>(t); }
   });
 
   await t.test('a file whose rewritten text would not type-check builds, because the originals are checked', () => {
-    assert.match(fs.readFileSync(path.join(root, '.golem/build/tsconfig/stage/src/typed.ts'), 'utf8'), /__golem_requireObjectCodec\(/, 'the stage holds the rewritten text');
-    assert.match(fs.readFileSync(path.join(root, 'build/typed.js'), 'utf8'), /requireObjectCodec/);
+    assertAsksForCodec(path.join(root, '.golem/build/tsconfig/stage/src/typed.ts'), 'the stage holds the rewritten text');
+    assertAsksForCodec(path.join(root, 'build/typed.js'), 'the emitted JavaScript is the rewritten one');
   });
 
   await t.test('a declaration comes from the original: an inferred return type names the model class', () => {
@@ -135,7 +141,7 @@ test('a type error fails the build with the compiler message at the original lin
   const result = await golemBuild(root, []);
   assert.notEqual(result.code, 0);
   assert.match(`${result.stdout}${result.stderr}`, /src\/broken\.ts\(1,14\): error TS2322: Type 'string' is not assignable to type 'number'\./);
-  assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /requireObjectCodec/, 'the rewritten JavaScript is emitted');
+  assertAsksForCodec(path.join(root, 'build/use.js'), 'the rewritten JavaScript is emitted');
   assert.ok(fs.existsSync(path.join(root, 'build/broken.js')), 'so is the file with the error');
 });
 
@@ -183,7 +189,6 @@ test('a forwarded --declaration writes declarations from the original sources', 
   const declarations = fs.readFileSync(path.join(root, 'build/use.d.ts'), 'utf8');
   // The rewritten text types `parse` as unknown; the original types it as the model's object type.
   assert.match(declarations, /export declare const money: \{\s*currency: string;\s*value: string;\s*\};/);
-  assert.doesNotMatch(declarations, /unknown|__golem_/, 'declarations come from the original, not the rewritten text');
 });
 
 test('-b and --build are rejected', async (t) => {

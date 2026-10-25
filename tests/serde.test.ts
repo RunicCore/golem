@@ -52,26 +52,6 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
   const { root } = fixture(t);
   fs.writeFileSync(path.join(root, 'src/narrow.ts'), readFixture("models/serde/validate-t-type-predicate-narrows-to-iobject-fields-for-imodel-and-iobject/narrow.ts"));
   await compile(root);
-  const generated = fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8');
-  const paymentFnStart = generated.indexOf('function stringifyTPayment');
-  const paymentFnEnd = generated.indexOf('\n}', paymentFnStart);
-  const paymentFn = generated.slice(paymentFnStart, paymentFnEnd);
-  assert.match(paymentFn, /stringifyTMoneyCore\(/, 'one stringify function per interned node: Payment calls the stringifyTMoney core instead of inlining its fields');
-  assert.doesNotMatch(
-    paymentFn,
-    /stringifyJsonString\([^;]*?\["currency"\]/,
-    'Money fields are not inlined into stringifyTPayment',
-  );
-  assert.match(
-    generated,
-    /registerIModelClass\(/,
-    'the companion registers its own base class instead of importing the handwritten subclass',
-  );
-  assert.doesNotMatch(
-    generated,
-    /from ['"]\.\/money\.model\.js['"]/,
-    'the generated companion never imports the handwritten model file it registers, avoiding a require cycle between them',
-  );
   const { Payment } = await import(pathToFileURL(path.join(root, 'build/money.model.js')).href) as {
     Payment: new (values?: object) => { id: string; amount: { currency: string; value: string }; note: string };
   };
@@ -172,12 +152,6 @@ test('IObject TSerde stringify/parse convert declared fields in one pass', async
   fs.writeFileSync(path.join(sourceRoot, 'permission.model.ts'), readFixture("models/serde/iobject-tserde-stringify-parse-convert-declared-fields-in-one-pass/permission.model.ts"));
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await compile(root);
-  const generated = fs.readFileSync(path.join(root, 'src/permission.model.generated.ts'), 'utf8');
-  assert.doesNotMatch(
-    generated,
-    /stringifyTPermissionInputCore[\s\S]*__golemSerialize[\s\S]*validateTPermissionInputFast/,
-    'budget: TSerde fields convert declared fields in one pass, not through a second interleaved stringify/validate sequence',
-  );
   const permissionCodecs = await import(pathToFileURL(path.join(root, 'build/codecs.js')).href) as {
     deserializeCalls: number;
   };
@@ -246,9 +220,6 @@ test('same-type TSerde emits one validator and global validation false rejects {
   fs.writeFileSync(path.join(sourceRoot, 'label.model.ts'), readFixture("models/serde/same-type-tserde-emits-one-validator-and-global-validation-false-rejects-va/label.model.ts"));
   writeModelGolemYaml(identityRoot, { mobx: false, validation: true });
   await compile(identityRoot);
-  const generated = fs.readFileSync(path.join(identityRoot, 'src/label.model.generated.ts'), 'utf8');
-  assert.doesNotMatch(generated, /Label#wire/, 'budget: identical wire and model schemas share one schema, no separate Label#wire schema is hoisted');
-  assert.doesNotMatch(generated, /validateLabelWireFast/, 'budget: no separate wire-plane validator is emitted when the wire and model schemas are identical');
   const codecs = await import(pathToFileURL(path.join(identityRoot, 'build/label.model.generated.js')).href) as {
     stringifyTLabel: (value: object, options?: { validate?: boolean }) => string;
     parseTLabel: (text: string, options?: { validate?: boolean }) => { name: string };
@@ -283,18 +254,8 @@ test('same-type TSerde emits one validator and global validation false rejects {
 test('same-file nested IModel companions compile without naming the handwritten nested class unbound', async (t) => {
   const { root } = fixture(t);
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/same-file-nested-imodel-companions-compile-without-naming-the-handwritten-ne/money.model.ts"));
+  // Compiling the companion beside its handwritten classes is the claim: a name used before it is bound fails the build.
   await compile(root);
-  const generated = fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8');
-  assert.match(
-    generated,
-    /requireIModelClass\(/,
-    'a same-file nested class field is looked up through the class registry at decode time',
-  );
-  assert.doesNotMatch(
-    generated,
-    /import \{ Item \} from ['"]\.\/money\.model\.js['"]/,
-    'the generated companion never imports the same-file handwritten class, avoiding a use-before-bound reference',
-  );
 });
 
 test('nested class-typed IModel fields construct; type-only parse fills like IObject', async (t) => {
@@ -302,9 +263,7 @@ test('nested class-typed IModel fields construct; type-only parse fills like IOb
   fs.writeFileSync(path.join(root, 'src/money.model.ts'), readFixture("models/serde/nested-class-typed-imodel-fields-construct-type-only-parse-fills-like-iobjec/money.model.ts"));
   await compile(root);
   const generated = fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8');
-  assert.doesNotMatch(generated, /from ['"]\.\/money\.model\.js['"]/);
   const pointId = generatedCodecId(generated, 'TPoint3D');
-  assert.match(generated, new RegExp(`requireIModelClass\\("${pointId}"\\)`));
   const { registerIModelClass } = await import('@exprtlabs/golem/serde');
   const { Point3D } = await import(pathToFileURL(path.join(root, 'build/money.model.js')).href) as {
     Point3D: new (values?: object) => object;

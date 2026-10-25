@@ -12,6 +12,7 @@ import { writeSdk } from '#openapi/generator';
 import { copyFixtureFile, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject, writeModelSources } from './model-project.js';
 import { writeFixture } from './support/consumer.js';
+import { runRewritten } from './support/rewritten-module.js';
 import { workspace } from './support/process.js';
 
 const BASE = ['payment.model.ts', 'payment.model.generated.ts'];
@@ -245,16 +246,9 @@ test('a model class registers once, several classes of one model register under 
   const root = project(t, ['ledger.model.ts', 'ledger.model.generated.ts', 'registered.model.ts', 'registered.model.generated.ts', 'rewritten.model.ts', 'rewritten.model.generated.ts']);
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
-  const ledger = rewritten(root, result, 'ledger.model.ts');
-  assertLines(ledger, [
-    'export class Ledger extends TLedgerBaseModel {}',
-    '__golem_registerIModelClass("TLedger_33333333#Ledger", Ledger);',
-    'export class AdminLedger extends TLedgerBaseModel {}',
-    '__golem_registerIModelClass("TLedger_33333333#AdminLedger", AdminLedger);',
-    'export class RushLedger extends AdminLedger {}',
-  ]);
-  assert.doesNotMatch(ledger, /RushLedger\)|"TLedger_33333333"/, 'a subclass and a default class do not register');
-  assert.match(rewritten(root, result, 'payment.model.ts'), /\n__golem_registerIModelClass\("TPayment_22222222", Payment\);/);
+  // A subclass of a registered class and the default class do not register.
+  assert.deepEqual(runRewritten(rewritten(root, result, 'ledger.model.ts')).registered, [['TLedger_33333333#Ledger', 'Ledger'], ['TLedger_33333333#AdminLedger', 'AdminLedger']]);
+  assert.deepEqual(runRewritten(rewritten(root, result, 'payment.model.ts')).registered, [['TPayment_22222222', 'Payment']]);
   assert.deepEqual(result.files.get('src/ledger.model.ts')?.imports, [{ from: '@exprtlabs/golem/serde', names: ['registerIModelClass'] }]);
   assert.equal(result.files.get('src/registered.model.ts'), undefined, 'the plain statement exists');
   assert.equal(result.files.get('src/rewritten.model.ts'), undefined, 'the aliased statement exists');
@@ -422,10 +416,10 @@ test('a user type that shares a file name and a type name with an SDK type never
 
 test('a regenerated codec key file changes what the next scan stamps', (t) => {
   const root = project(t, ['calls.ts']);
-  assert.match(rewritten(root, scan(root), 'calls.ts'), /requireObjectCodec\("TMoney_11111111"\)\.stringify\(/);
+  assert.deepEqual([...new Set(runRewritten(rewritten(root, scan(root), 'calls.ts')).codecIds)], ['TMoney_11111111']);
   const file = path.join(root, CODEC_KEYS);
   fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('TMoney_11111111', 'TMoney_99999999'));
-  assert.match(rewritten(root, scan(root), 'calls.ts'), /requireObjectCodec\("TMoney_99999999"\)\.stringify\(/);
+  assert.deepEqual([...new Set(runRewritten(rewritten(root, scan(root), 'calls.ts')).codecIds)], ['TMoney_99999999']);
 });
 
 test('a codec key file that is not golem\'s fails the scan with the file and what to run', (t) => {
@@ -724,7 +718,7 @@ test('a class registers under the id its own file keys, never under a same-named
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
   assert.equal(result.files.get('src/a.model.ts'), undefined, 'a class with no key of its own is not registered');
-  assert.match(rewritten(root, result, 'c.model.ts'), /\n__golem_registerIModelClass\("TBar_cccccccc", Bar\);/, 'a keyed class still registers');
+  assert.deepEqual(runRewritten(rewritten(root, result, 'c.model.ts')).registered, [['TBar_cccccccc', 'Bar']], 'a keyed class still registers');
 });
 
 test('createProjectProgram keeps its observer and session arguments, and takes the tsconfig as an optional last argument', (t) => {
@@ -832,5 +826,5 @@ test('a class extending a base from any generated module registers, whatever suf
   }, { 'src/order.entity.ts#Order': 'TOrder_aaaaaaaa', 'src/order.entity.ts#TOrder': 'TOrder_aaaaaaaa' });
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
-  assert.match(rewritten(root, result, 'order.entity.ts'), /\n__golem_registerIModelClass\("TOrder_aaaaaaaa", Order\);/);
+  assert.deepEqual(runRewritten(rewritten(root, result, 'order.entity.ts')).registered, [['TOrder_aaaaaaaa', 'Order']]);
 });
