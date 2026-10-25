@@ -183,8 +183,10 @@ function release(key: string, shared: SharedProject): void {
  * missing TypeScript fails with its install hint when a host first needs a rewrite.
  */
 export async function openRewriteProject(options: GolemHostOptions & { cwd: string }): Promise<RewriteProject> {
-  const requested = path.resolve(options.cwd, options.config ?? process.env.GOLEM_CONFIG ?? 'golem.yaml');
-  if (!existsSync(requested)) throw new GolemHostError(options.config === undefined && process.env.GOLEM_CONFIG === undefined ? NO_GOLEM_YAML : `${NO_GOLEM_YAML} (${requested} does not exist)`);
+  // An empty GOLEM_CONFIG is no setting: it would resolve to the working directory itself.
+  const fromEnvironment = process.env.GOLEM_CONFIG || undefined;
+  const requested = path.resolve(options.cwd, options.config ?? fromEnvironment ?? 'golem.yaml');
+  if (!existsSync(requested)) throw new GolemHostError(options.config === undefined && fromEnvironment === undefined ? NO_GOLEM_YAML : `${NO_GOLEM_YAML} (${requested} does not exist)`);
   const config = resolveConfig(requested);
   const key = config.configFile;
   let shared = projects.get(key);
