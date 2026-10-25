@@ -65,7 +65,7 @@ A discriminated union of two models:
 
 Generation fails for:
 
-- a root `IModel` union such as `IModel<TEmail | TPhone>`: put the union in a field ([`RUNM1052`](/reference/diagnostics#runm1052))
+- a root `IModel` or `IObject` whose fields are not an object type, such as `IModel<TEmail | TPhone>` or `IModel<string[]>`: declare the fields in an object type, and put the union, array or scalar in a field ([`RUNM1052`](/reference/diagnostics#runm1052))
 - object unions without a unique required literal discriminator: give each variant a required literal field such as `kind: 'cat'` ([`RUNM1080`](/reference/diagnostics#runm1080))
 - several undiscriminated SDK model classes, or an SDK model class plus an array, `any`, `unknown`, intersection or untagged object ([`RUNM1030`](/reference/diagnostics#runm1030))
 - any other union that would need to probe alternatives ([`RUNM1082`](/reference/diagnostics#runm1082))

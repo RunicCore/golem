@@ -51,7 +51,7 @@ import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, ty
 import { compareText, displayPath, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
-import { descriptorBuilder, propertyType } from '@exprtlabs/golem/internal/type-analysis';
+import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalFilename,
   commonDirectory,
@@ -634,6 +634,8 @@ export interface SourceModelGraph {
    * emits their code; this companion references them by codec id.
    */
   readonly siblings: readonly ModelSpecification[];
+  /** The job's descriptor builder, which describes the fields of a model that is an SDK model's fields. */
+  readonly describe: ReturnType<typeof descriptorBuilder>;
 }
 
 /** A job's executable-validation memo, keyed by the lookup objects its walks receive. */
@@ -661,16 +663,33 @@ interface JobAnalysis {
   lookup?: Readonly<Record<string, ModelConversionDescriptor>>;
 }
 
+/** The conversion descriptor of a model's fields type, described once per job. */
+function describeRoot(job: JobAnalysis, specification: ModelSpecification): ModelConversionDescriptor {
+  let descriptor = job.described.get(specification);
+  if (!descriptor) {
+    descriptor = job.describe(specification.fieldsType, specification, undefined, specification.fieldsNode);
+    job.described.set(specification, descriptor);
+  }
+  return descriptor;
+}
+
+/**
+ * A model emits the fields of an object, or of an SDK model. A root that a TSerde converts as a whole, or any other root
+ * that is no object, has no fields to emit: it stops with RUNM1052 once its other uses have been described.
+ */
+function assertRootHasFields(specification: ModelSpecification, definition: ModelConversionDescriptor): void {
+  const found = 'serde' in definition ? 'a type that a TSerde converts as a whole'
+    : definition.kind === 'object' || definition.kind === 'generated-model' ? undefined
+      : describeRootKind(definition.kind);
+  if (found) throw nonObjectRootDiagnostic(specification.sourceFile, specification.declaration, specification.emitClass ? 'IModel' : 'IObject', found);
+}
+
 /** Describe every model of the job once and index the results for lookups. */
 export function describeJob(job: JobAnalysis, specifications: readonly ModelSpecification[]): void {
   const byName = new Map<string, ModelConversionDescriptor | null>();
   for (const specification of specifications) {
     if (!job.sources.has(canonicalFilename(specification.sourceFile.fileName))) continue;
-    let descriptor = job.described.get(specification);
-    if (!descriptor) {
-      descriptor = job.describe(specification.fieldsType, specification, undefined, specification.fieldsNode);
-      job.described.set(specification, descriptor);
-    }
+    const descriptor = describeRoot(job, specification);
     byName.set(specification.name, byName.has(specification.name) ? null : descriptor);
   }
   const lookup: Record<string, ModelConversionDescriptor> = Object.create(null) as Record<string, ModelConversionDescriptor>;
@@ -757,14 +776,6 @@ export function analyzeSourceGraph(
     specifications.map((specification) => specification.sourceFile.fileName),
   ));
   const { describe } = job;
-  const describeOnce = (specification: ModelSpecification): ModelConversionDescriptor => {
-    let descriptor = job.described.get(specification);
-    if (!descriptor) {
-      descriptor = describe(specification.fieldsType, specification, undefined, specification.fieldsNode);
-      job.described.set(specification, descriptor);
-    }
-    return descriptor;
-  };
   const canonicalSource = canonicalFilename(source);
   const local = specifications.filter((item) => canonicalFilename(item.sourceFile.fileName) === canonicalSource);
   if (local.length === 0) return undefined;
@@ -804,7 +815,7 @@ export function analyzeSourceGraph(
     if (!specification || emitted.has(specification)) continue;
     const duplicate = [...emitted].find((item) => item.name === specification.name);
     if (duplicate) throw new Error(`Generated model symbol collision for "${specification.name}" in ${source}.`);
-    const descriptor = describeOnce(specification);
+    const descriptor = describeRoot(job, specification);
     definitions[specification.name] = descriptor;
     emitted.add(specification);
     if (isSibling(specification)) {
@@ -864,6 +875,7 @@ export function analyzeSourceGraph(
     schemas,
     emitted: [...emitted],
     siblings: [...siblings],
+    describe,
   };
 }
 
@@ -1032,10 +1044,8 @@ interface EmitContext {
   readonly source: string;
   readonly output: string;
   readonly checker: ts.TypeChecker;
-  readonly specifications: readonly ModelSpecification[];
   readonly manifestIndex: ManifestIndex;
   readonly profile: GolemProfile;
-  readonly identityRoot: string | undefined;
   readonly siblingCodecs: SiblingCodecOptions;
   readonly appOutputs: AppOutputs;
   readonly graph: SourceModelGraph;
@@ -1184,7 +1194,6 @@ function buildEmitContext(
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
   profile: GolemProfile,
-  identityRoot: string | undefined,
   graph: SourceModelGraph,
   preparedSchemaGraph: SchemaGraph | undefined,
   siblingCodecs: SiblingCodecOptions,
@@ -1258,7 +1267,7 @@ function buildEmitContext(
     cyclicSiblings, serdeBindings, serdeNames, classEntries, classNames,
   );
   return {
-    source, output, checker, specifications, manifestIndex, profile, identityRoot, siblingCodecs, appOutputs, graph, schemaGraph,
+    source, output, checker, manifestIndex, profile, siblingCodecs, appOutputs, graph, schemaGraph,
     local, localNames, fileLocalNames, classModelNames, objectOnlyNames, siblingObjects, siblingObjectNames, localImports,
     concreteNames, linkedByName, referenceNames, projectionNames, identityProjections, imports,
     serdeBindings, serdeNames,
@@ -1562,12 +1571,13 @@ function wrapRootConversion(
 }
 
 function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): ModelFieldEmission[] {
-  const { checker, specifications, manifestIndex, profile, identityRoot } = context;
+  const { checker } = context;
   const { definitions } = context.graph;
   const { fromAny: resolveFromAny, toJsonAny: resolveToJsonAny } = resolvers;
   const serdeExpressionOf = (id: string, direction: 'serialize' | 'deserialize', value: Code): Code => serdeExpression(context, id, direction, value);
   return context.local.map((specification) => {
     const definition = definitions[specification.name];
+    assertRootHasFields(specification, definition);
     const baseName = identifier(`${specification.name}BaseModel`);
     // Phantom tag members are part of the type-level intersection and must
     // remain in the root descriptor, but they are not model fields.  Emitting
@@ -1580,7 +1590,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
     );
     const descriptors = definition.kind === 'object'
       ? new Map(Object.entries(definition.properties))
-      : fieldDescriptors(checker, specification, descriptorBuilder(checker, specifications, manifestIndex, profile.validation, profile.allowAny ?? false, identityRoot), fields);
+      : fieldDescriptors(checker, specification, context.graph.describe, fields);
     const helpers: Code[] = [];
     const encode = fields.map((field) => {
       const name = literal(field.getName());
@@ -1958,7 +1968,7 @@ export function emitSource(
 ): string | undefined {
   const graph = preparedGraph ?? analyzeSourceGraph(source, output, checker, specifications, manifestIndex, profile, identityRoot);
   if (!graph) return undefined;
-  const context = buildEmitContext(source, output, checker, specifications, manifestIndex, profile, identityRoot, graph, preparedSchemaGraph, siblingCodecs, appOutputs);
+  const context = buildEmitContext(source, output, checker, specifications, manifestIndex, profile, graph, preparedSchemaGraph, siblingCodecs, appOutputs);
   const projections = buildProjections(context);
   const emissions = buildFieldEmissions(context, modelResolvers(context, projections.helpers));
   const codecs = emitCodecSection(context);
