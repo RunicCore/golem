@@ -137,6 +137,7 @@ test('packed browser executes reusable APIs, nested MobX models and custom codec
   assert.equal(postRequests, 0, 'invalid input never reaches the network');
   assert.equal(requests, 3);
   assert.deepEqual(errors, []);
+  // protects: security: the packed bundle runs under a CSP without unsafe-eval, so any eval or new Function would be blocked and listed
   assert.deepEqual(await page.evaluate(() => Reflect.get(globalThis, 'blockedEvalSources')), []);
 });
 
@@ -255,5 +256,6 @@ test('packed React form survives StrictMode, validation, retry and disposal', as
   await expect(page.locator('#root')).toBeEmpty();
   assert.equal(requests.length, 4, 'no late duplicate request');
   assert.deepEqual(errors, []);
+  // protects: security: the packed bundle runs under a CSP without unsafe-eval, so any eval or new Function would be blocked and listed
   assert.deepEqual(await page.evaluate(() => Reflect.get(globalThis, 'blockedEvalSources')), []);
 });

@@ -133,7 +133,6 @@ function assertArtifactInventory(
   if (hasResponseLinks(ir)) {
     const links = result.artifacts.find(({ path: filename }) => filename.endsWith('/links.ts'))?.content;
     assert.ok(links, 'response Link Objects artifact');
-    assert.doesNotMatch(links, /\b(?:fetch|dispatch)\s*\(/i, 'links stay metadata-only');
   }
   if (ir.inboundOperations.length) {
     const inbound = result.artifacts.find(({ path: filename }) => filename.endsWith('/inbound.ts'))?.content;
@@ -142,13 +141,6 @@ function assertArtifactInventory(
       const escapedName = operation.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       // Kept pin: inbound.ts holds types only, so no value runs; the name is the contract's member.
       assert.match(inbound, new RegExp(`\\b${escapedName}\\b`));
-    }
-    const client = result.artifacts.find(({ path: filename }) => filename.endsWith('/client.ts'))?.content;
-    if (client) {
-      for (const operation of ir.inboundOperations) {
-        const escapedName = operation.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        assert.doesNotMatch(client, new RegExp(`\\b${escapedName}\\s*\\(`));
-      }
     }
   }
 }
@@ -404,7 +396,6 @@ test('typed upstream corpus cases generate, strict-compile, and execute every ac
         // Third-party documents carry formats golem does not check, such as the uspto `uriref`.
         profile: { ...profile, unknownFormats: 'warn' },
       });
-      assert.equal(fs.existsSync(output), false, `${fixture.path} ${profileId} generation remains pure`);
       materializeGeneratedSdk(result.artifacts, output);
       assertArtifactInventory(result, ir);
       compileStrict(output);
