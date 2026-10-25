@@ -166,29 +166,50 @@ function mapConstraint(
   return mapConstraintSchemas(constraint, (descriptor) => projectDescriptor(descriptor, validationEnabled, wire, retainPredicates, definitions));
 }
 
+/**
+ * What a walk reaches below a descriptor: `structure` is the items, variants and properties; `wire` adds the wire
+ * descriptor of a serde; `all` adds the schemas of the constraints.
+ */
+type DescriptorReach = 'structure' | 'wire' | 'all';
+
+interface DescriptorVisitor {
+  /** Runs on a descriptor before the descriptors below it. */
+  readonly enter?: (descriptor: ModelConversionDescriptor) => void;
+  /** Runs on a descriptor after the descriptors below it. */
+  readonly leave?: (descriptor: ModelConversionDescriptor) => void;
+}
+
+/** The one walk over a descriptor tree for every reader of it: the wire descriptor, then the constraint schemas, then the structure. */
+function walkDescriptor(descriptor: ModelConversionDescriptor, visitor: DescriptorVisitor, reach: DescriptorReach = 'all'): void {
+  const rich = richDescriptor(descriptor);
+  const walk = (child: ModelConversionDescriptor): void => walkDescriptor(child, visitor, reach);
+  visitor.enter?.(descriptor);
+  if (reach !== 'structure' && rich.serde?.wireDescriptor) walk(rich.serde.wireDescriptor);
+  if (reach === 'all') {
+    for (const constraint of rich.constraints ?? []) constraintSchemas(constraint).forEach(walk);
+  }
+  switch (descriptor.kind) {
+    case 'array': walk(descriptor.item); break;
+    case 'tuple':
+      descriptor.items.forEach(walk);
+      if (descriptor.rest) walk(descriptor.rest.item);
+      break;
+    case 'union':
+    case 'intersection': descriptor.variants.forEach(walk); break;
+    case 'object':
+      Object.values(descriptor.properties).forEach(walk);
+      if (typeof descriptor.additionalProperties === 'object') walk(descriptor.additionalProperties);
+      break;
+    default: break;
+  }
+  visitor.leave?.(descriptor);
+}
+
 function descriptorExternalIds(
   descriptor: ModelConversionDescriptor,
   found = new Set<string>(),
 ): Set<string> {
-  const wire = richDescriptor(descriptor).serde?.wireDescriptor;
-  if (wire) descriptorExternalIds(wire, found);
-  for (const constraint of richDescriptor(descriptor).constraints ?? []) {
-    constraintSchemas(constraint).forEach((nested) => descriptorExternalIds(nested, found));
-  }
-  if (descriptor.kind === 'generated-model') found.add(descriptor.id);
-  else if (descriptor.kind === 'array') descriptorExternalIds(descriptor.item, found);
-  else if (descriptor.kind === 'tuple') {
-    for (const item of descriptor.items) descriptorExternalIds(item, found);
-    const rest = descriptor.rest;
-    if (rest) descriptorExternalIds(rest.item, found);
-  } else if (descriptor.kind === 'union' || descriptor.kind === 'intersection') {
-    for (const item of descriptor.variants) descriptorExternalIds(item, found);
-  } else if (descriptor.kind === 'object') {
-    for (const item of Object.values(descriptor.properties)) descriptorExternalIds(item, found);
-    if (typeof descriptor.additionalProperties === 'object') {
-      descriptorExternalIds(descriptor.additionalProperties, found);
-    }
-  }
+  walkDescriptor(descriptor, { leave: (item) => { if (item.kind === 'generated-model') found.add(item.id); } });
   return found;
 }
 
@@ -252,29 +273,13 @@ function visitDescriptor(
   descriptor: ModelConversionDescriptor,
   registry: BindingRegistry,
 ): void {
-  const rich = richDescriptor(descriptor);
-  for (const binding of rich.validations ?? []) registerValidation(registry.validations, binding);
-  if (rich.serde) {
-    registerSerde(registry.serde, rich.serde);
-    if (rich.serde.wireDescriptor) visitDescriptor(rich.serde.wireDescriptor, registry);
-  }
-  for (const constraint of rich.constraints ?? []) {
-    constraintSchemas(constraint).forEach((nested) => visitDescriptor(nested, registry));
-  }
-  switch (descriptor.kind) {
-    case 'array': visitDescriptor(descriptor.item, registry); break;
-    case 'tuple':
-      descriptor.items.forEach((item) => visitDescriptor(item, registry));
-      if (descriptor.rest) visitDescriptor(descriptor.rest.item, registry);
-      break;
-    case 'union':
-    case 'intersection': descriptor.variants.forEach((item) => visitDescriptor(item, registry)); break;
-    case 'object':
-      Object.values(descriptor.properties).forEach((item) => visitDescriptor(item, registry));
-      if (typeof descriptor.additionalProperties === 'object') visitDescriptor(descriptor.additionalProperties, registry);
-      break;
-    default: break;
-  }
+  walkDescriptor(descriptor, {
+    enter: (item) => {
+      const rich = richDescriptor(item);
+      for (const binding of rich.validations ?? []) registerValidation(registry.validations, binding);
+      if (rich.serde) registerSerde(registry.serde, rich.serde);
+    },
+  });
 }
 
 export interface TagSchema {
@@ -359,7 +364,7 @@ function tagSchemas(
     schemas.set(key, schema);
   };
   const schemaOptions = { definitions };
-  const visit = (descriptor: ModelConversionDescriptor): void => {
+  const registerTags = (descriptor: ModelConversionDescriptor): void => {
     const rich = richDescriptor(descriptor);
     const constraints = [...(rich.constraints ?? [])].sort((left, right) =>
       compareText(canonicalConstraintKey(left), canonicalConstraintKey(right)));
@@ -385,22 +390,8 @@ function tagSchemas(
       const key = validationTagKey(descriptor, { constraints: [], validations }, { definitions, representation });
       register(key, { [VALIDATION_KEYWORD]: validations });
     }
-    switch (descriptor.kind) {
-      case 'array': visit(descriptor.item); break;
-      case 'tuple':
-        descriptor.items.forEach(visit);
-        if (descriptor.rest) visit(descriptor.rest.item);
-        break;
-      case 'union':
-      case 'intersection': descriptor.variants.forEach(visit); break;
-      case 'object':
-        Object.values(descriptor.properties).forEach(visit);
-        if (typeof descriptor.additionalProperties === 'object') visit(descriptor.additionalProperties);
-        break;
-      default: break;
-    }
   };
-  descriptors.forEach(visit);
+  descriptors.forEach((descriptor) => walkDescriptor(descriptor, { enter: registerTags }, 'structure'));
   return [...schemas.entries()]
     .sort(([left], [right]) => compareText(left, right))
     .map(([key, schema], index) => ({ key, schema, id: `golem:model-tag:${index}` }));
@@ -645,23 +636,9 @@ function descriptorReferences(
   /** Collect only the references that name a class the app wrote (a field typed `Customer`, not `TCustomer`). */
   throughClass = false,
 ): Set<string> {
-  const wire = richDescriptor(descriptor).serde?.wireDescriptor;
-  if (wire) descriptorReferences(wire, found, throughClass);
-  for (const constraint of richDescriptor(descriptor).constraints ?? []) {
-    constraintSchemas(constraint).forEach((nested) => descriptorReferences(nested, found, throughClass));
-  }
-  if (descriptor.kind === 'reference') {
-    if (!throughClass || descriptor.construct) found.add(descriptor.name);
-  } else if (descriptor.kind === 'array') descriptorReferences(descriptor.item, found, throughClass);
-  else if (descriptor.kind === 'tuple') {
-    descriptor.items.forEach((item) => descriptorReferences(item, found, throughClass));
-    if (descriptor.rest) descriptorReferences(descriptor.rest.item, found, throughClass);
-  } else if (descriptor.kind === 'union' || descriptor.kind === 'intersection') {
-    descriptor.variants.forEach((item) => descriptorReferences(item, found, throughClass));
-  } else if (descriptor.kind === 'object') {
-    Object.values(descriptor.properties).forEach((item) => descriptorReferences(item, found, throughClass));
-    if (typeof descriptor.additionalProperties === 'object') descriptorReferences(descriptor.additionalProperties, found, throughClass);
-  }
+  walkDescriptor(descriptor, {
+    leave: (item) => { if (item.kind === 'reference' && (!throughClass || item.construct)) found.add(item.name); },
+  });
   return found;
 }
 
@@ -672,41 +649,26 @@ function collectReferences(
   emitted: ReadonlySet<ModelSpecification>,
   pending: ModelSpecification[],
 ): void {
-  const wire = richDescriptor(descriptor).serde?.wireDescriptor;
-  if (wire) collectReferences(wire, owner, byName, emitted, pending);
-  for (const constraint of richDescriptor(descriptor).constraints ?? []) {
-    constraintSchemas(constraint).forEach((nested) => collectReferences(nested, owner, byName, emitted, pending));
-  }
-  if (descriptor.kind === 'reference') {
-    const candidates = byName.get(descriptor.name) ?? [];
-    const sameSource = candidates.filter((candidate) =>
-      canonicalFilename(candidate.sourceFile.fileName) === canonicalFilename(owner.sourceFile.fileName),
-    );
-    const referenced = sameSource.length === 1
-      ? sameSource[0]
-      : candidates.length === 1
-        ? candidates[0]
-        : undefined;
-    if (candidates.length > 1 && sameSource.length !== 1) {
-      throw new Error(
-        `Ambiguous generated type reference "${descriptor.name}" in ${displayPath(owner.sourceFile.fileName)}.`,
+  walkDescriptor(descriptor, {
+    leave: (item) => {
+      if (item.kind !== 'reference') return;
+      const candidates = byName.get(item.name) ?? [];
+      const sameSource = candidates.filter((candidate) =>
+        canonicalFilename(candidate.sourceFile.fileName) === canonicalFilename(owner.sourceFile.fileName),
       );
-    }
-    if (referenced && !emitted.has(referenced)) pending.push(referenced);
-    return;
-  }
-  if (descriptor.kind === 'array') collectReferences(descriptor.item, owner, byName, emitted, pending);
-  else if (descriptor.kind === 'tuple') {
-    descriptor.items.forEach((item) => collectReferences(item, owner, byName, emitted, pending));
-    if (descriptor.rest) collectReferences(descriptor.rest.item, owner, byName, emitted, pending);
-  } else if (descriptor.kind === 'union' || descriptor.kind === 'intersection') {
-    descriptor.variants.forEach((item) => collectReferences(item, owner, byName, emitted, pending));
-  } else if (descriptor.kind === 'object') {
-    Object.values(descriptor.properties).forEach((item) => collectReferences(item, owner, byName, emitted, pending));
-    if (typeof descriptor.additionalProperties === 'object') {
-      collectReferences(descriptor.additionalProperties, owner, byName, emitted, pending);
-    }
-  }
+      const referenced = sameSource.length === 1
+        ? sameSource[0]
+        : candidates.length === 1
+          ? candidates[0]
+          : undefined;
+      if (candidates.length > 1 && sameSource.length !== 1) {
+        throw new Error(
+          `Ambiguous generated type reference "${item.name}" in ${displayPath(owner.sourceFile.fileName)}.`,
+        );
+      }
+      if (referenced && !emitted.has(referenced)) pending.push(referenced);
+    },
+  });
 }
 
 export interface SourceModelGraph {
@@ -1293,22 +1255,14 @@ function buildEmitContext(
   // generated name, so two classes called `Money` from different modules do not collide.
   const classImports = new Map<string, { readonly importPath: string; readonly exportName: string }>();
   for (const descriptor of Object.values(definitions)) {
-    const visit = (item: ModelConversionDescriptor): void => {
-      if (item.kind === 'class-value' && item.typeImport) {
-        const importPath = item.typeImport.specifier ?? sourceImportPath(item.typeImport.module, output);
-        classImports.set(classImportKey(item.typeImport), { importPath, exportName: item.typeImport.exportName });
-      }
-      const rich = richDescriptor(item);
-      if (rich.serde?.wireDescriptor) visit(rich.serde.wireDescriptor);
-      if (item.kind === 'array') visit(item.item);
-      if (item.kind === 'tuple') { item.items.forEach(visit); if (item.rest) visit(item.rest.item); }
-      if (item.kind === 'union' || item.kind === 'intersection') item.variants.forEach(visit);
-      if (item.kind === 'object') {
-        Object.values(item.properties).forEach(visit);
-        if (typeof item.additionalProperties === 'object') visit(item.additionalProperties);
-      }
-    };
-    visit(descriptor);
+    walkDescriptor(descriptor, {
+      enter: (item) => {
+        if (item.kind === 'class-value' && item.typeImport) {
+          const importPath = item.typeImport.specifier ?? sourceImportPath(item.typeImport.module, output);
+          classImports.set(classImportKey(item.typeImport), { importPath, exportName: item.typeImport.exportName });
+        }
+      },
+    }, 'wire');
   }
   const classEntries = [...classImports].sort(([, left], [, right]) => compareText(`${left.importPath}\0${left.exportName}`, `${right.importPath}\0${right.exportName}`));
   const classNames = new Map(classEntries.map(([key], index) => [key, `__golemClass${index}`] as const));
