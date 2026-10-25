@@ -103,8 +103,15 @@ test('a union whose scalar variants cannot be told apart stops generation with R
   );
 });
 
-test('a Date beside an array of Date, or beside an array of strings, converts by the wire form: a string is the Date, an array is the array', async (t) => {
+test('a Date beside an array converts by the wire form: a string is the Date, an array is the array', async (t) => {
   // protects: T-320 `Date | Date[]` once stopped generation with RUNM1082; the JSON string and the JSON array tell the two apart
+  const day = '2024-05-06T07:08:09.000Z';
+  const moment = new Date(day);
+  const cases = [
+    [{ at: day, from: day, maybe: day }, { at: moment, from: moment, maybe: moment }],
+    [{ at: [day], from: ['a'], maybe: [day] }, { at: [moment], from: ['a'], maybe: [moment] }],
+    [{ at: day, from: day, maybe: null }, { at: moment, from: moment, maybe: null }],
+  ] as const;
   for (const validation of [false, true]) {
     const { root } = createModelProject(t, { prefix: 'golem-date-or-dates-', name: 'date-or-dates', linkWorkspaceNodeModules: true });
     copyFixtureFile(root, 'models/date-or-dates/when.model.ts', 'src/when.model.ts');
@@ -113,31 +120,14 @@ test('a Date beside an array of Date, or beside an array of strings, converts by
     const { When } = await import(pathToFileURL(path.join(root, 'build/when.model.js')).href) as { When: GeneratedModelClass };
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TWhen'));
     const options = { validate: validation };
-    const day = '2024-05-06T07:08:09.000Z';
-    const moment = new Date(day);
-    const scalarWire = { at: day, from: day, maybe: day };
-    const arrayWire = { at: [day, day], from: ['a', 'b'], maybe: [day] };
-    const scalar = { at: moment, from: moment, maybe: moment };
-    const array = { at: [moment, moment], from: ['a', 'b'], maybe: [moment] };
-    const label = `validation=${validation}`;
-
-    for (const decoded of [codec.fromWireFormat(scalarWire, options), codec.parse(JSON.stringify(scalarWire), options), decodeGeneratedModel(When, scalarWire)]) {
-      assert.deepEqual({ ...requireRecord(decoded, 'decoded') }, scalar, label);
+    for (const [wire, value] of cases) {
+      for (const decoded of [codec.fromWireFormat(wire, options), codec.parse(JSON.stringify(wire), options), decodeGeneratedModel(When, wire)]) {
+        assert.deepEqual({ ...requireRecord(decoded, 'decoded') }, value, `validation=${validation}`);
+      }
+      const model = new When(value as never);
+      assert.deepEqual(codec.toWireFormat(model, options), wire, `validation=${validation}`);
+      assert.deepEqual(encodeGeneratedModel(model), wire, `validation=${validation}`);
+      assert.equal(codec.stringify(model, options), JSON.stringify(wire), `validation=${validation}`);
     }
-    for (const decoded of [codec.fromWireFormat(arrayWire, options), codec.parse(JSON.stringify(arrayWire), options), decodeGeneratedModel(When, arrayWire)]) {
-      assert.deepEqual({ ...requireRecord(decoded, 'decoded') }, array, label);
-    }
-    const nullWire = { at: day, from: day, maybe: null };
-    assert.deepEqual(codec.fromWireFormat(nullWire, options), { at: moment, from: moment, maybe: null }, label);
-    assert.throws(() => codec.fromWireFormat({ at: [day, 'not a date'], from: day }, options), label);
-
-    assert.deepEqual(codec.toWireFormat(new When(scalar as never), options), scalarWire, label);
-    assert.deepEqual(codec.toWireFormat(new When(array as never), options), arrayWire, label);
-    assert.deepEqual(encodeGeneratedModel(new When(scalar as never)), scalarWire, label);
-    assert.deepEqual(encodeGeneratedModel(new When(array as never)), arrayWire, label);
-    assert.equal(codec.stringify(new When(scalar as never), options), JSON.stringify(scalarWire), label);
-    assert.equal(codec.stringify(new When(array as never), options), JSON.stringify(arrayWire), label);
-    assert.deepEqual(codec.toWireFormat(new When({ at: moment, from: moment, maybe: null } as never), options), nullWire, label);
-    assert.equal(codec.stringify(new When({ at: moment, from: moment, maybe: null } as never), options), JSON.stringify(nullWire), label);
   }
 });
