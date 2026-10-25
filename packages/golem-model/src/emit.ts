@@ -110,55 +110,15 @@ function isModelDescriptor(value: ConstraintSchemaValue): value is ModelConversi
     && typeof Reflect.get(value, 'kind') === 'string';
 }
 
-function forEachConstraintSchema(
+/**
+ * The constraint with each schema that is a descriptor replaced by `map`: the one place that knows which constraint kinds
+ * hold schemas. A walk collects the schemas through it, and a projection maps them.
+ */
+function mapConstraintSchemas(
   constraint: ModelConstraint,
-  visit: (descriptor: ModelConversionDescriptor) => void,
-): void {
-  const one = (value: ConstraintSchemaValue): void => {
-    if (isModelDescriptor(value)) visit(value);
-  };
-  switch (constraint.kind) {
-    case 'contains':
-    case 'propertyNames':
-    case 'additionalProperties':
-    case 'unevaluatedProperties':
-    case 'items':
-    case 'unevaluatedItems':
-    case 'not':
-      one(constraint.schema);
-      break;
-    case 'patternProperties':
-      one(constraint.schema);
-      break;
-    case 'dependentSchemas':
-      Object.values(constraint.value).forEach(one);
-      break;
-    case 'oneOf':
-    case 'allOf':
-      constraint.schemas.forEach(one);
-      break;
-    case 'ifThenElse':
-      one(constraint.if);
-      if (constraint.then !== undefined) one(constraint.then);
-      if (constraint.else !== undefined) one(constraint.else);
-      break;
-    default:
-      break;
-  }
-}
-
-function mapConstraint(
-  constraint: ModelConstraint,
-  validationEnabled: boolean,
-  wire: boolean,
-  retainPredicates: boolean,
-  definitions: Readonly<Record<string, ModelConversionDescriptor>>,
+  map: (descriptor: ModelConversionDescriptor) => ConstraintSchemaValue,
 ): ModelConstraint {
-  if (!validationEnabled) return constraint;
-  const project = (value: ConstraintSchemaValue): ConstraintSchemaValue =>
-    isModelDescriptor(value)
-      ? projectDescriptor(value, validationEnabled, wire, retainPredicates, definitions)
-      : value;
+  const project = (value: ConstraintSchemaValue): ConstraintSchemaValue => isModelDescriptor(value) ? map(value) : value;
   switch (constraint.kind) {
     case 'contains':
     case 'propertyNames':
@@ -167,7 +127,6 @@ function mapConstraint(
     case 'items':
     case 'unevaluatedItems':
     case 'not':
-      return { ...constraint, schema: project(constraint.schema) };
     case 'patternProperties':
       return { ...constraint, schema: project(constraint.schema) };
     case 'dependentSchemas':
@@ -187,6 +146,26 @@ function mapConstraint(
   }
 }
 
+function constraintSchemas(constraint: ModelConstraint): ModelConversionDescriptor[] {
+  const found: ModelConversionDescriptor[] = [];
+  mapConstraintSchemas(constraint, (descriptor) => {
+    found.push(descriptor);
+    return descriptor;
+  });
+  return found;
+}
+
+function mapConstraint(
+  constraint: ModelConstraint,
+  validationEnabled: boolean,
+  wire: boolean,
+  retainPredicates: boolean,
+  definitions: Readonly<Record<string, ModelConversionDescriptor>>,
+): ModelConstraint {
+  if (!validationEnabled) return constraint;
+  return mapConstraintSchemas(constraint, (descriptor) => projectDescriptor(descriptor, validationEnabled, wire, retainPredicates, definitions));
+}
+
 function descriptorExternalIds(
   descriptor: ModelConversionDescriptor,
   found = new Set<string>(),
@@ -194,7 +173,7 @@ function descriptorExternalIds(
   const wire = richDescriptor(descriptor).serde?.wireDescriptor;
   if (wire) descriptorExternalIds(wire, found);
   for (const constraint of richDescriptor(descriptor).constraints ?? []) {
-    forEachConstraintSchema(constraint, (nested) => descriptorExternalIds(nested, found));
+    constraintSchemas(constraint).forEach((nested) => descriptorExternalIds(nested, found));
   }
   if (descriptor.kind === 'generated-model') found.add(descriptor.id);
   else if (descriptor.kind === 'array') descriptorExternalIds(descriptor.item, found);
@@ -280,7 +259,7 @@ function visitDescriptor(
     if (rich.serde.wireDescriptor) visitDescriptor(rich.serde.wireDescriptor, registry);
   }
   for (const constraint of rich.constraints ?? []) {
-    forEachConstraintSchema(constraint, (nested) => visitDescriptor(nested, registry));
+    constraintSchemas(constraint).forEach((nested) => visitDescriptor(nested, registry));
   }
   switch (descriptor.kind) {
     case 'array': visitDescriptor(descriptor.item, registry); break;
@@ -669,7 +648,7 @@ function descriptorReferences(
   const wire = richDescriptor(descriptor).serde?.wireDescriptor;
   if (wire) descriptorReferences(wire, found, throughClass);
   for (const constraint of richDescriptor(descriptor).constraints ?? []) {
-    forEachConstraintSchema(constraint, (nested) => descriptorReferences(nested, found, throughClass));
+    constraintSchemas(constraint).forEach((nested) => descriptorReferences(nested, found, throughClass));
   }
   if (descriptor.kind === 'reference') {
     if (!throughClass || descriptor.construct) found.add(descriptor.name);
@@ -696,7 +675,7 @@ function collectReferences(
   const wire = richDescriptor(descriptor).serde?.wireDescriptor;
   if (wire) collectReferences(wire, owner, byName, emitted, pending);
   for (const constraint of richDescriptor(descriptor).constraints ?? []) {
-    forEachConstraintSchema(constraint, (nested) => collectReferences(nested, owner, byName, emitted, pending));
+    constraintSchemas(constraint).forEach((nested) => collectReferences(nested, owner, byName, emitted, pending));
   }
   if (descriptor.kind === 'reference') {
     const candidates = byName.get(descriptor.name) ?? [];
