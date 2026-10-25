@@ -36,6 +36,12 @@ interface BuildOptions {
   readonly tscArguments?: readonly string[];
   /** Called after the generate step of each build with the ids of the jobs that executed; a job its record showed to be current is not among them. */
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
+  /**
+   * Called once when each build has finished, after a watching build has recorded what it read: `exitCode` is the build's own, 1 for a build that threw.
+   * The build prints nothing about its end; the caller says it. An exception from this function is not caught here: the first build, or a build without
+   * `watch`, rejects with it, and a later build of a watch is reported through the watch's own error path while the watch goes on.
+   */
+  readonly onBuilt?: (run: { readonly label: string; readonly exitCode: number }) => void;
 }
 
 export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
@@ -696,7 +702,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   const outputs = new Set<string>();
   const outputsPresent = (): boolean => [...outputs].every((directory) => fs.existsSync(directory));
   // Whether the directories the build writes existed when it ended: one that vanishes afterwards, such as a deleted outDir, is rebuilt once.
-  // Taken before "Built" is printed, so a deletion that follows that line is seen.
+  // Taken before the build is announced, so a deletion that follows the announcement is seen.
   let wrote = true;
   const state: BuildRun = {
     project: options.project,
@@ -714,11 +720,13 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     wrote = exitCode === 0 && outputsPresent();
     // The watch baseline is recorded before the build is announced: whoever reacts to the announcement may edit a source at once.
     beforeAnnouncing();
-    if (exitCode === 0) process.stdout.write(`Built ${label}.\n`);
-    else if (options.watch) process.stdout.write('Build failed.\n');
     return exitCode;
   };
-  if (!options.watch) return { exitCode: await run() };
+  if (!options.watch) {
+    const exitCode = await run();
+    options.onBuilt?.({ label, exitCode });
+    return { exitCode };
+  }
 
   let exitCode = 0;
   const scanOf = (): InputScan => new InputScan(inputs, { root });
@@ -794,9 +802,9 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       exitCode = 1;
       wrote = false;
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-      process.stdout.write('Build failed.\n');
       record();
     }
+    options.onBuilt?.({ label, exitCode });
   };
   await new Promise<void>((resolve) => {
     finish = () => { watcher.close(); resolve(); };

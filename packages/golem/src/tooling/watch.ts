@@ -67,8 +67,10 @@ export function summarizeRun(state: PipelineState, ms: number): string {
  * closes it when it stops. Without one, the watch opens its own. With a `PipelineState`, the first comparison is with `firstBaseline`,
  * taken before the run that made the state (`baselineBeforeRun`), else with the disk as it is now. A failure to watch goes to
  * `reportError` once; the watch goes on unless not one folder can be watched: then it stops, and `onUnwatchable` is called.
+ * `onRun` gets the line of each good run (`summarizeRun`, with `Recovered: ` before it after a failed run) once the watch has recorded what the run
+ * read. The watch prints nothing about its runs; the caller says it. An exception from `onRun` goes to `reportError`, and the watch goes on.
  */
-export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, session: GeneratorSessionResources = new GeneratorSessionResources(), firstBaseline?: RunBaseline, onUnwatchable: () => void = () => {}): () => void {
+export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, session: GeneratorSessionResources = new GeneratorSessionResources(), firstBaseline?: RunBaseline, onUnwatchable: () => void = () => {}, onRun: (line: string) => void = () => {}): () => void {
   let state = typeof initial === 'string' ? undefined : initial;
   const filename = path.resolve(typeof initial === 'string' ? initial : initial.config.configFile);
   let config = state?.config;
@@ -149,6 +151,8 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       const modelOnly = !retryFull && changed.every(input => kindOf(input) === 'models');
       const baseline = new RunBaseline(before, watched.root);
       const latestAttempt = new Map<string, InputKind>();
+      // The line of this run when it ended well, kept until the watch has recorded what the run read.
+      let line: string | undefined;
       try {
         const started = performance.now();
         const next = await runPipeline(filename, {
@@ -164,7 +168,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
         state = next;
         config = next.config;
         retryFull = false;
-        process.stdout.write(`${failed ? 'Recovered: ' : ''}${summarizeRun(next, Math.round(performance.now() - started))}\n`);
+        line = `${failed ? 'Recovered: ' : ''}${summarizeRun(next, Math.round(performance.now() - started))}`;
         failed = false;
       } catch (error) {
         retryFull = true;
@@ -175,6 +179,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       // Keep pre-read signatures so edits during work trigger the next serialized run.
       watched = watch();
       previous = baseline.settle(watcher.snapshotWatching(watched.scan));
+      if (line !== undefined) onRun(line);
     } catch (error) { reportError(error); }
     finally {
       busy = false;
