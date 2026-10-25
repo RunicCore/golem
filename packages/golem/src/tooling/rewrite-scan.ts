@@ -5,6 +5,7 @@ import { GolemDiagnosticSeverity, canonicalPath, compareText, isRecord } from '.
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
 import { OPERATION_METHOD_KEYS_EXPORT, operationCodecRegistryPath, operationCodecSlot, operationSlotCodec, type OperationMethodCodecs } from './generated-paths.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
+import { evaluateStaticValue } from './static-value.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { readModelManifest } from './model-manifest.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
@@ -502,17 +503,12 @@ function decoratorNames(node: ts.Node): readonly string[] {
   return (ts.getDecorators(node) ?? []).flatMap((decorator) => decoratorName(decorator) ?? []);
 }
 
-/** The registry slot of a `@Body()` or `@Query()` parameter: a first argument that is a string (written or a constant) names a field; any other first argument is a pipe. */
+/** The registry slot of a `@Body()` or `@Query()` parameter: a first argument with a static string value names a field, the way the controllers job reads it; any other first argument is a pipe. */
 function nestSlot(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration, decorator: string): string {
   const expression = ts.getDecorators(parameter)?.find((each) => decoratorName(each) === decorator)?.expression;
   const argument = expression !== undefined && ts.isCallExpression(expression) ? expression.arguments[0] : undefined;
-  let name: string | undefined;
-  if (argument !== undefined && ts.isStringLiteralLike(argument)) name = argument.text;
-  else if (argument !== undefined) {
-    const type = checker.getTypeAtLocation(argument);
-    if ((type.flags & ts.TypeFlags.StringLiteral) !== 0) name = (type as ts.StringLiteralType).value;
-  }
-  return operationCodecSlot(decorator === 'Body' ? 'body' : 'query', name);
+  const key = argument === undefined ? undefined : evaluateStaticValue(checker, argument);
+  return operationCodecSlot(decorator === 'Body' ? 'body' : 'query', key?.ok === true && typeof key.value === 'string' ? key.value : undefined);
 }
 
 /** Whether the node carries the decorator, written plainly or as the aliased import an earlier rewrite added. */

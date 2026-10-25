@@ -304,8 +304,8 @@ test('the operation-codec check passes when the registry holds every id the scan
 
   const slotOf = (site: { readonly method: string | undefined; readonly slot: string }): string => `${site.method}:${site.slot}`;
   assert.deepEqual(result.nestCodecSites.map(slotOf), ['create:input', 'createAsClass:input', 'list:query', 'createBatch:input', 'createPiped:input', 'listPiped:query']);
-  const methods = (replaced?: string): string => `export const OPERATION_METHOD_KEYS = ${JSON.stringify(Object.fromEntries(result.nestCodecSites.map(site => [
-    `PaymentsController.${site.method}`, { [site.slot]: site.method === 'create' && replaced ? replaced : site.id },
+  const methods = (replaced?: string, misplaced?: string): string => `export const OPERATION_METHOD_KEYS = ${JSON.stringify(Object.fromEntries(result.nestCodecSites.map(site => [
+    `PaymentsController.${site.method}`, { [site.method === misplaced ? 'input' : site.slot]: site.method === 'create' && replaced ? replaced : site.id },
   ])), null, 2)} as const;\n`;
   fs.mkdirSync(path.dirname(registry), { recursive: true });
   fs.writeFileSync(registry, methods());
@@ -318,6 +318,10 @@ test('the operation-codec check passes when the registry holds every id the scan
     { code: 'RUNM1072', file: CONTROLLER, message: '@Body() type TPaymentInput disagrees with generated operation keys' },
   ]);
   assert.deepEqual([failures[0]?.line, failures[0]?.column], [7, 25]);
+
+  // The method matches, but its registry entry holds the id in another slot: `list` is a @Query() site and its model sits under `input`.
+  fs.writeFileSync(registry, methods(undefined, 'list'));
+  assert.deepEqual(checkNestCodecs(root, result).map(({ message }) => message), ['@Query() type TPaymentFilter disagrees with generated operation keys']);
 
   fs.rmSync(registry);
   assert.equal(checkNestCodecs(root, result).length, 6, 'a missing registry disagrees with every site');

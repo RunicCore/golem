@@ -20,17 +20,31 @@ export type TTagged = IObject<{ tags: string[] }>;
 export type TNested = IObject<{ inner: { tags?: string[] } }>;
 `;
 
-function project(t: TestContext, methods: string, openapiVersion = '3.2.0'): string {
+function project(t: TestContext, methods: string, openapiVersion = '3.2.0', preamble = ''): string {
   return createControllerFixture(t, {
     prefix: 'golem-one-field-',
     links: 'workspace',
     files: {
       'src/payment.model.ts': MODEL,
-      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TFilter, TTagged, TNested } from './payment.model.js';\n@Controller('a')\nexport class AController {\n${methods}\n}\n`,
+      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TFilter, TTagged, TNested } from './payment.model.js';\n${preamble}@Controller('a')\nexport class AController {\n${methods}\n}\n`,
       'golem.yaml': `version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/a.controller.ts\n    output: generated/api.json\n    openapiVersion: "${openapiVersion}"\n    info: { title: T, version: "1" }\nmodels:\n  root: .\n`,
     },
   });
 }
+
+test('golem check agrees with the controllers job on a field key written as a concatenation or a constant member', async (t) => {
+  // protects: T-446 the check names a one-field parameter the way the controllers job does, so a key the job folds to a string is not reported
+  const root = project(t, [
+    "  @Post() create(@Body('pay' + 'ment') payment: TPayment): void {}",
+    '  @Get() list(@Query(KEYS.filter) filter: TFilter): void {}',
+  ].join('\n'), '3.2.0', "const KEYS = { filter: 'filter' } as const;\n");
+  const config = path.join(root, 'golem.yaml');
+  await runPipeline(config);
+  await runPipeline(config, { check: true });
+  const registry = read(root, 'src/generated/operation-codecs.ts');
+  assert.match(registry, /"AController\.create": \{\s*"fields": \{\s*"body:payment": "TPayment_[0-9a-f]{8}"/);
+  assert.match(registry, /"AController\.list": \{\s*"fields": \{\s*"query:filter": "TFilter_[0-9a-f]{8}"/);
+});
 
 const read = (root: string, file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
 

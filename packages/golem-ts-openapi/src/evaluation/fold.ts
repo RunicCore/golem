@@ -3,7 +3,7 @@ import * as ts from '@exprtlabs/golem/internal/ts';
 import { resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from '../diagnostics.js';
 import type { RouteEvaluationOptions } from './dependencies.js';
-import { evaluateStaticValue, isTypeScriptLibFile, singleReturnExpression, unwrapExpression as unwrap } from './static-value.js';
+import { evaluateStaticValue, isTypeScriptLibFile, singleReturnExpression, unwrapExpression as unwrap } from '@exprtlabs/golem/internal/static-value';
 
 type StringBinding = { readonly kind: 'string'; readonly value: string };
 type ObjectBinding = { readonly kind: 'object'; readonly fields: Readonly<Record<string, string>> };
