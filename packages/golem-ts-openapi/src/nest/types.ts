@@ -39,6 +39,8 @@ export interface ControllerParameter {
   readonly location?: ParameterLocation | 'body';
   readonly name?: string;
   readonly required: boolean;
+  /** The model id of the whole `@Query()` model that OpenAPI 3.1 flattened into this parameter. */
+  readonly wholeQueryModel?: string;
 }
 
 export interface RequestBodyDescription {
