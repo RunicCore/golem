@@ -39,7 +39,7 @@ export {
   type Rejected,
   type SlotRule,
 } from './composition.js';
-import { blockComment, bindInput, code, identifier, inputOf, inputSlot, join, literal, sameCode, type Code } from './code.js';
+import { blockComment, bindInput, code, codeKey, identifier, inputOf, inputSlot, join, literal, sameCode, type Code } from './code.js';
 import { rt } from './rt.js';
 import { MODEL_MANIFEST_FILENAME, MODEL_MANIFEST_MARKER } from './model-manifest.js';
 export { assertUniqueExportNames, type PublicModule } from './names.js';
@@ -290,13 +290,14 @@ function atField(emit: (value: Code) => Code, input: Code, field: Code, directio
 function sequenceItems(
   direction: 'fromJSON' | 'toJSON' | 'fromInit',
   resolveModel: (id: string) => FromJsonModelResolver | ToJsonModelResolver,
-  resolveSerde?: SerdeResolver,
+  resolveSerde: SerdeResolver | undefined,
+  memo: EmitMemo,
 ): SequenceItems {
   return {
     output: 'value',
     ...(direction === 'fromInit' ? {} : { paths: direction === 'toJSON' ? 'serialize' as const : 'deserialize' as const }),
     item: (item, value) => {
-      const converted = emitNested(item, value, direction, resolveModel, resolveSerde);
+      const converted = emitNested(item, value, direction, resolveModel, resolveSerde, memo);
       return { code: converted, throws: !sameCode(converted, value) };
     },
   };
@@ -307,16 +308,17 @@ function emitNestedUnion(
   expression: Code,
   direction: 'fromJSON' | 'toJSON' | 'fromInit',
   resolveModel: (id: string) => FromJsonModelResolver | ToJsonModelResolver,
-  resolveSerde?: SerdeResolver,
+  resolveSerde: SerdeResolver | undefined,
+  memo: EmitMemo,
 ): Code {
   const indices = presentUnionIndices(descriptor);
   const dispatchDirection = direction === 'toJSON' ? 'encode-value' : 'decode';
   const value = expression;
   const convert = (variant: ModelConversionDescriptor): Code =>
-    emitNested(variant, expression, direction, resolveModel, resolveSerde);
+    emitNested(variant, expression, direction, resolveModel, resolveSerde, memo);
   return emitUnionConversion(descriptor, expression, 'nested', {
     convert,
-    items: sequenceItems(direction, resolveModel, resolveSerde),
+    items: sequenceItems(direction, resolveModel, resolveSerde, memo),
     tagged: () => {
       const present = presentUnionVariants(descriptor);
       const modelBranches = present.filter(variant => variant.kind === 'reference' || variant.kind === 'generated-model');
@@ -402,12 +404,38 @@ function emitNestedUnion(
   });
 }
 
+/**
+ * The Code that one top-level emit wrote for a descriptor, by the code of its input. A field conversion is written for two inputs
+ * (the field read and the local of a copy), and each writes its own fields the same way, so without this the work doubles on each level.
+ */
+type EmitMemo = Map<ModelConversionDescriptor, Map<string, Code>>;
+
 function emitNested(
   descriptor: ModelConversionDescriptor,
   expression: Code,
   direction: 'fromJSON' | 'toJSON' | 'fromInit',
   resolveModel: (id: string) => FromJsonModelResolver | ToJsonModelResolver,
-  resolveSerde?: SerdeResolver,
+  resolveSerde: SerdeResolver | undefined,
+  memo: EmitMemo,
+): Code {
+  const key = codeKey(expression);
+  const known = memo.get(descriptor) ?? new Map<string, Code>();
+  memo.set(descriptor, known);
+  let emitted = known.get(key);
+  if (emitted === undefined) {
+    emitted = emitNestedUncached(descriptor, expression, direction, resolveModel, resolveSerde, memo);
+    known.set(key, emitted);
+  }
+  return emitted;
+}
+
+function emitNestedUncached(
+  descriptor: ModelConversionDescriptor,
+  expression: Code,
+  direction: 'fromJSON' | 'toJSON' | 'fromInit',
+  resolveModel: (id: string) => FromJsonModelResolver | ToJsonModelResolver,
+  resolveSerde: SerdeResolver | undefined,
+  memo: EmitMemo,
 ): Code {
   const value = expression;
   const tags = metadata(descriptor);
@@ -428,18 +456,18 @@ function emitNested(
   if (descriptor.kind === 'intersection') {
     const bases: ModelBases = { basesOf: (id) => resolveModel(id).bases ?? [] };
     const merged = descriptor.variants.every(variant => !metadata(variant).serde) ? requireComposedObject(descriptor.variants, bases) : undefined;
-    if (merged) return emitNested(merged, expression, direction, resolveModel, resolveSerde);
+    if (merged) return emitNested(merged, expression, direction, resolveModel, resolveSerde, memo);
     // A scalar intersection converts by its one converting part.
     const conversions: Code[] = [];
     for (const variant of descriptor.variants) {
-      const converted = emitNested(variant, expression, direction, resolveModel, resolveSerde);
+      const converted = emitNested(variant, expression, direction, resolveModel, resolveSerde, memo);
       if (!sameCode(converted, value) && !conversions.some(known => sameCode(known, converted))) conversions.push(converted);
     }
     if (conversions.length > 1) throw new CompositionConflictError('two parts convert it differently');
     return conversions[0] ?? value;
   }
   if (descriptor.kind === 'union') {
-    return emitNestedUnion(descriptor, expression, direction, resolveModel, resolveSerde);
+    return emitNestedUnion(descriptor, expression, direction, resolveModel, resolveSerde, memo);
   }
   if (descriptor.kind === 'generated-model') {
     const model = resolveModel(descriptor.id);
@@ -468,10 +496,10 @@ function emitNested(
     return code`${value} instanceof ${model.className} ? ${encodeCall('encode' in model ? model : {}, expression)} : ${value}`;
   }
   if (descriptor.kind === 'array') {
-    return emitArrayConversion(descriptor.item, expression, sequenceItems(direction, resolveModel, resolveSerde));
+    return emitArrayConversion(descriptor.item, expression, sequenceItems(direction, resolveModel, resolveSerde, memo));
   }
   if (descriptor.kind === 'tuple') {
-    return emitTupleConversion(descriptor, expression, sequenceItems(direction, resolveModel, resolveSerde));
+    return emitTupleConversion(descriptor, expression, sequenceItems(direction, resolveModel, resolveSerde, memo));
   }
   if (descriptor.kind === 'object') {
     // A projection copies its fields inside a function whose `source` parameter is the record.
@@ -483,14 +511,14 @@ function emitNested(
       // A record is read as it is. Another expression is cast once here, so its read is not a chain.
       const slot = inputSlot(name, isRecordRead(fieldSource) ? 'chain' : 'other');
       const sourceValue = recordIndex(fieldSource, property);
-      const convert = (input: Code): Code => atField(nested => emitNested(item, nested, direction, resolveModel, resolveSerde), input, property, direction);
+      const convert = (input: Code): Code => atField(nested => emitNested(item, nested, direction, resolveModel, resolveSerde, memo), input, property, direction);
       const piece = convert(inputOf(slot));
       return { name, property, sourceValue, unchanged: sameCode(piece, inputOf(slot)), value: bindInput(piece, slot, sourceValue), presentValue: convert(identifier(projectionLocal(index))) };
     });
     const additionalItem = descriptor.additionalProperties;
     const plainValue = identifier('value');
     const additional = typeof additionalItem === 'object'
-      ? atField(nested => emitNested(additionalItem, nested, direction, resolveModel, resolveSerde), plainValue, identifier('key'), direction)
+      ? atField(nested => emitNested(additionalItem, nested, direction, resolveModel, resolveSerde, memo), plainValue, identifier('key'), direction)
       : plainValue;
     // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do.
     const omitsUndefined = (name: string): boolean => direction === 'toJSON' && !descriptor.required.includes(name);
@@ -550,7 +578,7 @@ export function emitModelFromJSON(
   resolveModel: (id: string) => FromJsonModelResolver,
   resolveSerde?: SerdeResolver,
 ): Code {
-  return emitNested(descriptor, expression, 'fromJSON', resolveModel, resolveSerde);
+  return emitNested(descriptor, expression, 'fromJSON', resolveModel, resolveSerde, new Map());
 }
 
 /** Whether a value of `descriptor` can hold a value of `unknown` or `any` type, which can hold a model instance at any depth. */
@@ -585,7 +613,7 @@ export function emitModelToJSON(
   resolveModel: (id: string) => ToJsonModelResolver,
   resolveSerde?: SerdeResolver,
 ): Code {
-  const converted = emitNested(descriptor, expression, 'toJSON', resolveModel, resolveSerde);
+  const converted = emitNested(descriptor, expression, 'toJSON', resolveModel, resolveSerde, new Map());
   return holdsUnknown(descriptor) ? code`${rt.serde.withoutInstanceState}(${converted})` : converted;
 }
 
@@ -595,7 +623,7 @@ export function emitModelFromInit(
   expression: Code,
   resolveModel: (id: string) => FromJsonModelResolver,
 ): Code {
-  return emitNested(descriptor, expression, 'fromInit', resolveModel);
+  return emitNested(descriptor, expression, 'fromInit', resolveModel, undefined, new Map());
 }
 
 /** The marker comment of a file that names its model manifest, as Code. */

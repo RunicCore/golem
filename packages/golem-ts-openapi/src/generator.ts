@@ -331,8 +331,7 @@ class ComponentSchemas {
 
   /** A class named by getSchemaPath() may reuse an existing component only when it is that component's contract. */
   private assertComponentIdentity(name: string, reference: TypeReference): void {
-    const described = this.contractAnalysis.describe(reference.type, reference.sourceNode ?? reference.sourceFile);
-    if (described.kind === 'reference' && described.name === name) return;
+    if (this.contractAnalysis.modelName(reference.type, reference.sourceNode ?? reference.sourceFile) === name) return;
     throw new TsToOpenApiError(diagnostic(
       reference.sourceFile,
       reference.sourceNode,
