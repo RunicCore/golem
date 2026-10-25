@@ -15,6 +15,7 @@ import { command, golem } from '../support/process.js';
 const MODEL = `import type { IModel, IObject } from '@exprtlabs/golem/model';
 export type TPayment = IModel<{ id: string; amount: number }>;
 export type TFilter = IObject<{ status: string; limit?: number; active?: boolean }>;
+export type TPayments = TPayment[];
 export type TTagged = IObject<{ tags: string[] }>;
 export type TNested = IObject<{ inner: { tags?: string[] } }>;
 `;
@@ -25,7 +26,7 @@ function project(t: TestContext, methods: string, openapiVersion = '3.2.0'): str
     links: 'workspace',
     files: {
       'src/payment.model.ts': MODEL,
-      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TFilter, TTagged, TNested } from './payment.model.js';\n@Controller('a')\nexport class AController {\n${methods}\n}\n`,
+      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TFilter, TTagged, TNested } from './payment.model.js';\n@Controller('a')\nexport class AController {\n${methods}\n}\n`,
       'golem.yaml': `version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/a.controller.ts\n    output: generated/api.json\n    openapiVersion: "${openapiVersion}"\n    info: { title: T, version: "1" }\nmodels:\n  root: .\n`,
     },
   });
@@ -41,6 +42,10 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
     const root = project(t, [
       "  @Post() create(@Body('payment') payment: TPayment): void {}",
       "  @Post('batch') createBatch(@Body('items') items: TPayment[]): void {}",
+      "  @Post('generic') createGeneric(@Body('items') items: Array<TPayment>): void {}",
+      "  @Post('readonly') createReadonly(@Body('items') items: readonly TPayment[]): void {}",
+      "  @Post('readonly-generic') createReadonlyGeneric(@Body('items') items: ReadonlyArray<TPayment>): void {}",
+      "  @Post('qualified') createQualified(@Body('items') items: globalThis.Array<TPayment>): void {}",
       "  @Get() list(@Query('filter') filter: TFilter): void {}",
     ].join('\n'), openapiVersion);
     const config = path.join(root, 'golem.yaml');
@@ -57,6 +62,13 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
 
     const batchSchema = document.paths['/a/batch']!.post!.requestBody!.content['application/json']!.schema;
     assert.deepEqual({ ...batchSchema, properties: Object.keys(batchSchema.properties as object) }, { type: 'object', properties: ['items'], required: ['items'] });
+    for (const route of ['generic', 'qualified']) {
+      assert.deepEqual(document.paths[`/a/${route}`]!.post!.requestBody!.content['application/json']!.schema, batchSchema, route);
+    }
+    for (const route of ['readonly', 'readonly-generic']) {
+      const schema = document.paths[`/a/${route}`]!.post!.requestBody!.content['application/json']!.schema;
+      assert.equal((schema.properties as Record<string, { type: string }>).items.type, 'array', route);
+    }
     const itemsSchema = (batchSchema.properties as Record<string, { type: string; items: unknown }>).items;
     assert.equal(itemsSchema.type, 'array');
     assert.match(JSON.stringify(itemsSchema.items), /TPayment/);
@@ -68,6 +80,9 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
     const registry = read(root, 'src/generated/operation-codecs.ts');
     assert.match(registry, /"AController\.create": \{\s*"fields": \{\s*"body:payment": "TPayment_[0-9a-f]{8}"/);
     assert.match(registry, /"AController\.createBatch": \{\s*"fields": \{\s*"body:items": "TPayment_[0-9a-f]{8}"/);
+    for (const method of ['createGeneric', 'createReadonly', 'createReadonlyGeneric', 'createQualified']) {
+      assert.match(registry, new RegExp(`"AController\\.${method}": \\{\\s*"fields": \\{\\s*"body:items": "TPayment_[0-9a-f]{8}"`), method);
+    }
     assert.match(registry, /"AController\.list": \{\s*"fields": \{\s*"query:filter": "TFilter_[0-9a-f]{8}"/);
   });
 }
@@ -84,6 +99,7 @@ test('the controllers job refuses what NestModelInterceptor throws for, or canno
     ["  @Get() a(@Query('when') when: Date): void {}", 'NEST1107', /must be primitive/],
     ["  @Post() a(@Body('items') items?: TPayment[]): void {}", 'NEST1103', /optional one-field model.*Make the parameter required/],
     ["  @Post() a(@Body('items') items: string[]): void {}", 'NEST1103', /must be an IModel or IObject/],
+    ["  @Post() a(@Body('items') items: TPayments): void {}", 'NEST1103', /an array of one written as a type, such as TPayment\[\]/],
     ["  @Post() a(@Body('items') items: TPayment[][]): void {}", 'NEST1103', /must be an IModel or IObject/],
     ["  @Get() a(@Query('filter') filter: TFilter[]): void {}", 'NEST1107', /array of models.*does not define arrays in a deepObject.*Send the array in a @Body\./],
     ["  @Get() a(@Query('filter') filter: TTagged): void {}", 'NEST1107', /array field \(tags\).*@Body or in a whole @Query\(\) on OpenAPI 3\.2/],

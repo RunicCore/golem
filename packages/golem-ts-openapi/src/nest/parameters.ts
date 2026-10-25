@@ -299,14 +299,14 @@ function assertDistinctParameters(context: NestAnalysisContext, parameters: read
   ));
 }
 
-/** The item type node of `T[]`, `Array<T>` or `ReadonlyArray<T>`, through parentheses and `readonly`: the array forms the rewrite stamps with a model. */
+/** The item type node of `T[]`, `Array<T>`, `ReadonlyArray<T>` or a qualified spelling such as `globalThis.Array<T>`, through parentheses and `readonly`: the array forms the rewrite stamps with a model. */
 function arrayItemNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined {
   if (node === undefined) return undefined;
   if (ts.isParenthesizedTypeNode(node)) return arrayItemNode(node.type);
   if (ts.isTypeOperatorNode(node)) return node.operator === ts.SyntaxKind.ReadonlyKeyword ? arrayItemNode(node.type) : undefined;
   let item: ts.TypeNode | undefined;
   if (ts.isArrayTypeNode(node)) item = node.elementType;
-  else if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && ['Array', 'ReadonlyArray'].includes(node.typeName.text)) item = node.typeArguments?.length === 1 ? node.typeArguments[0] : undefined;
+  else if (ts.isTypeReferenceNode(node) && ['Array', 'ReadonlyArray'].includes(ts.isIdentifier(node.typeName) ? node.typeName.text : node.typeName.right.text)) item = node.typeArguments?.length === 1 ? node.typeArguments[0] : undefined;
   while (item !== undefined && ts.isParenthesizedTypeNode(item)) item = item.type;
   return item;
 }
@@ -408,7 +408,7 @@ export function parseParameters(
         if (field.kind !== 'model') {
           throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, field.kind === 'optional model'
             ? `@Body("${name}") is an optional one-field model or array of models, which NestModelInterceptor does not support: it answers HTTP 400 for a missing value. Make the parameter required.`
-            : `@Body("${name}") must be an IModel or IObject, or an array of them; any other type needs a whole @Body() or an explicit request-body contract.`));
+            : `@Body("${name}") must be an IModel or IObject, or an array of one written as a type, such as TPayment[]; any other type needs a whole @Body() or an explicit request-body contract.`));
         }
         parameters.push({ node: parameter, type: field.type, location: 'body', name, required: true });
         return;
