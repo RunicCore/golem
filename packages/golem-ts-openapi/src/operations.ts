@@ -332,8 +332,8 @@ async function bodyFieldsSchema(
     field.name!,
     await schemaFor(context, field.type, 'request', `body.${field.name}`),
   ] as const)));
-  const required = fields.filter(field => field.required).map(field => field.name!);
-  return { type: 'object', properties, ...(required.length > 0 ? { required } : {}) };
+  // A one-field body parameter is required: NestModelInterceptor answers HTTP 400 for a missing value.
+  return { type: 'object', properties, required: fields.map(field => field.name!) };
 }
 
 async function requestBody(
@@ -396,7 +396,7 @@ async function requestBody(
       };
     }
   }
-  const requiredBody = override?.required ?? route.body?.required ?? (fields.length > 0 ? fields.some(field => field.required) : undefined);
+  const requiredBody = override?.required ?? route.body?.required ?? (fields.length > 0 ? true : undefined);
   return {
     ...(override?.description ? { description: override.description } : {}),
     ...(requiredBody === undefined ? {} : { required: requiredBody }),

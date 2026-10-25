@@ -9,6 +9,8 @@ import { createControllerFixture } from '../fixture-templates/controllers/projec
 const MODEL = `import type { IModel, IObject } from '@exprtlabs/golem/model';
 export type TPayment = IModel<{ id: string; amount: number }>;
 export type TFilter = IObject<{ status: string; limit?: number }>;
+export type TTagged = IObject<{ tags: string[] }>;
+export type TNested = IObject<{ inner: { tags?: string[] } }>;
 `;
 
 function project(t: TestContext, methods: string, openapiVersion = '3.2.0'): string {
@@ -17,7 +19,7 @@ function project(t: TestContext, methods: string, openapiVersion = '3.2.0'): str
     links: 'workspace',
     files: {
       'src/payment.model.ts': MODEL,
-      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TFilter } from './payment.model.js';\n@Controller('a')\nexport class AController {\n${methods}\n}\n`,
+      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TFilter, TTagged, TNested } from './payment.model.js';\n@Controller('a')\nexport class AController {\n${methods}\n}\n`,
       'golem.yaml': `version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/a.controller.ts\n    output: generated/api.json\n    openapiVersion: "${openapiVersion}"\n    info: { title: T, version: "1" }\nmodels:\n  root: .\n`,
     },
   });
@@ -56,16 +58,26 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
   });
 }
 
-test('a one-field @Body of another type, a whole and a one-field @Body together, and a repeated field are refused', async (t) => {
-  // protects: R-13 T-323 the controllers job refuses what NestModelInterceptor throws for
-  const cases: readonly (readonly [string, string])[] = [
-    ["  @Post() a(@Body('note') note: string): void {}", 'NEST1103'],
-    ["  @Post() a(@Body() whole: TPayment, @Body('payment') payment: TPayment): void {}", 'NEST1103'],
-    ["  @Post() a(@Body('payment') payment: TPayment, @Body() whole: TPayment): void {}", 'NEST1103'],
-    ["  @Post() a(@Body('payment') one: TPayment, @Body('payment') two: TPayment): void {}", 'NEST1312'],
-    ["  @Get() a(@Query('when') when: Date): void {}", 'NEST1107'],
+test('the controllers job refuses what NestModelInterceptor throws for, or cannot convert, in a one-field parameter', async (t) => {
+  // protects: R-13 T-323 a one-field parameter the interceptor cannot convert, or that the client would send wrong, stops generation
+  const cases: readonly (readonly [string, string, RegExp])[] = [
+    ["  @Post() a(@Body('note') note: string): void {}", 'NEST1103', /must be an IModel or IObject/],
+    ["  @Post() a(@Body() whole: TPayment, @Body('payment') payment: TPayment): void {}", 'NEST1103', /cannot share an operation with a whole @Body\(\)/],
+    ["  @Post() a(@Body('payment') payment: TPayment, @Body() whole: TPayment): void {}", 'NEST1103', /cannot share an operation with a one-field @Body\("field"\)/],
+    ["  @Post() a(@Body('payment') one: TPayment, @Body('payment') two: TPayment): void {}", 'NEST1312', /declared more than once/],
+    ["  @Post() a(@Body('payment') payment?: TPayment): void {}", 'NEST1103', /optional one-field model.*Make the parameter required/],
+    ["  @Get() a(@Query('filter') filter?: TFilter): void {}", 'NEST1107', /optional one-field model.*Make the parameter required/],
+    ["  @Get() a(@Query('when') when: Date): void {}", 'NEST1107', /must be primitive/],
+    ["  @Get() a(@Query('filter') filter: TTagged): void {}", 'NEST1107', /array field \(tags\).*@Body or in a whole @Query\(\) on OpenAPI 3\.2/],
+    ["  @Get() a(@Query('filter') filter: TNested): void {}", 'NEST1107', /array field \(inner\.tags\)/],
   ];
-  for (const [methods, code] of cases) {
-    await assert.rejects(runPipeline(path.join(project(t, methods), 'golem.yaml')), new RegExp(`${code}`), methods);
+  for (const openapiVersion of ['3.2.0', '3.1.2']) {
+    const mixed: readonly (readonly [string, string, RegExp])[] = [
+      ["  @Get() a(@Query() whole: TFilter, @Query('filter') filter: TFilter): void {}", 'NEST1107', /cannot share an operation with a whole @Query\(\)/],
+      ["  @Get() a(@Query('filter') filter: TFilter, @Query() whole: TFilter): void {}", 'NEST1107', /cannot share an operation with a one-field model/],
+    ];
+    for (const [methods, code, message] of [...mixed, ...(openapiVersion === '3.2.0' ? cases : [])]) {
+      await assert.rejects(runPipeline(path.join(project(t, methods, openapiVersion), 'golem.yaml')), (error: Error) => error.message.includes(code) && message.test(error.message), `${openapiVersion} ${methods}`);
+    }
   }
 });
