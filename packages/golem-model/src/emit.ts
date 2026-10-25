@@ -454,40 +454,42 @@ function projectDescriptor(
       ...(validationEnabled ? { constraints: [{ kind: 'format', value: 'date-time' }] } : {}),
     } as ModelConversionDescriptor;
   }
+  const project = (item: ModelConversionDescriptor): ModelConversionDescriptor =>
+    projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions);
   let projected: ModelConversionDescriptor;
   switch (descriptor.kind) {
     case 'array': projected = {
       kind: 'array',
       ...(descriptor.isReadonly ? { isReadonly: true as const } : {}),
-      item: projectDescriptor(descriptor.item, validationEnabled, wire, retainPredicates, definitions),
+      item: project(descriptor.item),
     }; break;
     case 'tuple':
       projected = {
         kind: 'tuple',
         ...(descriptor.isReadonly ? { isReadonly: true as const } : {}),
-        items: descriptor.items.map((item) => projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions)),
+        items: descriptor.items.map(project),
         ...(descriptor.optionalFrom === undefined ? {} : { optionalFrom: descriptor.optionalFrom }),
         ...(descriptor.rest ? {
-          rest: { index: descriptor.rest.index, item: projectDescriptor(descriptor.rest.item, validationEnabled, wire, retainPredicates, definitions) },
+          rest: { index: descriptor.rest.index, item: project(descriptor.rest.item) },
         } : {}),
       };
       break;
     case 'union': projected = {
       kind: 'union',
-      variants: descriptor.variants.map((item) => projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions)),
+      variants: descriptor.variants.map(project),
       // Variants map one to one, so the tag table keeps its indexes.
       ...(descriptor.discriminator ? { discriminator: descriptor.discriminator } : {}),
     }; break;
-    case 'intersection': projected = { kind: 'intersection', variants: descriptor.variants.map((item) => projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions)) }; break;
+    case 'intersection': projected = { kind: 'intersection', variants: descriptor.variants.map(project) }; break;
     case 'object':
       projected = {
         kind: 'object',
         ...(descriptor.projection ? { projection: true as const } : {}),
         ...(descriptor.readonlyProperties ? { readonlyProperties: descriptor.readonlyProperties } : {}),
-        properties: Object.fromEntries(Object.entries(descriptor.properties).map(([name, item]) => [name, projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions)])),
+        properties: Object.fromEntries(Object.entries(descriptor.properties).map(([name, item]) => [name, project(item)])),
         required: descriptor.required,
         additionalProperties: typeof descriptor.additionalProperties === 'object'
-          ? projectDescriptor(descriptor.additionalProperties, validationEnabled, wire, retainPredicates, definitions)
+          ? project(descriptor.additionalProperties)
           : descriptor.additionalProperties,
         ...(descriptor.additionalPropertiesDeclared ? { additionalPropertiesDeclared: true as const } : {}),
       };
