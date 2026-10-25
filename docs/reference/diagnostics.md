@@ -378,7 +378,7 @@ A recursive interface, class or type alias never gives this error. It takes its 
 
 ### RUNM1083
 
-**Generic type that expands without end.** A generic interface, class or type alias holds itself with other type arguments on each level, such as `interface Box<T> { next?: Box<Box<T>> }`. Each level is a new type, so no finite schema describes it. The message names the generic type. Golem stops when 100 different instances of one generic declaration are open at once. TypeScript stops an instantiation chain at the same depth, with "Type instantiation is excessively deep and possibly infinite", so a finite type that TypeScript accepts still generates. Arrays, tuples and library types do not count. **Fix:** Pass the same type arguments back, such as `next?: Box<T>`, or end the nesting with a named type.
+**Generic type that expands without end.** A generic interface, class or type alias holds itself with other type arguments on each level, such as `interface Box<T> { next?: Box<Box<T>> }`. Each level is a new type, so no finite schema describes it. The message names the generic type. Golem stops when the 101st open instance of one generic declaration starts. This bound is golem's own. Arrays, tuples and library types do not count. **Fix:** Pass the same type arguments back, such as `next?: Box<T>`, or end the nesting with a named type.
 
 ## Validators (VALIDATE)
 

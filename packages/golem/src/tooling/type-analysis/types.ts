@@ -265,11 +265,11 @@ function userAliasName(type: ts.Type): string | undefined {
 }
 
 /**
- * How many different instances of one generic declaration a walk may hold at once. TypeScript itself stops an instantiation chain at
- * 100 levels ("Type instantiation is excessively deep and possibly infinite"), so a finite type that it accepts fits, and a type that
- * makes a new type argument on each level, which never repeats, ends here.
+ * How many different instances of one generic declaration a walk may hold at once. A type that makes a new type argument on each
+ * level never repeats, so the walk stops when the next instance would be one more than this. It is golem's own bound; the
+ * `maxExpansionDepth` option of `descriptorBuilder` sets another.
  */
-const MAX_EXPANSION_DEPTH = 100;
+const DEFAULT_MAX_EXPANSION_DEPTH = 100;
 
 /**
  * The name of the interface, class or generic type alias that declares a type. A recursive type with no concrete alias takes it,
@@ -568,6 +568,8 @@ export function descriptorBuilder(
   typeErrorAt: ((node: ts.Node) => string | undefined) | undefined,
   /** Whether a source file is a default library file: a symbol key it declares is the built-in type's own metadata, not a field. */
   isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
+  /** How many instances of one generic declaration may be open at once before the walk stops with RUNM1083. */
+  maxExpansionDepth = DEFAULT_MAX_EXPANSION_DEPTH,
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
@@ -708,10 +710,10 @@ export function descriptorBuilder(
     if (symbol === undefined || declaration === undefined || isDefaultLibraryFile(declaration.getSourceFile())) return () => undefined;
     const instances = activeInstances.get(symbol) ?? [];
     if (instances.includes(type)) return () => undefined;
-    if (instances.length >= MAX_EXPANSION_DEPTH) {
+    if (instances.length >= maxExpansionDepth) {
       const name = symbol.getName();
       throw diagnostic(location.getSourceFile(), location, '1083',
-        `The generic type ${name} expands without end: each level holds ${name} with other type arguments, and more than ${MAX_EXPANSION_DEPTH} levels are open, so no finite schema describes it. `
+        `The generic type ${name} expands without end: each level holds ${name} with other type arguments, and more than ${maxExpansionDepth} levels are open, so no finite schema describes it. `
         + `Pass the same type arguments back, for example ${name}<T> inside ${name}<T>.`);
     }
     activeInstances.set(symbol, [...instances, type]);
