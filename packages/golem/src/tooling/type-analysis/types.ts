@@ -581,6 +581,8 @@ export function descriptorBuilder(
   // The type that minted each projection name. A recursive type that asks for a name another type holds takes a qualified name before its body is read.
   const projectionOwners = new Map<string, ts.Type>();
   const headNames = new Map<ts.Type, Map<string, string>>();
+  // Whether a recursive type reads the same as the holder of its plain name, per policy suffix. Kept across `snapshotNames`, so each type is read once for it.
+  const sharesPlainName = new Map<ts.Type, Map<string, boolean>>();
   // The arguments of the `describe` calls that are open, so a name claim can read the type once under another name.
   const openCalls: Parameters<typeof describeType>[] = [];
   const snapshotNames = (): (() => void) => {
@@ -616,15 +618,22 @@ export function descriptorBuilder(
     // A finished projection of another type holds the plain name: when this type reads the same under its own name, the two share the plain name.
     const owner = projectionOwners.get(plain);
     if (name !== plain && owner !== undefined && owner !== type && projections.has(plain) && !modelLocations.has(plain)) {
-      const restore = snapshotNames();
-      describeType(...openCalls[openCalls.length - 1]!);
-      const lookup = (projection: string): ModelConversionDescriptor | undefined => projections.get(projection);
-      const read = (projection: string): string | undefined => {
-        const descriptor = projections.get(projection);
-        return descriptor && projectionIdentity(lookup, projection, descriptor);
-      };
-      if (read(name) === read(plain)) {
-        restore();
+      const verdicts = sharesPlainName.get(type) ?? new Map<string, boolean>();
+      sharesPlainName.set(type, verdicts);
+      let shares = verdicts.get(suffix);
+      if (shares === undefined) {
+        const restore = snapshotNames();
+        describeType(...openCalls[openCalls.length - 1]!);
+        const lookup = (projection: string): ModelConversionDescriptor | undefined => projections.get(projection);
+        const read = (projection: string): string | undefined => {
+          const descriptor = projections.get(projection);
+          return descriptor && projectionIdentity(lookup, projection, descriptor);
+        };
+        shares = read(name) === read(plain);
+        verdicts.set(suffix, shares);
+        if (shares) restore();
+      }
+      if (shares) {
         setName(plain);
         return plain;
       }

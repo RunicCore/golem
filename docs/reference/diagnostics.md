@@ -282,7 +282,14 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. The message lists both places. **Fix:** Declare a named type alias, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field.
 
-A recursive interface, class or type alias never gives this error. It takes its declared name, and when another type already holds that name, it adds the type arguments of a generic instance (`Page<number>` after `Page<string>` becomes `PageNumber`, and `Page<string[]>` becomes `PageStringArray`), then the file name (`Node` in `b.model.ts` becomes `NodeB`), then a number (`Node2`). The first type that asks keeps the plain name.
+A recursive interface, class or type alias never gives this error. It takes its declared name. A copy with the same shape, such as one `Node` declared in two files, shares one schema and the plain name. A type of another shape gets a longer name when another type already holds the plain name. Golem takes the first free name of these:
+
+- the type arguments of a generic instance: `Page<number>` becomes `PageNumber`, and `Page<string[]>` becomes `PageStringArray`;
+- the file name: `Node` in `b.model.ts` becomes `NodeB`;
+- both together: `PageNumberB`;
+- a number: `NodeB2`.
+
+The type that keeps the plain name is the one read first: the model source files in path order, then the models of a file in declaration order.
 
 ### RUNM1060
 
