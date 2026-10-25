@@ -706,8 +706,8 @@ export function descriptorBuilder(
         describe(schemaType, { ...context, exact: false, schemaData: true }, seen, schemaNode, representation, undefined, undefined, nameHint),
     };
     // Analyze checker types even when a child has no corresponding AST node
-    // (for example the Date branch of `Date | undefined`).
-    const analysis = analyzeNode(tagContext, originalType, node);
+    // (for example the Date branch of `Date | undefined`). A union variant reads the authored member that names it.
+    const analysis = analyzeNode(tagContext, originalType, node ?? nameNode);
     let metadata: InternalTagMetadata = analysis.metadata;
     if (metadata.serde && !metadata.serde.wireDescriptor) {
       const wireDescriptor = describe(metadata.serde.wireType, context, seen, undefined, 'wire', undefined, undefined, nameHint);

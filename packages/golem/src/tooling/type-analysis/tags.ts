@@ -61,9 +61,17 @@ export interface TagAnalysisContext {
   readonly aliasUseSite?: AliasUseSite;
   /**
    * The functions that the source read of one node wrote after `typeof`, by their type. The checker read of the same node
-   * names a function from its type; a const with a function type annotation has no declaration to name it by.
+   * names a function from its type; a const with a function type annotation has no declaration to name it by. Consts that
+   * share one type alias share one type: within one role, a type written with two different symbols maps to null and names no function.
    */
-  readonly writtenFunctions?: Map<ts.Type, ts.Symbol>;
+  readonly writtenFunctions?: WrittenFunctions;
+}
+
+type FunctionRole = 'validation' | 'serialize' | 'deserialize';
+type WrittenFunctions = Readonly<Record<FunctionRole, Map<ts.Type, ts.Symbol | null>>>;
+
+function newWrittenFunctions(): WrittenFunctions {
+  return { validation: new Map(), serialize: new Map(), deserialize: new Map() };
 }
 
 /** The concrete alias reference a generic tag alias is being read for. */
@@ -329,10 +337,7 @@ function functionArgument(
   message: string,
 ): TagFunction {
   if (argument?.node && ts.isTypeQueryNode(argument.node)) {
-    const type = context.checker.getTypeAtLocation(argument.node.exprName);
-    const symbol = symbolAtExpression(context.checker, argument.node.exprName);
-    if (symbol && !context.writtenFunctions?.has(type)) context.writtenFunctions?.set(type, symbol);
-    return { query: argument.node, type, owner: argument.node };
+    return { query: argument.node, type: context.checker.getTypeAtLocation(argument.node.exprName), owner: argument.node };
   }
   if (argument?.type && !argument.node) return { type: argument.type, owner: at };
   throw context.diagnostic(at, code, message);
@@ -343,7 +348,12 @@ function functionBinding(
   fn: TagFunction,
   kind: 'validation' | 'serialize' | 'deserialize',
 ): ValueBinding {
-  if (fn.query) return valueBindingForSymbol(context, symbolAtExpression(context.checker, fn.query.exprName), kind, fn.owner);
+  if (fn.query) {
+    const written = symbolAtExpression(context.checker, fn.query.exprName);
+    const known = context.writtenFunctions?.[kind].get(fn.type);
+    if (written && known !== null) context.writtenFunctions?.[kind].set(fn.type, known === undefined || known === written ? written : null);
+    return valueBindingForSymbol(context, written, kind, fn.owner);
+  }
   const declaration = fn.type.getCallSignatures()[0]?.declaration;
   const variable = declaration && ts.isFunctionLike(declaration)
     && (ts.isArrowFunction(declaration) || ts.isFunctionExpression(declaration))
@@ -352,7 +362,7 @@ function functionBinding(
     : undefined;
   const named = variable?.name
     ?? (declaration && (declaration as ts.NamedDeclaration).name);
-  const symbol = (named ? context.checker.getSymbolAtLocation(named) : undefined) ?? context.writtenFunctions?.get(fn.type);
+  const symbol = (named ? context.checker.getSymbolAtLocation(named) : undefined) ?? context.writtenFunctions?.[kind].get(fn.type) ?? undefined;
   return valueBindingForSymbol(context, symbol, kind, fn.owner);
 }
 
@@ -885,7 +895,7 @@ export function analyzeNode(
   type: ts.Type,
   node: ts.TypeNode | undefined,
 ): TagReadResult {
-  const nodeContext: TagAnalysisContext = { ...context, writtenFunctions: new Map() };
+  const nodeContext: TagAnalysisContext = { ...context, writtenFunctions: newWrittenFunctions() };
   const result = node ? readTags(nodeContext, node) : { baseNode: undefined, metadata: EMPTY };
   const metadata = mergeMetadata(result.metadata, metadataFromType(nodeContext, type));
   if (isDateType(context.checker, type)) {

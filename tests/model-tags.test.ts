@@ -339,21 +339,70 @@ test('a recursive type whose property name ends in a tag key name is a plain use
   assert.match(shared, /notTag/);
 });
 
-for (const item of [
-  { name: 'an annotated arrow', rules: tsSource`export const check: (v: string) => boolean = (v) => v !== '';\nexport const write: (v: number) => string = (v) => String(v);\nexport const read: (w: string) => number = (w) => Number(w);` },
-  { name: 'a const typed by a type alias', rules: tsSource`type Check = (v: string) => boolean;\ntype Write = (v: number) => string;\ntype Read = (w: string) => number;\nexport const check: Check = (v) => v !== '';\nexport const write: Write = (v) => String(v);\nexport const read: Read = (w) => Number(w);` },
-] as const) {
-  test(`${item.name} is a TValidation and a TSerde function`, t => {
+const typedRules = {
+  'an annotated arrow': tsSource`export const check: (v: string) => boolean = (v) => v !== '';\nexport const other: (v: string) => boolean = (v) => v.length < 9;\nexport const write: (v: string) => string = (v) => v;\nexport const read: (w: string) => string = (w) => w;`,
+  'a const typed by a type alias': tsSource`type Check = (v: string) => boolean;\ntype Write = (v: string) => string;\ntype Read = (w: string) => string;\nexport const check: Check = (v) => v !== '';\nexport const other: Check = (v) => v.length < 9;\nexport const write: Write = (v) => v;\nexport const read: Read = (w) => w;`,
+  'consts that share one type alias': tsSource`type Fn = (v: string) => string;\ntype Ok = (v: string) => boolean;\nexport const check: Ok = (v) => v !== '';\nexport const other: Ok = (v) => v.length < 9;\nexport const write: Fn = (v) => v;\nexport const read: Fn = (v) => v;`,
+} as const;
+
+/** The import lines of the generated files that bring in `name` (as `name` or `name as vN`). */
+function importsOf(generated: string, name: string): number {
+  return (generated.match(new RegExp(`^import \\{[^}]*\\b${name}\\b(?: as \\w+)?[^}]*\\} from`, 'gm')) ?? []).length;
+}
+
+for (const [name, rules] of Object.entries(typedRules)) {
+  test(`${name} is a TValidation and a TSerde function`, t => {
     // protects: F-31 a typed const named by typeof is a valid tag function (T-430, was RUNM1040)
     const { root, sourceRoot } = fixture(t);
-    fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), item.rules.text);
+    fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), rules.text);
     fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
       name: 'A',
-      imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { check, read, write } from './rules.js';`,
-      fields: tsSource`valid: string & TValidation<typeof check>; coded: number & TSerde<typeof write, typeof read>`,
+      imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { check, other, read, write } from './rules.js';`,
+      fields: tsSource`valid: string & TValidation<typeof check>; coded: string & TSerde<typeof write, typeof read>`,
     }).text);
     const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
-    for (const name of ['check', 'write', 'read']) assert.match(generated, new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from`), `${name} is bound`);
+    for (const bound of ['check', 'write', 'read']) assert.ok(importsOf(generated, bound) > 0, `${bound} is bound`);
+    assert.equal(importsOf(generated, 'other'), 0, 'a function no tag names is not bound');
+  });
+}
+
+test('two consts that share one type alias are both bound, each by its own tag', t => {
+  // protects: F-31 consts sharing a type alias share a type; a tag still binds the function it names (T-430)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), typedRules['consts that share one type alias'].text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { check, other, read, write } from './rules.js';`,
+    fields: tsSource`first: string & TValidation<typeof check>; second: string & TValidation<typeof other>; coded: string & TSerde<typeof write, typeof read>`,
+  }).text);
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  for (const bound of ['check', 'other', 'write', 'read']) assert.ok(importsOf(generated, bound) > 0, `${bound} is bound`);
+});
+
+test('two validators that share one type alias in one field are refused, not bound by guess', t => {
+  // protects: F-31 a function the checker cannot name from its type is not guessed from a shared alias (T-430)
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), typedRules['consts that share one type alias'].text);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { check, other } from './rules.js';`,
+    fields: tsSource`both: string & TValidation<typeof check> & TValidation<typeof other>`,
+  }).text);
+  assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), /RUNM1040/);
+});
+
+for (const [form, field] of [['optional', tsSource`email?: string & TValidation<typeof check>`], ['nullable', tsSource`email: (string & TValidation<typeof check>) | null`]] as const) {
+  test(`a ${form} field with a typed const validator binds it`, t => {
+    // protects: F-31 an optional or nullable tagged field reads its tag from the authored member (T-430)
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), typedRules['an annotated arrow'].text);
+    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+      name: 'A',
+      imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { check } from './rules.js';`,
+      fields: field,
+    }).text);
+    const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+    assert.ok(importsOf(generated, 'check') > 0, 'check is bound');
   });
 }
 
