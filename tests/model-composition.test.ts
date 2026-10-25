@@ -1,4 +1,5 @@
-import { readFixture } from './fixture-project.js';
+import { fixturePath, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,7 +9,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { compositionProject as fixture } from './support/model-composition-project.js';
-import { buildModelProject, writeModelGolemYaml } from './model-project.js';
+import { buildModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { discardedProjectionCodecsSource, discardedProjectionMetadataSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
 
@@ -57,23 +58,66 @@ test('IModel exposes fields and rejects root unions before emitting artifacts', 
 
 // protects: T-425 a non-object IModel root stops with RUNM1052 (Date[] once generated an invalid file, string[] a false RUNM1004)
 const nonObjectRoots = [
-  { name: 'an array of dates with validation off', fields: 'Date[]', validation: false, found: 'an array' },
-  { name: 'an array of strings with validation on', fields: 'string[]', validation: true, found: 'an array' },
-  { name: 'a tuple', fields: '[string, Date]', validation: true, found: 'a tuple' },
-  { name: 'a scalar', fields: 'string', validation: true, found: 'a scalar' },
-  { name: 'an object intersected with a scalar', fields: '{ a: string } & string', validation: false, found: 'an intersection with a scalar' },
+  { name: 'an array of dates with validation off', declaration: 'IModel', fields: 'Date[]', validation: false, found: 'an array' },
+  { name: 'an array of strings with validation on', declaration: 'IModel', fields: 'string[]', validation: true, found: 'an array' },
+  { name: 'an array in an IObject', declaration: 'IObject', fields: 'string[]', validation: true, found: 'an array' },
+  { name: 'a tuple', declaration: 'IModel', fields: '[string, Date]', validation: true, found: 'a tuple' },
+  { name: 'a scalar', declaration: 'IModel', fields: 'string', validation: true, found: 'a scalar' },
+  { name: 'any', declaration: 'IModel', fields: 'any', validation: false, found: 'any' },
+  { name: 'the object keyword', declaration: 'IModel', fields: 'object', validation: false, found: 'the object keyword' },
+  { name: 'an object intersected with a scalar', declaration: 'IModel', fields: '{ a: string } & string', validation: false, found: 'an intersection with a scalar' },
 ] as const;
-for (const { name, fields, validation, found } of nonObjectRoots) {
-  test(`an IModel with ${name} as its fields type stops with RUNM1052`, async t => {
+for (const { name, declaration, fields, validation, found } of nonObjectRoots) {
+  test(`${declaration} with ${name} as its fields type stops with RUNM1052`, async t => {
     const { root, sourceRoot } = fixture(t);
-    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';\nexport type TItem = IModel<${fields}>;\n`);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { ${declaration} } from '@exprtlabs/golem/model';\nexport type TItem = ${declaration}<${fields}>;\n`);
     assert.throws(
       () => generate({ root, profile: { mobx: false, validation } }),
-      new RegExp(`RUNM1052: The IModel fields type must be an object type, but TItem has ${found}\\.`),
+      new RegExp(`RUNM1052: The ${declaration} fields type must be an object type, but TItem has ${found}\\.`),
     );
     assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
   });
 }
+
+// protects: T-425 a whole-object TSerde root stops with RUNM1052 (it once wrote a file that did not compile); an SDK model's fields stay a valid root
+test('an IModel over a type that a TSerde converts as a whole stops with RUNM1052', async t => {
+  const { root, sourceRoot } = fixture(t);
+  writeModelSources(sourceRoot, {
+    'box.ts': `export class Box { constructor(public amount: number = 0) {} }
+export function boxToJson(value: Box): string { return String(value.amount); }
+export function boxFromJson(text: string): Box { return new Box(Number(text)); }
+`,
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { TSerde } from '@exprtlabs/golem/tags';
+import { Box, boxToJson, boxFromJson } from './box.js';
+export type TItem = IModel<Box & TSerde<typeof boxToJson, typeof boxFromJson>>;
+`,
+  });
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    /RUNM1052: The IModel fields type must be an object type, but TItem has a type that a TSerde converts as a whole\./,
+  );
+});
+
+test('an IModel over an SDK model generates a class with the fields of that model', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
+  writeGeneratedArtifacts((await generateOpenApi({
+    input: path.join(sourceRoot, 'money.yaml'),
+    output: path.join(sourceRoot, 'sdk'),
+    name: 'Payments',
+    profile: { mobx: false, validation: true },
+  })).artifacts);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Money } from './sdk/index.js';
+export type TItem = IModel<Money>;
+`,
+  });
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'));
+  assert.ok(generated);
+  assert.match(generated.content, /declare amount: TItemFields\["amount"\];\s+declare currency: TItemFields\["currency"\];/);
+});
 
 test('generated readonly fields remain readonly to TypeScript consumers', async t => {
   const { root, sourceRoot } = fixture(t);

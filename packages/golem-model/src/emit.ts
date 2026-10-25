@@ -51,7 +51,7 @@ import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, ty
 import { compareText, displayPath, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
-import { descriptorBuilder } from '@exprtlabs/golem/internal/type-analysis';
+import { descriptorBuilder, diagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalFilename,
   commonDirectory,
@@ -551,6 +551,30 @@ function descriptorType(
   return code`unknown`;
 }
 
+function fieldDescriptors(
+  checker: ts.TypeChecker,
+  specification: ModelSpecification,
+  describe: (type: ts.Type, context: ModelSpecification, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode) => ModelConversionDescriptor,
+  fields = checker.getPropertiesOfType(specification.fieldsType).filter((field) => !field.getName().startsWith('__@')),
+): Map<string, ModelConversionDescriptor> {
+  return new Map(
+    fields.map((field) => [
+      field.getName(),
+      describe(
+        propertyType(checker, field, specification.declaration),
+        specification,
+        undefined,
+        (() => {
+          const declaration = field.valueDeclaration ?? field.declarations?.[0];
+          return declaration && (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration))
+            ? declaration.type
+            : undefined;
+        })(),
+      ),
+    ]),
+  );
+}
+
 function descriptorReferences(
   descriptor: ModelConversionDescriptor,
   found = new Set<string>(),
@@ -610,6 +634,8 @@ export interface SourceModelGraph {
    * emits their code; this companion references them by codec id.
    */
   readonly siblings: readonly ModelSpecification[];
+  /** The job's descriptor builder, which describes the fields of a model that is an SDK model's fields. */
+  readonly describe: ReturnType<typeof descriptorBuilder>;
 }
 
 /** A job's executable-validation memo, keyed by the lookup objects its walks receive. */
@@ -637,16 +663,36 @@ interface JobAnalysis {
   lookup?: Readonly<Record<string, ModelConversionDescriptor>>;
 }
 
+/** The conversion descriptor of a model's fields type, described once per job. */
+function describeRoot(job: JobAnalysis, specification: ModelSpecification): ModelConversionDescriptor {
+  let descriptor = job.described.get(specification);
+  if (!descriptor) {
+    descriptor = job.describe(specification.fieldsType, specification, undefined, specification.fieldsNode);
+    job.described.set(specification, descriptor);
+  }
+  return descriptor;
+}
+
+/**
+ * A model emits the fields of an object, or of an SDK model. A root that a TSerde converts as a whole, or any other root
+ * that is no object, has no fields to emit: it stops with RUNM1052 once its other uses have been described.
+ */
+function assertRootHasFields(specification: ModelSpecification, definition: ModelConversionDescriptor): void {
+  const found = 'serde' in definition ? 'a type that a TSerde converts as a whole'
+    : definition.kind === 'object' || definition.kind === 'generated-model' ? undefined
+      : definition.kind === 'any' || definition.kind === 'unknown' ? definition.kind : `a ${definition.kind}`;
+  if (found) {
+    throw diagnostic(specification.sourceFile, specification.declaration, '1052',
+      `The ${specification.emitClass ? 'IModel' : 'IObject'} fields type must be an object type, but ${specification.name} has ${found}. Declare the fields in an object type, and put the value in a field of a model.`);
+  }
+}
+
 /** Describe every model of the job once and index the results for lookups. */
 export function describeJob(job: JobAnalysis, specifications: readonly ModelSpecification[]): void {
   const byName = new Map<string, ModelConversionDescriptor | null>();
   for (const specification of specifications) {
     if (!job.sources.has(canonicalFilename(specification.sourceFile.fileName))) continue;
-    let descriptor = job.described.get(specification);
-    if (!descriptor) {
-      descriptor = job.describe(specification.fieldsType, specification, undefined, specification.fieldsNode);
-      job.described.set(specification, descriptor);
-    }
+    const descriptor = describeRoot(job, specification);
     byName.set(specification.name, byName.has(specification.name) ? null : descriptor);
   }
   const lookup: Record<string, ModelConversionDescriptor> = Object.create(null) as Record<string, ModelConversionDescriptor>;
@@ -733,14 +779,6 @@ export function analyzeSourceGraph(
     specifications.map((specification) => specification.sourceFile.fileName),
   ));
   const { describe } = job;
-  const describeOnce = (specification: ModelSpecification): ModelConversionDescriptor => {
-    let descriptor = job.described.get(specification);
-    if (!descriptor) {
-      descriptor = describe(specification.fieldsType, specification, undefined, specification.fieldsNode);
-      job.described.set(specification, descriptor);
-    }
-    return descriptor;
-  };
   const canonicalSource = canonicalFilename(source);
   const local = specifications.filter((item) => canonicalFilename(item.sourceFile.fileName) === canonicalSource);
   if (local.length === 0) return undefined;
@@ -780,7 +818,7 @@ export function analyzeSourceGraph(
     if (!specification || emitted.has(specification)) continue;
     const duplicate = [...emitted].find((item) => item.name === specification.name);
     if (duplicate) throw new Error(`Generated model symbol collision for "${specification.name}" in ${source}.`);
-    const descriptor = describeOnce(specification);
+    const descriptor = describeRoot(job, specification);
     definitions[specification.name] = descriptor;
     emitted.add(specification);
     if (isSibling(specification)) {
@@ -840,6 +878,7 @@ export function analyzeSourceGraph(
     schemas,
     emitted: [...emitted],
     siblings: [...siblings],
+    describe,
   };
 }
 
@@ -1541,15 +1580,20 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
   const serdeExpressionOf = (id: string, direction: 'serialize' | 'deserialize', value: Code): Code => serdeExpression(context, id, direction, value);
   return context.local.map((specification) => {
     const definition = definitions[specification.name];
+    assertRootHasFields(specification, definition);
     const baseName = identifier(`${specification.name}BaseModel`);
-    if (definition.kind !== 'object') throw new Error(`Internal error: the root of ${specification.name} is a ${definition.kind}, not an object.`);
     // Phantom tag members are part of the type-level intersection and must
     // remain in the root descriptor, but they are not model fields.  Emitting
     // them would make conversion look for descriptors that intentionally do
     // not exist.
     const fields = checker.getPropertiesOfType(specification.fieldsType).filter((field) =>
-      Object.prototype.hasOwnProperty.call(definition.properties, field.getName()));
-    const descriptors = new Map(Object.entries(definition.properties));
+      definition.kind === 'object'
+        ? Object.prototype.hasOwnProperty.call(definition.properties, field.getName())
+        : !field.getName().startsWith('__@'),
+    );
+    const descriptors = definition.kind === 'object'
+      ? new Map(Object.entries(definition.properties))
+      : fieldDescriptors(checker, specification, context.graph.describe, fields);
     const helpers: Code[] = [];
     const encode = fields.map((field) => {
       const name = literal(field.getName());

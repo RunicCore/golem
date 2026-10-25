@@ -307,7 +307,7 @@ test('rejects a root IModel union before emitting a controller artifact', async 
 
   await assert.rejects(
     generateFixture(root),
-    (error: unknown) => /RUNM1052|Root IModel unions are unsupported/i.test(String(error)),
+    (error: unknown) => /RUNM1052.*must be an object type, but .* has a union/.test(String(error)),
   );
 });
 

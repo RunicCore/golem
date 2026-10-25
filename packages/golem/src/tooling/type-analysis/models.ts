@@ -1,7 +1,7 @@
 import { diagnostic, modelDeclarationKind } from './symbols.js';
 import * as ts from '../typescript-ns.js';
 import { isDateType } from './tags.js';
-import { descriptorBuilder } from './types.js';
+import { descriptorBuilder, isErrorAny } from './types.js';
 
 export interface ModelSpecification {
   readonly sourceFile: ts.SourceFile;
@@ -38,8 +38,9 @@ export interface TypeAnalysisContext {
   readonly field?: string;
 }
 
-/** What a fields type is when it is no object type, as a noun phrase for the RUNM1052 message; undefined for an object type. */
+/** What a fields type is when it is no object type, as a phrase for the RUNM1052 message; undefined for an object type. */
 function nonObjectKind(checker: ts.TypeChecker, type: ts.Type): string | undefined {
+  if (isErrorAny(type)) return undefined;
   if (type.isUnion()) return 'a union';
   if (type.isIntersection()) {
     const member = type.types.map((item) => nonObjectKind(checker, item)).find((kind) => kind !== undefined);
@@ -48,7 +49,9 @@ function nonObjectKind(checker: ts.TypeChecker, type: ts.Type): string | undefin
   if (checker.isTupleType(type)) return 'a tuple';
   if (checker.isArrayType(type)) return 'an array';
   if (isDateType(checker, type)) return 'a Date';
-  if ((type.flags & ts.TypeFlags.Object) === 0) return 'a scalar';
+  if ((type.flags & ts.TypeFlags.Any) !== 0) return 'any';
+  if ((type.flags & ts.TypeFlags.Unknown) !== 0) return 'unknown';
+  if ((type.flags & ts.TypeFlags.Object) === 0) return checker.typeToString(type) === 'object' ? 'the object keyword' : 'a scalar';
   if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) return 'a function';
   return undefined;
 }
@@ -103,7 +106,7 @@ export function collectSpecifications(
       const fieldsType = checker.getTypeFromTypeNode(fieldsNode);
       const found = nonObjectKind(checker, fieldsType);
       if (found) {
-        throw diagnostic(sourceFile, statement, '1052', `The IModel fields type must be an object type, but ${statement.name.text} has ${found}. Declare the fields in an object type, and put a union, array or scalar in a named model field.`);
+        throw diagnostic(sourceFile, statement, '1052', `The ${declarationKind} fields type must be an object type, but ${statement.name.text} has ${found}. Declare the fields in an object type, and put a union, array or scalar in a named model field.`);
       }
       specifications.push({
         sourceFile,
