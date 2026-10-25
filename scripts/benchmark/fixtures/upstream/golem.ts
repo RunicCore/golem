@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/serde';
+import { codecIdOf } from './codec-id.js';
 import { rejects, rejectsValidate, type Adapter, type ComparisonFixture, type InvalidOperations } from './fixture-contract.js';
 import {
   Account,
@@ -52,23 +53,23 @@ function trusted(validation: boolean, construct?: new (values?: never) => object
 }
 
 function registerHandwrittenClasses(): void {
-  registerIModelClass('TPoint3D', Point3D);
-  registerIModelClass('TTimestamp', Timestamp);
-  registerIModelClass('TAccount', Account);
-  registerIModelClass('TEnterprise', Enterprise);
-  registerIModelClass('TChannel', Channel);
-  registerIModelClass('TMember', Member);
-  registerIModelClass('TObjectSimple', ObjectSimple);
-  registerIModelClass('TEmployee', Employee);
-  registerIModelClass('TDepartment', Department);
-  registerIModelClass('TCompany', Company);
-  registerIModelClass('TCollection', Collection);
-  registerIModelClass('TConstrainedTimestamp', ConstrainedTimestamp);
-  registerIModelClass('TConstrainedAccount', ConstrainedAccount);
-  registerIModelClass('TConstrainedEnterprise', ConstrainedEnterprise);
-  registerIModelClass('TConstrainedChannel', ConstrainedChannel);
-  registerIModelClass('TConstrainedMember', ConstrainedMember);
-  registerIModelClass('TConstrainedObjectHierarchical', ConstrainedObjectHierarchical);
+  registerIModelClass(codecIdOf('TPoint3D'), Point3D);
+  registerIModelClass(codecIdOf('TTimestamp'), Timestamp);
+  registerIModelClass(codecIdOf('TAccount'), Account);
+  registerIModelClass(codecIdOf('TEnterprise'), Enterprise);
+  registerIModelClass(codecIdOf('TChannel'), Channel);
+  registerIModelClass(codecIdOf('TMember'), Member);
+  registerIModelClass(codecIdOf('TObjectSimple'), ObjectSimple);
+  registerIModelClass(codecIdOf('TEmployee'), Employee);
+  registerIModelClass(codecIdOf('TDepartment'), Department);
+  registerIModelClass(codecIdOf('TCompany'), Company);
+  registerIModelClass(codecIdOf('TCollection'), Collection);
+  registerIModelClass(codecIdOf('TConstrainedTimestamp'), ConstrainedTimestamp);
+  registerIModelClass(codecIdOf('TConstrainedAccount'), ConstrainedAccount);
+  registerIModelClass(codecIdOf('TConstrainedEnterprise'), ConstrainedEnterprise);
+  registerIModelClass(codecIdOf('TConstrainedChannel'), ConstrainedChannel);
+  registerIModelClass(codecIdOf('TConstrainedMember'), ConstrainedMember);
+  registerIModelClass(codecIdOf('TConstrainedObjectHierarchical'), ConstrainedObjectHierarchical);
 }
 
 registerHandwrittenClasses();
@@ -87,7 +88,7 @@ function constructFor(input: FixtureInput): new (values?: never) => object {
  * IModel tagValidators stay on the class editor path and are not the JSON hot path.
  */
 async function verifyPublicTagInvocation(input: FixtureInput): Promise<void> {
-  const codec = requireObjectCodec('TConstrainedObjectHierarchical');
+  const codec = requireObjectCodec(codecIdOf('TConstrainedObjectHierarchical'));
   const model = codec.fromWireFormat(input.payload, { construct: ConstrainedObjectHierarchical }) as InstanceType<typeof ConstrainedObjectHierarchical>;
   assert.ok(model instanceof ConstrainedObjectHierarchical);
   codec.toWireFormat(model);
@@ -110,10 +111,10 @@ function validationFor(adapter: Adapter): boolean {
 
 function codecId(input: FixtureInput): string {
   switch (input.name) {
-    case 'ObjectSimple': return 'TObjectSimple';
-    case 'ObjectHierarchical-Constrained': return 'TConstrainedObjectHierarchical';
+    case 'ObjectSimple': return codecIdOf('TObjectSimple');
+    case 'ObjectHierarchical-Constrained': return codecIdOf('TConstrainedObjectHierarchical');
     case 'ArrayHierarchical-1000':
-      return 'TCollection';
+      return codecIdOf('TCollection');
   }
 }
 
@@ -134,9 +135,9 @@ function encodeText(model: GolemModel, _payload: unknown, validation: boolean, i
 }
 
 function codecIdFromModel(model: GolemModel): string {
-  if (model instanceof ObjectSimple) return 'TObjectSimple';
-  if (model instanceof Collection) return 'TCollection';
-  return 'TConstrainedObjectHierarchical';
+  if (model instanceof ObjectSimple) return codecIdOf('TObjectSimple');
+  if (model instanceof Collection) return codecIdOf('TCollection');
+  return codecIdOf('TConstrainedObjectHierarchical');
 }
 
 function assertNestedInstances(input: FixtureInput, value: GolemModel): void {

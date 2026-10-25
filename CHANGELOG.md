@@ -39,6 +39,8 @@ in the sections below.
 - A property with a symbol key, such as `[sym]: string`, in a model, in a nested object of a model or in the type of a controller parameter stops generation with [`RUNM1070`](docs/reference/diagnostics.md#runm1070). Before, a model wrote a field named `__@sym@4`, and a parameter became a query or header parameter with that name.
 - Validation of an object type with no named properties is faster, and `stringify` of a map of numbers, such as `{ [key: string]: number }`, is faster. The results are the same.
 
+- **Breaking:** `getObjectCodec`, `getIModelClass`, `requireObjectCodec`, `requireIModelClass` and `registerIModelClass` from `@exprtlabs/golem/serde` match the full codec id exactly. Before, a short model name such as `TOrder` also found the codec `TOrder_<8 hex digits>`, and a model named like `Order_0badc0de` was linked wrongly or missed. Pass the id from `findCodecIdForConstructor`, `.golem/codec-keys.json` or the `codecId` of `model-manifest.json`. The error of `requireObjectCodec` names the id only. See [Upgrade to 1.1](docs/upgrade-1-1.md#codec-ids).
+
 ### OpenAPI
 
 - A `oneOf` or `anyOf` of objects that needs a conversion, and has no `discriminator` and no required `const` or single-value `enum` property that differs between variants, stops generation with [`OPENAPI_UNION_DISCRIMINATOR_MISSING`](docs/reference/diagnostics.md#openapi-union-discriminator-missing). The message names the schema and lists the variants. Add the property to each variant, or add a `discriminator`.

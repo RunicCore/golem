@@ -91,9 +91,9 @@ test('a validating model project runs when its sources and its companions are im
     '',
   ].join('\n'));
   write(root, 'src/main.ts', [
-    `import { requireObjectCodec } from '${SERDE}';`,
+    `import { findCodecIdForConstructor, requireObjectCodec } from '${SERDE}';`,
     "import { Money } from './money.model.js';",
-    "const codec = requireObjectCodec('TMoney');",
+    "const codec = requireObjectCodec(findCodecIdForConstructor(Money) as string);",
     "console.log(JSON.stringify({ good: codec.validate(new Money({ currency: 'USD' })), bad: codec.validate(new Money({ currency: 'x' })) }));",
     '',
   ].join('\n'));
@@ -444,9 +444,12 @@ test('a model named only in an async Promise return has its codec registered wit
     '',
   ].join('\n'), [
     "import 'reflect-metadata';",
+    "import fs from 'node:fs';",
     "import { getObjectCodec } from '@exprtlabs/golem/serde';",
     "import './payments.controller.ts';",
-    "console.log(JSON.stringify({ registered: getObjectCodec('TPayment') !== undefined }));",
+    "const keys = JSON.parse(fs.readFileSync('.golem/codec-keys.json', 'utf8')).keys;",
+    "const id = keys[Object.keys(keys).find((key) => key.endsWith('#TPayment'))];",
+    "console.log(JSON.stringify({ registered: getObjectCodec(id) !== undefined }));",
     '',
   ].join('\n'));
   const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });

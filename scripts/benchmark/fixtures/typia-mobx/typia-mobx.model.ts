@@ -6,6 +6,7 @@ import {
   TMobxTupleBaseModel, TMobxUnionBaseModel,
   type TMobxArrayInit, type TMobxFlatInit, type TMobxNestedInit, type TMobxOptionalInit, type TMobxTupleInit, type TMobxUnionInit,
 } from './typia-mobx.model.generated.js';
+import { codecIdOf } from './codec-id.js';
 
 // The MobX twins of the typia comparison models: the IModel twins (typia-imodel.model.ts) with `mobx: true`, each class
 // observable. MobX defines a declared field as an own accessor and a missing one as an own `undefined`.
@@ -119,10 +120,10 @@ export class MobxOptional extends TMobxOptionalBaseModel {
  * `TwinFactories` shape of typia/compare-case.ts, written out: the MobX project is generated and compiled from this folder alone.
  */
 export const mobxTwins: Readonly<Record<string, { readonly codecId: string; make(init: unknown): object }>> = {
-  flat: { codecId: 'TMobxFlat', make(init: TMobxFlatInit) { return new MobxFlat(init); } },
-  nested: { codecId: 'TMobxNested', make(init: TMobxNestedInit) { return new MobxNested(init); } },
-  union: { codecId: 'TMobxUnion', make(init: TMobxUnionInit) { return new MobxUnion(init); } },
-  array: { codecId: 'TMobxArray', make(init: TMobxArrayInit) { return new MobxArray(init); } },
-  tuple: { codecId: 'TMobxTuple', make(init: TMobxTupleInit) { return new MobxTuple(init); } },
-  optional: { codecId: 'TMobxOptional', make(init: TMobxOptionalInit) { return new MobxOptional(init); } },
+  flat: { codecId: codecIdOf('TMobxFlat'), make(init: TMobxFlatInit) { return new MobxFlat(init); } },
+  nested: { codecId: codecIdOf('TMobxNested'), make(init: TMobxNestedInit) { return new MobxNested(init); } },
+  union: { codecId: codecIdOf('TMobxUnion'), make(init: TMobxUnionInit) { return new MobxUnion(init); } },
+  array: { codecId: codecIdOf('TMobxArray'), make(init: TMobxArrayInit) { return new MobxArray(init); } },
+  tuple: { codecId: codecIdOf('TMobxTuple'), make(init: TMobxTupleInit) { return new MobxTuple(init); } },
+  optional: { codecId: codecIdOf('TMobxOptional'), make(init: TMobxOptionalInit) { return new MobxOptional(init); } },
 };
