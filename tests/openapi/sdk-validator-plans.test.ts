@@ -5,13 +5,12 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { transformSync } from 'esbuild';
-
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compilePlanValidators, type CodecValidationPlan, type PlanValidators } from '@exprtlabs/golem/internal/validation-plan';
 import { analyzeOpenApiModels, generateOpenApiModelArtifacts } from '#openapi/models';
 
 import { workspace } from '../support/process.js';
+import { stripTypes } from '../support/run-module.js';
 
 /** Models that several groups share: a union of variants over a base, and an owner and a toy that reach into it. */
 function sharedModelsDocument(): Record<string, unknown> {
@@ -67,7 +66,7 @@ async function loadValidators(compiled: PlanValidators, directory: string, name:
   const runtime = pathToFileURL(path.join(workspace, 'packages/golem/dist/validation-runtime.js')).href;
   const source = compiled.source.replaceAll('"@exprtlabs/golem/validation-runtime"', JSON.stringify(runtime));
   const file = path.join(directory, `${name}.mjs`);
-  writeFileSync(file, transformSync(source, { loader: 'ts', format: 'esm', target: 'es2022' }).code);
+  writeFileSync(file, stripTypes(source));
   return await import(pathToFileURL(file).href) as Readonly<Record<string, Validator>>;
 }
 
