@@ -4,8 +4,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { changedPaths, InputScan, InputWatcher, RunBaseline } from '#golem/input-watcher';
-import { quietly, trackWatchers, until } from './support/watch-wait.js';
+import { changedPaths, InputScan, InputWatcher, realInputFiles, RunBaseline } from '#golem/input-watcher';
+import type { InputFiles } from '#golem/input-watcher';
+import { countingInputFiles, quietly, until } from './support/watch-wait.js';
 
 /** A root with `src/a.model.ts`, and a folder beside it that stands for a shared folder outside the root. */
 function projectFolders(t: TestContext): { root: string; shared: string } {
@@ -27,8 +28,8 @@ test('a model file created while a run is in flight is reported by the next scan
   const added = path.join(root, 'src/b.model.ts');
   const elsewhere = path.join(path.dirname(root), 'elsewhere.model.ts');
   const scope = { root };
-  const before = new InputScan([known], scope).snapshot();
-  const baseline = new RunBaseline(before, root);
+  const before = new InputScan([known], scope, realInputFiles).snapshot();
+  const baseline = new RunBaseline(before, root, realInputFiles);
   baseline.observe(known);
   // The folder of an input outside the root is recorded when the run first reads it.
   baseline.observeFolder(path.dirname(root));
@@ -36,11 +37,11 @@ test('a model file created while a run is in flight is reported by the next scan
   fs.writeFileSync(added, 'export type TB = 1;\n');
   // A file outside every scanned folder is seen only as an input.
   fs.writeFileSync(elsewhere, 'export type TE = 1;\n');
-  const after = new InputScan([known, added, elsewhere], scope).snapshot();
+  const after = new InputScan([known, added, elsewhere], scope, realInputFiles).snapshot();
 
   const previous = baseline.settle(after);
   assert.deepEqual(changedPaths(previous, after).sort(), [added, elsewhere].sort());
-  const folderOnly = new InputScan([known], scope).snapshot();
+  const folderOnly = new InputScan([known], scope, realInputFiles).snapshot();
   assert.deepEqual(changedPaths(baseline.settle(folderOnly), folderOnly), [added], 'the names in the folder report it when it is no input yet');
 });
 
@@ -52,12 +53,12 @@ test('an input the run read first takes the state it had then, and a file the ru
   const written = path.join(root, 'src/a.model.generated.ts');
   const scope = { root };
   fs.writeFileSync(read, '1');
-  const before = new InputScan([known], scope).snapshot();
-  const baseline = new RunBaseline(before, root);
+  const before = new InputScan([known], scope, realInputFiles).snapshot();
+  const baseline = new RunBaseline(before, root, realInputFiles);
   baseline.observe(read);
   fs.writeFileSync(read, '22');
   fs.writeFileSync(written, 'generated');
-  const after = new InputScan([known, read, written], scope).snapshot();
+  const after = new InputScan([known, read, written], scope, realInputFiles).snapshot();
 
   const previous = baseline.settle(after, (file) => file === written);
   assert.deepEqual(changedPaths(previous, after, (file) => file === written), [read], 'the edit after the first read is a change; the generated file is not');
@@ -68,7 +69,7 @@ test('a name added to a scanned folder outside the root is reported, and a name 
   const { root, shared } = projectFolders(t);
   const outside = path.join(shared, 'money.model.ts');
   const scope = { root };
-  const scan = new InputScan([outside], scope);
+  const scan = new InputScan([outside], scope, realInputFiles);
   const previous = scan.snapshot();
   fs.writeFileSync(path.join(shared, 'order.model.ts'), 'export type TOrder = 1;\n');
   fs.writeFileSync(path.join(shared, 'order.model.generated.ts'), 'generated');
@@ -83,7 +84,7 @@ test('editor temporary files and hidden files are not reported', (t) => {
   // protects: T-307 editor temp files must not start a run
   const { root } = projectFolders(t);
   const scope = { root };
-  const scan = new InputScan([path.join(root, 'src/a.model.ts')], scope);
+  const scan = new InputScan([path.join(root, 'src/a.model.ts')], scope, realInputFiles);
   const previous = scan.snapshot();
   fs.writeFileSync(path.join(root, 'src/a.model.ts~'), 'backup');
   fs.writeFileSync(path.join(root, 'src/.#a.model.ts'), 'lock');
@@ -95,7 +96,7 @@ test('a folder created below a descent root is scanned, so a source added to it 
   // protects: T-29 a source in a folder that held no input is found
   const { root } = projectFolders(t);
   const scope = { root, descend: [root] };
-  const scan = new InputScan([path.join(root, 'src/a.model.ts')], scope);
+  const scan = new InputScan([path.join(root, 'src/a.model.ts')], scope, realInputFiles);
   fs.mkdirSync(path.join(root, 'lib'));
   const previous = scan.snapshot();
   fs.writeFileSync(path.join(root, 'lib/pet.model.ts'), 'export type TPet = 1;\n');
@@ -111,7 +112,7 @@ test('a hidden folder that an input lies in is scanned, and a folder under node_
   fs.mkdirSync(path.dirname(dependency), { recursive: true });
   fs.writeFileSync(config, 'export default {};\n');
   fs.writeFileSync(dependency, 'export {};\n');
-  const scan = new InputScan([config, dependency], { root });
+  const scan = new InputScan([config, dependency], { root }, realInputFiles);
   const previous = scan.snapshot();
   fs.writeFileSync(path.join(root, '.vitepress/theme.ts'), 'export {};\n');
   fs.writeFileSync(path.join(root, 'node_modules/pkg/other.ts'), 'export {};\n');
@@ -133,18 +134,18 @@ test('an installed package is no scanned input, and a file linked from outside n
   fs.symlinkSync(shared, path.dirname(linked), 'dir');
   fs.symlinkSync(path.join(root, 'node_modules/.pnpm/store'), path.join(root, 'node_modules/alias'), 'dir');
 
-  const scan = new InputScan([path.join(root, 'src/a.model.ts'), installed, linked, missing, path.join(root, 'node_modules/alias/index.ts')], { root });
+  const scan = new InputScan([path.join(root, 'src/a.model.ts'), installed, linked, missing, path.join(root, 'node_modules/alias/index.ts')], { root }, realInputFiles);
 
   assert.deepEqual([...scan.files], [path.join(root, 'src/a.model.ts'), linked]);
   assert.deepEqual([...scan.linkedFolders], [shared], 'a change to the linked file happens in its real folder');
 });
 
 /** A watcher over `folders` that records the `installed` flag of each tick, the errors it reports and each time it finds nothing to watch. */
-function ticking(t: TestContext, root: string, folders: readonly string[]): { ticks: boolean[]; errors: Error[]; unwatchable: boolean[]; watcher: InputWatcher } {
+function ticking(t: TestContext, root: string, folders: readonly string[], files?: Pick<InputFiles, 'watch'>): { ticks: boolean[]; errors: Error[]; unwatchable: boolean[]; watcher: InputWatcher } {
   const ticks: boolean[] = [];
   const errors: Error[] = [];
   const unwatchable: boolean[] = [];
-  const watcher = new InputWatcher({ root: () => root, tick: async (installed) => { ticks.push(installed); }, onError: (error) => { errors.push(error); }, onUnwatchable: () => { unwatchable.push(true); } });
+  const watcher = new InputWatcher({ root: () => root, tick: async (installed) => { ticks.push(installed); }, onError: (error) => { errors.push(error); }, onUnwatchable: () => { unwatchable.push(true); }, files });
   t.after(() => watcher.close());
   watcher.sync(folders);
   return { ticks, errors, unwatchable, watcher };
@@ -248,14 +249,15 @@ test('a folder that cannot be watched is reported once with its fix, and the wat
   // protects: R-31 a watch that cannot open is an external failure: loud, once, no exit
   const { root, shared } = projectFolders(t);
   const watchers: fs.FSWatcher[] = [];
-  const open = fs.watch.bind(fs) as (...args: unknown[]) => fs.FSWatcher;
-  t.mock.method(fs, 'watch', (...args: unknown[]) => {
-    if (args[0] === shared) throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' });
-    const watcher = open(...args);
-    watchers.push(watcher);
-    return watcher;
-  });
-  const { errors, watcher, ticks } = ticking(t, root, [shared, path.join(root, 'src')]);
+  const files: Pick<InputFiles, 'watch'> = {
+    watch: (folder, listener) => {
+      if (folder === shared) throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' });
+      const watcher = realInputFiles.watch(folder, listener);
+      watchers.push(watcher);
+      return watcher;
+    },
+  };
+  const { errors, watcher, ticks } = ticking(t, root, [shared, path.join(root, 'src')], files);
   watcher.sync([shared, path.join(root, 'src')]);
   assert.equal(errors.length, 1, 'reported once though it was tried twice');
   assert.match(errors[0].message, /^golem cannot watch .*shared \(ENOSPC\)/);
@@ -271,18 +273,18 @@ test('a folder that cannot be watched is reported once with its fix, and the wat
 test('closing the watcher closes every folder watch', (t) => {
   // protects: R-31 every watcher closes when the loop stops
   const { root } = projectFolders(t);
-  const watchers = trackWatchers(t);
-  const { watcher } = ticking(t, root, [path.join(root, 'src'), root]);
-  assert.equal(watchers.open(), 2, 'the two folders are watched');
+  const watchers = countingInputFiles();
+  const { watcher } = ticking(t, root, [path.join(root, 'src'), root], watchers.files);
+  assert.equal(watchers.openWatches(), 2, 'the two folders are watched');
   watcher.close();
-  assert.equal(watchers.open(), 0);
+  assert.equal(watchers.openWatches(), 0);
 });
 
 test('no folder can be watched: the watcher says so once and tells the loop to end', (t) => {
   // protects: R-31 a loop with no working watcher ends and fails instead of sleeping for ever
   const { root } = projectFolders(t);
-  t.mock.method(fs, 'watch', () => { throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' }); });
-  const { errors, unwatchable, watcher } = ticking(t, root, [path.join(root, 'src')]);
+  const files: Pick<InputFiles, 'watch'> = { watch: () => { throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' }); } };
+  const { errors, unwatchable, watcher } = ticking(t, root, [path.join(root, 'src')], files);
   watcher.sync([path.join(root, 'src')]);
   assert.deepEqual(unwatchable, [true]);
   assert.equal(errors.length, 2);
@@ -295,13 +297,14 @@ test('a watcher that errors because its folder is gone is dropped without a repo
   const { root } = projectFolders(t);
   const folder = path.join(root, 'src');
   const watchers: fs.FSWatcher[] = [];
-  const open = fs.watch.bind(fs) as (...args: unknown[]) => fs.FSWatcher;
-  t.mock.method(fs, 'watch', (...args: unknown[]) => {
-    const watcher = open(...args);
-    watchers.push(watcher);
-    return watcher;
-  });
-  const { errors, unwatchable, ticks, watcher } = ticking(t, root, [folder]);
+  const files: Pick<InputFiles, 'watch'> = {
+    watch: (target, listener) => {
+      const watcher = realInputFiles.watch(target, listener);
+      watchers.push(watcher);
+      return watcher;
+    },
+  };
+  const { errors, unwatchable, ticks, watcher } = ticking(t, root, [folder], files);
   fs.rmSync(folder, { recursive: true });
   watchers[0].emit('error', Object.assign(new Error('EPERM: operation not permitted, watch'), { code: 'EPERM' }));
   await until(() => ticks.length > 0, 'the tick that looks at the folder again');
@@ -315,7 +318,7 @@ test('an event for an input with a hidden name starts a tick, and another hidden
   const { root } = projectFolders(t);
   const base = path.join(root, '.tsconfig.base.json');
   fs.writeFileSync(base, '{}');
-  const scan = new InputScan([base], { root });
+  const scan = new InputScan([base], { root }, realInputFiles);
   const { ticks, watcher } = ticking(t, root, []);
   watcher.snapshotWatching(scan);
   fs.writeFileSync(path.join(root, '.other.json'), '{}');
@@ -333,7 +336,7 @@ test('the folder of every input outside the root is scanned, a missing one inclu
   fs.writeFileSync(base, '{}');
   const missingInShared = path.join(shared, 'later.ts');
   const missingAbove = path.join(outer, 'package.json');
-  const scan = new InputScan([path.join(root, 'src/a.model.ts'), base, missingInShared, missingAbove, path.join(outer, 'absent/new.ts')], { root });
+  const scan = new InputScan([path.join(root, 'src/a.model.ts'), base, missingInShared, missingAbove, path.join(outer, 'absent/new.ts')], { root }, realInputFiles);
   const folders = scan.snapshot().folders;
   assert.deepEqual([...folders.keys()].filter((folder) => !isInside(root, folder)).sort(), [outer, shared].sort());
   assert.deepEqual(folders.get(shared), ['money.model.ts']);

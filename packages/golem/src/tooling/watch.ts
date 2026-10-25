@@ -31,8 +31,8 @@ function observeInput(baseline: RunBaseline, root: string, input: string): void 
 export function baselineBeforeRun(configFile: string): { readonly baseline: RunBaseline; readonly onInput: (input: string) => void } {
   const resolved = path.resolve(configFile);
   const root = path.dirname(resolved);
-  const before = new InputScan([resolved], { root }).snapshot();
-  const baseline = new RunBaseline(before, root);
+  const before = new InputScan([resolved], { root }, realInputFiles).snapshot();
+  const baseline = new RunBaseline(before, root, realInputFiles);
   return { baseline, onInput: input => { observeInput(baseline, root, input); } };
 }
 
@@ -82,7 +82,7 @@ export interface WatchOptions {
  * run left. A package manager's install starts a full run. With a `PipelineState`, the first comparison is with
  * `options.firstBaseline`. A failure to watch goes to `reportError` once; the watch goes on unless not one folder can be watched: then
  * it stops, and `options.onUnwatchable` is called. `options.onRun` gets the line of each good run (`summarizeRun`, with `Recovered: `
- * before it after a failed run) once the watch has recorded what the run read. The watch prints nothing about its runs; the caller
+ * before it after a failed run) once the watch has recorded what the run read, or has reported why it could not. The watch prints nothing about its runs; the caller
  * says it. An exception from `onRun` goes to `reportError`, and the watch goes on.
  */
 export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, options: WatchOptions = {}): () => void {
@@ -167,7 +167,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       first = false;
       session.inputsChanged(changed);
       const modelOnly = !retryFull && changed.every(input => kindOf(input) === 'models');
-      const baseline = new RunBaseline(before, watched.root);
+      const baseline = new RunBaseline(before, watched.root, inputFiles);
       const latestAttempt = new Map<string, InputKind>();
       // The line of this run when it ended well, kept until the watch has recorded what the run read.
       let line: string | undefined;
@@ -194,9 +194,14 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
         reportError(jobFailedBeforeWriting(error) ? new Error(`${errorMessage(error)}\nThe job that failed wrote no files; its last good output stays in place.`, { cause: error }) : error);
       }
       attempted = latestAttempt;
-      // Keep pre-read signatures so edits during work trigger the next serialized run.
-      watched = watch();
-      previous = baseline.settle(watcher.snapshotWatching(watched.scan));
+      try {
+        // Keep pre-read signatures so edits during work trigger the next serialized run.
+        watched = watch();
+        previous = baseline.settle(watcher.snapshotWatching(watched.scan));
+      } catch (error) {
+        // The run ended well and its line is still owed; `previous` stays as it was, so the next tick compares with the scan before this run.
+        reportError(error);
+      }
       if (line !== undefined) onRun(line);
     } catch (error) { reportError(error); }
     finally {

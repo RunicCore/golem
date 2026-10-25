@@ -5,6 +5,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
+import { realOutputFiles } from '#golem/outputs';
+import type { OutputFiles } from '#golem/outputs';
 import { runPipeline } from '#golem/pipeline';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
@@ -43,13 +45,14 @@ test('an interrupted inventory replacement recovers and the validators stay in p
   assert.equal(sdkValidatorModules(setup.root).length, 1, 'the SDK has one validators module');
   const originalInventory = fs.readFileSync(setup.inventory, 'utf8');
   setup.addProbe('first');
-  const rename = fs.renameSync;
-  const fault = t.mock.method(fs, 'renameSync', (source: fs.PathLike, destination: fs.PathLike) => {
-    if (String(destination) === setup.inventory) throw new Error('interrupted inventory replacement');
-    rename(source, destination);
-  });
-  await assert.rejects(runPipeline(setup.config), /interrupted inventory replacement/);
-  fault.mock.restore();
+  const faultingFiles: OutputFiles = {
+    ...realOutputFiles,
+    rename: (source, destination) => {
+      if (destination === setup.inventory) throw new Error('interrupted inventory replacement');
+      realOutputFiles.rename(source, destination);
+    },
+  };
+  await assert.rejects(runPipeline(setup.config, { files: faultingFiles }), /interrupted inventory replacement/);
   assert.equal(fs.readFileSync(setup.inventory, 'utf8'), originalInventory);
   assert.equal(sdkValidatorModules(setup.root).length, 1, 'the interrupted run left the SDK validators in place');
   const recovered = await runPipeline(setup.config);

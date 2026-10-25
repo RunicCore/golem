@@ -18,7 +18,7 @@ import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
-import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, RunBaseline } from './input-watcher.js';
+import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
 import type { InputSnapshot } from './input-watcher.js';
 
 interface BuildOptions {
@@ -38,8 +38,8 @@ interface BuildOptions {
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
   /**
    * Called once when each build has finished, after a watching build has recorded what it read: `exitCode` is the build's own, 1 for a build that threw.
-   * The build prints nothing about its end; the caller says it. An exception from this function is not caught here: the first build, or a build without
-   * `watch`, rejects with it, and a later build of a watch is reported through the watch's own error path while the watch goes on.
+   * The build prints nothing about its end; the caller says it. An exception from this function is not caught here: a build without `watch` rejects
+   * with it, and a build of a watch, the first included, is reported through the watch's own error path while the watch goes on.
    */
   readonly onBuilt?: (run: { readonly label: string; readonly exitCode: number }) => void;
 }
@@ -729,7 +729,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   }
 
   let exitCode = 0;
-  const scanOf = (): InputScan => new InputScan(inputs, { root });
+  const scanOf = (): InputScan => new InputScan(inputs, { root }, realInputFiles);
   // The build's own names, which come and go with the build itself: the directories it writes, the files it generates and the directories it created for them. It changes only when a build ends.
   let own = new OwnedOutputIndex();
   let scan = scanOf();
@@ -750,10 +750,15 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
         if (starting) {
           // The first build runs as the first tick, so no tick runs beside it. What changed while it ran is told by its baseline, in the tick that follows.
           starting = false;
-          await attempt(undefined);
-          if (unwatchable) return;
-          process.stdout.write('Watching for changes.\n');
-          watcher.request();
+          try {
+            await attempt(undefined);
+          } finally {
+            // An `onBuilt` that throws is reported by the watcher's error path, and the watch goes on.
+            if (!unwatchable) {
+              process.stdout.write('Watching for changes.\n');
+              watcher.request();
+            }
+          }
           return;
         }
         let current: InputSnapshot;
@@ -788,7 +793,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   const attempt = async (changed: readonly string[] | undefined, before = watcher.snapshotWatching(scan, outputParents())): Promise<void> => {
     // The scan from before the build, so an edit or a new file made during it starts the next build. The first build has no
     // inputs yet: its files carry the signature they had when the build first read them.
-    const baseline = new RunBaseline(before, root);
+    const baseline = new RunBaseline(before, root, realInputFiles);
     state.baseline = baseline;
     const record = (): void => {
       // A file the generate step wrote, and the directory it created for it, is the build's own: its signature after the build is the one the next build compares with.

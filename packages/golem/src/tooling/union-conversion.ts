@@ -39,12 +39,20 @@ export class AmbiguousUnionConversionError extends Error {
 }
 
 /**
+ * The test of the JSON view, as code: `key` is an own enumerable property of `object`. Every generated read of a field
+ * (`presentValueCode`, the `isPresent` helper of the validators) builds on this one fragment.
+ */
+export function ownEnumerableCode(object: Code, key: Code): Code {
+  return code`Object.prototype.propertyIsEnumerable.call(${object}, ${key})`;
+}
+
+/**
  * The JSON view of a field as code, the rule of `presentValue` (presence.ts): `object` and `key` are expressions, and `read`
- * reads the field from `object`. This is the one template of the read: the runtime function `presentValue` does the same,
- * and no text form of it exists.
+ * reads the field from `object`. `presentValue` is the same rule as runtime code: it runs in the library, not in a generated
+ * file, so it cannot be built from a Code fragment.
  */
 export function presentValueCode(object: Code, key: Code, read: Code): Code {
-  return code`Object.prototype.propertyIsEnumerable.call(${object}, ${key}) ? ${read} : undefined`;
+  return code`${ownEnumerableCode(object, key)} ? ${read} : undefined`;
 }
 
 /**

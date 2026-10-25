@@ -18,6 +18,7 @@ import {
   analyzeNode,
   isAmbientOrGlobalSymbol,
   isDateType,
+  isGolemTagKey,
   publicExportName,
   type ModelConstraint,
   type SerdeBinding,
@@ -299,38 +300,7 @@ function modelSpecificationForType(
 
 function isPhantomTagType(checker: ts.TypeChecker, type: ts.Type): boolean {
   if ((type.flags & ts.TypeFlags.Object) === 0) return false;
-  return checker.getPropertiesOfType(type).some((property) => {
-    const name = property.getName();
-    return name.includes('validationTag')
-      || name.includes('serdeTag')
-      || name.includes('integerTag')
-      || name.includes('minimumTag')
-      || name.includes('maximumTag')
-      || name.includes('exclusiveMinimumTag')
-      || name.includes('exclusiveMaximumTag')
-      || name.includes('multipleOfTag')
-      || name.includes('minLengthTag')
-      || name.includes('maxLengthTag')
-      || name.includes('patternTag')
-      || name.includes('formatTag')
-      || name.includes('minItemsTag')
-      || name.includes('maxItemsTag')
-      || name.includes('uniqueItemsTag')
-      || name.includes('minPropertiesTag')
-      || name.includes('maxPropertiesTag')
-      || name.includes('containsTag')
-      || name.includes('minContainsTag')
-      || name.includes('maxContainsTag')
-      || name.includes('propertyNamesTag')
-      || name.includes('patternPropertiesTag')
-      || name.includes('additionalPropertiesTag')
-      || name.includes('unevaluatedPropertiesTag')
-      || name.includes('dependentRequiredTag')
-      || name.includes('dependentSchemasTag')
-      || name.includes('oneOfTag')
-      || name.includes('notTag')
-      || name.includes('ifThenElseTag');
-  });
+  return checker.getPropertiesOfType(type).some((property) => isGolemTagKey(checker, property));
 }
 
 function stripPhantomIntersection(
@@ -736,8 +706,8 @@ export function descriptorBuilder(
         describe(schemaType, { ...context, exact: false, schemaData: true }, seen, schemaNode, representation, undefined, undefined, nameHint),
     };
     // Analyze checker types even when a child has no corresponding AST node
-    // (for example the Date branch of `Date | undefined`).
-    const analysis = analyzeNode(tagContext, originalType, node);
+    // (for example the Date branch of `Date | undefined`). A union variant reads the authored member that names it.
+    const analysis = analyzeNode(tagContext, originalType, node ?? nameNode);
     let metadata: InternalTagMetadata = analysis.metadata;
     if (metadata.serde && !metadata.serde.wireDescriptor) {
       const wireDescriptor = describe(metadata.serde.wireType, context, seen, undefined, 'wire', undefined, undefined, nameHint);
