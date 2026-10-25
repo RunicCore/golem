@@ -16,6 +16,7 @@ import type { ManifestIndex } from './provenance.js';
 import type { ModelSpecification, TypeAnalysisContext } from './models.js';
 import {
   analyzeNode,
+  carriesSerdeTag,
   isAmbientOrGlobalSymbol,
   isDateType,
   isGolemTagKey,
@@ -801,7 +802,7 @@ export function descriptorBuilder(
    * the model, or the fields it shares. It is the ladder `describeType` climbs and the answer to "is this a model?" for every caller:
    * it reads only the checker and the specifications, so it writes no projection name, owner or cache entry.
    */
-  const modelOf = (type: ts.Type, node: ts.TypeNode | undefined, isRoot: boolean): {
+  const modelOf = (type: ts.Type, node: ts.TypeNode | undefined, isRoot: boolean, serde: boolean): {
     readonly provenance: ReturnType<typeof fieldProvenance>;
     readonly projection: boolean;
     readonly candidates: readonly ModelSpecification[];
@@ -819,7 +820,9 @@ export function descriptorBuilder(
       const structural = structuralModel(type);
       return structural && !provenance.models.includes(structural) ? structural : undefined;
     };
-    const model = classMatch ?? (isRoot || type.isUnion() || isPropertyMapping(type) ? undefined
+    // A TSerde over a bigint or a class value converts the whole value by its codec, so the type is no model whatever class it is.
+    const serdeValue = serde && (isBigIntValueType(type) || isClassValueType(checker, type));
+    const model = serdeValue ? undefined : classMatch ?? (isRoot || type.isUnion() || isPropertyMapping(type) ? undefined
       : projection
         ? projectedStructural()
         : (candidates[0]
@@ -914,7 +917,7 @@ export function descriptorBuilder(
     }
 
     const isRoot = node === context.fieldsNode;
-    const { provenance, projection, candidates, classMatch, model: localModel } = modelOf(type, node ?? provenanceNode ?? analysis.baseNode, isRoot);
+    const { provenance, projection, candidates, classMatch, model: localModel } = modelOf(type, node ?? provenanceNode ?? analysis.baseNode, isRoot, metadata.serde !== undefined);
     if (provenance.anonymous) {
       const alias = declaredModelAlias(provenance.anonymous);
       const foreign = alias ? foreignModelReason(alias, boundary) : undefined;
@@ -1253,7 +1256,7 @@ export function descriptorBuilder(
   };
   const modelOfType = (type: ts.Type): ModelSpecification | undefined => {
     const members = type.isIntersection() ? type.types.filter((member) => !isPhantomTagType(checker, member)) : [];
-    return modelOf(members.length === 1 ? members[0]! : type, undefined, false).model;
+    return modelOf(members.length === 1 ? members[0]! : type, undefined, false, carriesSerdeTag(checker, type)).model;
   };
   return Object.assign(describe, { projections, modelOf: modelOfType });
 }

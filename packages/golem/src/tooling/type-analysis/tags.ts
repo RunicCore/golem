@@ -814,6 +814,11 @@ function metadataFromType(
   return EMPTY;
 }
 
+/** Whether a type carries a TSerde tag: the tag type itself or a member of an intersection. It reads aliases only, so it runs no tag reader. */
+export function carriesSerdeTag(checker: ts.TypeChecker, type: ts.Type): boolean {
+  return golemTagName(checker, type.aliasSymbol) === 'TSerde' || (type.isIntersection() && type.types.some((member) => carriesSerdeTag(checker, member)));
+}
+
 /**
  * Whether a library or an ambient declaration file declares `symbol`. A `declare global` block in the user's source
  * augments such a symbol and does not change that; a type that only the user's own source declares is not one.
