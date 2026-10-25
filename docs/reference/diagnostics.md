@@ -8,11 +8,11 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1001
 
-**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or list the files that declare it in `sources` of the controller job.
+**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or list the files that declare it in `sources` of the controller job. When you call `generate` in code, pass them as its `sources` option.
 
 ### NEST1002
 
-**No controller sources.** No file that ends in one of the controller `suffixes` (default `.controller.ts`) exists under `src` of the job `root`, and the controller job has no `sources`. **Fix:** Add a controller file, or list the controller files in `sources` of the controller job.
+**No controller sources.** No file that ends in one of the controller `suffixes` (default `.controller.ts`) exists under `src` of the job `root`, and the controller job has no `sources`. **Fix:** Add a controller file, or list the controller files in `sources` of the controller job. When you call `generate` in code, pass them as its `sources` option.
 
 ### NEST1101
 

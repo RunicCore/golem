@@ -498,7 +498,7 @@ export async function analyzeControllers(
     throw new TsToOpenApiError({
       severity: GolemDiagnosticSeverity.Error,
       code: TsToOpenApiDiagnosticCode.NoExportedControllers,
-      message: 'No exported @Controller classes were found in the configured sources.',
+      message: 'No exported @Controller classes were found in the controller files. Export at least one @Controller class, or list the files that declare it in `sources` of the controller job. In code, pass them as the `sources` option of `generate`.',
     });
   }
   return { routes };
