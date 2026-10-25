@@ -865,7 +865,41 @@ export interface FileScanResult extends FileRewrite {
   readonly dependencies: readonly string[];
 }
 
-function resultOf(scan: FileScan): FileScanResult {
+const LINE_BREAKS = '\r\n\u2028\u2029';
+
+/** The offset after the line break at `at`, a CRLF counting as one; undefined when `at` holds none. */
+function afterLineBreak(text: string, at: number): number | undefined {
+  if (at >= text.length || !LINE_BREAKS.includes(text.charAt(at))) return undefined;
+  return text.startsWith('\r\n', at) ? at + 2 : at + 1;
+}
+
+/** The end of a directive's line when only whitespace and comments follow the directive on it; else the end of the directive. */
+function directiveEnd(text: string, end: number): number {
+  let at = ts.getTrailingCommentRanges(text, end)?.at(-1)?.end ?? end;
+  while (text.charAt(at) === ' ' || text.charAt(at) === '\t') at++;
+  return at >= text.length ? at : afterLineBreak(text, at) ?? end;
+}
+
+/**
+ * Where a rewrite's imports go: after a leading shebang line and the directive prologue (`'use strict'`, `'use client'`, ...), which
+ * is the run of string-literal expression statements that opens the file. A string that continues into an expression is no directive.
+ */
+export function importInsertOffset(file: ts.SourceFile): number {
+  const { text } = file;
+  let offset = 0;
+  if (text.startsWith('#!')) {
+    let end = 2;
+    while (end < text.length && afterLineBreak(text, end) === undefined) end++;
+    offset = afterLineBreak(text, end) ?? text.length;
+  }
+  for (const statement of file.statements) {
+    if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) break;
+    offset = directiveEnd(text, statement.end);
+  }
+  return offset;
+}
+
+function resultOf(scan: FileScan, file: ts.SourceFile): FileScanResult {
   const byModule = new Map<string, string[]>();
   for (const [name, from] of scan.imports) byModule.set(from, [...(byModule.get(from) ?? []), name]);
   for (const from of scan.loads) if (!byModule.has(from)) byModule.set(from, []);
@@ -873,7 +907,7 @@ function resultOf(scan: FileScan): FileScanResult {
     .sort(([left], [right]) => compareText(left, right))
     .map(([from, names]) => ({ from, names: names.sort(compareText) }));
   const edits = [...scan.edits].sort((left, right) => left.start - right.start || left.end - right.end);
-  return { edits, imports, diagnostics: scan.diagnostics, nestCodecSites: scan.nestSites, dependencies: [...scan.dependencies].sort(compareText) };
+  return { edits, imports, importsAt: imports.length === 0 ? 0 : importInsertOffset(file), diagnostics: scan.diagnostics, nestCodecSites: scan.nestSites, dependencies: [...scan.dependencies].sort(compareText) };
 }
 
 /**
@@ -928,7 +962,7 @@ export class RewriteScanner {
   }
 
   private scan(file: ts.SourceFile): FileScanResult {
-    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest, nonModelInputs: this.nonModelInputs, boundary: this.boundary, modelClasses: () => this.modelClasses() }, file));
+    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest, nonModelInputs: this.nonModelInputs, boundary: this.boundary, modelClasses: () => this.modelClasses() }, file), file);
   }
 
   /**
