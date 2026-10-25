@@ -14,6 +14,7 @@ import { buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { readFixture } from './fixture-project.js';
 import { modelAliasSource, referencedPolicyModelSource, taggedProfilePayloadSource } from './fixture-templates/models/profile-options.js';
+import { runModule } from './support/run-module.js';
 import { identifier, tsSource, type SourceFragment } from './source-template.js';
 
 function profile(overrides: Partial<GolemProfile> = {}): GolemProfile {
@@ -61,6 +62,19 @@ async function compileModel(root: string): Promise<void> {
   await buildModelProject(root);
 }
 
+/** The `profile.validation` option of each `registerGeneratedModel` call that the companion makes when it runs with its imports stubbed. */
+function registeredValidation(companion: string): unknown[] {
+  const profiles: unknown[] = [];
+  const open: unknown = new Proxy(function stub() {}, { get: () => open, apply: () => open, construct: () => open as object });
+  const runtime = new Proxy({}, {
+    get: (_target, name) => name === 'registerGeneratedModel'
+      ? (_model: unknown, options: { readonly profile: { readonly validation: unknown } }) => { profiles.push(options.profile.validation); }
+      : open,
+  });
+  runModule(companion, { require: () => runtime, exports: {}, module: { exports: {} } }, { format: 'cjs' });
+  return profiles;
+}
+
 function assertModelArtifactRoles(
   root: string,
   source: string,
@@ -70,12 +84,9 @@ function assertModelArtifactRoles(
   const companionPath = source.replace(/\.model\.ts$/, '.model.generated.ts');
   const companion = result.artifacts.find(artifact => artifact.path === companionPath);
   assert.ok(companion, `generated companion artifact ${companionPath}`);
-  assert.match(companion.content, /registerGeneratedModel/);
+  assert.deepEqual([...new Set(registeredValidation(companion.content))], [validation], 'the companion registers every model under the validation profile');
 
   const validatorsPath = path.join(root, 'src/generated/models/models.validators.generated.ts');
-  if (validation) {
-    assert.match(companion.content, /createObjectCodec|validatePayload/);
-  }
 
   // The provider is pure: artifact discovery must not write either generated role.
   assert.equal(fs.existsSync(companionPath), false);
