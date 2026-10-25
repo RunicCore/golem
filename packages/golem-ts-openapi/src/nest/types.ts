@@ -41,6 +41,8 @@ export interface ControllerParameter {
   readonly required: boolean;
   /** The model id of the whole `@Query()` model that OpenAPI 3.1 flattened into this parameter. */
   readonly wholeQueryModel?: string;
+  /** The model id of the items of a whole `@Body()` that is an array of models (`TPayment[]`, `readonly TPayment[]`, `ReadonlyArray<TPayment>`). */
+  readonly bodyItemModel?: string;
 }
 
 export interface RequestBodyDescription {
