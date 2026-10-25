@@ -1217,6 +1217,57 @@ function inlineBranchGuard(ctx: EmitCtx, expression: Code): UnionConversion['gua
     : code`(() => { ${rt.conversion.beginEncode}(${value}); try { return ${converted}; } finally { ${rt.conversion.endEncode}(${value}); } })()`;
 }
 
+/** How one walker converts a union variant; `unionOptions` builds the rest of the option set from it. */
+interface UnionWalker {
+  /** The conversion of one variant, against the union's expression. */
+  readonly walk: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code;
+  /** The conversion of a variant under tagged dispatch, when it differs from `walk`. */
+  readonly walkTagged?: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code;
+  /** The conversion of the generated model beside tagged objects, when it differs from `walk`. */
+  readonly generatedText?: (generated: Extract<ModelTypeDescriptor, { readonly kind: 'generated-model' }>) => Code | undefined;
+}
+
+/** The dispatch direction of each union direction. A decoder reads the wire; the others write a value or JSON text. */
+const UNION_DISPATCH = { stringify: 'encode-json', decode: 'decode', encode: 'encode-value' } as const;
+
+/**
+ * The part of the option set that the stringify, decode and encode union conversions share: the variant conversion, tagged
+ * dispatch, and the generated model beside tagged objects. A walker adds its own items and its own steps.
+ */
+function unionOptions(
+  direction: keyof typeof UNION_DISPATCH,
+  descriptor: UnionTypeDescriptor,
+  value: Code,
+  ctx: EmitCtx,
+  walker: UnionWalker,
+): Pick<UnionConversion, 'guard' | 'convert' | 'tagged' | 'generated'> {
+  const decoding = direction === 'decode';
+  const dispatch = UNION_DISPATCH[direction];
+  return {
+    ...(decoding ? {} : { guard: inlineBranchGuard(ctx, value) }),
+    convert: (variant) => walker.walk(variant, ctx),
+    tagged: () => emitTaggedVariantUnion(
+      descriptor,
+      presentUnionIndices(descriptor),
+      value,
+      ctx,
+      walker.walkTagged ?? walker.walk,
+      dispatch,
+      decoding ? undefined : { unresolved: 'skip' },
+    ),
+    generated: {
+      text: walker.generatedText ?? ((generated) => walker.walk(generated, ctx)),
+      tagMatch: (objects) => objectTagMatch(objects, value, decoding),
+      objects: (objects) => decoding
+        ? value
+        : objects.length === 1
+          ? walker.walk(objects[0], ctx)
+          : emitTaggedObjects(descriptor, value, ctx, walker.walk, dispatch),
+      takesEveryObject: decoding,
+    },
+  };
+}
+
 function emitUnionValue(
   descriptor: UnionTypeDescriptor,
   expression: Code,
@@ -1226,8 +1277,18 @@ function emitUnionValue(
   let itemsUnchanged = true;
   const plain = code`${rt.serde.stringifyJsonScalar}(${value} as never)`;
   return emitUnionConversion(descriptor, value, 'stringify', {
-    guard: inlineBranchGuard(ctx, value),
-    convert: (variant) => emitValue(variant, value, ctx),
+    ...unionOptions('stringify', descriptor, value, ctx, {
+      walk: (variant) => emitValue(variant, value, ctx),
+      walkTagged: (variant) => {
+        if (!ctx.wireIdentity) {
+          const node = ctx.graph.nodeFor(variant);
+          if (node && isObjectish(variant)) {
+            return nestedStringifyCall(node.id, value, ctx);
+          }
+        }
+        return emitValue(variant, value, ctx);
+      },
+    }),
     items: {
       output: 'json',
       item: (item, itemValue) => {
@@ -1239,23 +1300,6 @@ function emitUnionValue(
     joinSequence: (items, scalar) => itemsUnchanged && sameCode(scalar, plain)
       ? plain
       : code`(Array.isArray(${value}) ? ${items} : (${scalar}))`,
-    tagged: () => emitTaggedVariantUnion(
-      descriptor,
-      presentUnionIndices(descriptor),
-      value,
-      ctx,
-      (variant) => {
-        if (!ctx.wireIdentity) {
-          const node = ctx.graph.nodeFor(variant);
-          if (node && isObjectish(variant)) {
-            return nestedStringifyCall(node.id, value, ctx);
-          }
-        }
-        return emitValue(variant, value, ctx);
-      },
-      'encode-json',
-      { unresolved: 'skip' },
-    ),
     beforeGenerated: (present) => {
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
       if (objects.length > 1) {
@@ -1266,13 +1310,6 @@ function emitUnionValue(
         if (structured) throw new ObjectUnionDiscriminatorError(objects);
       }
       return present.every(isScalarishDescriptor) ? plain : undefined;
-    },
-    generated: {
-      text: (generated) => emitValue(generated, value, ctx),
-      tagMatch: (objects) => objectTagMatch(objects, value, false),
-      objects: (objects) => objects.length === 1
-        ? emitValue(objects[0], value, ctx)
-        : emitTaggedObjects(descriptor, value, ctx, (object) => emitValue(object, value, ctx), 'encode-json'),
     },
   });
 }
@@ -1297,28 +1334,17 @@ function emitUnionDecode(
 ): Code {
   const value = expression;
   return emitUnionConversion(descriptor, value, 'decode', {
-    convert: (variant) => emitDecodeValue(variant, value, ctx),
-    items: { output: 'value', paths: 'deserialize', item: decodeItem(ctx) },
-    tagged: () => emitTaggedVariantUnion(
-      descriptor,
-      presentUnionIndices(descriptor),
-      value,
-      ctx,
-      (variant, scope) => emitDecodeValue(variant, value, scope),
-      'decode',
-    ),
-    generated: {
-      text: (generated) => {
+    ...unionOptions('decode', descriptor, value, ctx, {
+      walk: (variant, scope) => emitDecodeValue(variant, value, scope),
+      generatedText: (generated) => {
         const className = ctx.nestedGenerated?.(generated.id);
         const name = className ? className : undefined;
         return name
           ? code`${value} instanceof ${name} ? ${value} : ${fallibleConversion(ctx, code`${rt.conversion.decodeGeneratedModelTrusted}(${name}, ${value})`)}`
           : undefined;
       },
-      tagMatch: (objects) => objectTagMatch(objects, value, true),
-      objects: () => value,
-      takesEveryObject: true,
-    },
+    }),
+    items: { output: 'value', paths: 'deserialize', item: decodeItem(ctx) },
     afterGenerated: (present) => {
       const refs = present.filter((variant): variant is Extract<ModelTypeDescriptor, { kind: 'reference' }> =>
         variant.kind === 'reference' && variant.construct === true);
@@ -1344,27 +1370,12 @@ function emitUnionEncode(
 ): Code {
   const value = expression;
   return emitUnionConversion(descriptor, value, 'encode', {
-    guard: inlineBranchGuard(ctx, value),
-    convert: (variant) => emitEncodeValue(variant, value, ctx),
+    ...unionOptions('encode', descriptor, value, ctx, {
+      walk: (variant) => emitEncodeValue(variant, value, ctx),
+    }),
     items: {
       output: 'value',
       item: (item, itemValue) => ({ code: emitEncodeValue(item, itemValue, ctx), throws: false }),
-    },
-    tagged: () => emitTaggedVariantUnion(
-      descriptor,
-      presentUnionIndices(descriptor),
-      value,
-      ctx,
-      (variant) => emitEncodeValue(variant, value, ctx),
-      'encode-value',
-      { unresolved: 'skip' },
-    ),
-    generated: {
-      text: (generated) => emitEncodeValue(generated, value, ctx),
-      tagMatch: (objects) => objectTagMatch(objects, value, false),
-      objects: (objects) => objects.length === 1
-        ? emitEncodeValue(objects[0], value, ctx)
-        : emitTaggedObjects(descriptor, value, ctx, (object) => emitEncodeValue(object, value, ctx), 'encode-value'),
     },
     afterGenerated: (present) => {
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
@@ -1880,71 +1891,65 @@ function blocksToText(blocks: readonly Code[]): Code {
   return join(blocks.filter((block) => block.parts.length > 0), code`\n`);
 }
 
-function emitNodeRuntime(
-  node: SchemaNode,
-  moduleCtx: EmitCtx,
-  validationEnabled: boolean,
-): Code {
-  const names = {
-    fromWire: identifier(fromWireFunctionName(node.id)),
-    toWire: identifier(toWireFunctionName(node.id)),
-    parse: identifier(parseFunctionName(node.id)),
-  };
-  if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') {
-    const imported = node.descriptor.kind === 'generated-model'
-      ? moduleCtx.nestedImportedSerde?.(node.codecId) ?? moduleCtx.nestedImportedSerde?.(node.id)
-      : undefined;
-    if (imported) return code``;
-    const id = literal(node.codecId);
-    return rowsToText([
-      emitStringifyFunction(node, moduleCtx.graph, moduleCtx.serde),
-      code`export function ${names.fromWire}(wire: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
-      code`  return ${rt.serde.requireObjectCodec}(${id}).fromWireFormat(wire, options);`,
-      code`}`,
-      code``,
-      code`export function ${names.toWire}(value: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
-      code`  return ${rt.serde.requireObjectCodec}(${id}).toWireFormat(value as never, options);`,
-      code`}`,
-      code``,
-      code`export function ${names.parse}(text: string, options?: ${SERDE_OPTIONS}): unknown {`,
-      code`  return ${rt.serde.requireObjectCodec}(${id}).parse(text, options);`,
-      code`}`,
-    ]);
-  }
+/** What the output sections of one node's runtime share: its function names, its emission context and the facts about its model. */
+interface NodeRuntime {
+  readonly node: SchemaNode;
+  readonly ctx: EmitCtx;
+  readonly validationEnabled: boolean;
+  readonly names: { readonly fromWire: Code; readonly toWire: Code; readonly parse: Code };
+  readonly stringifyId: Code;
+  readonly fillId: Code;
+  readonly validateId: Code;
+  readonly assertId: Code;
+  readonly wireAssertId: Code;
+  readonly modelOnlyAssertId: Code;
+  readonly wireOnlyAssertId: Code;
+  readonly convertId: Code;
+  readonly isExported: boolean;
+  /** `export ` when the node's functions are exported, else nothing. */
+  readonly exported: Code;
+  readonly fieldsCode: Code | undefined;
+  readonly fieldsOrUnknown: Code;
+  readonly modelType: Code;
+  /** The merged object of an object or an allOf-style intersection of objects, which converts field by field. */
+  readonly objectDescriptor: ObjectTypeDescriptor | undefined;
+  /** A validator and an encoder walk a cyclic value under a recursive model until the stack ends. */
+  readonly reachesCycle: boolean;
+  readonly guardInline: boolean;
+}
 
+/** The runtime of a node whose codec another module owns: a stringify function and calls to the registered object codec. */
+function emitExternalNodeRuntime(node: SchemaNode, moduleCtx: EmitCtx): Code {
+  const imported = node.descriptor.kind === 'generated-model'
+    ? moduleCtx.nestedImportedSerde?.(node.codecId) ?? moduleCtx.nestedImportedSerde?.(node.id)
+    : undefined;
+  if (imported) return code``;
+  const id = literal(node.codecId);
+  return rowsToText([
+    emitStringifyFunction(node, moduleCtx.graph, moduleCtx.serde),
+    code`export function ${identifier(fromWireFunctionName(node.id))}(wire: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
+    code`  return ${rt.serde.requireObjectCodec}(${id}).fromWireFormat(wire, options);`,
+    code`}`,
+    code``,
+    code`export function ${identifier(toWireFunctionName(node.id))}(value: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
+    code`  return ${rt.serde.requireObjectCodec}(${id}).toWireFormat(value as never, options);`,
+    code`}`,
+    code``,
+    code`export function ${identifier(parseFunctionName(node.id))}(text: string, options?: ${SERDE_OPTIONS}): unknown {`,
+    code`  return ${rt.serde.requireObjectCodec}(${id}).parse(text, options);`,
+    code`}`,
+  ]);
+}
+
+function nodeRuntime(node: SchemaNode, moduleCtx: EmitCtx, validationEnabled: boolean): NodeRuntime {
   const ctx: EmitCtx = {
     ...moduleCtx,
     effects: { fallible: 0 },
     hoisted: { prefix: node.id, bodies: [], sources: [] },
     fillThrows: moduleCtx.fillThrows ?? new Map(),
   };
-  // The validated call of a codec whose wire and model schemas agree runs this function after its check, so it keeps the
-  // all-required fast path and a call with validation off runs a lenient copy. Any other call is lenient.
-  const checkedCore = validationEnabled && node.sameSchema;
-  const stringifyName = stringifyFunctionName(node.id);
-  const stringifyId = identifier(stringifyName);
-  const coreId = identifier(`${stringifyName}Core`);
-  const lenientId = identifier(`${stringifyName}Lenient`);
-  const wireId = identifier(`${stringifyName}Wire`);
-  const stringifySrc = emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: !checkedCore, functionName: `${stringifyName}Core` });
-  const lenientCore = checkedCore ? emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Core` }) : stringifySrc;
-  const lenientStringify = sameCode(lenientCore, stringifySrc)
-    ? undefined
-    : emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Lenient` });
-  const fillId = identifier(fillFunctionName(node.id));
-  const toWireCoreId = identifier(`${toWireFunctionName(node.id)}Core`);
-  const validateId = identifier(validateFunctionName(node.id));
-  const assertId = identifier(`assert${node.id}`);
   const isExported = !((node.anonymous && !ctx.exportAnonymousCodecs) || ctx.privateCodec?.(node));
-  const exported = isExported ? code`export ` : code``;
-  const fieldsType = ctx.fieldsType?.(node);
-  const fieldsCode = fieldsType === undefined ? undefined : fieldsType;
-  const fieldsOrUnknown = fieldsCode ?? code`unknown`;
-  const modelType = fieldsCode ?? code`Record<string, unknown>`;
-  const wireAssertId = identifier(`__golemAssertWire_${node.id}`);
-  const modelOnlyAssertId = identifier(modelOnlyAssertName(node));
-  const wireOnlyAssertId = identifier(wireOnlyAssertName(node));
-  const convertId = identifier(`convertFromWire${node.id}`);
+  const fieldsCode = ctx.fieldsType?.(node);
   // An allOf-style intersection of objects (including referenced models) converts
   // as the merged object, so inherited fields such as dates are decoded too.
   const objectDescriptor = node.descriptor.kind === 'object'
@@ -1953,22 +1958,55 @@ function emitNodeRuntime(
       && node.descriptor.variants.every(variant => resolveObjectDescriptor(variant, ctx) !== undefined)
       ? resolveObjectDescriptor(node.descriptor, ctx)
       : undefined;
+  return {
+    node,
+    ctx,
+    validationEnabled,
+    names: {
+      fromWire: identifier(fromWireFunctionName(node.id)),
+      toWire: identifier(toWireFunctionName(node.id)),
+      parse: identifier(parseFunctionName(node.id)),
+    },
+    stringifyId: identifier(stringifyFunctionName(node.id)),
+    fillId: identifier(fillFunctionName(node.id)),
+    validateId: identifier(validateFunctionName(node.id)),
+    assertId: identifier(`assert${node.id}`),
+    wireAssertId: identifier(`__golemAssertWire_${node.id}`),
+    modelOnlyAssertId: identifier(modelOnlyAssertName(node)),
+    wireOnlyAssertId: identifier(wireOnlyAssertName(node)),
+    convertId: identifier(`convertFromWire${node.id}`),
+    isExported,
+    exported: isExported ? code`export ` : code``,
+    fieldsCode,
+    fieldsOrUnknown: fieldsCode ?? code`unknown`,
+    modelType: fieldsCode ?? code`Record<string, unknown>`,
+    objectDescriptor,
+    reachesCycle: reachesRecursion(node.descriptor, ctx),
+    guardInline: node.descriptor.kind === 'union' && reachesNode(node.descriptor, node.id, ctx),
+  };
+}
+
+/** The stringify function of a node, with the lenient and wire copies it needs, and the checked wrapper that calls them. */
+function emitStringifySection(runtime: NodeRuntime): Code {
+  const { node, ctx, validationEnabled, stringifyId, assertId, wireOnlyAssertId, exported, isExported, modelType, objectDescriptor } = runtime;
+  // The validated call of a codec whose wire and model schemas agree runs this function after its check, so it keeps the
+  // all-required fast path and a call with validation off runs a lenient copy. Any other call is lenient.
+  const checkedCore = validationEnabled && node.sameSchema;
+  const stringifyName = stringifyFunctionName(node.id);
+  const coreId = identifier(`${stringifyName}Core`);
+  const lenientId = identifier(`${stringifyName}Lenient`);
+  const wireId = identifier(`${stringifyName}Wire`);
+  const stringifySrc = emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: !checkedCore, functionName: `${stringifyName}Core` });
+  const lenientCore = checkedCore ? emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Core` }) : stringifySrc;
+  const lenientStringify = sameCode(lenientCore, stringifySrc)
+    ? undefined
+    : emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, withoutOptions: true, lenientRoot: true, functionName: `${stringifyName}Lenient` });
   const emitsValidatedWire = validationEnabled && !node.sameSchema;
-  // A validator and an encoder walk a cyclic value under a recursive model until the stack ends.
-  const reachesCycle = reachesRecursion(node.descriptor, ctx);
-  const recursiveNode = reachesNode(node.descriptor, node.id, ctx) && !passesValueOn(node.descriptor, objectDescriptor !== undefined);
-  const guardInline = node.descriptor.kind === 'union' && reachesNode(node.descriptor, node.id, ctx);
-  const encodedStringifyContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline };
-  const encodedWireContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline };
+  const encodedContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline: runtime.guardInline };
   const stringifyValue = inputSlot('value', 'name', true);
-  const toWireValue = inputSlot('value', 'name', true);
-  const toWireRecord = inputSlot('record', 'name', true);
   const encodedExpr = objectDescriptor
-    ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(stringifyValue), encodedStringifyContext), stringifyValue, code`value`)
-    : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encodedStringifyContext));
-  const encodedRecordExpr = objectDescriptor
-    ? emitEncodedRecord(objectDescriptor, inputOf(toWireRecord), encodedWireContext)
-    : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encodedWireContext), inputOf(toWireValue));
+    ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(stringifyValue), encodedContext), stringifyValue, code`value`)
+    : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encodedContext));
   const exportsWire = isExported && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true);
   const wireStringifySrc = emitsValidatedWire
     ? code`${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true, functionName: `${stringifyName}Wire` })}${exportsWire
@@ -1976,14 +2014,14 @@ function emitNodeRuntime(
       : code``}`
     : code``;
 
-  const wrappedStringify = rowsToText([
+  return rowsToText([
     blocksToText([stringifySrc, lenientStringify ?? code``, wireStringifySrc]),
     code`${exported}function ${stringifyId}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
     emitSerdeValidates(validationEnabled),
-    ...(emitsValidatedWire ? inlineLocalLines(encodedStringifyContext) : []),
+    ...(emitsValidatedWire ? inlineLocalLines(encodedContext) : []),
     ...(validationEnabled ? [
       code`  if (validates) {`,
-      ...(reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
+      ...(runtime.reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
       code`    ${assertId}(value, options);`,
       ...(emitsValidatedWire ? [
         code`    const wire = ${encodedExpr};`,
@@ -1999,9 +2037,15 @@ function emitNodeRuntime(
     code`}`,
     code``,
   ]);
+}
 
+/** The decode section: the fill function of an object model, the conversion from the wire, and the exported fromWireFormat. */
+function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonly convert: Code; readonly fromWire: Code } {
+  const {
+    node, ctx, validationEnabled, names, fillId, assertId, wireAssertId, modelOnlyAssertId, convertId, exported, fieldsCode, fieldsOrUnknown,
+    objectDescriptor, reachesCycle,
+  } = runtime;
   const fill = objectDescriptor ? emitFillFunction(node, ctx, objectDescriptor) : undefined;
-  const fillSrc = fill?.source ?? code``;
   const wireRoot = inputSlot('wire', 'name', true);
   const rootScope: EmitCtx = { ...ctx, decodeLocals: [], castWire: wireRoot };
   // The wire of a node that is not an object is `unknown`; a read of the root `wire` casts it where it reads.
@@ -2064,16 +2108,31 @@ function emitNodeRuntime(
   }
   convertLines.push(code`  return result;`, code`}`, code``);
 
-  const fromWireLines = [
-    code`${exported}function ${names.fromWire}(wire: unknown, options?: ${SERDE_OPTIONS}): ${fieldsOrUnknown} {`,
-    code`  return ${rt.conversion.decodeCheckedInput}(${convertId}, wire, options)${fieldsCode ? code` as ${fieldsCode}` : code``};`,
-    code`}`,
-    code``,
-  ];
+  return {
+    fill: fill?.source ?? code``,
+    convert: rowsToText(convertLines),
+    fromWire: rowsToText([
+      code`${exported}function ${names.fromWire}(wire: unknown, options?: ${SERDE_OPTIONS}): ${fieldsOrUnknown} {`,
+      code`  return ${rt.conversion.decodeCheckedInput}(${convertId}, wire, options)${fieldsCode ? code` as ${fieldsCode}` : code``};`,
+      code`}`,
+      code``,
+    ]),
+  };
+}
 
+/** The toWireFormat core, which nested trusted calls and the validating wrapper both run, and the exported wrapper. */
+function emitToWireSection(runtime: NodeRuntime): Code {
+  const { node, ctx, validationEnabled, names, assertId, wireOnlyAssertId, exported, fieldsOrUnknown, objectDescriptor, reachesCycle } = runtime;
+  const toWireCoreId = identifier(`${toWireFunctionName(node.id)}Core`);
+  const recursiveNode = reachesNode(node.descriptor, node.id, ctx) && !passesValueOn(node.descriptor, objectDescriptor !== undefined);
+  const encodedContext: EmitCtx = { ...ctx, inlineLocals: new Set(), guardInline: runtime.guardInline };
+  const toWireValue = inputSlot('value', 'name', true);
+  const toWireRecord = inputSlot('record', 'name', true);
+  const encodedRecordExpr = objectDescriptor
+    ? emitEncodedRecord(objectDescriptor, inputOf(toWireRecord), encodedContext)
+    : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encodedContext), inputOf(toWireValue));
   const wireType = ctx.wireType?.(node);
-  const wireCode = wireType === undefined ? undefined : wireType;
-  const wireOrUnknown = wireCode ?? code`unknown`;
+  const wireOrUnknown = wireType ?? code`unknown`;
 
   // The wire encoding without validation: nested trusted calls and the validating wrapper both run it.
   // A model with no field and no extra names writes `{}` and reads nothing from the value.
@@ -2081,9 +2140,9 @@ function emitNodeRuntime(
   const readsRecord = inputCount(encodedRecordExpr, toWireRecord) > 0;
   const toWireCoreBody = [
     ...(readsRecord ? [code`  const record = ${inputOf(toWireValue)} as Record<string, unknown>;`] : []),
-    ...inlineLocalLines(encodedWireContext),
+    ...inlineLocalLines(encodedContext),
     code`  const wire = ${bindInput(encodedRecordExpr, toWireRecord, code`record`)};`,
-    wireCode ? code`  return wire as ${wireCode};` : code`  return wire;`,
+    wireType ? code`  return wire as ${wireType};` : code`  return wire;`,
   ];
   // A recursive node registers the value while the body writes it, so a value that holds itself throws at its first repeat.
   const toWireCoreSource = stringifyFunction(
@@ -2092,7 +2151,7 @@ function emitNodeRuntime(
     recursiveNode,
     toWireValue,
   );
-  const toWireLines = [
+  return rowsToText([
     toWireCoreSource,
     code`${exported}function ${names.toWire}(value: ${fieldsOrUnknown}, options?: ${SERDE_OPTIONS}): ${wireOrUnknown} {`,
     emitSerdeValidates(validationEnabled),
@@ -2111,17 +2170,24 @@ function emitNodeRuntime(
     ] : [code`  return ${toWireCoreId}(value);`]),
     code`}`,
     code``,
-  ];
+  ]);
+}
 
-  const parseLines = [
+function emitParseSection(runtime: NodeRuntime): Code {
+  const { names, convertId, exported, fieldsCode, fieldsOrUnknown } = runtime;
+  return rowsToText([
     code`${exported}function ${names.parse}(text: string, options?: ${SERDE_OPTIONS}): ${fieldsOrUnknown} {`,
     code`  return ${rt.conversion.decodeDetachedInput}(${convertId}, ${rt.serde.parseJson}(text), options)${fieldsCode ? code` as ${fieldsCode}` : code``};`,
     code`}`,
     code``,
-  ];
+  ]);
+}
 
+/** The exported validate and assert functions, which fail with `validationUnavailable` when validation is off. */
+function emitValidateSection(runtime: NodeRuntime): Code {
+  const { node, ctx, validationEnabled, validateId, assertId, exported, modelType } = runtime;
   const valueRef = code`value`;
-  const validateLines = validationEnabled
+  return rowsToText(validationEnabled
     ? [
       code`${exported}function ${validateId}(value: unknown, options?: ${VALIDATE_OPTIONS}): value is ${modelType} {`,
       code`  return ${validModelValueCall(ctx, node.codecId)};`,
@@ -2142,8 +2208,13 @@ function emitNodeRuntime(
       code`  ${rt.serde.validationUnavailable}();`,
       code`}`,
       code``,
-    ];
+    ]);
+}
 
+/** The private assert functions of the wire plane and of the residual model-only and wire-only planes. */
+function emitPlaneAssertSection(runtime: NodeRuntime): Code {
+  const { node, ctx, validationEnabled, wireAssertId, modelOnlyAssertId, wireOnlyAssertId } = runtime;
+  const valueRef = code`value`;
   const planeAssert = (name: Code, plane: ValidationPlane): Code[] => [
     code`function ${name}(value: unknown, options?: ${VALIDATE_OPTIONS}): Record<string, unknown> {`,
     code`  ${emitModelGuard(node, valueRef, plane, ctx)}`,
@@ -2151,14 +2222,18 @@ function emitNodeRuntime(
     code`}`,
     code``,
   ];
-  const wireAssertLines = validationEnabled && !node.sameSchema
+  return rowsToText(validationEnabled && !node.sameSchema
     ? [
       ...planeAssert(wireAssertId, 'wire'),
       ...(node.modelOnlyJsonSchema !== undefined ? planeAssert(modelOnlyAssertId, 'model-only') : []),
       ...(node.wireOnlyJsonSchema !== undefined ? planeAssert(wireOnlyAssertId, 'wire-only') : []),
     ]
-    : [];
+    : []);
+}
 
+/** The registration of the node's functions as an object codec, with its schemas. */
+function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
+  const { node, ctx, validationEnabled, names, stringifyId, validateId, assertId, objectDescriptor } = runtime;
   const resolved = (id: string): Code | undefined => ctx.resolvedSchemasExpr !== undefined && validationEnabled
     ? code`${ctx.resolvedSchemasExpr}[${literal(id)}] as object`
     : undefined;
@@ -2176,7 +2251,7 @@ function emitNodeRuntime(
   };
   const modelOnlySchemaExpr = residualSchemaExpr('model-only');
   const wireOnlySchemaExpr = residualSchemaExpr('wire-only');
-  const codec = [
+  return rowsToText([
     code`${rt.serde.createObjectCodec}(${literal(node.codecId)}, {`,
     code`  stringify: ${stringifyId} as (value: never, options?: ${SERDE_OPTIONS}) => string,`,
     code`  parse: ${names.parse} as (text: string, options?: ${SERDE_OPTIONS}) => never,`,
@@ -2192,9 +2267,25 @@ function emitNodeRuntime(
     ...(resolved(node.codecId) !== undefined ? [code`  schemaRefsResolved: true,`] : []),
     code`  issueSource: ${rt.serde.IssueSource}.${identifier(ctx.issueSource)},`,
     code`});`,
-  ];
+  ]);
+}
 
-  return blocksToText([rowsToText(ctx.hoisted?.sources ?? []), fillSrc, wrappedStringify, rowsToText(convertLines), rowsToText(fromWireLines), rowsToText(toWireLines), rowsToText(parseLines), rowsToText(validateLines), rowsToText(wireAssertLines), rowsToText(codec)]);
+function emitNodeRuntime(
+  node: SchemaNode,
+  moduleCtx: EmitCtx,
+  validationEnabled: boolean,
+): Code {
+  if (node.descriptor.kind === 'generated-model' || node.descriptor.kind === 'reference') return emitExternalNodeRuntime(node, moduleCtx);
+  const runtime = nodeRuntime(node, moduleCtx, validationEnabled);
+  const stringify = emitStringifySection(runtime);
+  const decode = emitDecodeSection(runtime);
+  const toWire = emitToWireSection(runtime);
+  const parse = emitParseSection(runtime);
+  const validate = emitValidateSection(runtime);
+  const planeAsserts = emitPlaneAssertSection(runtime);
+  const codec = emitCodecRegistrationSection(runtime);
+  // The hoisted converters exist only after the decode section.
+  return blocksToText([rowsToText(runtime.ctx.hoisted?.sources ?? []), decode.fill, stringify, decode.convert, decode.fromWire, toWire, parse, validate, planeAsserts, codec]);
 }
 
 function schemaPayload(schema: JsonSchema, id: string): object {
