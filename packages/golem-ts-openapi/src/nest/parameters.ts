@@ -21,7 +21,7 @@ import {
   typeExpressionFromApiOption,
   typeReference,
 } from './analysis-utils.js';
-import { evaluateStaticValue, isStaticArray } from '../evaluation/static-value.js';
+import { evaluateStaticValue, isStaticArray } from '@exprtlabs/golem/internal/static-value';
 import { decoratorOptions, headerOptionsList, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
 import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, staticObject } from './symbols.js';
 import type { ControllerParameter, DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';

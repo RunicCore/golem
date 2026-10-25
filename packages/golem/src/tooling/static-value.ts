@@ -1,5 +1,5 @@
-import * as ts from '@exprtlabs/golem/internal/ts';
-import { resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
+import * as ts from './typescript-ns.js';
+import { resolveSymbol } from './type-analysis/symbols.js';
 
 /** A JSON-compatible value read from source without executing project code. */
 export type StaticValue =

@@ -9,7 +9,7 @@ import {
 } from '../diagnostics.js';
 import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator } from './analysis-utils.js';
 import { callStringValues, decoratorOptions, parseSecurity, parseTags, readBoolean, type MetadataReader } from './metadata.js';
-import { resolveValueSymbol, unwrapExpression } from '../evaluation/static-value.js';
+import { resolveValueSymbol, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, propertyInitializer, staticObject } from './symbols.js';
 import { classParameterDecorators, parseParameters, parseParameterOverride } from './parameters.js';
 import { assertManualResponseContract, parseRequestBody, parseResponses } from './responses.js';
