@@ -8,11 +8,13 @@ import YAML from 'yaml';
 import { runPipeline, watchPipeline } from '#golem/cli';
 import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
+import { runBuild } from '#golem/build';
 import { OwnedOutputIndex, realInputFiles } from '#golem/input-watcher';
 import type { InputFiles } from '#golem/input-watcher';
+import { serdeProject, USE, write } from './support/build-project.js';
 import { workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
-import { quietly, until } from './support/watch-wait.js';
+import { countingInputFiles, quietly, until } from './support/watch-wait.js';
 
 test('owned output index excludes exactly the outputs and the directories containing them', () => {
   const root = path.resolve(os.tmpdir(), 'owned-index');
@@ -155,6 +157,70 @@ test('each watch run prints the result of every job and its time; the run after 
     stop();
   }
   await until(() => compilerChildren(process.pid).length === 0, 'the compiler closes with the watch');
+});
+
+test('a scan that fails after a good run is reported, and the run keeps its line with Recovered:', async (t: TestContext) => {
+  // protects: T-429 a fault of the scan after a run must not drop the run line the caller prints
+  const { root, config } = generationWatchFixture(t);
+  const model = path.join(root, 'src/cart.model.ts');
+  const companion = path.join(root, 'src/cart.model.generated.ts');
+  const goodModel = fs.readFileSync(model, 'utf8');
+  const runs = countRuns();
+  const errors: unknown[] = [];
+  // The scan after the run is the first stat that finds the run's output: the scans before it do not.
+  let armed = false;
+  const files: Partial<InputFiles> = {
+    stat: (filename) => {
+      if (armed && fs.readFileSync(companion, 'utf8').includes('afterFault')) {
+        armed = false;
+        throw Object.assign(new Error('EMFILE: too many open files, stat'), { code: 'EMFILE' });
+      }
+      return realInputFiles.stat(filename);
+    },
+  };
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files });
+  try {
+    await until(() => runs() === 1, 'initial generation');
+    fs.writeFileSync(model, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCart = IModel<{ half: string & }>;\n");
+    await until(() => errors.length === 1, 'the broken model is reported');
+    armed = true;
+    fs.writeFileSync(model, goodModel.replace('note: string', 'note: string; afterFault?: boolean'));
+    await until(() => runs() === 2, () => `the fixed model runs (errors=${errors.map(String).join('; ')})`);
+    assert.match(runs.lines[1], /^Recovered: .* · \d+ ms$/);
+    assert.match(String(errors[1]), /EMFILE/);
+    assert.equal(errors.length, 2, 'the scan fault is reported once');
+  } finally {
+    stop();
+  }
+});
+
+test('golem build --watch with an onBuilt that throws on the first build still says it is watching, reports the error and builds the next edit', async (t: TestContext) => {
+  // protects: T-429 a throwing onBuilt must not end the first tick before the watch is announced
+  const root = serdeProject(t, 'build-watch-onbuilt');
+  write(root, 'src/use.ts', USE);
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  let output = '';
+  for (const stream of [process.stdout, process.stderr]) {
+    t.mock.method(stream, 'write', (chunk: string | Uint8Array) => {
+      output += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
+      return true;
+    });
+  }
+  let built = 0;
+  const finished = runBuild({
+    watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal,
+    onBuilt: () => {
+      built += 1;
+      if (built === 1) throw new Error('the caller failed to print');
+    },
+  });
+  await until(() => output.includes('Watching for changes.'), () => `the watch is announced (output=${output})`);
+  assert.match(output, /the caller failed to print/);
+  write(root, 'src/use.ts', `${USE}export const second = 2;\n`);
+  await until(() => built === 2, 'the build after an edit');
+  controller.abort();
+  assert.equal((await finished).exitCode, 0);
 });
 
 test('watch keeps model dependencies outside the models root after a run that reuses the models job', async (t: TestContext) => {
@@ -378,8 +444,9 @@ test('a package manager marker starts one full run, and a change inside node_mod
   assert.deepEqual(errors, []);
 });
 
-test('an idle watch reads no file, and stopping it closes its file watches', async (t: TestContext) => {
+test('an idle watch makes no stat or folder listing, and stopping it closes its file watches', async (t: TestContext) => {
   // protects: R-31 an idle watch costs nothing; the stop closes every watcher
+  // The count is of the calls the InputFiles seam carries (stat, list). Real paths are read only when a run ends, and files only by a run.
   const { config } = generationWatchFixture(t);
   const runs = countRuns();
   const errors: unknown[] = [];
@@ -392,7 +459,7 @@ test('an idle watch reads no file, and stopping it closes its file watches', asy
     await quietly(1_000);
     const settled = counted.reads();
     await quietly(1_000);
-    assert.equal(counted.reads(), settled, 'a quiet watch reads no file');
+    assert.equal(counted.reads(), settled, 'a quiet watch scans nothing');
     assert.equal(runs(), 1);
   } finally {
     stop();
@@ -536,25 +603,6 @@ test('a pipeline session closes the compiler of a removed job', { skip: process.
   await runPipeline(config, { session });
   await until(() => compilerChildren(process.pid).length === 0, 'the removed job closes its compiler');
 });
-
-/** The real input-file calls of a watch, counting the stats and folder listings it makes and the folder watches it opens and has not closed. */
-function countingInputFiles(): { readonly files: InputFiles; readonly reads: () => number; readonly openWatches: () => number } {
-  let reads = 0;
-  const watches: { closed: boolean }[] = [];
-  const files: InputFiles = {
-    stat: filename => { reads += 1; return realInputFiles.stat(filename); },
-    list: directory => { reads += 1; return realInputFiles.list(directory); },
-    watch: (folder, listener) => {
-      const watcher = realInputFiles.watch(folder, listener);
-      const watch = { closed: false };
-      const close = watcher.close.bind(watcher);
-      watcher.close = () => { watch.closed = true; close(); };
-      watches.push(watch);
-      return watcher;
-    },
-  };
-  return { files, reads: () => reads, openWatches: () => watches.filter(watch => !watch.closed).length };
-}
 
 /** Counts the good runs of a watch: pass `onRun` to `watchPipeline`; `lines` holds the line of each run, in order. */
 function countRuns(): (() => number) & { readonly lines: string[]; readonly onRun: (line: string) => void } {

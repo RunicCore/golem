@@ -26,7 +26,7 @@ const NODE_MODULES = 'node_modules';
 const GOLEM_DIRECTORY = '.golem';
 
 /** Content signature of a watched path: `missing`, `directory` (a directory's mtime also moves on output writes), or mtime, ctime and size. */
-function signature(filename: string, files: InputFiles = realInputFiles): string {
+function signature(filename: string, files: InputFiles): string {
   try {
     // Most watched paths are failed module-resolution probes; avoid an exception per missing path.
     const stat = files.stat(filename);
@@ -66,7 +66,7 @@ function isIgnoredDirectory(name: string): boolean {
 }
 
 /** The names in a folder and its subfolders, or undefined when the folder does not exist. Any other failure (a permission, too many open files) is the loop's to report. */
-function readFolder(directory: string, files: InputFiles = realInputFiles): { readonly names: string[]; readonly directories: string[] } | undefined {
+function readFolder(directory: string, files: InputFiles): { readonly names: string[]; readonly directories: string[] } | undefined {
   let entries: fs.Dirent[];
   try {
     entries = files.list(directory);
@@ -272,11 +272,11 @@ export class RunBaseline {
   private readonly firstFiles = new Map<string, string>();
   private readonly firstFolders = new Map<string, readonly string[]>();
 
-  constructor(private readonly before: InputSnapshot, private readonly root: string) {}
+  constructor(private readonly before: InputSnapshot, private readonly root: string, private readonly reader: InputFiles) {}
 
   /** Records an input the run reads, and the folders on the way up to the root, unless the scan before the run already holds them. */
   observe(filename: string): void {
-    if (!this.before.files.has(filename) && !this.firstFiles.has(filename)) this.firstFiles.set(filename, signature(filename));
+    if (!this.before.files.has(filename) && !this.firstFiles.has(filename)) this.firstFiles.set(filename, signature(filename, this.reader));
     for (const directory of foldersAbove(this.root, filename)) {
       if (this.firstFolders.has(directory)) break;
       this.observeFolder(directory);
@@ -304,7 +304,7 @@ export class RunBaseline {
 
   private recordFolder(directory: string): void {
     // A folder that does not exist yet had no names: every name it has later is new.
-    this.firstFolders.set(directory, readFolder(directory)?.names ?? []);
+    this.firstFolders.set(directory, readFolder(directory, this.reader)?.names ?? []);
   }
 }
 
