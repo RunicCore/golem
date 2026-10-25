@@ -397,6 +397,24 @@ function tagSchemas(
     .map(([key, schema], index) => ({ key, schema, id: `golem:model-tag:${index}` }));
 }
 
+/**
+ * TypeScript brands are commonly expressed as an intersection such as `string & { readonly __wireCode?: never }`. The
+ * brand carries no wire data and must not turn a scalar JSON value into an impossible allOf of a scalar and an object.
+ * The scalar of such an intersection; a genuine object intersection has none.
+ */
+function brandedScalar(descriptor: ModelConversionDescriptor): ModelConversionDescriptor | undefined {
+  if (descriptor.kind !== 'intersection') return undefined;
+  const isBrand = (item: ModelConversionDescriptor): boolean => item.kind === 'object'
+    && item.required.length === 0
+    && item.additionalProperties === false
+    && Object.entries(item.properties).every(([name, property]) =>
+      name.startsWith('__') && (property.kind === 'undefined' || property.kind === 'never'));
+  const scalar = descriptor.variants.find((item) =>
+    item.kind === 'string' || item.kind === 'number' || item.kind === 'boolean' || item.kind === 'null',
+  );
+  return scalar && descriptor.variants.every((item) => item === scalar || isBrand(item)) ? scalar : undefined;
+}
+
 function projectDescriptor(
   descriptor: ModelConversionDescriptor,
   validationEnabled: boolean,
@@ -414,40 +432,6 @@ function projectDescriptor(
       ? projectDescriptor(wireDescriptor, validationEnabled, true, true, definitions)
       : { kind: 'unknown' };
   }
-  // TypeScript brands are commonly expressed as an intersection such as
-  // `string & { readonly __wireCode?: never }`.  The brand carries no wire
-  // data and must not turn a scalar JSON value into an impossible allOf of a
-  // scalar and an object.  Keep genuine object intersections intact.
-  if (wire && descriptor.kind === 'intersection') {
-    const isBrand = (item: ModelConversionDescriptor): boolean => item.kind === 'object'
-      && item.required.length === 0
-      && item.additionalProperties === false
-      && Object.entries(item.properties).every(([name, property]) =>
-        name.startsWith('__') && (property.kind === 'undefined' || property.kind === 'never'));
-    const scalar = descriptor.variants.find((item) =>
-      item.kind === 'string' || item.kind === 'number' || item.kind === 'boolean' || item.kind === 'null',
-    );
-    if (scalar && descriptor.variants.every((item) => item === scalar || isBrand(item))) {
-      const projectedScalar = projectDescriptor(scalar, validationEnabled, true, retainPredicates, definitions);
-      const normalizedConstraints = validationEnabled
-        ? constraints.map((constraint) => mapConstraint(
-          constraint,
-          validationEnabled,
-          true,
-          retainPredicates,
-          definitions,
-        )).sort((left, right) => compareText(JSON.stringify(left), JSON.stringify(right)))
-        : [];
-      const normalizedValidations = [...(rich.validations ?? [])]
-        .map((binding) => typeof binding === 'string' ? binding : (binding as ValidationBinding).id)
-        .sort();
-      return {
-        ...projectedScalar,
-        ...(retainPredicates && normalizedValidations.length ? { validations: normalizedValidations } : {}),
-        ...(normalizedConstraints.length ? { constraints: normalizedConstraints } : {}),
-      } as ModelConversionDescriptor;
-    }
-  }
   if (wire && descriptor.kind === 'date') {
     return {
       kind: 'string',
@@ -456,8 +440,10 @@ function projectDescriptor(
   }
   const project = (item: ModelConversionDescriptor): ModelConversionDescriptor =>
     projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions);
+  const scalar = wire ? brandedScalar(descriptor) : undefined;
   let projected: ModelConversionDescriptor;
-  switch (descriptor.kind) {
+  if (scalar) projected = project(scalar);
+  else switch (descriptor.kind) {
     case 'array': projected = {
       kind: 'array',
       ...(descriptor.isReadonly ? { isReadonly: true as const } : {}),
