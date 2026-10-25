@@ -1,6 +1,6 @@
 import { code, helper, helperName, join, literal as literalCode, type Code, type Helper } from '../code.js';
 import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
-import { instanceFieldsCode } from '../union-conversion.js';
+import { instanceFieldsCode, ownEnumerableCode } from '../union-conversion.js';
 import { NEWLINE } from './function-names.js';
 
 type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOf' | 'hashedId' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
@@ -30,7 +30,7 @@ const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
   definedKeys: localHelper('definedKeys', 0, self => code`const ${self} = value => Object.keys(value).filter(key => value[key] !== undefined);`),
   // The failure of a fast check whose key test left the values unread reads them as the full validator does, then fails.
   readAll: localHelper('readAll', 1, self => code`function ${self}(value, keys) { for (const key of keys) value[key]; }`),
-  isPresent: localHelper('isPresent', 2, self => code`const ${self} = (value, key) => Object.prototype.propertyIsEnumerable.call(value, key) && value[key] !== undefined;`),
+  isPresent: localHelper('isPresent', 2, self => code`const ${self} = (value, key) => ${ownEnumerableCode(code`value`, code`key`)} && value[key] !== undefined;`),
   isObject: localHelper('isObject', 3, self => code`const ${self} = value => typeof value === 'object' && value !== null && !Array.isArray(value);`),
   // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFieldsCode`).
   instanceFields: localHelper('instanceFields', 4, () => instanceFieldsCode()),
