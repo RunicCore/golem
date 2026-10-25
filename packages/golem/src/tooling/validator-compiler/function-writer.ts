@@ -9,7 +9,7 @@ import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyTest
 
 const runtime = rt['validation-runtime'];
 
-export const TYPE_TESTS: Readonly<Record<IrTypeName, (value: Code) => Code>> = {
+const TYPE_TESTS: Readonly<Record<IrTypeName, (value: Code) => Code>> = {
   string: value => code`typeof ${value} === 'string'`,
   // JSON has no NaN or infinity; a model value that holds one is not a number.
   number: value => code`(typeof ${value} === 'number' && Number.isFinite(${value}))`,

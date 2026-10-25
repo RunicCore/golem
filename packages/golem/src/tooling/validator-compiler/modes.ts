@@ -4,8 +4,8 @@ import { presentKeysCode } from '../union-conversion.js';
 import { PATH, COMMA, ISSUES, ALL, callFunction, type CallArguments } from './function-names.js';
 import { localName, stateTest } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
-import { FunctionWriter } from './function-writer.js';
-import { FastPlan } from './fast-plan.js';
+import type { FunctionWriter } from './function-writer.js';
+import type { FastPlan } from './fast-plan.js';
 
 /** What a written function does when a check fails. */
 interface FailMode {
