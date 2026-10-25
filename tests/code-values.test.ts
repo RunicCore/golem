@@ -5,6 +5,7 @@ import {
   nameOf, nameSlot, render, runtimeImports, sameCode, nest, lineBreak, placeHelpers, runtimeCode,
 } from '#golem/code';
 import { rt, rtType } from '#golem/rt';
+import { runModule } from './support/run-module.js';
 
 test('render writes the parts once, in order, and fills each name from the table of the file', () => {
   // protects: T-281 render is the one place that makes text
@@ -119,7 +120,7 @@ test('a helper that a file reads while it loads comes after the helper it names'
   const block = render(join(helperDefinitions(code`${helperName(checkedOptions)}`), code`\n\n`), new NameTable());
   assert.deepEqual(helperSet(code`${helperName(checkedOptions)}`).map((found) => found.id), ['markKey', 'checkedOptions']);
   // The file loads: the first constant would be read before it exists if the ids set the order.
-  const loaded = new Function(`${block}\nreturn checkedOptions;`)() as Record<symbol, unknown>;
+  const loaded = runModule(block, {}, { exports: ['checkedOptions'] }).checkedOptions as Record<symbol, unknown>;
   assert.equal(loaded[Symbol.for('t286:mark')], true);
 });
 

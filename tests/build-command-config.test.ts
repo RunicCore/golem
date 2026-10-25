@@ -10,13 +10,8 @@ import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
 import { command, golem, workspace } from './support/process.js';
-import { runRewritten } from './support/rewritten-module.js';
+import { assertMoneyCodec } from './support/rewritten-module.js';
 
-/** The built module, run with its imports stubbed, asks the runtime for the TMoney codec: golem rewrote its calls. */
-function assertMoneyCodec(file: string, message?: string): void {
-  const ids = runRewritten(fs.readFileSync(file, 'utf8')).codecIds;
-  assert.ok(ids.length > 0 && ids.every((id) => /^TMoney_[0-9a-f]{8}$/.test(id)), `${message ?? file}: ${ids.join(', ')}`);
-}
 import { write, editTsconfig, serdeProject, PAYMENTS_CONTROLLER, USE, build, mtimes, golemBuild, assertCallMap } from './support/build-project.js';
 
 /** A project with a golem.yaml whose models job generates the serde model, and the files golem generate wrote. */

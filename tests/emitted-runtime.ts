@@ -1,8 +1,8 @@
-import { transformSync } from 'esbuild';
-
 import * as conversion from '@exprtlabs/golem/conversion';
 import * as serde from '@exprtlabs/golem/serde';
 import { emitCodecRuntimeCode, render } from '@exprtlabs/golem/internal/emitter';
+
+import { runModule } from './support/run-module.js';
 
 /** The codec runtime of a schema graph as text. */
 export function emitCodecRuntimeText(...args: Parameters<typeof emitCodecRuntimeCode>): string {
@@ -12,21 +12,13 @@ export function emitCodecRuntimeText(...args: Parameters<typeof emitCodecRuntime
 /** Evaluate emitted `stringify*` functions with the public serde exports in scope. */
 export function instantiate(source: string): Record<string, (value: never) => string> {
   const names = [...source.matchAll(/function (stringify\w+)/g)].map((match) => match[1]);
-  const javascript = transformSync(source, { loader: 'ts', target: 'es2022' }).code;
-  return new Function(
-    'stringifyJsonString',
-    'stringifyJsonNumber',
-    'stringifyJsonBoolean',
-    'stringifyJsonArray',
-    'stringifyJsonScalar',
-    `${javascript}\nreturn { ${names.join(', ')} };`,
-  )(
-    serde.stringifyJsonString,
-    serde.stringifyJsonNumber,
-    serde.stringifyJsonBoolean,
-    serde.stringifyJsonArray,
-    serde.stringifyJsonScalar,
-  ) as Record<string, (value: never) => string>;
+  return runModule(source, {
+    stringifyJsonString: serde.stringifyJsonString,
+    stringifyJsonNumber: serde.stringifyJsonNumber,
+    stringifyJsonBoolean: serde.stringifyJsonBoolean,
+    stringifyJsonArray: serde.stringifyJsonArray,
+    stringifyJsonScalar: serde.stringifyJsonScalar,
+  }, { exports: names }) as Record<string, (value: never) => string>;
 }
 
 export type RuntimeFunction = (...values: unknown[]) => unknown;
@@ -37,9 +29,5 @@ export function instantiateRuntime(
   scope: Readonly<Record<string, unknown>> = {},
 ): Record<string, RuntimeFunction> {
   const exported = [...source.matchAll(/^export function (\w+)/gm)].map((match) => match[1]);
-  const javascript = transformSync(source.replace(/^export /gm, ''), { loader: 'ts', target: 'es2022' }).code;
-  const bindings: Record<string, unknown> = { ...serde, ...conversion, ...scope };
-  const names = Object.keys(bindings).filter((name) => /^[A-Za-z_$][\w$]*$/.test(name));
-  const create = new Function(...names, `${javascript}\nreturn { ${exported.join(', ')} };`) as RuntimeFunction;
-  return create(...names.map((name) => bindings[name])) as Record<string, RuntimeFunction>;
+  return runModule(source.replace(/^export /gm, ''), { ...serde, ...conversion, ...scope }, { exports: exported }) as Record<string, RuntimeFunction>;
 }

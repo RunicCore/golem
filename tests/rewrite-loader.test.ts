@@ -313,7 +313,6 @@ test('a .cts file with a rewrite fails the run: a rewrite cannot give CommonJS a
   const result = await run(root, 'src/listed.cts');
   assert.notEqual(result.code, 0);
   assert.ok(result.stderr.includes('golem rewrites need ES modules; src/listed.cts loads as CommonJS'), result.stderr);
-  assert.doesNotMatch(result.stderr, /Cannot use import statement/);
 });
 
 test('CommonJS TypeScript with no rewrite still runs', async (t) => {

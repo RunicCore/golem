@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
-import { transformSync } from 'esbuild';
+import { runModule } from './run-module.js';
 
 /** What a rewritten module did when it ran with every import stubbed: the codec ids it asked the runtime for, in call order, and the modules it imported. */
 export interface RewrittenRun {
@@ -24,15 +25,18 @@ export function runRewritten(code: string | undefined): RewrittenRun {
       return open;
     },
   });
-  const { code: commonJs } = transformSync(code, { loader: 'ts', format: 'cjs', target: 'es2022' });
   // A name the module uses but a test fixture leaves undeclared (a `declare const`) reads as a stub: run again with it declared.
   const stubbed: string[] = [];
   for (;;) {
     codecIds.length = imports.length = registered.length = 0;
     try {
-      new Function(...stubbed, 'require', 'exports', 'module', 'console', commonJs)(
-        ...stubbed.map(() => open), (specifier: string) => { imports.push(specifier); return imported; }, {}, { exports: {} }, { log: () => undefined },
-      );
+      runModule(code, {
+        ...Object.fromEntries(stubbed.map((name) => [name, open])),
+        require: (specifier: string) => { imports.push(specifier); return imported; },
+        exports: {},
+        module: { exports: {} },
+        console: { log: () => undefined },
+      }, { format: 'cjs' });
       break;
     } catch (error) {
       const name = error instanceof ReferenceError ? /^(\w+) is not defined$/.exec(error.message)?.[1] : undefined;
@@ -41,4 +45,10 @@ export function runRewritten(code: string | undefined): RewrittenRun {
     }
   }
   return { codecIds, imports, registered };
+}
+
+/** The module at `file`, run with its imports stubbed, asks the runtime for the TMoney codec: golem rewrote its parse and stringify calls. */
+export function assertMoneyCodec(file: string, message: string = file): void {
+  const ids = runRewritten(fs.readFileSync(file, 'utf8')).codecIds;
+  assert.ok(ids.length > 0 && ids.every((id) => /^TMoney_[0-9a-f]{8}$/.test(id)), `${message}: ${ids.join(', ')}`);
 }

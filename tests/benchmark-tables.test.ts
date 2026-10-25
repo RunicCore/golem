@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ResultCase } from '../scripts/benchmark/results-schema.js';
-import { costTable } from '../scripts/benchmark/tables.js';
+import { costTable, releaseVerdict } from '../scripts/benchmark/tables.js';
 
 const timed = (payload: string, operation: string, adapter: string, median: number): ResultCase =>
   ({ payload, operation, adapter, support: 'full', opsPerSec: { median, min: median, max: median } });
@@ -75,4 +75,31 @@ test('the cost table divides invalid input by valid input for parse, decode and 
     ['validate', ratio(1)],
   ]);
   assert.deepEqual(costTable({ ...results, invalid: undefined }).map(r => r.invalidOverValid.kind), ['not-run', 'not-applicable', 'not-run', 'not-applicable', 'not-run']);
+});
+
+const pair = (base: number, head: number) => ({ base, head });
+/** A case whose two halves of the rounds run at `first` and `second` of a base of 100, and the session at their mean. */
+const release = (key: string, first: number, second: number = first) =>
+  ({ key, ...pair(100, (first + second) / 2), halves: [pair(100, first), pair(100, second)] });
+
+// protects: F-159 the bench:release check stops, and names the case, when a case runs below the base by more than the band in both halves
+test('the release verdict stops when a case runs below the base by more than the band in both halves, and names it', () => {
+  const verdict = releaseVerdict([release('simple/parse/golem', 101), release('simple/decode/golem', 80)], 0.1);
+  assert.equal(verdict.verdict, 'stop');
+  assert.deepEqual(verdict.failing.map(r => [r.key, r.ratio, r.halfRatios]), [['simple/decode/golem', 0.8, [0.8, 0.8]]]);
+});
+
+// protects: F-159 the bench:release check passes a drop in one half only, a drop inside the band, any gain, and a ratio exactly at one minus the band
+test('the release verdict passes a drop in one half only, inside the band, a gain, and a ratio at one minus the band', () => {
+  const passed = releaseVerdict([release('simple/parse/golem', 70, 100), release('simple/encode/golem', 100, 70)], 0.1);
+  assert.deepEqual([passed.verdict, passed.failing], ['pass', []]);
+  assert.equal(releaseVerdict([release('a/b/golem', 95), release('a/c/golem', 50), release('a/d/golem', 300)], 0.5).verdict, 'pass');
+  assert.equal(releaseVerdict([release('a/b/golem', 49.9)], 0.5).verdict, 'stop');
+});
+
+// protects: F-159 the bench:release check never passes on no data or an unusable timing or band
+test('the release verdict refuses to pass a check that compared nothing or has no usable band or timing', () => {
+  assert.throws(() => releaseVerdict([], 0.1), /no case was timed on both sides/);
+  assert.throws(() => releaseVerdict([release('a/b/golem', 100)], Number.NaN), /noise band is NaN/);
+  assert.throws(() => releaseVerdict([{ key: 'a/b/golem', ...pair(0, 100), halves: [pair(0, 100)] }], 0.1), /invalid timing for a\/b\/golem/);
 });

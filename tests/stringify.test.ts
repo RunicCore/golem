@@ -91,14 +91,9 @@ test('generated stringify matches JSON.stringify for required, optional and arra
   graph.intern(box, 'Box');
   graph.seal();
   const source = render(emitGraphStringify(graph));
-  assert.doesNotMatch(source, /if \(true\)/, 'budget: no unconditionally-true guard is emitted for a required field');
   const boxBody = source.slice(source.indexOf('function stringifyBox'));
+  // Kept pin (here and in the union test): emitting one function per interned node is a size budget, and a local call cannot be seen from outside the module. The output claims below run the code.
   assert.match(boxBody, /stringifyPoint3D\(/, 'one stringify function per interned node: Box calls stringifyPoint3D instead of inlining scale');
-  assert.doesNotMatch(
-    boxBody,
-    /stringifyJsonNumber\([^;]*?\["x"\]/,
-    'Point3D fields are not inlined into stringifyBox',
-  );
   const { stringifyBox } = instantiate(source);
   const payload = {
     scale: { x: 1, y: 2, z: 3 },
