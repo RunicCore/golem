@@ -99,17 +99,28 @@ function mergeMetadata(first: TagMetadata, second: TagMetadata): TagMetadata {
   };
 }
 
+/** A tag argument: the type node it was written as (the source path) or the checker's type for it (the instantiated path). */
+interface TagArgument {
+  readonly node?: ts.TypeNode;
+  readonly type?: ts.Type;
+}
+
+function argumentType(checker: ts.TypeChecker, argument: TagArgument | undefined): ts.Type | undefined {
+  return argument?.type ?? (argument?.node ? checker.getTypeFromTypeNode(argument.node) : undefined);
+}
+
 function literalValue(
   checker: ts.TypeChecker,
-  node: ts.TypeNode | undefined,
+  argument: TagArgument | undefined,
   expected: 'number' | 'string',
 ): number | string | undefined {
-  if (!node) return undefined;
-  if (expected === 'string') {
+  if (!argument) return undefined;
+  const node = argument.node;
+  if (node && expected === 'string') {
     if (ts.isLiteralTypeNode(node) && ts.isStringLiteral(node.literal)) return node.literal.text;
     if (ts.isTemplateLiteralTypeNode(node) && node.templateSpans.length === 0) return node.head.text;
   }
-  if (expected === 'number') {
+  if (node && expected === 'number') {
     if (ts.isLiteralTypeNode(node) && ts.isNumericLiteral(node.literal)) return Number(node.literal.text);
     if (
       ts.isLiteralTypeNode(node)
@@ -118,12 +129,18 @@ function literalValue(
       && ts.isNumericLiteral(node.literal.operand)
     ) return -Number(node.literal.operand.text);
   }
-  const type = checker.getTypeFromTypeNode(node);
+  const type = argumentType(checker, argument);
+  if (!type) return undefined;
   if (expected === 'number' && (type.flags & ts.TypeFlags.NumberLiteral) !== 0) {
     return (type as ts.NumberLiteralType).value;
   }
   if (expected === 'string' && (type.flags & ts.TypeFlags.StringLiteral) !== 0) {
     return (type as ts.StringLiteralType).value;
+  }
+  if (expected === 'number') {
+    const text = checker.typeToString(type);
+    const value = Number(text);
+    return Number.isFinite(value) && text.trim() !== '' ? value : undefined;
   }
   return undefined;
 }
@@ -202,6 +219,13 @@ function isGolemTagsSource(filename: string): boolean {
 function isGolemTagSymbol(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): boolean {
   const target = targetSymbol(checker, symbol);
   return Boolean(target?.declarations?.some((declaration) => isGolemTagsSource(declaration.getSourceFile().fileName)));
+}
+
+/** Whether `property` is the key of a golem tag: a property named by one of the unique symbols that tags.ts declares. */
+export function isGolemTagKey(checker: ts.TypeChecker, property: ts.Symbol): boolean {
+  const declaration = property.valueDeclaration ?? property.declarations?.[0];
+  const key = declaration && (declaration as ts.NamedDeclaration).name;
+  return key !== undefined && ts.isComputedPropertyName(key) && isGolemTagSymbol(checker, checker.getSymbolAtLocation(key.expression));
 }
 
 /**
@@ -283,23 +307,36 @@ function valueBindingForSymbol(
   };
 }
 
-function valueBinding(
-  context: TagAnalysisContext,
-  node: ts.TypeQueryNode,
-  kind: 'validation' | 'serialize' | 'deserialize',
-): ValueBinding {
-  const symbol = symbolAtExpression(context.checker, node.exprName);
-  return valueBindingForSymbol(context, symbol, kind, node);
+/** A function that a TValidation or TSerde tag names: the `typeof` query that wrote it, when the tag was read from source. */
+interface TagFunction {
+  readonly query?: ts.TypeQueryNode;
+  readonly type: ts.Type;
+  /** Where its diagnostics point. */
+  readonly owner: ts.Node;
 }
 
-function valueBindingFromFunctionType(
+/** The function `argument` names. A tag read from source must write `typeof name`; `code` and `message` refuse anything else, and a missing argument. */
+function functionArgument(
   context: TagAnalysisContext,
-  type: ts.Type,
+  argument: TagArgument | undefined,
+  at: ts.Node,
+  code: string,
+  message: string,
+): TagFunction {
+  if (argument?.node && ts.isTypeQueryNode(argument.node)) {
+    return { query: argument.node, type: context.checker.getTypeAtLocation(argument.node.exprName), owner: argument.node };
+  }
+  if (argument?.type && !argument.node) return { type: argument.type, owner: at };
+  throw context.diagnostic(at, code, message);
+}
+
+function functionBinding(
+  context: TagAnalysisContext,
+  fn: TagFunction,
   kind: 'validation' | 'serialize' | 'deserialize',
-  node: ts.Node,
 ): ValueBinding {
-  const signature = type.getCallSignatures()[0];
-  const declaration = signature?.declaration;
+  if (fn.query) return valueBindingForSymbol(context, symbolAtExpression(context.checker, fn.query.exprName), kind, fn.owner);
+  const declaration = fn.type.getCallSignatures()[0]?.declaration;
   const variable = declaration && ts.isFunctionLike(declaration)
     && (ts.isArrowFunction(declaration) || ts.isFunctionExpression(declaration))
     && ts.isVariableDeclaration(declaration.parent)
@@ -308,7 +345,7 @@ function valueBindingFromFunctionType(
   const named = variable?.name
     ?? (declaration && (declaration as ts.NamedDeclaration).name);
   const symbol = named ? context.checker.getSymbolAtLocation(named) : undefined;
-  return valueBindingForSymbol(context, symbol, kind, node);
+  return valueBindingForSymbol(context, symbol, kind, fn.owner);
 }
 
 function validateSynchronousSignature(
@@ -340,15 +377,6 @@ function validateSynchronousSignature(
   return signature;
 }
 
-function synchronousSignature(
-  context: TagAnalysisContext,
-  node: ts.TypeQueryNode,
-  kind: 'validation' | 'serialize' | 'deserialize',
-): ts.Signature {
-  const type = context.checker.getTypeAtLocation(node.exprName);
-  return validateSynchronousSignature(context, type, node, kind);
-}
-
 function parameterType(
   checker: ts.TypeChecker,
   signature: ts.Signature,
@@ -363,9 +391,9 @@ function parameterType(
 
 function validationSignature(
   context: TagAnalysisContext,
-  node: ts.TypeQueryNode,
+  fn: TagFunction,
 ): ts.Signature {
-  const signature = synchronousSignature(context, node, 'validation');
+  const signature = validateSynchronousSignature(context, fn.type, fn.owner, 'validation');
   const returnType = context.checker.getReturnTypeOfSignature(signature);
   const allowed = (candidate: ts.Type): boolean => {
     if ((candidate.flags & (ts.TypeFlags.BooleanLike | ts.TypeFlags.StringLike)) !== 0) return true;
@@ -373,21 +401,18 @@ function validationSignature(
     return false;
   };
   if (!allowed(returnType)) {
-    throw context.diagnostic(node, '1048', 'validation must return boolean or string synchronously.');
+    throw context.diagnostic(fn.owner, '1048', 'validation must return boolean or string synchronously.');
   }
   return signature;
 }
 
 function schemaArgument(
   context: TagAnalysisContext,
-  node: ts.TypeNode | undefined,
+  argument: TagArgument | undefined,
   owner: ts.Node,
   label: string,
 ): ConstraintSchemaValue {
-  if (!node || !context.describeSchema) {
-    throw context.diagnostic(owner, '1043', `${label} requires a representable schema type argument.`);
-  }
-  return schemaTypeArgument(context, context.checker.getTypeFromTypeNode(node), owner, label, node);
+  return schemaTypeArgument(context, argumentType(context.checker, argument), owner, label, argument?.node);
 }
 
 function schemaTypeArgument(
@@ -419,7 +444,7 @@ function literalString(
   owner: ts.Node,
   label: string,
 ): string {
-  const value = literalValue(context.checker, node, 'string');
+  const value = literalValue(context.checker, { node }, 'string');
   if (typeof value === 'string') return value;
   if ((type.flags & ts.TypeFlags.StringLiteral) !== 0) return (type as ts.StringLiteralType).value;
   throw context.diagnostic(owner, '1044', `${label} requires a string literal argument.`);
@@ -534,54 +559,162 @@ function dependentRequiredMap(
   return result;
 }
 
-const TAG_NAMES: ReadonlySet<string> = new Set([
-  'TValidation',
-  'TSerde',
-  'Integer',
-  'Minimum',
-  'Maximum',
-  'Min',
-  'Max',
-  'ExclusiveMinimum',
-  'ExclusiveMaximum',
-  'ExclusiveMin',
-  'ExclusiveMax',
-  'MultipleOf',
-  'MinLength',
-  'MaxLength',
-  'Pattern',
-  'Format',
-  'MinItems',
-  'MaxItems',
-  'UniqueItems',
-  'MinProperties',
-  'MaxProperties',
-  'MinProps',
-  'MaxProps',
-  'Contains',
-  'MinContains',
-  'MaxContains',
-  'PropertyNames',
-  'PatternProperties',
-  'AdditionalProperties',
-  'UnevaluatedProperties',
-  'DependentRequired',
-  'DependentSchemas',
-  'OneOf',
-  'Not',
-  'IfThenElse',
+/** Reads one tag from its name and arguments; `at` is where its diagnostics point. */
+type TagReader = (context: TagAnalysisContext, name: string, args: readonly TagArgument[], at: ts.Node) => TagMetadata;
+
+function constraintOnly(constraint: ModelConstraint): TagMetadata {
+  return { validations: [], constraints: [constraint] };
+}
+
+function readValidation(context: TagAnalysisContext, _name: string, args: readonly TagArgument[], at: ts.Node): TagMetadata {
+  const predicate = functionArgument(context, args[0], at, '1041', 'TValidation requires typeof an exported synchronous predicate.');
+  const signature = validationSignature(context, predicate);
+  return {
+    validations: [{
+      kind: 'validation',
+      ...functionBinding(context, predicate, 'validation'),
+      parameterType: parameterType(context.checker, signature, at),
+    }],
+    constraints: [],
+  };
+}
+
+function readSerde(context: TagAnalysisContext, _name: string, args: readonly TagArgument[], at: ts.Node): TagMetadata {
+  const message = 'TSerde requires typeof serialize and typeof deserialize functions.';
+  const serializeFunction = functionArgument(context, args[0], at, '1042', message);
+  const deserializeFunction = functionArgument(context, args[1], at, '1042', message);
+  const serializeSignature = validateSynchronousSignature(context, serializeFunction.type, serializeFunction.owner, 'serialize');
+  const deserializeSignature = validateSynchronousSignature(context, deserializeFunction.type, deserializeFunction.owner, 'deserialize');
+  const serialize = functionBinding(context, serializeFunction, 'serialize');
+  const deserialize = functionBinding(context, deserializeFunction, 'deserialize');
+  return {
+    validations: [],
+    serde: {
+      kind: 'serde',
+      id: `${serialize.id}\0${deserialize.id}`,
+      serialize,
+      deserialize,
+      modelType: parameterType(context.checker, serializeSignature, at),
+      wireType: parameterType(context.checker, deserializeSignature, at),
+      serializeType: context.checker.getReturnTypeOfSignature(serializeSignature),
+      deserializeType: context.checker.getReturnTypeOfSignature(deserializeSignature),
+    },
+    constraints: [],
+  };
+}
+
+function numberTag(kind: ModelConstraint['kind']): TagReader {
+  return (context, name, args, at) => {
+    const value = literalValue(context.checker, args[0], 'number');
+    if (value === undefined || typeof value !== 'number' || !Number.isFinite(value)) {
+      throw context.diagnostic(at, '1043', `${name} requires a finite numeric literal argument.`);
+    }
+    if (
+      (kind === 'minLength' || kind === 'maxLength' || kind === 'minItems' || kind === 'maxItems'
+        || kind === 'minProperties' || kind === 'maxProperties' || kind === 'minContains' || kind === 'maxContains')
+      && (!Number.isInteger(value) || value < 0)
+    ) {
+      throw context.diagnostic(at, '1043', `${name} requires a non-negative integer literal argument.`);
+    }
+    if (kind === 'multipleOf' && value <= 0) {
+      throw context.diagnostic(at, '1043', `${name} requires a positive numeric literal argument.`);
+    }
+    return constraintOnly({ kind, value } as ModelConstraint);
+  };
+}
+
+function stringTag(kind: 'pattern' | 'format'): TagReader {
+  return (context, name, args, at) => {
+    const value = literalValue(context.checker, args[0], 'string');
+    if (typeof value !== 'string') throw context.diagnostic(at, '1044', `${name} requires a string literal argument.`);
+    if (kind === 'pattern') {
+      try {
+        // Generated validators compile JSON Schema patterns with the Unicode flag. Parse the same expression here so
+        // malformed patterns fail before any generated artifact can be written.
+        void new RegExp(value, 'u');
+      } catch {
+        throw context.diagnostic(at, '1044', `${name} requires a valid Unicode regular expression.`);
+      }
+    }
+    return constraintOnly({ kind, value });
+  };
+}
+
+function schemaTag(kind: 'contains' | 'propertyNames' | 'additionalProperties' | 'unevaluatedProperties' | 'not'): TagReader {
+  return (context, name, args, at) => constraintOnly({ kind, schema: schemaArgument(context, args[0], at, name) });
+}
+
+function readPatternProperties(context: TagAnalysisContext, name: string, args: readonly TagArgument[], at: ts.Node): TagMetadata {
+  const patterns = patternSchemaMap(context, argumentType(context.checker, args[0]), args[0]?.node, at, name);
+  return {
+    validations: [],
+    constraints: Object.entries(patterns).map(([pattern, schema]) => ({ kind: 'patternProperties', pattern, schema })),
+  };
+}
+
+function readIfThenElse(context: TagAnalysisContext, name: string, args: readonly TagArgument[], at: ts.Node): TagMetadata {
+  const condition = schemaArgument(context, args[0], at, name);
+  const thenSchema = schemaArgument(context, args[1], at, name);
+  const elseSchema = args[2] ? schemaArgument(context, args[2], at, name) : undefined;
+  return constraintOnly({ kind: 'ifThenElse', if: condition, then: thenSchema, ...(elseSchema === undefined ? {} : { else: elseSchema }) });
+}
+
+/** Every tag golem reads, by the name its declaration in tags.ts carries. One reader serves a tag written in source and a tag the checker instantiated. */
+const TAG_READERS: ReadonlyMap<string, TagReader> = new Map<string, TagReader>([
+  ['TValidation', readValidation],
+  ['TSerde', readSerde],
+  ['Integer', () => constraintOnly({ kind: 'integer' })],
+  ['Minimum', numberTag('minimum')],
+  ['Min', numberTag('minimum')],
+  ['Maximum', numberTag('maximum')],
+  ['Max', numberTag('maximum')],
+  ['ExclusiveMinimum', numberTag('exclusiveMinimum')],
+  ['ExclusiveMin', numberTag('exclusiveMinimum')],
+  ['ExclusiveMaximum', numberTag('exclusiveMaximum')],
+  ['ExclusiveMax', numberTag('exclusiveMaximum')],
+  ['MultipleOf', numberTag('multipleOf')],
+  ['MinLength', numberTag('minLength')],
+  ['MaxLength', numberTag('maxLength')],
+  ['MinItems', numberTag('minItems')],
+  ['MaxItems', numberTag('maxItems')],
+  ['MinProperties', numberTag('minProperties')],
+  ['MinProps', numberTag('minProperties')],
+  ['MaxProperties', numberTag('maxProperties')],
+  ['MaxProps', numberTag('maxProperties')],
+  ['MinContains', numberTag('minContains')],
+  ['MaxContains', numberTag('maxContains')],
+  ['Pattern', stringTag('pattern')],
+  ['Format', stringTag('format')],
+  ['UniqueItems', () => constraintOnly({ kind: 'uniqueItems' })],
+  ['Contains', schemaTag('contains')],
+  ['PropertyNames', schemaTag('propertyNames')],
+  ['AdditionalProperties', schemaTag('additionalProperties')],
+  ['UnevaluatedProperties', schemaTag('unevaluatedProperties')],
+  ['Not', schemaTag('not')],
+  ['PatternProperties', readPatternProperties],
+  ['DependentRequired', (context, name, args, at) => constraintOnly({
+    kind: 'dependentRequired',
+    value: dependentRequiredMap(context, argumentType(context.checker, args[0]), args[0]?.node, at),
+  })],
+  ['DependentSchemas', (context, name, args, at) => constraintOnly({
+    kind: 'dependentSchemas',
+    value: schemaMap(context, argumentType(context.checker, args[0]), args[0]?.node, at, name),
+  })],
+  ['OneOf', (context, name, args, at) => constraintOnly({
+    kind: 'oneOf',
+    schemas: schemaList(context, argumentType(context.checker, args[0]), args[0]?.node, at, name),
+  })],
+  ['IfThenElse', readIfThenElse],
 ]);
 
-function tagReferenceName(
-  context: TagAnalysisContext,
-  node: ts.TypeReferenceNode,
-): string | undefined {
-  const symbolAtNode = context.checker.getSymbolAtLocation(node.typeName);
-  if (!isGolemTagSymbol(context.checker, symbolAtNode)) return undefined;
-  const symbol = targetSymbol(context.checker, symbolAtNode);
-  // The meaning comes from the tag the reference resolves to; the name written at the use site is the importer's choice.
-  const symbolName = symbol?.getName();
-  return symbolName !== undefined && TAG_NAMES.has(symbolName) ? symbolName : undefined;
+/**
+ * The tag a symbol names, or undefined when it is no golem tag. The meaning comes from the tag the symbol resolves to; the name
+ * written at a use site is the importer's choice.
+ */
+function golemTagName(checker: ts.TypeChecker, symbol: ts.Symbol | undefined): string | undefined {
+  if (!isGolemTagSymbol(checker, symbol)) return undefined;
+  const name = targetSymbol(checker, symbol)?.getName();
+  return name !== undefined && TAG_READERS.has(name) ? name : undefined;
 }
 
 function dependsOnAliasParameter(context: TagAnalysisContext, node: ts.Node): boolean {
@@ -619,7 +752,7 @@ function parseTag(
   context: TagAnalysisContext,
   node: ts.TypeReferenceNode,
 ): TagMetadata | undefined {
-  const name = tagReferenceName(context, node);
+  const name = golemTagName(context.checker, context.checker.getSymbolAtLocation(node.typeName));
   if (!name) return undefined;
   const arguments_ = node.typeArguments ?? [];
   if (arguments_.some((argument) => dependsOnAliasParameter(context, argument))) {
@@ -629,321 +762,16 @@ function parseTag(
     }
     return instantiatedTag(context, name);
   }
-  if (name === 'TValidation') {
-    const predicate = arguments_[0];
-    if (!predicate || !ts.isTypeQueryNode(predicate)) {
-      throw context.diagnostic(node, '1041', 'TValidation requires typeof an exported synchronous predicate.');
-    }
-    const signature = validationSignature(context, predicate);
-    return {
-      validations: [{
-        kind: 'validation',
-        ...valueBinding(context, predicate, 'validation'),
-        parameterType: parameterType(context.checker, signature, node),
-      }],
-      constraints: [],
-    };
-  }
-  if (name === 'TSerde') {
-    const serialize = arguments_[0];
-    const deserialize = arguments_[1];
-    if (!serialize || !deserialize || !ts.isTypeQueryNode(serialize) || !ts.isTypeQueryNode(deserialize)) {
-      throw context.diagnostic(node, '1042', 'TSerde requires typeof serialize and typeof deserialize functions.');
-    }
-    const serializeSignature = synchronousSignature(context, serialize, 'serialize');
-    const deserializeSignature = synchronousSignature(context, deserialize, 'deserialize');
-    const serializeBinding = valueBinding(context, serialize, 'serialize');
-    const deserializeBinding = valueBinding(context, deserialize, 'deserialize');
-    const wireParameter = deserializeSignature.parameters[0];
-    const wireDeclaration = wireParameter?.valueDeclaration ?? wireParameter?.declarations?.[0];
-    const wireType = wireParameter
-      ? context.checker.getTypeOfSymbolAtLocation(wireParameter, wireDeclaration ?? node)
-      : context.checker.getUnknownType();
-    return {
-      validations: [],
-      serde: {
-        kind: 'serde',
-        id: `${serializeBinding.id}\0${deserializeBinding.id}`,
-        serialize: serializeBinding,
-        deserialize: deserializeBinding,
-        modelType: parameterType(context.checker, serializeSignature, node),
-        wireType,
-        serializeType: context.checker.getReturnTypeOfSignature(serializeSignature),
-        deserializeType: context.checker.getReturnTypeOfSignature(deserializeSignature),
-      },
-      constraints: [],
-    };
-  }
-  const numberValue = (kind: ModelConstraint['kind']): TagMetadata => {
-    const value = literalValue(context.checker, arguments_[0], 'number');
-    if (value === undefined || typeof value !== 'number' || !Number.isFinite(value)) {
-      throw context.diagnostic(node, '1043', `${name} requires a finite numeric literal argument.`);
-    }
-    if (
-      (kind === 'minLength' || kind === 'maxLength' || kind === 'minItems' || kind === 'maxItems'
-        || kind === 'minProperties' || kind === 'maxProperties' || kind === 'minContains' || kind === 'maxContains')
-      && (!Number.isInteger(value) || value < 0)
-    ) {
-      throw context.diagnostic(node, '1043', `${name} requires a non-negative integer literal argument.`);
-    }
-    if (kind === 'multipleOf' && value <= 0) {
-      throw context.diagnostic(node, '1043', `${name} requires a positive numeric literal argument.`);
-    }
-    return { validations: [], constraints: [{ kind, value } as ModelConstraint] };
-  };
-  switch (name) {
-    case 'Integer': return { validations: [], constraints: [{ kind: 'integer' }] };
-    case 'Minimum':
-    case 'Min': return numberValue('minimum');
-    case 'Maximum':
-    case 'Max': return numberValue('maximum');
-    case 'ExclusiveMinimum':
-    case 'ExclusiveMin': return numberValue('exclusiveMinimum');
-    case 'ExclusiveMaximum':
-    case 'ExclusiveMax': return numberValue('exclusiveMaximum');
-    case 'MultipleOf': return numberValue('multipleOf');
-    case 'MinLength': return numberValue('minLength');
-    case 'MaxLength': return numberValue('maxLength');
-    case 'MinItems': return numberValue('minItems');
-    case 'MaxItems': return numberValue('maxItems');
-    case 'MinProperties':
-    case 'MinProps': return numberValue('minProperties');
-    case 'MaxProperties':
-    case 'MaxProps': return numberValue('maxProperties');
-    case 'MinContains': return numberValue('minContains');
-    case 'MaxContains': return numberValue('maxContains');
-    case 'Pattern':
-    case 'Format': {
-      const value = literalValue(context.checker, arguments_[0], 'string');
-      if (typeof value !== 'string') throw context.diagnostic(node, '1044', `${name} requires a string literal argument.`);
-      if (name === 'Pattern') {
-        try {
-          // Generated validators compile JSON Schema patterns with the Unicode flag.  Parse
-          // the same expression here so malformed patterns fail before any
-          // generated artifact can be written.
-          void new RegExp(value, 'u');
-        } catch {
-          throw context.diagnostic(node, '1044', `${name} requires a valid Unicode regular expression.`);
-        }
-      }
-      return { validations: [], constraints: [{ kind: name === 'Pattern' ? 'pattern' : 'format', value }] };
-    }
-    case 'UniqueItems': return { validations: [], constraints: [{ kind: 'uniqueItems' }] };
-    case 'Contains': return { validations: [], constraints: [{ kind: 'contains', schema: schemaArgument(context, arguments_[0], node, name) }] };
-    case 'PropertyNames': return { validations: [], constraints: [{ kind: 'propertyNames', schema: schemaArgument(context, arguments_[0], node, name) }] };
-    case 'AdditionalProperties': return { validations: [], constraints: [{ kind: 'additionalProperties', schema: schemaArgument(context, arguments_[0], node, name) }] };
-    case 'UnevaluatedProperties': return { validations: [], constraints: [{ kind: 'unevaluatedProperties', schema: schemaArgument(context, arguments_[0], node, name) }] };
-    case 'Not': return { validations: [], constraints: [{ kind: 'not', schema: schemaArgument(context, arguments_[0], node, name) }] };
-    case 'PatternProperties': {
-      const patterns = patternSchemaMap(
-        context,
-        arguments_[0] ? context.checker.getTypeFromTypeNode(arguments_[0]) : undefined,
-        arguments_[0],
-        node,
-        name,
-      );
-      return {
-        validations: [],
-        constraints: Object.entries(patterns).map(([pattern, schema]) => ({ kind: 'patternProperties', pattern, schema })),
-      };
-    }
-    case 'DependentRequired': {
-      return {
-        validations: [],
-        constraints: [{ kind: 'dependentRequired', value: dependentRequiredMap(context, arguments_[0] ? context.checker.getTypeFromTypeNode(arguments_[0]) : undefined, arguments_[0], node) }],
-      };
-    }
-    case 'DependentSchemas': {
-      return {
-        validations: [],
-        constraints: [{ kind: 'dependentSchemas', value: schemaMap(context, arguments_[0] ? context.checker.getTypeFromTypeNode(arguments_[0]) : undefined, arguments_[0], node, name) }],
-      };
-    }
-    case 'OneOf': return { validations: [], constraints: [{ kind: 'oneOf', schemas: schemaList(context, arguments_[0] ? context.checker.getTypeFromTypeNode(arguments_[0]) : undefined, arguments_[0], node, name) }] };
-    case 'IfThenElse': {
-      const condition = schemaArgument(context, arguments_[0], node, name);
-      const thenSchema = schemaArgument(context, arguments_[1], node, name);
-      const elseSchema = arguments_[2] ? schemaArgument(context, arguments_[2], node, name) : undefined;
-      return {
-        validations: [],
-        constraints: [{ kind: 'ifThenElse', if: condition, then: thenSchema, ...(elseSchema === undefined ? {} : { else: elseSchema }) }],
-      };
-    }
-    default: return undefined;
-  }
-}
-
-function checkerLiteralValue(
-  checker: ts.TypeChecker,
-  type: ts.Type | undefined,
-  expected: 'number' | 'string',
-): number | string | undefined {
-  if (!type) return undefined;
-  if (expected === 'number' && (type.flags & ts.TypeFlags.NumberLiteral) !== 0) {
-    return (type as ts.NumberLiteralType).value;
-  }
-  if (expected === 'string' && (type.flags & ts.TypeFlags.StringLiteral) !== 0) {
-    return (type as ts.StringLiteralType).value;
-  }
-  const text = checker.typeToString(type);
-  if (expected === 'number') {
-    const value = Number(text);
-    return Number.isFinite(value) && text.trim() !== '' ? value : undefined;
-  }
-  return undefined;
+  return TAG_READERS.get(name)!(context, name, arguments_.map((argument) => ({ node: argument })), node);
 }
 
 function parseCheckerTag(
   context: TagAnalysisContext,
   type: ts.Type,
 ): TagMetadata | undefined {
-  if (!isGolemTagSymbol(context.checker, type.aliasSymbol)) return undefined;
-  const name = type.aliasSymbol?.getName();
+  const name = golemTagName(context.checker, type.aliasSymbol);
   if (!name) return undefined;
-  const arguments_ = type.aliasTypeArguments ?? [];
-  if (name === 'TValidation') {
-    const predicateType = arguments_[0];
-    if (!predicateType) throw context.diagnostic(type.symbol?.valueDeclaration ?? context.sourceFile, '1041', 'TValidation requires typeof an exported synchronous predicate.');
-    const signature = validateSynchronousSignature(context, predicateType, context.sourceFile, 'validation');
-    const returnType = context.checker.getReturnTypeOfSignature(signature);
-    const allowed = (candidate: ts.Type): boolean => {
-      if ((candidate.flags & (ts.TypeFlags.BooleanLike | ts.TypeFlags.StringLike)) !== 0) return true;
-      return candidate.isUnion() && candidate.types.every(allowed);
-    };
-    if (!allowed(returnType)) throw context.diagnostic(context.sourceFile, '1048', 'validation must return boolean or string synchronously.');
-    return {
-      validations: [{
-        kind: 'validation',
-        ...valueBindingFromFunctionType(context, predicateType, 'validation', context.sourceFile),
-        parameterType: parameterType(context.checker, signature, context.sourceFile),
-      }],
-      constraints: [],
-    };
-  }
-  if (name === 'TSerde') {
-    const serializeType = arguments_[0];
-    const deserializeType = arguments_[1];
-    if (!serializeType || !deserializeType) throw context.diagnostic(context.sourceFile, '1042', 'TSerde requires typeof serialize and typeof deserialize functions.');
-    const serializeSignature = validateSynchronousSignature(context, serializeType, context.sourceFile, 'serialize');
-    const deserializeSignature = validateSynchronousSignature(context, deserializeType, context.sourceFile, 'deserialize');
-    const serialize = valueBindingFromFunctionType(context, serializeType, 'serialize', context.sourceFile);
-    const deserialize = valueBindingFromFunctionType(context, deserializeType, 'deserialize', context.sourceFile);
-    const modelParameter = serializeSignature.parameters[0];
-    const modelDeclaration = modelParameter?.valueDeclaration ?? modelParameter?.declarations?.[0];
-    const wireParameter = deserializeSignature.parameters[0];
-    const wireDeclaration = wireParameter?.valueDeclaration ?? wireParameter?.declarations?.[0];
-    return {
-      validations: [],
-      serde: {
-        kind: 'serde',
-        id: `${serialize.id}\0${deserialize.id}`,
-        serialize,
-        deserialize,
-        modelType: modelParameter
-          ? context.checker.getTypeOfSymbolAtLocation(modelParameter, modelDeclaration ?? context.sourceFile)
-          : context.checker.getUnknownType(),
-        wireType: wireParameter
-          ? context.checker.getTypeOfSymbolAtLocation(wireParameter, wireDeclaration ?? context.sourceFile)
-          : context.checker.getUnknownType(),
-        serializeType: context.checker.getReturnTypeOfSignature(serializeSignature),
-        deserializeType: context.checker.getReturnTypeOfSignature(deserializeSignature),
-      },
-      constraints: [],
-    };
-  }
-  const numberConstraint = (kind: ModelConstraint['kind']): TagMetadata => {
-    const value = checkerLiteralValue(context.checker, arguments_[0], 'number');
-    if (value === undefined || typeof value !== 'number' || !Number.isFinite(value)) {
-      throw context.diagnostic(context.sourceFile, '1043', `${name} requires a finite numeric literal argument.`);
-    }
-    if (
-      (kind === 'minLength' || kind === 'maxLength' || kind === 'minItems' || kind === 'maxItems'
-        || kind === 'minProperties' || kind === 'maxProperties' || kind === 'minContains' || kind === 'maxContains')
-      && (!Number.isInteger(value) || value < 0)
-    ) {
-      throw context.diagnostic(context.sourceFile, '1043', `${name} requires a non-negative integer literal argument.`);
-    }
-    if (kind === 'multipleOf' && value <= 0) {
-      throw context.diagnostic(context.sourceFile, '1043', `${name} requires a positive numeric literal argument.`);
-    }
-    return { validations: [], constraints: [{ kind, value } as ModelConstraint] };
-  };
-  switch (name) {
-    case 'Integer': return { validations: [], constraints: [{ kind: 'integer' }] };
-    case 'Minimum':
-    case 'Min': return numberConstraint('minimum');
-    case 'Maximum':
-    case 'Max': return numberConstraint('maximum');
-    case 'ExclusiveMinimum':
-    case 'ExclusiveMin': return numberConstraint('exclusiveMinimum');
-    case 'ExclusiveMaximum':
-    case 'ExclusiveMax': return numberConstraint('exclusiveMaximum');
-    case 'MultipleOf': return numberConstraint('multipleOf');
-    case 'MinLength': return numberConstraint('minLength');
-    case 'MaxLength': return numberConstraint('maxLength');
-    case 'MinItems': return numberConstraint('minItems');
-    case 'MaxItems': return numberConstraint('maxItems');
-    case 'MinProperties':
-    case 'MinProps': return numberConstraint('minProperties');
-    case 'MaxProperties':
-    case 'MaxProps': return numberConstraint('maxProperties');
-    case 'MinContains': return numberConstraint('minContains');
-    case 'MaxContains': return numberConstraint('maxContains');
-    case 'Pattern':
-    case 'Format': {
-      const value = checkerLiteralValue(context.checker, arguments_[0], 'string');
-      if (typeof value !== 'string') throw context.diagnostic(context.sourceFile, '1044', `${name} requires a string literal argument.`);
-      if (name === 'Pattern') {
-        try {
-          void new RegExp(value, 'u');
-        } catch {
-          throw context.diagnostic(context.sourceFile, '1044', `${name} requires a valid Unicode regular expression.`);
-        }
-      }
-      return { validations: [], constraints: [{ kind: name === 'Pattern' ? 'pattern' : 'format', value }] };
-    }
-    case 'UniqueItems': return { validations: [], constraints: [{ kind: 'uniqueItems' }] };
-    case 'Contains': return { validations: [], constraints: [{ kind: 'contains', schema: schemaTypeArgument(context, arguments_[0], context.sourceFile, name) }] };
-    case 'PropertyNames': return { validations: [], constraints: [{ kind: 'propertyNames', schema: schemaTypeArgument(context, arguments_[0], context.sourceFile, name) }] };
-    case 'AdditionalProperties': return { validations: [], constraints: [{ kind: 'additionalProperties', schema: schemaTypeArgument(context, arguments_[0], context.sourceFile, name) }] };
-    case 'UnevaluatedProperties': return { validations: [], constraints: [{ kind: 'unevaluatedProperties', schema: schemaTypeArgument(context, arguments_[0], context.sourceFile, name) }] };
-    case 'Not': return { validations: [], constraints: [{ kind: 'not', schema: schemaTypeArgument(context, arguments_[0], context.sourceFile, name) }] };
-    case 'PatternProperties': {
-      const patterns = patternSchemaMap(
-        context,
-        arguments_[0],
-        undefined,
-        context.sourceFile,
-        name,
-      );
-      return {
-        validations: [],
-        constraints: Object.entries(patterns).map(([pattern, schema]) => ({ kind: 'patternProperties', pattern, schema })),
-      };
-    }
-    case 'DependentRequired': return {
-      validations: [],
-      constraints: [{ kind: 'dependentRequired', value: dependentRequiredMap(context, arguments_[0], undefined, context.sourceFile) }],
-    };
-    case 'DependentSchemas': return {
-      validations: [],
-      constraints: [{ kind: 'dependentSchemas', value: schemaMap(context, arguments_[0], undefined, context.sourceFile, name) }],
-    };
-    case 'OneOf': return {
-      validations: [],
-      constraints: [{ kind: 'oneOf', schemas: schemaList(context, arguments_[0], undefined, context.sourceFile, name) }],
-    };
-    case 'IfThenElse': {
-      const condition = schemaTypeArgument(context, arguments_[0], context.sourceFile, name);
-      const thenSchema = schemaTypeArgument(context, arguments_[1], context.sourceFile, name);
-      const elseSchema = arguments_[2] ? schemaTypeArgument(context, arguments_[2], context.sourceFile, name) : undefined;
-      return {
-        validations: [],
-        constraints: [{ kind: 'ifThenElse', if: condition, then: thenSchema, ...(elseSchema === undefined ? {} : { else: elseSchema }) }],
-      };
-    }
-    default: return undefined;
-  }
+  return TAG_READERS.get(name)!(context, name, (type.aliasTypeArguments ?? []).map((argument) => ({ type: argument })), context.sourceFile);
 }
 
 function metadataFromType(

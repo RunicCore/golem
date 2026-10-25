@@ -18,6 +18,7 @@ import {
   analyzeNode,
   isAmbientOrGlobalSymbol,
   isDateType,
+  isGolemTagKey,
   publicExportName,
   type ModelConstraint,
   type SerdeBinding,
@@ -299,38 +300,7 @@ function modelSpecificationForType(
 
 function isPhantomTagType(checker: ts.TypeChecker, type: ts.Type): boolean {
   if ((type.flags & ts.TypeFlags.Object) === 0) return false;
-  return checker.getPropertiesOfType(type).some((property) => {
-    const name = property.getName();
-    return name.includes('validationTag')
-      || name.includes('serdeTag')
-      || name.includes('integerTag')
-      || name.includes('minimumTag')
-      || name.includes('maximumTag')
-      || name.includes('exclusiveMinimumTag')
-      || name.includes('exclusiveMaximumTag')
-      || name.includes('multipleOfTag')
-      || name.includes('minLengthTag')
-      || name.includes('maxLengthTag')
-      || name.includes('patternTag')
-      || name.includes('formatTag')
-      || name.includes('minItemsTag')
-      || name.includes('maxItemsTag')
-      || name.includes('uniqueItemsTag')
-      || name.includes('minPropertiesTag')
-      || name.includes('maxPropertiesTag')
-      || name.includes('containsTag')
-      || name.includes('minContainsTag')
-      || name.includes('maxContainsTag')
-      || name.includes('propertyNamesTag')
-      || name.includes('patternPropertiesTag')
-      || name.includes('additionalPropertiesTag')
-      || name.includes('unevaluatedPropertiesTag')
-      || name.includes('dependentRequiredTag')
-      || name.includes('dependentSchemasTag')
-      || name.includes('oneOfTag')
-      || name.includes('notTag')
-      || name.includes('ifThenElseTag');
-  });
+  return checker.getPropertiesOfType(type).some((property) => isGolemTagKey(checker, property));
 }
 
 function stripPhantomIntersection(

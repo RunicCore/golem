@@ -327,6 +327,18 @@ test('nullable and optional tagged branches retain their supported family', t =>
   assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
 });
 
+test('a recursive type whose property name ends in a tag key name is a plain user type', t => {
+  // protects: fixed bug (T-367): a property named notTag made isPhantomTagType read the user type as a tag and hid its cycle
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+    name: 'A',
+    imports: tsSource`type Chain = { notTag: string; next?: Chain };`,
+    fields: tsSource`chain: Chain`,
+  }).text);
+  const shared = generate({ root, profile: { mobx: false, validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+  assert.match(shared, /notTag/);
+});
+
 test('a MobX model generated with validation false has no validator', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
