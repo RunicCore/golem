@@ -1,3 +1,4 @@
+// lane: typescript6 Checker guards: the controller generator runs the checker in this process
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -50,8 +51,8 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
     assert.match(JSON.stringify(filter.schema), /TFilter/);
 
     const registry = read(root, 'src/generated/operation-codecs.ts');
-    assert.match(registry, /"POST \/a": \{\s*"body:payment": "TPayment_[0-9a-f]{8}"/);
-    assert.match(registry, /"GET \/a": \{\s*"query:filter": "TFilter_[0-9a-f]{8}"/);
+    assert.match(registry, /"AController\.create": \{\s*"fields": \{\s*"body:payment": "TPayment_[0-9a-f]{8}"/);
+    assert.match(registry, /"AController\.list": \{\s*"fields": \{\s*"query:filter": "TFilter_[0-9a-f]{8}"/);
   });
 }
 
