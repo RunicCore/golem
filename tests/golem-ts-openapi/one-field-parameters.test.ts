@@ -1,14 +1,20 @@
 // lane: typescript6 Checker guards: the controller generator runs the checker in this process
+import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
+import { pathToFileURL } from 'node:url';
+import { Module } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 import { runPipeline } from '#golem/cli';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { command, golem } from '../support/process.js';
 
 const MODEL = `import type { IModel, IObject } from '@exprtlabs/golem/model';
 export type TPayment = IModel<{ id: string; amount: number }>;
-export type TFilter = IObject<{ status: string; limit?: number }>;
+export type TFilter = IObject<{ status: string; limit?: number; active?: boolean }>;
 export type TTagged = IObject<{ tags: string[] }>;
 export type TNested = IObject<{ inner: { tags?: string[] } }>;
 `;
@@ -79,5 +85,47 @@ test('the controllers job refuses what NestModelInterceptor throws for, or canno
     for (const [methods, code, message] of [...mixed, ...(openapiVersion === '3.2.0' ? cases : [])]) {
       await assert.rejects(runPipeline(path.join(project(t, methods, openapiVersion), 'golem.yaml')), (error: Error) => error.message.includes(code) && message.test(error.message), `${openapiVersion} ${methods}`);
     }
+  }
+});
+
+test('the generated client sends a one-field body model and a one-field query model, and NestModelInterceptor converts both', async (t) => {
+  // protects: R-13 T-323 document, generated client and interceptor agree on the wire form of a one-field model
+  const root = createControllerFixture(t, {
+    prefix: 'golem-one-field-e2e-',
+    links: 'workspace',
+    tsconfig: { compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, experimentalDecorators: true, emitDecoratorMetadata: true, skipLibCheck: true, outDir: 'build', rootDir: 'src', types: ['node'] }, include: ['src/**/*.ts'] },
+    files: {
+      'src/payment.model.ts': `${MODEL}export type TReceipt = IModel<{ amount: number }>;\n`,
+      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import type { TPayment, TFilter, TReceipt } from './payment.model.js';
+@Controller('a')
+export class AController {
+  @Post() create(@Body('payment') payment: TPayment): TReceipt { return { amount: payment.amount }; }
+  @Get() list(@Query('filter') filter: TFilter): TFilter { return filter; }
+}
+`,
+      'golem.yaml': 'version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/a.controller.ts\n    output: generated/api.json\n    info: { title: T, version: "1" }\nopenapi:\n  - input: generated/api.json\n    output: src/sdk\n    name: Api\nmodels:\n  root: .\n',
+    },
+  });
+  const built = await command(root, process.execPath, [golem, 'build', '--config', path.join(root, 'golem.yaml')]);
+  assert.equal(built.code, 0, built.stdout + built.stderr);
+  const { AController } = await import(pathToFileURL(path.join(root, 'build/a.controller.js')).href) as { AController: new () => object };
+  const { ApiClient } = await import(pathToFileURL(path.join(root, 'build/sdk/index.js')).href) as { ApiClient: new (options: { baseUrl: string }) => {
+    aController_create(): { execute(input: unknown): Promise<{ body: unknown }> };
+    aController_list(): { execute(input: unknown): Promise<{ body: unknown }> };
+  } };
+  class AppModule {}
+  Module({ controllers: [AController] })(AppModule);
+  const application = await NestFactory.create(AppModule, { logger: false });
+  // Express 5 reads `filter[status]` as one flat key unless the app opts in to nested query keys.
+  application.getHttpAdapter().getInstance().set('query parser', 'extended');
+  application.useGlobalInterceptors(new NestModelInterceptor());
+  await application.listen(0, '127.0.0.1');
+  try {
+    const client = new ApiClient({ baseUrl: await application.getUrl() });
+    assert.deepEqual((await client.aController_create().execute({ body: { payment: { id: 'p1', amount: 12 } } })).body, { amount: 12 });
+    assert.deepEqual((await client.aController_list().execute({ query: { filter: { status: 'paid', limit: 10, active: true } } })).body, { status: 'paid', limit: 10, active: true });
+  } finally {
+    await application.close();
   }
 });
