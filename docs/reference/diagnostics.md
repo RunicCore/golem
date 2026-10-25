@@ -374,6 +374,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Union that golem cannot convert.** A model field is a union that needs a conversion, such as a `Date` or a `TSerde` value, and the JSON value cannot tell which variant it is: for example two scalar variants where one converts, or a model reference that is no object. Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no literal tag has its own code, [RUNM1080](#runm1080). **Fix:** Give the field one variant that needs a conversion, make the variants objects with a required literal tag, or declare the whole value with one `TSerde` pair.
 
+### RUNM1083
+
+**Generic type that expands without end.** A generic interface, class or type alias holds itself with other type arguments on each level, such as `interface Box<T> { next?: Box<Box<T>> }`. Each level is a new type, so no finite schema describes it. The message names the generic type. **Fix:** Pass the same type arguments back, such as `next?: Box<T>`, or end the nesting with a named type.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.

@@ -264,6 +264,9 @@ function userAliasName(type: ts.Type): string | undefined {
   return declaration ? aliasProjectionName(declaration) : undefined;
 }
 
+/** How many levels of one generic declaration a walk may hold at once. A type that makes a new type argument on each level never repeats, so this bound ends it. */
+const MAX_EXPANSION_DEPTH = 32;
+
 /**
  * The name of the interface, class or generic type alias that declares a type. A recursive type with no concrete alias takes it,
  * so every lap of the cycle names the projection the same and the second lap ends in a reference.
@@ -636,14 +639,30 @@ export function descriptorBuilder(
   // (an interface or a class has no alias) an object type. The walk keeps the alias types of a cycle, so one name per
   // alias gives the same projection from any entry type.
   const cycleHeads = new Map<ts.Type, boolean>();
-  // The name each cycle head without a projection was given on its first lap.
+  // A generic type that holds itself with a new type argument on each level, such as `interface Box<T> { next?: Box<Box<T>> }`, makes a
+  // new type on each level, so no cycle head repeats. The walks count the levels of each declaration they are in and stop at the bound.
+  const expansionDepth = new Map<ts.Symbol, number>();
+  const enterExpansion = (type: ts.Type, location: ts.Node): (() => void) => {
+    const symbol = isStructured(type) ? type.aliasSymbol ?? type.getSymbol() : undefined;
+    if (symbol === undefined) return () => undefined;
+    const depth = expansionDepth.get(symbol) ?? 0;
+    if (depth >= MAX_EXPANSION_DEPTH) {
+      const name = symbol.getName();
+      throw diagnostic(location.getSourceFile(), location, '1083',
+        `The generic type ${name} expands without end: each level holds ${name} with other type arguments, so no finite schema describes it. `
+        + `Pass the same type arguments back, for example ${name}<T> inside ${name}<T>.`);
+    }
+    expansionDepth.set(symbol, depth + 1);
+    return () => { expansionDepth.set(symbol, depth); };
+  };
+  // The name each cycle head was given on its first lap.
   const cycleStems = new Map<ts.Type, string>();
   const probeCycles = (root: ts.Type, location: ts.Node): void => {
     const index = new Map<ts.Type, number>();
     const low = new Map<ts.Type, number>();
     const stack: ts.Type[] = [];
     const onStack = new Set<ts.Type>();
-    const visit = (type: ts.Type): void => {
+    const visitType = (type: ts.Type): void => {
       index.set(type, index.size);
       low.set(type, index.get(type)!);
       stack.push(type);
@@ -670,6 +689,10 @@ export function descriptorBuilder(
         (member.flags & ts.TypeFlags.Object) !== 0 && !checker.isArrayType(member) && !checker.isTupleType(member)));
       for (const member of component) cycleHeads.set(member, heads.has(member));
     };
+    const visit = (type: ts.Type): void => {
+      const leave = enterExpansion(type, location);
+      try { visitType(type); } finally { leave(); }
+    };
     visit(root);
   };
   const isCycleHead = (type: ts.Type, location: ts.Node): boolean => {
@@ -690,7 +713,7 @@ export function descriptorBuilder(
     );
   };
 
-  const describe = (
+  const describeType = (
     originalType: ts.Type,
     context: TypeAnalysisContext,
     seen: ReadonlySet<ts.Type> = new Set<ts.Type>(),
@@ -871,12 +894,13 @@ export function descriptorBuilder(
     let projectionName: string | undefined;
     if ((projection && objectShape && !isRoot) || recursive) {
       const nameAt = node ?? nameNode;
-      // A cycle head keeps the name its first lap gave it, so a declared name that is not a plain identifier (non-ASCII) still ends the cycle.
-      const cycleHead = recursive && !projection;
-      let stem = cycleHead ? cycleStems.get(type) : undefined;
+      // A cycle head keeps the name its first lap gave it, so a declared name that is not a plain identifier (non-ASCII) still ends the cycle,
+      // and a projection that holds itself, such as `Partial<Cfg>` inside `Cfg`, does not take a longer owner-and-field name on each lap.
+      const declaredHead = recursive && !projection;
+      let stem = recursive ? cycleStems.get(type) : undefined;
       if (stem === undefined) {
-        stem = safeNameHint((cycleHead ? userAliasName(type) ?? declaredTypeName(type) : undefined) ?? projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint);
-        if (cycleHead) cycleStems.set(type, stem);
+        stem = safeNameHint((declaredHead ? userAliasName(type) ?? declaredTypeName(type) : undefined) ?? projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint);
+        if (recursive) cycleStems.set(type, stem);
       }
       const candidate = `${stem}${policySuffix({
         exact: context.exact, allowAny: context.allowAny ?? allowAny, representation,
@@ -1122,6 +1146,10 @@ export function descriptorBuilder(
     }
     projections.set(projectionName, described);
     return { kind: 'reference', name: projectionName, projection: true };
+  };
+  const describe: typeof describeType = (originalType, context, ...rest) => {
+    const leave = enterExpansion(originalType, context.declaration);
+    try { return describeType(originalType, context, ...rest); } finally { leave(); }
   };
   return Object.assign(describe, { projections });
 }
