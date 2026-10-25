@@ -6,6 +6,7 @@ import { runPipeline } from '#golem/cli';
 import { loadConfig } from '#golem/config';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { command, golem, workspace } from './support/process.js';
+import { TSC } from './support/build-project.js';
 
 const VERSION = (JSON.parse(fs.readFileSync(path.join(workspace, 'packages/golem/package.json'), 'utf8')) as { version: string }).version;
 // outputs.ts `marker()` recognizes a generator's files by this header.
@@ -47,7 +48,8 @@ test('a generator job writes model sources that the models job then generates', 
   const { root, config } = project(t);
   await runPipeline(config);
   assert.equal(fs.readFileSync(path.join(root, 'src/gen/item.model.ts'), 'utf8'), ITEM);
-  assert.match(fs.readFileSync(path.join(root, 'src/gen/item.model.generated.ts'), 'utf8'), /export[^\n]*\bTItemBaseModel\b/);
+  // The generated source extends TItemBaseModel from the companion, so the type-check needs the companion to export it.
+  await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
 });
 
 test('a configured generator that is not installed names the package and the install command', async t => {
