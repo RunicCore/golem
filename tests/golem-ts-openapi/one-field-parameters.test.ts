@@ -18,6 +18,7 @@ export type TFilter = IObject<{ status: string; limit?: number; active?: boolean
 export type TPayments = TPayment[];
 export type TTagged = IObject<{ tags: string[] }>;
 export type TNested = IObject<{ inner: { tags?: string[] } }>;
+export type TOrder = IModel<{ id: string; mutable: TPayment[]; readonly: readonly TPayment[]; readonlyGeneric: ReadonlyArray<TPayment> }>;
 `;
 
 function project(t: TestContext, methods: string, openapiVersion = '3.2.0'): string {
@@ -26,7 +27,7 @@ function project(t: TestContext, methods: string, openapiVersion = '3.2.0'): str
     links: 'workspace',
     files: {
       'src/payment.model.ts': MODEL,
-      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TFilter, TTagged, TNested } from './payment.model.js';\n@Controller('a')\nexport class AController {\n${methods}\n}\n`,
+      'src/a.controller.ts': `import { Body, Controller, Get, Post, Query } from '@nestjs/common';\nimport type { TPayment, TPayments, TFilter, TTagged, TNested, TOrder } from './payment.model.js';\n@Controller('a')\nexport class AController {\n${methods}\n}\n`,
       'golem.yaml': `version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/a.controller.ts\n    output: generated/api.json\n    openapiVersion: "${openapiVersion}"\n    info: { title: T, version: "1" }\nmodels:\n  root: .\n`,
     },
   });
@@ -38,7 +39,7 @@ interface Operation { readonly parameters?: readonly Record<string, unknown>[]; 
 
 for (const openapiVersion of ['3.2.0', '3.1.2']) {
   test(`a one-field model @Body and @Query reach the OpenAPI ${openapiVersion} document and the operation codecs, and golem check agrees with the rewrite`, async (t) => {
-    // protects: R-13 T-323 T-442 the one-field model parameter, or array of models, the interceptor converts is described by the controllers job
+    // protects: R-13 T-323 T-442 T-445 the one-field model parameter, or array of models (readonly too, a whole body, a model field), the interceptor converts is described by the controllers job
     const root = project(t, [
       "  @Post() create(@Body('payment') payment: TPayment): void {}",
       "  @Post('batch') createBatch(@Body('items') items: TPayment[]): void {}",
@@ -46,6 +47,10 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
       "  @Post('readonly') createReadonly(@Body('items') items: readonly TPayment[]): void {}",
       "  @Post('readonly-generic') createReadonlyGeneric(@Body('items') items: ReadonlyArray<TPayment>): void {}",
       "  @Post('qualified') createQualified(@Body('items') items: globalThis.Array<TPayment>): void {}",
+      "  @Post('whole') createWhole(@Body() items: TPayment[]): void {}",
+      "  @Post('whole-readonly') createWholeReadonly(@Body() items: readonly TPayment[]): void {}",
+      "  @Post('whole-readonly-generic') createWholeReadonlyGeneric(@Body() items: ReadonlyArray<TPayment>): void {}",
+      "  @Post('order') createOrder(@Body('order') order: TOrder): void {}",
       "  @Get() list(@Query('filter') filter: TFilter): void {}",
     ].join('\n'), openapiVersion);
     const config = path.join(root, 'golem.yaml');
@@ -62,16 +67,20 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
 
     const batchSchema = document.paths['/a/batch']!.post!.requestBody!.content['application/json']!.schema;
     assert.deepEqual({ ...batchSchema, properties: Object.keys(batchSchema.properties as object) }, { type: 'object', properties: ['items'], required: ['items'] });
-    for (const route of ['generic', 'qualified']) {
+    for (const route of ['generic', 'qualified', 'readonly', 'readonly-generic']) {
       assert.deepEqual(document.paths[`/a/${route}`]!.post!.requestBody!.content['application/json']!.schema, batchSchema, route);
     }
-    for (const route of ['readonly', 'readonly-generic']) {
-      const schema = document.paths[`/a/${route}`]!.post!.requestBody!.content['application/json']!.schema;
-      assert.equal((schema.properties as Record<string, { type: string }>).items.type, 'array', route);
+    const wholeSchema = document.paths['/a/whole']!.post!.requestBody!.content['application/json']!.schema;
+    assert.deepEqual(wholeSchema, { type: 'array', items: { $ref: '#/components/schemas/TPayment' } });
+    for (const route of ['whole-readonly', 'whole-readonly-generic']) {
+      assert.deepEqual(document.paths[`/a/${route}`]!.post!.requestBody!.content['application/json']!.schema, wholeSchema, route);
     }
+    const order = (document as unknown as { components: { schemas: { TOrder: { properties: Record<string, unknown> } } } }).components.schemas.TOrder.properties;
+    assert.deepEqual(order.mutable, { type: 'array', items: { $ref: '#/components/schemas/TPayment' } });
+    assert.deepEqual([order.readonly, order.readonlyGeneric], [order.mutable, order.mutable]);
     const itemsSchema = (batchSchema.properties as Record<string, { type: string; items: unknown }>).items;
     assert.equal(itemsSchema.type, 'array');
-    assert.match(JSON.stringify(itemsSchema.items), /TPayment/);
+    assert.deepEqual(itemsSchema.items, { $ref: '#/components/schemas/TPayment' });
 
     const filter = document.paths['/a']!.get!.parameters!.find(parameter => parameter.name === 'filter')!;
     assert.deepEqual({ in: filter.in, style: filter.style, explode: filter.explode, required: filter.required }, { in: 'query', style: 'deepObject', explode: true, required: true });
