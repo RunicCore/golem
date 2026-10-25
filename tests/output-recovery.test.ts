@@ -4,7 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import type { GolemConfig, GolemJob } from '#golem/config';
-import { applyJob, digest, loadInventory, removeRetiredJobs } from '#golem/outputs';
+import { applyJob, digest, loadInventory, realOutputFiles, removeRetiredJobs } from '#golem/outputs';
+import type { OutputFiles } from '#golem/outputs';
 import { snapshotFilesystem } from './fixture-project.js';
 
 interface OutputFixture {
@@ -96,15 +97,16 @@ test('a failed second replacement preserves the earlier per-file success and las
   applyJob(config, loadInventory(config), job, before);
   const inventory = fs.readFileSync(config.inventoryFile);
   const inventoryMtime = fs.statSync(config.inventoryFile, { bigint: true }).mtimeNs;
-  const rename = fs.renameSync;
-  const failure = t.mock.method(fs, 'renameSync', (source: fs.PathLike, destination: fs.PathLike): void => {
-    if (path.resolve(destination.toString()) === second) {
-      throw Object.assign(new Error('simulated second artifact rename failure'), { code: 'EIO' });
-    }
-    rename(source, destination);
-  });
-  assert.throws(() => applyJob(config, loadInventory(config), job, after), /simulated second artifact rename failure/);
-  failure.mock.restore();
+  const failing: OutputFiles = {
+    ...realOutputFiles,
+    rename: (source, destination) => {
+      if (path.resolve(destination) === second) {
+        throw Object.assign(new Error('simulated second artifact rename failure'), { code: 'EIO' });
+      }
+      realOutputFiles.rename(source, destination);
+    },
+  };
+  assert.throws(() => applyJob(config, loadInventory(config), job, after, false, failing), /simulated second artifact rename failure/);
 
   assert.equal(fs.readFileSync(first, 'utf8'), content(3));
   assert.equal(fs.readFileSync(second, 'utf8'), content(2));
@@ -138,15 +140,16 @@ test('a failed stale unlink leaves earlier removal visible and retry tolerates i
   ]);
   const inventory = fs.readFileSync(config.inventoryFile);
   const inventoryMtime = fs.statSync(config.inventoryFile, { bigint: true }).mtimeNs;
-  const unlink = fs.unlinkSync;
-  const failure = t.mock.method(fs, 'unlinkSync', (filename: fs.PathLike): void => {
-    if (path.resolve(filename.toString()) === secondStale) {
-      throw Object.assign(new Error('simulated second stale unlink failure'), { code: 'EIO' });
-    }
-    unlink(filename);
-  });
-  assert.throws(() => applyJob(config, loadInventory(config), job, [artifact(kept, 1)]), /simulated second stale unlink failure/);
-  failure.mock.restore();
+  const failing: OutputFiles = {
+    ...realOutputFiles,
+    unlink: filename => {
+      if (path.resolve(filename) === secondStale) {
+        throw Object.assign(new Error('simulated second stale unlink failure'), { code: 'EIO' });
+      }
+      realOutputFiles.unlink(filename);
+    },
+  };
+  assert.throws(() => applyJob(config, loadInventory(config), job, [artifact(kept, 1)], false, failing), /simulated second stale unlink failure/);
 
   assert.equal(fs.existsSync(firstStale), false);
   assert.equal(fs.readFileSync(secondStale, 'utf8'), content(3));
@@ -168,15 +171,16 @@ test('inventory rename failure after output mutations can be retried with replac
   const oldInventory = fs.readFileSync(config.inventoryFile);
   const oldInventoryMtime = fs.statSync(config.inventoryFile, { bigint: true }).mtimeNs;
   const expected = [artifact(existing, 2), artifact(added, 3)];
-  const rename = fs.renameSync;
-  const failure = t.mock.method(fs, 'renameSync', (source: fs.PathLike, destination: fs.PathLike): void => {
-    if (path.resolve(destination.toString()) === config.inventoryFile) {
-      throw Object.assign(new Error('simulated inventory rename failure'), { code: 'EIO' });
-    }
-    rename(source, destination);
-  });
-  assert.throws(() => applyJob(config, loadInventory(config), job, expected), /simulated inventory rename failure/);
-  failure.mock.restore();
+  const failing: OutputFiles = {
+    ...realOutputFiles,
+    rename: (source, destination) => {
+      if (path.resolve(destination) === config.inventoryFile) {
+        throw Object.assign(new Error('simulated inventory rename failure'), { code: 'EIO' });
+      }
+      realOutputFiles.rename(source, destination);
+    },
+  };
+  assert.throws(() => applyJob(config, loadInventory(config), job, expected, false, failing), /simulated inventory rename failure/);
 
   assert.equal(fs.readFileSync(existing, 'utf8'), content(2));
   assert.equal(fs.readFileSync(added, 'utf8'), content(3));
@@ -198,19 +202,16 @@ test('inventory write failure leaves generated content replaceable when inventor
   const { directory, config, job } = fixture(t, false);
   const filename = path.join(directory, 'src/item.model.generated.ts');
   const expected = [artifact(filename, 1)];
-  const write = fs.writeFileSync;
-  const failure = t.mock.method(fs, 'writeFileSync', (
-    target: fs.PathOrFileDescriptor,
-    data: string | NodeJS.ArrayBufferView,
-    options?: fs.WriteFileOptions,
-  ): void => {
-    if (typeof target !== 'number' && target.toString().startsWith(`${config.inventoryFile}.`)) {
-      throw Object.assign(new Error('simulated inventory write failure'), { code: 'EIO' });
-    }
-    write(target, data, options);
-  });
-  assert.throws(() => applyJob(config, loadInventory(config), job, expected), /simulated inventory write failure/);
-  failure.mock.restore();
+  const failing: OutputFiles = {
+    ...realOutputFiles,
+    create: (target, data) => {
+      if (target.startsWith(`${config.inventoryFile}.`)) {
+        throw Object.assign(new Error('simulated inventory write failure'), { code: 'EIO' });
+      }
+      realOutputFiles.create(target, data);
+    },
+  };
+  assert.throws(() => applyJob(config, loadInventory(config), job, expected, false, failing), /simulated inventory write failure/);
 
   assert.equal(fs.readFileSync(filename, 'utf8'), content(1));
   assert.equal(fs.existsSync(config.inventoryFile), false);

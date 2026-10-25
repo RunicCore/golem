@@ -270,22 +270,40 @@ export function loadInventory(config: GolemConfig): Inventory {
   return { version: 1, files };
 }
 
-export function atomicWrite(filename: string, content: string): boolean {
+/**
+ * The calls that change a file when a run writes outputs. A run uses the real ones; a test passes its own to fault one of them
+ * (ENOSPC on a write, EXDEV or EIO on a rename) or to act at the moment a file is published. An error from a call is the error
+ * the real call would raise.
+ */
+export interface OutputFiles {
+  /** Creates `filename` with `content`; it fails when the file exists. */
+  readonly create: (filename: string, content: string) => void;
+  readonly rename: (from: string, to: string) => void;
+  readonly unlink: (filename: string) => void;
+}
+
+export const realOutputFiles: OutputFiles = {
+  create: (filename, content) => { fs.writeFileSync(filename, content, { flag: 'wx' }); },
+  rename: (from, to) => { fs.renameSync(from, to); },
+  unlink: filename => { fs.unlinkSync(filename); },
+};
+
+export function atomicWrite(filename: string, content: string, files: OutputFiles = realOutputFiles): boolean {
   if (readFile(filename) === content) return false;
   fs.mkdirSync(path.dirname(filename), { recursive: true });
   const temporary = `${filename}.${process.pid}.${crypto.randomBytes(6).toString('hex')}.tmp`;
   try {
-    fs.writeFileSync(temporary, content, { flag: 'wx' });
-    fs.renameSync(temporary, filename);
+    files.create(temporary, content);
+    files.rename(temporary, filename);
   } finally {
-    try { fs.unlinkSync(temporary); } catch (error) { if (!hasErrorCode(error, 'ENOENT')) throw error; }
+    try { files.unlink(temporary); } catch (error) { if (!hasErrorCode(error, 'ENOENT')) throw error; }
   }
   return true;
 }
 
-function saveInventory(config: GolemConfig, inventory: Inventory): void {
+function saveInventory(config: GolemConfig, inventory: Inventory, files: OutputFiles): void {
   assertInventoryPath(config);
-  const files = Object.fromEntries(Object.entries(inventory.files)
+  const recorded = Object.fromEntries(Object.entries(inventory.files)
     .sort(([a], [b]) => compareText(a, b))
     .map(([filename, entry]) => [filename, {
       job: entry.job,
@@ -294,7 +312,7 @@ function saveInventory(config: GolemConfig, inventory: Inventory): void {
       destination: entry.destination,
       destinationKind: entry.destinationKind,
     }]));
-  atomicWrite(config.inventoryFile, `${JSON.stringify({ version: 1, files }, null, 2)}\n`);
+  atomicWrite(config.inventoryFile, `${JSON.stringify({ version: 1, files: recorded }, null, 2)}\n`, files);
 }
 
 function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, job: GolemJob, expected: ReadonlyMap<string, ExpectedArtifact>, check: boolean): string[] {
@@ -352,7 +370,7 @@ export interface FileChanges {
 
 const NO_CHANGES: FileChanges = { written: [], removed: [] };
 
-export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false): FileChanges {
+export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJob, artifacts: readonly GolemArtifact[], check = false, files: OutputFiles = realOutputFiles): FileChanges {
   assertInventoryPath(config);
   if (!Array.isArray(artifacts)) throw new Error(`${job.package} returned invalid artifacts.`);
   const expected = new Map<string, ExpectedArtifact>();
@@ -399,7 +417,7 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
   const removed: string[] = [];
   for (const [key, artifact] of expected) {
     assertDestinationPath(artifact.filename, recordedDestinationPath(config, artifact.destination), 'job');
-    if (atomicWrite(artifact.filename, artifact.content)) written.push(artifact.filename);
+    if (atomicWrite(artifact.filename, artifact.content, files)) written.push(artifact.filename);
     inventory.files[key] = {
       job: job.id,
       owner: job.package,
@@ -410,17 +428,17 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
   }
   for (const { key, filename } of deletions) {
     if (readFile(filename) !== undefined) {
-      fs.unlinkSync(filename);
+      files.unlink(filename);
       removed.push(filename);
     }
     delete inventory.files[key];
   }
-  saveInventory(config, inventory);
+  saveInventory(config, inventory, files);
   return { written, removed };
 }
 
 /** Deletes the outputs of jobs the configuration no longer lists, and returns the files it deleted. */
-export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, check = false): string[] {
+export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, check = false, files: OutputFiles = realOutputFiles): string[] {
   assertInventoryPath(config);
   const active = new Set(config.jobs.map(job => job.id));
   const retired = Object.entries(inventory.files).filter(([, entry]) => !active.has(entry.job));
@@ -437,12 +455,12 @@ export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, che
     for (const [key] of retired) {
       const filename = inventoryPath(config, key);
       if (readFile(filename) !== undefined) {
-        fs.unlinkSync(filename);
+        files.unlink(filename);
         removed.push(filename);
       }
       delete inventory.files[key];
     }
-    saveInventory(config, inventory);
+    saveInventory(config, inventory, files);
   }
   return removed;
 }

@@ -368,6 +368,9 @@ test('vite serve: a new file with its first parse call, added after the server s
 test('vite serve: regenerating a model transforms again the module that used it, and no other', async (t) => {
   const root = await generatedProject(t, 'vite-regenerate');
   const server = await serve(t, root);
+  // The plugin's contract with Vite is a full-reload message on `server.ws` and a watch on its key table through `server.watcher`; both
+  // are documented members of ViteDevServer, and the message is what leaves for the browser. With the socket off there is no client to
+  // read it, and a real socket would add a port to the test. Vite is pinned in the root package.json, so a change shows in this test.
   const send = t.mock.method(server.ws, 'send', () => undefined);
   const reloads = (): number => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length;
   const moduleOf = (file: string) => server.moduleGraph.getModuleById(path.join(root, file));
@@ -449,6 +452,9 @@ test('vite serve: the file events of one run invalidate every module they change
     write(root, `src/use-${name}.ts`, `import { parse } from '${SERDE}';\nimport type { TAlias } from './${name}-alias.js';\n\nexport const value = parse<TAlias>('{}');\n`);
   }
   const server = await serve(t, root);
+  // The plugin's contract with Vite is a full-reload message on `server.ws` and a watch on its key table through `server.watcher`; both
+  // are documented members of ViteDevServer, and the message is what leaves for the browser. With the socket off there is no client to
+  // read it, and a real socket would add a port to the test. Vite is pinned in the root package.json, so a change shows in this test.
   const send = t.mock.method(server.ws, 'send', () => undefined);
   const reloads = (): number => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length;
   for (const name of ['first', 'second']) await server.transformRequest(`/src/use-${name}.ts`);
@@ -468,6 +474,9 @@ test('vite serve: the file events of one run invalidate every module they change
 test('vite serve: a module whose model had no generated code transforms again once golem generate has written it', async (t) => {
   const root = await generatedProject(t, 'vite-recover', { generate: false });
   const server = await serve(t, root);
+  // The plugin's contract with Vite is a full-reload message on `server.ws` and a watch on its key table through `server.watcher`; both
+  // are documented members of ViteDevServer, and the message is what leaves for the browser. With the socket off there is no client to
+  // read it, and a real socket would add a port to the test. Vite is pinned in the root package.json, so a change shows in this test.
   const send = t.mock.method(server.ws, 'send', () => undefined);
   await assert.rejects(server.transformRequest('/src/main.ts'), /run golem generate/);
   await runPipeline(path.join(root, 'golem.yaml'));
@@ -480,6 +489,9 @@ test('vite serve: a module whose model had no generated code transforms again on
 test('vite serve: a generated model file outside the project root transforms again a module that failed, as one inside does', async (t) => {
   const root = await generatedProject(t, 'vite-recover-outside', { generate: false });
   const server = await serve(t, root);
+  // The plugin's contract with Vite is a full-reload message on `server.ws` and a watch on its key table through `server.watcher`; both
+  // are documented members of ViteDevServer, and the message is what leaves for the browser. With the socket off there is no client to
+  // read it, and a real socket would add a port to the test. Vite is pinned in the root package.json, so a change shows in this test.
   const send = t.mock.method(server.ws, 'send', () => undefined);
   await assert.rejects(server.transformRequest('/src/main.ts'), /run golem generate/);
   await runPipeline(path.join(root, 'golem.yaml'));
