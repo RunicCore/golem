@@ -1844,7 +1844,7 @@ function validatorReference(ctx: EmitCtx, id: string): Code {
 }
 
 /**
- * True when the fast check `fast` answers for `value`: no validation context decides instead (spec 7.1). The test is
+ * True when the fast check `fast` answers for `value`: no validation context decides instead. The test is
  * written in each model's function, not in a shared runtime helper, so each call of a fast check sees one check only
  * and V8 can inline it.
  */
@@ -1852,7 +1852,7 @@ function fastPasses(fast: Code, value: Code): Code {
   return code`options?.validationContext === undefined && ${fast}(${value})`;
 }
 
-/** Whether `value` passes the validator of `reference`, from the fast check first when the root has one (spec 7.1). */
+/** Whether `value` passes the validator of `reference`, from the fast check first when the root has one. */
 function validModelValueCall(ctx: EmitCtx, reference: string): Code {
   const fast = ctx.fastCheckName?.(reference);
   const slow = code`${rt.serde.isValidModelValue}(value, options, ${validatorReference(ctx, reference)}, ${literal(reference)})`;
@@ -1870,7 +1870,7 @@ function emitModelGuard(
   const reference = plane === 'model-only' || plane === 'wire-only'
     ? `${node.codecId}#${plane}`
     : wire ? `${node.codecId}#wire` : node.codecId;
-  // A valid value passes the fast check first, unless a validation context decides (spec 7.1).
+  // A valid value passes the fast check first, unless a validation context decides.
   const fast = ctx.fastCheckName?.(reference);
   const slow = code`${rt.serde.assertModelValue}(${value}, options, ${validatorReference(ctx, reference)}, ${literal(reference)}, ${rt.serde.IssueRepresentation}.${identifier(representation)}, ${rt.serde.IssueSource}.${identifier(ctx.issueSource)});`;
   return fast === undefined ? slow : code`if (!(${fastPasses(fast, value)})) ${slow}`;
