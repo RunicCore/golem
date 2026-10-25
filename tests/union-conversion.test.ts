@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { transformSync } from 'esbuild';
 
 import * as conversion from '@exprtlabs/golem/conversion';
 import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render, code, identifier, type Code } from '@exprtlabs/golem/internal/emitter';
@@ -9,6 +8,7 @@ import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/m
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import * as serde from '@exprtlabs/golem/serde';
 import { instantiateRuntime, type RuntimeFunction, emitCodecRuntimeText } from './emitted-runtime.js';
+import { runModule } from './support/run-module.js';
 
 function failsWith(kind: LibErrorKind, message: RegExp): (error: unknown) => boolean {
   return (error) => error instanceof LibError && error.kind === kind && message.test(error.message);
@@ -178,11 +178,13 @@ test('model conversion writes a variant instance by class and rejects unknown or
     encode: (value: Code) => code`({ ...${value} })`,
   });
   const compile = (code: string, direction: 'serialize' | 'deserialize'): RuntimeFunction => {
-    const expression = transformSync(`(${code})`, { loader: 'ts', target: 'es2022' }).code.trim().replace(/;$/, '');
-    const convert = new Function('ModelCat', 'ModelDog', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'convertModelField', 'value',
-      `return convertModelField(${JSON.stringify(direction)}, 'pet', (value) => ${expression}, value);`) as RuntimeFunction;
-    return (value) => convert(ModelCat, ModelDog, conversion.unknownDiscriminatorValue, conversion.withDiscriminatorValue,
-      conversion.convertModelField, value);
+    const { convert } = runModule(
+      `const convert = (value: unknown) => convertModelField(${JSON.stringify(direction)}, 'pet', (value: unknown) => ${code}, value);`,
+      { ModelCat, ModelDog, unknownDiscriminatorValue: conversion.unknownDiscriminatorValue, withDiscriminatorValue: conversion.withDiscriminatorValue,
+        convertModelField: conversion.convertModelField },
+      { exports: ['convert'] },
+    );
+    return convert as RuntimeFunction;
   };
   const toJson = compile(render(emitModelToJSON(union, identifier('value'), resolveModel)), 'serialize');
   const fromJson = compile(render(emitModelFromJSON(union, identifier('value'), resolveModel)), 'deserialize');
@@ -229,12 +231,12 @@ test('inferred literal tags require the tag on an instance too', () => {
     decode: (value: Code) => value,
     encode: (value: Code) => code`({ ...${value} })`,
   });
-  const expression = transformSync(`(${render(emitModelToJSON(union, identifier('value'), resolveModel))})`, { loader: 'ts', target: 'es2022' })
-    .code.trim().replace(/;$/, '');
-  const toJson = new Function('LiteralCat', 'LiteralDog', 'unknownDiscriminatorValue', 'withDiscriminatorValue', 'value',
-    `return ${expression};`) as RuntimeFunction;
-  const run = (value: object) => toJson(LiteralCat, class LiteralDog {}, conversion.unknownDiscriminatorValue,
-    conversion.withDiscriminatorValue, value);
+  const { run } = runModule(
+    `const run = (value: unknown) => ${render(emitModelToJSON(union, identifier('value'), resolveModel))};`,
+    { LiteralCat, LiteralDog: class LiteralDog {}, unknownDiscriminatorValue: conversion.unknownDiscriminatorValue,
+      withDiscriminatorValue: conversion.withDiscriminatorValue },
+    { exports: ['run'] },
+  ) as { run: RuntimeFunction };
   assert.deepEqual(run(Object.assign(new LiteralCat(), { kind: 'cat', name: 'Miso' })), { kind: 'cat', name: 'Miso' });
   assert.throws(() => run(Object.assign(new LiteralCat(), { name: 'Miso' })), failsWith(LibErrorKind.Serialization, /undefined/),
     'the variant schema requires its literal tag, so encoding must not invent it');
