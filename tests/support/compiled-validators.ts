@@ -3,13 +3,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { transformSync } from 'esbuild';
-
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile, type CompileOptions } from '@exprtlabs/golem/internal/validator-compiler';
 
 import { workspace } from './process.js';
+import { stripTypes } from './run-module.js';
 
 /** The built runtime file; the emitted module sits in a temp directory where the package name does not resolve. */
 const runtimeModule = pathToFileURL(path.join(workspace, 'packages/golem/dist/validation-runtime.js')).href;
@@ -68,7 +67,7 @@ export async function compileValidatorModule(input: CompiledValidatorInput): Pro
   const directory = mkdtempSync(path.join(tmpdir(), `golem-validators-${loads++}-`));
   try {
     const file = path.join(directory, 'validators.mjs');
-    writeFileSync(file, input.typed ? transformSync(source, { loader: 'ts' }).code : source);
+    writeFileSync(file, input.typed ? stripTypes(source) : source);
     for (const [name, text] of Object.entries(input.modules ?? {})) writeFileSync(path.join(directory, name), text);
     const namespace = await import(pathToFileURL(file).href);
     const loaded: Readonly<Record<string, Validator>> = namespace;
