@@ -339,6 +339,24 @@ test('a recursive type whose property name ends in a tag key name is a plain use
   assert.match(shared, /notTag/);
 });
 
+for (const item of [
+  { name: 'an annotated arrow', rules: tsSource`export const check: (v: string) => boolean = (v) => v !== '';\nexport const write: (v: number) => string = (v) => String(v);\nexport const read: (w: string) => number = (w) => Number(w);` },
+  { name: 'a const typed by a type alias', rules: tsSource`type Check = (v: string) => boolean;\ntype Write = (v: number) => string;\ntype Read = (w: string) => number;\nexport const check: Check = (v) => v !== '';\nexport const write: Write = (v) => String(v);\nexport const read: Read = (w) => Number(w);` },
+] as const) {
+  test(`${item.name} is a TValidation and a TSerde function`, t => {
+    // protects: F-31 a typed const named by typeof is a valid tag function (T-430, was RUNM1040)
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), item.rules.text);
+    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+      name: 'A',
+      imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { check, read, write } from './rules.js';`,
+      fields: tsSource`valid: string & TValidation<typeof check>; coded: number & TSerde<typeof write, typeof read>`,
+    }).text);
+    const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.map((artifact) => artifact.content).join('\n');
+    for (const name of ['check', 'write', 'read']) assert.match(generated, new RegExp(`import \\{[^}]*\\b${name}\\b[^}]*\\} from`), `${name} is bound`);
+  });
+}
+
 test('a MobX model generated with validation false has no validator', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({

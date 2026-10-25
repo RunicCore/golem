@@ -59,6 +59,11 @@ export interface TagAnalysisContext {
   /** Resolve a tag's schema type without executing application code. */
   readonly describeSchema?: (type: ts.Type, node?: ts.TypeNode) => ConstraintSchemaValue;
   readonly aliasUseSite?: AliasUseSite;
+  /**
+   * The functions that the source read of one node wrote after `typeof`, by their type. The checker read of the same node
+   * names a function from its type; a const with a function type annotation has no declaration to name it by.
+   */
+  readonly writtenFunctions?: Map<ts.Type, ts.Symbol>;
 }
 
 /** The concrete alias reference a generic tag alias is being read for. */
@@ -324,7 +329,10 @@ function functionArgument(
   message: string,
 ): TagFunction {
   if (argument?.node && ts.isTypeQueryNode(argument.node)) {
-    return { query: argument.node, type: context.checker.getTypeAtLocation(argument.node.exprName), owner: argument.node };
+    const type = context.checker.getTypeAtLocation(argument.node.exprName);
+    const symbol = symbolAtExpression(context.checker, argument.node.exprName);
+    if (symbol && !context.writtenFunctions?.has(type)) context.writtenFunctions?.set(type, symbol);
+    return { query: argument.node, type, owner: argument.node };
   }
   if (argument?.type && !argument.node) return { type: argument.type, owner: at };
   throw context.diagnostic(at, code, message);
@@ -344,7 +352,7 @@ function functionBinding(
     : undefined;
   const named = variable?.name
     ?? (declaration && (declaration as ts.NamedDeclaration).name);
-  const symbol = named ? context.checker.getSymbolAtLocation(named) : undefined;
+  const symbol = (named ? context.checker.getSymbolAtLocation(named) : undefined) ?? context.writtenFunctions?.get(fn.type);
   return valueBindingForSymbol(context, symbol, kind, fn.owner);
 }
 
@@ -877,8 +885,9 @@ export function analyzeNode(
   type: ts.Type,
   node: ts.TypeNode | undefined,
 ): TagReadResult {
-  const result = node ? readTags(context, node) : { baseNode: undefined, metadata: EMPTY };
-  const metadata = mergeMetadata(result.metadata, metadataFromType(context, type));
+  const nodeContext: TagAnalysisContext = { ...context, writtenFunctions: new Map() };
+  const result = node ? readTags(nodeContext, node) : { baseNode: undefined, metadata: EMPTY };
+  const metadata = mergeMetadata(result.metadata, metadataFromType(nodeContext, type));
   if (isDateType(context.checker, type)) {
     return { baseNode: result.baseNode ?? node, metadata: { ...metadata, date: true } };
   }
