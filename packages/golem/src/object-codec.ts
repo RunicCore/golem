@@ -98,7 +98,6 @@ interface ContextValidatorCache {
   readonly all: Map<string, Validator>;
 }
 const contextValidators = new WeakMap<ModelValidationContext, ContextValidatorCache>();
-const HASHED_CODEC_SUFFIX = /^[0-9a-f]{8}$/;
 
 /** Resolve only within an explicit environment; this function never uses the global fallback. */
 export function resolveModelValidationContextValidator(
@@ -148,49 +147,25 @@ export function registerIModelClass(name: string, ctor: abstract new (values?: n
   iModelClasses.set(name, ctor);
   // `<codec id>#<class>` names one of several classes linked to a model; the model has no default class.
   const variant = name.indexOf('#');
-  if (variant > 0) {
-    markModelCodecId(ctor, name.slice(0, variant));
-    codecIdByConstructor.set(ctor, name.slice(0, variant));
-    return;
-  }
-  markModelCodecId(ctor, name);
-  codecIdByConstructor.set(ctor, name);
-  if (name.includes('_') && HASHED_CODEC_SUFFIX.test(name.slice(name.lastIndexOf('_') + 1))) return;
-  const prefix = `${name}_`;
-  for (const key of iModelClasses.keys()) {
-    if (!key.startsWith(prefix)) continue;
-    if (!HASHED_CODEC_SUFFIX.test(key.slice(prefix.length))) continue;
-    iModelClasses.set(key, ctor);
-    codecIdByConstructor.set(ctor, key);
-    markModelCodecId(ctor, key);
-  }
+  const id = variant > 0 ? name.slice(0, variant) : name;
+  markModelCodecId(ctor, id);
+  codecIdByConstructor.set(ctor, id);
 }
 
 export function findCodecIdForConstructor(constructor: Function): string | undefined {
   return codecIdByConstructor.get(constructor);
 }
 
-export function getIModelClass(name: string): (abstract new (values?: never) => object) | undefined {
-  const exact = iModelClasses.get(name);
-  if (exact) return exact;
-  if (name.includes('_') && HASHED_CODEC_SUFFIX.test(name.slice(name.lastIndexOf('_') + 1))) return undefined;
-  const prefix = `${name}_`;
-  let found: (abstract new (values?: never) => object) | undefined;
-  for (const [key, ctor] of iModelClasses) {
-    if (!key.startsWith(prefix)) continue;
-    if (!HASHED_CODEC_SUFFIX.test(key.slice(prefix.length))) continue;
-    if (found) return undefined;
-    found = ctor;
-  }
-  return found;
+export function getIModelClass(id: string): (abstract new (values?: never) => object) | undefined {
+  return iModelClasses.get(id);
 }
 
-export function requireIModelClass(name: string): abstract new (values?: never) => object {
-  const ctor = getIModelClass(name);
+export function requireIModelClass(id: string): abstract new (values?: never) => object {
+  const ctor = getIModelClass(id);
   if (!ctor) {
     throw new LibError(
       LibErrorKind.ValidationUnavailable,
-      `IModel class ${JSON.stringify(name)} is not registered.`,
+      `IModel class ${JSON.stringify(id)} is not registered.`,
     );
   }
   return ctor;
@@ -201,28 +176,15 @@ export function registerObjectCodec<T>(codec: ObjectCodec<T>): void {
 }
 
 export function getObjectCodec<T = unknown>(id: string): ObjectCodec<T> | undefined {
-  const exact = codecs.get(id) as ObjectCodec<T> | undefined;
-  if (exact) return exact;
-  if (id.includes('_') && HASHED_CODEC_SUFFIX.test(id.slice(id.lastIndexOf('_') + 1))) return undefined;
-  const prefix = `${id}_`;
-  let found: ObjectCodec<T> | undefined;
-  for (const [key, codec] of codecs) {
-    if (!key.startsWith(prefix)) continue;
-    if (!HASHED_CODEC_SUFFIX.test(key.slice(prefix.length))) continue;
-    if (found) return undefined;
-    found = codec as ObjectCodec<T>;
-  }
-  return found;
+  return codecs.get(id) as ObjectCodec<T> | undefined;
 }
 
 export function requireObjectCodec<T = unknown>(id: string): ObjectCodec<T> {
   const codec = getObjectCodec<T>(id);
   if (!codec) {
-    const hash = id.lastIndexOf('_');
-    const model = hash > 0 && HASHED_CODEC_SUFFIX.test(id.slice(hash + 1)) ? id.slice(0, hash) : id;
     throw new LibError(
       LibErrorKind.ValidationUnavailable,
-      `golem fault: the IObject codec ${JSON.stringify(id)} for model ${model} is not registered. `
+      `golem fault: the IObject codec ${JSON.stringify(id)} is not registered. `
       + `The rewrite loads the generated module that registers a codec wherever it names one, and that module did not load. Run golem generate and rewrite the file again.`,
     );
   }

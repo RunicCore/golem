@@ -1,18 +1,19 @@
 import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/serde';
+import { codecIdOf } from './codec-id.js';
 import { rejects, rejectsValidate, type Adapter, type ComparisonFixture, type InvalidOperations } from './fixture-contract.js';
 import { Checkout, CheckoutPlain, LineItem, SerdeMany, SerdeManyLine, SerdeNone, SerdeNoneLine } from './features.model.js';
 import './sdk/index.js';
 import { assertFeatureWire, assertSerdeModel, checkoutInput, checkoutPlainInput, checkoutPlainInvalidWires, featureComparison, serdeComparison, serdeInput, serdeInvalidWires, type SerdeDensity } from './payloads.js';
 
-registerIModelClass('TLineItem', LineItem);
-registerIModelClass('TCheckout', Checkout);
-registerIModelClass('TCheckoutPlain', CheckoutPlain);
-registerIModelClass('TSerdeManyLine', SerdeManyLine);
-registerIModelClass('TSerdeMany', SerdeMany);
-registerIModelClass('TSerdeNoneLine', SerdeNoneLine);
-registerIModelClass('TSerdeNone', SerdeNone);
+registerIModelClass(codecIdOf('TLineItem'), LineItem);
+registerIModelClass(codecIdOf('TCheckout'), Checkout);
+registerIModelClass(codecIdOf('TCheckoutPlain'), CheckoutPlain);
+registerIModelClass(codecIdOf('TSerdeManyLine'), SerdeManyLine);
+registerIModelClass(codecIdOf('TSerdeMany'), SerdeMany);
+registerIModelClass(codecIdOf('TSerdeNoneLine'), SerdeNoneLine);
+registerIModelClass(codecIdOf('TSerdeNone'), SerdeNone);
 
 function options(validation: boolean, construct?: new (values?: never) => object): { readonly validate?: false; readonly construct?: new (values?: never) => object } {
   return { ...(validation ? {} : { validate: false as const }), ...(construct ? { construct } : {}) };
@@ -24,7 +25,7 @@ function validationFor(adapter: Adapter): boolean {
   throw new TypeError(`Unsupported golem adapter: ${adapter}`);
 }
 
-const codec = () => requireObjectCodec('TCheckout');
+const codec = () => requireObjectCodec(codecIdOf('TCheckout'));
 
 function checkConverted(model: object): void {
   assert.ok(model instanceof Checkout);
@@ -67,7 +68,7 @@ function checkoutPlainFixture(validation: boolean): ComparisonFixture {
   const input = checkoutPlainInput();
   // #region checkout-plain-calls
   // Resolve the codec and options once; timed calls do only the conversion.
-  const checkout = requireObjectCodec('TCheckoutPlain');
+  const checkout = requireObjectCodec(codecIdOf('TCheckoutPlain'));
   const decodeOptions = options(validation, CheckoutPlain);
   const encodeOptions = options(validation);
   const model = checkout.fromWireFormat(input.payload, decodeOptions);
@@ -110,7 +111,7 @@ function serdeFixtures(validation: boolean): readonly ComparisonFixture[] {
   return (['serde-none', 'serde-many'] as const).map((name: SerdeDensity) => {
     const input = serdeInput(name);
     const construct = name === 'serde-many' ? SerdeMany : SerdeNone;
-    const codec = requireObjectCodec(name === 'serde-many' ? 'TSerdeMany' : 'TSerdeNone');
+    const codec = requireObjectCodec(codecIdOf(name === 'serde-many' ? 'TSerdeMany' : 'TSerdeNone'));
     const decodeOptions = options(validation, construct);
     const encodeOptions = options(validation);
     const model = codec.fromWireFormat(input.payload, decodeOptions);

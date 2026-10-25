@@ -8,6 +8,7 @@ import type { ModelValidationContext } from '@exprtlabs/golem/model';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { validateInstance } from '@exprtlabs/golem/validation';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
@@ -48,7 +49,7 @@ async function project(t: TestContext, profile: { mobx: false; validation: true 
   const source = generatedModelFiles(root).map(a => a.content).join('\n');
   const counter = await import(pathToFileURL(path.join(root, 'build/counter.js')).href) as { calls: number; reset(): void };
   const models = await import(pathToFileURL(path.join(root, 'build/order.model.js')).href) as { Order: new (v?: object) => object; RuleOnly: new (v?: object) => object };
-  return { source, counter, ...models, order: requireObjectCodec('TOrder'), plain: requireObjectCodec('TPlainOrder'), ruleOnly: requireObjectCodec('TRuleOnly') };
+  return { source, counter, ...models, order: requireObjectCodec(generatedCodecIdFromRoot(root, 'TOrder')), plain: requireObjectCodec(generatedCodecIdFromRoot(root, 'TPlainOrder')), ruleOnly: requireObjectCodec(generatedCodecIdFromRoot(root, 'TRuleOnly')) };
 }
 
 test('each rule runs once per conversion; IObject parse enforces model-only rules', async t => {
@@ -106,7 +107,7 @@ test('a rule on an SDK model runs once per parse and IObject enforces it', async
     primary: { sku: 'ABC', quantity: 1, price: 2 }, flags: { rush: 'yes' }, channel: { kind: 'hold', until: '2026-01-03T00:00:00.000Z' },
     span: ['2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'], hold: null, bag: { lane: 'A' },
   };
-  const plain = requireObjectCodec('TJsonCheckout');
+  const plain = requireObjectCodec(generatedCodecIdFromRoot(root, 'TJsonCheckout'));
   const before = rules.extraMoneyCalls;
   plain.parse(JSON.stringify(wire));
   assert.equal(rules.extraMoneyCalls - before, 1, 'extraMoney runs once per parse');
@@ -145,7 +146,7 @@ for (const profileValidation of [true, false]) {
     const unavailable = (e: unknown): boolean => e instanceof LibError && e.kind === LibErrorKind.ValidationUnavailable;
     let cells = 0;
     for (const [name, declaration] of [['TInherit', 'inherit'], ['TOn', 'on'], ['TOff', 'off']] as const) {
-      const codec = requireObjectCodec(name);
+      const codec = requireObjectCodec(generatedCodecIdFromRoot(root, name));
       const construct = models[name.slice(1)];
       const effective = declaration === 'on' || (declaration === 'inherit' && profileValidation);
       const model = codec.parse(JSON.stringify(value), { validate: false, construct });
@@ -171,9 +172,9 @@ for (const profileValidation of [true, false]) {
     if (profileValidation) {
       // An opaque child inside a validated parent: parent rules run once, child contents unchecked.
       counter.reset();
-      requireObjectCodec('TParent').parse(JSON.stringify({ child: { secret: 7 }, ...value }), { construct: models.Parent });
+      requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent')).parse(JSON.stringify({ child: { secret: 7 }, ...value }), { construct: models.Parent });
       assert.equal(counter.calls, 1);
-      const parentCodec = requireObjectCodec('TParent');
+      const parentCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
       const blank = new models.Parent({ child: { secret: 'x' }, note: '  ', when: new Date(value.when) });
       assert.equal(parentCodec.validate(blank), false, 'a blank parent note is rejected');
       assert.ok((await validateInstance(blank)).some(issue => issue.path[0] === 'note'));
@@ -182,9 +183,9 @@ for (const profileValidation of [true, false]) {
     } else {
       // A validated child inside an unvalidated parent: the codec you call decides.
       counter.reset();
-      requireObjectCodec('TUParent').parse(JSON.stringify({ child: value, when: value.when }), { construct: models.UParent });
+      requireObjectCodec(generatedCodecIdFromRoot(root, 'TUParent')).parse(JSON.stringify({ child: value, when: value.when }), { construct: models.UParent });
       assert.equal(counter.calls, 0, 'converting the unvalidated parent runs no checks');
-      requireObjectCodec('TVChild').parse(JSON.stringify(value), { construct: models.VChild });
+      requireObjectCodec(generatedCodecIdFromRoot(root, 'TVChild')).parse(JSON.stringify(value), { construct: models.VChild });
       assert.equal(counter.calls, 1, 'converting the validated child directly validates it');
     }
   });
@@ -201,7 +202,7 @@ test('rules inside constraints the wire drops (Contains, Not) still run once on 
   await buildModelProject(root);
   const predicates = await import(pathToFileURL(path.join(root, 'build/predicates.js')).href) as { positiveCalls: number; reset(): void };
   const { A } = await import(pathToFileURL(path.join(root, 'build/a.model.js')).href) as { A: new (v?: object) => object };
-  const codec = requireObjectCodec('TA');
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA'));
   for (const options of [{ construct: A }, {}]) {
     assert.throws(() => codec.parse(JSON.stringify({ values: [-1] }), options), validationError, 'no positive element for Contains');
     assert.throws(() => codec.parse(JSON.stringify({ blocked: 5 }), options), validationError, 'Not<positive> rejects a positive number');
@@ -228,7 +229,7 @@ export class Trip extends TTripBaseModel {}
   const validators = await import(pathToFileURL(path.join(root, 'build', path.relative(sourceRoot, validatorsFile.path).replace(/\.ts$/, '.js'))).href) as Readonly<Record<string, Validator>>;
   const requested: string[] = [];
   const context: ModelValidationContext = { resolve: (reference) => { requested.push(reference); return validators[`validate_${reference.replace(/[^A-Za-z0-9_$]/g, '_')}`]; } };
-  const codec = requireObjectCodec('TTrip');
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTrip'));
   const good = { at: '2026-01-02T03:04:05.000Z', stop: { at: '2026-01-03T00:00:00.000Z', name: 'A' } };
   const trip = codec.parse(JSON.stringify(good), { construct: Trip, validationContext: context });
   assert.equal(codec.stringify(trip as never, { validationContext: context }), JSON.stringify(good));

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { codecIdOf } from './codec-id.js';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import type { TJsonCheckout, TJsonCheckoutPlain, TJsonSerdeMany, TJsonSerdeNone } from './features.iobject.model.js';
 import './features.iobject.model.generated.js';
@@ -13,7 +14,7 @@ const validationError = (error: unknown): boolean => error instanceof LibError &
 function serdeFixtures(validation: boolean): readonly ComparisonFixture[] {
   return (['serde-none', 'serde-many'] as const).map((name: SerdeDensity) => {
     const input = serdeInput(name);
-    const codec = requireObjectCodec<TJsonSerdeMany | TJsonSerdeNone>(name === 'serde-many' ? 'TJsonSerdeMany' : 'TJsonSerdeNone');
+    const codec = requireObjectCodec<TJsonSerdeMany | TJsonSerdeNone>(codecIdOf(name === 'serde-many' ? 'TJsonSerdeMany' : 'TJsonSerdeNone'));
     const model = codec.parse(input.text);
     return serdeComparison(name, input.payload, {
       'object-to-model': () => codec.fromWireFormat(input.payload),
@@ -50,7 +51,7 @@ function serdeFixtures(validation: boolean): readonly ComparisonFixture[] {
 function checkoutPlainFixture(validation: boolean): ComparisonFixture {
   const input = checkoutPlainInput();
   // #region checkout-plain-calls
-  const checkout = requireObjectCodec<TJsonCheckoutPlain>('TJsonCheckoutPlain');
+  const checkout = requireObjectCodec<TJsonCheckoutPlain>(codecIdOf('TJsonCheckoutPlain'));
   const model = checkout.parse(input.text);
   const timed = {
     'text-to-model': () => checkout.parse(input.text),
@@ -92,7 +93,7 @@ export async function createGolemObjectFeatureFixtures(adapter: Adapter): Promis
   const input = checkoutInput();
   // #region calls
   // Resolve the codec once; timed calls do only the conversion.
-  const checkout = requireObjectCodec<TJsonCheckout>('TJsonCheckout');
+  const checkout = requireObjectCodec<TJsonCheckout>(codecIdOf('TJsonCheckout'));
   const model = checkout.parse(input.text);
   const timed = {
     'text-to-model': () => checkout.parse(input.text),
