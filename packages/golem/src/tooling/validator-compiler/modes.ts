@@ -66,13 +66,13 @@ export interface KeyTest {
   readonly unknown?: Code;
   /**
    * Set when the key test left the own values unread: the statement that a failing check runs before it fails as it
-   * would without this object. It reads every value first (spec 7.3), and the passes over the key list read each value
+   * would without this object. It reads every value first, as the full validator does, and the passes over the key list read each value
    * before they skip a key.
    */
   readonly failure?: Code;
 }
 
-/** Which own values of an object the full validator reads before its checks (spec 7.3). */
+/** Which own values of an object the full validator reads before its checks. */
 interface ReadSet {
   /** The declared keys whose checks read their values; the full validator reads these first. */
   readonly declared: readonly string[];
@@ -85,7 +85,7 @@ interface ReadSet {
 }
 
 /**
- * The full validator's read set of an object check (spec 7.3), the one rule for the full validator, the fast key test
+ * The full validator's read set of an object check, the one rule for the full validator, the fast key test
  * and the merged union pass. `marks`: the function keeps an evaluation record, so a check that accepts anything still
  * marks its key.
  */
@@ -179,9 +179,9 @@ export const FULL_VALIDATOR: WriterMode = {
 };
 
 /**
- * The key test of the fast check (spec 5.2, F1). An object whose full validator reads only its declared keys reads
+ * The key test of the fast check. An object whose full validator reads only its declared keys reads
  * them as the full validator does. Any other reads every own value in one `Object.keys` pass, as `definedKeys` does,
- * with no exit inside the pass (spec 7.3: a caller such as `not` or a union can turn a `false` into `true`, and then the
+ * with no exit inside the pass (a caller such as `not` or a union can turn a `false` into `true`, and then the
  * reads must be the full validator's): a declared key in its own case by its name, every other key in `default`. A key
  * that `additionalProperties: false` forbids is only marked, and a schema of `additionalProperties` runs after
  * `required` in a second pass, both in the full validator's order. A key that matches a pattern of `patternProperties` is
@@ -253,7 +253,7 @@ function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: 
 }
 
 /**
- * The fast check `is_X(v)` (spec 5.1): true exactly when the full validator reports no issue. A failed check returns
+ * The fast check `is_X(v)`: true exactly when the full validator reports no issue. A failed check returns
  * `false`; no path and no issue is built. A function with a fast check is called as `isN(v)`; any other through its full
  * validator (`leafPasses`).
  */

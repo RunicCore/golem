@@ -72,7 +72,7 @@ function calledFunctions(check: IrCheck): readonly number[] {
   }
 }
 
-/** The functions whose IR call graph reaches a validation function (spec 5.1 rule 7). */
+/** The functions whose IR call graph reaches a validation function. These have no fast check, so each predicate runs once per conversion. */
 export function reachingValidation(functions: readonly IrFunction[]): ReadonlySet<number> {
   const callers = new Map<number, number[]>();
   const reaching = new Set<number>();

@@ -449,7 +449,7 @@ function planValidationRoots(plan: CodecValidationPlan): ReadonlyMap<string, unk
 export function compilePlanValidators(plan: CodecValidationPlan, options: PlanValidatorsOptions): PlanValidators {
   const locateModel = options.locateModel ?? ((name: string): SchemaPlace => ({ where: `model ${name}` }));
   const roots = planValidationRoots(plan);
-  // The codecs of the plan's own models answer a valid value with the fast check (spec 7.1); tag and closure roots get none, as no codec asserts them.
+  // The codecs of the plan's own models answer a valid value with the fast check; tag and closure roots get none, as no codec asserts them.
   return compileValidatorRoots(roots, new Map(), {
     ...options,
     locate: (resource, pointer) => {
@@ -522,7 +522,7 @@ export function compileSdkValidators(input: SdkValidatorsInput, options: PlanVal
     if (roots.has(name)) throw new Error(`Cannot compile the SDK validators: the resource ${JSON.stringify(name)} has the name of a root.`);
   }
   const locateModel = options.locateModel ?? ((name: string): SchemaPlace => ({ where: `model ${name}` }));
-  // The plan's own model roots get fast checks; the operation validators do not (spec F11).
+  // The plan's own model roots get fast checks; the operation validators do not.
   return compileValidatorRoots(roots, resources, {
     ...options,
     locate: (resource, pointer) => {

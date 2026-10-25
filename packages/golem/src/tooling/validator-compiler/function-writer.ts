@@ -314,7 +314,7 @@ export class FunctionWriter {
 
   /** The functions run only after the structural schema passed, so they never see a value of the wrong shape. */
   private validationCheck(check: IrValidation, value: Code): void {
-    // A function that reaches a validation function has no fast check (spec 5.1 rule 7): the predicate runs once.
+    // A function that reaches a validation function has no fast check, so the predicate runs once.
     if (!this.mode.records) throw new Error(`The validator compiler writes no fast check for the schema function ${this.fn.id}: it reaches a validation function.`);
     const runCalls = (): void => {
       for (const index of check.calls) {
@@ -836,8 +836,8 @@ export class FunctionWriter {
    * A tagged union of plain object branches as one key pass: the pass reads the tag only, as the full validator does
    * before it selects a branch, and marks every other key it meets. A tag outside the JSON view selects no branch. The
    * selected branch then reads its read set (`readSet`) before any of its checks can fail, as the full branch reads it
-   * up front, and runs its checks in the full branch's order (spec 7.3). A closed branch also requires each key it does
-   * not name to be absent. Every read is of an own enumerable key (spec 5.1 rule 3).
+   * up front, and runs its checks in the full branch's order. A closed branch also requires each key it does
+   * not name to be absent. Every read is of an own enumerable key.
    */
   private mergedUnion(branches: readonly IrObject[], discriminator: IrDiscriminator, value: Code): void {
     this.failWhen(code`!${TYPE_TESTS.object(value)}`);

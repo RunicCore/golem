@@ -4,7 +4,7 @@ import { reachingValidation } from './call-graph.js';
 /**
  * True when a check of a fast check decides something itself, not one that only passes the value to other functions:
  * `allOf` through its branches, a union, `not`, `$ref`, `if` and `dependentSchemas` through the functions they call,
- * which must have a fast check of their own (spec 5.4 a). A validation function and `unevaluated*` have no fast form;
+ * which must have a fast check of their own. A validation function and `unevaluated*` have no fast form;
  * a function that holds one is never planned (`FastPlan`).
  */
 function decidesFast(check: IrCheck, has: (id: number) => boolean): boolean {
@@ -20,15 +20,15 @@ function decidesFast(check: IrCheck, has: (id: number) => boolean): boolean {
   }
 }
 
-/** True when a fast check of `fn` pays: a check of it decides something itself, so a failing value is not run twice for nothing (spec 5.4 a). */
+/** True when a fast check of `fn` pays: a check of it decides something itself, so a failing value is not run twice for nothing. */
 function fastBody(fn: IrFunction, has: (id: number) => boolean): boolean {
   return fn.body.kind !== 'checks' || fn.body.checks.some(check => decidesFast(check, has));
 }
 
 /**
- * Which functions get a fast check. A function gets one when it keeps and receives no evaluation record (spec 5.4, the
+ * Which functions get a fast check. A function gets one when it keeps and receives no evaluation record (the
  * record travels through full validators), its IR call graph reaches no validation function, so each predicate runs once
- * per conversion (rule 7), and its body pays (`fastBody`), counting a call only to a function that has a fast check itself.
+ * per conversion, and its body pays (`fastBody`), counting a call only to a function that has a fast check itself.
  */
 export class FastPlan {
   private readonly fast = new Set<number>();
