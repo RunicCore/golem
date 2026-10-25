@@ -32,6 +32,7 @@ import {
   tscBin,
   writeGeneratedSdk,
   type CapturedRequest,
+  type GeneratedClientClass,
 } from './helpers.js';
 
 const example = openApiFixture('example.openapi.yaml');
@@ -730,9 +731,9 @@ function wireAuthDocument() {
 }
 
 let wireClient: ReturnType<typeof generateWireClient> | undefined;
-const wireClientRoots: string[] = [];
+const clientRoots: string[] = [];
 after(() => {
-  for (const root of wireClientRoots) fs.rmSync(root, { recursive: true, force: true });
+  for (const root of clientRoots) fs.rmSync(root, { recursive: true, force: true });
 });
 
 /** Generate and compile the Wire SDK against `wireAuthDocument()` once; the wire tests share its client class. */
@@ -744,7 +745,7 @@ function compileWireClient() {
 async function generateWireClient() {
   const document = wireAuthDocument();
   const output = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-openapi-wire-')));
-  wireClientRoots.push(output);
+  clientRoots.push(output);
   writeSdk(document, { output, name: 'Wire' });
   copyFixtureFile(output, "openapi/conformance/auth-type-test.ts", "auth-type-test.ts");
   const compiled = spawnSync(process.execPath, [tscBin(),
@@ -1007,14 +1008,14 @@ test('generated client serializes path, repeated query, form body and API-key au
   }
 });
 
-test('generated client implements path and query style/explode serialization', async (t) => {
+function stylesDocument() {
   const ok = {
     200: {
       description: 'ok',
       content: { 'application/json': { schema: { type: 'object' } } },
     },
   };
-  const document = {
+  return {
     openapi: '3.2.0',
     info: { title: 'Styles', version: '1' },
     paths: {
@@ -1320,9 +1321,25 @@ test('generated client implements path and query style/explode serialization', a
       },
     },
   };
-  const output = createFixtureProject(t, 'golem-openapi-styles-');
-  writeSdk(document, { output, name: 'Styles' });
-  const compiled = spawnSync(process.execPath, [tscBin(), 
+}
+
+const generatedClients = new Map<string, Promise<GeneratedClientClass>>();
+
+/** Generate and compile the `name` SDK once; the tests of one document share its client class. */
+function compileClient(name: string, document: unknown): Promise<GeneratedClientClass> {
+  let client = generatedClients.get(name);
+  if (!client) {
+    client = generateClient(name, document);
+    generatedClients.set(name, client);
+  }
+  return client;
+}
+
+async function generateClient(name: string, document: unknown): Promise<GeneratedClientClass> {
+  const output = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `golem-openapi-${name.toLowerCase()}-`)));
+  clientRoots.push(output);
+  writeSdk(document, { output, name });
+  const compiled = spawnSync(process.execPath, [tscBin(),
     '--target', 'ES2022',
     '--module', 'NodeNext',
     '--moduleResolution', 'NodeNext',
@@ -1331,84 +1348,108 @@ test('generated client implements path and query style/explode serialization', a
     path.join(output, 'index.ts'),
   ], { encoding: 'utf8' });
   assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
-  const stylesModule = requireRecord(
+  const clientModule = requireRecord(
     await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    'styles client',
+    `${name} client`,
   );
-  assert.equal(isGeneratedClientClass(stylesModule.StylesClient), true);
-  if (!isGeneratedClientClass(stylesModule.StylesClient)) throw new TypeError('StylesClient');
-  const StylesClient = stylesModule.StylesClient;
-  const urls: string[] = [];
-  const cookieHeaders: Array<string | null> = [];
-  const styleHeaders: Array<{ array: string | null; objectFlat: string | null; objectExplode: string | null }> = [];
-  const contentHeaders: Array<{ header: string | null; cookie: string | null }> = [];
-  const parameterContexts: Array<{ operation: string; name: string; in: string; contentType: string }> = [];
+  const Client = clientModule[`${name}Client`];
+  assert.equal(isGeneratedClientClass(Client), true);
+  if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client`);
+  return Client;
+}
+
+interface ParameterContext { operation: string; name: string; in: string; contentType: string }
+
+/** A Styles client that records each request and the context of each XML parameter serialization. */
+async function stylesClient() {
+  const StylesClient = await compileClient('Styles', stylesDocument());
+  const requests: CapturedRequest[] = [];
+  const contexts: ParameterContext[] = [];
   const client = new StylesClient({
     baseUrl: 'https://api.example',
     parameterSerializers: {
-      'application/xml': (value: Record<string, unknown>, context: { operation: string; name: string; in: string; contentType: string }) => {
-        parameterContexts.push(context);
+      'application/xml': (value: Record<string, unknown>, context: ParameterContext) => {
+        contexts.push(context);
         return `<value>${Object.values(value).join(',')}</value>`;
       },
     },
     fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      const captured = captureRequest(url, init);
-      urls.push(captured.url);
-      if (new URL(captured.url).pathname === '/cookie') {
-        cookieHeaders.push(captured.init.headers.get('cookie'));
-      }
-      if (new URL(captured.url).pathname === '/header') {
-        styleHeaders.push({
-          array: captured.init.headers.get('X-Array'),
-          objectFlat: captured.init.headers.get('X-Object-Flat'),
-          objectExplode: captured.init.headers.get('X-Object-Explode'),
-        });
-      }
-      if (new URL(captured.url).pathname.startsWith('/content/')) {
-        contentHeaders.push({
-          header: captured.init.headers.get('X-Content'),
-          cookie: captured.init.headers.get('cookie'),
-        });
-      }
+      requests.push(captureRequest(url, init));
       return new Response('{}', {
         status: 200,
         headers: { 'content-type': 'application/json' },
       });
     },
   });
-  await client.simple().execute({
-    path: {
-      array: ['blue', 'black'],
-      objectFlat: { role: 'admin', first: 'Alex' },
-      objectExplode: { role: 'admin', first: 'Alex' },
+  return { StylesClient, client, requests, contexts };
+}
+
+const STYLE_URL_ROWS = [
+  {
+    name: 'simple path arrays and objects',
+    operation: 'simple',
+    input: {
+      path: {
+        array: ['blue', 'black'],
+        objectFlat: { role: 'admin', first: 'Alex' },
+        objectExplode: { role: 'admin', first: 'Alex' },
+      },
     },
-  });
-  await client.label().execute({ path: { value: ['blue', 'black'] } });
-  await client.labelFlat().execute({
-    path: {
-      array: ['blue', 'black'],
-      object: { role: 'admin', first: 'Alex' },
+    url: 'https://api.example/simple/blue,black/role,admin,first,Alex/role=admin,first=Alex',
+  },
+  {
+    name: 'label path arrays',
+    operation: 'label',
+    input: { path: { value: ['blue', 'black'] } },
+    url: 'https://api.example/label/.blue.black',
+  },
+  {
+    name: 'label path arrays and objects without explode',
+    operation: 'labelFlat',
+    input: { path: { array: ['blue', 'black'], object: { role: 'admin', first: 'Alex' } } },
+    url: 'https://api.example/label-flat/.blue,black/.role,admin,first,Alex',
+  },
+  {
+    name: 'matrix path objects',
+    operation: 'matrix',
+    input: { path: { value: { role: 'admin', first: 'Alex' } } },
+    url: 'https://api.example/matrix/;role=admin;first=Alex',
+  },
+  {
+    name: 'matrix path arrays and objects without explode',
+    operation: 'matrixFlat',
+    input: { path: { array: ['blue', 'black'], object: { role: 'admin', first: 'Alex' } } },
+    url: 'https://api.example/matrix-flat/;array=blue,black/;object=role,admin,first,Alex',
+  },
+  {
+    name: 'query styles',
+    operation: 'queryStyles',
+    input: {
+      query: {
+        filter: { state: 'settled', rail: 'NPS' },
+        colors: ['blue', 'black'],
+        point: { x: 1, y: 2 },
+        tags: ['new', 'sale'],
+        compactTags: ['new', 'sale'],
+        dimensions: { width: 10, height: 20 },
+        words: ['blue sky', 'black night'],
+        criteria: { active: true },
+      },
     },
+    url: 'https://api.example/query?filter[state]=settled&filter[rail]=NPS&colors=blue|black&point=x,1,y,2&tags=new&tags=sale&compactTags=new,sale&width=10&height=20&words=blue%20sky%20black%20night&criteria=%7B%22active%22%3Atrue%7D',
+  },
+] as const;
+
+for (const row of STYLE_URL_ROWS) {
+  test(`generated client serializes ${row.name}`, async () => {
+    const { client, requests } = await stylesClient();
+    await client[row.operation]().execute(row.input);
+    assert.deepEqual(requests.map(request => request.url), [row.url]);
   });
-  await client.matrix().execute({ path: { value: { role: 'admin', first: 'Alex' } } });
-  await client.matrixFlat().execute({
-    path: {
-      array: ['blue', 'black'],
-      object: { role: 'admin', first: 'Alex' },
-    },
-  });
-  await client.queryStyles().execute({
-    query: {
-      filter: { state: 'settled', rail: 'NPS' },
-      colors: ['blue', 'black'],
-      point: { x: 1, y: 2 },
-      tags: ['new', 'sale'],
-      compactTags: ['new', 'sale'],
-      dimensions: { width: 10, height: 20 },
-      words: ['blue sky', 'black night'],
-      criteria: { active: true },
-    },
-  });
+}
+
+test('generated client serializes header styles', async () => {
+  const { client, requests } = await stylesClient();
   await client.headerStyles().execute({
     header: {
       'X-Array': ['blue', 'black'],
@@ -1416,37 +1457,30 @@ test('generated client implements path and query style/explode serialization', a
       'X-Object-Explode': { role: 'admin', first: 'Alex' },
     },
   });
+  assert.deepEqual(requests.map(request => request.url), ['https://api.example/header']);
+  assert.deepEqual(requests.map(({ init }) => ({
+    array: init.headers.get('X-Array'),
+    objectFlat: init.headers.get('X-Object-Flat'),
+    objectExplode: init.headers.get('X-Object-Explode'),
+  })), [{
+    array: 'blue,black',
+    objectFlat: 'role,admin,first,Alex',
+    objectExplode: 'role=admin,first=Alex',
+  }]);
+});
+
+test('generated client serializes content parameters through the configured serializer', async () => {
+  const { client, requests, contexts } = await stylesClient();
   await client.contentParameters().execute({
     path: { pathValue: { id: 'path' } },
     query: { queryValue: { id: 'query' } },
     header: { 'X-Content': { id: 'header' } },
     cookie: { contentCookie: { id: 'cookie' } },
   });
-  await client.cookieStyles().execute({
-    cookie: {
-      session: ['a', 'b'],
-      prefs: { theme: 'dark', lang: 'en' },
-      compact: ['x', 'y'],
-      flags: { secure: 'yes', sameSite: 'strict' },
-    },
-  });
-  assert.deepEqual(urls, [
-    'https://api.example/simple/blue,black/role,admin,first,Alex/role=admin,first=Alex',
-    'https://api.example/label/.blue.black',
-    'https://api.example/label-flat/.blue,black/.role,admin,first,Alex',
-    'https://api.example/matrix/;role=admin;first=Alex',
-    'https://api.example/matrix-flat/;array=blue,black/;object=role,admin,first,Alex',
-    'https://api.example/query?filter[state]=settled&filter[rail]=NPS&colors=blue|black&point=x,1,y,2&tags=new&tags=sale&compactTags=new,sale&width=10&height=20&words=blue%20sky%20black%20night&criteria=%7B%22active%22%3Atrue%7D',
-    'https://api.example/header',
+  assert.deepEqual(requests.map(request => request.url), [
     'https://api.example/content/%3Cvalue%3Epath%3C%2Fvalue%3E?queryValue=%3Cvalue%3Equery%3C%2Fvalue%3E',
-    'https://api.example/cookie',
   ]);
-  assert.deepEqual(styleHeaders, [{
-    array: 'blue,black',
-    objectFlat: 'role,admin,first,Alex',
-    objectExplode: 'role=admin,first=Alex',
-  }]);
-  assert.deepEqual(parameterContexts.map(({ operation, name, in: location, contentType }) => ({
+  assert.deepEqual(contexts.map(({ operation, name, in: location, contentType }) => ({
     operation,
     name,
     location,
@@ -1477,15 +1511,33 @@ test('generated client implements path and query style/explode serialization', a
       contentType: 'application/xml',
     },
   ]);
-  assert.equal(styleHeaders.length, 1);
-  assert.deepEqual(contentHeaders, [{
+  assert.deepEqual(requests.map(({ init }) => ({
+    header: init.headers.get('X-Content'),
+    cookie: init.headers.get('cookie'),
+  })), [{
     header: '<value>header</value>',
     cookie: 'contentCookie=%3Cvalue%3Ecookie%3C%2Fvalue%3E',
   }]);
-  assert.deepEqual(cookieHeaders, [
+});
+
+test('generated client serializes cookie styles', async () => {
+  const { client, requests } = await stylesClient();
+  await client.cookieStyles().execute({
+    cookie: {
+      session: ['a', 'b'],
+      prefs: { theme: 'dark', lang: 'en' },
+      compact: ['x', 'y'],
+      flags: { secure: 'yes', sameSite: 'strict' },
+    },
+  });
+  assert.deepEqual(requests.map(request => request.url), ['https://api.example/cookie']);
+  assert.deepEqual(requests.map(({ init }) => init.headers.get('cookie')), [
     'session=a; session=b; prefs=theme,dark,lang,en; compact=x,y; secure=yes; sameSite=strict',
   ]);
+});
 
+test('generated client refuses a content parameter without a parameter serializer', async () => {
+  const { StylesClient } = await stylesClient();
   const missingParameterSerializerClient = new StylesClient({
     baseUrl: 'https://api.example',
     fetchImpl: async () => {
@@ -1500,8 +1552,9 @@ test('generated client implements path and query style/explode serialization', a
   );
 });
 
-test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on the wire', async (t) => {
-  const document = {
+
+function mediaDocument() {
+  return {
     openapi: '3.2.0',
     info: { title: 'Media', version: '1' },
     paths: {
@@ -1671,31 +1724,25 @@ test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on t
       },
     },
   };
-  const output = createFixtureProject(t, 'golem-openapi-media-');
-  writeSdk(document, { output, name: 'Media' });
-  const compiled = spawnSync(process.execPath, [tscBin(), 
-    '--target', 'ES2022',
-    '--module', 'NodeNext',
-    '--moduleResolution', 'NodeNext',
-    '--lib', 'ES2023,ESNext.Collection,DOM,DOM.Iterable',
-    '--outDir', path.join(output, 'dist'),
-    path.join(output, 'index.ts'),
-  ], { encoding: 'utf8' });
-  assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
-  const mediaModule = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    'media client',
-  );
-  assert.equal(isGeneratedClientClass(mediaModule.MediaClient), true);
-  if (!isGeneratedClientClass(mediaModule.MediaClient)) throw new TypeError('MediaClient');
-  const MediaClient = mediaModule.MediaClient;
-  const urls: string[] = [];
-  let uploadRequest: CapturedRequest | undefined;
+}
+
+async function drain(body: unknown, label: string): Promise<unknown[]> {
+  assert.equal(isAsyncIterable(body), true);
+  if (!isAsyncIterable(body)) throw new TypeError(label);
+  const items: unknown[] = [];
+  for await (const item of body) items.push(item);
+  return items;
+}
+
+/** A Media client whose fetch answers each operation with its fixture response and records each request. */
+async function mediaClient() {
+  const MediaClient = await compileClient('Media', mediaDocument());
+  const requests: CapturedRequest[] = [];
   const client = new MediaClient({
     baseUrl: 'https://api.example',
     fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
       const captured = captureRequest(url, init);
-      urls.push(captured.url);
+      requests.push(captured);
       if (captured.url.endsWith('/events')) {
         return new Response('{"id":1}\n{"id":2}\n', {
           status: 200,
@@ -1726,7 +1773,6 @@ test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on t
         });
       }
       if (captured.url.endsWith('/upload')) {
-        uploadRequest = captured;
         return new Response(null, { status: 204 });
       }
       return new Response('{}', {
@@ -1744,36 +1790,50 @@ test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on t
       },
     },
   });
+  return { MediaClient, client, requests };
+}
+
+test('OpenAPI 3.2 querystring parameter is written as form-encoded query text', async () => {
+  const { client, requests } = await mediaClient();
   await client.search().execute({ querystring: { phrase: 'a + b', active: true } });
-  const stream = (await client.events().execute({})).body;
-  assert.equal(isAsyncIterable(stream), true);
-  if (!isAsyncIterable(stream)) throw new TypeError('events stream');
-  const events: unknown[] = [];
-  for await (const event of stream) events.push(event);
+  assert.equal(requests[0]?.url, 'https://api.example/search?phrase=a+%2B+b&active=true');
+});
+
+test('OpenAPI 3.2 itemSchema newline-delimited JSON response is an async stream of items', async () => {
+  const { client } = await mediaClient();
+  const events = await drain((await client.events().execute({})).body, 'events stream');
+  assert.deepEqual(events, [{ id: 1 }, { id: 2 }]);
+});
+
+test('OpenAPI 3.2 binary response body is a Blob', async () => {
+  const { client } = await mediaClient();
   const file = (await client.download().execute({})).body;
   assert.ok(file instanceof Blob);
-  const sseStream = (await client.serverEvents().execute({})).body;
-  assert.equal(isAsyncIterable(sseStream), true);
-  if (!isAsyncIterable(sseStream)) throw new TypeError('sse stream');
-  const serverEvents: unknown[] = [];
-  for await (const event of sseStream) serverEvents.push(event);
-  const multipartStream = (await client.multipartEvents().execute({})).body;
-  assert.equal(isAsyncIterable(multipartStream), true);
-  if (!isAsyncIterable(multipartStream)) throw new TypeError('multipart stream');
-  const multipartEvents: unknown[] = [];
-  for await (const event of multipartStream) multipartEvents.push(event);
-  const uploadFile = new Blob([new Uint8Array([7, 8])], { type: 'application/octet-stream' });
-  await client.upload().execute({ body: { metadata: { name: 'proof' }, file: uploadFile } });
-  assert.equal(urls[0], 'https://api.example/search?phrase=a+%2B+b&active=true');
-  assert.deepEqual(events, [{ id: 1 }, { id: 2 }]);
   assert.deepEqual([...new Uint8Array(await file.arrayBuffer())], [1, 2, 3]);
+});
+
+test('OpenAPI 3.2 server-sent event response is an async stream of decoded events', async () => {
+  const { client } = await mediaClient();
+  const serverEvents = await drain((await client.serverEvents().execute({})).body, 'sse stream');
   assert.deepEqual(serverEvents, [{
     data: 'first line\nsecond line',
     event: 'settled',
     id: 'payment-7',
     retry: 1500,
   }]);
+});
+
+test('OpenAPI 3.2 multipart response is an async stream from the configured stream decoder', async () => {
+  const { client } = await mediaClient();
+  const multipartEvents = await drain((await client.multipartEvents().execute({})).body, 'multipart stream');
   assert.deepEqual(multipartEvents, [{ id: 3 }, { id: 4 }]);
+});
+
+test('multipart upload sends form data with the declared part content types', async () => {
+  const { client, requests } = await mediaClient();
+  const uploadFile = new Blob([new Uint8Array([7, 8])], { type: 'application/octet-stream' });
+  await client.upload().execute({ body: { metadata: { name: 'proof' }, file: uploadFile } });
+  const uploadRequest = requests[0];
   assert.ok(uploadRequest);
   assert.equal(uploadRequest.init.headers.has('content-type'), false);
   assert.ok(uploadRequest.init.body instanceof FormData);
@@ -1784,7 +1844,10 @@ test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on t
   assert.ok(metadata instanceof Blob);
   assert.equal(metadata.type, 'application/json');
   assert.equal(await metadata.text(), '{"name":"proof"}');
+});
 
+test('a body encoder receives the declared part encoding and sets the content type', async () => {
+  const { MediaClient } = await mediaClient();
   let encoderContext: { contentType?: string; encoding?: Record<string, { headers?: Record<string, { schema?: { type?: string } }> }> } | undefined;
   let advancedRequest: CapturedRequest | undefined;
   const advancedClient = new MediaClient({
@@ -1815,7 +1878,10 @@ test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on t
     advancedRequest.init.headers.get('content-type'),
     'multipart/form-data; boundary=golem-test',
   );
+});
 
+test('a multipart response without a stream decoder is refused', async () => {
+  const { MediaClient } = await mediaClient();
   const missingStreamDecoderClient = new MediaClient({
     baseUrl: 'https://api.example',
     fetchImpl: async () => new Response('{"id":1}', {
@@ -1827,7 +1893,10 @@ test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on t
     () => missingStreamDecoderClient.multipartEvents().execute({}),
     /No stream decoder configured/,
   );
+});
 
+test('a stream item that fails its response validator rejects the iteration', async () => {
+  const { MediaClient } = await mediaClient();
   const invalidStreamClient = new MediaClient({
     baseUrl: 'https://api.example',
     operationValidators: new Map([[
@@ -1860,3 +1929,4 @@ test('OpenAPI 3.2 querystring, sequential stream, and binary responses work on t
     /API data validation failed/,
   );
 });
+
