@@ -5,7 +5,7 @@ import {
   resolveValueSymbol,
   singleReturnExpression,
   unwrapExpression,
-} from '../evaluation/static-value.js';
+} from '@exprtlabs/golem/internal/static-value';
 import { evaluateRouteExpression } from '../evaluation/evaluate.js';
 import type { DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';
 

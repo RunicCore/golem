@@ -1,6 +1,6 @@
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
-import { unwrapExpression } from '../evaluation/static-value.js';
+import { unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import type { DecoratorInfo } from './types.js';
 
 export const NEST_COMMON = '@nestjs/common' as const;

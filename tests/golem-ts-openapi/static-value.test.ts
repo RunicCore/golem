@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { evaluateStaticValue } from '#controllers/evaluation/static-value';
+import { evaluateStaticValue } from '@exprtlabs/golem/internal/static-value';
 
 const FILES: Readonly<Record<string, string>> = {
   'src/enums.ts': [
