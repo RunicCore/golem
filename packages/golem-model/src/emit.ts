@@ -74,7 +74,6 @@ import {
   projectPortableConstraints,
   type ExecutableValidationMemo,
   schemaForDescriptor,
-  validationTagKey,
   validationTagSchemaDescriptor,
   VALIDATION_KEYWORD,
 } from '@exprtlabs/golem/internal/schema';
@@ -239,70 +238,31 @@ function visitDescriptor(
   });
 }
 
+/** A validation schema of a tag and its canonical key: schemas with one key share one compiled validator. */
 export interface TagSchema {
   readonly key: string;
-  readonly id: string;
   readonly schema: Readonly<Record<string, unknown>>;
 }
 
 interface TagSchemaCompilation {
   readonly id: string;
   readonly schema: Readonly<Record<string, unknown>>;
-  /** Metadata lookup keys that may share this compiled validator. */
-  readonly keys: readonly string[];
 }
 
 /**
- * Group equivalent JSON schemas while retaining every metadata lookup key.
- * Callback identities and closed reference definitions are part of the
- * canonical schema key, so equivalent schemas can share a compiler while
- * distinct executable or reference semantics remain separate.
+ * Give each distinct schema one id, in the order of its canonical key. Callback
+ * identities and closed reference definitions are part of that key, so
+ * equivalent schemas share a compiler while distinct executable or reference
+ * semantics stay separate.
  */
 export function deduplicateTagSchemas(
   schemas: readonly TagSchema[],
 ): readonly TagSchemaCompilation[] {
-  const byMetadataKey = new Map<string, TagSchema>();
-  for (const schema of schemas) {
-    const previous = byMetadataKey.get(schema.key);
-    if (!previous) {
-      byMetadataKey.set(schema.key, schema);
-      continue;
-    }
-    if (canonicalSchemaKey(previous.schema) !== canonicalSchemaKey(schema.schema)) {
-      throw new Error(`Conflicting generated tag schema for metadata key ${JSON.stringify(schema.key)}.`);
-    }
-  }
-
-  interface Group {
-    readonly schemaKey: string;
-    readonly schema: Readonly<Record<string, unknown>>;
-    readonly keys: string[];
-    readonly order: number;
-  }
-  const groups = new Map<string, Group>();
-  let order = 0;
-  for (const schema of byMetadataKey.values()) {
-    const schemaKey = canonicalSchemaKey(schema.schema);
-    const existing = groups.get(schemaKey);
-    if (existing) {
-      existing.keys.push(schema.key);
-    } else {
-      groups.set(schemaKey, {
-        schemaKey,
-        schema: schema.schema,
-        keys: [schema.key],
-        order: order++,
-      });
-    }
-  }
-  return [...groups.values()]
-    .sort((left, right) => compareText(left.schemaKey, right.schemaKey)
-      || left.order - right.order)
-    .map((group, index) => ({
-      id: `golem:model-tag:${index}`,
-      schema: group.schema,
-      keys: [...group.keys].sort(),
-    }));
+  const byKey = new Map<string, Readonly<Record<string, unknown>>>();
+  for (const { key, schema } of schemas) if (!byKey.has(key)) byKey.set(key, schema);
+  return [...byKey.entries()]
+    .sort(([left], [right]) => compareText(left, right))
+    .map(([, schema], index) => ({ id: `golem:model-tag:${index}`, schema }));
 }
 
 function tagSchemas(
@@ -313,12 +273,9 @@ function tagSchemas(
 ): readonly TagSchema[] {
   if (!enabled) return [];
   const schemas = new Map<string, Readonly<Record<string, unknown>>>();
-  const register = (key: string, schema: Readonly<Record<string, unknown>>): void => {
-    const previous = schemas.get(key);
-    if (previous && canonicalSchemaKey(previous) !== canonicalSchemaKey(schema)) {
-      throw new Error('Generated tag metadata key resolves to conflicting validation schemas.');
-    }
-    schemas.set(key, schema);
+  const register = (schema: Readonly<Record<string, unknown>>): void => {
+    const key = canonicalSchemaKey(schema);
+    if (!schemas.has(key)) schemas.set(key, schema);
   };
   const schemaOptions = { definitions };
   const registerTags = (descriptor: ModelConversionDescriptor): void => {
@@ -328,30 +285,20 @@ function tagSchemas(
     const validations = [...(rich.validations ?? [])]
       .map((binding) => typeof binding === 'string' ? binding : (binding as ValidationBinding).id).sort();
     if (constraints.length > 0) {
-      const key = validationTagKey(descriptor, { constraints, validations: [] }, { definitions, representation });
       // Keep structural siblings in the same schema context as object and
       // array keywords. In particular, `additionalProperties` must see the
       // descriptor's declared properties, and contains bounds must remain
-      // siblings of contains. The key remains constraint-only so runtime
-      // lookup continues to share validators for equivalent tag groups.
+      // siblings of contains.
       const structural = schemaForDescriptor(
         validationTagSchemaDescriptor(descriptor, constraints, { definitions }),
         { ...schemaOptions, representation, executableBindings: true },
       );
-      register(
-        key,
-        typeof structural === 'boolean' ? { allOf: [structural] } : structural,
-      );
+      register(typeof structural === 'boolean' ? { allOf: [structural] } : structural);
     }
-    if (validations.length > 0) {
-      const key = validationTagKey(descriptor, { constraints: [], validations }, { definitions, representation });
-      register(key, { [VALIDATION_KEYWORD]: validations });
-    }
+    if (validations.length > 0) register({ [VALIDATION_KEYWORD]: validations });
   };
   descriptors.forEach((descriptor) => walkDescriptor(descriptor, { enter: registerTags }, 'structure'));
-  return [...schemas.entries()]
-    .sort(([left], [right]) => compareText(left, right))
-    .map(([key, schema], index) => ({ key, schema, id: `golem:model-tag:${index}` }));
+  return [...schemas.entries()].map(([key, schema]) => ({ key, schema }));
 }
 
 /**

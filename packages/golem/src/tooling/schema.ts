@@ -25,7 +25,7 @@ export { escapePointerToken, unescapePointerToken } from '../json-pointer.js';
 export { canonicalSchemaKey };
 export type { ConstraintSchemaValue, ModelConstraint } from '../model.js';
 export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CODEC_IDS_KEY, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
-export { validationTagKey, validationTagSchemaDescriptor, type ValidationTagGroup } from './validation-tags.js';
+export { validationTagSchemaDescriptor } from './validation-tags.js';
 
 /** Structural inputs used when a nested schema contains a named reference. */
 export interface SchemaDescriptorOptions {
@@ -217,7 +217,7 @@ function canonicalDescriptorValue(value: unknown): unknown {
         ? item.map((binding) => {
           if (typeof binding === 'string') return binding;
           if (isRecord(binding) && typeof binding.id === 'string') return binding.id;
-          return '[validation]';
+          throw new TypeError('Validation bindings require a declaration identity.');
         }).sort()
         : item;
       continue;

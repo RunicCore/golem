@@ -7,7 +7,7 @@ import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
-import { validationTagKey } from '@exprtlabs/golem/internal/schema';
+import { canonicalSchemaKey, schemaForDescriptor, validationTagSchemaDescriptor } from '@exprtlabs/golem/internal/schema';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { generatedCodecId } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
@@ -81,7 +81,7 @@ async function loadModel(project: ScenarioProject, directory: string, file: stri
   return modelConstructor as new (values?: never) => object;
 }
 
-test('tag keys preserve user fields named like descriptor metadata', () => {
+test('tag schemas keep user fields named like descriptor metadata', () => {
   const schema = (property: string, value: ModelTypeDescriptor): ModelTypeDescriptor => ({
     kind: 'object',
     properties: { [property]: value },
@@ -89,15 +89,11 @@ test('tag keys preserve user fields named like descriptor metadata', () => {
     additionalProperties: false,
   });
   const array: ModelTypeDescriptor = { kind: 'array', item: { kind: 'unknown' } };
-  const dateKey = validationTagKey(array, {
-    constraints: [{ kind: 'contains', schema: schema('date', { kind: 'string' }) }],
-    validations: [],
-  }, { representation: 'model' });
-  const serdeKey = validationTagKey(array, {
-    constraints: [{ kind: 'contains', schema: schema('serde', { kind: 'number' }) }],
-    validations: [],
-  }, { representation: 'model' });
-  assert.notEqual(dateKey, serdeKey, 'user property names must remain part of the tag identity');
+  const tagKey = (property: string, value: ModelTypeDescriptor): string => canonicalSchemaKey(schemaForDescriptor(
+    validationTagSchemaDescriptor(array, [{ kind: 'contains', schema: schema(property, value) }]),
+    { representation: 'model', executableBindings: true },
+  ));
+  assert.notEqual(tagKey('date', { kind: 'string' }), tagKey('serde', { kind: 'number' }), 'user property names must remain part of the tag schema');
 });
 
 interface Check {
