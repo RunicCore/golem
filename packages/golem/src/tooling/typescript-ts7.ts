@@ -999,6 +999,8 @@ export class ProgramSession implements Disposable {
    */
   parseSourceFile(filename: string, text: string): SourceFile {
     return this.withCompiler('parse', (api) => {
+      // The tree reads from the response buffer that this call owns; dispose only releases the server's copy, so a syntax walk
+      // may read the tree after it. Asking the server about a node (a symbol or a type) after dispose is not valid.
       const retained = api.createSourceFile(filename, text);
       try {
         return retained.sourceFile;

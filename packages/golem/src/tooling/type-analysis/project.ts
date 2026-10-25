@@ -516,7 +516,8 @@ export function classModelNames(file: ts.SourceFile): string[] {
   }
   const names = new Set<string>();
   for (const statement of file.statements) {
-    if (!ts.isTypeAliasDeclaration(statement) || !statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue;
+    // A generic model is refused by the analysis (RUNM1057), and a stub cannot extend it without its type arguments.
+    if (!ts.isTypeAliasDeclaration(statement) || statement.typeParameters !== undefined || !statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue;
     const type = statement.type;
     if (!ts.isTypeReferenceNode(type) || type.typeArguments === undefined) continue;
     const reference = type.typeName;
