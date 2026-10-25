@@ -44,33 +44,24 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
   const controller = new AbortController();
   t.after(() => controller.abort());
   const ran: string[][] = [];
-  let built = 0;
-  const stdout = process.stdout.write.bind(process.stdout);
-  t.mock.method(process.stdout, 'write', (chunk: string | Uint8Array, ...rest: unknown[]) => {
-    if (typeof chunk === 'string' && chunk.startsWith('Built ')) built += 1;
-    return (stdout as (chunk: string | Uint8Array, ...rest: unknown[]) => boolean)(chunk, ...rest);
-  });
   const finished = runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal, onGenerated: (jobs) => ran.push([...jobs].sort()) });
-  await until(() => built === 1, 'the first build');
+  const built = (name: string): string => { const file = path.join(root, 'build', name); return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''; };
   const companion = path.join(root, 'src/money.model.generated.ts');
-  assert.ok(fs.existsSync(companion), 'the first build generated the file');
+  await until(() => ran.length === 1 && built('use.js') !== '' && fs.existsSync(companion), 'the first build');
 
   // The model source is what both jobs read: its edit regenerates the companion, and the build that follows sees it.
   const model = path.join(root, 'src/money.model.ts');
   fs.writeFileSync(model, fs.readFileSync(model, 'utf8').replace('note: string', 'note: string; extra?: string'));
-  await until(() => built === 2, 'the rebuild after a model edit');
+  await until(() => /extra/.test(built('money.model.generated.js')), 'the rebuild after a model edit');
   assert.match(fs.readFileSync(companion, 'utf8'), /extra/);
-  assert.match(fs.readFileSync(path.join(root, 'build/money.model.generated.js'), 'utf8'), /extra/, 'the build compiled the regenerated file');
 
   // The models job's program reads the whole project, so `use.ts` is one of its inputs; the generator reads only the model.
   write(root, 'src/use.ts', `${USE}export const second = 2;\n`);
-  await until(() => built === 3, 'the rebuild after a source edit');
-  assert.match(fs.readFileSync(path.join(root, 'build/use.js'), 'utf8'), /second = 2/);
+  await until(() => /second = 2/.test(built('use.js')), 'the rebuild after a source edit');
   // The builds' own writes must start no build: any that would come has come within this time.
   await quietly();
   controller.abort();
   assert.equal((await finished).exitCode, 0);
-  assert.equal(built, 3, 'no edit started a build beyond the three');
   // Both jobs read the model source, and the generator reads nothing else: the use.ts edit reran the models job alone.
   assert.deepEqual(ran, [['generator:out', 'models:.'], ['generator:out', 'models:.'], ['models:.']], 'each edit triggered one build, and the generate step\'s writes none');
 
