@@ -164,13 +164,8 @@ function wrapSnapshotRequests(t: TestContext, wrap: (api: API, params: unknown, 
 }
 
 function throwAfterRealClose(t: TestContext, failure: Error): () => number {
-  const owned = new WeakSet<API>();
   const failing = new WeakSet<API>();
   let calls = 0;
-  wrapSnapshotRequests(t, (api, _params, send) => {
-    owned.add(api);
-    return send();
-  });
   // The failing close sits on the compiler a session started, not on a TypeScript prototype. TypeScript 7.1 defines `close`
   // as a prototype getter that returns the method, so the compiler's own property shadows it.
   onCompiler(t, api => {
@@ -181,7 +176,6 @@ function throwAfterRealClose(t: TestContext, failure: Error): () => number {
       configurable: true,
       value: () => {
         realClose();
-        if (!owned.has(api)) return;
         calls += 1;
         throw failure;
       },

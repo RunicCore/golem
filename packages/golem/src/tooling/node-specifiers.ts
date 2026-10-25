@@ -59,7 +59,8 @@ function outputExtension(filename: string, options: ts.CompilerOptions): string 
 
 /**
  * How a specifier that names the path `p` must end so that Node loads `target`, a project source whose emitted file ends in
- * `extension`. Undefined when `p` does not name the target by one of the forms of spec 3.4.
+ * `extension`. Undefined unless `p` is the target path, the target stem with a spelled extension, the stem alone, or the
+ * directory of the target when the target is its `index` file.
  */
 function suffixFor(p: string, target: string, extension: string): Suffix | undefined {
   const stem = stemOf(target);

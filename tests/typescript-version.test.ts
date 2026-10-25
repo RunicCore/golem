@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { assertGolemLoadsTypeScript, resolveTypeScript, UnsupportedTypeScriptError } from '#golem/typescript-version';
+import { assertGolemLoadsTypeScript, resolveTypeScript, TypeScriptNotInstalledError, UnsupportedTypeScriptError } from '#golem/typescript-version';
 import { command, workspace } from './support/process.js';
 
 function fakeProject(version: string): string {
@@ -49,6 +49,13 @@ test('(f) a root where neither the project nor golem has TypeScript fails naming
   writeFileSync(path.join(root, 'package.json'), '{}');
   assert.throws(() => resolveTypeScript(root, pathToFileURL(path.join(root, 'golem.js')).href), (error: unknown) => error instanceof UnsupportedTypeScriptError
     && error.message === `golem needs TypeScript 6.0+ or 7.1+ installed in ${root}.`);
+});
+test('(f2) a TypeScript that cannot be resolved for another reason than a missing package keeps the reason as the cause', () => {
+  // protects: E-34 the resolve error is chained, not swallowed
+  const root = fakeProject('6.0.3');
+  writeFileSync(path.join(root, 'node_modules', 'typescript', 'package.json'), '{ not json');
+  assert.throws(() => resolveTypeScript(root, pathToFileURL(path.join(root, 'golem.js')).href), (error: unknown) => error instanceof TypeScriptNotInstalledError
+    && (error.cause as { code?: string }).code === 'ERR_INVALID_PACKAGE_CONFIG');
 });
 test('(g) the facade refuses a TypeScript 7 project that is not the install golem loads', async () => {
   const root = fakeProject('7.1.0');

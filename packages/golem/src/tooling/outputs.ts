@@ -315,51 +315,42 @@ function saveInventory(config: GolemConfig, inventory: Inventory, files: OutputF
   atomicWrite(config.inventoryFile, `${JSON.stringify({ version: 1, files: recorded }, null, 2)}\n`, files);
 }
 
-function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, job: GolemJob, expected: ReadonlyMap<string, ExpectedArtifact>, check: boolean): string[] {
+/** `golem check` only: a file that carries a generator's marker, sits in a job's destination and no inventory entry or artifact names. A run that writes does not look. */
+function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, job: GolemJob, expected: ReadonlyMap<string, ExpectedArtifact>): void {
+  const owners = ownersOf(config);
+  const drift: string[] = [];
   if (job.kind === 'controllers') {
     const filename = path.resolve(job.options.output);
     const key = inventoryKey(config, filename);
     const current = readFile(filename);
-    const drift = current !== undefined && !expected.has(key) && !inventory.files[key] && knownOwner(current, ownersOf(config)) !== undefined
-      ? [filename]
-      : [];
-    if (check && drift.length) {
-      throw new Error(`Unrecorded generated output drift for ${job.id}:\n  ${filename}`);
-    }
-    return drift;
+    if (current !== undefined && !expected.has(key) && !inventory.files[key] && knownOwner(current, owners) !== undefined) drift.push(filename);
+  } else {
+    const roots = job.kind === 'openapi' || job.kind === 'generator'
+      ? [job.options.output]
+      : job.kind === 'models'
+        ? [modelOutputOf(job), ...modelSourceDirectories(job)]
+        : [];
+    const visited = new Set<string>();
+    const visit = (directory: string): void => {
+      const canonicalDirectory = canonicalPath(directory);
+      if (visited.has(canonicalDirectory)) return;
+      visited.add(canonicalDirectory);
+      let entries: fs.Dirent[];
+      try { entries = fs.readdirSync(directory, { withFileTypes: true }); }
+      catch (error) { if (hasErrorCode(error, 'ENOENT')) return; throw error; }
+      for (const entry of entries) {
+        if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+        const filename = path.join(directory, entry.name);
+        if (entry.isDirectory()) { visit(filename); continue; }
+        if (!entry.isFile() || (!entry.name.endsWith('.ts') && !entry.name.endsWith('.js') && !entry.name.endsWith('.NOTICES.txt') && entry.name !== 'model-manifest.json')) continue;
+        const key = inventoryKey(config, filename);
+        if (expected.has(key) || inventory.files[key]) continue;
+        if (knownOwner(fs.readFileSync(filename, 'utf8'), owners) !== undefined) drift.push(filename);
+      }
+    };
+    for (const root of roots) visit(root);
   }
-  const roots = job.kind === 'openapi' || job.kind === 'generator'
-    ? [job.options.output]
-    : job.kind === 'models'
-      ? [modelOutputOf(job), ...modelSourceDirectories(job)]
-      : [];
-  const drift: string[] = [];
-  const owners = ownersOf(config);
-  const visited = new Set<string>();
-  const visit = (directory: string): void => {
-    const canonicalDirectory = canonicalPath(directory);
-    if (visited.has(canonicalDirectory)) return;
-    visited.add(canonicalDirectory);
-    let entries: fs.Dirent[];
-    try { entries = fs.readdirSync(directory, { withFileTypes: true }); }
-    catch (error) { if (hasErrorCode(error, 'ENOENT')) return; throw error; }
-    for (const entry of entries) {
-      if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-      const filename = path.join(directory, entry.name);
-      if (entry.isDirectory()) { visit(filename); continue; }
-      if (!entry.isFile() || (!entry.name.endsWith('.ts') && !entry.name.endsWith('.js') && !entry.name.endsWith('.NOTICES.txt') && entry.name !== 'model-manifest.json')) continue;
-      const key = inventoryKey(config, filename);
-      if (expected.has(key) || inventory.files[key]) continue;
-      if (knownOwner(fs.readFileSync(filename, 'utf8'), owners) !== undefined) drift.push(filename);
-    }
-  };
-  for (const root of roots) {
-    visit(root);
-  }
-  if (check && drift.length) {
-    throw new Error(`Unrecorded generated output drift for ${job.id}:\n${drift.sort().map(filename => `  ${filename}`).join('\n')}`);
-  }
-  return drift;
+  if (drift.length) throw new Error(`Unrecorded generated output drift for ${job.id}:\n${drift.sort().map(filename => `  ${filename}`).join('\n')}`);
 }
 
 /** The files a run changed on disk: written with new content, or deleted. A file already as the run would write it is in neither list. */
@@ -392,7 +383,7 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     }
     expected.set(key, { filename, content: artifact.content, destination });
   }
-  assertNoUnrecordedOutputs(config, inventory, job, expected, check);
+  if (check) assertNoUnrecordedOutputs(config, inventory, job, expected);
   const stale: string[] = [];
   const deletions: Array<{ key: string; filename: string }> = [];
   for (const [key, artifact] of expected) {

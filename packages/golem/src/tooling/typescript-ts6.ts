@@ -6,9 +6,10 @@
  * module adds only what the classic objects lack: the `ProgramSession` overlay and input-observation contract, and
  * wrappers that give types, symbols and signatures the members golem reads.
  */
-import { statSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
+import { fileSignature, MISSING } from './input-watcher.js';
+import { assertConfigParsed } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
@@ -162,7 +163,7 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     configFilename: string,
     optionsToExtend: Golem.CompilerOptions | undefined,
     host: ParsedConfigHost,
-  ): { readonly options: Golem.CompilerOptions; readonly fileNames: string[] } | undefined;
+  ): { readonly options: Golem.CompilerOptions; readonly fileNames: string[]; readonly errors: readonly ClassicDiagnostic[] } | undefined;
   getPreEmitDiagnostics(program: ClassicProgram): readonly ClassicDiagnostic[];
   resolveModuleName(
     moduleName: string,
@@ -201,7 +202,9 @@ export const {
   forEachChild,
   formatDiagnostics,
   getDecorators,
+  getLeadingCommentRanges,
   getModifiers,
+  getTrailingCommentRanges,
   isArrayLiteralExpression,
   isArrayTypeNode,
   isArrowFunction,
@@ -222,6 +225,7 @@ export const {
   isExportDeclaration,
   isExportSpecifier,
   isExpression,
+  isExpressionStatement,
   isExpressionWithTypeArguments,
   isFunctionDeclaration,
   isFunctionExpression,
@@ -641,18 +645,6 @@ function withText(diagnostic: ClassicDiagnostic): Golem.Diagnostic & ClassicDiag
   return Object.create(diagnostic, { text: { value: headText(diagnostic.messageText), enumerable: true }, pos: { value: diagnostic.start, enumerable: true }, fileName: { value: diagnostic.file?.fileName, enumerable: true } }) as Golem.Diagnostic & ClassicDiagnostic;
 }
 
-const MISSING = 'missing';
-
-function fileSignature(filename: string): string {
-  try {
-    const stat = statSync(filename, { throwIfNoEntry: false });
-    if (!stat) return MISSING;
-    return stat.isDirectory() ? 'directory' : `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
-  } catch {
-    return MISSING;
-  }
-}
-
 /** A change to a package manifest or an installed package invalidates cached module resolution. */
 function affectsResolution(filename: string): boolean {
   return basename(filename) === 'package.json' || filename.split(sep).includes('node_modules');
@@ -764,6 +756,12 @@ export class ProgramSession implements Disposable {
     return held;
   }
 
+  /** Parse one source text on its own, without a program. */
+  parseSourceFile(filename: string, text: string): Golem.SourceFile {
+    this.assertOpen();
+    return classic.createSourceFile(filename, text, classic.ScriptTarget.ES2022);
+  }
+
   /**
    * Resolve a module name that no program imports, such as one an SDK manifest names. The lookup sees the disk and `virtualFiles`, the
    * same files as on the TypeScript 7 lane. The classic resolver takes the mode after its cache and redirect arguments.
@@ -847,6 +845,7 @@ export class ProgramSession implements Disposable {
       },
     });
     if (!parsed) throw new Error(`The TypeScript configuration ${configPath} could not be parsed.`);
+    assertConfigParsed(configPath, parsed.errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
     return { options: parsed.options, fileNames: parsed.fileNames };
   }
 

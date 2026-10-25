@@ -27,6 +27,8 @@ import {
   sep,
 } from 'node:path';
 import * as ast from 'typescript/ast';
+import { fileSignature, MISSING } from './input-watcher.js';
+import { assertConfigParsed } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
@@ -838,18 +840,6 @@ interface ProgramRequest {
   readonly hidden: ReadonlySet<string>;
 }
 
-const MISSING = 'missing';
-
-function fileSignature(filename: string): string {
-  try {
-    const stat = statSync(filename, { throwIfNoEntry: false });
-    if (!stat) return MISSING;
-    return stat.isDirectory() ? 'directory' : `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
-  } catch {
-    return MISSING;
-  }
-}
-
 function directoryEntries(directory: string): string {
   try {
     return readdirSync(directory).sort().join('\0');
@@ -996,9 +986,28 @@ export class ProgramSession implements Disposable {
   parseConfigFile(configPath: string, onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] } {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
-      return api.parseConfigFile(configPath);
+      const result = api.parseConfigFile(configPath);
+      assertConfigParsed(configPath, result.errors);
+      return result;
     });
     return { options: parsed.options as CompilerOptions, fileNames: parsed.fileNames };
+  }
+
+  /**
+   * Parse one source text on its own, without a program. The syntax tree reads from its own buffer, so the compiler's lease on
+   * the file ends here.
+   */
+  parseSourceFile(filename: string, text: string): SourceFile {
+    return this.withCompiler('parse', (api) => {
+      // The tree reads from the response buffer that this call owns; dispose only releases the server's copy, so a syntax walk
+      // may read the tree after it. Asking the server about a node (a symbol or a type) after dispose is not valid.
+      const retained = api.createSourceFile(filename, text);
+      try {
+        return retained.sourceFile;
+      } finally {
+        retained.dispose();
+      }
+    });
   }
 
   /**
@@ -1089,19 +1098,22 @@ export class ProgramSession implements Disposable {
    * The compiler builds a project only from a configuration, so a requested root outside the configuration's own files (an
    * external model root, or a file that exists only as an overlay) needs a derived configuration. It extends the project's
    * own and lists exactly what the TypeScript 6 backend gives the compiler: the files the project's configuration parses to,
-   * plus the requested roots. `include` is emptied so the list is the whole project.
+   * plus the requested roots. `include` is emptied so the list is the whole project. A program with no requested root still parses
+   * the configuration here, so a configuration with errors fails the same way on both backends.
    */
   private withRequestedRoots(api: API, base: ProgramRequest, onInput: ((filename: string) => void) | undefined): ProgramRequest {
-    if (base.files.length === 0) return base;
     const previous = this.overlays;
     this.setOverlays(base.overlays);
     this.observe(onInput, base.hidden);
     let parsed: { readonly fileNames: readonly string[] };
     try {
-      parsed = api.parseConfigFile(base.configPath);
+      const result = api.parseConfigFile(base.configPath);
+      assertConfigParsed(base.configPath, result.errors);
+      parsed = result;
     } finally {
       this.setOverlays(previous);
     }
+    if (base.files.length === 0) return base;
     const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}.roots.json`);
     const files = [...new Set([...parsed.fileNames.map(canonical), ...base.files])];
     const overlays = new Map(base.overlays);

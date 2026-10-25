@@ -33,6 +33,7 @@ in the sections below.
 - A model defined by a mapped type over its own class still stops with [`RUNM1058`](docs/reference/diagnostics.md#runm1058). The message now names the model and the class, and tells you to declare the fields in the model.
 - A tagged field that you reach through `Pick` keeps its validation tag on every run. Before, the second run dropped the tag.
 - `TValidation` and `TSerde` accept functions that you declare as typed consts, such as `export const check: (v: string) => boolean = ...`. A nullable union member that you write through a tag alias, such as `Inner<5> & string | null`, now stops generation with [`RUNM1064`](docs/reference/diagnostics.md#runm1064). Before, it generated a validator that rejected every plain string.
+- An `IModel` or `IObject` whose fields type is not an object type, such as `IModel<string[]>`, `IObject<Date[]>` or `IModel<string>`, or is a type that a `TSerde` converts as a whole, stops generation with [`RUNM1052`](docs/reference/diagnostics.md#runm1052), and the message names what it found. Before, an array root wrote an invalid model file or stopped with a wrong [`RUNM1004`](docs/reference/diagnostics.md#runm1004), and a whole-object `TSerde` root wrote a file that did not compile. A root union keeps the same code. A fields type that does not resolve, such as a missing import, stops with [`RUNM1058`](docs/reference/diagnostics.md#runm1058).
 - Validation of an object type with no named properties is faster, and `stringify` of a map of numbers, such as `{ [key: string]: number }`, is faster. The results are the same.
 
 ### OpenAPI
@@ -43,6 +44,7 @@ in the sections below.
 - A generated model with no fields, no base model and no additional properties names its constructor parameter `_values` and its encode parameter `_model`, so the SDK compiles with `noUnusedParameters`.
 - The generated codec code holds no runs of two blank lines. An SDK that you commit shows blank-line changes after you generate it again.
 - `schemaType()` from `@exprtlabs/golem-openapi/generator` accepts a qualifier only as identifiers that each end in a dot, such as `InputSchemas.`.
+- `golem-ts-openapi` treats a query or path parameter type as a branded primitive only when its extra members are golem tags. A brand from another library, such as a `tag` key, now stops generation with [`NEST1107`](docs/reference/diagnostics.md#nest1107). Before, golem took any member whose name held `tag`, `serde`, `validation` or `constraint` as a brand.
 
 ### Generation
 
@@ -51,6 +53,7 @@ in the sections below.
 - Generated files import only the runtime names, helpers and models that their code uses, and hold only the helpers that their code calls. A field named like a runtime export, such as `parseJson`, now compiles with `noUnusedLocals`. Before, the unused import stayed.
 - A generated `stringify` function whose body reads no value names its parameter `_value`, so it compiles with `noUnusedParameters`.
 - `golem build` writes the import paths that Node loads in declaration files (`.d.ts`) too, as it does in JavaScript.
+- **Breaking:** `FileRewrite` from `@exprtlabs/golem/rewrite` has a required `importsAt`, the offset where `applyRewrites` puts the imports. Golem finds it from the parsed file, so a string expression such as `'use client' + suffix;` is no longer taken for a directive.
 - A `@Body()` or `@Query()` parameter that `NestModelInterceptor` rejects stops `golem build`, `golem check`, the Vite plugin, the esbuild plugin and the Node loader with [`RUNM1081`](docs/reference/diagnostics.md#runm1081). This holds for a whole parameter and for one field, such as `@Body('name')`. If your own interceptor handles these parameters, set `nonModelInputs: warn` in `golem.yaml`; the diagnostic is then a warning. `golem build` and `golem check` print the warning. The plugins and the loader continue and print nothing.
 - On TypeScript 7, a package subpath that the `exports` map of its package hides does not resolve, as on TypeScript 6.
 - Fix: `golem build --watch` in a models project no longer builds a second time right after its first build, when the first build created the folders of the generated files.
@@ -61,6 +64,7 @@ in the sections below.
 - The Vite plugin sends one full reload for the file events of one watch run (the first event opens a 100 ms window and the events inside it share one reload), not one for each file. [`RUNM1067`](docs/reference/diagnostics.md#runm1067) says to wait for `golem generate` or `golem watch` when the generated file of the model is missing.
 - `golem build --watch` removes the files it wrote for a source that you delete: the JavaScript, declaration and map files in `outDir` and `declarationDir`, and the folders that become empty. It removes only files it wrote for that source.
 - `golem exec --watch` generates a model file that you create while its first run is in progress.
+- A `tsconfig.json` with errors, such as an unknown option or a bad value, stops `golem generate` and `golem build` with the compiler's messages. Before, golem dropped them. In `golem build --watch`, the run fails and the watch goes on; fixing the file starts a new build. `golem generate` no longer lists the output folders; only `golem check` looks for files golem did not write.
 - A `golem.yaml` or an OpenAPI input that is not valid YAML stops the run with a message that starts with the file, the line and the column. `@exprtlabs/golem/generator-api` exports `parseYamlFile` and `YamlFileError`.
 
 ## 1.0.0

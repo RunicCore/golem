@@ -22,10 +22,12 @@ export interface RewriteImport {
   readonly names: readonly string[];
 }
 
-/** What a host does to one file: the edits and the aliased imports they need. */
+/** What a host does to one file: the edits, the aliased imports they need, and where those imports go. */
 export interface FileRewrite {
   readonly edits: readonly RewriteEdit[];
   readonly imports: readonly RewriteImport[];
+  /** UTF-16 offset in the original text, after a leading shebang and the directive prologue. Read only when `imports` is not empty. */
+  readonly importsAt: number;
 }
 
 export const REWRITE_IMPORT_PREFIX = '__golem_';
@@ -49,32 +51,6 @@ function inconsistent(edit: RewriteEdit, text: string, file: string | undefined)
   return new Error(`golem rewrite is inconsistent${file === undefined ? '' : ` for ${file}`} at line ${line}: the edit at ${edit.start}-${edit.end} is out of range, overlaps another edit, or no longer matches the text it expects; run golem generate`);
 }
 
-const LINE_TEXT = '[^\\r\\n\\u2028\\u2029]';
-// Whitespace and comments that may sit before a directive.
-const PROLOGUE_TRIVIA = new RegExp(`(?:\\s+|//${LINE_TEXT}*|/\\*[\\s\\S]*?\\*/)*`, 'y');
-// One directive: a string literal statement. A trailing comment and the line break that end its line belong to it.
-const DIRECTIVE = new RegExp(`(['"])(?:(?!\\1)[^\\\\\\r\\n\\u2028\\u2029]|\\\\[\\s\\S])*\\1[ \\t]*(?:;(?:[ \\t]*(?://${LINE_TEXT}*)?(?:${LINE_BREAK_SOURCE}|$))?|(?://${LINE_TEXT}*)?(?:${LINE_BREAK_SOURCE}|$))`, 'y');
-
-/** Offset after a leading shebang line and the whole directive prologue (`'use strict'`, `'use client'`, ...). */
-function importInsertOffset(text: string): number {
-  let offset = 0;
-  if (text.startsWith('#!')) {
-    LINE_BREAK.lastIndex = 0;
-    const lineEnd = LINE_BREAK.exec(text);
-    offset = lineEnd ? lineEnd.index + lineEnd[0].length : text.length;
-  }
-  let position = offset;
-  for (;;) {
-    PROLOGUE_TRIVIA.lastIndex = position;
-    PROLOGUE_TRIVIA.exec(text);
-    DIRECTIVE.lastIndex = PROLOGUE_TRIVIA.lastIndex;
-    const match = DIRECTIVE.exec(text);
-    if (!match) return offset;
-    position = DIRECTIVE.lastIndex;
-    offset = position;
-  }
-}
-
 const QUOTE_ESCAPED = new RegExp("[\\\\'\\n\\r\\u2028\\u2029]", 'g');
 const QUOTE_ESCAPES: Readonly<Record<string, string>> = {
   '\\': '\\\\', "'": "\\'", '\n': '\\n', '\r': '\\r', '\u2028': '\\u2028', '\u2029': '\\u2029',
@@ -86,11 +62,10 @@ function quote(from: string): string {
 }
 
 /**
- * One aliased import line per entry, prepended after a leading shebang and the
+ * One aliased import line per entry, inserted at `at`, after a leading shebang and the
  * directive prologue. Existing imports are never read or edited.
  */
-function importEdits(text: string, imports: readonly RewriteImport[]): RewriteEdit[] {
-  const at = importInsertOffset(text);
+function importEdits(text: string, imports: readonly RewriteImport[], at: number): RewriteEdit[] {
   const lineBreakBefore = at === 0 || '\r\n\u2028\u2029'.includes(text.charAt(at - 1));
   return imports.map(({ from, names }, position) => ({
     start: at,
@@ -119,7 +94,7 @@ export function applyRewrites(source: string, rewrite: FileRewrite, file?: strin
   const mark = source.slice(0, source.length - text.length);
 
   // Imports first, so an import insertion precedes an edit inserted at the same offset.
-  const edits = [...importEdits(text, rewrite.imports), ...rewrite.edits]
+  const edits = [...importEdits(text, rewrite.imports, rewrite.importsAt), ...rewrite.edits]
     .map((edit, order) => ({ edit, order }))
     .sort((a, b) => a.edit.start - b.edit.start || Number(a.edit.end !== a.edit.start) - Number(b.edit.end !== b.edit.start) || a.order - b.order)
     .map(({ edit }) => edit);

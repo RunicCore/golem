@@ -264,7 +264,8 @@ function userAliasName(type: ts.Type): string | undefined {
   return declaration ? aliasProjectionName(declaration) : undefined;
 }
 
-function isErrorAny(type: ts.Type): boolean {
+/** The `any` of a type that did not resolve, such as a failed import. */
+export function isErrorAny(type: ts.Type): boolean {
   return (type.flags & ts.TypeFlags.Any) !== 0
     && type.aliasSymbol !== undefined
     && (type.aliasSymbol.flags & ts.SymbolFlags.Transient) !== 0;

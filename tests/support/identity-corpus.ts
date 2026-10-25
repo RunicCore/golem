@@ -80,7 +80,7 @@ export const EXPECTED_REJECTIONS: Readonly<Record<string, string>> = {
   'model-composition/a-projected-child-applies-the-containing-model-allowany-policy': 'RUNM1011: Model TContainer contains any. Replace it with a concrete type, or allow it with',
   'model-composition/anonymous-nested-imodel-declarations-fail-with-an-actionable-diagnostic': 'RUNM1053: Nested IModel definitions need a named, exported declaration',
   'model-composition/generic-model-templates-require-a-concrete-named-declaration': 'RUNM1057: IModel declarations must have concrete fields',
-  'model-composition/imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts': 'RUNM1052: Root IModel unions are unsupported',
+  'model-composition/imodel-exposes-fields-and-rejects-root-unions-before-emitting-artifacts': 'RUNM1052: The IModel fields type must be an object type, but TItem has a union',
   'controller/does-not-treat-a-project-local-string-function-as-a-swagger-primitive-construc': 'NEST1503: Swagger property value type conflicts',
   'controller/keeps-nest-runtime-status-authoritative-over-apinocontentresponse': 'NEST1311: Swagger success response status 204 conflicts',
   'controller/rejects-a-swagger-schema-that-conflicts-with-an-authoritative-imodel-wire-cont': 'NEST1503: Swagger schema at response.200.application/json.properties.id.type is "number"',

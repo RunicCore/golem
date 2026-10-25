@@ -195,7 +195,7 @@ function writeExports({ module, target, fastRootExports }: Emission, stayingSlot
  * Emits the module: one function per distinct behavior and one exported wrapper per root, named by `exportNames`.
  * Every check is written once: a forwarding function, and a function the same as another, are not emitted, and
  * their callers call the one that is. With `fastPath`, each root that has a fast check (see `FastPlan`) also exports
- * `is_X`, and only the fast checks those reach are written (spec 5.1 rule 9).
+ * `is_X`, and only the fast checks those reach are written.
  */
 export function emit(module: IrModule, options: EmitOptions): EmitResult {
   const emission = startEmission(module, options.fastPath);
