@@ -10,6 +10,13 @@ import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
 import { command, golem, workspace } from './support/process.js';
+import { runRewritten } from './support/rewritten-module.js';
+
+/** The built module, run with its imports stubbed, asks the runtime for the TMoney codec: golem rewrote its calls. */
+function assertMoneyCodec(file: string, message?: string): void {
+  const ids = runRewritten(fs.readFileSync(file, 'utf8')).codecIds;
+  assert.ok(ids.length > 0 && ids.every((id) => /^TMoney_[0-9a-f]{8}$/.test(id)), `${message ?? file}: ${ids.join(', ')}`);
+}
 import { write, editTsconfig, serdeProject, PAYMENTS_CONTROLLER, USE, build, mtimes, golemBuild, assertCallMap } from './support/build-project.js';
 
 /** A project with a golem.yaml whose models job generates the serde model, and the files golem generate wrote. */
@@ -213,7 +220,7 @@ test('a parent tsconfig builds every package under it, and no package gets build
   }
   assert.equal((await build(root)).exitCode, 0);
   assert.equal(fs.existsSync(path.join(root, 'packages/a/.golem')), false);
-  for (const name of ['a', 'b']) assert.match(fs.readFileSync(path.join(root, `build/packages/${name}/src/use.js`), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
+  for (const name of ['a', 'b']) assertMoneyCodec(path.join(root, `build/packages/${name}/src/use.js`));
 });
 
 test('a package without a tsconfig of its own, under a parent tsconfig, builds with the build state of the parent', async (t) => {
@@ -235,8 +242,8 @@ test('a package without a tsconfig of its own, under a parent tsconfig, builds w
   assert.equal(fs.existsSync(path.join(root, 'packages/a/.golem')), false, 'the package gets no state of its own');
 
   assert.equal((await build(root)).exitCode, 0);
-  assert.match(fs.readFileSync(path.join(root, 'build/packages/a/src/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
-  assert.match(fs.readFileSync(path.join(root, 'build/packages/b/src/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/);
+  assertMoneyCodec(path.join(root, 'build/packages/a/src/use.js'));
+  assertMoneyCodec(path.join(root, 'build/packages/b/src/use.js'));
 });
 
 
@@ -282,7 +289,7 @@ export function read(text: string): unknown { return parse<{ note: string }>(tex
 
   await runPipeline(path.join(app, 'golem.yaml'), { check: true });
   assert.equal((await build(app)).exitCode, 0);
-  assert.match(fs.readFileSync(path.join(app, 'build/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/, 'the app\'s own sites are rewritten');
+  assertMoneyCodec(path.join(app, 'build/use.js'), 'the app\'s own sites are rewritten');
 });
 
 test('a source without a rewrite site that the tsconfig includes outside its directory passes golem check and builds, whatever the project emits', async (t) => {
@@ -310,7 +317,7 @@ test('a source without a rewrite site that the tsconfig includes outside its dir
   editTsconfig(app, (tsconfig) => { tsconfig.include = ['src/**/*.ts', '../shared/typings.d.ts']; });
   await runPipeline(config, { check: true });
   assert.equal((await build(app)).exitCode, 0);
-  assert.match(fs.readFileSync(path.join(app, 'build/use.js'), 'utf8'), /requireObjectCodec\("TMoney_[0-9a-f]{8}"\)\.stringify\(/, 'the app\'s own sites are rewritten');
+  assertMoneyCodec(path.join(app, 'build/use.js'), 'the app\'s own sites are rewritten');
 
   // A TypeScript source outside the root: the rootDir that holds it sets the layout, as it does under tsc.
   write(outer, 'shared/plain.ts', 'export const plain = 1;\n');
@@ -364,5 +371,5 @@ export const money = parse<TMoney>(text);
     tsconfig.compilerOptions.rootDir = '..';
   });
   assert.equal((await build(app)).exitCode, 0);
-  assert.match(fs.readFileSync(path.join(app, 'build/shared/site.js'), 'utf8'), /export const money = __golem_requireObjectCodec\("TMoney_[0-9a-f]+"\)\.parse\(text\);/);
+  assertMoneyCodec(path.join(app, 'build/shared/site.js'));
 });
