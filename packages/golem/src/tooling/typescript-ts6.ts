@@ -202,6 +202,7 @@ export const {
   forEachChild,
   formatDiagnostics,
   getDecorators,
+  getLeadingCommentRanges,
   getModifiers,
   getTrailingCommentRanges,
   isArrayLiteralExpression,

@@ -36,6 +36,7 @@ export const {
   forEachChild,
   formatDiagnostics,
   getDecorators,
+  getLeadingCommentRanges,
   getModifiers,
   getPreEmitDiagnostics,
   getTrailingCommentRanges,

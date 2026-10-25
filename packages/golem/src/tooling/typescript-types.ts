@@ -669,6 +669,8 @@ export interface TypeScriptBackend {
   getDecorators(node: Node): readonly Decorator[] | undefined;
   getModifiers(node: Node): readonly Node[] | undefined;
   getPreEmitDiagnostics(program: Program): readonly Diagnostic[];
+  /** The comments between `position` and the next token that start on a later line (all of them at position 0), in source order. Undefined when there are none. */
+  getLeadingCommentRanges(text: string, position: number): readonly CommentRange[] | undefined;
   /** The comments that follow `position` on its own line, in source order. Undefined when there are none. */
   getTrailingCommentRanges(text: string, position: number): readonly CommentRange[] | undefined;
   /** TypeScript 7 names a type parameter's default `defaultType`; TypeScript 6 names it `default`. */
