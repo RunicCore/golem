@@ -11,8 +11,11 @@ import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { MODEL_CODEC_IDS_KEY } from '@exprtlabs/golem/internal/schema';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
+import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 
-import { compileSchema, compileValidatorModule, compileValidators } from './support/compiled-validators.js';
+import { compileSchema, compileValidationPlan, compileValidatorModule, compileValidators } from './support/compiled-validators.js';
 import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { TSC } from './support/build-project.js';
 import { command, workspace } from './support/process.js';
@@ -816,14 +819,56 @@ test('golemModelInstance without required lets a plain object through when it na
   await assertIssues({ golemModelInstance: { among: ['Dog', 'Cat'], required: false } }, new Dog(), [{ path: [], code: 'instance', model: 'Dog' }]);
 });
 
-test('golemModelInstance matches a hashed codec id exactly and an unhashed name against its hashed ids', async () => {
+test('golemModelInstance matches a registered codec id exactly, never by a prefix of it', async () => {
+  // protects: bug T-294 a hashed id is never guessed from a name
   const Order = modelClass('Order_1a2b3c4d');
   await assertIssues({ golemModelInstance: { of: 'Order_1a2b3c4d', among: ['Order_1a2b3c4d'], required: true } }, new Order(), []);
-  await assertIssues({ golemModelInstance: { of: 'Order', among: ['Order'], required: true } }, new Order(), []);
   await assertIssues({ golemModelInstance: { of: 'Order_ffffffff', among: ['Order_ffffffff'], required: true } }, new Order(), [
     { path: [], code: 'instance', model: 'Order_ffffffff' },
   ]);
-  await assertIssues({ golemModelInstance: { of: 'Ord', among: ['Ord'], required: true } }, new Order(), [{ path: [], code: 'instance', model: 'Ord' }]);
+  const Named = modelClass('Order_1a2b3c4d_ffffffff');
+  await assertIssues({ golemModelInstance: { of: 'Order_1a2b3c4d', among: ['Order_1a2b3c4d'], required: true } }, new Named(), [
+    { path: [], code: 'instance', model: 'Order_1a2b3c4d' },
+  ]);
+});
+
+/** A graph that holds a plain model of one tag; `name` is the model name, and the graph sealed. */
+function graphOf(...models: readonly (readonly [string, string])[]): ReturnType<typeof createSchemaGraph> {
+  const graph = createSchemaGraph();
+  for (const [name, tag] of models) {
+    const descriptor: ModelTypeDescriptor = { kind: 'object', properties: { kind: { kind: 'literal', value: tag } }, required: ['kind'], additionalProperties: false };
+    graph.intern(descriptor, name);
+  }
+  graph.seal();
+  return graph;
+}
+
+test('a plan resolves a model name to its codec id, and the compiled check tells a model named like a hashed id from the model it is named after', async () => {
+  // protects: bug T-294 a model named like a codec id keeps its full name in codec identity
+  const graph = graphOf(['Order', 'plain'], ['Order_0badc0de', 'suffixed']);
+  const [order, suffixed] = ['Order', 'Order_0badc0de'].map((name) => [...graph.nodes.values()].find((node) => node.name === name)!.codecId);
+  const keyword = { of: 'Order_0badc0de', among: ['Order', 'Order_0badc0de'], required: true };
+  const plan = buildCodecValidationPlan(graph, [], { Holder: { golemModelInstance: keyword } });
+  assert.deepEqual(JSON.parse(JSON.stringify(plan.schemas.Holder)), { golemModelInstance: { ...keyword, of: suffixed, among: [order, suffixed] }, $id: 'Holder' });
+  const { Holder } = await compileValidationPlan(plan);
+  assert.deepEqual(Holder(new (modelClass(suffixed))(), true), []);
+  assert.deepEqual(Holder(new (modelClass(order))(), true), [{ path: [], code: 'instance', model: suffixed }]);
+});
+
+test('a plan that cannot tell which model a name means says so, and a codec id is never ambiguous', () => {
+  // protects: bug T-294 a name shared by two graphs is an error naming the keyword, not a silent pick
+  const graphs = [graphOf(['Order', 'one']), graphOf(['Order', 'two'])];
+  const [one, two] = graphs.map((graph) => [...graph.nodes.values()][0]!.codecId);
+  assert.throws(
+    () => buildCodecValidationPlan(graphs, [], { Holder: { golemModelInstance: { of: 'Order', among: ['Order'], required: true } } }),
+    /the golemModelInstance model name "Order" is ambiguous between codec identities/,
+  );
+  const plan = buildCodecValidationPlan(graphs, [], { Holder: { golemModelInstance: { of: one, among: [one, two], required: true } } });
+  assert.deepEqual(JSON.parse(JSON.stringify(plan.schemas.Holder)), { golemModelInstance: { of: one, among: [one, two], required: true }, $id: 'Holder' });
+  // A model named like the codec id of another is one name for two models; the id itself still means one.
+  const lookalike = graphOf([one, 'three']);
+  const withLookalike = buildCodecValidationPlan([graphs[0]!, lookalike], [], { Holder: { golemModelInstance: { of: one, among: [one], required: true } } });
+  assert.equal((withLookalike.schemas.Holder as { golemModelInstance: { of: string } }).golemModelInstance.of, one);
 });
 
 test('golemModelInstance reports at the path of the value it checks', async () => {
