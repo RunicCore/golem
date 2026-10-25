@@ -492,3 +492,30 @@ export class OrdersController {
     (error: unknown) => String(error).includes(`RUNM1074: ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.`),
   );
 });
+
+test('a named query parameter keeps a golem tag member as a brand, and a user property called tag makes it non-primitive', async t => {
+  // protects: E-33 a brand is found by the golem tag symbol, not by a property name
+  const controller = (parameterType: string): string => `import { Controller, Get, Query } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+import type { MinLength } from '@exprtlabs/golem/tags';
+
+class ItemDto {
+  name!: string;
+}
+
+@Controller('items')
+export class ItemsController {
+  @Get()
+  @ApiOkResponse({ type: ItemDto })
+  list(@Query('filter') filter: ${parameterType}): ItemDto { return { name: filter as string }; }
+}
+`;
+  const branded = await generateFixture(fixture(t, controller('string & MinLength<3>')));
+  const parameter = expectValue(operationOf(documentOf(branded), '/items', 'get').parameters?.[0], 'filter parameter');
+  assert.equal(parameter.name, 'filter');
+
+  await assert.rejects(
+    generateFixture(fixture(t, controller('string & { tag: string }'))),
+    (error: unknown) => String(error).includes('NEST1107'),
+  );
+});
