@@ -300,6 +300,8 @@ async function openApiParameter(
   if (schemaRecord) schema = schemaRecord;
   const style = typeof override?.style === 'string'
     ? override.style
+    // A model is an object: a query object is `name[field]=value`, which is what the interceptor reads.
+    : location === 'query' && parameter.type.modelContractName !== undefined ? 'deepObject'
     : location === 'query' || location === 'cookie' ? 'form' : 'simple';
   const explode = typeof override?.explode === 'boolean'
     ? override.explode
@@ -322,14 +324,29 @@ function explicitContent(value: unknown): Record<string, unknown> | undefined {
   return record(value);
 }
 
+async function bodyFieldsSchema(
+  context: OperationBuildContext,
+  fields: readonly ControllerParameter[],
+): Promise<OpenApiSchema> {
+  const properties = Object.fromEntries(await Promise.all(fields.map(async (field) => [
+    field.name!,
+    await schemaFor(context, field.type, 'request', `body.${field.name}`),
+  ] as const)));
+  const required = fields.filter(field => field.required).map(field => field.name!);
+  return { type: 'object', properties, ...(required.length > 0 ? { required } : {}) };
+}
+
 async function requestBody(
   context: OperationBuildContext,
   route: ControllerRoute,
 ): Promise<Record<string, unknown> | undefined> {
-  if (!route.body && !route.requestBody) return undefined;
+  const fields = route.parameters.filter(parameter => parameter.location === 'body');
+  if (!route.body && !route.requestBody && fields.length === 0) return undefined;
   const override = route.requestBody;
   const declaredType = override?.declaredType ?? route.body?.type;
   const bodyType = declaredType ?? override?.type;
+  // The body of one-field parameters: an object that holds each field under its name.
+  const fieldsSchema = bodyType || fields.length === 0 ? undefined : await bodyFieldsSchema(context, fields);
   if (declaredType && override?.type && override.type !== declaredType) {
     const declaredSchema = await schemaFor(context, declaredType, 'request', 'body.declared');
     let overrideSchema = await schemaFor(context, override.type, 'request', 'body.override');
@@ -369,7 +386,7 @@ async function requestBody(
         continue;
       }
       if (!bodyType) {
-        generatedContent[media] = mediaRecord;
+        generatedContent[media] = fieldsSchema ? { ...mediaRecord, schema: fieldsSchema } : mediaRecord;
         continue;
       }
       const schema = await schemaFor(context, declaredType ?? bodyType, 'request', `body.${media}`);
@@ -379,9 +396,10 @@ async function requestBody(
       };
     }
   }
+  const requiredBody = override?.required ?? route.body?.required ?? (fields.length > 0 ? fields.some(field => field.required) : undefined);
   return {
     ...(override?.description ? { description: override.description } : {}),
-    ...((override?.required ?? route.body?.required) === undefined ? {} : { required: override?.required ?? route.body?.required }),
+    ...(requiredBody === undefined ? {} : { required: requiredBody }),
     content: generatedContent,
   };
 }
@@ -480,7 +498,9 @@ async function operationObject(
   context: OperationBuildContext,
   route: ControllerRoute,
 ): Promise<Record<string, unknown>> {
-  const parameters = await Promise.all(route.parameters.map(parameter => openApiParameter(context, route, parameter)));
+  // A one-field body parameter is a property of the request body, not an OpenAPI parameter.
+  const parameters = await Promise.all(route.parameters.filter(parameter => parameter.location !== 'body')
+    .map(parameter => openApiParameter(context, route, parameter)));
   const placeholders = pathParameterNames(route.path);
   for (const placeholder of placeholders) {
     if (!parameters.some(parameter => parameter.in === 'path' && parameter.name === placeholder)) {

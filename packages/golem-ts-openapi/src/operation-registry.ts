@@ -5,7 +5,9 @@ interface OperationCodecMap {
   readonly input: Readonly<Record<string, string>>;
   readonly output: Readonly<Record<string, string>>;
   readonly query: Readonly<Record<string, string>>;
-  readonly methods: Readonly<Record<string, { readonly input?: string; readonly output?: string; readonly query?: string }>>;
+  /** The model of each one-field `@Body('name')` and `@Query('name')` parameter, keyed `body:name` or `query:name`. */
+  readonly fields: Readonly<Record<string, Readonly<Record<string, string>>>>;
+  readonly methods: Readonly<Record<string, { readonly input?: string; readonly output?: string; readonly query?: string; readonly fields?: Readonly<Record<string, string>> }>>;
 }
 
 function routeKey(route: ControllerRoute): string {
@@ -20,26 +22,33 @@ function collectOperationCodecs(routes: readonly ControllerRoute[]): OperationCo
   const input: Record<string, string> = {};
   const output: Record<string, string> = {};
   const query: Record<string, string> = {};
-  const methods: Record<string, { input?: string; output?: string; query?: string }> = {};
+  const fields: Record<string, Record<string, string>> = {};
+  const methods: Record<string, { input?: string; output?: string; query?: string; fields?: Record<string, string> }> = {};
   for (const route of routes) {
     const inputName = route.body?.type.modelContractName
       ?? route.requestBody?.declaredType?.modelContractName
       ?? route.requestBody?.type?.modelContractName;
-    const queryName = route.parameters.find((parameter) => parameter.location === 'querystring' || parameter.location === 'query')
-      ?.type.modelContractName;
+    const queryName = route.parameters.find((parameter) => parameter.location === 'querystring')?.type.modelContractName;
+    const fieldNames = Object.fromEntries(route.parameters.flatMap((parameter) => parameter.name !== undefined
+      && (parameter.location === 'body' || parameter.location === 'query') && parameter.type.modelContractName !== undefined
+      ? [[`${parameter.location}:${parameter.name}`, parameter.type.modelContractName] as const]
+      : []));
     const success = route.responses.find((response) => response.status === '200' || response.status === '201');
     const outputName = success?.declaredType?.modelContractName ?? success?.type?.modelContractName;
     const key = routeKey(route);
     if (inputName) input[key] = inputName;
     if (outputName) output[key] = outputName;
     if (queryName) query[key] = queryName;
+    const hasFields = Object.keys(fieldNames).length > 0;
+    if (hasFields) fields[key] = fieldNames;
     methods[methodKey(route)] = {
       ...(inputName ? { input: inputName } : {}),
       ...(outputName ? { output: outputName } : {}),
       ...(queryName ? { query: queryName } : {}),
+      ...(hasFields ? { fields: fieldNames } : {}),
     };
   }
-  return { input, output, query, methods };
+  return { input, output, query, fields, methods };
 }
 
 export function emitOperationRegistry(
@@ -52,6 +61,7 @@ export function emitOperationRegistry(
     `export const OPERATION_CODECS = ${JSON.stringify(codecs.input, null, 2)} as const;`,
     `export const OPERATION_OUTPUT_CODECS = ${JSON.stringify(codecs.output, null, 2)} as const;`,
     `export const OPERATION_QUERY_CODECS = ${JSON.stringify(codecs.query, null, 2)} as const;`,
+    `export const OPERATION_FIELD_CODECS = ${JSON.stringify(codecs.fields, null, 2)} as const;`,
     `export const OPERATION_METHOD_KEYS = ${JSON.stringify(codecs.methods, null, 2)} as const;`,
     '',
   ].join('\n');

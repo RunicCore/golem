@@ -337,8 +337,16 @@ export function parseParameters(
     const required = !isOptionalParameter(parameter, parameterType.type);
     const name = location.name;
     if (location.location === 'body') {
+      // The interceptor reads a whole body or its fields, never both, and it converts only a model field.
+      if (name !== undefined ? body !== undefined : parameters.some(item => item.location === 'body')) {
+        throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, `@Body(${name === undefined ? '' : `"${name}"`}) cannot share an operation with ${name === undefined ? 'a one-field @Body("field")' : 'a whole @Body()'}: both read the request body. Declare the whole body as one model, or use one-field parameters only.`));
+      }
       if (name !== undefined) {
-        throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, '@Body("field") is not flattened implicitly; declare an explicit request-body contract.'));
+        if (parameterType.modelContractName === undefined) {
+          throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, `@Body("${name}") must be an IModel or IObject; any other type needs a whole @Body() or an explicit request-body contract.`));
+        }
+        parameters.push({ node: parameter, type: parameterType, location: 'body', name, required });
+        return;
       }
       body = {
         node: parameter,
@@ -349,8 +357,9 @@ export function parseParameters(
       return;
     }
     if (name !== undefined) {
-      if (!isFlatParameterType(context.checker, parameterType.type)) {
-        throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `Named @${location.location} parameter ${name} must be primitive or a primitive array; use a whole @Query() object in OpenAPI 3.2 or an explicit supported contract.`));
+      // A model in a named query parameter is a deepObject (`name[field]=value`), which the interceptor reads and converts.
+      if (!isFlatParameterType(context.checker, parameterType.type) && !(location.location === 'query' && parameterType.modelContractName !== undefined)) {
+        throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `Named @${location.location} parameter ${name} must be primitive, a primitive array${location.location === 'query' ? ' or an IModel or IObject' : ''}; use a whole @Query() object in OpenAPI 3.2 or an explicit supported contract.`));
       }
       parameters.push({
         node: parameter,
