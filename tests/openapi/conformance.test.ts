@@ -1552,7 +1552,6 @@ test('generated client refuses a content parameter without a parameter serialize
   );
 });
 
-
 function mediaDocument() {
   return {
     openapi: '3.2.0',
@@ -1929,4 +1928,3 @@ test('a stream item that fails its response validator rejects the iteration', as
     /API data validation failed/,
   );
 });
-
