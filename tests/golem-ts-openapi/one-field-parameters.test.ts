@@ -84,6 +84,8 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
     for (const route of ['generic', 'qualified', 'readonly', 'readonly-generic']) {
       assert.deepEqual(document.paths[`/a/${route}`]!.post!.requestBody!.content['application/json']!.schema, batchSchema, route);
     }
+    assert.match(read(root, 'src/generated/operation-codecs.ts'), /"AController\.createWhole": \{\s*"input": "TPayment_[0-9a-f]{8}"/, 'a whole array body names its item model');
+    assert.doesNotMatch(read(root, 'src/generated/operation-codecs.ts'), /"POST \/a\/whole"/, 'the route-key map does not read an array body as one model');
     const wholeSchema = document.paths['/a/whole']!.post!.requestBody!.content['application/json']!.schema;
     assert.deepEqual(wholeSchema, { type: 'array', items: { $ref: '#/components/schemas/TPayment' } });
     for (const route of ['whole-readonly', 'whole-readonly-generic']) {

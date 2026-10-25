@@ -413,11 +413,13 @@ export function parseParameters(
         parameters.push({ node: parameter, type: field.type, location: 'body', name, required: true });
         return;
       }
+      const items = oneFieldKind(context, parameter, parameterType);
       body = {
         node: parameter,
         type: parameterType,
         location: 'body',
         required,
+        ...(items.array && items.type.modelContractName !== undefined ? { bodyItemModel: items.type.modelContractName } : {}),
       };
       return;
     }

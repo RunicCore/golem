@@ -35,12 +35,14 @@ function collectOperationCodecs(routes: readonly ControllerRoute[]): OperationCo
       : []));
     const success = route.responses.find((response) => response.status === '200' || response.status === '201');
     const outputName = success?.declaredType?.modelContractName ?? success?.type?.modelContractName;
+    // The item model of an array body is for golem check only: in the route-key map it would read as a body of that one model.
+    const methodInput = inputName ?? route.body?.bodyItemModel;
     const key = routeKey(route);
     if (inputName) input[key] = inputName;
     if (outputName) output[key] = outputName;
     if (queryName) query[key] = queryName;
     methods[methodKey(route)] = {
-      ...(inputName ? { input: inputName } : {}),
+      ...(methodInput ? { input: methodInput } : {}),
       ...(outputName ? { output: outputName } : {}),
       ...(queryName ? { query: queryName } : {}),
       ...(Object.keys(fieldNames).length > 0 ? { fields: fieldNames } : {}),
