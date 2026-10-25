@@ -42,6 +42,11 @@ export interface NodeArray<T> extends ReadonlyArray<T> {
 }
 
 export interface Expression extends Node {}
+/** The span of one comment in a text, from its opening `//` or `/*` to its end (a line comment does not hold its line break). */
+export interface CommentRange {
+  readonly pos: number;
+  readonly end: number;
+}
 export interface TypeNode extends Node {}
 export type Declaration = Node;
 export type NamedDeclaration = Node & { readonly name?: Identifier };
@@ -301,6 +306,10 @@ export interface Block extends Node {
 }
 export interface EmptyStatement extends Node {
   readonly kind: KindOf<'EmptyStatement'>;
+}
+export interface ExpressionStatement extends Node {
+  readonly kind: KindOf<'ExpressionStatement'>;
+  readonly expression: Expression;
 }
 export interface ReturnStatement extends Node {
   readonly kind: KindOf<'ReturnStatement'>;
@@ -660,6 +669,8 @@ export interface TypeScriptBackend {
   getDecorators(node: Node): readonly Decorator[] | undefined;
   getModifiers(node: Node): readonly Node[] | undefined;
   getPreEmitDiagnostics(program: Program): readonly Diagnostic[];
+  /** The comments that follow `position` on its own line, in source order. Undefined when there are none. */
+  getTrailingCommentRanges(text: string, position: number): readonly CommentRange[] | undefined;
   /** TypeScript 7 names a type parameter's default `defaultType`; TypeScript 6 names it `default`. */
   typeParameterDefault(parameter: TypeParameterDeclaration): TypeNode | undefined;
   /** The generic target of a type reference (e.g. the tuple target of a tuple type). */
@@ -684,6 +695,7 @@ export interface TypeScriptBackend {
   isExportDeclaration(node: Node): node is ExportDeclaration;
   isExportSpecifier(node: Node): node is ExportSpecifier;
   isExpression(node: Node): node is Expression;
+  isExpressionStatement(node: Node): node is ExpressionStatement;
   isExpressionWithTypeArguments(node: Node): node is ExpressionWithTypeArguments;
   isFunctionDeclaration(node: Node): node is FunctionDeclaration;
   isFunctionExpression(node: Node): node is FunctionExpression;

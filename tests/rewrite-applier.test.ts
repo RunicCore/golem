@@ -1,3 +1,4 @@
+// lane: typescript6 isExpressionStatement and getTrailingCommentRanges of the classic API: the directive prologue is read from statements
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
@@ -7,6 +8,8 @@ import {
   type RewriteEdit,
   type RewriteImport,
 } from '#golem/rewrite';
+import { importInsertOffset } from '#golem/rewrite-scan';
+import { ProgramSession } from '#golem/typescript-ns';
 import { composeSourceMaps, decodeMappings, encodeMappings, type SourceMapV3 } from '#golem/source-map';
 
 const SERDE = '@exprtlabs/golem/serde';
@@ -20,12 +23,18 @@ function replace(text: string, original: string, replacement: string, from = 0):
   return { start, end: start + original.length, expect: original, text: replacement };
 }
 
-function rewriteOf(edits: readonly RewriteEdit[], imports: readonly RewriteImport[] = []): FileRewrite {
-  return { edits, imports };
+function rewriteOf(edits: readonly RewriteEdit[], imports: readonly RewriteImport[] = [], importsAt = 0): FileRewrite {
+  return { edits, imports, importsAt };
+}
+
+/** Where the scanner puts the imports of `text`: the offset comes from the file's parsed syntax. */
+function importsAtOf(text: string): number {
+  using session = new ProgramSession({ cwd: process.cwd() });
+  return importInsertOffset(session.parseSourceFile('call.ts', text));
 }
 
 function callRewrite(text: string): FileRewrite {
-  return rewriteOf([replace(text, CALL, CALL_TEXT)], [{ from: SERDE, names: ['requireObjectCodec'] }]);
+  return rewriteOf([replace(text, CALL, CALL_TEXT)], [{ from: SERDE, names: ['requireObjectCodec'] }], importsAtOf(text));
 }
 
 /** Original `[line, column]` of the first `needle` in the generated code, resolved through the map's segments. */
@@ -75,6 +84,16 @@ test('the whole directive prologue stays first, whatever the directives are and 
   // A string that is not a statement of its own is not a directive.
   const expression = "'use client' + suffix;\nparse<TPayment>(text);\n";
   assert.equal(applyRewrites(expression, callRewrite(expression)).code, `${IMPORT_LINE}'use client' + suffix;\n${CALL_TEXT}(text);\n`);
+});
+
+test('a directive is a string statement of its own: a comment after it is trivia, an expression it starts is not', () => {
+  // protects: T-292 a regex over the text took a string that an expression continues for a directive, and missed a directive with a block comment
+  const continued = "'use client'\n  + suffix;\nparse<TPayment>(text);\n";
+  assert.equal(applyRewrites(continued, callRewrite(continued)).code, `${IMPORT_LINE}'use client'\n  + suffix;\n${CALL_TEXT}(text);\n`);
+  const commented = "'use strict' /* note */\nparse<TPayment>(text);\n";
+  assert.equal(applyRewrites(commented, callRewrite(commented)).code, `'use strict' /* note */\n${IMPORT_LINE}${CALL_TEXT}(text);\n`);
+  const sameLine = "'use strict'; parse<TPayment>(text);\n";
+  assert.equal(applyRewrites(sameLine, callRewrite(sameLine)).code, `'use strict';\n${IMPORT_LINE} ${CALL_TEXT}(text);\n`);
 });
 
 test('a module name with a quote or a backslash is escaped in the import line', () => {
@@ -176,13 +195,13 @@ test('a file that ends right after its shebang or directive gets the import on i
     "#!/usr/bin/env node\n'use strict';",
     "#!/usr/bin/env node\r\n'use strict';\r\n",
   ]) {
-    const code = applyRewrites(text, rewriteOf([], imports)).code;
+    const code = applyRewrites(text, rewriteOf([], imports, importsAtOf(text))).code;
     const lines = code.split(/\r?\n/);
     assert.equal(lines.includes(IMPORT_LINE.trimEnd()), true, JSON.stringify(code));
     assert.equal(code.startsWith(text.split(/\r?\n/)[0]!), true);
     assert.equal(code.endsWith(IMPORT_LINE), true, JSON.stringify(code));
   }
-  assert.equal(applyRewrites('#!/usr/bin/env node', rewriteOf([], imports)).code, `#!/usr/bin/env node\n${IMPORT_LINE}`);
+  assert.equal(applyRewrites('#!/usr/bin/env node', rewriteOf([], imports, importsAtOf('#!/usr/bin/env node'))).code, `#!/usr/bin/env node\n${IMPORT_LINE}`);
 });
 
 test('one aliased import line is added per entry, and the map stays correct after the prepended lines', () => {
@@ -191,7 +210,7 @@ test('one aliased import line is added per entry, and the map stays correct afte
     { from: SERDE, names: ['requireObjectCodec', 'registerIModelClass'] },
     { from: '@exprtlabs/golem/model', names: ['IModel'] },
   ];
-  const applied = applyRewrites(text, rewriteOf([replace(text, CALL, CALL_TEXT)], imports));
+  const applied = applyRewrites(text, rewriteOf([replace(text, CALL, CALL_TEXT)], imports, importsAtOf(text)));
   assert.equal(
     applied.code,
     "'use strict';\r\n"

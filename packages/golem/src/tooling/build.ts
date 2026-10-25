@@ -416,6 +416,7 @@ function withNodeSpecifiers(root: string, sources: readonly ts.SourceFile[], che
     rewrites.set(key, {
       edits: [...scan?.edits ?? [], ...edits].sort((left, right) => left.start - right.start || left.end - right.end),
       imports: (scan?.imports ?? []).map((added) => ({ ...added, from: specifiers.get(added.from) ?? added.from })),
+      importsAt: scan?.importsAt ?? 0,
     });
   }
   return rewrites;
@@ -461,7 +462,7 @@ function rewriteDeclarations(session: ts.ProgramSession, project: Project, sourc
     const declaration = program.getSourceFile(module);
     if (declaration === undefined) throw new Error(`golem build could not read the declaration ${file} to change its import paths.`);
     const { edits } = nodeSpecifierEdits(declaration, checker, options);
-    if (edits.length > 0) atomicWrite(file, applyRewrites(text, { edits, imports: [] }, file).code);
+    if (edits.length > 0) atomicWrite(file, applyRewrites(text, { edits, imports: [], importsAt: 0 }, file).code);
   }
 }
 
