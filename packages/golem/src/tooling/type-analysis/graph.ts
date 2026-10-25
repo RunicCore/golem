@@ -61,7 +61,7 @@ function canonicalIdentity(
       // the descriptor-aware key so compiler/checker objects never enter the
       // projection identity JSON.
       constraints: rich.constraints?.map(canonicalConstraintKey).sort(),
-      validations: rich.validations?.map(binding => typeof binding === 'string' ? binding : binding.id),
+      validations: rich.validations?.map(binding => typeof binding === 'string' ? binding : binding.id).sort(),
       serde: rich.serde ? { id: rich.serde.id, wire: rich.serde.wireDescriptor ? canonical(rich.serde.wireDescriptor, stack) : undefined } : undefined,
     };
   };

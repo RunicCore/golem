@@ -297,3 +297,31 @@ test('a model that projects an SDK model with an unknown field is rejected by de
   const allowed = await buildModelProject(root, [], { allowFailure: true });
   assert.equal(allowed.code, 0, `${allowed.stdout}\n${allowed.stderr}`);
 });
+
+test('a projection over a source object drops the brand keys of an SDK model and keeps a field spelled like one', async t => {
+  // protects: F-213 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
+  const { root, writeView } = await envelopeSdkProject(t);
+  writeView('Omit<Envelope, \'payload\'>');
+  const built = await buildModelProject(root, [], { allowFailure: true });
+  assert.equal(built.code, 0, `${built.stdout}\n${built.stderr}`);
+  const companion = generatedModelFiles(root).find(artifact => artifact.path.endsWith('view.model.generated.ts'))!.content;
+  assert.doesNotMatch(companion, /__@/);
+});
+
+test('a projection keeps a source field whose string key is spelled like a brand key', async t => {
+  // protects: F-213 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
+  const { root, sourceRoot } = fixture(t);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  writeModelSources(sourceRoot, {
+    'view.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TViewBaseModel } from './view.model.generated.js';
+export interface Look { name: string; '__@generatedModelWireBrand@1': string; extra: string }
+export type TView = IModel<{ look: Omit<Look, 'extra'> }>;
+export class View extends TViewBaseModel {}
+`,
+  });
+  await buildModelProject(root);
+  const { View } = await import(path.join(root, 'build/view.model.js'));
+  const wire = encodeGeneratedModel(decodeGeneratedModel(View, { look: { name: 'a', '__@generatedModelWireBrand@1': 'b', extra: 'c' } }));
+  assert.deepEqual(wire, { look: { name: 'a', '__@generatedModelWireBrand@1': 'b' } });
+});
