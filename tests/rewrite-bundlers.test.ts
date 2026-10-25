@@ -251,6 +251,14 @@ for (const bundler of BUNDLERS) {
     assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
   });
 
+  test(`${bundler.name}: an empty config option is no setting, so the golem.yaml of the working directory is used`, async (t) => {
+    // protects: T-27 config '' resolved to the working directory and failed on a directory
+    const root = await generatedProject(t, `${bundler.name}-empty-config`);
+    const bundle = await build(bundler, t, root, 'src/main.ts', { config: '' });
+    const result = await command(root, process.execPath, [bundle]);
+    assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+  });
+
   test(`${bundler.name}: a file with a parse call is rewritten for every TypeScript extension the bundler strips`, async (t) => {
     const root = await generatedProject(t, `${bundler.name}-extensions`);
     const names = bundler.extensions.map((extension) => `call${extension}`);
