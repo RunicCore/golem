@@ -20,13 +20,13 @@ export const realInputFiles: InputFiles = {
 };
 
 /** The signature of a path that does not exist. */
-const MISSING = 'missing';
+export const MISSING = 'missing';
 const NODE_MODULES = 'node_modules';
 /** The folder golem keeps its own state in, which is never an input folder. */
 const GOLEM_DIRECTORY = '.golem';
 
 /** Content signature of a watched path: `missing`, `directory` (a directory's mtime also moves on output writes), or mtime, ctime and size. */
-function signature(filename: string, files: InputFiles): string {
+export function fileSignature(filename: string, files: InputFiles = realInputFiles): string {
   try {
     // Most watched paths are failed module-resolution probes; avoid an exception per missing path.
     const stat = files.stat(filename);
@@ -205,7 +205,7 @@ export class InputScan {
 
   snapshot(): InputSnapshot {
     const files = new Map<string, string>();
-    for (const file of this.files) files.set(file, signature(file, this.reader));
+    for (const file of this.files) files.set(file, fileSignature(file, this.reader));
     const folders = new Map<string, readonly string[]>();
     const visit = (directory: string): void => {
       if (folders.has(directory)) return;
@@ -276,7 +276,7 @@ export class RunBaseline {
 
   /** Records an input the run reads, and the folders on the way up to the root, unless the scan before the run already holds them. */
   observe(filename: string): void {
-    if (!this.before.files.has(filename) && !this.firstFiles.has(filename)) this.firstFiles.set(filename, signature(filename, this.reader));
+    if (!this.before.files.has(filename) && !this.firstFiles.has(filename)) this.firstFiles.set(filename, fileSignature(filename, this.reader));
     for (const directory of foldersAbove(this.root, filename)) {
       if (this.firstFolders.has(directory)) break;
       this.observeFolder(directory);

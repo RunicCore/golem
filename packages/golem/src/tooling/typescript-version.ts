@@ -25,8 +25,8 @@ function resolveManifest(root: string, golemUrl: string): string {
   } catch {
     try {
       return createRequire(golemUrl).resolve('typescript/package.json');
-    } catch {
-      throw new TypeScriptNotInstalledError(`golem needs TypeScript 6.0+ or 7.1+ installed in ${root}.`);
+    } catch (error) {
+      throw new TypeScriptNotInstalledError(`golem needs TypeScript 6.0+ or 7.1+ installed in ${root}.`, { cause: error });
     }
   }
 }

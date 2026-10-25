@@ -125,6 +125,19 @@ test('unrecorded generated-marker leftovers are preserved by generate and report
   assert.equal(fs.readFileSync(orphan, 'utf8'), content(1));
 });
 
+test('generate does not list the output tree for leftovers; only check does', (t: TestContext) => {
+  // protects: E-34 the scan for unrecorded outputs runs only with check
+  const { config, job, filename } = fixture(t);
+  const artifacts = [{ path: filename, content: content(1) }];
+  const listing = t.mock.method(fs, 'readdirSync');
+  const listed = (): unknown[] => listing.mock.calls.map(call => call.arguments[0]).filter(directory => String(directory).startsWith(config.directory));
+  applyJob(config, loadInventory(config), job, artifacts, false);
+  applyJob(config, loadInventory(config), job, artifacts, false);
+  assert.deepEqual(listed(), []);
+  applyJob(config, loadInventory(config), job, artifacts, true);
+  assert.notDeepEqual(listed(), [], 'check lists the folders of the job');
+});
+
 // ---------------------------------------------------------------------------
 // Complete ownership record comparison, mutation, and invalid inventories
 // ---------------------------------------------------------------------------

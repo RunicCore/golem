@@ -616,7 +616,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const ignoredDirectories = [stringOption(configured.options, 'outDir'), stringOption(configured.options, 'declarationDir')].filter((directory) => directory !== undefined);
   const generated = await runPipeline(golemConfig.configFile, { session: run.generation, onInput: observe, ignoredDirectories, ...(previous === undefined || changed === undefined ? {} : { previous, changedInputs: changed }) });
   for (const output of generated.owned) run.owned.add(output);
-  // The compiler session knows only the changes it was told about.
+  // The session compares file signatures, and a write within the timestamp resolution of the file system leaves a signature as it was: the files this step wrote are told to it.
   if (generated.ran.size > 0) session.inputsChanged(generated.owned);
   run.pipeline = generated;
   run.onGenerated?.(generated.ran);

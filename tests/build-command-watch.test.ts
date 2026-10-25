@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import { runBuild } from '#golem/build';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
 import { write, serdeProject, sourceOnlyProject, countingGenerator, editTsconfig, USE, snapshot } from './support/build-project.js';
@@ -46,16 +47,27 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
   const controller = new AbortController();
   t.after(() => controller.abort());
   const ran: string[][] = [];
+  // The compiler session compares file signatures, which an edit within the timestamp resolution of the file system leaves as they were: the build
+  // also tells the session which files it generated.
+  const hinted: string[] = [];
+  const inputsChanged = ts.ProgramSession.prototype.inputsChanged;
+  t.mock.method(ts.ProgramSession.prototype, 'inputsChanged', function (this: unknown, filenames: Iterable<string>) {
+    const names = [...filenames];
+    hinted.push(...names);
+    inputsChanged.call(this, names);
+  });
   const finished = runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal, onGenerated: (jobs) => ran.push([...jobs].sort()) });
   const built = (name: string): string => { const file = path.join(root, 'build', name); return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''; };
   const companion = path.join(root, 'src/money.model.generated.ts');
   await until(() => ran.length === 1 && built('use.js') !== '' && fs.existsSync(companion), 'the first build');
 
+  hinted.length = 0;
   // The model source is what both jobs read: its edit regenerates the companion, and the build that follows sees it.
   const model = path.join(root, 'src/money.model.ts');
   fs.writeFileSync(model, fs.readFileSync(model, 'utf8').replace('note: string', 'note: string; extra?: string'));
   await until(() => /extra/.test(built('money.model.generated.js')), 'the rebuild after a model edit');
   assert.match(fs.readFileSync(companion, 'utf8'), /extra/);
+  assert.ok(hinted.includes(companion), 'the compiler session was told that the regenerated companion changed');
 
   // The models job's program reads the whole project, so `use.ts` is one of its inputs; the generator reads only the model.
   write(root, 'src/use.ts', `${USE}export const second = 2;\n`);
