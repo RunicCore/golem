@@ -704,6 +704,7 @@ export function createJobAnalysis(
   manifestIndex: ManifestIndex,
   profile: GolemProfile,
   sources: readonly string[],
+  isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
   identityRoot?: string,
   sourceFileOf?: (filename: string) => ts.SourceFile | undefined,
   boundary?: ModelBoundary,
@@ -725,6 +726,8 @@ export function createJobAnalysis(
       undefined,
       modelSources,
       boundary,
+      undefined,
+      isDefaultLibraryFile,
     ),
     described: new Map(),
     sources: modelSources,
@@ -769,8 +772,8 @@ export function analyzeSourceGraph(
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
   profile: GolemProfile,
-  identityRoot?: string,
-  job: JobAnalysis = createJobAnalysis(checker, specifications, manifestIndex, profile, [source], identityRoot),
+  identityRoot: string | undefined,
+  job: JobAnalysis,
 ): SourceModelGraph | undefined {
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
@@ -1960,14 +1963,11 @@ export function emitSource(
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
   profile: GolemProfile,
-  identityRoot?: string,
-  preparedGraph?: SourceModelGraph,
+  graph: SourceModelGraph,
   preparedSchemaGraph?: SchemaGraph,
   siblingCodecs: SiblingCodecOptions = {},
   appOutputs: AppOutputs = {},
 ): string | undefined {
-  const graph = preparedGraph ?? analyzeSourceGraph(source, output, checker, specifications, manifestIndex, profile, identityRoot);
-  if (!graph) return undefined;
   const context = buildEmitContext(source, output, checker, specifications, manifestIndex, profile, graph, preparedSchemaGraph, siblingCodecs, appOutputs);
   const projections = buildProjections(context);
   const emissions = buildFieldEmissions(context, modelResolvers(context, projections.helpers));

@@ -540,18 +540,18 @@ export function descriptorBuilder(
   manifestIndex: ManifestIndex,
   validationEnabled: boolean,
   allowAny = false,
-  identityRoot?: string,
+  identityRoot: string | undefined,
   allowUnresolved = true,
   /** Name that references to a model and its derived projections use; the model's own name when omitted. */
-  nameFor?: (specification: ModelSpecification) => string,
+  nameFor: ((specification: ModelSpecification) => string) | undefined,
   /** Canonical model source files of the job, which have a generated companion; omitted when the analysis emits none. */
-  modelSources?: ReadonlySet<string>,
+  modelSources: ReadonlySet<string> | undefined,
   /** The models-job boundary, for the diagnostic of a field that nests a model this job does not own. */
-  boundary?: ModelBoundary,
+  boundary: ModelBoundary | undefined,
   /** The first TypeScript error that starts inside a node, for the diagnostic of a type that did not resolve. */
-  typeErrorAt?: (node: ts.Node) => string | undefined,
+  typeErrorAt: ((node: ts.Node) => string | undefined) | undefined,
   /** Whether a source file is a default library file: a symbol key it declares is the built-in type's own metadata, not a field. */
-  isDefaultLibraryFile: (file: ts.SourceFile) => boolean = () => false,
+  isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
