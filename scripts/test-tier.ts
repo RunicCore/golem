@@ -32,7 +32,9 @@ export function typescript6Files(): readonly string[] {
     const descriptor = fs.openSync(path.join(root, file), 'r');
     try {
       const head = Buffer.alloc(200);
-      return LANE_TAG.test(head.toString('utf8', 0, fs.readSync(descriptor, head, 0, head.length, 0)));
+      const first = head.toString('utf8', 0, fs.readSync(descriptor, head, 0, head.length, 0)).split(/\r?\n/, 1)[0]!;
+      if (first.startsWith('// lane:') && !LANE_TAG.test(first)) throw new Error(`${file}: the first line starts with \`// lane:\` but is not \`// lane: typescript6 <the shim place the file proves>\`, so the TypeScript 6 lane would skip the file.`);
+      return LANE_TAG.test(first);
     } finally { fs.closeSync(descriptor); }
   };
   const files = (fs.readdirSync(path.join(root, 'tests'), { recursive: true }) as string[])
