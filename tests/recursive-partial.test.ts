@@ -50,3 +50,16 @@ for (const [form, declaration] of EXPANDING) {
       /box\.model\.ts:\d+:\d+ RUNM1083: The generic type Box expands without end/);
   });
 }
+
+test('valid finite types nest without a diagnostic', (t: TestContext) => {
+  // protects: T-440 the expansion bound counts only a project generic that is re-entered with other arguments, not arrays or a finite chain
+  const wrap = (depth: number): string => `${'Wrap<'.repeat(depth)}string${'>'.repeat(depth)}`;
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-finite-nesting-', name: 'finite-nesting' });
+  writeModelSources(sourceRoot, {
+    'deep.model.ts': `import type { IModel } from '@exprtlabs/golem/model';\nexport interface Wrap<T> { inner: T }\n`
+      + "export type Chain<N extends unknown[]> = N['length'] extends 12 ? { end: true } : { next: Chain<[...N, 1]> };\n"
+      + `export type TDeep = IModel<{ arrays: string${'[]'.repeat(40)}; wraps: ${wrap(10)}; chain: Chain<[]> }>;\n`,
+  });
+  const result = generate({ root, sources: [path.join(sourceRoot, 'deep.model.ts')], profile: { mobx: false, validation: false } });
+  assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('deep.model.generated.ts')));
+});

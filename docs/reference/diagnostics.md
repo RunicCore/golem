@@ -280,7 +280,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1059
 
-**Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. A recursive interface, class or type alias derives its name from its own. When two of them share a name, the second takes a longer name: the type arguments for a generic instance (`Page<number>` after `Page<string>` becomes `PageNumber`), else the file name (`Node` in `b.model.ts` becomes `NodeB`). Golem reports this code only when the longer name clashes too, such as `Page<string[]>` and `Page<string[][]>`. The message lists both places. **Fix:** For an inline type, declare a named type alias, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field. For a recursive interface, class or type alias, rename one of the two types.
+**Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. A recursive interface, class or type alias derives its name from its own, so two of them with one name clash too. The message lists both places. **Fix:** For an inline type, declare a named type alias, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field. For a recursive interface, class or type alias, rename one of the two types.
 
 ### RUNM1060
 
@@ -376,7 +376,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1083
 
-**Generic type that expands without end.** A generic interface, class or type alias holds itself with other type arguments on each level, such as `interface Box<T> { next?: Box<Box<T>> }`. Each level is a new type, so no finite schema describes it. The message names the generic type. **Fix:** Pass the same type arguments back, such as `next?: Box<T>`, or end the nesting with a named type.
+**Generic type that expands without end.** A generic interface, class or type alias holds itself with other type arguments on each level, such as `interface Box<T> { next?: Box<Box<T>> }`. Each level is a new type, so no finite schema describes it. The message names the generic type. Golem stops when 100 different instances of one generic declaration are open at once. TypeScript stops an instantiation chain at the same depth, with "Type instantiation is excessively deep and possibly infinite", so a finite type that TypeScript accepts still generates. Arrays, tuples and library types do not count. **Fix:** Pass the same type arguments back, such as `next?: Box<T>`, or end the nesting with a named type.
 
 ## Validators (VALIDATE)
 
