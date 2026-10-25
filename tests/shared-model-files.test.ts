@@ -590,6 +590,14 @@ test('a golem run that skips the models job still writes its RUNM1076 warning, o
   assert.deepEqual(warning(second.stderr), warning(first.stderr));
 });
 
+test('an alias of an SDK type whose advertised manifest is gone stops generation and names what to run', (t: TestContext) => {
+  // protects: T-27 the missing-manifest error names a remedy
+  const app = appWithSdk(t, 'installed', './money.model.d.ts');
+  fs.rmSync(path.join(app, '../node_modules/@acme/sdk/model-manifest.json'));
+
+  assert.throws(() => generate({ root: app, profile: PROFILE }), /Run golem generate to write it/);
+});
+
 test('a job that generates nothing does not read the model manifests its program advertises', (t: TestContext) => {
   // protects: P-12 a models job with no alias behaves as before: a stale advertised manifest does not stop it
   const outer = createFixtureProject(t, 'golem-no-aliases-');

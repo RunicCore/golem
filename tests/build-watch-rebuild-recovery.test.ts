@@ -1,3 +1,4 @@
+// lane: typescript6 ProgramSession in the `golem build --watch` driver, where users run it
 // golem build --watch: one build per edit, an error, and recovery.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

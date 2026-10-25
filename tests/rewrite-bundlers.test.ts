@@ -1,3 +1,4 @@
+// lane: typescript6 ProgramSession resolution updates in the bundler rewrite plugins
 // The Vite and esbuild plugins scan each TypeScript file with the project's own types and rewrite it in memory; the bundler then strips the types.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -246,6 +247,14 @@ for (const bundler of BUNDLERS) {
     write(root, 'app/entry.ts', `import '../src/main.js';\n`);
     fs.renameSync(path.join(root, 'golem.yaml'), path.join(root, 'config.yaml'));
     const bundle = await build(bundler, t, root, 'app/entry.ts', { config: 'config.yaml' });
+    const result = await command(root, process.execPath, [bundle]);
+    assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+  });
+
+  test(`${bundler.name}: an empty config option is no setting, so the golem.yaml of the working directory is used`, async (t) => {
+    // protects: T-27 config '' resolved to the working directory and failed on a directory
+    const root = await generatedProject(t, `${bundler.name}-empty-config`);
+    const bundle = await build(bundler, t, root, 'src/main.ts', { config: '' });
     const result = await command(root, process.execPath, [bundle]);
     assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
   });

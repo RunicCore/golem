@@ -1,3 +1,4 @@
+// lane: typescript6 ProgramSession resolution updates and the `golem build` driver in the pipeline
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';

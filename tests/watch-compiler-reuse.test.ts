@@ -1,3 +1,4 @@
+// lane: typescript6 ProgramSession: a watch reuses one program across edits and tsconfig path-mapping changes
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';

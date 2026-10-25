@@ -1,3 +1,4 @@
+// lane: typescript6 Checker guards: the controller generator and the rewrite code it uses run the checker in this process
 import { linkProjectPackages, readFixture } from '../fixture-project.js';
 import { workspace } from '../support/process.js';
 import assert from 'node:assert/strict';

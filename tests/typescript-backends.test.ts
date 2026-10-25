@@ -1,3 +1,4 @@
+// lane: typescript6 diagnostics, and ProgramSession (the in-process program and its incremental updates)
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
