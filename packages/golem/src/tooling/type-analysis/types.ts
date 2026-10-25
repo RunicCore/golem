@@ -573,6 +573,8 @@ export function descriptorBuilder(
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
+  /** Runs `run` and then takes back every projection name, owner and cache entry it made, so a question about a type leaves no name behind. */
+  readonly isolated: <T>(run: () => T) => T;
 } {
   const projections = new Map<string, ModelConversionDescriptor>();
   const projectionCache = new Map<ts.Type, Map<string, string>>();
@@ -1225,5 +1227,9 @@ export function descriptorBuilder(
     openCalls.push([originalType, context, ...rest]);
     try { return describeType(originalType, context, ...rest); } finally { openCalls.pop(); leave(); }
   };
-  return Object.assign(describe, { projections });
+  const isolated = <T>(run: () => T): T => {
+    const restore = snapshotNames();
+    try { return run(); } finally { restore(); }
+  };
+  return Object.assign(describe, { projections, isolated });
 }
