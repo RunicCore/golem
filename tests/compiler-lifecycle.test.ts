@@ -196,67 +196,97 @@ function errorRecord(error: unknown): { readonly name?: unknown; readonly error?
     : {};
 }
 
-test('public model and controller generators close every owned API child across success, failure, empty, manifest, and concurrent paths', async t => {
-  const tracker = trackApiChildren(t);
-  const profile = { mobx: false, validation: false } as const;
+const lifecycleProfile = { mobx: false, validation: false } as const;
 
-  const model = projectFixture(t, 'compiler-lifecycle-model');
-  const modelSource = path.join(model.sourceRoot, 'item.model.ts');
-  fs.writeFileSync(modelSource, [
+function modelSourceFixture(t: TestContext, name: string): { readonly fixture: Fixture; readonly source: string } {
+  const fixture = projectFixture(t, name);
+  const source = path.join(fixture.sourceRoot, 'item.model.ts');
+  fs.writeFileSync(source, [
     "import type { IModel } from '@exprtlabs/golem/model';",
     'export type TItem = IModel<{ value: string }>;',
     '',
   ].join('\n'));
-  assert.equal(generateModel({ root: model.root, sources: [modelSource], profile }).artifacts.length > 0, true);
+  return { fixture, source };
+}
+
+function controllerFixture(t: TestContext, name: string, example: string): { readonly fixture: Fixture; readonly source: string; readonly output: string } {
+  const fixture = projectFixture(t, name);
+  const source = path.join(fixture.sourceRoot, 'items.controller.ts');
+  fs.writeFileSync(source, readFixture(`models/compiler-lifecycle/${example}/items.controller.ts`));
+  return { fixture, source, output: path.join(fixture.root, 'openapi.json') };
+}
+
+// Each path below ends with no TypeScript --api child alive while the test process runs.
+test('a model generation that succeeds closes its API child, also when repeated', async t => {
+  const tracker = trackApiChildren(t);
+  const { fixture, source } = modelSourceFixture(t, 'compiler-lifecycle-model');
+  assert.equal(generateModel({ root: fixture.root, sources: [source], profile: lifecycleProfile }).artifacts.length > 0, true);
   await tracker.assertClosed('model success');
-  assert.equal(generateModel({ root: model.root, sources: [modelSource], profile }).artifacts.length > 0, true);
+  assert.equal(generateModel({ root: fixture.root, sources: [source], profile: lifecycleProfile }).artifacts.length > 0, true);
   await tracker.assertClosed('repeated model success');
+  assert.ok(tracker.seen() >= 2, `expected API subprocesses from both generations, saw ${tracker.seen()}`);
+});
 
-  fs.writeFileSync(modelSource, 'export const notAModel = 1;\n');
-  assert.throws(() => generateModel({ root: model.root, sources: [modelSource], profile }), /No exported IModel/);
+test('a model generation that fails closes its API child', async t => {
+  const tracker = trackApiChildren(t);
+  const fixture = projectFixture(t, 'compiler-lifecycle-model-failure');
+  const source = path.join(fixture.sourceRoot, 'item.model.ts');
+  fs.writeFileSync(source, 'export const notAModel = 1;\n');
+  assert.throws(() => generateModel({ root: fixture.root, sources: [source], profile: lifecycleProfile }), /No exported IModel/);
   await tracker.assertClosed('model failure');
-  fs.rmSync(modelSource);
-  assert.deepEqual(generateModel({ root: model.root, profile }).artifacts, []);
-  await tracker.assertClosed('empty model generation');
+  assert.ok(tracker.seen() >= 1, `expected an API subprocess from the failed generation, saw ${tracker.seen()}`);
+});
 
-  const manifestFixture = projectFixture(t, 'compiler-lifecycle-manifest');
-  const manifest = writeManifestFixture(manifestFixture);
+test('a model generation with no sources closes its API child', async t => {
+  const tracker = trackApiChildren(t);
+  const fixture = projectFixture(t, 'compiler-lifecycle-model-empty');
+  assert.deepEqual(generateModel({ root: fixture.root, profile: lifecycleProfile }).artifacts, []);
+  await tracker.assertClosed('empty model generation');
+});
+
+test('a manifest validation failure closes the API child', async t => {
+  const tracker = trackApiChildren(t);
+  const fixture = projectFixture(t, 'compiler-lifecycle-manifest');
+  const manifest = writeManifestFixture(fixture);
   assert.throws(
-    () => generateModel({ root: manifestFixture.root, sources: [manifest.source], profile, manifestInputs: [manifest.manifest] }),
+    () => generateModel({ root: fixture.root, sources: [manifest.source], profile: lifecycleProfile, manifestInputs: [manifest.manifest] }),
     /missing runtime export/,
   );
   await tracker.assertClosed('manifest validation failure');
+  assert.ok(tracker.seen() >= 1, `expected an API subprocess from the manifest validation, saw ${tracker.seen()}`);
+});
 
-  const validController = projectFixture(t, 'compiler-lifecycle-controller');
-  const validSource = path.join(validController.sourceRoot, 'items.controller.ts');
-  fs.writeFileSync(validSource, readFixture('models/compiler-lifecycle/controller-success/items.controller.ts'));
-  const validOutput = path.join(validController.root, 'openapi.json');
-  const validResult = await generateController(controllerContext(validController.root, validSource, validOutput));
-  assert.equal(validResult.artifacts.length > 0, true);
+test('a controller generation that succeeds closes its API child', async t => {
+  const tracker = trackApiChildren(t);
+  const valid = controllerFixture(t, 'compiler-lifecycle-controller', 'controller-success');
+  const result = await generateController(controllerContext(valid.fixture.root, valid.source, valid.output));
+  assert.equal(result.artifacts.length > 0, true);
   await tracker.assertClosed('controller success');
+  assert.ok(tracker.seen() >= 1, `expected an API subprocess from the controller generation, saw ${tracker.seen()}`);
+});
 
-  const invalidController = projectFixture(t, 'compiler-lifecycle-controller-failure');
-  const invalidSource = path.join(invalidController.sourceRoot, 'items.controller.ts');
-  fs.writeFileSync(invalidSource, readFixture('models/compiler-lifecycle/controller-duplicate/items.controller.ts'));
+test('a controller generation that fails closes its API child', async t => {
+  const tracker = trackApiChildren(t);
+  const invalid = controllerFixture(t, 'compiler-lifecycle-controller-failure', 'controller-duplicate');
   await assert.rejects(
-    generateController(controllerContext(invalidController.root, invalidSource, path.join(invalidController.root, 'openapi.json'))),
+    generateController(controllerContext(invalid.fixture.root, invalid.source, invalid.output)),
     /NEST1306: Route GET \/items\/same is declared more than once/,
   );
   await tracker.assertClosed('controller failure');
+  assert.ok(tracker.seen() >= 1, `expected an API subprocess from the failed controller generation, saw ${tracker.seen()}`);
+});
 
-  const concurrentA = projectFixture(t, 'compiler-lifecycle-concurrent-a');
-  const concurrentB = projectFixture(t, 'compiler-lifecycle-concurrent-b');
-  const sourceA = path.join(concurrentA.sourceRoot, 'items.controller.ts');
-  const sourceB = path.join(concurrentB.sourceRoot, 'items.controller.ts');
-  fs.writeFileSync(sourceA, readFixture('models/compiler-lifecycle/controller-success/items.controller.ts'));
-  fs.writeFileSync(sourceB, readFixture('models/compiler-lifecycle/controller-success/items.controller.ts'));
+test('two concurrent controller generations close their API children', async t => {
+  const tracker = trackApiChildren(t);
+  const a = controllerFixture(t, 'compiler-lifecycle-concurrent-a', 'controller-success');
+  const b = controllerFixture(t, 'compiler-lifecycle-concurrent-b', 'controller-success');
   const concurrent = await Promise.allSettled([
-    generateController(controllerContext(concurrentA.root, sourceA, path.join(concurrentA.root, 'openapi.json'))),
-    generateController(controllerContext(concurrentB.root, sourceB, path.join(concurrentB.root, 'openapi.json'))),
+    generateController(controllerContext(a.fixture.root, a.source, a.output)),
+    generateController(controllerContext(b.fixture.root, b.source, b.output)),
   ]);
   assert.equal(concurrent.every(result => result.status === 'fulfilled'), true);
   await tracker.assertClosed('concurrent controller generation');
-  assert.ok(tracker.seen() >= 8, `expected API subprocesses from every lifecycle path, saw ${tracker.seen()}`);
+  assert.ok(tracker.seen() >= 2, `expected API subprocesses from both generations, saw ${tracker.seen()}`);
 });
 
 test('compiler setup preserves the primary error and reports cleanup failure after closing the API child', async t => {
@@ -287,50 +317,54 @@ test('compiler setup preserves the primary error and reports cleanup failure aft
   await tracker.assertClosed('compiler setup failure');
 });
 
-test('manifest validation shares one compiler across 5 and 50 generated model modules', async t => {
-  const tracker = trackApiChildren(t);
-  const counts: number[] = [];
-  const profile = { mobx: false, validation: false } as const;
-  for (const count of [5, 50]) {
-    const fixture = projectFixture(t, `manifest-scale-${count}`);
-    const sdk = path.join(fixture.sourceRoot, 'sdk');
-    fs.mkdirSync(path.join(sdk, 'models'), { recursive: true });
-    const manifestFile = path.join(sdk, 'model-manifest.json');
-    const models = Array.from({ length: count }, (_, index) => {
-      const names = manifestScaleNames({ index });
-      return {
-        id: `scale:item:${index}`,
-        codecId: `${names.item}_${index.toString(16).padStart(8, '0')}`,
-        allowAny: false,
-        type: { module: './types.ts', export: names.item },
-        generated: { module: `./models/${names.item}.ts`, export: names.generatedClass },
-      };
-    });
-    fs.writeFileSync(path.join(sdk, 'types.ts'), manifestScaleTypesSource({ count }).text);
-    for (let index = 0; index < count; index++) {
-      const { item } = manifestScaleNames({ index });
-      fs.writeFileSync(path.join(sdk, 'models', `${item}.ts`), manifestScaleClassSource({ index }).text);
-    }
-    fs.writeFileSync(manifestFile, JSON.stringify({
-      profile: { ...profile, allowAny: false, unknownFormats: 'error' }, models,
-    }));
-    const source = path.join(fixture.sourceRoot, 'aggregate.model.ts');
-    fs.writeFileSync(source, readFixture('models/compiler-lifecycle/manifest-scale/aggregate.model.ts'));
-    const before = tracker.seen();
-    const result = generateModel({ root: fixture.root, sources: [source], profile });
-    assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('aggregate.model.generated.ts')));
-    counts.push(tracker.seen() - before);
-    await tracker.assertClosed(`${count}-model manifest`);
-
-    // A cached export table must still be rebuilt for the next generation job.
-    if (count === 50) {
-      fs.writeFileSync(path.join(sdk, 'models', 'Item49.ts'), 'export const RenamedModel = 1;\n');
-      assert.throws(() => generateModel({ root: fixture.root, sources: [source], profile }), /missing runtime export Item49Model/);
-      await tracker.assertClosed('changed manifest export');
-    }
+/** A project whose manifest lists `count` generated model modules, and the model source that aggregates them. */
+function manifestScaleFixture(t: TestContext, count: number): { readonly fixture: Fixture; readonly sdk: string; readonly source: string } {
+  const fixture = projectFixture(t, `manifest-scale-${count}`);
+  const sdk = path.join(fixture.sourceRoot, 'sdk');
+  fs.mkdirSync(path.join(sdk, 'models'), { recursive: true });
+  const manifestFile = path.join(sdk, 'model-manifest.json');
+  const models = Array.from({ length: count }, (_, index) => {
+    const names = manifestScaleNames({ index });
+    return {
+      id: `scale:item:${index}`,
+      codecId: `${names.item}_${index.toString(16).padStart(8, '0')}`,
+      allowAny: false,
+      type: { module: './types.ts', export: names.item },
+      generated: { module: `./models/${names.item}.ts`, export: names.generatedClass },
+    };
+  });
+  fs.writeFileSync(path.join(sdk, 'types.ts'), manifestScaleTypesSource({ count }).text);
+  for (let index = 0; index < count; index++) {
+    const { item } = manifestScaleNames({ index });
+    fs.writeFileSync(path.join(sdk, 'models', `${item}.ts`), manifestScaleClassSource({ index }).text);
   }
-  assert.ok(counts[0] > 0, 'the public generator must invoke the real compiler');
-  assert.deepEqual(counts, [counts[0], counts[0]], 'compiler process count must not grow with manifest entries');
+  fs.writeFileSync(manifestFile, JSON.stringify({
+    profile: { ...lifecycleProfile, allowAny: false, unknownFormats: 'error' }, models,
+  }));
+  const source = path.join(fixture.sourceRoot, 'aggregate.model.ts');
+  fs.writeFileSync(source, readFixture('models/compiler-lifecycle/manifest-scale/aggregate.model.ts'));
+  return { fixture, sdk, source };
+}
+
+// One compiler serves a generation however many models its manifest lists, so each size spawns the same single process.
+for (const count of [5, 50]) {
+  test(`manifest validation shares one compiler across ${count} generated model modules`, async t => {
+    const tracker = trackApiChildren(t);
+    const { fixture, source } = manifestScaleFixture(t, count);
+    const result = generateModel({ root: fixture.root, sources: [source], profile: lifecycleProfile });
+    assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('aggregate.model.generated.ts')));
+    assert.equal(tracker.seen(), 1, 'the public generator must invoke the real compiler once, however many manifest entries');
+    await tracker.assertClosed(`${count}-model manifest`);
+  });
+}
+
+test('a cached manifest export table is rebuilt for the next generation job', async t => {
+  const tracker = trackApiChildren(t);
+  const { fixture, sdk, source } = manifestScaleFixture(t, 50);
+  generateModel({ root: fixture.root, sources: [source], profile: lifecycleProfile });
+  fs.writeFileSync(path.join(sdk, 'models', 'Item49.ts'), 'export const RenamedModel = 1;\n');
+  assert.throws(() => generateModel({ root: fixture.root, sources: [source], profile: lifecycleProfile }), /missing runtime export Item49Model/);
+  await tracker.assertClosed('changed manifest export');
 });
 
 test('owned generator scope preserves its primary error when API cleanup also fails', async t => {
