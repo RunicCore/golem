@@ -427,7 +427,7 @@ function controllerSources(normalized: NormalizedContext, observe: InputObserver
     throw new TsToOpenApiError({
       severity: GolemDiagnosticSeverity.Error,
       code: TsToOpenApiDiagnosticCode.NoControllerSources,
-      message: `No controller source files found under ${path.join(normalized.root, 'src')}. Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
+      message: `No controller source files found under ${path.join(normalized.root, 'src')}. Add a file that ends in ${normalized.suffixes.join(' or ')}, or list the controller files in \`sources\` of the controller job. In code, pass them as the \`sources\` option of \`generate\`.`,
     });
   }
   for (const source of sources) {
