@@ -14,7 +14,7 @@ import {
   generateMaterializedSdk,
   generatedModelSource,
 } from './openapi/helpers.js';
-import { runModule } from './support/run-module.js';
+import { openScope, runModule } from './support/run-module.js';
 
 function validatedDocument(): Record<string, unknown> {
   return {
@@ -91,7 +91,7 @@ const profile = Object.freeze({
 
 /** The values a generated TypeScript module exports, with every import stubbed. */
 function exportsOf(source: string): Record<string, unknown> {
-  const open: unknown = new Proxy(function stub() {}, { get: () => open, apply: () => open, construct: () => open as object });
+  const open = openScope();
   const holder = { exports: {} as Record<string, unknown> };
   runModule(source, { require: () => open, exports: holder.exports, module: holder }, { format: 'cjs' });
   return holder.exports;
