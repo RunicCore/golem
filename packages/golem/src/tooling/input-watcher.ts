@@ -2,6 +2,23 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { errorMessage, hasErrorCode, isInsideDirectory } from './generator-api.js';
 
+/**
+ * The calls a watch makes between two runs. A watch uses the real ones; a test passes its own to fault a folder watch (ENOSPC, EMFILE)
+ * or to count the reads of an idle watch. An error from a call is the error the real call would raise.
+ */
+export interface InputFiles {
+  /** The stat of a path, or undefined when it does not exist. */
+  readonly stat: (filename: string) => fs.Stats | undefined;
+  readonly list: (directory: string) => fs.Dirent[];
+  readonly watch: (folder: string, listener: (event: string, name: string | null) => void) => fs.FSWatcher;
+}
+
+export const realInputFiles: InputFiles = {
+  stat: filename => fs.statSync(filename, { throwIfNoEntry: false }),
+  list: directory => fs.readdirSync(directory, { withFileTypes: true }),
+  watch: (folder, listener) => fs.watch(folder, listener),
+};
+
 /** The signature of a path that does not exist. */
 const MISSING = 'missing';
 const NODE_MODULES = 'node_modules';
@@ -9,10 +26,10 @@ const NODE_MODULES = 'node_modules';
 const GOLEM_DIRECTORY = '.golem';
 
 /** Content signature of a watched path: `missing`, `directory` (a directory's mtime also moves on output writes), or mtime, ctime and size. */
-function signature(filename: string): string {
+function signature(filename: string, files: InputFiles = realInputFiles): string {
   try {
     // Most watched paths are failed module-resolution probes; avoid an exception per missing path.
-    const stat = fs.statSync(filename, { throwIfNoEntry: false });
+    const stat = files.stat(filename);
     if (!stat) return MISSING;
     // Source discovery scans model names. Directory mtimes also change on output writes.
     return stat.isDirectory() ? 'directory' : `${stat.mtimeMs}:${stat.ctimeMs}:${stat.size}`;
@@ -49,10 +66,10 @@ function isIgnoredDirectory(name: string): boolean {
 }
 
 /** The names in a folder and its subfolders, or undefined when the folder does not exist. Any other failure (a permission, too many open files) is the loop's to report. */
-function readFolder(directory: string): { readonly names: string[]; readonly directories: string[] } | undefined {
+function readFolder(directory: string, files: InputFiles = realInputFiles): { readonly names: string[]; readonly directories: string[] } | undefined {
   let entries: fs.Dirent[];
   try {
-    entries = fs.readdirSync(directory, { withFileTypes: true });
+    entries = files.list(directory);
   } catch (error) {
     if (hasErrorCode(error, 'ENOENT') || hasErrorCode(error, 'ENOTDIR')) return undefined;
     throw error;
@@ -152,7 +169,7 @@ export class InputScan {
   private readonly fileSet: ReadonlySet<string>;
   private readonly directories: ReadonlySet<string>;
 
-  constructor(inputs: Iterable<string>, private readonly scope: ScanScope) {
+  constructor(inputs: Iterable<string>, private readonly scope: ScanScope, private readonly reader: InputFiles = realInputFiles) {
     const files: string[] = [];
     const linked = new Set<string>();
     const realFolders = new Map<string, string | undefined>();
@@ -188,11 +205,11 @@ export class InputScan {
 
   snapshot(): InputSnapshot {
     const files = new Map<string, string>();
-    for (const file of this.files) files.set(file, signature(file));
+    for (const file of this.files) files.set(file, signature(file, this.reader));
     const folders = new Map<string, readonly string[]>();
     const visit = (directory: string): void => {
       if (folders.has(directory)) return;
-      const listed = readFolder(directory);
+      const listed = readFolder(directory, this.reader);
       if (listed === undefined) return;
       folders.set(directory, listed.names);
       if (!this.descends(directory)) return;
@@ -310,6 +327,8 @@ export interface InputWatcherOptions {
   readonly onError: (error: Error) => void;
   /** Called once when not one folder can be watched: nothing will wake the loop, so it must end. */
   readonly onUnwatchable: () => void;
+  /** The folder watches; a test passes a fault here. */
+  readonly files?: Pick<InputFiles, 'watch'>;
 }
 
 /**
@@ -386,7 +405,7 @@ export class InputWatcher {
 
   private open(folder: string, markers: boolean): fs.FSWatcher | undefined {
     try {
-      const watcher = fs.watch(folder, (event, name) => { this.seen(folder, markers, event, name === null ? undefined : String(name)); });
+      const watcher = (this.options.files ?? realInputFiles).watch(folder, (event, name) => { this.seen(folder, markers, event, name === null ? undefined : String(name)); });
       watcher.on('error', (error) => {
         this.drop(folder);
         // Windows reports a deleted folder as an error of its watcher: the folder is gone, and the next sync finds out whether it came back.

@@ -14,7 +14,7 @@ import { buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { readFixture } from './fixture-project.js';
 import { modelAliasSource, referencedPolicyModelSource, taggedProfilePayloadSource } from './fixture-templates/models/profile-options.js';
-import { runModule } from './support/run-module.js';
+import { openScope, runModule } from './support/run-module.js';
 import { identifier, tsSource, type SourceFragment } from './source-template.js';
 
 function profile(overrides: Partial<GolemProfile> = {}): GolemProfile {
@@ -65,11 +65,8 @@ async function compileModel(root: string): Promise<void> {
 /** The `profile.validation` option of each `registerGeneratedModel` call that the companion makes when it runs with its imports stubbed. */
 function registeredValidation(companion: string): unknown[] {
   const profiles: unknown[] = [];
-  const open: unknown = new Proxy(function stub() {}, { get: () => open, apply: () => open, construct: () => open as object });
-  const runtime = new Proxy({}, {
-    get: (_target, name) => name === 'registerGeneratedModel'
-      ? (_model: unknown, options: { readonly profile: { readonly validation: unknown } }) => { profiles.push(options.profile.validation); }
-      : open,
+  const runtime = openScope({
+    registerGeneratedModel: (_model: unknown, options: { readonly profile: { readonly validation: unknown } }) => { profiles.push(options.profile.validation); },
   });
   runModule(companion, { require: () => runtime, exports: {}, module: { exports: {} } }, { format: 'cjs' });
   return profiles;

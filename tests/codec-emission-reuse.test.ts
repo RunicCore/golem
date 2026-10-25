@@ -1,14 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render, identifier } from '@exprtlabs/golem/internal/emitter';
+import { identifier } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import { instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
-import { runModule } from './support/run-module.js';
 
 /** A parent that nests a model with a date, so the wire differs from the model and validation is on. */
 function paymentGraph(): ReturnType<typeof createSchemaGraph> {
@@ -98,26 +96,6 @@ test('identity arrays are copied, so the decoded and encoded values share no arr
   const encoded = runtime.toWireFormatPayment(decoded, { validate: false }) as { amount: { tags: string[] } };
   assert.deepEqual(encoded.amount.tags, ['a']);
   assert.notEqual(encoded.amount.tags, decoded.amount.tags);
-});
-
-test('model initializers, fromJSON and toJSON copy an unchanged array and pass a non-array through', () => {
-  const strings: ModelTypeDescriptor = { kind: 'array', item: { kind: 'string' } };
-  const unusedModel = (id: string): never => { throw new Error(`No model expected: ${id}`); };
-  const nested: ModelTypeDescriptor = { kind: 'array', item: strings };
-  const run = (expression: string, input: unknown): unknown => runModule(`const result = (${expression});`, { values: input }, { exports: ['result'] }).result;
-  const input = ['a', 'b'];
-  for (const emit of [emitModelFromInit, emitModelFromJSON, emitModelToJSON]) {
-    const expression = render(emit(strings, identifier('values'), unusedModel));
-    const copy = run(expression, input);
-    assert.deepEqual(copy, ['a', 'b']);
-    assert.notEqual(copy, input);
-    assert.equal(run(expression, 'text'), 'text');
-  }
-  const nestedInput = [['a'], 'b'];
-  const nestedCopy = run(render(emitModelFromInit(nested, identifier('values'), unusedModel)), nestedInput) as unknown[];
-  assert.deepEqual(nestedCopy, [['a'], 'b']);
-  assert.notEqual(nestedCopy, nestedInput);
-  assert.notEqual(nestedCopy[0], nestedInput[0]);
 });
 
 test('a nested call to a model of the same module runs unvalidated inside the one outer check', async () => {

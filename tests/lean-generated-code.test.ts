@@ -91,21 +91,27 @@ test('identity arrays are copied with one slice, not mapped through a callback',
   assert.deepEqual(encodedTags.calls, { slice: 1, map: 0, callbacks: 0 }, 'the encoded tags are copied by one slice');
 });
 
-test('model initializers, fromJSON and toJSON copy an unchanged array with one slice', () => {
+test('model initializers, fromJSON and toJSON copy an unchanged array with one slice and pass a non-array through', () => {
   // protects: F-129 lean generated code: an unchanged array is copied with slice, not a map callback
   const strings: ModelTypeDescriptor = { kind: 'array', item: { kind: 'string' } };
   const unusedModel = (id: string): never => { throw new Error(`No model expected: ${id}`); };
   const run = (expression: string, input: unknown): unknown => runModule(`const result = (${expression});`, { values: input }, { exports: ['result'] }).result;
   for (const emit of [emitModelFromInit, emitModelFromJSON, emitModelToJSON]) {
+    const expression = render(emit(strings, identifier('values'), unusedModel));
     const input = spyArray(['a', 'b']);
-    run(render(emit(strings, identifier('values'), unusedModel)), input.array);
+    const copy = run(expression, input.array);
     assert.deepEqual(input.calls, { slice: 1, map: 0, callbacks: 0 });
+    assert.deepEqual(copy, ['a', 'b']);
+    assert.notEqual(copy, input.array, 'the copy is a new array');
+    assert.equal(run(expression, 'text'), 'text', 'a non-array passes through');
   }
   const inner = spyArray(['a']);
   const outer = spyArray([inner.array, 'b']);
-  run(render(emitModelFromInit({ kind: 'array', item: strings }, identifier('values'), unusedModel)), outer.array);
+  const copy = run(render(emitModelFromInit({ kind: 'array', item: strings }, identifier('values'), unusedModel)), outer.array) as unknown[];
   assert.deepEqual(outer.calls, { slice: 0, map: 1, callbacks: 2 }, 'a nested array maps once, a callback for each of its two items');
   assert.deepEqual(inner.calls, { slice: 1, map: 0, callbacks: 0 });
+  assert.deepEqual(copy, [['a'], 'b']);
+  assert.notEqual(copy[0], inner.array, 'the inner array is copied too');
 });
 
 test('the cores and the wire stringify of a module take no options', () => {
@@ -115,6 +121,48 @@ test('the cores and the wire stringify of a module take no options', () => {
   const functions = runModule(source.replace(/^export /gm, ''), { ...serde, ...conversion }, { exports: names }) as Record<string, (...args: unknown[]) => unknown>;
   assert.deepEqual(names.map((name) => [name, functions[name].length]), names.map((name) => [name, 1]), 'each takes its value and nothing else');
   assert.equal(instantiateRuntime(source).stringifyPayment.length, 2, 'the public function takes the value and the options');
+});
+
+test('a parent module names and defines the validators of its own model, not those of a model it nests', () => {
+  // protects: F-129 lean generated code: the parent companion does not duplicate the validator of a nested interned model
+  const owner: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { pet: { kind: 'generated-model', id: 'Pet' }, id: { kind: 'string' } },
+    required: ['pet', 'id'],
+    additionalProperties: false,
+  };
+  const graph = createSchemaGraph();
+  graph.intern({ kind: 'generated-model', id: 'Pet' }, 'Pet');
+  graph.intern(owner, 'Owner');
+  graph.seal();
+  const asked: string[] = [];
+  const source = emitCodecRuntimeText(graph, {
+    nestedGenerated: (id) => identifier(`${id}Model`),
+    validatorName: (id) => { asked.push(id.replace(/_[0-9a-f]{8}$/, '')); return identifier(`validate_${id.replace(/[^\w$]/g, '_')}`); },
+  });
+  assert.deepEqual(asked, ['Owner', 'Owner'], 'validate and assert each name the validator of the parent, none of the nested model');
+  const checks = [...source.matchAll(/^export function ((?:validate|assert)\w+)/gm)].map((match) => match[1]);
+  assert.deepEqual(checks, ['validateOwner', 'assertOwner'], 'the module defines no check of the nested model');
+});
+
+test('validate parses no JSON on a call', async () => {
+  // protects: F-129 lean generated code: schema work runs once at module scope, not on every validate call
+  const binding = await compileValidationPlanBinding(buildCodecValidationPlan([paymentGraph()], [], {}, true), { fastPath: true });
+  const runtime = instantiateRuntime(emitCodecRuntimeText(paymentGraph(), {
+    validatorName: (id) => identifier(binding.validatorName(id)),
+    fastCheckName: (id) => { const name = binding.fastCheckName(id); return name === undefined ? undefined : identifier(name); },
+  }), { ...binding.scope, ...binding.fastScope });
+  const value = { id: 'p1', amount: { currency: 'USD', at: new Date(0), tags: ['a'] }, list: [['x']] };
+  const parse = JSON.parse;
+  let parses = 0;
+  JSON.parse = (...args: Parameters<typeof JSON.parse>) => { parses += 1; return parse(...args); };
+  try {
+    assert.equal(runtime.validatePayment(value), true);
+    assert.equal(runtime.validatePayment({ ...value, id: 7 }), false);
+  } finally {
+    JSON.parse = parse;
+  }
+  assert.equal(parses, 0, 'two validate calls, valid and invalid, parse no JSON');
 });
 
 /** The model `Entry` with one field; with `wire` the field is a TSerde field of that wire form. */
