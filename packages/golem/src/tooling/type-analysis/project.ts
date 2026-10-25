@@ -499,28 +499,32 @@ export function isOrphanCompanion(companion: string, suffixes: readonly string[]
 
 /**
  * The names of the class models a model file declares: the exported aliases `type Name = IModel<...>`, where `IModel` is
- * the name the file imports it by (`import { IModel as Model }` too) or a member of a namespace import. The text is read
- * with patterns. A file where it finds no name gets no stub: its own companion stays as it is on disk, and a companion in
- * `models.output`, which golem owns, reads as `export {}`.
+ * the name the file imports it by (`import { IModel as Model }` too) or a member of a namespace import. The names come
+ * from the top-level statements of the parsed file, so a declaration in a comment or a string gives none. A file where it
+ * finds no name gets no stub: its own companion stays as it is on disk, and a companion in `models.output`, which golem
+ * owns, reads as `export {}`.
  */
-export function classModelNames(text: string): string[] {
+export function classModelNames(file: ts.SourceFile): string[] {
   const local = new Set<string>();
   const namespaces = new Set<string>();
-  for (const [, clause = ''] of text.matchAll(/\bimport\s+(?:type\s+)?([^'";]*?)\s*\bfrom\s*['"][^'"]*['"]/g)) {
-    for (const [, members = ''] of clause.matchAll(/\{([^}]*)\}/g)) {
-      for (const member of members.split(',')) {
-        const [imported, alias] = member.trim().replace(/^type\s+/, '').split(/\s+as\s+/);
-        if (imported === 'IModel') local.add(alias ?? imported);
-      }
+  for (const statement of file.statements) {
+    if (!ts.isImportDeclaration(statement)) continue;
+    const bindings = statement.importClause?.namedBindings;
+    if (bindings === undefined) continue;
+    if (ts.isNamespaceImport(bindings)) namespaces.add(bindings.name.text);
+    else for (const member of bindings.elements) if ((member.propertyName ?? member.name).text === 'IModel') local.add(member.name.text);
+  }
+  const names = new Set<string>();
+  for (const statement of file.statements) {
+    if (!ts.isTypeAliasDeclaration(statement) || !statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword)) continue;
+    const type = statement.type;
+    if (!ts.isTypeReferenceNode(type) || type.typeArguments === undefined) continue;
+    const reference = type.typeName;
+    if (ts.isIdentifier(reference) ? local.has(reference.text) : ts.isIdentifier(reference.left) && namespaces.has(reference.left.text) && reference.right.text === 'IModel') {
+      names.add(statement.name.text);
     }
-    const namespace = /\*\s*as\s+([\w$]+)/.exec(clause)?.[1];
-    if (namespace !== undefined) namespaces.add(namespace);
   }
-  const names: string[] = [];
-  for (const [, name = '', owner, member = ''] of text.matchAll(/\bexport\s+type\s+([\w$]+)\s*=\s*(?:([\w$]+)\s*\.\s*)?([\w$]+)\s*</g)) {
-    if (owner === undefined ? local.has(member) : namespaces.has(owner) && member === 'IModel') names.push(name);
-  }
-  return [...new Set(names)];
+  return [...names];
 }
 
 /**
@@ -548,7 +552,7 @@ export function createModelStubProgram(
       const real = canonicalFilename(file);
       if (stubbed.has(real) || !existsSync(file)) continue;
       stubbed.add(real);
-      const names = classModelNames(readFileSync(file, 'utf8'));
+      const names = classModelNames(session.parseSourceFile(file, readFileSync(file, 'utf8')));
       if (names.length === 0) continue;
       const companion = canonicalFilename(companionFilename(boundary, file));
       stubs.set(companion, `import type { ${names.join(', ')} } from ${JSON.stringify(sourceImportPath(real, companion))};\n`
