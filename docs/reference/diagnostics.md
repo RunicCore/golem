@@ -268,7 +268,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1056
 
-**Unresolvable recursive type.** A type refers back to itself, and golem cannot give the cycle a name. A recursive type alias gets its name from the alias, so the cycle needs a type alias that you wrote. **Fix:** Declare the recursive shape as a named type alias, for example `type Tree = { children: Tree[] }`, or as a named model.
+**Unresolvable recursive type.** A type refers back to itself, and golem cannot give the cycle a name. A recursive type gets its name from its interface, class or type alias, so the cycle needs one of them. **Fix:** Declare the recursive shape as a named interface, class or type alias, for example `type Tree = { children: Tree[] }`, or as a named model.
 
 ### RUNM1057
 
@@ -280,7 +280,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1059
 
-**Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. The message lists both places. **Fix:** Declare a named type alias for one of the inline types, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field.
+**Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. A recursive interface, class or type alias derives its name from its own, so two of them with one name clash too. The message lists both places. **Fix:** For an inline type, declare a named type alias, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field. For a recursive interface, class or type alias, rename one of the two types.
 
 ### RUNM1060
 
