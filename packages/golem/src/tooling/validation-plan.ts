@@ -281,15 +281,16 @@ export function buildCodecValidationPlan(
     addSchema(id, schema);
   }
 
-  /** The one codec id a model name stands for in `preferredAliases` or the whole plan; undefined when none does. */
-  const codecIdOf = (name: string, preferredAliases: Map<string, Set<string>> | undefined): string | undefined => {
+  /** The one codec id a model name stands for, from `preferredAliases` or the whole plan; a name that is a schema id is its own. Undefined when none does. `place` names the caller in the ambiguity error. */
+  const codecIdOf = (name: string, preferredAliases: Map<string, Set<string>> | undefined, place: string): string | undefined => {
+    if (Object.hasOwn(schemas, name)) return name;
     const candidates = preferredAliases?.get(name)
       ?? preferredAliases?.get(codecShortName(name))
       ?? aliases.get(name)
       ?? aliases.get(codecShortName(name));
     if (candidates && candidates.size > 1) {
       throw new TypeError(
-        `Cannot compile validators: generated model schema reference ${JSON.stringify(name)} `
+        `Cannot compile validators: ${place} ${JSON.stringify(name)} `
         + `is ambiguous between codec identities ${[...candidates].sort().map(id => JSON.stringify(id)).join(', ')}. `
         + 'Regenerate the referenced model manifest with an unambiguous codec identity.',
       );
@@ -297,17 +298,12 @@ export function buildCodecValidationPlan(
     return candidates?.values().next().value;
   };
 
-  /** A `golemModelInstance` value with the codec id of each name it holds that differs from the name: a class registers under its codec id, so the check matches ids exactly. */
+  /** A `golemModelInstance` value with each model name replaced by its codec id, which a class registers under: the generated check compares ids exactly. A name no model answers to stays. */
   const withInstanceCodecIds = (instance: unknown, preferredAliases: Map<string, Set<string>> | undefined): unknown => {
     if (instance === null || typeof instance !== 'object' || Array.isArray(instance)) return instance;
     const { of, among } = instance as { of?: unknown; among?: unknown };
-    const names = [...(typeof of === 'string' ? [of] : []), ...(Array.isArray(among) ? among.filter((name): name is string => typeof name === 'string') : [])];
-    const codecIds: Record<string, string> = {};
-    for (const name of names) {
-      const codecId = codecIdOf(name, preferredAliases);
-      if (codecId !== undefined && codecId !== name) codecIds[name] = codecId;
-    }
-    return Object.keys(codecIds).length === 0 ? instance : { ...instance, codecIds };
+    const idOf = (name: unknown): unknown => (typeof name === 'string' ? codecIdOf(name, preferredAliases, `the ${MODEL_INSTANCE_KEYWORD} model name`) ?? name : name);
+    return { ...instance, ...(of === undefined ? {} : { of: idOf(of) }), ...(Array.isArray(among) ? { among: among.map(idOf) } : {}) };
   };
 
   const resolveGeneratedModelRefs = (
@@ -335,7 +331,7 @@ export function buildCodecValidationPlan(
             // A residual reference names its own plane (`Name#model-only`).
             const name = hash < 0 ? reference : reference.slice(0, hash);
             const residualPlane = hash < 0 ? undefined : reference.slice(hash);
-            const codecId = codecIdOf(name, preferredAliases);
+            const codecId = codecIdOf(name, preferredAliases, 'generated model schema reference');
             if (codecId === undefined || !Object.hasOwn(schemas, codecId)) {
               throw new TypeError(
                 `Cannot compile validators: generated model schema reference ${JSON.stringify(name)} is unresolved. `

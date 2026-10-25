@@ -1087,13 +1087,11 @@ function resolveObjectDescriptor(
     if (node.descriptor.kind === 'object') return node.descriptor;
     if (node.descriptor.kind === 'intersection') return resolveObjectDescriptor(node.descriptor, ctx);
   }
-  const hashedBase = short && /_[0-9a-f]{8}$/i.test(short) ? short.replace(/_[0-9a-f]{8}$/i, '') : undefined;
   const ids = new Set(
     [
       descriptor.kind === 'generated-model' ? descriptor.id : undefined,
       descriptor.kind === 'reference' ? descriptor.name : undefined,
       short,
-      hashedBase,
       node?.codecId,
       node?.name,
     ].filter((value): value is string => typeof value === 'string' && value.length > 0),

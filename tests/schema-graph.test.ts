@@ -585,3 +585,20 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
   const parsed = parseCheckout(JSON.stringify(wire), { validate: false }) as Record<string, unknown>;
   assert.equal(parsed.note, 'hi', 'parse round-trips through the same fill as fromWireFormat');
 });
+
+test('a reference to a model missing from the graph is never read as the model it looks like a hashed id of', () => {
+  // protects: bug T-294 a hashed id is never guessed from a name
+  const model = (tag: string): ModelTypeDescriptor => ({ kind: 'object', properties: { kind: { kind: 'literal', value: tag } }, required: ['kind'], additionalProperties: false });
+  const box: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { item: { kind: 'union', variants: [{ kind: 'reference', name: 'Order_0badc0de' }, { kind: 'reference', name: 'Other' }] } },
+    required: ['item'],
+    additionalProperties: false,
+  };
+  const graph = createSchemaGraph();
+  graph.intern(model('plain'), 'Order');
+  graph.intern(model('other'), 'Other');
+  graph.intern(box, 'Box', true);
+  graph.seal();
+  assert.throws(() => render(emitGraphStringify(graph)), /require a unique, required literal discriminator\. The variants are Order_0badc0de \| Other_/);
+});
