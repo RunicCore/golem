@@ -209,7 +209,7 @@ class ComponentSchemas {
     this.diagnostics.push(entry);
   };
 
-  schemaOf(descriptor: Descriptor, sourceNode?: ts.Node): DtoSchema {
+  private schemaOf(descriptor: Descriptor, sourceNode?: ts.Node): DtoSchema {
     return schemaForDescriptor(descriptor, {
       definitions: this.contractAnalysis.definitions,
       representation: 'wire' as const,
