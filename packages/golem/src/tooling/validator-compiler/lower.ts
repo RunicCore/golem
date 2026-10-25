@@ -31,6 +31,20 @@ interface SameValueEdge {
   readonly keyword: string;
 }
 
+/** What the keyword steps of one schema object share: its location, the checks so far, and the ways to lower its children. */
+interface RecordContext {
+  readonly node: Readonly<Record<string, unknown>>;
+  readonly here: SchemaLocation;
+  readonly sameValue: SameValueEdge[];
+  readonly checks: IrCheck[];
+  readonly child: (keyword: string, value: unknown, ...more: readonly (string | number)[]) => SchemaLocation;
+  readonly lowerChild: (keyword: string, value: unknown, ...more: readonly (string | number)[]) => IrSchema;
+  readonly otherValueFunction: (keyword: string, value: unknown, ...more: readonly (string | number)[]) => number;
+  readonly sameValueFunction: (keyword: string, value: unknown, ...more: readonly (string | number)[]) => number;
+  readonly inPlaceBranch: (keyword: string, branch: unknown, position: number) => IrSchema;
+  readonly malformed: (keyword: string, expected: string) => void;
+}
+
 /** `not` passes the value on, but what its schema evaluates does not count for the schema that holds it. */
 function carriesEvaluation(edge: SameValueEdge): boolean {
   return edge.keyword !== 'not';
@@ -366,11 +380,29 @@ class Lowering {
     }
   }
 
+  /** Lowers one schema object: each group of keywords adds its checks to the context, in the order the validators run them. */
   private lowerRecord(node: Readonly<Record<string, unknown>>, location: SchemaLocation, sameValue: SameValueEdge[]): IrSchema {
     const here: SchemaLocation = { ...location, base: baseInside(node, location.base) };
     for (const keyword of Object.keys(node)) {
       if (UNSUPPORTED_KEYWORDS.has(keyword)) this.report(VALIDATE_UNSUPPORTED_KEYWORD, GolemDiagnosticSeverity.Error, here, keyword, `the keyword ${keyword} is not supported`);
     }
+    const cx = this.recordContext(node, here, sameValue);
+    this.lowerTypeAndValues(cx);
+    this.lowerReference(cx);
+    this.lowerString(cx);
+    this.lowerNumber(cx);
+    this.lowerFormat(cx);
+    this.lowerArray(cx);
+    this.lowerObject(cx);
+    this.lowerComposition(cx);
+    this.lowerConditional(cx);
+    this.lowerValidation(cx);
+    this.lowerUnevaluated(cx);
+    return cx.checks.length === 0 ? ALWAYS : { kind: 'checks', checks: cx.checks };
+  }
+
+  /** The context of one schema object: its child locations, and the ways to lower a child that applies to the same value or to another. */
+  private recordContext(node: Readonly<Record<string, unknown>>, here: SchemaLocation, sameValue: SameValueEdge[]): RecordContext {
     const child = (keyword: string, value: unknown, ...more: readonly (string | number)[]): SchemaLocation => ({
       ...here,
       node: value,
@@ -391,14 +423,21 @@ class Lowering {
       sameValue.push({ to, location: here, keyword });
       return to;
     };
-    const checks: IrCheck[] = [];
+    // A branch that applies to this value in place. One with its own `unevaluated*` keyword is its own function: it must not see what its siblings evaluated.
+    const inPlaceBranch = (keyword: string, branch: unknown, position: number): IrSchema => {
+      if (holdsEvaluationKeyword(branch) || this.isInlining(branch)) return callTo(sameValueFunction(keyword, branch, position));
+      return this.lowerSchema(child(keyword, branch, position), sameValue);
+    };
+    // A golem keyword with a malformed value is an error: dropping it would accept data its rule rejects.
+    const malformed = (keyword: string, expected: string): void => this.report(VALIDATE_UNSUPPORTED_KEYWORD, GolemDiagnosticSeverity.Error, here, keyword, `the value of ${keyword} is not valid: ${expected}`);
+    return { node, here, sameValue, checks: [], child, lowerChild, otherValueFunction, sameValueFunction, inPlaceBranch, malformed };
+  }
 
+  private lowerTypeAndValues({ node, checks, malformed }: RecordContext): void {
     const typeList = typeof node.type === 'string' ? [node.type] : Array.isArray(node.type) ? node.type as readonly unknown[] : [];
     const names = typeList.filter(isTypeName);
     if (names.length > 0) checks.push({ kind: 'type', names });
 
-    // A golem keyword with a malformed value is an error: dropping it would accept data its rule rejects.
-    const malformed = (keyword: string, expected: string): void => this.report(VALIDATE_UNSUPPORTED_KEYWORD, GolemDiagnosticSeverity.Error, here, keyword, `the value of ${keyword} is not valid: ${expected}`);
     if (Object.hasOwn(node, MODEL_DATE_KEYWORD)) {
       if (typeof node[MODEL_DATE_KEYWORD] !== 'boolean') malformed(MODEL_DATE_KEYWORD, 'expected true or false');
       else if (node[MODEL_DATE_KEYWORD]) checks.push({ kind: 'date' });
@@ -411,17 +450,20 @@ class Lowering {
 
     if (Object.hasOwn(node, 'const')) checks.push({ kind: 'literal', values: [node.const] });
     if (Array.isArray(node.enum)) checks.push({ kind: 'literal', values: node.enum as readonly unknown[] });
+  }
 
-    if (typeof node.$ref === 'string') {
-      const target = this.resolver.resolve(node.$ref, here.base);
-      if (target) {
-        const to = this.functionFor(target, referenceName(target));
-        sameValue.push({ to, location: here, keyword: '$ref' });
-        checks.push({ kind: 'call', fn: to });
-      }
-      else this.report(VALIDATE_UNRESOLVED_REF, GolemDiagnosticSeverity.Error, here, '$ref', `the reference ${JSON.stringify(node.$ref)} does not resolve to a schema`);
+  private lowerReference({ node, here, sameValue, checks }: RecordContext): void {
+    if (typeof node.$ref !== 'string') return;
+    const target = this.resolver.resolve(node.$ref, here.base);
+    if (target) {
+      const to = this.functionFor(target, referenceName(target));
+      sameValue.push({ to, location: here, keyword: '$ref' });
+      checks.push({ kind: 'call', fn: to });
     }
+    else this.report(VALIDATE_UNRESOLVED_REF, GolemDiagnosticSeverity.Error, here, '$ref', `the reference ${JSON.stringify(node.$ref)} does not resolve to a schema`);
+  }
 
+  private lowerString({ node, here, checks }: RecordContext): void {
     const minLength = finiteNumber(node.minLength);
     const maxLength = finiteNumber(node.maxLength);
     let pattern: string | undefined;
@@ -431,7 +473,9 @@ class Lowering {
       else this.report(VALIDATE_INVALID_PATTERN, GolemDiagnosticSeverity.Error, here, 'pattern', `the pattern ${JSON.stringify(node.pattern)} is not a valid regular expression: ${problem}`);
     }
     if (minLength !== undefined || maxLength !== undefined || pattern !== undefined) checks.push({ kind: 'string', minLength, maxLength, pattern });
+  }
 
+  private lowerNumber({ node, checks }: RecordContext): void {
     const divisor = finiteNumber(node.multipleOf);
     const limits = {
       minimum: finiteNumber(node.minimum),
@@ -441,16 +485,19 @@ class Lowering {
       multipleOf: divisor !== undefined && divisor > 0 ? divisor : undefined,
     };
     if (Object.values(limits).some(limit => limit !== undefined)) checks.push({ kind: 'number', ...limits });
+  }
 
-    if (typeof node.format === 'string') {
-      if (isKnownFormat(node.format)) {
-        checks.push({ kind: 'format', format: node.format });
-      } else {
-        const severity = this.options.unknownFormats === 'error' ? GolemDiagnosticSeverity.Error : GolemDiagnosticSeverity.Warning;
-        this.report(VALIDATE_UNKNOWN_FORMAT, severity, here, 'format', `the format ${JSON.stringify(node.format)} is not implemented${severity === GolemDiagnosticSeverity.Warning ? ' and is not checked' : ', so golem cannot check it.'}`);
-      }
+  private lowerFormat({ node, here, checks }: RecordContext): void {
+    if (typeof node.format !== 'string') return;
+    if (isKnownFormat(node.format)) {
+      checks.push({ kind: 'format', format: node.format });
+    } else {
+      const severity = this.options.unknownFormats === 'error' ? GolemDiagnosticSeverity.Error : GolemDiagnosticSeverity.Warning;
+      this.report(VALIDATE_UNKNOWN_FORMAT, severity, here, 'format', `the format ${JSON.stringify(node.format)} is not implemented${severity === GolemDiagnosticSeverity.Warning ? ' and is not checked' : ', so golem cannot check it.'}`);
     }
+  }
 
+  private lowerArray({ node, checks, lowerChild, otherValueFunction }: RecordContext): void {
     const prefixItems = Array.isArray(node.prefixItems) ? (node.prefixItems as readonly unknown[]).map((item, position) => lowerChild('prefixItems', item, position)) : [];
     const closed = node.items === false;
     const items = node.items === undefined || closed ? undefined : lowerChild('items', node.items);
@@ -467,7 +514,9 @@ class Lowering {
     if (arrayType || prefixItems.some(item => item.kind !== 'always') || (items !== undefined && items.kind !== 'always') || closed || contains !== undefined || marksItems || minItems !== undefined || maxItems !== undefined || uniqueItems) {
       checks.push({ kind: 'array', prefixItems, items, closed, contains, minItems, maxItems, uniqueItems });
     }
+  }
 
+  private lowerObject({ node, here, checks, lowerChild, otherValueFunction }: RecordContext): void {
     const required = Array.isArray(node.required) ? (node.required as readonly unknown[]).filter((key): key is string => typeof key === 'string') : [];
     const properties = isRecord(node.properties)
       ? Object.entries(node.properties).map(([key, schema]) => ({ key, schema: lowerChild('properties', schema, key) }))
@@ -498,12 +547,10 @@ class Lowering {
     if (checksKeys || marksKeys || additional !== undefined || propertyNames !== undefined || minProperties !== undefined || maxProperties !== undefined) {
       checks.push({ kind: 'object', required, dependentRequired, properties, patternProperties, additional, propertyNames, minProperties, maxProperties });
     }
+  }
 
-    // A branch that applies to this value in place. One with its own `unevaluated*` keyword is its own function: it must not see what its siblings evaluated.
-    const inPlaceBranch = (keyword: string, branch: unknown, position: number): IrSchema => {
-      if (holdsEvaluationKeyword(branch) || this.isInlining(branch)) return callTo(sameValueFunction(keyword, branch, position));
-      return this.lowerSchema(child(keyword, branch, position), sameValue);
-    };
+  /** `allOf`, `anyOf`, `oneOf` and `not`: the branches that apply to this same value. */
+  private lowerComposition({ node, checks, child, sameValueFunction, inPlaceBranch }: RecordContext): void {
     if (Array.isArray(node.allOf)) {
       const branches = (node.allOf as readonly unknown[]).map((branch, position) => inPlaceBranch('allOf', branch, position)).filter(branch => branch.kind !== 'always');
       if (branches.length > 0) checks.push({ kind: 'allOf', branches });
@@ -529,7 +576,10 @@ class Lowering {
       }
     }
     if (node.not !== undefined) checks.push({ kind: 'not', fn: sameValueFunction('not', node.not) });
+  }
 
+  /** `if` with `then` and `else`, and `dependentSchemas`. */
+  private lowerConditional({ node, checks, sameValueFunction }: RecordContext): void {
     // `then` and `else` apply only next to an `if`; an `if` with neither changes nothing unless it marks what it evaluates.
     if (node.if !== undefined && (node.then !== undefined || node.else !== undefined || this.tracksEvaluation)) {
       checks.push({
@@ -543,29 +593,30 @@ class Lowering {
       const entries = Object.entries(node.dependentSchemas).map(([trigger, schema]) => ({ trigger, fn: sameValueFunction('dependentSchemas', schema, trigger) }));
       if (entries.length > 0) checks.push({ kind: 'dependentSchemas', entries });
     }
+  }
 
-    // `{ schema, bindings }`, or the bindings alone: the functions run once the structural schema has passed, and the schema marks what it evaluates.
-    if (Object.hasOwn(node, VALIDATION_KEYWORD)) {
-      const validation = node[VALIDATION_KEYWORD];
-      const ids: unknown = isRecord(validation) ? validation.bindings : validation;
-      if (!Array.isArray(ids) || !ids.every(id => typeof id === 'string')) {
-        malformed(VALIDATION_KEYWORD, 'expected a list of validation function identifiers, or an object with such a list as "bindings"');
-      } else if (Array.isArray(validation)) {
-        const calls = this.bindingCalls(ids, here);
-        if (calls.length > 0) checks.push({ kind: 'validation', calls });
-      } else if (isRecord(validation) && validation.schema !== undefined && typeof validation.schema !== 'boolean' && !isRecord(validation.schema)) {
-        malformed(VALIDATION_KEYWORD, 'expected "schema" to be a boolean or a schema object');
-      } else if (isRecord(validation)) {
-        const calls = this.bindingCalls(ids, here, 'bindings');
-        const fn = validation.schema === undefined || validation.schema === true ? undefined : sameValueFunction(VALIDATION_KEYWORD, validation.schema, 'schema');
-        if (calls.length > 0 || fn !== undefined) checks.push({ kind: 'validation', fn, calls });
-      }
+  /** `{ schema, bindings }`, or the bindings alone: the functions run once the structural schema has passed, and the schema marks what it evaluates. */
+  private lowerValidation({ node, here, checks, sameValueFunction, malformed }: RecordContext): void {
+    if (!Object.hasOwn(node, VALIDATION_KEYWORD)) return;
+    const validation = node[VALIDATION_KEYWORD];
+    const ids: unknown = isRecord(validation) ? validation.bindings : validation;
+    if (!Array.isArray(ids) || !ids.every(id => typeof id === 'string')) {
+      malformed(VALIDATION_KEYWORD, 'expected a list of validation function identifiers, or an object with such a list as "bindings"');
+    } else if (Array.isArray(validation)) {
+      const calls = this.bindingCalls(ids, here);
+      if (calls.length > 0) checks.push({ kind: 'validation', calls });
+    } else if (isRecord(validation) && validation.schema !== undefined && typeof validation.schema !== 'boolean' && !isRecord(validation.schema)) {
+      malformed(VALIDATION_KEYWORD, 'expected "schema" to be a boolean or a schema object');
+    } else if (isRecord(validation)) {
+      const calls = this.bindingCalls(ids, here, 'bindings');
+      const fn = validation.schema === undefined || validation.schema === true ? undefined : sameValueFunction(VALIDATION_KEYWORD, validation.schema, 'schema');
+      if (calls.length > 0 || fn !== undefined) checks.push({ kind: 'validation', fn, calls });
     }
+  }
 
-    // These two read what every check above evaluated, so they come last.
+  /** These two read what every check before them evaluated, so they come last. */
+  private lowerUnevaluated({ node, checks, lowerChild }: RecordContext): void {
     if (node.unevaluatedProperties !== undefined) checks.push({ kind: 'unevaluatedProperties', schema: lowerChild('unevaluatedProperties', node.unevaluatedProperties) });
     if (node.unevaluatedItems !== undefined) checks.push({ kind: 'unevaluatedItems', schema: lowerChild('unevaluatedItems', node.unevaluatedItems) });
-
-    return checks.length === 0 ? ALWAYS : { kind: 'checks', checks };
   }
 }
