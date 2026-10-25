@@ -131,6 +131,57 @@ export type TItem = IModel<Money>;
   assert.match(generated.content, /declare amount: TItemFields\["amount"\];\s+declare currency: TItemFields\["currency"\];/);
 });
 
+test('an IModel over an SDK model keeps a field spelled like a brand key and drops the real brand keys', async t => {
+  // protects: F-213 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'odd.yaml'), `openapi: 3.1.0
+info: { title: Odd, version: "1" }
+paths: {}
+components:
+  schemas:
+    Odd:
+      type: object
+      required: [amount, "__@generatedModelWireBrand@1"]
+      additionalProperties: false
+      properties:
+        amount: { type: number }
+        "__@generatedModelWireBrand@1": { type: string }
+`);
+  writeGeneratedArtifacts((await generateOpenApi({
+    input: path.join(sourceRoot, 'odd.yaml'),
+    output: path.join(sourceRoot, 'sdk'),
+    name: 'Odd',
+    profile: { mobx: false, validation: true },
+  })).artifacts);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Odd } from './sdk/index.js';
+export type TItem = IModel<Odd>;
+`,
+  });
+  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'));
+  assert.ok(generated);
+  const declared = [...generated.content.matchAll(/^\s*declare (\S+?): TItemFields\[/gm)].map(match => match[1]);
+  assert.deepEqual(declared, ['amount', '"__@generatedModelWireBrand@1"']);
+});
+
+for (const [place, fields] of [['a field of the model', 'name: string; [sym]: string'], ['a field of a nested object', 'inner: { name: string; [sym]: string }']] as const) {
+  test(`a symbol-keyed property in ${place} stops generation with RUNM1070`, t => {
+    // protects: F-39 golem rejects a property that JSON cannot carry; a symbol key once became a field named __@sym@N
+    const { root, sourceRoot } = fixture(t);
+    writeModelSources(sourceRoot, {
+      'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+declare const sym: unique symbol;
+export type TItem = IModel<{ ${fields} }>;
+`,
+    });
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation: true } }),
+      /item\.model\.ts:\d+:\d+ RUNM1070: Model TItem has the property \[sym\] with a symbol key\. JSON cannot carry a symbol key\. Use a string key, or remove the property\./,
+    );
+  });
+}
+
 test('generated readonly fields remain readonly to TypeScript consumers', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), readFixture("models/model-composition/generated-readonly-fields-remain-readonly-to-typescript-consumers/item.model.ts"));
