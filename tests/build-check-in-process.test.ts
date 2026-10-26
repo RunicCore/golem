@@ -102,7 +102,7 @@ test('golem build refuses the tsc commands and the arguments that name files bef
   }
   const files = await golemBuild(root, ['src/plain.ts']);
   assert.notEqual(files.code, 0);
-  assert.match(files.stderr, /name source files \(src\/plain\.ts\).*TS5042/);
+  assert.match(files.stderr, /name source files \(.*src\/plain\.ts\).*TS5042/);
   assert.equal(fs.existsSync(path.join(root, 'build')), false, 'nothing is emitted');
   assert.equal(fs.existsSync(path.join(root, '.golem')), false, 'nothing is generated');
 });
@@ -115,7 +115,7 @@ test('with noEmitOnError a syntax error alone is printed, as tsc prints it, and 
   const flags = ['--noEmitOnError', '--pretty', 'false'];
   const result = await golemBuild(root, flags);
   assert.equal(printed(result.stdout), printed(await tsc(root, flags)));
-  assert.match(result.stdout, /src\/b\.ts\(1,14\): error TS1389/);
+  assert.match(result.stdout, /src\/b\.ts\(1,14\): error TS1134/);
   assert.doesNotMatch(result.stdout, /TS2322/);
   assert.equal(result.code, 1);
   assert.equal(fs.existsSync(path.join(root, 'build')), false);

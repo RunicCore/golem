@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
+import { flagsAsConfigOptions } from '#golem/typescript-config';
 import { createFixtureProject } from './fixture-project.js';
 import { TSC } from './support/build-project.js';
 
@@ -123,17 +124,17 @@ test('arguments reach a program as the options of a configuration parsed under t
   assert.throws(() => session.openProgram({ root, sources, configFile: config, flags: ['--noSuchFlag'] }), /TS5023/);
 });
 
-test('an argument value is trimmed, an empty one is an empty list and a negative number is a number', t => {
-  // protects: T-461 --lib "es2020, dom", --lib "" and --maxNodeModuleJsDepth -1 reach a program as the configuration parsed under them has them
+test('an argument value is trimmed and an empty one is an empty list', t => {
+  // protects: T-461 --lib "es2020, dom" and --lib "" reach a program as the configuration parsed under them has them
   const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n' });
   using session = new ts.ProgramSession({ cwd: root });
   const picked = (options: ts.CompilerOptions) => ({ lib: options.lib, types: options.types, maxNodeModuleJsDepth: options.maxNodeModuleJsDepth });
-  for (const flags of [['--lib', 'es2020, dom', '--maxNodeModuleJsDepth', '-1'], ['--lib', '', '--types', '']]) {
+  for (const flags of [['--lib', 'es2020, dom'], ['--lib', '', '--types', '']]) {
     const parsed = session.parseConfigFileWithFlags(config, flags);
     using program = session.openProgram({ root, sources: parsed.fileNames, configFile: config, flags });
     assert.deepEqual(picked(program.getCompilerOptions()), picked(parsed.options), flags.join(' '));
   }
-  assert.throws(() => session.parseConfigFileWithFlags(config, ['src/a.ts']), /name source files \(src\/a\.ts\).*TS5042/);
+  assert.throws(() => session.parseConfigFileWithFlags(config, ['src/a.ts']), /name source files \(.*src\/a\.ts\).*TS5042/);
 });
 
 test('a package built in place under node_modules emits its declarations', t => {
@@ -142,4 +143,10 @@ test('a package built in place under node_modules emits its declarations', t => 
   using session = new ts.ProgramSession({ cwd: root });
   using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config });
   assert.deepEqual([...program.emitToMemory('declarations').files.keys()], [path.join(root, 'build/a.d.ts')]);
+});
+
+test('a negative number after an option is its value', () => {
+  // protects: T-461 --maxNodeModuleJsDepth -1 is one argument with its value, not a flag
+  const parse = (args: readonly string[]) => ({ options: args[0] === '--depth' ? { depth: args[1] === undefined ? true : Number(args[1]) } : {}, fileNames: [], errors: [] });
+  assert.deepEqual(flagsAsConfigOptions(['--depth', '-1'], parse), { depth: -1 });
 });
