@@ -99,6 +99,8 @@ export interface NestAnalysisContext {
   readonly program: ts.Program;
   readonly checker: ts.TypeChecker;
   readonly openapiVersion?: '3.2.0' | '3.1.2';
+  /** The most bytes of JSON that a route path or version can fold to; omitted means 1 MiB. */
+  readonly maxResultBytes?: number;
   readonly onInput?: (filename: string) => void;
   /** Shared source contract analysis used for generated model subclasses and projections. */
   readonly contractAnalysis?: ContractAnalysis;

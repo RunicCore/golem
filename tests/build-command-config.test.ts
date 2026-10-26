@@ -145,12 +145,13 @@ test('a tsconfig key that differs from the tsconfig the job finds from its root 
 });
 
 test('a job root outside the directory of the yaml tsconfig fails in golem generate, golem check and golem build', async (t) => {
+  // protects: T-375 the build error names its local files relative to the working directory
   const root = await generatedProject(t, 'build-job-root-outside', { yaml: 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./app/tsconfig.json\nmodels:\n  root: .\n', generate: false });
   fs.mkdirSync(path.join(root, 'app'));
   fs.writeFileSync(path.join(root, 'app/tsconfig.json'), JSON.stringify({ extends: '../tsconfig.json', include: ['../src/**/*.ts'] }));
   const yaml = path.join(root, 'golem.yaml');
   const outside = (error: Error): boolean => {
-    assert.equal(error.message, `job root ${fs.realpathSync(root)} is outside ${path.join(fs.realpathSync(root), 'app')}; use one golem.yaml per tsconfig.`);
+    assert.equal(error.message, `job root ${path.relative(process.cwd(), fs.realpathSync(root))} is outside ${path.relative(process.cwd(), path.join(fs.realpathSync(root), 'app'))}; use one golem.yaml per tsconfig.`);
     return true;
   };
   await assert.rejects(runPipeline(yaml), outside);

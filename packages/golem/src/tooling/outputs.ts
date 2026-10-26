@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-import { canonicalPath, compareText, hasErrorCode, isInsideDirectory, isRecord } from './generator-api.js';
+import { canonicalPath, compareText, displayPath, hasErrorCode, isInsideDirectory, isRecord } from './generator-api.js';
 import type { GolemArtifact } from './generator-api.js';
 import { codecKeysPath, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
 import type { GolemConfig, GolemJob } from './config.js';
@@ -83,10 +83,10 @@ function assertInventoryPath(config: GolemConfig): void {
   const boundary = inventoryBoundaryPath(config);
   const link = symlinkInPath(boundary);
   if (link !== undefined) {
-    throw new Error(`Generated inventory path uses symbolic link: ${config.inventoryFile}`);
+    throw new Error(`Generated inventory path uses symbolic link: ${displayPath(config.inventoryFile)}`);
   }
   if (!isInsideDirectory(canonicalPath(config.directory), canonicalPath(boundary))) {
-    throw new Error(`Generated inventory escapes its configuration directory: ${config.inventoryFile}`);
+    throw new Error(`Generated inventory escapes its configuration directory: ${displayPath(config.inventoryFile)}`);
   }
 }
 
@@ -104,17 +104,17 @@ function assertDestinationPath(filename: string, destination: string, label: str
   try { finalStat = fs.lstatSync(filename); }
   catch (error) { if (!hasErrorCode(error, 'ENOENT')) throw error; }
   if (finalStat?.isSymbolicLink()) {
-    throw new Error(`Refusing non-regular generated output: ${filename}`);
+    throw new Error(`Refusing non-regular generated output: ${displayPath(filename)}`);
   }
   const destinationLink = symlinkInPath(destination);
   if (destinationLink !== undefined) {
-    throw new Error(`Refusing generated ${label} destination through symbolic link: ${destination}`);
+    throw new Error(`Refusing generated ${label} destination through symbolic link: ${displayPath(destination)}`);
   }
   const canonicalDestination = canonicalPath(destination);
   const canonicalFilename = canonicalPath(filename);
   if (!isInsideDirectory(canonicalDestination, canonicalFilename)) {
     const link = symlinkInPath(filename);
-    throw new Error(`Generated output escapes its ${label} destination${link === undefined ? '' : ` through symbolic link ${link}`}: ${filename}`);
+    throw new Error(`Generated output escapes its ${label} destination${link === undefined ? '' : ` through symbolic link ${displayPath(link)}`}: ${displayPath(filename)}`);
   }
 }
 
@@ -149,7 +149,7 @@ function artifactDestination(config: GolemConfig, job: GolemJob, filename: strin
   if (job.kind === 'controllers') {
     const extra = operationCodecRegistryPath(job.options.root);
     if (!samePath(filename, job.options.output) && !samePath(filename, extra)) {
-      throw new Error(`Generated output escapes the ${job.id} destination: ${filename}`);
+      throw new Error(`Generated output escapes the ${job.id} destination: ${displayPath(filename)}`);
     }
   }
   const destination = destinations.find(candidate => {
@@ -159,7 +159,7 @@ function artifactDestination(config: GolemConfig, job: GolemJob, filename: strin
     } catch { return false; }
   });
   if (destination === undefined) {
-    throw new Error(`Generated output escapes the ${job.id} destination: ${filename}`);
+    throw new Error(`Generated output escapes the ${job.id} destination: ${displayPath(filename)}`);
   }
   const configured = configuredDestinationPath(destination);
   assertDestinationPath(filename, configured, 'job');
@@ -178,7 +178,7 @@ function inventoryDestination(config: GolemConfig, filename: string, entry: Inve
     const isDocument = samePath(configured, destination);
     const isRegistry = isOperationCodecRegistry(portable(entry.destination));
     if (path.resolve(filename) !== path.resolve(destination) || (!isDocument && !isRegistry)) {
-      throw new Error(`Generated output escapes its exact file destination: ${filename}`);
+      throw new Error(`Generated output escapes its exact file destination: ${displayPath(filename)}`);
     }
   }
   return destination;
@@ -187,14 +187,14 @@ function inventoryDestination(config: GolemConfig, filename: string, entry: Inve
 function recordedDestinationPath(config: GolemConfig, destination: string): string {
   const absolute = path.resolve(canonicalPath(config.directory), destination);
   if (canonicalPath(absolute) !== absolute) {
-    throw new Error(`Generated output destination moved through a symbolic link: ${destination}`);
+    throw new Error(`Generated output destination moved through a symbolic link: ${displayPath(absolute)}`);
   }
   return absolute;
 }
 
 function assertProtectedPath(config: GolemConfig, filename: string): void {
   if (samePath(filename, config.configFile) || samePath(filename, config.inventoryFile)) {
-    throw new Error(`Generated output collision: ${filename}`);
+    throw new Error(`Generated output collision: ${displayPath(filename)}`);
   }
 }
 
@@ -207,13 +207,13 @@ function knownOwner(content: string, owners: ReadonlySet<string>): string | unde
 function assertDeletable(filename: string, entry: InventoryEntry): void {
   const current = readFile(filename);
   if (current === undefined || digest(current) === entry.digest || marker(current, entry.owner)) return;
-  throw new Error(`Refusing to delete ${filename}: it no longer holds the generated content of ${entry.owner}. Move it, or delete it yourself.`);
+  throw new Error(`Refusing to delete ${displayPath(filename)}: it no longer holds the generated content of ${entry.owner}. Move it, or delete it yourself.`);
 }
 
 function readFile(filename: string): string | undefined {
   try {
     const stat = fs.lstatSync(filename);
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Refusing non-regular generated output: ${filename}`);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Refusing non-regular generated output: ${displayPath(filename)}`);
     return fs.readFileSync(filename, 'utf8');
   } catch (error) {
     if (hasErrorCode(error, 'ENOENT')) return undefined;
@@ -241,12 +241,13 @@ export function loadInventory(config: GolemConfig): Inventory {
   const content = readFile(config.inventoryFile);
   if (content === undefined) return { version: 1, files: {} };
   let inventory: unknown;
-  try { inventory = JSON.parse(content); } catch { throw new Error(`Invalid generated inventory: ${config.inventoryFile}`); }
-  if (!isRecord(inventory) || inventory.version !== 1 || !isRecord(inventory.files)) throw new Error(`Invalid generated inventory: ${config.inventoryFile}`);
+  try { inventory = JSON.parse(content); } catch { throw new Error(`Invalid generated inventory: ${displayPath(config.inventoryFile)}`); }
+  if (!isRecord(inventory) || inventory.version !== 1 || !isRecord(inventory.files)) throw new Error(`Invalid generated inventory: ${displayPath(config.inventoryFile)}`);
   const files: Record<string, InventoryEntry> = Object.create(null);
   for (const [filename, entry] of Object.entries(inventory.files)) {
     const key = validateRelativePath(filename, 'inventory path');
-    if (!isRecord(entry) || typeof entry.owner !== 'string' || !entry.owner || typeof entry.job !== 'string' || typeof entry.digest !== 'string' || !/^[a-f0-9]{64}$/.test(entry.digest)) throw new Error(`Invalid generated inventory entry: ${filename}`);
+    const shown = displayPath(inventoryPath(config, key));
+    if (!isRecord(entry) || typeof entry.owner !== 'string' || !entry.owner || typeof entry.job !== 'string' || typeof entry.digest !== 'string' || !/^[a-f0-9]{64}$/.test(entry.digest)) throw new Error(`Invalid generated inventory entry: ${shown}`);
     // Any other owner is a generator package; the entry itself records it, so a retired generator's files stay known.
     const prefix = entry.owner === '@exprtlabs/golem-model'
       ? 'models:'
@@ -255,16 +256,16 @@ export function loadInventory(config: GolemConfig): Inventory {
         : entry.owner === '@exprtlabs/golem-openapi'
           ? 'openapi:'
           : 'generator:';
-    if (!entry.job.startsWith(prefix) || entry.job.length === prefix.length) throw new Error(`Generated output ownership conflict: ${filename}. Inventory owner and job disagree.`);
-    if (typeof entry.destination !== 'string') throw new Error(`Invalid generated inventory entry: ${filename}`);
+    if (!entry.job.startsWith(prefix) || entry.job.length === prefix.length) throw new Error(`Generated output ownership conflict: ${shown}. Inventory owner and job disagree.`);
+    if (typeof entry.destination !== 'string') throw new Error(`Invalid generated inventory entry: ${shown}`);
     const destination = validateRelativePath(entry.destination, 'inventory destination', true);
     const kind = destinationKind(entry.owner);
-    if (entry.destinationKind !== kind) throw new Error(`Invalid generated inventory destination kind: ${filename}`);
+    if (entry.destinationKind !== kind) throw new Error(`Invalid generated inventory destination kind: ${shown}`);
     const absolute = inventoryPath(config, key);
     assertProtectedPath(config, absolute);
     const recorded: InventoryEntry = { job: entry.job, owner: entry.owner, digest: entry.digest, destination, destinationKind: kind };
     try { assertDestinationPath(absolute, inventoryDestination(config, absolute, recorded), 'recorded'); }
-    catch (error) { throw new Error(`Invalid generated inventory entry: ${filename}. ${error instanceof Error ? error.message : String(error)}`); }
+    catch (error) { throw new Error(`Invalid generated inventory entry: ${shown}. ${error instanceof Error ? error.message : String(error)}`); }
     files[key] = recorded;
   }
   return { version: 1, files };
@@ -350,7 +351,7 @@ function assertNoUnrecordedOutputs(config: GolemConfig, inventory: Inventory, jo
     };
     for (const root of roots) visit(root);
   }
-  if (drift.length) throw new Error(`Unrecorded generated output drift for ${job.id}:\n${drift.sort().map(filename => `  ${filename}`).join('\n')}`);
+  if (drift.length) throw new Error(`Unrecorded generated output drift for ${job.id}:\n${drift.sort().map(filename => `  ${displayPath(filename)}`).join('\n')}`);
 }
 
 /** The files a run changed on disk: written with new content, or deleted. A file already as the run would write it is in neither list. */
@@ -369,17 +370,17 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     if (!artifact || !path.isAbsolute(artifact.path) || typeof artifact.content !== 'string') throw new Error(`${job.package} returned an invalid artifact.`);
     const filename = path.normalize(artifact.path);
     const key = inventoryKey(config, filename);
-    if (!key || expected.has(key)) throw new Error(`Generated output collision: ${filename}`);
+    if (!key || expected.has(key)) throw new Error(`Generated output collision: ${displayPath(filename)}`);
     assertProtectedPath(config, filename);
     const destination = artifactDestination(config, job, filename);
     assertDestinationPath(filename, recordedDestinationPath(config, destination), 'job');
-    if (!marker(artifact.content, job.package)) throw new Error(`Missing generator ownership marker: ${filename}`);
+    if (!marker(artifact.content, job.package)) throw new Error(`Missing generator ownership marker: ${displayPath(filename)}`);
     const old = inventory.files[key];
-    if (old && (old.job !== job.id || old.owner !== job.package)) throw new Error(`Generated output is owned by another job: ${filename}`);
+    if (old && (old.job !== job.id || old.owner !== job.package)) throw new Error(`Generated output is owned by another job: ${displayPath(filename)}`);
     // A file golem never recorded is replaced only when it carries this generator's marker.
     const current = old ? undefined : readFile(filename);
     if (current !== undefined && !marker(current, job.package)) {
-      throw new Error(`Refusing to overwrite ${filename}: it was not generated by ${job.package}. Remove or rename it, or change the job's output path.`);
+      throw new Error(`Refusing to overwrite ${displayPath(filename)}: it was not generated by ${job.package}. Remove or rename it, or change the job's output path.`);
     }
     expected.set(key, { filename, content: artifact.content, destination });
   }
@@ -393,7 +394,7 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
   }
   for (const [key, entry] of Object.entries(inventory.files)) {
     if (entry.job !== job.id || expected.has(key)) continue;
-    if (entry.owner !== job.package) throw new Error(`Generated output ownership conflict: ${key}. Inventory owner does not match ${job.package}.`);
+    if (entry.owner !== job.package) throw new Error(`Generated output ownership conflict: ${displayPath(inventoryPath(config, key))}. Inventory owner does not match ${job.package}.`);
     const filename = inventoryPath(config, key);
     assertProtectedPath(config, filename);
     const destination = inventoryDestination(config, filename, entry);
@@ -402,7 +403,7 @@ export function applyJob(config: GolemConfig, inventory: Inventory, job: GolemJo
     deletions.push({ key, filename });
     stale.push(key);
   }
-  if (check && stale.length) throw new Error(`Generated outputs are stale for ${job.id}:\n${stale.sort().map(key => `  ${key}`).join('\n')}`);
+  if (check && stale.length) throw new Error(`Generated outputs are stale for ${job.id}:\n${stale.sort().map(key => `  ${displayPath(inventoryPath(config, key))}`).join('\n')}`);
   if (check) return NO_CHANGES;
   const written: string[] = [];
   const removed: string[] = [];
@@ -440,7 +441,7 @@ export function removeRetiredJobs(config: GolemConfig, inventory: Inventory, che
     assertDestinationPath(filename, destination, 'recorded');
     assertDeletable(filename, entry);
   }
-  if (check && retired.length) throw new Error(`Generated outputs belong to removed jobs:\n${retired.map(([key]) => `  ${key}`).join('\n')}`);
+  if (check && retired.length) throw new Error(`Generated outputs belong to removed jobs:\n${retired.map(([key]) => `  ${displayPath(inventoryPath(config, key))}`).join('\n')}`);
   const removed: string[] = [];
   if (!check && retired.length) {
     for (const [key] of retired) {

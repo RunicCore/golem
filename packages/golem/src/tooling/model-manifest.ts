@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { discoverSources, isRecord, resolveProfile, stableValue } from './generator-api.js';
+import { discoverSources, displayPath, isRecord, resolveProfile, stableValue } from './generator-api.js';
 import type { GolemProfile, InputObserver } from './generator-api.js';
 import type { CodecSchemaClosureEntry } from './validation-plan.js';
 
@@ -53,20 +53,20 @@ function isProfile(profile: unknown): profile is GolemProfile {
 
 export function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST_FILENAME): GolemProfile {
   if (!isRecord(profile)) {
-    throw new Error(`Invalid model manifest ${filename}: profile must be an object.`);
+    throw new Error(`Invalid model manifest ${displayPath(filename)}: profile must be an object.`);
   }
   if (!isProfile(profile)) {
     throw new Error(
-      `Invalid model manifest ${filename}: profile must include mobx, validation and allowAny booleans. Regenerate the models.`,
+      `Invalid model manifest ${displayPath(filename)}: profile must include mobx, validation and allowAny booleans. Regenerate the models.`,
     );
   }
   if (profile.unknownFormats !== undefined && profile.unknownFormats !== 'warn' && profile.unknownFormats !== 'error') {
-    throw new Error(`Invalid model manifest ${filename}: profile unknownFormats must be "warn" or "error". Regenerate the models.`);
+    throw new Error(`Invalid model manifest ${displayPath(filename)}: profile unknownFormats must be "warn" or "error". Regenerate the models.`);
   }
   const unknown = Object.keys(profile).filter((key) => !['mobx', 'validation', 'allowAny', 'unknownFormats'].includes(key));
   if (unknown.length > 0) {
     throw new Error(
-      `Invalid model manifest ${filename}: profile has unsupported field(s): ${unknown.join(', ')}. Regenerate or remove the older generated SDK.`,
+      `Invalid model manifest ${displayPath(filename)}: profile has unsupported field(s): ${unknown.join(', ')}. Regenerate or remove the older generated SDK.`,
     );
   }
   return resolveProfile(profile);
@@ -74,7 +74,7 @@ export function validateModelProfile(profile: unknown, filename = MODEL_MANIFEST
 
 export function modelManifestProfile(manifest: unknown, filename = MODEL_MANIFEST_FILENAME): GolemProfile {
   if (!isRecord(manifest)) {
-    throw new Error(`Invalid model manifest ${filename}: expected an object.`);
+    throw new Error(`Invalid model manifest ${displayPath(filename)}: expected an object.`);
   }
   return validateModelProfile(manifest.profile, filename);
 }
@@ -111,20 +111,20 @@ function isClosureEntry(value: unknown): value is CodecSchemaClosureEntry {
 
 export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFEST_FILENAME): ModelManifest {
   if (!isRecord(manifest)) {
-    throw new Error(`Invalid model manifest ${filename}: expected an object.`);
+    throw new Error(`Invalid model manifest ${displayPath(filename)}: expected an object.`);
   }
   if ('manifestVersion' in manifest) {
     throw new Error(
-      `Outdated model manifest in ${filename}: regenerate the models with the current generator.`,
+      `Outdated model manifest in ${displayPath(filename)}: regenerate the models with the current generator.`,
     );
   }
   modelManifestProfile(manifest, filename);
   if (manifest.validationSchemaClosure !== undefined
     && (!Array.isArray(manifest.validationSchemaClosure) || !manifest.validationSchemaClosure.every(isClosureEntry))) {
-    throw new Error(`Invalid model manifest ${filename}: validationSchemaClosure must contain codec ids and data-only model/wire schemas. Regenerate the models.`);
+    throw new Error(`Invalid model manifest ${displayPath(filename)}: validationSchemaClosure must contain codec ids and data-only model/wire schemas. Regenerate the models.`);
   }
   if (!Array.isArray(manifest.models)) {
-    throw new Error(`Invalid model manifest ${filename}: models must be an array.`);
+    throw new Error(`Invalid model manifest ${displayPath(filename)}: models must be an array.`);
   }
   for (const model of manifest.models) {
     if (
@@ -132,10 +132,10 @@ export function validateModelManifest(manifest: unknown, filename = MODEL_MANIFE
       || typeof model.id !== 'string' || !model.id || typeof model.allowAny !== 'boolean'
       || (model.codecId !== undefined && (typeof model.codecId !== 'string' || !model.codecId))
     ) {
-      throw new Error(`Invalid model entry in ${filename}.`);
+      throw new Error(`Invalid model entry in ${displayPath(filename)}.`);
     }
     if (model.codecId === undefined) {
-      throw new Error(`Invalid model manifest ${filename}: model entry ${model.type.export} has no codecId. Regenerate the SDK with this golem version.`);
+      throw new Error(`Invalid model manifest ${displayPath(filename)}: model entry ${model.type.export} has no codecId. Regenerate the SDK with this golem version.`);
     }
   }
   return manifest as ModelManifest;
@@ -148,7 +148,7 @@ export function readModelManifest(filename: string, onInput?: InputObserver): Mo
     manifest = JSON.parse(fs.readFileSync(filename, 'utf8'));
   } catch (error) {
     throw new Error(
-      `Could not read model manifest ${filename}: `
+      `Could not read model manifest ${displayPath(filename)}: `
       + `${error instanceof Error ? error.message : String(error)}`,
     );
   }

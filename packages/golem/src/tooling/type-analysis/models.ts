@@ -1,3 +1,4 @@
+import { displayPath } from '../generator-api.js';
 import { diagnostic, modelDeclarationKind } from './symbols.js';
 import * as ts from '../typescript-ns.js';
 import { isDateType } from './tags.js';
@@ -104,7 +105,7 @@ export function collectSpecifications(
   const specifications: ModelSpecification[] = [];
   for (const filename of sources) {
     const sourceFile = program.getSourceFile(filename);
-    if (!sourceFile) throw new Error(`Could not load model source: ${filename}`);
+    if (!sourceFile) throw new Error(`Could not load model source: ${displayPath(filename)}`);
     for (const statement of sourceFile.statements) {
       if (
         !ts.isTypeAliasDeclaration(statement)

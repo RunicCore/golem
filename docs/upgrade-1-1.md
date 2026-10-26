@@ -24,6 +24,29 @@ Get the exact id from one of these:
 - The `.golem/codec-keys.json` file in the directory of `golem.yaml`, which maps each `<file>#<name>` to its id.
 - The `codecId` of a model in the `model-manifest.json` of an SDK.
 
+## Expect an empty description on a default response {#empty-response-description}
+
+A controller route with no `@ApiResponse` or named response decorator gets `description: ""` on its default response, as `@nestjs/swagger` writes it. In 1.0 the description was `Success`, or `Created`, `Accepted` or `No Content` for status 201, 202 or 204. `@ApiNoContentResponse()` with no description also gets `""`; in 1.0 it got `No Content`. Run `npx golem generate`, then update any test or tool that reads or compares that description. Add `description` to `@ApiOkResponse` or another response decorator to keep a text.
+
+## Update `$ref`s to renamed model classes {#api-schema-names}
+
+A model class with `@ApiSchema({ name: 'PlacedOrder' })` is now the component `PlacedOrder` in the OpenAPI document of the `controllers` job. In 1.0 the document used the class name and ignored `@ApiSchema`. The generated models keep the model's name.
+
+- Update the `$ref`s and the generated-client code that use the class name of such a model.
+- Remove `@ApiSchema` from the model class when you want to keep the class name.
+
+## Read local paths relative to the working directory {#message-paths}
+
+Golem commands and generators now print a local file relative to the working directory. This is the form that `tsc` uses. In 1.0, many messages printed the absolute path.
+
+```text
+The TypeScript configuration packages/app/tsconfig.json has errors:
+```
+
+A path in a message that does not lie below the working directory starts with `..`. The working directory itself prints as `.`. A URL and a path that is already relative stay as they are. Paths that golem writes into generated files and JSON files do not change.
+
+When a script or an editor task parses golem messages, change it to read this form. Run the command from the folder where you want the paths to start.
+
 ## Move to TypeScript 7.1 or 6
 
 Install one of the supported versions, then update the Golem packages:

@@ -87,6 +87,16 @@ test('a missing referenced file is observed before the error', async (t) => {
   assert.ok(observed.includes(path.join(directory, 'later.json')));
 });
 
+test('a missing referenced file is named relative to the working directory', async (t) => {
+  // protects: T-450 a message names a local file relative to the working directory
+  const directory = createFixtureProject(t, 'golem-loader-missing-relative-');
+  const document = root({ components: { schemas: { A: { $ref: './later.json' } } } });
+  await assert.rejects(
+    () => loadReferenceGraph(write(directory, 'api.json', document), document),
+    (error: unknown) => error instanceof Error && error.message.match(/^referenced document does not exist: (.*)$/)?.[1] === path.relative(process.cwd(), path.join(directory, 'later.json')),
+  );
+});
+
 test('a referenced file that fails to parse is observed and named in the error', async (t) => {
   const directory = createFixtureProject(t, 'golem-loader-parse-');
   write(directory, 'broken.yaml', 'type: [unclosed');

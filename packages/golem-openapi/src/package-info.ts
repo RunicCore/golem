@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { displayPath } from '@exprtlabs/golem/generator-api';
 import { blockComment, type Code } from '@exprtlabs/golem/internal/emitter';
 
 const packageJsonPath = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
 
 function readPackageVersion(value: unknown): string {
   if (isJsonObject(value) && typeof value.version === 'string') return value.version;
-  throw new TypeError(`${packageJsonPath} is missing a string version`);
+  throw new TypeError(`${displayPath(packageJsonPath)} is missing a string version`);
 }
 
 function isJsonObject(value: unknown): value is { readonly [key: string]: unknown } {

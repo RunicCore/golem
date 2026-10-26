@@ -54,7 +54,7 @@ export interface ResolvedGolemProfile extends GolemProfile {
 
 /** The error for a `models.sources` entry whose real path is outside `models.root`: the yaml and the API stop with this text. */
 export function outsideModelsRootMessage(entry: string, root: string): string {
-  return `RUNM1075: models.sources entry ${entry} is outside the models root ${root}. A models job generates only files inside its root.`;
+  return `RUNM1075: models.sources entry ${displayPath(entry)} is outside the models root ${displayPath(root)}. A models job generates only files inside its root.`;
 }
 
 /**
@@ -224,6 +224,8 @@ export interface ControllerContext {
   readonly tags?: readonly ControllerTag[];
   readonly globalPrefix?: string;
   readonly uriVersioning?: ControllerUriVersioning;
+  /** The most bytes of JSON that a route path or version can fold to, a positive safe integer; omitted means 1 MiB (1048576). A larger result stops with RUNT2106. */
+  readonly maxResultBytes?: number;
   readonly profile: GolemProfile;
   /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
   readonly exact?: boolean;
@@ -257,9 +259,9 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** `filename` as a message prints it: an absolute path relative to the working directory, any other name (a URL, a relative path) as written. */
+/** `filename` as a message prints it: an absolute path relative to the working directory (`.` for the directory itself), any other name (a URL, a relative path) as written. */
 export function displayPath(filename: string): string {
-  return path.isAbsolute(filename) ? path.relative(process.cwd(), filename) : filename;
+  return path.isAbsolute(filename) ? path.relative(process.cwd(), filename) || '.' : filename;
 }
 
 /** A YAML file that does not parse: the developer's input to fix. The message starts with `<file>:<line>:<column>`; `cause` is the parser's error. */

@@ -8,6 +8,7 @@
  */
 import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
+import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { assertConfigParsed } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
@@ -844,7 +845,7 @@ export class ProgramSession implements Disposable {
         throw new Error(classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
       },
     });
-    if (!parsed) throw new Error(`The TypeScript configuration ${configPath} could not be parsed.`);
+    if (!parsed) throw new Error(`The TypeScript configuration ${displayPath(configPath)} could not be parsed.`);
     assertConfigParsed(configPath, parsed.errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
     return { options: parsed.options, fileNames: parsed.fileNames };
   }

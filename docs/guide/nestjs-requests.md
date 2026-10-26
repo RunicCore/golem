@@ -56,6 +56,7 @@ The interceptor converts HTTP handlers. A handler of another context, such as RP
 Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type:
 
 - **Accepted types:** an `IModel`, an `IObject`, or your class that extends a generated model class.
+- **`@Query()`:** it needs one object model. A union type, such as `TFilterA | TFilterB`, stops with [`RUNM1081`](/reference/diagnostics#runm1081).
 - **Other types:** the interceptor throws a `TypeError` that names the controller, the method and the parameter. Nest answers HTTP 500. This holds for a plain interface, a plain class, a primitive and a parameter with no type.
 - **Timing:** the interceptor throws on each request to the handler, not at startup. Return types are not affected.
 - **Build report:** `golem build` and `golem check` report [`RUNM1081`](/reference/diagnostics#runm1081) for a typed parameter of that kind.

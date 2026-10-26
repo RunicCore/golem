@@ -1,5 +1,5 @@
 import * as path from 'node:path';
-import { DEFAULT_CONTROLLER_SUFFIXES, compareText, discoverSources, stripSourceSuffix, suffixPattern } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_CONTROLLER_SUFFIXES, compareText, discoverSources, displayPath, stripSourceSuffix, suffixPattern } from '@exprtlabs/golem/generator-api';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,
@@ -487,7 +487,7 @@ export async function analyzeControllers(
   for (const filename of context.sources) {
     const sourceFile = context.program.getSourceFile(filename);
     if (!sourceFile) {
-      throw new Error(`Could not load controller source: ${filename}`);
+      throw new Error(`Could not load controller source: ${displayPath(filename)}`);
     }
     for (const declaration of exportedControllerClasses(context, sourceFile)) {
       routes.push(...await analyzeController(context, declaration, options.globalPrefix, uriVersioning));

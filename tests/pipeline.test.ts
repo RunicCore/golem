@@ -410,7 +410,7 @@ test('check reports an unresolved parse call with its code and writes no file', 
   fs.writeFileSync(path.join(root, 'src/use.ts'), "import { parse } from '@exprtlabs/golem/serde';\nexport const bad = parse<string | null>('{}');\n");
   const before = fs.readdirSync(root, { recursive: true }).map(String).sort();
   const records = fs.readFileSync(path.join(root, '.golem/jobs.json'), 'utf8');
-  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(src\/use\.ts:2:20\): parse type argument must be a single type name or typeof expression/);
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(.*src\/use\.ts:2:20\): parse type argument must be a single type name or typeof expression/);
   assert.deepEqual(fs.readdirSync(root, { recursive: true }).map(String).sort(), before);
   assert.equal(fs.readFileSync(path.join(root, '.golem/jobs.json'), 'utf8'), records);
 });
@@ -592,7 +592,7 @@ test('a models job whose root has no tsconfig.json analyses with the parent tsco
   await assertItemFieldsTyped(jobRoot, root);
   assert.equal(
     result.stderr,
-    `RUNM1073: The models:pkg job has no tsconfig.json in its root ${jobRoot}, so it uses ${path.join(root, 'tsconfig.json')}, the nearest one above it.\n`,
+    `RUNM1073: The models:pkg job has no tsconfig.json in its root ${path.relative(root, jobRoot)}, so it uses tsconfig.json, the nearest one above it.\n`,
   );
 });
 
@@ -603,7 +603,7 @@ test('a models job whose root has no tsconfig.json names the parent tsconfig whe
   delete options.compilerOptions.paths;
   fs.writeFileSync(parent, JSON.stringify(options));
   const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
-  const warning = `RUNM1073: The models:pkg job has no tsconfig.json in its root ${jobRoot}, so it uses ${parent}, the nearest one above it.\n`;
+  const warning = `RUNM1073: The models:pkg job has no tsconfig.json in its root ${path.relative(root, jobRoot)}, so it uses ${path.relative(root, parent)}, the nearest one above it.\n`;
   await assert.rejects(command(root, process.execPath, [binary, 'generate']), (error: Error) => {
     assert.ok(error.message.includes(warning), error.message);
     assert.match(error.message, /TS2307: Cannot find module '@lib\/ids'/);
@@ -657,7 +657,7 @@ test('a models job does not write a generated file outside its root, even beside
 
   assert.throws(
     () => applyJob(config, loadInventory(config), job, [{ path: stray, content: COMPANION_TEXT }]),
-    { message: `Generated output escapes the ${job.id} destination: ${stray}` },
+    { message: `Generated output escapes the ${job.id} destination: ${path.relative(process.cwd(), stray)}` },
   );
   assert.equal(fs.existsSync(stray), false);
 });

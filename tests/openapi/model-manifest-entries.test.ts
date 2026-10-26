@@ -50,6 +50,14 @@ test('every model manifest entry carries the codec id a rewrite stamps, and vali
   assert.throws(() => validateModelManifest(empty), /Invalid model entry/);
 });
 
+test('a manifest error names an absolute manifest file relative to the working directory', () => {
+  // protects: T-375 messages print a local file relative to the working directory
+  const beside = path.join(path.dirname(process.cwd()), 'other/model-manifest.json');
+  assert.throws(() => validateModelManifest({ profile: { mobx: false, validation: true, allowAny: false }, models: 'none' }, beside), {
+    message: 'Invalid model manifest ../other/model-manifest.json: models must be an array.',
+  });
+});
+
 test('a manifest profile with a field golem no longer reads is rejected and says to regenerate', () => {
   const profile = { mobx: false, validation: true, allowAny: false, retiredOption: true };
   assert.throws(

@@ -383,7 +383,7 @@ export function evaluateContextExpression(
   expression: ts.Expression,
   context: NestAnalysisContext,
 ): Promise<string | string[]> {
-  return evaluateRouteExpression(expression, context.program, { onInput: context.onInput });
+  return evaluateRouteExpression(expression, context.program, { maxResultBytes: context.maxResultBytes, onInput: context.onInput });
 }
 
 /** Evaluate route paths and versions through the route folder, which reads literals and simple helpers. */

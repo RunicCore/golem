@@ -454,3 +454,64 @@ export class ChainController extends ChainBase {
   assert.deepEqual(document.paths['/chain']?.get?.parameters?.map(item => item.name), ['X-Q', 'X-P', 'X-B', 'X-A', 'q2', 'q1']);
   assert.deepEqual(listed, document.paths['/constant']?.get?.parameters);
 });
+
+test('names the component of a model class by its @ApiSchema name in every $ref and keeps the codec ids', async t => {
+  // protects: F-163 a class that sets @ApiSchema({ name }) is that component in a body, a nested property and a return (T-324)
+  const root = createControllerFixture(t, {
+    prefix: 'golem-ts-openapi-swagger-metadata-',
+    packageName: 'golem-ts-openapi-swagger-metadata-fixture',
+    source: `import { Body, Controller, Post } from '@nestjs/common';
+import { Order, Receipt } from './order.model.js';
+@Controller('orders')
+export class OrdersController { @Post() create(@Body() body: Order): Receipt { return body as never; } }
+`,
+    files: {
+      'src/order.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { ApiSchema } from '@nestjs/swagger';
+import { TLineBaseModel, TOrderBaseModel, TReceiptBaseModel } from './order.model.generated.js';
+export type TLine = IModel<{ sku: string }>;
+export type TOrder = IModel<{ lines: Line[] }>;
+export type TReceipt = IModel<{ total: number }>;
+@ApiSchema({ name: 'OrderLine' }) export class Line extends TLineBaseModel {}
+@ApiSchema({ name: 'PlacedOrder' }) export class Order extends TOrderBaseModel {}
+@ApiSchema({ name: 'OrderReceipt' }) export class Receipt extends TReceiptBaseModel {}
+`,
+    },
+    links: 'workspace',
+  });
+  const result = await generateAt(root);
+  const document = documentOf(result);
+  const schemas = document.components?.schemas ?? {};
+  assert.deepEqual(Object.keys(schemas), ['OrderLine', 'OrderReceipt', 'PlacedOrder']);
+  const operation = document.paths['/orders']?.post;
+  assert.deepEqual(operation?.requestBody?.content?.['application/json']?.schema, { $ref: '#/components/schemas/PlacedOrder' });
+  assert.deepEqual(jsonSchema(operation, '201'), { $ref: '#/components/schemas/OrderReceipt' });
+  assert.deepEqual(property(document, objectSchema(document, schemas.PlacedOrder), 'lines').items, { $ref: '#/components/schemas/OrderLine' });
+  const registry = result.artifacts.find(artifact => artifact.path.endsWith('operation-codecs.ts'))?.content ?? '';
+  assert.match(registry, /"POST \/orders": "TOrder_[0-9a-f]{8}"/, 'the codec id is the model\'s, not the renamed component');
+});
+
+test('stops with RUNM1005 when two model classes of one file take one @ApiSchema name', async t => {
+  // protects: F-163 a renamed component never swallows another model's schema (T-324)
+  const root = createControllerFixture(t, {
+    prefix: 'golem-ts-openapi-swagger-metadata-',
+    packageName: 'golem-ts-openapi-swagger-metadata-fixture',
+    source: `import { Body, Controller, Post } from '@nestjs/common';
+import { A, B } from './pair.model.js';
+@Controller('pair')
+export class PairController { @Post() create(@Body() body: A): B { return body as never; } }
+`,
+    files: {
+      'src/pair.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { ApiSchema } from '@nestjs/swagger';
+import { TABaseModel, TBBaseModel } from './pair.model.generated.js';
+export type TA = IModel<{ a: string }>;
+export type TB = IModel<{ b: number }>;
+@ApiSchema({ name: 'Same' }) export class A extends TABaseModel {}
+@ApiSchema({ name: 'Same' }) export class B extends TBBaseModel {}
+`,
+    },
+    links: 'workspace',
+  });
+  await assert.rejects(generateAt(root), /pair\.model\.ts:\d+:\d+ RUNM1005: Component name "Same" is already taken in this model source\./);
+});
