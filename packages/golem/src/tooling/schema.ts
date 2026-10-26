@@ -360,6 +360,11 @@ function discriminatorTable(
   };
 }
 
+/** A string-keyed phantom member is a brand: its name starts with two underscores, such as `__brand`. */
+export function isBrandPropertyName(name: string): boolean {
+  return name.startsWith('__');
+}
+
 function isTypeOnlyBrand(value: unknown): boolean {
   if (!isRecord(value) || value.kind !== 'object') return false;
   const properties = isRecord(value.properties) ? value.properties : {};
@@ -367,7 +372,7 @@ function isTypeOnlyBrand(value: unknown): boolean {
   return required.length === 0
     && value.additionalProperties === false
     && Object.entries(properties).every(([name, descriptor]) =>
-      name.startsWith('__')
+      isBrandPropertyName(name)
       && isRecord(descriptor)
       && (descriptor.kind === 'undefined' || descriptor.kind === 'never'));
 }

@@ -693,10 +693,13 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 ### RUNM1085
 
-**Date or bigint combined with an object type.** A field is an intersection of a `Date` or a `bigint` with an object type or a model, such as `Date & TAddress`, `{ x: Date } & { x: TAddress }` or an optional form of these. An intersection is AND, and no value is both a `Date` and an object, so the field has no valid value. A field with a `TSerde` pair converts as one value and is not checked. The message names the field and the scalar. **Fix:**
+**Date or bigint combined with an object type.** A field is an intersection of a `Date` or a `bigint` with an object type or a model, such as `Date & TAddress`, `{ x: Date } & { x: TAddress }` or an optional form of these. An intersection is AND, and no value is both a `Date` and an object, so the field has no valid value. A phantom brand, such as `Date & { readonly __brand: 'Timestamp' }`, is no object. A field with a `TSerde` pair converts as one value and is not checked. The message names the field and the scalar.
+
+**Fix:**
 
 - Keep one of the two types.
 - Or move the object into its own field.
+- For a `bigint`, declare it with a `TSerde` pair and no object.
 
 ## Validators (VALIDATE)
 
