@@ -285,6 +285,9 @@ function applyPropertyMetadata(
   if (options.authoritative && generated && !sameValue(schemaShape(existing as DtoSchema), generated)) {
     conflict(`Swagger property ${name} type would overwrite the authoritative IModel wire schema.`);
   }
+  // A bare `type: 'object'` says no more than the TypeScript type already checked above, so it keeps the schema
+  // written from that type, such as a Record's value schema, instead of replacing it.
+  const documentedShape = generated?.type === 'object' ? undefined : generated;
 
   // An unconstrained ordinary field (`unknown`) is the `true` schema; give its metadata an object to live on.
   let propertySchema: DtoSchema = existing === true && !options.authoritative ? {} : existing as DtoSchema;
@@ -302,7 +305,7 @@ function applyPropertyMetadata(
   if (typeof propertySchema !== 'boolean') {
     // An ordinary DTO field documented as another primitive (an upload object as
     // `{ type: 'string', format: 'binary' }`) takes that shape instead of its own.
-    const replacesShape = generated !== undefined && !options.authoritative && propertySchema.type !== generated.type;
+    const replacesShape = documentedShape !== undefined && !options.authoritative && propertySchema.type !== documentedShape.type;
     const schemaRecord: Record<string, unknown> = replacesShape ? schemaAnnotations(propertySchema) : { ...propertySchema };
     let normalizedPropertySchema: DtoSchema | undefined;
     const docs: readonly [string, unknown][] = [
@@ -362,6 +365,10 @@ function applyPropertyMetadata(
       }
       schemaRecord[key] = value;
     }
+    if (documentedShape && !options.authoritative) {
+      schemaRecord.type = documentedShape.type;
+      if (documentedShape.type === 'array') schemaRecord.items = documentedShape.items;
+    }
     const nullable = read?.boolean('nullable');
     if (nullable !== undefined) {
       if (options.authoritative) {
@@ -371,10 +378,6 @@ function applyPropertyMetadata(
       } else {
         normalizedPropertySchema = normalizeNullable(schemaRecord, nullable, options);
       }
-    }
-    if (generated && !options.authoritative) {
-      schemaRecord.type = generated.type;
-      if (generated.type === 'array') schemaRecord.items = generated.items;
     }
     propertySchema = normalizedPropertySchema ?? schemaRecord;
     const enumName = read?.string('enumName');
