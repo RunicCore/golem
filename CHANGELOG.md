@@ -65,6 +65,7 @@ in the sections below.
 
 ### Generation
 
+- One `golem generate` from a clean tree passes when a model under the root of a `controllers` job imports the SDK that an `openapi` job of the same golem.yaml writes and no controller reaches that model. Before, it stopped with [`RUNM1058`](docs/reference/diagnostics.md#runm1058) and passed on the second run. A controller that reaches such a model stops with [`RUNM1084`](docs/reference/diagnostics.md#runm1084).
 - With `preserveSymlinks`, the Node loader, the Vite plugin and the esbuild plugin rewrite the `parse<T>()` calls of a workspace package linked into `node_modules`, as they do without it. Before, the call failed at run time with `parse<T> was not rewritten`. A package installed in `node_modules` is still not rewritten.
 - **Breaking:** golem commands and generators print a local file relative to the working directory, as `tsc` does, in errors, warnings and diagnostics. Before, many messages printed the absolute path. A tool that parses these messages must read the new form. See [Upgrade to 1.1](docs/upgrade-1-1.md#message-paths).
 - A TypeScript error that stops generation, in a model source or a file a job writes, prints in the compiler's plain form, `src/a.ts(3,7): error TS2322: ...`, the form `tsc` prints without `--pretty`. Golem uses the compiler's own formatter on TypeScript 6 and 7.1. Before, they printed as `src/a.ts:3:7 - error TS2322: ...`.
