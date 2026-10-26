@@ -1,5 +1,6 @@
 // lane: typescript6 isExpressionStatement and getTrailingCommentRanges of the classic API: the directive prologue is read from statements
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
 
 import {
@@ -128,6 +129,11 @@ test('an inconsistent rewrite names its file and line when the caller gives the 
   assert.throws(
     () => applyRewrites(text, rewriteOf([wrong]), 'src/pay.ts'),
     (error: unknown) => error instanceof Error && error.message.startsWith('golem rewrite is inconsistent for src/pay.ts at line 2: ') && error.message.endsWith('run golem generate'),
+  );
+  const absolute = path.resolve('..', 'other', 'pay.ts');
+  assert.throws(
+    () => applyRewrites(text, rewriteOf([wrong]), absolute),
+    (error: unknown) => error instanceof Error && error.message.startsWith(`golem rewrite is inconsistent for ${path.relative(process.cwd(), absolute)} at line 2: `),
   );
   assert.throws(
     () => applyRewrites(text, rewriteOf([wrong])),
