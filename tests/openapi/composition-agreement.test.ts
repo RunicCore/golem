@@ -524,6 +524,31 @@ const rows: readonly Row[] = [
     }],
     rejected: [{ named: { name: 'n', lives: 'x' } }],
   },
+  {
+    // protects: T-385 a variant still narrows the union that selects it
+    shape: 'a derived component narrows an inherited oneOf property to one of its variants',
+    root: 'Derived',
+    document: componentDocument('Derived', {
+      Animal: object({ kind: text }, { required: ['kind'] }),
+      Cat: { allOf: [ref('Animal'), object({ kind: { const: 'cat' }, lives: { type: 'integer' } }, { required: ['kind'] })] },
+      Dog: { allOf: [ref('Animal'), object({ kind: { const: 'dog' }, bark: { type: 'boolean' } }, { required: ['kind'] })] },
+      Pet: {
+        oneOf: [ref('Cat'), ref('Dog')],
+        discriminator: { propertyName: 'kind', mapping: { cat: '#/components/schemas/Cat', dog: '#/components/schemas/Dog' } },
+      },
+      Base: object({ pet: ref('Pet'), pets: { type: 'array', items: ref('Pet') } }),
+      Derived: { allOf: [ref('Base'), object({ pet: ref('Cat'), pets: { type: 'array', items: ref('Cat') } })] },
+    }),
+    accepted: [{
+      wire: { pet: { kind: 'cat', lives: 9 }, pets: [{ kind: 'cat', lives: 1 }] },
+      model: ({ CatModel }) => ({
+        pet: construct(CatModel, { kind: 'cat', lives: 9 }),
+        pets: [construct(CatModel, { kind: 'cat', lives: 1 })],
+      }),
+    }],
+    // The base admits a dog; JSON Schema AND with the derived member leaves only the cat.
+    rejected: [{ pet: { kind: 'cat', lives: 'x' } }, { pet: { kind: 'dog', bark: true } }],
+  },
   // Arrays and tuples that convert alike combine by their items, so items that differ in null or required names agree.
   {
     shape: 'a derived component narrows an inherited array of nullable date-times to date-times',
