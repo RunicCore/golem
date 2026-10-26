@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
-import { runBuild, shownOptions } from '#golem/build';
+import { runBuild } from '#golem/build';
 import { generate } from '#model/generator';
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
@@ -242,21 +242,6 @@ test('a package without a tsconfig of its own, under a parent tsconfig, builds w
   assertMoneyCodec(path.join(root, 'build/packages/b/src/use.js'));
 });
 
-
-test('output that tsc --showConfig prints and is not a configuration fails with what to run, never the tsconfig answer', () => {
-  const shown = shownOptions(JSON.stringify({ compilerOptions: { noEmitOnError: true, declaration: true } }), 'tsconfig.json', ['--noEmitOnError']);
-  assert.equal(shown.noEmitOnError, true);
-  assert.equal(shown.declaration, true);
-  assert.equal(shownOptions('{}', 'tsconfig.json', ['--noEmitOnError']).noEmitOnError, false, 'a configuration without options holds none');
-  for (const printed of ['error TS5023: Unknown option', 'null', '']) {
-    assert.throws(
-      () => shownOptions(printed, 'tsconfig.json', ['--noEmitOnError']),
-      (error: Error) => error.message.startsWith('golem build cannot read what tsc --showConfig printed for tsconfig.json with --noEmitOnError: ')
-        && error.message.endsWith('Run tsc -p tsconfig.json --noEmitOnError --showConfig to see it.'),
-      printed,
-    );
-  }
-});
 
 test('a symlinked workspace package outside the tsconfig directory passes golem check and builds: both scan only the sources the build stages', async (t) => {
   // The package's `types` is its source, so the compiler reads it as an external library: the app's build does not stage it, and its check does not scan it.

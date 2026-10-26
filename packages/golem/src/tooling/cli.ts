@@ -21,8 +21,8 @@ const BUILD_OWNED_ARGUMENTS: Readonly<Record<string, { readonly why: string; rea
   '--nocheck': { why: 'the emit run skips the type check and the check run reports the errors', workaround: 'a build emits JavaScript when the check fails unless noEmitOnError is set' },
   '--noemit': { why: 'the check run writes nothing and the emit run writes the JavaScript', workaround: 'set noEmit in the tsconfig to check without emitting' },
   '--emitdeclarationonly': { why: 'the check run writes the declarations from your sources and the emit run writes the JavaScript', workaround: 'set emitDeclarationOnly in the tsconfig for a declarations-only build' },
-  '--tsbuildinfofile': { why: 'each run keeps its own incremental state under .golem/build', workaround: 'delete .golem/build to start from clean state' },
-  '--incremental': { why: 'both runs are incremental', workaround: 'delete .golem/build to build everything again' },
+  '--tsbuildinfofile': { why: 'golem keeps its own build state under .golem/build', workaround: 'delete .golem/build to start from clean state' },
+  '--incremental': { why: 'golem keeps its own build state under .golem/build', workaround: 'delete .golem/build to build everything again' },
   '--outdir': { why: 'the emit run writes into the outDir of the tsconfig', workaround: 'set outDir in the tsconfig, or pass -p a tsconfig that extends it and sets another outDir' },
   '--listemittedfiles': { why: 'golem reads the list of emitted files to point source maps at your sources and to remove the output of a deleted source', workaround: 'list the files in outDir after the build' },
   ...Object.fromEntries(([
@@ -38,7 +38,7 @@ const BUILD_OWNED_ARGUMENTS: Readonly<Record<string, { readonly why: string; rea
   ] as const).map(([flag, why]) => [flag.toLowerCase(), { why, workaround: 'set it in tsconfig.json' }])),
 };
 
-/** `golem build` takes `--config`, `-p/--project` and `--watch` (`-w` too, so the compiler's own watcher never starts); every other argument goes to both compiler runs unchanged. */
+/** `golem build` takes `--config`, `-p/--project` and `--watch` (`-w` too, so the compiler's own watcher never starts); every other argument goes to the check program and the emit run unchanged. */
 function parseBuildArguments(args: readonly string[]): Arguments {
   let project: string | undefined;
   let watch = false;
