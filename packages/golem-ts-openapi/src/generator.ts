@@ -29,7 +29,7 @@ import type {
   InputObserver,
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, resolveProfile } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, displayPath, resolveProfile } from '@exprtlabs/golem/generator-api';
 import {
   GolemDiagnosticSeverity,
   diagnostic,
@@ -76,7 +76,7 @@ function validateContext(context: TsToOpenApiContext): {
   const root = assertAbsolute(context.root, 'context.root');
   context.onInput?.(root);
   if (!existsSync(root) || !statSync(root).isDirectory()) {
-    throw new Error(`context.root must be an existing directory: ${root}`);
+    throw new Error(`context.root must be an existing directory: ${displayPath(root)}`);
   }
   const output = assertAbsolute(context.output, 'context.output');
   if (!/\.(?:json|ya?ml)$/i.test(output)) {
@@ -429,12 +429,12 @@ function controllerSources(normalized: NormalizedContext, observe: InputObserver
     throw new TsToOpenApiError({
       severity: GolemDiagnosticSeverity.Error,
       code: TsToOpenApiDiagnosticCode.NoControllerSources,
-      message: `No controller source files found under ${path.join(normalized.root, 'src')}. Add a file that ends in ${normalized.suffixes.join(' or ')}, or list the controller files in \`sources\` of the controller job. In code, pass them as the \`sources\` option of \`generate\`.`,
+      message: `No controller source files found under ${displayPath(path.join(normalized.root, 'src'))}. Add a file that ends in ${normalized.suffixes.join(' or ')}, or list the controller files in \`sources\` of the controller job. In code, pass them as the \`sources\` option of \`generate\`.`,
     });
   }
   for (const source of sources) {
     observe(source);
-    if (!existsSync(source) || !statSync(source).isFile()) throw new Error(`Controller source does not exist: ${source}`);
+    if (!existsSync(source) || !statSync(source).isFile()) throw new Error(`Controller source does not exist: ${displayPath(source)}`);
   }
   return sources;
 }

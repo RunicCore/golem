@@ -108,7 +108,7 @@ function validateContext(context: GolemModelContext): NormalizedContext {
   const root = assertAbsolute(context.root, 'context.root');
   context.onInput?.(root);
   if (!existsSync(root) || !statSync(root).isDirectory()) {
-    throw new Error(`context.root must be an existing directory: ${root}`);
+    throw new Error(`context.root must be an existing directory: ${displayPath(root)}`);
   }
   if (!context.profile || typeof context.profile !== 'object' || Array.isArray(context.profile)) {
     throw new TypeError('context.profile is required and must contain mobx and validation booleans.');
@@ -301,7 +301,7 @@ function internJobSchemaGraphs(
         if (owner && members.has(owner) && owner !== graph) continue;
         if (emitted.some((item) => item.name === specification.name)) {
           if (emitted.includes(specification)) continue;
-          throw new Error(`Generated model symbol collision for "${specification.name}" in ${graph.source}.`);
+          throw new Error(`Generated model symbol collision for "${specification.name}" in ${displayPath(graph.source)}.`);
         }
         emitted.push(specification);
         if (!owner) outside.push(specification);
@@ -393,8 +393,8 @@ function assertListedSourceIsOwn(boundary: ModelBoundary, source: string): void 
   if (!isInsideDirectory(boundary.root, real)) throw new Error(outsideModelsRootMessage(real, boundary.root));
   if (!isOwnModelFile(boundary, source)) {
     throw new Error(real.split(sep).includes('node_modules')
-      ? `models.sources entry ${real} is in node_modules. Golem does not generate models in node_modules.`
-      : `models.sources entry ${real} is a declaration file. Golem generates models from .ts sources.`);
+      ? `models.sources entry ${displayPath(real)} is in node_modules. Golem does not generate models in node_modules.`
+      : `models.sources entry ${displayPath(real)} is a declaration file. Golem generates models from .ts sources.`);
   }
 }
 
@@ -408,17 +408,17 @@ export function generate(context: GolemModelContext): GolemModelResult {
     throw new Error(
       '`sources` is empty, so there is no model file to generate. '
       + 'List at least one model file in `sources`, or leave `sources` out '
-      + `to use the files below ${join(normalized.root, 'src')} that end in ${normalized.suffixes.join(' or ')}.`,
+      + `to use the files below ${displayPath(join(normalized.root, 'src'))} that end in ${normalized.suffixes.join(' or ')}.`,
     );
   }
   const boundary = modelBoundary(normalized.root, normalized.suffixes, { directory: normalized.directory, output: normalized.output });
   for (const source of discovered) {
     normalized.onInput?.(source);
     if (!isModelSource(source)) {
-      throw new Error(`Model source must be a .ts, .mts or .cts file that golem did not generate: ${source}`);
+      throw new Error(`Model source must be a .ts, .mts or .cts file that golem did not generate: ${displayPath(source)}`);
     }
     if (!existsSync(source) || !statSync(source).isFile()) {
-      throw new Error(`Model source does not exist: ${source}`);
+      throw new Error(`Model source does not exist: ${displayPath(source)}`);
     }
     if (listed) assertListedSourceIsOwn(boundary, source);
   }
@@ -446,7 +446,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const ownCandidates = candidates.filter((source) => isOwnModelFile(boundary, source));
   const nested = nestedModelsJobs(boundary.root, canonicalPath(normalized.directory), ownCandidates, normalized.onInput);
   if (nested.length > 0) {
-    throw new Error(`RUNM1077: ${nested.join(', ')} ${nested.length === 1 ? 'declares' : 'declare'} a models job below the models root ${boundary.root}, where the models job of ${join(normalized.directory, 'golem.yaml')} already generates the same model files. Two jobs would write one generated file. Remove the models job from ${nested.length === 1 ? 'it' : 'each'}, or move the folder out of the models root.`);
+    throw new Error(`RUNM1077: ${nested.map(displayPath).join(', ')} ${nested.length === 1 ? 'declares' : 'declare'} a models job below the models root ${displayPath(boundary.root)}, where the models job of ${displayPath(join(normalized.directory, 'golem.yaml'))} already generates the same model files. Two jobs would write one generated file. Remove the models job from ${nested.length === 1 ? 'it' : 'each'}, or move the folder out of the models root.`);
   }
   const sharedModelFiles = programModelFiles.filter((source) => !isOwnModelFile(boundary, source));
   // A job with no model file of its own still generates the shared models its program holds.

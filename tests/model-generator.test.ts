@@ -695,6 +695,17 @@ test('a model file of a folder outside the root with its own golem.yaml is gener
   );
 });
 
+test('a model source that does not exist is named relative to the working directory', (t: TestContext) => {
+  // protects: T-450 a message names a local file relative to the working directory
+  const { root, sourceRoot } = project(t);
+  const missing = path.join(sourceRoot, 'missing.model.ts');
+
+  assert.throws(
+    () => generate({ root, sources: [missing], profile: { mobx: false, validation: true } }),
+    (error: unknown) => error instanceof Error && error.message.match(/^Model source does not exist: (.*)$/)?.[1] === path.relative(process.cwd(), missing),
+  );
+});
+
 test('a golem.yaml with a models job below the root of another models job stops generation with RUNM1077 naming it', (t: TestContext) => {
   // protects: R-20 nested models job is an error
   const { root, sourceRoot } = project(t);
@@ -708,7 +719,7 @@ export type TMoney = IObject<{ currency: string }>;
 
   assert.throws(
     () => generate({ root, profile: { mobx: false, validation: true } }),
-    { message: `RUNM1077: ${path.join(sourceRoot, 'lib/golem.yaml')} declares a models job below the models root ${root}, where the models job of ${path.join(root, 'golem.yaml')} already generates the same model files. Two jobs would write one generated file. Remove the models job from it, or move the folder out of the models root.` },
+    { message: `RUNM1077: ${path.relative(process.cwd(), path.join(sourceRoot, 'lib/golem.yaml'))} declares a models job below the models root ${path.relative(process.cwd(), root)}, where the models job of ${path.relative(process.cwd(), path.join(root, 'golem.yaml'))} already generates the same model files. Two jobs would write one generated file. Remove the models job from it, or move the folder out of the models root.` },
   );
 });
 
@@ -901,7 +912,7 @@ export type TMoney = IObject<{ currency: string }>;
   assert.throws(
     () => generate({ root, sources: [path.join(root, 'src/lib/money.model.ts')], profile: { mobx: false, validation: true } }),
     (error: unknown) => error instanceof Error
-      && error.message.startsWith(`RUNM1077: ${path.join(fs.realpathSync(root), 'src/lib/golem.yaml')} declares a models job below the models root ${fs.realpathSync(root)}, where `),
+      && error.message.startsWith(`RUNM1077: ${path.relative(process.cwd(), path.join(fs.realpathSync(root), 'src/lib/golem.yaml'))} declares a models job below the models root ${path.relative(process.cwd(), fs.realpathSync(root))}, where `),
   );
 });
 

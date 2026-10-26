@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { isInsideDirectory, parseYamlFile, type InputObserver } from '@exprtlabs/golem/generator-api';
+import { displayPath, isInsideDirectory, parseYamlFile, type InputObserver } from '@exprtlabs/golem/generator-api';
 import { displayLocation } from './origin.js';
 import { asRecord, escapeJsonPointerToken, isJsonObject, jsonPointerJoin, objectEntries, resolveJsonPointer } from './json.js';
 import {
@@ -182,8 +182,14 @@ function decodeFragment(fragment: string): string {
   }
 }
 
+/** A document as a message prints it: a `file:` document as its path relative to the working directory, any other as its URL. */
+function displayDocument(uri: string): string {
+  const url = new URL(uri);
+  return url.protocol === 'file:' ? displayPath(fileURLToPath(url)) : uri;
+}
+
 function anchorFragmentError(reference: string, documentUri: string): Error {
-  return new Error(`anchor fragments are only supported within the root document: ${reference} (in ${documentUri})`);
+  return new Error(`anchor fragments are only supported within the root document: ${reference} (in ${displayDocument(documentUri)})`);
 }
 
 /** A YAML document's parse error names the document with its line and column; a JSON one is wrapped here. */
@@ -193,7 +199,7 @@ function parseDocumentText(text: string, name: string): unknown {
     return JSON.parse(text);
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`failed to parse referenced document ${name}: ${detail}`);
+    throw new Error(`failed to parse referenced document ${displayPath(name)}: ${detail}`);
   }
 }
 
@@ -309,8 +315,8 @@ export async function loadReferenceGraph(
       const file = fileURLToPath(url);
       localFiles.add(file);
       onInput?.(file);
-      if (!existsSync(file)) throw new Error(`referenced document does not exist: ${file}`);
-      if (statSync(file).size > maxBytes) throw new Error(`referenced document exceeds ${maxBytes} bytes: ${file}`);
+      if (!existsSync(file)) throw new Error(`referenced document does not exist: ${displayPath(file)}`);
+      if (statSync(file).size > maxBytes) throw new Error(`referenced document exceeds ${maxBytes} bytes: ${displayPath(file)}`);
       document = parseDocumentText(readFileSync(file, 'utf8'), file);
     } else {
       document = parseDocumentText(await fetchRemoteDocument(uri, maxBytes, timeoutMs), uri);
@@ -336,10 +342,10 @@ export async function loadReferenceGraph(
     const uri = resolved.href;
     const file = fileURLToPath(resolved);
     if (localReferenceEscapes(rootDirectory, file)) {
-      throw new Error(`local reference escapes the input directory: ${file}`);
+      throw new Error(`local reference escapes the input directory: ${displayPath(file)}`);
     }
     if (new URL(documentUri).protocol !== 'file:') {
-      throw new Error(`remote document cannot reference local file: ${file}`);
+      throw new Error(`remote document cannot reference local file: ${displayPath(file)}`);
     }
     return { target: { uri, pointer: fragment }, preserve: false };
   };

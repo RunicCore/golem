@@ -83,6 +83,7 @@ test('golem check fails a @Query() model that only another operation holds, and 
 
 test('two controllers with one class name and one method name stop generation with NEST1313 and name both files, and a method with two paths is no clash', async (t) => {
   // protects: T-449 a same-named controller in another file must not replace a registry entry, which made golem check fail a correct site
+  // protects: T-450 the message names both controller files relative to the working directory
   const controller = (model: string, operationId: string, className: string, routes: string) => `import { Body, Controller, Post } from '@nestjs/common';\nimport { ApiOperation } from '@nestjs/swagger';\nimport type { ${model} } from '../m.model.js';\n@Controller('${operationId}')\nexport class ${className} {\n  @ApiOperation({ operationId: '${operationId}' }) @Post(${routes}) create(@Body() body: ${model}): void {}\n}\n`;
   const root = createControllerFixture(t, {
     prefix: 'golem-registry-same-name-',
@@ -97,6 +98,9 @@ test('two controllers with one class name and one method name stop generation wi
   const config = path.join(root, 'golem.yaml');
   await assert.rejects(runPipeline(config), (error: Error) => {
     assert.match(error.message, /src\/two\/a\.controller\.ts:6:\d+: ERROR NEST1313: AController\.create is declared in both .*src\/one\/a\.controller\.ts and .*src\/two\/a\.controller\.ts\. .* Rename one controller class\./);
+    const relative = (file: string): string => path.relative(process.cwd(), path.join(root, file));
+    assert.ok(error.message.includes(`declared in both ${relative('src/one/a.controller.ts')} and ${relative('src/two/a.controller.ts')}.`));
+    assert.ok(error.message.includes(`${relative('src/two/a.controller.ts')}:6:`));
     return true;
   });
 

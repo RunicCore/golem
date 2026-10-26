@@ -1,5 +1,5 @@
 import type * as ts from '@exprtlabs/golem/internal/ts';
-import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, displayPath } from '@exprtlabs/golem/generator-api';
 
 export { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 
@@ -89,7 +89,7 @@ export function diagnostic(
 
 function formatDiagnostic(value: TsToOpenApiDiagnostic): string {
   const location = value.file
-    ? `${value.file}${value.line === undefined ? '' : `:${value.line}:${value.column ?? 1}`}: `
+    ? `${displayPath(value.file)}${value.line === undefined ? '' : `:${value.line}:${value.column ?? 1}`}: `
     : '';
   return `${location}${value.severity.toUpperCase()} ${value.code}: ${value.message}`;
 }
