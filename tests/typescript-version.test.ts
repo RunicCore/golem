@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -33,7 +33,8 @@ test('(b2) TypeScript 7.0 fails and names golem 1.0', () => {
 });
 test('(c) the project\'s own TypeScript wins over golem\'s', () => {
   const root = fakeProject('6.0.3');
-  assert.equal(resolveTypeScript(root).packageDir, path.join(root, 'node_modules', 'typescript'));
+  // Node resolves a package to its real path, and the temp folder of macOS is a link (/var to /private/var).
+  assert.equal(resolveTypeScript(root).packageDir, path.join(realpathSync(root), 'node_modules', 'typescript'));
 });
 test('(d) TypeScript 7 that is another install than the one golem loads fails naming both', () => {
   const root = fakeProject('7.1.0');
