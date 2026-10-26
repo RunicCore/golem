@@ -206,7 +206,8 @@ class ScanningProject {
     const { jsx } = this.options;
     if (tsx && (!jsx || jsx === ts.JsxEmit.Preserve || jsx === ts.JsxEmit.ReactNative)) throw new GolemHostError(`golem cannot compile ${displayPath(file)}: set compilerOptions.jsx in ${displayPath(this.config.tsconfig)} to react, react-jsx or react-jsxdev; preserve and react-native leave JSX in the output`, { file });
     // Node runs ES modules only, and a module resolution that matches another `module` is of no use to a single file.
-    const options = { ...this.options, module: ts.ModuleKind.ESNext, moduleResolution: undefined, sourceMap: true, inlineSourceMap: false, inlineSources: false };
+    const kept = Object.entries(this.options).filter(([name]) => name !== 'moduleResolution');
+    const options = { ...Object.fromEntries(kept), module: ts.ModuleKind.ESNext, sourceMap: true, inlineSourceMap: false, inlineSources: false };
     const compiled = rewritten?.code ?? text;
     const { outputText, sourceMapText, diagnostics } = this.session.transpileModule(file, compiled, options);
     if (diagnostics.length > 0) {
