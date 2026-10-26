@@ -611,7 +611,7 @@ The message names both model files and the path.
 - `texts.map(parse<TPayment>)`
 - `parse?.<TPayment>(text)`
 
-Golem rewrites a call only, so this code stays as you wrote it and throws when it runs. The message names the function, the form, and the position. `golem build`, `golem check` and every host report it.
+Golem rewrites a call only, so this code stays as you wrote it and throws when it runs. The message names the function, the form, and the position. `golem build`, `golem check` and every host report it. The [ESLint rule](/guide/build#lint) reports it too.
 
 **Fix:**
 

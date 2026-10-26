@@ -23,6 +23,7 @@ Find every `@exprtlabs/golem` subpath that your application, NestJS app or build
 | [`register`](#register) | `node --import` entry that installs the loader | none |
 | [`vite`](#vite) | Vite plugin that rewrites TypeScript before Vite strips its types | `vite` |
 | [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
+| [`eslint`](#eslint) | ESLint config with a rule that reports serde calls no host can rewrite | `eslint` |
 
 A path that starts with `internal/` is for the generators and may change in any release. Do not import it ([Compatibility](/compatibility#public-api)).
 
@@ -670,6 +671,24 @@ The plugin rewrites TypeScript in memory before esbuild strips its types and cha
 
 - Watch mode builds a file again when a file its rewrite depends on changes.
 - Without a `golem.yaml`, or for a call that cannot be rewritten, the build fails with the same messages as the [loader](#loader).
+
+## `@exprtlabs/golem/eslint` {#eslint}
+
+```js
+import { golem } from '@exprtlabs/golem/eslint';
+
+export default [await golem()];
+```
+
+| Option | Type | Behavior |
+| --- | --- | --- |
+| `config` | `string` | The `golem.yaml` to open, relative to `cwd`. Without it the function uses `GOLEM_CONFIG`, else `./golem.yaml` in `cwd`. |
+| `cwd` | `string` | The folder that `config` is relative to. Default: the current directory. |
+
+`golem()` returns a promise of an ESLint flat-config object. It sets the rule `golem/unrewritable-serde-call` to `error` for `.ts`, `.mts`, `.cts` and `.tsx` files ([Lint for unrewritable calls](/guide/build#lint)). Without a `golem.yaml` the promise rejects with the same message as the [loader](#loader).
+
+- The rule reports the errors that `golem check` reports for the file, with the code and the position. It reads the text that ESLint holds.
+- Put a config object with a TypeScript parser before it.
 
 ## Exports for generated code {#generated-code}
 

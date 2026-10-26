@@ -5,9 +5,10 @@ import { modelsRootOf, resolveConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
 import { displayPath, GolemDiagnosticSeverity } from './generator-api.js';
+import type { GolemDiagnostic } from './generator-api.js';
 import { applyRewrites } from './rewrite.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
-import type { RewriteScanner } from './rewrite-scan.js';
+import type { FileScanResult, RewriteScanner } from './rewrite-scan.js';
 import { composeSourceMaps, decodeMappings } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import type * as ts from './typescript-ns.js';
@@ -97,6 +98,8 @@ export interface RewriteProject {
    * rewrite. A file outside the tsconfig's directory is scanned and rewritten like any other. Throws a `GolemHostError` (file, line, "run golem generate") on scan diagnostics.
    */
   rewrite(filename: string, text: string): { code: string; map: SourceMapV3; dependencies: readonly string[] } | undefined;
+  /** The errors of the scan of one file as the host will compile it: what `rewrite` throws for, one entry each. Empty for a file with no error or no rewrite. */
+  diagnose(filename: string, text: string): readonly GolemDiagnostic[];
   /** Tell the session these files changed on disk (new, edited or removed). */
   changed(filenames: readonly string[]): void;
   /**
@@ -175,12 +178,22 @@ class ScanningProject {
     return this.program!;
   }
 
-  rewrite(filename: string, text: string): { code: string; map: SourceMapV3; dependencies: readonly string[] } | undefined {
+  /** The scan of a file with the host's `text`, and its errors; undefined when the file is no rewrite candidate. */
+  private scan(filename: string, text: string): { readonly file: string; readonly scanned: FileScanResult; readonly errors: readonly GolemDiagnostic[] } | undefined {
     const file = this.compiler.canonicalFilename(filename);
     this.holds(file, withoutByteOrderMark(text));
     const scanned = this.scanner!.scanFile(file);
-    if (scanned === undefined) return undefined;
-    const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
+    return scanned && { file, scanned, errors: scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error) };
+  }
+
+  diagnose(filename: string, text: string): readonly GolemDiagnostic[] {
+    return this.scan(filename, text)?.errors ?? [];
+  }
+
+  rewrite(filename: string, text: string): { code: string; map: SourceMapV3; dependencies: readonly string[] } | undefined {
+    const found = this.scan(filename, text);
+    if (found === undefined) return undefined;
+    const { file, scanned, errors } = found;
     if (errors.length > 0) {
       const line = errors.find((diagnostic) => diagnostic.line !== undefined)?.line;
       throw new GolemHostError([
@@ -301,6 +314,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   return {
     expectedGenerated: project.expectedGenerated,
     rewrite: (filename, text) => project.rewrite(filename, text),
+    diagnose: (filename, text) => project.diagnose(filename, text),
     transpile: (filename, text, rewritten) => project.transpile(filename, text, rewritten),
     changed: (filenames) => { project.changed(filenames); },
     close() {

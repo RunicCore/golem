@@ -95,6 +95,24 @@ node --import @exprtlabs/golem/register src/main.ts
 - Node before 22.18 needs `--experimental-strip-types` as well ([Node versions](#node-versions)).
 - The loader compiles the files that Node cannot strip, such as a file with a decorator or an `enum`, with your TypeScript. A NestJS app needs no second loader ([run with the Node loader](/guide/nestjs-requests#run-with-the-node-loader)).
 
+## Lint for unrewritable calls {#lint}
+
+A host rewrites each call that it can read. It cannot rewrite `parse<TPayment>` used as a value, such as `texts.map(parse<TPayment>)`. That code throws when it runs. `golem build` and `golem check` report it. The ESLint rule `golem/unrewritable-serde-call` reports the same errors when ESLint runs, also in your editor.
+
+```js
+// eslint.config.mjs
+import { golem } from '@exprtlabs/golem/eslint';
+import tseslint from 'typescript-eslint';
+
+export default [...tseslint.configs.base, await golem()];
+```
+
+- `golem()` returns one flat-config object. It turns the rule on for `.ts`, `.mts`, `.cts` and `.tsx` files.
+- The rule needs a parser that reads TypeScript. Set it in a config object before `golem()`.
+- The rule reads your `golem.yaml` and your `tsconfig.json`, as the hosts do. The `config` option names another `golem.yaml`, and `cwd` sets the folder where the search starts. Without them, `golem()` reads `GOLEM_CONFIG`, then `./golem.yaml` in the working directory.
+- Run `golem generate` first, so the generated files exist.
+- A report names the code, such as `RUNM1079`, and the position. The [diagnostics](/reference/diagnostics) page gives the fix for each code.
+
 ## Editor setup (generate or watch)
 
 A host rewrites calls. It does not give your editor the generated files. Run `npx golem generate` once, or keep `npx golem watch` running ([Generate, watch and check](/guide/watch)). The editor then sees `TTaskBaseModel` and the other generated names.
