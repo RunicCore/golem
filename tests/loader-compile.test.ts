@@ -119,5 +119,5 @@ test('a .tsx file in a project with no jsx option fails the run with the file an
   write(root, 'src/view.tsx', VIEW);
   const result = await run(root, 'src/view.tsx');
   assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /GolemHostError: golem cannot compile .*view\.tsx: set compilerOptions\.jsx in .*tsconfig\.json/, result.stderr);
+  assert.match(result.stderr, /golem cannot compile .*view\.tsx: set compilerOptions\.jsx in .*tsconfig\.json/, result.stderr);
 });

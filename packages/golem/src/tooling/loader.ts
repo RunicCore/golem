@@ -72,8 +72,8 @@ export async function load(url: string, context: LoadContext, nextLoad: NextLoad
   if (!TYPESCRIPT_FILE.test(file) || isInstalledFile(file)) return nextLoad(url, context);
 
   const rewriting = await projectOfThisProcess();
-  // Node has no format for a `.tsx` file, so the hook reads it; its result is an ES module.
-  const loaded: LoadResult = TSX_FILE.test(file) ? { format: 'module', source: await readFile(file) } : await nextLoad(url, context);
+  // Node has no format for a `.tsx` file, so the hook reads it and ends the chain; its result is an ES module.
+  const loaded: LoadResult = TSX_FILE.test(file) ? { format: 'module', source: await readFile(file), shortCircuit: true } : await nextLoad(url, context);
   const text = sourceText(loaded.source);
   const rewritten = rewriting.rewrite(file, text);
   const compiled = rewriting.transpile(file, text, rewritten);

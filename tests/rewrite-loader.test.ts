@@ -403,14 +403,13 @@ test('a model named only in an async Promise return has its codec registered wit
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { registered: true });
 });
 
-test('files under node_modules, .tsx files, other schemes and non-TypeScript files pass through without opening a project', async (t) => {
+test('files under node_modules, other schemes and non-TypeScript files pass through without opening a project', async (t) => {
   const root = createFixtureProject(t, 'golem-loader-passthrough-');
   const before = snapshotFilesystem(root);
   const next = { format: 'module', source: 'marker' };
   const nextLoad = () => next;
   for (const url of [
     pathToFileURL(path.join(root, 'node_modules/dep/index.ts')).href,
-    pathToFileURL(path.join(root, 'src/view.tsx')).href,
     pathToFileURL(path.join(root, 'src/plain.js')).href,
     pathToFileURL(path.join(root, 'src/data.json')).href,
     'node:fs',
