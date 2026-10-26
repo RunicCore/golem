@@ -165,7 +165,7 @@ test('interrupted documentation build output stays outside a public source expor
 test('the .golem folder, with its outputs index and codec keys, stays outside a public source export', (t) => {
   // protects: T-32 generated output and .golem state are never part of a public source export
   const root = publicFixture(t);
-  const local = ['examples/app/.golem/jobs.json', 'examples/app/.golem/build/tsconfig/stage/tsconfig.json', 'examples/app/.golem/outputs.json', 'examples/app/.golem/codec-keys.json'];
+  const local = ['examples/app/.golem/jobs.json', 'examples/app/.golem/outputs.json', 'examples/app/.golem/codec-keys.json'];
   for (const relative of local) writeFixture(root, relative, '{}\n');
   const destination = path.join(root, '.cache', 'export');
   const result = exportPublicSource(root, destination);

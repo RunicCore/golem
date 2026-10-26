@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -6,7 +5,7 @@ import path from 'node:path';
 import { canonicalFile, modelsRootOf, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
-import { displayPath, GolemDiagnosticSeverity, isInsideDirectory } from './generator-api.js';
+import { displayPath, errorMessage, GolemDiagnosticSeverity, isInsideDirectory } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { nodeSpecifierEdits } from './node-specifiers.js';
 import { atomicWrite } from './outputs.js';
@@ -18,7 +17,7 @@ import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.
 import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
-import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
+import { requestTypeScriptRoot } from './typescript-selection.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
 import type { InputSnapshot } from './input-watcher.js';
 
@@ -33,7 +32,7 @@ interface BuildOptions {
   readonly config?: string;
   /** Stops a watching build; the returned promise resolves when the current build has finished. */
   readonly signal?: AbortSignal;
-  /** Every argument golem build does not take itself: the check program and the emit run get them unchanged. */
+  /** Every argument golem build does not take itself: the check program and the emit program get them unchanged. */
   readonly tscArguments?: readonly string[];
   /** Called after the generate step of each build with the ids of the jobs that executed; a job its record showed to be current is not among them. */
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
@@ -47,20 +46,14 @@ interface BuildOptions {
 
 export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
 
-const GOLEM_DIRECTORY = '.golem';
-
 /** What a build needs from the project's configuration, read once per build from the compiler's own parse. */
 interface Project {
   readonly root: string;
   readonly configFile: string;
-  /** `<root>/.golem/build/<config name>`: the staged copy and the compiler's incremental state of this tsconfig alone. */
-  readonly buildDirectory: string;
   readonly files: readonly string[];
   readonly outDir: string;
   readonly declarationDir?: string;
   readonly rootDir?: string;
-  readonly baseUrl?: string;
-  readonly paths?: Readonly<Record<string, readonly string[]>>;
   /** The original configuration emits declarations, so the check writes them from the original sources and the build changes their import paths. */
   readonly declaration: boolean;
   /** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: the build is the check alone. */
@@ -76,12 +69,6 @@ function posix(filename: string): string {
 function stringOption(options: ts.CompilerOptions, name: string): string | undefined {
   const value = options[name];
   return typeof value === 'string' ? value : undefined;
-}
-
-function pathsOption(options: ts.CompilerOptions): Readonly<Record<string, readonly string[]>> | undefined {
-  const value = options.paths;
-  if (typeof value !== 'object' || value === null) return undefined;
-  return Object.fromEntries(Object.entries(value).map(([pattern, targets]) => [pattern, (targets as readonly unknown[]).map(String)]));
 }
 
 /** The golem.yaml a build starts from. Nothing above the working directory is searched. */
@@ -124,7 +111,7 @@ const TSC_COMMAND_OPTIONS = [
 /** Options that only the `tsc` command takes: they ask it to print or write something other than a build. */
 const TSC_COMMANDS = ['showConfig', 'listFilesOnly', 'version', 'help', 'init'] as const;
 
-/** Fail on a configuration the staged copy cannot mirror: the tsconfig's, with the forwarded arguments applied. It reads options alone, so it runs before anything is generated. */
+/** Fail on a configuration the build cannot emit: the tsconfig's, with the forwarded arguments applied. It reads options alone, so it runs before anything is generated. */
 function assertSupported(configFile: string, parsed: { readonly options: ts.CompilerOptions; readonly fileNames: readonly string[] }): void {
   const { options } = parsed;
   const unsupported = (what: string): Error => new Error(`golem build does not support ${what} (${displayPath(configFile)}).`);
@@ -154,51 +141,20 @@ function readProject(configFile: string, parsed: { readonly options: ts.Compiler
   const outDir = stringOption(options, 'outDir');
   if (outDir === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
   const rootDir = stringOption(options, 'rootDir');
-  const baseUrl = stringOption(options, 'baseUrl');
   const declarationDir = stringOption(options, 'declarationDir');
-  const paths = pathsOption(options);
   const noEmit = options.noEmit === true;
   return {
     root,
     configFile,
-    buildDirectory: path.join(root, GOLEM_DIRECTORY, 'build', path.basename(configFile).replace(/\.json$/, '')),
     files: parsed.fileNames,
     outDir,
     ...(declarationDir === undefined ? {} : { declarationDir }),
     ...(rootDir === undefined ? {} : { rootDir }),
-    ...(baseUrl === undefined ? {} : { baseUrl }),
-    ...(paths === undefined ? {} : { paths: rebasePaths(paths, baseUrl ?? stringOption(options, 'pathsBasePath') ?? root) }),
     declaration: options.declaration === true || options.composite === true,
     emitsJavaScript: emitsJavaScript(options),
     noEmit,
     noEmitOnError: options.noEmitOnError === true,
   };
-}
-
-/** Each `paths` target as an absolute path: the staged copy is elsewhere, so a target relative to the original config would reach the originals. */
-function rebasePaths(paths: Readonly<Record<string, readonly string[]>>, base: string): Record<string, readonly string[]> {
-  return Object.fromEntries(Object.entries(paths).map(([pattern, targets]) => [pattern, targets.map((target) => posix(path.resolve(base, target)))]));
-}
-
-/** The compiler CLI of the TypeScript the seam loaded: a project on a different install would check with one compiler and emit with another. */
-function compilerCli(root: string): string {
-  requestTypeScriptRoot(root);
-  return path.join(selectedTypeScript().packageDir, 'bin', 'tsc');
-}
-
-interface TscResult { readonly code: number; readonly stdout: string; readonly stderr: string }
-
-/** Run the compiler CLI and collect what it printed. */
-function runTsc(cli: string, cwd: string, args: readonly string[]): Promise<TscResult> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.on('data', (chunk: Buffer) => { stdout += chunk; });
-    child.stderr.on('data', (chunk: Buffer) => { stderr += chunk; });
-    child.once('error', reject);
-    child.once('close', (code) => { resolve({ code: code ?? 1, stdout, stderr }); });
-  });
 }
 
 function scanFailure(root: string, errors: readonly GolemDiagnostic[]): Error {
@@ -209,23 +165,17 @@ function scanFailure(root: string, errors: readonly GolemDiagnostic[]): Error {
   ].join('\n'));
 }
 
-/** The stage's own guard: nothing is written, linked or removed outside the stage directory, whatever computed the path. */
-function insideStage(stageDirectory: string, target: string): string {
-  if (!isInsideDirectory(stageDirectory, target)) throw new Error(`golem build would change ${displayPath(target)}, which is outside its stage ${displayPath(stageDirectory)}.`);
-  return target;
-}
-
 /** The deepest directory that holds every one of `directories`. */
 function commonDirectory(directories: readonly string[]): string {
   const [first, ...others] = directories.map((directory) => path.resolve(directory).split(path.sep));
-  if (first === undefined) throw new Error('golem build has no directory to stage from.');
+  if (first === undefined) throw new Error('golem build has no directory to lay its output out from.');
   let length = first.length;
   for (const other of others) {
     let shared = 0;
     while (shared < length && shared < other.length && other[shared] === first[shared]) shared += 1;
     length = shared;
   }
-  if (length === 0) throw new Error(`golem build cannot stage sources that share no directory: ${directories.map(displayPath).join(', ')}.`);
+  if (length === 0) throw new Error(`golem build cannot lay out sources that share no directory: ${directories.map(displayPath).join(', ')}.`);
   return path.resolve(`${first.slice(0, length).join(path.sep)}${path.sep}`);
 }
 
@@ -237,131 +187,8 @@ function sourceBase(project: Project, sources: readonly ts.SourceFile[]): string
   return commonDirectory([project.root, ...sources.map((source) => path.dirname(source.fileName)), ...project.rootDir === undefined ? [] : [project.rootDir]]);
 }
 
-/** The `package.json` that governs `directory`: its own, or the nearest one above. */
-function nearestManifest(directory: string): string | undefined {
-  for (let current = directory; ; current = path.dirname(current)) {
-    const candidate = path.join(current, 'package.json');
-    if (fs.existsSync(candidate)) return candidate;
-    if (path.dirname(current) === current) return undefined;
-  }
-}
-
-/** Delete staged files whose source left the program. A link is removed as itself and never entered: its target is not the stage's. */
-function pruneStage(stageDirectory: string, keep: ReadonlySet<string>): void {
-  const visit = (directory: string): void => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const filename = path.join(directory, entry.name);
-      if (entry.isDirectory()) {
-        visit(filename);
-        if (fs.readdirSync(filename).length === 0) fs.rmdirSync(insideStage(stageDirectory, filename));
-      } else if (!keep.has(posix(path.relative(stageDirectory, filename)))) fs.unlinkSync(insideStage(stageDirectory, filename));
-    }
-  };
-  if (fs.existsSync(stageDirectory)) visit(stageDirectory);
-}
-
-/** Point `link` at the directory `target`, replacing a link that points elsewhere. Anything at `link` that is not a link is a fault. */
-function linkDirectory(stageDirectory: string, link: string, target: string): void {
-  insideStage(stageDirectory, link);
-  const existing = fs.lstatSync(link, { throwIfNoEntry: false });
-  if (existing !== undefined) {
-    if (!existing.isSymbolicLink()) throw new Error(`golem build found ${displayPath(link)} in its stage, where it links ${displayPath(target)}, and it is not a link.`);
-    if (fs.realpathSync(link) === target) return;
-    fs.unlinkSync(link);
-  }
-  fs.mkdirSync(path.dirname(link), { recursive: true });
-  fs.symlinkSync(target, link, 'junction');
-}
-
-interface StageResult {
-  readonly configFile: string;
-  readonly directory: string;
-  /** The original directory the stage mirrors: a staged file's path under the stage is its path under this one. */
-  readonly base: string;
-  /** The applier's map for each rewritten file, keyed by its path under the base. */
-  readonly maps: ReadonlyMap<string, SourceMapV3>;
-  /** The original `package.json` files the stage holds a copy of. */
-  readonly manifests: readonly string[];
-}
-
 /**
- * Mirror the program's local sources into `<root>/.golem/build/<config name>/stage`: the rewritten text for a file with a site to rewrite or a specifier to change, the file itself
- * otherwise. A file is written only when its content differs, so the compiler's incremental state keeps every other file.
- * The stage mirrors the common directory of the tsconfig's directory and every source, as the compiler's own source root is, so a source
- * outside the tsconfig's directory lands in the output where the compiler would put it. A mirrored directory holds a copy of its original's `package.json`
- * and a link to its `node_modules`, so a staged file resolves packages, `type` and `exports` as the original does.
- */
-function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrites: ReadonlyMap<string, FileRewrite>): StageResult {
-  const { root } = project;
-  const stageDirectory = path.join(project.buildDirectory, 'stage');
-  const base = sourceBase(project, sources);
-  const stagePath = (original: string): string => insideStage(stageDirectory, path.join(stageDirectory, path.relative(base, original)));
-  const keyOf = (original: string): string => posix(path.relative(base, original));
-  const maps = new Map<string, SourceMapV3>();
-  const manifests: string[] = [];
-  const keep = new Set<string>(['tsconfig.json']);
-  for (const source of sources) {
-    const key = keyOf(source.fileName);
-    const rewrite = rewrites.get(posix(path.relative(root, source.fileName)));
-    const rewritten = rewrite && applyRewrites(source.text, rewrite, source.fileName);
-    if (rewritten) maps.set(key, rewritten.map);
-    atomicWrite(stagePath(source.fileName), rewritten?.code ?? source.text);
-    keep.add(key);
-  }
-
-  const mirrored = new Set<string>([base]);
-  for (const source of sources) {
-    for (let directory = path.dirname(source.fileName); !mirrored.has(directory); directory = path.dirname(directory)) mirrored.add(directory);
-  }
-  for (const directory of mirrored) {
-    // Above the base the stage reaches the project's own files, not the original's: the base holds the manifest that governs it.
-    const manifest = directory === base && base !== root ? nearestManifest(base) : fs.existsSync(path.join(directory, 'package.json')) ? path.join(directory, 'package.json') : undefined;
-    const staged = stagePath(path.join(directory, 'package.json'));
-    if (manifest !== undefined) {
-      atomicWrite(staged, fs.readFileSync(manifest, 'utf8'));
-      manifests.push(manifest);
-      keep.add(keyOf(path.join(directory, 'package.json')));
-    } else if (directory === base && base !== root) {
-      atomicWrite(staged, '{}\n');
-      keep.add(keyOf(path.join(directory, 'package.json')));
-    }
-    const modules = path.join(directory, 'node_modules');
-    if (fs.statSync(modules, { throwIfNoEntry: false })?.isDirectory()) {
-      linkDirectory(stageDirectory, stagePath(modules), fs.realpathSync(modules));
-      keep.add(keyOf(modules));
-    }
-  }
-  pruneStage(stageDirectory, keep);
-
-  const stageOf = (absolute: string): string => (isInsideDirectory(base, absolute) ? posix(stagePath(absolute)) : absolute);
-  const configFile = path.join(stageDirectory, 'tsconfig.json');
-  const stageConfig = {
-    extends: posix(path.relative(stageDirectory, project.configFile)),
-    compilerOptions: {
-      outDir: project.outDir,
-      ...(project.rootDir === undefined ? {} : { rootDir: stageOf(project.rootDir) }),
-      // The stage's text has the calls rewritten, so its types differ from the original's: the declarations come from the check.
-      declaration: false,
-      declarationMap: false,
-      composite: false,
-      noEmit: false,
-      emitDeclarationOnly: false,
-      noEmitOnError: false,
-      ...(project.baseUrl === undefined ? {} : { baseUrl: stageOf(project.baseUrl) }),
-      ...(project.paths === undefined ? {} : {
-        paths: Object.fromEntries(Object.entries(project.paths).map(([pattern, targets]) => [pattern, targets.map(stageOf)])),
-      }),
-    },
-    files: project.files.map((file) => keyOf(file)),
-    include: [],
-    exclude: [],
-  };
-  atomicWrite(insideStage(stageDirectory, configFile), `${JSON.stringify(stageConfig, null, 2)}\n`);
-  return { configFile, directory: stageDirectory, base, maps, manifests };
-}
-
-/**
- * The scanner's rewrites with the edits that give each import specifier of a staged source the text Node loads as ESM. An import
+ * The scanner's rewrites with the edits that give each import specifier of a source the text Node loads as ESM. An import
  * the scanner adds for a type-only import copies that import's path text, so it takes the new text of the same specifier.
  */
 function withNodeSpecifiers(root: string, sources: readonly ts.SourceFile[], checker: ts.TypeChecker, compilerOptions: ts.CompilerOptions, scanned: ReadonlyMap<string, FileRewrite>): ReadonlyMap<string, FileRewrite> {
@@ -479,45 +306,7 @@ function settleOutputs(run: BuildRun, project: Project, sources: readonly ts.Sou
   }
 }
 
-/** The start of each line of the list that `--listEmittedFiles` prints. */
-const EMITTED_LINE = 'TSFILE: ';
-
-/** The emitted files the compiler listed (`--listEmittedFiles`), and its output without those lines. */
-function emittedFiles(output: string): { readonly files: readonly string[]; readonly rest: string } {
-  const files: string[] = [];
-  const rest: string[] = [];
-  for (const line of output.split('\n')) {
-    if (line.startsWith(EMITTED_LINE)) files.push(line.slice(EMITTED_LINE.length));
-    else rest.push(line);
-  }
-  return { files, rest: rest.join('\n').trim() };
-}
-
-/**
- * Point a map the compiler wrote for a staged file at the original. A rewritten file's map is composed with the
- * applier's, so a position in the emitted JavaScript resolves to the original line and column.
- */
-function remapSourceMap(mapFile: string, stage: StageResult): void {
-  const emitted = JSON.parse(fs.readFileSync(mapFile, 'utf8')) as SourceMapV3;
-  const [source] = emitted.sources;
-  if (emitted.sources.length !== 1 || source === undefined) return;
-  const staged = path.resolve(path.dirname(mapFile), source);
-  if (!isInsideDirectory(stage.directory, staged)) return;
-  const relative = posix(path.relative(stage.directory, staged));
-  const original = posix(path.relative(path.dirname(mapFile), path.join(stage.base, relative)));
-  const inner = stage.maps.get(relative);
-  const composed = inner ? composeSourceMaps(emitted, inner) : emitted;
-  const { sourcesContent, ...kept } = composed;
-  const remapped = {
-    ...kept,
-    sources: [original],
-    // Keep embedded sources only when the compiler embedded them; they are the original text.
-    ...(emitted.sourcesContent === undefined ? {} : { sourcesContent: inner ? inner.sourcesContent : sourcesContent }),
-  };
-  fs.writeFileSync(mapFile, JSON.stringify(remapped));
-}
-
-/** The directories this build writes: the compiler's own output, where the incremental state would otherwise find nothing to do. */
+/** The directories this build writes: a watching build builds again once when one of them has vanished. */
 function writtenDirectories(project: Project): Set<string> {
   if (project.noEmit) return new Set();
   return new Set([
@@ -551,13 +340,60 @@ interface BuildRun {
  * files of `listFiles`, then in the pretty form the line that counts the errors.
  */
 function reportCheck(root: string, program: ts.Program, diagnostics: readonly ts.Diagnostic[]): void {
-  const host = { getCanonicalFileName: (name: string) => name, getCurrentDirectory: () => root, getNewLine: () => os.EOL };
+  const host = diagnosticHost(root);
   const options = program.getCompilerOptions();
-  const pretty = typeof options.pretty === 'boolean' ? options.pretty : process.stdout.isTTY === true && !process.env.NO_COLOR;
-  const printed = diagnostics.map((diagnostic) => (pretty ? `${ts.formatDiagnosticsWithColorAndContext([diagnostic], host)}${host.getNewLine()}` : ts.formatDiagnostics([diagnostic], host))).join('');
   const listed = options.listFiles === true ? program.getSourceFiles().map((file) => `${file.fileName}${host.getNewLine()}`).join('') : '';
-  const output = `${printed}${listed}${pretty ? ts.formatErrorSummary(diagnostics, host) : ''}`;
+  const output = `${diagnosticText(root, options, diagnostics)}${listed}${isPretty(options) ? ts.formatErrorSummary(diagnostics, host) : ''}`;
   if (output !== '') process.stdout.write(output);
+}
+
+function diagnosticHost(root: string): ts.DiagnosticFormatHost {
+  return { getCanonicalFileName: (name: string) => name, getCurrentDirectory: () => root, getNewLine: () => os.EOL };
+}
+
+/** The `pretty` option, else whether stdout is a terminal. */
+function isPretty(options: ts.CompilerOptions): boolean {
+  return typeof options.pretty === 'boolean' ? options.pretty : process.stdout.isTTY === true && !process.env.NO_COLOR;
+}
+
+/** Each diagnostic as `tsc` prints it, plain or pretty. */
+function diagnosticText(root: string, options: ts.CompilerOptions, diagnostics: readonly ts.Diagnostic[]): string {
+  const host = diagnosticHost(root);
+  return diagnostics.map((diagnostic) => (isPretty(options) ? `${ts.formatDiagnosticsWithColorAndContext([diagnostic], host)}${host.getNewLine()}` : ts.formatDiagnostics([diagnostic], host))).join('');
+}
+
+/** The options of the emit program: it emits JavaScript and its maps from the rewritten text, and leaves the check and the declarations to the check program. Each beats a forwarded argument. */
+const EMIT_OPTIONS = { noCheck: true, declaration: false, declarationMap: false, composite: false, noEmit: false, emitDeclarationOnly: false, noEmitOnError: false } as const;
+
+/** The map file of a JavaScript output. */
+const JS_SOURCE_MAP = /\.[cm]?jsx?\.map$/;
+
+/**
+ * Point the map the compiler made for a rewritten file at the original. The compiler read the rewritten text, so a position in the emitted
+ * JavaScript is a position in that text; composing with the applier's map gives the original line and column.
+ */
+function pointSourceMap(mapFile: string, text: string, rewriteMaps: ReadonlyMap<string, SourceMapV3>): string {
+  const emitted = JSON.parse(text) as SourceMapV3;
+  const [source] = emitted.sources;
+  if (emitted.sources.length !== 1 || source === undefined) return text;
+  const inner = rewriteMaps.get(path.resolve(path.dirname(mapFile), source));
+  const composed = inner ? composeSourceMaps(emitted, inner) : emitted;
+  const { sourcesContent, ...kept } = composed;
+  return JSON.stringify({
+    ...kept,
+    sources: [source],
+    // Keep embedded sources only when the compiler embedded them; they are the original text.
+    ...(emitted.sourcesContent === undefined ? {} : { sourcesContent: inner ? inner.sourcesContent : sourcesContent }),
+  });
+}
+
+/** Write one output when it differs from the file on disk, so a file another tool changed is repaired and a file that is current keeps its time stamp. A failure names the file. */
+function writeOutput(file: string, text: string): void {
+  try {
+    atomicWrite(file, text);
+  } catch (error) {
+    throw new Error(`golem build could not write ${displayPath(file)}: ${errorMessage(error)}`, { cause: error });
+  }
 }
 
 /** One build: generate, check the original sources, emit the rewritten ones. `changed` are the inputs that changed since the build before. */
@@ -580,7 +416,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     if (folder !== undefined) run.baseline?.observeFolder(folder);
   }
   observe(configFile);
-  const cli = compilerCli(root);
+  requestTypeScriptRoot(root);
   // The options of the tsconfig with the forwarded arguments applied, as `tsc -p` resolves them. A configuration the build cannot mirror fails before anything is generated.
   const parseOptions = (): { options: ts.CompilerOptions; fileNames: string[] } => (run.tscArguments.length === 0
     ? session.parseConfigFile(configFile, observe)
@@ -602,11 +438,8 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const project = readProject(configFile, parsed);
   // The sources are inputs from here on: a failed check ends the build before any later step reads them.
   for (const filename of parsed.fileNames) observe(filename);
-  const emitState = path.join(project.buildDirectory, 'emit.tsbuildinfo');
   outputs.clear();
   for (const directory of writtenDirectories(project)) outputs.add(directory);
-  // The incremental state outlives the output: with a directory this build writes gone, the compiler would find nothing to write.
-  if ([...outputs].some((directory) => !fs.existsSync(directory))) fs.rmSync(emitState, { force: true });
 
   // The original sources are what the check program holds; it also writes the declarations, to memory.
   using program = session.openProgram({ root, sources: parsed.fileNames, configFile, flags: run.tscArguments, onInput: observe });
@@ -622,7 +455,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const sources = projectSources(program);
   for (const source of sources) observe(source.fileName);
   const written = declarations === undefined ? new Map<string, string>() : rewriteDeclarations(session, project, sources, parsed.fileNames, run.tscArguments, declarations.files);
-  for (const [file, text] of written) atomicWrite(file, text);
+  for (const [file, text] of written) writeOutput(file, text);
   const checkFiles = [...written.keys()];
   if (!project.emitsJavaScript) {
     settleOutputs(run, project, sources, checkFiles);
@@ -638,31 +471,39 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     if (warning.severity === GolemDiagnosticSeverity.Warning) process.stderr.write(`${warning.code} (${warning.file === undefined ? '' : displayPath(path.resolve(root, warning.file))}:${warning.line}:${warning.column}): ${warning.message}\n`);
   }
 
-  const stage = writeStage(project, sources, withNodeSpecifiers(root, sources, checker, program.getCompilerOptions(), scanned.files));
-  // The stage holds copies of these: a change to one is a change to build for.
-  for (const manifest of stage.manifests) observe(manifest);
-  const emit = await runTsc(cli, root, [
-    '-p', stage.configFile,
-    '--noCheck', '--listEmittedFiles',
-    '--incremental', '--tsBuildInfoFile', emitState,
-    ...run.tscArguments,
-    // A forwarded --declaration or --declarationMap beats the stage's configuration: the emit run writes JavaScript alone.
-    '--declaration', 'false', '--declarationMap', 'false',
-  ]);
-  const { files, rest } = emittedFiles(emit.stdout);
-  for (const file of files.filter((candidate) => /\.[cm]?jsx?\.map$/.test(candidate))) remapSourceMap(file, stage);
-  settleOutputs(run, project, sources, [...checkFiles, ...files]);
-  // After a failed check the check program already reported what the emit run would report.
-  if (emit.code !== 0 && !checkFailed) {
-    if (rest !== '') process.stdout.write(`${rest}\n`);
-    process.stderr.write(emit.stderr);
+  // The emit program reads the original paths, with the rewritten text served over the sources that have a call to rewrite or a specifier to change.
+  // It skips the check and writes no declaration: the declarations come from the check program, whose types the rewritten text would change.
+  const rewrites = withNodeSpecifiers(root, sources, checker, program.getCompilerOptions(), scanned.files);
+  const overlays = new Map<string, string>();
+  const rewriteMaps = new Map<string, SourceMapV3>();
+  for (const source of sources) {
+    const rewrite = rewrites.get(posix(path.relative(root, source.fileName)));
+    const rewritten = rewrite && applyRewrites(source.text, rewrite, source.fileName);
+    if (rewritten) {
+      overlays.set(source.fileName, rewritten.code);
+      rewriteMaps.set(path.resolve(source.fileName), rewritten.map);
+    }
   }
-  return checkFailed ? checkCode : emit.code;
+  using emitProgram = session.openProgram({ root, sources: parsed.fileNames, configFile, flags: run.tscArguments, overlays, compilerOptionOverrides: EMIT_OPTIONS, onInput: observe });
+  const emitted = emitProgram.emitToMemory('javascript');
+  // A failed emit writes no file: the outputs of the builds before stay as they were. After a failed check the check program already reported what the emit would report.
+  if (emitted.emitSkipped || emitted.diagnostics.length > 0) {
+    if (!checkFailed) {
+      const printed = diagnosticText(root, emitProgram.getCompilerOptions(), emitted.diagnostics);
+      process.stdout.write(printed === '' ? `golem build: the compiler emitted no JavaScript for ${displayPath(configFile)}.\n` : printed);
+    }
+    return checkFailed ? checkCode : 1;
+  }
+  const files = new Map<string, string>();
+  for (const [file, text] of emitted.files) files.set(file, JS_SOURCE_MAP.test(file) ? pointSourceMap(file, text, rewriteMaps) : text);
+  for (const [file, text] of files) writeOutput(file, text);
+  settleOutputs(run, project, sources, [...checkFiles, ...files.keys()]);
+  return checkFailed ? checkCode : 0;
 }
 
 /**
  * Generate the golem.yaml's code, check the original sources of its tsconfig and emit the rewritten ones into its outDir. The project's
- * compiler checks in process and writes the declarations; it emits the JavaScript through a run of its own, incrementally. With `watch`, the build repeats when an input changes and ends on `signal`.
+ * compiler checks and emits in process, to memory; the build writes each output that differs from the file on disk. With `watch`, the build repeats when an input changes and ends on `signal`.
  */
 export async function runBuild(options: BuildOptions): Promise<{ exitCode: number }> {
   const first = readGolemConfig(options.config, () => {});

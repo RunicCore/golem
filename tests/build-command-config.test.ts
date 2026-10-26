@@ -1,4 +1,4 @@
-// golem build: the golem.yaml, its tsconfig and the build state of each tsconfig.
+// golem build: the golem.yaml and its tsconfig.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -31,7 +31,7 @@ async function generatedProject(t: TestContext, name: string, options: { readonl
   return root;
 }
 
-test('each tsconfig of the directory keeps its own build state', async (t) => {
+test('each tsconfig of the directory builds its own files', async (t) => {
   const root = await generatedProject(t, 'build-two-configs');
   fs.writeFileSync(path.join(root, 'tsconfig.build.json'), JSON.stringify({ extends: './tsconfig.json', exclude: ['src/**/*.test.ts'] }));
 
@@ -40,7 +40,6 @@ test('each tsconfig of the directory keeps its own build state', async (t) => {
 
   assert.equal((await build(root)).exitCode, 0);
   assert.ok(fs.existsSync(path.join(root, 'build/use.test.js')));
-  for (const name of ['tsconfig', 'tsconfig.build']) assert.ok(fs.existsSync(path.join(root, '.golem/build', name, 'emit.tsbuildinfo')), `${name} has its own state`);
 });
 
 test('golem build --config from the parent folder builds the yaml tsconfig and keeps the Nest decorators', async (t) => {
@@ -117,7 +116,6 @@ test('a tsconfig key names the project that golem build builds', async (t) => {
   assert.equal((await build(root)).exitCode, 0);
   assert.ok(fs.existsSync(path.join(root, 'build/use.js')));
   assert.equal(fs.existsSync(path.join(root, 'build/use.test.js')), false, 'the default project is the yaml tsconfig');
-  assert.ok(fs.existsSync(path.join(root, '.golem/build/tsconfig/emit.tsbuildinfo')));
 
   assert.equal((await build(root, 'tsconfig.all.json')).exitCode, 0);
   assert.ok(fs.existsSync(path.join(root, 'build/use.test.js')));
@@ -171,8 +169,7 @@ test('a symlinked tsconfig keeps its own directory as the project root', async (
 
   assert.equal((await build(root)).exitCode, 0);
   assert.ok(fs.existsSync(path.join(root, 'build/use.js')));
-  assert.ok(fs.existsSync(path.join(root, '.golem/build/tsconfig/stage/src/use.ts')));
-  assert.equal(fs.existsSync(path.join(root, 'shared/.golem')), false, 'build state lives beside the symlink');
+  assert.equal(fs.existsSync(path.join(root, 'shared/.golem')), false, 'the build writes nothing beside the real file');
 });
 
 test('a declaration-only project with a declarationDir rebuilds nothing when nothing changed', async (t) => {
@@ -243,8 +240,8 @@ test('a package without a tsconfig of its own, under a parent tsconfig, builds w
 });
 
 
-test('a symlinked workspace package outside the tsconfig directory passes golem check and builds: both scan only the sources the build stages', async (t) => {
-  // The package's `types` is its source, so the compiler reads it as an external library: the app's build does not stage it, and its check does not scan it.
+test('a symlinked workspace package outside the tsconfig directory passes golem check and builds: both scan only the sources the build emits', async (t) => {
+  // The package's `types` is its source, so the compiler reads it as an external library: the app's build does not emit it, and its check does not scan it.
   const { root: outer } = createModelProject(t, {
     prefix: 'golem-build-linked-package-',
     name: 'build-linked-package',

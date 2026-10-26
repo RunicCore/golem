@@ -52,7 +52,7 @@ test('a class expression with a private member builds when the original does not
 
 // A configuration with nothing to emit
 
-test('a noEmit or emitDeclarationOnly project is checked and writes no JavaScript and no stage', async (t) => {
+test('a noEmit or emitDeclarationOnly project is checked and writes no JavaScript', async (t) => {
   const root = serdeProject(t, 'build-no-js');
   write(root, 'src/use.ts', USE);
   editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.emitDeclarationOnly = true; });
@@ -63,7 +63,6 @@ test('a noEmit or emitDeclarationOnly project is checked and writes no JavaScrip
   editTsconfig(root, (tsconfig) => { delete tsconfig.compilerOptions.emitDeclarationOnly; tsconfig.compilerOptions.declaration = false; tsconfig.compilerOptions.noEmit = true; tsconfig.compilerOptions.outDir = 'unused'; });
   assert.equal((await build(root)).exitCode, 0);
   assert.equal(fs.existsSync(path.join(root, 'unused')), false);
-  assert.equal(fs.existsSync(path.join(root, '.golem/build/tsconfig/stage')), false, 'a check-only build stages nothing');
 });
 
 // Decorator metadata
@@ -104,7 +103,7 @@ test('a Nest controller builds with the design:paramtypes of a plain tsc emit of
   assert.match(fs.readFileSync(path.join(root, 'build/payments.controller.js'), 'utf8'), /nestModelCodec/, 'the build carries the nest rewrite');
 });
 
-// tsconfig forms the stage supports and rejects
+// tsconfig forms the build supports and rejects
 
 test('a tsconfig that extends a file outside the root, with paths and a rootDir, builds', async (t) => {
   const parent = createFixtureProject(t, 'golem-build-forms-');
@@ -127,7 +126,7 @@ test('a tsconfig that extends a file outside the root, with paths and a rootDir,
   assert.deepEqual(snapshot(root), before);
 });
 
-test('golem build rejects a tsconfig the stage cannot mirror', async (t) => {
+test('golem build rejects a tsconfig it cannot emit', async (t) => {
   const parent = createFixtureProject(t, 'golem-build-rejected-');
   const root = path.join(parent, 'app');
   linkProjectPackages(root, { typescript: path.join(workspace, 'node_modules/typescript'), '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') });
@@ -243,7 +242,7 @@ test('a declaration file outside the project, imported under a rootDir inside it
   assert.deepEqual(built, await plainTscOutput(app));
 });
 
-test('an outside source under a folder without a package.json is CommonJS in the stage, as in its place', async (t) => {
+test('an outside source under a folder without a package.json is CommonJS, as in its place', async (t) => {
   const { outer, app } = appBesideShared(t, 'build-shared-no-manifest');
   // The app is ESM; nothing from the shared folder up to the filesystem root has a package.json.
   fs.rmSync(path.join(outer, 'package.json'));
@@ -256,9 +255,9 @@ test('an outside source under a folder without a package.json is CommonJS in the
   assert.deepEqual(built, await plainTscOutput(app));
 });
 
-test('an outside source resolves its own package.json and node_modules in the stage as it does in its place', async (t) => {
+test('an outside source resolves its own package.json and node_modules as it does in its place', async (t) => {
   const { outer, app } = appBesideShared(t, 'build-shared-packages', { experimentalDecorators: true, emitDecoratorMetadata: true });
-  // Everything above the shared folder is CommonJS, so a module the stage emits as ESM got its type from the shared folder's own package.json.
+  // Everything above the shared folder is CommonJS, so a module that emits as ESM got its type from the shared folder's own package.json.
   write(outer, 'package.json', '{"private":true}');
   write(app, 'package.json', '{"name":"shared-app"}');
   write(app, 'src/main.ts', 'export const main: number = 1;\n');
@@ -282,7 +281,7 @@ export class User {
   assert.deepEqual(built, await plainTscOutput(app));
 });
 
-test('a workspace library reached only by import is neither staged nor emitted, as under tsc', async (t) => {
+test('a workspace library reached only by import is not emitted, as under tsc', async (t) => {
   const { outer, app } = appBesideShared(t, 'build-shared-library');
   write(app, 'src/main.ts', 'export const main: number = 1;\n');
   write(outer, 'packages/lib/package.json', JSON.stringify({ name: '@fixture/lib', type: 'module', types: './src/index.ts', exports: { '.': { types: './src/index.ts', default: './src/index.js' } } }));
@@ -295,35 +294,6 @@ test('a workspace library reached only by import is neither staged nor emitted, 
   const built = filesUnder(path.join(app, 'build'));
   assert.deepEqual(Object.keys(built), ['app/src/main.d.ts', 'app/src/main.js', 'shared/util.d.ts', 'shared/util.js']);
   assert.deepEqual(built, await plainTscOutput(app));
-  // The stage holds the program's sources, the package.json files and links the originals have, and the stage's own tsconfig.
-  assert.deepEqual(Object.keys(filesUnder(path.join(app, '.golem/build/tsconfig/stage'))), [
-    'app/package.json',
-    'app/src/main.ts',
-    'node_modules (link)',
-    'package.json',
-    'shared/node_modules (link)',
-    'shared/util.ts',
-    'tsconfig.json',
-  ]);
-});
-
-test('a staged copy of a source that left the program is pruned and the node_modules its stage linked to is left alone', async (t) => {
-  const { outer, app } = appBesideShared(t, 'build-shared-prune');
-  write(app, 'src/main.ts', 'export const main: number = 1;\n');
-  write(outer, 'shared/util.ts', "import { Dep } from '@fixture/dep';\nexport const value = (dep: Dep): string => dep.name;\n");
-  write(outer, 'shared/node_modules/@fixture/dep/package.json', '{"name":"@fixture/dep","version":"1.0.0","types":"./index.d.ts"}');
-  write(outer, 'shared/node_modules/@fixture/dep/index.d.ts', 'export interface Dep { readonly name: string }\n');
-  const stage = path.join(app, '.golem/build/tsconfig/stage');
-  const dependency = filesUnder(path.join(outer, 'shared/node_modules'));
-
-  assert.equal((await build(app)).exitCode, 0);
-  assert.ok(Object.keys(filesUnder(stage)).includes('shared/node_modules (link)'), 'the stage links the outside node_modules');
-
-  editTsconfig(app, (tsconfig) => { tsconfig.include = ['src/**/*.ts']; tsconfig.compilerOptions.rootDir = 'src'; });
-  assert.equal((await build(app)).exitCode, 0);
-  assert.deepEqual(Object.keys(filesUnder(stage)), ['package.json', 'src/main.ts', 'tsconfig.json']);
-  assert.deepEqual(filesUnder(path.join(outer, 'shared/node_modules')), dependency, 'the linked directory keeps its files');
-  assert.equal(fs.readFileSync(path.join(outer, 'shared/util.ts'), 'utf8'), "import { Dep } from '@fixture/dep';\nexport const value = (dep: Dep): string => dep.name;\n");
 });
 
 test('a rewrite site in a source outside the tsconfig directory passes golem check, is rewritten by golem build, and its source map names the original file and line', async (t) => {
