@@ -58,7 +58,7 @@ export function createContractAnalysis(
     && !isGeneratedCompanion(source.fileName)).map(source => source.fileName);
   // With the models job known, a model file of an installed package or a declaration file is a shared model file of the app, as it is for that job.
   const sharedSources = options.boundary === undefined ? [] : includedModelSources(
-    program.getSourceFiles().filter(source => !program.isSourceFileDefaultLibrary(source)).map(source => source.fileName),
+    program.getSourceFiles().filter(source => !program.isSourceFileDefaultLibrary(source) && !excluded.has(source.fileName)).map(source => source.fileName),
     options.boundary.suffixes,
   );
   // A file has one name: TypeScript's own spelling and the normalized one of a shared file are the same file.
