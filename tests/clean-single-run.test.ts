@@ -84,7 +84,7 @@ test('a clean tree generates in one run, and the run after it writes the same do
   }
   const registry = path.relative(root, operationCodecRegistryPath(root));
   const first = { document: read(root, 'generated/openapi.json'), registry: read(root, registry) };
-  assert.deepEqual(Object.keys((JSON.parse(first.document) as { components: { schemas: object } }).components.schemas), ['TStatus', 'TCharge']);
+  assert.deepEqual(Object.keys((JSON.parse(first.document) as { components: { schemas: object } }).components.schemas), ['TCharge', 'TStatus']);
 
   // A changed controller file makes the controllers job read the project again, now with the SDK on disk.
   fs.appendFileSync(path.join(root, 'src/catalog.controller.ts'), '// second run\n');
@@ -105,7 +105,7 @@ for (const [reach, returns, imports] of [
   test(`a controller that ${reach} stops with RUNM1084 on a clean tree and with the SDK present`, async (t: TestContext) => {
     const root = cleanProject(t, controller(returns, imports));
     const yaml = path.join(root, 'golem.yaml');
-    const cycle = /RUNM1084: Generated input dependency cycle: .*sdk/;
+    const cycle = /RUNM1084: Generated input dependency cycle: the controllers job reads .*, which is, or imports, a file that a later job writes/;
 
     await assert.rejects(runPipeline(yaml), (error: unknown) => cycle.test(String(error)) && !/RUNM1058/.test(String(error)));
     fs.writeFileSync(path.join(root, 'src/catalog.controller.ts'), keeps);

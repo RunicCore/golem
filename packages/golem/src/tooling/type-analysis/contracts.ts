@@ -236,7 +236,7 @@ export function createContractAnalysis(
     describe(type, node, typeNode) {
       const reached = reachedLaterOutput(type, node, typeNode);
       if (reached !== undefined) {
-        throw diagnostic(node.getSourceFile(), node, '1084', `Generated input dependency cycle: the controllers job reads ${displayPath(reached)}, a file that a later job writes or that imports one. The jobs run in the order generators, controllers, openapi, models, so the controllers job cannot read it. Move the model out of what the controllers reach.`);
+        throw diagnostic(node.getSourceFile(), node, '1084', `Generated input dependency cycle: the controllers job reads ${displayPath(reached)}, which is, or imports, a file that a later job writes. The jobs run in the order generators, controllers, openapi, models, so the controllers job cannot read it. Move the model out of what the controllers reach.`);
       }
       const intact = intactModel(type, node, typeNode);
       if (intact) {
