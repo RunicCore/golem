@@ -26,7 +26,7 @@ Your package version does not need to match the version of golem.
 
 `manifestPaths` and `watchInputs` list the manifests and input files that the generator reads. This generator reads only its options, so both are empty.
 
-Golem skips a generator whose inputs did not change. It learns an input when the generator calls `context.onInput(path)` before it reads the file. A generator that lists a path in `watchInputs` without announcing it runs again on every `golem generate` and `golem build`.
+Golem skips a generator whose inputs did not change. It learns an input when the generator calls `context.onInput(path)` before it reads the file. Golem also records a file in `watchInputs` that the generator did not announce, but it reads that file when the generator returns. If the file changed during the run, the next run runs the generator again. A directory that the generator did not announce makes the generator run every time. Call `context.onInput(path)` for each file you read, so golem records it at the read.
 
 ## Check what it writes
 

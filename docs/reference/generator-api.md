@@ -90,7 +90,7 @@ interface GeneratorJobContext {
 - Show returned diagnostics to the user. Their codes are in [Diagnostics](/reference/diagnostics).
 - A generator reports a failure as an exception or as a result that carries an `Error` diagnostic. Treat both as a failed run. The CLI stops the job.
 - `onInput` runs before each local read or existence check, including for a missing path.
-- The CLI skips a job whose recorded inputs did not change since its last run. It learns an input only through `onInput`. A generator that returns a path in `watchInputs` without announcing it through `onInput` runs again every time.
+- The CLI skips a job whose recorded inputs did not change since its last run. It learns an input when the generator calls `onInput`. A file that the generator returns in `watchInputs` without calling `onInput` is recorded when the generator returns. If the file changed during the run, the next run runs the generator again. A directory that the generator returns without announcing it makes the generator run every time. Call `onInput` for each file you read, so golem records it at the read.
 - Pass the same `session` to repeated `generate()` calls of the model or controller generator to keep its TypeScript compiler running between calls. The session owner disposes the retained resources.
 - Without a session, each call starts and closes its own compiler.
 
