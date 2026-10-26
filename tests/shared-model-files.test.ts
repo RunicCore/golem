@@ -298,7 +298,7 @@ test('a shared package.json that is not JSON stops generation with an error that
   fs.writeFileSync(path.join(outer, 'shared/package.json'), '{ "name": ');
   const app = appWithShared(outer, 'web', false, { 'src/use.ts': "import type { TCustomer } from '../../shared/customer.model.js';\nexport type Used = TCustomer;\n" });
 
-  assert.throws(() => generate({ root: app, profile: PROFILE }), (error: Error) => error.message.includes(`Cannot read ${path.join(fs.realpathSync(outer), 'shared/package.json')}`));
+  assert.throws(() => generate({ root: app, profile: PROFILE }), (error: Error) => error.message.includes(`Cannot read ${path.relative(process.cwd(), path.join(fs.realpathSync(outer), 'shared/package.json'))}`));
 });
 
 test('a nameless package.json under a shared package only scopes the module format: the companion goes in the named package folder', (t: TestContext) => {
