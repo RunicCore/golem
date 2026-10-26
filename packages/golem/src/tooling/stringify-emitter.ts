@@ -63,6 +63,11 @@ export interface CodecRuntimeOptions {
    * which keeps the validator's route. Called once for each use, as `validatorName` is.
    */
   readonly fastCheckName?: (id: string) => Code | undefined;
+  /**
+   * The names the module imports the structure check and the predicates-only pass of a root under, by the same keys;
+   * undefined for a root that has none (it has a fast check, or runs the validator). Called once for each use.
+   */
+  readonly passCheckNames?: (id: string) => { readonly structure: Code; readonly predicates: Code } | undefined;
   /** Expression of a record of the validation plan's resolved schemas by the same keys. A validated codec publishes these as its schemas; without it the codec carries its own unresolved payload. */
   readonly resolvedSchemasExpr?: Code;
   readonly serde?: StringifySerdeResolver;
@@ -98,6 +103,7 @@ interface EmitCtx {
   readonly guardInline?: boolean;
   readonly validatorName?: (id: string) => Code;
   readonly fastCheckName?: (id: string) => Code | undefined;
+  readonly passCheckNames?: CodecRuntimeOptions['passCheckNames'];
   readonly resolvedSchemasExpr?: Code;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Code;
@@ -1846,6 +1852,17 @@ function validatorReference(ctx: EmitCtx, id: string): Code {
 }
 
 /**
+ * The validator a site runs for `value`. A root with a structure check and a predicates-only pass runs the pass when
+ * the structure is valid and no validation context decides, so each predicate runs once and never before the full
+ * validator on a failing structure; any other value, and any other root, runs the full validator.
+ */
+function validatorFor(ctx: EmitCtx, reference: string, value: Code): Code {
+  const full = validatorReference(ctx, reference);
+  const pass = ctx.passCheckNames?.(reference);
+  return pass === undefined ? full : code`options?.validationContext === undefined && ${pass.structure}(${value}) ? ${pass.predicates} : ${full}`;
+}
+
+/**
  * True when the fast check `fast` answers for `value`: no validation context decides instead. The test is
  * written in each model's function, not in a shared runtime helper, so each call of a fast check sees one check only
  * and V8 can inline it.
@@ -1857,7 +1874,7 @@ function fastPasses(fast: Code, value: Code): Code {
 /** Whether `value` passes the validator of `reference`, from the fast check first when the root has one. */
 function validModelValueCall(ctx: EmitCtx, reference: string): Code {
   const fast = ctx.fastCheckName?.(reference);
-  const slow = code`${rt.serde.isValidModelValue}(value, options, ${validatorReference(ctx, reference)}, ${literal(reference)})`;
+  const slow = code`${rt.serde.isValidModelValue}(value, options, ${validatorFor(ctx, reference, code`value`)}, ${literal(reference)})`;
   return fast === undefined ? slow : code`(${fastPasses(fast, code`value`)}) || ${slow}`;
 }
 
@@ -1874,7 +1891,7 @@ function emitModelGuard(
     : wire ? `${node.codecId}#wire` : node.codecId;
   // A valid value passes the fast check first, unless a validation context decides.
   const fast = ctx.fastCheckName?.(reference);
-  const slow = code`${rt.serde.assertModelValue}(${value}, options, ${validatorReference(ctx, reference)}, ${literal(reference)}, ${rt.serde.IssueRepresentation}.${identifier(representation)}, ${rt.serde.IssueSource}.${identifier(ctx.issueSource)});`;
+  const slow = code`${rt.serde.assertModelValue}(${value}, options, ${validatorFor(ctx, reference, value)}, ${literal(reference)}, ${rt.serde.IssueRepresentation}.${identifier(representation)}, ${rt.serde.IssueSource}.${identifier(ctx.issueSource)});`;
   return fast === undefined ? slow : code`if (!(${fastPasses(fast, value)})) ${slow}`;
 }
 
@@ -2367,6 +2384,7 @@ export function emitCodecRuntimeCode(
     exportWireStringify: options.exportWireStringify,
     validatorName: options.validatorName,
     fastCheckName: options.fastCheckName,
+    passCheckNames: options.passCheckNames,
     resolvedSchemasExpr: options.resolvedSchemasExpr,
     serde: options.serde,
     nestedConstruct: options.nestedConstruct,

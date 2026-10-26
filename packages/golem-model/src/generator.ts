@@ -580,7 +580,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       { siblingWireCodecIds, siblingRecursion, cyclicSiblings },
       {
         ...(planSchemas ? { planSchemas } : {}),
-        ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports } } : {}),
+        ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports, passExports: validators.passExports } } : {}),
       },
     ));
     if (content !== undefined) artifacts.push({ path: output, content });

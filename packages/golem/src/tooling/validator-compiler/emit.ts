@@ -6,7 +6,7 @@ import { VALUE, NEWLINE, functionParameters, FunctionSlots, callFunction, type C
 import { FULL_VALIDATOR, fastCheckMode, type WriterMode } from './modes.js';
 import { ModuleState } from './module-state.js';
 import { FunctionWriter } from './function-writer.js';
-import { forwardingTarget, reachable } from './call-graph.js';
+import { forwardingTarget, projectPasses, reachable } from './call-graph.js';
 import { FastPlan } from './fast-plan.js';
 import { groupFunctions, type WrittenFastCheck, type WrittenFunction } from './grouping.js';
 
@@ -19,10 +19,18 @@ interface EmitOptions {
   readonly fastPath?: boolean | ReadonlySet<string>;
 }
 
+/** The names a root's two passes are exported under; see `PassRoot`. */
+export interface PassExports {
+  readonly structure: string;
+  readonly predicates: string;
+}
+
 interface EmitResult {
   readonly source: string;
   /** The name each root's fast check is exported under, by root name; only roots that have one. */
   readonly fastExports: ReadonlyMap<string, string>;
+  /** The names each root's structure check and predicates-only pass are exported under, by root name; only roots that have them. */
+  readonly passExports: ReadonlyMap<string, PassExports>;
 }
 
 /** The longest part of a schema's name that a function name keeps. */
@@ -53,9 +61,9 @@ export function exportNames(rootNames: Iterable<string>): ReadonlyMap<string, st
   return result;
 }
 
-/** The name a root's fast check is exported under: its `validate_` name with `is_` instead (`validate_User` becomes `is_User`). */
-function fastExportName(validateName: string): string {
-  return `is_${validateName.slice('validate_'.length)}`;
+/** The name a sibling of a root's validator is exported under: its `validate_` name with `prefix` instead (`validate_User` becomes `is_User`). */
+function siblingExportName(prefix: string, validateName: string): string {
+  return `${prefix}_${validateName.slice('validate_'.length)}`;
 }
 
 /**
@@ -78,7 +86,14 @@ function writeFastCheck(state: ModuleState, module: IrModule, target: (id: numbe
   return { body: writer.write(), calls: writer.calls, fastCalls: writer.fastCalls };
 }
 
-/** What every step of `emit` reads: the module, how its functions forward, and which fast checks are planned. */
+/** A root that validates conjunctively (see `conjunctiveValidation`) and has a structure check: the functions of its two passes. */
+interface PassRoot {
+  readonly name: string;
+  readonly structure: number;
+  readonly predicates: number;
+}
+
+/** What every step of `emit` reads: the module with the functions of the passes added, how its functions forward, and which fast checks are planned. */
 interface Emission {
   readonly module: IrModule;
   readonly target: (id: number) => number;
@@ -87,21 +102,33 @@ interface Emission {
   readonly slots: FunctionSlots;
   /** The roots that export a fast check. */
   readonly fastRootExports: IrModule['exports'];
+  /** The roots that export a structure check and a predicates-only pass. */
+  readonly passRoots: readonly PassRoot[];
 }
 
-/** The functions the roots reach, grouped: the function that stays for each group, and the fast checks written. */
+/**
+ * The functions the roots reach, grouped: the function that stays for each group, and the fast checks written. A
+ * structure check is a fast check with no full validator beside it, so `kept` and `fastKept` can differ in both directions.
+ */
 interface Reached {
   readonly fastReached: ReadonlySet<number>;
   readonly representative: ReadonlyMap<number, number>;
+  /** The groups whose full validator is written. */
   readonly kept: readonly number[];
+  /** The groups whose fast check is written. */
   readonly fastKept: ReadonlySet<number>;
 }
 
-function startEmission(module: IrModule, fastPath: EmitOptions['fastPath']): Emission {
-  const target = forwardingTarget(module.functions);
+function startEmission(source: IrModule, fastPath: EmitOptions['fastPath']): Emission {
   // A set of root names is any `ReadonlySet`, not only a `Set`.
-  const plan = fastPath === true || (typeof fastPath === 'object' && fastPath.size > 0) ? new FastPlan(module.functions) : undefined;
   const wantsFastCheck = (name: string): boolean => fastPath === true || (typeof fastPath === 'object' && fastPath.has(name));
+  const wanted = fastPath === true || (typeof fastPath === 'object' && fastPath.size > 0);
+  const sourceTarget = forwardingTarget(source.functions);
+  // The passes are IR functions of their own, so the plan and the writers treat them as any other function.
+  const passes = wanted ? projectPasses(source.functions, source.exports.filter(({ name }) => wantsFastCheck(name)).map(({ fn }) => sourceTarget(fn))) : undefined;
+  const module = passes === undefined ? source : { ...source, functions: passes.functions };
+  const target = forwardingTarget(module.functions);
+  const plan = wanted ? new FastPlan(module.functions) : undefined;
   return {
     module,
     target,
@@ -109,6 +136,11 @@ function startEmission(module: IrModule, fastPath: EmitOptions['fastPath']): Emi
     fastMode: plan === undefined ? undefined : fastCheckMode(plan),
     slots: new FunctionSlots(module.functions),
     fastRootExports: module.exports.filter(({ name, fn }) => wantsFastCheck(name) && (plan?.has(target(fn)) ?? false)),
+    passRoots: passes === undefined ? [] : module.exports.flatMap(({ name, fn }): PassRoot[] => {
+      const structure = passes.structure.get(sourceTarget(fn));
+      const predicates = passes.predicates.get(sourceTarget(fn));
+      return wantsFastCheck(name) && structure !== undefined && predicates !== undefined && (plan?.has(target(structure)) ?? false) ? [{ name, structure, predicates }] : [];
+    }),
   };
 }
 
@@ -123,17 +155,17 @@ function surveyFunctions({ module, target, plan, fastMode, slots }: Emission): R
   }] as const));
 }
 
-function reachedFunctions({ module, target, slots, fastRootExports }: Emission, written: ReadonlyMap<number, WrittenFunction>): Reached {
-  const fastReached = reachable(fastRootExports.map(({ fn }) => target(fn)), id => written.get(id)?.fast?.fastCalls ?? []);
+function reachedFunctions({ module, target, slots, fastRootExports, passRoots }: Emission, written: ReadonlyMap<number, WrittenFunction>): Reached {
+  const fastReached = reachable([...fastRootExports.map(({ fn }) => target(fn)), ...passRoots.map(({ structure }) => target(structure))], id => written.get(id)?.fast?.fastCalls ?? []);
   const reached = reachable(
-    [...module.exports.map(({ fn }) => target(fn)), ...[...fastReached].flatMap(id => [...(written.get(id)?.fast?.calls ?? [])])],
+    [...module.exports.map(({ fn }) => target(fn)), ...passRoots.map(({ predicates }) => target(predicates)), ...[...fastReached].flatMap(id => [...(written.get(id)?.fast?.calls ?? [])])],
     id => written.get(id)?.calls ?? [],
   );
-  const representative = groupFunctions([...written.values()].filter(entry => reached.has(entry.id)), fastReached, slots);
+  const representative = groupFunctions([...written.values()].filter(entry => reached.has(entry.id) || fastReached.has(entry.id)), fastReached, slots);
   return {
     fastReached,
     representative,
-    kept: [...new Set(representative.values())].sort((first, second) => first - second),
+    kept: [...new Set([...reached].map(id => representative.get(id) ?? id))].sort((first, second) => first - second),
     fastKept: new Set([...fastReached].map(id => representative.get(id) ?? id)),
   };
 }
@@ -141,8 +173,9 @@ function reachedFunctions({ module, target, slots, fastRootExports }: Emission, 
 /** The names of the functions that stay, and of their fast checks. */
 function declareFunctionNames({ module, slots }: Emission, { kept, fastKept }: Reached): NameTable {
   const names = new NameTable();
-  kept.forEach((id, index) => {
-    names.declare(slots.of(id, false), functionName(index, module.functions[id].name, false));
+  const keptFull = new Set(kept);
+  [...new Set([...kept, ...fastKept])].sort((first, second) => first - second).forEach((id, index) => {
+    if (keptFull.has(id)) names.declare(slots.of(id, false), functionName(index, module.functions[id].name, false));
     if (fastKept.has(id)) names.declare(slots.of(id, true), functionName(index, module.functions[id].name, true));
   });
   return names;
@@ -170,8 +203,17 @@ function writeStaying({ module, target, fastMode, slots }: Emission, { kept, fas
   return { state, functions, fastFunctions };
 }
 
-/** The exported wrapper of each root, and of each fast check. */
-function writeExports({ module, target, fastRootExports }: Emission, stayingSlot: CalleeSlot, options: EmitOptions): { readonly wrappers: readonly Code[]; readonly fastWrappers: readonly Code[]; readonly fastExports: ReadonlyMap<string, string> } {
+/** The exported wrappers of the roots, of the fast checks and of the passes. */
+interface Exported {
+  readonly wrappers: readonly Code[];
+  readonly fastWrappers: readonly Code[];
+  readonly passWrappers: readonly Code[];
+  readonly fastExports: ReadonlyMap<string, string>;
+  readonly passExports: ReadonlyMap<string, PassExports>;
+}
+
+/** The exported wrapper of each root, of each fast check, and of each root's two passes. */
+function writeExports({ module, target, fastRootExports, passRoots }: Emission, stayingSlot: CalleeSlot, options: EmitOptions): Exported {
   const exported = exportNames(module.exports.map(({ name }) => name));
   const exportName = (name: string): string => {
     const known = exported.get(name);
@@ -179,23 +221,30 @@ function writeExports({ module, target, fastRootExports }: Emission, stayingSlot
     return known;
   };
   const signature = options.typed ? code`(value: unknown, all: boolean): readonly ${rtType['validation-runtime'].SchemaIssue}[] {` : code`(value, all) {`;
-  const wrappers = module.exports.map(({ name, fn }) => code`export function ${identifierCode(exportName(name))}${signature}
+  const issuesOf = (name: string, id: number): Code => code`export function ${identifierCode(name)}${signature}
   const issues = [];
-  ${callFunction(module.functions[target(fn)], nameOf(stayingSlot(target(fn), false)), { value: identifierCode('value'), path: code`[]`, issues: identifierCode('issues'), all: identifierCode('all') })};
+  ${callFunction(module.functions[target(id)], nameOf(stayingSlot(target(id), false)), { value: identifierCode('value'), path: code`[]`, issues: identifierCode('issues'), all: identifierCode('all') })};
   return issues;
-}`);
-  const fastExports = new Map(fastRootExports.map(({ name }) => [name, fastExportName(exportName(name))] as const));
+}`;
+  const wrappers = module.exports.map(({ name, fn }) => issuesOf(exportName(name), fn));
+  const fastExports = new Map(fastRootExports.map(({ name }) => [name, siblingExportName('is', exportName(name))] as const));
   // The fast check itself is the export: a valid value takes no extra call.
   const fastType = options.typed ? code`: (value: unknown) => boolean` : code``;
-  const fastWrappers = fastRootExports.map(({ name, fn }) => code`export const ${identifierCode(fastExportName(exportName(name)))}${fastType} = ${nameOf(stayingSlot(target(fn), true))};`);
-  return { wrappers, fastWrappers, fastExports };
+  const fastWrappers = fastRootExports.map(({ name, fn }) => code`export const ${identifierCode(siblingExportName('is', exportName(name)))}${fastType} = ${nameOf(stayingSlot(target(fn), true))};`);
+  const passExports = new Map(passRoots.map(({ name }) => [name, { structure: siblingExportName('structure', exportName(name)), predicates: siblingExportName('predicates', exportName(name)) }] as const));
+  const passWrappers = passRoots.flatMap(({ name, structure, predicates }) => [
+    code`export const ${identifierCode(passExports.get(name)!.structure)}${fastType} = ${nameOf(stayingSlot(target(structure), true))};`,
+    issuesOf(passExports.get(name)!.predicates, predicates),
+  ]);
+  return { wrappers, fastWrappers, passWrappers, fastExports, passExports };
 }
 
 /**
  * Emits the module: one function per distinct behavior and one exported wrapper per root, named by `exportNames`.
  * Every check is written once: a forwarding function, and a function the same as another, are not emitted, and
  * their callers call the one that is. With `fastPath`, each root that has a fast check (see `FastPlan`) also exports
- * `is_X`, and only the fast checks those reach are written.
+ * `is_X`, and only the fast checks those reach are written. A root that validates conjunctively (see `projectPasses`)
+ * and whose structure has a fast check also exports `structure_X` and `predicates_X`.
  */
 export function emit(module: IrModule, options: EmitOptions): EmitResult {
   const emission = startEmission(module, options.fastPath);
@@ -203,9 +252,9 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
   const stayingSlot = stayingSlotOf(emission, reached);
   const names = declareFunctionNames(emission, reached);
   const { state, functions, fastFunctions } = writeStaying(emission, reached, stayingSlot);
-  const { wrappers, fastWrappers, fastExports } = writeExports(emission, stayingSlot, options);
+  const { wrappers, fastWrappers, passWrappers, fastExports, passExports } = writeExports(emission, stayingSlot, options);
   // The imports and the helpers come from the parts of everything the file holds.
-  const contents = [...state.constantDeclarations(), ...functions, ...fastFunctions, ...wrappers, ...fastWrappers];
+  const contents = [...state.constantDeclarations(), ...functions, ...fastFunctions, ...wrappers, ...fastWrappers, ...passWrappers];
   const everything = join(contents, NEWLINE);
   return {
     source: render(join([
@@ -216,5 +265,6 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
       code``,
     ], NEWLINE), names),
     fastExports,
+    passExports,
   };
 }

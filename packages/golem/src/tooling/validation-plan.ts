@@ -3,7 +3,7 @@ import { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_INSTANCE_KEYWORD } from '../sc
 import { compareText, type GolemDiagnostic } from './generator-api.js';
 import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
-import { compile, type CompileInput, type CompileOptions, type SchemaPlace } from './validator-compiler/index.js';
+import { compile, type CompileInput, type CompileOptions, type CompileResult, type SchemaPlace } from './validator-compiler/index.js';
 
 export type { SchemaPlace };
 
@@ -421,6 +421,8 @@ export interface PlanValidators {
   readonly exports: ReadonlyMap<string, string>;
   /** The name each model plan root's fast check is exported under, for the roots that have one; see `CompileResult.fastExports`. */
   readonly fastExports: ReadonlyMap<string, string>;
+  /** The names each model plan root's structure check and predicates-only pass are exported under, for the roots that have them; see `CompileResult.passExports`. */
+  readonly passExports: CompileResult['passExports'];
   readonly diagnostics: readonly GolemDiagnostic[];
 }
 
@@ -431,7 +433,7 @@ function compileValidatorRoots(
   options: PlanValidatorsOptions,
   fastRoots: ReadonlySet<string>,
 ): PlanValidators {
-  const { source, exports, fastExports, diagnostics } = compile(
+  const { source, exports, fastExports, passExports, diagnostics } = compile(
     {
       roots,
       ...(resources.size === 0 ? {} : { resources }),
@@ -450,6 +452,7 @@ function compileValidatorRoots(
     source: source === '' ? '' : `${banner}// @ts-nocheck\n${source}`,
     exports,
     fastExports,
+    passExports,
     diagnostics,
   };
 }

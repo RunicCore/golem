@@ -1,5 +1,5 @@
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-api.js';
-import { emit, exportNames } from './emit.js';
+import { emit, exportNames, type PassExports } from './emit.js';
 import { lower } from './lower.js';
 
 export interface CompileInput {
@@ -53,6 +53,15 @@ export interface CompileResult {
    * reaches a validation function, keeps an evaluation record, or has no check with a fast form; empty when the source is.
    */
   readonly fastExports: ReadonlyMap<string, string>;
+  /**
+   * With `fastPath`, for each root whose every path to a validation function is conjunctive (a reference, an array item,
+   * a declared property, `allOf`) and whose structure has a fast check: `structure`, a check `(value) => boolean` that
+   * holds no validation function and is true when the structure is valid, and `predicates`, a function
+   * `(value, all) => issues` that runs each validation function once and reports, for a value whose structure is valid,
+   * the issues of `validate_X` in the same order. A root with a predicate under a union, `not`, `if`,
+   * `dependentSchemas`, `contains`, `propertyNames`, a pattern, `additionalProperties` or `unevaluated*` has none.
+   */
+  readonly passExports: ReadonlyMap<string, PassExports>;
   readonly diagnostics: readonly GolemDiagnostic[];
 }
 
@@ -62,11 +71,11 @@ const DEFAULT_RUNTIME_MODULE = '@exprtlabs/golem/validation-runtime';
 export function compile(input: CompileInput, options: CompileOptions): CompileResult {
   const { module, diagnostics } = lower(input, options);
   const exports = exportNames(input.roots.keys());
-  if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', exports, fastExports: new Map(), diagnostics };
-  const { source, fastExports } = emit(module, {
+  if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', exports, fastExports: new Map(), passExports: new Map(), diagnostics };
+  const { source, fastExports, passExports } = emit(module, {
     runtimeModule: options.runtimeModule ?? DEFAULT_RUNTIME_MODULE,
     ...(options.typed ? { typed: true } : {}),
     ...(options.fastPath === undefined || options.fastPath === false ? {} : { fastPath: options.fastPath }),
   });
-  return { source, exports, fastExports, diagnostics };
+  return { source, exports, fastExports, passExports, diagnostics };
 }

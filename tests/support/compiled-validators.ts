@@ -48,13 +48,15 @@ export interface CompiledValidatorModule {
   readonly exportNames: readonly string[];
   /** The fast check of each root that has one, by root name; empty without `fastPath`. */
   readonly fastByRoot: Readonly<Record<string, FastCheck>>;
+  /** The structure check and the predicates-only pass of each root that has them, by root name; empty without `fastPath`. */
+  readonly passByRoot: Readonly<Record<string, { readonly structure: FastCheck; readonly predicates: Validator }>>;
   /** The emitted module. */
   readonly source: string;
 }
 
 /** Compiles the roots, writes the module to a temp directory and imports it. */
 export async function compileValidatorModule(input: CompiledValidatorInput): Promise<CompiledValidatorModule> {
-  const { source, exports, fastExports, diagnostics } = compile(
+  const { source, exports, fastExports, passExports, diagnostics } = compile(
     {
       roots: new Map(Object.entries(input.roots)),
       resources: new Map(Object.entries(input.resources ?? {})),
@@ -79,6 +81,7 @@ export async function compileValidatorModule(input: CompiledValidatorInput): Pro
       exports,
       exportNames: Object.keys(namespace).sort(),
       fastByRoot: Object.fromEntries([...fastExports].map(([root, exported]) => [root, fastChecks[exported]] as const)),
+      passByRoot: Object.fromEntries([...passExports].map(([root, names]) => [root, { structure: fastChecks[names.structure], predicates: loaded[names.predicates] }] as const)),
       source,
     };
   } finally {
@@ -123,11 +126,19 @@ export async function compileValidationPlanBinding(
 ): Promise<{
   readonly validatorName: (id: string) => string;
   readonly fastCheckName: (id: string) => string | undefined;
+  /** The export names of the structure check and the predicates-only pass of a root that has them. */
+  readonly passCheckNames: (id: string) => { readonly structure: string; readonly predicates: string } | undefined;
   readonly scope: Readonly<Record<string, Validator>>;
   readonly fastScope: Readonly<Record<string, FastCheck>>;
+  /** The structure checks and predicates-only passes of the roots that have them, by export name. */
+  readonly passScope: Readonly<Record<string, (value: unknown, all: boolean) => unknown>>;
 }> {
   const compiled = await compileValidatorModule({ ...input, roots: planRoots(plan) });
   const fastNames = new Map(Object.keys(compiled.fastByRoot).map(root => [root, `is_${(compiled.exports.get(root) ?? '').slice('validate_'.length)}`] as const));
+  const passNames = new Map(Object.keys(compiled.passByRoot).map(root => {
+    const rest = (compiled.exports.get(root) ?? '').slice('validate_'.length);
+    return [root, { structure: `structure_${rest}`, predicates: `predicates_${rest}` }] as const;
+  }));
   return {
     validatorName: id => {
       const name = compiled.exports.get(id);
@@ -135,6 +146,8 @@ export async function compileValidationPlanBinding(
       return name;
     },
     fastCheckName: id => fastNames.get(id),
+    passCheckNames: id => passNames.get(id),
+    passScope: Object.fromEntries([...passNames].flatMap(([root, names]) => [[names.structure, compiled.passByRoot[root].structure], [names.predicates, compiled.passByRoot[root].predicates]] as const)),
     scope: compiled.byExport,
     fastScope: Object.fromEntries([...fastNames].map(([root, name]) => [name, compiled.fastByRoot[root]] as const)),
   };

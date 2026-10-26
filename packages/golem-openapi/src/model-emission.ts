@@ -457,10 +457,10 @@ export function generateOpenApiModelArtifacts(
     readonly locate?: OriginLocator | undefined;
     /**
      * Compiles the SDK's validators module from the validation plan of every model and returns the name it exports
-     * each root and each root's fast check under (`PlanValidators.exports` and `fastExports`). `groupPlans` are the plans the model groups' own schemas come from:
+     * each root and each root's fast check under (`PlanValidators.exports`, `fastExports` and `passExports`). `groupPlans` are the plans the model groups' own schemas come from:
      * a companion imports the validators of its group's plan ids. Called once, and required when the profile validates.
      */
-    readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly locateModel: (name: string) => SchemaPlace }) => Pick<PlanValidators, 'exports' | 'fastExports'>;
+    readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly locateModel: (name: string) => SchemaPlace }) => Pick<PlanValidators, 'exports' | 'fastExports' | 'passExports'>;
   } = {},
 ): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: Code; readonly diagnostics: readonly GolemDiagnostic[] } {
   const { schemaGraph, definitions, ordered, grouping } = analysis;
@@ -584,6 +584,7 @@ export function generateOpenApiModelArtifacts(
     : undefined;
   const validatorExports = compiledValidators?.exports;
   const fastCheckExports = compiledValidators?.fastExports;
+  const passCheckExports = compiledValidators?.passExports;
   for (const group of groups) {
     const localIds = group.nodes;
     const dependencyIds = dependenciesByGroup.get(group.id) ?? new Set<string>();
@@ -636,6 +637,7 @@ export function generateOpenApiModelArtifacts(
       initializerModule: initializerOwner(group.id),
       ...(validatorExports ? { validatorExports } : {}),
       ...(fastCheckExports ? { fastCheckExports } : {}),
+      ...(passCheckExports ? { passCheckExports } : {}),
       codecFunctionImport: (nodeId, functionName) => {
         const dependencyGroupId = owner.get(nodeId);
         if (!dependencyGroupId || dependencyGroupId === group.id) return undefined;
@@ -781,6 +783,8 @@ export function generateModels(
     readonly validatorExports?: ReadonlyMap<string, string>;
     /** The name of each root's fast check, by the same keys, for the roots that have one. */
     readonly fastCheckExports?: ReadonlyMap<string, string>;
+    /** The names of each root's structure check and predicates-only pass, by the same keys, for the roots that have them. */
+    readonly passCheckExports?: ReadonlyMap<string, { readonly structure: string; readonly predicates: string }>;
     /** The validation plan's resolved schemas of this module's models by codec id and plane. */
     readonly resolvedSchemas?: Readonly<Record<string, object | boolean>>;
     readonly exportedFillFunctionIds?: ReadonlySet<string>;
@@ -1092,6 +1096,10 @@ export function generateModels(
     ...(helpers.fastCheckExports ? { fastCheckName: (id: string) => {
       const name = helpers.fastCheckExports?.get(id);
       return name === undefined ? undefined : validatorsSource?.name(name);
+    } } : {}),
+    ...(helpers.passCheckExports ? { passCheckNames: (id: string) => {
+      const names = helpers.passCheckExports?.get(id);
+      return names === undefined || validatorsSource === undefined ? undefined : { structure: validatorsSource.name(names.structure), predicates: validatorsSource.name(names.predicates) };
     } } : {}),
     ...(helpers.resolvedSchemas ? { resolvedSchemasExpr: identifier('modelSchemas') } : {}),
     issueSource: 'OpenAPI',
