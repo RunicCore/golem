@@ -38,6 +38,7 @@ import {
   type TsToOpenApiDiagnostic,
 } from './diagnostics.js';
 import { buildDocument, serializeForOutput } from './document.js';
+import { apiSchemaName } from './nest/metadata.js';
 import { analyzeControllers, discoverControllerSources } from './nest/routes.js';
 import type { DtoSchema } from './nest/json-schema-merge.js';
 import { applySwaggerPropertyMetadata } from './nest/swagger-overlay.js';
@@ -460,6 +461,7 @@ function analyzeContracts(
     root: normalized.root,
     allowAny: normalized.profile.allowAny,
     exact: normalized.exact,
+    classComponentName: declaration => apiSchemaName(programInfo.program.getTypeChecker(), declaration),
     // With the models job known, the manifests the program advertises decide which model files are SDK files, as they do for that job.
     ...(normalized.boundary ? { boundary: normalized.boundary, manifests: loadModelManifests(normalized.root, programInfo, [], normalized.profile, observe) } : {}),
   });

@@ -140,11 +140,11 @@ export function modelSpecificationForClass(
  * Every exported class of the model's file that extends the model's generated base, whatever its
  * name. A class that extends another such class is a subclass and does not link.
  */
-export function linkedClassNames(
+export function linkedClasses(
   checker: ts.TypeChecker,
   specification: ModelSpecification,
   specifications: readonly ModelSpecification[],
-): string[] {
+): Array<ts.ClassDeclaration & { readonly name: ts.Identifier }> {
   const candidates = specification.sourceFile.statements.filter((statement): statement is ts.ClassDeclaration & { readonly name: ts.Identifier } =>
     ts.isClassDeclaration(statement)
       && statement.name !== undefined
@@ -158,7 +158,16 @@ export function linkedClassNames(
       const resolved = symbol && symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
       return (resolved?.declarations ?? []).some((declaration) => candidates.some((other) => other === declaration));
     });
-  return candidates.filter((candidate) => !extendsCandidate(candidate)).map((candidate) => candidate.name.text);
+  return candidates.filter((candidate) => !extendsCandidate(candidate));
+}
+
+/** The names of `linkedClasses`. */
+export function linkedClassNames(
+  checker: ts.TypeChecker,
+  specification: ModelSpecification,
+  specifications: readonly ModelSpecification[],
+): string[] {
+  return linkedClasses(checker, specification, specifications).map((candidate) => candidate.name.text);
 }
 
 /** The model's default class: its only linked class. A model with several has none. */

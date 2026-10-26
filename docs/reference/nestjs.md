@@ -106,7 +106,10 @@ More rules for component names:
 
 - A type derived from a model, such as `Omit<TMerchant, 'id'>`, is named from the model's component, as in `TMerchantOmitId`.
 - Two models with the same component name and an identical schema share one component.
-- For `getSchemaPath()` and `refs()` from `@nestjs/swagger`, a class named with `@ApiSchema({ name })` resolves to that name.
+- A model class named with `@ApiSchema({ name })` is the component of that name, in every `$ref` to it. The generated model code keeps the model's name.
+- `@ApiSchema` renames a model's component only when the class is the single class linked to the model and is declared in the same file as the alias. Otherwise the component keeps the alias name.
+- Two models of one file with the same component name stop generation with [`RUNM1005`](/reference/diagnostics#runm1005).
+- A plain DTO class stays inline in the document. Its `@ApiSchema({ name })` names it only for `getSchemaPath()` and `refs()` from `@nestjs/swagger`.
 
 Two models with the same name and different schemas are qualified by where they are declared:
 
