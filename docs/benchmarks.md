@@ -150,7 +150,19 @@ They were measured at commit c7513ad. To measure them on your machine, run `npm 
 
 ## What is measured
 
-A case is one payload, one operation and one setup. The tables show the median speed of a case in operations per second. The payloads Simple object, Nested object and Large array have no converting fields. Checkout converts a few fields (money, a hex code and dates). Checkout, no conversion converts none. The cost tab adds Serde none and Serde many. They have the same 21 fields, and in Serde many every field converts.
+A case is one payload, one operation and one setup. The tables show the median speed of a case in operations per second. The payloads differ in what they convert:
+
+| Payload | What it converts |
+| --- | --- |
+| Simple object | Nothing |
+| Nested object | Nothing |
+| Large array | Nothing |
+| Checkout | A few fields: money, a hex code and dates |
+| Checkout, no conversion | Nothing |
+| Serde none | Nothing, in 21 fields |
+| Serde many | Every one of the same 21 fields |
+
+The cost tab adds Serde none and Serde many.
 
 The run is short, so read the ratios between setups in one run and not the absolute numbers. Do not compare numbers from two machines or from two runs.
 
@@ -170,45 +182,8 @@ Each ratio on the second tab divides one speed by another speed, for the same op
 - **serde many/none** divides the speed on Serde many by the speed on Serde none, with validation on. It is shown on the Serde many rows only.
 - **invalid/valid** divides the speed on one invalid value by the speed on a valid value, with validation on. It is shown for parse, decode and validate. Golem makes the path of a valid value fast, and the path of an invalid value builds the error and can be slower.
 
-A dash means that the pair does not apply. "Not run" means that the run did not time the pair. The tab has no release column. The release check below writes its result to a file and not to this page.
+A dash means that the pair does not apply. "Not run" means that the run did not time the pair. The tab has no release column. The [release check](/guide/benchmarks#check-a-release) writes its result to a file and not to this page.
 
 ## Run it yourself
 
-```bash
-npm run bench
-```
-
-It takes about 2.5 minutes (145 seconds on an Apple M4). It prints its tables to the console and writes the full results to `scripts/benchmark/results.json`. The docs build reads that file and shows the Golem numbers. Stop other work on the machine first. The run stores the host load with the numbers.
-
-To run only some setups or payloads, name them with `--adapters` and `--payloads`:
-
-```bash
-npm run bench -- --adapters golem-object --payloads simple,nested
-```
-
-The payloads are `simple`, `nested`, `array`, `checkout`, `checkout-plain`, `serde-none` and `serde-many`. A name that is not valid stops the run before it starts, with exit code 2, and the message lists the valid names. A run with `--adapters` or `--payloads` writes `.cache/benchmark/results.json` and leaves the committed results unchanged.
-
-### Check a release
-
-Before you cut a release, compare this checkout with an earlier one:
-
-```bash
-npm run bench:release -- --base <git ref>
-```
-
-The base is a branch, a tag or a commit. The command exports the base into `.cache/benchmark/release` and builds it there. Then it times both sides in one session, in alternating rounds, with a native JSON control on both sides. A ratio between two separate days is not evidence. The release check times Golem only, so `--adapters` accepts `golem-object`, `golem-object-off`, `golem` and `golem-validated`, and `--payloads` accepts the payloads above. `golem-object-off` is `IObject` built with validation off.
-
-The noise band comes from the control on both sides. A valid-path case is slower when this checkout is below the base by more than the band in both halves of the rounds. One slower case stops the release. Invalid input is shown and has no verdict.
-
-The exit code tells the outcome:
-
-| Code | Meaning |
-| --- | --- |
-| 0 | No case is slower |
-| 1 | A case is slower |
-| 2 | The call is wrong, for example a missing or unknown base |
-| 3 | The check failed and gave no verdict, for example a failed build or a worker crash |
-
-On code 3 the command prints the error and its cause. The command writes the full result to `.cache/benchmark/release.json`. It changes nothing else in the repository.
-
-A check of one adapter on one payload takes about 30 seconds. A full check takes about 5 minutes on an Apple M4. The first check of a base also builds it, and later checks of the same commit reuse that build.
+To run the benchmarks on your machine, or to check a release against an earlier one, follow [Run the benchmarks](/guide/benchmarks).
