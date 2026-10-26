@@ -85,6 +85,7 @@ export function createContractAnalysis(
   // A model that fails on such an import is left out of the analysis, and the models job handles it. A controller that reaches a model left
   // out fails with the job-order error instead. For each model left out: the file of the unresolved type and the specifier of its import.
   const pendingModels = new Map<ModelSpecification, { readonly file: string; readonly specifier: string }>();
+  const pendingIn = (file: string | undefined): { readonly file: string; readonly specifier: string } | undefined => [...pendingModels.values()].find((pending) => pending.file === file);
   const describeAll = (build: () => ReturnType<typeof buildDescribe>): { readonly describe: ReturnType<typeof buildDescribe>; readonly described: Map<ModelSpecification, ModelConversionDescriptor> } => {
     for (;;) {
       const describe = build();
@@ -94,8 +95,10 @@ export function createContractAnalysis(
         try {
           described.set(specification, describe(specification.fieldsType, specification, undefined, specification.fieldsNode));
         } catch (error) {
-          const file = error instanceof Error && (error as { code?: unknown }).code === 'RUNM1058' ? errorFile(error) : undefined;
-          const specifier = file === undefined ? undefined : unresolvedImportIn(program, file);
+          // The cause is a type that did not resolve in a file whose import does not resolve. A model that holds a left-out one fails in that file, with the error of any walk into it.
+          const file = errorFile(error);
+          const known = pendingIn(file);
+          const specifier = known?.specifier ?? (file !== undefined && (error as { code?: unknown }).code === 'RUNM1058' ? unresolvedImportIn(program, file) : undefined);
           if (file === undefined || specifier === undefined) throw error;
           pendingModels.set(specification, { file, specifier });
           blocked = specification;
@@ -103,7 +106,7 @@ export function createContractAnalysis(
         }
       }
       if (!blocked) return { describe, described };
-      // A model that holds the left-out one fails on the same import in the next round, so it leaves too.
+      // A model that holds the left-out one fails in the next round, so it leaves too.
       specifications = specifications.filter((specification) => specification !== blocked);
     }
   };
@@ -174,8 +177,7 @@ export function createContractAnalysis(
     try {
       return read();
     } catch (error) {
-      const file = errorFile(error);
-      const pending = [...pendingModels.values()].find((candidate) => candidate.file === file);
+      const pending = pendingIn(errorFile(error));
       if (pending === undefined) throw error;
       throw jobOrderError(pending.file, pending.specifier, error);
     }
