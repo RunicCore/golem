@@ -9,18 +9,11 @@ import { Linter } from 'eslint';
 import { golem as golemEslint } from '#golem/eslint';
 import { SERDE, project, write } from './support/loader-project.js';
 
-/** The rule reads the text, not the syntax tree, so a parser that reads no TypeScript is enough to run it. */
-const textOnly = {
-  parseForESLint: (code: string) => ({
-    ast: { type: 'Program', body: [], comments: [], tokens: [], sourceType: 'module', range: [0, code.length], loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } } },
-  }),
-};
-
 const IMPORTS = `import { parse } from '${SERDE}';\nimport type { TMoney } from './money.model.ts';\n`;
 
+/** The config a project with no ESLint parser for TypeScript uses: the text parser of the config is the only parser. */
 async function lint(root: string, file: string, text: string) {
-  const config = await golemEslint({ cwd: root });
-  return new Linter({ cwd: root }).verify(text, [{ files: ['**/*.ts'], languageOptions: { parser: textOnly } }, config], path.join(root, file));
+  return new Linter({ cwd: root }).verify(text, [await golemEslint({ cwd: root, parser: 'text' })], path.join(root, file));
 }
 
 test('the golem ESLint rule reports parse<T> used as a value at its line and column, and passes a direct call', async (t) => {
@@ -35,6 +28,13 @@ test('the golem ESLint rule reports parse<T> used as a value at its line and col
   assert.equal(reported!.line, 3);
   assert.equal(reported!.column, 23);
   assert.match(reported!.message, /^RUNM1079: parse<TMoney> is used as a value, which golem cannot rewrite\. Call parse<TMoney>\(\.\.\.\) directly\.$/);
+});
+
+test('the golem ESLint config sets a parser only when asked, so a typescript-eslint parser stays in use', async (t) => {
+  // protects: T-396 the text parser is opt-in and never replaces the parser of the user's config
+  const root = await project(t, 'eslint-rule-parser-option');
+  assert.equal((await golemEslint({ cwd: root })).languageOptions, undefined);
+  assert.ok((await golemEslint({ cwd: root, parser: 'text' })).languageOptions?.parser);
 });
 
 test('the golem ESLint config refuses to start without a golem.yaml', async (t) => {

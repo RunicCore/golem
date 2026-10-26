@@ -99,16 +99,26 @@ node --import @exprtlabs/golem/register src/main.ts
 
 A host rewrites each call that it can read. It cannot rewrite `parse<TPayment>` used as a value, such as `texts.map(parse<TPayment>)`. That code throws when it runs. `golem build` and `golem check` report it. The ESLint rule `golem/unrewritable-serde-call` reports the same errors when ESLint runs, also in your editor.
 
+`golem()` returns one flat-config object. It turns the rule on for `.ts`, `.mts`, `.cts` and `.tsx` files. ESLint needs a parser for these files. Choose one setup:
+
+- Use the first setup when your project lints TypeScript with [typescript-eslint](https://typescript-eslint.io). Its parser stays in use.
+- Use the second setup when your project has no ESLint parser for TypeScript, for example on TypeScript 7. The rule reads the text of the file, so `parser: 'text'` gives ESLint an empty program in its place.
+
 ```js
-// eslint.config.mjs
+// eslint.config.mjs: with typescript-eslint
 import { golem } from '@exprtlabs/golem/eslint';
 import tseslint from 'typescript-eslint';
 
 export default [tseslint.configs.base, await golem()];
 ```
 
-- `golem()` returns one flat-config object. It turns the rule on for `.ts`, `.mts`, `.cts` and `.tsx` files.
-- The rule needs a parser that reads TypeScript. Set it in a config object before `golem()`.
+```js
+// eslint.config.mjs: without an ESLint parser for TypeScript
+import { golem } from '@exprtlabs/golem/eslint';
+
+export default [await golem({ parser: 'text' })];
+```
+
 - The rule reads your `golem.yaml` and your `tsconfig.json`, as the hosts do. The `config` option names another `golem.yaml`, and `cwd` sets the folder where the search starts. Without them, `golem()` reads `GOLEM_CONFIG`, then `./golem.yaml` in the working directory.
 - Run `golem generate` first, so the generated files exist.
 - A report names the code, such as `RUNM1079`, and the position. The [diagnostics](/reference/diagnostics) page gives the fix for each code.

@@ -684,11 +684,12 @@ export default [await golem()];
 | --- | --- | --- |
 | `config` | `string` | The `golem.yaml` to open, relative to `cwd`. Without it the function uses `GOLEM_CONFIG`, else `./golem.yaml` in `cwd`. |
 | `cwd` | `string` | The folder that `config` is relative to. Default: the current directory. |
+| `parser` | `'text'` | Sets a parser that gives ESLint an empty program. Use it when your project has no ESLint parser for TypeScript. Without it, a config object before `golem()` sets the parser, such as the `typescript-eslint` parser. |
 
 `golem()` returns a promise of an ESLint flat-config object. It sets the rule `golem/unrewritable-serde-call` to `error` for `.ts`, `.mts`, `.cts` and `.tsx` files ([Lint for unrewritable calls](/guide/build#lint)). Without a `golem.yaml` the promise rejects with the same message as the [loader](#loader).
 
 - The rule reports the errors that `golem check` reports for the file, with the code and the position. It reads the text that ESLint holds.
-- Put a config object with a TypeScript parser before it.
+- Without `parser: 'text'`, put a config object with a TypeScript parser before it.
 
 ## Exports for generated code {#generated-code}
 
