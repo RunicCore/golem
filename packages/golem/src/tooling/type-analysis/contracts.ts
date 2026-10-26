@@ -29,10 +29,10 @@ export interface ContractAnalysis {
   specFor(name: string): ModelSpecification | undefined;
 }
 
-/** The file a RUNM1058 error is located in, or undefined for any other error. */
-function unresolvedTypeFile(error: unknown): string | undefined {
-  const { code, fileName } = error instanceof Error ? error as { code?: unknown; fileName?: unknown } : {};
-  return code === 'RUNM1058' && typeof fileName === 'string' ? fileName : undefined;
+/** The file a located model-analysis error (see `diagnostic`) is in, or undefined for any other error. */
+function errorFile(error: unknown): string | undefined {
+  const { fileName } = error instanceof Error ? error as { fileName?: unknown } : {};
+  return typeof fileName === 'string' ? fileName : undefined;
 }
 
 /** Shared source interpretation for controller contracts; it never loads application modules. */
@@ -94,7 +94,7 @@ export function createContractAnalysis(
         try {
           described.set(specification, describe(specification.fieldsType, specification, undefined, specification.fieldsNode));
         } catch (error) {
-          const file = unresolvedTypeFile(error);
+          const file = error instanceof Error && (error as { code?: unknown }).code === 'RUNM1058' ? errorFile(error) : undefined;
           const specifier = file === undefined ? undefined : unresolvedImportIn(program, file);
           if (file === undefined || specifier === undefined) throw error;
           pendingModels.set(specification, { file, specifier });
@@ -169,12 +169,12 @@ export function createContractAnalysis(
 
   const jobOrderError = (file: string, specifier: string, cause?: unknown): Error => new Error(`Generated input dependency cycle: the controllers job reads ${displayPath(file)}, which imports ${JSON.stringify(specifier)}. That import does not resolve when the controllers job runs, because the jobs run in the order generators, controllers, openapi, models: the controllers job cannot read a file that the openapi or models job writes. Keep the controllers from reaching that file, or fix the import.`, { cause });
 
-  /** Runs a controller read. A controller that reaches an unresolved type of a model left out reads a file of a later job. */
+  /** Runs a controller read. A controller that walks into a model left out stops in its file, with the error of the type that did not resolve or of the model read as a nested one. */
   const reachingPendingModel = <T>(read: () => T): T => {
     try {
       return read();
     } catch (error) {
-      const file = unresolvedTypeFile(error);
+      const file = errorFile(error);
       const pending = [...pendingModels.values()].find((candidate) => candidate.file === file);
       if (pending === undefined) throw error;
       throw jobOrderError(pending.file, pending.specifier, error);
