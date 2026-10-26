@@ -92,11 +92,17 @@ async function orderCodec(descriptor: ModelTypeDescriptor, fastPath: boolean, ne
     Bytes,
     ...Object.fromEntries(Object.entries(binding.scope).map(([name, run]) => [name, countValidator(name, run)])),
     ...Object.fromEntries(Object.entries(binding.fastScope).map(([name, run]) => [name, countFast(name, run)])),
-    ...binding.passScope,
+    ...Object.fromEntries(Object.entries(binding.passScope).map(([name, run]) => [name, (value: unknown, all: boolean) => {
+      passRuns.push(name);
+      return run(value, all);
+    }])),
   };
   const source = emitCodecRuntimeText(graph, { validatorName: (id) => identifier(binding.validatorName(id)), fastCheckName: (id) => { const name = binding.fastCheckName(id); return name === undefined ? undefined : identifier(name); }, passCheckNames: (id) => { const names = binding.passCheckNames(id); return names === undefined ? undefined : { structure: identifier(names.structure), predicates: identifier(names.predicates) }; }, serde: BYTES_SERDE });
   return { functions: instantiateRuntime(source, scope), calls, binding, codecId: root.codecId };
 }
+
+/** The structure checks and predicates-only passes that ran, by export name, since a test cleared it. */
+const passRuns: string[] = [];
 
 const order = (properties: Record<string, ModelTypeDescriptor>, required: readonly string[]): ModelTypeDescriptor => ({
   kind: 'object', properties, required, additionalProperties: false,
@@ -369,6 +375,20 @@ for (const [site, run, form] of SITES) {
     );
   });
 }
+
+test('a validation context decides: neither the structure check nor the predicates-only pass runs, and no predicate', async () => {
+  // protects: T-469 a validation context keeps its own validator
+  const { functions } = await orderCodec(GUARDED, true);
+  const asked: string[] = [];
+  const validationContext = { resolve: (reference: string) => { asked.push(reference); return () => []; } };
+  passRuns.length = 0;
+  Reflect.set(globalThis, 'positiveCalls', 0);
+  const results = [
+    functions.validateOrder({ amount: -1, name: 'a' }, { validationContext }),
+    functions.assertOrder({ amount: -1, name: 1 }, { validationContext }) !== undefined,
+  ];
+  assert.deepEqual({ results, passRuns, predicate: Reflect.get(globalThis, 'positiveCalls'), asked: asked.length > 0 }, { results: [true, true], passRuns: [], predicate: 0, asked: true });
+});
 
 for (const [site, run, form] of SITES) {
   test(`${site} of a model whose structure fails runs the full validator, and each predicate at most once`, async () => {

@@ -131,7 +131,7 @@ export async function compileValidationPlanBinding(
   readonly scope: Readonly<Record<string, Validator>>;
   readonly fastScope: Readonly<Record<string, FastCheck>>;
   /** The structure checks and predicates-only passes of the roots that have them, by export name. */
-  readonly passScope: Readonly<Record<string, FastCheck | Validator>>;
+  readonly passScope: Readonly<Record<string, (value: unknown, all: boolean) => unknown>>;
 }> {
   const compiled = await compileValidatorModule({ ...input, roots: planRoots(plan) });
   const fastNames = new Map(Object.keys(compiled.fastByRoot).map(root => [root, `is_${(compiled.exports.get(root) ?? '').slice('validate_'.length)}`] as const));
