@@ -1,4 +1,5 @@
 import { isBinaryMediaType, isJsonSeqMediaType, isNdjsonMediaType, isServerSentEventsMediaType, mediaEssence } from './client/codecs.js';
+import type { ServerObject } from '@exprtlabs/golem/client';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { collectOpenApiModelDefinitions } from './models.js';
 import {
@@ -59,18 +60,10 @@ interface StreamPlan {
   readonly custom: boolean;
 }
 
-/** A server of the document's `servers` list, with the fields that the client reads. */
-export interface DocumentServer {
-  readonly url: string;
-  readonly description?: string;
-  readonly name?: string;
-  readonly variables?: Readonly<Record<string, { readonly default: string; readonly enum?: readonly string[] }>>;
-}
-
 export interface EmissionPlan {
   readonly profile: OpenApiGenerationProfile;
   readonly artifacts: ReadonlySet<ArtifactFile>;
-  readonly servers: readonly DocumentServer[];
+  readonly servers: readonly ServerObject[];
   readonly hasComponentSchemas: boolean;
   readonly hasModels: boolean;
   readonly hasOutboundOperations: boolean;
@@ -120,24 +113,24 @@ function mediaList(operations: readonly NormalizedOperation[]): OpenApiMediaType
   ]);
 }
 
-function documentServers(document: unknown): readonly DocumentServer[] {
+/** The validator has checked the document, so a server whose `url` or variable `default` is not a string is a broken invariant. */
+function documentServers(document: unknown): readonly ServerObject[] {
   const servers = asRecord(document).servers;
   if (!Array.isArray(servers)) return [];
-  return servers.flatMap((server): DocumentServer[] => {
+  return servers.map((server, index): ServerObject => {
     const { url, description, name, variables } = asRecord(server);
-    if (typeof url !== 'string') return [];
-    const declared = objectEntries(variables).flatMap(([variable, entry]) => {
+    if (typeof url !== 'string') throw new TypeError(`servers[${index}] has no string url`);
+    const declared = objectEntries(variables).map(([variable, entry]) => {
       const { default: fallback, enum: values } = asRecord(entry);
-      return typeof fallback === 'string'
-        ? [[variable, { default: fallback, ...(Array.isArray(values) ? { enum: values.filter((value) => typeof value === 'string') } : {}) }] as const]
-        : [];
+      if (typeof fallback !== 'string') throw new TypeError(`servers[${index}] variable ${JSON.stringify(variable)} has no string default`);
+      return [variable, { default: fallback, ...(Array.isArray(values) ? { enum: values.filter((value) => typeof value === 'string') } : {}) }] as const;
     });
-    return [{
+    return {
       url,
       ...(typeof description === 'string' ? { description } : {}),
       ...(typeof name === 'string' ? { name } : {}),
       ...(declared.length ? { variables: Object.fromEntries(declared) } : {}),
-    }];
+    };
   });
 }
 

@@ -227,17 +227,24 @@ function serverBaseUrl(client: string, options: ClientOptions, servers: readonly
     if (!baseUrl) throw new Error(`${client}Client requires a non-empty baseUrl`);
     return baseUrl;
   }
-  const { server = 0 } = options;
-  const picked = servers[typeof server === 'number' ? server : servers.findIndex((entry) => entry.name === server || entry.description === server)];
+  const { server = 0, serverVariables = {} } = options;
+  const named = servers.findIndex((entry) => entry.name === server);
+  const picked = servers[typeof server === 'number' ? server : named >= 0 ? named : servers.findIndex((entry) => entry.description === server)];
   if (!picked) {
     throw new Error(servers.length
       ? `${client}Client found no server ${JSON.stringify(server)} in the document; it lists ${servers.length}`
       : `${client}Client requires a non-empty baseUrl`);
   }
+  const declared = picked.variables ?? {};
+  for (const name of Object.keys(serverVariables)) {
+    if (!Object.hasOwn(declared, name)) {
+      throw new Error(`${client}Client server ${JSON.stringify(server)} declares no variable ${JSON.stringify(name)}`);
+    }
+  }
   return picked.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => {
-    const variable = picked.variables?.[name];
-    if (!variable) return placeholder;
-    const value = options.serverVariables?.[name] ?? variable.default;
+    if (!Object.hasOwn(declared, name)) return placeholder;
+    const variable = declared[name]!;
+    const value = Object.hasOwn(serverVariables, name) ? serverVariables[name]! : variable.default;
     if (variable.enum && !variable.enum.includes(value)) {
       throw new Error(`${client}Client server variable ${JSON.stringify(name)} must be one of ${variable.enum.join(', ')}; got ${JSON.stringify(value)}`);
     }
