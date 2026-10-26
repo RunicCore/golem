@@ -9,11 +9,13 @@ Install the packages that each generator needs, with their peer dependencies and
 | Node.js | `22.15` or newer |
 | `typescript` | `>=6.0.0 <7` or `>=7.1.0-0 <8` |
 
+The Node loader needs `--experimental-strip-types` before Node.js 22.18 ([Node versions](/guide/build#node-versions)).
+
 Golem uses the `typescript` installed in your project. Generation writes the same files on TypeScript 6.0+ and 7.1+.
 
 ## Packages for each generator
 
-The `golem` command comes from `@exprtlabs/golem`, which every generator depends on. Install it in the project before you run `npx golem`. An unrelated npm package is also named `golem`. Without a local install, `npx` offers to download and run that package, and in CI it runs it without asking. In scripts and CI, run `npx --no-install golem`, which fails instead.
+Each generator is a development dependency:
 
 | To generate | Development dependency |
 | --- | --- |
@@ -28,6 +30,14 @@ npm install @exprtlabs/golem
 ```
 
 Generating OpenAPI from controllers needs no runtime. A NestJS app that registers `NestModelInterceptor` does need it.
+
+The `golem` command comes from `@exprtlabs/golem`, which every generator depends on:
+
+- Install it in the project before you run `npx golem`. An unrelated npm package is also named `golem`.
+- Without a local install, `npx` offers to download and run that package. In CI, `npx` runs it without asking.
+- In scripts and CI, run `npx --no-install golem`. It fails instead of running the other package.
+
+The `@exprtlabs/*` package subpaths are ESM-only. Import them from ESM application code, or invoke the CLI directly.
 
 ## Peer dependencies
 
@@ -60,7 +70,7 @@ npm install --save-dev typescript@~7.1.0-beta
 - `"outDir": ".build"`
 - `"rootDir": "."`
 
-`golem.yaml` names the project with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. The `@exprtlabs/*` package subpaths are ESM-only. Import them from ESM application code, or invoke the CLI directly. A NestJS app needs more compiler settings ([set up TypeScript](/guide/nestjs-requests#set-up-typescript)). Choose how the build rewrites your calls in [Build your app](/guide/build).
+`golem.yaml` names the project with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. A NestJS app needs more compiler settings ([set up TypeScript](/guide/nestjs-requests#set-up-typescript)). Choose how the build rewrites your calls in [Build your app](/guide/build).
 
 ## Runtime dependencies
 
