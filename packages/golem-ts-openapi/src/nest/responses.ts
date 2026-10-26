@@ -221,8 +221,7 @@ function parseSwaggerResponse(
   const content = options.record('content');
   const schema = options.record('schema');
   const headers = options.record('headers');
-  const description = options.documentationString('description')
-    ?? (name === 'ApiNoContentResponse' ? 'No Content' : '');
+  const description = options.documentationString('description') ?? '';
   return {
     status,
     description,
