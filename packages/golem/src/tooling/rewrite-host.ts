@@ -149,8 +149,11 @@ class ScanningProject {
   private options: ts.CompilerOptions = {};
   private scanner: RewriteScanner | undefined;
   private stale = false;
-  /** The signature of the generation record when the latest program was opened. */
+  /** The signature of the generation record before the latest program was opened. */
   private recordSignature: string | undefined;
+  /** The files the generation record listed before the latest program was opened; read only by a host that lints. */
+  private recorded: readonly string[] = [];
+  private readsRecord = false;
   /** Text the host holds for files that differ from the disk, by canonical file. */
   private readonly overlays = new Map<string, string>();
   /** Files that the tsconfig's own file list misses, such as `.mts`: the program gets them as roots. */
@@ -163,7 +166,15 @@ class ScanningProject {
     this.session = new compiler.ts.ProgramSession({ cwd: this.root });
   }
 
+  /** The files the generation record lists, as absolute paths. */
+  private recordedFiles(): string[] {
+    return Object.keys(loadInventory(this.config).files).map((key) => path.resolve(this.config.directory, key));
+  }
+
   private open(): void {
+    // The record is read before the program: a `golem generate` that ends in between is seen as a move at the next read.
+    const signature = fileSignature(this.config.inventoryFile);
+    const recorded = this.readsRecord ? this.recordedFiles() : [];
     const parsed = this.session.parseConfigFile(this.config.tsconfig);
     this.options = parsed.options;
     const { canonicalFilename } = this.compiler;
@@ -174,7 +185,8 @@ class ScanningProject {
     const models = this.config.jobs.find((job) => job.kind === 'models');
     this.scanner = new this.compiler.RewriteScanner({ root: this.root, directory: this.config.directory, modelsRoot: modelsRootOf(this.config), suffixes: models?.options.suffixes, output: models?.options.output, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nest: this.nest, nonModelInputs: this.config.nonModelInputs });
     this.stale = false;
-    this.recordSignature = fileSignature(this.config.inventoryFile);
+    this.recordSignature = signature;
+    this.recorded = recorded;
   }
 
   /** The program holds `file` with the host's `text`, reopened when it does not. */
@@ -201,11 +213,13 @@ class ScanningProject {
   }
 
   diagnose(filename: string, text: string): readonly GolemDiagnostic[] {
+    this.readsRecord = true;
     this.syncToDisk(this.compiler.canonicalFilename(filename));
     return this.scan(filename, text)?.errors ?? [];
   }
 
   comments(filename: string, text: string): readonly SourceComment[] {
+    this.readsRecord = true;
     const file = this.compiler.canonicalFilename(filename);
     const held = this.holds(file, withoutByteOrderMark(text)).getSourceFile(file);
     return held === undefined ? [] : sourceComments(this.compiler.ts, held);
@@ -222,7 +236,8 @@ class ScanningProject {
       this.stale = true;
     }
     if (this.program !== undefined && fileSignature(this.config.inventoryFile) !== this.recordSignature) {
-      this.changed([...Object.keys(loadInventory(this.config).files).map((key) => path.resolve(this.config.directory, key)), ...this.expectedGenerated]);
+      // The files of the old record too: one that `golem generate` removed is changed as well.
+      this.changed([...this.recorded, ...this.recordedFiles(), ...this.expectedGenerated]);
     }
   }
 
@@ -351,7 +366,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
     expectedGenerated: project.expectedGenerated,
     rewrite: (filename, text) => project.rewrite(filename, text),
     diagnose: (filename, text) => project.diagnose(filename, text),
-  comments: (filename, text) => project.comments(filename, text),
+    comments: (filename, text) => project.comments(filename, text),
     transpile: (filename, text, rewritten) => project.transpile(filename, text, rewritten),
     changed: (filenames) => { project.changed(filenames); },
     close() {

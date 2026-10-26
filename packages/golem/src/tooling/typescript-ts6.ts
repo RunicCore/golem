@@ -324,12 +324,12 @@ export function typeReferenceTarget(type: Golem.Type): Golem.Type | undefined {
   return (type as Golem.Type & { readonly target?: Golem.Type }).target;
 }
 
-/** Checker-internal `CheckFlags` bits (verified against TypeScript 6.0: Readonly = 8, Mapped = 262144). */
 /** The classic scanner takes the language version first and the text after the variant. */
 export function createScanner(skipTrivia: boolean, text: string, start?: number, length?: number): Golem.Scanner {
   return classic.createScanner(classic.ScriptTarget.ES2022, skipTrivia, classic.LanguageVariant.Standard, text, undefined, start, length);
 }
 
+/** Checker-internal `CheckFlags` bits (verified against TypeScript 6.0: Readonly = 8, Mapped = 262144). */
 export const CheckFlags = { Readonly: 1 << 3, Mapped: 1 << 18 } as const;
 
 // Types, symbols and signatures: one wrapper per classic object, so identity-keyed maps and sets in golem keep working.
