@@ -25,10 +25,11 @@ const config = [
 
 const plainController = [
   "import { Controller, Get } from '@nestjs/common';",
+  'interface Status { ok: boolean }',
   "@Controller('catalog')",
   'export class CatalogController {',
   '  @Get()',
-  "  list(): string { return 'ok'; }",
+  '  list(): Status { return { ok: true }; }',
   '}',
   '',
 ].join('\n');

@@ -82,9 +82,9 @@ export function createContractAnalysis(
   // The document describes an SDK model by its type; only the codec ids see it as the manifest reference the models job hashes.
   const buildDescribe = (nameFor?: (specification: ModelSpecification) => string, manifests: ManifestIndex = emptyManifests) => descriptorBuilder(checker, specifications, manifests, true, options.allowAny ?? false, options.root, false, nameFor, undefined, undefined, (node) => typeScriptErrorAt(program, node), file => program.isSourceFileDefaultLibrary(file));
   // The controllers job runs before the openapi and models jobs write their files, so a model whose import reads one of them does not resolve yet.
-  // A model that fails on such an import is left out of the analysis, and the models job handles it. A controller that reaches the import fails
-  // with the job-order error instead. The file and the specifier of each such import:
-  const pendingImports = new Map<string, string>();
+  // A model that fails on such an import is left out of the analysis, and the models job handles it. A controller that reaches a model left
+  // out fails with the job-order error instead. For each model left out: the file of the unresolved type and the specifier of its import.
+  const pendingModels = new Map<ModelSpecification, { readonly file: string; readonly specifier: string }>();
   const describeAll = (build: () => ReturnType<typeof buildDescribe>): { readonly describe: ReturnType<typeof buildDescribe>; readonly described: Map<ModelSpecification, ModelConversionDescriptor> } => {
     for (;;) {
       const describe = build();
@@ -97,7 +97,7 @@ export function createContractAnalysis(
           const file = unresolvedTypeFile(error);
           const specifier = file === undefined ? undefined : unresolvedImportIn(program, file);
           if (file === undefined || specifier === undefined) throw error;
-          pendingImports.set(file, specifier);
+          pendingModels.set(specification, { file, specifier });
           blocked = specification;
           break;
         }
@@ -157,25 +157,27 @@ export function createContractAnalysis(
   };
   syncProjections();
 
-  const intactModel = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): ModelSpecification | undefined => {
+  const intactModel = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode, among: readonly ModelSpecification[] = specifications): ModelSpecification | undefined => {
     const syntax = typeNode ?? (ts.isTypeNode(node) ? node : undefined);
-    const provenance = fieldProvenance(checker, syntax, specifications);
+    const provenance = fieldProvenance(checker, syntax, among);
     const candidate = !provenance.projection && !type.isUnion() && provenance.models.length === 1 ? provenance.models[0] : undefined;
     const sameFields = candidate && checker.isTypeAssignableTo(type, candidate.fieldsType)
       && checker.isTypeAssignableTo(candidate.fieldsType, type)
       && checker.getPropertiesOfType(type).length === checker.getPropertiesOfType(candidate.fieldsType).length;
-    return sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, specifications) : undefined;
+    return sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, among) : undefined;
   };
 
-  /** Runs a controller read. An unresolved type in a file the left-out models name is the controller reaching such a model: the job-order cycle. */
-  const reachingPendingImport = <T>(read: () => T): T => {
+  const jobOrderError = (file: string, specifier: string, cause?: unknown): Error => new Error(`Generated input dependency cycle: the controllers job reads ${displayPath(file)}, which imports ${JSON.stringify(specifier)}. That import does not resolve when the controllers job runs, because the jobs run in the order generators, controllers, openapi, models: the controllers job cannot read a file that the openapi or models job writes. Keep the controllers from reaching that file, or fix the import.`, { cause });
+
+  /** Runs a controller read. A controller that reaches an unresolved type of a model left out reads a file of a later job. */
+  const reachingPendingModel = <T>(read: () => T): T => {
     try {
       return read();
     } catch (error) {
       const file = unresolvedTypeFile(error);
-      const specifier = file === undefined ? undefined : pendingImports.get(file);
-      if (file === undefined || specifier === undefined) throw error;
-      throw new Error(`Generated input dependency cycle: the controllers job reads ${displayPath(file)}, which imports ${JSON.stringify(specifier)}. That import does not resolve when the controllers job runs, because the jobs run in the order generators, controllers, openapi, models: the controllers job cannot read a file that the openapi or models job writes. Keep the controllers from reaching that file, or fix the import.`, { cause: error });
+      const pending = [...pendingModels.values()].find((candidate) => candidate.file === file);
+      if (pending === undefined) throw error;
+      throw jobOrderError(pending.file, pending.specifier, error);
     }
   };
 
@@ -220,7 +222,10 @@ export function createContractAnalysis(
       if (intact) {
         return { kind: 'reference', name: componentName(intact) };
       }
-      const descriptor = reachingPendingImport(() => describeController(type, node, typeNode));
+      const left = pendingModels.size === 0 ? undefined : intactModel(type, node, typeNode, [...pendingModels.keys()]);
+      const pending = left && pendingModels.get(left);
+      if (pending) throw jobOrderError(pending.file, pending.specifier);
+      const descriptor = reachingPendingModel(() => describeController(type, node, typeNode));
       return syncProjections(descriptor) ?? descriptor;
     },
     modelName(type, node, typeNode) {
