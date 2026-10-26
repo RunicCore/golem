@@ -1,3 +1,4 @@
+import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
 import type { ControllerRoute } from './nest/types.js';
 import type { GolemArtifact } from '@exprtlabs/golem/generator-api';
 import { OPERATION_METHOD_KEYS_EXPORT, operationCodecSlot, type OperationMethodCodecs } from '@exprtlabs/golem/internal/generated-paths';
@@ -22,6 +23,7 @@ function collectOperationCodecs(routes: readonly ControllerRoute[]): OperationCo
   const output: Record<string, string> = {};
   const query: Record<string, string> = {};
   const methods: Record<string, OperationMethodCodecs> = {};
+  const declaredBy = new Map<string, ControllerRoute>();
   for (const route of routes) {
     const inputName = route.body?.type.modelContractName
       ?? route.requestBody?.declaredType?.modelContractName
@@ -41,7 +43,14 @@ function collectOperationCodecs(routes: readonly ControllerRoute[]): OperationCo
     if (inputName) input[key] = inputName;
     if (outputName) output[key] = outputName;
     if (queryName) query[key] = queryName;
-    methods[methodKey(route)] = {
+    // Several routes of one method (path or version expansion) share one entry; a second method of the same key would replace it.
+    const name = methodKey(route);
+    const previous = declaredBy.get(name);
+    if (previous && previous.method !== route.method) {
+      throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.DuplicateControllerName, `${name} is declared in both ${previous.sourceFile.fileName} and ${route.sourceFile.fileName}. The operation-codec registry keys a method by controller class name and method name, so one entry would replace the other. Rename one controller class.`));
+    }
+    declaredBy.set(name, route);
+    methods[name] = {
       ...(methodInput ? { input: methodInput } : {}),
       ...(outputName ? { output: outputName } : {}),
       ...(queryName ? { query: queryName } : {}),
