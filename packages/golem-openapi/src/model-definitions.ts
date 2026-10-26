@@ -152,6 +152,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
       rawSchema,
       baseName: null,
       otherBaseNames: [],
+      variantOf: [],
       properties: new Map(),
       additionalProperties: null,
       required: new Set(),
@@ -228,6 +229,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
       rawSchema,
       baseName: commonBase,
       otherBaseNames: [],
+      variantOf: [],
       properties: new Map(),
       additionalProperties: null,
       required: new Set(),
@@ -239,6 +241,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
   for (const union of unions) {
     schemaScope.claim(union.name, `union schema ${JSON.stringify(union.schemaName)}`, union.schemaName);
     definitions.set(union.name, union);
+    for (const variant of union.variants ?? []) definitions.get(variant)?.variantOf.push(union.name);
   }
 
   for (const [rawName, rawSchema] of objectEntries(schemas)) {
