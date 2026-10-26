@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { readManifest } from './package-specifier.js';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
+import { DEFAULT_MODEL_SUFFIXES, displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
 import { canonicalFilename } from './path-identity.js';
 
 export { canonicalFilename };
@@ -201,7 +201,7 @@ function packageNameOf(packageFolder: string): string {
   const name = readManifest(manifestFile)?.name;
   if (typeof name !== 'string' || name === '') return basename(packageFolder);
   if (isAbsolute(name) || /^[a-zA-Z]:/.test(name) || name.split(/[\\/]/).includes('..')) {
-    throw new Error(`${manifestFile} names the package "${name}". The generated files of the package go in a folder of that name in models.output, so the name cannot be absolute or have a ".." segment. Rename the package.`);
+    throw new Error(`${displayPath(manifestFile)} names the package "${name}". The generated files of the package go in a folder of that name in models.output, so the name cannot be absolute or have a ".." segment. Rename the package.`);
   }
   return name;
 }
@@ -228,7 +228,7 @@ export function assertDistinctCompanions(boundary: ModelBoundary, modelFiles: re
     const companion = companionFilename(boundary, file);
     const other = owners.get(companion);
     if (other !== undefined && other !== file) {
-      throw new Error(`${CODE_COMPANION_PATH_CLASH}: the shared model files ${other} and ${file} have one generated file, ${companion}. Rename one of them, or move it into another package folder.`);
+      throw new Error(`${CODE_COMPANION_PATH_CLASH}: the shared model files ${displayPath(other)} and ${displayPath(file)} have one generated file, ${displayPath(companion)}. Rename one of them, or move it into another package folder.`);
     }
     owners.set(companion, file);
   }
@@ -371,7 +371,7 @@ function referencedProject(
     const files = new Set(uniqueFilenames(parsed.fileNames));
     if (requested.every((source) => files.has(source))) return { configPath, parsed };
   }
-  throw new Error(`The solution tsconfig ${canonicalFilename(solutionPath)} references no project that includes ${requested.join(', ')}.`);
+  throw new Error(`The solution tsconfig ${displayPath(canonicalFilename(solutionPath))} references no project that includes ${requested.map(displayPath).join(', ')}.`);
 }
 
 function parsedProject(

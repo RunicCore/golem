@@ -316,9 +316,40 @@ function collectQueryShape(schema: unknown, shape: QueryFieldShape): void {
   collectQueryShape(schemaRecord(record[VALIDATION_KEYWORD])?.schema, shape);
 }
 
-function collectQueryProperties(schema: unknown, fields: Map<string, QueryFieldShape>): void {
+/**
+ * The schema a `$ref` names, with the root that its own local references resolve against: a JSON pointer into the root
+ * schema, or a registered codec by the id the reference carries (`id`, `id#wire`, `id#model-only` or `id#wire-only`).
+ * An unknown reference names nothing; the validator reports it.
+ */
+function resolveQueryReference(reference: string, root: unknown): { readonly schema: unknown; readonly root: unknown } | undefined {
+  if (reference === '#' || reference.startsWith('#/')) {
+    let schema = root;
+    if (reference !== '#') {
+      for (const segment of reference.slice(2).split('/')) {
+        const key = segment.replaceAll('~1', '/').replaceAll('~0', '~');
+        schema = typeof schema === 'object' && schema !== null && Object.hasOwn(schema, key)
+          ? (schema as Record<string, unknown>)[key]
+          : undefined;
+      }
+    }
+    return schema === undefined ? undefined : { schema, root };
+  }
+  const hash = reference.indexOf('#');
+  const codec = getObjectCodec(hash < 0 ? reference : reference.slice(0, hash));
+  if (!codec) return undefined;
+  const plane = hash < 0 ? undefined : reference.slice(hash + 1);
+  const schema = plane === 'wire' ? codec.wireSchema ?? codec.schema
+    : plane === 'model-only' ? codec.modelOnlySchema
+      : plane === 'wire-only' ? codec.wireOnlySchema
+        : codec.schema;
+  return schema === undefined ? undefined : { schema, root: schema };
+}
+
+function collectQueryProperties(schema: unknown, fields: Map<string, QueryFieldShape>, root: unknown = schema, seen = new Set<unknown>()): void {
   const record = schemaRecord(schema);
-  if (!record) return;
+  // A reference cycle, or a branch met twice, adds no field.
+  if (!record || seen.has(record)) return;
+  seen.add(record);
   const properties = schemaRecord(record.properties);
   if (properties) {
     for (const [name, property] of Object.entries(properties)) {
@@ -330,8 +361,12 @@ function collectQueryProperties(schema: unknown, fields: Map<string, QueryFieldS
       collectQueryShape(property, shape);
     }
   }
-  if (Array.isArray(record.allOf)) for (const branch of record.allOf) collectQueryProperties(branch, fields);
-  collectQueryProperties(schemaRecord(record[VALIDATION_KEYWORD])?.schema, fields);
+  if (typeof record.$ref === 'string') {
+    const target = resolveQueryReference(record.$ref, root);
+    if (target) collectQueryProperties(target.schema, fields, target.root, seen);
+  }
+  if (Array.isArray(record.allOf)) for (const branch of record.allOf) collectQueryProperties(branch, fields, root, seen);
+  collectQueryProperties(schemaRecord(record[VALIDATION_KEYWORD])?.schema, fields, root, seen);
 }
 
 function decodeQueryScalar(text: string, shape: QueryFieldShape): unknown {

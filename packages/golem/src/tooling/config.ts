@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { GolemDiagnosticSeverity, canonicalPath, isInsideDirectory, isRecord, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, displayPath, isInsideDirectory, isRecord, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-api.js';
 import { defaultModelOutput } from './generated-paths.js';
 import type {
   GolemDiagnostic,
@@ -84,8 +84,8 @@ function positive(value: unknown, fallback: number, label: string): number {
 
 function existing(filename: string, kind: 'directory' | 'file', label: string): void {
   let stat: fs.Stats;
-  try { stat = fs.statSync(filename); } catch { throw new Error(`${label} does not exist: ${filename}`); }
-  if (!(kind === 'directory' ? stat.isDirectory() : stat.isFile())) throw new Error(`${label} must be a ${kind}: ${filename}`);
+  try { stat = fs.statSync(filename); } catch { throw new Error(`${label} does not exist: ${displayPath(filename)}`); }
+  if (!(kind === 'directory' ? stat.isDirectory() : stat.isFile())) throw new Error(`${label} must be a ${kind}: ${displayPath(filename)}`);
 }
 
 function optionalString(value: unknown, label: string): string | undefined {
@@ -177,7 +177,7 @@ export function jobTsconfigDiagnostics(config: GolemConfig, job: GolemJob): read
   return [{
     code: CODE_TSCONFIG_ABOVE_ROOT,
     severity: GolemDiagnosticSeverity.Warning,
-    message: `The ${job.id} job has no tsconfig.json in its root ${root}, so it uses ${found}, the nearest one above it.`,
+    message: `The ${job.id} job has no tsconfig.json in its root ${displayPath(root)}, so it uses ${displayPath(found)}, the nearest one above it.`,
   }];
 }
 
@@ -192,11 +192,11 @@ function assertJobsMatchTsconfig(configFile: string, tsconfig: string, declared:
   for (const job of jobs) {
     if (job.kind !== 'models' && job.kind !== 'controllers') continue;
     const { root } = job.options;
-    if (!isInsideDirectory(directory, root)) throw new Error(`job root ${root} is outside ${directory}; use one golem.yaml per tsconfig.`);
+    if (!isInsideDirectory(directory, root)) throw new Error(`job root ${displayPath(root)} is outside ${displayPath(directory)}; use one golem.yaml per tsconfig.`);
     const found = tsconfigFoundFrom(root);
     if (found !== undefined && found !== tsconfig) {
       throw new Error(
-        `${configFile} uses the tsconfig ${tsconfig}, but the ${job.id} job reads ${found}, the tsconfig it finds from its root ${root}. `
+        `${displayPath(configFile)} uses the tsconfig ${displayPath(tsconfig)}, but the ${job.id} job reads ${displayPath(found)}, the tsconfig it finds from its root ${displayPath(root)}. `
         + (declared
           ? "A non-default tsconfig: that differs from the job's own tsconfig is not supported yet; name the file the job finds."
           : "A default tsconfig.json that differs from the job's own tsconfig is not supported yet; name the file the job finds with tsconfig:."),
@@ -206,7 +206,7 @@ function assertJobsMatchTsconfig(configFile: string, tsconfig: string, declared:
   for (const job of jobs) {
     // The output is a real path already, so an output that leaves through a link shows as the place it reaches.
     if (job.kind === 'models' && job.options.output !== undefined && !isInsideDirectory(directory, job.options.output)) {
-      throw new Error(`Job ${job.id}: output ${job.options.output} is outside the tsconfig directory ${directory}. Move it inside.`);
+      throw new Error(`Job ${job.id}: output ${displayPath(job.options.output)} is outside the tsconfig directory ${displayPath(directory)}. Move it inside.`);
     }
   }
 }
@@ -257,7 +257,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
       for (const previous of outputs) {
-        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${previous} and ${output}`);
+        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${displayPath(previous)} and ${displayPath(output)}`);
       }
       outputs.push(output);
       jobs.push({ id: `generator:${path.relative(directory, output) || '.'}`, kind: 'generator', package: packageName, options: { directory, output, options: entry.options ?? {}, profile } });
@@ -269,7 +269,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const label = `controllers[${index}]`;
       keys(entry, [
         'framework', 'root', 'sources', 'suffixes', 'output', 'openapiVersion', 'info', 'servers',
-        'securitySchemes', 'tags', 'globalPrefix', 'uriVersioning',
+        'securitySchemes', 'tags', 'globalPrefix', 'uriVersioning', 'maxResultBytes',
       ], label);
       if (entry.framework !== undefined && entry.framework !== 'nestjs') throw new Error(`${label}.framework must be nestjs.`);
       const root = inputPath(entry.root ?? '.', `${label}.root`);
@@ -277,7 +277,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       if (!/\.(?:json|ya?ml)$/i.test(output)) throw new Error(`${label}.output must be a JSON or YAML file.`);
       if (fs.existsSync(output) && !fs.statSync(output).isFile()) throw new Error(`${label}.output must be a file.`);
       for (const previous of outputs) {
-        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${previous} and ${output}`);
+        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${displayPath(previous)} and ${displayPath(output)}`);
       }
       outputs.push(output);
       const sourceValues = entry.sources === undefined
@@ -299,6 +299,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const tags = controllerTags(entry.tags, `${label}.tags`);
       const globalPrefix = optionalString(entry.globalPrefix, `${label}.globalPrefix`);
       const uriVersioning = controllerUriVersioning(entry.uriVersioning, `${label}.uriVersioning`);
+      const maxResultBytes = entry.maxResultBytes === undefined ? undefined : positive(entry.maxResultBytes, 0, `${label}.maxResultBytes`);
       jobs.push({ id: `controllers:${path.relative(directory, output) || '.'}`, kind: 'controllers', package: '@exprtlabs/golem-ts-openapi', options: {
         root,
         output,
@@ -313,6 +314,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
         ...(tags ? { tags } : {}),
         ...(globalPrefix === undefined ? {} : { globalPrefix }),
         ...(uriVersioning === undefined ? {} : { uriVersioning }),
+        ...(maxResultBytes === undefined ? {} : { maxResultBytes }),
       } });
     }
   }
@@ -325,7 +327,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
       for (const previous of outputs) {
-        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping OpenAPI outputs: ${previous} and ${output}`);
+        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping OpenAPI outputs: ${displayPath(previous)} and ${displayPath(output)}`);
       }
       outputs.push(output);
       const allowRemoteRefs = boolean(entry.allowRemoteRefs, false, `${label}.allowRemoteRefs`);
@@ -351,7 +353,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       : path.resolve(directory, nonempty(value.models.output, 'models.output')));
     if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error('models.output must be a directory.');
     for (const previous of outputs) {
-      if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${previous} and ${output}`);
+      if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${displayPath(previous)} and ${displayPath(output)}`);
     }
     let sources: string[] | undefined;
     if (value.models.sources !== undefined) {
@@ -381,7 +383,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     const inputs = job.kind === 'openapi' ? [job.options.input] : job.kind === 'generator' ? [] : job.options.sources ?? [];
     for (const input of inputs) {
       for (const [producerIndex, producer] of jobs.entries()) {
-        if (producesInput(producer, input) && producerIndex >= index) throw new Error(`Generated input dependency cycle: ${job.id} reads ${input} from ${producer.id}.`);
+        if (producesInput(producer, input) && producerIndex >= index) throw new Error(`Generated input dependency cycle: ${job.id} reads ${displayPath(input)} from ${producer.id}.`);
       }
     }
   }
@@ -409,7 +411,7 @@ export function validateConfigInputs(config: GolemConfig): void {
       existing(job.options.root, 'directory', 'controllers.root');
       for (const source of job.options.sources ?? []) existing(source, 'file', 'controller source');
       if (fs.existsSync(job.options.output) && !fs.statSync(job.options.output).isFile()) {
-        throw new Error(`controllers.output must be a file: ${job.options.output}`);
+        throw new Error(`controllers.output must be a file: ${displayPath(job.options.output)}`);
       }
     } else if (job.kind === 'openapi') {
       if (!producedBefore(index, job.options.input)) existing(job.options.input, 'file', 'OpenAPI input');

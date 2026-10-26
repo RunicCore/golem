@@ -67,7 +67,7 @@ post:
         application/json:
           schema:
             $ref: "#/components/schemas/Payment"
-      description: Created
+      description: ""
     "400":
       description: Invalid payment input.
     "502":

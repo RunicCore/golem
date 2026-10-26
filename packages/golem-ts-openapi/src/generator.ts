@@ -29,7 +29,7 @@ import type {
   InputObserver,
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, resolveProfile } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, displayPath, resolveProfile } from '@exprtlabs/golem/generator-api';
 import {
   GolemDiagnosticSeverity,
   diagnostic,
@@ -38,6 +38,8 @@ import {
   type TsToOpenApiDiagnostic,
 } from './diagnostics.js';
 import { buildDocument, serializeForOutput } from './document.js';
+import { validateRouteEvaluationOptions } from './evaluation/dependencies.js';
+import { apiSchemaName } from './nest/metadata.js';
 import { analyzeControllers, discoverControllerSources } from './nest/routes.js';
 import type { DtoSchema } from './nest/json-schema-merge.js';
 import { applySwaggerPropertyMetadata } from './nest/swagger-overlay.js';
@@ -62,6 +64,7 @@ function validateContext(context: TsToOpenApiContext): {
   readonly sources?: readonly string[];
   readonly suffixes: readonly string[];
   readonly openapiVersion: '3.2.0' | '3.1.2';
+  readonly maxResultBytes: number;
   readonly profile: ResolvedGolemProfile;
   readonly exact?: boolean;
   readonly boundary?: ModelBoundary;
@@ -73,7 +76,7 @@ function validateContext(context: TsToOpenApiContext): {
   const root = assertAbsolute(context.root, 'context.root');
   context.onInput?.(root);
   if (!existsSync(root) || !statSync(root).isDirectory()) {
-    throw new Error(`context.root must be an existing directory: ${root}`);
+    throw new Error(`context.root must be an existing directory: ${displayPath(root)}`);
   }
   const output = assertAbsolute(context.output, 'context.output');
   if (!/\.(?:json|ya?ml)$/i.test(output)) {
@@ -87,6 +90,7 @@ function validateContext(context: TsToOpenApiContext): {
     throw new TypeError('context.openapiVersion must be 3.2.0 or 3.1.2.');
   }
   const profile = resolveProfile(context.profile);
+  const { maxResultBytes } = validateRouteEvaluationOptions(context);
   const sources = context.sources === undefined
     ? undefined
     : (() => {
@@ -103,7 +107,7 @@ function validateContext(context: TsToOpenApiContext): {
     models.suffixes,
     { directory: assertAbsolute(models.directory, 'context.models.directory'), output: assertAbsolute(models.output, 'context.models.output') },
   );
-  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, profile, exact: context.exact, ...(boundary ? { boundary } : {}), onInput: context.onInput };
+  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, maxResultBytes, profile, exact: context.exact, ...(boundary ? { boundary } : {}), onInput: context.onInput };
 }
 
 function asGolemDiagnostic(value: TsToOpenApiDiagnostic): GolemDiagnostic {
@@ -425,12 +429,12 @@ function controllerSources(normalized: NormalizedContext, observe: InputObserver
     throw new TsToOpenApiError({
       severity: GolemDiagnosticSeverity.Error,
       code: TsToOpenApiDiagnosticCode.NoControllerSources,
-      message: `No controller source files found under ${path.join(normalized.root, 'src')}. Add a file that ends in ${normalized.suffixes.join(' or ')}, or list the controller files in \`sources\` of the controller job. In code, pass them as the \`sources\` option of \`generate\`.`,
+      message: `No controller source files found under ${displayPath(path.join(normalized.root, 'src'))}. Add a file that ends in ${normalized.suffixes.join(' or ')}, or list the controller files in \`sources\` of the controller job. In code, pass them as the \`sources\` option of \`generate\`.`,
     });
   }
   for (const source of sources) {
     observe(source);
-    if (!existsSync(source) || !statSync(source).isFile()) throw new Error(`Controller source does not exist: ${source}`);
+    if (!existsSync(source) || !statSync(source).isFile()) throw new Error(`Controller source does not exist: ${displayPath(source)}`);
   }
   return sources;
 }
@@ -460,6 +464,7 @@ function analyzeContracts(
     root: normalized.root,
     allowAny: normalized.profile.allowAny,
     exact: normalized.exact,
+    classComponentName: declaration => apiSchemaName(programInfo.program.getTypeChecker(), declaration),
     // With the models job known, the manifests the program advertises decide which model files are SDK files, as they do for that job.
     ...(normalized.boundary ? { boundary: normalized.boundary, manifests: loadModelManifests(normalized.root, programInfo, [], normalized.profile, observe) } : {}),
   });
@@ -487,6 +492,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     program,
     checker,
     openapiVersion: normalized.openapiVersion,
+    maxResultBytes: normalized.maxResultBytes,
     onInput: observe,
     contractAnalysis,
     registerSchemaComponent: schemas.registerSchemaComponent,

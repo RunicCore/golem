@@ -1,6 +1,6 @@
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
 import type { ControllerRoute } from './nest/types.js';
-import type { GolemArtifact } from '@exprtlabs/golem/generator-api';
+import { displayPath, type GolemArtifact } from '@exprtlabs/golem/generator-api';
 import { OPERATION_METHOD_KEYS_EXPORT, operationCodecSlot, type OperationMethodCodecs } from '@exprtlabs/golem/internal/generated-paths';
 
 interface OperationCodecMap {
@@ -47,7 +47,7 @@ function collectOperationCodecs(routes: readonly ControllerRoute[]): OperationCo
     const name = methodKey(route);
     const previous = declaredBy.get(name);
     if (previous && previous.method !== route.method) {
-      throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.DuplicateControllerName, `${name} is declared in both ${previous.sourceFile.fileName} and ${route.sourceFile.fileName}. The operation-codec registry keys a method by controller class name and method name, so one entry would replace the other. Rename one controller class.`));
+      throw new TsToOpenApiError(diagnostic(route.sourceFile, route.method, TsToOpenApiDiagnosticCode.DuplicateControllerName, `${name} is declared in both ${displayPath(previous.sourceFile.fileName)} and ${displayPath(route.sourceFile.fileName)}. The operation-codec registry keys a method by controller class name and method name, so one entry would replace the other. Rename one controller class.`));
     }
     declaredBy.set(name, route);
     methods[name] = {

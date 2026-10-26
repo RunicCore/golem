@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalPath, isInsideDirectory } from '../generator-api.js';
+import { canonicalPath, displayPath, isInsideDirectory } from '../generator-api.js';
 
 type PackageSpecifierResult =
   | { readonly kind: 'same-package' }
@@ -19,7 +19,7 @@ export function parseManifest(filename: string, text: string): Record<string, un
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('the JSON is not an object');
     return parsed as Record<string, unknown>;
   }
-  catch (error) { throw new Error(`Cannot read ${filename} to resolve a package import: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
+  catch (error) { throw new Error(`Cannot read ${displayPath(filename)} to resolve a package import: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
 }
 
 export function readManifest(filename: string): { readonly name?: string; readonly exports?: unknown } | undefined {

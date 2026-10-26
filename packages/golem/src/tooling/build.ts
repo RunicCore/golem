@@ -5,7 +5,7 @@ import path from 'node:path';
 import { canonicalFile, modelsRootOf, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
-import { GolemDiagnosticSeverity, isInsideDirectory, isRecord } from './generator-api.js';
+import { displayPath, GolemDiagnosticSeverity, isInsideDirectory, isRecord } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { nodeSpecifierEdits } from './node-specifiers.js';
 import { atomicWrite } from './outputs.js';
@@ -87,23 +87,23 @@ function pathsOption(options: ts.CompilerOptions): Readonly<Record<string, reado
 function readGolemConfig(requested: string | undefined, observe: (filename: string) => void): GolemConfig {
   const file = path.resolve(requested ?? 'golem.yaml');
   observe(file);
-  if (!fs.existsSync(file)) throw new Error(requested === undefined ? NO_GOLEM_YAML : `golem build cannot find ${file}.`);
+  if (!fs.existsSync(file)) throw new Error(requested === undefined ? NO_GOLEM_YAML : `golem build cannot find ${displayPath(file)}.`);
   return resolveConfig(file, observe);
 }
 
 /** The tsconfig to build: the golem.yaml's own, or the alternate `-p` names beside it. */
 function resolveProject(project: string | undefined, config: GolemConfig): string {
   if (project === undefined) {
-    if (!fs.existsSync(config.tsconfig)) throw new Error(`golem build cannot find ${config.tsconfig}, the tsconfig ${config.configFile} names.`);
+    if (!fs.existsSync(config.tsconfig)) throw new Error(`golem build cannot find ${displayPath(config.tsconfig)}, the tsconfig ${displayPath(config.configFile)} names.`);
     return config.tsconfig;
   }
   const requested = path.resolve(project);
   const stat = fs.statSync(requested, { throwIfNoEntry: false });
-  if (!stat) throw new Error(`golem build cannot find ${requested}.`);
+  if (!stat) throw new Error(`golem build cannot find ${displayPath(requested)}.`);
   const configFile = canonicalFile(stat.isDirectory() ? path.join(requested, 'tsconfig.json') : requested);
-  if (!fs.existsSync(configFile)) throw new Error(`golem build cannot find ${configFile}.`);
+  if (!fs.existsSync(configFile)) throw new Error(`golem build cannot find ${displayPath(configFile)}.`);
   if (path.dirname(configFile) !== path.dirname(config.tsconfig)) {
-    throw new Error(`golem build -p ${project} must name a config in the same directory as ${config.tsconfig}, the tsconfig ${config.configFile} names.`);
+    throw new Error(`golem build -p ${project} must name a config in the same directory as ${displayPath(config.tsconfig)}, the tsconfig ${displayPath(config.configFile)} names.`);
   }
   return configFile;
 }
@@ -111,11 +111,11 @@ function resolveProject(project: string | undefined, config: GolemConfig): strin
 /** Fail on a configuration the staged copy cannot mirror: the tsconfig's, with the forwarded arguments applied. It reads options alone, so it runs before anything is generated. */
 function assertSupported(configFile: string, parsed: { readonly options: ts.CompilerOptions; readonly fileNames: readonly string[] }, effective: EffectiveOptions): void {
   const { options } = parsed;
-  const unsupported = (what: string): Error => new Error(`golem build does not support ${what} (${configFile}).`);
+  const unsupported = (what: string): Error => new Error(`golem build does not support ${what} (${displayPath(configFile)}).`);
   if (parsed.fileNames.length === 0) {
-    throw new Error(`${configFile} includes no files. golem build builds one project and does not follow project references; run golem build -p <tsconfig> per project.`);
+    throw new Error(`${displayPath(configFile)} includes no files. golem build builds one project and does not follow project references; run golem build -p <tsconfig> per project.`);
   }
-  if (!effective.outDir) throw new Error(`golem build requires compilerOptions.outDir in ${configFile}: it emits the rewritten sources there.`);
+  if (!effective.outDir) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
   if (effective.outFile) throw unsupported('outFile');
   if (Array.isArray(options.rootDirs)) throw unsupported('rootDirs');
   if (effective.inlineSourceMap) throw unsupported('inlineSourceMap');
@@ -127,7 +127,7 @@ function readProject(configFile: string, parsed: { readonly options: ts.Compiler
   const { options } = parsed;
   const root = path.dirname(configFile);
   const outDir = stringOption(options, 'outDir');
-  if (outDir === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${configFile}: it emits the rewritten sources there.`);
+  if (outDir === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
   const rootDir = stringOption(options, 'rootDir');
   const baseUrl = stringOption(options, 'baseUrl');
   const declarationDir = stringOption(options, 'declarationDir');
@@ -225,7 +225,7 @@ export function shownOptions(stdout: string, configFile: string, tscArguments: r
     shown = undefined;
   }
   if (!isRecord(shown)) {
-    throw new Error(`golem build cannot read what tsc --showConfig printed for ${configFile} with ${tscArguments.join(' ')}: ${stdout.trim() || 'nothing'}. Run tsc -p ${configFile} ${tscArguments.join(' ')} --showConfig to see it.`);
+    throw new Error(`golem build cannot read what tsc --showConfig printed for ${displayPath(configFile)} with ${tscArguments.join(' ')}: ${stdout.trim() || 'nothing'}. Run tsc -p ${displayPath(configFile)} ${tscArguments.join(' ')} --showConfig to see it.`);
   }
   return effectiveOf(isRecord(shown.compilerOptions) ? shown.compilerOptions : {});
 }
@@ -242,8 +242,8 @@ async function effectiveOptions(cli: string, root: string, configFile: string, p
   return shownOptions(shown.stdout, configFile, tscArguments);
 }
 
-function scanFailure(errors: readonly GolemDiagnostic[]): Error {
-  const location = (diagnostic: GolemDiagnostic): string => (diagnostic.file === undefined ? '' : ` (${diagnostic.file}${diagnostic.line === undefined ? '' : `:${diagnostic.line}${diagnostic.column === undefined ? '' : `:${diagnostic.column}`}`})`);
+function scanFailure(root: string, errors: readonly GolemDiagnostic[]): Error {
+  const location = (diagnostic: GolemDiagnostic): string => (diagnostic.file === undefined ? '' : ` (${displayPath(path.resolve(root, diagnostic.file))}${diagnostic.line === undefined ? '' : `:${diagnostic.line}${diagnostic.column === undefined ? '' : `:${diagnostic.column}`}`})`);
   return new Error([
     `golem rewrite scan reported ${errors.length} error diagnostic${errors.length === 1 ? '' : 's'}:`,
     ...errors.map((diagnostic) => `  ${diagnostic.code}${location(diagnostic)}: ${diagnostic.message}`),
@@ -252,7 +252,7 @@ function scanFailure(errors: readonly GolemDiagnostic[]): Error {
 
 /** The stage's own guard: nothing is written, linked or removed outside the stage directory, whatever computed the path. */
 function insideStage(stageDirectory: string, target: string): string {
-  if (!isInsideDirectory(stageDirectory, target)) throw new Error(`golem build would change ${target}, which is outside its stage ${stageDirectory}.`);
+  if (!isInsideDirectory(stageDirectory, target)) throw new Error(`golem build would change ${displayPath(target)}, which is outside its stage ${displayPath(stageDirectory)}.`);
   return target;
 }
 
@@ -266,7 +266,7 @@ function commonDirectory(directories: readonly string[]): string {
     while (shared < length && shared < other.length && other[shared] === first[shared]) shared += 1;
     length = shared;
   }
-  if (length === 0) throw new Error(`golem build cannot stage sources that share no directory: ${directories.join(', ')}.`);
+  if (length === 0) throw new Error(`golem build cannot stage sources that share no directory: ${directories.map(displayPath).join(', ')}.`);
   return path.resolve(`${first.slice(0, length).join(path.sep)}${path.sep}`);
 }
 
@@ -306,7 +306,7 @@ function linkDirectory(stageDirectory: string, link: string, target: string): vo
   insideStage(stageDirectory, link);
   const existing = fs.lstatSync(link, { throwIfNoEntry: false });
   if (existing !== undefined) {
-    if (!existing.isSymbolicLink()) throw new Error(`golem build found ${link} in its stage, where it links ${target}, and it is not a link.`);
+    if (!existing.isSymbolicLink()) throw new Error(`golem build found ${displayPath(link)} in its stage, where it links ${displayPath(target)}, and it is not a link.`);
     if (fs.realpathSync(link) === target) return;
     fs.unlinkSync(link);
   }
@@ -460,7 +460,7 @@ function rewriteDeclarations(session: ts.ProgramSession, project: Project, sourc
   const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(sources.map((source) => source.fileName)) };
   for (const [module, { file, text }] of declarations) {
     const declaration = program.getSourceFile(module);
-    if (declaration === undefined) throw new Error(`golem build could not read the declaration ${file} to change its import paths.`);
+    if (declaration === undefined) throw new Error(`golem build could not read the declaration ${displayPath(file)} to change its import paths.`);
     const { edits } = nodeSpecifierEdits(declaration, checker, options);
     if (edits.length > 0) atomicWrite(file, applyRewrites(text, { edits, imports: [], importsAt: 0 }, file).code);
   }
@@ -662,9 +662,9 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const scanned = new RewriteScanner({ root, directory: golemConfig.directory, modelsRoot: modelsRootOf(golemConfig), suffixes: models?.options.suffixes, output: models?.options.output, program, checker, codecKeysFile: codecKeysPath(golemConfig.directory), nest: golemConfig.jobs.some((job) => job.kind === 'controllers'), nonModelInputs: golemConfig.nonModelInputs })
     .scanFiles(sources.map((source) => source.fileName));
   const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
-  if (errors.length > 0) throw scanFailure(errors);
+  if (errors.length > 0) throw scanFailure(root, errors);
   for (const warning of scanned.diagnostics) {
-    if (warning.severity === GolemDiagnosticSeverity.Warning) process.stderr.write(`${warning.code} (${warning.file}:${warning.line}:${warning.column}): ${warning.message}\n`);
+    if (warning.severity === GolemDiagnosticSeverity.Warning) process.stderr.write(`${warning.code} (${warning.file === undefined ? '' : displayPath(path.resolve(root, warning.file))}:${warning.line}:${warning.column}): ${warning.message}\n`);
   }
 
   const stage = writeStage(project, sources, withNodeSpecifiers(root, sources, checker, program.getCompilerOptions(), scanned.files));
@@ -696,7 +696,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
 export async function runBuild(options: BuildOptions): Promise<{ exitCode: number }> {
   const first = readGolemConfig(options.config, () => {});
   const root = path.dirname(first.tsconfig);
-  const label = path.relative(process.cwd(), options.project === undefined ? first.tsconfig : path.resolve(options.project)) || first.tsconfig;
+  const label = displayPath(options.project === undefined ? first.tsconfig : path.resolve(options.project));
   using session = new ts.ProgramSession({ cwd: root });
   using generation = new GeneratorSessionResources();
   const inputs = new Set<string>();
