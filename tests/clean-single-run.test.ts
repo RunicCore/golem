@@ -50,7 +50,7 @@ function cleanProject(t: TestContext, controller: string): string {
     prefix: 'golem-clean-run-',
     packageName: 'clean-run',
     links: 'workspace',
-    tsconfig: JSON.parse(readFixture('packed/profile/tsconfig.json')) as object,
+    tsconfig: JSON.parse(readFixture('packed/profile/tsconfig.json')) as Record<string, unknown>,
     files: { 'golem.yaml': config, 'src/catalog.controller.ts': controller },
   });
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
