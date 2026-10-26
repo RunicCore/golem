@@ -41,7 +41,8 @@ jobs:
           rm -f package-lock.json
           npm install --package-lock-only --no-audit --no-fund
           npm ci --no-audit --no-fund
-      - run: npx playwright install --with-deps chromium
+      # Builds the test image, which holds Chromium, and fills its caches; the tiers below run offline.
+      - run: npm run test:prepare
       - run: npm run public:check
       - run: npm run check:openapi-compliance
       - run: npm run test:full
@@ -75,6 +76,17 @@ jobs:
           rm -f package-lock.json
           npm install --package-lock-only --no-audit --no-fund
           npm ci --no-audit --no-fund
+      # The identity test compares TypeScript 7 output with TypeScript 6 output; the test container installs TypeScript 6 the same way.
+      - name: Install TypeScript 6
+        shell: bash
+        run: |
+          npm run build:scripts
+          spec="$(node -e "import('./.build/scripts/third-party-installs.js').then(({ TYPESCRIPT6 }) => process.stdout.write(TYPESCRIPT6))")"
+          root="$RUNNER_TEMP/typescript6"
+          mkdir -p "$root"
+          echo '{ "private": true }' > "$root/package.json"
+          (cd "$root" && npm install --ignore-scripts --no-audit --no-fund "$spec")
+          echo "GOLEM_TYPESCRIPT6_ROOT=$root" >> "$GITHUB_ENV"
       - run: npm run test:native
 
   deploy:
