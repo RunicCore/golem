@@ -95,6 +95,35 @@ node --import @exprtlabs/golem/register src/main.ts
 - Node before 22.18 needs `--experimental-strip-types` as well ([Node versions](#node-versions)).
 - The loader compiles the files that Node cannot strip, such as a file with a decorator or an `enum`, with your TypeScript. A NestJS app needs no second loader ([run with the Node loader](/guide/nestjs-requests#run-with-the-node-loader)).
 
+## Lint for unrewritable code {#lint}
+
+A host rewrites each call that it can read. It cannot rewrite `parse<TPayment>` used as a value, such as `texts.map(parse<TPayment>)`. That code throws when it runs. `golem build` and `golem check` report it. The ESLint rule `golem/no-unrewritable-code` reports the same errors when ESLint runs, also in your editor.
+
+`golem()` returns one flat-config object. It turns the rule on for `.ts`, `.mts`, `.cts` and `.tsx` files. ESLint needs a parser for these files. Choose one setup:
+
+- Use the first setup when your project lints TypeScript with [typescript-eslint](https://typescript-eslint.io). Its parser stays in use.
+- Use the second setup when your project has no ESLint parser for TypeScript. The rule reads the text of the file, so `parser: 'text'` gives ESLint an empty program in its place.
+
+```js
+// eslint.config.mjs: with typescript-eslint
+import { golem } from '@exprtlabs/golem/eslint';
+import tseslint from 'typescript-eslint';
+
+export default [tseslint.configs.base, await golem()];
+```
+
+```js
+// eslint.config.mjs: without an ESLint parser for TypeScript
+import { golem } from '@exprtlabs/golem/eslint';
+
+export default [await golem({ parser: 'text' })];
+```
+
+- The rule reads your `golem.yaml` and your `tsconfig.json`, as the hosts do. The `config` option names another `golem.yaml`, and `cwd` sets the folder where the search starts. Without them, `golem()` reads `GOLEM_CONFIG`, then `./golem.yaml` in the working directory.
+- Run `golem generate` first, so the generated files exist. A lint run that goes on while you run `golem generate` reads the new files.
+- `eslint-disable` comments work with both setups.
+- A report names the code, such as `RUNM1079`, and the position. The [diagnostics](/reference/diagnostics) page gives the fix for each code.
+
 ## Editor setup (generate or watch)
 
 A host rewrites calls. It does not give your editor the generated files. Run `npx golem generate` once, or keep `npx golem watch` running ([Generate, watch and check](/guide/watch)). The editor then sees `TTaskBaseModel` and the other generated names.

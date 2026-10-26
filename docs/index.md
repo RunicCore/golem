@@ -221,7 +221,7 @@ A typical TypeScript API stack assembles a library for each job and keeps their 
 <div class="home-ver"><b>6.x · 7.1+</b><span>TypeScript, same output on both</span></div>
 <div class="home-ver"><b>3.1 · 3.2</b><span>OpenAPI input</span></div>
 <div class="home-ver"><b>3.2.0 · 3.1.2</b><span>OpenAPI output</span></div>
-<div class="home-ver"><b>all optional</b><span>NestJS ^11 · MobX ^6.13 · Vite ≥5 · esbuild ^0.25</span></div>
+<div class="home-ver"><b>all optional</b><span>NestJS ^11 · MobX ^6.13 · Vite ≥5 · esbuild ^0.25 · ESLint ^9 or ^10</span></div>
 </div>
 
 The configuration format and the public subpaths of `@exprtlabs/golem` follow semver ([Compatibility](/compatibility)).

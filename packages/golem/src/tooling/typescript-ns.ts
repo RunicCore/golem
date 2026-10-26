@@ -33,6 +33,7 @@ export const {
   canHaveDecorators,
   canHaveModifiers,
   createCompilerHost,
+  createScanner,
   createProgramFromSources,
   findConfigFile,
   forEachChild,

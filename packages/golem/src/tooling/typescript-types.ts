@@ -48,6 +48,12 @@ export interface CommentRange {
   readonly pos: number;
   readonly end: number;
 }
+/** The compiler's scanner over one text: `scan` moves to the next token, trivia included, and the token's span is its start and end. */
+export interface Scanner {
+  scan(): SyntaxKind;
+  getTokenStart(): number;
+  getTokenEnd(): number;
+}
 export interface TypeNode extends Node {}
 export type Declaration = Node;
 export type NamedDeclaration = Node & { readonly name?: Identifier };
@@ -652,6 +658,15 @@ export interface ProgramSession extends Disposable {
 // members golem reads; the type `X` above is the number those members hold.
 export interface TypeScriptBackend {
   readonly SyntaxKind: {
+    readonly JsxText: SyntaxKind;
+    readonly MultiLineCommentTrivia: SyntaxKind;
+    readonly NoSubstitutionTemplateLiteral: SyntaxKind;
+    readonly RegularExpressionLiteral: SyntaxKind;
+    readonly SingleLineCommentTrivia: SyntaxKind;
+    readonly StringLiteral: SyntaxKind;
+    readonly TemplateHead: SyntaxKind;
+    readonly TemplateMiddle: SyntaxKind;
+    readonly TemplateTail: SyntaxKind;
     readonly DeclareKeyword: SyntaxKind;
     readonly ExportKeyword: SyntaxKind;
     readonly ExtendsKeyword: SyntaxKind;
@@ -722,6 +737,8 @@ export interface TypeScriptBackend {
   canHaveDecorators(node: Node): boolean;
   canHaveModifiers(node: Node): boolean;
   createCompilerHost(options?: CompilerOptions, setParentNodes?: boolean): CompilerHost;
+  /** A scanner over `text`, or over `length` characters of it from `start`, that keeps its trivia when `skipTrivia` is false. */
+  createScanner(skipTrivia: boolean, text: string, start?: number, length?: number): Scanner;
   createProgramFromSources(options: OpenProgramOptions): Program;
   findConfigFile(searchPath: string, fileExists: (filename: string) => boolean, configName?: string): string | undefined;
   forEachChild<T>(node: Node, callback: (node: Node) => T | undefined): T | undefined;

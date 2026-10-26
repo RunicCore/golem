@@ -152,7 +152,7 @@ interface ParsedConfigHost {
 }
 
 // Names that this module implements itself; every other seam name is the classic API's own member.
-type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources'
+type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources' | 'createScanner'
   | 'getPreEmitDiagnostics' | 'getTscDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
 
 interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'ObjectFlags' | 'SignatureKind'> {
@@ -162,6 +162,8 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     readonly ClassOrInterface: Golem.ObjectFlags;
   };
   readonly sys: ClassicSystem;
+  readonly LanguageVariant: { readonly Standard: number };
+  createScanner(languageVersion: Golem.ScriptTarget, skipTrivia: boolean, languageVariant: number, text: string, onError?: undefined, start?: number, length?: number): Golem.Scanner;
   createCompilerHost(options?: Golem.CompilerOptions, setParentNodes?: boolean): ClassicHost;
   createProgram(init: {
     readonly rootNames: readonly string[];
@@ -320,6 +322,11 @@ export function typeParameterDefault(parameter: Golem.TypeParameterDeclaration):
 export function typeReferenceTarget(type: Golem.Type): Golem.Type | undefined {
   // The wrapper's `target` is the wrapped generic target; golem's Type declaration omits it.
   return (type as Golem.Type & { readonly target?: Golem.Type }).target;
+}
+
+/** The classic scanner takes the language version first and the text after the variant. */
+export function createScanner(skipTrivia: boolean, text: string, start?: number, length?: number): Golem.Scanner {
+  return classic.createScanner(classic.ScriptTarget.ES2022, skipTrivia, classic.LanguageVariant.Standard, text, undefined, start, length);
 }
 
 /** Checker-internal `CheckFlags` bits (verified against TypeScript 6.0: Readonly = 8, Mapped = 262144). */

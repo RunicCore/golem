@@ -11,7 +11,7 @@
  *    converts: a scalar decider takes their
  *    constraints, and an object or array decider also takes each other child as a whole-value check; a scalar
  *    intersection reduces (`string` and `'cat'` give `'cat'`); disjoint JSON types give `never`; and children
- *    that convert differently are rejected.
+ *    that convert differently but share a JSON type are rejected.
  * 4. The required names are the union of the parts' lists. A name that only a list mentions is judged by the value schemas.
  * 5. The names that no part lists take every part's value schema; one closed part closes them.
  */
@@ -126,6 +126,7 @@ function combineDescriptors(children: readonly ModelTypeDescriptor[], models: Mo
   const converting = distinct.filter((part) => descriptorNeedsConversion(part));
   const [decider] = converting;
   if (decider) {
+    if (hasDisjointJsonTypes(distinct)) return NEVER;
     const conversion = conversionKey(decider);
     if (converting.some((child) => conversionKey(child) !== conversion)) return { rejected: 'two parts convert it differently' };
     const others = distinct.filter((child) => !converting.includes(child));
@@ -135,11 +136,6 @@ function combineDescriptors(children: readonly ModelTypeDescriptor[], models: Mo
       // The other children constrain the wire value that the decider converts: their constraints join it.
       return withConstraints(decider, [...converting, ...others].flatMap((child) => child.constraints ?? []));
     }
-    const json = jsonType(decider);
-    if (others.some((child) => {
-      const type = jsonType(child);
-      return json !== undefined && type !== undefined && type !== json;
-    })) return NEVER;
     // An object or array decider converts the value; each other child still checks its wire value as a whole.
     return withConstraints(decider, [
       ...[...converting, ...others.filter((child) => child.kind === 'unknown')].flatMap((child) => child.constraints ?? []),
@@ -375,7 +371,7 @@ function scalarWireKind(descriptor: ModelTypeDescriptor): string | undefined {
   }
 }
 
-/** The JSON type of a descriptor's wire value; undefined when it is not one type (unknown, a union, an intersection). */
+/** The JSON type of a descriptor's wire value; undefined when it is not one type (unknown, a union of several types, an intersection). */
 function jsonType(descriptor: ModelTypeDescriptor): string | undefined {
   const scalar = scalarWireKind(descriptor);
   if (scalar !== undefined || descriptor.serde) return scalar;
@@ -387,9 +383,19 @@ function jsonType(descriptor: ModelTypeDescriptor): string | undefined {
     case 'array':
     case 'tuple':
       return 'array';
+    case 'union': {
+      const types = new Set(descriptor.variants.map(jsonType));
+      const [only] = types;
+      return types.size === 1 ? only : undefined;
+    }
     default:
       return undefined;
   }
+}
+
+/** Whether two children have one JSON type each and the types differ: no value fits both. Children with no one type make no claim. */
+function hasDisjointJsonTypes(children: readonly ModelTypeDescriptor[]): boolean {
+  return new Set(children.map(jsonType).filter((type) => type !== undefined)).size > 1;
 }
 
 /** A child as one constraint that its whole schema must hold. */

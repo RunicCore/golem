@@ -14,6 +14,9 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Actions are pinned to release commits; the trailing comment names the tag.
+# The checked-in package-lock.json comes from macOS and lacks the Linux and
+# Windows platform binaries, so each install step first resolves a lockfile for
+# its runner, the way the test runner does (scripts/test-runner/entrypoint.sh).
 jobs:
   # Release gate on the baseline runtime: public source, OpenAPI compliance,
   # the full test tier in its container (unit, TypeScript 6, pack, packed smoke),
@@ -32,8 +35,14 @@ jobs:
         with:
           node-version: '22.15.0'
           cache: npm
-      - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - name: Install dependencies
+        shell: bash
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only --no-audit --no-fund
+          npm ci --no-audit --no-fund
+      # Builds the test image, which holds Chromium, and fills its caches; the tiers below run offline.
+      - run: npm run test:prepare
       - run: npm run public:check
       - run: npm run check:openapi-compliance
       - run: npm run test:full
@@ -61,7 +70,20 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci
+      - name: Install dependencies
+        shell: bash
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only --no-audit --no-fund
+          npm ci --no-audit --no-fund
+      # The identity test compares TypeScript 7 output with TypeScript 6 output; the test container installs it with the same script.
+      - name: Install TypeScript 6
+        shell: bash
+        run: |
+          npm run build:scripts
+          root="$RUNNER_TEMP/typescript6"
+          scripts/test-runner/install-typescript6.sh "$root"
+          echo "GOLEM_TYPESCRIPT6_ROOT=$root" >> "$GITHUB_ENV"
       - run: npm run test:native
 
   deploy:
@@ -83,7 +105,12 @@ jobs:
           cache: npm
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
         id: pages
-      - run: npm ci
+      - name: Install dependencies
+        shell: bash
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only --no-audit --no-fund
+          npm ci --no-audit --no-fund
       - run: npx vitepress build docs
         env:
           DOCS_BASE: ${{ steps.pages.outputs.base_path }}
