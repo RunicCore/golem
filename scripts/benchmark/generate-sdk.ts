@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-const moneyYaml = path.join(root, 'scripts/benchmark/fixtures/features/money.yaml');
+const moneyYaml = path.join(root, 'tests/fixtures/models/serde-features/money.yaml');
 
 export function generateFeatureMoneySdk(
   project: string,

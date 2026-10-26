@@ -8,7 +8,9 @@ import {
   canonicalDescriptorKey,
   constraintSchemaValues,
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
+  mapConstraintSchemaValues,
   schemaForDescriptor,
+  type ConstraintSchemaValue,
   type JsonSchema,
   type ModelConstraint,
 } from './schema.js';
@@ -378,42 +380,9 @@ function rewriteConstraint(
   constraint: ModelConstraint,
   lookup: (descriptor: ModelTypeDescriptor) => SchemaNode | undefined,
 ): ModelConstraint {
-  const rewriteValue = (value: unknown): unknown => (
-    isTypeDescriptor(value) ? rewriteToRefs(value, lookup) : value
-  );
-  switch (constraint.kind) {
-    case 'contains':
-    case 'propertyNames':
-    case 'additionalProperties':
-    case 'unevaluatedProperties':
-    case 'items':
-    case 'unevaluatedItems':
-    case 'not':
-    case 'patternProperties':
-      return { ...constraint, schema: rewriteValue(constraint.schema) as typeof constraint.schema };
-    case 'dependentSchemas':
-      return {
-        ...constraint,
-        value: Object.fromEntries(
-          Object.entries(constraint.value).map(([name, schema]) => [name, rewriteValue(schema) as typeof schema]),
-        ),
-      };
-    case 'oneOf':
-    case 'allOf':
-      return {
-        ...constraint,
-        schemas: constraint.schemas.map((schema) => rewriteValue(schema) as typeof schema),
-      };
-    case 'ifThenElse':
-      return {
-        ...constraint,
-        if: rewriteValue(constraint.if) as typeof constraint.if,
-        ...(constraint.then === undefined ? {} : { then: rewriteValue(constraint.then) as typeof constraint.then }),
-        ...(constraint.else === undefined ? {} : { else: rewriteValue(constraint.else) as typeof constraint.else }),
-      };
-    default:
-      return constraint;
-  }
+  return mapConstraintSchemaValues(constraint, (value) => (
+    isTypeDescriptor(value) ? rewriteToRefs(value, lookup) as ConstraintSchemaValue : value
+  ));
 }
 
 function rewriteMetadata(

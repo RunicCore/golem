@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import { LibError } from '@exprtlabs/golem/errors';
@@ -9,13 +9,14 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { registerGeneratedModel } from '@exprtlabs/golem/model';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 
-import { readFixture } from './fixture-project.js';
+import { fileFixtureScope, onceShared, readFixture, type FixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { compileValidatorModule } from './support/compiled-validators.js';
 import { instanceFields } from '../packages/golem/src/presence.js';
 import { render } from '#golem/code';
 import { instanceFieldsCode } from '#golem/union-conversion';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
+import { runModule } from './support/run-module.js';
 // An own key of a golem model instance that its own model does not declare is program state, never an unknown key
 // (T-148). A key that the instance's own model declares is judged as before, and so is a value without a model.
 
@@ -147,7 +148,7 @@ for (const root of ['valued', 'patterned'] as const) {
 
 test('the runtime walk of the field entry and the walk the validators generate return the same names', () => {
   // protects: T-150 review the allowGetter copy and the generated validators decide program state by one rule
-  const generated = new Function(`${render(instanceFieldsCode())}\nreturn instanceFields;`)() as (value: object) => readonly string[] | undefined;
+  const generated = runModule(render(instanceFieldsCode()), {}, { exports: ['instanceFields'] }).instanceFields as (value: object) => readonly string[] | undefined;
   const values = [
     instance(Task, { cache: 1 }), instance(Kid, {}), instance(Bag, {}), Object.create(Task.prototype), new (class extends Task {})(),
     { title: 'a' }, Object.create(null), Object.create({ inherited: 1 }), [],
@@ -156,8 +157,8 @@ test('the runtime walk of the field entry and the walk the validators generate r
   assert.deepEqual(values.map(value => instanceFields(value)), [['title', 'done'], ['title', 'done', 'mode'], undefined, ['title', 'done'], ['title', 'done'], undefined, undefined, undefined, undefined]);
 });
 
-async function buildState(t: TestContext, mobx: boolean) {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-instance-state-', name: 'model-instance-state', linkWorkspaceNodeModules: true });
+async function buildStateIn(scope: FixtureScope, mobx: boolean) {
+  const { root, sourceRoot } = createModelProject(scope, { prefix: 'golem-model-instance-state-', name: 'model-instance-state', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'state.model.ts'), readFixture('models/model-instance-state/own-state/state.model.ts'));
   writeModelGolemYaml(root, { mobx, validation: true });
   await buildModelProject(root);
@@ -166,10 +167,15 @@ async function buildState(t: TestContext, mobx: boolean) {
   return { Task: models.Task as new (values?: object) => object, Board: models.Board as new (values?: object) => object, task: codec('TTask'), small: codec('TSmall'), board: codec('TBoard'), Bag: models.Bag as new (values?: object) => object, bag: codec('TBag'), Tally: models.Tally as new (values?: object) => object, tally: codec('TTally'), Empty: models.Empty as new (values?: object) => object, empty: codec('TEmpty'), Free: models.Free as new (values?: object) => object, free: codec('TFree'), Stamps: models.Stamps as new (values?: object) => object, stamps: codec('TStamps'), Note: models.Note as new (values?: object) => object, note: codec('TNote') };
 }
 
+// The tests that read the own-state fixture share one build of it for each profile.
+const fileScope = fileFixtureScope();
+const stateBuilds = { plain: onceShared(() => buildStateIn(fileScope, false)), mobx: onceShared(() => buildStateIn(fileScope, true)) };
+const buildState = (mobx: boolean) => (mobx ? stateBuilds.mobx : stateBuilds.plain)();
+
 for (const mobx of [false, true]) {
-  test(`codec checks and encode keep the own state of a model class (mobx ${mobx})`, async (t) => {
+  test(`codec checks and encode keep the own state of a model class (mobx ${mobx})`, async () => {
     // protects: bug T-148 validate, assert, toWireFormat and stringify of a class with own state; a dynamic-map model keeps its keys
-    const { Task: Model, Board, task, small, board, Bag, bag, Tally, tally } = await buildState(t, mobx);
+    const { Task: Model, Board, task, small, board, Bag, bag, Tally, tally } = await buildState(mobx);
     const value = new Model({ title: 'a', done: true });
     assert.equal(task.validate(value), true);
     assert.equal(task.assert(value), value);
@@ -193,9 +199,9 @@ for (const mobx of [false, true]) {
   });
 }
 
-test('an object with no declared field writes the same in stringify and toWireFormat', async (t) => {
+test('an object with no declared field writes the same in stringify and toWireFormat', async () => {
   // protects: bug T-158 toWireFormat of a model with no declared field returned the instance with its program state; stringify wrote {}
-  const { Empty, Free, empty, free } = await buildState(t, false);
+  const { Empty, Free, empty, free } = await buildState(false);
   const instance = Object.assign(new Empty(), { cache: new Map<string, string>(), hits: 3 });
   assert.deepEqual(empty.toWireFormat(instance), {}, 'an instance of a model that is open by default');
   assert.equal(empty.stringify(instance), '{}');
@@ -205,9 +211,9 @@ test('an object with no declared field writes the same in stringify and toWireFo
 });
 
 for (const validation of [true, false]) {
-  test(`a model instance at any depth in an unknown field writes no program state (validation ${validation ? 'on' : 'off'})`, async (t) => {
+  test(`a model instance at any depth in an unknown field writes no program state (validation ${validation ? 'on' : 'off'})`, async () => {
     // protects: bug T-164 only the top value of an unknown field lost its program state; an instance inside an array or object kept it
-    const { Task: TaskModel, Note, note } = await buildState(t, false);
+    const { Task: TaskModel, Note, note } = await buildState(false);
     const task = () => Object.assign(new TaskModel({ title: 't' }), { cache: new Map<string, string>(), hits: 3 });
     const options = { validate: validation };
     const cases: readonly [string, unknown, unknown][] = [
@@ -225,17 +231,17 @@ for (const validation of [true, false]) {
   });
 }
 
-test('the class-level encode of a model writes no program state of an instance inside its unknown field', async (t) => {
+test('the class-level encode of a model writes no program state of an instance inside its unknown field', async () => {
   // protects: bug T-164 a model nested as a field of another model is encoded by the class-level encode, which kept the state of an instance in its unknown field
-  const { Task: TaskModel, Note } = await buildState(t, false);
+  const { Task: TaskModel, Note } = await buildState(false);
   const task = Object.assign(new TaskModel({ title: 't' }), { cache: new Map<string, string>(), hits: 3 });
   assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: { list: [task] } })), { title: 'n', data: { list: [{ title: 't' }] } });
   assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: task })), { title: 'n', data: { title: 't' } });
 });
 
-test('parse with construct keeps the extra keys of a dynamic map, converts them, and stringify writes them back', async (t) => {
+test('parse with construct keeps the extra keys of a dynamic map, converts them, and stringify writes them back', async () => {
   // protects: bug T-163 parse with construct dropped the extra keys of a model with a dynamic map
-  const { Bag, bag, Stamps, stamps } = await buildState(t, false);
+  const { Bag, bag, Stamps, stamps } = await buildState(false);
   const parsed = bag.parse('{"id":"a","extra":1}', { construct: Bag }) as { id: string; extra: number };
   assert.ok(parsed instanceof Bag);
   assert.deepEqual({ ...parsed }, { id: 'a', extra: 1 });
@@ -273,8 +279,8 @@ export class Loose extends TLooseBaseModel {
   assert.equal(codec.stringify(new Loose({ id: 'a', extra: 1 } as object)), '{"id":"a"}');
 });
 
-async function buildLoose(t: TestContext) {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-loose-state-', name: 'model-loose-state', linkWorkspaceNodeModules: true });
+async function buildLooseIn(scope: FixtureScope) {
+  const { root, sourceRoot } = createModelProject(scope, { prefix: 'golem-model-loose-state-', name: 'model-loose-state', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'loose.model.ts'), readFixture('models/model-instance-state/loose-state/loose.model.ts'));
   writeModelGolemYaml(root, { mobx: false, validation: true, exact: false });
   await buildModelProject(root);
@@ -284,9 +290,12 @@ async function buildLoose(t: TestContext) {
   return { Loose: models.Loose as Make, LooseNote: models.LooseNote as Make, Open: models.Open as Make, Shape: models.Shape as Make, Stamped: models.Stamped as Make, loose: codec('TLoose'), note: codec('TLooseNote'), open: codec('TOpen'), shape: codec('TShape'), stamped: codec('TStamped') };
 }
 
-test('a loose model instance inside an unknown field writes no program state', async (t) => {
+// The loose-state tests share one build of their fixture.
+const buildLoose = onceShared(() => buildLooseIn(fileScope));
+
+test('a loose model instance inside an unknown field writes no program state', async () => {
   // protects: bug T-191 a loose (exact: false) model registered an open map, so the program state of its instance was written inside an unknown value
-  const { Loose, LooseNote, note } = await buildLoose(t);
+  const { Loose, LooseNote, note } = await buildLoose();
   const inner = Object.assign(new Loose({ id: 'a' }), { cache: new Map<string, string>(), hits: 3 });
   const value = new LooseNote({ title: 'n', data: { list: [inner], direct: inner } });
   const written = { title: 'n', data: { list: [{ id: 'a' }], direct: { id: 'a' } } };
@@ -297,9 +306,9 @@ test('a loose model instance inside an unknown field writes no program state', a
   assert.deepEqual(encodeGeneratedModel(value), written, 'the class-level encode');
 });
 
-test('an explicit additionalProperties tag on a TS model writes its extra keys, and a loose model writes its declared fields only', async (t) => {
+test('an explicit additionalProperties tag on a TS model writes its extra keys, and a loose model writes its declared fields only', async () => {
   // protects: bug T-192 stringify and toWireFormat wrote the declared fields only for a TS model with an explicit additionalProperties true
-  const { Loose, Open, Shape, loose, open, shape } = await buildLoose(t);
+  const { Loose, Open, Shape, loose, open, shape } = await buildLoose();
   const opened = Object.assign(new Open({ id: 'a' }), { extra: 1 });
   assert.equal(open.stringify(opened), '{"id":"a","extra":1}');
   assert.deepEqual(open.toWireFormat(opened), { id: 'a', extra: 1 });
@@ -316,9 +325,9 @@ test('an explicit additionalProperties tag on a TS model writes its extra keys, 
   assert.deepEqual(shape.toWireFormat(shaped), { tagged: { known: 'k', extra: 1 }, plain: { known: 'k' } });
 });
 
-test('an AdditionalProperties tag with a value type converts the extra values like an index signature', async (t) => {
+test('an AdditionalProperties tag with a value type converts the extra values like an index signature', async () => {
   // protects: bug T-192 the extra values of an AdditionalProperties<Date> tag were copied as they are, so an extra ISO string stayed a string
-  const { Stamped, stamped } = await buildLoose(t);
+  const { Stamped, stamped } = await buildLoose();
   const text = '{"id":"a","at":"2021-02-03T04:05:06.000Z"}';
   const parsed = stamped.parse(text, { construct: Stamped }) as { at: Date };
   assert.ok(parsed instanceof Stamped);

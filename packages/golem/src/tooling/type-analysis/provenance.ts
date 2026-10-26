@@ -159,18 +159,37 @@ function validateGeneratedModules(
   return exportsById;
 }
 
+const MARKER_PATTERN = new RegExp(`${escapeRegExp(MODEL_MANIFEST_MARKER)}\\s+([^\\s*]+)`);
+
+/**
+ * The manifest path that a comment of the file names after the marker. A comment sits between top-level statements, so each gap is
+ * read: what trails the previous statement on its line and what leads the next token. A string or code that holds the marker text names none.
+ */
+function advertisedPath(file: ts.SourceFile): string | undefined {
+  const { text } = file;
+  // Most files, such as the library declarations, never hold the marker text; only a file that does is walked.
+  if (!text.includes(MODEL_MANIFEST_MARKER)) return undefined;
+  for (const position of [0, ...file.statements.map((statement) => statement.end)]) {
+    const comments = [...ts.getLeadingCommentRanges(text, position) ?? [], ...position === 0 ? [] : ts.getTrailingCommentRanges(text, position) ?? []];
+    for (const { pos, end } of comments) {
+      const marker = MARKER_PATTERN.exec(text.slice(pos, end));
+      if (marker) return marker[1];
+    }
+  }
+  return undefined;
+}
+
 /** The manifests the program's files advertise with the `@golem-model-manifest` marker comment. Throws for one that does not exist. */
 export function advertisedModelManifests(program: ts.Program, onInput?: InputObserver): Set<string> {
   const advertised = new Set<string>();
-  const markerPattern = new RegExp(`${escapeRegExp(MODEL_MANIFEST_MARKER)}\\s+([^\\s*]+)`);
   for (const sourceFile of program.getSourceFiles()) {
-    const marker = sourceFile.text.match(markerPattern);
-    if (!marker) continue;
-    const filename = canonicalFilename(resolve(dirname(sourceFile.fileName), marker[1]));
+    const manifestPath = advertisedPath(sourceFile);
+    if (manifestPath === undefined) continue;
+    const filename = canonicalFilename(resolve(dirname(sourceFile.fileName), manifestPath));
     onInput?.(filename);
     if (!existsSync(filename)) {
       throw new Error(
-        `${displayPath(sourceFile.fileName)}: generated types advertise a missing model manifest: ${displayPath(filename)}`,
+        `${displayPath(sourceFile.fileName)}: generated types advertise a missing model manifest: ${displayPath(filename)}. Run golem generate to write it, or reinstall the package that ships it.`,
       );
     }
     advertised.add(filename);

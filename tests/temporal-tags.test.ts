@@ -2,13 +2,14 @@ import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import test, { type TestContext } from 'node:test';
+import test from 'node:test';
 import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
+import { fileFixtureScope, onceShared, type FixtureScope } from './fixture-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource } from './source-template.js';
 
-async function build(t: TestContext) {
-  const { root, sourceRoot } = createModelProject(t, {
+async function buildCodecs(scope: FixtureScope) {
+  const { root, sourceRoot } = createModelProject(scope, {
     prefix: 'golem-temporal-tags-', name: 'temporal-tags', linkWorkspaceNodeModules: true,
     compilerOptions: { lib: ['ES2023', 'DOM', 'esnext.temporal'] },
   });
@@ -24,6 +25,10 @@ async function build(t: TestContext) {
   }>;
 }
 
+// Every test reads the same model, so the file builds it once.
+const fileScope = fileFixtureScope();
+const build = onceShared(() => buildCodecs(fileScope));
+
 const WIRE = {
   at: '2025-01-02T03:04:05.123Z',
   zoned: '2025-01-02T03:04:05+01:00[Europe/Paris]',
@@ -34,14 +39,14 @@ const WIRE = {
   maybe: null,
 };
 
-test('nanosecond precision survives a round trip', async t => {
-  const codecs = await build(t);
+test('nanosecond precision survives a round trip', async () => {
+  const codecs = await build();
   const wire = { ...WIRE, at: '2025-01-02T03:04:05.123456789Z', time: '03:04:05.123456789' };
   assert.deepEqual(JSON.parse(codecs.stringifyTA(codecs.parseTA(JSON.stringify(wire)))), wire);
 });
 
-test('Temporal tags round-trip through parse and stringify', async t => {
-  const codecs = await build(t);
+test('Temporal tags round-trip through parse and stringify', async () => {
+  const codecs = await build();
   const model = codecs.parseTA(JSON.stringify(WIRE));
   assert.ok(model.at instanceof Temporal.Instant);
   assert.ok(model.zoned instanceof Temporal.ZonedDateTime);
@@ -61,8 +66,8 @@ for (const [field, bad] of [
   ['time', '03:04:05+01:00'],
   ['span', '1 day'],
 ] as const) {
-  test(`Temporal tag ${field} rejects ${bad}`, async t => {
-    const codecs = await build(t);
+  test(`Temporal tag ${field} rejects ${bad}`, async () => {
+    const codecs = await build();
     assert.throws(() => codecs.parseTA(JSON.stringify({ ...WIRE, [field]: bad })));
   });
 }
@@ -85,8 +90,8 @@ for (const [field, value] of [
   ['span', 'P1W1D'],
   ['zoned', '2025-01-02T03:04:05+01:00[+01:00]'],
 ] as const) {
-  test(`Temporal tag ${field} round-trips ${value}`, async t => {
-    const codecs = await build(t);
+  test(`Temporal tag ${field} round-trips ${value}`, async () => {
+    const codecs = await build();
     const wire = { ...WIRE, [field]: value };
     assert.deepEqual(JSON.parse(codecs.stringifyTA(codecs.parseTA(JSON.stringify(wire)))), wire);
   });

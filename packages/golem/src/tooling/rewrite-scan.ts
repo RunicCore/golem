@@ -3,8 +3,9 @@ import path from 'node:path';
 import * as ts from './typescript-ns.js';
 import { GolemDiagnosticSeverity, canonicalPath, compareText, isRecord } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
-import { operationCodecRegistryPath } from './generated-paths.js';
+import { OPERATION_METHOD_KEYS_EXPORT, operationCodecRegistryPath, operationCodecSlot, operationSlotCodec, type OperationMethodCodecs } from './generated-paths.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
+import { evaluateStaticValue } from './static-value.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { readModelManifest } from './model-manifest.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
@@ -44,6 +45,10 @@ interface NestCodecSite {
   /** The model type as the parameter spells it, array wrappers removed. */
   readonly label: string;
   readonly id: string;
+  /** The name of the method the parameter belongs to, spelled as the generated registry spells it. Undefined for a parameter of a constructor or a function, which no route holds. */
+  readonly method: string | undefined;
+  /** The slot of that method's registry entry that holds `id` (`operationCodecSlot`). */
+  readonly slot: string;
 }
 
 const SERDE_MODULE = '@exprtlabs/golem/serde';
@@ -498,6 +503,14 @@ function decoratorNames(node: ts.Node): readonly string[] {
   return (ts.getDecorators(node) ?? []).flatMap((decorator) => decoratorName(decorator) ?? []);
 }
 
+/** The registry slot of a `@Body()` or `@Query()` parameter: a first argument with a static string value names a field, the way the controllers job reads it; any other first argument is a pipe. */
+function nestSlot(checker: ts.TypeChecker, parameter: ts.ParameterDeclaration, decorator: string): string {
+  const expression = ts.getDecorators(parameter)?.find((each) => decoratorName(each) === decorator)?.expression;
+  const argument = expression !== undefined && ts.isCallExpression(expression) ? expression.arguments[0] : undefined;
+  const key = argument === undefined ? undefined : evaluateStaticValue(checker, argument);
+  return operationCodecSlot(decorator === 'Body' ? 'body' : 'query', key?.ok === true && typeof key.value === 'string' ? key.value : undefined);
+}
+
 /** Whether the node carries the decorator, written plainly or as the aliased import an earlier rewrite added. */
 function hasDecorator(names: readonly string[], name: string): boolean {
   return names.includes(name) || names.includes(`${REWRITE_IMPORT_PREFIX}${name}`);
@@ -803,7 +816,8 @@ function scanFile(
     importOf(scan, root, file, parameter, NEST_CODEC_DECORATOR, NEST_MODULE);
     loadCodecModule(scan, { root, checker, keys, file }, id, name);
     const { line, character } = file.getLineAndCharacterOfPosition(parameter.type.getStart(file));
-    scan.nestSites.push({ file: portable(root, file.fileName), line: line + 1, column: character + 1, decorator, label, id });
+    const method = ts.isMethodDeclaration(parameter.parent) ? parameter.parent.name.getText(file) : undefined;
+    scan.nestSites.push({ file: portable(root, file.fileName), line: line + 1, column: character + 1, decorator, label, id, method, slot: nestSlot(checker, parameter, decorator) });
   };
 
   /** A class method that returns a model gets `@nestModelReturn(id[, true])` before its other decorators. */
@@ -865,7 +879,41 @@ export interface FileScanResult extends FileRewrite {
   readonly dependencies: readonly string[];
 }
 
-function resultOf(scan: FileScan): FileScanResult {
+const LINE_BREAKS = '\r\n\u2028\u2029';
+
+/** The offset after the line break at `at`, a CRLF counting as one; undefined when `at` holds none. */
+function afterLineBreak(text: string, at: number): number | undefined {
+  if (at >= text.length || !LINE_BREAKS.includes(text.charAt(at))) return undefined;
+  return text.startsWith('\r\n', at) ? at + 2 : at + 1;
+}
+
+/** The end of a directive's line when only whitespace and comments follow the directive on it; else the end of the directive. */
+function directiveEnd(text: string, end: number): number {
+  let at = ts.getTrailingCommentRanges(text, end)?.at(-1)?.end ?? end;
+  while (text.charAt(at) === ' ' || text.charAt(at) === '\t') at++;
+  return at >= text.length ? at : afterLineBreak(text, at) ?? end;
+}
+
+/**
+ * Where a rewrite's imports go: after a leading shebang line and the directive prologue (`'use strict'`, `'use client'`, ...), which
+ * is the run of string-literal expression statements that opens the file. A string that continues into an expression is no directive.
+ */
+export function importInsertOffset(file: ts.SourceFile): number {
+  const { text } = file;
+  let offset = 0;
+  if (text.startsWith('#!')) {
+    let end = 2;
+    while (end < text.length && afterLineBreak(text, end) === undefined) end++;
+    offset = afterLineBreak(text, end) ?? text.length;
+  }
+  for (const statement of file.statements) {
+    if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) break;
+    offset = directiveEnd(text, statement.end);
+  }
+  return offset;
+}
+
+function resultOf(scan: FileScan, file: ts.SourceFile): FileScanResult {
   const byModule = new Map<string, string[]>();
   for (const [name, from] of scan.imports) byModule.set(from, [...(byModule.get(from) ?? []), name]);
   for (const from of scan.loads) if (!byModule.has(from)) byModule.set(from, []);
@@ -873,7 +921,7 @@ function resultOf(scan: FileScan): FileScanResult {
     .sort(([left], [right]) => compareText(left, right))
     .map(([from, names]) => ({ from, names: names.sort(compareText) }));
   const edits = [...scan.edits].sort((left, right) => left.start - right.start || left.end - right.end);
-  return { edits, imports, diagnostics: scan.diagnostics, nestCodecSites: scan.nestSites, dependencies: [...scan.dependencies].sort(compareText) };
+  return { edits, imports, importsAt: imports.length === 0 ? 0 : importInsertOffset(file), diagnostics: scan.diagnostics, nestCodecSites: scan.nestSites, dependencies: [...scan.dependencies].sort(compareText) };
 }
 
 /**
@@ -928,7 +976,7 @@ export class RewriteScanner {
   }
 
   private scan(file: ts.SourceFile): FileScanResult {
-    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest, nonModelInputs: this.nonModelInputs, boundary: this.boundary, modelClasses: () => this.modelClasses() }, file));
+    return resultOf(scanFile({ root: this.root, checker: this.checker, keys: this.keys, nest: this.nest, nonModelInputs: this.nonModelInputs, boundary: this.boundary, modelClasses: () => this.modelClasses() }, file), file);
   }
 
   /**
@@ -970,21 +1018,53 @@ export interface ProgramScan {
   readonly nestCodecSites: readonly NestCodecSite[];
 }
 
+/** The plain data of a literal the generator wrote: nested objects and strings. Anything else is no data. */
+function literalData(node: ts.Expression): unknown {
+  if (ts.isStringLiteralLike(node)) return node.text;
+  if (!ts.isObjectLiteralExpression(node)) return undefined;
+  const data: Record<string, unknown> = {};
+  for (const property of node.properties) {
+    if (!ts.isPropertyAssignment(property) || !(ts.isStringLiteralLike(property.name) || ts.isIdentifier(property.name))) continue;
+    data[property.name.text] = literalData(property.initializer);
+  }
+  return data;
+}
+
+/** The `<Controller>.<method>` entries of the `OPERATION_METHOD_KEYS` export of a registry file, read from its syntax tree. */
+function registryMethods(session: ts.ProgramSession, filename: string, text: string): ReadonlyMap<string, OperationMethodCodecs> {
+  for (const statement of session.parseSourceFile(filename, text).statements) {
+    if (!ts.isVariableStatement(statement)) continue;
+    for (const declaration of statement.declarationList.declarations) {
+      if (!ts.isIdentifier(declaration.name) || declaration.name.text !== OPERATION_METHOD_KEYS_EXPORT || declaration.initializer === undefined) continue;
+      const initializer = ts.isAsExpression(declaration.initializer) ? declaration.initializer.expression : declaration.initializer;
+      const data = literalData(initializer);
+      return new Map(isRecord(data) ? Object.entries(data).flatMap(([key, entry]) => isRecord(entry) ? [[key, entry as OperationMethodCodecs] as const] : []) : []);
+    }
+  }
+  return new Map();
+}
+
 /**
- * The `@Body()` and `@Query()` parameters whose codec id no controllers job's generated operation codecs hold. The id the scan stamps and the id the controllers job writes come
- * from separate analyses, so a mismatch means the decorators and the generated operations disagree. A missing registry
- * disagrees with every site. `roots` are the controllers job roots whose registries the project's sites may belong to.
+ * The `@Body()` and `@Query()` parameters whose model the generated operation codecs do not hold in the slot of the parameter's own method. The id the scan stamps and the id the controllers job writes come
+ * from separate analyses, so a mismatch means the decorators and the generated operations disagree. The registry names a route by the controller class that serves it, which an inherited route does not share with the class that
+ * declares the method, so a method matches by its name, in any controller. A missing registry, and a parameter of no method, disagree with every site. `roots` are the controllers job roots whose registries the project's sites may belong to.
  */
 export function checkNestCodecs(roots: string | readonly string[], scanned: { readonly nestCodecSites: readonly NestCodecSite[] }): GolemDiagnostic[] {
   const registries = (typeof roots === 'string' ? [roots] : roots).flatMap((root) => {
+    const filename = operationCodecRegistryPath(root);
     try {
-      return [fs.readFileSync(operationCodecRegistryPath(root), 'utf8')];
+      return [{ filename, text: fs.readFileSync(filename, 'utf8') }];
     } catch {
       return [];
     }
   });
+  const methods: (readonly [string, OperationMethodCodecs])[] = [];
+  if (registries.length > 0) {
+    using session = new ts.ProgramSession({ cwd: path.dirname(registries[0]!.filename), closeWhenIdle: true });
+    for (const { filename, text } of registries) methods.push(...registryMethods(session, filename, text));
+  }
   return scanned.nestCodecSites
-    .filter((site) => !registries.some((registry) => registry.includes(JSON.stringify(site.id))))
+    .filter((site) => site.method === undefined || !methods.some(([key, entry]) => key.endsWith(`.${site.method}`) && operationSlotCodec(entry, site.slot) === site.id))
     .map((site) => ({
       code: CODE_NEST_REGISTRY,
       severity: GolemDiagnosticSeverity.Error,

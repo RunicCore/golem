@@ -1,3 +1,4 @@
+// lane: typescript6 Checker guards: the controller generator and the rewrite code it uses run the checker in this process
 import { writeGeneratedArtifacts } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -5,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { evaluateStaticValue } from '#controllers/evaluation/static-value';
+import { evaluateStaticValue } from '@exprtlabs/golem/internal/static-value';
 
 const FILES: Readonly<Record<string, string>> = {
   'src/enums.ts': [

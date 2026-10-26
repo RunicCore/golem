@@ -62,3 +62,17 @@ test('model identity checks grow linearly with the model count', t => {
   }
   assert.ok(counts[1] <= counts[0] * 12, `isTypeAssignableTo calls grew from ${counts[0]} to ${counts[1]}`);
 });
+
+test('a model that nests a generic thirty levels deep generates', t => {
+  // protects: T-447 emitting the conversion of a nested field twice per level made generation time double with each level of nesting
+  // The test runner's ceiling is the check: before the fix, depth 30 ran for hours. A leaf of Date makes every level convert.
+  const wrap = (leaf: string): string => `${'Wrap<'.repeat(30)}${leaf}${'>'.repeat(30)}`;
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-nesting-depth-', name: 'nesting-depth' });
+  writeModelSources(sourceRoot, {
+    'deep.model.ts': `import type { IModel } from '@exprtlabs/golem/model';\nexport interface Wrap<T> { inner: T }\n`
+      + "export type Chain<N extends unknown[]> = N['length'] extends 30 ? { end: true } : { next: Chain<[...N, 1]> };\n"
+      + `export type TDeep = IModel<{ plain: ${wrap('string')}; dates: ${wrap('Date')}; chain: Chain<[]> }>;\n`,
+  });
+  const result = generate({ root, sources: [path.join(sourceRoot, 'deep.model.ts')], profile: { mobx: false, validation: false } });
+  assert.ok(result.artifacts.some(artifact => artifact.path.endsWith('deep.model.generated.ts')));
+});

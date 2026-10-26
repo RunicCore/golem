@@ -51,20 +51,3 @@ export function rejectsValidate(validate: () => boolean): () => number {
 export interface ComparisonModule {
   createComparisonFixtures(adapter: Adapter): Promise<readonly ComparisonFixture[]>;
 }
-
-/* Golem-only feature correctness (feature-check.ts). */
-export const MODES = ['conversion-only', 'validating'] as const;
-export type Mode = typeof MODES[number];
-export const FEATURE_FIXTURES = ['reuse', 'nested-10', 'nested-200', 'compose', 'tagged', 'combined', 'sdk-extend'] as const;
-
-export interface Fixture {
-  readonly name: string;
-  readonly payload?: unknown;
-  readonly payloadBytes: number;
-  readonly operations: Partial<Record<Operation, () => Promise<number>>>;
-  verify(): Promise<void>;
-}
-
-export interface FixtureModule {
-  createFixtures(validation: boolean): Promise<readonly Fixture[]>;
-}

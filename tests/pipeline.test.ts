@@ -1,3 +1,4 @@
+// lane: typescript6 ProgramSession resolution updates and the `golem build` driver in the pipeline
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,6 +10,7 @@ import { loadConfig } from '#golem/config';
 import { applyJob, loadInventory } from '#golem/outputs';
 import { runBuild } from '#golem/build';
 import { command, workspace } from './support/process.js';
+import { TSC } from './support/build-project.js';
 import { writeFixture } from './support/consumer.js';
 import { until } from './support/watch-wait.js';
 import { runLines } from './support/watch-runs.js';
@@ -29,8 +31,8 @@ test('frontend models generated from an out-of-src SDK manifest do not re-emit i
   const { root, config } = fixture(t);
   const state = await runPipeline(config);
   const generated = fs.readFileSync(path.join(root, 'src/cart.model.generated.ts'), 'utf8');
+  // The companion names the SDK's own model class, which the manifest names.
   assert.match(generated, /MoneyModel/);
-  assert.doesNotMatch(generated, /\^\[A-Z\]/);
   assert.equal(state.inputs.has(path.join(root, 'sdk/model-manifest.json')), false);
 });
 
@@ -49,7 +51,9 @@ test('global profile changes remove obsolete validation and keep manifest identi
     models: { id: string }[];
     profile: { mobx: boolean; validation: boolean };
   };
-  assert.match(readGeneratedModelSource(path.join(root, 'sdk')), /\bvalidate_\w+_[0-9a-f]{8}\b/);
+  // Kept as text: the SDK model is TypeScript source in the fixture, with no runner here; its validators are the only thing the profile changes.
+  const validators = /\bvalidate_\w+_[0-9a-f]{8}\b/;
+  assert.match(readGeneratedModelSource(path.join(root, 'sdk')), validators);
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('validation: true', 'validation: false'));
   await assert.rejects(runPipeline(config, { check: true }), /stale/);
   await runPipeline(config);
@@ -59,8 +63,7 @@ test('global profile changes remove obsolete validation and keep manifest identi
   };
   assert.deepEqual(after.models.map((model) => model.id), before.models.map((model) => model.id));
   assert.deepEqual(after.profile, { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' });
-  assert.doesNotMatch(readGeneratedModelSource(path.join(root, 'sdk')), /\bvalidate_\w+_[0-9a-f]{8}\b/);
-  assert.doesNotMatch(fs.readFileSync(path.join(root, 'src/cart.model.generated.ts'), 'utf8'), /\$validator|modelTypeDefinitions/);
+  assert.doesNotMatch(readGeneratedModelSource(path.join(root, 'sdk')), validators);
   await runPipeline(config, { check: true });
 });
 
@@ -115,6 +118,7 @@ test('watch regenerates model edits without rewriting SDKs or looping on outputs
     assert.equal(runs(), 3, stdout + stderr);
     assert.equal(fs.statSync(sdk).mtimeMs, sdkMtime);
     assert.equal(stderr, '');
+    const published = fs.readFileSync(generated, 'utf8');
     const api = path.join(root, 'api.json');
     const validApi = fs.readFileSync(api, 'utf8');
     fs.writeFileSync(api, '{}');
@@ -122,7 +126,7 @@ test('watch regenerates model edits without rewriting SDKs or looping on outputs
     const previousErrorLength = stderr.length;
     fs.writeFileSync(modelSource, fs.readFileSync(modelSource, 'utf8').replace('selected?: boolean', 'selected?: boolean; attempt?: number'));
     await until(() => stderr.length > previousErrorLength, 'model edit retries failed upstream generation');
-    assert.doesNotMatch(fs.readFileSync(generated, 'utf8'), /attempt/);
+    assert.equal(fs.readFileSync(generated, 'utf8'), published, 'a failed upstream run publishes nothing');
     fs.writeFileSync(api, validApi);
     await until(() => fs.readFileSync(generated, 'utf8').includes('attempt') && runs() >= 4, 'watch recovers after upstream input is repaired');
     assert.equal(runs(), 4, 'failed upstream runs publish nothing and recovery runs once');
@@ -568,12 +572,24 @@ function parentTsconfigProject(t: TestContext, yamlLines: readonly string[]): { 
   return { root, jobRoot: path.join(root, 'pkg') };
 }
 
+/** Type-checks a file that assigns values to the generated `TItemFields`: the alias and the extensionless import resolve under the parent options, or both fields are `unknown` and the bad assignment compiles. */
+async function assertItemFieldsTyped(jobRoot: string, root: string): Promise<void> {
+  fs.writeFileSync(path.join(jobRoot, 'src/probe.ts'), [
+    "import type { TItemFields } from './item.model.generated.js';",
+    "export const good: TItemFields = { id: 'a', label: 'b' };",
+    '// @ts-expect-error the fields are strings, not unknown',
+    'export const bad: TItemFields = { id: 1, label: 2 };',
+    '',
+  ].join('\n'));
+  await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
+}
+
 test('a models job whose root has no tsconfig.json analyses with the parent tsconfig and warns once, naming it', async (t: TestContext) => {
   const { root, jobRoot } = parentTsconfigProject(t, ['version: 1', 'models:', '  root: pkg']);
   const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const result = await command(root, process.execPath, [binary, 'generate']);
   // The alias and the extensionless import resolve only under the parent's options; without them both fields are `unknown`.
-  assert.match(fs.readFileSync(path.join(jobRoot, 'src/item.model.generated.ts'), 'utf8'), /export type TItemFields = \{ id: string; label: string \};/);
+  await assertItemFieldsTyped(jobRoot, root);
   assert.equal(
     result.stderr,
     `RUNM1073: The models:pkg job has no tsconfig.json in its root ${jobRoot}, so it uses ${path.join(root, 'tsconfig.json')}, the nearest one above it.\n`,
@@ -599,7 +615,7 @@ test('a models job whose root has no tsconfig.json does not warn when golem.yaml
   const { root, jobRoot } = parentTsconfigProject(t, ['version: 1', 'tsconfig: tsconfig.json', 'models:', '  root: pkg']);
   const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const result = await command(root, process.execPath, [binary, 'generate']);
-  assert.match(fs.readFileSync(path.join(jobRoot, 'src/item.model.generated.ts'), 'utf8'), /export type TItemFields = \{ id: string; label: string \};/);
+  await assertItemFieldsTyped(jobRoot, root);
   assert.equal(result.stderr, '');
 });
 

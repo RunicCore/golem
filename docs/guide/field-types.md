@@ -53,7 +53,7 @@ Supported:
 - scalar types only, such as `string | number`, and literal unions, such as `'paid' | 'pending'`
 - optional and nullish values: `T | undefined`, `T | null`
 - one object, model or class beside scalars: `string | TPlace`
-- strings, numbers, booleans or literals beside one array or one tuple, as in query objects (`status?: Status | Status[]`). The items can convert: `string | Date[]`
+- strings, numbers, booleans or literals beside one array or one tuple, as in query objects (`status?: Status | Status[]`). The items can convert: `string | Date[]`. A Date can be the only scalar beside the array: `Date | Date[]`, `Date | string[]`
 - a model beside an array of that model: `TPlace | TPlace[]`
 - strings, numbers, booleans or literals beside one array and one object or model: `string | string[] | TPlace`. The `JsonValue` alias under [Recursive type aliases](#recursive-type-aliases) has this shape
 - object unions with one unique, required literal discriminator
@@ -65,7 +65,7 @@ A discriminated union of two models:
 
 Generation fails for:
 
-- a root `IModel` union such as `IModel<TEmail | TPhone>`: put the union in a field ([`RUNM1052`](/reference/diagnostics#runm1052))
+- a root `IModel` or `IObject` whose fields are not an object type, such as `IModel<TEmail | TPhone>` or `IModel<string[]>`: declare the fields in an object type, and put the union, array or scalar in a field ([`RUNM1052`](/reference/diagnostics#runm1052))
 - object unions without a unique required literal discriminator: give each variant a required literal field such as `kind: 'cat'` ([`RUNM1080`](/reference/diagnostics#runm1080))
 - several undiscriminated SDK model classes, or an SDK model class plus an array, `any`, `unknown`, intersection or untagged object ([`RUNM1030`](/reference/diagnostics#runm1030))
 - any other union that would need to probe alternatives ([`RUNM1082`](/reference/diagnostics#runm1082))

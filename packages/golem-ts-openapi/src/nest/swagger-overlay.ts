@@ -6,7 +6,7 @@ import {
   diagnostic,
   type TsToOpenApiDiagnostic,
 } from '../diagnostics.js';
-import { evaluateStaticValue, isStaticArray, resolveValueSymbol, singleReturnExpression, unwrapExpression } from '../evaluation/static-value.js';
+import { evaluateStaticValue, isStaticArray, resolveValueSymbol, singleReturnExpression, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import { hasDecorator, isTypeScriptBuiltinConstructor, unwrapAsyncType } from './analysis-utils.js';
 import {
   isAssertionFormat,

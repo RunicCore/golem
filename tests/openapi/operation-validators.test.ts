@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url';
 import test, { after } from 'node:test';
 import { ClientRuntime } from '@exprtlabs/golem/client';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { operationValidators, type OperationRuntimeValidators } from '@exprtlabs/golem/validation';
+import { operationValidators } from '@exprtlabs/golem/validation';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { writeSdk } from '#openapi/generator';
@@ -95,19 +95,16 @@ test('a response body that fails its schema is rejected for its status and conte
   assert.deepEqual(error.issues.map((issue) => [issue.code, issue.path]), [['literal', ['marker']]]);
 });
 
-test('a generated client needs no validation engine and operations share one validators module', async () => {
+test('a validator override on one client leaves other clients of the same generated SDK on the generated validators', async () => {
+  // protects: F-139 a validator override on one client never reaches another client's validators
   const Client = await loadPayloadClass('S');
-  const validatorsOf = (client: PayloadClient): OperationRuntimeValidators => {
-    client.sendPayload();
-    const runtime: unknown = Reflect.get(client, 'runtime');
-    if (!(runtime instanceof ClientRuntime)) throw new TypeError('the generated client holds a ClientRuntime');
-    const validators = runtime.operationValidatorCache.get('sendPayload');
-    assert.ok(validators);
-    return validators;
-  };
-  const first = validatorsOf(new Client({ baseUrl: 'https://fixture.invalid' }) as unknown as PayloadClient);
-  const second = validatorsOf(new Client({ baseUrl: 'https://fixture.invalid' }) as unknown as PayloadClient);
-  assert.equal(second.input, first.input, 'both runtimes use the validators of one generated module');
+  const rejectAll: Validator = () => [{ code: 'custom', path: [] }];
+  const overrides = new Map([['sendPayload', { input: rejectAll, responses: new Map() }]]);
+  const overridden = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo, operationValidators: overrides }) as unknown as PayloadClient;
+  const generated = new Client({ baseUrl: 'https://fixture.invalid', fetchImpl: echo }) as unknown as PayloadClient;
+  await assert.rejects(overridden.sendPayload().execute({ body: { marker: 'S' } }), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
+  assert.deepEqual((await generated.sendPayload().execute({ body: { marker: 'S' } })).body, { marker: 'S' });
+  await assert.rejects(generated.sendPayload().execute({ body: { marker: 'A' } }), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
 });
 
 test('a validator override replaces the generated validators of its operation', async () => {

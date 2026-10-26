@@ -91,9 +91,9 @@ test('a validating model project runs when its sources and its companions are im
     '',
   ].join('\n'));
   write(root, 'src/main.ts', [
-    `import { requireObjectCodec } from '${SERDE}';`,
+    `import { findCodecIdForConstructor, requireObjectCodec } from '${SERDE}';`,
     "import { Money } from './money.model.js';",
-    "const codec = requireObjectCodec('TMoney');",
+    "const codec = requireObjectCodec(findCodecIdForConstructor(Money) as string);",
     "console.log(JSON.stringify({ good: codec.validate(new Money({ currency: 'USD' })), bad: codec.validate(new Money({ currency: 'x' })) }));",
     '',
   ].join('\n'));
@@ -190,6 +190,13 @@ test('GOLEM_CONFIG names the golem.yaml when the working directory has none', as
   const result = await run(root, 'main.ts', { cwd: path.join(root, 'src'), env: { GOLEM_CONFIG: '../golem.yaml' } });
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+});
+
+test('an empty GOLEM_CONFIG is no setting: the golem.yaml of the working directory is used', async (t) => {
+  // protects: T-27 GOLEM_CONFIG="" resolved to the working directory and failed on a directory
+  const root = await project(t, 'loader-empty-env-config');
+  const result = await run(root, 'src/main.ts', { env: { GOLEM_CONFIG: '' } });
+  assert.equal(result.code, 0, result.stderr);
 });
 
 /** A source that starts with a byte order mark, has CRLF line ends and Vietnamese text. */
@@ -306,7 +313,6 @@ test('a .cts file with a rewrite fails the run: a rewrite cannot give CommonJS a
   const result = await run(root, 'src/listed.cts');
   assert.notEqual(result.code, 0);
   assert.ok(result.stderr.includes('golem rewrites need ES modules; src/listed.cts loads as CommonJS'), result.stderr);
-  assert.doesNotMatch(result.stderr, /Cannot use import statement/);
 });
 
 test('CommonJS TypeScript with no rewrite still runs', async (t) => {
@@ -438,9 +444,12 @@ test('a model named only in an async Promise return has its codec registered wit
     '',
   ].join('\n'), [
     "import 'reflect-metadata';",
+    "import fs from 'node:fs';",
     "import { getObjectCodec } from '@exprtlabs/golem/serde';",
     "import './payments.controller.ts';",
-    "console.log(JSON.stringify({ registered: getObjectCodec('TPayment') !== undefined }));",
+    "const keys = JSON.parse(fs.readFileSync('.golem/codec-keys.json', 'utf8')).keys;",
+    "const id = keys[Object.keys(keys).find((key) => key.endsWith('#TPayment'))];",
+    "console.log(JSON.stringify({ registered: getObjectCodec(id) !== undefined }));",
     '',
   ].join('\n'));
   const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });

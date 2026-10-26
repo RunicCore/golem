@@ -1,4 +1,4 @@
-import { deduplicateProjections, exportedConcreteClass, linkedClassNames } from '@exprtlabs/golem/internal/type-analysis';
+import { deduplicateProjections, exportedConcreteClass, isGeneratedBrandKey, isGolemTagKey, linkedClassNames } from '@exprtlabs/golem/internal/type-analysis';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { PACKAGE_VERSION } from './package-info.js';
 import {
@@ -51,7 +51,7 @@ import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, ty
 import { compareText, displayPath, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
-import { descriptorBuilder, propertyType } from '@exprtlabs/golem/internal/type-analysis';
+import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalFilename,
   commonDirectory,
@@ -61,7 +61,6 @@ import {
   sourceImportPath,
 } from '@exprtlabs/golem/internal/type-analysis';
 import type {
-  ConstraintSchemaValue,
   ModelConstraint,
   SerdeBinding,
   ValidationBinding,
@@ -69,11 +68,12 @@ import type {
 import {
   canonicalSchemaKey,
   canonicalConstraintKey,
+  constraintSchemaValues,
   createExecutableValidationMemo,
+  mapConstraintSchemaValues,
   projectPortableConstraints,
   type ExecutableValidationMemo,
   schemaForDescriptor,
-  validationTagKey,
   validationTagSchemaDescriptor,
   VALIDATION_KEYWORD,
 } from '@exprtlabs/golem/internal/schema';
@@ -104,47 +104,10 @@ function jsonDataExpression(value: unknown): Code {
   return code`JSON.parse(${literal(json)}) as object`;
 }
 
-function isModelDescriptor(value: ConstraintSchemaValue): value is ModelConversionDescriptor {
+function isModelDescriptor(value: unknown): value is ModelConversionDescriptor {
   return typeof value === 'object'
     && value !== null
     && typeof Reflect.get(value, 'kind') === 'string';
-}
-
-function forEachConstraintSchema(
-  constraint: ModelConstraint,
-  visit: (descriptor: ModelConversionDescriptor) => void,
-): void {
-  const one = (value: ConstraintSchemaValue): void => {
-    if (isModelDescriptor(value)) visit(value);
-  };
-  switch (constraint.kind) {
-    case 'contains':
-    case 'propertyNames':
-    case 'additionalProperties':
-    case 'unevaluatedProperties':
-    case 'items':
-    case 'unevaluatedItems':
-    case 'not':
-      one(constraint.schema);
-      break;
-    case 'patternProperties':
-      one(constraint.schema);
-      break;
-    case 'dependentSchemas':
-      Object.values(constraint.value).forEach(one);
-      break;
-    case 'oneOf':
-    case 'allOf':
-      constraint.schemas.forEach(one);
-      break;
-    case 'ifThenElse':
-      one(constraint.if);
-      if (constraint.then !== undefined) one(constraint.then);
-      if (constraint.else !== undefined) one(constraint.else);
-      break;
-    default:
-      break;
-  }
 }
 
 function mapConstraint(
@@ -155,61 +118,54 @@ function mapConstraint(
   definitions: Readonly<Record<string, ModelConversionDescriptor>>,
 ): ModelConstraint {
   if (!validationEnabled) return constraint;
-  const project = (value: ConstraintSchemaValue): ConstraintSchemaValue =>
-    isModelDescriptor(value)
-      ? projectDescriptor(value, validationEnabled, wire, retainPredicates, definitions)
-      : value;
-  switch (constraint.kind) {
-    case 'contains':
-    case 'propertyNames':
-    case 'additionalProperties':
-    case 'unevaluatedProperties':
-    case 'items':
-    case 'unevaluatedItems':
-    case 'not':
-      return { ...constraint, schema: project(constraint.schema) };
-    case 'patternProperties':
-      return { ...constraint, schema: project(constraint.schema) };
-    case 'dependentSchemas':
-      return { ...constraint, value: Object.fromEntries(Object.entries(constraint.value).map(([name, value]) => [name, project(value)])) };
-    case 'oneOf':
-    case 'allOf':
-      return { ...constraint, schemas: constraint.schemas.map(project) };
-    case 'ifThenElse':
-      return {
-        ...constraint,
-        if: project(constraint.if),
-        ...(constraint.then === undefined ? {} : { then: project(constraint.then) }),
-        ...(constraint.else === undefined ? {} : { else: project(constraint.else) }),
-      };
-    default:
-      return constraint;
+  return mapConstraintSchemaValues(constraint, (value) =>
+    isModelDescriptor(value) ? projectDescriptor(value, validationEnabled, wire, retainPredicates, definitions) : value);
+}
+
+/**
+ * What a walk reaches below a descriptor: `structure` is the items, variants and properties; `wire` adds the wire
+ * descriptor of a serde; `all` adds the schemas of the constraints.
+ */
+type DescriptorReach = 'structure' | 'wire' | 'all';
+
+interface DescriptorVisitor {
+  /** Runs on a descriptor before the descriptors below it. */
+  readonly enter?: (descriptor: ModelConversionDescriptor) => void;
+  /** Runs on a descriptor after the descriptors below it. */
+  readonly leave?: (descriptor: ModelConversionDescriptor) => void;
+}
+
+/** The one read-only walk over a descriptor tree: below each descriptor it reaches the wire descriptor, then the constraint schemas, then the structure. */
+function walkDescriptor(descriptor: ModelConversionDescriptor, visitor: DescriptorVisitor, reach: DescriptorReach = 'all'): void {
+  const rich = richDescriptor(descriptor);
+  const walk = (child: ModelConversionDescriptor): void => walkDescriptor(child, visitor, reach);
+  visitor.enter?.(descriptor);
+  if (reach !== 'structure' && rich.serde?.wireDescriptor) walk(rich.serde.wireDescriptor);
+  if (reach === 'all') {
+    for (const constraint of rich.constraints ?? []) constraintSchemaValues(constraint).filter(isModelDescriptor).forEach(walk);
   }
+  switch (descriptor.kind) {
+    case 'array': walk(descriptor.item); break;
+    case 'tuple':
+      descriptor.items.forEach(walk);
+      if (descriptor.rest) walk(descriptor.rest.item);
+      break;
+    case 'union':
+    case 'intersection': descriptor.variants.forEach(walk); break;
+    case 'object':
+      Object.values(descriptor.properties).forEach(walk);
+      if (typeof descriptor.additionalProperties === 'object') walk(descriptor.additionalProperties);
+      break;
+    default: break;
+  }
+  visitor.leave?.(descriptor);
 }
 
 function descriptorExternalIds(
   descriptor: ModelConversionDescriptor,
   found = new Set<string>(),
 ): Set<string> {
-  const wire = richDescriptor(descriptor).serde?.wireDescriptor;
-  if (wire) descriptorExternalIds(wire, found);
-  for (const constraint of richDescriptor(descriptor).constraints ?? []) {
-    forEachConstraintSchema(constraint, (nested) => descriptorExternalIds(nested, found));
-  }
-  if (descriptor.kind === 'generated-model') found.add(descriptor.id);
-  else if (descriptor.kind === 'array') descriptorExternalIds(descriptor.item, found);
-  else if (descriptor.kind === 'tuple') {
-    for (const item of descriptor.items) descriptorExternalIds(item, found);
-    const rest = descriptor.rest;
-    if (rest) descriptorExternalIds(rest.item, found);
-  } else if (descriptor.kind === 'union' || descriptor.kind === 'intersection') {
-    for (const item of descriptor.variants) descriptorExternalIds(item, found);
-  } else if (descriptor.kind === 'object') {
-    for (const item of Object.values(descriptor.properties)) descriptorExternalIds(item, found);
-    if (typeof descriptor.additionalProperties === 'object') {
-      descriptorExternalIds(descriptor.additionalProperties, found);
-    }
-  }
+  walkDescriptor(descriptor, { leave: (item) => { if (item.kind === 'generated-model') found.add(item.id); } });
   return found;
 }
 
@@ -273,95 +229,40 @@ function visitDescriptor(
   descriptor: ModelConversionDescriptor,
   registry: BindingRegistry,
 ): void {
-  const rich = richDescriptor(descriptor);
-  for (const binding of rich.validations ?? []) registerValidation(registry.validations, binding);
-  if (rich.serde) {
-    registerSerde(registry.serde, rich.serde);
-    if (rich.serde.wireDescriptor) visitDescriptor(rich.serde.wireDescriptor, registry);
-  }
-  for (const constraint of rich.constraints ?? []) {
-    forEachConstraintSchema(constraint, (nested) => visitDescriptor(nested, registry));
-  }
-  switch (descriptor.kind) {
-    case 'array': visitDescriptor(descriptor.item, registry); break;
-    case 'tuple':
-      descriptor.items.forEach((item) => visitDescriptor(item, registry));
-      if (descriptor.rest) visitDescriptor(descriptor.rest.item, registry);
-      break;
-    case 'union':
-    case 'intersection': descriptor.variants.forEach((item) => visitDescriptor(item, registry)); break;
-    case 'object':
-      Object.values(descriptor.properties).forEach((item) => visitDescriptor(item, registry));
-      if (typeof descriptor.additionalProperties === 'object') visitDescriptor(descriptor.additionalProperties, registry);
-      break;
-    default: break;
-  }
+  walkDescriptor(descriptor, {
+    enter: (item) => {
+      const rich = richDescriptor(item);
+      for (const binding of rich.validations ?? []) registerValidation(registry.validations, binding);
+      if (rich.serde) registerSerde(registry.serde, rich.serde);
+    },
+  });
 }
 
+/** A validation schema of a tag and its canonical key: schemas with one key share one compiled validator. */
 export interface TagSchema {
   readonly key: string;
-  readonly id: string;
   readonly schema: Readonly<Record<string, unknown>>;
 }
 
 interface TagSchemaCompilation {
   readonly id: string;
   readonly schema: Readonly<Record<string, unknown>>;
-  /** Metadata lookup keys that may share this compiled validator. */
-  readonly keys: readonly string[];
 }
 
 /**
- * Group equivalent JSON schemas while retaining every metadata lookup key.
- * Callback identities and closed reference definitions are part of the
- * canonical schema key, so equivalent schemas can share a compiler while
- * distinct executable or reference semantics remain separate.
+ * Give each distinct schema one id, in the order of its canonical key. Callback
+ * identities and closed reference definitions are part of that key, so
+ * equivalent schemas share a compiler while distinct executable or reference
+ * semantics stay separate.
  */
 export function deduplicateTagSchemas(
   schemas: readonly TagSchema[],
 ): readonly TagSchemaCompilation[] {
-  const byMetadataKey = new Map<string, TagSchema>();
-  for (const schema of schemas) {
-    const previous = byMetadataKey.get(schema.key);
-    if (!previous) {
-      byMetadataKey.set(schema.key, schema);
-      continue;
-    }
-    if (canonicalSchemaKey(previous.schema) !== canonicalSchemaKey(schema.schema)) {
-      throw new Error(`Conflicting generated tag schema for metadata key ${JSON.stringify(schema.key)}.`);
-    }
-  }
-
-  interface Group {
-    readonly schemaKey: string;
-    readonly schema: Readonly<Record<string, unknown>>;
-    readonly keys: string[];
-    readonly order: number;
-  }
-  const groups = new Map<string, Group>();
-  let order = 0;
-  for (const schema of byMetadataKey.values()) {
-    const schemaKey = canonicalSchemaKey(schema.schema);
-    const existing = groups.get(schemaKey);
-    if (existing) {
-      existing.keys.push(schema.key);
-    } else {
-      groups.set(schemaKey, {
-        schemaKey,
-        schema: schema.schema,
-        keys: [schema.key],
-        order: order++,
-      });
-    }
-  }
-  return [...groups.values()]
-    .sort((left, right) => compareText(left.schemaKey, right.schemaKey)
-      || left.order - right.order)
-    .map((group, index) => ({
-      id: `golem:model-tag:${index}`,
-      schema: group.schema,
-      keys: [...group.keys].sort(),
-    }));
+  const byKey = new Map<string, Readonly<Record<string, unknown>>>();
+  for (const { key, schema } of schemas) if (!byKey.has(key)) byKey.set(key, schema);
+  return [...byKey.entries()]
+    .sort(([left], [right]) => compareText(left, right))
+    .map(([, schema], index) => ({ id: `golem:model-tag:${index}`, schema }));
 }
 
 function tagSchemas(
@@ -372,59 +273,50 @@ function tagSchemas(
 ): readonly TagSchema[] {
   if (!enabled) return [];
   const schemas = new Map<string, Readonly<Record<string, unknown>>>();
-  const register = (key: string, schema: Readonly<Record<string, unknown>>): void => {
-    const previous = schemas.get(key);
-    if (previous && canonicalSchemaKey(previous) !== canonicalSchemaKey(schema)) {
-      throw new Error('Generated tag metadata key resolves to conflicting validation schemas.');
-    }
-    schemas.set(key, schema);
+  const register = (schema: Readonly<Record<string, unknown>>): void => {
+    const key = canonicalSchemaKey(schema);
+    if (!schemas.has(key)) schemas.set(key, schema);
   };
   const schemaOptions = { definitions };
-  const visit = (descriptor: ModelConversionDescriptor): void => {
+  const registerTags = (descriptor: ModelConversionDescriptor): void => {
     const rich = richDescriptor(descriptor);
     const constraints = [...(rich.constraints ?? [])].sort((left, right) =>
       compareText(canonicalConstraintKey(left), canonicalConstraintKey(right)));
     const validations = [...(rich.validations ?? [])]
       .map((binding) => typeof binding === 'string' ? binding : (binding as ValidationBinding).id).sort();
     if (constraints.length > 0) {
-      const key = validationTagKey(descriptor, { constraints, validations: [] }, { definitions, representation });
       // Keep structural siblings in the same schema context as object and
       // array keywords. In particular, `additionalProperties` must see the
       // descriptor's declared properties, and contains bounds must remain
-      // siblings of contains. The key remains constraint-only so runtime
-      // lookup continues to share validators for equivalent tag groups.
+      // siblings of contains.
       const structural = schemaForDescriptor(
         validationTagSchemaDescriptor(descriptor, constraints, { definitions }),
         { ...schemaOptions, representation, executableBindings: true },
       );
-      register(
-        key,
-        typeof structural === 'boolean' ? { allOf: [structural] } : structural,
-      );
+      register(typeof structural === 'boolean' ? { allOf: [structural] } : structural);
     }
-    if (validations.length > 0) {
-      const key = validationTagKey(descriptor, { constraints: [], validations }, { definitions, representation });
-      register(key, { [VALIDATION_KEYWORD]: validations });
-    }
-    switch (descriptor.kind) {
-      case 'array': visit(descriptor.item); break;
-      case 'tuple':
-        descriptor.items.forEach(visit);
-        if (descriptor.rest) visit(descriptor.rest.item);
-        break;
-      case 'union':
-      case 'intersection': descriptor.variants.forEach(visit); break;
-      case 'object':
-        Object.values(descriptor.properties).forEach(visit);
-        if (typeof descriptor.additionalProperties === 'object') visit(descriptor.additionalProperties);
-        break;
-      default: break;
-    }
+    if (validations.length > 0) register({ [VALIDATION_KEYWORD]: validations });
   };
-  descriptors.forEach(visit);
-  return [...schemas.entries()]
-    .sort(([left], [right]) => compareText(left, right))
-    .map(([key, schema], index) => ({ key, schema, id: `golem:model-tag:${index}` }));
+  descriptors.forEach((descriptor) => walkDescriptor(descriptor, { enter: registerTags }, 'structure'));
+  return [...schemas.entries()].map(([key, schema]) => ({ key, schema }));
+}
+
+/**
+ * TypeScript brands are commonly expressed as an intersection such as `string & { readonly __wireCode?: never }`. The
+ * brand carries no wire data and must not turn a scalar JSON value into an impossible allOf of a scalar and an object.
+ * The scalar of such an intersection; a genuine object intersection has none.
+ */
+function brandedScalar(descriptor: ModelConversionDescriptor): ModelConversionDescriptor | undefined {
+  if (descriptor.kind !== 'intersection') return undefined;
+  const isBrand = (item: ModelConversionDescriptor): boolean => item.kind === 'object'
+    && item.required.length === 0
+    && item.additionalProperties === false
+    && Object.entries(item.properties).every(([name, property]) =>
+      name.startsWith('__') && (property.kind === 'undefined' || property.kind === 'never'));
+  const scalar = descriptor.variants.find((item) =>
+    item.kind === 'string' || item.kind === 'number' || item.kind === 'boolean' || item.kind === 'null',
+  );
+  return scalar && descriptor.variants.every((item) => item === scalar || isBrand(item)) ? scalar : undefined;
 }
 
 function projectDescriptor(
@@ -444,80 +336,50 @@ function projectDescriptor(
       ? projectDescriptor(wireDescriptor, validationEnabled, true, true, definitions)
       : { kind: 'unknown' };
   }
-  // TypeScript brands are commonly expressed as an intersection such as
-  // `string & { readonly __wireCode?: never }`.  The brand carries no wire
-  // data and must not turn a scalar JSON value into an impossible allOf of a
-  // scalar and an object.  Keep genuine object intersections intact.
-  if (wire && descriptor.kind === 'intersection') {
-    const isBrand = (item: ModelConversionDescriptor): boolean => item.kind === 'object'
-      && item.required.length === 0
-      && item.additionalProperties === false
-      && Object.entries(item.properties).every(([name, property]) =>
-        name.startsWith('__') && (property.kind === 'undefined' || property.kind === 'never'));
-    const scalar = descriptor.variants.find((item) =>
-      item.kind === 'string' || item.kind === 'number' || item.kind === 'boolean' || item.kind === 'null',
-    );
-    if (scalar && descriptor.variants.every((item) => item === scalar || isBrand(item))) {
-      const projectedScalar = projectDescriptor(scalar, validationEnabled, true, retainPredicates, definitions);
-      const normalizedConstraints = validationEnabled
-        ? constraints.map((constraint) => mapConstraint(
-          constraint,
-          validationEnabled,
-          true,
-          retainPredicates,
-          definitions,
-        )).sort((left, right) => compareText(JSON.stringify(left), JSON.stringify(right)))
-        : [];
-      const normalizedValidations = [...(rich.validations ?? [])]
-        .map((binding) => typeof binding === 'string' ? binding : (binding as ValidationBinding).id)
-        .sort();
-      return {
-        ...projectedScalar,
-        ...(retainPredicates && normalizedValidations.length ? { validations: normalizedValidations } : {}),
-        ...(normalizedConstraints.length ? { constraints: normalizedConstraints } : {}),
-      } as ModelConversionDescriptor;
-    }
-  }
   if (wire && descriptor.kind === 'date') {
     return {
       kind: 'string',
       ...(validationEnabled ? { constraints: [{ kind: 'format', value: 'date-time' }] } : {}),
     } as ModelConversionDescriptor;
   }
+  const project = (item: ModelConversionDescriptor): ModelConversionDescriptor =>
+    projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions);
+  const scalar = wire ? brandedScalar(descriptor) : undefined;
   let projected: ModelConversionDescriptor;
-  switch (descriptor.kind) {
+  if (scalar) projected = project(scalar);
+  else switch (descriptor.kind) {
     case 'array': projected = {
       kind: 'array',
       ...(descriptor.isReadonly ? { isReadonly: true as const } : {}),
-      item: projectDescriptor(descriptor.item, validationEnabled, wire, retainPredicates, definitions),
+      item: project(descriptor.item),
     }; break;
     case 'tuple':
       projected = {
         kind: 'tuple',
         ...(descriptor.isReadonly ? { isReadonly: true as const } : {}),
-        items: descriptor.items.map((item) => projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions)),
+        items: descriptor.items.map(project),
         ...(descriptor.optionalFrom === undefined ? {} : { optionalFrom: descriptor.optionalFrom }),
         ...(descriptor.rest ? {
-          rest: { index: descriptor.rest.index, item: projectDescriptor(descriptor.rest.item, validationEnabled, wire, retainPredicates, definitions) },
+          rest: { index: descriptor.rest.index, item: project(descriptor.rest.item) },
         } : {}),
       };
       break;
     case 'union': projected = {
       kind: 'union',
-      variants: descriptor.variants.map((item) => projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions)),
+      variants: descriptor.variants.map(project),
       // Variants map one to one, so the tag table keeps its indexes.
       ...(descriptor.discriminator ? { discriminator: descriptor.discriminator } : {}),
     }; break;
-    case 'intersection': projected = { kind: 'intersection', variants: descriptor.variants.map((item) => projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions)) }; break;
+    case 'intersection': projected = { kind: 'intersection', variants: descriptor.variants.map(project) }; break;
     case 'object':
       projected = {
         kind: 'object',
         ...(descriptor.projection ? { projection: true as const } : {}),
         ...(descriptor.readonlyProperties ? { readonlyProperties: descriptor.readonlyProperties } : {}),
-        properties: Object.fromEntries(Object.entries(descriptor.properties).map(([name, item]) => [name, projectDescriptor(item, validationEnabled, wire, retainPredicates, definitions)])),
+        properties: Object.fromEntries(Object.entries(descriptor.properties).map(([name, item]) => [name, project(item)])),
         required: descriptor.required,
         additionalProperties: typeof descriptor.additionalProperties === 'object'
-          ? projectDescriptor(descriptor.additionalProperties, validationEnabled, wire, retainPredicates, definitions)
+          ? project(descriptor.additionalProperties)
           : descriptor.additionalProperties,
         ...(descriptor.additionalPropertiesDeclared ? { additionalPropertiesDeclared: true as const } : {}),
       };
@@ -640,7 +502,7 @@ function fieldDescriptors(
   checker: ts.TypeChecker,
   specification: ModelSpecification,
   describe: (type: ts.Type, context: ModelSpecification, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode) => ModelConversionDescriptor,
-  fields = checker.getPropertiesOfType(specification.fieldsType).filter((field) => !field.getName().startsWith('__@')),
+  fields: readonly ts.Symbol[],
 ): Map<string, ModelConversionDescriptor> {
   return new Map(
     fields.map((field) => [
@@ -666,23 +528,9 @@ function descriptorReferences(
   /** Collect only the references that name a class the app wrote (a field typed `Customer`, not `TCustomer`). */
   throughClass = false,
 ): Set<string> {
-  const wire = richDescriptor(descriptor).serde?.wireDescriptor;
-  if (wire) descriptorReferences(wire, found, throughClass);
-  for (const constraint of richDescriptor(descriptor).constraints ?? []) {
-    forEachConstraintSchema(constraint, (nested) => descriptorReferences(nested, found, throughClass));
-  }
-  if (descriptor.kind === 'reference') {
-    if (!throughClass || descriptor.construct) found.add(descriptor.name);
-  } else if (descriptor.kind === 'array') descriptorReferences(descriptor.item, found, throughClass);
-  else if (descriptor.kind === 'tuple') {
-    descriptor.items.forEach((item) => descriptorReferences(item, found, throughClass));
-    if (descriptor.rest) descriptorReferences(descriptor.rest.item, found, throughClass);
-  } else if (descriptor.kind === 'union' || descriptor.kind === 'intersection') {
-    descriptor.variants.forEach((item) => descriptorReferences(item, found, throughClass));
-  } else if (descriptor.kind === 'object') {
-    Object.values(descriptor.properties).forEach((item) => descriptorReferences(item, found, throughClass));
-    if (typeof descriptor.additionalProperties === 'object') descriptorReferences(descriptor.additionalProperties, found, throughClass);
-  }
+  walkDescriptor(descriptor, {
+    leave: (item) => { if (item.kind === 'reference' && (!throughClass || item.construct)) found.add(item.name); },
+  });
   return found;
 }
 
@@ -693,41 +541,26 @@ function collectReferences(
   emitted: ReadonlySet<ModelSpecification>,
   pending: ModelSpecification[],
 ): void {
-  const wire = richDescriptor(descriptor).serde?.wireDescriptor;
-  if (wire) collectReferences(wire, owner, byName, emitted, pending);
-  for (const constraint of richDescriptor(descriptor).constraints ?? []) {
-    forEachConstraintSchema(constraint, (nested) => collectReferences(nested, owner, byName, emitted, pending));
-  }
-  if (descriptor.kind === 'reference') {
-    const candidates = byName.get(descriptor.name) ?? [];
-    const sameSource = candidates.filter((candidate) =>
-      canonicalFilename(candidate.sourceFile.fileName) === canonicalFilename(owner.sourceFile.fileName),
-    );
-    const referenced = sameSource.length === 1
-      ? sameSource[0]
-      : candidates.length === 1
-        ? candidates[0]
-        : undefined;
-    if (candidates.length > 1 && sameSource.length !== 1) {
-      throw new Error(
-        `Ambiguous generated type reference "${descriptor.name}" in ${displayPath(owner.sourceFile.fileName)}.`,
+  walkDescriptor(descriptor, {
+    leave: (item) => {
+      if (item.kind !== 'reference') return;
+      const candidates = byName.get(item.name) ?? [];
+      const sameSource = candidates.filter((candidate) =>
+        canonicalFilename(candidate.sourceFile.fileName) === canonicalFilename(owner.sourceFile.fileName),
       );
-    }
-    if (referenced && !emitted.has(referenced)) pending.push(referenced);
-    return;
-  }
-  if (descriptor.kind === 'array') collectReferences(descriptor.item, owner, byName, emitted, pending);
-  else if (descriptor.kind === 'tuple') {
-    descriptor.items.forEach((item) => collectReferences(item, owner, byName, emitted, pending));
-    if (descriptor.rest) collectReferences(descriptor.rest.item, owner, byName, emitted, pending);
-  } else if (descriptor.kind === 'union' || descriptor.kind === 'intersection') {
-    descriptor.variants.forEach((item) => collectReferences(item, owner, byName, emitted, pending));
-  } else if (descriptor.kind === 'object') {
-    Object.values(descriptor.properties).forEach((item) => collectReferences(item, owner, byName, emitted, pending));
-    if (typeof descriptor.additionalProperties === 'object') {
-      collectReferences(descriptor.additionalProperties, owner, byName, emitted, pending);
-    }
-  }
+      const referenced = sameSource.length === 1
+        ? sameSource[0]
+        : candidates.length === 1
+          ? candidates[0]
+          : undefined;
+      if (candidates.length > 1 && sameSource.length !== 1) {
+        throw new Error(
+          `Ambiguous generated type reference "${item.name}" in ${displayPath(owner.sourceFile.fileName)}.`,
+        );
+      }
+      if (referenced && !emitted.has(referenced)) pending.push(referenced);
+    },
+  });
 }
 
 export interface SourceModelGraph {
@@ -748,6 +581,8 @@ export interface SourceModelGraph {
    * emits their code; this companion references them by codec id.
    */
   readonly siblings: readonly ModelSpecification[];
+  /** The job's descriptor builder, which describes the fields of a model that is an SDK model's fields. */
+  readonly describe: ReturnType<typeof descriptorBuilder>;
 }
 
 /** A job's executable-validation memo, keyed by the lookup objects its walks receive. */
@@ -775,16 +610,33 @@ interface JobAnalysis {
   lookup?: Readonly<Record<string, ModelConversionDescriptor>>;
 }
 
+/** The conversion descriptor of a model's fields type, described once per job. */
+function describeRoot(job: JobAnalysis, specification: ModelSpecification): ModelConversionDescriptor {
+  let descriptor = job.described.get(specification);
+  if (!descriptor) {
+    descriptor = job.describe(specification.fieldsType, specification, undefined, specification.fieldsNode);
+    job.described.set(specification, descriptor);
+  }
+  return descriptor;
+}
+
+/**
+ * A model emits the fields of an object, or of an SDK model. A root that a TSerde converts as a whole, or any other root
+ * that is no object, has no fields to emit: it stops with RUNM1052 once its other uses have been described.
+ */
+function assertRootHasFields(specification: ModelSpecification, definition: ModelConversionDescriptor): void {
+  const found = 'serde' in definition ? 'a type that a TSerde converts as a whole'
+    : definition.kind === 'object' || definition.kind === 'generated-model' ? undefined
+      : describeRootKind(definition.kind);
+  if (found) throw nonObjectRootDiagnostic(specification.sourceFile, specification.declaration, specification.emitClass ? 'IModel' : 'IObject', found);
+}
+
 /** Describe every model of the job once and index the results for lookups. */
 export function describeJob(job: JobAnalysis, specifications: readonly ModelSpecification[]): void {
   const byName = new Map<string, ModelConversionDescriptor | null>();
   for (const specification of specifications) {
     if (!job.sources.has(canonicalFilename(specification.sourceFile.fileName))) continue;
-    let descriptor = job.described.get(specification);
-    if (!descriptor) {
-      descriptor = job.describe(specification.fieldsType, specification, undefined, specification.fieldsNode);
-      job.described.set(specification, descriptor);
-    }
+    const descriptor = describeRoot(job, specification);
     byName.set(specification.name, byName.has(specification.name) ? null : descriptor);
   }
   const lookup: Record<string, ModelConversionDescriptor> = Object.create(null) as Record<string, ModelConversionDescriptor>;
@@ -799,6 +651,7 @@ export function createJobAnalysis(
   manifestIndex: ManifestIndex,
   profile: GolemProfile,
   sources: readonly string[],
+  isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
   identityRoot?: string,
   sourceFileOf?: (filename: string) => ts.SourceFile | undefined,
   boundary?: ModelBoundary,
@@ -820,6 +673,8 @@ export function createJobAnalysis(
       undefined,
       modelSources,
       boundary,
+      undefined,
+      isDefaultLibraryFile,
     ),
     described: new Map(),
     sources: modelSources,
@@ -864,21 +719,13 @@ export function analyzeSourceGraph(
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
   profile: GolemProfile,
-  identityRoot?: string,
-  job: JobAnalysis = createJobAnalysis(checker, specifications, manifestIndex, profile, [source], identityRoot),
+  identityRoot: string | undefined,
+  job: JobAnalysis,
 ): SourceModelGraph | undefined {
   const stableIdentityRoot = canonicalFilename(identityRoot ?? commonDirectory(
     specifications.map((specification) => specification.sourceFile.fileName),
   ));
   const { describe } = job;
-  const describeOnce = (specification: ModelSpecification): ModelConversionDescriptor => {
-    let descriptor = job.described.get(specification);
-    if (!descriptor) {
-      descriptor = describe(specification.fieldsType, specification, undefined, specification.fieldsNode);
-      job.described.set(specification, descriptor);
-    }
-    return descriptor;
-  };
   const canonicalSource = canonicalFilename(source);
   const local = specifications.filter((item) => canonicalFilename(item.sourceFile.fileName) === canonicalSource);
   if (local.length === 0) return undefined;
@@ -918,7 +765,7 @@ export function analyzeSourceGraph(
     if (!specification || emitted.has(specification)) continue;
     const duplicate = [...emitted].find((item) => item.name === specification.name);
     if (duplicate) throw new Error(`Generated model symbol collision for "${specification.name}" in ${source}.`);
-    const descriptor = describeOnce(specification);
+    const descriptor = describeRoot(job, specification);
     definitions[specification.name] = descriptor;
     emitted.add(specification);
     if (isSibling(specification)) {
@@ -978,6 +825,7 @@ export function analyzeSourceGraph(
     schemas,
     emitted: [...emitted],
     siblings: [...siblings],
+    describe,
   };
 }
 
@@ -1146,10 +994,8 @@ interface EmitContext {
   readonly source: string;
   readonly output: string;
   readonly checker: ts.TypeChecker;
-  readonly specifications: readonly ModelSpecification[];
   readonly manifestIndex: ManifestIndex;
   readonly profile: GolemProfile;
-  readonly identityRoot: string | undefined;
   readonly siblingCodecs: SiblingCodecOptions;
   readonly appOutputs: AppOutputs;
   readonly graph: SourceModelGraph;
@@ -1298,7 +1144,6 @@ function buildEmitContext(
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
   profile: GolemProfile,
-  identityRoot: string | undefined,
   graph: SourceModelGraph,
   preparedSchemaGraph: SchemaGraph | undefined,
   siblingCodecs: SiblingCodecOptions,
@@ -1314,22 +1159,14 @@ function buildEmitContext(
   // generated name, so two classes called `Money` from different modules do not collide.
   const classImports = new Map<string, { readonly importPath: string; readonly exportName: string }>();
   for (const descriptor of Object.values(definitions)) {
-    const visit = (item: ModelConversionDescriptor): void => {
-      if (item.kind === 'class-value' && item.typeImport) {
-        const importPath = item.typeImport.specifier ?? sourceImportPath(item.typeImport.module, output);
-        classImports.set(classImportKey(item.typeImport), { importPath, exportName: item.typeImport.exportName });
-      }
-      const rich = richDescriptor(item);
-      if (rich.serde?.wireDescriptor) visit(rich.serde.wireDescriptor);
-      if (item.kind === 'array') visit(item.item);
-      if (item.kind === 'tuple') { item.items.forEach(visit); if (item.rest) visit(item.rest.item); }
-      if (item.kind === 'union' || item.kind === 'intersection') item.variants.forEach(visit);
-      if (item.kind === 'object') {
-        Object.values(item.properties).forEach(visit);
-        if (typeof item.additionalProperties === 'object') visit(item.additionalProperties);
-      }
-    };
-    visit(descriptor);
+    walkDescriptor(descriptor, {
+      enter: (item) => {
+        if (item.kind === 'class-value' && item.typeImport) {
+          const importPath = item.typeImport.specifier ?? sourceImportPath(item.typeImport.module, output);
+          classImports.set(classImportKey(item.typeImport), { importPath, exportName: item.typeImport.exportName });
+        }
+      },
+    }, 'wire');
   }
   const classEntries = [...classImports].sort(([, left], [, right]) => compareText(`${left.importPath}\0${left.exportName}`, `${right.importPath}\0${right.exportName}`));
   const classNames = new Map(classEntries.map(([key], index) => [key, `__golemClass${index}`] as const));
@@ -1380,7 +1217,7 @@ function buildEmitContext(
     cyclicSiblings, serdeBindings, serdeNames, classEntries, classNames,
   );
   return {
-    source, output, checker, specifications, manifestIndex, profile, identityRoot, siblingCodecs, appOutputs, graph, schemaGraph,
+    source, output, checker, manifestIndex, profile, siblingCodecs, appOutputs, graph, schemaGraph,
     local, localNames, fileLocalNames, classModelNames, objectOnlyNames, siblingObjects, siblingObjectNames, localImports,
     concreteNames, linkedByName, referenceNames, projectionNames, identityProjections, imports,
     serdeBindings, serdeNames,
@@ -1684,12 +1521,13 @@ function wrapRootConversion(
 }
 
 function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): ModelFieldEmission[] {
-  const { checker, specifications, manifestIndex, profile, identityRoot } = context;
+  const { checker } = context;
   const { definitions } = context.graph;
   const { fromAny: resolveFromAny, toJsonAny: resolveToJsonAny } = resolvers;
   const serdeExpressionOf = (id: string, direction: 'serialize' | 'deserialize', value: Code): Code => serdeExpression(context, id, direction, value);
   return context.local.map((specification) => {
     const definition = definitions[specification.name];
+    assertRootHasFields(specification, definition);
     const baseName = identifier(`${specification.name}BaseModel`);
     // Phantom tag members are part of the type-level intersection and must
     // remain in the root descriptor, but they are not model fields.  Emitting
@@ -1698,11 +1536,11 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
     const fields = checker.getPropertiesOfType(specification.fieldsType).filter((field) =>
       definition.kind === 'object'
         ? Object.prototype.hasOwnProperty.call(definition.properties, field.getName())
-        : !field.getName().startsWith('__@'),
+        : !isGeneratedBrandKey(checker, field) && !isGolemTagKey(checker, field),
     );
     const descriptors = definition.kind === 'object'
       ? new Map(Object.entries(definition.properties))
-      : fieldDescriptors(checker, specification, descriptorBuilder(checker, specifications, manifestIndex, profile.validation, profile.allowAny ?? false, identityRoot), fields);
+      : fieldDescriptors(checker, specification, context.graph.describe, fields);
     const helpers: Code[] = [];
     const encode = fields.map((field) => {
       const name = literal(field.getName());
@@ -1973,14 +1811,16 @@ function emitCodecSection(context: EmitContext): CodecSection {
     return code`${rt.serde.requireIModelClass}(${literal(id)})`;
   };
   const nestedGenerated = (id: string): Code => externalModel(context, id).cls;
+  /** The manifest id of the SDK model that a generated-model descriptor names by its short name, class name or manifest id. */
+  const externalManifestId = (name: string): string | undefined => [...graph.externalNames.entries()].find(([manifestId, className]) => (
+    manifestId === name
+    || className === name
+    || codecShortName(manifestId) === name
+  ))?.[0];
   const nestedImportedSerde = (id: string) => {
-    const match = [...graph.externalNames.entries()].find(([manifestId, className]) => (
-      manifestId === id
-      || className === id
-      || codecShortName(manifestId) === id
-    ));
+    const match = externalManifestId(id);
     if (!match) return undefined;
-    const { stringify, fromWire, toWire } = externalModel(context, match[0]);
+    const { stringify, fromWire, toWire } = externalModel(context, match);
     return { stringify, fromWire, toWire };
   };
   // The validators the codecs use: the model file imports those and no others.
@@ -2022,6 +1862,10 @@ function emitCodecSection(context: EmitContext): CodecSection {
       } : {}),
       ...(hasPlanSchemas ? { resolvedSchemasExpr: identifier('modelSchemas') } : {}),
       serde: serdeResolver(context),
+      generatedModelCodecId: (name) => {
+        const manifestId = externalManifestId(name);
+        return manifestId === undefined ? undefined : imports.external.get(manifestId)?.model.codecId;
+      },
       nestedConstruct,
       nestedGenerated,
       nestedImportedSerde,
@@ -2072,15 +1916,12 @@ export function emitSource(
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
   profile: GolemProfile,
-  identityRoot?: string,
-  preparedGraph?: SourceModelGraph,
+  graph: SourceModelGraph,
   preparedSchemaGraph?: SchemaGraph,
   siblingCodecs: SiblingCodecOptions = {},
   appOutputs: AppOutputs = {},
 ): string | undefined {
-  const graph = preparedGraph ?? analyzeSourceGraph(source, output, checker, specifications, manifestIndex, profile, identityRoot);
-  if (!graph) return undefined;
-  const context = buildEmitContext(source, output, checker, specifications, manifestIndex, profile, identityRoot, graph, preparedSchemaGraph, siblingCodecs, appOutputs);
+  const context = buildEmitContext(source, output, checker, specifications, manifestIndex, profile, graph, preparedSchemaGraph, siblingCodecs, appOutputs);
   const projections = buildProjections(context);
   const emissions = buildFieldEmissions(context, modelResolvers(context, projections.helpers));
   const codecs = emitCodecSection(context);

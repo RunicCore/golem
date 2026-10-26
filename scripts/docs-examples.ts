@@ -5,8 +5,8 @@ import { SOURCE_EXAMPLES } from './maintained-examples.js';
 const packageSnippetSources = new Set([
   'packages/golem/src/nest.ts',
 ]);
-/** The benchmark page shows the fixtures it times; they are in the public source inventory. */
-const benchmarkSnippetPrefix = 'scripts/benchmark/fixtures/';
+/** The benchmark page shows the fixtures it times and the feature models it shares with the acceptance test; they are in the public source inventory. */
+const benchmarkSnippetPrefixes = ['scripts/benchmark/fixtures/', 'tests/fixtures/models/serde-features/'];
 
 /**
  * Region marker forms VitePress accepts in `<<<` includes. VitePress renders the whole
@@ -52,7 +52,7 @@ export function docExampleSources(root: string): readonly { source: string }[] {
             ? path.resolve(root, 'docs', target.slice(2))
             : path.resolve(path.dirname(filename), target);
           const relative = path.relative(root, absolute).split(path.sep).join('/');
-          if ((!relative.startsWith('examples/') && !relative.startsWith(benchmarkSnippetPrefix) && !packageSnippetSources.has(relative)) || !allowed.has(relative)) {
+          if ((!relative.startsWith('examples/') && !benchmarkSnippetPrefixes.some(prefix => relative.startsWith(prefix)) && !packageSnippetSources.has(relative)) || !allowed.has(relative)) {
             throw new Error(`Documentation source is outside the public snippet inventory: ${path.relative(root, filename)} -> ${relative}`);
           }
           const region = /^[^#{]*#([\w-]+)/.exec(match[1])?.[1];

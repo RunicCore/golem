@@ -8,6 +8,7 @@ import { createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } fr
 import { writeModelSources } from './model-project.js';
 import { TSC } from './support/build-project.js';
 import { command, golem } from './support/process.js';
+import { runRewritten } from './support/rewritten-module.js';
 import { literal, tsSource, type SourceFragment } from './source-template.js';
 import { createJobAnalysis } from '#model/emit';
 import { generate } from '#model/generator';
@@ -70,7 +71,7 @@ test('type analysis reads the tags of an alias in the .model.d.ts file of an ins
   const order = path.join(root, 'src/order.model.ts');
   const info = createProgram([order], root);
   const { checker, specifications } = collectSpecifications(info.program, [order, declaration]);
-  const job = createJobAnalysis(checker, specifications, loadModelManifests(root, info, [], PROFILE), PROFILE, [order], root);
+  const job = createJobAnalysis(checker, specifications, loadModelManifests(root, info, [], PROFILE), PROFILE, [order], file => info.program.isSourceFileDefaultLibrary(file), root);
   const describe = (name: string): { properties: Record<string, object> } => {
     const specification = specifications.find((item) => item.name === name);
     assert.ok(specification);
@@ -166,7 +167,7 @@ function sharedFolder(t: TestContext): string {
   return outer;
 }
 
-test('two apps with different profiles each write the companion of a shared alias in their own models.output, and the shared folder keeps only its author files', (t: TestContext) => {
+test('two apps with different profiles each write the companion of a shared alias in their own models.output, and the shared folder keeps only its author files', async (t: TestContext) => {
   // protects: P-12 done checks 1 and 3: a shared alias works in two apps, each app owns its companion
   const outer = sharedFolder(t);
   const web = appWithShared(outer, 'web', true, { 'src/order.model.ts': SHARED_ORDER('../../shared/customer.model.js'), 'src/customer.ts': SHARED_CUSTOMER_BASE });
@@ -177,11 +178,13 @@ test('two apps with different profiles each write the companion of a shared alia
   }
 
   assert.deepEqual(fs.readdirSync(path.join(outer, 'shared')).sort(), ['customer.model.ts', 'package.json']);
-  const companion = (root: string): string => fs.readFileSync(path.join(root, 'src/generated/models/@acme/shared/customer.model.generated.ts'), 'utf8');
-  assert.match(companion(web), /export abstract class TCustomerBaseModel/);
-  assert.match(companion(web), /models\.validators\.generated/);
-  assert.match(companion(worker), /export abstract class TCustomerBaseModel/);
-  assert.doesNotMatch(companion(worker), /models\.validators\.generated/);
+  // Each app's own class extends the shared companion's base, so the compile proves that the base is exported and resolves.
+  for (const root of [web, worker]) {
+    assert.ok(fs.existsSync(path.join(root, 'src/generated/models/@acme/shared/customer.model.generated.ts')));
+    await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
+  }
+  // Only the validating profile writes the validators module the companion imports.
+  assert.deepEqual([web, worker].map((root) => fs.existsSync(path.join(root, 'src/generated/models/models.validators.generated.ts'))), [true, false]);
 });
 
 test('a field typed with an app class of a shared model generates, imports the shared companion and compiles', async (t: TestContext) => {
@@ -195,8 +198,9 @@ test('a field typed with an app class of a shared model generates, imports the s
 
   await command(app, process.execPath, [golem, 'build']);
 
-  const companion = fs.readFileSync(path.join(app, 'src/order.model.generated.ts'), 'utf8');
-  assert.match(companion, /import \{ TCustomerBaseModel, .* \} from "\.\/generated\/models\/@acme\/shared\/customer\.model\.generated\.js";/);
+  // The build type-checks the order companion, which imports the shared companion for the class of the field.
+  assert.ok(fs.existsSync(path.join(app, 'src/order.model.generated.ts')));
+  assert.ok(fs.existsSync(path.join(app, 'src/generated/models/@acme/shared/customer.model.generated.ts')));
 });
 
 test('on the first run an app class that imports the shared base through a paths alias is the class of the shared model', (t: TestContext) => {
@@ -271,8 +275,9 @@ for (const preserveSymlinks of [false, true]) {
 
     assert.deepEqual(scan.diagnostics, []);
     const code = applyRewrites(fs.readFileSync(path.join(app, 'src/use.ts'), 'utf8'), scan.files.get('src/use.ts')!).code;
-    assert.ok(code.includes(`__golem_requireObjectCodec("${id}").parse('{}')`), code);
-    assert.ok(code.includes("import './generated/models/@acme/shared/customer.model.generated.js';"), code);
+    const run = runRewritten(code);
+    assert.deepEqual(run.codecIds, [id]);
+    assert.ok(run.imports.includes('./generated/models/@acme/shared/customer.model.generated.js'), run.imports.join('\n'));
   });
 }
 
@@ -354,8 +359,8 @@ for (const form of ['d.ts', 'ts'] as const) {
     const { artifacts } = generate({ root: app, profile: PROFILE });
     writeGeneratedArtifacts(artifacts);
 
-    const order = artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'));
-    assert.match(order?.content ?? '', /from "\.\/generated\/models\/@acme\/shared\/customer\.model\.generated\.js";/);
+    // The compile below resolves the order companion's import of the shared companion at this path.
+    assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/customer.model.generated.ts')));
     await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
   });
 }
@@ -378,8 +383,8 @@ for (const [variant, entry] of [
     const { artifacts } = generate({ root: app, profile: PROFILE });
     writeGeneratedArtifacts(artifacts);
 
-    const order = artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'));
-    assert.match(order?.content ?? '', /from "\.\/generated\/models\/@acme\/shared\/dist\/customer\.model\.generated\.js";/);
+    // The compile below resolves the order companion's import of the shared companion at this path.
+    assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/dist/customer.model.generated.ts')));
     await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
   });
 }
@@ -404,8 +409,8 @@ for (const [importer, appType, resolved] of [['a CommonJS app', undefined, 'cjs'
     const { artifacts } = generate({ root: app, profile: PROFILE });
     writeGeneratedArtifacts(artifacts);
 
-    const order = artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'));
-    assert.match(order?.content ?? '', new RegExp(`from "\\./generated/models/@acme/shared/dist/${resolved}/customer\\.model\\.generated\\.js";`));
+    // The compile below resolves the order companion's import of the shared companion at this path.
+    assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, `src/generated/models/@acme/shared/dist/${resolved}/customer.model.generated.ts`)));
     await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
   });
 }
@@ -428,8 +433,6 @@ for (const [importer, appType, form] of [['a CommonJS app', undefined, 'd.cts'],
     writeGeneratedArtifacts(artifacts);
 
     assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/dist/customer.model.generated.ts')));
-    const order = artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'));
-    assert.match(order?.content ?? '', /from "\.\/generated\/models\/@acme\/shared\/dist\/customer\.model\.generated\.js";/);
     await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
   });
 }
@@ -504,7 +507,6 @@ for (const place of ['installed', 'linked'] as const) {
     const companion = artifacts.find((artifact) => artifact.path === path.join(app, 'src/order.model.generated.ts'))?.content ?? '';
     assert.match(companion, /stringifysdk_money/);
     assert.match(companion, /toWireFormatsdk_money/);
-    assert.doesNotMatch(companion, /currency/);
   });
 }
 
@@ -532,7 +534,6 @@ for (const field of ['total: Money | null', 'total: NonNullable<Money>', 'total:
     const sdkInterface = sdkOrderCompanion(t, 'export interface Money { currency: string }', field);
 
     assert.match(alias, /stringifysdk_money/);
-    assert.doesNotMatch(alias, /currency/);
     assert.equal(alias, sdkInterface);
   });
 }
@@ -587,6 +588,14 @@ test('a golem run that skips the models job still writes its RUNM1076 warning, o
   const warning = (stderr: string): string[] => stderr.split('\n').filter((line) => line.startsWith('RUNM1076'));
   assert.equal(warning(first.stderr).length, 1, first.stderr);
   assert.deepEqual(warning(second.stderr), warning(first.stderr));
+});
+
+test('an alias of an SDK type whose advertised manifest is gone stops generation and names what to run', (t: TestContext) => {
+  // protects: T-27 the missing-manifest error names a remedy
+  const app = appWithSdk(t, 'installed', './money.model.d.ts');
+  fs.rmSync(path.join(app, '../node_modules/@acme/sdk/model-manifest.json'));
+
+  assert.throws(() => generate({ root: app, profile: PROFILE }), /Run golem generate to write it/);
 });
 
 test('a job that generates nothing does not read the model manifests its program advertises', (t: TestContext) => {

@@ -6,7 +6,7 @@ import { jobTsconfigDiagnostics, modelsRootOf, resolveConfig, validateConfigInpu
 import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
-import type { FileChanges, Inventory } from './outputs.js';
+import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
 import { absoluteRecordPath, codeDigest, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, errorMessage, hasErrorCode, isInsideDirectory, isRecord, suffixPattern } from './generator-api.js';
@@ -66,6 +66,8 @@ export interface PipelineOptions {
   readonly ignoredDirectories?: readonly string[];
   /** Provider resources kept across runs; a run without one disposes its own. */
   readonly session?: GeneratorSessionResources;
+  /** The calls that write and delete outputs; internal, for tests that fault them. */
+  readonly files?: OutputFiles;
 }
 
 /** A retained resource may observe host-detected input changes. */
@@ -540,7 +542,7 @@ async function planPipeline(filename: string, run: PipelineRun): Promise<{ reado
   }
   const providers = await providersFor(config, jobCache ? planned : undefined);
   options.onOwned?.([config.inventoryFile, ...Object.keys(inventory.files).map(key => path.resolve(config.directory, key))]);
-  const retiredFiles = removeRetiredJobs(config, inventory, Boolean(options.check));
+  const retiredFiles = removeRetiredJobs(config, inventory, Boolean(options.check), options.files);
   return { plan: { config, inventory, generated, jobCache, records, current, providerCode: codeOf, affected: affectedJobs(config, options), retired: retiredFiles }, providers };
 }
 
@@ -641,7 +643,7 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
   options.onOwned?.(result.artifacts.map(artifact => artifact.path));
   let changes: FileChanges;
   try {
-    changes = applyJob(config, inventory, job, result.artifacts, Boolean(options.check));
+    changes = applyJob(config, inventory, job, result.artifacts, Boolean(options.check), options.files);
   } catch (error) {
     // The write loop may have changed files before it threw, so this failure is not one that left the job's output as it was.
     if (typeof error === 'object' && error !== null) failedWhileWriting.add(error);

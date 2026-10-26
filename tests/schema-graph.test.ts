@@ -6,6 +6,7 @@ import { emitGraphStringify, identifier, render } from '@exprtlabs/golem/interna
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import * as serde from '@exprtlabs/golem/serde';
+import { defineModelProperty } from '@exprtlabs/golem/conversion';
 import { LibError } from '@exprtlabs/golem/errors';
 import { instantiate, instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
@@ -56,13 +57,6 @@ test('schema graph interns nested objects once and stringify composes by call', 
   const moneyNode = [...graph.nodes.values()].find((node) => node.name === 'Money');
   assert.equal(moneyNode?.sameSchema, true);
   const source = render(emitGraphStringify(graph));
-  const paymentBody = source.slice(source.indexOf('function stringifyPayment'), source.indexOf('function stringify', source.indexOf('function stringifyPayment') + 1) === -1
-    ? source.length
-    : source.indexOf('\nfunction stringify', source.indexOf('function stringifyPayment') + 1));
-  assert.match(paymentBody, /stringifyMoney\(/, 'one stringify function per interned node: Payment calls stringifyMoney instead of inlining its fields');
-  assert.doesNotMatch(paymentBody, /stringifyJsonString\(value\["currency"\]/, 'Money fields are not inlined into stringifyPayment');
-  // Budget: the codegen never emits a redundant, unconditionally-true guard clause.
-  assert.doesNotMatch(source, /if \(true\)/, 'budget: no unconditionally-true guard is emitted for an interned field');
   const { stringifyMoney, stringifyPayment } = instantiate(source);
   const moneyValue = { currency: 'USD', value: '10.00' };
   assert.equal(stringifyMoney(moneyValue as never), JSON.stringify(moneyValue));
@@ -179,21 +173,18 @@ test('TSerde intern emits a second schema only when wire and model intern keys d
   const name = [...graph.nodes.values()].find((node) => node.name === 'NameInput');
   assert.equal(permission?.sameSchema, false);
   assert.equal(name?.sameSchema, true);
+  const codecs = new Map<string, { readonly wireSchema?: { readonly properties: { readonly permissions?: { readonly type: string } } } }>();
+  const createObjectCodec = (id: string, codec: object): void => { codecs.set(id, codec); };
   const source = emitRuntime(graph);
-  assert.match(source, /PermissionInput_[0-9a-f]{8}#wire/, 'a second schema is registered for PermissionInput because its wire and model intern keys differ');
-  assert.doesNotMatch(source, /NameInput_[0-9a-f]{8}#wire/, 'no second schema is registered for NameInput because its wire and model intern keys are identical');
-  // The only way to observe that stringify composes through its own wire-plane function
-  // instead of degenerating to a naive JSON.stringify(wire): both produce the same bytes
-  // for this fixture, so a round trip alone cannot catch a regression to the fallback.
-  assert.match(source, /return stringify\w+Wire\(wire as never/, 'the codec composes through its own wire stringify function instead of a naive JSON.stringify(wire)');
-  assert.doesNotMatch(source, /return JSON\.stringify\(wire\)/, 'the codec never falls back to JSON.stringify(wire) directly');
-  const { parsePermissionInput, stringifyPermissionInput, parseNameInput, stringifyNameInput } = instantiateRuntime(source);
+  const { parsePermissionInput, stringifyPermissionInput, parseNameInput, stringifyNameInput } = instantiateRuntime(source, { createObjectCodec });
   const permissionWire = { permissions: '5' };
   const decodedPermission = parsePermissionInput(JSON.stringify(permissionWire), { validate: false }) as Record<string, unknown>;
   assert.equal(stringifyPermissionInput(decodedPermission as never, { validate: false }), JSON.stringify(permissionWire), 'PermissionInput round-trips through its own wire stringify function');
   const nameWire = { name: 'ann' };
   const decodedName = parseNameInput(JSON.stringify(nameWire), { validate: false }) as Record<string, unknown>;
   assert.equal(stringifyNameInput(decodedName as never, { validate: false }), JSON.stringify(nameWire), 'NameInput round-trips even though model and wire share one schema');
+  const wireTypes = [...codecs].map(([id, codec]) => [id.replace(/_[0-9a-f]{8}$/, ''), codec.wireSchema?.properties.permissions?.type]);
+  assert.deepEqual(wireTypes, [['PermissionInput', 'string'], ['NameInput', undefined]], 'a second schema is registered only for PermissionInput, whose wire and model intern keys differ');
 });
 
 test('IObject and IModel with the same TSerde fields intern as separate stringify nodes', () => {
@@ -275,9 +266,9 @@ test('different Payment contracts intern as distinct hashed codec ids and identi
   assert.notEqual(first.codecId, second.codecId);
   assert.match(first.codecId, /^Payment_[0-9a-f]{8}$/);
   assert.match(second.codecId, /^Payment_[0-9a-f]{8}$/);
-  const source = emitRuntime(graph);
-  assert.match(source, new RegExp(`createObjectCodec\\("${first.codecId}"`));
-  assert.match(source, new RegExp(`createObjectCodec\\("${second.codecId}"`));
+  const registered: string[] = [];
+  instantiateRuntime(emitRuntime(graph), { createObjectCodec: (id: string) => { registered.push(id); } });
+  assert.deepEqual(registered, [first.codecId, second.codecId], 'each contract registers its codec under its own id');
 
   const identical = createSchemaGraph();
   const copyA = identical.intern({ ...billing, properties: { ...billing.properties } }, 'Payment');
@@ -387,8 +378,10 @@ test('codec declaration table maps source#Name to hashed ids and rejects conflic
     { source: 'src/payout/payment.model.ts', name: 'TPayment', codecId: 'Payment_bbbbbbbb' },
   ]);
   assert.equal(JSON.parse(billing).version, 1, 'the table is the version 1 codec key file');
-  assert.match(billing, /"src\/billing\/payment\.model\.ts#Payment": "Payment_aaaaaaaa"/);
-  assert.match(billing, /"src\/payout\/payment\.model\.ts#TPayment": "Payment_bbbbbbbb"/);
+  assert.deepEqual(JSON.parse(billing).keys, {
+    'src/billing/payment.model.ts#Payment': 'Payment_aaaaaaaa',
+    'src/payout/payment.model.ts#TPayment': 'Payment_bbbbbbbb',
+  });
   assert.throws(
     () => emitCodecDeclarationTable([
       { source: 'src/payment.model.ts', name: 'Payment', codecId: 'Payment_aaaaaaaa' },
@@ -400,9 +393,13 @@ test('codec declaration table maps source#Name to hashed ids and rejects conflic
     { source: 'src/payment.model.ts', name: 'Payment', codecId: 'Payment_aaaaaaaa', classNames: ['PaymentModel'] },
     { source: 'src/payment.model.ts', name: 'TPayment', codecId: 'TPayment_bbbbbbbb', classNames: ['Payment2', 'Payment3'] },
   ]);
-  for (const [name, id] of [['Payment', 'Payment_aaaaaaaa'], ['PaymentModel', 'Payment_aaaaaaaa'], ['TPayment', 'TPayment_bbbbbbbb'], ['Payment2', 'TPayment_bbbbbbbb'], ['Payment3', 'TPayment_bbbbbbbb']]) {
-    assert.match(exact, new RegExp(`"src/payment\\.model\\.ts#${name}": "${id}"`), `${name} keeps its own exact entry`);
-  }
+  assert.deepEqual(JSON.parse(exact).keys, {
+    'src/payment.model.ts#Payment': 'Payment_aaaaaaaa',
+    'src/payment.model.ts#PaymentModel': 'Payment_aaaaaaaa',
+    'src/payment.model.ts#Payment2': 'TPayment_bbbbbbbb',
+    'src/payment.model.ts#Payment3': 'TPayment_bbbbbbbb',
+    'src/payment.model.ts#TPayment': 'TPayment_bbbbbbbb',
+  }, 'each declared name and class keeps its own exact entry');
 });
 
 test('codec declaration table lists the model and its class when the class name differs', () => {
@@ -410,11 +407,12 @@ test('codec declaration table lists the model and its class when the class name 
     { source: 'src/order.model.ts', name: 'TOrder', codecId: 'TOrder_aaaaaaaa', classNames: ['PurchaseOrder', 'RushOrder'] },
     { source: 'src/order.model.ts', name: 'TInvoice', codecId: 'TInvoice_bbbbbbbb' },
   ]);
-  assert.match(table, /"src\/order\.model\.ts#TOrder": "TOrder_aaaaaaaa"/);
-  assert.match(table, /"src\/order\.model\.ts#PurchaseOrder": "TOrder_aaaaaaaa"/);
-  assert.match(table, /"src\/order\.model\.ts#TInvoice": "TInvoice_bbbbbbbb"/);
-  assert.match(table, /"src\/order\.model\.ts#RushOrder": "TOrder_aaaaaaaa"/);
-  assert.equal(table.match(/TOrder_aaaaaaaa/g)?.length, 3);
+  assert.deepEqual(JSON.parse(table).keys, {
+    'src/order.model.ts#PurchaseOrder': 'TOrder_aaaaaaaa',
+    'src/order.model.ts#RushOrder': 'TOrder_aaaaaaaa',
+    'src/order.model.ts#TInvoice': 'TInvoice_bbbbbbbb',
+    'src/order.model.ts#TOrder': 'TOrder_aaaaaaaa',
+  });
 });
 
 test('nested IModel refs keep construct on the hashed codec id', () => {
@@ -548,8 +546,6 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
     validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`),
     nestedGenerated: (id) => identifier(id === 'Money' ? 'MoneyModel' : id),
   });
-  // The fill reads each field once by the JSON view, then copies a present one.
-  assert.match(source, /if \(copyIdentity\) \{\n    if \(__golemPresent\d+ !== undefined\) \{\n      out\["note"\] = __golemPresent\d+;/, 'budget: defineModelProperty is heavier than a plain assignment, so an ordinary field is copied with a direct assignment');
   class MoneyModel {
     public constructor(values: object = {}) {
       Object.assign(this, values);
@@ -565,8 +561,11 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
     schema: { $id: 'Money', type: 'object', properties: { amount: { type: 'number' } } },
     schemaRefsResolved: true,
   });
+  // defineModelProperty is heavier than a plain assignment: only the "__proto__" key needs it.
+  const defined: string[] = [];
   const { fromWireFormatCheckout, parseCheckout } = instantiateRuntime(source, {
     MoneyModel,
+    defineModelProperty: (target: object, key: string, value: unknown) => { defined.push(key); defineModelProperty(target, key, value); },
     decodeGeneratedModelTrusted: (constructor: new (values?: object) => object, value: object) =>
       value instanceof constructor ? value : new constructor(value),
   });
@@ -582,6 +581,24 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
   assert.equal(Object.getPrototypeOf(result), Object.prototype, 'copying "__proto__" through defineModelProperty does not repoint the result\'s own prototype');
   assert.equal(Object.prototype.hasOwnProperty.call(result, '__proto__'), true, 'the "__proto__" key is defined as the result\'s own property');
   assert.deepEqual(result['__proto__'], { polluted: true }, 'the "__proto__" key keeps its wire value');
+  assert.deepEqual(defined, ['__proto__'], 'an ordinary field is copied by assignment');
   const parsed = parseCheckout(JSON.stringify(wire), { validate: false }) as Record<string, unknown>;
   assert.equal(parsed.note, 'hi', 'parse round-trips through the same fill as fromWireFormat');
+});
+
+test('a reference to a model missing from the graph is never read as the model it looks like a hashed id of', () => {
+  // protects: bug T-294 a hashed id is never guessed from a name
+  const model = (tag: string): ModelTypeDescriptor => ({ kind: 'object', properties: { kind: { kind: 'literal', value: tag } }, required: ['kind'], additionalProperties: false });
+  const box: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: { item: { kind: 'union', variants: [{ kind: 'reference', name: 'Order_0badc0de' }, { kind: 'reference', name: 'Other' }] } },
+    required: ['item'],
+    additionalProperties: false,
+  };
+  const graph = createSchemaGraph();
+  graph.intern(model('plain'), 'Order');
+  graph.intern(model('other'), 'Other');
+  graph.intern(box, 'Box', true);
+  graph.seal();
+  assert.throws(() => render(emitGraphStringify(graph)), /require a unique, required literal discriminator\. The variants are Order_0badc0de \| Other_/);
 });

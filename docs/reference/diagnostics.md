@@ -8,11 +8,11 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1001
 
-**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or list the files that declare it in `sources` of the controller job.
+**No exported controllers.** No exported class decorated with `@Controller` exists among the configured source files. **Fix:** Export at least one `@Controller` class, or list the files that declare it in `sources` of the controller job. When you call `generate` in code, pass them as its `sources` option.
 
 ### NEST1002
 
-**No controller sources.** No file that ends in one of the controller `suffixes` (default `.controller.ts`) exists under `src` of the job `root`, and the controller job has no `sources`. **Fix:** Add a controller file, or list the controller files in `sources` of the controller job.
+**No controller sources.** No file that ends in one of the controller `suffixes` (default `.controller.ts`) exists under `src` of the job `root`, and the controller job has no `sources`. **Fix:** Add a controller file, or list the controller files in `sources` of the controller job. When you call `generate` in code, pass them as its `sources` option.
 
 ### NEST1101
 
@@ -24,7 +24,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1103
 
-**Named body parameter.** `@Body('field')` names a single field instead of the whole request body. **Fix:** Use `@Body()` for the whole object and declare an explicit request-body contract.
+**Named body parameter.** A one-field `@Body('field')` has a type that is no `IModel`, `IObject` or array of them, is optional, or shares an operation with a whole `@Body()`. `NestModelInterceptor` converts only a model field, and it cannot convert a whole body and a field of it together. **Fix:** Give the field a required `IModel` or `IObject` type, or an array of one, or use `@Body()` for the whole object and declare an explicit request-body contract. Use one-field parameters only, or one whole parameter only.
 
 ### NEST1105
 
@@ -36,7 +36,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1107
 
-**Non-portable parameter.** A parameter's OpenAPI mapping isn't portable for the shape or version involved: flattening it would need a non-primitive property, a named parameter isn't primitive, a whole `@Query()` object collides with another query parameter, or a `querystring` parameter needs OpenAPI 3.2.0. **Fix:** Use a named primitive parameter or an explicit Swagger contract, keep a single whole-object query parameter, or generate against OpenAPI 3.2.0 for a `querystring` parameter.
+**Non-portable parameter.** A parameter's OpenAPI mapping isn't portable for the shape or version involved: flattening it would need a non-primitive property, a named parameter is neither primitive nor, for `@Query('name')`, an `IModel` or `IObject`, a one-field `@Query('name')` model is optional, is an array of models, or holds an array field, a whole `@Query()` object shares an operation with a one-field model or collides with another query parameter, or a `querystring` parameter needs OpenAPI 3.2.0. **Fix:** Use a named primitive parameter or an explicit Swagger contract, keep a single whole-object query parameter, or generate against OpenAPI 3.2.0 for a `querystring` parameter.
 
 ### NEST1108
 
@@ -204,7 +204,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1040
 
-**Unresolvable tag function.** `TValidation`'s predicate, or `TSerde`'s `serialize`/`deserialize` argument, names a declaration the checker can't resolve, or the resolved function isn't exported. **Fix:** Point the tag at an exported function.
+**Unresolvable tag function.** `TValidation`'s predicate, or `TSerde`'s `serialize`/`deserialize` argument, names a declaration the checker can't resolve, or the resolved function isn't exported. Two functions in one field can also share one function type, such as two consts typed by the same alias, so golem cannot tell which one the tag names. **Fix:** Point the tag at an exported function. When two functions share a type, declare one with `function` or give it its own type.
 
 ### RUNM1041
 
@@ -252,7 +252,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1052
 
-**Root IModel union.** `IModel`'s fields type is a union, such as `IModel<TEmail | TPhone>`. **Fix:** Put the union in a named field instead of at the model's root, or declare separate models.
+**IModel fields type is not an object type.** `IModel`'s or `IObject`'s fields type is a union, an array, a tuple, a `Date`, a function, a scalar, or an intersection with one of these, such as `IModel<TEmail | TPhone>` or `IModel<string[]>`. The message names what it found. **Fix:** Declare the fields in an object type. Put the union, array or scalar in a named field, or declare separate models.
 
 ### RUNM1053
 
@@ -268,7 +268,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1056
 
-**Unresolvable recursive type.** A type refers back to itself, and golem cannot give the cycle a name. A recursive type alias gets its name from the alias, so the cycle needs a type alias that you wrote. **Fix:** Declare the recursive shape as a named type alias, for example `type Tree = { children: Tree[] }`, or as a named model.
+**Unresolvable recursive type.** A type refers back to itself, and golem cannot give the cycle a name. A recursive type gets its name from its interface, class or type alias, so the cycle needs one of them. **Fix:** Declare the recursive shape as a named interface, class or type alias, for example `type Tree = { children: Tree[] }`, or as a named model.
 
 ### RUNM1057
 
@@ -276,11 +276,20 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1058
 
-**Unresolved contract type.** A field has TypeScript's internal error type, because golem could not resolve a declaration or an import. The message adds the first TypeScript error at that position, such as `(TS2304: Cannot find name 'strin'.)`, when there is one. Golem also reports this code when a `Pick` names a member that its source type does not declare. Golem also reports this code when a model is defined by a mapped type over its own class, such as `IModel<{ [K in keyof Customer]: Customer[K] }>` where `Customer` extends the generated base of that model: the base is generated from the model, so the type has no members. **Fix:** Fix the declaration, the import, or the key, then generate again. For a model over its own class, declare the fields in the model.
+**Unresolved contract type.** A field has TypeScript's internal error type, because golem could not resolve a declaration or an import. The message adds the first TypeScript error at that position, such as `(TS2304: Cannot find name 'strin'.)`, when there is one. Golem also reports this code when the fields type of an `IModel` or `IObject` cannot be resolved, such as `IModel<Missing>` with a broken import. Golem also reports this code when a `Pick` names a member that its source type does not declare. Golem also reports this code when a model is defined by a mapped type over its own class, such as `IModel<{ [K in keyof Customer]: Customer[K] }>` where `Customer` extends the generated base of that model: the base is generated from the model, so the type has no members. **Fix:** Fix the declaration, the import, or the key, then generate again. For a model over its own class, declare the fields in the model.
 
 ### RUNM1059
 
-**Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. The message lists both places. **Fix:** Declare a named type alias for one of the inline types, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field.
+**Generated type name clash.** Two different inline types derive the same generated name, such as `Omit<TMerchant, 'id'>` over two unrelated `TMerchant` types, or an inline type whose derived name is also the name of a model. The message lists both places. **Fix:** Declare a named type alias, for example `type TBillingMerchant = Omit<TMerchant, 'id'>`, and use it in the field.
+
+A recursive interface, class or type alias never gives this error. It takes its declared name. A copy with the same shape, such as one `Node` declared in two files, shares one schema and the plain name. A type of another shape gets a longer name when another type already holds the plain name. Golem takes the first free name of these:
+
+- the type arguments of a generic instance: `Page<number>` becomes `PageNumber`, and `Page<string[]>` becomes `PageStringArray`;
+- the file name: `Node` in `b.model.ts` becomes `NodeB`;
+- both together: `PageNumberB`;
+- a number: `NodeB2`.
+
+The type that keeps the plain name is the one read first: the model source files in path order, then the models of a file in declaration order.
 
 ### RUNM1060
 
@@ -322,13 +331,17 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Class imported from two modules.** A file holds `parse` or `fromWireFormat` calls whose type arguments are type-only imports of two classes with the same exported name from different modules. golem imports each of them by name for the call, and a name has one module. **Fix:** Import one of the classes as a value, or give the two classes different names.
 
+### RUNM1070
+
+**Symbol-keyed property.** A model, a nested object of a model, or the type of a controller parameter has a property whose key is a symbol, such as `[sym]: string`. JSON cannot carry a symbol key. The message names the model or the type and the key. **Fix:** Use a string key, or remove the property.
+
 ### RUNM1071
 
 **Nest parameter type has no codec.** A `@Body()` or `@Query()` parameter's type is a model (an `IModel` or `IObject` alias, or a class that extends a generated base class), but golem finds no single generated model for it. Either the model is new and `golem generate` has not run since, or two models in different files share the name and the type is not one of them. The message shows the decorator and the type, such as `@Body() type Payment has no unique codec id; run golem generate`. **Fix:** Run `golem generate`. If the error stays, type the parameter with the exported `IModel` or `IObject` alias or the model class, imported from the file that declares it.
 
 ### RUNM1072
 
-**Nest parameter disagrees with the generated operations.** `golem check` found a `@Body()` or `@Query()` parameter whose model is missing from `src/generated/operation-codecs.ts`, or that file does not exist. The controllers job writes that file from the routes it reads, so the parameter is not part of a route it generated. The message shows the decorator and the type. **Fix:** Run `golem generate`. If the parameter belongs to a method that is not a route, add its file to the controllers job's `sources`, or give the parameter a primitive type.
+**Nest parameter disagrees with the generated operations.** `golem check` found a `@Body()` or `@Query()` parameter whose model its own operation does not hold in `src/generated/operation-codecs.ts`, or that file does not exist. The controllers job writes that file from the routes it reads, so the parameter is not part of a route it generated. A model that another operation holds does not count. The message shows the decorator and the type. **Fix:** Run `golem generate`. If the parameter belongs to a method that is not a route, add its file to the controllers job's `sources`, or give the parameter a primitive type.
 
 ### RUNM1073
 
@@ -369,6 +382,10 @@ An error prints its code, location when known, and message, then stops generatio
 ### RUNM1082
 
 **Union that golem cannot convert.** A model field is a union that needs a conversion, such as a `Date` or a `TSerde` value, and the JSON value cannot tell which variant it is: for example two scalar variants where one converts, or a model reference that is no object. Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no literal tag has its own code, [RUNM1080](#runm1080). **Fix:** Give the field one variant that needs a conversion, make the variants objects with a required literal tag, or declare the whole value with one `TSerde` pair.
+
+### RUNM1083
+
+**Generic type that expands without end.** A generic interface, class or type alias holds itself with other type arguments on each level, such as `interface Box<T> { next?: Box<Box<T>> }`. Each level is a new type, so no finite schema describes it. The message names the generic type. Golem stops when the 101st open instance of one generic declaration starts. This bound is golem's own. Arrays, tuples and library types do not count. **Fix:** Pass the same type arguments back, such as `next?: Box<T>`, or end the nesting with a named type.
 
 ## Validators (VALIDATE)
 

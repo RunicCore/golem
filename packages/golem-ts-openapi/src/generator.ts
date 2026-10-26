@@ -16,7 +16,9 @@ import {
   programFilenames,
   retainedProgramSession,
   projectWatchInputs,
+  type ContractAnalysis,
   type ModelBoundary,
+  type ProgramInfo,
 } from '@exprtlabs/golem/internal/type-analysis';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import type {
@@ -39,9 +41,9 @@ import { buildDocument, serializeForOutput } from './document.js';
 import { analyzeControllers, discoverControllerSources } from './nest/routes.js';
 import type { DtoSchema } from './nest/json-schema-merge.js';
 import { applySwaggerPropertyMetadata } from './nest/swagger-overlay.js';
-import type { NestAnalysisContext, TypeReference } from './nest/types.js';
+import type { TypeReference } from './nest/types.js';
 import { emitOperationRegistry } from './operation-registry.js';
-import type { SchemaResolutionContext, SchemaResolver } from './operations.js';
+import type { SchemaResolutionContext } from './operations.js';
 
 export const apiVersion = 1 as const;
 
@@ -174,128 +176,80 @@ function collectComponentReferences(value: unknown, names: Set<string>, seen = n
   for (const item of Object.values(value)) collectComponentReferences(item, names, seen);
 }
 
-function reachableGeneratedSchemas(
-  document: Readonly<Record<string, unknown>>,
-  definitions: Readonly<Record<string, unknown>>,
-  schemaOptions: (sourceNode?: ts.Node) => object,
-): Readonly<Record<string, unknown>> {
-  const components = objectRecord(document.components);
-  const existingSchemas = objectRecord(components?.schemas) ?? {};
-  const pending = new Set<string>();
-  collectComponentReferences(document, pending);
-  const generated: Record<string, unknown> = {};
-  const visited = new Set<string>();
-  while (pending.size > 0) {
-    const name = pending.values().next().value as string;
-    pending.delete(name);
-    if (visited.has(name)) continue;
-    visited.add(name);
-    const existing = existingSchemas[name];
-    if (existing !== undefined) {
-      collectComponentReferences(existing, pending);
-      continue;
-    }
-    const descriptor = definitions[name];
-    if (descriptor === undefined) continue;
-    const schema = schemaForDescriptor(descriptor, schemaOptions());
-    generated[name] = schema;
-    collectComponentReferences(schema, pending);
-  }
-  return generated;
-}
+type NormalizedContext = ReturnType<typeof validateContext>;
+type Descriptor = Parameters<typeof schemaForDescriptor>[0];
 
 /**
- * Analyse exported Nest controllers and return the exact OpenAPI artifact.
- * This provider never writes files; the shared CLI owns output ownership and
- * the check/watch lifecycle.
+ * The `components.schemas` of one run: the classes and enums that Swagger metadata names as components, the schemas built from
+ * them, and the diagnostics the schema walk reports. Resolving one component can register another, so the pieces share this state.
  */
-export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApiResult> {
-  const normalized = validateContext(context);
-  const observed = new Set<string>();
-  const observe: InputObserver = (filename) => {
-    const canonical = canonicalFilename(filename);
-    observed.add(canonical);
-    normalized.onInput?.(canonical);
+class ComponentSchemas {
+  private readonly diagnostics: TsToOpenApiDiagnostic[] = [];
+  private readonly diagnosticKeys = new Set<string>();
+  /** Classes named by `getSchemaPath()`/`refs()` in Swagger metadata; each becomes a component schema. */
+  private readonly classes = new Map<string, TypeReference>();
+  /** Enums named by `@ApiProperty({ enum, enumName })`; each becomes one component schema. */
+  private readonly enums = new Map<string, Record<string, unknown>>();
+  private readonly resolved = new Map<string, DtoSchema>();
+  private readonly resolving = new Set<string>();
+
+  constructor(
+    private readonly checker: ts.TypeChecker,
+    private readonly contractAnalysis: ContractAnalysis,
+  ) {}
+
+  get reported(): readonly TsToOpenApiDiagnostic[] {
+    return this.diagnostics;
+  }
+
+  report = (entry: TsToOpenApiDiagnostic): void => {
+    const key = `${entry.code}:${entry.file ?? ''}:${entry.line ?? ''}:${entry.column ?? ''}:${entry.message}`;
+    if (this.diagnosticKeys.has(key)) return;
+    this.diagnosticKeys.add(key);
+    this.diagnostics.push(entry);
   };
-  const sources = normalized.sources ?? discoverControllerSources(normalized.root, observe, normalized.suffixes);
-  if (sources.length === 0) {
-    throw new TsToOpenApiError({
-      severity: GolemDiagnosticSeverity.Error,
-      code: TsToOpenApiDiagnosticCode.NoControllerSources,
-      message: `No controller source files found under ${path.join(normalized.root, 'src')}. Add a file ending in ${normalized.suffixes.join(' or ')}, or provide context.sources.`,
+
+  private schemaOf(descriptor: Descriptor, sourceNode?: ts.Node): DtoSchema {
+    return schemaForDescriptor(descriptor, {
+      definitions: this.contractAnalysis.definitions,
+      representation: 'wire' as const,
+      portable: true,
+      referencePrefix: '#/components/schemas/',
+      discriminatorMapping: true,
+      onNonportable: (message: string): void => this.report(diagnostic(
+        sourceNode?.getSourceFile(),
+        sourceNode,
+        TsToOpenApiDiagnosticCode.NonportableSchema,
+        message,
+        GolemDiagnosticSeverity.Warning,
+      )),
     });
   }
-  for (const source of sources) {
-    observe(source);
-    if (!existsSync(source) || !statSync(source).isFile()) throw new Error(`Controller source does not exist: ${source}`);
-  }
-  const session = retainedProgramSession(context.session, '@exprtlabs/golem-ts-openapi', normalized.root);
-  // With the models job known, a generated base class is a stub of its model, as in that job's program: the generated file on
-  // disk is missing on the first run and stale until the models job rewrites it, which runs after this job.
-  const programInfo = normalized.boundary
-    ? createModelStubProgram(sources, normalized.root, normalized.boundary, discoverModelSources(normalized.boundary.root, undefined, normalized.boundary.suffixes), observe, session)
-    : createProgram(sources, normalized.root, observe, session);
-  using program = programInfo.program;
-  const checker = program.getTypeChecker();
-  // The controllers job analyses the models its controllers use, so a syntax error in a model file stops here too.
-  assertNoSyntaxErrors(program, [...sources, ...includedModelSources(programFilenames(program), normalized.boundary?.suffixes ?? DEFAULT_MODEL_SUFFIXES)]);
-  const contractAnalysis = createContractAnalysis(program, {
-    root: normalized.root,
-    allowAny: normalized.profile.allowAny,
-    exact: normalized.exact,
-    // With the models job known, the manifests the program advertises decide which model files are SDK files, as they do for that job.
-    ...(normalized.boundary ? { boundary: normalized.boundary, manifests: loadModelManifests(normalized.root, programInfo, [], normalized.profile, observe) } : {}),
-  });
-  const schemaDiagnostics: TsToOpenApiDiagnostic[] = [];
-  const schemaDiagnosticKeys = new Set<string>();
-  const reportSchemaDiagnostic = (entry: TsToOpenApiDiagnostic): void => {
-    const key = `${entry.code}:${entry.file ?? ''}:${entry.line ?? ''}:${entry.column ?? ''}:${entry.message}`;
-    if (schemaDiagnosticKeys.has(key)) return;
-    schemaDiagnosticKeys.add(key);
-    schemaDiagnostics.push(entry);
-  };
-  const schemaOptions = (sourceNode?: ts.Node) => ({
-    definitions: contractAnalysis.definitions,
-    representation: 'wire' as const,
-    portable: true,
-    referencePrefix: '#/components/schemas/',
-    discriminatorMapping: true,
-    onNonportable: (message: string): void => reportSchemaDiagnostic(diagnostic(
-      sourceNode?.getSourceFile(),
-      sourceNode,
-      TsToOpenApiDiagnosticCode.NonportableSchema,
-      message,
-      GolemDiagnosticSeverity.Warning,
-    )),
-  });
-  const describeControllerType = (
-    type: ts.Type,
-    sourceNode: ts.Node,
-    typeNode?: ts.TypeNode,
-  ): ReturnType<typeof contractAnalysis.describe> => {
+
+  /** The descriptor of a type a controller names. */
+  private describe(type: ts.Type, sourceNode: ts.Node, typeNode?: ts.TypeNode): ReturnType<ContractAnalysis['describe']> {
     // The shared analyzer intentionally treats arrays as part of a model
     // conversion walk. A controller return such as `Payment[]` can point at
     // an authored model subclass whose generated companion is also present;
     // describing the item first keeps that named identity intact and avoids
     // re-entering the subclass's runtime fields as an anonymous object.
-    if (checker.isArrayType(type)) {
-      const itemType = checker.getTypeArguments(type as ts.TypeReference)[0] ?? checker.getAnyType();
-      const itemNode = typeNode && ts.isArrayTypeNode(typeNode) ? typeNode.elementType
-        : typeNode && ts.isTypeReferenceNode(typeNode) ? typeNode.typeArguments?.[0]
+    if (this.checker.isArrayType(type)) {
+      const itemType = this.checker.getTypeArguments(type as ts.TypeReference)[0] ?? this.checker.getAnyType();
+      // `readonly T[]` and `(T[])` write the same array as `T[]`; its item node keeps the model's name.
+      let written = typeNode;
+      while (written && (ts.isParenthesizedTypeNode(written) || (ts.isTypeOperatorNode(written) && written.operator === ts.SyntaxKind.ReadonlyKeyword))) written = written.type;
+      const itemNode = written && ts.isArrayTypeNode(written) ? written.elementType
+        : written && ts.isTypeReferenceNode(written) ? written.typeArguments?.[0]
           : undefined;
-      return { kind: 'array', item: describeControllerType(itemType, sourceNode, itemNode) };
+      return { kind: 'array', item: this.describe(itemType, sourceNode, itemNode) };
     }
-    const descriptor = contractAnalysis.describe(type, sourceNode, typeNode);
-    return descriptor;
-  };
-  // Classes named by `getSchemaPath()`/`refs()` in Swagger metadata; each becomes a component schema.
-  const schemaComponents = new Map<string, TypeReference>();
-  const componentSchemas = new Map<string, DtoSchema>();
-  const resolvingComponents = new Set<string>();
-  const registerSchemaComponent = (name: string, reference: TypeReference): void => {
-    const existing = schemaComponents.get(name);
+    return this.contractAnalysis.describe(type, sourceNode, typeNode);
+  }
+
+  registerSchemaComponent = (name: string, reference: TypeReference): void => {
+    const existing = this.classes.get(name);
     if (existing === undefined) {
-      schemaComponents.set(name, reference);
+      this.classes.set(name, reference);
       return;
     }
     if (existing.type === reference.type) return;
@@ -306,13 +260,12 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
       `getSchemaPath() names two different classes called ${name}; Nest would emit one components.schemas.${name} entry for both.`,
     ));
   };
-  // Enums named by `@ApiProperty({ enum, enumName })`; each becomes one component schema.
-  const enumComponents = new Map<string, Record<string, unknown>>();
-  const registerEnumComponent = (name: string, schema: Record<string, unknown>, node: ts.Node): void => {
-    const existing = enumComponents.get(name);
+
+  registerEnumComponent = (name: string, schema: Record<string, unknown>, node: ts.Node): void => {
+    const existing = this.enums.get(name);
     const clash = existing !== undefined
       ? JSON.stringify(existing) !== JSON.stringify(schema)
-      : schemaComponents.has(name) || contractAnalysis.definitions[name] !== undefined;
+      : this.classes.has(name) || this.contractAnalysis.definitions[name] !== undefined;
     if (clash) {
       throw new TsToOpenApiError(diagnostic(
         node.getSourceFile(),
@@ -321,153 +274,253 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
         `enumName ${name} names components.schemas.${name}, which already describes a different schema.`,
       ));
     }
-    enumComponents.set(name, schema);
+    this.enums.set(name, schema);
   };
-  const componentSchema = (name: string): DtoSchema | undefined => {
-    const enumSchema = enumComponents.get(name);
+
+  private classSchema(name: string): DtoSchema | undefined {
+    const enumSchema = this.enums.get(name);
     if (enumSchema !== undefined) return enumSchema;
-    const cached = componentSchemas.get(name);
+    const cached = this.resolved.get(name);
     if (cached !== undefined) return cached;
-    const reference = schemaComponents.get(name);
-    if (!reference || resolvingComponents.has(name)) return undefined;
-    resolvingComponents.add(name);
+    const reference = this.classes.get(name);
+    if (!reference || this.resolving.has(name)) return undefined;
+    this.resolving.add(name);
     try {
-      const schema = canonicalSchema({ reference, location: `components.schemas.${name}` });
-      componentSchemas.set(name, schema);
+      const schema = this.canonicalSchema({ reference, location: `components.schemas.${name}` });
+      this.resolved.set(name, schema);
       return schema;
     } finally {
-      resolvingComponents.delete(name);
+      this.resolving.delete(name);
     }
-  };
-  const resolveComponentReference = (reference: string): DtoSchema | undefined => {
+  }
+
+  resolveReference = (reference: string): DtoSchema | undefined => {
     const name = componentReferenceName(reference);
     if (name === undefined) return undefined;
-    const descriptor = contractAnalysis.definitions[name];
-    return descriptor === undefined ? componentSchema(name) : schemaForDescriptor(descriptor, schemaOptions());
+    const descriptor = this.contractAnalysis.definitions[name];
+    return descriptor === undefined ? this.classSchema(name) : this.schemaOf(descriptor);
   };
-  const canonicalSchema = (schemaContext: Pick<SchemaResolutionContext, 'reference' | 'location'>): DtoSchema => {
-    let descriptor = describeControllerType(
-      schemaContext.reference.type,
-      schemaContext.reference.sourceNode ?? schemaContext.reference.declaration ?? schemaContext.reference.sourceFile,
-      schemaContext.reference.node,
-    );
+
+  canonicalSchema = (schemaContext: Pick<SchemaResolutionContext, 'reference' | 'location'>): DtoSchema => {
+    const { reference } = schemaContext;
+    let descriptor = this.describe(reference.type, reference.sourceNode ?? reference.declaration ?? reference.sourceFile, reference.node);
     // OpenAPI 3.2 querystring carries the complete object contract in the
     // parameter content. Inline a named root so object-level constraints such
     // such as dependentRequired remain visible to the query serializer;
     // nested named models still use stable component refs.
     if (schemaContext.location === 'querystring' && descriptor.kind === 'reference') {
-      descriptor = contractAnalysis.definitions[descriptor.name] ?? descriptor;
+      descriptor = this.contractAnalysis.definitions[descriptor.name] ?? descriptor;
     }
-    const schema = schemaForDescriptor(descriptor, schemaOptions(schemaContext.reference.sourceNode));
+    const schema = this.schemaOf(descriptor, reference.sourceNode);
     return applySwaggerPropertyMetadata(
-      checker,
-      schemaContext.reference.type,
+      this.checker,
+      reference.type,
       schema,
-      schemaContext.reference.sourceNode ?? schemaContext.reference.declaration ?? schemaContext.reference.sourceFile,
+      reference.sourceNode ?? reference.declaration ?? reference.sourceFile,
       {
-        authoritative: schemaContext.reference.modelContractName !== undefined,
-        resolveReference: resolveComponentReference,
-        isAuthoritativeType: (type, node) => {
-          const described = contractAnalysis.describe(type, node ?? schemaContext.reference.sourceNode ?? schemaContext.reference.sourceFile);
-          return described.kind === 'reference'
-            && contractAnalysis.specFor(described.name) !== undefined;
-        },
+        authoritative: reference.modelContractName !== undefined,
+        resolveReference: this.resolveReference,
+        isAuthoritativeType: (type, node) => this.contractAnalysis.isModel(type, node ?? reference.sourceNode ?? reference.sourceFile),
         location: schemaContext.location,
-        onWarning: reportSchemaDiagnostic,
-        registerSchemaComponent,
-        registerEnumComponent,
+        onWarning: this.report,
+        registerSchemaComponent: this.registerSchemaComponent,
+        registerEnumComponent: this.registerEnumComponent,
       },
     );
   };
-  const canonicalSchemaResolver: SchemaResolver = schemaContext => canonicalSchema(schemaContext);
-  const analysisContext: NestAnalysisContext = {
+
+  /** A class named by getSchemaPath() may reuse an existing component only when it is that component's contract. */
+  private assertComponentIdentity(name: string, reference: TypeReference): void {
+    if (this.contractAnalysis.modelName(reference.type, reference.sourceNode ?? reference.sourceFile) === name) return;
+    throw new TsToOpenApiError(diagnostic(
+      reference.sourceFile,
+      reference.sourceNode,
+      TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata,
+      `getSchemaPath() names components.schemas.${name}, but that component is a different contract than ${this.checker.typeToString(reference.type)}. Rename the class or its @ApiSchema({ name }).`,
+    ));
+  }
+
+  /** The schemas of every registered class and enum. Resolving one registered class can register the classes its own metadata names. */
+  registeredSchemas(): Record<string, unknown> {
+    const registered: Record<string, unknown> = {};
+    for (let added = true; added;) {
+      added = false;
+      for (const [name, reference] of this.classes) {
+        if (name in registered) continue;
+        if (this.contractAnalysis.definitions[name] !== undefined) {
+          this.assertComponentIdentity(name, reference);
+          continue;
+        }
+        registered[name] = this.classSchema(name);
+        added = true;
+      }
+    }
+    for (const [name, schema] of this.enums) {
+      if (!(name in registered)) registered[name] = schema;
+    }
+    return registered;
+  }
+
+  /** The schemas of the model definitions that `document` reaches by `$ref` and does not already hold. */
+  reachableSchemas(document: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+    const components = objectRecord(document.components);
+    const existingSchemas = objectRecord(components?.schemas) ?? {};
+    const pending = new Set<string>();
+    collectComponentReferences(document, pending);
+    const generated: Record<string, unknown> = {};
+    const visited = new Set<string>();
+    while (pending.size > 0) {
+      const name = pending.values().next().value as string;
+      pending.delete(name);
+      if (visited.has(name)) continue;
+      visited.add(name);
+      const existing = existingSchemas[name];
+      if (existing !== undefined) {
+        collectComponentReferences(existing, pending);
+        continue;
+      }
+      const descriptor = this.contractAnalysis.definitions[name];
+      if (descriptor === undefined) continue;
+      const schema = this.schemaOf(descriptor);
+      generated[name] = schema;
+      collectComponentReferences(schema, pending);
+    }
+    return generated;
+  }
+}
+
+/** The document with `schemas` as its `components.schemas`; a document keeps its other components. */
+function withSchemas(
+  document: Readonly<Record<string, unknown>>,
+  schemas: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> {
+  return Object.keys(schemas).length === 0
+    ? document
+    : { ...document, components: { ...(objectRecord(document.components) ?? {}), schemas } };
+}
+
+/** The document with the registered schemas and the model schemas it reaches. */
+function completeDocument(builtDocument: Readonly<Record<string, unknown>>, schemas: ComponentSchemas): Readonly<Record<string, unknown>> {
+  const registered = schemas.registeredSchemas();
+  const generated = schemas.reachableSchemas(withSchemas(builtDocument, registered));
+  return withSchemas(builtDocument, { ...registered, ...generated });
+}
+
+/** Reports each file the run reads to the caller's observer, and keeps the set for the watch inputs. */
+function inputObserver(onInput: InputObserver | undefined): { readonly observed: Set<string>; readonly observe: InputObserver } {
+  const observed = new Set<string>();
+  return {
+    observed,
+    observe: (filename) => {
+      const canonical = canonicalFilename(filename);
+      observed.add(canonical);
+      onInput?.(canonical);
+    },
+  };
+}
+
+function controllerSources(normalized: NormalizedContext, observe: InputObserver): readonly string[] {
+  const sources = normalized.sources ?? discoverControllerSources(normalized.root, observe, normalized.suffixes);
+  if (sources.length === 0) {
+    throw new TsToOpenApiError({
+      severity: GolemDiagnosticSeverity.Error,
+      code: TsToOpenApiDiagnosticCode.NoControllerSources,
+      message: `No controller source files found under ${path.join(normalized.root, 'src')}. Add a file that ends in ${normalized.suffixes.join(' or ')}, or list the controller files in \`sources\` of the controller job. In code, pass them as the \`sources\` option of \`generate\`.`,
+    });
+  }
+  for (const source of sources) {
+    observe(source);
+    if (!existsSync(source) || !statSync(source).isFile()) throw new Error(`Controller source does not exist: ${source}`);
+  }
+  return sources;
+}
+
+function openProgram(
+  sources: readonly string[],
+  normalized: NormalizedContext,
+  observe: InputObserver,
+  session: ReturnType<typeof retainedProgramSession>,
+): ProgramInfo {
+  // With the models job known, a generated base class is a stub of its model, as in that job's program: the generated file on
+  // disk is missing on the first run and stale until the models job rewrites it, which runs after this job.
+  return normalized.boundary
+    ? createModelStubProgram(sources, normalized.root, normalized.boundary, discoverModelSources(normalized.boundary.root, undefined, normalized.boundary.suffixes), observe, session)
+    : createProgram(sources, normalized.root, observe, session);
+}
+
+function analyzeContracts(
+  programInfo: ProgramInfo,
+  sources: readonly string[],
+  normalized: NormalizedContext,
+  observe: InputObserver,
+): ContractAnalysis {
+  // The controllers job analyses the models its controllers use, so a syntax error in a model file stops here too.
+  assertNoSyntaxErrors(programInfo.program, [...sources, ...includedModelSources(programFilenames(programInfo.program), normalized.boundary?.suffixes ?? DEFAULT_MODEL_SUFFIXES)]);
+  return createContractAnalysis(programInfo.program, {
+    root: normalized.root,
+    allowAny: normalized.profile.allowAny,
+    exact: normalized.exact,
+    // With the models job known, the manifests the program advertises decide which model files are SDK files, as they do for that job.
+    ...(normalized.boundary ? { boundary: normalized.boundary, manifests: loadModelManifests(normalized.root, programInfo, [], normalized.profile, observe) } : {}),
+  });
+}
+
+/**
+ * Analyse exported Nest controllers and return the exact OpenAPI artifact.
+ * This provider never writes files; the shared CLI owns output ownership and
+ * the check/watch lifecycle.
+ */
+export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApiResult> {
+  const normalized = validateContext(context);
+  const { observed, observe } = inputObserver(normalized.onInput);
+  const sources = controllerSources(normalized, observe);
+  const session = retainedProgramSession(context.session, '@exprtlabs/golem-ts-openapi', normalized.root);
+  const programInfo = openProgram(sources, normalized, observe, session);
+  using program = programInfo.program;
+  const checker = program.getTypeChecker();
+  const contractAnalysis = analyzeContracts(programInfo, sources, normalized, observe);
+  const schemas = new ComponentSchemas(checker, contractAnalysis);
+  const analysis = await analyzeControllers({
     root: normalized.root,
     sources,
     suffixes: normalized.suffixes,
-    program: programInfo.program,
+    program,
     checker,
     openapiVersion: normalized.openapiVersion,
     onInput: observe,
     contractAnalysis,
-    registerSchemaComponent,
-    onWarning: reportSchemaDiagnostic,
-  };
-  const analysis = await analyzeControllers(analysisContext, {
+    registerSchemaComponent: schemas.registerSchemaComponent,
+    onWarning: schemas.report,
+  }, {
     globalPrefix: context.globalPrefix,
     uriVersioning: context.uriVersioning,
   });
   const builtDocument = await buildDocument({
     checker,
-    program: programInfo.program,
+    program,
     openapiVersion: normalized.openapiVersion,
-    schemaResolver: canonicalSchemaResolver,
-    resolveSchemaReference: resolveComponentReference,
+    schemaResolver: schemas.canonicalSchema,
+    resolveSchemaReference: schemas.resolveReference,
     info: context.info,
     ...(context.servers ? { servers: context.servers } : {}),
     ...(context.securitySchemes ? { securitySchemes: context.securitySchemes } : {}),
     ...(context.tags ? { tags: context.tags } : {}),
     routes: analysis.routes,
   });
-  const documentComponents = objectRecord(builtDocument.components);
-  // A class named by getSchemaPath() may reuse an existing component only when it is that component's contract.
-  const assertComponentIdentity = (name: string, reference: TypeReference): void => {
-    const described = contractAnalysis.describe(reference.type, reference.sourceNode ?? reference.sourceFile);
-    if (described.kind === 'reference' && described.name === name) return;
-    throw new TsToOpenApiError(diagnostic(
-      reference.sourceFile,
-      reference.sourceNode,
-      TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata,
-      `getSchemaPath() names components.schemas.${name}, but that component is a different contract than ${checker.typeToString(reference.type)}. Rename the class or its @ApiSchema({ name }).`,
-    ));
-  };
-  // Resolving one registered component can register the classes its own metadata names.
-  const registeredSchemas: Record<string, unknown> = {};
-  for (let added = true; added;) {
-    added = false;
-    for (const [name, reference] of schemaComponents) {
-      if (name in registeredSchemas) continue;
-      if (contractAnalysis.definitions[name] !== undefined) {
-        assertComponentIdentity(name, reference);
-        continue;
-      }
-      registeredSchemas[name] = componentSchema(name);
-      added = true;
-    }
-  }
-  const withComponents = (schemas: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => (
-    Object.keys(schemas).length === 0
-      ? builtDocument
-      : { ...builtDocument, components: { ...(documentComponents ?? {}), schemas } }
-  );
-  for (const [name, schema] of enumComponents) {
-    if (!(name in registeredSchemas)) registeredSchemas[name] = schema;
-  }
-  const registeredDocument = withComponents(registeredSchemas);
-  const generatedSchemas = reachableGeneratedSchemas(
-    registeredDocument,
-    contractAnalysis.definitions,
-    schemaOptions,
-  );
-  const finalDocument = withComponents({ ...registeredSchemas, ...generatedSchemas });
+  const finalDocument = completeDocument(builtDocument, schemas);
   assertResolvedLocalReferences(finalDocument);
-  const content = serializeForOutput(finalDocument, normalized.output);
-  const artifact: GolemArtifact = { path: normalized.output, content };
+  const artifact: GolemArtifact = { path: normalized.output, content: serializeForOutput(finalDocument, normalized.output) };
   const operationRegistry = emitOperationRegistry(
     analysis.routes,
     operationCodecRegistryPath(normalized.root),
   );
-  const watchInputs = new Set(projectWatchInputs(
-    programInfo,
-    programInfo.program,
-    sources,
-    [],
-  ));
+  const watchInputs = new Set(projectWatchInputs(programInfo, program, sources, []));
   for (const filename of observed) watchInputs.add(filename);
   return {
     apiVersion,
     artifacts: [artifact, operationRegistry],
     manifestPaths: [],
     watchInputs: [...watchInputs].sort(),
-    ...(schemaDiagnostics.length > 0 ? { diagnostics: schemaDiagnostics.map(asGolemDiagnostic) } : {}),
+    ...(schemas.reported.length > 0 ? { diagnostics: schemas.reported.map(asGolemDiagnostic) } : {}),
   };
 }

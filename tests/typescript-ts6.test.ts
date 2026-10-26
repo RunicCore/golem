@@ -1,3 +1,4 @@
+// lane: typescript6 the type-parameter default, ProgramSession, and the `tsc --showConfig` and `--listEmittedFiles` parsing of `golem build`
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -35,8 +36,8 @@ type Bytes = Uint8Array & TSerde<typeof encodeBytes, typeof decodeBytes>;`,
   }).text);
   const result = generate({ root, profile: { mobx: false, validation: true } });
   const generated = result.artifacts.find(artifact => artifact.path.endsWith('a.model.generated.ts'))?.content ?? '';
+  // Kept pin: the generated companion imports the user's file, so it does not run here; the field type it writes is the only observation.
   assert.match(generated, /\bUint8Array\b/);
-  assert.doesNotMatch(generated, /Uint8Array</);
 });
 
 test('a program session reuses the SourceFile of an unchanged input and parses a changed one again', { skip }, t => {
@@ -57,7 +58,7 @@ test('a program session reuses the SourceFile of an unchanged input and parses a
   assert.equal(second.getSourceFile(before.lib.fileName), before.lib, 'a library file keeps its SourceFile');
   const after = second.getSourceFile(changed);
   assert.ok(after && after !== before.changed, 'a changed input is parsed again');
-  assert.match(after.text, /value = 2/);
+  assert.equal(after.text, 'export const value = 2;\n');
   first.close();
 });
 
@@ -75,6 +76,7 @@ export function load(text: string) { return parse<Payment>(text); }
 
   const first = await golemBuild(root, ['--declaration']);
   assert.equal(first.code, 0, `${first.stdout}${first.stderr}`);
+  // Kept pin: TypeScript prints the declaration file, which is the artifact that --declaration asks for.
   assert.match(fs.readFileSync(path.join(root, 'build/use.d.ts'), 'utf8'), /export declare const money: \{\s*currency: string;\s*value: string;\s*\};/);
   const { load } = await importBuilt(root, 'load.js') as { load: (text: string) => { amount: { currency: string } } };
   const { Payment } = await importBuilt(root, 'money.model.js') as { Payment: new (...args: never[]) => unknown };

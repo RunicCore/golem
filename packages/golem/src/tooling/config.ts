@@ -59,7 +59,7 @@ function nonempty(value: unknown, label: string): string {
   return value;
 }
 
-/** The `suffixes` of a job: file-name endings that start with `.`, end in `.ts`, `.mts` or `.cts`, never repeat and never name a generated file. */
+/** The `suffixes` of a job: file-name endings that start with `.`, end in `.ts`, `.mts` or `.cts`, never repeat, never name a declaration file and never name a generated file. */
 function suffixes(value: unknown, label: string): readonly string[] | undefined {
   if (value === undefined) return undefined;
   if (!Array.isArray(value) || !value.length) throw new Error(`${label} must be a nonempty array.`);
@@ -68,6 +68,7 @@ function suffixes(value: unknown, label: string): readonly string[] | undefined 
     if (typeof entry !== 'string' || !entry.startsWith('.') || !/\.[cm]?ts$/.test(entry)) {
       throw new Error(`${label}[${index}] must be a string that starts with "." and ends in .ts, .mts or .cts.`);
     }
+    if (/\.d\.[cm]?ts$/.test(entry)) throw new Error(`${label}[${index}] must not end in .d.ts, .d.mts or .d.cts: a declaration file cannot be a source.`);
     if (/\.generated\.[cm]?ts$/.test(entry)) throw new Error(`${label}[${index}] must not end in .generated.ts, .generated.mts or .generated.cts: golem writes those files.`);
     if (seen.has(entry)) throw new Error(`${label} lists ${entry} twice.`);
     seen.add(entry);

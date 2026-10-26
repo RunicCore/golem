@@ -93,6 +93,9 @@ function tsconfigDirectory(configFile: string): string {
   }
 }
 
+/** The line a watch run ends with. */
+const printRun = (line: string): void => { process.stdout.write(`${line}\n`); };
+
 export async function main(argv = process.argv.slice(2)) {
   const options = parseArguments(argv);
   if (options.action === 'help') {
@@ -106,13 +109,17 @@ export async function main(argv = process.argv.slice(2)) {
     let signalled: number | undefined;
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { signalled = signal === 'SIGINT' ? 130 : 143; controller.abort(); });
     const { runBuild } = await import('./build.js');
-    const { exitCode } = await runBuild({ watch: options.watch, signal: controller.signal, ...(options.project === undefined ? {} : { project: options.project }), ...(options.config === undefined ? {} : { config: options.config }), ...(options.tscArguments === undefined ? {} : { tscArguments: options.tscArguments }) });
+    const onBuilt = ({ label, exitCode }: { readonly label: string; readonly exitCode: number }): void => {
+      if (exitCode === 0) process.stdout.write(`Built ${label}.\n`);
+      else if (options.watch) process.stdout.write('Build failed.\n');
+    };
+    const { exitCode } = await runBuild({ watch: options.watch, signal: controller.signal, onBuilt, ...(options.project === undefined ? {} : { project: options.project }), ...(options.config === undefined ? {} : { config: options.config }), ...(options.tscArguments === undefined ? {} : { tscArguments: options.tscArguments }) });
     process.exitCode = signalled ?? exitCode;
     return;
   }
   if (options.action === 'watch') {
     // With no folder to watch the watch ends by itself, and the exit code says it failed.
-    const stop = watchPipeline(options.config, undefined, undefined, undefined, () => { process.exitCode = 1; });
+    const stop = watchPipeline(options.config, undefined, { onUnwatchable: () => { process.exitCode = 1; }, onRun: printRun });
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { stop(); process.exitCode = signal === 'SIGINT' ? 130 : 143; });
     return;
   }
@@ -130,7 +137,7 @@ export async function main(argv = process.argv.slice(2)) {
   }
   // A watching command prints the line every run of its watch prints; the other commands name what they did.
   process.stdout.write(watchSession === undefined ? `${options.action === 'check' ? 'Checked' : 'Generated'} configured outputs.\n` : `${summarizeRun(state, Math.round(performance.now() - started))}\n`);
-  const stop = watchSession === undefined ? () => {} : watchPipeline(state, undefined, watchSession, firstRun?.baseline);
+  const stop = watchSession === undefined ? () => {} : watchPipeline(state, undefined, { session: watchSession, ...(firstRun === undefined ? {} : { firstBaseline: firstRun.baseline }), onRun: printRun });
   if (options.action === 'exec') {
     await new Promise<void>((resolve, reject) => {
       const child = spawn(options.command[0], options.command.slice(1), { stdio: 'inherit', shell: process.platform === 'win32' });

@@ -18,6 +18,33 @@ export function isOperationCodecRegistry(portablePath: string): boolean {
   return portablePath === OPERATION_CODEC_REGISTRY || portablePath.endsWith(`/${OPERATION_CODEC_REGISTRY}`);
 }
 
+/** The registry export that maps `<Controller>.<method>` to the model ids of that method's slots. */
+export const OPERATION_METHOD_KEYS_EXPORT = 'OPERATION_METHOD_KEYS';
+
+/** The model ids of one controller method in the registry: `input` and `query` hold a whole `@Body()` and `@Query()` model, `fields` a one-field `@Body('name')` or `@Query('name')` model. */
+export interface OperationMethodCodecs {
+  readonly input?: string;
+  readonly output?: string;
+  readonly query?: string;
+  readonly fields?: Readonly<Record<string, string>>;
+}
+
+/**
+ * The slot of a method's registry entry that holds the model of a `@Body()` or `@Query()` parameter: `input` or `query` for the whole
+ * model, `body:name` or `query:name` for a one-field parameter, which `fields` keys the same way.
+ */
+export function operationCodecSlot(location: 'body' | 'query', name?: string): string {
+  if (name !== undefined) return `${location}:${name}`;
+  return location === 'body' ? 'input' : 'query';
+}
+
+/** The model id a method's registry entry holds in the slot, if any. */
+export function operationSlotCodec(entry: OperationMethodCodecs, slot: string): string | undefined {
+  if (slot === 'input') return entry.input;
+  if (slot === 'query') return entry.query;
+  return entry.fields?.[slot];
+}
+
 /** The codec ids a models job writes under `.golem/`, beside the owned-output inventory: the table a rewrite reads. */
 export const CODEC_KEYS_FILE = 'codec-keys.json';
 

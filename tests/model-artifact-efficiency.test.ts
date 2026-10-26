@@ -9,6 +9,7 @@ import test, { type TestContext } from 'node:test';
 
 import { deduplicateTagSchemas, type TagSchema } from '#model/emit';
 import { generate } from '#model/generator';
+import { canonicalSchemaKey } from '@exprtlabs/golem/internal/schema';
 import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources, type ModelProject } from './model-project.js';
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
@@ -28,42 +29,23 @@ function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } 
   });
 }
 
-test('equivalent tag schemas share compilation while metadata and callback identities stay distinct', () => {
-  const schemas: TagSchema[] = [
-    { key: 'number:first', id: 'legacy:first', schema: { type: 'number' } },
-    { key: 'number:second', id: 'legacy:second', schema: { type: 'number' } },
-    {
-      key: 'callback:first',
-      id: 'legacy:callback:first',
-      schema: { exprtValidation: { schema: { type: 'number' }, bindings: ['callback:first'] } },
-    },
-    {
-      key: 'callback:second',
-      id: 'legacy:callback:second',
-      schema: { exprtValidation: { schema: { type: 'number' }, bindings: ['callback:second'] } },
-    },
-    {
-      key: 'reference:number',
-      id: 'legacy:reference:number',
-      schema: { $ref: '#/$defs/Value', $defs: { Value: { type: 'number' } } },
-    },
-    {
-      key: 'reference:string',
-      id: 'legacy:reference:string',
-      schema: { $ref: '#/$defs/Value', $defs: { Value: { type: 'string' } } },
-    },
+test('equivalent tag schemas share compilation while callback identities and reference definitions stay distinct', () => {
+  // protects: F-164 equal tag schemas compile once, and callback and reference variants keep their own validator
+  const tag = (schema: TagSchema['schema']): TagSchema => ({ key: canonicalSchemaKey(schema), schema });
+  const number = { type: 'number' };
+  const schemas = [
+    tag(number),
+    tag({ type: 'number' }),
+    tag({ exprtValidation: { schema: number, bindings: ['callback:first'] } }),
+    tag({ exprtValidation: { schema: number, bindings: ['callback:second'] } }),
+    tag({ $ref: '#/$defs/Value', $defs: { Value: { type: 'number' } } }),
+    tag({ $ref: '#/$defs/Value', $defs: { Value: { type: 'string' } } }),
   ];
   const compilations = deduplicateTagSchemas(schemas);
   assert.equal(compilations.length, 5);
-  const number = compilations.find((item) => item.keys.includes('number:first'));
-  assert.ok(number);
-  assert.deepEqual(number.keys, ['number:first', 'number:second']);
-  assert.equal(compilations.filter((item) => item.keys.some((key) => key.startsWith('callback:'))).length, 2);
-  assert.equal(compilations.filter((item) => item.keys.some((key) => key.startsWith('reference:'))).length, 2);
-  assert.throws(
-    () => deduplicateTagSchemas([...schemas, { key: 'number:first', id: 'conflict', schema: { type: 'string' } }]),
-    /Conflicting generated tag schema/,
-  );
+  assert.deepEqual(compilations.map((item) => item.id), [0, 1, 2, 3, 4].map((index) => `golem:model-tag:${index}`));
+  assert.equal(compilations.filter((item) => item.schema.exprtValidation !== undefined).length, 2);
+  assert.equal(compilations.filter((item) => item.schema.$ref !== undefined).length, 2);
 });
 
 test('equivalent MinLength tags of two companions compile to one validators module and each keeps its own bound', async (t) => {

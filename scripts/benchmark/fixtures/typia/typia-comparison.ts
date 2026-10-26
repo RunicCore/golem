@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { isObservableObject } from 'mobx';
 import typia from 'typia';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { codecIdOf } from './codec-id.js';
 import './typia-comparison.model.generated.js';
 import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFactories, TwinKind } from './compare-case.js';
 import { imodelTwins } from './typia-imodel.model.js';
@@ -233,7 +234,7 @@ export function createSubjects(twins: MobxTwins): readonly Subject[] {
     return {
       model: spec.name,
       twin,
-      codecId: factory?.codecId ?? spec.codecId,
+      codecId: factory?.codecId ?? codecIdOf(spec.codecId),
       valid,
       early: make(mutated(spec.model, spec.early)),
       late: make(mutated(spec.model, spec.late)),
@@ -272,7 +273,7 @@ export function agreements(subjects: readonly Subject[]): Agreement[] {
 }
 
 function check<T extends { id: number }>(spec: ModelSpec<T>): void {
-  const codec = requireObjectCodec<T>(spec.codecId);
+  const codec = requireObjectCodec<T>(codecIdOf(spec.codecId));
   const wire = wireOf(spec.model);
   const where = (what: string) => `${spec.name}: ${what}`;
   // Valid input: every validator accepts it and returns the same value.
@@ -311,7 +312,7 @@ function check<T extends { id: number }>(spec: ModelSpec<T>): void {
 
 function casesOf<T extends { id: number }>(spec: ModelSpec<T>): CompareCase[] {
   // Resolve the codec once, as the other fixtures do; timed calls do only the work.
-  const codec = requireObjectCodec<T>(spec.codecId);
+  const codec = requireObjectCodec<T>(codecIdOf(spec.codecId));
   const { model } = spec;
   const wire = wireOf(model);
   const text = JSON.stringify(wire);

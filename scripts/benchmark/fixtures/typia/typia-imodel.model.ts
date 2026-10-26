@@ -6,6 +6,7 @@ import {
   TTwinTupleBaseModel, TTwinUnionBaseModel,
   type TTwinArrayInit, type TTwinFlatInit, type TTwinNestedInit, type TTwinOptionalInit, type TTwinTupleInit, type TTwinUnionInit,
 } from './typia-imodel.model.generated.js';
+import { codecIdOf } from './codec-id.js';
 
 // The IModel twins of the typia comparison models (typia-comparison.model.ts): the same fields, declared as IModel, so
 // each validated value is a class instance. Nested models are classes, as the models guide declares them.
@@ -92,10 +93,10 @@ export class TwinOptional extends TTwinOptionalBaseModel {}
 
 // A value is built from plain initial data; the constructor makes each nested model a class instance.
 export const imodelTwins: TwinFactories = {
-  flat: { codecId: 'TTwinFlat', make(init: TTwinFlatInit) { return new TwinFlat(init); } },
-  nested: { codecId: 'TTwinNested', make(init: TTwinNestedInit) { return new TwinNested(init); } },
-  union: { codecId: 'TTwinUnion', make(init: TTwinUnionInit) { return new TwinUnion(init); } },
-  array: { codecId: 'TTwinArray', make(init: TTwinArrayInit) { return new TwinArray(init); } },
-  tuple: { codecId: 'TTwinTuple', make(init: TTwinTupleInit) { return new TwinTuple(init); } },
-  optional: { codecId: 'TTwinOptional', make(init: TTwinOptionalInit) { return new TwinOptional(init); } },
+  flat: { codecId: codecIdOf('TTwinFlat'), make(init: TTwinFlatInit) { return new TwinFlat(init); } },
+  nested: { codecId: codecIdOf('TTwinNested'), make(init: TTwinNestedInit) { return new TwinNested(init); } },
+  union: { codecId: codecIdOf('TTwinUnion'), make(init: TTwinUnionInit) { return new TwinUnion(init); } },
+  array: { codecId: codecIdOf('TTwinArray'), make(init: TTwinArrayInit) { return new TwinArray(init); } },
+  tuple: { codecId: codecIdOf('TTwinTuple'), make(init: TTwinTupleInit) { return new TwinTuple(init); } },
+  optional: { codecId: codecIdOf('TTwinOptional'), make(init: TTwinOptionalInit) { return new TwinOptional(init); } },
 };

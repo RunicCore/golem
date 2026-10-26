@@ -13,6 +13,7 @@ import { writeSdk } from '#openapi/generator';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
 import { writeGeneratedSdk } from './openapi/helpers.js';
 import { spyOnBuild } from './support/build-spy.js';
+import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { command } from './support/process.js';
 
 const fixture = (t: TestContext) => createModelProject(t, {
@@ -278,7 +279,7 @@ export class Team extends TTeamBaseModel {}
     const { TMemberBaseModel: Member, TStampBaseModel: Stamp } = await import(pathToFileURL(path.join(value.root, 'build/team.model.generated.js')).href);
     const { requireObjectCodec } = await import('@exprtlabs/golem/serde');
     const input = { lead: { name: 'Ada', joined: { time: 1 } }, members: [{ name: 'Lin', joined: { time: 2 } }] };
-    const codec = requireObjectCodec<InstanceType<typeof Team>>('TTeam');
+    const codec = requireObjectCodec<InstanceType<typeof Team>>(generatedCodecIdFromRoot(value.root, 'TTeam'));
     const entries = [
       { check: 'decodeCheckedInput', decode: () => codec.fromWireFormat(input, { construct: Team }) },
       { check: 'decodeDetachedInput', decode: () => codec.parse(JSON.stringify(input), { construct: Team }) },

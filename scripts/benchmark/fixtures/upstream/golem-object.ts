@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec, type ObjectCodec } from '@exprtlabs/golem/serde';
+import { codecIdOf } from './codec-id.js';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import './golem.object.model.generated.js';
 import { createGolemObjectFeatureFixtures } from './comparison-features-golem-object.js';
@@ -8,9 +9,9 @@ import { assertValidText, consumeValue, createFixtureInputs, invalidIpLength, in
 
 function codecId(input: FixtureInput): string {
   switch (input.name) {
-    case 'ObjectSimple': return 'TPlainObjectSimple';
-    case 'ObjectHierarchical-Constrained': return 'TPlainConstrainedObjectHierarchical';
-    case 'ArrayHierarchical-1000': return 'TPlainCollection';
+    case 'ObjectSimple': return codecIdOf('TPlainObjectSimple');
+    case 'ObjectHierarchical-Constrained': return codecIdOf('TPlainConstrainedObjectHierarchical');
+    case 'ArrayHierarchical-1000': return codecIdOf('TPlainCollection');
   }
 }
 

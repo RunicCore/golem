@@ -1,3 +1,4 @@
+// lane: typescript6 ProgramSession resolution updates in the bundler rewrite plugins
 // The Vite and esbuild plugins scan each TypeScript file with the project's own types and rewrite it in memory; the bundler then strips the types.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -15,6 +16,7 @@ import { golem as vitePlugin } from '#golem/vite';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
+import { runRewritten } from './support/rewritten-module.js';
 import { until } from './support/watch-wait.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
 
@@ -115,6 +117,11 @@ async function generatedProject(t: TestContext, name: string, options: { readonl
   write(root, 'src/tag.ts', TAG_USE);
   if (options.generate !== false) await runPipeline(path.join(root, 'golem.yaml'));
   return root;
+}
+
+/** The codec ids a rewritten module asks the runtime for when it runs, in call order. */
+function requestedCodecIds(code: string | undefined): readonly string[] {
+  return runRewritten(code).codecIds;
 }
 
 function lineOf(source: string, prefix: string): number {
@@ -244,6 +251,14 @@ for (const bundler of BUNDLERS) {
     assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
   });
 
+  test(`${bundler.name}: an empty config option is no setting, so the golem.yaml of the working directory is used`, async (t) => {
+    // protects: T-27 config '' resolved to the working directory and failed on a directory
+    const root = await generatedProject(t, `${bundler.name}-empty-config`);
+    const bundle = await build(bundler, t, root, 'src/main.ts', { config: '' });
+    const result = await command(root, process.execPath, [bundle]);
+    assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+  });
+
   test(`${bundler.name}: a file with a parse call is rewritten for every TypeScript extension the bundler strips`, async (t) => {
     const root = await generatedProject(t, `${bundler.name}-extensions`);
     const names = bundler.extensions.map((extension) => `call${extension}`);
@@ -304,17 +319,22 @@ test('the rewrite project of one golem.yaml is shared, and its session lives unt
   const second = await openRewriteProject({ cwd: root });
   first.close();
   // The second host still has a live session.
-  assert.match(second.rewrite(file, text)?.code ?? '', /__golem_requireObjectCodec\(/);
+  assert.deepEqual(requestedCodecIds(second.rewrite(file, text)?.code), Array(3).fill(codecId(root, 'TMoney')));
   second.close();
   assert.throws(() => second.rewrite(file, text), /closed/, 'the last close disposes the session');
   // Closing again is not a second release; a later host opens a new session.
   first.close();
   const third = await openRewriteProject({ cwd: root });
   t.after(() => third.close());
-  assert.match(third.rewrite(file, text)?.code ?? '', /__golem_requireObjectCodec\(/);
+  assert.deepEqual(requestedCodecIds(third.rewrite(file, text)?.code), Array(3).fill(codecId(root, 'TMoney')));
 });
 
-/** A Vite dev server with no file watching: closing a server before its watcher finished scanning leaves a handle open and the test process alive. */
+/**
+ * A Vite dev server with no file watching: closing a server before its watcher finished scanning leaves a handle open and the test process alive.
+ * The plugin's contract with Vite is a full-reload message on `server.ws` and a watch on its key table through `server.watcher`; both are documented
+ * members of ViteDevServer. A test reads the message by replacing `server.ws.send`: with the socket off there is no client to read it, and a real
+ * socket would add a port. Vite is pinned in the root package.json, so a change shows in these tests.
+ */
 async function serve(t: TestContext, root: string): Promise<ViteDevServer> {
   const server = await createServer({
     root,
@@ -334,7 +354,7 @@ test('vite serve: a transformed module is rewritten and its map names the module
   const server = await serve(t, root);
   const before = snapshotFilesystem(root);
   const result = await server.transformRequest('/src/main.ts');
-  assert.match(result?.code ?? '', /__golem_requireObjectCodec\(/);
+  assert.deepEqual(requestedCodecIds(result?.code), Array(3).fill(codecId(root, 'TMoney')));
   // The browser resolves a served map's `sources` against the module's URL.
   const map = result?.map;
   assert.ok(map && 'sources' in map);
@@ -345,9 +365,9 @@ test('vite serve: a transformed module is rewritten and its map names the module
 test('vite serve: a new file with its first parse call, added after the server started, is rewritten', async (t) => {
   const root = await generatedProject(t, 'vite-new-file');
   const server = await serve(t, root);
-  assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
+  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(codecId(root, 'TMoney')));
   write(root, 'src/later.ts', CALL);
-  assert.match((await server.transformRequest('/src/later.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
+  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/later.ts'))?.code), [codecId(root, 'TMoney')]);
 });
 
 test('vite serve: regenerating a model transforms again the module that used it, and no other', async (t) => {
@@ -361,7 +381,7 @@ test('vite serve: regenerating a model transforms again the module that used it,
   const add = server.watcher.add.bind(server.watcher);
   server.watcher.add = (paths) => { watched.push(...[paths].flat()); return add(paths); };
 
-  assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', new RegExp(`"${oldId}"`));
+  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(oldId));
   assert.ok((await server.transformRequest('/src/tag.ts'))?.code);
   assert.ok(watched.includes(keyTable(root)), `the key table is not watched: ${watched.join(', ')}`);
   assert.ok(moduleOf('src/main.ts')?.transformResult && moduleOf('src/tag.ts')?.transformResult, 'both modules are cached after their first transform');
@@ -376,9 +396,7 @@ test('vite serve: regenerating a model transforms again the module that used it,
 
   // Vite caches a transform only when it starts after the module's invalidation, to the millisecond.
   pastThisMillisecond();
-  const code = (await server.transformRequest('/src/main.ts'))?.code ?? '';
-  assert.match(code, new RegExp(`"${newId}"`));
-  assert.doesNotMatch(code, new RegExp(`"${oldId}"`));
+  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(newId));
 
   // The same files announced again change no rewrite: nothing is invalidated and no reload is sent.
   server.watcher.emit('change', keyTable(root));
@@ -395,13 +413,11 @@ test('vite serve: retargeting an alias that a module parses through transforms i
   const moneyId = codecId(root, 'TMoney');
   const tagId = codecId(root, 'TTag');
 
-  assert.match((await server.transformRequest('/src/use-alias.ts'))?.code ?? '', new RegExp(`"${moneyId}"`));
+  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/use-alias.ts'))?.code), [moneyId]);
   write(root, 'src/alias.ts', "export type { TTag as TAlias } from './money.model.js';\n");
   server.watcher.emit('change', path.join(root, 'src/alias.ts'));
   assert.equal(server.moduleGraph.getModuleById(path.join(root, 'src/use-alias.ts'))?.transformResult, null);
-  const code = (await server.transformRequest('/src/use-alias.ts'))?.code ?? '';
-  assert.match(code, new RegExp(`"${tagId}"`));
-  assert.doesNotMatch(code, new RegExp(`"${moneyId}"`));
+  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/use-alias.ts'))?.code), [tagId]);
 });
 
 test('vite serve: retargeting an alias or an export * that a module reaches through a barrel transforms it again with the new codec id', async (t) => {
@@ -412,22 +428,22 @@ test('vite serve: retargeting an alias or an export * that a module reaches thro
   write(root, 'src/barrel.ts', "export * from './alias.js';\n");
   write(root, 'src/use-barrel.ts', `import { parse } from '${SERDE}';\nimport type { TAlias } from './barrel.js';\n\nexport const value = parse<TAlias>('{}');\n`);
   const server = await serve(t, root);
-  const idsIn = async (): Promise<string> => (await server.transformRequest('/src/use-barrel.ts'))?.code ?? '';
+  const idsIn = async (): Promise<readonly string[]> => requestedCodecIds((await server.transformRequest('/src/use-barrel.ts'))?.code);
   const changed = (file: string): void => { server.watcher.emit('change', path.join(root, file)); };
   const moneyId = codecId(root, 'TMoney');
   const tagId = codecId(root, 'TTag');
 
-  assert.match(await idsIn(), new RegExp(`"${moneyId}"`));
+  assert.deepEqual(await idsIn(), [moneyId]);
   write(root, 'src/alias.ts', "export type { TTag as TAlias } from './money.model.js';\n");
   changed('src/alias.ts');
-  assert.match(await idsIn(), new RegExp(`"${tagId}"`));
+  assert.deepEqual(await idsIn(), [tagId]);
 
   write(root, 'src/alias.ts', "export type { TMoney as TAlias } from './money.model.js';\n");
   changed('src/alias.ts');
-  assert.match(await idsIn(), new RegExp(`"${moneyId}"`));
+  assert.deepEqual(await idsIn(), [moneyId]);
   write(root, 'src/barrel.ts', "export * from './other.js';\n");
   changed('src/barrel.ts');
-  assert.match(await idsIn(), new RegExp(`"${tagId}"`));
+  assert.deepEqual(await idsIn(), [tagId]);
 });
 
 test('vite serve: the file events of one run invalidate every module they change and send one full reload', async (t) => {
@@ -463,7 +479,7 @@ test('vite serve: a module whose model had no generated code transforms again on
   server.watcher.emit('add', keyTable(root));
   await until(() => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length === 1, 'the reload once golem generate has written the model');
   pastThisMillisecond();
-  assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
+  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(codecId(root, 'TMoney')));
 });
 
 test('vite serve: a generated model file outside the project root transforms again a module that failed, as one inside does', async (t) => {
@@ -475,7 +491,7 @@ test('vite serve: a generated model file outside the project root transforms aga
   server.watcher.emit('add', path.join(createFixtureProject(t, 'golem-bundler-outside-'), 'shared.model.generated.ts'));
   await until(() => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length === 1, 'the reload once the outside model file exists');
   pastThisMillisecond();
-  assert.match((await server.transformRequest('/src/main.ts'))?.code ?? '', /__golem_requireObjectCodec\(/);
+  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(codecId(root, 'TMoney')));
 });
 
 /** An esbuild context in watch mode that writes the bundle; `built(n)` waits for build n and gives its error texts. */
@@ -515,7 +531,8 @@ test('vite serve: a validating model file imports its validators, which resolve 
   const root = await generatedProject(t, 'vite-validating', { validation: true });
   const server = await serve(t, root);
   const companion = await server.transformRequest('/src/money.model.generated.ts');
-  assert.match(companion?.code ?? '', /from "\/src\/generated\/models\/models\.validators\.generated\.ts"/, 'the .js specifier resolves to the .ts file');
+  const imported = server.moduleGraph.getModuleById(path.join(root, 'src/money.model.generated.ts'))?.importedModules ?? new Set();
+  assert.ok(companion && [...imported].some((module) => module.file === path.join(root, 'src/generated/models/models.validators.generated.ts')), 'the .js specifier resolves to the .ts file');
   assert.ok(await server.transformRequest('/src/generated/models/models.validators.generated.ts'), 'the validators module is served from its .ts file');
 });
 

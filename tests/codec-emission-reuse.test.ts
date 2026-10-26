@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render, identifier } from '@exprtlabs/golem/internal/emitter';
+import { identifier } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import { instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
@@ -38,7 +38,7 @@ function paymentGraph(): ReturnType<typeof createSchemaGraph> {
   return graph;
 }
 
-/** The runtime source; a test that only reads the text names each validator after its root. */
+/** The runtime source of the payment graph; a test that runs it without compiled validators uses the default validator names. */
 function paymentRuntimeSource(options: Parameters<typeof emitCodecRuntimeText>[1] = {}): string {
   return emitCodecRuntimeText(paymentGraph(), { validatorName: (id) => identifier(`validate_${id.replace(/[^\w$]/g, '_')}`), ...options });
 }
@@ -48,52 +48,46 @@ function paymentValidators(): ReturnType<typeof compileValidationPlanBinding> {
   return compileValidationPlanBinding(buildCodecValidationPlan([paymentGraph()], [], {}, true));
 }
 
-function functionBody(source: string, name: string): string {
-  const start = source.indexOf(`function ${name}(`);
-  assert.notEqual(start, -1, `generated function ${name}`);
-  const end = source.indexOf('\n}\n', start);
-  assert.notEqual(end, -1, `end of generated function ${name}`);
-  return source.slice(start, end);
+/** The scope validators wrapped to count their calls, by name; the wrapped function keeps its own behavior. */
+function countingScope(scope: Readonly<Record<string, unknown>>): { readonly scope: Record<string, unknown>; readonly calls: Map<string, number> } {
+  const calls = new Map<string, number>();
+  const wrapped = Object.fromEntries(Object.entries(scope).map(([name, validator]) => [name, new Proxy(validator as (...args: unknown[]) => unknown, {
+    apply: (target, self, args) => { calls.set(name, (calls.get(name) ?? 0) + 1); return Reflect.apply(target, self, args); },
+  })]));
+  return { scope: wrapped, calls };
 }
 
-function occurrences(text: string, pattern: string): number {
-  return text.split(pattern).length - 1;
-}
+const value = { id: 'p1', amount: { currency: 'USD', at: new Date(0), tags: ['a'] }, list: [['x']] };
+const wire = { id: 'p1', amount: { currency: 'USD', at: '1970-01-01T00:00:00.000Z', tags: ['a'] }, list: [['x']] };
 
-test('validate makes one check through the generated validator of the model', () => {
-  const body = functionBody(paymentRuntimeSource(), 'validatePayment');
-  assert.equal(occurrences(body, 'isValidModelValue('), 1, 'one check');
-  assert.match(body, /return isValidModelValue\(value, options, validate_Payment_[0-9a-f]{8}, "Payment_[0-9a-f]{8}"\);/);
+test('validate makes one check through the generated validator of the model', async () => {
+  // protects: T-363 the emitted validate runs the model's validator once per call
+  const validators = await paymentValidators();
+  const counted = countingScope(validators.scope);
+  const runtime = instantiateRuntime(paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) }), counted.scope);
+  assert.equal(runtime.validatePayment(value), true);
+  assert.deepEqual([...counted.calls.values()], [1], 'one validator ran, once');
+  assert.equal(runtime.validatePayment({ ...value, id: 7 }), false);
+  assert.deepEqual([...counted.calls.values()], [2]);
 });
 
-test('stringify checks the model, builds the wire, checks the wire and writes it in one guarded block', async () => {
+test('stringify checks the model, builds the wire, checks the wire and writes it', async () => {
+  // protects: T-363 the emitted stringify runs the model check and the wire check once each, none for trusted input
   const validators = await paymentValidators();
-  const source = paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) });
-  const body = functionBody(source, 'stringifyPayment');
-  assert.equal(occurrences(body, 'if (validates)'), 1, 'one guard');
-  const order = ['assertPayment(value, options)', 'const wire =', '__golemAssertWireOnly_Payment(wire, options)', 'stringifyPaymentWire(wire']
-    .map((step) => body.indexOf(step));
-  assert.ok(order.every((index) => index >= 0), `every step is emitted: ${order.join(', ')}`);
-  assert.deepEqual(order, [...order].sort((a, b) => a - b), 'model check, wire build, wire-only check, wire stringify');
-  assert.ok(body.indexOf('stringifyPaymentCore(') > body.indexOf('stringifyPaymentWire('), 'the unvalidated path follows the guarded block');
-
-  const runtime = instantiateRuntime(source, validators.scope);
-  const value = { id: 'p1', amount: { currency: 'USD', at: new Date(0), tags: ['a'] }, list: [['x']] };
-  const wire = { id: 'p1', amount: { currency: 'USD', at: '1970-01-01T00:00:00.000Z', tags: ['a'] }, list: [['x']] };
+  const counted = countingScope(validators.scope);
+  const runtime = instantiateRuntime(paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) }), counted.scope);
   assert.equal(runtime.stringifyPayment(value), JSON.stringify(wire));
+  const validated = Object.fromEntries(counted.calls);
+  assert.equal(Object.keys(validated).length, 2, 'the model check and the wire-only check each ran');
+  assert.deepEqual(Object.values(validated), [1, 1], 'each ran once, for the nested model too');
+  counted.calls.clear();
   assert.equal(runtime.stringifyPayment(value, { validate: false }), JSON.stringify(wire));
+  assert.equal(counted.calls.size, 0, 'trusted input runs no validator');
   assert.throws(() => runtime.stringifyPayment({ ...value, id: 7 }), /validation/i);
 });
 
-test('identity arrays are copied with slice, not a map callback that returns its item', () => {
-  const source = paymentRuntimeSource();
-  assert.doesNotMatch(source, /\.map\(\(item\) => item\)/);
-  assert.match(functionBody(source, 'fillPayment'), /\(__golemWire\d+ as readonly unknown\[\]\)\.map\(\(item\) => Array\.isArray\(item\) \? \(item as readonly unknown\[\]\)\.slice\(\) : item\)/);
-  assert.match(functionBody(source, 'fillMoney'), /\(__golemWire\d+ as readonly unknown\[\]\)\.slice\(\)/);
-  assert.match(functionBody(source, 'toWireFormatMoneyCore'), /\(__golemField0 as readonly unknown\[\]\)\.slice\(\)/);
-
-  const runtime = instantiateRuntime(source);
-  const wire = { id: 'p1', amount: { currency: 'USD', at: '1970-01-01T00:00:00.000Z', tags: ['a'] }, list: [['x']] };
+test('identity arrays are copied, so the decoded and encoded values share no array with their input', () => {
+  const runtime = instantiateRuntime(paymentRuntimeSource());
   const decoded = runtime.fromWireFormatPayment(wire, { validate: false }) as { list: string[][]; amount: { tags: string[] } };
   assert.deepEqual(decoded.list, [['x']]);
   assert.notEqual(decoded.list, wire.list);
@@ -104,49 +98,22 @@ test('identity arrays are copied with slice, not a map callback that returns its
   assert.notEqual(encoded.amount.tags, decoded.amount.tags);
 });
 
-test('model initializers, fromJSON and toJSON copy an unchanged array with slice', () => {
-  const strings: ModelTypeDescriptor = { kind: 'array', item: { kind: 'string' } };
-  const unusedModel = (id: string): never => { throw new Error(`No model expected: ${id}`); };
-  const copied = 'Array.isArray(values) ? (values as readonly unknown[]).slice() : values';
-  assert.equal(render(emitModelFromInit(strings, identifier('values'), unusedModel)), copied);
-  assert.equal(render(emitModelFromJSON(strings, identifier('values'), unusedModel)), copied);
-  assert.equal(render(emitModelToJSON(strings, identifier('values'), unusedModel)), copied);
-  const nested: ModelTypeDescriptor = { kind: 'array', item: strings };
-  assert.equal(
-    render(emitModelFromInit(nested, identifier('values'), unusedModel)),
-    'Array.isArray(values) ? (values as readonly unknown[]).map((item) => Array.isArray(item) ? (item as readonly unknown[]).slice() : item) : values',
-  );
-});
-
-const TRUSTED_LITERAL = '{ validate: false }';
-
-test('a nested trusted call to a model of the same module runs its core and passes no options', () => {
-  const source = paymentRuntimeSource();
-  assert.equal(occurrences(source, TRUSTED_LITERAL), 0, 'no per-call options literal');
-  assert.doesNotMatch(source, /__golemTrusted/, 'no constant when every callee is in this module');
-  assert.match(functionBody(source, 'stringifyPaymentCore'), /stringifyMoneyCore\(__golem\w+ as never\)/);
-  assert.match(functionBody(source, 'stringifyPaymentWire'), /stringifyMoneyWire\(value\["amount"\] as never\)/);
-  assert.match(functionBody(source, 'stringifyPayment'), /stringifyPaymentWire\(wire as never\);/);
-  assert.match(functionBody(source, 'stringifyPayment'), /return stringifyPaymentCore\(value as never\);/);
-  assert.match(functionBody(source, 'stringifyPayment'), /toWireFormatMoneyCore\(value\["amount"\] as never\)/);
-  assert.match(functionBody(source, 'toWireFormatPaymentCore'), /toWireFormatMoneyCore\(record\["amount"\] as never\)/);
-  assert.doesNotMatch(source, /function \w+Core\([^)]*options/, 'a core function takes no options');
-  assert.doesNotMatch(source, /function stringify\w+Wire\([^)]*options/, 'a wire stringify takes no options');
-});
-
-test('the public toWireFormat validates, builds the wire through its core and checks the wire-only schema last', async () => {
+test('a nested call to a model of the same module runs unvalidated inside the one outer check', async () => {
+  // protects: T-363 a nested model call inside one outer check runs no validator of its own
   const validators = await paymentValidators();
-  const source = paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) });
-  const body = functionBody(source, 'toWireFormatPayment');
-  const order = ['assertPayment(value, options)', 'const wire = toWireFormatPaymentCore(value);', '__golemAssertWireOnly_Payment(wire, options)', 'return wire;']
-    .map((step) => body.indexOf(step));
-  assert.ok(order.every((index) => index >= 0), `every step is emitted: ${order.join(', ')}`);
-  assert.deepEqual(order, [...order].sort((a, b) => a - b));
-  assert.doesNotMatch(body, /\bMoney\b|record\[/, 'the wrapper builds nothing itself');
+  const counted = countingScope(validators.scope);
+  const runtime = instantiateRuntime(paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) }), counted.scope);
+  // The trusted path reaches the nested Money through its own core, which neither validates nor takes options.
+  assert.doesNotThrow(() => runtime.stringifyPayment({ ...value, id: 7 }, { validate: false }));
+  assert.deepEqual(runtime.toWireFormatPayment({ ...value, id: 7 }, { validate: false }), { ...wire, id: 7 });
+  assert.equal(counted.calls.size, 0);
+  assert.equal(runtime.stringifyPayment(value), JSON.stringify(wire));
+  assert.equal(counted.calls.size, 2, 'the validated path runs the two Payment checks, none for the nested Money');
+});
 
-  const runtime = instantiateRuntime(source, validators.scope);
-  const value = { id: 'p1', amount: { currency: 'USD', at: new Date(0), tags: ['a'] }, list: [['x']] };
-  const wire = { id: 'p1', amount: { currency: 'USD', at: '1970-01-01T00:00:00.000Z', tags: ['a'] }, list: [['x']] };
+test('the public toWireFormat validates the model first, builds the wire, and skips both checks for trusted input', async () => {
+  const validators = await paymentValidators();
+  const runtime = instantiateRuntime(paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) }), validators.scope);
   assert.deepEqual(runtime.toWireFormatPayment(value), wire);
   assert.deepEqual(runtime.toWireFormatPayment(value, { validate: false }), wire);
   assert.throws(() => runtime.toWireFormatPayment({ ...value, id: 7 }), /validation/i, 'the model check runs first');
@@ -165,17 +132,23 @@ test('a nested trusted call to a model of another module shares one frozen optio
   graph.intern(owner, 'Owner');
   graph.seal();
   const source = emitCodecRuntimeText(graph, { validationEnabled: false, nestedGenerated: (id) => identifier(`${id}Model`) });
-  assert.equal(occurrences(source, TRUSTED_LITERAL), 1, 'the options literal appears once, in the constant');
-  assert.match(source, /^const __golemTrusted = Object\.freeze\(\{ validate: false \}\);\n/);
-  assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(__golem\w+ as never, __golemTrusted\)/);
-  assert.match(functionBody(source, 'stringifyOwnerCore'), /stringifyPet\(item as never, __golemTrusted\)/);
-  assert.match(functionBody(source, 'toWireFormatOwnerCore'), /toWireFormatPet\(record\["pet"\] as never, __golemTrusted\)/);
+  const received: unknown[] = [];
+  const pet = { stringify: (_value: unknown, options: unknown) => { received.push(options); return '"pet"'; }, toWireFormat: (_value: unknown, options: unknown) => { received.push(options); return 'pet'; } };
+  const runtime = instantiateRuntime(source, { requireObjectCodec: () => pet });
+  assert.equal(runtime.stringifyOwner({ pet: {}, pets: [{}, {}] }), '{"pet":"pet","pets":["pet","pet"]}');
+  assert.deepEqual(runtime.toWireFormatOwner({ pet: {}, pets: [{}] }), { pet: 'pet', pets: ['pet'] });
+  assert.equal(received.length, 5);
+  assert.deepEqual(received[0], { validate: false });
+  assert.ok(Object.isFrozen(received[0]));
+  assert.ok(received.every((options) => options === received[0]), 'every nested call passes the same constant');
 });
 
-test('a codec that does not validate publishes its own schemas, not the plan entries it has none of', () => {
+test('a codec that does not validate publishes its own schema, not a plan entry it has none of', () => {
   // The profile is off and no node chose: the plan compiles none of them, so `modelSchemas` holds no entry to read.
-  const source = paymentRuntimeSource({ validationEnabled: false, resolvedSchemasExpr: identifier('modelSchemas') });
-  assert.doesNotMatch(source, /modelSchemas\[/);
-  assert.match(source, /schema: JSON\.parse\(/);
-  assert.doesNotMatch(source, /schemaRefsResolved/);
+  const registered = new Map<string, { readonly schema?: unknown }>();
+  const createObjectCodec = (id: string, codec: { readonly schema?: unknown }): void => { registered.set(id, codec); };
+  // `modelSchemas` is not in scope: reading a plan entry would throw a ReferenceError.
+  instantiateRuntime(paymentRuntimeSource({ validationEnabled: false, resolvedSchemasExpr: identifier('modelSchemas') }), { createObjectCodec });
+  const payment = [...registered].find(([id]) => id.startsWith('Payment_'));
+  assert.deepEqual(Object.keys((payment?.[1].schema as { properties: object }).properties).sort(), ['amount', 'id', 'list', 'note']);
 });

@@ -1,3 +1,4 @@
+// lane: typescript6 diagnostics, and ProgramSession (the in-process program and its incremental updates)
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -220,7 +221,7 @@ test('a disk edit reported through inputsChanged gives a new SourceFile with the
   using second = session.openProgram({ root, sources: [main] });
   const after = second.getSourceFile(dependency);
   assert.ok(after && after !== before);
-  assert.match(after.text, /value = 22/);
+  assert.equal(after.text, 'export const value = 22;\n');
 });
 
 test('a disk edit that changes a file signature gives a new SourceFile without inputsChanged', t => {
@@ -234,7 +235,29 @@ test('a disk edit that changes a file signature gives a new SourceFile without i
   using second = session.openProgram({ root, sources: [main] });
   const after = second.getSourceFile(dependency);
   assert.ok(after && after !== before);
-  assert.match(after.text, /value = 22/);
+  assert.equal(after.text, 'export const value = 22;\n');
+});
+
+test('a configuration with errors fails to parse with the compiler messages, and one that lists no file does not', t => {
+  // protects: E-34 the errors of a parsed configuration are reported, not dropped
+  const root = createFixtureProject(t, 'golem-config-errors-');
+  fs.writeFileSync(path.join(root, 'a.ts'), 'export const a = 1;\n');
+  fs.writeFileSync(path.join(root, 'tsconfig.bad.json'), JSON.stringify({ compilerOptions: { nope: 1 }, include: ['a.ts'] }));
+  fs.writeFileSync(path.join(root, 'tsconfig.empty.json'), JSON.stringify({ include: [] }));
+  using session = new ts.ProgramSession({ cwd: root });
+  assert.throws(() => session.parseConfigFile(path.join(root, 'tsconfig.bad.json')), (error: unknown) => error instanceof Error
+    && error.message === `The TypeScript configuration ${path.join(root, 'tsconfig.bad.json')} has errors:\n  TS5023: Unknown compiler option 'nope'.`);
+  assert.deepEqual(session.parseConfigFile(path.join(root, 'tsconfig.empty.json')).fileNames, []);
+});
+
+test('a path whose state cannot be read fails the program with the file-system error; a missing path does not', t => {
+  // protects: E-34 a failed stat is reported, not taken for a missing file
+  const { root, main, dependency } = sessionOnDiskDependency(t);
+  fs.rmSync(dependency);
+  using session = new ts.ProgramSession({ cwd: root });
+  session.openProgram({ root, sources: [main] }).close();
+  fs.symlinkSync('dependency.ts', dependency);
+  assert.throws(() => session.openProgram({ root, sources: [main] }), /ELOOP/);
 });
 
 test('a source that exists only as an overlay is part of the program and its errors are reported', t => {
@@ -327,10 +350,10 @@ test('a program sees only its own overlays while another program is open', t => 
   fs.writeFileSync(x, 'export const x: string = "on disk";\n');
   using session = new ts.ProgramSession({ cwd: root });
   using emit = session.openProgram({ root, sources: [x], overlays: new Map([[x, 'export const x: number = "rewritten";\n']]) });
-  assert.match(emit.getSourceFile(x)?.text ?? '', /rewritten/);
+  assert.equal(emit.getSourceFile(x)?.text, 'export const x: number = "rewritten";\n');
   using check = session.openProgram({ root, sources: [x] });
-  assert.match(check.getSourceFile(x)?.text ?? '', /on disk/, 'the program without overlays reads the file on disk');
-  assert.match(emit.getSourceFile(x)?.text ?? '', /rewritten/, 'the held program keeps its overlay');
+  assert.equal(check.getSourceFile(x)?.text, 'export const x: string = "on disk";\n', 'the program without overlays reads the file on disk');
+  assert.equal(emit.getSourceFile(x)?.text, 'export const x: number = "rewritten";\n', 'the held program keeps its overlay');
   assert.deepEqual(ts.getPreEmitDiagnostics(check).map(diagnostic => diagnostic.text), []);
   assert.match(ts.getPreEmitDiagnostics(emit).map(diagnostic => diagnostic.text).join('\n'), /'string' is not assignable to type 'number'/, 'the held program still type-checks its overlay');
 });

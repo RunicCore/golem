@@ -18,7 +18,7 @@ import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot, selectedTypeScript } from './typescript-selection.js';
-import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, RunBaseline } from './input-watcher.js';
+import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
 import type { InputSnapshot } from './input-watcher.js';
 
 interface BuildOptions {
@@ -36,6 +36,12 @@ interface BuildOptions {
   readonly tscArguments?: readonly string[];
   /** Called after the generate step of each build with the ids of the jobs that executed; a job its record showed to be current is not among them. */
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
+  /**
+   * Called once when each build has finished, after a watching build has recorded what it read: `exitCode` is the build's own, 1 for a build that threw.
+   * The build prints nothing about its end; the caller says it. An exception from this function is not caught here: a build without `watch` rejects
+   * with it, and a build of a watch, the first included, is reported through the watch's own error path while the watch goes on.
+   */
+  readonly onBuilt?: (run: { readonly label: string; readonly exitCode: number }) => void;
 }
 
 export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
@@ -410,6 +416,7 @@ function withNodeSpecifiers(root: string, sources: readonly ts.SourceFile[], che
     rewrites.set(key, {
       edits: [...scan?.edits ?? [], ...edits].sort((left, right) => left.start - right.start || left.end - right.end),
       imports: (scan?.imports ?? []).map((added) => ({ ...added, from: specifiers.get(added.from) ?? added.from })),
+      importsAt: scan?.importsAt ?? 0,
     });
   }
   return rewrites;
@@ -455,7 +462,7 @@ function rewriteDeclarations(session: ts.ProgramSession, project: Project, sourc
     const declaration = program.getSourceFile(module);
     if (declaration === undefined) throw new Error(`golem build could not read the declaration ${file} to change its import paths.`);
     const { edits } = nodeSpecifierEdits(declaration, checker, options);
-    if (edits.length > 0) atomicWrite(file, applyRewrites(text, { edits, imports: [] }, file).code);
+    if (edits.length > 0) atomicWrite(file, applyRewrites(text, { edits, imports: [], importsAt: 0 }, file).code);
   }
 }
 
@@ -610,7 +617,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const ignoredDirectories = [stringOption(configured.options, 'outDir'), stringOption(configured.options, 'declarationDir')].filter((directory) => directory !== undefined);
   const generated = await runPipeline(golemConfig.configFile, { session: run.generation, onInput: observe, ignoredDirectories, ...(previous === undefined || changed === undefined ? {} : { previous, changedInputs: changed }) });
   for (const output of generated.owned) run.owned.add(output);
-  // The compiler session knows only the changes it was told about.
+  // The session compares file signatures, and a write within the timestamp resolution of the file system leaves a signature as it was: the files this step wrote are told to it.
   if (generated.ran.size > 0) session.inputsChanged(generated.owned);
   run.pipeline = generated;
   run.onGenerated?.(generated.ran);
@@ -696,7 +703,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   const outputs = new Set<string>();
   const outputsPresent = (): boolean => [...outputs].every((directory) => fs.existsSync(directory));
   // Whether the directories the build writes existed when it ended: one that vanishes afterwards, such as a deleted outDir, is rebuilt once.
-  // Taken before "Built" is printed, so a deletion that follows that line is seen.
+  // Taken before the build is announced, so a deletion that follows the announcement is seen.
   let wrote = true;
   const state: BuildRun = {
     project: options.project,
@@ -714,14 +721,16 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     wrote = exitCode === 0 && outputsPresent();
     // The watch baseline is recorded before the build is announced: whoever reacts to the announcement may edit a source at once.
     beforeAnnouncing();
-    if (exitCode === 0) process.stdout.write(`Built ${label}.\n`);
-    else if (options.watch) process.stdout.write('Build failed.\n');
     return exitCode;
   };
-  if (!options.watch) return { exitCode: await run() };
+  if (!options.watch) {
+    const exitCode = await run();
+    options.onBuilt?.({ label, exitCode });
+    return { exitCode };
+  }
 
   let exitCode = 0;
-  const scanOf = (): InputScan => new InputScan(inputs, { root });
+  const scanOf = (): InputScan => new InputScan(inputs, { root }, realInputFiles);
   // The build's own names, which come and go with the build itself: the directories it writes, the files it generates and the directories it created for them. It changes only when a build ends.
   let own = new OwnedOutputIndex();
   let scan = scanOf();
@@ -742,10 +751,15 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
         if (starting) {
           // The first build runs as the first tick, so no tick runs beside it. What changed while it ran is told by its baseline, in the tick that follows.
           starting = false;
-          await attempt(undefined);
-          if (unwatchable) return;
-          process.stdout.write('Watching for changes.\n');
-          watcher.request();
+          try {
+            await attempt(undefined);
+          } finally {
+            // An `onBuilt` that throws is reported by the watcher's error path, and the watch goes on.
+            if (!unwatchable) {
+              process.stdout.write('Watching for changes.\n');
+              watcher.request();
+            }
+          }
           return;
         }
         let current: InputSnapshot;
@@ -780,7 +794,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   const attempt = async (changed: readonly string[] | undefined, before = watcher.snapshotWatching(scan, outputParents())): Promise<void> => {
     // The scan from before the build, so an edit or a new file made during it starts the next build. The first build has no
     // inputs yet: its files carry the signature they had when the build first read them.
-    const baseline = new RunBaseline(before, root);
+    const baseline = new RunBaseline(before, root, realInputFiles);
     state.baseline = baseline;
     const record = (): void => {
       // A file the generate step wrote, and the directory it created for it, is the build's own: its signature after the build is the one the next build compares with.
@@ -794,9 +808,9 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
       exitCode = 1;
       wrote = false;
       process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-      process.stdout.write('Build failed.\n');
       record();
     }
+    options.onBuilt?.({ label, exitCode });
   };
   await new Promise<void>((resolve) => {
     finish = () => { watcher.close(); resolve(); };

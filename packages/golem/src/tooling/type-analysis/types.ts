@@ -1,9 +1,9 @@
 import path from 'node:path';
 import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPropertyNames, instantiatedTypeSource, substituteTypeNode, authoredPropertyTypeNode, type TypeSubstitutions } from './projections.js';
 import * as ts from '../typescript-ns.js';
-import { declaredModelAlias, diagnostic, foreignModelReason, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
+import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
-import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
+import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { compareText, displayPath } from '../generator-api.js';
@@ -16,8 +16,10 @@ import type { ManifestIndex } from './provenance.js';
 import type { ModelSpecification, TypeAnalysisContext } from './models.js';
 import {
   analyzeNode,
+  carriesSerdeTag,
   isAmbientOrGlobalSymbol,
   isDateType,
+  isGolemTagKey,
   publicExportName,
   type ModelConstraint,
   type SerdeBinding,
@@ -263,7 +265,24 @@ function userAliasName(type: ts.Type): string | undefined {
   return declaration ? aliasProjectionName(declaration) : undefined;
 }
 
-function isErrorAny(type: ts.Type): boolean {
+/**
+ * How many different instances of one generic declaration a walk may hold at once. A type that makes a new type argument on each
+ * level never repeats, so the walk stops when the next instance would be one more than this. It is golem's own bound; the
+ * `maxExpansionDepth` option of `descriptorBuilder` sets another.
+ */
+const DEFAULT_MAX_EXPANSION_DEPTH = 100;
+
+/**
+ * The name of the interface, class or generic type alias that declares a type. A recursive type with no concrete alias takes it,
+ * so every lap of the cycle names the projection the same and the second lap ends in a reference.
+ */
+function declaredTypeName(type: ts.Type): string | undefined {
+  const name = (type.aliasSymbol ?? type.getSymbol())?.getName();
+  return name === undefined || name.startsWith('__') ? undefined : name;
+}
+
+/** The `any` of a type that did not resolve, such as a failed import. */
+export function isErrorAny(type: ts.Type): boolean {
   return (type.flags & ts.TypeFlags.Any) !== 0
     && type.aliasSymbol !== undefined
     && (type.aliasSymbol.flags & ts.SymbolFlags.Transient) !== 0;
@@ -299,38 +318,7 @@ function modelSpecificationForType(
 
 function isPhantomTagType(checker: ts.TypeChecker, type: ts.Type): boolean {
   if ((type.flags & ts.TypeFlags.Object) === 0) return false;
-  return checker.getPropertiesOfType(type).some((property) => {
-    const name = property.getName();
-    return name.includes('validationTag')
-      || name.includes('serdeTag')
-      || name.includes('integerTag')
-      || name.includes('minimumTag')
-      || name.includes('maximumTag')
-      || name.includes('exclusiveMinimumTag')
-      || name.includes('exclusiveMaximumTag')
-      || name.includes('multipleOfTag')
-      || name.includes('minLengthTag')
-      || name.includes('maxLengthTag')
-      || name.includes('patternTag')
-      || name.includes('formatTag')
-      || name.includes('minItemsTag')
-      || name.includes('maxItemsTag')
-      || name.includes('uniqueItemsTag')
-      || name.includes('minPropertiesTag')
-      || name.includes('maxPropertiesTag')
-      || name.includes('containsTag')
-      || name.includes('minContainsTag')
-      || name.includes('maxContainsTag')
-      || name.includes('propertyNamesTag')
-      || name.includes('patternPropertiesTag')
-      || name.includes('additionalPropertiesTag')
-      || name.includes('unevaluatedPropertiesTag')
-      || name.includes('dependentRequiredTag')
-      || name.includes('dependentSchemasTag')
-      || name.includes('oneOfTag')
-      || name.includes('notTag')
-      || name.includes('ifThenElseTag');
-  });
+  return checker.getPropertiesOfType(type).some((property) => isGolemTagKey(checker, property));
 }
 
 function stripPhantomIntersection(
@@ -547,9 +535,6 @@ function withMetadata(
   } as RichModelConversionDescriptor;
 }
 
-/** The type-only brand members that a generated base class declares; they are no fields of its model. */
-const GENERATED_BRAND_KEY = /^__@generatedModel(?:Wire|Fields)Brand@\d+$/;
-
 /** The type a mapped projection reads its members from: `Customer` in `Pick<Customer, 'name'>` or in `{ [K in 'name']: Customer[K] }`. */
 function projectedSourceType(checker: ts.TypeChecker, type: ts.Type): ts.Type | undefined {
   const aliased = type.aliasTypeArguments?.[0];
@@ -572,24 +557,100 @@ export function descriptorBuilder(
   manifestIndex: ManifestIndex,
   validationEnabled: boolean,
   allowAny = false,
-  identityRoot?: string,
+  identityRoot: string | undefined,
   allowUnresolved = true,
   /** Name that references to a model and its derived projections use; the model's own name when omitted. */
-  nameFor?: (specification: ModelSpecification) => string,
+  nameFor: ((specification: ModelSpecification) => string) | undefined,
   /** Canonical model source files of the job, which have a generated companion; omitted when the analysis emits none. */
-  modelSources?: ReadonlySet<string>,
+  modelSources: ReadonlySet<string> | undefined,
   /** The models-job boundary, for the diagnostic of a field that nests a model this job does not own. */
-  boundary?: ModelBoundary,
+  boundary: ModelBoundary | undefined,
   /** The first TypeScript error that starts inside a node, for the diagnostic of a type that did not resolve. */
-  typeErrorAt?: (node: ts.Node) => string | undefined,
+  typeErrorAt: ((node: ts.Node) => string | undefined) | undefined,
+  /** Whether a source file is a default library file: a symbol key it declares is the built-in type's own metadata, not a field. */
+  isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
+  /** How many instances of one generic declaration may be open at once before the walk stops with RUNM1083. */
+  maxExpansionDepth = DEFAULT_MAX_EXPANSION_DEPTH,
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
+  /**
+   * The model a type with no authored type node stands for, or undefined. It reads the checker and the specifications only, so asking
+   * leaves no projection name behind. A phantom tag around a single other member does not hide the model.
+   */
+  readonly modelOf: (type: ts.Type) => ModelSpecification | undefined;
 } {
   const projections = new Map<string, ModelConversionDescriptor>();
   const projectionCache = new Map<ts.Type, Map<string, string>>();
   // Where each projection name was first minted, for the clash diagnostic.
   const projectionSources = new Map<string, string>();
+  // The type that minted each projection name. A recursive type that asks for a name another type holds takes a qualified name before its body is read.
+  const projectionOwners = new Map<string, ts.Type>();
+  const headNames = new Map<ts.Type, Map<string, string>>();
+  // Whether a recursive type reads the same as the holder of a plain name, by that name. Kept across `snapshotNames`, so each type is read once for it.
+  // The verdicts belong to the holder they were read against: another holder of the name (after a rollback) starts with none.
+  const sharesPlainName = new Map<string, { holder: ts.Type; verdicts: Map<ts.Type, boolean> }>();
+  // The arguments of the `describe` calls that are open, so a name claim can read the type once under another name.
+  const openCalls: Parameters<typeof describeType>[] = [];
+  const snapshotNames = (): (() => void) => {
+    const copy = <K, V>(source: Map<K, V>, inner: (value: V) => V = (value) => value): Map<K, V> =>
+      new Map([...source].map(([key, value]) => [key, inner(value)] as const));
+    const saved = {
+      projections: copy(projections), cache: copy(projectionCache, (value) => new Map(value)), owners: copy(projectionOwners),
+      heads: copy(headNames, (value) => new Map(value)), sources: copy(projectionSources), stems: copy(cycleStems),
+    };
+    const restore = <K, V>(target: Map<K, V>, source: Map<K, V>): void => { target.clear(); source.forEach((value, key) => target.set(key, value)); };
+    return () => {
+      restore(projections, saved.projections); restore(projectionCache, saved.cache); restore(projectionOwners, saved.owners);
+      restore(headNames, saved.heads); restore(projectionSources, saved.sources); restore(cycleStems, saved.stems);
+    };
+  };
+  const claimHeadName = (type: ts.Type, stem: string, suffix: string): string => {
+    const known = headNames.get(type)?.get(suffix);
+    if (known !== undefined) return known;
+    const free = (name: string): boolean => !modelLocations.has(name) && (projectionOwners.get(name) ?? type) === type;
+    const qualifiers = headQualifiers(checker, type);
+    const options = [stem, ...qualifiers.map((part) => `${stem}${part}`)];
+    let name = options.map((option) => `${option}${suffix}`).find(free);
+    // Names that stay equal after qualifying get a number, so every valid program generates.
+    for (let number = 2; name === undefined; number += 1) {
+      const numbered = `${options[options.length - 1]}${number}${suffix}`;
+      if (free(numbered)) name = numbered;
+    }
+    const plain = `${stem}${suffix}`;
+    const setName = (value: string): void => {
+      headNames.set(type, (headNames.get(type) ?? new Map<string, string>()).set(suffix, value));
+    };
+    setName(name);
+    // A finished projection of another type holds the plain name: when this type reads the same under its own name, the two share the plain name.
+    const owner = projectionOwners.get(plain);
+    if (name !== plain && owner !== undefined && owner !== type && projections.has(plain) && !modelLocations.has(plain)) {
+      let known = sharesPlainName.get(plain);
+      if (known?.holder !== owner) {
+        known = { holder: owner, verdicts: new Map<ts.Type, boolean>() };
+        sharesPlainName.set(plain, known);
+      }
+      const { verdicts } = known;
+      let shares = verdicts.get(type);
+      if (shares === undefined) {
+        const restore = snapshotNames();
+        describeType(...openCalls[openCalls.length - 1]!);
+        const lookup = (projection: string): ModelConversionDescriptor | undefined => projections.get(projection);
+        const read = (projection: string): string | undefined => {
+          const descriptor = projections.get(projection);
+          return descriptor && projectionIdentity(lookup, projection, descriptor);
+        };
+        shares = read(name) === read(plain);
+        verdicts.set(type, shares);
+        if (shares) restore();
+      }
+      if (shares) {
+        setName(plain);
+        return plain;
+      }
+    }
+    return name;
+  };
   const sourceLocation = (at: ts.Node): string => {
     const sourceFile = at.getSourceFile();
     const position = sourceFile.getLineAndCharacterOfPosition(at.getStart(sourceFile));
@@ -657,12 +718,35 @@ export function descriptorBuilder(
   // (an interface or a class has no alias) an object type. The walk keeps the alias types of a cycle, so one name per
   // alias gives the same projection from any entry type.
   const cycleHeads = new Map<ts.Type, boolean>();
+  // A generic type that holds itself with a new type argument on each level, such as `interface Box<T> { next?: Box<Box<T>> }`, makes a
+  // new type on each level, so no cycle head repeats. The walks count the instances of each generic declaration they are in and stop at the bound.
+  // Only an interface, class or type alias of the project with type parameters counts: arrays, tuples, library types and anonymous types do not.
+  const activeInstances = new Map<ts.Symbol, ts.Type[]>();
+  const enterExpansion = (type: ts.Type, location: ts.Node): (() => void) => {
+    const symbol = isStructured(type) ? type.aliasSymbol ?? type.getSymbol() : undefined;
+    const declaration = symbol?.declarations?.find((candidate) =>
+      (ts.isInterfaceDeclaration(candidate) || ts.isClassDeclaration(candidate) || ts.isTypeAliasDeclaration(candidate))
+      && (candidate.typeParameters?.length ?? 0) > 0);
+    if (symbol === undefined || declaration === undefined || isDefaultLibraryFile(declaration.getSourceFile())) return () => undefined;
+    const instances = activeInstances.get(symbol) ?? [];
+    if (instances.includes(type)) return () => undefined;
+    if (instances.length >= maxExpansionDepth) {
+      const name = symbol.getName();
+      throw diagnostic(location.getSourceFile(), location, '1083',
+        `The generic type ${name} expands without end: each level holds ${name} with other type arguments, and more than ${maxExpansionDepth} levels are open, so no finite schema describes it. `
+        + `Pass the same type arguments back, for example ${name}<T> inside ${name}<T>.`);
+    }
+    activeInstances.set(symbol, [...instances, type]);
+    return () => { activeInstances.set(symbol, instances); };
+  };
+  // The name each cycle head was given on its first lap.
+  const cycleStems = new Map<ts.Type, string>();
   const probeCycles = (root: ts.Type, location: ts.Node): void => {
     const index = new Map<ts.Type, number>();
     const low = new Map<ts.Type, number>();
     const stack: ts.Type[] = [];
     const onStack = new Set<ts.Type>();
-    const visit = (type: ts.Type): void => {
+    const visitType = (type: ts.Type): void => {
       index.set(type, index.size);
       low.set(type, index.get(type)!);
       stack.push(type);
@@ -689,6 +773,10 @@ export function descriptorBuilder(
         (member.flags & ts.TypeFlags.Object) !== 0 && !checker.isArrayType(member) && !checker.isTupleType(member)));
       for (const member of component) cycleHeads.set(member, heads.has(member));
     };
+    const visit = (type: ts.Type): void => {
+      const leave = enterExpansion(type, location);
+      try { visitType(type); } finally { leave(); }
+    };
     visit(root);
   };
   const isCycleHead = (type: ts.Type, location: ts.Node): boolean => {
@@ -709,7 +797,41 @@ export function descriptorBuilder(
     );
   };
 
-  const describe = (
+  /**
+   * The model a type stands for, from the authored type node (`node`), the class that extends a generated base, the alias that declares
+   * the model, or the fields it shares. It is the ladder `describeType` climbs and the answer to "is this a model?" for every caller:
+   * it reads only the checker and the specifications, so it writes no projection name, owner or cache entry.
+   */
+  const modelOf = (type: ts.Type, node: ts.TypeNode | undefined, isRoot: boolean, serde: boolean): {
+    readonly provenance: ReturnType<typeof fieldProvenance>;
+    readonly projection: boolean;
+    readonly candidates: readonly ModelSpecification[];
+    readonly classMatch: ModelSpecification | undefined;
+    readonly model: ModelSpecification | undefined;
+  } => {
+    const provenance = fieldProvenance(checker, node, specifications, manifestIndex.byProvenance);
+    const projection = provenance.projection || isPropertyMapping(type);
+    const candidates = provenance.models.filter(specification => checker.isTypeAssignableTo(type, specification.fieldsType)
+      && checker.isTypeAssignableTo(specification.fieldsType, type));
+    const classMatch = isRoot || type.isUnion() || isPropertyMapping(type) || projection
+      ? undefined
+      : modelSpecificationForClass(checker, type, specifications);
+    const projectedStructural = (): ModelSpecification | undefined => {
+      const structural = structuralModel(type);
+      return structural && !provenance.models.includes(structural) ? structural : undefined;
+    };
+    // A TSerde over a bigint or a class value converts the whole value by its codec, so the type is no model whatever class it is.
+    const serdeValue = serde && (isBigIntValueType(type) || isClassValueType(checker, type));
+    const model = serdeValue ? undefined : classMatch ?? (isRoot || type.isUnion() || isPropertyMapping(type) ? undefined
+      : projection
+        ? projectedStructural()
+        : (candidates[0]
+          ?? modelSpecificationForType(checker, type, specifications)
+          ?? (provenance.models.length > 0 ? structuralModel(type) : undefined)));
+    return { provenance, projection, candidates, classMatch, model };
+  };
+
+  const describeType = (
     originalType: ts.Type,
     context: TypeAnalysisContext,
     seen: ReadonlySet<ts.Type> = new Set<ts.Type>(),
@@ -736,8 +858,8 @@ export function descriptorBuilder(
         describe(schemaType, { ...context, exact: false, schemaData: true }, seen, schemaNode, representation, undefined, undefined, nameHint),
     };
     // Analyze checker types even when a child has no corresponding AST node
-    // (for example the Date branch of `Date | undefined`).
-    const analysis = analyzeNode(tagContext, originalType, node);
+    // (for example the Date branch of `Date | undefined`). A union variant reads the authored member that names it.
+    const analysis = analyzeNode(tagContext, originalType, node ?? nameNode);
     let metadata: InternalTagMetadata = analysis.metadata;
     if (metadata.serde && !metadata.serde.wireDescriptor) {
       const wireDescriptor = describe(metadata.serde.wireType, context, seen, undefined, 'wire', undefined, undefined, nameHint);
@@ -794,7 +916,8 @@ export function descriptorBuilder(
       return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot, companionOf(context.sourceFile.fileName)) } as ModelConversionDescriptor, metadata);
     }
 
-    const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications, manifestIndex.byProvenance);
+    const isRoot = node === context.fieldsNode;
+    const { provenance, projection, candidates, classMatch, model: localModel } = modelOf(type, node ?? provenanceNode ?? analysis.baseNode, isRoot, metadata.serde !== undefined);
     if (provenance.anonymous) {
       const alias = declaredModelAlias(provenance.anonymous);
       const foreign = alias ? foreignModelReason(alias, boundary) : undefined;
@@ -802,7 +925,6 @@ export function descriptorBuilder(
       const nested = provenance.anonymous;
       throw diagnostic(nested.getSourceFile(), nested, '1053', `Nested IModel definitions need a named, exported declaration: ${shortenedText(nested)}. Give it its own exported type alias.`);
     }
-    const projection = provenance.projection || isPropertyMapping(type);
     if (projection) {
       for (const original of provenance.models) {
         const whole = analyzeNode({ ...tagContext, sourceFile: original.sourceFile }, original.fieldsType, original.fieldsNode).metadata;
@@ -811,25 +933,9 @@ export function descriptorBuilder(
         }
       }
     }
-    const candidates = provenance.models.filter(specification => checker.isTypeAssignableTo(type, specification.fieldsType)
-      && checker.isTypeAssignableTo(specification.fieldsType, type));
     if (!projection && candidates.length > 1 && !type.isUnion()) {
       throw diagnostic(context.sourceFile, node ?? context.declaration, '1054', 'Model identity is ambiguous after type composition. Use an explicit named model reference.');
     }
-    const isRoot = node === context.fieldsNode;
-    const classMatch = isRoot || type.isUnion() || isPropertyMapping(type) || projection
-      ? undefined
-      : modelSpecificationForClass(checker, type, specifications);
-    const projectedStructural = (): ModelSpecification | undefined => {
-      const structural = structuralModel(type);
-      return structural && !provenance.models.includes(structural) ? structural : undefined;
-    };
-    const localModel = classMatch ?? (isRoot || type.isUnion() || isPropertyMapping(type) ? undefined
-      : projection
-        ? projectedStructural()
-        : (candidates[0]
-          ?? modelSpecificationForType(checker, type, specifications)
-          ?? (provenance.models.length > 0 ? structuralModel(type) : undefined)));
     const generatedName = localModel ? modelNames.get(localModel.declaration) : undefined;
     if (generatedName) {
       return withMetadata({
@@ -890,16 +996,22 @@ export function descriptorBuilder(
     let projectionName: string | undefined;
     if ((projection && objectShape && !isRoot) || recursive) {
       const nameAt = node ?? nameNode;
-      const base = recursive && !projection ? userAliasName(type) : undefined;
-      const candidate = `${safeNameHint(base ?? projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint)}${policySuffix({
-        exact: context.exact, allowAny: context.allowAny ?? allowAny, representation,
-      })}`;
+      // A cycle head keeps the name its first lap gave it, so a declared name that is not a plain identifier (non-ASCII) still ends the cycle,
+      // and a projection that holds itself, such as `Partial<Cfg>` inside `Cfg`, does not take a longer owner-and-field name on each lap.
+      const declaredHead = recursive && !projection;
+      let stem = recursive ? cycleStems.get(type) : undefined;
+      if (stem === undefined) {
+        stem = safeNameHint((declaredHead ? userAliasName(type) ?? declaredTypeName(type) : undefined) ?? projectionBaseName(checker, nameAt, modelNameOf, nameHint), nameHint);
+        if (recursive) cycleStems.set(type, stem);
+      }
+      const suffix = policySuffix({ exact: context.exact, allowAny: context.allowAny ?? allowAny, representation });
+      const candidate = recursive ? claimHeadName(type, stem, suffix) : `${stem}${suffix}`;
       if (!isProjectionName(candidate)) throw new Error(`Internal error: projection name "${candidate}" is not a plain identifier.`);
       const here = sourceLocation(nameAt ?? context.declaration);
       const modelLocation = modelLocations.get(candidate);
       if (modelLocation) {
         throw diagnostic(context.sourceFile, nameAt ?? context.declaration, '1059',
-          `Projection name ${candidate} is used by a projection and a model: ${here} and ${modelLocation}. Declare a named type alias for the projection.`);
+          `Projection name ${candidate} is used by a projection and a model: ${here} and ${modelLocation}. Rename one of them, or declare a named type alias for the projection.`);
       }
       const policy = `${context.exact}:${context.allowAny ?? allowAny}:${representation}:${candidate}`;
       const cached = projectionCache.get(type) ?? new Map<string, string>();
@@ -908,6 +1020,7 @@ export function descriptorBuilder(
       projectionName = candidate;
       cached.set(policy, projectionName);
       projectionCache.set(type, cached);
+      if (!projectionOwners.has(candidate)) projectionOwners.set(candidate, type);
       if (!projectionSources.has(candidate)) projectionSources.set(candidate, here);
     }
     if ((sequence || objectShape) && seen.has(type) && !projectionName) {
@@ -1030,7 +1143,8 @@ export function descriptorBuilder(
         const members: { readonly name: string; readonly property: ts.Symbol; readonly absentFromSource: boolean }[] = [];
         for (const mapped of checker.getPropertiesOfType(type)) {
           const name = mapped.getName();
-          if (sourceObject && GENERATED_BRAND_KEY.test(name)) continue;
+          if (sourceObject && isGeneratedBrandKey(checker, mapped)) continue;
+          if (isSymbolKeyedProperty(checker, mapped) && isDefaultLibraryProperty(mapped, isDefaultLibraryFile)) continue;
           members.push({ name, property: mapped, absentFromSource: sourceObject !== undefined && !sourceObject.getProperty(name) });
         }
         // A model defined by a mapped type over its own class has no members: the base of the class is a stub of this very model.
@@ -1046,7 +1160,10 @@ export function descriptorBuilder(
           const optional = (property.flags & ts.SymbolFlags.Optional) !== 0;
           const isMethod = (property.flags & ts.SymbolFlags.Method) !== 0
             || property.declarations?.some(declaration => ts.isMethodDeclaration(declaration) || ts.isMethodSignature(declaration)) === true;
-          if (!context.schemaData && !isMethod) assertSupportedModelFieldName(name);
+          if (!context.schemaData && !isMethod) {
+            assertNoSymbolKey(checker, property, `Model ${context.name}`, context.sourceFile, node ?? context.declaration);
+            assertSupportedModelFieldName(name);
+          }
           if (context.dto && isMethod) continue;
           const valueType = propertyType(checker, property, context.declaration);
           // A member the source type lacks makes the checker's picked type `unknown`; the field is not typed unknown, so `allowAny` is no fix.
@@ -1087,7 +1204,9 @@ export function descriptorBuilder(
           properties[name] = described;
           if (!optional) required.push(name);
         }
-        const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => !(sourceObject && GENERATED_BRAND_KEY.test(name)));
+        // The members kept above exclude the brand keys of an SDK base; a readonly modifier counts only for a kept member.
+        const memberNames = new Set(members.map(member => member.name));
+        const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => memberNames.has(name));
         const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
         const taggedAdditional = indexType ? undefined : additionalPropertiesFromTags(metadata.constraints);
         const descriptor = withMetadata({
@@ -1123,12 +1242,21 @@ export function descriptorBuilder(
       if (projectionIdentity(lookup, projectionName, existing) !== projectionIdentity(lookup, projectionName, described)) {
         const nameAt = node ?? nameNode ?? context.declaration;
         throw diagnostic(context.sourceFile, nameAt, '1059',
-          `Projection name ${projectionName} is used by two different types: ${projectionSources.get(projectionName)} and ${sourceLocation(nameAt)}. Declare a named type alias for one of them.`);
+          `Projection name ${projectionName} is used by two different types: ${projectionSources.get(projectionName)} and ${sourceLocation(nameAt)}. Rename one of the two types; a distinct type alias name also works.`);
       }
       return { kind: 'reference', name: projectionName, projection: true };
     }
     projections.set(projectionName, described);
     return { kind: 'reference', name: projectionName, projection: true };
   };
-  return Object.assign(describe, { projections });
+  const describe: typeof describeType = (originalType, context, ...rest) => {
+    const leave = enterExpansion(originalType, context.declaration);
+    openCalls.push([originalType, context, ...rest]);
+    try { return describeType(originalType, context, ...rest); } finally { openCalls.pop(); leave(); }
+  };
+  const modelOfType = (type: ts.Type): ModelSpecification | undefined => {
+    const members = type.isIntersection() ? type.types.filter((member) => !isPhantomTagType(checker, member)) : [];
+    return modelOf(members.length === 1 ? members[0]! : type, undefined, false, carriesSerdeTag(checker, type)).model;
+  };
+  return Object.assign(describe, { projections, modelOf: modelOfType });
 }

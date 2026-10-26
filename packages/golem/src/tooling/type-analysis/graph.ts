@@ -1,7 +1,7 @@
 import type { ModelConversionDescriptor } from '../model-source-emitter.js';
 import type { SerdeBinding, ValidationBinding } from './tags.js';
 import { compareText } from '../generator-api.js';
-import { canonicalConstraintKey } from '../schema.js';
+import { canonicalConstraintKey, mapConstraintSchemaValues } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
 
 type Rich = {
@@ -20,36 +20,7 @@ function rewriteConstraint(
   constraint: ModelConstraint,
   rewrite: (descriptor: ModelConversionDescriptor) => ModelConversionDescriptor,
 ): ModelConstraint {
-  const project = (value: ConstraintSchemaValue): ConstraintSchemaValue =>
-    isDescriptor(value) ? rewrite(value) : value;
-  switch (constraint.kind) {
-    case 'contains':
-    case 'propertyNames':
-    case 'additionalProperties':
-    case 'unevaluatedProperties':
-    case 'items':
-    case 'unevaluatedItems':
-    case 'not':
-    case 'patternProperties':
-      return { ...constraint, schema: project(constraint.schema) };
-    case 'dependentSchemas':
-      return {
-        ...constraint,
-        value: Object.fromEntries(Object.entries(constraint.value).map(([name, value]) => [name, project(value)])),
-      };
-    case 'oneOf':
-    case 'allOf':
-      return { ...constraint, schemas: constraint.schemas.map(project) };
-    case 'ifThenElse':
-      return {
-        ...constraint,
-        if: project(constraint.if),
-        ...(constraint.then === undefined ? {} : { then: project(constraint.then) }),
-        ...(constraint.else === undefined ? {} : { else: project(constraint.else) }),
-      };
-    default:
-      return constraint;
-  }
+  return mapConstraintSchemaValues(constraint, (value) => isDescriptor(value) ? rewrite(value) : value);
 }
 
 export type ProjectionLookup = (name: string) => ModelConversionDescriptor | undefined;
@@ -90,7 +61,7 @@ function canonicalIdentity(
       // the descriptor-aware key so compiler/checker objects never enter the
       // projection identity JSON.
       constraints: rich.constraints?.map(canonicalConstraintKey).sort(),
-      validations: rich.validations?.map(binding => typeof binding === 'string' ? binding : binding.id),
+      validations: rich.validations?.map(binding => typeof binding === 'string' ? binding : binding.id).sort(),
       serde: rich.serde ? { id: rich.serde.id, wire: rich.serde.wireDescriptor ? canonical(rich.serde.wireDescriptor, stack) : undefined } : undefined,
     };
   };

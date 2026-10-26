@@ -15,7 +15,7 @@ import {
   type StaticIntrinsic,
   type StaticValue,
   type StaticValueResult,
-} from '../evaluation/static-value.js';
+} from '@exprtlabs/golem/internal/static-value';
 import { hasAnyDecorator, hasDecorator } from './analysis-utils.js';
 import { NEST_SWAGGER, callArguments, decoratorsOf, nestPackageOf } from './symbols.js';
 import type { DecoratorInfo, TypeReference } from './types.js';

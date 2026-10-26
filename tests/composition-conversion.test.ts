@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { transformSync } from 'esbuild';
 
 import { convertModelField, convertModelItems, convertModelTupleItems, defineModelProperty, deserializeDate, serializeDate, withDiscriminatorValue } from '@exprtlabs/golem/conversion';
 import {
@@ -15,6 +14,8 @@ import {
   type SerdeResolver,
   type ToJsonModelResolver,
 } from '@exprtlabs/golem/internal/emitter';
+
+import { runModule } from './support/run-module.js';
 
 type CompiledConversion = (value: unknown) => unknown;
 
@@ -45,25 +46,11 @@ function compileConversion(
   bindings: Readonly<Record<string, unknown>>,
 ): CompiledConversion {
   const source = [
-    'export function run(value: unknown): unknown {',
+    'function run(value: unknown): unknown {',
     `  return (${expression});`,
     '}',
   ].join('\n');
-  const output = transformSync(source, {
-    loader: 'ts',
-    format: 'cjs',
-    target: 'es2022',
-  }).code;
-  const moduleRecord: { readonly exports: Record<string, unknown> } = { exports: {} };
-  const names = Object.keys(bindings);
-  const values = names.map((name) => bindings[name]);
-  const factory = new Function(
-    'exports',
-    'module',
-    ...names,
-    `${output}\nreturn module.exports.run;`,
-  ) as (...arguments_: unknown[]) => unknown;
-  const run = factory(moduleRecord.exports, moduleRecord, ...values);
+  const { run } = runModule(source, bindings, { exports: ['run'] });
   if (typeof run !== 'function') throw new TypeError('Generated conversion did not export run.');
   return (value: unknown): unknown => (run as (input: unknown) => unknown)(value);
 }
@@ -308,12 +295,14 @@ test('ambiguous union conversions fail generation instead of probing codecs', ()
       message: /unique|required literal discriminator|ambiguous/i,
     },
     {
-      name: 'date or date array',
+      // `Date | Date[]` converts by its wire value (T-320); a plain string beside the Date makes the string ambiguous.
+      name: 'date beside a string and an array of strings',
       descriptor: {
         kind: 'union',
         variants: [
           { kind: 'date' },
-          { kind: 'array', item: { kind: 'date' } },
+          { kind: 'string' },
+          { kind: 'array', item: { kind: 'string' } },
         ],
       },
       message: /ambiguous conversions/i,

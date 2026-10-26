@@ -1,4 +1,5 @@
-import { linkProjectPackages, readFixture } from '../fixture-project.js';
+// lane: typescript6 Checker guards: the controller generator and the rewrite code it uses run the checker in this process
+import { linkProjectPackages, readFixture, writeGeneratedArtifacts } from '../fixture-project.js';
 import { workspace } from '../support/process.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,6 +8,8 @@ import test, { type TestContext } from 'node:test';
 
 import { generate } from '#controllers/generator';
 import { generate as generateModels } from '#model/generator';
+import { createContractAnalysis, createProgram } from '@exprtlabs/golem/internal/type-analysis';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 
 interface FixtureOptions {
@@ -306,7 +309,7 @@ test('rejects a root IModel union before emitting a controller artifact', async 
 
   await assert.rejects(
     generateFixture(root),
-    (error: unknown) => /RUNM1052|Root IModel unions are unsupported/i.test(String(error)),
+    (error: unknown) => /RUNM1052.*must be an object type, but .* has a union/.test(String(error)),
   );
 });
 
@@ -490,4 +493,168 @@ export class OrdersController {
     generateFixture(root),
     (error: unknown) => String(error).includes(`RUNM1074: ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.`),
   );
+});
+
+test('a named query parameter keeps a golem tag member as a brand, and a user property called tag makes it non-primitive', async t => {
+  // protects: F-213 a brand is found by the golem tag symbol, not by a property name
+  const controller = (parameterType: string): string => `import { Controller, Get, Query } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+import type { MinLength } from '@exprtlabs/golem/tags';
+
+class ItemDto {
+  name!: string;
+}
+
+@Controller('items')
+export class ItemsController {
+  @Get()
+  @ApiOkResponse({ type: ItemDto })
+  list(@Query('filter') filter: ${parameterType}): ItemDto { return { name: filter as string }; }
+}
+`;
+  const branded = await generateFixture(fixture(t, controller('string & MinLength<3>')));
+  const parameter = expectValue(operationOf(documentOf(branded), '/items', 'get').parameters?.[0], 'filter parameter');
+  assert.equal(parameter.name, 'filter');
+
+  await assert.rejects(
+    generateFixture(fixture(t, controller('string & { tag: string }'))),
+    (error: unknown) => String(error).includes('NEST1107'),
+  );
+});
+
+test('a model with a model-level tag flattens into header parameters without its tag key', async t => {
+  // protects: F-213 a golem tag key is found by its symbol; the old wide filter dropped it from a tagged model's parameters
+  const root = fixture(t, `import { Controller, Get, Headers } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+import type { TFilter } from './filter.model.js';
+
+@Controller('items')
+export class ItemsController {
+  @Get()
+  @ApiOkResponse({ description: 'ok' })
+  list(@Headers() filter: TFilter): void {}
+}
+`, {
+    files: {
+      'src/filter.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinProperties } from '@exprtlabs/golem/tags';
+export type TFilter = IModel<{ term: string; page?: number } & MinProperties<1>>;
+`,
+    },
+  });
+  const document = documentOf(await generateFixture(root));
+  assert.deepEqual(operationOf(document, '/items', 'get').parameters?.map(parameter => `${parameter.in}:${parameter.name}`), ['header:term', 'header:page']);
+});
+
+test('a generated model class as a @Headers() parameter flattens into its fields without its brand keys', async t => {
+  // protects: F-213 a generated-model brand key is found by its symbol, so the erased brands are no header parameters
+  const root = fixture(t, `import { Controller, Get, Headers } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+import { Filter } from './filter.model.js';
+
+@Controller('items')
+export class ItemsController {
+  @Get()
+  @ApiOkResponse({ description: 'ok' })
+  list(@Headers() filter: Filter): void {}
+}
+`, {
+    files: {
+      'src/filter.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TFilterBaseModel } from './filter.model.generated.js';
+export type TFilter = IModel<{ term: string; page?: number }>;
+export class Filter extends TFilterBaseModel {}
+`,
+    },
+  });
+  writeGeneratedArtifacts((await generateModels({ root, profile: { mobx: false, validation: true } })).artifacts);
+  const document = documentOf(await generateFixture(root));
+  assert.deepEqual(operationOf(document, '/items', 'get').parameters?.map(parameter => `${parameter.in}:${parameter.name}`), ['header:term', 'header:page']);
+});
+
+test('a symbol-keyed property of a flattened @Query() parameter type stops generation with RUNM1070', async t => {
+  // protects: F-39 golem rejects a property that JSON cannot carry; a symbol key once became a query parameter named __@sym@N
+  const root = fixture(t, `import { Controller, Get, Query } from '@nestjs/common';
+import { ApiOkResponse } from '@nestjs/swagger';
+
+declare const sym: unique symbol;
+class SearchDto {
+  term!: string;
+  [sym]!: string;
+}
+
+@Controller('items')
+export class ItemsController {
+  @Get()
+  @ApiOkResponse({ description: 'ok' })
+  list(@Query() filter: SearchDto): void {}
+}
+`);
+  await assert.rejects(
+    generateFixture(root),
+    /RUNM1070: Model SearchDto has the property \[sym\] with a symbol key\. JSON cannot carry a symbol key\. Use a string key, or remove the property\./,
+  );
+});
+
+test('a DTO field typed with a built-in type keeps its schema and gains no field from the type\'s symbol keys', async t => {
+  // protects: F-39 RUNM1070 is for symbol keys the user wrote; the [Symbol.toStringTag] of a library type is no field and no error
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse, ApiProperty } from '@nestjs/swagger';
+
+class BlobDto {
+  @ApiProperty({ type: 'string', format: 'binary' })
+  file!: Uint8Array;
+
+  @ApiProperty({ type: String, format: 'date-time' })
+  at!: Date;
+
+  @ApiProperty({ type: 'object', additionalProperties: { type: 'string' } })
+  tags!: Map<string, string>;
+}
+
+@Controller('blobs')
+export class BlobsController {
+  @Get()
+  @ApiOkResponse({ type: BlobDto })
+  get(): BlobDto { throw new Error('not implemented'); }
+}
+`);
+  const document = documentOf(await generateFixture(root));
+  const schema = expectSchema(responseOf(document, '/blobs', 'get', '200').content?.['application/json']?.schema, 'BlobDto');
+  assert.deepEqual(Object.keys(schema.properties ?? {}).sort(), ['at', 'file', 'tags']);
+  assert.deepEqual(schema.properties?.file, { format: 'binary', type: 'string' });
+});
+
+test('isModel is false for a model class with a whole-value TSerde and true for the model class itself', async t => {
+  // protects: T-448 asking whether a type is a model gives the answer describe gives: a TSerde over a class value converts the whole value, so it is no model
+  const root = fixture(t, `import { Money, encodeMoney, decodeMoney } from './money.model.js';
+import type { TSerde } from '@exprtlabs/golem/tags';
+
+export class OrderDto {
+  price!: Money & TSerde<typeof encodeMoney, typeof decodeMoney>;
+  plain!: Money;
+}
+`, {
+    files: {
+      'src/money.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TMoneyBaseModel } from './money.model.generated.js';
+export type TMoney = IModel<{ cents: number }>;
+export class Money extends TMoneyBaseModel { format(): string { return String(this.cents); } }
+export function encodeMoney(value: Money): string { return value.format(); }
+export function decodeMoney(value: string): Money { throw new Error(value); }
+`,
+    },
+  });
+  writeGeneratedArtifacts((await generateModels({ root, profile: { mobx: false, validation: true } })).artifacts);
+  const { program } = createProgram([path.join(root, 'src/contracts.controller.ts'), path.join(root, 'src/money.model.ts')], root);
+  const analysis = createContractAnalysis(program, { root });
+  const checker = program.getTypeChecker();
+  const source = program.getSourceFile(path.join(root, 'src/contracts.controller.ts'))!;
+  const dto = source.statements.find(ts.isClassDeclaration) as ts.ClassDeclaration;
+  const typeOf = (name: string): { readonly type: ts.Type; readonly node: ts.Node } => {
+    const member = dto.members.find(item => (item as ts.PropertyDeclaration).name?.getText() === name)!;
+    return { type: checker.getTypeAtLocation(member), node: member };
+  };
+  assert.equal(analysis.isModel(typeOf('plain').type, typeOf('plain').node), true);
+  assert.equal(analysis.isModel(typeOf('price').type, typeOf('price').node), false);
 });

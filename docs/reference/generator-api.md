@@ -161,7 +161,7 @@ With a `controllers` job in `golem.yaml`, the rewrite also inserts `nestModelCod
 | `applyRewrites` | `(text: string, rewrite: FileRewrite, file?: string): { code: string; map: SourceMapV3 }` | Applies the edits and the imports they need to the file's `text`, and returns the new `code` with its source `map`. Offsets are UTF-16 units of the text without a leading byte order mark, which the output keeps. The map has one source, named `''`. Set `sources` on it when you know the file name. Throws an error that names `file` and the line when an edit is out of range, overlaps another edit, or no longer matches the text it expects. |
 | `REWRITE_IMPORT_PREFIX` | `'__golem_'` | The prefix of the names that the rewrite imports. Each name is imported as `__golem_<name>`, so edit text cannot clash with an import of your file. |
 
-Types: `FileRewrite` (`{ edits, imports }`), `RewriteEdit` (`{ start, end, expect, text }`) and `RewriteImport` (`{ from, names }`).
+Types: `FileRewrite` (`{ edits, imports, importsAt }`, where `importsAt` is the offset in the text where the imports go: after a shebang and the directive prologue, such as `'use client'`), `RewriteEdit` (`{ start, end, expect, text }`) and `RewriteImport` (`{ from, names }`).
 
 ## Generate OpenAPI from controllers
 

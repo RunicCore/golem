@@ -42,6 +42,11 @@ export interface NodeArray<T> extends ReadonlyArray<T> {
 }
 
 export interface Expression extends Node {}
+/** The span of one comment in a text, from its opening `//` or `/*` to its end (a line comment does not hold its line break). */
+export interface CommentRange {
+  readonly pos: number;
+  readonly end: number;
+}
 export interface TypeNode extends Node {}
 export type Declaration = Node;
 export type NamedDeclaration = Node & { readonly name?: Identifier };
@@ -302,6 +307,10 @@ export interface Block extends Node {
 export interface EmptyStatement extends Node {
   readonly kind: KindOf<'EmptyStatement'>;
 }
+export interface ExpressionStatement extends Node {
+  readonly kind: KindOf<'ExpressionStatement'>;
+  readonly expression: Expression;
+}
 export interface ReturnStatement extends Node {
   readonly kind: KindOf<'ReturnStatement'>;
   readonly expression?: Expression;
@@ -310,6 +319,7 @@ export interface ReturnStatement extends Node {
 // Imports and exports
 export interface ImportDeclaration extends Node {
   readonly kind: KindOf<'ImportDeclaration'>;
+  readonly importClause?: ImportClause;
   readonly moduleSpecifier: Expression;
 }
 export interface ImportClause extends Node {
@@ -318,9 +328,11 @@ export interface ImportClause extends Node {
   readonly isTypeOnly?: boolean;
   readonly phaseModifier?: SyntaxKind;
   readonly name?: Identifier;
+  readonly namedBindings?: NamedImports | NamespaceImport;
 }
 export interface NamedImports extends Node {
   readonly kind: KindOf<'NamedImports'>;
+  readonly elements: readonly ImportSpecifier[];
 }
 export interface ImportSpecifier extends Node {
   readonly kind: KindOf<'ImportSpecifier'>;
@@ -330,6 +342,7 @@ export interface ImportSpecifier extends Node {
 }
 export interface NamespaceImport extends Node {
   readonly kind: KindOf<'NamespaceImport'>;
+  readonly name: Identifier;
 }
 export interface ImportEqualsDeclaration extends Node {
   readonly kind: KindOf<'ImportEqualsDeclaration'>;
@@ -572,6 +585,8 @@ export interface ProgramSession extends Disposable {
   inputsChanged(filenames: Iterable<string>): void;
   parseConfigFile(configPath: string, onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] };
   openProgram(options: OpenProgramOptions): Program;
+  /** Parse one source text on its own, without a program: its syntax tree, with no types and no diagnostics. */
+  parseSourceFile(filename: string, text: string): SourceFile;
   /** Resolve a module name that no program imports, such as one an SDK manifest names, as the compiler resolves an import of `containingFile`: the disk and `virtualFiles` count. */
   resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles?: ReadonlySet<string>): { resolvedModule?: ResolvedModule };
 }
@@ -612,6 +627,7 @@ export interface TypeScriptBackend {
     readonly TemplateLiteral: TypeFlags;
     readonly TypeParameter: TypeFlags;
     readonly Undefined: TypeFlags;
+    readonly UniqueESSymbol: TypeFlags;
     readonly Unknown: TypeFlags;
     readonly Void: TypeFlags;
   };
@@ -654,6 +670,10 @@ export interface TypeScriptBackend {
   getDecorators(node: Node): readonly Decorator[] | undefined;
   getModifiers(node: Node): readonly Node[] | undefined;
   getPreEmitDiagnostics(program: Program): readonly Diagnostic[];
+  /** The comments between `position` and the next token that start on a later line (all of them at position 0), in source order. Undefined when there are none. */
+  getLeadingCommentRanges(text: string, position: number): readonly CommentRange[] | undefined;
+  /** The comments that follow `position` on its own line, in source order. Undefined when there are none. */
+  getTrailingCommentRanges(text: string, position: number): readonly CommentRange[] | undefined;
   /** TypeScript 7 names a type parameter's default `defaultType`; TypeScript 6 names it `default`. */
   typeParameterDefault(parameter: TypeParameterDeclaration): TypeNode | undefined;
   /** The generic target of a type reference (e.g. the tuple target of a tuple type). */
@@ -678,6 +698,7 @@ export interface TypeScriptBackend {
   isExportDeclaration(node: Node): node is ExportDeclaration;
   isExportSpecifier(node: Node): node is ExportSpecifier;
   isExpression(node: Node): node is Expression;
+  isExpressionStatement(node: Node): node is ExpressionStatement;
   isExpressionWithTypeArguments(node: Node): node is ExpressionWithTypeArguments;
   isFunctionDeclaration(node: Node): node is FunctionDeclaration;
   isFunctionExpression(node: Node): node is FunctionExpression;

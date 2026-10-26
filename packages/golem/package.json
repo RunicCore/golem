@@ -175,6 +175,11 @@
       "import": "./dist/tooling/type-analysis/index.js",
       "default": "./dist/tooling/type-analysis/index.js"
     },
+    "./internal/static-value": {
+      "types": "./dist/tooling/static-value.d.ts",
+      "import": "./dist/tooling/static-value.js",
+      "default": "./dist/tooling/static-value.js"
+    },
     "./internal/ts": {
       "types": "./dist/tooling/typescript-ns.d.ts",
       "import": "./dist/tooling/typescript-ns.js",

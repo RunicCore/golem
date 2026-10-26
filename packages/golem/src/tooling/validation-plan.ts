@@ -1,5 +1,5 @@
 import { lowerDiscriminatorMappings } from '../discriminator-mapping.js';
-import { GENERATED_MODEL_SCHEMA_REF_PREFIX } from '../schema-keywords.js';
+import { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_INSTANCE_KEYWORD } from '../schema-keywords.js';
 import { compareText, type GolemDiagnostic } from './generator-api.js';
 import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
@@ -281,6 +281,31 @@ export function buildCodecValidationPlan(
     addSchema(id, schema);
   }
 
+  /** The one codec id a model name stands for, from `preferredAliases` or the whole plan; a name that is a schema id is its own. Undefined when none does. `place` names the caller in the ambiguity error. */
+  const codecIdOf = (name: string, preferredAliases: Map<string, Set<string>> | undefined, place: string): string | undefined => {
+    if (Object.hasOwn(schemas, name)) return name;
+    const candidates = preferredAliases?.get(name)
+      ?? preferredAliases?.get(codecShortName(name))
+      ?? aliases.get(name)
+      ?? aliases.get(codecShortName(name));
+    if (candidates && candidates.size > 1) {
+      throw new TypeError(
+        `Cannot compile validators: ${place} ${JSON.stringify(name)} `
+        + `is ambiguous between codec identities ${[...candidates].sort().map(id => JSON.stringify(id)).join(', ')}. `
+        + 'Regenerate the referenced model manifest with an unambiguous codec identity.',
+      );
+    }
+    return candidates?.values().next().value;
+  };
+
+  /** A `golemModelInstance` value with each model name replaced by its codec id, which a class registers under: the generated check compares ids exactly. A name no model answers to stays. */
+  const withInstanceCodecIds = (instance: unknown, preferredAliases: Map<string, Set<string>> | undefined): unknown => {
+    if (instance === null || typeof instance !== 'object' || Array.isArray(instance)) return instance;
+    const { of, among } = instance as { of?: unknown; among?: unknown };
+    const idOf = (name: unknown): unknown => (typeof name === 'string' ? codecIdOf(name, preferredAliases, `the ${MODEL_INSTANCE_KEYWORD} model name`) ?? name : name);
+    return { ...instance, ...(of === undefined ? {} : { of: idOf(of) }), ...(Array.isArray(among) ? { among: among.map(idOf) } : {}) };
+  };
+
   const resolveGeneratedModelRefs = (
     value: unknown,
     preferredAliases: Map<string, Set<string>> | undefined,
@@ -306,18 +331,7 @@ export function buildCodecValidationPlan(
             // A residual reference names its own plane (`Name#model-only`).
             const name = hash < 0 ? reference : reference.slice(0, hash);
             const residualPlane = hash < 0 ? undefined : reference.slice(hash);
-            const candidates = preferredAliases?.get(name)
-              ?? preferredAliases?.get(codecShortName(name))
-              ?? aliases.get(name)
-              ?? aliases.get(codecShortName(name));
-            if (candidates && candidates.size > 1) {
-              throw new TypeError(
-                `Cannot compile validators: generated model schema reference ${JSON.stringify(name)} `
-                + `is ambiguous between codec identities ${[...candidates].sort().map(id => JSON.stringify(id)).join(', ')}. `
-                + 'Regenerate the referenced model manifest with an unambiguous codec identity.',
-              );
-            }
-            const codecId = candidates?.values().next().value;
+            const codecId = codecIdOf(name, preferredAliases, 'generated model schema reference');
             if (codecId === undefined || !Object.hasOwn(schemas, codecId)) {
               throw new TypeError(
                 `Cannot compile validators: generated model schema reference ${JSON.stringify(name)} is unresolved. `
@@ -336,6 +350,10 @@ export function buildCodecValidationPlan(
             }
             // A wire schema refers to the model's wire schema when it has one.
             result[key] = wire && Object.hasOwn(schemas, `${codecId}#wire`) ? `${codecId}#wire` : codecId;
+            continue;
+          }
+          if (key === MODEL_INSTANCE_KEYWORD) {
+            result[key] = withInstanceCodecIds(item, preferredAliases);
             continue;
           }
           if (key === '$ref' && resolveLocalReferences && typeof item === 'string') {
@@ -449,7 +467,7 @@ function planValidationRoots(plan: CodecValidationPlan): ReadonlyMap<string, unk
 export function compilePlanValidators(plan: CodecValidationPlan, options: PlanValidatorsOptions): PlanValidators {
   const locateModel = options.locateModel ?? ((name: string): SchemaPlace => ({ where: `model ${name}` }));
   const roots = planValidationRoots(plan);
-  // The codecs of the plan's own models answer a valid value with the fast check (spec 7.1); tag and closure roots get none, as no codec asserts them.
+  // The codecs of the plan's own models answer a valid value with the fast check; tag and closure roots get none, as no codec asserts them.
   return compileValidatorRoots(roots, new Map(), {
     ...options,
     locate: (resource, pointer) => {
@@ -522,7 +540,7 @@ export function compileSdkValidators(input: SdkValidatorsInput, options: PlanVal
     if (roots.has(name)) throw new Error(`Cannot compile the SDK validators: the resource ${JSON.stringify(name)} has the name of a root.`);
   }
   const locateModel = options.locateModel ?? ((name: string): SchemaPlace => ({ where: `model ${name}` }));
-  // The plan's own model roots get fast checks; the operation validators do not (spec F11).
+  // The plan's own model roots get fast checks; the operation validators do not.
   return compileValidatorRoots(roots, resources, {
     ...options,
     locate: (resource, pointer) => {

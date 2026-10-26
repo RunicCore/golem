@@ -1,3 +1,4 @@
+// lane: typescript6 Checker guards: the controller generator and the rewrite code it uses run the checker in this process
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -301,17 +302,26 @@ test('the operation-codec check passes when the registry holds every id the scan
   assert.equal(label, 'TPaymentInput');
   assert.equal(decorator, 'Body');
 
-  const ids = [...new Set(result.nestCodecSites.map(site => site.id))];
+  const slotOf = (site: { readonly method: string | undefined; readonly slot: string }): string => `${site.method}:${site.slot}`;
+  assert.deepEqual(result.nestCodecSites.map(slotOf), ['create:input', 'createAsClass:input', 'list:query', 'createBatch:input', 'createPiped:input', 'listPiped:query']);
+  const methods = (replaced?: string, misplaced?: string): string => `export const OPERATION_METHOD_KEYS = ${JSON.stringify(Object.fromEntries(result.nestCodecSites.map(site => [
+    `PaymentsController.${site.method}`, { [site.method === misplaced ? 'input' : site.slot]: site.method === 'create' && replaced ? replaced : site.id },
+  ])), null, 2)} as const;\n`;
   fs.mkdirSync(path.dirname(registry), { recursive: true });
-  fs.writeFileSync(registry, `export const OPERATION_CODECS = {\n${ids.map((each, index) => `  "POST /${index}": "${each}",\n`).join('')}};\n`);
+  fs.writeFileSync(registry, methods());
   assert.deepEqual(checkNestCodecs(root, result), []);
 
-  fs.writeFileSync(registry, fs.readFileSync(registry, 'utf8').replace(id, 'TPaymentInput_00000000'));
+  // Each site is compared with the slot of its own method: three methods hold the same id, and only the one that now holds another id fails.
+  fs.writeFileSync(registry, methods('TPaymentInput_00000000'));
   const failures = checkNestCodecs(root, result);
   assert.deepEqual(failures.map(({ code, file, message }) => ({ code, file, message })), [
-    ...Array(3).fill({ code: 'RUNM1072', file: CONTROLLER, message: '@Body() type TPaymentInput disagrees with generated operation keys' }),
+    { code: 'RUNM1072', file: CONTROLLER, message: '@Body() type TPaymentInput disagrees with generated operation keys' },
   ]);
   assert.deepEqual([failures[0]?.line, failures[0]?.column], [7, 25]);
+
+  // The method matches, but its registry entry holds the id in another slot: `list` is a @Query() site and its model sits under `input`.
+  fs.writeFileSync(registry, methods(undefined, 'list'));
+  assert.deepEqual(checkNestCodecs(root, result).map(({ message }) => message), ['@Query() type TPaymentFilter disagrees with generated operation keys']);
 
   fs.rmSync(registry);
   assert.equal(checkNestCodecs(root, result).length, 6, 'a missing registry disagrees with every site');

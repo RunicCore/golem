@@ -1,11 +1,11 @@
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
+import { isGeneratedBrandKey, isGolemTagKey, resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
 import {
   isTypeScriptLibFile,
   resolveValueSymbol,
   singleReturnExpression,
   unwrapExpression,
-} from '../evaluation/static-value.js';
+} from '@exprtlabs/golem/internal/static-value';
 import { evaluateRouteExpression } from '../evaluation/evaluate.js';
 import type { DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';
 
@@ -295,7 +295,7 @@ export function isFlatParameterType(checker: ts.TypeChecker, type: ts.Type): boo
     const metadataMembers = type.types.filter(member => {
       if ((member.flags & ts.TypeFlags.Object) === 0) return false;
       const properties = checker.getPropertiesOfType(member);
-      return properties.length > 0 && properties.every(property => /(?:serde|validation|constraint|tag)/i.test(property.name));
+      return properties.length > 0 && properties.every(property => isGolemTagKey(checker, property));
     });
     return valueMembers.length > 0 && valueMembers.length + metadataMembers.length === type.types.length;
   }
@@ -322,21 +322,21 @@ export function parameterProperties(
   parameter: ts.ParameterDeclaration,
   type: ts.Type,
 ): readonly ts.Symbol[] {
-  const direct = context.checker.getPropertiesOfType(type);
-  // An already generated model contributes erased wire/fields symbol brands
-  // to its instance type. Ordinary DTOs should keep their
-  // compiler properties and be checked by the portable flattening rules
-  // below; consult the source contract only when the generated bookkeeping
-  // is present or the companion is absent and no direct properties exist.
-  if (direct.length > 0 && !direct.some(property => property.name.startsWith('__@'))) return direct;
+  const { checker } = context;
+  const direct = checker.getPropertiesOfType(type);
+  // A model carries type-only bookkeeping that no parameter is: the erased wire and fields brands of a generated model, and the
+  // golem tag keys of a model-level tag. Ordinary DTOs should keep their compiler properties and be checked by the portable
+  // flattening rules below; consult the source contract only when the bookkeeping is present or the companion is absent and
+  // no direct properties exist.
+  const isBookkeeping = (property: ts.Symbol): boolean => isGeneratedBrandKey(checker, property) || isGolemTagKey(checker, property);
+  if (direct.length > 0 && !direct.some(isBookkeeping)) return direct;
   const contracts = context.contractAnalysis;
   if (contracts) {
     const descriptor = contracts.describe(type, parameter, parameter.type);
     if (descriptor.kind === 'reference') {
       const specification = contracts.specFor(descriptor.name);
       if (specification) {
-        return context.checker.getPropertiesOfType(specification.fieldsType)
-          .filter(property => !property.name.startsWith('__@'));
+        return checker.getPropertiesOfType(specification.fieldsType).filter(property => !isBookkeeping(property));
       }
     }
   }

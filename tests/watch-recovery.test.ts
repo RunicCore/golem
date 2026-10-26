@@ -1,3 +1,4 @@
+// lane: typescript6 ProgramSession resolution updates and the compiler process of a watch
 import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,11 +8,11 @@ import YAML from 'yaml';
 import { runPipeline, watchPipeline } from '#golem/cli';
 import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
-import { OwnedOutputIndex } from '#golem/input-watcher';
+import { OwnedOutputIndex, realInputFiles } from '#golem/input-watcher';
+import type { InputFiles } from '#golem/input-watcher';
 import { workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
-import { quietly, trackWatchers, until } from './support/watch-wait.js';
-import { isRunLine } from './support/watch-runs.js';
+import { countingInputFiles, quietly, until } from './support/watch-wait.js';
 
 test('owned output index excludes exactly the outputs and the directories containing them', () => {
   const root = path.resolve(os.tmpdir(), 'owned-index');
@@ -40,9 +41,9 @@ test('owned output index excludes exactly the outputs and the directories contai
 
 test('watch recovers when a referenced local schema file is introduced after the document that references it', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
 
   try {
     await until(() => runs() === 1, 'initial generation');
@@ -93,9 +94,9 @@ test('watch started on a golem.yaml that is not YAML reports its file, line and 
   const { config } = generationWatchFixture(t);
   const valid = fs.readFileSync(config, 'utf8');
   fs.writeFileSync(config, `${valid}version: 1\n`);
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
   try {
     await until(() => errors.length > 0, 'the broken golem.yaml is reported');
     assert.ok(errors[0] instanceof Error);
@@ -114,11 +115,12 @@ test('each watch run prints the result of every job and its time; the run after 
   // protects: T-312 each watch run says what it did; only a job that failed before writing says its last good output stays
   const { root, config } = generationWatchFixture(t);
   const valid = fs.readFileSync(config, 'utf8');
-  const lines = watchRunLines(t);
+  const runs = countRuns();
+  const lines = runs.lines;
   const errors: unknown[] = [];
   const reported = (): string => errors.map(String).join('; ');
   const results = (line: string): string[] => line.replace(/^Recovered: /, '').split(' · ').slice(0, -1);
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
   try {
     await until(() => lines.length === 1, 'the first run is summarized');
     assert.match(lines[0], / · \d+ ms$/);
@@ -155,6 +157,41 @@ test('each watch run prints the result of every job and its time; the run after 
   await until(() => compilerChildren(process.pid).length === 0, 'the compiler closes with the watch');
 });
 
+test('a scan that fails after a good run is reported, and the run keeps its line with Recovered:', async (t: TestContext) => {
+  // protects: T-429 a fault of the scan after a run must not drop the run line the caller prints
+  const { root, config } = generationWatchFixture(t);
+  const model = path.join(root, 'src/cart.model.ts');
+  const companion = path.join(root, 'src/cart.model.generated.ts');
+  const goodModel = fs.readFileSync(model, 'utf8');
+  const runs = countRuns();
+  const errors: unknown[] = [];
+  // The scan after the run is the first stat that finds the run's output: the scans before it do not.
+  let armed = false;
+  const files: Partial<InputFiles> = {
+    stat: (filename) => {
+      if (armed && fs.readFileSync(companion, 'utf8').includes('afterFault')) {
+        armed = false;
+        throw Object.assign(new Error('EMFILE: too many open files, stat'), { code: 'EMFILE' });
+      }
+      return realInputFiles.stat(filename);
+    },
+  };
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files });
+  try {
+    await until(() => runs() === 1, 'initial generation');
+    fs.writeFileSync(model, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCart = IModel<{ half: string & }>;\n");
+    await until(() => errors.length === 1, 'the broken model is reported');
+    armed = true;
+    fs.writeFileSync(model, goodModel.replace('note: string', 'note: string; afterFault?: boolean'));
+    await until(() => runs() === 2, () => `the fixed model runs (errors=${errors.map(String).join('; ')})`);
+    assert.match(runs.lines[1], /^Recovered: .* · \d+ ms$/);
+    assert.match(String(errors[1]), /EMFILE/);
+    assert.equal(errors.length, 2, 'the scan fault is reported once');
+  } finally {
+    stop();
+  }
+});
+
 test('watch keeps model dependencies outside the models root after a run that reuses the models job', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
   const app = path.join(root, 'app');
@@ -187,9 +224,9 @@ test('watch keeps model dependencies outside the models root after a run that re
     [],
     'installed, linked and TypeScript library files are not models dependencies',
   );
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
   const context = (): string => `(errors=${errors.map(String).join('; ')})`;
 
   try {
@@ -239,9 +276,9 @@ test('watch generates a new model file in a folder of the models root outside sr
   const { root, config } = generationWatchFixture(t);
   const tsconfig = path.join(root, 'tsconfig.json');
   fs.writeFileSync(tsconfig, fs.readFileSync(tsconfig, 'utf8').replace('"src/**/*.ts"', '"src/**/*.ts", "lib/**/*.ts"'));
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
   try {
     await until(() => runs() === 1, 'initial generation');
     fs.mkdirSync(path.join(root, 'lib'));
@@ -257,20 +294,19 @@ test('watch generates a new model file in a folder of the models root outside sr
 test('watch generates a new file that a run in flight did not read', async (t: TestContext) => {
   // protects: T-307 a model file created during a run is generated without another edit
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
   const companion = path.join(root, 'src/cart.model.generated.ts');
   let createWhileRunning = false;
-  const rename = fs.renameSync.bind(fs);
   // The companion is published by rename after the run read its sources: create a model file at that moment.
-  t.mock.method(fs, 'renameSync', (from: fs.PathLike, to: fs.PathLike): void => {
-    if (createWhileRunning && path.resolve(String(to)) === companion) {
+  const rename = (from: string, to: string): void => {
+    if (createWhileRunning && path.resolve(to) === companion) {
       createWhileRunning = false;
       fs.writeFileSync(path.join(root, 'src/pet.model.ts'), newModel('Pet'));
     }
-    rename(from, to);
-  });
-  const stop = watchPipeline(config, error => { errors.push(error); });
+    fs.renameSync(from, to);
+  };
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files: { rename } });
   try {
     await until(() => runs() === 1, 'initial generation');
     createWhileRunning = true;
@@ -286,10 +322,10 @@ test('watch generates a new file that a run in flight did not read', async (t: T
 test('a file that is no source, added to a watched folder, starts no run', async (t: TestContext) => {
   // protects: T-307 only a source name added to a folder starts a run
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
   const source = path.join(root, 'src/cart.model.ts');
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
   try {
     await until(() => runs() === 1, 'initial generation');
     fs.writeFileSync(path.join(root, 'src/style.css'), 'a { color: red }\n');
@@ -307,7 +343,7 @@ test('a file that is no source, added to a watched folder, starts no run', async
 test('an editor save by renaming over the file, a save through a backup file and a delete each start one run', async (t: TestContext) => {
   // protects: R-31 the events of an editor's save and of a delete reach the watch as one run each
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
   const source = path.join(root, 'src/cart.model.ts');
   const companion = path.join(root, 'src/cart.model.generated.ts');
@@ -315,7 +351,7 @@ test('an editor save by renaming over the file, a save through a backup file and
   const original = fs.readFileSync(source, 'utf8');
   const edited = (field: string): string => original.replace('note: string', `note: string; ${field}?: boolean`);
   const generated = (): string => fs.existsSync(companion) ? fs.readFileSync(companion, 'utf8') : '';
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
   const context = (): string => `(errors=${errors.map(String).join('; ')})`;
   try {
     await until(() => runs() === 1, `initial generation ${context()}`);
@@ -353,9 +389,9 @@ test('a package manager marker starts one full run, and a change inside node_mod
   const document = JSON.parse(fs.readFileSync(api, 'utf8')) as { paths: Record<string, unknown> };
   document.paths['/user'] = { get: { operationId: 'getUser', responses: { 200: { description: 'User', content: { 'application/json': { schema: { $ref: './node_modules/shared-schemas/user.json' } } } } } } };
   fs.writeFileSync(api, JSON.stringify(document));
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
   const context = (): string => `(errors=${errors.map(String).join('; ')})`;
   try {
     await until(() => runs() === 1, () => `initial generation runs=${runs()} ${context()}`);
@@ -377,31 +413,27 @@ test('a package manager marker starts one full run, and a change inside node_mod
   assert.deepEqual(errors, []);
 });
 
-test('an idle watch reads no file, and stopping it closes its file watches', async (t: TestContext) => {
+test('an idle watch makes no stat or folder listing, and stopping it closes its file watches', async (t: TestContext) => {
   // protects: R-31 an idle watch costs nothing; the stop closes every watcher
+  // The count is of the calls the InputFiles seam carries (stat, list). Real paths are read only when a run ends, and files only by a run.
   const { config } = generationWatchFixture(t);
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
-  const watchers = trackWatchers(t);
-  let reads = 0;
-  for (const name of ['statSync', 'readdirSync', 'lstatSync'] as const) {
-    const original = fs[name].bind(fs) as (...args: unknown[]) => unknown;
-    t.mock.method(fs, name, (...args: unknown[]) => { reads += 1; return original(...args); });
-  }
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const counted = countingInputFiles();
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files: counted.files });
   try {
     await until(() => runs() === 1, 'initial generation');
-    assert.ok(watchers.open() > 0, 'the folders are watched');
+    assert.ok(counted.openWatches() > 0, 'the folders are watched');
     // The first run's own writes cause ticks that find nothing; they end within the quiet period.
     await quietly(1_000);
-    const settled = reads;
+    const settled = counted.reads();
     await quietly(1_000);
-    assert.equal(reads, settled, 'a quiet watch reads no file');
+    assert.equal(counted.reads(), settled, 'a quiet watch scans nothing');
     assert.equal(runs(), 1);
   } finally {
     stop();
   }
-  assert.equal(watchers.open(), 0, 'every watcher is closed');
+  assert.equal(counted.openWatches(), 0, 'every watcher is closed');
   assert.deepEqual(errors, []);
 });
 
@@ -439,11 +471,10 @@ test('watch generates once a missing file outside the models root, imported by a
 test('a watch that can watch no folder reports it with its fix, runs nothing and tells its caller', async (t: TestContext) => {
   // protects: R-31 no working watcher ends the watch with a failure instead of an idle process
   const { config } = generationWatchFixture(t);
-  t.mock.method(fs, 'watch', () => { throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' }); });
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: Error[] = [];
   let unwatchable = 0;
-  const stop = watchPipeline(config, error => { errors.push(error as Error); }, undefined, undefined, () => { unwatchable += 1; });
+  const stop = watchPipeline(config, error => { errors.push(error as Error); }, { onUnwatchable: () => { unwatchable += 1; }, onRun: runs.onRun, files: { watch: () => { throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' }); } } });
   try {
     await until(() => unwatchable === 1, 'the caller is told');
     assert.match(errors.map(String).join('\n'), /fs\.inotify\.max_user_watches/);
@@ -503,9 +534,9 @@ test('watch generates a new model file in a shared folder that holds only a help
   fs.rmSync(path.join(root, 'shared/money.model.ts'));
   fs.mkdirSync(path.join(root, 'shared/billing'));
   fs.writeFileSync(path.join(root, 'shared/billing/rules.ts'), 'export type Rate = number;\n');
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
   try {
     await until(() => runs() === 1, () => `initial generation (errors=${errors.map(String).join('; ')})`);
     fs.writeFileSync(path.join(root, 'shared/billing/invoice.model.ts'), newModel('Invoice'));
@@ -542,36 +573,22 @@ test('a pipeline session closes the compiler of a removed job', { skip: process.
   await until(() => compilerChildren(process.pid).length === 0, 'the removed job closes its compiler');
 });
 
-/** The lines the watch prints after each successful generation, in order. */
-function watchRunLines(t: TestContext): string[] {
+/** Counts the good runs of a watch: pass `onRun` to `watchPipeline`; `lines` holds the line of each run, in order. */
+function countRuns(): (() => number) & { readonly lines: string[]; readonly onRun: (line: string) => void } {
   const lines: string[] = [];
-  const write = process.stdout.write.bind(process.stdout);
-  t.mock.method(process.stdout, 'write', (chunk: string | Uint8Array, ...rest: never[]): boolean => {
-    if (isRunLine(String(chunk))) {
-      lines.push(String(chunk).trimEnd());
-      return true;
-    }
-    return write(chunk, ...rest);
-  });
-  return lines;
-}
-
-/** Count completed watch runs by the line the watch prints after each successful generation. */
-function countRuns(t: TestContext): () => number {
-  const lines = watchRunLines(t);
-  return () => lines.length;
+  return Object.assign(() => lines.length, { lines, onRun: (line: string): void => { lines.push(line); } });
 }
 
 test('edits that land between two ticks produce one run with the final content', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
   const source = path.join(root, 'src/cart.model.ts');
   const companion = path.join(root, 'src/cart.model.generated.ts');
   const original = fs.readFileSync(source, 'utf8');
   const edit = (field: string): void => fs.writeFileSync(source, original.replace('note: string', `note: string; ${field}?: boolean`));
   const generated = (): string => fs.existsSync(companion) ? fs.readFileSync(companion, 'utf8') : '';
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
   try {
     await until(() => runs() === 1, 'initial generation');
     // Both writes run in one turn of the event loop, so no tick can observe the first alone.
@@ -592,7 +609,7 @@ test('edits that land between two ticks produce one run with the final content',
 
 test('an edit during a running generation triggers exactly one follow-up run with the latest content', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns(t);
+  const runs = countRuns();
   const errors: unknown[] = [];
   const source = path.join(root, 'src/cart.model.ts');
   const companion = path.join(root, 'src/cart.model.generated.ts');
@@ -600,17 +617,16 @@ test('an edit during a running generation triggers exactly one follow-up run wit
   const edit = (field: string): void => fs.writeFileSync(source, original.replace('note: string', `note: string; ${field}?: boolean`));
   const generated = (): string => fs.existsSync(companion) ? fs.readFileSync(companion, 'utf8') : '';
   let editWhileRunning = false;
-  const rename = fs.renameSync.bind(fs);
   // The companion is published by rename while the run is still in progress: edit the source at that moment.
-  t.mock.method(fs, 'renameSync', (from: fs.PathLike, to: fs.PathLike): void => {
-    if (editWhileRunning && path.resolve(String(to)) === companion) {
+  const rename = (from: string, to: string): void => {
+    if (editWhileRunning && path.resolve(to) === companion) {
       editWhileRunning = false;
       edit('duringRunEdit');
       edit('latestDuringRunEdit');
     }
-    rename(from, to);
-  });
-  const stop = watchPipeline(config, error => { errors.push(error); });
+    fs.renameSync(from, to);
+  };
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files: { rename } });
   try {
     await until(() => runs() === 1, 'initial generation');
     editWhileRunning = true;

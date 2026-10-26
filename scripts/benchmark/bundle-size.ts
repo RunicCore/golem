@@ -18,7 +18,7 @@ export const RUNTIME_ENTRIES = [
   'validation', 'mobx', 'mobx-validation', 'client',
 ] as const;
 
-/** SDK profiles generated from scripts/benchmark/fixtures/features/money.yaml: one operation, one model. */
+/** SDK profiles generated from tests/fixtures/models/serde-features/money.yaml: one operation, one model. */
 const SDK_PROFILES = [
   { id: 'sdk-no-validation', validation: false },
   { id: 'sdk-validating', validation: true },
