@@ -82,6 +82,7 @@ in the sections below.
 - `golem exec --watch` generates a model file that you create while its first run is in progress.
 - A `tsconfig.json` with errors, such as an unknown option or a bad value, stops `golem generate` and `golem build` with the compiler's messages. Before, golem dropped them. In `golem build --watch`, the run fails and the watch goes on; fixing the file starts a new build. `golem generate` no longer lists the output folders; only `golem check` looks for files golem did not write.
 - A `golem.yaml` or an OpenAPI input that is not valid YAML stops the run with a message that starts with the file, the line and the column. `@exprtlabs/golem/generator-api` exports `parseYamlFile` and `YamlFileError`.
+- A generator that returns a `watchInputs` path without calling `onInput` no longer runs again on every `golem generate`, `golem build` and watch cycle. Golem records the file when the generator returns, and runs the job again when the file changes. Call `onInput` before each read for an exact record.
 
 ## 1.0.0
 
