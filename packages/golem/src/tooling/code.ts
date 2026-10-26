@@ -128,29 +128,114 @@ export interface Code {
   readonly objectLiteral?: true;
 }
 
-/** Every Code is a `CodeValue`. A Code in a string template would print "[object Object]", so its text conversion fails. */
-class CodeValue implements Code {
+/**
+ * Every Code is a `CodeValue`. A Code in a string template would print "[object Object]", so its text conversion fails.
+ *
+ * A Code made from other Codes (the code tag, `join`, `joinIndented`) holds them and writes no parts when it is built: the
+ * parts of a piece that other pieces contain would be copied once for each level that contains it. `parts` writes them the
+ * first time a step reads them, in one pass over the leaves, and a Code is never changed, so they are kept.
+ */
+abstract class CodeValue implements Code {
   public readonly objectLiteral?: true;
+  #parts: readonly Part[] | undefined;
 
-  public constructor(public readonly parts: readonly Part[], objectLiteral: boolean = false) {
+  public constructor(objectLiteral: boolean = false) {
     if (objectLiteral) this.objectLiteral = true;
   }
+
+  public get parts(): readonly Part[] {
+    if (this.#parts === undefined) {
+      const out: Part[] = [];
+      this.#parts = finishParts(out, this.appendTo(out, ''));
+    }
+    return this.#parts;
+  }
+
+  /** Append the parts of this Code to `out` as `append` does, and return the text still pending. */
+  public appendTo(out: Part[], pending: string): string {
+    return this.#parts === undefined ? this.write(out, pending) : append(out, pending, this.#parts);
+  }
+
+  protected abstract write(out: Part[], pending: string): string;
 
   public toString(): never {
     throw new TypeError('a Code was put in a string template or a string; put it in the code tag, or in render');
   }
 }
 
+/** A Code that holds its parts. */
+class PartsCode extends CodeValue {
+  public constructor(private readonly held: readonly Part[], objectLiteral: boolean = false) {
+    super(objectLiteral);
+  }
+
+  protected write(out: Part[], pending: string): string {
+    return append(out, pending, this.held);
+  }
+}
+
+/** The text between the values of a code tag, and the values. */
+class TagCode extends CodeValue {
+  public constructor(private readonly strings: readonly string[], private readonly values: readonly Code[], objectLiteral: boolean = false) {
+    super(objectLiteral);
+  }
+
+  protected write(out: Part[], pending: string): string {
+    const { strings, values } = this;
+    pending += strings[0]!;
+    for (let index = 0; index < values.length; index += 1) {
+      const value = values[index];
+      if (value) pending = appendCode(out, pending, value);
+      pending += strings[index + 1]!;
+    }
+    return pending;
+  }
+}
+
+/** The pieces of a `join`, and the separator between them. */
+class JoinCode extends CodeValue {
+  public constructor(private readonly pieces: readonly Code[], private readonly separator: Code) {
+    super();
+  }
+
+  protected write(out: Part[], pending: string): string {
+    const { pieces, separator } = this;
+    for (let index = 0; index < pieces.length; index += 1) {
+      if (index > 0) pending = appendCode(out, pending, separator);
+      pending = appendCode(out, pending, pieces[index]!);
+    }
+    return pending;
+  }
+}
+
+/** The lines of a `joinIndented`, and the separator between them. */
+class LinesCode extends CodeValue {
+  public constructor(private readonly lines: readonly IndentedLine[], private readonly separator: Code) {
+    super();
+  }
+
+  protected write(out: Part[], pending: string): string {
+    const { lines, separator } = this;
+    for (let index = 0; index < lines.length; index += 1) {
+      if (index > 0) pending = appendCode(out, pending, separator);
+      const { spaces, body } = lines[index]!;
+      pending += ' '.repeat(spaces);
+      pending = appendCode(out, pending, body);
+    }
+    return pending;
+  }
+}
+
 /** The Code of one runtime part: the value `name` of a runtime module, or its type when `typeOnly`. The rt tables make these. */
 export function runtimeCode(module: RuntimeModule, name: string, typeOnly: boolean = false): Code {
-  return new CodeValue([{ kind: 'runtime', module, name, ...(typeOnly ? { typeOnly: true } : {}) }]);
+  return new PartsCode([{ kind: 'runtime', module, name, ...(typeOnly ? { typeOnly: true } : {}) }]);
 }
 
 /** The runtime part `named` under a local name of the file: `rtType.serde.SerdeOptions` as `__GolemSerdeOptions` imports `SerdeOptions as __GolemSerdeOptions` and writes the alias. */
 export function aliased(named: Code, alias: string): Code {
   const [only, ...more] = named.parts;
   if (only?.kind !== 'runtime' || more.length > 0) throw new TypeError('aliased takes the Code of one runtime part');
-  return new CodeValue([{ ...only, alias: checkedIdentifier(alias, 'alias') }]);
+  return new PartsCode([{ ...only, alias: checkedIdentifier(alias, 'alias') }]);
 }
 
 /** A value that `literal` writes as a JSON literal. */
@@ -183,13 +268,27 @@ function append(out: Part[], pending: string, source: readonly Part[]): string {
   return pending;
 }
 
-function finish(out: Part[], pending: string): Code {
+/** `append` for a Code: a Code that holds other Codes appends their leaves, not a copy of their parts. */
+function appendCode(out: Part[], pending: string, source: Code): string {
+  return source instanceof CodeValue ? source.appendTo(out, pending) : append(out, pending, source.parts);
+}
+
+function finishParts(out: Part[], pending: string): readonly Part[] {
   if (pending !== '') out.push({ kind: 'text', text: pending });
-  return new CodeValue(out);
+  return out;
+}
+
+function finish(out: Part[], pending: string): Code {
+  return new PartsCode(finishParts(out, pending));
 }
 
 /** Build a Code from parts. Adjacent text parts become one, so equal code has one shape. */
 function fromParts(parts: readonly Part[]): Code {
+  // One part needs no merge, unless it is empty text, which is no part.
+  if (parts.length === 1) {
+    const only = parts[0]!;
+    if (only.kind !== 'text' || only.text !== '') return new PartsCode(parts);
+  }
   const out: Part[] = [];
   return finish(out, append(out, '', parts));
 }
@@ -211,30 +310,18 @@ export function code(strings: TemplateStringsArray, ...values: readonly Code[]):
   const only = values[0];
   // `${value}` alone is the value, unless the mark of an object literal would carry over (see `asObjectLiteral`).
   if (values.length === 1 && only && strings[0] === '' && strings[1] === '' && !only.objectLiteral) return only;
-  const out: Part[] = [];
-  let pending = strings[0]!;
-  for (let index = 0; index < values.length; index += 1) {
-    const value = values[index];
-    if (value) pending = append(out, pending, value.parts);
-    pending += strings[index + 1]!;
-  }
-  return finish(out, pending);
+  return new TagCode(strings, values);
 }
 
 const constants = new WeakMap<TemplateStringsArray, Code>();
 
 /** The Code that writes nothing. */
-const NOTHING: Code = new CodeValue([]);
+const NOTHING: Code = new PartsCode([]);
 
 /** Code from the pieces of a list, with `separator` between them. */
 export function join(pieces: readonly Code[], separator: Code = NOTHING): Code {
-  const out: Part[] = [];
-  let pending = '';
-  for (let index = 0; index < pieces.length; index += 1) {
-    if (index > 0) pending = append(out, pending, separator.parts);
-    pending = append(out, pending, pieces[index]!.parts);
-  }
-  return finish(out, pending);
+  // The list is the caller's, who may change it after the call: the Code keeps its own copy.
+  return new JoinCode(pieces.slice(), separator);
 }
 
 /** A JSON literal of a value, such as a quoted string. */
@@ -264,7 +351,7 @@ export function identifier(name: string): Code {
 
 /** The code of an object literal, as the emitter that built the literal says. Any later change of the code drops the mark. */
 export function asObjectLiteral(literalCode: Code): Code {
-  return new CodeValue(literalCode.parts, true);
+  return new TagCode(['', ''], [literalCode], true);
 }
 
 export function helper(id: string, define: () => Code, rank?: number): Helper {
@@ -345,15 +432,8 @@ export interface IndentedLine {
 
 /** The lines with `separator` between them, each after its spaces: `join` of `code\`${indentation(spaces)}${body}\``, without a Code for each line. */
 export function joinIndented(lines: readonly IndentedLine[], separator: Code): Code {
-  const out: Part[] = [];
-  let pending = '';
-  for (let index = 0; index < lines.length; index += 1) {
-    if (index > 0) pending = append(out, pending, separator.parts);
-    const { spaces, body } = lines[index]!;
-    pending += ' '.repeat(spaces);
-    pending = append(out, pending, body.parts);
-  }
-  return finish(out, pending);
+  // The list is the caller's, who may change it after the call: the Code keeps its own copy.
+  return new LinesCode(lines.map(({ spaces, body }) => ({ spaces, body })), separator);
 }
 
 /**
