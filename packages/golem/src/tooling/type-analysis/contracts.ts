@@ -7,7 +7,7 @@ import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
 import { canonicalDescriptorKey } from '../schema.js';
 import { deduplicateProjections } from './graph.js';
-import { diagnostic, linkedClassNames, modelSpecificationForClass } from './symbols.js';
+import { diagnostic, linkedClasses, modelSpecificationForClass } from './symbols.js';
 import { manifestModelOfSymbol, type ManifestIndex } from './provenance.js';
 import { codecPublicId, createSchemaGraph, internDescriptors } from '../schema-graph.js';
 
@@ -62,14 +62,12 @@ export function createContractAnalysis(
   const baseNames = new Map<ModelSpecification, string>();
   const declaredNames = new Set<string>();
   for (const specification of specifications) {
-    const linked = linkedClassNames(checker, specification, specifications);
-    const declaration = linked.length === 1
-      ? specification.sourceFile.statements.find((statement): statement is ts.ClassDeclaration => ts.isClassDeclaration(statement) && statement.name?.text === linked[0])
-      : undefined;
-    const name = (declaration && options.classComponentName?.(declaration)) ?? (linked.length === 1 ? linked[0]! : specification.name);
-    // Two models of one file cannot share a name: the classes of two models would otherwise take one component.
+    const linked = linkedClasses(checker, specification, specifications);
+    const declaration = linked.length === 1 ? linked[0] : undefined;
+    const name = (declaration && options.classComponentName?.(declaration)) ?? declaration?.name.text ?? specification.name;
+    // Two models of one file cannot share a component name: the classes of two models would otherwise take one component.
     const key = `${specification.sourceFile.fileName}\0${name}`;
-    if (declaredNames.has(key)) throw diagnostic(specification.sourceFile, specification.declaration, '1005', `Generated model name "${name}" is already declared in this model source.`);
+    if (declaredNames.has(key)) throw diagnostic(specification.sourceFile, specification.declaration, '1005', `Component name "${name}" is already taken in this model source. Give ${declaration?.name.text ?? specification.name} another @ApiSchema name, or move it to another file.`);
     declaredNames.add(key);
     baseNames.set(specification, name);
   }

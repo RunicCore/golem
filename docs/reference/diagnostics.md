@@ -192,7 +192,12 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1005
 
-**Duplicate generated model name.** Two `IModel`/`IObject` declarations in the same model source produce the same generated name. **Fix:** Rename one of the declarations.
+**Duplicate generated model name.** Two `IModel`/`IObject` declarations in the same model source produce the same generated name, or two models of one model source get the same OpenAPI component name, from `@ApiSchema({ name })` or a class name.
+
+**Fix:**
+
+- Rename one of the declarations.
+- For a component name, give one class another `@ApiSchema({ name })`, or move it to another file.
 
 ### RUNM1011
 

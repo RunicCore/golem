@@ -513,5 +513,5 @@ export type TB = IModel<{ b: number }>;
     },
     links: 'workspace',
   });
-  await assert.rejects(generateAt(root), /pair\.model\.ts:\d+:\d+ RUNM1005: Generated model name "Same" is already declared/);
+  await assert.rejects(generateAt(root), /pair\.model\.ts:\d+:\d+ RUNM1005: Component name "Same" is already taken in this model source\./);
 });
