@@ -24,14 +24,14 @@ test('the golem ESLint rule reports parse<T> used as a value at its line and col
   assert.deepEqual(await lint(root, 'src/use.ts', `${IMPORTS}export const money = parse<TMoney>('{}');\n`), []);
   const [reported, ...rest] = await lint(root, 'src/use.ts', `${IMPORTS}export const decode = parse<TMoney>;\n`);
   assert.equal(rest.length, 0);
-  assert.equal(reported!.ruleId, 'golem/unrewritable-serde-call');
+  assert.equal(reported!.ruleId, 'golem/no-unrewritable-code');
   assert.equal(reported!.severity, 2);
   assert.equal(reported!.line, 3);
   assert.equal(reported!.column, 23);
   assert.match(reported!.message, /^RUNM1079: parse<TMoney> is used as a value, which golem cannot rewrite\. Call parse<TMoney>\(\.\.\.\) directly\.$/);
 });
 
-const DISABLE = '// eslint-disable-next-line golem/unrewritable-serde-call';
+const DISABLE = '// eslint-disable-next-line golem/no-unrewritable-code';
 const DECODE = 'export const decode = parse<TMoney>;';
 
 test('an eslint-disable comment suppresses the report under the text parser, and the same words in a template do not', async (t) => {
@@ -41,7 +41,7 @@ test('an eslint-disable comment suppresses the report under the text parser, and
   assert.deepEqual(await lint(root, 'src/use.ts', `${IMPORTS}${DISABLE}\n${DECODE}\n`), []);
   assert.deepEqual(await lint(root, 'src/use.ts', `/* eslint-disable */\n${IMPORTS}${DECODE}\n`), []);
   const quoted = await lint(root, 'src/use.ts', `${IMPORTS}export const note = \`${DISABLE}\`;\n${DECODE}\n`);
-  assert.deepEqual(quoted.map((message) => [message.ruleId, message.line]), [['golem/unrewritable-serde-call', 4]]);
+  assert.deepEqual(quoted.map((message) => [message.ruleId, message.line]), [['golem/no-unrewritable-code', 4]]);
 });
 
 test('a report in a file with CRLF line breaks and a multi-line comment lands on its own line', async (t) => {

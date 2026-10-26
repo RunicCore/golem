@@ -95,9 +95,9 @@ node --import @exprtlabs/golem/register src/main.ts
 - Node before 22.18 needs `--experimental-strip-types` as well ([Node versions](#node-versions)).
 - The loader compiles the files that Node cannot strip, such as a file with a decorator or an `enum`, with your TypeScript. A NestJS app needs no second loader ([run with the Node loader](/guide/nestjs-requests#run-with-the-node-loader)).
 
-## Lint for unrewritable calls {#lint}
+## Lint for unrewritable code {#lint}
 
-A host rewrites each call that it can read. It cannot rewrite `parse<TPayment>` used as a value, such as `texts.map(parse<TPayment>)`. That code throws when it runs. `golem build` and `golem check` report it. The ESLint rule `golem/unrewritable-serde-call` reports the same errors when ESLint runs, also in your editor.
+A host rewrites each call that it can read. It cannot rewrite `parse<TPayment>` used as a value, such as `texts.map(parse<TPayment>)`. That code throws when it runs. `golem build` and `golem check` report it. The ESLint rule `golem/no-unrewritable-code` reports the same errors when ESLint runs, also in your editor.
 
 `golem()` returns one flat-config object. It turns the rule on for `.ts`, `.mts`, `.cts` and `.tsx` files. ESLint needs a parser for these files. Choose one setup:
 

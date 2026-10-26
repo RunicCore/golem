@@ -47,11 +47,11 @@ function textParser(project: RewriteProject): Linter.Parser {
 }
 
 /** The rule that reports each error of the rewrite scan of a file, the errors that `golem check` reports: code that no golem host can rewrite. */
-function unrewritableSerdeCall(project: RewriteProject): Rule.RuleModule {
+function noUnrewritableCode(project: RewriteProject): Rule.RuleModule {
   return {
     meta: {
       type: 'problem',
-      docs: { description: 'Report the code in a file that golem cannot rewrite, such as a stringify, parse, validate, assertValue, toWireFormat or fromWireFormat call used as a value, so it would throw when it runs.' },
+      docs: { description: 'Report code that golem cannot rewrite' },
       schema: [],
       messages: { unrewritable: '{{ code }}: {{ text }}' },
     },
@@ -69,7 +69,7 @@ function unrewritableSerdeCall(project: RewriteProject): Rule.RuleModule {
 }
 
 /**
- * An ESLint flat-config object that turns on `golem/unrewritable-serde-call` for the TypeScript files, against the
+ * An ESLint flat-config object that turns on `golem/no-unrewritable-code` for the TypeScript files, against the
  * golem.yaml named by `config`, `GOLEM_CONFIG` or `./golem.yaml` in `cwd`. The scan is the one the hosts run, with the
  * project's own TypeScript; the file's text is the text ESLint holds. The config needs a parser: another config object
  * sets one that reads TypeScript, or `parser: 'text'` sets the parser of this config.
@@ -81,7 +81,7 @@ export async function golem(options: GolemEslintOptions = {}): Promise<Linter.Co
     name: 'golem',
     files: ['**/*.ts', '**/*.mts', '**/*.cts', '**/*.tsx'],
     ...(parser === 'text' ? { languageOptions: { parser: textParser(project) } } : {}),
-    plugins: { golem: { rules: { 'unrewritable-serde-call': unrewritableSerdeCall(project) } } },
-    rules: { 'golem/unrewritable-serde-call': 'error' },
+    plugins: { golem: { rules: { 'no-unrewritable-code': noUnrewritableCode(project) } } },
+    rules: { 'golem/no-unrewritable-code': 'error' },
   };
 }
