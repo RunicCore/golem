@@ -157,7 +157,7 @@ test('an argument golem build sets itself is rejected with the reason and the wo
     assert.throws(() => parseArguments(['build', flag, 'value']), (error: Error) => error.message.startsWith(`golem build sets ${flag} itself (`) && error.message.includes('); '), flag);
   }
   // The emit program sets these: an argument would beat the tsconfig it reads. The tsconfig is where they are set.
-  for (const flag of ['--rootDir', '--baseUrl', '--composite', '--outFile', '--declarationDir', '--sourceRoot', '--mapRoot', '--inlineSourceMap', '--inlineSources']) {
+  for (const flag of ['--baseUrl', '--composite', '--outFile', '--declarationDir', '--sourceRoot', '--mapRoot', '--inlineSourceMap', '--inlineSources']) {
     assert.throws(() => parseArguments(['build', flag, 'value']), (error: Error) => error.message.startsWith(`golem build sets ${flag} itself (`) && error.message.endsWith('); set it in tsconfig.json'), flag);
   }
   const root = serdeProject(t, 'build-owned-flag');

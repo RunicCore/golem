@@ -97,7 +97,7 @@ interface ClassicProgram {
   getDeclarationDiagnostics(): readonly ClassicDiagnostic[];
   emit(
     targetSourceFile: undefined,
-    writeFile: (filename: string, text: string) => void,
+    writeFile: (filename: string, text: string, writeByteOrderMark: boolean, onError: undefined, sourceFiles: readonly Golem.SourceFile[] | undefined) => void,
     cancellationToken: undefined,
     emitOnlyDtsFiles: boolean,
   ): { readonly emitSkipped: boolean; readonly diagnostics: readonly ClassicDiagnostic[] };
@@ -639,16 +639,22 @@ class CompatProgram implements Golem.Program {
     return file ? this.program.getSemanticDiagnostics(file).map(withText) : [];
   }
 
-  /** The classic emit with a collecting `writeFile`: it writes nothing. A declaration output is told from JavaScript by its name. */
+  /**
+   * The classic emit with a collecting `writeFile`: it writes nothing. A declaration output is told from JavaScript by its name. The
+   * source of an output is the one file `writeFile` gets for it; the files are the compiler's transformed copies, so the name is used.
+   */
   emitToMemory(kind: Golem.EmitKind): Golem.MemoryEmit {
     const options = this.getCompilerOptions();
     const declarations = kind === 'declarations';
     const files = new Map<string, string>();
-    if (!emitWanted(options, declarations)) return { emitSkipped: true, files, diagnostics: [] };
-    const result = this.program.emit(undefined, (filename, text) => {
-      if (DECLARATION_OUTPUT.test(filename) === declarations) files.set(canonical(filename), text);
+    const sources = new Map<string, string>();
+    if (!emitWanted(options, declarations)) return { emitSkipped: true, files, sources, diagnostics: [] };
+    const result = this.program.emit(undefined, (filename, text, _writeByteOrderMark, _onError, sourceFiles) => {
+      if (DECLARATION_OUTPUT.test(filename) !== declarations) return;
+      files.set(canonical(filename), text);
+      if (sourceFiles?.length === 1) sources.set(canonical(filename), canonical(sourceFiles[0]!.fileName));
     }, undefined, declarations);
-    return { emitSkipped: result.emitSkipped, files, diagnostics: result.diagnostics.map(withText) };
+    return { emitSkipped: result.emitSkipped, files, sources, diagnostics: result.diagnostics.map(withText) };
   }
 }
 

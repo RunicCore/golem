@@ -53,7 +53,6 @@ interface Project {
   readonly files: readonly string[];
   readonly outDir: string;
   readonly declarationDir?: string;
-  readonly rootDir?: string;
   /** The original configuration emits declarations, so the check writes them from the original sources and the build changes their import paths. */
   readonly declaration: boolean;
   /** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: the build is the check alone. */
@@ -140,7 +139,6 @@ function readProject(configFile: string, parsed: { readonly options: ts.Compiler
   const root = path.dirname(configFile);
   const outDir = stringOption(options, 'outDir');
   if (outDir === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
-  const rootDir = stringOption(options, 'rootDir');
   const declarationDir = stringOption(options, 'declarationDir');
   const noEmit = options.noEmit === true;
   return {
@@ -149,7 +147,6 @@ function readProject(configFile: string, parsed: { readonly options: ts.Compiler
     files: parsed.fileNames,
     outDir,
     ...(declarationDir === undefined ? {} : { declarationDir }),
-    ...(rootDir === undefined ? {} : { rootDir }),
     declaration: options.declaration === true || options.composite === true,
     emitsJavaScript: emitsJavaScript(options),
     noEmit,
@@ -163,28 +160,6 @@ function scanFailure(root: string, errors: readonly GolemDiagnostic[]): Error {
     `golem rewrite scan reported ${errors.length} error diagnostic${errors.length === 1 ? '' : 's'}:`,
     ...errors.map((diagnostic) => `  ${diagnostic.code}${location(diagnostic)}: ${diagnostic.message}`),
   ].join('\n'));
-}
-
-/** The deepest directory that holds every one of `directories`. */
-function commonDirectory(directories: readonly string[]): string {
-  const [first, ...others] = directories.map((directory) => path.resolve(directory).split(path.sep));
-  if (first === undefined) throw new Error('golem build has no directory to lay its output out from.');
-  let length = first.length;
-  for (const other of others) {
-    let shared = 0;
-    while (shared < length && shared < other.length && other[shared] === first[shared]) shared += 1;
-    length = shared;
-  }
-  if (length === 0) throw new Error(`golem build cannot lay out sources that share no directory: ${directories.map(displayPath).join(', ')}.`);
-  return path.resolve(`${first.slice(0, length).join(path.sep)}${path.sep}`);
-}
-
-/**
- * The directory the compiler writes outputs relative to: the common directory of the tsconfig's directory, the `rootDir` and every source.
- * With a `rootDir` the output layout starts at that directory instead.
- */
-function sourceBase(project: Project, sources: readonly ts.SourceFile[]): string {
-  return commonDirectory([project.root, ...sources.map((source) => path.dirname(source.fileName)), ...project.rootDir === undefined ? [] : [project.rootDir]]);
 }
 
 /**
@@ -208,17 +183,8 @@ function withNodeSpecifiers(root: string, sources: readonly ts.SourceFile[], che
   return rewrites;
 }
 
-/** How the compiler names the declaration file of a source by its extension, and the extension of the file that holds that declaration's text in the program that reads it. */
-const DECLARATION_FILES: Readonly<Record<string, { readonly declaration: string; readonly module: string }>> = {
-  '.ts': { declaration: '.d.ts', module: '.ts' },
-  '.tsx': { declaration: '.d.ts', module: '.ts' },
-  '.js': { declaration: '.d.ts', module: '.ts' },
-  '.jsx': { declaration: '.d.ts', module: '.ts' },
-  '.mts': { declaration: '.d.mts', module: '.mts' },
-  '.mjs': { declaration: '.d.mts', module: '.mts' },
-  '.cts': { declaration: '.d.cts', module: '.cts' },
-  '.cjs': { declaration: '.d.cts', module: '.cts' },
-};
+/** The extension of the file that holds a declaration's text in the program that reads it: `.d.ts` is read as `.ts`, `.d.mts` as `.mts`, `.d.cts` as `.cts`. */
+const DECLARATION_MODULE = /\.d(\.[cm]?ts)$/;
 
 /**
  * Give the declarations the check program emitted from the original sources the import paths Node resolves, as the emitted JavaScript has
@@ -226,25 +192,21 @@ const DECLARATION_FILES: Readonly<Record<string, { readonly declaration: string;
  * a specifier resolves from where the source's own does, and the edits apply to the declaration. The result is the emitted files with
  * the edited text of those that needed an edit.
  */
-function rewriteDeclarations(session: ts.ProgramSession, project: Project, sources: readonly ts.SourceFile[], rootNames: readonly string[], flags: readonly string[], emitted: ReadonlyMap<string, string>): ReadonlyMap<string, string> {
-  const layoutRoot = project.rootDir ?? sourceBase(project, sources);
-  const directory = project.declarationDir ?? project.outDir;
+function rewriteDeclarations(session: ts.ProgramSession, project: Project, sources: readonly ts.SourceFile[], rootNames: readonly string[], flags: readonly string[], emitted: ts.MemoryEmit): ReadonlyMap<string, string> {
+  const projectFiles = new Set(sources.filter((candidate) => !candidate.isDeclarationFile).map((candidate) => candidate.fileName));
   const declarations = new Map<string, { readonly file: string; readonly text: string }>();
-  for (const source of sources.filter((candidate) => !candidate.isDeclarationFile)) {
-    const extension = Object.keys(DECLARATION_FILES).find((candidate) => source.fileName.endsWith(candidate));
-    if (extension === undefined) continue;
-    const kind = DECLARATION_FILES[extension]!;
-    const stem = source.fileName.slice(0, source.fileName.length - extension.length);
-    const file = path.join(directory, `${path.relative(layoutRoot, stem)}${kind.declaration}`);
-    const text = emitted.get(file);
-    if (text !== undefined) declarations.set(`${stem}.golem-declaration${kind.module}`, { file, text });
+  for (const [file, text] of emitted.files) {
+    const kind = DECLARATION_MODULE.exec(file)?.[1];
+    const source = emitted.sources.get(file);
+    if (kind === undefined || source === undefined || !projectFiles.has(source)) continue;
+    declarations.set(`${source.slice(0, source.length - path.extname(source).length)}.golem-declaration${kind}`, { file, text });
   }
-  if (declarations.size === 0) return emitted;
+  if (declarations.size === 0) return emitted.files;
   const overlays = new Map([...declarations].map(([module, { text }]) => [module, text]));
   using program = session.openProgram({ root: project.root, sources: [...rootNames, ...overlays.keys()], configFile: project.configFile, flags, overlays });
   const checker = program.getTypeChecker();
   const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(sources.map((source) => source.fileName)) };
-  const rewritten = new Map(emitted);
+  const rewritten = new Map(emitted.files);
   for (const [module, { file, text }] of declarations) {
     const declaration = program.getSourceFile(module);
     if (declaration === undefined) throw new Error(`golem build could not read the declaration ${displayPath(file)} to change its import paths.`);
@@ -254,44 +216,16 @@ function rewriteDeclarations(session: ts.ProgramSession, project: Project, sourc
   return rewritten;
 }
 
-/** The endings of the files the compiler writes for a source, longest first: the JavaScript, the declaration and their maps. */
-const EMITTED_ENDINGS = ['.d.ts.map', '.d.mts.map', '.d.cts.map', '.d.ts', '.d.mts', '.d.cts', '.js.map', '.mjs.map', '.cjs.map', '.jsx.map', '.js', '.mjs', '.cjs', '.jsx'] as const;
-
-/**
- * The source an emitted file belongs to: the one whose path, without its extension, is the file's path under the output directory,
- * from a folder that holds every source. Undecided when none or several do, so the file is not attributed and not removed later.
- */
-function sourceOfEmitted(project: Project, local: readonly ts.SourceFile[], file: string): string | undefined {
-  const ending = EMITTED_ENDINGS.find((candidate) => file.endsWith(candidate));
-  if (ending === undefined) return undefined;
-  const stem = file.slice(0, file.length - ending.length);
-  const directory = ending.startsWith('.d.') ? project.declarationDir ?? project.outDir : project.outDir;
-  const relative = path.relative(directory, stem);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) return undefined;
-  const matches = local.filter((source) => {
-    const extension = Object.keys(DECLARATION_FILES).find((candidate) => source.fileName.endsWith(candidate));
-    if (extension === undefined) return false;
-    const sourceStem = source.fileName.slice(0, source.fileName.length - extension.length);
-    if (sourceStem !== relative && !sourceStem.endsWith(`${path.sep}${relative}`)) return false;
-    const layoutRoot = sourceStem.slice(0, sourceStem.length - relative.length);
-    return local.every((other) => isInsideDirectory(layoutRoot, other.fileName));
-  });
-  return matches.length === 1 ? matches[0]!.fileName : undefined;
-}
-
 /**
  * Keep the files the compiler emitted for each source of the program, and remove those of a source that left the program since
  * the build before: its JavaScript, declaration and maps, and the directories that leave empty inside the output. A file that a
- * source still in the program owns stays. Only the files recorded here are removed: a file another tool wrote is never touched.
+ * source still in the program owns stays. `emitted` names the source the compiler made each output from. Only the files recorded here are removed: a file another tool wrote is never touched.
  */
-function settleOutputs(run: BuildRun, project: Project, sources: readonly ts.SourceFile[], emitted: readonly string[]): void {
+function settleOutputs(run: BuildRun, project: Project, sources: readonly ts.SourceFile[], emitted: ReadonlyMap<string, string>): void {
   const { emitted: record } = run;
   if (record === undefined) return;
   const local = sources.filter((source) => !source.isDeclarationFile);
-  for (const file of emitted) {
-    const source = sourceOfEmitted(project, local, path.resolve(file));
-    if (source !== undefined) record.set(source, new Set([...record.get(source) ?? [], path.resolve(file)]));
-  }
+  for (const [file, source] of emitted) record.set(source, new Set([...record.get(source) ?? [], path.resolve(file)]));
   const present = new Set(local.map((source) => source.fileName));
   const kept = new Set([...record].filter(([source]) => present.has(source)).flatMap(([, files]) => [...files]));
   for (const [source, files] of [...record]) {
@@ -506,11 +440,11 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const sources = projectSources(program);
   for (const source of sources) observe(source.fileName);
   // Nothing is written until the emit has succeeded: a failed build leaves the outputs of the build before as they were.
-  const written = declarations === undefined ? new Map<string, string>() : rewriteDeclarations(session, project, sources, parsed.fileNames, run.tscArguments, declarations.files);
+  const written = declarations === undefined ? new Map<string, string>() : rewriteDeclarations(session, project, sources, parsed.fileNames, run.tscArguments, declarations);
   if (!project.emitsJavaScript) {
     assertContained(project, configFile, new Map(), written);
     for (const [file, text] of written) writeOutput(file, text);
-    settleOutputs(run, project, sources, [...written.keys()]);
+    settleOutputs(run, project, sources, declarations?.sources ?? new Map());
     return checkCode;
   }
   const checker = program.getTypeChecker();
@@ -553,7 +487,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   }
   assertContained(project, configFile, files, written);
   for (const [file, text] of [...written, ...files]) writeOutput(file, text);
-  settleOutputs(run, project, sources, [...written.keys(), ...files.keys()]);
+  settleOutputs(run, project, sources, new Map([...declarations?.sources ?? [], ...emitted.sources]));
   return checkFailed ? checkCode : 0;
 }
 

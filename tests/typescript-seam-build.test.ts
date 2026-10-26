@@ -87,6 +87,20 @@ test('a program emits JavaScript and declarations to memory, equal to what tsc w
   for (const [file, text] of [...javascript.files, ...declarations.files]) assert.equal(fs.readFileSync(file, 'utf8'), text, file);
 });
 
+test('each emitted file names the source file the compiler made it from, maps and declarations included, on both lanes', t => {
+  // protects: T-474 the seam pairs every output with its source, so the build computes no layout of its own
+  const { root, config } = project(t, { 'src/a.ts': 'export const a: number = 1;\n', 'src/b.mts': 'export const b = 1;\n' }, { declaration: true, declarationMap: true, sourceMap: true, outDir: 'build' });
+  using session = new ts.ProgramSession({ cwd: root });
+  using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config });
+  const paired = (kind: 'javascript' | 'declarations'): [string, string][] => [...program.emitToMemory(kind).sources].map(([output, source]): [string, string] => [path.relative(root, output), path.relative(root, source)]).toSorted();
+  assert.deepEqual(paired('javascript'), [
+    ['build/src/a.js', 'src/a.ts'], ['build/src/a.js.map', 'src/a.ts'], ['build/src/b.mjs', 'src/b.mts'], ['build/src/b.mjs.map', 'src/b.mts'],
+  ]);
+  assert.deepEqual(paired('declarations'), [
+    ['build/src/a.d.ts', 'src/a.ts'], ['build/src/a.d.ts.map', 'src/a.ts'], ['build/src/b.d.mts', 'src/b.mts'], ['build/src/b.d.mts.map', 'src/b.mts'],
+  ]);
+});
+
 test('compiler option overrides apply to one program through a virtual configuration that is no file', t => {
   // protects: T-460 the emit program takes noCheck and declaration false through a virtual tsconfig that extends the original
   const { root, config } = project(t, { 'src/a.ts': "export const a: number = 'x';\n" }, { declaration: true, outDir: 'build', rootDir: 'src' });

@@ -726,7 +726,7 @@ class CompatProgram implements Program {
   emitToMemory(kind: EmitKind): MemoryEmit {
     const options = this.getCompilerOptions();
     const declarations = kind === 'declarations';
-    if (!emitWanted(options, declarations)) return { emitSkipped: true, files: new Map(), diagnostics: [] };
+    if (!emitWanted(options, declarations)) return { emitSkipped: true, files: new Map(), sources: new Map(), diagnostics: [] };
     const sources = this.getSourceFiles()
       .filter((file) => !file.isDeclarationFile && !this.isSourceFileDefaultLibrary(file) && !this.isSourceFileFromExternalLibrary(file))
       .map((file) => file.fileName);
@@ -734,6 +734,7 @@ class CompatProgram implements Program {
     return {
       emitSkipped: output.emitSkipped,
       files: new Map([...output.outputFiles].map(([filename, { text }]) => [canonical(filename), text])),
+      sources: new Map([...output.outputFiles].flatMap(([filename, { sourceFileName }]) => (sourceFileName === undefined ? [] : [[canonical(filename), canonical(sourceFileName)] as const]))),
       diagnostics: output.diagnostics,
     };
   }

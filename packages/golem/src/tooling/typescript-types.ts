@@ -573,10 +573,13 @@ export type EmitKind = 'javascript' | 'declarations';
  * The files of an in-memory emit, keyed by absolute output path. Nothing is written. `emitSkipped` is true when the options ask for
  * no such output (`noEmit`, `emitDeclarationOnly` for JavaScript, no `declaration` or `composite` for declarations) or the compiler
  * stopped; `noEmitOnError` is the caller's step: the TypeScript 6 compiler honors it, the TypeScript 7 one does not.
+ * `sources` names the source file the compiler made each output from, keyed by output path, with the output's folder and name as the
+ * compiler laid them out. An output the compiler ties to no single source, such as a build state file, has no entry.
  */
 export interface MemoryEmit {
   readonly emitSkipped: boolean;
   readonly files: ReadonlyMap<string, string>;
+  readonly sources: ReadonlyMap<string, string>;
   readonly diagnostics: readonly Diagnostic[];
 }
 
