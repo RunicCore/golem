@@ -116,3 +116,15 @@ test('section links resolve to a heading id in the built site', () => {
   }
   assert.deepEqual(missing, []);
 });
+
+const installHtml = path.join(dist, 'guide/install.html');
+// protects: T-406 the peer table shows both TypeScript ranges; a `||` in a table cell once cut the second range
+test('the built install page shows both TypeScript ranges in the peer row of each generator package', () => {
+  assert.ok(existsSync(installHtml), 'run npm run docs:build first');
+  const rows = [...readFileSync(installHtml, 'utf8').matchAll(/<tr[^>]*>[\s\S]*?<\/tr>/g)].map(m => m[0]);
+  for (const name of ['@exprtlabs/golem-model', '@exprtlabs/golem-ts-openapi']) {
+    const row = rows.filter(r => r.includes(`<code>${name}</code>`));
+    assert.equal(row.length, 1, `one peer row for ${name}`);
+    for (const range of ['&gt;=6.0.0 &lt;7', '&gt;=7.1.0-0 &lt;8']) assert.ok(row[0].includes(range), `${name} row lacks "${range}"`);
+  }
+});
