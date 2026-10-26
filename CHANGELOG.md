@@ -90,6 +90,8 @@ in the sections below.
 - `golem build --watch` removes the files it wrote for a source that you delete: the JavaScript, declaration and map files in `outDir` and `declarationDir`, and the folders that become empty. It removes only files it wrote for that source.
 - Fix: `golem build --watch` removes the output of a deleted JSON source too. Before, the copied `.json` file stayed in `outDir`.
 - `golem build` takes `--rootDir`. The layout of its output is the one the compiler gives, also for a source outside the project.
+- Fix: with `mapRoot` in the tsconfig, `golem build` maps a rewritten call back to its original line and column. Before, the map pointed at the rewritten text.
+- `golem build` accepts `inlineSourceMap` and `sourceRoot` in the tsconfig, and `--sourceRoot`, `--mapRoot`, `--inlineSourceMap` and `--inlineSources` as arguments. A rewritten call maps back to its original line and column in an inline map and with `sourceRoot` too. Before, the build refused them.
 - Fix: a relative path in a flag that you pass to `golem build`, such as `--rootDir ..` or `--typeRoots types`, is read from the folder where you run golem, as `tsc` reads it. Before, golem read it from the folder of the tsconfig. Not breaking: `--outDir` is still set by `golem build` and refused.
 - `golem exec --watch` generates a model file that you create while its first run is in progress.
 - A `tsconfig.json` with errors, such as an unknown option or a bad value, stops `golem generate` and `golem build` with the compiler's messages. Before, golem dropped them. In `golem build --watch`, the run fails and the watch goes on; fixing the file starts a new build. `golem generate` no longer lists the output folders; only `golem check` looks for files golem did not write.

@@ -129,3 +129,33 @@ export function composeSourceMaps(outer: SourceMapV3, inner: SourceMapV3): Sourc
     mappings: encodeMappings(lines),
   };
 }
+
+/**
+ * Point the JSON text of a map the compiler made for a rewritten file at the original: `inner` is the rewrite map of that file. Every
+ * field the compiler wrote stays as it wrote it (`file`, `sourceRoot`, `sources`) except the mappings, which now name positions of the original,
+ * the names, which the composition drops, and the embedded sources, which are the original text and not the rewritten one.
+ */
+export function pointSourceMap(text: string, inner: SourceMapV3): string {
+  const emitted = JSON.parse(text) as SourceMapV3;
+  return JSON.stringify({
+    ...emitted,
+    names: [],
+    mappings: composeSourceMaps(emitted, inner).mappings,
+    ...(emitted.sourcesContent === undefined ? {} : { sourcesContent: inner.sourcesContent }),
+  });
+}
+
+/** The inline source map `inlineSourceMap` puts at the end of a JavaScript file: the comment up to its data, the data, and what follows it. */
+const INLINE_SOURCE_MAP = /(\/\/# sourceMappingURL=data:application\/json(?:;charset=[^;,]*)?;base64,)([A-Za-z0-9+/=]*)(\s*)$/;
+
+/** `pointSourceMap` for the data URL at the end of the JavaScript text of `file`. A map that is missing or cannot be read is an error that names the file. */
+export function pointInlineSourceMap(file: string, code: string, inner: SourceMapV3): string {
+  const match = INLINE_SOURCE_MAP.exec(code);
+  if (!match) throw new Error(`golem build could not find the inline source map at the end of ${file}.`);
+  try {
+    const pointed = pointSourceMap(Buffer.from(match[2]!, 'base64').toString('utf8'), inner);
+    return code.slice(0, match.index) + match[1]! + Buffer.from(pointed).toString('base64') + match[3]!;
+  } catch (error) {
+    throw new Error(`golem build could not read the inline source map of ${file}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
+}

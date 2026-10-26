@@ -14,7 +14,7 @@ import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
 import type { FileRewrite } from './rewrite.js';
 import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.js';
-import { composeSourceMaps } from './source-map.js';
+import { pointInlineSourceMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
@@ -120,8 +120,6 @@ function assertSupported(configFile: string, parsed: { readonly options: ts.Comp
   if (stringOption(options, 'outDir') === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
   if (stringOption(options, 'outFile') !== undefined) throw unsupported('outFile');
   if (Array.isArray(options.rootDirs)) throw unsupported('rootDirs');
-  if (options.inlineSourceMap === true) throw unsupported('inlineSourceMap');
-  if (stringOption(options, 'sourceRoot') !== undefined) throw unsupported('sourceRoot');
   for (const name of TSC_COMMANDS) {
     if (options[name] === true) throw new Error(`golem build does not support --${name} (${displayPath(configFile)}): it is a command of tsc, not an option of a build. Run tsc --${name} instead.`);
   }
@@ -330,25 +328,8 @@ function removeOldBuildState(root: string, configFile: string): void {
 
 /** The map file of a JavaScript output. */
 const JS_SOURCE_MAP = /\.[cm]?jsx?\.map$/;
-
-/**
- * Point the map the compiler made for a rewritten file at the original. The compiler read the rewritten text, so a position in the emitted
- * JavaScript is a position in that text; composing with the applier's map gives the original line and column.
- */
-function pointSourceMap(mapFile: string, text: string, rewriteMaps: ReadonlyMap<string, SourceMapV3>): string {
-  const emitted = JSON.parse(text) as SourceMapV3;
-  const [source] = emitted.sources;
-  if (emitted.sources.length !== 1 || source === undefined) return text;
-  const inner = rewriteMaps.get(path.resolve(path.dirname(mapFile), source));
-  const composed = inner ? composeSourceMaps(emitted, inner) : emitted;
-  const { sourcesContent, ...kept } = composed;
-  return JSON.stringify({
-    ...kept,
-    sources: [source],
-    // Keep embedded sources only when the compiler embedded them; they are the original text.
-    ...(emitted.sourcesContent === undefined ? {} : { sourcesContent: inner ? inner.sourcesContent : sourcesContent }),
-  });
-}
+/** A JavaScript output. */
+const JS_OUTPUT = /\.[cm]?jsx?$/;
 
 /**
  * Write one output when it differs from the file on disk, so a file another tool changed is repaired and a file that is current keeps its time stamp.
@@ -485,9 +466,17 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     // The declarations of the check are not written either, so the status is not the check's 2.
     return 1;
   }
+  // The compiler names the source of each output; the rewrite map is found from that, never from the `sources` text of the map, which sourceRoot and mapRoot change.
+  // A map that is composed keeps every field the compiler wrote, and the mappings name the original. A file with no rewrite keeps the map as the compiler wrote it.
+  const inline = emitProgram.getCompilerOptions().inlineSourceMap === true;
   const files = new Map<string, string>();
   for (const [file, text] of emitted.files) {
-    if (!BUILD_INFO.test(file)) files.set(file, JS_SOURCE_MAP.test(file) ? pointSourceMap(file, text, rewriteMaps) : text);
+    if (BUILD_INFO.test(file)) continue;
+    const source = emitted.sources.get(file);
+    const rewriteMap = source === undefined ? undefined : rewriteMaps.get(path.resolve(source));
+    if (rewriteMap !== undefined && JS_SOURCE_MAP.test(file)) files.set(file, pointSourceMap(text, rewriteMap));
+    else if (rewriteMap !== undefined && inline && JS_OUTPUT.test(file)) files.set(file, pointInlineSourceMap(displayPath(file), text, rewriteMap));
+    else files.set(file, text);
   }
   assertContained(project, configFile, files, written);
   for (const [file, text] of [...written, ...files]) writeOutput(file, text);
