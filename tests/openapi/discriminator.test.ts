@@ -316,9 +316,9 @@ test('a union variant used on its own keeps its declared tag type and any tag va
   }
 });
 
-test('one variant model can be selected by two discriminated unions, in either declaration order', async t => {
-  const outcomes: unknown[] = [];
-  // The lowering-order warning does not depend on the profile, so one profile (mobx and validation on) is enough.
+test('a variant shared by two discriminated unions gets both union classes, in either declaration order', async t => {
+  // protects: T-385 a shared variant still gets each union model class
+  // The lowering order does not depend on the profile, so one profile (mobx and validation on) is enough.
   const profile = profiles[1];
   for (const order of ['union-first', 'shared-first'] as const) {
     const suffix = order === 'union-first' ? 'TwiceA' : 'TwiceB';
@@ -334,24 +334,30 @@ test('one variant model can be selected by two discriminated unions, in either d
     requireRecord(document.components, 'components').schemas = ordered;
     const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-twice-'), 'sdk');
     const result = await generateMaterializedSdk(document, { output, name: 'Pets', profile });
-    assert.deepEqual(
-      (result.diagnostics ?? []).map(diagnostic => diagnostic.code).sort(),
-      ['OPENAPI_UNION_SHARED_VARIANT', 'OPENAPI_UNION_SHARED_VARIANT'],
-    );
+    assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
     compileGeneratedSdk(output, [], { strict: true });
     const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'models');
     const CatModel = modelClass(models, `Cat${suffix}Model`);
     const DogModel = modelClass(models, `Dog${suffix}Model`);
+    const PetModel = modelClass(models, `Pet${suffix}Model`);
+    const FelineModel = modelClass(models, `Feline${suffix}Model`);
+    // Each union class decodes its own tags to the variant models, the shared variant included.
+    const cat = decodeGeneratedModel(PetModel, { kind: 'feline', name: 'Miso' });
+    assert.ok(cat instanceof CatModel);
+    assert.deepEqual(encodeGeneratedModel(cat), { kind: 'feline', name: 'Miso' });
+    assert.ok(decodeGeneratedModel(PetModel, { kind: 'canine', bark: true }) instanceof DogModel);
+    const tabby = decodeGeneratedModel(FelineModel, { kind: 'tabby', name: 'Miso' });
+    assert.ok(tabby instanceof CatModel);
+    assert.deepEqual(encodeGeneratedModel(tabby), { kind: 'tabby', name: 'Miso' });
+    // A tag that another union maps is not one of this union's.
+    assert.throws(() => decodeGeneratedModel(FelineModel, { kind: 'feline', name: 'Miso' }));
+    assert.throws(() => decodeGeneratedModel(PetModel, { kind: 'tabby', name: 'Miso' }));
     const json = { pet: { kind: 'feline', name: 'Miso' }, pets: [{ kind: 'canine', bark: true }] };
     const owner = requireRecord(decodeGeneratedModel(modelClass(models, `Owner${suffix}Model`), json), 'owner');
     assert.ok(owner.pet instanceof CatModel);
     assert.ok(Array.isArray(owner.pets) && owner.pets[0] instanceof DogModel);
     assert.deepEqual(encodeGeneratedModel(owner), json);
-    assert.throws(() => decodeGeneratedModel(modelClass(models, `Owner${suffix}Model`), { pet: { kind: 'tabby', name: 'Miso' } }));
-    // Cat cannot extend both unions, so neither becomes a union model class.
-    outcomes.push([`Pet${suffix}Model` in models, `Feline${suffix}Model` in models]);
   }
-  assert.deepEqual(outcomes, [[false, false], [false, false]]);
 });
 
 test('a discriminator over a non-model variant is reported and left to the union shape', async t => {
