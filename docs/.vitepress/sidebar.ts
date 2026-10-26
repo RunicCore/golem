@@ -15,6 +15,7 @@ export const SIDEBAR: readonly SidebarGroup[] = [
     { text: 'Validation tags', link: '/guide/tags' },
     { text: 'Validate models', link: '/guide/validation' },
     { text: 'JSON conversion', link: '/guide/serialization' },
+    { text: 'Number in code, text on the wire', link: '/guide/wire-text' },
     { text: 'Dates and times', link: '/guide/dates' },
     { text: 'SDK types in your models', link: '/guide/models-and-client' },
     { text: 'MobX and React', link: '/guide/mobx' },
@@ -22,12 +23,14 @@ export const SIDEBAR: readonly SidebarGroup[] = [
   ] },
   { text: 'API clients', items: [
     { text: 'Generate a client', link: '/guide/client' },
+    { text: 'Call a partner API', link: '/guide/partner-client' },
     { text: 'Call operations', link: '/guide/client-usage' },
     { text: 'Authentication', link: '/guide/auth' },
     { text: 'Body formats', link: '/guide/codecs' },
     { text: 'Streaming responses', link: '/guide/streams' },
   ] },
   { text: 'NestJS', items: [
+    { text: 'Build a NestJS endpoint', link: '/guide/nestjs-endpoint' },
     { text: 'OpenAPI from controllers', link: '/guide/nestjs' },
     { text: 'Convert requests', link: '/guide/nestjs-requests' },
   ] },
