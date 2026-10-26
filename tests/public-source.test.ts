@@ -206,13 +206,14 @@ test('a file the repository ignores is neither listed, exported nor hashed, and 
 test('an ignore rule with a character class matches what git matches', (t) => {
   const root = publicFixture(t);
   writeFixture(root, 'examples/classes/.gitignore', ['[Gg]enerated/', 'gen-[a-c].ts', 'out[!0-9].ts', 'num-[0-3].ts', 'dash[-x].ts', 'esc[\\d].ts', 'dir[/]x.ts', 'r[+-0]f.ts', ''].join('\n'));
+  // The three spellings of the folder sit under three parents: on a case-insensitive disk (macOS, Windows) they would be one folder.
   const ignoredFiles = [
-    'examples/classes/Generated/a.ts', 'examples/classes/generated/a.ts', 'examples/classes/gen-a.ts', 'examples/classes/gen-c.ts',
+    'examples/classes/upper/Generated/a.ts', 'examples/classes/lower/generated/a.ts', 'examples/classes/gen-a.ts', 'examples/classes/gen-c.ts',
     'examples/classes/outx.ts', 'examples/classes/num-2.ts', 'examples/classes/dash-.ts', 'examples/classes/dashx.ts',
     'examples/classes/escd.ts', 'examples/classes/r,f.ts',
   ];
   const keptFiles = [
-    'examples/classes/GENERATED/a.ts', 'examples/classes/gen-d.ts', 'examples/classes/out5.ts', 'examples/classes/num-4.ts',
+    'examples/classes/shout/GENERATED/a.ts', 'examples/classes/gen-d.ts', 'examples/classes/out5.ts', 'examples/classes/num-4.ts',
     'examples/classes/dashy.ts', 'examples/classes/gen-.ts',
     'examples/classes/esc5.ts', 'examples/classes/dir/x.ts', 'examples/classes/r/f.ts',
   ];
