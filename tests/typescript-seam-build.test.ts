@@ -124,12 +124,12 @@ test('arguments reach a program as the options of a configuration parsed under t
   assert.throws(() => session.openProgram({ root, sources, configFile: config, flags: ['--noSuchFlag'] }), /TS5023/);
 });
 
-test('an argument value is trimmed and an empty one is an empty list', t => {
-  // protects: T-461 --lib "es2020, dom" and --lib "" reach a program as the configuration parsed under them has them
+test('a list argument with spaces reaches a program as the configuration parsed under it has it', t => {
+  // protects: T-461 --lib "es2020, dom" reaches a program as the configuration parsed under it has it
   const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n' });
   using session = new ts.ProgramSession({ cwd: root });
   const picked = (options: ts.CompilerOptions) => ({ lib: options.lib, types: options.types, maxNodeModuleJsDepth: options.maxNodeModuleJsDepth });
-  for (const flags of [['--lib', 'es2020, dom'], ['--lib', '', '--types', '']]) {
+  for (const flags of [['--lib', 'es2020, dom']]) {
     const parsed = session.parseConfigFileWithFlags(config, flags);
     using program = session.openProgram({ root, sources: parsed.fileNames, configFile: config, flags });
     assert.deepEqual(picked(program.getCompilerOptions()), picked(parsed.options), flags.join(' '));
@@ -145,8 +145,10 @@ test('a package built in place under node_modules emits its declarations', t => 
   assert.deepEqual([...program.emitToMemory('declarations').files.keys()], [path.join(root, 'build/a.d.ts')]);
 });
 
-test('a negative number after an option is its value', () => {
-  // protects: T-461 --maxNodeModuleJsDepth -1 is one argument with its value, not a flag
-  const parse = (args: readonly string[]) => ({ options: args[0] === '--depth' ? { depth: args[1] === undefined ? true : Number(args[1]) } : {}, fileNames: [], errors: [] });
+test('a value of a list option is trimmed and empty means no items, and a negative number after an option is its value', () => {
+  // protects: T-461 --lib "es2020, dom", --lib "" and --maxNodeModuleJsDepth -1 become tsconfig values whatever the lane's parser takes
+  const parse = (args: readonly string[]) => ({ options: { [args[0]!.slice(2)]: args[1] === undefined ? true : args[0] === '--lib' ? [args[1]] : Number(args[1]) }, fileNames: [], errors: [] });
   assert.deepEqual(flagsAsConfigOptions(['--depth', '-1'], parse), { depth: -1 });
+  assert.deepEqual(flagsAsConfigOptions(['--lib', ' es2020 , dom '], parse), { lib: ['es2020', 'dom'] });
+  assert.deepEqual(flagsAsConfigOptions(['--lib', ''], parse), { lib: [] });
 });

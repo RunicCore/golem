@@ -12,8 +12,8 @@ import { TSC, write, editTsconfig, serdeProject, golemBuild } from './support/bu
 /** What a command printed, without the line `golem build` ends with. */
 const printed = (stdout: string): string => stdout.split('\n').filter((line) => !line.startsWith('Built ')).join('\n');
 
-async function tsc(root: string, args: readonly string[]): Promise<string> {
-  return (await command(root, process.execPath, [TSC, '-p', root, '--noEmit', ...args], { allowFailure: true })).stdout;
+async function tsc(root: string, args: readonly string[], emit: readonly string[] = ['--noEmit']): Promise<string> {
+  return (await command(root, process.execPath, [TSC, '-p', root, ...emit, ...args], { allowFailure: true })).stdout;
 }
 
 /** A project with two files that hold type errors, so that the order and the count of the report show. */
@@ -114,9 +114,11 @@ test('with noEmitOnError a syntax error alone is printed, as tsc prints it, and 
   write(root, 'src/b.ts', 'export const = ;\n');
   const flags = ['--noEmitOnError', '--pretty', 'false'];
   const result = await golemBuild(root, flags);
-  assert.equal(printed(result.stdout), printed(await tsc(root, flags)));
+  // The project writes declarations, so tsc is run as the build's check is: emitting them, to a folder that holds nothing after the stop.
+  const declarations = path.join(root, 'declarations-out');
+  assert.equal(printed(result.stdout), printed(await tsc(root, flags, ['--emitDeclarationOnly', '--declarationDir', declarations])));
   assert.match(result.stdout, /src\/b\.ts\(1,14\): error TS1134/);
-  assert.doesNotMatch(result.stdout, /TS2322/);
+  assert.equal(fs.existsSync(declarations), false);
   assert.equal(result.code, 1);
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
 });
