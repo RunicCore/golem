@@ -85,13 +85,12 @@ The rules for the names:
 - The suffixes and function prefixes go on that name. A schema `Charge` gives `Charge` and `ChargeModel`. A schema `TMoney` gives `TMoney` and `TMoneyModel`: the name keeps the schema's own prefix.
 - A `controllers` job names a schema after its model ([component names](/reference/nestjs#component-names)). `type TMoney = IModel<…>` with no class gives the schema `TMoney`.
 - Only an object schema has the class, the fields, the init type, the `JSON` type and the functions. A schema of another type, such as a string enum or an array, has the data type only.
-- A `oneOf` union, or an `anyOf` union with a `discriminator`, also gets `<Name>Model` when every variant is an object schema that extends the same base schema through `allOf`. The class is abstract and the variants extend it.
+- A `oneOf` union, or an `anyOf` union with a `discriminator`, also gets `<Name>Model` when every variant is an object schema that extends the same base schema through `allOf`. The class is abstract. A variant extends the base schema, not the union class. `value instanceof <Name>Model` is true for an instance of any variant of the union, also when another union selects that variant. A variant that two unions select belongs to both classes.
 
 Two schemas that give one name stop generation with a `generated name collision` error. The schemas `Foo-Bar` and `Foo.Bar` both give `FooBar`. The error names both schemas with the place of each in the document. Rename one schema in the document.
 
 The diagnostics for these names:
 
-- [OPENAPI_UNION_SHARED_VARIANT](/reference/diagnostics#openapi-union-shared-variant): a union gets no class, because another union also claims one of its variants.
 - [OPENAPI_DISCRIMINATOR_IMPLICIT_VALUE](/reference/diagnostics#openapi-discriminator-implicit-value): a variant with no `mapping` entry is selected by its schema name, not by its generated name.
 
 Call operations with these names in [Call operations](/guide/client-usage#import-one-operation-or-model). Use them as the field types of your own models in [SDK types in your models](/guide/models-and-client).

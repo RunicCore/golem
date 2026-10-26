@@ -44,6 +44,7 @@ in the sections below.
 
 ### OpenAPI
 
+- **Breaking:** a union model class of `golem-openapi` answers `instanceof` for its variants, and a variant no longer extends it. A variant that two unions select now belongs to both, so the warning `OPENAPI_UNION_SHARED_VARIANT` is gone. Before, a variant extended its union class, and two unions that shared a variant got no class. An `instanceof` test on the union class stays true. See [Upgrade to 1.1](docs/upgrade-1-1.md#union-model-classes).
 - A controller body or return typed `readonly TPayment[]` refers to the `TPayment` component in the OpenAPI document, as `TPayment[]` does. Before, it held an inline copy of the model's schema.
 - A `oneOf` or `anyOf` of objects that needs a conversion, and has no `discriminator` and no required `const` or single-value `enum` property that differs between variants, stops generation with [`OPENAPI_UNION_DISCRIMINATOR_MISSING`](docs/reference/diagnostics.md#openapi-union-discriminator-missing). The message names the schema and lists the variants. Add the property to each variant, or add a `discriminator`.
 - An `allOf` whose members declare types with no common value, such as `allOf: [{ type: string }, { type: number }]`, stops generation with [`OPENAPI_COMPOSITION_UNSATISFIABLE`](docs/reference/diagnostics.md#openapi-composition-unsatisfiable). Before, it generated code. Give the members a type that they share.

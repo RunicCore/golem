@@ -47,6 +47,16 @@ A path in a message that does not lie below the working directory starts with `.
 
 When a script or an editor task parses golem messages, change it to read this form. Run the command from the folder where you want the paths to start.
 
+## Use `instanceof` to test a union model class {#union-model-classes}
+
+A union model class that `golem-openapi` generates (a `oneOf`, or an `anyOf` with a `discriminator`, of variants that extend one base schema) now tests its variants with `instanceof`. A variant extends the base schema, not the union class. In 1.0 a variant extended the union class.
+
+- `value instanceof PetModel` stays true for an instance of any variant of `Pet`. TypeScript narrows `value` to the variants.
+- A variant that two unions select now belongs to both. In 1.0 the generator wrote the warning `OPENAPI_UNION_SHARED_VARIANT` and gave neither union a class.
+- The model manifest names the base schema as the base of each variant, not the union.
+
+Search your code for a use of the prototype chain, such as `Object.getPrototypeOf(CatModel) === PetModel`, and replace it with `instanceof`. Run `npx golem generate` after you update.
+
 ## Move to TypeScript 7.1 or 6
 
 Install one of the supported versions, then update the Golem packages:
