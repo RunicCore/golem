@@ -18,7 +18,6 @@ import type * as ts from './typescript-ns.js';
 
 /** Paths a host's bundler can strip types from; `.tsx` is a bundler's to handle, not Node's. */
 export const BUNDLER_TYPESCRIPT_FILE = /\.(?:ts|mts|cts|tsx)$/;
-export const NODE_MODULES = /[\\/]node_modules[\\/]/;
 
 /**
  * `code` with `map` as an inline source map. The map's source is the module's own file name: a host that reads an
@@ -138,7 +137,7 @@ class ScanningProject {
     }
     if (scanned.edits.length === 0) return undefined;
     const relative = path.relative(this.root, file).split(path.sep).join('/');
-    const applied = applyRewrites(text, scanned, relative);
+    const applied = applyRewrites(text, scanned, file);
     return { code: applied.code, map: { ...applied.map, sources: [relative] }, dependencies: scanned.dependencies.map((dependency) => path.join(this.root, dependency)) };
   }
 

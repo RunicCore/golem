@@ -616,7 +616,7 @@ For inbound conversion in your own interceptor or pipe, get the codec with `obje
 
 A Node `load` hook that rewrites TypeScript files as Node loads them. Install it through [`register`](#register). Import `loader` only to call `module.register` yourself ([Node loader](/guide/build#node-loader)).
 
-- It rewrites only `.ts`, `.mts` and `.cts` files outside `node_modules`. A `.tsx` file goes to Node unchanged.
+- It rewrites only `.ts`, `.mts` and `.cts` files outside `node_modules`. A workspace package that is linked into `node_modules` counts as outside it, also with `preserveSymlinks`. A `.tsx` file goes to Node unchanged.
 - It needs ES modules. A `.cts` file, or a `.ts` file under a CommonJS `package.json`, that holds a call to rewrite throws `golem rewrites need ES modules`. The message names the file.
 - A call that cannot be rewritten fails the load with the file, the line and the instruction to run `golem generate`.
 - Without a `golem.yaml`, the load fails with `golem needs a golem.yaml to rewrite parse<T>() calls; set config or GOLEM_CONFIG`.

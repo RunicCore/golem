@@ -8,6 +8,7 @@ import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import { evaluateStaticValue } from './static-value.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { readModelManifest } from './model-manifest.js';
+import { isInstalledFile } from './type-analysis/path-identity.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
 import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { advertisedModelManifests } from './type-analysis/provenance.js';
@@ -312,7 +313,7 @@ function starTargets(checker: ts.TypeChecker, module: ts.Symbol, seen = new Set<
 function addAliasChainFiles(checker: ts.TypeChecker, input: { readonly root: string; readonly from: ts.SourceFile; readonly dependencies: Set<string> }, name: ts.Node): void {
   const add = (file: ts.SourceFile): void => {
     // An installed package is not edited in a dev session; its manifest names what a rewrite depends on.
-    if (file !== input.from && !file.fileName.split(/[\\/]/).includes('node_modules')) input.dependencies.add(portable(input.root, file.fileName));
+    if (file !== input.from && !isInstalledFile(file.fileName)) input.dependencies.add(portable(input.root, file.fileName));
   };
   const seen = new Set<ts.Symbol>();
   let symbol = symbolAt(checker, name);
@@ -963,7 +964,7 @@ export class RewriteScanner {
   private candidate(file: ts.SourceFile): boolean {
     return !file.isDeclarationFile
       && !this.program.isSourceFileDefaultLibrary(file)
-      && !file.fileName.split(/[\\/]/).includes('node_modules')
+      && !isInstalledFile(file.fileName)
       && !isGeneratedCompanion(file.fileName);
   }
 
@@ -981,8 +982,8 @@ export class RewriteScanner {
 
   /**
    * `filename` is an absolute path. Undefined for a file that is not a rewrite candidate: not in the program, a declaration file, under node_modules, or a generated companion.
-   * node_modules is judged by the file's own path, which the compiler resolves through symlinks: a workspace package
-   * linked into node_modules is `isSourceFileFromExternalLibrary` yet lies elsewhere, and a host loading it rewrites its sites.
+   * node_modules is judged by the file's path and its real path (`isInstalledFile`): a workspace package linked into
+   * node_modules is `isSourceFileFromExternalLibrary` yet lies elsewhere, and a host loading it rewrites its sites.
    */
   scanFile(filename: string): FileScanResult | undefined {
     const file = this.program.getSourceFile(filename);

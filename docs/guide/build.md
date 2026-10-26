@@ -70,6 +70,7 @@ The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project se
 
 - `golem()` rewrites each TypeScript file in memory before esbuild strips its types.
 - It takes each TypeScript file outside `node_modules` that holds a call to rewrite. Other files go to the next plugins.
+- A workspace package that is linked into `node_modules` counts as outside it, also with `preserveSymlinks`. `golem build` does not build such a package, with or without `preserveSymlinks`: its own `golem build` builds it.
 - A plugin that needs a file that `golem()` takes goes before `golem()` in `plugins`.
 - `config` names the `golem.yaml` relative to `absWorkingDir`.
 

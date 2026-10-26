@@ -23,7 +23,7 @@ import { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CODEC_IDS_KEY } from './schema
 export function untransformedCallError(name: string): LibError {
   return new LibError(
     LibErrorKind.ValidationUnavailable,
-    `${name}<T> was not rewritten to a generated function. Build with \`golem build\`, the golem Vite or esbuild plugin, or Node with \`--import @exprtlabs/golem/register\`; a package loaded through \`node_modules\` (\`preserveSymlinks\`) is not rewritten.`,
+    `${name}<T> was not rewritten to a generated function. Build with \`golem build\`, the golem Vite or esbuild plugin, or Node with \`--import @exprtlabs/golem/register\`; a package installed in \`node_modules\` is not rewritten.`,
   );
 }
 
