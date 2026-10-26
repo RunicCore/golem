@@ -1,5 +1,5 @@
 // lane: typescript6 Checker guards: the controllers job reads the checker's declarations and unresolved imports in this process
-import { copyFixtureFile, readFixture } from './fixture-project.js';
+import { copyFixtureFile, fileFixtureScope, onceShared, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -38,9 +38,11 @@ const models: Record<string, string> = {
   'src/order.model.ts': model('TOrder', 'cart: TCart', "import type { TCart } from './cart.model.js';"),
   'src/a/charge.model.ts': model('TCharge', 'money: Money', "import type { Money } from '../../sdk/index.js';"),
   'src/b/charge.model.ts': model('TCharge', 'amount: number'),
+  'src/inline.model.ts': model('TInline', "money: import('../sdk/index.js').Money"),
+  'src/aliased.model.ts': model('TAliased', 'cart: TCart', "import type { TCart } from '@app/cart.model.js';"),
 };
 
-const controller = (returns: string, imports = ''): string => [
+const controller = (returns: string, imports = '', body = 'undefined as never'): string => [
   "import { Controller, Get } from '@nestjs/common';",
   "import type { TCart } from './cart.model.js';",
   "import type { TStatus } from './status.model.js';",
@@ -49,12 +51,18 @@ const controller = (returns: string, imports = ''): string => [
   "@Controller('catalog')",
   'export class CatalogController {',
   '  @Get()',
-  `  list(): ${returns} { return undefined as never; }`,
+  `  list()${returns && `: ${returns}`} { return ${body}; }`,
   '}',
   '',
 ].join('\n');
 
 const keeps = controller('TStatus | TCharge');
+
+/** The packed profile's tsconfig, with an `@app/*` alias of `src/*`. */
+function tsconfig(): Record<string, unknown> {
+  const profile = JSON.parse(readFixture('packed/profile/tsconfig.json')) as { compilerOptions: Record<string, unknown> };
+  return { ...profile, compilerOptions: { ...profile.compilerOptions, paths: { '@app/*': ['./src/*'] } } };
+}
 
 /** A clean tree: no SDK, no generated file and no `.golem/`. Models under the controllers root import the SDK that the openapi job of the same golem.yaml writes. */
 function cleanProject(t: TestContext, source: string, yaml = config, files: Record<string, string> = models): string {
@@ -62,7 +70,7 @@ function cleanProject(t: TestContext, source: string, yaml = config, files: Reco
     prefix: 'golem-clean-run-',
     packageName: 'clean-run',
     links: 'workspace',
-    tsconfig: JSON.parse(readFixture('packed/profile/tsconfig.json')) as Record<string, unknown>,
+    tsconfig: tsconfig(),
     files: { 'golem.yaml': yaml, 'src/catalog.controller.ts': source, ...files },
   });
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
@@ -84,6 +92,7 @@ test('a clean tree generates in one run, and the run after it writes the same do
   }
   const registry = path.relative(root, operationCodecRegistryPath(root));
   const first = { document: read(root, 'generated/openapi.json'), registry: read(root, registry) };
+  // The inline `import('../sdk/index.js').Money` model and the model that reaches the SDK through a `paths` alias are left out too.
   assert.deepEqual(Object.keys((JSON.parse(first.document) as { components: { schemas: object } }).components.schemas), ['TCharge', 'TStatus']);
 
   // A changed controller file makes the controllers job read the project again, now with the SDK on disk.
@@ -93,25 +102,43 @@ test('a clean tree generates in one run, and the run after it writes the same do
   await runPipeline(yaml, { check: true });
 });
 
-// protects: T-464 a controller that reaches a model with an SDK import gets RUNM1084 in every run
-for (const [reach, returns, imports] of [
-  ['returns it', 'TCart', ''],
-  ['returns an array of it', 'TCart[]', ''],
-  ['picks a field of it that holds no SDK type', "Pick<TCart, 'note'>", ''],
-  ['returns it in a union', 'TStatus | TCart', ''],
-  ['returns a model that holds it', 'TStatus | TOrder', "import type { TOrder } from './order.model.js';"],
-  ['imports an SDK type', 'Money', "import type { Money } from '../sdk/index.js';"],
-] as const) {
-  test(`a controller that ${reach} stops with RUNM1084 on a clean tree and with the SDK present`, async (t: TestContext) => {
-    const root = cleanProject(t, controller(returns, imports));
-    const yaml = path.join(root, 'golem.yaml');
-    const cycle = /RUNM1084: Generated input dependency cycle: the controllers job reads .*, which is, or imports, a file that a later job writes/;
+const reaches = [
+  ['returns it', 'TCart', '', undefined],
+  ['returns an array of it', 'TCart[]', '', undefined],
+  ['picks a field of it that holds no SDK type', "Pick<TCart, 'note'>", '', undefined],
+  ['returns it in a union', 'TStatus | TCart', '', undefined],
+  ['returns a model that holds it', 'TStatus | TOrder', "import type { TOrder } from './order.model.js';", undefined],
+  ['returns an inferred Map of it', '', '', 'new Map<string, TCart>()'],
+  ['imports an SDK type', 'Money', "import type { Money } from '../sdk/index.js';", undefined],
+  ['returns a local type that holds an SDK type', 'Local', "import type { Money } from '../sdk/index.js';\ntype Local = { m: Money };", undefined],
+] as const;
+const cycle = (error: unknown): boolean => /RUNM1084: Generated input dependency cycle: the controllers job reads .*, which is, or imports, a file that a later job writes/.test(String(error)) && !/RUNM1058/.test(String(error));
 
-    await assert.rejects(runPipeline(yaml), (error: unknown) => cycle.test(String(error)) && !/RUNM1058/.test(String(error)));
-    fs.writeFileSync(path.join(root, 'src/catalog.controller.ts'), keeps);
-    await runPipeline(yaml);
-    fs.writeFileSync(path.join(root, 'src/catalog.controller.ts'), controller(returns, imports));
-    await assert.rejects(runPipeline(yaml), (error: unknown) => cycle.test(String(error)) && !/RUNM1058/.test(String(error)));
+// One project whose SDK is on disk, shared by the cases: the controller file changes, the models stay.
+const fileScope = fileFixtureScope();
+const withSdk = onceShared(async () => {
+  const root = createControllerFixture(fileScope, {
+    prefix: 'golem-clean-run-sdk-', packageName: 'clean-run-sdk', links: 'workspace', tsconfig: tsconfig(),
+    files: { 'golem.yaml': config, 'src/catalog.controller.ts': keeps, ...models },
+  });
+  copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
+  copyFixtureFile(root, 'packed/profile/src/cart.model.ts', 'src/cart.model.ts');
+  await runPipeline(path.join(root, 'golem.yaml'));
+  return root;
+});
+
+// protects: T-464 a controller that reaches a model with an SDK import gets RUNM1084 in every run
+for (const [reach, returns, imports, body] of reaches) {
+  test(`a controller that ${reach} stops with RUNM1084 on a clean tree`, async (t: TestContext) => {
+    const root = cleanProject(t, controller(returns, imports, body));
+
+    await assert.rejects(runPipeline(path.join(root, 'golem.yaml')), cycle);
+  });
+  test(`a controller that ${reach} stops with RUNM1084 when the SDK is present`, async () => {
+    const root = await withSdk();
+    fs.writeFileSync(path.join(root, 'src/catalog.controller.ts'), controller(returns, imports, body));
+
+    await assert.rejects(runPipeline(path.join(root, 'golem.yaml')), cycle);
   });
 }
 

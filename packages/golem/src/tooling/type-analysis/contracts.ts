@@ -2,7 +2,7 @@ import * as path from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { collectSpecifications, type ModelSpecification, type TypeAnalysisContext } from './models.js';
 import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
-import { byRealPath, companionFilename, filesReadingOutputs, includedModelSources, isGeneratedCompanion, isUnderOutputs, typeScriptErrorAt, type ModelBoundary } from './project.js';
+import { byRealPath, companionFilename, filesReadingOutputs, includedModelSources, inNodeModules, isGeneratedCompanion, isUnderOutputs, typeScriptErrorAt, type ModelBoundary } from './project.js';
 import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
 import { canonicalPath, displayPath } from '../generator-api.js';
@@ -53,7 +53,7 @@ export function createContractAnalysis(
   const laterOutputs = (options.laterOutputs ?? []).map(canonicalPath);
   const excluded = laterOutputs.length === 0 ? new Set<string>() : filesReadingOutputs(program, laterOutputs);
   const ownSources = program.getSourceFiles().filter(source => !source.isDeclarationFile
-    && !source.fileName.replace(/\\/g, '/').includes('/node_modules/')
+    && !inNodeModules(source.fileName)
     && !excluded.has(source.fileName)
     && !isGeneratedCompanion(source.fileName)).map(source => source.fileName);
   // With the models job known, a model file of an installed package or a declaration file is a shared model file of the app, as it is for that job.
@@ -157,9 +157,14 @@ export function createContractAnalysis(
   const reachedLaterOutput = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): string | undefined => {
     if (laterOutputs.length === 0) return undefined;
     const own = node.getSourceFile().fileName;
+    // Every program file under an output is in `excluded`; only a file of node_modules can reach one, through a symlink.
+    const linked = new Map<string, boolean>();
     const later = (symbol: ts.Symbol | undefined): string | undefined => symbol?.declarations
-      ?.map((declaration) => declaration.getSourceFile().fileName).find((file) => file !== own && (excluded.has(file) || isUnderOutputs(laterOutputs, file)));
+      ?.map((declaration) => declaration.getSourceFile().fileName).find((file) => file !== own && (excluded.has(file)
+        || (inNodeModules(file) && (linked.get(file) ?? linked.set(file, isUnderOutputs(laterOutputs, file)).get(file)))));
     let found: string | undefined;
+    // The local types a controller type names are read too: `type Local = { m: Money }` keeps the SDK import of its file.
+    const declarationsSeen = new Set<ts.Node>();
     const visitNode = (visited: ts.Node): void => {
       if (found !== undefined) return;
       if (ts.isIdentifier(visited)) {
@@ -171,7 +176,16 @@ export function createContractAnalysis(
           const target = specifier?.startsWith('.') ? path.resolve(path.dirname(declaration.getSourceFile().fileName), specifier) : undefined;
           if (target !== undefined && isUnderOutputs(laterOutputs, target)) found = target;
         }
-        found ??= later(resolveSymbol(checker, symbol));
+        const resolved = resolveSymbol(checker, symbol);
+        found ??= later(resolved);
+        for (const declaration of resolved?.declarations ?? []) {
+          const file = declaration.getSourceFile();
+          if (found !== undefined || declarationsSeen.has(declaration) || file.isDeclarationFile || program.isSourceFileDefaultLibrary(file) || inNodeModules(file.fileName)) continue;
+          if (ts.isTypeAliasDeclaration(declaration) || ts.isInterfaceDeclaration(declaration) || ts.isClassDeclaration(declaration)) {
+            declarationsSeen.add(declaration);
+            visitNode(declaration);
+          }
+        }
       }
       ts.forEachChild(visited, visitNode);
     };
@@ -183,9 +197,10 @@ export function createContractAnalysis(
       if (found !== undefined) return;
       for (const argument of visited.aliasTypeArguments ?? []) visitType(argument);
       if (visited.isUnion() || visited.isIntersection()) visited.types.forEach(visitType);
-      if (checker.isArrayType(visited) || checker.isTupleType(visited)) checker.getTypeArguments(visited).forEach(visitType);
+      // The compiler shims return no arguments for a type that is no reference.
+      checker.getTypeArguments(visited).forEach(visitType);
       const declared = visited.getSymbol()?.declarations?.[0]?.getSourceFile();
-      if (!(visited.flags & ts.TypeFlags.Object) || (declared && (program.isSourceFileDefaultLibrary(declared) || declared.fileName.replace(/\\/g, '/').includes('/node_modules/')))) return;
+      if (!(visited.flags & ts.TypeFlags.Object) || (declared && (program.isSourceFileDefaultLibrary(declared) || inNodeModules(declared.fileName)))) return;
       for (const property of checker.getPropertiesOfType(visited)) {
         found ??= later(property);
         if (found === undefined && property.declarations[0]) visitType(checker.getTypeOfSymbolAtLocation(property, property.declarations[0]));
