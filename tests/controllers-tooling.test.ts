@@ -247,6 +247,18 @@ test('controller OpenAPI files stay standards-valid while ownership and retireme
   assert.equal(fs.readFileSync(output, 'utf8'), '{"user":true}\n');
 });
 
+test('controller maxResultBytes from golem.yaml reaches the job options and must be a positive integer', (t: TestContext) => {
+  // protects: T-376 golem.yaml sets the route result limit; the job options, and so the job hash, carry it
+  const { config } = fixture(t);
+  const job = (value: number): string => `controllers:\n  - root: .\n    output: api.json\n    info: { title: Test, version: "1" }\n    maxResultBytes: ${value}`;
+  writeConfig(config, job(2097152));
+  const loaded = loadConfig(config).jobs[0];
+  assert.ok(loaded && loaded.kind === 'controllers');
+  assert.equal(loaded.options.maxResultBytes, 2097152);
+  writeConfig(config, job(0));
+  assert.throws(() => loadConfig(config), /controllers\[0\]\.maxResultBytes must be a positive safe integer/);
+});
+
 test('pipeline executes controller output before the SDK consumes its exact file', async (t: TestContext) => {
   const { root, config } = fixture(t);
   const controllerOutput = path.join(root, 'generated/api.json');

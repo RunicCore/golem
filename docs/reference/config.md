@@ -106,6 +106,7 @@ Install `@exprtlabs/golem-ts-openapi` to use `controllers`. A job reads static N
 | `securitySchemes` | object | No | — | Named OpenAPI security schemes that controller metadata references. |
 | `globalPrefix` | string | No | — | Prefix for every route. Match the Nest application configuration. |
 | `uriVersioning` | object | No | — | URI versioning with an optional `type` (`URI`, `uri` or `0`), a `prefix` (default `v`) and a `defaultVersion` as a string or an array of strings. Set it when controllers declare versions. |
+| `maxResultBytes` | positive integer | No | `1048576` (1 MiB) | The largest result of a [route helper](/reference/nestjs#route-helpers), counted in bytes of JSON. A path or version that folds to more stops generation with [`RUNT2106`](/reference/diagnostics#runt2106). Raise it only when a result is large on purpose. A changed value runs the job again. |
 
 ```yaml
 version: 1

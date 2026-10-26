@@ -403,6 +403,16 @@ test('resolves HttpStatus enum members and preserves Nest URI version concatenat
   });
 });
 
+test('a route helper result over 1 MiB stops with RUNT2106 until maxResultBytes is raised', async (t: TestContext) => {
+  // protects: T-376 the route result limit is an option; the default stays 1 MiB
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+function bigPath() { return '${'a'.repeat(1024 * 1024)}'; }
+@Controller(bigPath()) export class BigController { @Get() get(): void {} }`);
+  const context = { root, output: path.join(root, 'openapi.json'), info: { title: 'Big', version: '1' }, profile: { mobx: false, validation: false } };
+  await assert.rejects(generate(context), (error: unknown) => diagnosticsOf(error).some(item => item.code === 'RUNT2106'));
+  assert.equal(Object.keys(documentOf(await generate({ ...context, maxResultBytes: 2 * 1024 * 1024 })).paths).length, 1);
+});
+
 test('rejects @HostParam routes', async (t: TestContext) => {
   const source = `import { Controller, Get, HostParam } from '@nestjs/common';
 @Controller('host') export class HostController { @Get() get(@HostParam('tenant') tenant: string): void {} }`;

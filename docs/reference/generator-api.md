@@ -196,7 +196,7 @@ console.log(result.artifacts[0]?.path); // /absolute/app/api/payments.yaml
 | `sources` | No | files that end in `suffixes` below `<root>/src` | Non-empty list of controller files. |
 | `suffixes` | No | `['.controller.ts']` | File-name endings that make a file below `<root>/src` a controller source. |
 | `openapiVersion` | No | `'3.2.0'` | `'3.2.0'` or `'3.1.2'`. |
-| `servers`, `securitySchemes`, `tags`, `globalPrefix`, `uriVersioning` | No | omitted | Same as the [controller job keys](/reference/config#controller-jobs). |
+| `servers`, `securitySchemes`, `tags`, `globalPrefix`, `uriVersioning`, `maxResultBytes` | No | omitted | Same as the [controller job keys](/reference/config#controller-jobs). |
 | `onInput` | No | omitted | Called with each path before it is read. |
 | `session` | No | omitted | Keeps the compiler running across calls. |
 

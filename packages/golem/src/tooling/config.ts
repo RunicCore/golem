@@ -269,7 +269,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const label = `controllers[${index}]`;
       keys(entry, [
         'framework', 'root', 'sources', 'suffixes', 'output', 'openapiVersion', 'info', 'servers',
-        'securitySchemes', 'tags', 'globalPrefix', 'uriVersioning',
+        'securitySchemes', 'tags', 'globalPrefix', 'uriVersioning', 'maxResultBytes',
       ], label);
       if (entry.framework !== undefined && entry.framework !== 'nestjs') throw new Error(`${label}.framework must be nestjs.`);
       const root = inputPath(entry.root ?? '.', `${label}.root`);
@@ -299,6 +299,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const tags = controllerTags(entry.tags, `${label}.tags`);
       const globalPrefix = optionalString(entry.globalPrefix, `${label}.globalPrefix`);
       const uriVersioning = controllerUriVersioning(entry.uriVersioning, `${label}.uriVersioning`);
+      const maxResultBytes = entry.maxResultBytes === undefined ? undefined : positive(entry.maxResultBytes, 0, `${label}.maxResultBytes`);
       jobs.push({ id: `controllers:${path.relative(directory, output) || '.'}`, kind: 'controllers', package: '@exprtlabs/golem-ts-openapi', options: {
         root,
         output,
@@ -313,6 +314,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
         ...(tags ? { tags } : {}),
         ...(globalPrefix === undefined ? {} : { globalPrefix }),
         ...(uriVersioning === undefined ? {} : { uriVersioning }),
+        ...(maxResultBytes === undefined ? {} : { maxResultBytes }),
       } });
     }
   }
