@@ -1016,7 +1016,7 @@ export function projectSources(program: ts.Program): ts.SourceFile[] {
     && !file.fileName.split(/[\\/]/).includes('node_modules'));
 }
 
-/** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: `golem build` stages nothing then. */
+/** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: `golem build` runs no emit program then. */
 export function emitsJavaScript(options: ts.CompilerOptions): boolean {
   return options.noEmit !== true && options.emitDeclarationOnly !== true;
 }

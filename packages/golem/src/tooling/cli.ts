@@ -16,29 +16,29 @@ export type Arguments =
   | { action: 'build'; project?: string; watch: boolean; config?: string; tscArguments?: readonly string[] }
   | { action: 'generate' | 'check' | 'watch' | 'exec'; config: string; watch: boolean; command: string[] };
 
-/** The arguments `golem build` sets itself in its two compiler runs, by lowercase name, with why and what to do instead. */
+/** The arguments `golem build` sets itself in its check and emit programs, by lowercase name, with why and what to do instead. */
 const BUILD_OWNED_ARGUMENTS: Readonly<Record<string, { readonly why: string; readonly workaround: string }>> = {
-  '--nocheck': { why: 'the emit run skips the type check and the check run reports the errors', workaround: 'a build emits JavaScript when the check fails unless noEmitOnError is set' },
-  '--noemit': { why: 'the check run writes nothing and the emit run writes the JavaScript', workaround: 'set noEmit in the tsconfig to check without emitting' },
-  '--emitdeclarationonly': { why: 'the check run writes the declarations from your sources and the emit run writes the JavaScript', workaround: 'set emitDeclarationOnly in the tsconfig for a declarations-only build' },
-  '--tsbuildinfofile': { why: 'each run keeps its own incremental state under .golem/build', workaround: 'delete .golem/build to start from clean state' },
-  '--incremental': { why: 'both runs are incremental', workaround: 'delete .golem/build to build everything again' },
-  '--outdir': { why: 'the emit run writes into the outDir of the tsconfig', workaround: 'set outDir in the tsconfig, or pass -p a tsconfig that extends it and sets another outDir' },
-  '--listemittedfiles': { why: 'golem reads the list of emitted files to point source maps at your sources and to remove the output of a deleted source', workaround: 'list the files in outDir after the build' },
+  '--nocheck': { why: 'the emit program skips the type check and the check program reports the errors', workaround: 'a build emits JavaScript when the check fails unless noEmitOnError is set' },
+  '--noemit': { why: 'the check program writes no JavaScript and the emit program writes it', workaround: 'set noEmit in the tsconfig to check without emitting' },
+  '--emitdeclarationonly': { why: 'the check program writes the declarations from your sources and the emit program writes the JavaScript', workaround: 'set emitDeclarationOnly in the tsconfig for a declarations-only build' },
+  '--tsbuildinfofile': { why: 'golem keeps no TypeScript build state: it compares each output with the file on disk', workaround: 'leave it out; a build with nothing changed writes no file' },
+  '--incremental': { why: 'golem keeps no TypeScript build state: it compares each output with the file on disk', workaround: 'leave it out; a build with nothing changed writes no file' },
+  '--outdir': { why: 'the emit program writes into the outDir of the tsconfig', workaround: 'set outDir in the tsconfig, or pass -p a tsconfig that extends it and sets another outDir' },
+  '--listemittedfiles': { why: 'golem writes the outputs itself and prints no list of them', workaround: 'list the files in outDir after the build' },
   ...Object.fromEntries(([
-    ['--rootDir', 'the emit run compiles a staged copy of your sources, so golem maps the rootDir of the tsconfig onto it'],
-    ['--baseUrl', 'the emit run compiles a staged copy of your sources, so golem maps the baseUrl and paths of the tsconfig onto it'],
-    ['--composite', 'the emit run is not a composite build, and the check run must report what it reports'],
-    ['--outFile', 'the emit run writes one file per source into the outDir of the tsconfig'],
-    ['--declarationDir', 'the check run writes the declarations from your sources, and a forwarded directory would also receive the ones of the staged copy'],
-    ['--sourceRoot', 'golem points source maps at your sources, and the emit run writes them from a staged copy'],
-    ['--mapRoot', 'golem points the maps of the emit run at your sources, and a forwarded map location would change what they resolve against'],
-    ['--inlineSourceMap', 'golem rewrites the map files the emit run writes and cannot reach a map inside the JavaScript'],
-    ['--inlineSources', 'the maps of the emit run embed the sources of the tsconfig setting, and a forwarded one would embed the staged text'],
+    ['--rootDir', 'golem lays out its outputs and the import paths of the declarations from the rootDir of the tsconfig'],
+    ['--baseUrl', 'golem reads the baseUrl and paths of the tsconfig to give each import the path Node loads'],
+    ['--composite', 'the emit program is not a composite build, and the check program must report what it reports'],
+    ['--outFile', 'the emit program writes one file per source into the outDir of the tsconfig'],
+    ['--declarationDir', 'the check program writes the declarations from your sources into the directory of the tsconfig'],
+    ['--sourceRoot', 'golem points source maps at your sources, which the emit program reads at their own paths'],
+    ['--mapRoot', 'golem points the maps of the emit program at your sources, and a forwarded map location would change what they resolve against'],
+    ['--inlineSourceMap', 'golem maps each source map back to your sources and cannot reach a map inside the JavaScript'],
+    ['--inlineSources', 'the maps of the emit program embed the sources of the tsconfig setting, and a forwarded one would embed the rewritten text'],
   ] as const).map(([flag, why]) => [flag.toLowerCase(), { why, workaround: 'set it in tsconfig.json' }])),
 };
 
-/** `golem build` takes `--config`, `-p/--project` and `--watch` (`-w` too, so the compiler's own watcher never starts); every other argument goes to both compiler runs unchanged. */
+/** `golem build` takes `--config`, `-p/--project` and `--watch` (`-w` too, so the compiler's own watcher never starts); every other argument goes to the check program and the emit program unchanged. */
 function parseBuildArguments(args: readonly string[]): Arguments {
   let project: string | undefined;
   let watch = false;

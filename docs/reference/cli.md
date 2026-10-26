@@ -97,8 +97,10 @@ npx golem build --declaration --noEmitOnError
 A build runs three steps:
 
 1. It generates the outputs of `golem.yaml`, as `golem generate` does. A job whose inputs, options and generator package are unchanged is skipped, so a second build with no change runs no job. An input change runs the job and each later job that reads its outputs.
-2. It type-checks the sources you wrote with the TypeScript in your project ([supported versions](/compatibility#supported-versions)). It prints the messages of the compiler unchanged. An error points at your line. The declarations come from your sources, and their import paths change as in [import paths](#import-paths).
-3. It emits JavaScript with the calls rewritten and the import paths that Node loads ([import paths](#import-paths)). Source maps point at your sources.
+2. It type-checks the sources you wrote with the TypeScript in your project ([supported versions](/compatibility#supported-versions)). The check runs inside the `golem` process: the build starts no `tsc`. It prints the diagnostics as `tsc -p` prints them. An error points at your line. The declarations come from your sources, and their import paths change as in [import paths](#import-paths).
+3. It emits JavaScript with the calls rewritten and the import paths that Node loads ([import paths](#import-paths)), also in memory. Source maps point at your sources. It writes each output file only when the file differs from the file on disk.
+
+The check and the emit are two programs of one compiler. The messages of [compiler arguments](#compiler-arguments) call them the check program and the emit program.
 
 The build starts from `golem.yaml`:
 
@@ -125,6 +127,9 @@ A build never edits your source files:
 
 - It writes the generated files that `golem.yaml` configures.
 - It writes the declarations and JavaScript that the tsconfig asks for into `outDir`.
+- It writes an output only when its text differs from the file on disk. A file that is current keeps its time stamp, and a file that another tool changed is written again.
+- It writes an existing output in place, so a link stays a link and the file mode stays.
+- It writes no file until the emit has succeeded. A failed emit leaves the outputs of the build before as they were.
 - Ignore the generated files and `.golem/` ([ignore generated files](/reference/generated-files#gitignore)).
 - Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
 
@@ -143,28 +148,55 @@ Every other specifier stays: a bare package name, a `#` import, a URL, a specifi
 ### Compiler arguments
 
 - `golem build` takes `--config`, `-p` or `--project`, and `--watch` or `-w`.
-- It passes every other argument unchanged to both compiler runs, the check and the emit, so `tsc` decides what it means.
-- `--declaration`, `--noEmitOnError`, `--listFiles` and `--generateTrace` work as they do for `tsc -p`.
-- The build asks the compiler how the arguments change `declaration` and `noEmitOnError`, so a forwarded `--declaration` writes the declarations from your sources.
+- It passes every other argument unchanged to the check program and the emit program, so `tsc` decides what it means.
+- `--declaration` and `--noEmitOnError` work as they do for `tsc -p`. The build asks the compiler how the arguments change `declaration` and `noEmitOnError`, so a forwarded `--declaration` writes the declarations from your sources.
+- `--listFiles` prints the files of the program after the diagnostics, as `tsc -p` does.
+- A file name among the arguments stops the build with a message that starts `The compiler arguments name source files (...)` and holds `TS5042`. `tsc -p` refuses it too: a build names its files in the tsconfig.
 
 The build sets some arguments itself. Passing one stops the build with `golem build sets <argument> itself (<reason>); <workaround>`.
 
 | Argument | Why the build sets it | Instead |
 | --- | --- | --- |
-| `--noCheck` | The emit run skips the check and the check run reports the errors | A failed check still emits unless `noEmitOnError` is set |
-| `--noEmit` | The check run writes nothing and the emit run writes the JavaScript | Set `noEmit` in the tsconfig |
-| `--emitDeclarationOnly` | The check run writes the declarations and the emit run writes the JavaScript | Set `emitDeclarationOnly` in the tsconfig |
-| `--tsBuildInfoFile` | Each run keeps its own incremental state | Delete `.golem/build` to start clean |
-| `--incremental` | Both runs are incremental | Delete `.golem/build` to build everything again |
-| `--outDir` | The emit run writes into the `outDir` of the tsconfig | Set `outDir` in the tsconfig, or pass `-p` a tsconfig that extends it and sets another `outDir` |
-| `--listEmittedFiles` | The build reads the list to point source maps at your sources | List the files in `outDir` after the build |
-| `--rootDir`, `--baseUrl`, `--composite`, `--outFile`, `--declarationDir`, `--sourceRoot`, `--mapRoot`, `--inlineSourceMap`, `--inlineSources` | An argument beats the tsconfig that the emit run reads. These change how the build maps your sources and writes declarations and maps | Set it in the tsconfig |
+| `--noCheck` | The emit program skips the type check and the check program reports the errors | A build emits JavaScript when the check fails unless `noEmitOnError` is set |
+| `--noEmit` | The check program writes no JavaScript and the emit program writes it | Set `noEmit` in the tsconfig to check without emitting |
+| `--emitDeclarationOnly` | The check program writes the declarations from your sources and the emit program writes the JavaScript | Set `emitDeclarationOnly` in the tsconfig for a declarations-only build |
+| `--tsBuildInfoFile`, `--incremental` | Golem keeps no TypeScript build state: it compares each output with the file on disk | Leave it out. A build with nothing changed writes no file |
+| `--outDir` | The emit program writes into the `outDir` of the tsconfig | Set `outDir` in the tsconfig, or pass `-p` a tsconfig that extends it and sets another `outDir` |
+| `--listEmittedFiles` | Golem writes the outputs itself and prints no list of them | List the files in `outDir` after the build |
+| `--rootDir` | Golem lays out its outputs and the import paths of the declarations from the `rootDir` of the tsconfig | Set it in `tsconfig.json` |
+| `--baseUrl` | Golem reads the `baseUrl` and `paths` of the tsconfig to give each import the path Node loads | Set it in `tsconfig.json` |
+| `--composite` | The emit program is not a composite build, and the check program must report what it reports | Set it in `tsconfig.json` |
+| `--outFile` | The emit program writes one file per source into the `outDir` of the tsconfig | Set it in `tsconfig.json` |
+| `--declarationDir` | The check program writes the declarations from your sources into the directory of the tsconfig | Set it in `tsconfig.json` |
+| `--sourceRoot` | Golem points source maps at your sources, which the emit program reads at their own paths | Set it in `tsconfig.json` |
+| `--mapRoot` | Golem points the maps of the emit program at your sources, and a forwarded map location would change what they resolve against | Set it in `tsconfig.json` |
+| `--inlineSourceMap` | Golem maps each source map back to your sources and cannot reach a map inside the JavaScript | Set it in `tsconfig.json` |
+| `--inlineSources` | The maps of the emit program embed the sources of the tsconfig setting, and a forwarded one would embed the rewritten text | Set it in `tsconfig.json` |
+
+The build refuses two more kinds of option. It refuses them before it generates anything, whether the tsconfig sets them or a flag does:
+
+| Option | Refused because | Message |
+| --- | --- | --- |
+| `--generateTrace`, `--extendedDiagnostics`, `--explainFiles`, `--traceResolution`, `--diagnostics` | They measure the `tsc` process or give facts that the build does not have | `golem build does not support <option> (<tsconfig>): it measures the tsc process. Run tsc -p <tsconfig> --noEmit <flag> to get it.` |
+| `--showConfig`, `--listFilesOnly` and other commands of `tsc` | They are commands of `tsc`, not options of a build | `golem build does not support --<command> (<tsconfig>): it is a command of tsc, not an option of a build. Run tsc --<command> instead.` |
+
+Run the `tsc` command that the message names. Give it `--noEmit` when you run `tsc -p`.
+
+`tsc -p <tsconfig>` writes JavaScript with no rewrite into the same `outDir`. That overwrites the output of `golem build`. Run `tsc -p` with `--noEmit` to check only.
 
 ### Type errors
 
 Generation stops only on a type error in the model sources of the models job and in the generated files it writes. A codec built from a model that does not type-check could validate wrongly. A type error in any other file does not stop generation. The check run reports it, as `tsc` does.
 
-Like `tsc`, the build emits JavaScript after a failed check unless `noEmitOnError` is true, in the tsconfig or as `--noEmitOnError`. With it, a type error stops the build before any file is emitted. The exit status is the status of the check whenever it failed.
+Like `tsc`, the build emits JavaScript after a failed check unless `noEmitOnError` is true, in the tsconfig or as `--noEmitOnError`. With it, a type error stops the build before any file is written.
+
+- The build prints each diagnostic as `tsc -p` does. It uses the pretty form with colors and a `Found N errors` line when the `pretty` option is true. Without the option it uses that form when stdout is a terminal and `NO_COLOR` is not set.
+- When the check fails, the exit status is `1`. It is `2` when the build still wrote the declarations of the project.
+- When the emit fails, the build writes no file, prints the compiler messages and exits with `1`.
+
+### Output folders
+
+The build stops before it writes when an output would land outside its folder. The folder is `outDir` for JavaScript and maps, and `declarationDir`, else `outDir`, for declarations. This happens when a source lies outside the `rootDir`, or outside the project folder when you set no `rootDir`. The message is `golem build would write <file> outside <folder>, because a source of <tsconfig> is outside its rootDir or, with no rootDir, outside the project folder.` Set `rootDir` to a folder that holds every source.
 
 ### What the tsconfig needs
 
@@ -201,7 +233,7 @@ The model and controller analysis reads the nearest `tsconfig.json` from the job
 | `130` | `watch` or `build --watch` stopped on `SIGINT`. |
 | `143` | `watch` or `build --watch` stopped on `SIGTERM`. |
 
-`build` exits with the code of the compiler when the check finds errors, and with `1` for any other error.
+`build` exits with `1` when the check fails, with `2` when the check fails and the build still wrote declarations ([type errors](#type-errors)), and with `1` for any other error.
 
 A `golem.yaml` or an OpenAPI input that is not valid YAML fails the run with a message that starts with `<file>:<line>:<column>`, then the parse error. The file is relative to the working directory. `watch` and `build --watch` report it and run again when the file changes.
 

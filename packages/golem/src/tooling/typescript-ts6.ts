@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed } from './typescript-config.js';
+import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, emitWanted, flagsAsConfigOptions } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
@@ -91,6 +91,16 @@ interface ClassicProgram {
   getCompilerOptions(): Golem.CompilerOptions;
   getSyntacticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
   getSemanticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
+  getConfigFileParsingDiagnostics(): readonly ClassicDiagnostic[];
+  getOptionsDiagnostics(): readonly ClassicDiagnostic[];
+  getGlobalDiagnostics(): readonly ClassicDiagnostic[];
+  getDeclarationDiagnostics(): readonly ClassicDiagnostic[];
+  emit(
+    targetSourceFile: undefined,
+    writeFile: (filename: string, text: string) => void,
+    cancellationToken: undefined,
+    emitOnlyDtsFiles: boolean,
+  ): { readonly emitSkipped: boolean; readonly diagnostics: readonly ClassicDiagnostic[] };
   getModeForUsageLocation(file: Golem.SourceFile, usage: Golem.StringLiteralLike): Golem.ModuleKind;
   /** Internal to the classic compiler: the resolution it stored for an import. */
   getResolvedModuleFromModuleSpecifier(specifier: Golem.StringLiteralLike, file: Golem.SourceFile): { readonly resolvedModule?: Golem.ResolvedModule } | undefined;
@@ -143,7 +153,7 @@ interface ParsedConfigHost {
 
 // Names that this module implements itself; every other seam name is the classic API's own member.
 type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources'
-  | 'getPreEmitDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
+  | 'getPreEmitDiagnostics' | 'getTscDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
 
 interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'ObjectFlags' | 'SignatureKind'> {
   readonly SignatureKind: Golem.TypeScriptBackend['SignatureKind'] & { readonly Construct: Golem.SignatureKind };
@@ -167,6 +177,8 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     host: ParsedConfigHost,
   ): { readonly options: Golem.CompilerOptions; readonly fileNames: string[]; readonly errors: readonly ClassicDiagnostic[] } | undefined;
   getPreEmitDiagnostics(program: ClassicProgram): readonly ClassicDiagnostic[];
+  parseCommandLine(flags: readonly string[]): { readonly options: Golem.CompilerOptions; readonly fileNames: readonly string[]; readonly errors: readonly ClassicDiagnostic[] };
+  sortAndDeduplicateDiagnostics(diagnostics: readonly ClassicDiagnostic[]): readonly ClassicDiagnostic[];
   resolveModuleName(
     moduleName: string,
     containingFile: string,
@@ -204,6 +216,7 @@ export const {
   findConfigFile,
   forEachChild,
   formatDiagnostics,
+  formatDiagnosticsWithColorAndContext,
   getDecorators,
   getLeadingCommentRanges,
   getModifiers,
@@ -618,7 +631,22 @@ class CompatProgram implements Golem.Program {
     const file = this.program.getSourceFile(filename);
     return file ? this.program.getSemanticDiagnostics(file).map(withText) : [];
   }
+
+  /** The classic emit with a collecting `writeFile`: it writes nothing. A declaration output is told from JavaScript by its name. */
+  emitToMemory(kind: Golem.EmitKind): Golem.MemoryEmit {
+    const options = this.getCompilerOptions();
+    const declarations = kind === 'declarations';
+    const files = new Map<string, string>();
+    if (!emitWanted(options, declarations)) return { emitSkipped: true, files, diagnostics: [] };
+    const result = this.program.emit(undefined, (filename, text) => {
+      if (DECLARATION_OUTPUT.test(filename) === declarations) files.set(canonical(filename), text);
+    }, undefined, declarations);
+    return { emitSkipped: result.emitSkipped, files, diagnostics: result.diagnostics.map(withText) };
+  }
 }
+
+/** A declaration file or its map, such as `a.d.ts`, `a.d.mts.map` or `a.d.css.ts`. */
+const DECLARATION_OUTPUT = /\.d\.(?:[^./\\]+\.)?[cm]?ts(?:\.map)?$/;
 
 function canonical(filename: string): string {
   return normalize(resolvePath(filename));
@@ -644,9 +672,33 @@ export function getPreEmitDiagnostics(program: Golem.Program): readonly Golem.Di
   return classic.getPreEmitDiagnostics(program.program).map(withText);
 }
 
+/**
+ * The diagnostics of `tsc`'s own report, in its steps: the configuration's, then the syntax errors alone when there are any, else the
+ * options', the global and the semantic ones, then the declaration ones under `noEmit` (an emit reports its own); sorted without repeats.
+ */
+export function getTscDiagnostics(program: Golem.Program, emitDiagnostics: readonly Golem.Diagnostic[] = []): readonly Golem.Diagnostic[] {
+  if (!(program instanceof CompatProgram)) throw new TypeError('getTscDiagnostics needs a program opened by the TypeScript 6 backend.');
+  const classicProgram = program.program;
+  const found = collectTscDiagnostics<ClassicDiagnostic>({
+    config: () => classicProgram.getConfigFileParsingDiagnostics(),
+    syntactic: () => classicProgram.getSyntacticDiagnostics(),
+    options: () => classicProgram.getOptionsDiagnostics(),
+    global: () => classicProgram.getGlobalDiagnostics(),
+    semantic: () => classicProgram.getSemanticDiagnostics(),
+    declaration: () => classicProgram.getDeclarationDiagnostics(),
+  }, classicProgram.getCompilerOptions());
+  return classic.sortAndDeduplicateDiagnostics([...found, ...emitDiagnostics as readonly ClassicDiagnostic[]]).map(withText);
+}
+
 // Object.create returns `any`; the result is the classic diagnostic with `text` added.
 function withText(diagnostic: ClassicDiagnostic): Golem.Diagnostic & ClassicDiagnostic {
-  return Object.create(diagnostic, { text: { value: headText(diagnostic.messageText), enumerable: true }, pos: { value: diagnostic.start, enumerable: true }, fileName: { value: diagnostic.file?.fileName, enumerable: true } }) as Golem.Diagnostic & ClassicDiagnostic;
+  const { file, start } = diagnostic;
+  return Object.create(diagnostic, {
+    text: { value: headText(diagnostic.messageText), enumerable: true },
+    pos: { value: start, enumerable: true },
+    fileName: { value: file?.fileName, enumerable: true },
+    startPosition: { value: file && start !== undefined ? file.getLineAndCharacterOfPosition(start) : undefined, enumerable: true },
+  }) as Golem.Diagnostic & ClassicDiagnostic;
 }
 
 /** A change to a package manifest or an installed package invalidates cached module resolution. */
@@ -663,18 +715,20 @@ function languageVersionKey(languageVersionOrOptions: LanguageVersionOrOptions):
 interface ProgramRequest {
   readonly configPath: string;
   readonly overlays: ReadonlyMap<string, string>;
-  readonly hidden?: string;
+  /** Configuration paths the observer is not told about: virtual configurations are derived input. */
+  readonly hidden: ReadonlySet<string>;
   readonly rootNames: readonly string[];
 }
 
 function programRequest(options: Golem.OpenProgramOptions): ProgramRequest {
   const overlays = new Map([...options.overlays ?? []].map(([filename, content]) => [canonical(filename), content]));
-  const configPath = canonical(options.configFile === undefined
+  const baseConfigPath = canonical(options.configFile === undefined
     ? join(options.root, 'tsconfig.json')
     : isAbsolute(options.configFile) ? options.configFile : join(options.root, options.configFile));
-  const hidden = options.configFile !== undefined && overlays.has(configPath) ? configPath : undefined;
-  if (!overlays.has(configPath) && !sys.fileExists(configPath)) {
-    overlays.set(configPath, JSON.stringify({
+  const hidden = new Set<string>();
+  if (options.configFile !== undefined && overlays.has(baseConfigPath)) hidden.add(baseConfigPath);
+  if (!overlays.has(baseConfigPath) && !sys.fileExists(baseConfigPath)) {
+    overlays.set(baseConfigPath, JSON.stringify({
       compilerOptions: {
         strict: true,
         target: 'ES2022',
@@ -686,7 +740,14 @@ function programRequest(options: Golem.OpenProgramOptions): ProgramRequest {
       include: ['**/*.ts'],
     }));
   }
-  return { configPath, overlays, ...(hidden ? { hidden } : {}), rootNames: [...new Set(options.sources.map(canonical))] };
+  let configPath = baseConfigPath;
+  if (options.compilerOptionOverrides !== undefined) {
+    // A virtual configuration that extends the original replaces the options for this program only.
+    configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.options.json`);
+    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides }));
+    hidden.add(configPath);
+  }
+  return { configPath, overlays, hidden, rootNames: [...new Set(options.sources.map(canonical))] };
 }
 
 interface CachedSourceFile {
@@ -709,7 +770,7 @@ interface CachedSourceFile {
 export class ProgramSession implements Disposable {
   private disposed = false;
   private observer: ((filename: string) => void) | undefined;
-  private hidden: string | undefined;
+  private hidden: ReadonlySet<string> = new Set();
   private readonly observed = new Set<string>();
   /** The signature of each disk path the compiler read or probed, as it was when last seen. */
   private readonly seen = new Map<string, string>();
@@ -733,14 +794,23 @@ export class ProgramSession implements Disposable {
   /** Parse a project configuration with the session compiler. */
   parseConfigFile(configPath: string, onInput?: (filename: string) => void): { options: Golem.CompilerOptions; fileNames: string[] } {
     this.assertOpen();
-    this.observe(onInput, undefined);
+    this.observe(onInput, new Set());
     return this.parseConfig(configPath, new Map());
+  }
+
+  /** Parse a project configuration under compiler command-line arguments, as the classic `tsc -p` does. */
+  parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): { options: Golem.CompilerOptions; fileNames: string[] } {
+    this.assertOpen();
+    this.observe(onInput, new Set());
+    const commandLine = classic.parseCommandLine(flags);
+    assertNoSourceFiles(commandLine.fileNames);
+    return this.parseConfig(configPath, new Map(), commandLine);
   }
 
   /** Open a program that reflects every file change since the previous one. */
   openProgram(options: Golem.OpenProgramOptions): Golem.Program {
     this.assertOpen();
-    const request = programRequest(options);
+    const request = programRequest(this.withFlags(options));
     this.observe(options.onInput, request.hidden);
     const resolutionsChanged = this.resolutionsChanged();
     for (const filename of [...this.observed]) this.report(filename);
@@ -758,6 +828,16 @@ export class ProgramSession implements Disposable {
     this.held.add(held);
     this.retainFilesOf(held);
     return held;
+  }
+
+  /** The options of a program with its command-line `flags` among its option overrides, which win over the flags. */
+  private withFlags(options: Golem.OpenProgramOptions): Golem.OpenProgramOptions {
+    if (options.flags === undefined || options.flags.length === 0) return options;
+    const parse = (flags: readonly string[]) => {
+      const { options: parsed, fileNames, errors } = classic.parseCommandLine(flags);
+      return { options: parsed, fileNames, errors: errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })) };
+    };
+    return { ...options, compilerOptionOverrides: { ...flagsAsConfigOptions(options.flags, parse), ...options.compilerOptionOverrides } };
   }
 
   /** Parse one source text on its own, without a program. */
@@ -810,13 +890,13 @@ export class ProgramSession implements Disposable {
     if (this.disposed) throw new Error('The TypeScript program session is closed.');
   }
 
-  private observe(observer: ((filename: string) => void) | undefined, hidden: string | undefined): void {
+  private observe(observer: ((filename: string) => void) | undefined, hidden: ReadonlySet<string>): void {
     this.observer = observer;
     this.hidden = hidden;
   }
 
   private report(filename: string): void {
-    if (filename === this.hidden) return;
+    if (this.hidden.has(filename)) return;
     this.observed.add(filename);
     this.observer?.(filename);
   }
@@ -845,8 +925,8 @@ export class ProgramSession implements Disposable {
     return changed;
   }
 
-  private parseConfig(configPath: string, overlays: ReadonlyMap<string, string>): { options: Golem.CompilerOptions; fileNames: string[] } {
-    const parsed = classic.getParsedCommandLineOfConfigFile(configPath, undefined, {
+  private parseConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions; readonly errors: readonly ClassicDiagnostic[] }): { options: Golem.CompilerOptions; fileNames: string[] } {
+    const parsed = classic.getParsedCommandLineOfConfigFile(configPath, commandLine?.options, {
       useCaseSensitiveFileNames: sys.useCaseSensitiveFileNames,
       readDirectory: (root, extensions, excludes, includes, depth) => sys.readDirectory(root, extensions, excludes, includes, depth),
       fileExists: (filename) => overlays.has(this.probe(filename, overlays)) || sys.fileExists(filename),
@@ -857,7 +937,7 @@ export class ProgramSession implements Disposable {
       },
     });
     if (!parsed) throw new Error(`The TypeScript configuration ${displayPath(configPath)} could not be parsed.`);
-    assertConfigParsed(configPath, parsed.errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
+    assertConfigParsed(configPath, [...commandLine?.errors ?? [], ...parsed.errors].map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
     return { options: parsed.options, fileNames: parsed.fileNames };
   }
 

@@ -29,7 +29,7 @@ import {
 import * as ast from 'typescript/ast';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed } from './typescript-config.js';
+import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, emitWanted, flagsAsConfigOptions } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
@@ -50,6 +50,7 @@ import {
   type CreateSnapshotParams,
   type Diagnostic as SyncDiagnostic,
   formatDiagnostics,
+  formatDiagnosticsWithColorAndContext,
   type ModuleResolver,
   type RawCompilerOptions,
   type ResolutionMode,
@@ -58,10 +59,12 @@ import {
 } from 'typescript/sync';
 import { serverFS, type FileSystemCallbacks } from 'typescript/fs';
 import type { Node, SourceFile, TypeNode } from 'typescript/ast';
+import type { EmitKind, MemoryEmit } from './typescript-types.js';
 
 export {
   API,
   formatDiagnostics,
+  formatDiagnosticsWithColorAndContext,
   ElementFlags,
   JsxEmit,
   ModuleKind,
@@ -244,6 +247,9 @@ export interface Program {
   getSemanticDiagnostics(file?: string): readonly SyncDiagnostic[];
   getDeclarationDiagnostics(file?: string): readonly SyncDiagnostic[];
   getProgramDiagnostics(): readonly SyncDiagnostic[];
+  getGlobalDiagnostics(): readonly SyncDiagnostic[];
+  getConfigFileParsingDiagnostics(): readonly SyncDiagnostic[];
+  emitToMemory(kind: EmitKind): MemoryEmit;
   readonly project: Project;
   readonly snapshot: Snapshot;
   /** The compiler session that opened this program; further programs can share it. */
@@ -704,6 +710,33 @@ class CompatProgram implements Program {
   getProgramDiagnostics(): readonly SyncDiagnostic[] {
     return this.project.program.getProgramDiagnostics();
   }
+
+  getGlobalDiagnostics(): readonly SyncDiagnostic[] {
+    return this.project.program.getGlobalDiagnostics();
+  }
+
+  getConfigFileParsingDiagnostics(): readonly SyncDiagnostic[] {
+    return this.project.program.getConfigFileParsingDiagnostics();
+  }
+
+  /**
+   * The compiler's `getJavaScriptEmit` and `getDeclarationEmit` over the program's own sources: they return the text and write
+   * nothing. They ignore `noEmit` and the declaration options, so the classic compiler's rule for what a program emits is applied here.
+   */
+  emitToMemory(kind: EmitKind): MemoryEmit {
+    const options = this.getCompilerOptions();
+    const declarations = kind === 'declarations';
+    if (!emitWanted(options, declarations)) return { emitSkipped: true, files: new Map(), diagnostics: [] };
+    const sources = this.getSourceFiles()
+      .filter((file) => !file.isDeclarationFile && !this.isSourceFileDefaultLibrary(file) && !this.isSourceFileFromExternalLibrary(file))
+      .map((file) => file.fileName);
+    const output = declarations ? this.project.program.getDeclarationEmit(sources) : this.project.program.getJavaScriptEmit(sources);
+    return {
+      emitSkipped: output.emitSkipped,
+      files: new Map([...output.outputFiles].map(([filename, { text }]) => [canonical(filename), text])),
+      diagnostics: output.diagnostics,
+    };
+  }
 }
 
 function canonical(filename: string): string {
@@ -792,6 +825,30 @@ export function getPreEmitDiagnostics(program: Program): readonly SyncDiagnostic
   ];
 }
 
+/** The order `tsc` sorts diagnostics in: file, start, end, code, message. A diagnostic without a file comes first. */
+function compareDiagnostics(left: SyncDiagnostic, right: SyncDiagnostic): number {
+  const text = (diagnostic: SyncDiagnostic): string => [diagnostic.text, ...(diagnostic.messageChain ?? []).map((chained) => chained.text)].join('\n');
+  const order = (a: string | number | undefined, b: string | number | undefined): number => (a === b ? 0 : a === undefined ? -1 : b === undefined ? 1 : a < b ? -1 : 1);
+  return order(left.fileName, right.fileName) || order(left.pos, right.pos) || order(left.end, right.end) || order(left.code, right.code) || order(text(left), text(right));
+}
+
+/**
+ * The diagnostics of `tsc`'s own report, in its steps: the configuration's, then the syntax errors alone when there are any, else the
+ * options', the global and the semantic ones, then the declaration ones under `noEmit` (an emit reports its own); sorted without repeats.
+ */
+export function getTscDiagnostics(program: Program, emitDiagnostics: readonly SyncDiagnostic[] = []): readonly SyncDiagnostic[] {
+  const found = collectTscDiagnostics<SyncDiagnostic>({
+    config: () => program.getConfigFileParsingDiagnostics(),
+    syntactic: () => program.getSyntacticDiagnostics(),
+    options: () => program.getProgramDiagnostics(),
+    global: () => program.getGlobalDiagnostics(),
+    semantic: () => program.getSemanticDiagnostics(),
+    declaration: () => program.getDeclarationDiagnostics(),
+  }, program.getCompilerOptions());
+  const sorted = [...found, ...emitDiagnostics].sort(compareDiagnostics);
+  return sorted.filter((diagnostic, index) => index === 0 || compareDiagnostics(sorted[index - 1]!, diagnostic) !== 0);
+}
+
 export function canHaveDecorators(node: Node): boolean {
   return 'modifiers' in node || ast.isClassDeclaration(node) || ast.isMethodDeclaration(node)
     || ast.isParameterDeclaration(node) || ast.isPropertyDeclaration(node);
@@ -826,6 +883,10 @@ export interface OpenProgramOptions {
    */
   readonly configFile?: string;
   readonly overlays?: ReadonlyMap<string, string>;
+  /** Compiler options that replace the configuration's own for this program only, as tsconfig JSON values (an enum is its name). */
+  readonly compilerOptionOverrides?: Readonly<Record<string, string | number | boolean | null | readonly string[]>>;
+  /** Command-line arguments that replace the configuration's options for this program only; `compilerOptionOverrides` win over them. */
+  readonly flags?: readonly string[];
   readonly onInput?: (filename: string) => void;
 }
 
@@ -885,7 +946,14 @@ function programRequest(options: OpenProgramOptions): ProgramRequest {
       include: ['**/*.ts'],
     }));
   }
-  return { configPath: baseConfigPath, files: [...new Set(options.sources.map(canonical))], overlays, hidden };
+  let configPath = baseConfigPath;
+  if (options.compilerOptionOverrides !== undefined) {
+    // A virtual configuration that extends the original replaces the options for this program only: the API has no override.
+    configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.options.json`);
+    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides }));
+    hidden.add(configPath);
+  }
+  return { configPath, files: [...new Set(options.sources.map(canonical))], overlays, hidden };
 }
 
 /** The compiler process of an API, or undefined when this TypeScript build keeps it somewhere else. */
@@ -998,6 +1066,41 @@ export class ProgramSession implements Disposable {
   }
 
   /**
+   * Parse a project configuration under compiler command-line arguments. The API has no `tsc -p` parse, so the arguments are parsed
+   * on their own and merged over the configuration's options, which is what `tsc` does. The options that decide which files match
+   * (`allowJs`, `resolveJsonModule` and the output directories the default `exclude` skips) first go through a virtual configuration
+   * that extends the original, so the file list follows the merged options.
+   */
+  parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] } {
+    const parsed = this.withCompiler('parse', (api) => {
+      this.observe(onInput, new Set());
+      const commandLine = api.parseCommandLine(flags);
+      assertNoSourceFiles(commandLine.fileNames);
+      const { allowJs, resolveJsonModule, outDir, declarationDir } = commandLine.options;
+      const matching = Object.fromEntries(Object.entries({ allowJs, resolveJsonModule, outDir, declarationDir }).filter(([, value]) => value !== undefined));
+      const virtual = join(dirname(configPath), `${basename(configPath, '.json')}.flags.json`);
+      const result = api.parseJsonConfigFileContent({ extends: `./${basename(configPath)}`, compilerOptions: matching }, { configFileName: virtual });
+      assertConfigParsed(configPath, [...commandLine.errors, ...result.errors]);
+      return { options: { ...result.options, ...commandLine.options, configFilePath: configPath }, fileNames: result.fileNames };
+    });
+    return { options: parsed.options as CompilerOptions, fileNames: parsed.fileNames };
+  }
+
+  /**
+   * The options of a program with its command-line `flags` among its option overrides, which win over the flags. The compiler builds a
+   * program from a configuration alone, so the flags travel in the virtual configuration that `compilerOptionOverrides` already uses.
+   */
+  private withFlags(options: OpenProgramOptions): OpenProgramOptions {
+    const { flags } = options;
+    if (flags === undefined || flags.length === 0) return options;
+    const flagged = this.withCompiler('parse', (api) => flagsAsConfigOptions(flags, (args) => {
+      const { options: parsed, fileNames, errors } = api.parseCommandLine(args);
+      return { options: parsed, fileNames, errors };
+    }));
+    return { ...options, compilerOptionOverrides: { ...flagged, ...options.compilerOptionOverrides } };
+  }
+
+  /**
    * Parse one source text on its own, without a program. The syntax tree reads from its own buffer, so the compiler's lease on
    * the file ends here.
    */
@@ -1047,7 +1150,7 @@ export class ProgramSession implements Disposable {
 
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
   openProgram(options: OpenProgramOptions): Program {
-    const base = programRequest(options);
+    const base = programRequest(this.withFlags(options));
     return this.withCompiler('snapshot', (api, reused) => {
       const request = this.withRequestedRoots(api, base, options.onInput);
       // A program sees only its own overlays: a held program keeps the snapshot it was opened in.

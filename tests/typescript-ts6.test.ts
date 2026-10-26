@@ -1,4 +1,4 @@
-// lane: typescript6 the type-parameter default, ProgramSession, and the `tsc --showConfig` and `--listEmittedFiles` parsing of `golem build`
+// lane: typescript6 the type-parameter default, ProgramSession, and the in-process option parse and the in-memory emit of `golem build`
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -62,10 +62,10 @@ test('a program session reuses the SourceFile of an unchanged input and parses a
   first.close();
 });
 
-// The build paths whose compiler calls differ by version: `--showConfig` of forwarded arguments, the emit run's `--listEmittedFiles` lines and the incremental state. On TypeScript 7 build-command.test.ts proves the same claims.
+// The build paths whose compiler calls differ by version: the in-process parse of forwarded arguments, the in-memory emit and the rebuild that writes the changed file. On TypeScript 7 build-command.test.ts proves the same claims.
 test('golem build --declaration builds, runs and rebuilds incrementally, and a type error under --noEmitOnError emits nothing', { skip }, async (t) => {
   const root = sourceOnlyProject(t, 'ts6-build');
-  // The tsconfig does not ask for declarations, so only the forwarded argument can produce them: golem build must read it with --showConfig.
+  // The tsconfig does not ask for declarations, so only the forwarded argument can produce them: golem build must read it from the forwarded arguments.
   editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.declaration = false; });
   write(root, 'src/use.ts', USE);
   // `Payment` is a class imported with `import type`: the build rewrites the call to construct it from a value import.
