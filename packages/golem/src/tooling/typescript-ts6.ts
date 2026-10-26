@@ -160,7 +160,7 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     readonly oldProgram?: ClassicProgram;
   }): ClassicProgram;
   createSourceFile(filename: string, text: string, languageVersionOrOptions: LanguageVersionOrOptions, setParentNodes?: boolean): Golem.SourceFile;
-  transpileModule(text: string, options: { readonly fileName: string; readonly compilerOptions: Golem.CompilerOptions }): { readonly outputText: string; readonly sourceMapText?: string };
+  transpileModule(text: string, options: { readonly fileName: string; readonly compilerOptions: Golem.CompilerOptions; readonly reportDiagnostics: boolean }): { readonly outputText: string; readonly sourceMapText?: string; readonly diagnostics?: readonly ClassicDiagnostic[] };
   getParsedCommandLineOfConfigFile(
     configFilename: string,
     optionsToExtend: Golem.CompilerOptions | undefined,
@@ -187,6 +187,7 @@ const classic = require(selected.packageDir) as ClassicTypeScript;
 export const {
   ElementFlags,
   IndexKind,
+  JsxEmit,
   ModuleKind,
   ModuleResolutionKind,
   NodeBuilderFlags,
@@ -766,11 +767,11 @@ export class ProgramSession implements Disposable {
   }
 
   /** Compile one source text on its own, with the classic compiler's single-file transpile. */
-  transpileModule(filename: string, text: string, compilerOptions: Golem.CompilerOptions): { readonly outputText: string; readonly sourceMapText: string } {
+  transpileModule(filename: string, text: string, compilerOptions: Golem.CompilerOptions): { readonly outputText: string; readonly sourceMapText: string; readonly diagnostics: readonly Golem.Diagnostic[] } {
     this.assertOpen();
-    const { outputText, sourceMapText } = classic.transpileModule(text, { fileName: filename, compilerOptions });
+    const { outputText, sourceMapText, diagnostics = [] } = classic.transpileModule(text, { fileName: filename, compilerOptions, reportDiagnostics: true });
     if (sourceMapText === undefined) throw new Error(`The TypeScript compiler returned no source map for ${displayPath(filename)}`);
-    return { outputText, sourceMapText };
+    return { outputText, sourceMapText, diagnostics: diagnostics.map(withText) };
   }
 
   /**

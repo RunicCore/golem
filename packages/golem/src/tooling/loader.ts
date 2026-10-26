@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { displayPath } from './generator-api.js';
-import { openRewriteProject, withInlineSourceMap } from './rewrite-host.js';
+import { openRewriteProject, TSX_FILE, TYPESCRIPT_FILE, withInlineSourceMap } from './rewrite-host.js';
 import { isInstalledFile } from './type-analysis/path-identity.js';
 import type { RewriteProject } from './rewrite-host.js';
 
@@ -18,9 +18,6 @@ import type { RewriteProject } from './rewrite-host.js';
  * The `resolve` hook lets a relative `.js`, `.mjs` or `.cjs` import name the TypeScript source (`.ts` or `.tsx`) that has no built file yet,
  * the way the generated companions and validators name their siblings. ES modules only: a rewrite adds imports, which CommonJS cannot run.
  */
-
-const TYPESCRIPT_FILE = /\.(?:ts|mts|cts|tsx)$/;
-const TSX_FILE = /\.tsx$/;
 
 /** The TypeScript extensions a built file's extension can come from, in the order the lookup tries them. */
 const BUILT_TO_SOURCE: Readonly<Record<string, readonly string[]>> = { '.js': ['.ts', '.tsx'], '.mjs': ['.mts'], '.cjs': ['.cts'] };

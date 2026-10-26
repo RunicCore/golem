@@ -70,6 +70,8 @@ class AppModule {}
 const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
 ${PARSE_MONEY}
 console.log(JSON.stringify({ greeting: app.get(AppController).get('Ada'), money }));
+const trace = new Error('where am I').stack;
+console.log(trace);
 await app.close();
 `;
 
@@ -83,6 +85,7 @@ test('a NestJS app with parameter decorators and injected types starts through t
   const result = await run(root, 'src/app.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { greeting: 'hello Ada!', money: { currency: 'USD', value: '1' } });
+  assert.equal(frameLine(result.stdout, path.join(root, 'src/app.ts')), lineOf(NEST_APP, 'const trace'), result.stdout);
 });
 
 test('a decorated .cts file fails the run: the compiled module is an ES module', async (t) => {
@@ -94,30 +97,56 @@ test('a decorated .cts file fails the run: the compiled module is an ES module',
   assert.ok(result.stderr.includes('golem compiles to ES modules only; src/decorated.cts loads as CommonJS'), result.stderr);
 });
 
-test('a file with an enum, a namespace with a value and a parameter property runs through the loader', async (t) => {
+const STRIP_ONLY = [
+  "enum Color { Red = 'red' }",
+  'namespace Util { export const twice = (value: number): number => value * 2; }',
+  'namespace Shapes { export interface Point { x: number } }',
+  'class Box {',
+  '  constructor(private readonly value: number, public label: string) {}',
+  '  show(): string { return `${this.label}:${this.value}`; }',
+  '}',
+  "const trace = new Error('where am I').stack;",
+  'console.log(JSON.stringify({ color: Color.Red, twice: Util.twice(2), box: new Box(1, "a").show() }));',
+  'console.log(trace);',
+  '',
+].join('\n');
+
+test('a file with an enum, a namespace with a value and a parameter property runs through the loader and maps to its original line', async (t) => {
   // protects: T-381 one rule for what Node cannot strip: the loader compiles enums, value namespaces and parameter properties too
   const root = await project(t, 'loader-strip-only');
-  write(root, 'src/plain.ts', [
-    "enum Color { Red = 'red' }",
-    'namespace Util { export const twice = (value: number): number => value * 2; }',
-    'namespace Shapes { export interface Point { x: number } }',
-    'class Box {',
-    '  constructor(private readonly value: number, public label: string) {}',
-    '  show(): string { return `${this.label}:${this.value}`; }',
-    '}',
-    'console.log(JSON.stringify({ color: Color.Red, twice: Util.twice(2), box: new Box(1, "a").show() }));',
-    '',
-  ].join('\n'));
+  write(root, 'src/plain.ts', STRIP_ONLY);
   const result = await run(root, 'src/plain.ts');
   assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout), { color: 'red', twice: 4, box: 'a:1' });
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { color: 'red', twice: 4, box: 'a:1' });
+  assert.equal(frameLine(result.stdout, path.join(root, 'src/plain.ts')), lineOf(STRIP_ONLY, 'const trace'), result.stdout);
 });
 
-test('a .tsx file in a project with no jsx option fails the run with the file and the option to set', async (t) => {
-  // protects: T-380 a .tsx file with no jsx option stops with a golem error, not a Node syntax error
-  const root = await project(t, 'loader-tsx-no-jsx', { include: JSX_PROJECT.include });
-  write(root, 'src/view.tsx', VIEW);
-  const result = await run(root, 'src/view.tsx');
+test('an enum inside a declare namespace is only a type: Node strips it, so a CommonJS file with it still runs', async (t) => {
+  // protects: T-381 a declare form does not make the loader compile (a compile would refuse a CommonJS file)
+  const root = await project(t, 'loader-ambient');
+  write(root, 'src/ambient.cts', "declare namespace Ambient { enum Inner { A } }\nconsole.log('ambient ok');\n");
+  const result = await run(root, 'src/ambient.cts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout, 'ambient ok\n');
+});
+
+test('a syntax error in a decorated file stops the load with the file, the line and the message', async (t) => {
+  // protects: T-381 the compiler's recovered output never runs
+  const root = await project(t, 'loader-syntax-error', { compilerOptions: { experimentalDecorators: true } });
+  const source = 'function tag(target: unknown): void { void target; }\n@tag\nclass Broken {}\nconst broken = ;\n';
+  write(root, 'src/broken.ts', source);
+  const result = await run(root, 'src/broken.ts');
   assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /golem cannot compile .*view\.tsx: set compilerOptions\.jsx in .*tsconfig\.json/, result.stderr);
+  assert.match(result.stderr, new RegExp(`golem cannot compile .*broken\\.ts:\n.*broken\\.ts:${lineOf(source, 'const broken')} TS\\d+: `), result.stderr);
+});
+
+test('a .tsx file whose tsconfig leaves JSX in the output fails the run with the file and the option to set', async (t) => {
+  // protects: T-380 a .tsx file that no jsx option compiles stops with a golem error, not a Node syntax error
+  for (const compilerOptions of [{}, { jsx: 'preserve' }]) {
+    const root = await project(t, 'loader-tsx-no-jsx', { include: JSX_PROJECT.include, compilerOptions });
+    write(root, 'src/view.tsx', VIEW);
+    const result = await run(root, 'src/view.tsx');
+    assert.notEqual(result.code, 0);
+    assert.match(result.stderr, /golem cannot compile .*view\.tsx: set compilerOptions\.jsx in .*tsconfig\.json/, result.stderr);
+  }
 });

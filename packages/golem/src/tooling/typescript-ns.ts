@@ -17,6 +17,7 @@ export const {
   CheckFlags,
   ElementFlags,
   IndexKind,
+  JsxEmit,
   ModuleKind,
   ModuleResolutionKind,
   NodeBuilderFlags,
@@ -134,6 +135,7 @@ export const {
 // A value export shadows the type meaning of its name, so enum-like and class names are re-exported as types too.
 export type ElementFlags = Golem.ElementFlags;
 export type IndexKind = Golem.IndexKind;
+export type JsxEmit = Golem.JsxEmit;
 export type ModuleKind = Golem.ModuleKind;
 export type ModuleResolutionKind = Golem.ModuleResolutionKind;
 export type NodeBuilderFlags = Golem.NodeBuilderFlags;

@@ -8,7 +8,7 @@ import { displayPath, GolemDiagnosticSeverity } from './generator-api.js';
 import { applyRewrites } from './rewrite.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
 import type { RewriteScanner } from './rewrite-scan.js';
-import { composeSourceMaps } from './source-map.js';
+import { composeSourceMaps, decodeMappings } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import type * as ts from './typescript-ns.js';
 
@@ -17,8 +17,11 @@ import type * as ts from './typescript-ns.js';
  * per file. Only `openRewriteProject` loads TypeScript, and it does so lazily.
  */
 
-/** Paths a host's bundler can strip types from; `.tsx` is a bundler's to handle, not Node's. */
-export const BUNDLER_TYPESCRIPT_FILE = /\.(?:ts|mts|cts|tsx)$/;
+/** The TypeScript files every host takes, `.tsx` included. */
+export const TYPESCRIPT_FILE = /\.(?:ts|mts|cts|tsx)$/;
+
+/** A file that Node cannot load without a compile, whatever it holds. */
+export const TSX_FILE = /\.tsx$/;
 
 /**
  * `code` with `map` as an inline source map. The map's source is the module's own file name: a host that reads an
@@ -29,7 +32,6 @@ export function withInlineSourceMap(code: string, map: SourceMapV3, file: string
   return `${code}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(json, 'utf8').toString('base64')}\n`;
 }
 
-const TSX_FILE = /\.tsx$/;
 const SOURCE_MAP_COMMENT = '//# sourceMappingURL=';
 
 /** Text that can hold a construct Node cannot strip: a decorator, an enum, a namespace, or a parameter property's modifier. */
@@ -47,18 +49,27 @@ function isInstantiated(compiler: typeof ts, node: ts.ModuleDeclaration): boolea
 /**
  * Whether `node` or a node below it is a construct that Node's type stripping rejects, because it needs code and not only the
  * removal of types: a decorator, an `enum`, a namespace with a value, or a constructor parameter with an accessibility,
- * `override` or `readonly` modifier. A `declare` form is only a type.
+ * `override` or `readonly` modifier. A `declare` form is only a type, with everything inside it.
  */
 function needsCompile(compiler: typeof ts, node: ts.Node): boolean {
   const { SyntaxKind } = compiler;
   const modifiers = compiler.canHaveModifiers(node) ? compiler.getModifiers(node) ?? [] : [];
-  const ambient = modifiers.some((modifier) => modifier.kind === SyntaxKind.DeclareKeyword);
+  // Nothing inside a `declare` form runs.
+  if (modifiers.some((modifier) => modifier.kind === SyntaxKind.DeclareKeyword)) return false;
   const parameterProperty = [SyntaxKind.PublicKeyword, SyntaxKind.PrivateKeyword, SyntaxKind.ProtectedKeyword, SyntaxKind.OverrideKeyword, SyntaxKind.ReadonlyKeyword];
   const here = compiler.isDecorator(node)
-    || compiler.isEnumDeclaration(node) && !ambient
-    || compiler.isModuleDeclaration(node) && !ambient && isInstantiated(compiler, node)
+    || compiler.isEnumDeclaration(node)
+    || compiler.isModuleDeclaration(node) && isInstantiated(compiler, node)
     || compiler.isParameter(node) && modifiers.some((modifier) => parameterProperty.includes(modifier.kind));
   return here || compiler.forEachChild(node, (child) => needsCompile(compiler, child) || undefined) === true;
+}
+
+/** The 1-based line of `position` in `text`; with `map`, the line of the original file that the line maps to, or undefined when it maps to none. */
+function lineAt(text: string, position: number, map: SourceMapV3 | undefined): number | undefined {
+  const line = text.slice(0, position).split('\n').length - 1;
+  if (map === undefined) return line + 1;
+  const original = decodeMappings(map.mappings)[line]?.[0]?.[2];
+  return original === undefined ? undefined : original + 1;
 }
 
 /** A host cannot rewrite a file; the message names the file and line and what to run. */
@@ -190,12 +201,22 @@ class ScanningProject {
     const tsx = TSX_FILE.test(file);
     // The walk is for the files whose text can hold such a construct.
     if (!tsx && !(COMPILE_HINT.test(text) && held !== undefined && needsCompile(this.compiler.ts, held))) return undefined;
-    // Node cannot run JSX, so a file that no `jsx` option compiles would fail later with a syntax error.
-    if (tsx && !this.options.jsx) throw new GolemHostError(`golem cannot compile ${displayPath(file)}: set compilerOptions.jsx in ${displayPath(this.config.tsconfig)}`, { file });
     const { ts } = this.compiler;
+    // Node cannot run JSX, so a file that no `jsx` option turns into calls would fail later with a syntax error.
+    const { jsx } = this.options;
+    if (tsx && (!jsx || jsx === ts.JsxEmit.Preserve || jsx === ts.JsxEmit.ReactNative)) throw new GolemHostError(`golem cannot compile ${displayPath(file)}: set compilerOptions.jsx in ${displayPath(this.config.tsconfig)} to react, react-jsx or react-jsxdev; preserve and react-native leave JSX in the output`, { file });
     // Node runs ES modules only, and a module resolution that matches another `module` is of no use to a single file.
     const options = { ...this.options, module: ts.ModuleKind.ESNext, moduleResolution: undefined, sourceMap: true, inlineSourceMap: false, inlineSources: false };
-    const { outputText, sourceMapText } = this.session.transpileModule(file, rewritten?.code ?? text, options);
+    const compiled = rewritten?.code ?? text;
+    const { outputText, sourceMapText, diagnostics } = this.session.transpileModule(file, compiled, options);
+    if (diagnostics.length > 0) {
+      const places = diagnostics.map((diagnostic) => ({ diagnostic, line: diagnostic.pos === undefined ? undefined : lineAt(compiled, diagnostic.pos, rewritten?.map) }));
+      const line = places.find((place) => place.line !== undefined)?.line;
+      throw new GolemHostError([
+        `golem cannot compile ${displayPath(file)}:`,
+        ...places.map((place) => `  ${displayPath(file)}${place.line === undefined ? '' : `:${place.line}`} TS${place.diagnostic.code}: ${place.diagnostic.text}`),
+      ].join('\n'), { file, ...(line === undefined ? {} : { line }) });
+    }
     // The compiler ends its output with a comment that names a map file; the host carries the map inline.
     const comment = outputText.lastIndexOf(SOURCE_MAP_COMMENT);
     const emitted = JSON.parse(sourceMapText) as SourceMapV3;

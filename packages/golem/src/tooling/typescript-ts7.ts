@@ -36,6 +36,7 @@ import {
   CheckFlags as SyncCheckFlags,
   Checker,
   ElementFlags,
+  JsxEmit,
   ModuleKind,
   NodeBuilderFlags,
   ObjectFlags,
@@ -62,6 +63,7 @@ export {
   API,
   formatDiagnostics,
   ElementFlags,
+  JsxEmit,
   ModuleKind,
   NodeBuilderFlags,
   ObjectFlags,
@@ -1013,11 +1015,11 @@ export class ProgramSession implements Disposable {
   }
 
   /** Compile one source text on its own, with the compiler's single-file transpile: no snapshot, no program. */
-  transpileModule(filename: string, text: string, compilerOptions: CompilerOptions): { readonly outputText: string; readonly sourceMapText: string } {
+  transpileModule(filename: string, text: string, compilerOptions: CompilerOptions): { readonly outputText: string; readonly sourceMapText: string; readonly diagnostics: readonly SyncDiagnostic[] } {
     return this.withCompiler('parse', (api) => {
-      const { outputText, sourceMapText } = api.transpileModule(text, { fileName: filename, compilerOptions: compilerOptions as RawCompilerOptions });
+      const { outputText, sourceMapText, diagnostics = [] } = api.transpileModule(text, { fileName: filename, compilerOptions: compilerOptions as RawCompilerOptions, reportDiagnostics: true });
       if (sourceMapText === undefined) throw new Error(`The TypeScript compiler returned no source map for ${displayPath(filename)}`);
-      return { outputText, sourceMapText };
+      return { outputText, sourceMapText, diagnostics };
     });
   }
 
