@@ -53,10 +53,10 @@ The interceptor converts HTTP handlers. A handler of another context, such as RP
 
 ## Parameter types and arrays
 
-Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type:
+Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type, or a [union of models](#union-of-models):
 
-- **Accepted types:** an `IModel`, an `IObject`, or your class that extends a generated model class.
-- **`@Query()`:** it needs one object model. A union type, such as `TFilterA | TFilterB`, stops with [`RUNM1081`](/reference/diagnostics#runm1081).
+- **Accepted types:** an `IModel`, an `IObject`, your class that extends a generated model class, or a tagged union of models.
+- **`@Query()`:** it needs one object model or a tagged union of models. A union with no shared tag, such as `TFilterA | TFilterB` without a tag field, stops with [`RUNM1081`](/reference/diagnostics#runm1081).
 - **Other types:** the interceptor throws a `TypeError` that names the controller, the method and the parameter. Nest answers HTTP 500. This holds for a plain interface, a plain class, a primitive and a parameter with no type.
 - **Timing:** the interceptor throws on each request to the handler, not at startup. Return types are not affected.
 - **Build report:** `golem build` and `golem check` report [`RUNM1081`](/reference/diagnostics#runm1081) for a typed parameter of that kind.
@@ -116,6 +116,18 @@ The `exact` option decides whether a model rejects keys that it does not declare
 - A named `IObject` or `IModel` keeps its own `exact`. Without the option, it takes the `exact` key of `golem.yaml`, and that key defaults to `true`.
 - A type that you spell out inline in a controller signature is read with `exact` set to `false`. Its schema admits extra properties.
 - The example models set `{ exact: true }`, which repeats the default. You can leave it out. Keep it when `golem.yaml` sets `exact: false` and the model must stay exact.
+
+## Union of models
+
+A whole `@Body()` or `@Query()` parameter can be a union of models, such as `TCircle | TRect` or an alias of one. Each model needs a required literal field with a value of its own, such as `kind: 'circle'` ([unions](/guide/field-types#unions)).
+
+- The interceptor reads the tag and converts the input with the model that the tag picks. A missing or unknown tag returns HTTP 400.
+- A query string holds the tag as text. The interceptor decodes it to the type that the picked model declares.
+- The `controllers` job documents a body as `oneOf` with a `discriminator`. A query union needs OpenAPI 3.2; OpenAPI 3.1.2 stops with [`NEST1108`](/reference/diagnostics#nest1108).
+- A union converts only as a whole parameter. An array of a union and a union in `@Body('field')` stop with [`RUNM1081`](/reference/diagnostics#runm1081).
+- A union of models with no shared tag stops with [`RUNM1081`](/reference/diagnostics#runm1081).
+- A union return stays Nest JSON.
+- A custom interceptor cannot read a union binding: `objectCodecFromMetatype` returns nothing for a union parameter.
 
 ## Model responses
 

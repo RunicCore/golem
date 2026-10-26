@@ -10,6 +10,16 @@ import {
 } from './model.js';
 import { instanceFields } from './presence.js';
 
+/** The tag as JSON text. A tag comes from a request, so any value can arrive: `String` throws for an object whose `toString` is not a function. */
+function shownTag(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  try {
+    return JSON.stringify(value) ?? 'a value that JSON cannot show';
+  } catch {
+    return 'a value that JSON cannot show';
+  }
+}
+
 /**
  * Generated union conversions call this when an object's tag selects no
  * variant, or contradicts the variant class of the instance being encoded.
@@ -20,10 +30,9 @@ export function unknownDiscriminatorValue(
   value: unknown,
   direction: 'serialize' | 'deserialize',
 ): never {
-  const shown = typeof value === 'string' ? JSON.stringify(value) : String(value);
   throw conversionError(
     direction === 'serialize' ? LibErrorKind.Serialization : LibErrorKind.Deserialization,
-    `Unknown ${property} discriminator value: ${shown}.`,
+    `Unknown ${property} discriminator value: ${shownTag(value)}.`,
     [...activeConversionPath, property],
     undefined,
     direction === 'deserialize',

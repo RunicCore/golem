@@ -140,27 +140,36 @@ export interface VariantDispatch {
   readonly values: readonly (readonly DiscriminatorValue[])[];
 }
 
-function disjoint(sets: readonly (readonly DiscriminatorValue[])[]): boolean {
-  const seen = new Set<DiscriminatorValue>();
+function disjoint(sets: readonly (readonly DiscriminatorValue[])[], byText = false): boolean {
+  const seen = new Set<DiscriminatorValue | string>();
   for (const values of sets) {
     if (values.length === 0) return false;
     for (const value of values) {
-      if (seen.has(value)) return false;
-      seen.add(value);
+      const key = byText ? String(value) : value;
+      if (seen.has(key)) return false;
+      seen.add(key);
     }
   }
   return true;
 }
 
-/** A required literal tag whose values are disjoint across the alternatives. */
-export function objectDiscriminator(alternatives: readonly ObjectTypeDescriptor[]): VariantDispatch | undefined {
-  if (alternatives.length === 0) return undefined;
-  const tags = alternatives.map(literalDiscriminator);
+/**
+ * The first property of the first alternative that every alternative requires with literal values, when no value is shared. `tags` holds
+ * each alternative's required literal properties and their values; the model generator reads them from descriptors, the rewrite scan from types.
+ * With `byText`, values that print the same (`1` and `'1'`) are one value: a query string carries a tag as text.
+ */
+export function sharedTag(tags: readonly ReadonlyMap<string, readonly DiscriminatorValue[]>[], options: { readonly byText?: boolean } = {}): VariantDispatch | undefined {
+  if (tags.length === 0) return undefined;
   for (const property of tags[0].keys()) {
     const values = tags.map((tag) => tag.get(property) ?? []);
-    if (disjoint(values)) return { property, values };
+    if (disjoint(values, options.byText === true)) return { property, values };
   }
   return undefined;
+}
+
+/** A required literal tag whose values are disjoint across the alternatives. */
+export function objectDiscriminator(alternatives: readonly ObjectTypeDescriptor[]): VariantDispatch | undefined {
+  return sharedTag(alternatives.map(literalDiscriminator));
 }
 
 /** Indices of the union variants that hold a value (not null or undefined). */
