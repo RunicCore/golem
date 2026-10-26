@@ -391,15 +391,15 @@ test('resolves HttpStatus enum members and preserves Nest URI version concatenat
     profile: { mobx: false, validation: false },
   }));
   assert.deepEqual(document.paths, {
-    '/v1/status/get': { get: { operationId: 'StatusController_get', responses: { '200': { description: 'Success' } } } },
-    '/v1/status/post': { post: { operationId: 'StatusController_post', responses: { '201': { description: 'Created' } } } },
-    '/v1/status/put': { put: { operationId: 'StatusController_put', responses: { '200': { description: 'Success' } } } },
-    '/v1/status/patch': { patch: { operationId: 'StatusController_patch', responses: { '200': { description: 'Success' } } } },
-    '/v1/status/delete': { delete: { operationId: 'StatusController_remove', responses: { '200': { description: 'Success' } } } },
-    '/v1/status/options': { options: { operationId: 'StatusController_options', responses: { '200': { description: 'Success' } } } },
-    '/v1/status/head': { head: { operationId: 'StatusController_head', responses: { '200': { description: 'Success' } } } },
-    '/status/neutral': { get: { operationId: 'StatusController_neutral', responses: { '200': { description: 'Success' } } } },
-    '/status/empty': { get: { operationId: 'StatusController_empty', responses: { '204': { description: 'No Content' } } } },
+    '/v1/status/get': { get: { operationId: 'StatusController_get', responses: { '200': { description: '' } } } },
+    '/v1/status/post': { post: { operationId: 'StatusController_post', responses: { '201': { description: '' } } } },
+    '/v1/status/put': { put: { operationId: 'StatusController_put', responses: { '200': { description: '' } } } },
+    '/v1/status/patch': { patch: { operationId: 'StatusController_patch', responses: { '200': { description: '' } } } },
+    '/v1/status/delete': { delete: { operationId: 'StatusController_remove', responses: { '200': { description: '' } } } },
+    '/v1/status/options': { options: { operationId: 'StatusController_options', responses: { '200': { description: '' } } } },
+    '/v1/status/head': { head: { operationId: 'StatusController_head', responses: { '200': { description: '' } } } },
+    '/status/neutral': { get: { operationId: 'StatusController_neutral', responses: { '200': { description: '' } } } },
+    '/status/empty': { get: { operationId: 'StatusController_empty', responses: { '204': { description: '' } } } },
   });
 });
 

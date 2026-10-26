@@ -24,6 +24,10 @@ Get the exact id from one of these:
 - The `.golem/codec-keys.json` file in the directory of `golem.yaml`, which maps each `<file>#<name>` to its id.
 - The `codecId` of a model in the `model-manifest.json` of an SDK.
 
+## Expect an empty description on a default response {#empty-response-description}
+
+A controller route with no `@ApiResponse` or named response decorator gets `description: ""` on its default response, as `@nestjs/swagger` writes it. In 1.0 the description was `Success`, or `Created`, `Accepted` or `No Content` for status 201, 202 or 204. `@ApiNoContentResponse()` with no description also gets `""`; in 1.0 it got `No Content`. Run `npx golem generate`, then update any test or tool that reads or compares that description. Add `description` to `@ApiOkResponse` or another response decorator to keep a text.
+
 ## Move to TypeScript 7.1 or 6
 
 Install one of the supported versions, then update the Golem packages:
