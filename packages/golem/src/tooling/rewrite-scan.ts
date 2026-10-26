@@ -313,7 +313,7 @@ function starTargets(checker: ts.TypeChecker, module: ts.Symbol, seen = new Set<
 function addAliasChainFiles(checker: ts.TypeChecker, input: { readonly root: string; readonly from: ts.SourceFile; readonly dependencies: Set<string> }, name: ts.Node): void {
   const add = (file: ts.SourceFile): void => {
     // An installed package is not edited in a dev session; its manifest names what a rewrite depends on.
-    if (file !== input.from && !file.fileName.split(/[\\/]/).includes('node_modules')) input.dependencies.add(portable(input.root, file.fileName));
+    if (file !== input.from && !isInstalledFile(file.fileName)) input.dependencies.add(portable(input.root, file.fileName));
   };
   const seen = new Set<ts.Symbol>();
   let symbol = symbolAt(checker, name);

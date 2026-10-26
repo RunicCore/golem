@@ -49,7 +49,7 @@ The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project se
 
 <<< ../../examples/models/bundle.mjs#esbuild-bundle{js}
 
-`golem()` rewrites each TypeScript file in memory before esbuild strips its types. It takes each TypeScript file outside `node_modules` that holds a call to rewrite. A workspace package that is linked into `node_modules` counts as outside it, also with `preserveSymlinks`. Other files go to the next plugins. A plugin that needs a file that `golem()` takes goes before `golem()` in `plugins`. `config` names the `golem.yaml` relative to `absWorkingDir`.
+`golem()` rewrites each TypeScript file in memory before esbuild strips its types. It takes each TypeScript file outside `node_modules` that holds a call to rewrite. A workspace package that is linked into `node_modules` counts as outside it, also with `preserveSymlinks`. `golem build` does not build such a package, with or without `preserveSymlinks`: its own `golem build` builds it. Other files go to the next plugins. A plugin that needs a file that `golem()` takes goes before `golem()` in `plugins`. `config` names the `golem.yaml` relative to `absWorkingDir`.
 
 ## Node loader
 
