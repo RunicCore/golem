@@ -166,7 +166,7 @@ function flattenUnion(checker: ts.TypeChecker, node: ts.TypeNode, seen: Readonly
 }
 
 /** The members of the union as authored, also through a concrete type alias of a union. */
-function authoredUnionMembers(checker: ts.TypeChecker, node: ts.TypeNode | undefined): ts.TypeNode[] | undefined {
+export function authoredUnionMembers(checker: ts.TypeChecker, node: ts.TypeNode | undefined): ts.TypeNode[] | undefined {
   if (!node) return undefined;
   const current = unwrap(node);
   return ts.isUnionTypeNode(current) || unionAlias(checker, current) ? flattenUnion(checker, current) : undefined;

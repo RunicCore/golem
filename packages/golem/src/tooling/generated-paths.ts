@@ -38,6 +38,16 @@ export function operationCodecSlot(location: 'body' | 'query', name?: string): s
   return location === 'body' ? 'input' : 'query';
 }
 
+/** The id a registry slot and a `nestModelUnion` site give a union of models: the ids of its variants in written order, joined by `|`. */
+export function nestUnionCodecId(variantIds: readonly string[]): string {
+  return variantIds.join('|');
+}
+
+/** Whether a registry id names a union of models rather than one model. */
+export function isNestUnionCodecId(id: string): boolean {
+  return id.includes('|');
+}
+
 /** The model id a method's registry entry holds in the slot, if any. */
 export function operationSlotCodec(entry: OperationMethodCodecs, slot: string): string | undefined {
   if (slot === 'input') return entry.input;
