@@ -196,7 +196,7 @@ function assertGeneratedNames(
     const previous = names.get(name) ?? used.get(name);
     if (previous) {
       throw new Error(
-        `Generated model import collision for "${name}" between ${previous} and ${model.manifestFile}.`,
+        `Generated model import collision for "${name}" between ${displayPath(previous)} and ${displayPath(model.manifestFile)}.`,
       );
     }
     if (reserved.has(name)) {
@@ -764,7 +764,7 @@ export function analyzeSourceGraph(
     const specification = pending.shift();
     if (!specification || emitted.has(specification)) continue;
     const duplicate = [...emitted].find((item) => item.name === specification.name);
-    if (duplicate) throw new Error(`Generated model symbol collision for "${specification.name}" in ${source}.`);
+    if (duplicate) throw new Error(`Generated model symbol collision for "${specification.name}" in ${displayPath(source)}.`);
     const descriptor = describeRoot(job, specification);
     definitions[specification.name] = descriptor;
     emitted.add(specification);
@@ -1259,7 +1259,7 @@ function discriminatorsOf(context: EmitContext, name: string): ModelDiscriminato
 
 function serdeExpression(context: EmitContext, id: string, direction: 'serialize' | 'deserialize', value: Code): Code {
   const names = context.serdeNames.get(id);
-  if (names === undefined) throw new Error(`The generated model file of ${context.source} has no ${direction} function for the serde id ${JSON.stringify(id)}.`);
+  if (names === undefined) throw new Error(`The generated model file of ${displayPath(context.source)} has no ${direction} function for the serde id ${JSON.stringify(id)}.`);
   return code`${identifier(names[direction])}(${value})`;
 }
 
@@ -1971,7 +1971,7 @@ function assertExternalImportsExported(calls: Code, context: EmitContext): void 
     const missing = [...new Set(imported.filter((name) => !exports.has(name)))];
     if (missing.length > 0) {
       throw new Error(
-        `${context.source}: generated model module ${model.generated.module} (model manifest ${model.manifestFile}) `
+        `${displayPath(context.source)}: generated model module ${model.generated.module} (model manifest ${displayPath(model.manifestFile)}) `
         + `does not export ${missing.join(', ')}. Regenerate the SDK so it exports the model class and its codec helpers.`,
       );
     }
