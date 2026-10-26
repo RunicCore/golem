@@ -238,3 +238,53 @@ test('MobX projections retain nested observability', async t => {
     assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'Parent')).assert( encodeGeneratedModel(parent)));
   } finally { dispose(); }
 });
+
+// protects: T-471 Date & Model once generated a field of Date's method names (validation off) or blamed toString with RUNM1004 (validation on)
+const scalarWithObject = [
+  { name: 'a required field', fields: '{ x: Date & TAddress }', scalar: 'Date' },
+  { name: 'an optional field', fields: '{ x?: Date & TAddress }', scalar: 'Date' },
+  { name: 'two object parts that give one field', fields: '{ x: Date } & { x: TAddress }', scalar: 'Date' },
+  { name: 'a bigint field', fields: '{ x: bigint & TAddress }', scalar: 'bigint' },
+  { name: 'a branded Date with a model', fields: "{ x: Date & { readonly __brand: 'T' } & TAddress }", scalar: 'Date' },
+] as const;
+for (const { name, fields, scalar } of scalarWithObject) for (const validation of [true, false]) {
+  test(`${name} that combines a scalar with a model stops with RUNM1085 with validation ${validation ? 'on' : 'off'}`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TAddress = IModel<{ city: string }>;
+export type TItem = IModel<${fields}>;
+`);
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation } }),
+      new RegExp(`RUNM1085: Field "x" of TItem combines ${scalar} with an object type, and no value is both\\. Keep one of the two types, or move the object into its own field`),
+    );
+    assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
+  });
+}
+
+// protects: T-471 a Date with a phantom brand is a Date (RUNM1085 once said no value is both); a bigint with a brand keeps the old TSerde message
+for (const validation of [true, false]) {
+  test(`a Date with a phantom brand generates a Date field and round-trips a Date with validation ${validation ? 'on' : 'off'}`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type Timestamp = Date & { readonly __brand: 'Timestamp' };
+export type Optional = Date & { readonly __brand?: 'Optional' };
+export type TItem = IModel<{ at: Timestamp; later?: Optional }>;
+`);
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+    const decoded = decodeGeneratedModel(generated.TItemBaseModel, { at: '2024-05-06T07:08:09.000Z', later: '2025-01-02T03:04:05.000Z' });
+    assert.equal(decoded.at instanceof Date, true);
+    assert.equal(decoded.later instanceof Date, true);
+    assert.deepEqual(encodeGeneratedModel(decoded), { at: '2024-05-06T07:08:09.000Z', later: '2025-01-02T03:04:05.000Z' });
+  });
+}
+
+test('a bigint with a phantom brand keeps the TSerde message, not RUNM1085', t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ x: bigint & { readonly __brand: 'Id' } }>;
+`);
+  assert.throws(() => generate({ root, profile: { mobx: false, validation: false } }), /bigint has no JSON representation; declare a TSerde wire codec/);
+});

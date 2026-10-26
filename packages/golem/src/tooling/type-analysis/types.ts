@@ -7,7 +7,7 @@ import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, 
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { compareText, displayPath } from '../generator-api.js';
-import { assertSupportedModelFieldName, canonicalDescriptorKey } from '../schema.js';
+import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
 import type {
   ModelConversionDescriptor,
   TupleConversionDescriptor,
@@ -254,6 +254,37 @@ function isObjectLikeIntersection(checker: ts.TypeChecker, type: ts.Type): boole
       && member.getCallSignatures().length === 0
       && member.getConstructSignatures().length === 0,
     );
+}
+
+/** A plain object type whose every property is a brand (`{ readonly __brand: 'Timestamp' }`, `{ __brand?: never }`): a type-only mark, no data. */
+function isBrandMember(checker: ts.TypeChecker, type: ts.Type): boolean {
+  if ((type.flags & ts.TypeFlags.Object) === 0 || isDateType(checker, type) || checker.isArrayType(type) || checker.isTupleType(type)) return false;
+  const properties = checker.getPropertiesOfType(type);
+  return properties.length > 0 && type.getCallSignatures().length === 0 && type.getConstructSignatures().length === 0
+    && properties.every((property) => isBrandPropertyName(property.getName()));
+}
+
+/** The members of an intersection that carry data: the brand members drop out. */
+function dataMembers(checker: ts.TypeChecker, type: ts.Type): readonly ts.Type[] {
+  return type.isIntersection() ? type.types.filter((member) => !isBrandMember(checker, member)) : [type];
+}
+
+/** A Date with only brands beside it, such as `Date & { readonly __brand: 'Timestamp' }`: it is a Date. */
+function isBrandedDate(checker: ts.TypeChecker, type: ts.Type): boolean {
+  const members = dataMembers(checker, type);
+  return type.isIntersection() && members.length === 1 && isDateType(checker, members[0]!);
+}
+
+/**
+ * The scalar that golem converts by its own rule (a Date, a bigint) in an intersection with an object type, such as `Date & TModel`.
+ * An intersection is AND, and no value is both a scalar and an object, so the field has no valid value. A brand is no object.
+ */
+function scalarIntersectedWithObject(checker: ts.TypeChecker, type: ts.Type): string | undefined {
+  if (!type.isIntersection()) return undefined;
+  const members = dataMembers(checker, type);
+  const scalar = members.find((member) => isDateType(checker, member) || isBigIntValueType(member));
+  const object = members.some((member) => (member.flags & ts.TypeFlags.Object) !== 0 && !isDateType(checker, member));
+  return scalar && object ? (isBigIntValueType(scalar) ? 'bigint' : 'Date') : undefined;
 }
 
 /**
@@ -703,7 +734,7 @@ export function descriptorBuilder(
     }
     if ((type.flags & ts.TypeFlags.Object) === 0 && !type.isIntersection()) return [];
     if (checker.isTupleType(type) || checker.isArrayType(type)) return checker.getTypeArguments(type as ts.TypeReference);
-    if (isDateType(checker, type) || primitiveConstructorDescriptor(type) || isPhantomTagType(checker, type)
+    if (isDateType(checker, type) || isBrandedDate(checker, type) || primitiveConstructorDescriptor(type) || isPhantomTagType(checker, type)
       || type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) return [];
     const held: ts.Type[] = [];
     for (const property of checker.getPropertiesOfType(type)) {
@@ -898,10 +929,22 @@ export function descriptorBuilder(
       assertSerdeCompatibility(checker, metadata.serde, type, context);
     }
 
+    // A TSerde codec converts the whole value, so only an intersection that no codec converts is cut here, before the object merge reads it.
+    const scalar = metadata.serde ? undefined : scalarIntersectedWithObject(checker, type);
+    if (scalar) {
+      const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
+      throw diagnostic(
+        context.sourceFile,
+        node ?? context.declaration,
+        '1085',
+        `${where} combines ${scalar} with an object type, and no value is both. Keep one of the two types, or move the object into its own field${scalar === 'bigint' ? ', or declare the bigint with a TSerde pair and no object' : ''}.`,
+      );
+    }
+
     // A custom serde can intersect Date with its phantom marker.  The
     // checker then no longer reports the original intersection as Date, but
     // the projected base type still is Date and must remain terminal.
-    if (metadata.date || isDateType(checker, type)) {
+    if (metadata.date || isDateType(checker, type) || isBrandedDate(checker, type)) {
       return withMetadata({ kind: 'date' } as unknown as ModelConversionDescriptor, {
         ...metadata,
         date: true,
