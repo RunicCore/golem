@@ -22,72 +22,23 @@ Signatures and context fields are in the [Generator and tool API](/reference/gen
 
 The first artifact is the OpenAPI document. A second artifact is a generated file that the rewrite reads. `manifestPaths` is empty.
 
-```ts
-import { generate } from '@exprtlabs/golem-ts-openapi/generator';
-
-const result = await generate({
-  root: '/absolute/app/backend',
-  output: '/absolute/app/api/payments.yaml',
-  info: { title: 'Payments API', version: '1' },
-  profile: { mobx: false, validation: true },
-});
-
-console.log(result.artifacts[0]?.path); // /absolute/app/api/payments.yaml
-```
-
-Set `root`, `output`, `info` and `profile`. The other fields of [`ControllerContext`](/reference/generator-api#controllercontext) have defaults.
+Call `generate` with a [`ControllerContext`](/reference/generator-api#controllercontext) that sets `root`, `output`, `info` and `profile`. The other fields have defaults, and the entry holds a full example.
 
 ## Generate an OpenAPI SDK
 
-`generate()` returns an `OpenApiGenerationResult`:
-
-```ts
-import { apiVersion, generate } from '@exprtlabs/golem-openapi/generator';
-
-const result = await generate({
-  input: '/absolute/app/api.yaml',
-  output: '/absolute/app/sdk',
-  name: 'Payments',
-  profile: { mobx: false, validation: true },
-});
-
-console.log(apiVersion, result.artifacts.map(artifact => artifact.path));
-```
-
-Set `input`, `output` and `profile`. The other fields, such as `name` and the options for remote references, are in [`OpenApiContext`](/reference/generator-api#openapicontext).
+`generate()` returns an `OpenApiGenerationResult`. Call it with an [`OpenApiContext`](/reference/generator-api#openapicontext) that sets `input`, `output` and `profile`. The other fields, such as `name` and the options for remote references, are in the same entry, which holds a full example.
 
 The result's `manifestPaths` holds the SDK's `model-manifest.json`. Pass it in `manifestInputs` to the model generator, so your models can use the SDK models.
 
 ### Start from a loaded document
 
-To generate from a document you already loaded, call `writeSdk`:
-
-```ts
-import { loadValidatedDocument, writeSdk } from '@exprtlabs/golem-openapi/generator';
-
-const document = await loadValidatedDocument('/absolute/app/api.yaml');
-const result = writeSdk(document, {
-  output: '/absolute/app/sdk',
-  profile: { mobx: false, validation: true },
-});
-```
+To generate from a document you already loaded, call `writeSdk` with the result of `loadValidatedDocument`, as in the [example of both functions](/reference/generator-api#writesdk).
 
 `loadValidatedDocument` reads and checks the document and bundles its references. `writeSdk` reads no files and returns empty `watchInputs`. Its [signature](/reference/generator-api#writesdk) is in the reference.
 
 ## Generate TypeScript models
 
-```ts
-import { apiVersion, generate } from '@exprtlabs/golem-model/generator';
-
-const result = generate({
-  root: '/absolute/app',
-  profile: { mobx: false, validation: true },
-});
-
-console.log(apiVersion, result.artifacts.length);
-```
-
-Set `root` and `profile`. The other fields, such as `suffixes` and `manifestInputs`, are in [`ModelContext`](/reference/generator-api#modelcontext).
+Call the synchronous `generate` with a [`ModelContext`](/reference/generator-api#modelcontext) that sets `root` and `profile`. The other fields, such as `suffixes` and `manifestInputs`, are in the same entry, which holds a full example.
 
 ## Check the result
 

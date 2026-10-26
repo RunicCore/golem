@@ -14,7 +14,7 @@ security:
   - bearerAuth: []
 ```
 
-Run `npx golem generate`. The client then has an `auth` option, keyed by security-scheme name. A client whose operations reference no security scheme has no `auth` option. If you cannot edit your document, see [Use a document you do not own](#use-a-document-you-do-not-own).
+Run `npx golem generate`. The client then has an `auth` option, keyed by security-scheme name. A client whose operations reference no security scheme has no `auth` option. If you cannot edit your document, follow the steps in [Use a document you do not own](#use-a-document-you-do-not-own).
 
 ## Pass a token
 

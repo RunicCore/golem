@@ -63,7 +63,7 @@ Each item names a breaking change and the action to take.
 | `golem generate` no longer stops on a type error in a handwritten file that is not a model source. | Read the error from `tsc` or `golem build`. |
 | Eight subpaths of `@exprtlabs/golem` move under `internal/`: `emitter`, `schema`, `schema-graph`, `type-analysis`, `generated-paths`, `ts`, `validation-plan` and `validator-compiler` (for example `@exprtlabs/golem/internal/schema`). A path that starts with `internal/` has no stability promise and may change in any release. The old names fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`. | Use only the documented subpaths. |
 | `@exprtlabs/golem/cli` is removed. | Run the `golem` command. |
-| Several pre-1.0 exports are removed with no replacement. | None. See [Removed APIs](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#removed-apis-pre-10). |
+| Several pre-1.0 exports are removed with no replacement. | None. Each removed export is in [Removed APIs](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#removed-apis-pre-10) of the changelog. |
 | The packages are renamed: `@exprtlabs/codegen` is `@exprtlabs/golem`, `@exprtlabs/model-codegen` is `@exprtlabs/golem-model`, `@exprtlabs/openapi-to-ts` is `@exprtlabs/golem-openapi` and `@exprtlabs/ts-to-openapi` is `@exprtlabs/golem-ts-openapi`. Subpaths are unchanged. | Replace the dependencies and imports. |
 | A `TSerde` or `TValidation` function declared in a `*.model.ts` file is a generation error (RUNM1065). | Move it to its own module. |
 | A `TSerde` or `TValidation` function in another package, including a sibling workspace package, is imported by its package name. So the `exports` of that package must reach the file (RUNM1060). | Add an `exports` entry for the codec file. |

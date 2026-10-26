@@ -191,6 +191,21 @@ The context of the controller generator. Usage: [Generate OpenAPI from controlle
 
 Diagnostic source locations are not copied into the OpenAPI document.
 
+Example:
+
+```ts
+import { generate } from '@exprtlabs/golem-ts-openapi/generator';
+
+const result = await generate({
+  root: '/absolute/app/backend',
+  output: '/absolute/app/api/payments.yaml',
+  info: { title: 'Payments API', version: '1' },
+  profile: { mobx: false, validation: true },
+});
+
+console.log(result.artifacts[0]?.path); // /absolute/app/api/payments.yaml
+```
+
 ## `OpenApiContext` {#openapicontext}
 
 The context of the SDK generator. Usage: [Generate an OpenAPI SDK](/guide/generator-api#generate-an-openapi-sdk).
@@ -213,6 +228,21 @@ The context of the SDK generator. Usage: [Generate an OpenAPI SDK](/guide/genera
 - The optional `validationSchemaClosure` holds the model and JSON schemas that model jobs compile into their validators.
 - A model job that uses an SDK without `validationSchemaClosure` fails with `Cannot compile validators: … is unresolved`. Generate that SDK again.
 
+Example:
+
+```ts
+import { apiVersion, generate } from '@exprtlabs/golem-openapi/generator';
+
+const result = await generate({
+  input: '/absolute/app/api.yaml',
+  output: '/absolute/app/sdk',
+  name: 'Payments',
+  profile: { mobx: false, validation: true },
+});
+
+console.log(apiVersion, result.artifacts.map(artifact => artifact.path));
+```
+
 ### `writeSdk` and `loadValidatedDocument` {#writesdk}
 
 Both are exports of `@exprtlabs/golem-openapi/generator`. Usage: [Start from a loaded document](/guide/generator-api#start-from-a-loaded-document).
@@ -228,6 +258,18 @@ function loadValidatedDocument(filename: string, options?: ReferenceResolutionOp
 
 - `loadValidatedDocument` reads and checks the document and bundles its references. `options` takes the reference fields of `OpenApiContext` and `onInput`.
 - `writeSdk` reads no files and returns empty `watchInputs`.
+
+Example:
+
+```ts
+import { loadValidatedDocument, writeSdk } from '@exprtlabs/golem-openapi/generator';
+
+const document = await loadValidatedDocument('/absolute/app/api.yaml');
+const result = writeSdk(document, {
+  output: '/absolute/app/sdk',
+  profile: { mobx: false, validation: true },
+});
+```
 
 ## `ModelContext` {#modelcontext}
 
@@ -252,6 +294,19 @@ The context of the model generator. Usage: [Generate TypeScript models](/guide/g
 | `generatedFilename` | `(source: string): string` | The generated file path: `task.model.ts` → `task.model.generated.ts`, `.models.ts` → `.models.generated.ts`. |
 | `isModelSource` | `(filename: string): boolean` | Whether the name ends in `.ts`, `.mts` or `.cts`, a declaration file such as `customer.model.d.ts` included, and is not a generated file. |
 | `discoverModelManifests` | `(root?, onInput?): string[]` | [`@exprtlabs/golem/manifest`](#manifest) re-export. |
+
+Example:
+
+```ts
+import { apiVersion, generate } from '@exprtlabs/golem-model/generator';
+
+const result = generate({
+  root: '/absolute/app',
+  profile: { mobx: false, validation: true },
+});
+
+console.log(apiVersion, result.artifacts.length);
+```
 
 ## Apply results
 

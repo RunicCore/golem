@@ -27,7 +27,7 @@ Give a combination of tags a type alias and use the alias as the field type. A t
 
 ## Built-in validation constraints
 
-Each family has its own tags. [Built-in tags](/reference/runtime-api#built-in-tags) lists every tag, its JSON Schema keyword and the field types it fits.
+Each family has its own tags. Every tag, its JSON Schema keyword and the field types it fits are in [Built-in tags](/reference/runtime-api#built-in-tags).
 
 | Family | What it checks | Example |
 | --- | --- | --- |

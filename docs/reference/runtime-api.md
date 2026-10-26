@@ -428,7 +428,7 @@ type TSerde<
 | A function is not usable | generation | [RUNM1040](/reference/diagnostics#runm1040), [RUNM1042](/reference/diagnostics#runm1042), [RUNM1046](/reference/diagnostics#runm1046), [RUNM1047](/reference/diagnostics#runm1047) |
 | A type does not fit the pair | generation | [RUNM1049](/reference/diagnostics#runm1049) |
 
-[Change the JSON form](/guide/serialization#change-the-json-form) shows the usage. [Which type controls validation](/guide/serialization#which-type-controls-validation) compares the declarations. [Class values](/guide/serialization#class-values) covers class fields.
+The usage is in [Change the JSON form](/guide/serialization#change-the-json-form). The declarations are compared in [Which type controls validation](/guide/serialization#which-type-controls-validation), and class fields are in [Class values](/guide/serialization#class-values).
 
 ### `TValidation` {#tvalidation}
 
@@ -500,7 +500,7 @@ Each built-in tag writes one JSON Schema keyword. A tag that does not fit the fi
 - `Pattern` is a valid Unicode regular expression. `Format` and the keys of `DependentRequired` are string literals ([RUNM1044](/reference/diagnostics#runm1044)).
 - A schema-valued argument is a type that golem can describe as a schema ([RUNM1043](/reference/diagnostics#runm1043)).
 
-[Built-in validation constraints](/guide/tags#built-in-validation-constraints) shows the usage, and [Formats](/guide/tags#formats) lists the format names. [Validation tags](/guide/tags) is the guide.
+The usage is in [Built-in validation constraints](/guide/tags#built-in-validation-constraints), and the format names are in [Formats](/guide/tags#formats). [Validation tags](/guide/tags) is the guide.
 
 ## `@exprtlabs/golem/temporal` {#temporal}
 
