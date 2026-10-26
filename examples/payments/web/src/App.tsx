@@ -29,6 +29,26 @@ const AmountField = observer(function AmountField({ editor }: { editor: PaymentE
 });
 // #endregion observer-component
 
+// #region number-input
+const PartsField = observer(function PartsField({ store }: { store: PaymentStore }) {
+  const error = store.partsDraftError ?? getValidator(store.split).errors['/parts']?.[0]; // The draft check first, then the tags of the number.
+  return (
+    <label className="field">
+      <span>Instalments</span>
+      <input
+        aria-invalid={error ? true : undefined}
+        inputMode="numeric"
+        name="parts"
+        onChange={event => store.setPartsDraft(event.currentTarget.value)}
+        type="text"
+        value={store.partsDraft} // The draft, never the number.
+      />
+      {error && <span className="field-error">{error}</span>}
+    </label>
+  );
+});
+// #endregion number-input
+
 const PaymentEditorView = observer(function PaymentEditorView({ store }: { store: PaymentStore }) {
   const validator = getValidator(store.editor);
   const currencyError = validator.errors['/money/currency']?.[0];
@@ -60,6 +80,7 @@ const PaymentEditorView = observer(function PaymentEditorView({ store }: { store
               />
               {currencyError && <span className="field-error">{currencyError}</span>}
             </label>
+            <PartsField store={store} />
           </div>
           <label className="field">
             <span>Note <small>(optional)</small></span>

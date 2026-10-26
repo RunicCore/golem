@@ -86,13 +86,21 @@ The amount field of the payments editor binds an input to a model field, reads t
 
 <<< ../../examples/payments/web/src/App.tsx#observer-component
 
-No example shows a number input yet. Follow this pattern:
+The instalments field holds a number, so its input keeps a draft string. The model has the number and an action:
 
-- Keep the text that the user types in a draft string. An input holds a string, and a half-typed `12.` is not yet a number.
-- On change, store the draft and convert it. For money, convert `"12.50"` to `1250`.
-- When the draft converts, call an action that writes the number to the model field. If it does not convert, keep the old number and show your own message for the draft.
-- Give the input the draft as its `value`, never the number.
-- When you load another model, set the draft again from its number. Use the first function of `TSerde` for the text, for example `writeAmount(1250)`.
+<<< ../../examples/payments/web/src/split-editor.model.ts#split-model
+
+The store converts the draft and calls the action only when the draft converts:
+
+<<< ../../examples/payments/web/src/payment-store.ts#draft-conversion
+
+<<< ../../examples/payments/web/src/payment-store.ts#draft-number
+
+- Mark `partsDraft` observable, `partsDraftError` computed and `setPartsDraft` an action in `makeObservable`.
+
+The input shows the draft, never the number. It also shows the message for a draft that does not convert:
+
+<<< ../../examples/payments/web/src/App.tsx#number-input
 
 ### Show field errors
 

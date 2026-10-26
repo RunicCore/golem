@@ -85,6 +85,12 @@ The amount field in [`src/App.tsx`](https://github.com/RunicCore/golem/blob/mast
 - Import `getValidator` from `@exprtlabs/golem/validation`. When the model is generated with `mobx: true` and `validation: true`, the validator it returns is already observable, so `observer` re-renders when its issues change.
 - Import it from `@exprtlabs/golem/mobx-validation` when a model is generated without both settings and a component must still re-render on its issues. It returns the same validator for that instance, made observable.
 
-A text input holds a string. For a number field, keep a draft string in the form and convert it when the input changes. Write the converted number to the model, and show the draft string in the input.
+A text input holds a string. For a number field, keep a draft string in the store and convert it when the input changes. The store writes the converted number to the model through an action, and the input shows the draft ([Bind a text input to a number field](/guide/wire-text#bind-a-text-input-to-a-number-field)):
+
+<<< ../../examples/payments/web/src/payment-store.ts#draft-conversion
+
+<<< ../../examples/payments/web/src/payment-store.ts#draft-number
+
+- Mark `partsDraft` observable, `partsDraftError` computed and `setPartsDraft` an action in `makeObservable`.
 
 Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments) runs this editor against a local demo server.

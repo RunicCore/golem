@@ -1,8 +1,9 @@
-import { computed, makeObservable, observable, runInAction } from 'mobx';
+import { action, computed, makeObservable, observable, runInAction } from 'mobx';
 import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { getValidator } from '@exprtlabs/golem/validation';
 import type { PaymentsClientPort } from '../sdk/index.js';
 import { PaymentEditor } from './payment-editor.model.js';
+import { SplitEditor } from './split-editor.model.js';
 
 export type SaveState = 'idle' | 'saving' | 'success' | 'error';
 
@@ -17,10 +18,20 @@ function receipt(payment: { id: string; charge?: { id: string; status: string; s
   return `Payment ${payment.id} saved.${charge ? ` Charge ${charge.id} is ${charge.status}, settles ${charge.settlesOn}.` : ''}`;
 }
 
+// #region draft-conversion
+// Converts the text of the input to a number. A half-typed `3.`, an empty text or 0 does not convert.
+function toParts(draft: string): number | undefined {
+  const parts = /^[0-9]+$/.test(draft) ? Number(draft) : NaN;
+  return Number.isSafeInteger(parts) && parts >= 1 ? parts : undefined; // The model field has Minimum<1>.
+}
+// #endregion draft-conversion
+
 export class PaymentStore {
   public readonly editor = new PaymentEditor();
+  public readonly split = new SplitEditor();
   public saveState: SaveState = 'idle';
   public message = '';
+  public partsDraft = String(this.split.parts); // The text in the input. The model keeps the number.
 
   private readonly createPayment: ReturnType<PaymentsClientPort['createPayment']>;
   private activeController: AbortController | undefined;
@@ -28,8 +39,27 @@ export class PaymentStore {
 
   public constructor(client: PaymentsClientPort) {
     this.createPayment = client.createPayment();
-    makeObservable(this, { saveState: observable, message: observable, sending: computed });
+    makeObservable(this, {
+      saveState: observable,
+      message: observable,
+      sending: computed,
+      partsDraft: observable,
+      partsDraftError: computed,
+      setPartsDraft: action,
+    });
   }
+
+  // #region draft-number
+  public setPartsDraft(draft: string): void {
+    this.partsDraft = draft; // The input always shows the draft.
+    const parts = toParts(draft);
+    if (parts !== undefined) this.split.setParts(parts); // Only a draft that converts reaches the model.
+  }
+
+  public get partsDraftError(): string | undefined {
+    return toParts(this.partsDraft) === undefined ? 'Enter a whole number like 3' : undefined;
+  }
+  // #endregion draft-number
 
   // #region loading
   public get sending(): boolean {
