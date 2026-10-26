@@ -5,6 +5,8 @@ import { createAuthorizedClient, createClientWithIdempotencyKey, createMoneyText
 import { createChargeWithAmount, fetchCharge, readCharge, readTwoCharges } from './charges.js';
 import { createEventLinesClient, firstEvent, firstEventId, readCaptured, readEvents, readUntilClosed } from './events.js';
 import { describeCharge, readSettlementDate } from './settlement.js';
+import { ChargeRecord } from './charge-record.model.js';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { PaymentCaptured } from '../src/events/payment-events.model.js';
 
 type Handler = (request: Request) => Response | Promise<Response>;
@@ -125,4 +127,11 @@ test('a custom stream decoder reads integer lines, and event models parse JSON',
   const captured = readCaptured('{"paymentId":"p-1","amount":"25.00"}');
   assert.ok(captured instanceof PaymentCaptured);
   assert.equal(captured.amount, '25.00');
+});
+
+test('a charge is overdue the day after its settlement date and not on that day', () => {
+  // protects: task T-453 the isOverdue example of partner-client.md Step 8
+  const record = fromWireFormat<ChargeRecord>({ charge });
+  assert.equal(record.isOverdue(Temporal.PlainDate.from('2025-02-02')), true);
+  assert.equal(record.isOverdue(Temporal.PlainDate.from('2025-02-01')), false);
 });
