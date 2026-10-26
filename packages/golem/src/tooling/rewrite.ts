@@ -76,7 +76,7 @@ function importEdits(text: string, imports: readonly RewriteImport[], at: number
   }));
 }
 
-function lineStarts(text: string): number[] {
+export function lineStarts(text: string): number[] {
   const starts = [0];
   LINE_BREAK.lastIndex = 0;
   for (let match = LINE_BREAK.exec(text); match; match = LINE_BREAK.exec(text)) starts.push(match.index + match[0].length);

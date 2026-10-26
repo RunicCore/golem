@@ -869,6 +869,11 @@ export function getModifiers(node: Node): readonly Node[] | undefined {
   return modifiers?.filter((modifier) => !ast.isDecorator(modifier));
 }
 
+/** The TypeScript 7 scanner takes no language version, and the variant before the text. */
+export function createScanner(skipTrivia: boolean, text: string, start?: number, length?: number) {
+  return ast.createScanner(skipTrivia, ast.LanguageVariant.Standard, text, start, length);
+}
+
 export function forEachChild<T>(node: Node, callback: (node: Node) => T | undefined): T | undefined {
   return node.forEachChild(callback);
 }

@@ -5,9 +5,14 @@ import { modelsRootOf, resolveConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
 import { displayPath, GolemDiagnosticSeverity } from './generator-api.js';
+import { fileSignature } from './input-watcher.js';
+import { loadInventory } from './outputs.js';
+import { sourceComments } from './source-comments.js';
+import type { SourceComment } from './source-comments.js';
+import type { GolemDiagnostic } from './generator-api.js';
 import { applyRewrites } from './rewrite.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
-import type { RewriteScanner } from './rewrite-scan.js';
+import type { FileScanResult, RewriteScanner } from './rewrite-scan.js';
 import { composeSourceMaps, decodeMappings } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import type * as ts from './typescript-ns.js';
@@ -97,6 +102,15 @@ export interface RewriteProject {
    * rewrite. A file outside the tsconfig's directory is scanned and rewritten like any other. Throws a `GolemHostError` (file, line, "run golem generate") on scan diagnostics.
    */
   rewrite(filename: string, text: string): { code: string; map: SourceMapV3; dependencies: readonly string[] } | undefined;
+  /**
+   * The errors of the scan of one file as the host will compile it: what `rewrite` throws for, one entry each. Empty for a file with no error or no rewrite.
+   * It is for a host with no watch, such as a lint run: it keeps the overlay of this file only, and reopens the program when `golem generate` wrote a new generation record.
+   */
+  diagnose(filename: string, text: string): readonly GolemDiagnostic[];
+  /**
+   * The comments of one file, from the compiler's scanner, for a host that parses the file itself. Empty when the file is no source of the program.
+   */
+  comments(filename: string, text: string): readonly SourceComment[];
   /** Tell the session these files changed on disk (new, edited or removed). */
   changed(filenames: readonly string[]): void;
   /**
@@ -135,6 +149,11 @@ class ScanningProject {
   private options: ts.CompilerOptions = {};
   private scanner: RewriteScanner | undefined;
   private stale = false;
+  /** The signature of the generation record before the latest program was opened. */
+  private recordSignature: string | undefined;
+  /** The files the generation record listed before the latest program was opened; read only by a host that lints. */
+  private recorded: readonly string[] = [];
+  private readsRecord = false;
   /** Text the host holds for files that differ from the disk, by canonical file. */
   private readonly overlays = new Map<string, string>();
   /** Files that the tsconfig's own file list misses, such as `.mts`: the program gets them as roots. */
@@ -147,7 +166,15 @@ class ScanningProject {
     this.session = new compiler.ts.ProgramSession({ cwd: this.root });
   }
 
+  /** The files the generation record lists, as absolute paths. */
+  private recordedFiles(): string[] {
+    return Object.keys(loadInventory(this.config).files).map((key) => path.resolve(this.config.directory, key));
+  }
+
   private open(): void {
+    // The record is read before the program: a `golem generate` that ends in between is seen as a move at the next read.
+    const signature = fileSignature(this.config.inventoryFile);
+    const recorded = this.readsRecord ? this.recordedFiles() : [];
     const parsed = this.session.parseConfigFile(this.config.tsconfig);
     this.options = parsed.options;
     const { canonicalFilename } = this.compiler;
@@ -158,6 +185,8 @@ class ScanningProject {
     const models = this.config.jobs.find((job) => job.kind === 'models');
     this.scanner = new this.compiler.RewriteScanner({ root: this.root, directory: this.config.directory, modelsRoot: modelsRootOf(this.config), suffixes: models?.options.suffixes, output: models?.options.output, program, codecKeysFile: codecKeysPath(this.config.directory), checker: program.getTypeChecker(), nest: this.nest, nonModelInputs: this.config.nonModelInputs });
     this.stale = false;
+    this.recordSignature = signature;
+    this.recorded = recorded;
   }
 
   /** The program holds `file` with the host's `text`, reopened when it does not. */
@@ -175,12 +204,47 @@ class ScanningProject {
     return this.program!;
   }
 
-  rewrite(filename: string, text: string): { code: string; map: SourceMapV3; dependencies: readonly string[] } | undefined {
+  /** The scan of a file with the host's `text`, and its errors; undefined when the file is no rewrite candidate. */
+  private scan(filename: string, text: string): { readonly file: string; readonly scanned: FileScanResult; readonly errors: readonly GolemDiagnostic[] } | undefined {
     const file = this.compiler.canonicalFilename(filename);
     this.holds(file, withoutByteOrderMark(text));
     const scanned = this.scanner!.scanFile(file);
-    if (scanned === undefined) return undefined;
-    const errors = scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error);
+    return scanned && { file, scanned, errors: scanned.diagnostics.filter((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error) };
+  }
+
+  diagnose(filename: string, text: string): readonly GolemDiagnostic[] {
+    this.readsRecord = true;
+    this.syncToDisk(this.compiler.canonicalFilename(filename));
+    return this.scan(filename, text)?.errors ?? [];
+  }
+
+  comments(filename: string, text: string): readonly SourceComment[] {
+    this.readsRecord = true;
+    const file = this.compiler.canonicalFilename(filename);
+    const held = this.holds(file, withoutByteOrderMark(text)).getSourceFile(file);
+    return held === undefined ? [] : sourceComments(this.compiler.ts, held);
+  }
+
+  /**
+   * What a host with no watch does before it reads a file: only the file in hand keeps its overlay, so the text of a closed buffer
+   * leaves the program, and a generation record that moved since the program opened means `golem generate` wrote files, which
+   * the program reads again. One stat of the record, not one for each file of the program.
+   */
+  private syncToDisk(file: string): void {
+    for (const other of [...this.overlays.keys()].filter((key) => key !== file)) {
+      this.overlays.delete(other);
+      this.stale = true;
+    }
+    if (this.program !== undefined && fileSignature(this.config.inventoryFile) !== this.recordSignature) {
+      // The files of the old record too: one that `golem generate` removed is changed as well.
+      this.changed([...this.recorded, ...this.recordedFiles(), ...this.expectedGenerated]);
+    }
+  }
+
+  rewrite(filename: string, text: string): { code: string; map: SourceMapV3; dependencies: readonly string[] } | undefined {
+    const found = this.scan(filename, text);
+    if (found === undefined) return undefined;
+    const { file, scanned, errors } = found;
     if (errors.length > 0) {
       const line = errors.find((diagnostic) => diagnostic.line !== undefined)?.line;
       throw new GolemHostError([
@@ -301,6 +365,8 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   return {
     expectedGenerated: project.expectedGenerated,
     rewrite: (filename, text) => project.rewrite(filename, text),
+    diagnose: (filename, text) => project.diagnose(filename, text),
+    comments: (filename, text) => project.comments(filename, text),
     transpile: (filename, text, rewritten) => project.transpile(filename, text, rewritten),
     changed: (filenames) => { project.changed(filenames); },
     close() {
