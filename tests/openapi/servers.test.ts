@@ -29,6 +29,7 @@ function twoServerDocument(): unknown {
       },
       { url: 'https://staging.example/v2', description: 'Staging' },
       { url: 'https://decoy.example', description: 'prod' },
+      { url: 'https://named.example', name: 'Staging' },
     ],
     paths: { '/ping': ping },
   };
@@ -73,8 +74,9 @@ test('a client takes a document server by index, name or description, with varia
   const { Client } = await loadSdk(t, twoServerDocument(), 'Servers', TWO_SERVER_TYPES);
   assert.equal(await pingUrl(Client, {}), 'https://eu.api.example/v1/ping');
   assert.equal(await pingUrl(Client, { server: 1 }), 'https://staging.example/v2/ping');
-  assert.equal(await pingUrl(Client, { server: 'Staging' }), 'https://staging.example/v2/ping');
-  assert.equal(await pingUrl(Client, { server: 'prod' }), 'https://eu.api.example/v1/ping', 'a name wins over a description');
+  assert.equal(await pingUrl(Client, { server: 'Production' }), 'https://eu.api.example/v1/ping');
+  assert.equal(await pingUrl(Client, { server: 'Staging' }), 'https://named.example/ping', 'a name wins over a description');
+  assert.equal(await pingUrl(Client, { server: 'prod' }), 'https://eu.api.example/v1/ping');
   assert.equal(await pingUrl(Client, { server: 2 }), 'https://decoy.example/ping');
   assert.equal(await pingUrl(Client, { server: 'prod', serverVariables: { region: 'us', base: 'v9' } }), 'https://us.api.example/v9/ping');
   assert.equal(await pingUrl(Client, { server: 1, baseUrl: 'https://own.example/' }), 'https://own.example/ping');
@@ -84,7 +86,7 @@ test('a client refuses a server variable outside its enum and a server the docum
   // protects: T-388 a bad server choice fails when the client is created
   const { Client } = await loadSdk(t, twoServerDocument(), 'Servers', TWO_SERVER_TYPES);
   assert.throws(() => new Client({ serverVariables: { region: 'asia' } }), /server variable "region" must be one of eu, us; got "asia"/);
-  assert.throws(() => new Client({ server: 3 }), /ServersClient found no server 3 in the document; it lists 3/);
+  assert.throws(() => new Client({ server: 4 }), /ServersClient found no server 4 in the document; it lists 4/);
   assert.throws(() => new Client({ serverVariables: { zone: 'x' } }), /server 0 declares no variable "zone"/);
   assert.throws(() => new Client({ server: 1, serverVariables: { region: 'eu' } }), /server 1 declares no variable "region"/);
   assert.throws(() => new Client({ serverVariables: { toString: 'x' } }), /declares no variable "toString"/);
@@ -105,7 +107,7 @@ test('an operation module takes the same server options as the client', async (t
   assert.equal(typeof pingOperation, 'function');
   const seen: CapturedRequest[] = [];
   const operation = (pingOperation as (options: Record<string, unknown>) => { execute: () => Promise<unknown> })({
-    server: 'Staging',
+    server: 1,
     fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
       seen.push(captureRequest(url, init));
       return new Response(null, { status: 204 });
