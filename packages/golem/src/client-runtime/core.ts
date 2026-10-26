@@ -52,9 +52,25 @@ export type StreamDecoder = (response: Response, context: StreamDecoderContext) 
 
 export type ResponseDecoder = (response: Response) => unknown | Promise<unknown>;
 
+/** A server of the OpenAPI document's `servers` list, as a generated client holds it. */
+export interface ServerObject {
+  readonly url: string;
+  readonly description?: string;
+  /** OpenAPI 3.2 `name`. */
+  readonly name?: string;
+  readonly variables?: Readonly<Record<string, { readonly default: string; readonly enum?: readonly string[] }>>;
+}
+
 export interface ClientOptions {
-  /** Runtime-owned API endpoint. No specification server URL is assumed. */
-  baseUrl: string;
+  /** The API endpoint. It wins over `server`. A client whose document lists no servers requires it. */
+  baseUrl?: string;
+  /**
+   * The document server to use: its index, or its `name` or `description`. The default is the first server.
+   * Ignored when `baseUrl` is set.
+   */
+  server?: number | string;
+  /** Values for the `{variables}` of the chosen server URL. A variable you leave out uses its default. */
+  serverVariables?: Readonly<Record<string, string>>;
   fetchImpl?: typeof fetch;
   headers?: HeadersInit;
   /** Credentials keyed by OpenAPI security-scheme name: values or lazy providers. */
@@ -205,6 +221,30 @@ async function* checkStreamItems(
   }
 }
 
+function serverBaseUrl(client: string, options: ClientOptions, servers: readonly ServerObject[]): string {
+  if (options.baseUrl !== undefined) {
+    const baseUrl = options.baseUrl.trim();
+    if (!baseUrl) throw new Error(`${client}Client requires a non-empty baseUrl`);
+    return baseUrl;
+  }
+  const { server = 0 } = options;
+  const picked = servers[typeof server === 'number' ? server : servers.findIndex((entry) => entry.name === server || entry.description === server)];
+  if (!picked) {
+    throw new Error(servers.length
+      ? `${client}Client found no server ${JSON.stringify(server)} in the document; it lists ${servers.length}`
+      : `${client}Client requires a non-empty baseUrl`);
+  }
+  return picked.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => {
+    const variable = picked.variables?.[name];
+    if (!variable) return placeholder;
+    const value = options.serverVariables?.[name] ?? variable.default;
+    if (variable.enum && !variable.enum.includes(value)) {
+      throw new Error(`${client}Client server variable ${JSON.stringify(name)} must be one of ${variable.enum.join(', ')}; got ${JSON.stringify(value)}`);
+    }
+    return value;
+  });
+}
+
 export class ClientRuntime {
   public readonly baseUrl: string;
   public readonly fetchImpl: typeof fetch;
@@ -221,10 +261,9 @@ export class ClientRuntime {
   constructor(
     public readonly client: string,
     public readonly options: ClientOptions,
+    servers: readonly ServerObject[] = [],
   ) {
-    const baseUrl = options.baseUrl.trim();
-    if (!baseUrl) throw new Error(`${client}Client requires a non-empty baseUrl`);
-    this.baseUrl = baseUrl.replace(/\/$/, '');
+    this.baseUrl = serverBaseUrl(client, options, servers).replace(/\/$/, '');
     const configuredFetch = options.mutualTls?.fetchImpl ?? options.fetchImpl;
     // Call a configured fetch without a receiver: browsers reject a native
     // fetch invoked with any receiver other than the global object.

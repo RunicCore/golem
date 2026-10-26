@@ -27,7 +27,8 @@ export type ArtifactFile =
   | 'output-schemas.ts'
   | 'client.ts'
   | 'inbound.ts'
-  | 'links.ts';
+  | 'links.ts'
+  | 'servers.ts';
 
 type ClientHelperName =
   | 'constructor' | 'baseUrl' | 'fetchImpl' | 'defaultHeaders' | 'url'
@@ -58,9 +59,18 @@ interface StreamPlan {
   readonly custom: boolean;
 }
 
+/** A server of the document's `servers` list, with the fields that the client reads. */
+export interface DocumentServer {
+  readonly url: string;
+  readonly description?: string;
+  readonly name?: string;
+  readonly variables?: Readonly<Record<string, { readonly default: string; readonly enum?: readonly string[] }>>;
+}
+
 export interface EmissionPlan {
   readonly profile: OpenApiGenerationProfile;
   readonly artifacts: ReadonlySet<ArtifactFile>;
+  readonly servers: readonly DocumentServer[];
   readonly hasComponentSchemas: boolean;
   readonly hasModels: boolean;
   readonly hasOutboundOperations: boolean;
@@ -108,6 +118,27 @@ function mediaList(operations: readonly NormalizedOperation[]): OpenApiMediaType
     ...operation.requestContent,
     ...operation.responses.flatMap((response) => [...response.content]),
   ]);
+}
+
+function documentServers(document: unknown): readonly DocumentServer[] {
+  const servers = asRecord(document).servers;
+  if (!Array.isArray(servers)) return [];
+  return servers.flatMap((server): DocumentServer[] => {
+    const { url, description, name, variables } = asRecord(server);
+    if (typeof url !== 'string') return [];
+    const declared = objectEntries(variables).flatMap(([variable, entry]) => {
+      const { default: fallback, enum: values } = asRecord(entry);
+      return typeof fallback === 'string'
+        ? [[variable, { default: fallback, ...(Array.isArray(values) ? { enum: values.filter((value) => typeof value === 'string') } : {}) }] as const]
+        : [];
+    });
+    return [{
+      url,
+      ...(typeof description === 'string' ? { description } : {}),
+      ...(typeof name === 'string' ? { name } : {}),
+      ...(declared.length ? { variables: Object.fromEntries(declared) } : {}),
+    }];
+  });
 }
 
 function hasLinks(operations: readonly NormalizedOperation[]): boolean {
@@ -349,13 +380,16 @@ export function buildEmissionPlan(
     artifacts.add('input-schemas.ts');
     artifacts.add('output-schemas.ts');
   }
+  const servers = documentServers(document);
   if (hasOutboundOperations) artifacts.add('client.ts');
+  if (hasOutboundOperations && servers.length) artifacts.add('servers.ts');
   if (hasInboundOperations) artifacts.add('inbound.ts');
   if (links) artifacts.add('links.ts');
 
   const partial = {
     profile,
     artifacts,
+    servers,
     hasComponentSchemas,
     hasModels,
     hasOutboundOperations,
