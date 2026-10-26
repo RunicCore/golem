@@ -166,11 +166,14 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNT2101
 
-**Unsupported route expression.** A route path or version in a controller decorator is neither a string literal nor a simple route helper that golem can fold at generation time. **Fix:** Write the path as a string literal, an array of string literals, or a helper that returns one value, as in [route helpers](/reference/nestjs#route-helpers).
+**Unsupported route expression.** Golem cannot fold a route path or version in a controller decorator to a string or an array of strings at generation time. It folds string literals, `+` and template strings, constants, and helpers with a single `return` statement. It stops at a value that is not constant, a helper with more than one statement or a rest parameter, a call with the wrong number of arguments, or a helper that calls itself or nests more than 64 calls. **Fix:** Write the path as a string literal, an array of string literals, or a helper that returns one value, as in [route helpers](/reference/nestjs#route-helpers).
 
 ### RUNT2106
 
-**Route result too large.** A route path or version folds to a value larger than 1 MiB when written as JSON. **Fix:** Use a shorter path or version value.
+**Route result too large.** A route path or version folds to a value larger than the limit, 1 MiB when written as JSON. **Fix:**
+
+- Use a shorter path or version value.
+- Or raise `maxResultBytes` in the [controller job](/reference/config#controller-jobs) of `golem.yaml`.
 
 ## Model generator (RUNM)
 

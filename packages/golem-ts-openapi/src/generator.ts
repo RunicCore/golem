@@ -38,6 +38,7 @@ import {
   type TsToOpenApiDiagnostic,
 } from './diagnostics.js';
 import { buildDocument, serializeForOutput } from './document.js';
+import { validateRouteEvaluationOptions } from './evaluation/dependencies.js';
 import { analyzeControllers, discoverControllerSources } from './nest/routes.js';
 import type { DtoSchema } from './nest/json-schema-merge.js';
 import { applySwaggerPropertyMetadata } from './nest/swagger-overlay.js';
@@ -62,6 +63,7 @@ function validateContext(context: TsToOpenApiContext): {
   readonly sources?: readonly string[];
   readonly suffixes: readonly string[];
   readonly openapiVersion: '3.2.0' | '3.1.2';
+  readonly maxResultBytes: number;
   readonly profile: ResolvedGolemProfile;
   readonly exact?: boolean;
   readonly boundary?: ModelBoundary;
@@ -87,6 +89,7 @@ function validateContext(context: TsToOpenApiContext): {
     throw new TypeError('context.openapiVersion must be 3.2.0 or 3.1.2.');
   }
   const profile = resolveProfile(context.profile);
+  const { maxResultBytes } = validateRouteEvaluationOptions(context);
   const sources = context.sources === undefined
     ? undefined
     : (() => {
@@ -103,7 +106,7 @@ function validateContext(context: TsToOpenApiContext): {
     models.suffixes,
     { directory: assertAbsolute(models.directory, 'context.models.directory'), output: assertAbsolute(models.output, 'context.models.output') },
   );
-  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, profile, exact: context.exact, ...(boundary ? { boundary } : {}), onInput: context.onInput };
+  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, maxResultBytes, profile, exact: context.exact, ...(boundary ? { boundary } : {}), onInput: context.onInput };
 }
 
 function asGolemDiagnostic(value: TsToOpenApiDiagnostic): GolemDiagnostic {
@@ -487,6 +490,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
     program,
     checker,
     openapiVersion: normalized.openapiVersion,
+    maxResultBytes: normalized.maxResultBytes,
     onInput: observe,
     contractAnalysis,
     registerSchemaComponent: schemas.registerSchemaComponent,
