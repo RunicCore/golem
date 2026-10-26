@@ -59,7 +59,7 @@ function validateManifestProfile(
     || advertised.unknownFormats !== profile.unknownFormats
   ) {
     throw new Error(
-      `Model manifest profile mismatch in ${filename}: expected `
+      `Model manifest profile mismatch in ${displayPath(filename)}: expected `
       + `{ mobx: ${profile.mobx}, validation: ${profile.validation}, allowAny: ${profile.allowAny ?? false}, unknownFormats: ${profile.unknownFormats} }. `
       + 'Regenerate the SDK manifest with the same profile before model generation.',
     );
@@ -92,7 +92,7 @@ function validateGeneratedModules(
       const resolved = info.program.session.resolveModuleName(moduleName, model.manifestFile, options).resolvedModule;
       if (!resolved) {
         throw new Error(
-          `Model manifest ${model.manifestFile} references missing generated module `
+          `Model manifest ${displayPath(model.manifestFile)} references missing generated module `
           + `${moduleName} for ${model.id}.`,
         );
       }
@@ -150,7 +150,7 @@ function validateGeneratedModules(
     }
     if (!exports.has(model.generated.export)) {
       throw new Error(
-        `Model manifest ${model.manifestFile} references missing runtime export `
+        `Model manifest ${displayPath(model.manifestFile)} references missing runtime export `
         + `${model.generated.export} from ${model.generated.module} for ${model.id}.`,
       );
     }
@@ -249,7 +249,7 @@ export function loadModelManifests(
     // checks. Only manifests this job discovered or advertised are watch inputs
     // until emit records the ones it actually referenced.
     if (local.has(filename)) onInput?.(filename);
-    if (!existsSync(filename)) throw new Error(`Model manifest does not exist: ${filename}`);
+    if (!existsSync(filename)) throw new Error(`Model manifest does not exist: ${displayPath(filename)}`);
     const manifest = readModelManifest(filename);
     validateManifestProfile(manifest, filename, profile);
     validationSchemaClosure.push(...manifest.validationSchemaClosure ?? []);

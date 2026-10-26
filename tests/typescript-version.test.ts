@@ -48,7 +48,7 @@ test('(f) a root where neither the project nor golem has TypeScript fails naming
   const root = mkdtempSync(path.join(tmpdir(), 'golem-ts-version-none-'));
   writeFileSync(path.join(root, 'package.json'), '{}');
   assert.throws(() => resolveTypeScript(root, pathToFileURL(path.join(root, 'golem.js')).href), (error: unknown) => error instanceof UnsupportedTypeScriptError
-    && error.message === `golem needs TypeScript 6.0+ or 7.1+ installed in ${root}.`);
+    && error.message === `golem needs TypeScript 6.0+ or 7.1+ installed in ${path.relative(process.cwd(), root)}.`);
 });
 test('(f2) a TypeScript that cannot be resolved for another reason than a missing package keeps the reason as the cause', () => {
   // protects: E-34 the resolve error is chained, not swallowed

@@ -35,6 +35,18 @@ A model class with `@ApiSchema({ name: 'PlacedOrder' })` is now the component `P
 - Update the `$ref`s and the generated-client code that use the class name of such a model.
 - Remove `@ApiSchema` from the model class when you want to keep the class name.
 
+## Read local paths relative to the working directory {#message-paths}
+
+Golem commands and generators now print a local file relative to the working directory. This is the form that `tsc` uses. In 1.0, many messages printed the absolute path.
+
+```text
+The TypeScript configuration packages/app/tsconfig.json has errors:
+```
+
+A path in a message that does not lie below the working directory starts with `..`. The working directory itself prints as `.`. A URL and a path that is already relative stay as they are. Paths that golem writes into generated files and JSON files do not change.
+
+When a script or an editor task parses golem messages, change it to read this form. Run the command from the folder where you want the paths to start.
+
 ## Move to TypeScript 7.1 or 6
 
 Install one of the supported versions, then update the Golem packages:

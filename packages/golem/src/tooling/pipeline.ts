@@ -9,7 +9,7 @@ import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
 import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
 import { absoluteRecordPath, codeDigest, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, errorMessage, hasErrorCode, isInsideDirectory, isRecord, suffixPattern } from './generator-api.js';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, displayPath, errorMessage, hasErrorCode, isInsideDirectory, isRecord, suffixPattern } from './generator-api.js';
 import { distTagForVersion } from './dist-tag.js';
 import { validateModelManifest } from './model-manifest.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
@@ -178,7 +178,7 @@ export async function providersFor(config: GolemConfig, only?: ReadonlySet<strin
     let filename: string;
     try { filename = requireFromProject.resolve(`${job.package}/generator`); }
     catch (error) {
-      if (hasErrorCode(error, 'MODULE_NOT_FOUND')) throw new Error(`${job.kind} is configured but ${job.package} is not installed in ${config.directory}. Install it with npm install -D ${job.package}@${distTagForVersion(golemVersion())}.`);
+      if (hasErrorCode(error, 'MODULE_NOT_FOUND')) throw new Error(`${job.kind} is configured but ${job.package} is not installed in ${displayPath(config.directory)}. Install it with npm install -D ${job.package}@${distTagForVersion(golemVersion())}.`);
       throw new Error(`Cannot resolve ${job.package}/generator: ${errorMessage(error)}`);
     }
     // golem publishes its own packages in lockstep; a third-party generator versions on its own.
@@ -217,7 +217,7 @@ function validateResult(result: unknown, job: GolemJob): GolemResult {
   const manifestPaths = paths(result.manifestPaths);
   for (const filename of manifestPaths) {
     const artifact = artifacts.find(artifact => artifact.path === filename);
-    if (!artifact) throw new Error(`${job.package} returned a manifest without an artifact: ${filename}`);
+    if (!artifact) throw new Error(`${job.package} returned a manifest without an artifact: ${displayPath(filename)}`);
     const manifest = validateModelManifest(JSON.parse(artifact.content) as unknown, filename);
     if (Object.entries(job.options.profile).some(([key, value]) => Reflect.get(manifest.profile, key) !== value)) {
       throw new Error(`${job.package} returned a manifest with a different generation profile. Regenerate with a compatible provider.`);
@@ -269,22 +269,23 @@ function validateResult(result: unknown, job: GolemJob): GolemResult {
   };
 }
 
-function diagnosticLocation(diagnostic: GolemDiagnostic): string {
+/** ` (file:line:column)` of a diagnostic. A scan diagnostic's file is relative to `base`, the project root; a provider's file is as it gave it. */
+function diagnosticLocation(diagnostic: GolemDiagnostic, base?: string): string {
   if (!diagnostic.file) return '';
   const line = diagnostic.line === undefined ? '' : `:${diagnostic.line}${diagnostic.column === undefined ? '' : `:${diagnostic.column}`}`;
-  return ` (${diagnostic.file}${line})`;
+  return ` (${displayPath(base === undefined ? diagnostic.file : path.resolve(base, diagnostic.file))}${line})`;
 }
 
-function writeWarnings(diagnostics: readonly GolemDiagnostic[]): void {
+function writeWarnings(diagnostics: readonly GolemDiagnostic[], base?: string): void {
   for (const diagnostic of diagnostics) {
-    if (diagnostic.severity === GolemDiagnosticSeverity.Warning) process.stderr.write(`${diagnostic.code}${diagnosticLocation(diagnostic)}: ${diagnostic.message}\n`);
+    if (diagnostic.severity === GolemDiagnosticSeverity.Warning) process.stderr.write(`${diagnostic.code}${diagnosticLocation(diagnostic, base)}: ${diagnostic.message}\n`);
   }
 }
 
-function errorDiagnosticsMessage(source: string, errors: readonly GolemDiagnostic[]): string {
+function errorDiagnosticsMessage(source: string, errors: readonly GolemDiagnostic[], base?: string): string {
   return [
     `${source} reported ${errors.length} error diagnostic${errors.length === 1 ? '' : 's'}:`,
-    ...errors.map(diagnostic => `  ${diagnostic.code}${diagnosticLocation(diagnostic)}: ${diagnostic.message}`),
+    ...errors.map(diagnostic => `  ${diagnostic.code}${diagnosticLocation(diagnostic, base)}: ${diagnostic.message}`),
   ].join('\n');
 }
 
@@ -479,7 +480,7 @@ export function jobFailedBeforeWriting(error: unknown): boolean {
 function assertUnowned(owned: ReadonlySet<string>, outputs: readonly string[]): void {
   const seen = new Set<string>();
   for (const output of outputs) {
-    if (owned.has(output) || seen.has(output)) throw new Error(`Two generators emitted the same output: ${output}`);
+    if (owned.has(output) || seen.has(output)) throw new Error(`Two generators emitted the same output: ${displayPath(output)}`);
     seen.add(output);
   }
 }
@@ -713,10 +714,10 @@ async function scanRewriteSites(config: GolemConfig, session: GeneratorSessionRe
     } : {}),
   });
   const errors = scanned.diagnostics.filter(diagnostic => diagnostic.severity === GolemDiagnosticSeverity.Error);
-  if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors));
-  writeWarnings(scanned.diagnostics);
+  if (errors.length > 0) throw new Error(errorDiagnosticsMessage('golem rewrite scan', errors, path.dirname(config.tsconfig)));
+  writeWarnings(scanned.diagnostics, path.dirname(config.tsconfig));
   const disagreements = nest ? rewriteScan.checkNestCodecs(controllerRoots, scanned) : [];
-  if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements));
+  if (disagreements.length > 0) throw new Error(errorDiagnosticsMessage('golem nest codec check', disagreements, path.dirname(config.tsconfig)));
 }
 
 /** Scan the sources for `check`, save the records of the jobs still configured, and hand the provider keys back to the session. */

@@ -1,3 +1,5 @@
+import { displayPath } from './generator-api.js';
+
 /** The diagnostic code of a configuration that matches no file. */
 const NO_INPUTS_FOUND = 18003;
 
@@ -5,6 +7,6 @@ const NO_INPUTS_FOUND = 18003;
 export function assertConfigParsed(configPath: string, errors: readonly { readonly code: number; readonly text: string }[]): void {
   const reported = errors.filter((diagnostic) => diagnostic.code !== NO_INPUTS_FOUND);
   if (reported.length > 0) {
-    throw new Error([`The TypeScript configuration ${configPath} has errors:`, ...reported.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
+    throw new Error([`The TypeScript configuration ${displayPath(configPath)} has errors:`, ...reported.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
   }
 }

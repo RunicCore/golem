@@ -871,7 +871,7 @@ test('a sources entry outside the models root stops generation with RUNM1075 nam
 
   assert.throws(
     () => generate({ root, sources: [path.join(root, 'src/order.model.ts'), money], profile: { mobx: false, validation: true } }),
-    { message: `RUNM1075: models.sources entry ${money} is outside the models root ${root}. A models job generates only files inside its root.` },
+    { message: `RUNM1075: models.sources entry ${path.relative(process.cwd(), money)} is outside the models root ${path.relative(process.cwd(), root)}. A models job generates only files inside its root.` },
   );
 });
 
@@ -883,7 +883,7 @@ test('a sources entry that links to a file outside the models root stops generat
 
   assert.throws(
     () => generate({ root, sources: [path.join(root, 'src/money.model.ts')], profile: { mobx: false, validation: true } }),
-    { message: `RUNM1075: models.sources entry ${money} is outside the models root ${root}. A models job generates only files inside its root.` },
+    { message: `RUNM1075: models.sources entry ${path.relative(process.cwd(), money)} is outside the models root ${path.relative(process.cwd(), root)}. A models job generates only files inside its root.` },
   );
 });
 
