@@ -84,6 +84,37 @@ for (const all of [true, false]) {
   });
 }
 
+// A TypeScript tuple [Validated, string, ...Validated[]]: the rest items start after the plain prefix item.
+const TUPLE = { type: 'array', prefixItems: [short, { type: 'string' }], items: short };
+
+for (const all of [true, false]) {
+  test(`the predicates-only pass of a tuple with a plain prefix item and validated rest items matches the full validator, all-errors ${all}`, async () => {
+    // protects: T-468 rest-item predicates stay after the prefix
+    const module = await compileValidatorModule({ roots: { tuple: TUPLE }, validations: VALIDATIONS, modules: { 'rules.mjs': RULES }, fastPath: true });
+    const { predicates } = module.passByRoot.tuple;
+    const values = [['ab', 'abcdef'], ['ab', 'abcdef', 'xy', 'toolong'], ['abcdef', 'x', 'ab'], ['ab']];
+    assert.deepEqual(values.map(value => predicates(value, all)), values.map(value => module.byRoot.tuple(value, all)));
+    assert.deepEqual(values.map(value => predicates(value, all).length), [0, 1, 1, 0]);
+  });
+}
+
+// One predicate under each keyword whose path is not conjunctive: today's path.
+const EVEN_UNDER: Readonly<Record<string, unknown>> = {
+  not: { not: even },
+  conditional: { if: { type: 'integer' }, then: even },
+  dependentSchemas: { dependentSchemas: { a: { properties: { b: even } } } },
+  propertyNames: { propertyNames: short },
+  patternProperties: { patternProperties: { '^x': even } },
+  additionalProperties: { additionalProperties: even },
+  unevaluatedProperties: { properties: { a: { type: 'string' } }, unevaluatedProperties: even },
+};
+
+test('a root with a predicate under not, if, dependentSchemas, propertyNames, a pattern, additionalProperties or unevaluatedProperties gets no passes', async () => {
+  // protects: T-468 non-conjunctive roots keep today's path
+  const module = await compileValidatorModule({ roots: EVEN_UNDER, validations: VALIDATIONS, modules: { 'rules.mjs': RULES }, fastPath: true });
+  assert.deepEqual({ passes: Object.keys(module.passByRoot), validators: module.exportNames.filter(name => name.startsWith('validate_')).length }, { passes: [], validators: 7 });
+});
+
 test('a root with a predicate under a union or contains gets no structure check and no predicates-only pass', async () => {
   // protects: T-468 non-conjunctive roots keep today's path
   const module = await compileOrder();

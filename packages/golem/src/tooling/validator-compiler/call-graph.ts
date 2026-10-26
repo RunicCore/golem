@@ -107,7 +107,7 @@ function conjunctiveCallee(check: IrCheck): number | undefined {
  * union, `not`, `if`, `dependentSchemas`, `contains`, `propertyNames`, a pattern, `additionalProperties` or `unevaluated*`
  * is not conjunctive, and neither is one in a function that keeps or receives an evaluation record.
  */
-export function conjunctiveValidation(functions: readonly IrFunction[]): ReadonlySet<number> {
+function conjunctiveValidation(functions: readonly IrFunction[]): ReadonlySet<number> {
   const reaching = reachingValidation(functions);
   const callers = new Map<number, number[]>();
   const spoiled = new Set<number>();
@@ -128,7 +128,7 @@ export function conjunctiveValidation(functions: readonly IrFunction[]): Readonl
 }
 
 /** The functions of `functions` plus the two passes of the roots that validate conjunctively. */
-export interface PassFunctions {
+interface PassFunctions {
   readonly functions: readonly IrFunction[];
   /** For a function the passes cover: its structure check, the function with every validation function left out. */
   readonly structure: ReadonlyMap<number, number>;
@@ -137,6 +137,11 @@ export interface PassFunctions {
 }
 
 const ALWAYS: IrSchema = { kind: 'always' };
+
+/** A new kind of check fails the build here, and generation, instead of being dropped from a pass. */
+function unprojected(check: never): never {
+  throw new Error(`The validator compiler projects no check of the kind ${JSON.stringify(check)}.`);
+}
 
 /**
  * Adds the structure check and the predicates-only pass of each function in `roots` that validates conjunctively (see
@@ -170,7 +175,10 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
       case 'allOf': return [{ ...check, branches: check.branches.map(nested) }];
       case 'array': return [{ ...check, prefixItems: check.prefixItems.map(nested), ...(check.items === undefined ? {} : { items: nested(check.items) }) }];
       case 'object': return [{ ...check, properties: check.properties.map(property => ({ ...property, schema: nested(property.schema) })) }];
-      default: return [check];
+      case 'type': case 'literal': case 'format': case 'string': case 'number': case 'date': case 'instance': case 'union':
+      case 'not': case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
+        return [check];
+      default: return unprojected(check);
     }
   };
 
@@ -194,8 +202,9 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
       }
       case 'array': {
         const prefixItems = check.prefixItems.map(item => predicateSchema(item) ?? ALWAYS);
-        while (prefixItems.at(-1)?.kind === 'always') prefixItems.pop();
         const items = check.items === undefined ? undefined : predicateSchema(check.items);
+        // The items loop starts after the last prefix item, so a prefix item that is dropped keeps its place while `items` is kept.
+        while (items === undefined && prefixItems.at(-1)?.kind === 'always') prefixItems.pop();
         return items === undefined && prefixItems.length === 0
           ? []
           : [{ kind: 'array', prefixItems, ...(items === undefined ? {} : { items }), closed: false, uniqueItems: false }];
@@ -207,7 +216,10 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
         });
         return properties.length === 0 ? [] : [{ kind: 'object', required: [], dependentRequired: [], properties, patternProperties: [] }];
       }
-      default: return [];
+      case 'type': case 'literal': case 'format': case 'string': case 'number': case 'date': case 'instance': case 'union':
+      case 'not': case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
+        return [];
+      default: return unprojected(check);
     }
   };
 
