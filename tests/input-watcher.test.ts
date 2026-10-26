@@ -6,7 +6,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { changedPaths, InputScan, InputWatcher, realInputFiles, RunBaseline } from '#golem/input-watcher';
 import type { InputFiles } from '#golem/input-watcher';
-import { countingInputFiles, quietly, until } from './support/watch-wait.js';
+import { countingInputFiles, quietly, until, watchStarted } from './support/watch-wait.js';
 
 /** A root with `src/a.model.ts`, and a folder beside it that stands for a shared folder outside the root. */
 function projectFolders(t: TestContext): { root: string; shared: string } {
@@ -161,6 +161,7 @@ for (const [name, act] of FILE_EVENTS) {
     const { root } = projectFolders(t);
     const folder = path.join(root, 'src');
     const { ticks } = ticking(t, root, [folder]);
+    await watchStarted();
     act(folder);
     await until(() => ticks.length > 0, name);
     assert.deepEqual(ticks, [false]);
@@ -172,10 +173,13 @@ test('a hidden file and an editor temporary file start no tick', async (t) => {
   const { root } = projectFolders(t);
   const folder = path.join(root, 'src');
   const { ticks } = ticking(t, root, [folder]);
+  // FSEvents (macOS) reports the files created just before the watch opened; that tick is settled first.
+  await quietly();
+  const settled = ticks.length;
   fs.writeFileSync(path.join(folder, '.a.model.ts.swp'), 'swap');
   fs.writeFileSync(path.join(folder, 'a.model.ts~'), 'backup');
   await quietly();
-  assert.deepEqual(ticks, [], 'nothing started a tick');
+  assert.equal(ticks.length, settled, 'nothing started a tick');
   fs.writeFileSync(path.join(folder, 'b.model.ts'), 'export {};\n');
   await until(() => ticks.length > 0, 'the control: a source file starts a tick');
 });
@@ -217,6 +221,7 @@ test('an event during a tick starts exactly one more tick after it, and events i
   });
   t.after(() => watcher.close());
   watcher.sync([folder]);
+  await watchStarted();
   fs.writeFileSync(path.join(folder, 'a.model.ts'), '1');
   fs.writeFileSync(path.join(folder, 'a.model.ts'), '2');
   await until(() => ticks.length === 1, 'the first tick, held open');
@@ -236,10 +241,13 @@ test('a folder deleted and created again is watched again', async (t) => {
   const { root } = projectFolders(t);
   const folder = path.join(root, 'src');
   const { ticks, watcher } = ticking(t, root, [folder]);
+  await watchStarted();
   fs.rmSync(folder, { recursive: true });
   fs.mkdirSync(folder);
   await until(() => ticks.length > 0, 'the events of the delete and the create');
-  assert.equal(watcher.sync([folder]), true, 'the tick that follows opens a watcher on the new folder');
+  // inotify (Linux) kills the watcher of a deleted folder, so this sync opens a new one; FSEvents (macOS) watches the path and keeps its watcher.
+  watcher.sync([folder]);
+  await quietly();
   const seen = ticks.length;
   fs.writeFileSync(path.join(folder, 'again.model.ts'), 'export {};\n');
   await until(() => ticks.length > seen, 'a file created in the new folder');
@@ -321,9 +329,12 @@ test('an event for an input with a hidden name starts a tick, and another hidden
   const scan = new InputScan([base], { root }, realInputFiles);
   const { ticks, watcher } = ticking(t, root, []);
   watcher.snapshotWatching(scan);
+  // FSEvents (macOS) reports the creation of the input that happened just before the watch opened; that tick is settled first.
+  await quietly();
+  const settled = ticks.length;
   fs.writeFileSync(path.join(root, '.other.json'), '{}');
   await quietly();
-  assert.deepEqual(ticks, [], 'a hidden name that is no input starts nothing');
+  assert.equal(ticks.length, settled, 'a hidden name that is no input starts nothing');
   fs.writeFileSync(base, '{"compilerOptions":{}}');
   await until(() => ticks.length > 0, 'the hidden input');
 });

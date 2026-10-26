@@ -17,6 +17,14 @@ export function quietly(ms = 400): Promise<void> {
 }
 
 /**
+ * Waits for a folder watch that just opened to be live. fs.watch returns before FSEvents (macOS) starts its stream, and a change
+ * made in that first moment is lost; the stream has no ready event, so there is nothing to poll.
+ */
+export function watchStarted(ms = 200): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
  * Counts the reads a watch makes (`stat`, `list`) and the folder watches it opens and has not closed, through the `InputFiles` seam.
  */
 export function countingInputFiles(): { readonly files: InputFiles; readonly reads: () => number; readonly openWatches: () => number } {
