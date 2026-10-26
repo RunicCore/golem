@@ -252,7 +252,9 @@ client.<operation>().execute(input, options?: <Client>RequestOptions): Promise<H
 
 | Option | Present when the API has | Value |
 | --- | --- | --- |
-| `baseUrl` | always | The required API address. |
+| `baseUrl` | always | The API address. It wins over `server`. Required when the document lists no `servers`. |
+| `server` | `servers` in the document | The index, `name` or `description` of a server. The default is the first server. |
+| `serverVariables` | `servers` in the document | A record of values for the `{variables}` in the URL of the chosen server. |
 | `fetchImpl` | always | A `fetch` function. The default is the global `fetch`. |
 | `headers` | always | `HeadersInit` that the client adds to every request. |
 | `auth` | a security scheme that is not mutual TLS | Credentials by scheme name, or functions that return them ([Client authentication](#client-authentication)). |
@@ -270,6 +272,7 @@ client.<operation>().execute(input, options?: <Client>RequestOptions): Promise<H
 
 - The client type has the first three options always. It adds each other option only when the API needs it. A key that the type does not have is a type error.
 - `baseUrl` loses its surrounding spaces and one trailing `/`. An empty value throws `Error` with the message `<Client>Client requires a non-empty baseUrl` when you create the client.
+- A server URL is used as the document writes it, after the variables are filled. A variable that `serverVariables` leaves out uses its `default`. A value that is not in the `enum` of the variable, or a `server` that the document does not list, throws `Error` when you create the client.
 - `mutualTls.fetchImpl` replaces `fetchImpl` for every request of the client, also for operations without a mutual TLS requirement.
 - A codec map that you leave out is empty. A codec that you pass replaces the built-in one.
 - Each `execute` call resolves with the response that the operation declares, as in the table below. A declared error status resolves too ([Read responses and handle failures](/guide/client-usage#read-responses-and-handle-failures)).

@@ -44,6 +44,7 @@ in the sections below.
 
 ### OpenAPI
 
+- The generated client takes its address from the `servers` list of the document. With `servers`, `baseUrl` is optional; `server` picks a server by index, `name` or `description` (the first by default), and `serverVariables` fills its `{variables}`. `baseUrl` still wins. A document with no `servers` keeps `baseUrl` required. See [Generated client](docs/reference/runtime-api.md#generated-client).
 - A controller body or return typed `readonly TPayment[]` refers to the `TPayment` component in the OpenAPI document, as `TPayment[]` does. Before, it held an inline copy of the model's schema.
 - A `oneOf` or `anyOf` of objects that needs a conversion, and has no `discriminator` and no required `const` or single-value `enum` property that differs between variants, stops generation with [`OPENAPI_UNION_DISCRIMINATOR_MISSING`](docs/reference/diagnostics.md#openapi-union-discriminator-missing). The message names the schema and lists the variants. Add the property to each variant, or add a `discriminator`.
 - An `allOf` whose members declare types with no common value, such as `allOf: [{ type: string }, { type: number }]`, stops generation with [`OPENAPI_COMPOSITION_UNSATISFIABLE`](docs/reference/diagnostics.md#openapi-composition-unsatisfiable). Before, it generated code. Give the members a type that they share.
