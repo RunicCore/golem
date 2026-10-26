@@ -255,6 +255,7 @@ function operationSource(
   if (surfaces.auth || surfaces.mutualTls) importedNames.push(['__golemSecuritySchemes', 'security metadata']);
   if (appliesSecurity) importedNames.push(['RuntimeSecuritySchemes', 'security scheme type import']);
   if (profile.validation) importedNames.push(['OperationValidationSources', 'validation source type import']);
+  if (plan.servers.length) importedNames.push(['__golemServers', 'document servers import']);
   const moduleScope = new NameScope(`operation ${JSON.stringify(operation.name)}`);
   for (const [name, origin] of importedNames) {
     moduleScope.claim(name, origin);
@@ -284,6 +285,8 @@ function operationSource(
   const validatorsSource = new ImportSource('../validators.generated.js');
   const validatorNames = validatorImports.map((item) => validatorsSource.name(item.exported, { alias: item.local }));
   const clientModule = new ImportSource('../client.js', true);
+  const serversModule = new ImportSource('../servers.js');
+  const serversCode = plan.servers.length ? serversModule.name('servers', { alias: '__golemServers' }) : BLANK;
   const clientOptions = clientModule.name(`${clientName}ClientOptions`, { alias: 'ClientOptions' });
   const requestOptions = clientModule.name(`${clientName}RequestOptions`, { alias: 'RequestOptions' });
   const clientRuntime = rt.client.ClientRuntime;
@@ -343,7 +346,7 @@ ${join(bodyLines, code`\n`)}
   ].filter((part) => part.parts.length > 0), code`\n`);
   const factoryCode = identifierPart(factoryName);
   const functions = code`export function ${identifierPart(operation.name)}(options: ${clientOptions}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
-  return ${factoryCode}(new ${clientRuntime}(${literal(clientName)}, options));
+  return ${factoryCode}(new ${clientRuntime}(${literal(clientName)}, options${plan.servers.length ? code`, ${serversCode}` : BLANK}));
 }
 
 export function ${factoryCode}(runtime: ${clientRuntime}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
@@ -362,14 +365,16 @@ ${validatorSetup.parts.length > 0 ? code`${validatorSetup}\n` : BLANK}${body}
     const entry = runtime.get(module);
     return entry ? importLines(entry, imports) : [];
   };
-  const clientImports = fileImports(file, [clientModule], { elsewhere: [typesModule, validatorsSource] });
-  const typesImports = fileImports(file, [typesModule], { elsewhere: [clientModule, validatorsSource] });
-  const validatorImportLines = fileImports(file, [validatorsSource], { elsewhere: [typesModule, clientModule] });
+  const clientImports = fileImports(file, [clientModule], { elsewhere: [typesModule, validatorsSource, serversModule] });
+  const typesImports = fileImports(file, [typesModule], { elsewhere: [clientModule, validatorsSource, serversModule] });
+  const serversImports = fileImports(file, [serversModule], { elsewhere: [typesModule, clientModule, validatorsSource] });
+  const validatorImportLines = fileImports(file, [validatorsSource], { elsewhere: [typesModule, clientModule, serversModule] });
   return render(code`${join([
     generatedBannerComment(),
     ...runtimeLines('client'),
     ...clientImports,
     ...typesImports,
+    ...serversImports,
     ...runtimeLines('mobx'),
     ...validatorImportLines,
     ...runtimeLines('validation'),
@@ -501,6 +506,9 @@ function emitClient(
   });
   // Each operation module is imported under the aliases that the scope decided; a name is imported when the code calls it.
   const operationSources = operations.map((operation) => new ImportSource(`./operations/${operation.name}.js`));
+  const serversSource = new ImportSource('./servers.js');
+  const localSources = [...operationSources, serversSource];
+  if (plan.servers.length) scope.claim('__golemServers', 'document servers import');
   const factoryCodes = operations.map((operation, index) => operationSources[index]?.name(operationFactoryName(operation), { alias: aliases.get(operation.name) ?? '' }) ?? BLANK);
   const securityCodes = operations.flatMap((operation, index) => {
     const securityAlias = securityAliases.get(operation.name);
@@ -532,10 +540,12 @@ ${join(securityCodes.map((alias) => code`  ...${alias},`), code`\n`)}
   const undeclared = plan.helpers.has('selectResponse');
   const usesAuth = surfaces.auth || surfaces.mutualTls;
   const optionExtensions: Code[] = [
+    ...(plan.servers.length ? [] : [code`  ${docComment('The API endpoint. The document lists no servers.')}\n  baseUrl: string;`]),
     ...(surfaces.auth ? [code`  ${docComment('Values or lazy providers keyed by OpenAPI security-scheme name.')}\n  auth?: ${named('Auth')};`] : []),
     ...(profile.validation ? [code`  ${docComment('Overrides generated validators for individual operations.')}\n  operationValidators?: ReadonlyMap<__GolemOperationName, ${aliased(rtType.validation.OperationRuntimeValidators, '__GolemOperationRuntimeValidators')}>;`] : []),
   ];
   const omittedOptions = [
+    ...(plan.servers.length ? [] : ['baseUrl', 'server', 'serverVariables']),
     ...(surfaces.bodyEncoders ? [] : ['bodyEncoders']),
     ...(surfaces.responseDecoders ? [] : ['responseDecoders']),
     ...(surfaces.parameterSerializers ? [] : ['parameterSerializers']),
@@ -585,14 +595,14 @@ export class ${exported('Client')} implements ${named('ClientPort')} {
   private readonly runtime: ${clientRuntime};
 
   constructor(options: ${named('ClientOptions')}) {
-    this.runtime = new ${clientRuntime}(${literal(clientName)}, options);
+    this.runtime = new ${clientRuntime}(${literal(clientName)}, options${plan.servers.length ? code`, ${serversSource.name('servers', { alias: '__golemServers' })}` : BLANK});
   }
 
 ${implementations}
 }
 ${metadata}
 `;
-  const imports = join(fileImports(tail, operationSources, { quote: '"', elsewhere: [runtimeTypes, typesModule] }), code`\n`);
+  const imports = join(fileImports(tail, localSources, { quote: '"', elsewhere: [runtimeTypes, typesModule] }), code`\n`);
   const rest = code`${imports}${tail}`;
   const imports_: ImportOptions = { modules: ['client', 'mobx', 'validation'] };
   const runtime = new Map(importSet(rest, imports_).map((entry) => [entry.module, entry] as const));
@@ -605,9 +615,9 @@ ${metadata}
   };
   const importLinesOfFile = [
     ...lines('client', { values: true }),
-    ...fileImports(rest, [runtimeTypes], { elsewhere: [typesModule, ...operationSources] }),
+    ...fileImports(rest, [runtimeTypes], { elsewhere: [typesModule, ...localSources] }),
     ...lines('validation', { types: true }),
-    ...fileImports(rest, [typesModule], { elsewhere: [runtimeTypes, ...operationSources] }),
+    ...fileImports(rest, [typesModule], { elsewhere: [runtimeTypes, ...localSources] }),
     ...lines('mobx', { types: true }),
     ...(profile.mobx ? [] : lines('client', { types: true })),
   ];

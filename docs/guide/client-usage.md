@@ -20,13 +20,15 @@ A response holds the HTTP `status` and the decoded `body`. This includes declare
 
 | Option | Value |
 | --- | --- |
-| `baseUrl` | the required base URL |
+| `baseUrl` | the API address; required when the document lists no `servers`, and it wins over `server` |
+| `server` | a number is the index of a document server; a string is its `name` or `description`. The first server by default |
+| `serverVariables` | values for the `{variables}` of that server URL |
 | `fetchImpl` | the `fetch` function, global `fetch` by default |
 | `headers` | headers for every request |
 | `auth` | credentials by security-scheme name ([Authentication](/guide/auth)) |
 | `operationValidators` | validators that replace generated ones ([Runtime API](/reference/runtime-api#runtime-validators)) |
 
-An empty `baseUrl` is an error. `auth` values can be functions that return the credentials. `operationValidators` replaces the generated validator of each named operation.
+An empty `baseUrl` is an error. The client has `server` and `serverVariables` only when the document lists `servers`. It reads the `servers` of the document root. A variable that you leave out uses its default. A value outside its `enum`, or a variable that the server does not declare, is an error. A relative server URL such as `/api` is used as written, so it works where `fetch` accepts a relative URL, such as a browser. `auth` values can be functions that return the credentials. `operationValidators` replaces the generated validator of each named operation.
 
 ## Pass parameters and a body
 

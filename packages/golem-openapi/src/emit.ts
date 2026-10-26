@@ -128,6 +128,13 @@ ${include('links.ts') ? code`export * from './links.js';` : code``}
 `), stars };
 }
 
+/** The document's servers as data. The client and every operation module pass it to the runtime. */
+function generateServers(servers: EmissionPlan['servers']): RenderedModule {
+  return renderModule(code`${generatedBannerComment()}
+export const ${exportedName('servers')} = ${documentLiteral(servers, 2)} as const;
+`);
+}
+
 function generateInbound(clientName: string, operations: readonly NormalizedOperation[]): RenderedModule {
   const methods = join(operations.map((operation) =>
     code`  ${descriptionComment(`${operation.sourceKind} ${operation.sourceName}: ${operation.method} ${operation.route}`)}\n  ${identifierPart(operation.name)}(input: Types.${identifierPart(`${operation.typeName}OperationInput`)}): Promise<Types.${identifierPart(`${operation.typeName}OperationHttpResponse`)}>;`,
@@ -235,6 +242,11 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
     files.set('client.ts', clientModules.client.source);
     modules.set('client.ts', { exports: clientModules.client.exports, stars: [] });
     for (const [name, source] of clientModules.operations) files.set(name, source);
+  }
+  if (plan.artifacts.has('servers.ts')) {
+    const serversModule = generateServers(plan.servers);
+    files.set('servers.ts', serversModule.source);
+    modules.set('servers.ts', { exports: serversModule.exports, stars: [] });
   }
   if (plan.artifacts.has('inbound.ts')) {
     const inbound = generateInbound(clientName, inboundOperations);

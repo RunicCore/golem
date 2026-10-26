@@ -1,4 +1,5 @@
 import { isBinaryMediaType, isJsonSeqMediaType, isNdjsonMediaType, isServerSentEventsMediaType, mediaEssence } from './client/codecs.js';
+import type { ServerObject } from '@exprtlabs/golem/client';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { collectOpenApiModelDefinitions } from './models.js';
 import {
@@ -27,7 +28,8 @@ export type ArtifactFile =
   | 'output-schemas.ts'
   | 'client.ts'
   | 'inbound.ts'
-  | 'links.ts';
+  | 'links.ts'
+  | 'servers.ts';
 
 type ClientHelperName =
   | 'constructor' | 'baseUrl' | 'fetchImpl' | 'defaultHeaders' | 'url'
@@ -61,6 +63,7 @@ interface StreamPlan {
 export interface EmissionPlan {
   readonly profile: OpenApiGenerationProfile;
   readonly artifacts: ReadonlySet<ArtifactFile>;
+  readonly servers: readonly ServerObject[];
   readonly hasComponentSchemas: boolean;
   readonly hasModels: boolean;
   readonly hasOutboundOperations: boolean;
@@ -108,6 +111,27 @@ function mediaList(operations: readonly NormalizedOperation[]): OpenApiMediaType
     ...operation.requestContent,
     ...operation.responses.flatMap((response) => [...response.content]),
   ]);
+}
+
+/** The validator has checked the document, so a server whose `url` or variable `default` is not a string is a broken invariant. */
+function documentServers(document: unknown): readonly ServerObject[] {
+  const servers = asRecord(document).servers;
+  if (!Array.isArray(servers)) return [];
+  return servers.map((server, index): ServerObject => {
+    const { url, description, name, variables } = asRecord(server);
+    if (typeof url !== 'string') throw new TypeError(`servers[${index}] has no string url`);
+    const declared = objectEntries(variables).map(([variable, entry]) => {
+      const { default: fallback, enum: values } = asRecord(entry);
+      if (typeof fallback !== 'string') throw new TypeError(`servers[${index}] variable ${JSON.stringify(variable)} has no string default`);
+      return [variable, { default: fallback, ...(Array.isArray(values) ? { enum: values.filter((value) => typeof value === 'string') } : {}) }] as const;
+    });
+    return {
+      url,
+      ...(typeof description === 'string' ? { description } : {}),
+      ...(typeof name === 'string' ? { name } : {}),
+      ...(declared.length ? { variables: Object.fromEntries(declared) } : {}),
+    };
+  });
 }
 
 function hasLinks(operations: readonly NormalizedOperation[]): boolean {
@@ -349,13 +373,16 @@ export function buildEmissionPlan(
     artifacts.add('input-schemas.ts');
     artifacts.add('output-schemas.ts');
   }
+  const servers = documentServers(document);
   if (hasOutboundOperations) artifacts.add('client.ts');
+  if (hasOutboundOperations && servers.length) artifacts.add('servers.ts');
   if (hasInboundOperations) artifacts.add('inbound.ts');
   if (links) artifacts.add('links.ts');
 
   const partial = {
     profile,
     artifacts,
+    servers,
     hasComponentSchemas,
     hasModels,
     hasOutboundOperations,
