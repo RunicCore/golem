@@ -19,7 +19,11 @@ Add these options to the `tsconfig.json` from [Quick start](/guide/quick-start):
 
 Import `reflect-metadata` first in the application entry file, before any application module import.
 
-TypeScript erases the types of `@Body()`, `@Query()` and return values. With a `controllers` job in `golem.yaml`, the build rewrite records them for `NestModelInterceptor`. Every host applies the rewrite ([Build your app](/guide/build)). The rewrite also loads the generated module of each model it records, so the codec exists before the first request. Write the parameter type and the return type explicitly, because the rewrite reads the annotation.
+TypeScript erases the types of `@Body()`, `@Query()` and return values. With a `controllers` job in `golem.yaml`, the build rewrite records them for `NestModelInterceptor`.
+
+- Every host applies the rewrite ([Build your app](/guide/build)).
+- The rewrite also loads the generated module of each model it records, so the codec exists before the first request.
+- Write the parameter type and the return type explicitly, because the rewrite reads the annotation.
 
 ## Register the interceptor
 
@@ -49,9 +53,23 @@ The interceptor converts HTTP handlers. A handler of another context, such as RP
 
 ## Parameter types and arrays
 
-Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. For any other type, the interceptor throws a `TypeError` that names the controller, the method and the parameter, and Nest answers HTTP 500. This holds for a plain interface, a plain class, a primitive and a parameter with no type. The interceptor throws on each request to the handler, not at startup. Return types are not affected. `golem build` and `golem check` report [`RUNM1081`](/reference/diagnostics#runm1081) for a typed parameter of that kind. If your own interceptor handles those parameters, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys) to turn the error into a warning.
+Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type:
 
-A whole `@Body() items: Item[]` converts item by item. An invalid item returns HTTP 400. Each issue path starts with the item index, such as `[1, 'name']`. A value that is not an array returns HTTP 400 with a `type` issue. A whole `@Query()` is an object, so declare it as one model and not as an array.
+- **Accepted types:** an `IModel`, an `IObject`, or your class that extends a generated model class.
+- **Other types:** the interceptor throws a `TypeError` that names the controller, the method and the parameter. Nest answers HTTP 500. This holds for a plain interface, a plain class, a primitive and a parameter with no type.
+- **Timing:** the interceptor throws on each request to the handler, not at startup. Return types are not affected.
+- **Build report:** `golem build` and `golem check` report [`RUNM1081`](/reference/diagnostics#runm1081) for a typed parameter of that kind.
+- **Option `nonModelInputs`:** if your own interceptor handles those parameters, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys). The error becomes a warning.
+
+A whole `@Body()` parameter reads the request body as follows:
+
+| Request body | Declared type | Result |
+| --- | --- | --- |
+| A JSON object | `@Body() payment: TPayment` | Converts to the model. Invalid input returns HTTP 400. |
+| A JSON array | `@Body() items: Item[]` | Converts item by item. An invalid item returns HTTP 400. Each issue path starts with the item index, such as `[1, 'name']`. |
+| A value that is not an array | `@Body() items: Item[]` | Returns HTTP 400 with a `type` issue. |
+
+A whole `@Query()` is an object, so declare it as one model and not as an array.
 
 - Give all whole `@Body()` parameters of a handler one model type. The same rule holds for whole `@Query()` parameters.
 - Name one field with `@Body('payment') payment: TPayment` or `@Query('filter') filter: TFilter` when the model sits under one key. Its type is an `IModel` or `IObject`, and the parameter is required: an optional `payment?: TPayment` stops the `controllers` job, because the interceptor answers HTTP 400 for a missing value.
@@ -89,6 +107,14 @@ HTTP query values are strings, and repeated keys arrive as string arrays. Declar
 - `PaymentStatus | PaymentStatus[]` is the [supported query union](/guide/field-types#unions).
 
 OpenAPI 3.2 emits the whole query schema, and its SDK calls `.execute({ querystring: { limit: 10, status: ['paid'] } })`. OpenAPI 3.1.2 flattens a query object into named parameters ([query compatibility](/reference/nestjs#query-compatibility)).
+
+## Extra properties
+
+The `exact` option decides whether a model rejects keys that it does not declare ([Objects and exact](/guide/field-types#objects-and-exact)).
+
+- A named `IObject` or `IModel` keeps its own `exact`. Without the option, it takes the `exact` key of `golem.yaml`, and that key defaults to `true`.
+- A type that you spell out inline in a controller signature is read with `exact` set to `false`. Its schema admits extra properties.
+- The example models set `{ exact: true }`, which repeats the default. You can leave it out. Keep it when `golem.yaml` sets `exact: false` and the model must stay exact.
 
 ## Model responses
 
