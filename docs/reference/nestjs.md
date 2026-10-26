@@ -38,6 +38,43 @@ Supported validation tags become OpenAPI keywords, and the client generator read
 
 The supported keywords depend on the OpenAPI version and profile ([OpenAPI support](/reference/openapi-support)).
 
+### Tag keywords
+
+A controllers job writes each validation tag of a model into the document as one OpenAPI keyword:
+
+| TypeScript tag | OpenAPI keyword |
+| --- | --- |
+| `Integer` | `type: integer` |
+| `Minimum<N>` or `Min<N>` | `minimum` |
+| `Maximum<N>` or `Max<N>` | `maximum` |
+| `ExclusiveMinimum<N>` or `ExclusiveMin<N>` | `exclusiveMinimum` |
+| `ExclusiveMaximum<N>` or `ExclusiveMax<N>` | `exclusiveMaximum` |
+| `MultipleOf<N>` | `multipleOf` |
+| `MinLength<N>` | `minLength` |
+| `MaxLength<N>` | `maxLength` |
+| `Pattern<'…'>` | `pattern` |
+| `Format<'name'>` | `format` |
+| `MinItems<N>` | `minItems` |
+| `MaxItems<N>` | `maxItems` |
+| `UniqueItems` | `uniqueItems: true` |
+| `Contains<T>` | `contains`, with the schema of `T` |
+| `MinContains<N>` | `minContains` |
+| `MaxContains<N>` | `maxContains` |
+| `MinProperties<N>` or `MinProps<N>` | `minProperties` |
+| `MaxProperties<N>` or `MaxProps<N>` | `maxProperties` |
+| `PropertyNames<T>` | `propertyNames`, with the schema of `T` |
+| `PatternProperties<Map>` | `patternProperties`, one schema for each pattern |
+| `AdditionalProperties<T>` | `additionalProperties`, with the schema of `T` |
+| `UnevaluatedProperties<T>` | `unevaluatedProperties`, with the schema of `T` |
+| `DependentRequired<Map>` | `dependentRequired` |
+| `DependentSchemas<Map>` | `dependentSchemas` |
+| `OneOf<Tuple>` | `oneOf`, one schema for each member |
+| `Not<T>` | `not`, with the schema of `T` |
+| `IfThenElse<Condition, Then, Else>` | `if`, `then` and `else` (`else` only when you give it) |
+
+- `TSerde` and `TValidation` write no keyword of their own. OpenAPI has no keyword for a function. A `TSerde` field still gets the schema of its JSON type, which the deserializer's parameter type sets.
+- Golem adds no `400` response to the document, for any tag. Declare it with `@ApiBadRequestResponse()` or `@ApiResponse({ status: 400 })`.
+
 Custom predicates and converters stay in TypeScript functions, because OpenAPI carries no executable code. Sharing them through imports is optional.
 
 ### Fields with a TSerde pair
@@ -65,9 +102,17 @@ A model's component name comes from the types it was declared with:
 | `type TMerchant = IModel<…>` with no class | `TMerchant`, the exact alias |
 | `type TPaymentInput = IObject<…>` | `TPaymentInput`, the exact alias |
 
-A type derived from a model, such as `Omit<TMerchant, 'id'>`, is named from the model's component, as in `TMerchantOmitId`. Two models with the same component name and an identical schema share one component. For `getSchemaPath()` and `refs()` from `@nestjs/swagger`, a class named with `@ApiSchema({ name })` resolves to that name.
+More rules for component names:
 
-Two models with the same name and different schemas are qualified by where they are declared. Each takes the shortest trailing run of its file's directory segments, relative to the project root, that tells the models apart, joined with `.`: `orders.Payment` and `billing.Payment`. Models in the same directory add the file name without `.model.ts` or `.ts`: `billing.payment.Payment` and `billing.refund.Payment`. Characters other than letters, digits and underscores in a segment become `_`.
+- A type derived from a model, such as `Omit<TMerchant, 'id'>`, is named from the model's component, as in `TMerchantOmitId`.
+- Two models with the same component name and an identical schema share one component.
+- For `getSchemaPath()` and `refs()` from `@nestjs/swagger`, a class named with `@ApiSchema({ name })` resolves to that name.
+
+Two models with the same name and different schemas are qualified by where they are declared:
+
+- Each takes the shortest trailing run of its file's directory segments, relative to the project root, that tells the models apart. The segments join with `.`, as in `orders.Payment` and `billing.Payment`.
+- Models in the same directory add the file name without `.model.ts` or `.ts`, as in `billing.payment.Payment` and `billing.refund.Payment`.
+- Characters other than letters, digits and underscores in a segment become `_`.
 
 ## Status codes and media types
 
