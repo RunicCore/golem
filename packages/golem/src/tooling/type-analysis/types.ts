@@ -257,6 +257,17 @@ function isObjectLikeIntersection(checker: ts.TypeChecker, type: ts.Type): boole
 }
 
 /**
+ * The scalar that golem converts by its own rule (a Date, a bigint) in an intersection with an object type, such as `Date & TModel`.
+ * An intersection is AND, and no value is both a scalar and an object, so the field has no valid value.
+ */
+function scalarIntersectedWithObject(checker: ts.TypeChecker, type: ts.Type): string | undefined {
+  if (!type.isIntersection()) return undefined;
+  const scalar = type.types.find((member) => isDateType(checker, member) || isBigIntValueType(member));
+  const object = type.types.some((member) => (member.flags & ts.TypeFlags.Object) !== 0 && !isDateType(checker, member));
+  return scalar && object ? (isBigIntValueType(scalar) ? 'bigint' : 'Date') : undefined;
+}
+
+/**
  * The name of the type alias that the user wrote for a type: a concrete alias with no type parameters, declared outside
  * a declaration file (`Record` and `Partial` never name). A generic alias or no alias has none.
  */
@@ -896,6 +907,18 @@ export function descriptorBuilder(
     // rejected rather than hidden by the Date shortcut below.
     if (metadata.serde && (type.flags & ts.TypeFlags.TypeParameter) === 0) {
       assertSerdeCompatibility(checker, metadata.serde, type, context);
+    }
+
+    // A TSerde codec converts the whole value, so only an intersection that no codec converts is cut here, before the object merge reads it.
+    const scalar = metadata.serde ? undefined : scalarIntersectedWithObject(checker, type);
+    if (scalar) {
+      const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
+      throw diagnostic(
+        context.sourceFile,
+        node ?? context.declaration,
+        '1085',
+        `${where} combines ${scalar} with an object type, and no value is both. Keep one of the two types, or move the object into its own field.`,
+      );
     }
 
     // A custom serde can intersect Date with its phantom marker.  The

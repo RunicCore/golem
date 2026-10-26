@@ -691,6 +691,13 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 - Move the model out of the controllers root, so that no controller reaches it.
 - Or do not import a later job's output from a model that the `controllers` job reads.
 
+### RUNM1085
+
+**Date or bigint combined with an object type.** A field is an intersection of a `Date` or a `bigint` with an object type or a model, such as `Date & TAddress`, `{ x: Date } & { x: TAddress }` or an optional form of these. An intersection is AND, and no value is both a `Date` and an object, so the field has no valid value. A field with a `TSerde` pair converts as one value and is not checked. The message names the field and the scalar. **Fix:**
+
+- Keep one of the two types.
+- Or move the object into its own field.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.

@@ -238,3 +238,25 @@ test('MobX projections retain nested observability', async t => {
     assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'Parent')).assert( encodeGeneratedModel(parent)));
   } finally { dispose(); }
 });
+
+// protects: T-471 Date & Model once generated a field of Date's method names (validation off) or blamed toString with RUNM1004 (validation on)
+const scalarWithObject = [
+  { name: 'a required field', fields: '{ x: Date & TAddress }', scalar: 'Date' },
+  { name: 'an optional field', fields: '{ x?: Date & TAddress }', scalar: 'Date' },
+  { name: 'two object parts that give one field', fields: '{ x: Date } & { x: TAddress }', scalar: 'Date' },
+  { name: 'a bigint field', fields: '{ x: bigint & TAddress }', scalar: 'bigint' },
+] as const;
+for (const { name, fields, scalar } of scalarWithObject) for (const validation of [true, false]) {
+  test(`${name} that combines a scalar with a model stops with RUNM1085 with validation ${validation ? 'on' : 'off'}`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TAddress = IModel<{ city: string }>;
+export type TItem = IModel<${fields}>;
+`);
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation } }),
+      new RegExp(`RUNM1085: Field "x" of TItem combines ${scalar} with an object type, and no value is both\\.`),
+    );
+    assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
+  });
+}
