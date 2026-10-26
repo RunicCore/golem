@@ -46,13 +46,13 @@ function frameLine(output: string, file: string): number {
 }
 
 /** A project that runs under Node's type stripping. It runs `golem generate` unless told not to. */
-async function project(t: TestContext, name: string, options: { readonly generate?: boolean } = {}): Promise<string> {
+async function project(t: TestContext, name: string, options: { readonly generate?: boolean; readonly preserveSymlinks?: boolean } = {}): Promise<string> {
   const { root } = createModelProject(t, {
     prefix: 'golem-loader-',
     name,
     linkTypescript: true,
     packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
-    compilerOptions: { noEmit: true, allowImportingTsExtensions: true },
+    compilerOptions: { noEmit: true, allowImportingTsExtensions: true, ...(options.preserveSymlinks === true ? { preserveSymlinks: true } : {}) },
   });
   write(root, 'golem.yaml', MODELS_YAML);
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
@@ -247,17 +247,37 @@ test('a parse call in a file outside the project runs rewritten', async (t) => {
   assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
 });
 
-test('a parse call in a workspace package symlinked into node_modules runs rewritten', async (t) => {
-  const root = await project(t, 'loader-symlinked-package');
+/** A workspace package of `root` linked into its node_modules, with one parse call; `src/linked.ts` imports it. */
+function linkedPackage(t: TestContext, root: string, preserveSymlinks = false): void {
   const workspacePackage = createFixtureProject(t, 'golem-loader-workspace-package-');
-  linkProjectPackages(workspacePackage, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  if (!preserveSymlinks) linkProjectPackages(workspacePackage, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   write(workspacePackage, 'package.json', JSON.stringify({ name: 'workspace-lib', type: 'module', exports: './lib.ts' }));
   write(workspacePackage, 'lib.ts', `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`);
   linkProjectPackages(root, { 'workspace-lib': workspacePackage });
   write(root, 'src/linked.ts', "import './money.model.ts';\nimport { value } from 'workspace-lib';\nconsole.log(JSON.stringify(value));\n");
+}
+
+test('a parse call in a workspace package symlinked into node_modules runs rewritten', async (t) => {
+  const root = await project(t, 'loader-symlinked-package');
+  linkedPackage(t, root);
   const result = await run(root, 'src/linked.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
+});
+
+test('with preserveSymlinks, the load hook rewrites a workspace package that keeps its node_modules path', async (t) => {
+  // protects: T-382 a linked package keeps its node_modules path under preserveSymlinks and was skipped
+  // Node itself refuses to strip types under node_modules, so the hook is called as a chained loader would call it.
+  const root = await project(t, 'loader-preserved-symlink', { preserveSymlinks: true });
+  linkedPackage(t, root, true);
+  const file = path.join(root, 'node_modules/workspace-lib/lib.ts');
+  const original = fs.readFileSync(file, 'utf8');
+  write(root, 'hook.mjs', `import { load } from '@exprtlabs/golem/loader';
+const loaded = await load(${JSON.stringify(pathToFileURL(file).href)}, {}, () => ({ format: 'module-typescript', source: ${JSON.stringify(original)} }));
+console.log(JSON.stringify({ rewritten: loaded.source !== ${JSON.stringify(original)}, codec: /TMoney_[0-9a-f]+/.test(String(loaded.source)) }));
+`);
+  const result = await command(root, process.execPath, ['hook.mjs']);
+  assert.deepEqual(JSON.parse(result.stdout), { rewritten: true, codec: true });
 });
 
 test('a file outside the project with no rewrite site loads normally', async (t) => {

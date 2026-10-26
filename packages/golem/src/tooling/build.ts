@@ -344,7 +344,7 @@ function writeStage(project: Project, sources: readonly ts.SourceFile[], rewrite
   for (const source of sources) {
     const key = keyOf(source.fileName);
     const rewrite = rewrites.get(posix(path.relative(root, source.fileName)));
-    const rewritten = rewrite && applyRewrites(source.text, rewrite, key);
+    const rewritten = rewrite && applyRewrites(source.text, rewrite, source.fileName);
     if (rewritten) maps.set(key, rewritten.map);
     atomicWrite(stagePath(source.fileName), rewritten?.code ?? source.text);
     keep.add(key);

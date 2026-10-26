@@ -39,10 +39,14 @@ export interface ModelDefinition {
   baseName: string | null;
   /** The other models the allOf refers to; their fields are in `properties`, and a slot narrows each of them. */
   otherBaseNames: readonly string[];
+  /** The union models that select this model as a variant. It narrows each of them, also when it does not extend them. */
+  variantOf: string[];
   properties: Map<string, unknown>;
   additionalProperties: unknown;
   required: Set<string>;
   variants?: readonly string[];
+  /** The variants of a union that another union also selects. They extend their own base, so the union class answers `instanceof` for them. */
+  sharedVariants?: readonly string[];
   discriminator?: unknown;
   isUnion?: boolean;
 }
@@ -281,9 +285,9 @@ export function aliasUseType(alias: RecursiveAlias, definitions: ModelDefinition
   return aliasConvertsValue(alias, definitions, env) ? names.aliasType(alias) : code`${names.types}.${identifierPart(alias.name)}`;
 }
 
-/** Every model that the definition extends, its class base and the other refs of its allOf. */
+/** Every model that the definition narrows: its class base, the other refs of its allOf, and the unions that select it. */
 export function modelBases(definition: ModelDefinition | undefined): readonly string[] {
-  return definition ? [...(definition.baseName ? [definition.baseName] : []), ...definition.otherBaseNames] : [];
+  return definition ? [...(definition.baseName ? [definition.baseName] : []), ...definition.otherBaseNames, ...definition.variantOf] : [];
 }
 
 export function modelSchemaReference(schema: unknown, env: ModelResolveEnv): string | null {

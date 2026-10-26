@@ -252,7 +252,9 @@ client.<operation>().execute(input, options?: <Client>RequestOptions): Promise<H
 
 | Option | Present when the API has | Value |
 | --- | --- | --- |
-| `baseUrl` | always | The required API address. |
+| `baseUrl` | always | The API address. It wins over `server`. Required when the document lists no `servers`. |
+| `server` | `servers` in the document | A number is the index of a server. A string is its `name` or `description`; a `name` wins. The default is the first server. |
+| `serverVariables` | `servers` in the document | A record of values for the `{variables}` in the URL of the chosen server. |
 | `fetchImpl` | always | A `fetch` function. The default is the global `fetch`. |
 | `headers` | always | `HeadersInit` that the client adds to every request. |
 | `auth` | a security scheme that is not mutual TLS | Credentials by scheme name, or functions that return them ([Client authentication](#client-authentication)). |
@@ -270,6 +272,7 @@ client.<operation>().execute(input, options?: <Client>RequestOptions): Promise<H
 
 - The client type has the first three options always. It adds each other option only when the API needs it. A key that the type does not have is a type error.
 - `baseUrl` loses its surrounding spaces and one trailing `/`. An empty value throws `Error` with the message `<Client>Client requires a non-empty baseUrl` when you create the client.
+- A server URL is used as the document writes it, after the variables are filled. A variable that `serverVariables` leaves out uses its `default`. A value that is not in the `enum` of the variable, a variable that the server does not declare, or a `server` that the document does not list, throws `Error` when you create the client. A relative server URL such as `/api` is used as written, so it works where `fetch` accepts a relative URL, such as a browser. The client reads the `servers` of the document root.
 - `mutualTls.fetchImpl` replaces `fetchImpl` for every request of the client, also for operations without a mutual TLS requirement.
 - A codec map that you leave out is empty. A codec that you pass replaces the built-in one.
 - Each `execute` call resolves with the response that the operation declares, as in the table below. A declared error status resolves too ([Read responses and handle failures](/guide/client-usage#read-responses-and-handle-failures)).
@@ -616,7 +619,7 @@ For inbound conversion in your own interceptor or pipe, get the codec with `obje
 
 A Node `load` hook that rewrites TypeScript files as Node loads them. Install it through [`register`](#register). Import `loader` only to call `module.register` yourself ([Node loader](/guide/build#node-loader)).
 
-- It rewrites only `.ts`, `.mts` and `.cts` files outside `node_modules`. A `.tsx` file goes to Node unchanged.
+- It rewrites only `.ts`, `.mts` and `.cts` files outside `node_modules`. A workspace package that is linked into `node_modules` counts as outside it, also with `preserveSymlinks`. A `.tsx` file goes to Node unchanged.
 - It needs ES modules. A `.cts` file, or a `.ts` file under a CommonJS `package.json`, that holds a call to rewrite throws `golem rewrites need ES modules`. The message names the file.
 - A call that cannot be rewritten fails the load with the file, the line and the instruction to run `golem generate`.
 - Without a `golem.yaml`, the load fails with `golem needs a golem.yaml to rewrite parse<T>() calls; set config or GOLEM_CONFIG`.
@@ -696,13 +699,14 @@ The module exports more helpers for the runtime itself. Application code does no
 | Member | Signature | Behavior |
 | --- | --- | --- |
 | `nestModelCodec` | `(id: string, array?: boolean): ParameterDecorator` | The rewrite inserts it on `@Body()` and `@Query()` parameters typed with a model or an array of one. It replaces the parameter type with a token that carries the codec and class of the model. |
+| `nestModelUnion` | `(property: string, variants: readonly [values: readonly (string \| number \| boolean)[], id: string][]): ParameterDecorator` | The rewrite inserts it on a whole `@Body()` or `@Query()` typed as a union of models. `property` is the tag that every model requires, and each variant lists its tag values and the model it stands for. `NestModelInterceptor` converts the input with the model that the tag picks. |
 | `nestModelReturn` | `(id: string, array?: boolean): MethodDecorator` | The rewrite inserts it on a handler that returns a model. `NestModelInterceptor` reads it. |
 
 ### From `client`
 
 | Member | Behavior |
 | --- | --- |
-| `ClientRuntime` | Holds a client's options and sends its requests. `new ClientRuntime(client, options)`. `readResponse` selects the declared response, decodes it and runs the operation's response check. |
+| `ClientRuntime` | Holds a client's options and sends its requests. `new ClientRuntime(client, options, servers?)`, where `servers` is the `servers` list of the document. `readResponse` selects the declared response, decodes it and runs the operation's response check. |
 | `isUndeclaredResponseError` | `(error, client?)`: true for a status or media type the operation does not declare |
 | `serializePath` | Writes a path parameter |
 | `addQueryParameter` | Adds a query parameter |

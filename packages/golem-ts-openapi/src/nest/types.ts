@@ -43,6 +43,8 @@ export interface ControllerParameter {
   readonly wholeQueryModel?: string;
   /** The model id of the items of a whole `@Body()` that is an array of models (`TPayment[]`, `readonly TPayment[]`, `ReadonlyArray<TPayment>`). */
   readonly bodyItemModel?: string;
+  /** The model ids of the variants of a whole `@Body()` or `@Query()` that is a union of models. */
+  readonly unionModels?: readonly string[];
 }
 
 export interface RequestBodyDescription {

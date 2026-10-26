@@ -1,5 +1,5 @@
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { isGeneratedBrandKey, isGolemTagKey, resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
+import { authoredUnionMembers, isGeneratedBrandKey, isGolemTagKey, resolveSymbol } from '@exprtlabs/golem/internal/type-analysis';
 import {
   isTypeScriptLibFile,
   resolveValueSymbol,
@@ -158,6 +158,17 @@ export function authoritativeTypeReference(
   const codecId = fromReference() ?? fromAlias();
   if (!codecId) return reference;
   return { ...reference, modelContractName: codecId };
+}
+
+/**
+ * The model ids of the variants of a parameter typed as a union of models, in written order. Undefined for any other type, and for
+ * a union with a member that is no authored model.
+ */
+export function unionModelIds(context: NestAnalysisContext, parameter: ts.ParameterDeclaration): readonly string[] | undefined {
+  const members = authoredUnionMembers(context.checker, parameter.type);
+  if (members === undefined) return undefined;
+  const ids = members.map(member => authoritativeTypeReference(context, typeReference(context.checker, parameter, member))?.modelContractName);
+  return ids.every((id): id is string => id !== undefined) ? ids : undefined;
 }
 
 /**

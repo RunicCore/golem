@@ -22,12 +22,16 @@ import {
 import { mergeMap, type Observable } from 'rxjs';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type IssuePath } from './errors.js';
 import { VALIDATION_KEYWORD } from './schema-keywords.js';
-import { getIModelClass, getObjectCodec, type ObjectCodec } from './object-codec.js';
+import type { DiscriminatorValue } from './model.js';
+import { requireModelObject, unknownDiscriminatorValue } from './conversion.js';
+import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from './object-codec.js';
+import { presentValue } from './presence.js';
 
 const NEST_MODEL_CODEC_ID = Symbol.for('@exprtlabs/golem:nestModelCodec');
 const NEST_MODEL_CODEC = Symbol.for('@exprtlabs/golem:nestModelCodec.codec');
 const NEST_MODEL_CONSTRUCT = Symbol.for('@exprtlabs/golem:nestModelCodec.construct');
 const NEST_MODEL_ARRAY = Symbol.for('@exprtlabs/golem:nestModelCodec.array');
+const NEST_MODEL_UNION = Symbol.for('@exprtlabs/golem:nestModelCodec.union');
 const NEST_MODEL_RETURN = '@exprtlabs/golem:nestModelReturn';
 const ROUTE_ARGS_METADATA = '__routeArguments__';
 const NEST_BODY = 3;
@@ -76,9 +80,25 @@ type NestReturnMeta = {
 
 type NestModelConstruct = abstract new (values?: never) => object;
 
+/** A variant of a union parameter: the values of its tag and the id of its codec. */
+type NestUnionVariant = readonly [values: readonly DiscriminatorValue[], id: string];
+
+/** A tagged union of registered codecs that converts a wire value through the codec its tag picks. */
+interface NestUnionInput {
+  /** The property and variants of the union: two parameters with one key are one input type. */
+  readonly key: string;
+  fromWireFormat(wire: unknown, options?: SerdeOptions): unknown;
+  /** Decodes the query fields to what the picked variant declares; a query whose tag picks none stays as it is. */
+  decodeQuery(query: unknown): unknown;
+}
+
+/** What the interceptor converts a whole or one-field input with. */
+type ModelInput = ObjectCodec | NestUnionInput;
+
 type NestModelToken = Function & {
   readonly [NEST_MODEL_CODEC_ID]?: unknown;
   readonly [NEST_MODEL_CODEC]?: ObjectCodec;
+  readonly [NEST_MODEL_UNION]?: NestUnionInput;
   readonly [NEST_MODEL_CONSTRUCT]?: NestModelConstruct;
   readonly [NEST_MODEL_ARRAY]?: true;
 };
@@ -114,6 +134,10 @@ function codecIdFromMetatype(metatype: unknown): string | undefined {
 
 function boundCodec(metatype: unknown): ObjectCodec | undefined {
   return asToken(metatype)?.[NEST_MODEL_CODEC];
+}
+
+function boundUnion(metatype: unknown): NestUnionInput | undefined {
+  return asToken(metatype)?.[NEST_MODEL_UNION];
 }
 
 function boundArray(metatype: unknown): boolean {
@@ -153,8 +177,7 @@ export function nestModelReturn(id: string, array?: boolean): MethodDecorator {
   };
 }
 
-export function nestModelCodec(id: string, array?: boolean): ParameterDecorator {
-  const token = nestModelMetatype(id, array === true);
+function bindMetatype(token: Function): ParameterDecorator {
   return (target, propertyKey, parameterIndex) => {
     if (propertyKey === undefined) return;
     const meta = reflectMeta();
@@ -164,6 +187,55 @@ export function nestModelCodec(id: string, array?: boolean): ParameterDecorator 
     types[parameterIndex] = token;
     meta.defineMetadata('design:paramtypes', types, target, propertyKey);
   };
+}
+
+export function nestModelCodec(id: string, array?: boolean): ParameterDecorator {
+  return bindMetatype(nestModelMetatype(id, array === true));
+}
+
+/**
+ * Binds a parameter typed as a union of models, such as `TCircle | TRect`. `property` is the tag every variant requires with a
+ * literal type, and each variant lists the values of its tag and its codec id. The interceptor converts
+ * the input through the codec of the variant that its tag picks. Only `NestModelInterceptor` reads this binding.
+ */
+export function nestModelUnion(property: string, variants: readonly NestUnionVariant[]): ParameterDecorator {
+  // The token is named after its variants, which the interceptor's fault messages show.
+  const token = nestModelMetatype(variants.map(([, id]) => id).join(' | '), false);
+  const union = nestUnionInput(property, variants);
+  if (union) Object.defineProperty(token, NEST_MODEL_UNION, { value: union });
+  return bindMetatype(token);
+}
+
+/** The union of the variants, or undefined while the codec of one is not registered. */
+function nestUnionInput(property: string, variants: readonly NestUnionVariant[]): NestUnionInput | undefined {
+  const members = variants.map(([values, id]) => ({ values, codec: getObjectCodec(id), construct: getIModelClass(id) }));
+  const registered = members.flatMap((member) => member.codec === undefined ? [] : [{ ...member, codec: member.codec }]);
+  if (registered.length !== members.length) return undefined;
+  const picked = (record: Readonly<Record<string, unknown>>): (typeof registered)[number] | undefined => {
+    const tag = presentValue(record, property);
+    return registered.find((member) => member.values.includes(tag as DiscriminatorValue));
+  };
+  return {
+    key: JSON.stringify([property, variants]),
+    fromWireFormat(wire, options) {
+      const record = requireModelObject(wire, 'The input');
+      const member = picked(record);
+      if (!member) return unknownDiscriminatorValue(property, presentValue(record, property), 'deserialize');
+      return member.codec.fromWireFormat(wire, { ...options, construct: member.construct });
+    },
+    decodeQuery(query) {
+      const record = schemaRecord(query);
+      const tag = record && presentValue(record, property);
+      // A query tag is text: the picked variant decodes it to a number or a boolean when its tag has that type.
+      const member = typeof tag === 'string' ? registered.find((each) => each.values.some((value) => String(value) === tag)) : undefined;
+      return member ? queryWireDecoder(member.codec)(query) : query;
+    },
+  };
+}
+
+/** Whether two parameters take one model type: the same codec, or unions with the same tag and variants. */
+function sameInput(left: ModelInput, right: ModelInput): boolean {
+  return left === right || ('key' in left && 'key' in right && left.key === right.key);
 }
 
 export function objectCodecFromMetatype<T = unknown>(metatype: unknown): ObjectCodec<T> | undefined {
@@ -421,7 +493,9 @@ function decodesField(shape: QueryFieldShape): boolean {
   return !shape.types.has('string') || decodesScalar(shape.item);
 }
 
-function queryWireDecoder(codec: ObjectCodec): QueryWireDecoder {
+function queryWireDecoder(input: ModelInput): QueryWireDecoder {
+  if ('decodeQuery' in input) return input.decodeQuery;
+  const codec = input;
   const cached = queryWireDecoders.get(codec);
   if (cached) return cached;
   const fields = new Map<string, QueryFieldShape>();
@@ -463,7 +537,7 @@ function prefixedError(error: unknown, path: IssuePath): unknown {
  * starts the path of each issue; an item that fails adds its index.
  */
 function convertInput(
-  codec: ObjectCodec,
+  codec: ModelInput,
   construct: NestModelConstruct | undefined,
   array: boolean,
   wire: unknown,
@@ -550,7 +624,7 @@ export class NestModelInterceptor implements NestInterceptor {
           ?? [];
         const req = context.switchToHttp().getRequest<HttpRequest>();
         // A whole parameter keys by its source, a one-field parameter by its source and field.
-        let converted: Map<number | string, { codec: ObjectCodec; construct: NestModelConstruct | undefined; array: boolean }> | undefined;
+        let converted: Map<number | string, { codec: ModelInput; construct: NestModelConstruct | undefined; array: boolean }> | undefined;
         // Bit 1 is the body, bit 2 the query.
         let wholeSources = 0;
         let fieldSources = 0;
@@ -560,7 +634,7 @@ export class NestModelInterceptor implements NestInterceptor {
           if (paramtype !== NEST_BODY && paramtype !== NEST_QUERY) continue;
           const field = typeof meta.data === 'string' && meta.data !== '' ? meta.data : undefined;
           const metatype = types[meta.index];
-          const codec = boundCodec(metatype);
+          const codec: ModelInput | undefined = boundUnion(metatype) ?? boundCodec(metatype);
           if (!codec) {
             // A controller declaration fault, not bad input: Nest answers 500 for this request.
             const where = `${inputDecorator(paramtype, field)} parameter ${meta.index} of ${klass.name}.${handler.name}`;
@@ -586,7 +660,7 @@ export class NestModelInterceptor implements NestInterceptor {
           const convertedKey = field === undefined ? paramtype : `${paramtype}:${field}`;
           const previous = converted?.get(convertedKey);
           if (previous) {
-            if (previous.codec !== codec || previous.construct !== construct || previous.array !== array) {
+            if (!sameInput(previous.codec, codec) || previous.construct !== construct || previous.array !== array) {
               throw new TypeError(field === undefined
                 ? 'NestModelInterceptor requires one model type for each whole body or query object.'
                 : `NestModelInterceptor requires one model type for ${inputDecorator(paramtype, field)} of ${klass.name}.${handler.name}.`);

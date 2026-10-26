@@ -297,16 +297,17 @@ test('the operation-codec check passes when the registry holds every id the scan
   const registry = path.join(root, 'src/generated/operation-codecs.ts');
 
   assert.equal(result.nestCodecSites.length, 6, 'one site for each parameter that gained a codec');
-  const { id, label, decorator } = result.nestCodecSites[0]!;
+  const { ids, label, decorator } = result.nestCodecSites[0]!;
   assert.deepEqual(result.nestCodecSites.map(site => site.file), Array(6).fill(CONTROLLER));
-  assert.match(id, /^TPaymentInput_[0-9a-f]{8}$/);
+  assert.equal(ids.length, 1);
+  assert.match(ids[0]!, /^TPaymentInput_[0-9a-f]{8}$/);
   assert.equal(label, 'TPaymentInput');
   assert.equal(decorator, 'Body');
 
   const slotOf = (site: { readonly method: string | undefined; readonly slot: string }): string => `${site.method}:${site.slot}`;
   assert.deepEqual(result.nestCodecSites.map(slotOf), ['create:input', 'createAsClass:input', 'list:query', 'createBatch:input', 'createPiped:input', 'listPiped:query']);
   const methods = (replaced?: string, misplaced?: string): string => `export const OPERATION_METHOD_KEYS = ${JSON.stringify(Object.fromEntries(result.nestCodecSites.map(site => [
-    `PaymentsController.${site.method}`, { [site.method === misplaced ? 'input' : site.slot]: site.method === 'create' && replaced ? replaced : site.id },
+    `PaymentsController.${site.method}`, { [site.method === misplaced ? 'input' : site.slot]: site.method === 'create' && replaced ? replaced : site.ids[0] },
   ])), null, 2)} as const;\n`;
   fs.mkdirSync(path.dirname(registry), { recursive: true });
   fs.writeFileSync(registry, methods());
@@ -395,4 +396,72 @@ test('golem check stops on a body or query parameter that is no model, and nonMo
     `RUNM1081 (${site}:5:32): ${notAModel('Body', 'Note', 'warn')}\n`,
     `RUNM1081 (${site}:5:59): ${notAModel('Query', 'number', 'warn')}\n`,
   ]);
+});
+
+const SHAPES_MODEL = `import type { IModel } from '@exprtlabs/golem/model';
+export type TCircle = IModel<{ kind: 'circle'; radius: number }>;
+export type TRect = IModel<{ kind: 'rect'; width: number }>;
+export type TPlain = IModel<{ width: number }>;
+export type TShape = TCircle | TRect;
+export type TNumberTag = IModel<{ v: 1 }>;
+export type TTextTag = IModel<{ v: '1' }>;
+`;
+
+const SHAPES_CONTROLLER = [
+  "import { Body, Controller, Post, Query } from '@nestjs/common';",
+  "import type { TCircle, TNumberTag, TPlain, TRect, TShape, TTextTag } from './shapes.model.js';",
+  "@Controller('shapes')",
+  'export class ShapesController {',
+  '  @Post() written(@Body() shape: TCircle | TRect): number { return 1; }',
+  '  @Post() aliased(@Body() shape: TShape): number { return 1; }',
+  '  @Post() query(@Query() shape: TCircle | TRect): number { return 1; }',
+  '  @Post() untagged(@Body() shape: TCircle | TPlain): number { return 1; }',
+  '  @Post() list(@Body() shapes: TShape[]): number { return 1; }',
+  "  @Post() field(@Body('shape') shape: TShape): number { return 1; }",
+  '  @Post() bodyMixed(@Body() tag: TNumberTag | TTextTag): number { return 1; }',
+  '  @Post() queryMixed(@Query() tag: TNumberTag | TTextTag): number { return 1; }',
+  '}',
+].join('\n');
+
+const shapeId = (root: string, name: string): string => {
+  const id = new RegExp(`src/shapes\\.model\\.ts#${name}": "([^"]+)"`).exec(fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8'))?.[1];
+  assert.ok(id, `${name} has a key`);
+  return id;
+};
+
+test('a whole @Body() or @Query() union of tagged models is stamped with its tag and variants, and an untagged, array or one-field union gets RUNM1081', (t) => {
+  // protects: T-390 E-50 a tagged union binds a union codec; an untagged union (T-258, T-377) and the forms golem does not describe still stop the build
+  const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': SHAPES_CONTROLLER });
+  const result = scan(root);
+  const refused = (type: string, decorator: string, reason: string, advice: string): string => `${type} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${advice} An app with its own interceptor can set nonModelInputs: warn in golem.yaml.`;
+  assert.deepEqual(result.diagnostics.map(({ code, line, message }) => ({ code, line, message })), [
+    { code: 'RUNM1081', line: 8, message: refused('TCircle | TPlain', 'Body', 'is a union of golem models with no tag', "Give each model a required literal field with a value of its own, such as kind: 'circle', or bind one field of a model type.") },
+    { code: 'RUNM1081', line: 9, message: refused('TShape', 'Body', 'is a union of golem models, which NestModelInterceptor converts only as a whole input', 'Declare the parameter as the union itself in a whole @Body(), or as one model.') },
+    { code: 'RUNM1081', line: 10, message: refused('TShape', 'Body', 'is a union of golem models, which NestModelInterceptor converts only as a whole input', 'Declare the parameter as the union itself in a whole @Body(), or as one model.') },
+    // A query string carries the tag as text, so the number 1 and the text '1' pick the same model there; a JSON body tells them apart.
+    { code: 'RUNM1081', line: 12, message: refused('TNumberTag | TTextTag', 'Query', 'is a union of golem models with no tag', "Give each model a required literal field with a value of its own, such as kind: 'circle', or bind one field of a model type.") },
+  ]);
+  const [circle, rect] = [shapeId(root, 'TCircle'), shapeId(root, 'TRect')];
+  const variants = `[[["circle"],"${circle}"],[["rect"],"${rect}"]]`;
+  assertLines(rewritten(root, result, 'src/shapes.controller.ts'), [
+    `  @Post() written(@Body() @__golem_nestModelUnion("kind", ${variants}) shape: TCircle | TRect): number { return 1; }`,
+    `  @Post() aliased(@Body() @__golem_nestModelUnion("kind", ${variants}) shape: TShape): number { return 1; }`,
+    `  @Post() query(@Query() @__golem_nestModelUnion("kind", ${variants}) shape: TCircle | TRect): number { return 1; }`,
+    `  @Post() bodyMixed(@Body() @__golem_nestModelUnion("v", [[[1],"${shapeId(root, 'TNumberTag')}"],[["1"],"${shapeId(root, 'TTextTag')}"]]) tag: TNumberTag | TTextTag): number { return 1; }`,
+  ]);
+  assert.deepEqual(result.nestCodecSites.map(({ method, slot, ids }) => ({ method, slot, ids })), [
+    { method: 'written', slot: 'input', ids: [circle, rect] },
+    { method: 'aliased', slot: 'input', ids: [circle, rect] },
+    { method: 'query', slot: 'query', ids: [circle, rect] },
+    { method: 'bodyMixed', slot: 'input', ids: [shapeId(root, 'TNumberTag'), shapeId(root, 'TTextTag')] },
+  ]);
+
+  // The registry holds the variants of a union as a list: the check compares them as a set, in any order.
+  const registry = path.join(root, 'src/generated/operation-codecs.ts');
+  const methods = (input: readonly string[]): string => `export const OPERATION_METHOD_KEYS = { 'ShapesController.written': { input: ${JSON.stringify(input)} }, 'ShapesController.aliased': { input: ${JSON.stringify(input)} }, 'ShapesController.query': { query: ${JSON.stringify(input)} }, 'ShapesController.bodyMixed': { input: ${JSON.stringify([shapeId(root, 'TTextTag'), shapeId(root, 'TNumberTag')])} } } as const;\n`;
+  fs.mkdirSync(path.dirname(registry), { recursive: true });
+  fs.writeFileSync(registry, methods([rect, circle]));
+  assert.deepEqual(checkNestCodecs(root, result), []);
+  fs.writeFileSync(registry, methods([rect]));
+  assert.equal(checkNestCodecs(root, result).length, 3, 'a registry that lacks a variant disagrees with every union site');
 });

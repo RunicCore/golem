@@ -38,7 +38,9 @@ function collectOperationCodecs(routes: readonly ControllerRoute[]): OperationCo
     const success = route.responses.find((response) => response.status === '200' || response.status === '201');
     const outputName = success?.declaredType?.modelContractName ?? success?.type?.modelContractName;
     // The item model of an array body is for golem check only: in the route-key map it would read as a body of that one model.
-    const methodInput = inputName ?? route.body?.bodyItemModel;
+    const methodInput = inputName ?? route.body?.bodyItemModel ?? route.body?.unionModels;
+    // The variants of a union are for golem check only, like the item model: no route key reads a union as one model.
+    const methodQuery = queryName ?? route.parameters.find((parameter) => parameter.unionModels !== undefined)?.unionModels;
     const key = routeKey(route);
     if (inputName) input[key] = inputName;
     if (outputName) output[key] = outputName;
@@ -53,7 +55,7 @@ function collectOperationCodecs(routes: readonly ControllerRoute[]): OperationCo
     methods[name] = {
       ...(methodInput ? { input: methodInput } : {}),
       ...(outputName ? { output: outputName } : {}),
-      ...(queryName ? { query: queryName } : {}),
+      ...(methodQuery ? { query: methodQuery } : {}),
       ...(Object.keys(fieldNames).length > 0 ? { fields: fieldNames } : {}),
     };
   }

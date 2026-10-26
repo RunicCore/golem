@@ -147,6 +147,22 @@ test('normalizes ordinary DTO nullable properties, enums, and response overlays'
   assert.notDeepEqual(validateResponse({ label: 42, kind: 'cat' }, true), []);
 });
 
+for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
+  test(`keeps the TypeScript schema under a nullable type or Record overlay on ${openapiVersion}`, async t => {
+    // protects: T-419 nullable and additionalProperties overlays keep the TypeScript schema, as Nest Swagger keeps them
+    const root = fixture(t, readFixture('controllers/overlay/keeps-the-typescript-schema-under-a-nullable-type-or-record-overlay/controller.ts'));
+    const document = documentOf(await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'Overlay', version: '1' }, profile: { mobx: false, validation: false } }));
+    const properties = document.paths['/widgets']?.get?.responses['200']?.content?.['application/json']?.schema?.properties;
+    assert.ok(properties?.middle && properties.scores);
+    const middle = await compileSchema(standardSchema(document, properties.middle));
+    const scores = await compileSchema(standardSchema(document, properties.scores));
+    assert.deepEqual([middle('a', true), middle(null, true)], [[], []]);
+    assert.notDeepEqual(middle(3, true), []);
+    assert.deepEqual(scores({ a: 1 }, true), []);
+    assert.notDeepEqual(scores({ a: 'x' }, true), []);
+  });
+}
+
 test('allows nullable:false narrowing for ordinary DTOs while keeping the standard schema nonnullable', async t => {
   const root = fixture(t, readFixture("controllers/overlay/allows-nullable-false-narrowing-for-ordinary-dtos-while-keeping-the-standard-s/controller.ts"));
   const document = documentOf(await generate({
