@@ -20,6 +20,7 @@ import {
   parameterPropertyTypeNode,
   typeExpressionFromApiOption,
   typeReference,
+  unionModelIds,
 } from './analysis-utils.js';
 import { evaluateStaticValue, isStaticArray } from '@exprtlabs/golem/internal/static-value';
 import { decoratorOptions, headerOptionsList, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
@@ -223,6 +224,7 @@ function flattenParameter(
   if (!portable) {
     throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NonPortableParameter, `Cannot flatten @${location} parameter ${context.checker.typeToString(type)}; only primitive and primitive-array properties have portable OpenAPI parameter mappings.`));
   }
+  const unionModels = location === 'query' ? unionModelIds(context, parameter) : undefined;
   if (location === 'query' && context.openapiVersion === '3.2.0') {
     return [{
       node: parameter,
@@ -230,7 +232,11 @@ function flattenParameter(
       location: 'querystring',
       name: ts.isIdentifier(parameter.name) ? parameter.name.text : 'query',
       required: !isOptionalParameter(parameter, type),
+      ...(unionModels === undefined ? {} : { unionModels }),
     } satisfies ControllerParameter];
+  }
+  if (unionModels !== undefined) {
+    throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.LossyQueryFlatten, 'OpenAPI 3.1 flattens a whole @Query() into independent parameters, which cannot express a union of models. Use OpenAPI 3.2 querystring, or declare one model.'));
   }
   if (location === 'query' && hasWholeObjectContract(context, parameter, type)) {
     throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.LossyQueryFlatten, 'OpenAPI 3.1 cannot preserve whole-query object constraints or codecs when flattening. Use OpenAPI 3.2 querystring or a named primitive query contract.'));
@@ -415,12 +421,14 @@ export function parseParameters(
       }
       // Only an array body names an item model; describing any other body here would read a generic base's `T` too early.
       const items = context.checker.isArrayType(parameterType.type) ? oneFieldKind(context, parameter, parameterType) : undefined;
+      const unionModels = unionModelIds(context, parameter);
       body = {
         node: parameter,
         type: parameterType,
         location: 'body',
         required,
         ...(items?.array && items.type.modelContractName !== undefined ? { bodyItemModel: items.type.modelContractName } : {}),
+        ...(unionModels === undefined ? {} : { unionModels }),
       };
       return;
     }

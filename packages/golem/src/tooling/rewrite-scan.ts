@@ -869,22 +869,26 @@ function scanFile(
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR) || hasDecorator(names, NEST_UNION_DECORATOR)) return;
     const typeNode = parameter.type;
     const { id, golemModel, label, array, name, defaultExport, union, untaggedUnion } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies, unions: true }, typeNode);
-    if (id === '' && union === undefined) {
-      const notAModel = (reason: string): GolemDiagnostic => locate(root, file, typeNode, CODE_NEST_NOT_A_MODEL,
-        `${label} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${untaggedUnion
-          ? "Give each model a required literal field with a value of its own, such as kind: 'circle', or bind one field of a model type."
-          : 'Declare the input as a golem model (IModel or IObject), or bind one field of a model type.'} ${nonModelInputs === 'warn'
-          ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.'
-          : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.'}`,
-        nonModelInputs === 'warn' ? GolemDiagnosticSeverity.Warning : GolemDiagnosticSeverity.Error);
-      if (golemModel && !untaggedUnion) scan.diagnostics.push(locate(root, file, typeNode, CODE_NEST_NO_CODEC, defaultExport
+    // A union converts as a whole input only; golem describes no array of a union and no one-field union.
+    const unionUnsupported = union !== undefined && (array || !['input', 'query'].includes(nestSlot(checker, parameter, decorator)));
+    if ((id === '' && union === undefined) || unionUnsupported) {
+      const [reason, advice] = untaggedUnion
+        ? ['is a union of golem models with no tag', "Give each model a required literal field with a value of its own, such as kind: 'circle', or bind one field of a model type."]
+        : unionUnsupported
+          ? ['is a union of golem models, which NestModelInterceptor converts only as a whole input', `Declare the parameter as the union itself in a whole @${decorator}(), or as one model.`]
+          : ['is not a golem model', 'Declare the input as a golem model (IModel or IObject), or bind one field of a model type.'];
+      if (golemModel && !untaggedUnion && !unionUnsupported) scan.diagnostics.push(locate(root, file, typeNode, CODE_NEST_NO_CODEC, defaultExport
         ? `@${decorator}() type ${label} is the default export of its file, which has no codec id; golem generate cannot add one. Export the class by name (export class ${label}) and import it by name.`
         : `@${decorator}() type ${label} has no unique codec id; run golem generate`));
-      else scan.diagnostics.push(notAModel(untaggedUnion ? 'is a union of golem models with no tag' : 'is not a golem model'));
+      else scan.diagnostics.push(locate(root, file, typeNode, CODE_NEST_NOT_A_MODEL,
+        `${label} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${advice} ${nonModelInputs === 'warn'
+          ? 'Generation continues, because golem.yaml sets nonModelInputs: warn.'
+          : 'An app with its own interceptor can set nonModelInputs: warn in golem.yaml.'}`,
+        nonModelInputs === 'warn' ? GolemDiagnosticSeverity.Warning : GolemDiagnosticSeverity.Error));
       return;
     }
     if (union) {
-      scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_UNION_DECORATOR}(${JSON.stringify(union.property)}, ${JSON.stringify(union.variants.map((variant) => [variant.values, variant.id]))}${array ? ', true' : ''}) `));
+      scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_UNION_DECORATOR}(${JSON.stringify(union.property)}, ${JSON.stringify(union.variants.map((variant) => [variant.values, variant.id]))}) `));
       importOf(scan, root, file, parameter, NEST_UNION_DECORATOR, NEST_MODULE);
       for (const variant of union.variants) loadCodecModule(scan, { root, checker, keys, file }, variant.id, variant.name);
     } else {

@@ -1,12 +1,14 @@
 // lane: typescript6 Checker guards: the rewrite scan reads the variants of a union parameter with the checker
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { NestModelInterceptor } from '@exprtlabs/golem/nest';
+import { runPipeline } from '#golem/cli';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { command, golem } from '../support/process.js';
 
@@ -28,22 +30,23 @@ export class ShapesController {
 }
 `;
 
-const YAML = 'version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/shapes.controller.ts\n    output: generated/api.json\n    info: { title: T, version: "1" }\nmodels:\n  root: .\n';
+const yaml = (openapiVersion: string) => `version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/shapes.controller.ts\n    output: generated/api.json\n    openapiVersion: "${openapiVersion}"\n    info: { title: T, version: "1" }\nmodels:\n  root: .\n`;
 
-function project(t: Parameters<typeof createControllerFixture>[0], controller: string, prefix = 'golem-union-parameters-') {
+function project(t: Parameters<typeof createControllerFixture>[0], openapiVersion = '3.2.0') {
   return createControllerFixture(t, {
-    prefix,
+    prefix: 'golem-union-parameters-',
     links: 'workspace',
     tsconfig: { compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, experimentalDecorators: true, emitDecoratorMetadata: true, skipLibCheck: true, outDir: 'build', rootDir: 'src', types: ['node'] }, include: ['src/**/*.ts'] },
-    files: { 'src/shapes.model.ts': MODELS, 'src/shapes.controller.ts': controller, 'golem.yaml': YAML },
+    files: { 'src/shapes.model.ts': MODELS, 'src/shapes.controller.ts': CONTROLLER, 'golem.yaml': yaml(openapiVersion) },
   });
 }
 
 test('NestModelInterceptor converts each variant of a tagged object union in a whole @Body() and @Query() and answers 400 for an unknown tag', async (t) => {
   // protects: T-390 E-50 a tagged object union parameter gets a codec the interceptor binds, so each variant converts
-  const root = project(t, CONTROLLER);
+  const root = project(t);
   const built = await command(root, process.execPath, [golem, 'build', '--config', path.join(root, 'golem.yaml')]);
   assert.equal(built.code, 0, built.stdout + built.stderr);
+  await runPipeline(path.join(root, 'golem.yaml'), { check: true });
   const { ShapesController } = await import(pathToFileURL(path.join(root, 'build/shapes.controller.js')).href) as { ShapesController: new () => object };
   class AppModule {}
   Module({ controllers: [ShapesController] })(AppModule);
@@ -77,4 +80,43 @@ test('NestModelInterceptor converts each variant of a tagged object union in a w
   } finally {
     await application.close();
   }
+});
+
+interface Operation { readonly parameters?: readonly { readonly in: string; readonly content: Record<string, { readonly schema: unknown }> }[]; readonly requestBody?: { readonly content: Record<string, { readonly schema: unknown }> } }
+
+test('the controllers job documents a union of models as oneOf with a discriminator and records the variant ids for golem check only', async (t) => {
+  // protects: T-390 E-50 the document and the operation codecs describe the union that the interceptor converts
+  const root = project(t);
+  const config = path.join(root, 'golem.yaml');
+  await runPipeline(config);
+  await runPipeline(config, { check: true });
+  const document = JSON.parse(fs.readFileSync(path.join(root, 'generated/api.json'), 'utf8')) as { paths: Record<string, Record<string, Operation>> };
+  assert.deepEqual(document.paths['/shapes']!.post!.requestBody!.content['application/json']!.schema, {
+    discriminator: { propertyName: 'kind', mapping: { circle: '#/components/schemas/TCircle', rect: '#/components/schemas/TRect' } },
+    oneOf: [{ $ref: '#/components/schemas/TCircle' }, { $ref: '#/components/schemas/TRect' }],
+  });
+  assert.deepEqual(document.paths['/shapes']!.get!.parameters![0]!.content['application/x-www-form-urlencoded']!.schema, {
+    discriminator: { propertyName: 'by', mapping: { id: '#/components/schemas/TById', name: '#/components/schemas/TByName' } },
+    oneOf: [{ $ref: '#/components/schemas/TById' }, { $ref: '#/components/schemas/TByName' }],
+  });
+  const registry = fs.readFileSync(path.join(root, 'src/generated/operation-codecs.ts'), 'utf8');
+  assert.match(registry, /"ShapesController\.draw": \{\s*"input": \[\s*"TCircle_[0-9a-f]{8}",\s*"TRect_[0-9a-f]{8}"\s*\]/);
+  assert.match(registry, /"ShapesController\.find": \{\s*"query": \[\s*"TByName_[0-9a-f]{8}",\s*"TById_[0-9a-f]{8}"\s*\]/);
+  assert.match(registry, /export const OPERATION_CODECS = \{\} as const;/, 'no route key reads a union as one model');
+  assert.match(registry, /export const OPERATION_QUERY_CODECS = \{\} as const;/);
+});
+
+test('the controllers job stops a whole @Query() union on OpenAPI 3.1 and a one-field union, which it cannot describe', async (t) => {
+  // protects: T-390 a union the interceptor converts but the document cannot express is refused at generation
+  await assert.rejects(runPipeline(path.join(project(t, '3.1.2'), 'golem.yaml')), (error: Error) => error.message.includes('NEST1108') && /cannot express a union of models/.test(error.message));
+  const oneField = createControllerFixture(t, {
+    prefix: 'golem-union-field-',
+    links: 'workspace',
+    files: {
+      'src/shapes.model.ts': MODELS,
+      'src/shapes.controller.ts': `import { Body, Controller, Post } from '@nestjs/common';\nimport type { TShape } from './shapes.model.js';\n@Controller('shapes')\nexport class ShapesController {\n  @Post() draw(@Body('shape') shape: TShape) { return shape; }\n}\n`,
+      'golem.yaml': yaml('3.2.0'),
+    },
+  });
+  await assert.rejects(runPipeline(path.join(oneField, 'golem.yaml')), (error: Error) => error.message.includes('NEST1103'));
 });

@@ -196,9 +196,9 @@ export function nestModelCodec(id: string, array?: boolean): ParameterDecorator 
  * literal type, and each variant lists the values of its tag and its codec id. The interceptor converts
  * the input through the codec of the variant that its tag picks. Only `NestModelInterceptor` reads this binding.
  */
-export function nestModelUnion(property: string, variants: readonly NestUnionVariant[], array?: boolean): ParameterDecorator {
+export function nestModelUnion(property: string, variants: readonly NestUnionVariant[]): ParameterDecorator {
   // The token is named after its variants, which the interceptor's fault messages show.
-  const token = nestModelMetatype(variants.map(([, id]) => id).join(' | '), array === true);
+  const token = nestModelMetatype(variants.map(([, id]) => id).join(' | '), false);
   const union = nestUnionInput(property, variants);
   if (union) Object.defineProperty(token, NEST_MODEL_UNION, { value: union });
   return bindMetatype(token);
