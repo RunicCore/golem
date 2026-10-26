@@ -14,7 +14,7 @@ import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
 import type { FileRewrite } from './rewrite.js';
 import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.js';
-import { pointInlineSourceMap, pointSourceMap } from './source-map.js';
+import { pointDeclarationMap, pointInlineSourceMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
@@ -183,12 +183,14 @@ function withNodeSpecifiers(root: string, sources: readonly ts.SourceFile[], che
 
 /** The extension of the file that holds a declaration's text in the program that reads it: `.d.ts` is read as `.ts`, `.d.mts` as `.mts`, `.d.cts` as `.cts`. */
 const DECLARATION_MODULE = /\.d(\.[cm]?ts)$/;
+const DECLARATION_MAP = /\.d\.[cm]?ts\.map$/;
 
 /**
  * Give the declarations the check program emitted from the original sources the import paths Node resolves, as the emitted JavaScript has
  * them (`nodeSpecifierEdits`): a NodeNext consumer reads these files. A declaration's text is read as a module beside its source, so
  * a specifier resolves from where the source's own does, and the edits apply to the declaration. The result is the emitted files with
- * the edited text of those that needed an edit.
+ * the edited text of those that needed an edit, and the declaration map of each of them pointed at the edited text. The compiler names the source
+ * of each output, and the declaration map is found from that, as the JavaScript map is, never from the name of the declaration.
  */
 function rewriteDeclarations(session: ts.ProgramSession, project: Project, sources: readonly ts.SourceFile[], rootNames: readonly string[], flags: readonly string[], emitted: ts.MemoryEmit): ReadonlyMap<string, string> {
   // The seam names a source by its resolved path; the overlay takes the program's own file name for it, as the program reads it.
@@ -206,11 +208,19 @@ function rewriteDeclarations(session: ts.ProgramSession, project: Project, sourc
   const checker = program.getTypeChecker();
   const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(sources.map((source) => source.fileName)) };
   const rewritten = new Map(emitted.files);
+  const editMaps = new Map<string, SourceMapV3>();
   for (const [module, { file, text }] of declarations) {
     const declaration = program.getSourceFile(module);
     if (declaration === undefined) throw new Error(`golem build could not read the declaration ${displayPath(file)} to change its import paths.`);
     const { edits } = nodeSpecifierEdits(declaration, checker, options);
-    if (edits.length > 0) rewritten.set(file, applyRewrites(text, { edits, imports: [], importsAt: 0 }, file).code);
+    if (edits.length === 0) continue;
+    const edited = applyRewrites(text, { edits, imports: [], importsAt: 0 }, file);
+    rewritten.set(file, edited.code);
+    editMaps.set(emitted.sources.get(file)!, edited.map);
+  }
+  for (const [file, text] of emitted.files) {
+    const edit = editMaps.get(emitted.sources.get(file) ?? '');
+    if (edit !== undefined && DECLARATION_MAP.test(file)) rewritten.set(file, pointDeclarationMap(text, edit));
   }
   return rewritten;
 }
