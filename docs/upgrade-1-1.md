@@ -47,6 +47,19 @@ A path in a message that does not lie below the working directory starts with `.
 
 When a script or an editor task parses golem messages, change it to read this form. Run the command from the folder where you want the paths to start.
 
+## Expect a class for a union with a shared variant {#union-model-classes}
+
+Only a union that shares a variant with another union changes form. A union with no shared variant generates the same files as in 1.0.
+
+In 1.0, a variant that two unions selected stopped both union classes, and the generator wrote the warning `OPENAPI_UNION_SHARED_VARIANT`. In 1.1 each of those unions gets its model class:
+
+- The shared variant extends its own base schema, not a union class.
+- Each union that selects the shared variant answers `value instanceof PetModel` with true for it. TypeScript narrows `value` to the variants.
+- The other variants of such a union now extend its class. In 1.0 they extended the base schema.
+- A subclass that you write for a union class tests its own prototype chain, not the variants of the union.
+
+Remove any code that depends on the warning. Run `npx golem generate` after you update.
+
 ## Move to TypeScript 7.1 or 6
 
 Install one of the supported versions, then update the Golem packages:

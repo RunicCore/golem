@@ -834,12 +834,3 @@ Generation does not try the variants in turn, so it stops. The message names the
 
 - Add a required `const` or `enum` property with a different value to each variant.
 - Or add a `discriminator` (`propertyName` and `mapping`) to the `oneOf`/`anyOf`, and make each variant a component schema that carries that property.
-
-### OPENAPI_UNION_SHARED_VARIANT
-
-**Shared union variant.** A `oneOf`/`anyOf` variant schema is also claimed by another union, so no single class can represent it as a subtype of both. The generator emits no union model class for this schema. This is a warning: generation continues:
-
-- Values still decode to their variant model classes.
-- They don't gain the shared union's own class.
-
-**Fix:** Give the variant to a single union in the OpenAPI document if it needs a dedicated union class.

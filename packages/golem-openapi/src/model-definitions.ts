@@ -152,6 +152,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
       rawSchema,
       baseName: null,
       otherBaseNames: [],
+      variantOf: [],
       properties: new Map(),
       additionalProperties: null,
       required: new Set(),
@@ -202,10 +203,10 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
     checkComposition(componentSite(rawName), model ? model.rawSchema : rawSchema, model, definitions, document, resources, warn);
   }
 
-  // Union models are decided against declared inheritance only, so the result
-  // does not depend on component order. A union model class requires its
-  // variants to extend it, so a union with a variant that another union also
-  // selects stays a plain union type (decoded through its tag table).
+  // A union model is decided against declared inheritance only, so the result does not depend on
+  // component order. A variant that one union selects extends that union's class. A variant that
+  // several unions select cannot extend them all: it keeps its own base, and each of those unions
+  // answers `instanceof` for it.
   const unions: ModelDefinition[] = [];
   for (const [rawName, rawSchema] of objectEntries(schemas)) {
     if (!isJsonObject(rawSchema)) continue;
@@ -229,6 +230,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
       rawSchema,
       baseName: commonBase,
       otherBaseNames: [],
+      variantOf: [],
       properties: new Map(),
       additionalProperties: null,
       required: new Set(),
@@ -239,19 +241,18 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
   }
   const claims = new Map<string, number>();
   for (const union of unions) {
-    for (const variant of union.variants ?? []) claims.set(variant, (claims.get(variant) ?? 0) + 1);
+    for (const variant of new Set(union.variants)) claims.set(variant, (claims.get(variant) ?? 0) + 1);
   }
   for (const union of unions) {
-    const shared = (union.variants ?? []).filter((variant) => claims.get(variant) !== 1);
-    if (shared.length) {
-      warn('OPENAPI_UNION_SHARED_VARIANT', `schema ${JSON.stringify(union.schemaName)} gets no union model class because ${shared.map((variant) => definitions.get(variant)?.schemaName ?? variant).map((name) => JSON.stringify(name)).join(', ')} is also a variant of another union; values typed by it still decode to the variant models`);
-      continue;
-    }
     schemaScope.claim(union.name, `union schema ${JSON.stringify(union.schemaName)}`, union.schemaName);
     definitions.set(union.name, union);
+    const shared = (union.variants ?? []).filter((variant) => claims.get(variant) !== 1);
+    if (shared.length > 0) union.sharedVariants = shared;
     for (const variant of union.variants ?? []) {
       const child = definitions.get(variant);
-      if (child) child.baseName = union.name;
+      if (!child) continue;
+      child.variantOf.push(union.name);
+      if (claims.get(variant) === 1) child.baseName = union.name;
     }
   }
 
