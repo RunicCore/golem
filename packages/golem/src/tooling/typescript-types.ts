@@ -547,6 +547,31 @@ export interface Diagnostic {
   readonly pos?: number;
   /** The file the diagnostic is about; absent for a diagnostic about the program as a whole. */
   readonly fileName?: string;
+  /** 1 for an error: the category the error summary counts. */
+  readonly category?: number;
+  /** The zero-based line and character of `pos`, as the compiler's line map counts them. Present when `fileName` is. */
+  readonly startPosition?: { readonly line: number; readonly character: number };
+}
+
+/** What a diagnostic formatter reads from its caller: the directory that paths print relative to, and the line break. */
+export interface DiagnosticFormatHost {
+  getCanonicalFileName(filename: string): string;
+  getCurrentDirectory(): string;
+  getNewLine(): string;
+}
+
+/** Which output an in-memory emit makes: the JavaScript files with their source maps, or the declaration files with their maps. */
+export type EmitKind = 'javascript' | 'declarations';
+
+/**
+ * The files of an in-memory emit, keyed by absolute output path. Nothing is written. `emitSkipped` is true when the options ask for
+ * no such output (`noEmit`, `emitDeclarationOnly` for JavaScript, no `declaration` or `composite` for declarations) or the compiler
+ * stopped; `noEmitOnError` is the caller's step: the TypeScript 6 compiler honors it, the TypeScript 7 one does not.
+ */
+export interface MemoryEmit {
+  readonly emitSkipped: boolean;
+  readonly files: ReadonlyMap<string, string>;
+  readonly diagnostics: readonly Diagnostic[];
 }
 
 export interface ModuleResolutionHost {
@@ -572,6 +597,8 @@ export interface Program extends Disposable {
   getSyntacticDiagnostics(filename: string): readonly Diagnostic[];
   /** The type errors of one file, found by checking that file. */
   getSemanticDiagnostics(filename: string): readonly Diagnostic[];
+  /** Emit the program's own sources (no declaration file, default library or package) to memory, as `tsc` would write them. */
+  emitToMemory(kind: EmitKind): MemoryEmit;
   readonly session: ProgramSession;
 }
 
@@ -580,6 +607,12 @@ export interface OpenProgramOptions {
   readonly sources: readonly string[];
   readonly configFile?: string;
   readonly overlays?: ReadonlyMap<string, string>;
+  /**
+   * Compiler options that replace the configuration's own for this program only, as tsconfig JSON values (an enum is its name, a
+   * path is relative to the configuration). The session serves them as a virtual configuration that extends the original, so
+   * the original stays observed and the virtual file is not reported as an input.
+   */
+  readonly compilerOptionOverrides?: Readonly<Record<string, string | number | boolean | null>>;
   readonly onInput?: (filename: string) => void;
 }
 
@@ -591,6 +624,12 @@ export interface ProgramSessionOptions {
 export interface ProgramSession extends Disposable {
   inputsChanged(filenames: Iterable<string>): void;
   parseConfigFile(configPath: string, onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] };
+  /**
+   * Parse a project configuration under compiler command-line arguments (`--strict false`, `--allowJs`), as `tsc -p` does: an
+   * argument replaces the same option of the configuration, and the file list follows the merged options. An argument the compiler
+   * rejects throws. The TypeScript 6 lane keeps a relative path argument as written; the TypeScript 7 lane makes it absolute.
+   */
+  parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] };
   openProgram(options: OpenProgramOptions): Program;
   /** Parse one source text on its own, without a program: its syntax tree, with no types and no diagnostics. */
   parseSourceFile(filename: string, text: string): SourceFile;
@@ -681,10 +720,9 @@ export interface TypeScriptBackend {
   findConfigFile(searchPath: string, fileExists: (filename: string) => boolean, configName?: string): string | undefined;
   forEachChild<T>(node: Node, callback: (node: Node) => T | undefined): T | undefined;
   /** The compiler's plain form, `path(line,col): error TS1234: message`, one line each with chained messages indented below. */
-  formatDiagnostics(
-    diagnostics: readonly Diagnostic[],
-    host: { getCanonicalFileName(filename: string): string; getCurrentDirectory(): string; getNewLine(): string },
-  ): string;
+  formatDiagnostics(diagnostics: readonly Diagnostic[], host: DiagnosticFormatHost): string;
+  /** The compiler's pretty form: colored, with the source line and a squiggle under each diagnostic. */
+  formatDiagnosticsWithColorAndContext(diagnostics: readonly Diagnostic[], host: DiagnosticFormatHost): string;
   getDecorators(node: Node): readonly Decorator[] | undefined;
   getModifiers(node: Node): readonly Node[] | undefined;
   getPreEmitDiagnostics(program: Program): readonly Diagnostic[];

@@ -50,6 +50,7 @@ import {
   type CreateSnapshotParams,
   type Diagnostic as SyncDiagnostic,
   formatDiagnostics,
+  formatDiagnosticsWithColorAndContext,
   type ModuleResolver,
   type RawCompilerOptions,
   type ResolutionMode,
@@ -62,6 +63,7 @@ import type { Node, SourceFile, TypeNode } from 'typescript/ast';
 export {
   API,
   formatDiagnostics,
+  formatDiagnosticsWithColorAndContext,
   ElementFlags,
   JsxEmit,
   ModuleKind,
@@ -114,6 +116,14 @@ export enum IndexKind {
 
 export const isFunctionLike = ast.isFunctionLikeDeclaration;
 export const isTypeAssertionExpression = ast.isTypeAssertion;
+
+export type EmitKind = 'javascript' | 'declarations';
+
+export interface MemoryEmit {
+  readonly emitSkipped: boolean;
+  readonly files: ReadonlyMap<string, string>;
+  readonly diagnostics: readonly SyncDiagnostic[];
+}
 
 export interface Diagnostic {
   readonly fileName?: string;
@@ -244,6 +254,7 @@ export interface Program {
   getSemanticDiagnostics(file?: string): readonly SyncDiagnostic[];
   getDeclarationDiagnostics(file?: string): readonly SyncDiagnostic[];
   getProgramDiagnostics(): readonly SyncDiagnostic[];
+  emitToMemory(kind: EmitKind): MemoryEmit;
   readonly project: Project;
   readonly snapshot: Snapshot;
   /** The compiler session that opened this program; further programs can share it. */
@@ -704,6 +715,26 @@ class CompatProgram implements Program {
   getProgramDiagnostics(): readonly SyncDiagnostic[] {
     return this.project.program.getProgramDiagnostics();
   }
+
+  /**
+   * The compiler's `getJavaScriptEmit` and `getDeclarationEmit` over the program's own sources: they return the text and write
+   * nothing. They ignore `noEmit` and the declaration options, so the classic compiler's rule for what a program emits is applied here.
+   */
+  emitToMemory(kind: EmitKind): MemoryEmit {
+    const options = this.getCompilerOptions();
+    const declarations = kind === 'declarations';
+    const wanted = options.noEmit !== true && (declarations ? options.declaration === true || options.composite === true : options.emitDeclarationOnly !== true);
+    if (!wanted) return { emitSkipped: true, files: new Map(), diagnostics: [] };
+    const sources = this.getSourceFiles()
+      .filter((file) => !file.isDeclarationFile && !this.isSourceFileDefaultLibrary(file) && !this.isSourceFileFromExternalLibrary(file) && !file.fileName.split(/[\\/]/).includes('node_modules'))
+      .map((file) => file.fileName);
+    const output = declarations ? this.project.program.getDeclarationEmit(sources) : this.project.program.getJavaScriptEmit(sources);
+    return {
+      emitSkipped: output.emitSkipped,
+      files: new Map([...output.outputFiles].map(([filename, { text }]) => [canonical(filename), text])),
+      diagnostics: output.diagnostics,
+    };
+  }
 }
 
 function canonical(filename: string): string {
@@ -826,6 +857,8 @@ export interface OpenProgramOptions {
    */
   readonly configFile?: string;
   readonly overlays?: ReadonlyMap<string, string>;
+  /** Compiler options that replace the configuration's own for this program only, as tsconfig JSON values (an enum is its name). */
+  readonly compilerOptionOverrides?: Readonly<Record<string, string | number | boolean | null>>;
   readonly onInput?: (filename: string) => void;
 }
 
@@ -885,7 +918,14 @@ function programRequest(options: OpenProgramOptions): ProgramRequest {
       include: ['**/*.ts'],
     }));
   }
-  return { configPath: baseConfigPath, files: [...new Set(options.sources.map(canonical))], overlays, hidden };
+  let configPath = baseConfigPath;
+  if (options.compilerOptionOverrides !== undefined) {
+    // A virtual configuration that extends the original replaces the options for this program only: the API has no override.
+    configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.options.json`);
+    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides }));
+    hidden.add(configPath);
+  }
+  return { configPath, files: [...new Set(options.sources.map(canonical))], overlays, hidden };
 }
 
 /** The compiler process of an API, or undefined when this TypeScript build keeps it somewhere else. */
@@ -993,6 +1033,26 @@ export class ProgramSession implements Disposable {
       const result = api.parseConfigFile(configPath);
       assertConfigParsed(configPath, result.errors);
       return result;
+    });
+    return { options: parsed.options as CompilerOptions, fileNames: parsed.fileNames };
+  }
+
+  /**
+   * Parse a project configuration under compiler command-line arguments. The API has no `tsc -p` parse, so the arguments are parsed
+   * on their own and merged over the configuration's options, which is what `tsc` does. The options that decide which files match
+   * (`allowJs`, `resolveJsonModule` and the output directories the default `exclude` skips) first go through a virtual configuration
+   * that extends the original, so the file list follows the merged options.
+   */
+  parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] } {
+    const parsed = this.withCompiler('parse', (api) => {
+      this.observe(onInput, new Set());
+      const commandLine = api.parseCommandLine(flags);
+      const { allowJs, resolveJsonModule, outDir, declarationDir } = commandLine.options;
+      const matching = Object.fromEntries(Object.entries({ allowJs, resolveJsonModule, outDir, declarationDir }).filter(([, value]) => value !== undefined));
+      const virtual = join(dirname(configPath), `${basename(configPath, '.json')}.flags.json`);
+      const result = api.parseJsonConfigFileContent({ extends: `./${basename(configPath)}`, compilerOptions: matching }, { configFileName: virtual });
+      assertConfigParsed(configPath, [...commandLine.errors, ...result.errors]);
+      return { options: { ...result.options, ...commandLine.options, configFilePath: configPath }, fileNames: result.fileNames };
     });
     return { options: parsed.options as CompilerOptions, fileNames: parsed.fileNames };
   }
