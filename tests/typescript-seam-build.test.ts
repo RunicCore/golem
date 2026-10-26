@@ -162,7 +162,7 @@ test('a package built in place under node_modules emits its declarations', t => 
 test('a value of a list option is trimmed and empty means no items, and a negative number after an option is its value', () => {
   // protects: T-461 --lib "es2020, dom", --lib "" and --maxNodeModuleJsDepth -1 become tsconfig values whatever the lane's parser takes
   const parse = (args: readonly string[]) => ({ options: { [args[0]!.slice(2)]: args[1] === undefined ? true : args[0] === '--lib' ? [args[1]] : Number(args[1]) }, fileNames: [], errors: [] });
-  assert.deepEqual(flagsAsConfigOptions(['--depth', '-1'], parse), { depth: -1 });
-  assert.deepEqual(flagsAsConfigOptions(['--lib', ' es2020 , dom '], parse), { lib: ['es2020', 'dom'] });
-  assert.deepEqual(flagsAsConfigOptions(['--lib', ''], parse), { lib: [] });
+  assert.deepEqual(flagsAsConfigOptions(['--depth', '-1'], parse, (options) => options), { depth: -1 });
+  assert.deepEqual(flagsAsConfigOptions(['--lib', ' es2020 , dom '], parse, (options) => options), { lib: ['es2020', 'dom'] });
+  assert.deepEqual(flagsAsConfigOptions(['--lib', ''], parse, (options) => options), { lib: [] });
 });

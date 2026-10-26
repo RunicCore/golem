@@ -10,7 +10,8 @@ import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, emitWanted, flagsAsConfigOptions } from './typescript-config.js';
+import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, emitWanted, flagPathOptions, flagsAsConfigOptions } from './typescript-config.js';
+import type { ResolveAtCurrentFolder } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
@@ -179,6 +180,7 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     host: ParsedConfigHost,
   ): { readonly options: Golem.CompilerOptions; readonly fileNames: string[]; readonly errors: readonly ClassicDiagnostic[] } | undefined;
   getPreEmitDiagnostics(program: ClassicProgram): readonly ClassicDiagnostic[];
+  parseJsonConfigFileContent(json: object, host: Pick<ParsedConfigHost, 'useCaseSensitiveFileNames' | 'readDirectory' | 'fileExists' | 'readFile'>, basePath: string): { readonly options: Golem.CompilerOptions };
   parseCommandLine(flags: readonly string[]): { readonly options: Golem.CompilerOptions; readonly fileNames: readonly string[]; readonly errors: readonly ClassicDiagnostic[] };
   sortAndDeduplicateDiagnostics(diagnostics: readonly ClassicDiagnostic[]): readonly ClassicDiagnostic[];
   resolveModuleName(
@@ -665,6 +667,18 @@ function canonical(filename: string): string {
   return normalize(resolvePath(filename));
 }
 
+function parseFlags(flags: readonly string[]) {
+  const { options: parsed, fileNames, errors } = classic.parseCommandLine(flags);
+  return { options: parsed, fileNames, errors: errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })) };
+}
+
+/** The options read as a tsconfig of the current folder: the classic parse makes the path options absolute from it. No file is listed or read. */
+const resolveAtCurrentFolder: ResolveAtCurrentFolder = (options) => classic.parseJsonConfigFileContent(
+  { compilerOptions: options, files: [] },
+  { useCaseSensitiveFileNames: sys.useCaseSensitiveFileNames, readDirectory: () => [], fileExists: () => false, readFile: () => undefined },
+  process.cwd(),
+).options as Readonly<Record<string, unknown>>;
+
 export function createProgramFromSources(options: Golem.OpenProgramOptions): Golem.Program {
   return new ProgramSession({ cwd: options.root, closeWhenIdle: true }).openProgram(options);
 }
@@ -817,7 +831,9 @@ export class ProgramSession implements Disposable {
     this.observe(onInput, new Set());
     const commandLine = classic.parseCommandLine(flags);
     assertNoSourceFiles(commandLine.fileNames);
-    return this.parseConfig(configPath, new Map(), commandLine);
+    // A path in a flag is read from the current folder, as `tsc` reads it; the session works from the tsconfig's folder.
+    const paths = flagPathOptions(flags, parseFlags, resolveAtCurrentFolder);
+    return this.parseConfig(configPath, new Map(), { ...commandLine, options: { ...commandLine.options, ...paths } });
   }
 
   /** Open a program that reflects every file change since the previous one. */
@@ -846,11 +862,7 @@ export class ProgramSession implements Disposable {
   /** The options of a program with its command-line `flags` among its option overrides, which win over the flags. */
   private withFlags(options: Golem.OpenProgramOptions): Golem.OpenProgramOptions {
     if (options.flags === undefined || options.flags.length === 0) return options;
-    const parse = (flags: readonly string[]) => {
-      const { options: parsed, fileNames, errors } = classic.parseCommandLine(flags);
-      return { options: parsed, fileNames, errors: errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })) };
-    };
-    return { ...options, compilerOptionOverrides: { ...flagsAsConfigOptions(options.flags, parse), ...options.compilerOptionOverrides } };
+    return { ...options, compilerOptionOverrides: { ...flagsAsConfigOptions(options.flags, parseFlags, resolveAtCurrentFolder), ...options.compilerOptionOverrides } };
   }
 
   /** Parse one source text on its own, without a program. */

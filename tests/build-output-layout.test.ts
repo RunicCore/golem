@@ -5,9 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
-import { build, golemBuild, write } from './support/build-project.js';
+import { build, golemBuild, TSC, write } from './support/build-project.js';
 import { count, watching } from './support/build-watching.js';
-import { workspace } from './support/process.js';
+import { command, golem, workspace } from './support/process.js';
 import { until } from './support/watch-wait.js';
 
 /** `outer/app` is the project; `outer/shared` is outside it. The Bundler options leave `./widget` without an extension, so a declaration needs the edit that adds `.js`. */
@@ -61,4 +61,29 @@ test('golem build --watch removes the outputs of a deleted source that lies outs
   assert.equal(fs.existsSync(path.join(app, 'build/shared')), false, 'the folder the deletion left empty is gone');
   assert.ok(outputs('app/src', 'api').every((file) => fs.existsSync(file)), 'the outputs of the other source stay');
   assert.equal(await watcher.stop(), 130);
+});
+
+const built = (app: string): string[] => fs.readdirSync(path.join(app, 'build'), { recursive: true, withFileTypes: true }).filter((entry) => entry.isFile()).map((entry) => path.relative(path.join(app, 'build'), path.join(entry.parentPath, entry.name))).toSorted();
+
+test('a relative --rootDir is read from the folder golem runs in, so the layout is the one tsc -p gives from that folder', async (t) => {
+  // protects: T-474 a path in a forwarded flag is relative to the current folder, as in tsc
+  const { outer, app } = project(t, {}, ['src/**/*.ts', '../shared/plain.ts']);
+  write(outer, 'shared/plain.ts', 'export const plain = 1;\n');
+  const run = await command(outer, process.execPath, [golem, 'build', '--config', 'app/golem.yaml', '--rootDir', '..'], { allowFailure: true });
+  assert.equal(run.code, 0, `${run.stdout}${run.stderr}`);
+  const golemFiles = built(app);
+  fs.rmSync(path.join(app, 'build'), { recursive: true });
+  await command(outer, process.execPath, [TSC, '-p', 'app', '--rootDir', '..'], { allowFailure: true });
+  assert.deepEqual(golemFiles, built(app));
+  assert.ok(golemFiles.includes(path.join(path.basename(outer), 'app/src/api.js')), 'the layout starts one folder above the folder golem ran in');
+});
+
+test('a relative --typeRoots is read from the folder golem runs in', async (t) => {
+  // protects: T-474 a path list in a forwarded flag is relative to the current folder, as in tsc
+  const { outer, app } = project(t, { rootDir: '.' }, ['src/**/*.ts']);
+  write(app, 'types/globals/index.d.ts', 'declare const fromGlobals: number;\n');
+  write(app, 'src/use.ts', 'export const used: number = fromGlobals;\n');
+  const run = await command(outer, process.execPath, [golem, 'build', '--config', 'app/golem.yaml', '--typeRoots', 'app/types', '--types', 'globals'], { allowFailure: true });
+  assert.equal(run.code, 0, `${run.stdout}${run.stderr}`);
+  assert.ok(fs.existsSync(path.join(app, 'build/src/use.js')));
 });

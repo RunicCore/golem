@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import { displayPath } from './generator-api.js';
 
 /** The diagnostic code of a configuration that matches no file. */
@@ -59,14 +60,42 @@ function configValue(parsed: unknown, argument: string | undefined): string | nu
   if (argument === undefined) return parsed as boolean;
   if (Array.isArray(parsed)) return argument.trim() === '' ? [] : argument.split(',').map((item) => item.trim());
   if (typeof parsed === 'number') return /^-?\d+$/.test(argument) ? parsed : argument;
-  return parsed as string | boolean;
+  // A string is the argument as written: a lane may have made a path in it absolute from the wrong folder.
+  return typeof parsed === 'string' ? argument : parsed as boolean;
+}
+
+/**
+ * What a compiler lane gives for options read as a tsconfig that sits in the current folder: the compiler's own parse makes each path
+ * option an absolute path from that folder, and keeps the other values.
+ */
+export type ResolveAtCurrentFolder = (options: Readonly<Record<string, unknown>>) => Readonly<Record<string, unknown>>;
+
+/** A path option, as the compiler's parse leaves it: an absolute path, or a list of them. */
+function isResolvedPath(value: unknown): value is string | readonly string[] {
+  return typeof value === 'string' ? isAbsolute(value) : Array.isArray(value) && value.length > 0 && value.every((item) => typeof item === 'string' && isAbsolute(item));
+}
+
+/**
+ * The path options among the command-line `flags`, as absolute paths from the current folder. `tsc` reads a path in a flag from the
+ * folder it runs in, and one in a tsconfig from the tsconfig's folder, while a lane's session works from the tsconfig's folder.
+ * The compiler's own option table tells which options are paths: it makes them absolute when it reads them as a tsconfig of the current folder.
+ */
+export function flagPathOptions(flags: readonly string[], parse: (flags: readonly string[]) => ParsedArguments, resolveAtCurrentFolder: ResolveAtCurrentFolder): Record<string, string | readonly string[]> {
+  const options = parsedFlagOptions(flags, parse);
+  const resolved = resolveAtCurrentFolder(options);
+  return Object.fromEntries(Object.entries(resolved).filter(([name, value]) => name in options && isResolvedPath(value) && value !== options[name])) as Record<string, string | readonly string[]>;
 }
 
 /**
  * The command-line `flags` as `compilerOptions` of a tsconfig, for a compiler that builds a program from a configuration alone. The
- * lane's own parser tells which argument takes the next one as its value and what option it sets.
+ * lane's own parser tells which argument takes the next one as its value and what option it sets. A path option is an absolute path
+ * from the current folder (`flagPathOptions`), because a tsconfig would read it from its own folder.
  */
-export function flagsAsConfigOptions(flags: readonly string[], parse: (flags: readonly string[]) => ParsedArguments): Record<string, string | number | boolean | readonly string[]> {
+export function flagsAsConfigOptions(flags: readonly string[], parse: (flags: readonly string[]) => ParsedArguments, resolveAtCurrentFolder: ResolveAtCurrentFolder): Record<string, string | number | boolean | readonly string[]> {
+  return { ...parsedFlagOptions(flags, parse), ...flagPathOptions(flags, parse, resolveAtCurrentFolder) };
+}
+
+function parsedFlagOptions(flags: readonly string[], parse: (flags: readonly string[]) => ParsedArguments): Record<string, string | number | boolean | readonly string[]> {
   const options: Record<string, string | number | boolean | readonly string[]> = {};
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index]!;
