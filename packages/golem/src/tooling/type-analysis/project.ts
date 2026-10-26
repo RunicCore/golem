@@ -638,6 +638,56 @@ export function assertNoSyntaxErrors(program: ts.Program, files: readonly string
   if (errors.length > 0) throw new Error(formatDiagnostics(errors));
 }
 
+/** Whether `filename` is one of `outputs` or lies inside one; the outputs are canonical paths. */
+export function isUnderOutputs(outputs: readonly string[], filename: string): boolean {
+  const target = canonicalPath(filename);
+  return outputs.some((output) => output === target || isInsideDirectory(output, target));
+}
+
+/** The file of `files` that a relative import resolves to, with the `.js` of a written specifier standing for its `.ts` source. */
+function importedFile(files: ReadonlyMap<string, string>, target: string): string | undefined {
+  const stem = target.replace(/\.[cm]?jsx?$/, '');
+  return [target, `${stem}.ts`, `${stem}.tsx`, `${stem}.mts`, `${stem}.cts`, `${target}.ts`, `${target}.tsx`, join(target, 'index.ts'), join(stem, 'index.ts')]
+    .map((candidate) => files.get(canonicalPath(candidate))).find((found) => found !== undefined);
+}
+
+/**
+ * The files of the program that lie under one of `outputs`, or that import a path under one by a relative import, directly or
+ * through the files they import. It reads the specifier text and the file names only, so it gives the same answer whether or not
+ * the output exists yet. The outputs are canonical paths.
+ */
+export function filesReadingOutputs(program: ts.Program, outputs: readonly string[]): ReadonlySet<string> {
+  const files = program.getSourceFiles().filter((file) => !program.isSourceFileDefaultLibrary(file) && !file.fileName.replace(/\\/g, '/').includes('/node_modules/'));
+  const byPath = new Map(files.map((file) => [canonicalPath(file.fileName), file.fileName] as const));
+  const excluded = new Set<string>();
+  const imports = new Map<string, string[]>();
+  for (const file of files) {
+    const imported: string[] = [];
+    imports.set(file.fileName, imported);
+    if (isUnderOutputs(outputs, file.fileName)) excluded.add(file.fileName);
+    for (const statement of file.statements) {
+      if (!(ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) || statement.moduleSpecifier === undefined
+        || !ts.isStringLiteral(statement.moduleSpecifier) || !statement.moduleSpecifier.text.startsWith('.')) continue;
+      const target = resolve(dirname(file.fileName), statement.moduleSpecifier.text);
+      if (isUnderOutputs(outputs, target)) {
+        excluded.add(file.fileName);
+        continue;
+      }
+      const found = importedFile(byPath, target);
+      if (found !== undefined) imported.push(found);
+    }
+  }
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [file, imported] of imports) {
+      if (excluded.has(file) || !imported.some((other) => excluded.has(other))) continue;
+      excluded.add(file);
+      grew = true;
+    }
+  }
+  return excluded;
+}
+
 /** The first TypeScript error that starts inside `node`, as `TS2304: Cannot find name 'strin'.`; undefined when the file has none there. Reads the semantic diagnostics of one file, so a caller uses it on a failure path only. */
 export function typeScriptErrorAt(program: ts.Program, node: ts.Node): string | undefined {
   const file = node.getSourceFile();
@@ -646,20 +696,6 @@ export function typeScriptErrorAt(program: ts.Program, node: ts.Node): string | 
   const found = program.getSemanticDiagnostics(file.fileName)
     .find((error) => error.pos !== undefined && error.pos >= start && error.pos < end);
   return found?.text === undefined ? undefined : `TS${found.code}: ${found.text}`;
-}
-
-/** The module specifiers in `fileName` that do not resolve (TS2307 or TS2792). Reads the semantic diagnostics of one file, so a caller uses it on a failure path only. */
-export function unresolvedImportsIn(program: ts.Program, fileName: string): string[] {
-  const file = program.getSourceFile(fileName);
-  if (file === undefined) return [];
-  // Each diagnostic starts at the string literal of the import.
-  const specifiers: string[] = [];
-  for (const error of program.getSemanticDiagnostics(fileName)) {
-    if ((error.code !== 2307 && error.code !== 2792) || error.pos === undefined) continue;
-    const specifier = /^(['"`])(.*?)\1/.exec(file.text.slice(error.pos))?.[2];
-    if (specifier !== undefined) specifiers.push(specifier);
-  }
-  return specifiers;
 }
 
 export function formatDiagnostics(diagnostics: readonly ts.Diagnostic[]): string {

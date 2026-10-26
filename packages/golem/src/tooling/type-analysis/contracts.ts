@@ -2,13 +2,13 @@ import * as path from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { collectSpecifications, type ModelSpecification, type TypeAnalysisContext } from './models.js';
 import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
-import { byRealPath, companionFilename, includedModelSources, isGeneratedCompanion, typeScriptErrorAt, unresolvedImportsIn, type ModelBoundary } from './project.js';
+import { byRealPath, companionFilename, filesReadingOutputs, includedModelSources, isGeneratedCompanion, isUnderOutputs, typeScriptErrorAt, type ModelBoundary } from './project.js';
 import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
-import { canonicalPath, displayPath, isInsideDirectory } from '../generator-api.js';
+import { canonicalPath, displayPath } from '../generator-api.js';
 import { canonicalDescriptorKey } from '../schema.js';
 import { deduplicateProjections } from './graph.js';
-import { diagnostic, linkedClasses, modelSpecificationForClass } from './symbols.js';
+import { diagnostic, linkedClasses, modelSpecificationForClass, resolveSymbol } from './symbols.js';
 import { manifestModelOfSymbol, type ManifestIndex } from './provenance.js';
 import { codecPublicId, createSchemaGraph, internDescriptors } from '../schema-graph.js';
 
@@ -29,12 +29,6 @@ export interface ContractAnalysis {
   specFor(name: string): ModelSpecification | undefined;
 }
 
-/** The file a located model-analysis error (see `diagnostic`) is in, or undefined for any other error. */
-function errorFile(error: unknown): string | undefined {
-  const { fileName } = error instanceof Error ? error as { fileName?: unknown } : {};
-  return typeof fileName === 'string' ? fileName : undefined;
-}
-
 /** Shared source interpretation for controller contracts; it never loads application modules. */
 export function createContractAnalysis(
   program: ts.Program,
@@ -46,15 +40,21 @@ export function createContractAnalysis(
     readonly boundary?: ModelBoundary;
     /** The model manifests of the program, as the models job reads them: a model a manifest lists has the codec id of its manifest entry. */
     readonly manifests?: ManifestIndex;
-    /** Where the jobs after the controllers job write, absolute. An import of one of these paths does not resolve until that job has run. */
+    /** Where the jobs after the controllers job write, absolute. A model file that imports a path under one is not read: its answer would depend on whether the job has run. */
     readonly laterOutputs?: readonly string[];
     /** The component name a class declares for its model, such as `@ApiSchema({ name })`. It renames the OpenAPI component only; the model name and the codec ids stay. */
     readonly classComponentName?: (declaration: ts.ClassDeclaration) => string | undefined;
   },
 ): ContractAnalysis {
   const checker = program.getTypeChecker();
+  // The rule is the same in every run, so run 1 (no SDK yet) and run 2 (SDK present) describe the same models: a file under a later job's
+  // output, and a file that imports one by a relative import, directly or through the files it imports, is read by none of them.
+  // The files stay in the program, so a controller type still resolves.
+  const laterOutputs = (options.laterOutputs ?? []).map(canonicalPath);
+  const excluded = laterOutputs.length === 0 ? new Set<string>() : filesReadingOutputs(program, laterOutputs);
   const ownSources = program.getSourceFiles().filter(source => !source.isDeclarationFile
     && !source.fileName.replace(/\\/g, '/').includes('/node_modules/')
+    && !excluded.has(source.fileName)
     && !isGeneratedCompanion(source.fileName)).map(source => source.fileName);
   // With the models job known, a model file of an installed package or a declaration file is a shared model file of the app, as it is for that job.
   const sharedSources = options.boundary === undefined ? [] : includedModelSources(
@@ -63,7 +63,7 @@ export function createContractAnalysis(
   );
   // A file has one name: TypeScript's own spelling and the normalized one of a shared file are the same file.
   const sources = byRealPath([...ownSources, ...sharedSources]);
-  let { specifications } = collectSpecifications(program, sources, options.exact, options.boundary && ((file) => companionFilename(options.boundary, file)));
+  const { specifications } = collectSpecifications(program, sources, options.exact, options.boundary && ((file) => companionFilename(options.boundary, file)));
   const emptyManifests: ManifestIndex = {
     byId: new Map(), byProvenance: new Map(), files: [], localFiles: [], validationSchemaClosure: [], runtimeExports: () => new Set(), externalModelForType: () => undefined,
   };
@@ -83,51 +83,22 @@ export function createContractAnalysis(
   // OpenAPI describes the full contract even when runtime validation is omitted.
   // The document describes an SDK model by its type; only the codec ids see it as the manifest reference the models job hashes.
   const buildDescribe = (nameFor?: (specification: ModelSpecification) => string, manifests: ManifestIndex = emptyManifests) => descriptorBuilder(checker, specifications, manifests, true, options.allowAny ?? false, options.root, false, nameFor, undefined, undefined, (node) => typeScriptErrorAt(program, node), file => program.isSourceFileDefaultLibrary(file));
-  // The controllers job runs before the openapi and models jobs write their files, so a model that imports one of them does not resolve yet.
-  // A model that fails on such an import is left out of the analysis, and the models job handles it. A controller that reaches a model left
-  // out fails with the job-order error instead. For each model left out: the file of the unresolved type and the specifier of its import.
-  const laterOutputs = (options.laterOutputs ?? []).map(canonicalPath);
-  const pendingImportOf = (file: string): string | undefined => unresolvedImportsIn(program, file).find((specifier) => {
-    if (!specifier.startsWith('.')) return false;
-    const target = canonicalPath(path.resolve(path.dirname(file), specifier));
-    return laterOutputs.some((output) => output === target || isInsideDirectory(output, target));
-  });
-  const pendingModels = new Map<ModelSpecification, { readonly file: string; readonly specifier: string }>();
-  const pendingIn = (file: string | undefined): { readonly file: string; readonly specifier: string } | undefined => [...pendingModels.values()].find((pending) => pending.file === file);
-  const describeAll = (build: () => ReturnType<typeof buildDescribe>): { readonly describe: ReturnType<typeof buildDescribe>; readonly described: Map<ModelSpecification, ModelConversionDescriptor> } => {
-    for (;;) {
-      const describe = build();
-      const described = new Map<ModelSpecification, ModelConversionDescriptor>();
-      let blocked: ModelSpecification | undefined;
-      for (const specification of specifications) {
-        try {
-          described.set(specification, describe(specification.fieldsType, specification, undefined, specification.fieldsNode));
-        } catch (error) {
-          // The cause is a type that did not resolve in a file whose import does not resolve. A model that holds a left-out one fails in that file, with the error of any walk into it.
-          const file = errorFile(error);
-          const known = pendingIn(file);
-          const specifier = known?.specifier ?? (file !== undefined && (error as { code?: unknown }).code === 'RUNM1058' ? pendingImportOf(file) : undefined);
-          if (file === undefined || specifier === undefined) throw error;
-          pendingModels.set(specification, { file, specifier });
-          blocked = specification;
-          break;
-        }
-      }
-      if (!blocked) return { describe, described };
-      // A model that holds the left-out one fails in the next round, so it leaves too.
-      specifications = specifications.filter((specification) => specification !== blocked);
-    }
-  };
+  const describeAll = (builder: ReturnType<typeof buildDescribe>): Map<ModelSpecification, ModelConversionDescriptor> => new Map(
+    specifications.map((specification) => [specification, builder(specification.fieldsType, specification, undefined, specification.fieldsNode)] as const),
+  );
   const baseName = (specification: ModelSpecification): string => baseNames.get(specification) ?? specification.name;
-  let { describe, described } = describeAll(() => buildDescribe(baseName));
+  let describe = buildDescribe(baseName);
+  let described = describeAll(describe);
   // Models whose names are equal but whose schemas differ are qualified by where they are declared.
   const componentNames = qualifiedComponentNames(specifications, described, baseName, options.root);
   const componentName = (specification: ModelSpecification): string => componentNames.get(specification) ?? baseName(specification);
   if (specifications.some((specification) => componentName(specification) !== baseName(specification))) {
-    ({ describe, described } = describeAll(() => buildDescribe(componentName)));
+    describe = buildDescribe(componentName);
+    described = describeAll(describe);
   }
   // Codec ids hash descriptors named by alias and nesting an SDK model by its manifest, as the generated companions do; the document uses component names.
-  const { describe: describeForIds, described: describedForIds } = describeAll(() => buildDescribe(undefined, options.manifests));
+  const describeForIds = buildDescribe(undefined, options.manifests);
+  const describedForIds = describeAll(describeForIds);
   const internGraph = createSchemaGraph();
   internDescriptors(internGraph, [
     ...specifications.flatMap((specification) => {
@@ -168,28 +139,62 @@ export function createContractAnalysis(
   };
   syncProjections();
 
-  const intactModel = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode, among: readonly ModelSpecification[] = specifications): ModelSpecification | undefined => {
+  const intactModel = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): ModelSpecification | undefined => {
     const syntax = typeNode ?? (ts.isTypeNode(node) ? node : undefined);
-    const provenance = fieldProvenance(checker, syntax, among);
+    const provenance = fieldProvenance(checker, syntax, specifications);
     const candidate = !provenance.projection && !type.isUnion() && provenance.models.length === 1 ? provenance.models[0] : undefined;
     const sameFields = candidate && checker.isTypeAssignableTo(type, candidate.fieldsType)
       && checker.isTypeAssignableTo(candidate.fieldsType, type)
       && checker.getPropertiesOfType(type).length === checker.getPropertiesOfType(candidate.fieldsType).length;
-    return sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, among) : undefined;
+    return sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, specifications) : undefined;
   };
 
-  /** A controller reads a model whose import is the output of a later job: the cycle that the fixed job order (generators, controllers, openapi, models) forbids. */
-  const jobOrderError = (node: ts.Node, file: string, specifier: string): Error => diagnostic(node.getSourceFile(), node, '1084', `Generated input dependency cycle: the controllers job reads ${displayPath(file)}, which imports ${JSON.stringify(specifier)}, a file that a later job writes. The jobs run in the order generators, controllers, openapi, models, so the controllers job cannot read it. Move the model out of what the controllers reach.`);
-
-  /** Runs a controller read. A controller that walks into a model left out stops in its file, with the error of the type that did not resolve or of the model read as a nested one. */
-  const reachingPendingModel = <T>(node: ts.Node, read: () => T): T => {
-    try {
-      return read();
-    } catch (error) {
-      const pending = pendingIn(errorFile(error));
-      if (pending === undefined) throw error;
-      throw jobOrderError(node, pending.file, pending.specifier);
-    }
+  /**
+   * The file a controller type reaches that a later job decides: a declaration in an excluded file, or an import that points under a
+   * later output, even where the import does not resolve yet. Any reach counts, whatever field of the file the type keeps. The
+   * controller's own file does not count as a reach.
+   */
+  const reachedLaterOutput = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): string | undefined => {
+    if (laterOutputs.length === 0) return undefined;
+    const own = node.getSourceFile().fileName;
+    const later = (symbol: ts.Symbol | undefined): string | undefined => symbol?.declarations
+      ?.map((declaration) => declaration.getSourceFile().fileName).find((file) => file !== own && (excluded.has(file) || isUnderOutputs(laterOutputs, file)));
+    let found: string | undefined;
+    const visitNode = (visited: ts.Node): void => {
+      if (found !== undefined) return;
+      if (ts.isIdentifier(visited)) {
+        const symbol = checker.getSymbolAtLocation(visited);
+        for (const declaration of symbol?.declarations ?? []) {
+          let owner: ts.Node | undefined = declaration;
+          while (owner && !ts.isImportDeclaration(owner)) owner = owner.parent;
+          const specifier = owner && ts.isImportDeclaration(owner) && ts.isStringLiteral(owner.moduleSpecifier) ? owner.moduleSpecifier.text : undefined;
+          const target = specifier?.startsWith('.') ? path.resolve(path.dirname(declaration.getSourceFile().fileName), specifier) : undefined;
+          if (target !== undefined && isUnderOutputs(laterOutputs, target)) found = target;
+        }
+        found ??= later(resolveSymbol(checker, symbol));
+      }
+      ts.forEachChild(visited, visitNode);
+    };
+    const seen = new Set<ts.Type>();
+    const visitType = (visited: ts.Type): void => {
+      if (found !== undefined || seen.has(visited)) return;
+      seen.add(visited);
+      found = later(visited.aliasSymbol) ?? later(visited.getSymbol());
+      if (found !== undefined) return;
+      for (const argument of visited.aliasTypeArguments ?? []) visitType(argument);
+      if (visited.isUnion() || visited.isIntersection()) visited.types.forEach(visitType);
+      if (checker.isArrayType(visited) || checker.isTupleType(visited)) checker.getTypeArguments(visited).forEach(visitType);
+      const declared = visited.getSymbol()?.declarations?.[0]?.getSourceFile();
+      if (!(visited.flags & ts.TypeFlags.Object) || (declared && (program.isSourceFileDefaultLibrary(declared) || declared.fileName.replace(/\\/g, '/').includes('/node_modules/')))) return;
+      for (const property of checker.getPropertiesOfType(visited)) {
+        found ??= later(property);
+        if (found === undefined && property.declarations[0]) visitType(checker.getTypeOfSymbolAtLocation(property, property.declarations[0]));
+      }
+    };
+    const syntax = typeNode ?? (ts.isTypeNode(node) ? node : undefined);
+    if (syntax) visitNode(syntax);
+    visitType(type);
+    return found;
   };
 
   const describeController = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): ModelConversionDescriptor => {
@@ -229,14 +234,15 @@ export function createContractAnalysis(
       return intact ? codecBySpec.get(intact) : undefined;
     },
     describe(type, node, typeNode) {
+      const reached = reachedLaterOutput(type, node, typeNode);
+      if (reached !== undefined) {
+        throw diagnostic(node.getSourceFile(), node, '1084', `Generated input dependency cycle: the controllers job reads ${displayPath(reached)}, a file that a later job writes or that imports one. The jobs run in the order generators, controllers, openapi, models, so the controllers job cannot read it. Move the model out of what the controllers reach.`);
+      }
       const intact = intactModel(type, node, typeNode);
       if (intact) {
         return { kind: 'reference', name: componentName(intact) };
       }
-      const left = pendingModels.size === 0 ? undefined : intactModel(type, node, typeNode, [...pendingModels.keys()]);
-      const pending = left && pendingModels.get(left);
-      if (pending) throw jobOrderError(node, pending.file, pending.specifier);
-      const descriptor = reachingPendingModel(node, () => describeController(type, node, typeNode));
+      const descriptor = describeController(type, node, typeNode);
       return syncProjections(descriptor) ?? descriptor;
     },
     modelName(type, node, typeNode) {
