@@ -1021,6 +1021,7 @@ export function generateModels(
       ...(definition.isUnion ? [code`  declare static readonly [${rtType.model.generatedModelResultBrand}]: ${variantUnion};`] : []),
       ...(definition.isUnion ? [
         code`  static [Symbol.hasInstance](value: unknown): value is ${variantUnion} {`,
+        code`    if (this !== ${identifier(className)}) return Function.prototype[Symbol.hasInstance].call(this, value);`,
         code`    return ${join((definition.variants ?? []).map((variant) => code`value instanceof ${models.model(variant)}`), code` || `)};`,
         code`  }`,
       ] : []),

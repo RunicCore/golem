@@ -1074,8 +1074,7 @@ test('an inline response narrows an inherited oneOf property to one of its varia
   const animal = object({ kind: text }, { required: ['kind'] });
   const variant = (tag: string, own: Record<string, unknown>): Record<string, unknown> =>
     ({ allOf: [ref('Animal'), object({ kind: { const: tag }, ...own }, { required: ['kind'] })] });
-  const document = componentDocument('Placeholder', {
-    Placeholder: object({}),
+  const document = componentDocument('Base', {
     Animal: animal,
     Cat: variant('cat', { lives: { type: 'integer' } }),
     Dog: variant('dog', { bark: { type: 'boolean' } }),

@@ -338,9 +338,13 @@ test('a variant shared by two discriminated unions gets both union classes, in e
     // `instanceof` on a union class narrows to its variants, the shared one included.
     const consumer = path.join(output, 'narrow-union.ts');
     writeFileSync(consumer, [
-      `import { Cat${suffix}Model, Dog${suffix}Model, Feline${suffix}Model, Pet${suffix}Model } from './index.js';`,
+      `import { Cat${suffix}Model, Dog${suffix}Model, Feline${suffix}Model, Owner${suffix}Model, Pet${suffix}Model } from './index.js';`,
       `export function feline(value: unknown): Cat${suffix}Model | undefined { return value instanceof Feline${suffix}Model ? value : undefined; }`,
       `export function pet(value: unknown): Cat${suffix}Model | Dog${suffix}Model | undefined { return value instanceof Pet${suffix}Model ? value : undefined; }`,
+      // A variant instance is a value of each union class that selects it, also as a field of another model.
+      `export const asPet: Pet${suffix}Model = new Cat${suffix}Model({ kind: 'feline', name: 'Miso' });`,
+      `export const asFeline: Feline${suffix}Model = new Cat${suffix}Model({ kind: 'tabby', name: 'Miso' });`,
+      `export const owner = new Owner${suffix}Model({ pet: new Cat${suffix}Model({ kind: 'feline', name: 'Miso' }) });`,
       '',
     ].join('\n'));
     compileGeneratedSdk(output, [consumer], { strict: true });
@@ -361,6 +365,12 @@ test('a variant shared by two discriminated unions gets both union classes, in e
     const dog = decodeGeneratedModel(PetModel, { kind: 'canine', bark: true });
     assert.deepEqual([cat, dog, tabby].map(value => value instanceof PetModel), [true, true, true]);
     assert.deepEqual([cat, dog, tabby].map(value => value instanceof FelineModel), [true, false, true]);
+    // A value is an instance only through a variant class: the tag alone, or a look-alike class, is not enough.
+    class Lookalike { readonly kind = 'feline'; readonly name = 'Miso'; }
+    assert.deepEqual([{ kind: 'feline', name: 'Miso' }, new Lookalike()].map(value => value instanceof PetModel), [false, false]);
+    // A handwritten subclass of a union class tests its own prototype chain, not the variants of the union.
+    class Handwritten extends (PetModel as unknown as new () => object) {}
+    assert.deepEqual([cat instanceof Handwritten, new Handwritten() instanceof Handwritten], [false, true]);
     // A tag that another union maps is not one of this union's.
     assert.throws(() => decodeGeneratedModel(FelineModel, { kind: 'feline', name: 'Miso' }));
     assert.throws(() => decodeGeneratedModel(PetModel, { kind: 'tabby', name: 'Miso' }));
