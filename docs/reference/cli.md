@@ -163,7 +163,6 @@ The build sets some arguments itself. Passing one stops the build with `golem bu
 | `--tsBuildInfoFile`, `--incremental` | Golem keeps no TypeScript build state: it compares each output with the file on disk | Leave it out. A build with nothing changed writes no file |
 | `--outDir` | The emit program writes into the `outDir` of the tsconfig | Set `outDir` in the tsconfig, or pass `-p` a tsconfig that extends it and sets another `outDir` |
 | `--listEmittedFiles` | Golem writes the outputs itself and prints no list of them | List the files in `outDir` after the build |
-| `--rootDir` | Golem lays out its outputs and the import paths of the declarations from the `rootDir` of the tsconfig | Set it in `tsconfig.json` |
 | `--baseUrl` | Golem reads the `baseUrl` and `paths` of the tsconfig to give each import the path Node loads | Set it in `tsconfig.json` |
 | `--composite` | The emit program is not a composite build, and the check program must report what it reports | Set it in `tsconfig.json` |
 | `--outFile` | The emit program writes one file per source into the `outDir` of the tsconfig | Set it in `tsconfig.json` |
@@ -196,7 +195,11 @@ Like `tsc`, the build emits JavaScript after a failed check unless `noEmitOnErro
 
 ### Output folders
 
-The build stops before it writes when an output would land outside its folder. The folder is `outDir` for JavaScript and maps, and `declarationDir`, else `outDir`, for declarations. This happens when a source lies outside the `rootDir`, or outside the project folder when you set no `rootDir`. The message is `golem build would write <file> outside <folder>, because a source of <tsconfig> is outside its rootDir or, with no rootDir, outside the project folder.` Set `rootDir` to a folder that holds every source.
+The compiler decides where each output goes. The build writes every file at the path that `tsc -p` gives it. JavaScript and maps go below `outDir`. Declarations go below `declarationDir`, else `outDir`.
+
+The layout starts at `rootDir`. Without a `rootDir`, it starts at the folder of the tsconfig. Set `rootDir` in the tsconfig, or pass `--rootDir <folder>`. The build forwards the argument to the compiler, as `tsc` takes it.
+
+The build stops before it writes when an output would land outside its folder. This happens when a source lies outside the `rootDir`, or outside the project folder when you set no `rootDir`. The message is `golem build would write <file> outside <folder>, because a source of <tsconfig> is outside its rootDir or, with no rootDir, outside the project folder.` Set `rootDir` to a folder that holds every source.
 
 ### What the tsconfig needs
 
