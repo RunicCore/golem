@@ -145,15 +145,16 @@ const PLAIN_CONTROLLER = [
   '  @Post() model(@Body() input: TPaymentInput): number { return 1; }',
   "  @Post() modelField(@Body('input') input: TPaymentInput): number { return 1; }",
   "  @Post() field(@Body('note') note: string, @Query('page') page: number): number { return 1; }",
+  '  @Post() either(@Query() filter: TPaymentInput | { page: number }): number { return 1; }',
   '}',
 ].join('\n');
 
 for (const mode of ['error', 'warn'] as const) {
   test(`a @Body() or @Query() parameter that is not a golem model, whole or one field, gets RUNM1081 with its position, ${mode === 'warn' ? 'a warning with nonModelInputs: warn' : 'an error by default'}; a model and a model field are silent`, (t) => {
-    // protects: T-258 R-13 a body or query input the interceptor rejects is reported at build
+    // protects: T-258 R-13 a body or query input the interceptor rejects is reported at build, a union-typed @Query() (T-377) included
     const root = paymentsProject(t, { 'src/plain.controller.ts': PLAIN_CONTROLLER });
     const severity = mode === 'warn' ? 'warning' : 'error';
-    const sites = [['Body', 'PlainInput', 6, 32], ['Query', '{ page: number }', 7, 34], ['Body', 'TPaymentInput[][]', 8, 34], ['Body', 'string', 11, 37], ['Query', 'number', 11, 66]] as const;
+    const sites = [['Body', 'PlainInput', 6, 32], ['Query', '{ page: number }', 7, 34], ['Body', 'TPaymentInput[][]', 8, 34], ['Body', 'string', 11, 37], ['Query', 'number', 11, 66], ['Query', 'TPaymentInput | { page: number }', 12, 35]] as const;
     assert.deepEqual(scan(root, true, mode).diagnostics.map(({ code, severity, file, line, column, message }) => ({ code, severity, file, line, column, message })),
       sites.map(([decorator, type, line, column]) => ({ code: 'RUNM1081', severity, file: 'src/plain.controller.ts', line, column, message: notAModel(decorator, type, mode) })));
   });
