@@ -35,13 +35,13 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 
 | Package | Peer dependencies |
 | --- | --- |
-| `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <7 || >=7.1.0-0 <8` |
-| `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <7 || >=7.1.0-0 <8` |
+| `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` |
+| `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` |
 | `@exprtlabs/golem-openapi` | none, add `typescript` to compile the SDK |
 
 `@exprtlabs/golem` has only optional peer dependencies:
 
-- `typescript` `>=6.0.0 <7 || >=7.1.0-0 <8`, for `golem build`, the plugins and the loader
+- `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8`, for `golem build`, the plugins and the loader
 - `vite` `>=5`, for the Vite plugin
 - `esbuild` `^0.25.12`, for the esbuild plugin
 - `mobx` `^6.13.0`, for MobX models
