@@ -4,7 +4,8 @@ import path from 'node:path';
 import type { Plugin, ViteDevServer } from 'vite';
 
 import { isGeneratedModelFile } from './generated-paths.js';
-import { BUNDLER_TYPESCRIPT_FILE, NODE_MODULES, openRewriteProject, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
+import { BUNDLER_TYPESCRIPT_FILE, openRewriteProject, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
+import { isInstalledFile } from './type-analysis/path-identity.js';
 
 /**
  * Vite plugin that scans each TypeScript module with the project's own TypeScript, against the golem.yaml named by
@@ -117,7 +118,7 @@ export function golem(options: GolemHostOptions = {}): Plugin {
       for (const event of ['add', 'change', 'unlink'] as const) devServer.watcher.on(event, fileChanged);
     },
     async transform(code, id) {
-      if (id.includes('?') || id.startsWith('\0') || !BUNDLER_TYPESCRIPT_FILE.test(id) || NODE_MODULES.test(id)) return undefined;
+      if (id.includes('?') || id.startsWith('\0') || !BUNDLER_TYPESCRIPT_FILE.test(id) || isInstalledFile(id)) return undefined;
       const rewriting = await open();
       let rewritten: ReturnType<RewriteProject['rewrite']>;
       try {

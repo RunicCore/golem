@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url';
 
-import { NODE_MODULES, openRewriteProject, withInlineSourceMap } from './rewrite-host.js';
+import { openRewriteProject, withInlineSourceMap } from './rewrite-host.js';
+import { isInstalledFile } from './type-analysis/path-identity.js';
 import type { RewriteProject } from './rewrite-host.js';
 
 /**
@@ -57,7 +58,7 @@ export async function resolve(specifier: string, context: ResolveContext, nextRe
 export async function load(url: string, context: LoadContext, nextLoad: NextLoad): Promise<LoadResult> {
   if (!url.startsWith('file:')) return nextLoad(url, context);
   const file = fileURLToPath(url);
-  if (!TYPESCRIPT_FILE.test(file) || NODE_MODULES.test(file)) return nextLoad(url, context);
+  if (!TYPESCRIPT_FILE.test(file) || isInstalledFile(file)) return nextLoad(url, context);
 
   const rewriting = await projectOfThisProcess();
   const loaded = await nextLoad(url, context);

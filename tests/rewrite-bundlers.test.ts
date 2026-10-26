@@ -56,18 +56,19 @@ interface Bundler {
   readonly name: string;
   /** Vite's own esbuild step strips these, and leaves `.cts` alone. */
   readonly extensions: readonly string[];
-  bundle(root: string, entry: string, outDir: string, options?: GolemHostOptions): Promise<void>;
+  bundle(root: string, entry: string, outDir: string, options?: GolemHostOptions, preserveSymlinks?: boolean): Promise<void>;
 }
 
 const BUNDLERS: readonly Bundler[] = [
   {
     name: 'vite',
     extensions: ['.ts', '.mts', '.tsx'],
-    async bundle(root, entry, outDir, options) {
+    async bundle(root, entry, outDir, options, preserveSymlinks) {
       await vite({
         root,
         configFile: false,
         logLevel: 'silent',
+        resolve: { preserveSymlinks: preserveSymlinks === true },
         plugins: [vitePlugin(options)],
         build: { lib: { entry, formats: ['es'], fileName: () => 'main.mjs' }, outDir, emptyOutDir: true, sourcemap: true, minify: false },
       });
@@ -76,9 +77,10 @@ const BUNDLERS: readonly Bundler[] = [
   {
     name: 'esbuild',
     extensions: ['.ts', '.mts', '.cts', '.tsx'],
-    async bundle(root, entry, outDir, options) {
+    async bundle(root, entry, outDir, options, preserveSymlinks) {
       await esbuild({
         absWorkingDir: root,
+        preserveSymlinks: preserveSymlinks === true,
         entryPoints: [entry],
         outfile: path.join(outDir, 'main.mjs'),
         bundle: true,
@@ -101,13 +103,13 @@ export const tag = parse<TTag>('{"label":"a"}');
 `;
 
 /** A generated project: the model source and its generated files. */
-async function generatedProject(t: TestContext, name: string, options: { readonly generate?: boolean; readonly validation?: boolean } = {}): Promise<string> {
+async function generatedProject(t: TestContext, name: string, options: { readonly generate?: boolean; readonly validation?: boolean; readonly preserveSymlinks?: boolean } = {}): Promise<string> {
   const { root } = createModelProject(t, {
     prefix: 'golem-bundler-',
     name,
     linkTypescript: true,
     packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
-    compilerOptions: { noEmit: true },
+    compilerOptions: { noEmit: true, ...(options.preserveSymlinks === true ? { preserveSymlinks: true } : {}) },
   });
   write(root, 'golem.yaml', `version: 1\nmobx: false\nvalidation: ${options.validation === true}\nmodels:\n  root: .\n`);
   copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
@@ -148,11 +150,11 @@ async function changeMoney(root: string): Promise<void> {
 }
 
 /** The project's files and their mtimes, taken before a build and compared after it: a build edits no source. */
-async function build(bundler: Bundler, t: TestContext, root: string, entry: string, options?: GolemHostOptions): Promise<string> {
+async function build(bundler: Bundler, t: TestContext, root: string, entry: string, options?: GolemHostOptions, preserveSymlinks?: boolean): Promise<string> {
   const outDir = createFixtureProject(t, 'golem-bundle-out-');
   const before = snapshotFilesystem(root);
   try {
-    await bundler.bundle(root, entry, outDir, options);
+    await bundler.bundle(root, entry, outDir, options, preserveSymlinks);
   } finally {
     assert.deepEqual(snapshotFilesystem(root), before, `${bundler.name} changed a file of the project`);
   }
@@ -270,10 +272,13 @@ for (const bundler of BUNDLERS) {
   });
 }
 
-/** A workspace package symlinked into the project's node_modules: its real path is outside the project root and outside node_modules. */
-function symlinkedPackage(t: TestContext, root: string): void {
+/**
+ * A workspace package symlinked into the project's node_modules: its real path is outside the project root and outside node_modules.
+ * With `preserveSymlinks` the package finds the runtime through the project's node_modules, as a workspace install gives it: a runtime of its own would be a second instance.
+ */
+function symlinkedPackage(t: TestContext, root: string, preserveSymlinks = false): void {
   const workspacePackage = createFixtureProject(t, 'golem-bundler-workspace-package-');
-  linkProjectPackages(workspacePackage, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  if (!preserveSymlinks) linkProjectPackages(workspacePackage, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   write(workspacePackage, 'package.json', JSON.stringify({ name: 'workspace-lib', type: 'module', exports: './lib.ts' }));
   write(workspacePackage, 'lib.ts', `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`);
   linkProjectPackages(root, { 'workspace-lib': workspacePackage });
@@ -296,6 +301,15 @@ for (const bundler of BUNDLERS) {
     const root = await generatedProject(t, `${bundler.name}-symlinked-package`);
     symlinkedPackage(t, root);
     const bundle = await build(bundler, t, root, 'src/linked.ts');
+    const result = await command(root, process.execPath, [bundle]);
+    assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
+  });
+
+  test(`${bundler.name}: with preserveSymlinks, a parse call in a workspace package symlinked into node_modules is rewritten and the bundle runs`, async (t) => {
+    // protects: T-382 a linked package keeps its node_modules path under preserveSymlinks and was skipped
+    const root = await generatedProject(t, `${bundler.name}-preserved-symlink`, { preserveSymlinks: true });
+    symlinkedPackage(t, root, true);
+    const bundle = await build(bundler, t, root, 'src/linked.ts', undefined, true);
     const result = await command(root, process.execPath, [bundle]);
     assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
   });
