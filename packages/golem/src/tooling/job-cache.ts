@@ -19,7 +19,7 @@ export interface JobRecord {
   readonly providerCode: string;
   /** JSON of the job's resolved options. */
   readonly options: string;
-  /** Every input, by the digest it had when the job read it: a file's content, the file listing of a directory under the golem.yaml's directory, `directory` for one outside it, `missing` for an absent path. A reported watch input the job never announced has the digest it had when the job returned. */
+  /** Every input, by the digest it had when the job read it: a file's content, the file listing of a directory under the golem.yaml's directory, `directory` for one outside it, `missing` for an absent path, `changed-during-run` for a reported input the job never announced and that changed while the job ran. A reported watch input the job never announced, and unchanged during the run, has the digest it had when the job returned. */
   readonly inputs: Readonly<Record<string, string>>;
   /** The manifests of the jobs before it that the job received as `manifestInputs`. */
   readonly manifestInputs: readonly string[];
@@ -31,6 +31,8 @@ export interface JobRecord {
 }
 
 const MISSING = 'missing';
+/** A digest no read gives, so the next run finds the input changed and runs the job again. */
+const CHANGED_DURING_RUN = 'changed-during-run';
 const OUTSIDE_DIRECTORY = 'directory';
 const RECORDS_VERSION = 2;
 
@@ -248,6 +250,7 @@ export function jobIsCurrent(
 /** Collects the inputs of one running job, each digested when the job reads it and never later: an edit after the read changes the file's digest, so the next run reruns the job. */
 export class JobInputs {
   private readonly digests = new Map<string, string>();
+  private readonly started = Date.now();
 
   /** `excluded` is read at each call, so files an earlier job just wrote stay out of a listing. `root` is the golem.yaml's directory. */
   constructor(private readonly excluded: (filename: string) => boolean, private readonly root: string) {}
@@ -259,14 +262,28 @@ export class JobInputs {
 
   /**
    * The record's inputs. A reported watch input the job never announced was not digested at a read: it is digested now, when the
-   * job has returned, so a later change still reruns the job. `own` are the job's own outputs, which are not inputs.
+   * job has returned. If its modification time is not before the start of the job, it may have changed after the job read it, so
+   * it gets `changed-during-run` and the next run runs the job again. `own` are the job's own outputs, which are not inputs.
    */
   finish(config: GolemConfig, watchInputs: readonly string[], own: ReadonlySet<string>): Record<string, string> {
     for (const input of watchInputs) {
-      if (!own.has(path.resolve(input))) this.read(input);
+      const resolved = path.resolve(input);
+      if (own.has(resolved) || this.digests.has(resolved)) continue;
+      if (this.modifiedSinceStart(resolved)) this.digests.set(resolved, CHANGED_DURING_RUN);
+      else this.read(resolved);
     }
     return Object.fromEntries([...this.digests]
       .filter(([input]) => !own.has(input))
       .map(([input, digest]) => [recordPath(config, input), digest]));
+  }
+
+  private modifiedSinceStart(filename: string): boolean {
+    try {
+      const stat = fs.statSync(filename, { throwIfNoEntry: false });
+      return stat !== undefined && stat.mtimeMs >= this.started;
+    } catch (error) {
+      if (hasErrorCode(error, 'ENOTDIR')) return false;
+      throw error;
+    }
   }
 }
