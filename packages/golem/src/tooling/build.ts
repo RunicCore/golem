@@ -193,12 +193,13 @@ const DECLARATION_MODULE = /\.d(\.[cm]?ts)$/;
  * the edited text of those that needed an edit.
  */
 function rewriteDeclarations(session: ts.ProgramSession, project: Project, sources: readonly ts.SourceFile[], rootNames: readonly string[], flags: readonly string[], emitted: ts.MemoryEmit): ReadonlyMap<string, string> {
-  const projectFiles = new Set(sources.filter((candidate) => !candidate.isDeclarationFile).map((candidate) => candidate.fileName));
+  // The seam names a source by its resolved path; the overlay takes the program's own file name for it, as the program reads it.
+  const projectFiles = new Map(sources.filter((candidate) => !candidate.isDeclarationFile).map((candidate) => [path.resolve(candidate.fileName), candidate.fileName]));
   const declarations = new Map<string, { readonly file: string; readonly text: string }>();
   for (const [file, text] of emitted.files) {
     const kind = DECLARATION_MODULE.exec(file)?.[1];
-    const source = emitted.sources.get(file);
-    if (kind === undefined || source === undefined || !projectFiles.has(source)) continue;
+    const source = projectFiles.get(emitted.sources.get(file) ?? '');
+    if (kind === undefined || source === undefined) continue;
     declarations.set(`${source.slice(0, source.length - path.extname(source).length)}.golem-declaration${kind}`, { file, text });
   }
   if (declarations.size === 0) return emitted.files;
@@ -225,8 +226,11 @@ function settleOutputs(run: BuildRun, project: Project, sources: readonly ts.Sou
   const { emitted: record } = run;
   if (record === undefined) return;
   const local = sources.filter((source) => !source.isDeclarationFile);
-  for (const [file, source] of emitted) record.set(source, new Set([...record.get(source) ?? [], path.resolve(file)]));
-  const present = new Set(local.map((source) => source.fileName));
+  // The seam names a source by its resolved path, and the program by its own file name (with `/` on Windows): both are compared resolved.
+  const present = new Set(local.map((source) => path.resolve(source.fileName)));
+  for (const [file, source] of emitted) {
+    if (present.has(source)) record.set(source, new Set([...record.get(source) ?? [], path.resolve(file)]));
+  }
   const kept = new Set([...record].filter(([source]) => present.has(source)).flatMap(([, files]) => [...files]));
   for (const [source, files] of [...record]) {
     if (present.has(source)) continue;
