@@ -162,7 +162,9 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1313
 
-**Duplicate controller name.** Two controller classes with the same name declare a method of the same name in different files, and `@ApiOperation({ operationId })` keeps their operation IDs apart. The operation-codec registry names a method by its class and method name, so one entry would replace the other and `golem check` would report a wrong [`RUNM1072`](#runm1072) for the other class. **Fix:** Rename one controller class.
+**Duplicate controller name.** Two controller classes with the same name, in different files, each declare a method of the same name, and `@ApiOperation({ operationId })` keeps their operation IDs apart. Golem names a method by its class and method name, so one method would replace the other, and `golem check` would report a wrong [`RUNM1072`](#runm1072) for the other class.
+
+**Fix:** Rename one controller class.
 
 ### NEST1401
 
