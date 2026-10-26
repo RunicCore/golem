@@ -1,4 +1,5 @@
 import { encodeMappings, type MappingSegment, type SourceMapV3 } from './source-map.js';
+import { displayPath } from './generator-api.js';
 
 export interface RewriteEdit {
   /** UTF-16 offset into the original file text. */
@@ -48,7 +49,7 @@ function inconsistent(edit: RewriteEdit, text: string, file: string | undefined)
   const starts = lineStarts(text);
   const at = Number.isInteger(edit.start) ? Math.min(Math.max(edit.start, 0), text.length) : 0;
   const line = starts.filter((start) => start <= at).length;
-  return new Error(`golem rewrite is inconsistent${file === undefined ? '' : ` for ${file}`} at line ${line}: the edit at ${edit.start}-${edit.end} is out of range, overlaps another edit, or no longer matches the text it expects; run golem generate`);
+  return new Error(`golem rewrite is inconsistent${file === undefined ? '' : ` for ${displayPath(file)}`} at line ${line}: the edit at ${edit.start}-${edit.end} is out of range, overlaps another edit, or no longer matches the text it expects; run golem generate`);
 }
 
 const QUOTE_ESCAPED = new RegExp("[\\\\'\\n\\r\\u2028\\u2029]", 'g');

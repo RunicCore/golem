@@ -657,7 +657,7 @@ test('a models job does not write a generated file outside its root, even beside
 
   assert.throws(
     () => applyJob(config, loadInventory(config), job, [{ path: stray, content: COMPANION_TEXT }]),
-    { message: `Generated output escapes the ${job.id} destination: ${stray}` },
+    { message: `Generated output escapes the ${job.id} destination: ${path.relative(process.cwd(), stray)}` },
   );
   assert.equal(fs.existsSync(stray), false);
 });
