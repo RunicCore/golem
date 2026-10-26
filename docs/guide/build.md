@@ -47,13 +47,21 @@ Golem needs Node.js 22.15 or newer ([requirements](/guide/install#requirements))
 npx golem build
 ```
 
-`golem build` generates first and type-checks your sources with the TypeScript in your project. Then it writes JavaScript with the calls rewritten into `outDir`. A fresh clone builds with this one command. Run the result with Node:
+`golem build` generates first and type-checks your sources with the TypeScript in your project. It starts no `tsc` process. Then it writes JavaScript with the calls rewritten into `outDir`. A fresh clone builds with this one command. Run the result with Node:
 
 ```sh
 node .build/src/main.js
 ```
 
-The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project settings](/guide/install#project-settings). The options, the import paths that the build changes and the compiler arguments that it passes on are in the [CLI reference](/reference/cli#build).
+The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project settings](/guide/install#project-settings).
+
+- It prints type errors as `tsc -p` does. It uses colors and a `Found N errors` line when the `pretty` option is true, or when stdout is a terminal and `NO_COLOR` is not set.
+- A failed check still writes JavaScript, unless `noEmitOnError` is true. The exit status is not `0` after a failed check.
+- It writes an output file only when the file changes. A build with nothing changed writes no file.
+- `--listFiles` prints the files of the program. `--generateTrace`, `--extendedDiagnostics`, `--explainFiles`, `--traceResolution` and `--diagnostics` stop the build with a message, also when the tsconfig sets them. Run `tsc -p <tsconfig> --noEmit` with the option instead.
+- Do not run `tsc -p` without `--noEmit` on the same project. It writes JavaScript with no rewrite into the same `outDir`.
+
+The options, the import paths that the build changes and the compiler arguments that it passes on are in the [CLI reference](/reference/cli#build).
 
 ## Vite
 

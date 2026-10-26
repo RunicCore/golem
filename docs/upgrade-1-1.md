@@ -60,6 +60,22 @@ In 1.0, a variant that two unions selected stopped both union classes, and the g
 
 Remove any code that depends on the warning. Run `npx golem generate` after you update.
 
+## Run diagnostic options of `tsc` with `--noEmit` {#build-options}
+
+`golem build` checks your sources in its own process and starts no `tsc`. It cannot give the output of some `tsc` options, so it stops with a message when you set one. This holds when the tsconfig sets the option and when a flag sets it:
+
+- `generateTrace`, `extendedDiagnostics`, `explainFiles`, `traceResolution` and `diagnostics`.
+- A command of `tsc`, such as `--showConfig`.
+- A file name among the arguments.
+
+Remove the option from the tsconfig or from the `golem build` command. To get its output, run `tsc -p <tsconfig> --noEmit` with the option. Do not run `tsc -p` without `--noEmit` on a project that you build with golem: it writes JavaScript with no rewrite into the same `outDir`.
+
+`golem build` also changes in these ways:
+
+- It prints `listFiles`, and it prints type errors in the pretty form only when the `pretty` option says so or when stdout is a terminal and `NO_COLOR` is not set.
+- A failed emit writes no file and exits with `1`.
+- The first build removes the `.golem/build` folder that an older golem left.
+
 ## Move to TypeScript 7.1 or 6
 
 Install one of the supported versions, then update the Golem packages:
