@@ -1009,6 +1009,15 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*the required property "x" has no value that every member accepts/,
     document: visitDocument({ m: { allOf: [object({ x: dateTime }, { required: ['x'] }), object({ x: ref('M') })] } }, { M: object({ n: text }) }),
   },
+  // protects: T-279 a union whose variants share one JSON type is disjoint from a date-time, as a single model is
+  {
+    shape: 'members that type a required property as a Date and as a union of models',
+    error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*the required property "x" has no value that every member accepts/,
+    document: visitDocument(
+      { m: { allOf: [object({ x: dateTime }, { required: ['x'] }), object({ x: { oneOf: [ref('M'), ref('N')] } })] } },
+      { M: object({ n: text }), N: object({ k: text }) },
+    ),
+  },
   // protects: T-279 members that convert one property in two ways but share a JSON type keep the conversion conflict
   {
     shape: 'members that convert one property to two different models',
@@ -1058,6 +1067,15 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     document: visitDocument(
       { e: { type: 'array', items: { allOf: [object({ x: dateTime }, { required: ['x'] }), object({ x: ref('M') })] } } },
       { M: object({ n: text }) },
+    ),
+  },
+  // protects: T-279 array items whose members convert one property to two different models keep the conversion conflict
+  {
+    shape: 'array items whose members convert a required property to two different models',
+    error: /#\/components\/schemas\/Visit\/properties\/e\/items(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
+    document: visitDocument(
+      { e: { type: 'array', items: { allOf: [object({ x: ref('M') }, { required: ['x'] }), object({ x: ref('N') })] } } },
+      { M: object({ n: text }), N: object({ k: text }) },
     ),
   },
   {
