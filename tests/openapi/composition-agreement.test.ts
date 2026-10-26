@@ -524,31 +524,6 @@ const rows: readonly Row[] = [
     }],
     rejected: [{ named: { name: 'n', lives: 'x' } }],
   },
-  {
-    // protects: T-385 a variant still narrows the union that selects it
-    shape: 'a derived component narrows an inherited oneOf property to one of its variants',
-    root: 'Derived',
-    document: componentDocument('Derived', {
-      Animal: object({ kind: text }, { required: ['kind'] }),
-      Cat: { allOf: [ref('Animal'), object({ kind: { const: 'cat' }, lives: { type: 'integer' } }, { required: ['kind'] })] },
-      Dog: { allOf: [ref('Animal'), object({ kind: { const: 'dog' }, bark: { type: 'boolean' } }, { required: ['kind'] })] },
-      Pet: {
-        oneOf: [ref('Cat'), ref('Dog')],
-        discriminator: { propertyName: 'kind', mapping: { cat: '#/components/schemas/Cat', dog: '#/components/schemas/Dog' } },
-      },
-      Base: object({ pet: ref('Pet'), pets: { type: 'array', items: ref('Pet') } }),
-      Derived: { allOf: [ref('Base'), object({ pet: ref('Cat'), pets: { type: 'array', items: ref('Cat') } })] },
-    }),
-    accepted: [{
-      wire: { pet: { kind: 'cat', lives: 9 }, pets: [{ kind: 'cat', lives: 1 }] },
-      model: ({ CatModel }) => ({
-        pet: construct(CatModel, { kind: 'cat', lives: 9 }),
-        pets: [construct(CatModel, { kind: 'cat', lives: 1 })],
-      }),
-    }],
-    // The base admits a dog; JSON Schema AND with the derived member leaves only the cat.
-    rejected: [{ pet: { kind: 'cat', lives: 'x' } }, { pet: { kind: 'dog', bark: true } }],
-  },
   // Arrays and tuples that convert alike combine by their items, so items that differ in null or required names agree.
   {
     shape: 'a derived component narrows an inherited array of nullable date-times to date-times',
@@ -1093,3 +1068,29 @@ for (const { shape, error: expected, document } of stopped) {
     );
   });
 }
+
+// protects: T-385 a variant still narrows the union that selects it, as it did when the variant extended the union class
+test('an inline response narrows an inherited oneOf property to one of its variants', async t => {
+  const animal = object({ kind: text }, { required: ['kind'] });
+  const variant = (tag: string, own: Record<string, unknown>): Record<string, unknown> =>
+    ({ allOf: [ref('Animal'), object({ kind: { const: tag }, ...own }, { required: ['kind'] })] });
+  const document = componentDocument('Placeholder', {
+    Placeholder: object({}),
+    Animal: animal,
+    Cat: variant('cat', { lives: { type: 'integer' } }),
+    Dog: variant('dog', { bark: { type: 'boolean' } }),
+    Pet: {
+      oneOf: [ref('Cat'), ref('Dog')],
+      discriminator: { propertyName: 'kind', mapping: { cat: '#/components/schemas/Cat', dog: '#/components/schemas/Dog' } },
+    },
+    Base: object({ pet: ref('Pet'), pets: { type: 'array', items: ref('Pet') } }),
+  });
+  const paths = requireRecord(document.paths, 'paths');
+  paths['/root'] = { get: { operationId: 'getRoot', responses: { 200: { description: 'ok', content: { 'application/json': {
+    schema: { allOf: [ref('Base'), object({ pet: ref('Cat'), pets: { type: 'array', items: ref('Cat') } })] },
+  } } } } } };
+  const output = path.join(createFixtureProject(t, 'golem-composition-variant-'), 'sdk');
+  const result = await generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
+  assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+});
