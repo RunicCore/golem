@@ -152,15 +152,22 @@ function disjoint(sets: readonly (readonly DiscriminatorValue[])[]): boolean {
   return true;
 }
 
-/** A required literal tag whose values are disjoint across the alternatives. */
-export function objectDiscriminator(alternatives: readonly ObjectTypeDescriptor[]): VariantDispatch | undefined {
-  if (alternatives.length === 0) return undefined;
-  const tags = alternatives.map(literalDiscriminator);
+/**
+ * The first property of the first alternative that every alternative requires with literal values, when no value is shared. `tags` holds
+ * each alternative's required literal properties and their values; the model generator reads them from descriptors, the rewrite scan from types.
+ */
+export function sharedTag(tags: readonly ReadonlyMap<string, readonly DiscriminatorValue[]>[]): VariantDispatch | undefined {
+  if (tags.length === 0) return undefined;
   for (const property of tags[0].keys()) {
     const values = tags.map((tag) => tag.get(property) ?? []);
     if (disjoint(values)) return { property, values };
   }
   return undefined;
+}
+
+/** A required literal tag whose values are disjoint across the alternatives. */
+export function objectDiscriminator(alternatives: readonly ObjectTypeDescriptor[]): VariantDispatch | undefined {
+  return sharedTag(alternatives.map(literalDiscriminator));
 }
 
 /** Indices of the union variants that hold a value (not null or undefined). */

@@ -3,7 +3,9 @@ import path from 'node:path';
 import * as ts from './typescript-ns.js';
 import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, isRecord } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
-import { OPERATION_METHOD_KEYS_EXPORT, nestUnionCodecId, operationCodecRegistryPath, operationCodecSlot, operationSlotCodec, type OperationMethodCodecs } from './generated-paths.js';
+import { OPERATION_METHOD_KEYS_EXPORT, operationCodecRegistryPath, operationCodecSlot, operationSlotCodecs, type OperationMethodCodecs } from './generated-paths.js';
+import { sharedTag } from './union-conversion.js';
+import type { DiscriminatorValue } from '../model.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import { evaluateStaticValue } from './static-value.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
@@ -45,7 +47,8 @@ interface NestCodecSite {
   readonly decorator: string;
   /** The model type as the parameter spells it, array wrappers removed. */
   readonly label: string;
-  readonly id: string;
+  /** The id of the model, or the ids of the models of a union. */
+  readonly ids: readonly string[];
   /** The name of the method the parameter belongs to, spelled as the generated registry spells it. Undefined for a parameter of a constructor or a function, which no route holds. */
   readonly method: string | undefined;
   /** The slot of that method's registry entry that holds `id` (`operationCodecSlot`). */
@@ -553,18 +556,16 @@ interface NestBinding {
   readonly union?: NestUnion;
 }
 
-type NestTagValue = string | number | boolean;
-
 /** A union of golem models and the property whose literal value picks the member. */
 interface NestUnion {
   readonly property: string;
-  readonly variants: readonly { readonly values: readonly NestTagValue[]; readonly id: string; readonly name: ts.EntityName }[];
+  readonly variants: readonly { readonly values: readonly DiscriminatorValue[]; readonly id: string; readonly name: ts.EntityName }[];
 }
 
 /** The values of a literal type or a union of literals; undefined for any other type. */
-function literalTagValues(checker: ts.TypeChecker, type: ts.Type): NestTagValue[] | undefined {
+function literalTagValues(checker: ts.TypeChecker, type: ts.Type): DiscriminatorValue[] | undefined {
   const members = type.isUnion() ? type.types : [type];
-  const values: NestTagValue[] = [];
+  const values: DiscriminatorValue[] = [];
   for (const member of members) {
     if ((member.flags & ts.TypeFlags.StringLiteral) !== 0) values.push((member as ts.StringLiteralType).value);
     else if ((member.flags & ts.TypeFlags.NumberLiteral) !== 0) values.push((member as ts.NumberLiteralType).value);
@@ -574,22 +575,12 @@ function literalTagValues(checker: ts.TypeChecker, type: ts.Type): NestTagValue[
   return values.length === 0 ? undefined : values;
 }
 
-/**
- * The first property of the first member that every member requires with a literal type, when no value is shared: the rule that
- * model generation applies to a union field (`objectDiscriminator`).
- */
-function unionTag(checker: ts.TypeChecker, members: readonly ts.TypeNode[]): { readonly property: string; readonly values: readonly (readonly NestTagValue[])[] } | undefined {
-  const tags = members.map((member) => new Map(checker.getPropertiesOfType(checker.getTypeFromTypeNode(member)).flatMap((property) => {
+/** The tag that tells the members of a union apart, by the rule of model generation (`sharedTag`), read from the members' types. */
+function unionTag(checker: ts.TypeChecker, members: readonly ts.TypeNode[]): { readonly property: string; readonly values: readonly (readonly DiscriminatorValue[])[] } | undefined {
+  return sharedTag(members.map((member) => new Map(checker.getPropertiesOfType(checker.getTypeFromTypeNode(member)).flatMap((property) => {
     const values = (property.flags & ts.SymbolFlags.Optional) === 0 ? literalTagValues(checker, propertyType(checker, property, member)) : undefined;
     return values === undefined ? [] : [[property.getName(), values] as const];
-  })));
-  for (const property of tags[0]?.keys() ?? []) {
-    const values = tags.map((tag) => tag.get(property));
-    if (!values.every((each): each is NestTagValue[] => each !== undefined)) continue;
-    const all = values.flat();
-    if (new Set(all).size === all.length) return { property, values };
-  }
-  return undefined;
+  }))));
 }
 
 /** A parameter type that is a union of golem models (written out, or through an alias of a union): the models, and the tag that picks one when there is one. */
@@ -615,7 +606,7 @@ function nestUnionBinding(
   return {
     ...unbound,
     golemModel: true,
-    id: nestUnionCodecId(variants.map((variant) => variant.id)),
+    id: '',
     union: { property: tag.property, variants: variants.map((variant, index) => ({ values: tag.values[index]!, id: variant.id, name: variant.name! })) },
   };
 }
@@ -871,14 +862,14 @@ function scanFile(
     }
   };
 
-  /** A `@Body()` or `@Query()` parameter of a model gets `@nestModelCodec(id)` before its name, and one of a tagged union of models `@nestModelUnion(id, tag, variants)`. */
+  /** A `@Body()` or `@Query()` parameter of a model gets `@nestModelCodec(id)` before its name, and one of a tagged union of models `@nestModelUnion(tag, variants)`. */
   const visitParameter = (parameter: ts.ParameterDeclaration): void => {
     const names = decoratorNames(parameter);
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR) || hasDecorator(names, NEST_UNION_DECORATOR)) return;
     const typeNode = parameter.type;
     const { id, golemModel, label, array, name, defaultExport, union, untaggedUnion } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies, unions: true }, typeNode);
-    if (id === '') {
+    if (id === '' && union === undefined) {
       const notAModel = (reason: string): GolemDiagnostic => locate(root, file, typeNode, CODE_NEST_NOT_A_MODEL,
         `${label} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${untaggedUnion
           ? "Give each model a required literal field with a value of its own, such as kind: 'circle', or bind one field of a model type."
@@ -893,7 +884,7 @@ function scanFile(
       return;
     }
     if (union) {
-      scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_UNION_DECORATOR}(${JSON.stringify(id)}, ${JSON.stringify(union.property)}, ${JSON.stringify(union.variants.map((variant) => [variant.values, variant.id]))}${array ? ', true' : ''}) `));
+      scan.edits.push(insertion(parameter.name.getStart(file), `@${REWRITE_IMPORT_PREFIX}${NEST_UNION_DECORATOR}(${JSON.stringify(union.property)}, ${JSON.stringify(union.variants.map((variant) => [variant.values, variant.id]))}${array ? ', true' : ''}) `));
       importOf(scan, root, file, parameter, NEST_UNION_DECORATOR, NEST_MODULE);
       for (const variant of union.variants) loadCodecModule(scan, { root, checker, keys, file }, variant.id, variant.name);
     } else {
@@ -903,7 +894,7 @@ function scanFile(
     }
     const { line, character } = file.getLineAndCharacterOfPosition(parameter.type.getStart(file));
     const method = ts.isMethodDeclaration(parameter.parent) ? parameter.parent.name.getText(file) : undefined;
-    scan.nestSites.push({ file: portable(root, file.fileName), line: line + 1, column: character + 1, decorator, label, id, method, slot: nestSlot(checker, parameter, decorator) });
+    scan.nestSites.push({ file: portable(root, file.fileName), line: line + 1, column: character + 1, decorator, label, ids: union === undefined ? [id] : union.variants.map((variant) => variant.id), method, slot: nestSlot(checker, parameter, decorator) });
   };
 
   /** A class method that returns a model gets `@nestModelReturn(id[, true])` before its other decorators. */
@@ -1104,9 +1095,10 @@ export interface ProgramScan {
   readonly nestCodecSites: readonly NestCodecSite[];
 }
 
-/** The plain data of a literal the generator wrote: nested objects and strings. Anything else is no data. */
+/** The plain data of a literal the generator wrote: nested objects, arrays and strings. Anything else is no data. */
 function literalData(node: ts.Expression): unknown {
   if (ts.isStringLiteralLike(node)) return node.text;
+  if (ts.isArrayLiteralExpression(node)) return node.elements.map(literalData);
   if (!ts.isObjectLiteralExpression(node)) return undefined;
   const data: Record<string, unknown> = {};
   for (const property of node.properties) {
@@ -1130,6 +1122,11 @@ function registryMethods(session: ts.ProgramSession, filename: string, text: str
   return new Map();
 }
 
+/** Whether the registry holds the models of the site, in any order. */
+function sameIds(held: readonly string[] | undefined, ids: readonly string[]): boolean {
+  return held !== undefined && held.length === ids.length && ids.every((id) => held.includes(id));
+}
+
 /**
  * The `@Body()` and `@Query()` parameters whose model the generated operation codecs do not hold in the slot of the parameter's own method. The id the scan stamps and the id the controllers job writes come
  * from separate analyses, so a mismatch means the decorators and the generated operations disagree. The registry names a route by the controller class that serves it, which an inherited route does not share with the class that
@@ -1150,7 +1147,7 @@ export function checkNestCodecs(roots: string | readonly string[], scanned: { re
     for (const { filename, text } of registries) methods.push(...registryMethods(session, filename, text));
   }
   return scanned.nestCodecSites
-    .filter((site) => site.method === undefined || !methods.some(([key, entry]) => key.endsWith(`.${site.method}`) && operationSlotCodec(entry, site.slot) === site.id))
+    .filter((site) => site.method === undefined || !methods.some(([key, entry]) => key.endsWith(`.${site.method}`) && sameIds(operationSlotCodecs(entry, site.slot), site.ids)))
     .map((site) => ({
       code: CODE_NEST_REGISTRY,
       severity: GolemDiagnosticSeverity.Error,

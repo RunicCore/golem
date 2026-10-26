@@ -297,16 +297,17 @@ test('the operation-codec check passes when the registry holds every id the scan
   const registry = path.join(root, 'src/generated/operation-codecs.ts');
 
   assert.equal(result.nestCodecSites.length, 6, 'one site for each parameter that gained a codec');
-  const { id, label, decorator } = result.nestCodecSites[0]!;
+  const { ids, label, decorator } = result.nestCodecSites[0]!;
   assert.deepEqual(result.nestCodecSites.map(site => site.file), Array(6).fill(CONTROLLER));
-  assert.match(id, /^TPaymentInput_[0-9a-f]{8}$/);
+  assert.equal(ids.length, 1);
+  assert.match(ids[0]!, /^TPaymentInput_[0-9a-f]{8}$/);
   assert.equal(label, 'TPaymentInput');
   assert.equal(decorator, 'Body');
 
   const slotOf = (site: { readonly method: string | undefined; readonly slot: string }): string => `${site.method}:${site.slot}`;
   assert.deepEqual(result.nestCodecSites.map(slotOf), ['create:input', 'createAsClass:input', 'list:query', 'createBatch:input', 'createPiped:input', 'listPiped:query']);
   const methods = (replaced?: string, misplaced?: string): string => `export const OPERATION_METHOD_KEYS = ${JSON.stringify(Object.fromEntries(result.nestCodecSites.map(site => [
-    `PaymentsController.${site.method}`, { [site.method === misplaced ? 'input' : site.slot]: site.method === 'create' && replaced ? replaced : site.id },
+    `PaymentsController.${site.method}`, { [site.method === misplaced ? 'input' : site.slot]: site.method === 'create' && replaced ? replaced : site.ids[0] },
   ])), null, 2)} as const;\n`;
   fs.mkdirSync(path.dirname(registry), { recursive: true });
   fs.writeFileSync(registry, methods());
