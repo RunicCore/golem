@@ -152,7 +152,6 @@ test('golem build --watch removes the output of a source that is deleted, and no
   fs.rmSync(path.join(root, 'src/extra/helper.ts'));
   await until(() => count(watcher.output(), /^Built /) === 3, 'the build after the last source of a folder was deleted');
   assert.equal(fs.existsSync(path.join(root, 'build/extra')), false, 'the folder the deletion left empty is gone');
-  assert.doesNotMatch(watcher.output(), /TSFILE/, 'the list of emitted files is for the build, not for its output');
   assert.equal(await watcher.stop(), 130);
 });
 

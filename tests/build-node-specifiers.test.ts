@@ -1,4 +1,4 @@
-// lane: typescript6 the build.ts emit of the edited stage through the TypeScript 6 `tsc`: Node runs what a Bundler project builds to
+// lane: typescript6 the build.ts emit of the rewritten text through the TypeScript 6 compiler: Node runs what a Bundler project builds to
 // golem build writes the import paths Node loads: a Bundler project (no `.js` on its relative imports, an alias with no `baseUrl`,
 // deep paths into packages with no `exports` map) builds to JavaScript that Node runs as ESM and to declarations that a NodeNext consumer resolves. The unit text of each specifier is
 // tests/node-specifiers.test.ts; this file proves the build applies it, in the emitted code and in its source maps.

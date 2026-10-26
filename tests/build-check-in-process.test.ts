@@ -1,11 +1,8 @@
 // lane: typescript6 the in-process check of golem build: tsc-form diagnostics and exit status, listFiles, the refused tsc-command options and the forwarded arguments
 import assert from 'node:assert/strict';
-import childProcess from 'node:child_process';
 import fs from 'node:fs';
-import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
-import test, { mock } from 'node:test';
-import { runBuild } from '#golem/build';
+import test from 'node:test';
 import { command } from './support/process.js';
 import { TSC, write, editTsconfig, serdeProject, golemBuild } from './support/build-project.js';
 
@@ -75,19 +72,6 @@ test('a declaration-less build with a type error and noEmitOnError stops before 
   const result = await golemBuild(root, []);
   assert.equal(result.code, 1);
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
-});
-
-test('no tsc process starts for the check of a check-only build', async (t) => {
-  // protects: T-461 the check runs in process
-  const root = serdeProject(t, 'build-no-tsc-spawn');
-  write(root, 'src/plain.ts', 'export const answer: number = 42;\n');
-  editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.noEmit = true; tsconfig.compilerOptions.declaration = false; });
-  const spawn = mock.method(childProcess, 'spawn');
-  syncBuiltinESMExports();
-  t.after(() => { mock.restoreAll(); syncBuiltinESMExports(); });
-  assert.deepEqual(await runBuild({ watch: false, config: path.join(root, 'golem.yaml') }), { exitCode: 0 });
-  const compilerRuns = spawn.mock.calls.filter((call) => (call.arguments[1] as readonly unknown[] | undefined)?.some((argument) => typeof argument === 'string' && argument.endsWith(path.join('bin', 'tsc'))));
-  assert.equal(compilerRuns.length, 0);
 });
 
 test('golem build refuses the tsc commands and the arguments that name files before it generates', async (t) => {

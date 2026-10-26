@@ -1,14 +1,13 @@
-// golem build: type-checks the original sources with the project's own tsc, emits the rewritten ones from a staging copy.
+// golem build: type-checks the original sources and emits the rewritten ones, both in process.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { parseArguments } from '#golem/cli';
-import { command } from './support/process.js';
 import { corruptScans } from './support/corrupt-scan.js';
 import { assertMoneyCodec } from './support/rewritten-module.js';
 
-import { TSC, REJECTION, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
+import { REJECTION, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
 
 // Original sources are checked, rewritten sources are emitted
 
@@ -40,7 +39,6 @@ export function load(t: string) { return parse<Payment>(t); }
   });
 
   await t.test('a file whose rewritten text would not type-check builds, because the originals are checked', () => {
-    assertMoneyCodec(path.join(root, '.golem/build/tsconfig/stage/src/typed.ts'), 'the stage holds the rewritten text');
     assertMoneyCodec(path.join(root, 'build/typed.js'), 'the emitted JavaScript is the rewritten one');
   });
 
@@ -56,13 +54,6 @@ export function load(t: string) { return parse<Payment>(t); }
     const mapFile = path.join(root, 'build/plain.js.map');
     const map = JSON.parse(fs.readFileSync(mapFile, 'utf8')) as { sources: string[] };
     assert.deepEqual(map.sources.map((source) => path.resolve(path.dirname(mapFile), source)), [path.join(root, 'src/plain.ts')]);
-  });
-
-  await t.test('the project include never reaches the stage', async () => {
-    const listed = await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--listFilesOnly']);
-    const own = listed.stdout.split('\n').filter((file) => file.startsWith(root));
-    assert.ok(own.some((file) => file.endsWith('src/use.ts')));
-    assert.deepEqual(own.filter((file) => file.includes('.golem')), []);
   });
 });
 
@@ -135,11 +126,6 @@ test('a second build emits only the changed file', async (t) => {
   assert.deepEqual([...second].filter(([file, time]) => stamped.get(file) !== time).map(([file]) => file), ['use.js']);
   const built = await importBuilt(root, 'use.js');
   assert.equal(built.again, '{"currency":"EUR","value":"2"}');
-
-  // A source that leaves the program leaves the stage too.
-  fs.rmSync(path.join(root, 'src/other.ts'));
-  assert.equal((await build(root)).exitCode, 0);
-  assert.equal(fs.existsSync(path.join(root, '.golem/build/tsconfig/stage/src/other.ts')), false);
 });
 
 // The compiler's own messages and the rejected -b
@@ -166,11 +152,11 @@ test('a forwarded --noEmitOnError stops the emit after a type error, and the exi
 });
 
 test('an argument golem build sets itself is rejected with the reason and the workaround', async (t) => {
-  assert.throws(() => parseArguments(['build', '--noCheck']), { message: 'golem build sets --noCheck itself (the emit run skips the type check and the check run reports the errors); a build emits JavaScript when the check fails unless noEmitOnError is set' });
+  assert.throws(() => parseArguments(['build', '--noCheck']), { message: 'golem build sets --noCheck itself (the emit program skips the type check and the check program reports the errors); a build emits JavaScript when the check fails unless noEmitOnError is set' });
   for (const flag of ['--noEmit', '--emitDeclarationOnly', '--tsBuildInfoFile', '--incremental', '--outDir', '--listEmittedFiles']) {
     assert.throws(() => parseArguments(['build', flag, 'value']), (error: Error) => error.message.startsWith(`golem build sets ${flag} itself (`) && error.message.includes('); '), flag);
   }
-  // The stage tsconfig sets these: an argument would beat it. The tsconfig is where they are set.
+  // The emit program sets these: an argument would beat the tsconfig it reads. The tsconfig is where they are set.
   for (const flag of ['--rootDir', '--baseUrl', '--composite', '--outFile', '--declarationDir', '--sourceRoot', '--mapRoot', '--inlineSourceMap', '--inlineSources']) {
     assert.throws(() => parseArguments(['build', flag, 'value']), (error: Error) => error.message.startsWith(`golem build sets ${flag} itself (`) && error.message.endsWith('); set it in tsconfig.json'), flag);
   }
