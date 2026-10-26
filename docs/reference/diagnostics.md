@@ -160,6 +160,10 @@ An error prints its code, location when known, and message, then stops generatio
 
 **Duplicate parameter.** The same parameter (name and location) is declared more than once for one operation, or a whole `@Query()` object is declared alongside another whole-object or named query parameter. **Fix:** Remove the duplicate, or combine the fields into one contract.
 
+### NEST1313
+
+**Duplicate controller name.** Two controller classes with the same name declare a method of the same name in different files, and `@ApiOperation({ operationId })` keeps their operation IDs apart. The operation-codec registry names a method by its class and method name, so one entry would replace the other and `golem check` would report a wrong [`RUNM1072`](#runm1072) for the other class. **Fix:** Rename one controller class.
+
 ### NEST1401
 
 **Invalid info.** `info` of the controller job, or its `title` or `version` field, is missing, not an object, or not a non-empty string. **Fix:** Set `info` with a `title` and a `version` that are non-empty strings.
