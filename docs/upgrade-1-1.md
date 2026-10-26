@@ -49,9 +49,10 @@ When a script or an editor task parses golem messages, change it to read this fo
 
 ## Use `instanceof` to test a union model class {#union-model-classes}
 
-A union model class that `golem-openapi` generates (a `oneOf`, or an `anyOf` with a `discriminator`, of variants that extend one base schema) now tests its variants with `instanceof`. A variant extends the base schema, not the union class. In 1.0 a variant extended the union class.
+A union model class that `golem-openapi` generates (a `oneOf`, or an `anyOf` with a `discriminator`, of variants that extend one base schema) now tests its variants with `instanceof`. A variant extends the base schema, not the union class, and it gets its fields from that base directly. In 1.0 a variant extended the union class and inherited from it, so the prototype chain and the nominal type of a variant held the union.
 
 - `value instanceof PetModel` stays true for an instance of any variant of `Pet`. TypeScript narrows `value` to the variants.
+- A subclass that you write for a union class tests its own prototype chain, not the variants of the union.
 - A variant that two unions select now belongs to both. In 1.0 the generator wrote the warning `OPENAPI_UNION_SHARED_VARIANT` and gave neither union a class.
 - The model manifest names the base schema as the base of each variant, not the union.
 
