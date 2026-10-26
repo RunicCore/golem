@@ -20,6 +20,8 @@ export interface ContractAnalysis {
   codecId(name: string): string | undefined;
   /** Whether a controller type is a model of the project. It reads the type without leaving a projection name behind. */
   isModel(type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): boolean;
+  /** The component name of the model a controller type is, or undefined. Like `isModel`, it writes no projection name. */
+  modelName(type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): string | undefined;
   /** Codec id of the model a controller type is, even when other models share its component name. */
   modelCodecId(type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): string | undefined;
   /** Resolve a unique short name or a hashed codec id to its model spec. */
@@ -172,10 +174,17 @@ export function createContractAnalysis(
       const descriptor = describeController(type, node, typeNode);
       return syncProjections(descriptor) ?? descriptor;
     },
+    modelName(type, node, typeNode) {
+      const intact = intactModel(type, node, typeNode);
+      if (intact) return componentName(intact);
+      // A type with a written node is the root of its description, which is never a model reference; only an inferred type can be a model by its class or alias.
+      if ((typeNode ?? (ts.isTypeNode(node) ? node : undefined)) !== undefined) return undefined;
+      const found = describe.modelOf(type);
+      const name = found && componentName(found);
+      return name !== undefined && analysis.specFor(name) !== undefined ? name : undefined;
+    },
     isModel(type, node, typeNode) {
-      if (intactModel(type, node, typeNode)) return true;
-      const descriptor = describe.isolated(() => describeController(type, node, typeNode));
-      return descriptor.kind === 'reference' && analysis.specFor(descriptor.name) !== undefined;
+      return analysis.modelName(type, node, typeNode) !== undefined;
     },
   };
   return analysis;

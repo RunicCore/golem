@@ -8,6 +8,8 @@ import test, { type TestContext } from 'node:test';
 
 import { generate } from '#controllers/generator';
 import { generate as generateModels } from '#model/generator';
+import { createContractAnalysis, createProgram } from '@exprtlabs/golem/internal/type-analysis';
+import * as ts from '@exprtlabs/golem/internal/ts';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 
 interface FixtureOptions {
@@ -621,4 +623,38 @@ export class BlobsController {
   const schema = expectSchema(responseOf(document, '/blobs', 'get', '200').content?.['application/json']?.schema, 'BlobDto');
   assert.deepEqual(Object.keys(schema.properties ?? {}).sort(), ['at', 'file', 'tags']);
   assert.deepEqual(schema.properties?.file, { format: 'binary', type: 'string' });
+});
+
+test('isModel is false for a model class with a whole-value TSerde and true for the model class itself', async t => {
+  // protects: T-448 asking whether a type is a model gives the answer describe gives: a TSerde over a class value converts the whole value, so it is no model
+  const root = fixture(t, `import { Money, encodeMoney, decodeMoney } from './money.model.js';
+import type { TSerde } from '@exprtlabs/golem/tags';
+
+export class OrderDto {
+  price!: Money & TSerde<typeof encodeMoney, typeof decodeMoney>;
+  plain!: Money;
+}
+`, {
+    files: {
+      'src/money.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TMoneyBaseModel } from './money.model.generated.js';
+export type TMoney = IModel<{ cents: number }>;
+export class Money extends TMoneyBaseModel { format(): string { return String(this.cents); } }
+export function encodeMoney(value: Money): string { return value.format(); }
+export function decodeMoney(value: string): Money { throw new Error(value); }
+`,
+    },
+  });
+  writeGeneratedArtifacts((await generateModels({ root, profile: { mobx: false, validation: true } })).artifacts);
+  const { program } = createProgram([path.join(root, 'src/contracts.controller.ts'), path.join(root, 'src/money.model.ts')], root);
+  const analysis = createContractAnalysis(program, { root });
+  const checker = program.getTypeChecker();
+  const source = program.getSourceFile(path.join(root, 'src/contracts.controller.ts'))!;
+  const dto = source.statements.find(ts.isClassDeclaration) as ts.ClassDeclaration;
+  const typeOf = (name: string): { readonly type: ts.Type; readonly node: ts.Node } => {
+    const member = dto.members.find(item => (item as ts.PropertyDeclaration).name?.getText() === name)!;
+    return { type: checker.getTypeAtLocation(member), node: member };
+  };
+  assert.equal(analysis.isModel(typeOf('plain').type, typeOf('plain').node), true);
+  assert.equal(analysis.isModel(typeOf('price').type, typeOf('price').node), false);
 });

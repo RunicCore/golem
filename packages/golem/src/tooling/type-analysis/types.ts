@@ -16,6 +16,7 @@ import type { ManifestIndex } from './provenance.js';
 import type { ModelSpecification, TypeAnalysisContext } from './models.js';
 import {
   analyzeNode,
+  carriesSerdeTag,
   isAmbientOrGlobalSymbol,
   isDateType,
   isGolemTagKey,
@@ -573,8 +574,11 @@ export function descriptorBuilder(
 ): {
   (type: ts.Type, context: TypeAnalysisContext, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode): ModelConversionDescriptor;
   readonly projections: ReadonlyMap<string, ModelConversionDescriptor>;
-  /** Runs `run` and then takes back every projection name, owner and cache entry it made, so a question about a type leaves no name behind. */
-  readonly isolated: <T>(run: () => T) => T;
+  /**
+   * The model a type with no authored type node stands for, or undefined. It reads the checker and the specifications only, so asking
+   * leaves no projection name behind. A phantom tag around a single other member does not hide the model.
+   */
+  readonly modelOf: (type: ts.Type) => ModelSpecification | undefined;
 } {
   const projections = new Map<string, ModelConversionDescriptor>();
   const projectionCache = new Map<ts.Type, Map<string, string>>();
@@ -583,8 +587,9 @@ export function descriptorBuilder(
   // The type that minted each projection name. A recursive type that asks for a name another type holds takes a qualified name before its body is read.
   const projectionOwners = new Map<string, ts.Type>();
   const headNames = new Map<ts.Type, Map<string, string>>();
-  // Whether a recursive type reads the same as the holder of its plain name, per policy suffix. Kept across `snapshotNames`, so each type is read once for it.
-  const sharesPlainName = new Map<ts.Type, Map<string, boolean>>();
+  // Whether a recursive type reads the same as the holder of a plain name, by that name. Kept across `snapshotNames`, so each type is read once for it.
+  // The verdicts belong to the holder they were read against: another holder of the name (after a rollback) starts with none.
+  const sharesPlainName = new Map<string, { holder: ts.Type; verdicts: Map<ts.Type, boolean> }>();
   // The arguments of the `describe` calls that are open, so a name claim can read the type once under another name.
   const openCalls: Parameters<typeof describeType>[] = [];
   const snapshotNames = (): (() => void) => {
@@ -620,9 +625,13 @@ export function descriptorBuilder(
     // A finished projection of another type holds the plain name: when this type reads the same under its own name, the two share the plain name.
     const owner = projectionOwners.get(plain);
     if (name !== plain && owner !== undefined && owner !== type && projections.has(plain) && !modelLocations.has(plain)) {
-      const verdicts = sharesPlainName.get(type) ?? new Map<string, boolean>();
-      sharesPlainName.set(type, verdicts);
-      let shares = verdicts.get(suffix);
+      let known = sharesPlainName.get(plain);
+      if (known?.holder !== owner) {
+        known = { holder: owner, verdicts: new Map<ts.Type, boolean>() };
+        sharesPlainName.set(plain, known);
+      }
+      const { verdicts } = known;
+      let shares = verdicts.get(type);
       if (shares === undefined) {
         const restore = snapshotNames();
         describeType(...openCalls[openCalls.length - 1]!);
@@ -632,7 +641,7 @@ export function descriptorBuilder(
           return descriptor && projectionIdentity(lookup, projection, descriptor);
         };
         shares = read(name) === read(plain);
-        verdicts.set(suffix, shares);
+        verdicts.set(type, shares);
         if (shares) restore();
       }
       if (shares) {
@@ -788,6 +797,40 @@ export function descriptorBuilder(
     );
   };
 
+  /**
+   * The model a type stands for, from the authored type node (`node`), the class that extends a generated base, the alias that declares
+   * the model, or the fields it shares. It is the ladder `describeType` climbs and the answer to "is this a model?" for every caller:
+   * it reads only the checker and the specifications, so it writes no projection name, owner or cache entry.
+   */
+  const modelOf = (type: ts.Type, node: ts.TypeNode | undefined, isRoot: boolean, serde: boolean): {
+    readonly provenance: ReturnType<typeof fieldProvenance>;
+    readonly projection: boolean;
+    readonly candidates: readonly ModelSpecification[];
+    readonly classMatch: ModelSpecification | undefined;
+    readonly model: ModelSpecification | undefined;
+  } => {
+    const provenance = fieldProvenance(checker, node, specifications, manifestIndex.byProvenance);
+    const projection = provenance.projection || isPropertyMapping(type);
+    const candidates = provenance.models.filter(specification => checker.isTypeAssignableTo(type, specification.fieldsType)
+      && checker.isTypeAssignableTo(specification.fieldsType, type));
+    const classMatch = isRoot || type.isUnion() || isPropertyMapping(type) || projection
+      ? undefined
+      : modelSpecificationForClass(checker, type, specifications);
+    const projectedStructural = (): ModelSpecification | undefined => {
+      const structural = structuralModel(type);
+      return structural && !provenance.models.includes(structural) ? structural : undefined;
+    };
+    // A TSerde over a bigint or a class value converts the whole value by its codec, so the type is no model whatever class it is.
+    const serdeValue = serde && (isBigIntValueType(type) || isClassValueType(checker, type));
+    const model = serdeValue ? undefined : classMatch ?? (isRoot || type.isUnion() || isPropertyMapping(type) ? undefined
+      : projection
+        ? projectedStructural()
+        : (candidates[0]
+          ?? modelSpecificationForType(checker, type, specifications)
+          ?? (provenance.models.length > 0 ? structuralModel(type) : undefined)));
+    return { provenance, projection, candidates, classMatch, model };
+  };
+
   const describeType = (
     originalType: ts.Type,
     context: TypeAnalysisContext,
@@ -873,7 +916,8 @@ export function descriptorBuilder(
       return withMetadata({ kind: 'class-value', ...classValueReference(checker, type, context, node ?? context.declaration, stableIdentityRoot, companionOf(context.sourceFile.fileName)) } as ModelConversionDescriptor, metadata);
     }
 
-    const provenance = fieldProvenance(checker, node ?? provenanceNode ?? analysis.baseNode, specifications, manifestIndex.byProvenance);
+    const isRoot = node === context.fieldsNode;
+    const { provenance, projection, candidates, classMatch, model: localModel } = modelOf(type, node ?? provenanceNode ?? analysis.baseNode, isRoot, metadata.serde !== undefined);
     if (provenance.anonymous) {
       const alias = declaredModelAlias(provenance.anonymous);
       const foreign = alias ? foreignModelReason(alias, boundary) : undefined;
@@ -881,7 +925,6 @@ export function descriptorBuilder(
       const nested = provenance.anonymous;
       throw diagnostic(nested.getSourceFile(), nested, '1053', `Nested IModel definitions need a named, exported declaration: ${shortenedText(nested)}. Give it its own exported type alias.`);
     }
-    const projection = provenance.projection || isPropertyMapping(type);
     if (projection) {
       for (const original of provenance.models) {
         const whole = analyzeNode({ ...tagContext, sourceFile: original.sourceFile }, original.fieldsType, original.fieldsNode).metadata;
@@ -890,25 +933,9 @@ export function descriptorBuilder(
         }
       }
     }
-    const candidates = provenance.models.filter(specification => checker.isTypeAssignableTo(type, specification.fieldsType)
-      && checker.isTypeAssignableTo(specification.fieldsType, type));
     if (!projection && candidates.length > 1 && !type.isUnion()) {
       throw diagnostic(context.sourceFile, node ?? context.declaration, '1054', 'Model identity is ambiguous after type composition. Use an explicit named model reference.');
     }
-    const isRoot = node === context.fieldsNode;
-    const classMatch = isRoot || type.isUnion() || isPropertyMapping(type) || projection
-      ? undefined
-      : modelSpecificationForClass(checker, type, specifications);
-    const projectedStructural = (): ModelSpecification | undefined => {
-      const structural = structuralModel(type);
-      return structural && !provenance.models.includes(structural) ? structural : undefined;
-    };
-    const localModel = classMatch ?? (isRoot || type.isUnion() || isPropertyMapping(type) ? undefined
-      : projection
-        ? projectedStructural()
-        : (candidates[0]
-          ?? modelSpecificationForType(checker, type, specifications)
-          ?? (provenance.models.length > 0 ? structuralModel(type) : undefined)));
     const generatedName = localModel ? modelNames.get(localModel.declaration) : undefined;
     if (generatedName) {
       return withMetadata({
@@ -1227,9 +1254,9 @@ export function descriptorBuilder(
     openCalls.push([originalType, context, ...rest]);
     try { return describeType(originalType, context, ...rest); } finally { openCalls.pop(); leave(); }
   };
-  const isolated = <T>(run: () => T): T => {
-    const restore = snapshotNames();
-    try { return run(); } finally { restore(); }
+  const modelOfType = (type: ts.Type): ModelSpecification | undefined => {
+    const members = type.isIntersection() ? type.types.filter((member) => !isPhantomTagType(checker, member)) : [];
+    return modelOf(members.length === 1 ? members[0]! : type, undefined, false, carriesSerdeTag(checker, type)).model;
   };
-  return Object.assign(describe, { projections, isolated });
+  return Object.assign(describe, { projections, modelOf: modelOfType });
 }
