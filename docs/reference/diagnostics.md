@@ -72,7 +72,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1108
 
-**Lossy query flatten.** OpenAPI 3.1.2 flattens a whole `@Query()` object into independent parameters, and this object's constraints or codecs can't survive that. A union of models can't survive it either. **Fix:** Generate against OpenAPI 3.2, which keeps a whole query object as one `querystring` schema, or declare a named primitive query contract.
+**Lossy query flatten.** OpenAPI 3.1.2 flattens a whole `@Query()` object into independent parameters, and this object's constraints or codecs can't survive that. A union of models can't survive it either. **Fix:** Use OpenAPI 3.2, which writes a querystring parameter, or declare one model for the query.
 
 ### NEST1201
 

@@ -68,6 +68,21 @@ test('NestModelInterceptor converts each variant of a tagged object union in a w
     assert.deepEqual(wrongField.body.issues!.map(issue => issue.path), [['height']]);
     assert.equal((await post('', { kind: 'triangle', width: 3 })).status, 400);
     assert.equal((await post('', { radius: 2 })).status, 400);
+    // Input the model cannot be picked from is a 400 with the issues of the input, never a 500: a request can send any JSON.
+    const faults: readonly (readonly [string, string | undefined])[] = [
+      ['no body', undefined],
+      ['an array body', '[]'],
+      ['a string body', '"circle"'],
+      ['a null body', 'null'],
+      ['a tag of the wrong type', '{"kind":1,"radius":2}'],
+      ['an object tag whose toString is not a function', '{"kind":{"toString":1},"radius":2}'],
+      ['a tag that only a prototype holds', '{"__proto__":{"kind":"circle"},"radius":2}'],
+    ];
+    for (const [name, text] of faults) {
+      const response = await fetch(`${url}/shapes`, { method: 'POST', ...(text === undefined ? {} : { headers: { 'content-type': 'application/json' }, body: text }) });
+      assert.equal(response.status, 400, name);
+      if (name === 'an array body' || name.includes('tag')) assert.ok(((await response.json()) as { issues?: unknown[] }).issues?.length, `${name} reports its issues`);
+    }
 
     const get = async (query: string) => {
       const response = await fetch(`${url}/shapes?${query}`);

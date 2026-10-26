@@ -236,7 +236,7 @@ function flattenParameter(
     } satisfies ControllerParameter];
   }
   if (unionModels !== undefined) {
-    throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.LossyQueryFlatten, 'OpenAPI 3.1 flattens a whole @Query() into independent parameters, which cannot express a union of models. Use OpenAPI 3.2 querystring, or declare one model.'));
+    throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.LossyQueryFlatten, 'OpenAPI 3.1 flattens a whole @Query() into independent parameters, which cannot express a union of models. Use OpenAPI 3.2, which writes a querystring parameter, or declare one model for the query.'));
   }
   if (location === 'query' && hasWholeObjectContract(context, parameter, type)) {
     throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.LossyQueryFlatten, 'OpenAPI 3.1 cannot preserve whole-query object constraints or codecs when flattening. Use OpenAPI 3.2 querystring or a named primitive query contract.'));

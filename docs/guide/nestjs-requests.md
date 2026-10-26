@@ -100,6 +100,7 @@ A whole `@Body()` or `@Query()` parameter can be a union of models, such as `TCi
 - A union converts only as a whole parameter. An array of a union and a union in `@Body('field')` stop with [`RUNM1081`](/reference/diagnostics#runm1081).
 - A union of models with no shared tag stops with [`RUNM1081`](/reference/diagnostics#runm1081).
 - A union return stays Nest JSON.
+- A custom interceptor cannot read a union binding: `objectCodecFromMetatype` returns nothing for a union parameter.
 
 ## Model responses
 

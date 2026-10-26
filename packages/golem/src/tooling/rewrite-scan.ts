@@ -575,17 +575,17 @@ function literalTagValues(checker: ts.TypeChecker, type: ts.Type): Discriminator
   return values.length === 0 ? undefined : values;
 }
 
-/** The tag that tells the members of a union apart, by the rule of model generation (`sharedTag`), read from the members' types. */
-function unionTag(checker: ts.TypeChecker, members: readonly ts.TypeNode[]): { readonly property: string; readonly values: readonly (readonly DiscriminatorValue[])[] } | undefined {
+/** The tag that tells the members of a union apart, by the rule of model generation (`sharedTag`), read from the members' types. A query tag is text, so `text` makes `1` and `'1'` one value. */
+function unionTag(checker: ts.TypeChecker, members: readonly ts.TypeNode[], text: boolean): { readonly property: string; readonly values: readonly (readonly DiscriminatorValue[])[] } | undefined {
   return sharedTag(members.map((member) => new Map(checker.getPropertiesOfType(checker.getTypeFromTypeNode(member)).flatMap((property) => {
     const values = (property.flags & ts.SymbolFlags.Optional) === 0 ? literalTagValues(checker, propertyType(checker, property, member)) : undefined;
     return values === undefined ? [] : [[property.getName(), values] as const];
-  }))));
+  }))), { byText: text });
 }
 
 /** A parameter type that is a union of golem models (written out, or through an alias of a union): the models, and the tag that picks one when there is one. */
 function nestUnionBinding(
-  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile; readonly dependencies: Set<string> },
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile; readonly dependencies: Set<string>; readonly unions?: { readonly text: boolean } },
   unbound: NestBinding,
   members: readonly ts.TypeNode[],
 ): NestBinding {
@@ -601,7 +601,7 @@ function nestUnionBinding(
   });
   const golemModel = variants.every((variant) => variant.golemModel);
   if (!golemModel || variants.some((variant) => variant.id === '')) return { ...unbound, golemModel };
-  const tag = unionTag(checker, members);
+  const tag = unionTag(checker, members, input.unions?.text === true);
   if (tag === undefined) return { ...unbound, golemModel: true, id: '', untaggedUnion: true };
   return {
     ...unbound,
@@ -612,7 +612,7 @@ function nestUnionBinding(
 }
 
 function nestBinding(
-  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile; readonly dependencies: Set<string>; readonly unions?: boolean },
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile; readonly dependencies: Set<string>; readonly unions?: { readonly text: boolean } },
   typeNode: ts.TypeNode,
 ): NestBinding {
   const { root, checker, keys, file, dependencies } = input;
@@ -621,7 +621,7 @@ function nestBinding(
   const unbound = { id: '', primitive: false, golemModel: false, label: (model ?? typeNode).getText(file), array: walked?.array ?? false };
   if (!model) return unbound;
   // Only an input parameter can be a union: a union return is left as Nest JSON.
-  const members = input.unions === true ? authoredUnionMembers(checker, model) : undefined;
+  const members = input.unions !== undefined ? authoredUnionMembers(checker, model) : undefined;
   if (members) return nestUnionBinding(input, unbound, members);
   const { label } = unbound;
   if (NEST_PRIMITIVE_TYPES.has(label.slice(label.lastIndexOf('.') + 1))) return { ...unbound, primitive: true };
@@ -868,7 +868,7 @@ function scanFile(
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR) || hasDecorator(names, NEST_UNION_DECORATOR)) return;
     const typeNode = parameter.type;
-    const { id, golemModel, label, array, name, defaultExport, union, untaggedUnion } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies, unions: true }, typeNode);
+    const { id, golemModel, label, array, name, defaultExport, union, untaggedUnion } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies, unions: { text: decorator === 'Query' } }, typeNode);
     // A union converts as a whole input only; golem describes no array of a union and no one-field union.
     const unionUnsupported = union !== undefined && (array || !['input', 'query'].includes(nestSlot(checker, parameter, decorator)));
     if ((id === '' && union === undefined) || unionUnsupported) {
