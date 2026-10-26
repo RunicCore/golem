@@ -160,6 +160,7 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     readonly oldProgram?: ClassicProgram;
   }): ClassicProgram;
   createSourceFile(filename: string, text: string, languageVersionOrOptions: LanguageVersionOrOptions, setParentNodes?: boolean): Golem.SourceFile;
+  transpileModule(text: string, options: { readonly fileName: string; readonly compilerOptions: Golem.CompilerOptions }): { readonly outputText: string; readonly sourceMapText?: string };
   getParsedCommandLineOfConfigFile(
     configFilename: string,
     optionsToExtend: Golem.CompilerOptions | undefined,
@@ -761,6 +762,14 @@ export class ProgramSession implements Disposable {
   parseSourceFile(filename: string, text: string): Golem.SourceFile {
     this.assertOpen();
     return classic.createSourceFile(filename, text, classic.ScriptTarget.ES2022);
+  }
+
+  /** Compile one source text on its own, with the classic compiler's single-file transpile. */
+  transpileModule(filename: string, text: string, compilerOptions: Golem.CompilerOptions): { readonly outputText: string; readonly sourceMapText: string } {
+    this.assertOpen();
+    const { outputText, sourceMapText } = classic.transpileModule(text, { fileName: filename, compilerOptions });
+    if (sourceMapText === undefined) throw new Error(`The TypeScript compiler returned no source map for ${displayPath(filename)}`);
+    return { outputText, sourceMapText };
   }
 
   /**

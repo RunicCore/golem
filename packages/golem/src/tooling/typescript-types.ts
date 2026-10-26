@@ -587,6 +587,8 @@ export interface ProgramSession extends Disposable {
   openProgram(options: OpenProgramOptions): Program;
   /** Parse one source text on its own, without a program: its syntax tree, with no types and no diagnostics. */
   parseSourceFile(filename: string, text: string): SourceFile;
+  /** Compile one source text on its own to JavaScript, with no program and no type check: `compilerOptions` set how decorators and JSX lower, and the map describes the text given. */
+  transpileModule(filename: string, text: string, compilerOptions: CompilerOptions): { readonly outputText: string; readonly sourceMapText: string };
   /** Resolve a module name that no program imports, such as one an SDK manifest names, as the compiler resolves an import of `containingFile`: the disk and `virtualFiles` count. */
   resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles?: ReadonlySet<string>): { resolvedModule?: ResolvedModule };
 }
@@ -650,7 +652,7 @@ export interface TypeScriptBackend {
   readonly NodeBuilderFlags: { readonly NoTruncation: NodeBuilderFlags };
   readonly SignatureKind: { readonly Call: SignatureKind };
   readonly IndexKind: { readonly String: IndexKind };
-  readonly ModuleKind: { readonly NodeNext: ModuleKind };
+  readonly ModuleKind: { readonly ESNext: ModuleKind; readonly NodeNext: ModuleKind };
   readonly ModuleResolutionKind: { readonly NodeNext: ModuleResolutionKind };
   readonly ScriptTarget: { readonly ES2022: ScriptTarget };
   readonly CheckFlags: { readonly Readonly: number; readonly Mapped: number };

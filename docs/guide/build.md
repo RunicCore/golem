@@ -81,6 +81,7 @@ node --import @exprtlabs/golem/register src/main.ts
 ```
 
 - The loader rewrites TypeScript files as Node loads them.
+- The loader also loads `.tsx` files. The `jsx` options of your tsconfig set their output.
 - Run `golem generate` once, so the generated files exist.
 - The loader needs ES modules. Use `"type": "module"` or `.mts` files.
 - Node before 22.18 needs `--experimental-strip-types` as well ([Node versions](#node-versions)).

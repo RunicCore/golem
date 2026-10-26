@@ -8,6 +8,7 @@ import { displayPath, GolemDiagnosticSeverity } from './generator-api.js';
 import { applyRewrites } from './rewrite.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
 import type { RewriteScanner } from './rewrite-scan.js';
+import { composeSourceMaps } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import type * as ts from './typescript-ns.js';
 
@@ -27,6 +28,9 @@ export function withInlineSourceMap(code: string, map: SourceMapV3, file: string
   const json = JSON.stringify({ ...map, sources: [path.basename(file)] });
   return `${code}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(json, 'utf8').toString('base64')}\n`;
 }
+
+const TSX_FILE = /\.tsx$/;
+const SOURCE_MAP_COMMENT = '//# sourceMappingURL=';
 
 /** A host cannot rewrite a file; the message names the file and line and what to run. */
 export class GolemHostError extends Error {
@@ -55,6 +59,11 @@ export interface RewriteProject {
   rewrite(filename: string, text: string): { code: string; map: SourceMapV3; dependencies: readonly string[] } | undefined;
   /** Tell the session these files changed on disk (new, edited or removed). */
   changed(filenames: readonly string[]): void;
+  /**
+   * The JavaScript of a file that Node's own type stripping cannot load: a `.tsx` file. It is an ES module that follows the
+   * tsconfig's `jsx` and `target` options, with a source map back to `text`; undefined for any other file. `rewritten` is the result of `rewrite` for the same `text`, which the module then compiles in place of `text`.
+   */
+  transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined): { code: string; map: SourceMapV3 } | undefined;
   close(): void;
 }
 
@@ -80,6 +89,8 @@ class ScanningProject {
   readonly expectedGenerated: readonly string[];
   private readonly session: ts.ProgramSession;
   private program: ts.Program | undefined;
+  /** The tsconfig's compiler options as the latest program was opened with them. */
+  private options: ts.CompilerOptions = {};
   private scanner: RewriteScanner | undefined;
   private stale = false;
   /** Text the host holds for files that differ from the disk, by canonical file. */
@@ -96,6 +107,7 @@ class ScanningProject {
 
   private open(): void {
     const parsed = this.session.parseConfigFile(this.config.tsconfig);
+    this.options = parsed.options;
     const { canonicalFilename } = this.compiler;
     const sources = [...new Set([...parsed.fileNames.map(canonicalFilename), ...this.extras])];
     const program = this.session.openProgram({ root: this.root, sources, configFile: this.config.tsconfig, overlays: new Map(this.overlays) });
@@ -139,6 +151,22 @@ class ScanningProject {
     const relative = path.relative(this.root, file).split(path.sep).join('/');
     const applied = applyRewrites(text, scanned, file);
     return { code: applied.code, map: { ...applied.map, sources: [relative] }, dependencies: scanned.dependencies.map((dependency) => path.join(this.root, dependency)) };
+  }
+
+  transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined): { code: string; map: SourceMapV3 } | undefined {
+    const file = this.compiler.canonicalFilename(filename);
+    if (!TSX_FILE.test(file)) return undefined;
+    this.holds(file, withoutByteOrderMark(text));
+    // Node cannot run JSX, so a file that no `jsx` option compiles would fail later with a syntax error.
+    if (!this.options.jsx) throw new GolemHostError(`golem cannot compile ${displayPath(file)}: set compilerOptions.jsx in ${displayPath(this.config.tsconfig)}`, { file });
+    const { ts } = this.compiler;
+    // Node runs ES modules only, and a module resolution that matches another `module` is of no use to a single file.
+    const options = { ...this.options, module: ts.ModuleKind.ESNext, moduleResolution: undefined, sourceMap: true, inlineSourceMap: false, inlineSources: false };
+    const { outputText, sourceMapText } = this.session.transpileModule(file, rewritten?.code ?? text, options);
+    // The compiler ends its output with a comment that names a map file; the host carries the map inline.
+    const comment = outputText.lastIndexOf(SOURCE_MAP_COMMENT);
+    const emitted = JSON.parse(sourceMapText) as SourceMapV3;
+    return { code: comment < 0 ? outputText : outputText.slice(0, comment), map: rewritten === undefined ? emitted : composeSourceMaps(emitted, rewritten.map) };
   }
 
   changed(filenames: readonly string[]): void {
@@ -218,6 +246,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   return {
     expectedGenerated: project.expectedGenerated,
     rewrite: (filename, text) => project.rewrite(filename, text),
+    transpile: (filename, text, rewritten) => project.transpile(filename, text, rewritten),
     changed: (filenames) => { project.changed(filenames); },
     close() {
       if (closed) return;
