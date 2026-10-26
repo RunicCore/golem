@@ -1,3 +1,4 @@
+// lane: typescript6 Checker guards: the controllers job reads the checker's unresolved-import diagnostics and types in this process
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import assert from 'node:assert/strict';
@@ -50,16 +51,17 @@ const controllerReturning = (type: string, value: string): string => [
 ].join('\n');
 
 /** A clean tree: no SDK, no generated file and no `.golem/`. The model under the controllers root imports the SDK the openapi job of the same golem.yaml writes. */
-function cleanProject(t: TestContext, controller: string): string {
+function cleanProject(t: TestContext, controller: string, yaml = config, cart?: string): string {
   const root = createControllerFixture(t, {
     prefix: 'golem-clean-run-',
     packageName: 'clean-run',
     links: 'workspace',
     tsconfig: JSON.parse(readFixture('packed/profile/tsconfig.json')) as Record<string, unknown>,
-    files: { 'golem.yaml': config, 'src/catalog.controller.ts': controller, 'src/status.model.ts': statusModel, 'src/order.model.ts': orderModel },
+    files: { 'golem.yaml': yaml, 'src/catalog.controller.ts': controller, 'src/status.model.ts': statusModel, 'src/order.model.ts': orderModel },
   });
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
-  copyFixtureFile(root, 'packed/profile/src/cart.model.ts', 'src/cart.model.ts');
+  if (cart === undefined) copyFixtureFile(root, 'packed/profile/src/cart.model.ts', 'src/cart.model.ts');
+  else fs.writeFileSync(path.join(root, 'src/cart.model.ts'), cart);
   return root;
 }
 
@@ -84,9 +86,18 @@ for (const [reach, type, value] of [['returns', 'TCart', "{ money: { amount: 1, 
     const root = cleanProject(t, controllerReturning(type, value));
 
     await assert.rejects(runPipeline(path.join(root, 'golem.yaml')), (error: unknown) => {
-      assert.match(String(error), /Generated input dependency cycle: .*cart\.model\.ts.*sdk\/index\.js/);
+      assert.match(String(error), /RUNM1084: Generated input dependency cycle: .*cart\.model\.ts.*sdk\/index\.js/);
       assert.doesNotMatch(String(error), /RUNM1058/);
       return true;
     });
   });
 }
+
+// protects: T-464 an import that no later job writes keeps RUNM1058 in a model that no controller reaches
+test('a typo in the import of an unreached model still stops with RUNM1058 when no job writes that path', async (t: TestContext) => {
+  const withoutModels = config.replace('models:\n  root: .\n', '');
+  const typo = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Money } from '../skd/index.js';\nexport type TCart = IModel<{ money: Money }>;\n";
+  const root = cleanProject(t, controllerReturning('TStatus', '{ ok: true }'), withoutModels, typo);
+
+  await assert.rejects(runPipeline(path.join(root, 'golem.yaml')), /cart\.model\.ts:3:\d+ RUNM1058/);
+});

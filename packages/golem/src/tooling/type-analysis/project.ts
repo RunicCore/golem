@@ -648,13 +648,13 @@ export function typeScriptErrorAt(program: ts.Program, node: ts.Node): string | 
   return found?.text === undefined ? undefined : `TS${found.code}: ${found.text}`;
 }
 
-/** The module specifier of the first import in `fileName` that does not resolve (TS2307 or TS2792), or undefined when every import resolves. Reads the semantic diagnostics of one file, so a caller uses it on a failure path only. */
-export function unresolvedImportIn(program: ts.Program, fileName: string): string | undefined {
+/** The module specifiers in `fileName` that do not resolve (TS2307 or TS2792). Reads the semantic diagnostics of one file, so a caller uses it on a failure path only. */
+export function unresolvedImportsIn(program: ts.Program, fileName: string): string[] {
   const file = program.getSourceFile(fileName);
-  const missing = program.getSemanticDiagnostics(fileName)
-    .find((error) => (error.code === 2307 || error.code === 2792) && error.pos !== undefined);
-  // The diagnostic starts at the string literal of the import.
-  return file === undefined || missing?.pos === undefined ? undefined : /^(['"`])(.*?)\1/.exec(file.text.slice(missing.pos))?.[2];
+  if (file === undefined) return [];
+  // Each diagnostic starts at the string literal of the import.
+  return program.getSemanticDiagnostics(fileName)
+    .flatMap((error) => (error.code === 2307 || error.code === 2792) && error.pos !== undefined ? [/^(['"`])(.*?)\1/.exec(file.text.slice(error.pos))?.[2] ?? []] : []);
 }
 
 export function formatDiagnostics(diagnostics: readonly ts.Diagnostic[]): string {
