@@ -1019,6 +1019,11 @@ export function generateModels(
       code`  declare readonly [${rtType.model.generatedModelWireBrand}]: ${typesNamespace}.${identifier(typeName)};`,
       code`  declare readonly [${rtType.model.generatedModelFieldsBrand}]: ${identifier(`${typeName}Fields`)};`,
       ...(definition.isUnion ? [code`  declare static readonly [${rtType.model.generatedModelResultBrand}]: ${variantUnion};`] : []),
+      ...(definition.isUnion ? [
+        code`  static [Symbol.hasInstance](value: unknown): value is ${variantUnion} {`,
+        code`    return ${join((definition.variants ?? []).map((variant) => code`value instanceof ${models.model(variant)}`), code` || `)};`,
+        code`  }`,
+      ] : []),
       ...constructorLines,
       code`  }`,
       BLANK,

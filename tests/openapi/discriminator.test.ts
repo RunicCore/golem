@@ -335,7 +335,15 @@ test('a variant shared by two discriminated unions gets both union classes, in e
     const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-twice-'), 'sdk');
     const result = await generateMaterializedSdk(document, { output, name: 'Pets', profile });
     assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
-    compileGeneratedSdk(output, [], { strict: true });
+    // `instanceof` on a union class narrows to its variants, the shared one included.
+    const consumer = path.join(output, 'narrow-union.ts');
+    writeFileSync(consumer, [
+      `import { Cat${suffix}Model, Dog${suffix}Model, Feline${suffix}Model, Pet${suffix}Model } from './index.js';`,
+      `export function feline(value: unknown): Cat${suffix}Model | undefined { return value instanceof Feline${suffix}Model ? value : undefined; }`,
+      `export function pet(value: unknown): Cat${suffix}Model | Dog${suffix}Model | undefined { return value instanceof Pet${suffix}Model ? value : undefined; }`,
+      '',
+    ].join('\n'));
+    compileGeneratedSdk(output, [consumer], { strict: true });
     const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'models');
     const CatModel = modelClass(models, `Cat${suffix}Model`);
     const DogModel = modelClass(models, `Dog${suffix}Model`);
@@ -349,6 +357,10 @@ test('a variant shared by two discriminated unions gets both union classes, in e
     const tabby = decodeGeneratedModel(FelineModel, { kind: 'tabby', name: 'Miso' });
     assert.ok(tabby instanceof CatModel);
     assert.deepEqual(encodeGeneratedModel(tabby), { kind: 'tabby', name: 'Miso' });
+    // A union class answers instanceof for the variants it selects, and only those.
+    const dog = decodeGeneratedModel(PetModel, { kind: 'canine', bark: true });
+    assert.deepEqual([cat, dog, tabby].map(value => value instanceof PetModel), [true, true, true]);
+    assert.deepEqual([cat, dog, tabby].map(value => value instanceof FelineModel), [true, false, true]);
     // A tag that another union maps is not one of this union's.
     assert.throws(() => decodeGeneratedModel(FelineModel, { kind: 'feline', name: 'Miso' }));
     assert.throws(() => decodeGeneratedModel(PetModel, { kind: 'tabby', name: 'Miso' }));
