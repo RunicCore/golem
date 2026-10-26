@@ -68,6 +68,7 @@ function validateContext(context: TsToOpenApiContext): {
   readonly profile: ResolvedGolemProfile;
   readonly exact?: boolean;
   readonly boundary?: ModelBoundary;
+  readonly laterOutputs: readonly string[];
   readonly onInput?: InputObserver;
 } {
   if (!context || typeof context !== 'object' || Array.isArray(context)) {
@@ -107,7 +108,8 @@ function validateContext(context: TsToOpenApiContext): {
     models.suffixes,
     { directory: assertAbsolute(models.directory, 'context.models.directory'), output: assertAbsolute(models.output, 'context.models.output') },
   );
-  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, maxResultBytes, profile, exact: context.exact, ...(boundary ? { boundary } : {}), onInput: context.onInput };
+  const laterOutputs = (context.laterOutputs ?? []).map((later) => assertAbsolute(later, 'context.laterOutputs entry'));
+  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, maxResultBytes, profile, exact: context.exact, ...(boundary ? { boundary } : {}), laterOutputs, onInput: context.onInput };
 }
 
 function asGolemDiagnostic(value: TsToOpenApiDiagnostic): GolemDiagnostic {
@@ -464,6 +466,7 @@ function analyzeContracts(
     root: normalized.root,
     allowAny: normalized.profile.allowAny,
     exact: normalized.exact,
+    laterOutputs: normalized.laterOutputs,
     classComponentName: declaration => apiSchemaName(programInfo.program.getTypeChecker(), declaration),
     // With the models job known, the manifests the program advertises decide which model files are SDK files, as they do for that job.
     ...(normalized.boundary ? { boundary: normalized.boundary, manifests: loadModelManifests(normalized.root, programInfo, [], normalized.profile, observe) } : {}),

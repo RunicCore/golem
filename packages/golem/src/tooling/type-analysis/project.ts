@@ -638,6 +638,82 @@ export function assertNoSyntaxErrors(program: ts.Program, files: readonly string
   if (errors.length > 0) throw new Error(formatDiagnostics(errors));
 }
 
+/** Whether `filename` is one of `outputs` or lies inside one; the outputs are canonical paths. */
+export function isUnderOutputs(outputs: readonly string[], filename: string): boolean {
+  const target = canonicalPath(filename);
+  return outputs.some((output) => output === target || isInsideDirectory(output, target));
+}
+
+/** Whether a path lies in a `node_modules` folder. */
+export function inNodeModules(filename: string): boolean {
+  return filename.replace(/\\/g, '/').includes('/node_modules/');
+}
+
+/** The file of `files` that a relative import resolves to, with the `.js` of a written specifier standing for its `.ts` source. Names compare as the program spells them. */
+function importedFile(files: ReadonlySet<string>, target: string): string | undefined {
+  const stem = target.replace(/\.[cm]?jsx?$/, '');
+  return [target, `${stem}.ts`, `${stem}.tsx`, `${stem}.mts`, `${stem}.cts`, `${target}.ts`, `${target}.tsx`, join(target, 'index.ts'), join(stem, 'index.ts')]
+    .map((candidate) => candidate.replace(/\\/g, '/')).find((candidate) => files.has(candidate));
+}
+
+/** The module specifier of every import and re-export of a file, and of every inline `import('…')` type. */
+function moduleSpecifiers(file: ts.SourceFile): ts.StringLiteral[] {
+  const specifiers: ts.StringLiteral[] = [];
+  for (const statement of file.statements) {
+    if ((ts.isImportDeclaration(statement) || ts.isExportDeclaration(statement)) && statement.moduleSpecifier !== undefined && ts.isStringLiteral(statement.moduleSpecifier)) specifiers.push(statement.moduleSpecifier);
+  }
+  if (!file.text.includes('import(')) return specifiers;
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportTypeNode(node) && ts.isLiteralTypeNode(node.argument) && ts.isStringLiteral(node.argument.literal)) specifiers.push(node.argument.literal);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+  return specifiers;
+}
+
+/**
+ * The files of the program that lie under one of `outputs`, or that import a path under one by a relative import, directly or
+ * through the files they import. A relative import is read by its text. Any other import links the files only when it resolves to a
+ * project file, such as a `paths` alias of an intermediate file; an import that resolves to nothing, or into an output, says nothing,
+ * because it would differ between a run before the output exists and one after. So the answer is the same in every run. The outputs
+ * are canonical paths.
+ */
+export function filesReadingOutputs(program: ts.Program, outputs: readonly string[]): ReadonlySet<string> {
+  const files = program.getSourceFiles().filter((file) => !program.isSourceFileDefaultLibrary(file) && !inNodeModules(file.fileName));
+  const names: ReadonlySet<string> = new Set(files.map((file) => file.fileName.replace(/\\/g, '/')));
+  const checker = program.getTypeChecker();
+  const excluded = new Set<string>();
+  const imports = new Map<string, string[]>();
+  for (const file of files) {
+    const imported: string[] = [];
+    imports.set(file.fileName, imported);
+    if (isUnderOutputs(outputs, file.fileName)) excluded.add(file.fileName);
+    for (const specifier of moduleSpecifiers(file)) {
+      if (!specifier.text.startsWith('.')) {
+        const resolved = checker.resolveImport(specifier)?.resolvedFileName;
+        if (resolved !== undefined && names.has(resolved.replace(/\\/g, '/'))) imported.push(resolved);
+        continue;
+      }
+      const target = resolve(dirname(file.fileName), specifier.text);
+      if (isUnderOutputs(outputs, target)) {
+        excluded.add(file.fileName);
+        continue;
+      }
+      const found = importedFile(names, target);
+      if (found !== undefined) imported.push(found);
+    }
+  }
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [file, imported] of imports) {
+      if (excluded.has(file) || !imported.some((other) => excluded.has(other))) continue;
+      excluded.add(file);
+      grew = true;
+    }
+  }
+  return excluded;
+}
+
 /** The first TypeScript error that starts inside `node`, as `TS2304: Cannot find name 'strin'.`; undefined when the file has none there. Reads the semantic diagnostics of one file, so a caller uses it on a failure path only. */
 export function typeScriptErrorAt(program: ts.Program, node: ts.Node): string | undefined {
   const file = node.getSourceFile();
