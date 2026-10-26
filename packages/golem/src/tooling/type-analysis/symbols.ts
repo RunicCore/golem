@@ -5,18 +5,19 @@ import { canonicalFilename, generatedFilename, isModelFileName, type ModelBounda
 import type { ModelSpecification } from './models.js';
 import { isGolemSourceFile, isGolemTagKey } from './tags.js';
 
-/** A located model-analysis error with its RUNM code. */
+/** A located model-analysis error with its RUNM code. `fileName` is the file it is located in. */
 export function diagnostic(
   sourceFile: ts.SourceFile,
   node: ts.Node,
   code: string,
   message: string,
-): Error & { readonly code: string } {
+): Error & { readonly code: string; readonly fileName: string } {
   const position = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
   const error = new Error(
     `${displayPath(sourceFile.fileName)}:${position.line + 1}:${position.character + 1} RUNM${code}: ${message}`,
-  ) as Error & { readonly code: string };
+  ) as Error & { readonly code: string; readonly fileName: string };
   Object.defineProperty(error, 'code', { value: `RUNM${code}`, enumerable: true });
+  Object.defineProperty(error, 'fileName', { value: sourceFile.fileName });
   return error;
 }
 

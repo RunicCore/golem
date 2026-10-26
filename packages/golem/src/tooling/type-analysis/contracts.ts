@@ -2,9 +2,10 @@ import * as path from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { collectSpecifications, type ModelSpecification, type TypeAnalysisContext } from './models.js';
 import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
-import { byRealPath, companionFilename, includedModelSources, isGeneratedCompanion, typeScriptErrorAt, type ModelBoundary } from './project.js';
+import { byRealPath, companionFilename, includedModelSources, isGeneratedCompanion, typeScriptErrorAt, unresolvedImportIn, type ModelBoundary } from './project.js';
 import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
+import { displayPath } from '../generator-api.js';
 import { canonicalDescriptorKey } from '../schema.js';
 import { deduplicateProjections } from './graph.js';
 import { diagnostic, linkedClasses, modelSpecificationForClass } from './symbols.js';
@@ -26,6 +27,12 @@ export interface ContractAnalysis {
   modelCodecId(type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): string | undefined;
   /** Resolve a unique short name or a hashed codec id to its model spec. */
   specFor(name: string): ModelSpecification | undefined;
+}
+
+/** The file a RUNM1058 error is located in, or undefined for any other error. */
+function unresolvedTypeFile(error: unknown): string | undefined {
+  const { code, fileName } = error instanceof Error ? error as { code?: unknown; fileName?: unknown } : {};
+  return code === 'RUNM1058' && typeof fileName === 'string' ? fileName : undefined;
 }
 
 /** Shared source interpretation for controller contracts; it never loads application modules. */
@@ -54,7 +61,7 @@ export function createContractAnalysis(
   );
   // A file has one name: TypeScript's own spelling and the normalized one of a shared file are the same file.
   const sources = byRealPath([...ownSources, ...sharedSources]);
-  const { specifications } = collectSpecifications(program, sources, options.exact, options.boundary && ((file) => companionFilename(options.boundary, file)));
+  let { specifications } = collectSpecifications(program, sources, options.exact, options.boundary && ((file) => companionFilename(options.boundary, file)));
   const emptyManifests: ManifestIndex = {
     byId: new Map(), byProvenance: new Map(), files: [], localFiles: [], validationSchemaClosure: [], runtimeExports: () => new Set(), externalModelForType: () => undefined,
   };
@@ -74,22 +81,42 @@ export function createContractAnalysis(
   // OpenAPI describes the full contract even when runtime validation is omitted.
   // The document describes an SDK model by its type; only the codec ids see it as the manifest reference the models job hashes.
   const buildDescribe = (nameFor?: (specification: ModelSpecification) => string, manifests: ManifestIndex = emptyManifests) => descriptorBuilder(checker, specifications, manifests, true, options.allowAny ?? false, options.root, false, nameFor, undefined, undefined, (node) => typeScriptErrorAt(program, node), file => program.isSourceFileDefaultLibrary(file));
-  const describeAll = (builder: ReturnType<typeof buildDescribe>): Map<ModelSpecification, ModelConversionDescriptor> => new Map(
-    specifications.map((specification) => [specification, builder(specification.fieldsType, specification, undefined, specification.fieldsNode)] as const),
-  );
+  // The controllers job runs before the openapi and models jobs write their files, so a model whose import reads one of them does not resolve yet.
+  // A model that fails on such an import is left out of the analysis, and the models job handles it. A controller that reaches the import fails
+  // with the job-order error instead. The file and the specifier of each such import:
+  const pendingImports = new Map<string, string>();
+  const describeAll = (build: () => ReturnType<typeof buildDescribe>): { readonly describe: ReturnType<typeof buildDescribe>; readonly described: Map<ModelSpecification, ModelConversionDescriptor> } => {
+    for (;;) {
+      const describe = build();
+      const described = new Map<ModelSpecification, ModelConversionDescriptor>();
+      let blocked: ModelSpecification | undefined;
+      for (const specification of specifications) {
+        try {
+          described.set(specification, describe(specification.fieldsType, specification, undefined, specification.fieldsNode));
+        } catch (error) {
+          const file = unresolvedTypeFile(error);
+          const specifier = file === undefined ? undefined : unresolvedImportIn(program, file);
+          if (file === undefined || specifier === undefined) throw error;
+          pendingImports.set(file, specifier);
+          blocked = specification;
+          break;
+        }
+      }
+      if (!blocked) return { describe, described };
+      // A model that holds the left-out one fails on the same import in the next round, so it leaves too.
+      specifications = specifications.filter((specification) => specification !== blocked);
+    }
+  };
   const baseName = (specification: ModelSpecification): string => baseNames.get(specification) ?? specification.name;
-  let describe = buildDescribe(baseName);
-  let described = describeAll(describe);
+  let { describe, described } = describeAll(() => buildDescribe(baseName));
   // Models whose names are equal but whose schemas differ are qualified by where they are declared.
   const componentNames = qualifiedComponentNames(specifications, described, baseName, options.root);
   const componentName = (specification: ModelSpecification): string => componentNames.get(specification) ?? baseName(specification);
   if (specifications.some((specification) => componentName(specification) !== baseName(specification))) {
-    describe = buildDescribe(componentName);
-    described = describeAll(describe);
+    ({ describe, described } = describeAll(() => buildDescribe(componentName)));
   }
   // Codec ids hash descriptors named by alias and nesting an SDK model by its manifest, as the generated companions do; the document uses component names.
-  const describeForIds = buildDescribe(undefined, options.manifests);
-  const describedForIds = describeAll(describeForIds);
+  const { describe: describeForIds, described: describedForIds } = describeAll(() => buildDescribe(undefined, options.manifests));
   const internGraph = createSchemaGraph();
   internDescriptors(internGraph, [
     ...specifications.flatMap((specification) => {
@@ -140,6 +167,18 @@ export function createContractAnalysis(
     return sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, specifications) : undefined;
   };
 
+  /** Runs a controller read. An unresolved type in a file the left-out models name is the controller reaching such a model: the job-order cycle. */
+  const reachingPendingImport = <T>(read: () => T): T => {
+    try {
+      return read();
+    } catch (error) {
+      const file = unresolvedTypeFile(error);
+      const specifier = file === undefined ? undefined : pendingImports.get(file);
+      if (file === undefined || specifier === undefined) throw error;
+      throw new Error(`Generated input dependency cycle: the controllers job reads ${displayPath(file)}, which imports ${JSON.stringify(specifier)}. That import does not resolve when the controllers job runs, because the jobs run in the order generators, controllers, openapi, models: the controllers job cannot read a file that the openapi or models job writes. Keep the controllers from reaching that file, or fix the import.`, { cause: error });
+    }
+  };
+
   const describeController = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): ModelConversionDescriptor => {
     const syntax = typeNode ?? (ts.isTypeNode(node) ? node : undefined);
     const location = syntax ?? checker.typeToTypeNode(type, node, ts.NodeBuilderFlags.NoTruncation);
@@ -181,7 +220,7 @@ export function createContractAnalysis(
       if (intact) {
         return { kind: 'reference', name: componentName(intact) };
       }
-      const descriptor = describeController(type, node, typeNode);
+      const descriptor = reachingPendingImport(() => describeController(type, node, typeNode));
       return syncProjections(descriptor) ?? descriptor;
     },
     modelName(type, node, typeNode) {
