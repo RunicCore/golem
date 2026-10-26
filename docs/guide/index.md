@@ -29,7 +29,13 @@ An `IObject` declares fields whose values stay plain objects. An `IModel` is an 
 4. Golem writes the generated class, its JSON conversion and its types beside your file.
 5. A build host rewrites calls such as `parse<T>` to that generated conversion when you build or load your code ([Build your app](/guide/build)).
 
-For an OpenAPI 3.1 or 3.2 document, Golem resolves its `$ref`s across local files and across the HTTPS hosts you allow. It checks the document against the official OpenAPI schema and the cross-field rules of the specification. Then it runs the same schema and validator steps. For NestJS, Golem reads controllers and their types without starting the app and writes an OpenAPI document.
+## How each generator uses these steps
+
+| Generator | Reads | Then |
+| --- | --- | --- |
+| `@exprtlabs/golem-model` | Your `IObject` and `IModel` declarations | Runs steps 1 to 5 |
+| `@exprtlabs/golem-openapi` | An OpenAPI 3.1 or 3.2 document | Resolves its `$ref`s across local files and the HTTPS hosts you allow, checks it against the official OpenAPI schema and the cross-field rules of the specification, then runs steps 2 to 4 to build a typed SDK |
+| `@exprtlabs/golem-ts-openapi` | NestJS controllers and their types, without starting the app | Writes an OpenAPI document |
 
 ## What you need
 

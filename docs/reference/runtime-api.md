@@ -56,14 +56,12 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 
 Generation also writes [derived type names](/reference/generated-files#derived-type-names), such as `TTaskFields`, `TTaskJSON` and `TTaskInit`.
 
-Types that describe generated metadata:
+Types of generated models:
 
 | Type | Describes |
 | --- | --- |
 | `GeneratedModelFields<Model>` | The field types of a generated model. |
 | `GeneratedModelResult<Constructor>` | The instance type of a generated class. |
-| `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile`, `GeneratedModelValidatorEnhancer` | The metadata that a generated class registers. |
-| `ModelTypeMetadata`, `ModelTypeDescriptor`, `ModelConstraint`, `ConstraintSchemaValue`, `UnionDiscriminator`, `DiscriminatorValue` | The type information that generation records for a field. |
 
 ## `@exprtlabs/golem/validation` {#validation}
 
@@ -179,7 +177,12 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 | `ValidationUnavailable` | `validation_unavailable` | Checks were not generated, no build rewrote a call, or a validation context lacks a validator. |
 | `Response` | `response` | A generated client receives a status or media type the operation does not declare. |
 
-`ModelValidator.validate()` returns `false` for an invalid value. Checked serde calls and generated client checks throw `LibError` instead. A predicate, codec or native call that throws is wrapped once with its `cause`. A thrown `LibError` passes through unchanged. [Errors and issues](/guide/validation#errors-and-issues) shows how to read them.
+- `ModelValidator.validate()` returns `false` for an invalid value. Checked serde calls and generated client checks throw `LibError` instead.
+- A `TSerde` function that throws is wrapped once with its `cause`.
+- A [`TValidation`](#tvalidation) predicate that throws is wrapped only by `validateInstance` and `ModelValidator.validate`. In `parse`, `fromWireFormat` and `validate<T>` its error reaches you unchanged.
+- A thrown `LibError` passes through unchanged.
+
+[Errors and issues](/guide/validation#errors-and-issues) shows how to read them.
 
 | `Issue` field | Type | Meaning |
 | --- | --- | --- |
@@ -238,6 +241,114 @@ interface ApiOperation<Input, Result, Options = unknown> {
 
 [Create a client](/guide/client-usage#create-a-client) shows the generated client options. Generated SDKs call the request runtime in [Exports for generated code](#generated-code).
 
+### Generated client {#generated-client}
+
+```ts
+new <Client>Client(options: <Client>ClientOptions)
+client.<operation>().execute(input, options?: <Client>RequestOptions): Promise<HttpResponse>
+```
+
+`<Client>` is the client name in `golem.yaml`. Each operation method returns an [`ApiOperation`](#client).
+
+| Option | Present when the API has | Value |
+| --- | --- | --- |
+| `baseUrl` | always | The required API address. |
+| `fetchImpl` | always | A `fetch` function. The default is the global `fetch`. |
+| `headers` | always | `HeadersInit` that the client adds to every request. |
+| `auth` | a security scheme that is not mutual TLS | Credentials by scheme name, or functions that return them ([Client authentication](#client-authentication)). |
+| `mutualTls` | a mutual TLS security scheme | `{ fetchImpl }`, a transport that you configure with the certificate ([Mutual TLS](/guide/auth#mutual-tls)). |
+| `bodyEncoders` | a request body | Request codecs by media type ([Codec options](/guide/codecs#codec-options)). |
+| `responseDecoders` | response content | Response codecs by media type ([Codec options](/guide/codecs#codec-options)). |
+| `parameterSerializers` | a parameter that uses `content`, or a `querystring` parameter | Parameter writers by media type. |
+| `responseHeaderDecoders` | a response header that declares `content` | Header decoders by media type. |
+| `streamDecoders` | a response that declares `itemSchema` | Framing decoders for streams other than NDJSON, JSON-seq and SSE ([Connect a custom stream decoder](/guide/streams#connect-a-custom-stream-decoder)). |
+| `operationValidators` | `validation` turned on | A map of operation name to validators. Each entry replaces the generated validators of that operation ([Runtime validators](#runtime-validators)). |
+
+| Request option | Value |
+| --- | --- |
+| `signal` | An `AbortSignal` that cancels the request. |
+
+- The client type has the first three options always. It adds each other option only when the API needs it. A key that the type does not have is a type error.
+- `baseUrl` loses its surrounding spaces and one trailing `/`. An empty value throws `Error` with the message `<Client>Client requires a non-empty baseUrl` when you create the client.
+- `mutualTls.fetchImpl` replaces `fetchImpl` for every request of the client, also for operations without a mutual TLS requirement.
+- A codec map that you leave out is empty. A codec that you pass replaces the built-in one.
+- Each `execute` call resolves with the response that the operation declares, as in the table below. A declared error status resolves too ([Read responses and handle failures](/guide/client-usage#read-responses-and-handle-failures)).
+
+| `execute` result | Value |
+| --- | --- |
+| `matched` | `status` for an exact status code, `range` for a range such as `2XX`, `default` for the `default` response. |
+| `status` | The HTTP status of the reply. |
+| `contentType` | The declared media type that matched the reply, or `null` when the response declares no content. |
+| `body` | The decoded body. A response that declares no content has no body. A stream response has an `AsyncIterable` ([Streaming responses](/guide/streams)). |
+| `headers` | The declared response headers that the reply holds, decoded. |
+
+- A stream body is lazy. With validation on, each item is checked when your loop reads it. A failed item throws from `for await`, not from `execute`.
+- Selection follows [Response matching](/reference/openapi-support#response-matching).
+
+| Failure | Result |
+| --- | --- |
+| A request input or a response breaks its schema | `LibError` of kind `Validation` with the message `API data validation failed.` The issues have source `openapi` and representation `wire`. `causedByInput` is `true`. The error does not hold the response body. |
+| A validator crashes | `LibError` of kind `Validation` with `cause`, no issues and `causedByInput` `false`. |
+| The generated validator of the request input is missing | `LibError` of kind `ValidationUnavailable`. |
+| The reply has a status or media type that the operation does not declare | `LibError` of kind `Response` with `causedByInput` `true` and no issues. It also has `client`, `operation`, `status`, `headers` and `contentType` (the media type in lower case, without parameters). The message is `Undeclared OpenAPI response for <operation>: HTTP <status> <type>`. The runtime cancels the body. |
+| The body is not valid JSON | `SyntaxError`, not a `LibError`. |
+| No codec or decoder exists for the body, or the operation requires a custom codec you did not pass | A plain `Error` that names the media type or the missing option. |
+| No security requirement has all its credentials | A plain `Error` whose message starts with `No configured credentials satisfy`. It rejects before `fetch` runs ([Client authentication](#client-authentication)). |
+| The network fails | The rejection of `fetchImpl`, unchanged. |
+
+- Test an undeclared response with the generated guard `is<Client>UndeclaredResponseError(error)`. It calls `isUndeclaredResponseError(error, client)`. Without `client`, that function accepts the error of any client.
+- With validation off, the client checks no request or response. With it on, a response that declares no content has no body to check.
+
+[Create a client](/guide/client-usage#create-a-client) shows the options in use. [Read responses and handle failures](/guide/client-usage#read-responses-and-handle-failures) and [Handle errors](/guide/client-usage#handle-errors) show how to read the result and the errors.
+
+### Client authentication {#client-authentication}
+
+```ts
+auth?: <Client>Auth;
+mutualTls?: { readonly fetchImpl: typeof fetch };
+```
+
+`<Client>Auth` has one optional key for each declared security scheme except mutual TLS. Each value is a `TokenAuthValue` or a `BasicAuthValue`. The client has `auth` when an operation requires a scheme that is not mutual TLS. It has `mutualTls` when an operation requires a mutual TLS scheme. [Authentication](/guide/auth) shows the usage.
+
+| Type | Shape | Meaning |
+| --- | --- | --- |
+| `AuthContext` | `{ scheme, type, scopes, flows?, openIdConnectUrl? }` | The argument of an auth function. `scheme` is the scheme name, `type` its OpenAPI type and `scopes` the scopes of the requirement. `flows` is set for OAuth2. `openIdConnectUrl` is set for OpenID Connect. |
+| `TokenAuthValue<Context = AuthContext>` | `string \| (context: Context) => string \| Promise<string>` | A token or an API key, or a function that returns one. |
+| `BasicCredentials` | `{ username: string; password: string }` | The credentials of an HTTP Basic scheme. |
+| `BasicAuthValue<Context = AuthContext>` | `BasicCredentials \| (context: Context) => BasicCredentials \| Promise<BasicCredentials>` | The credentials, or a function that returns them. |
+| `MutualTlsTransport` | `{ readonly fetchImpl: typeof fetch }` | The value of `mutualTls`. |
+| `RuntimeSecuritySchemes` | `Readonly<Record<string, RuntimeSecurityScheme>>` | The scheme metadata that a generated client gives to the runtime. You do not build it. |
+
+Each SDK declares these types again with the client name, such as `<Client>Auth`, the type of the `auth` option. It also declares a context type for each scheme with narrowed fields.
+
+| OpenAPI scheme | Auth value | What the client sends |
+| --- | --- | --- |
+| `apiKey` in `header` | `TokenAuthValue` | A header named by the scheme's `name`. The scheme key is the name when `name` is missing. |
+| `apiKey` in `query` | `TokenAuthValue` | A query parameter with that name. |
+| `apiKey` in `cookie` | `TokenAuthValue` | A cookie with that name. The value is percent-encoded. |
+| `http` with `bearer` | `TokenAuthValue` | `Authorization: Bearer <token>`. |
+| `http` with `basic` | `BasicAuthValue` | `Authorization: Basic <credentials>`, Base64 of `username:password` in UTF-8. |
+| `oauth2` | `TokenAuthValue` | `Authorization: Bearer <access token>`. The context has `scopes` and `flows`. |
+| `openIdConnect` | `TokenAuthValue` | `Authorization: Bearer <access token>`. The context has `openIdConnectUrl`. |
+| `mutualTLS` | none: use `mutualTls` | No credential. The requirement holds when `mutualTls` is set. |
+
+- A value is a string, a credentials object or a function. The client calls a function with an `AuthContext` on each `execute` and awaits it.
+- An operation can list several security requirements. The client uses the first requirement for which every scheme has a value. It applies all schemes of that requirement together.
+- A scheme with no key in `auth` has no value.
+- An empty requirement allows a request without credentials. The client uses it only after every other requirement fails.
+- Security on an operation replaces the security of the document. `security: []` on an operation asks for no credentials.
+- The client resolves credentials before it calls `fetch`. A failure rejects `execute` and sends no request.
+
+| Failure | Result |
+| --- | --- |
+| No requirement has all its credentials | A plain `Error` with the message `No configured credentials satisfy the operation security requirements`. |
+| An auth function returns a value that is not a string or a credentials object | `TypeError` with the message `Authentication provider for <scheme> returned an invalid value`. A function that returns `undefined` counts as no value. |
+| An auth function throws | `execute` rejects with that error, unchanged. |
+| A Basic username contains `:` | `TypeError`. |
+| An `http` scheme is not `basic` or `bearer` | A plain `Error` with the message `Unsupported HTTP authentication scheme: <scheme>`. |
+
+[Authentication](/guide/auth) shows how to pass credentials, read a token for each request and use mutual TLS.
+
 ## `@exprtlabs/golem/conversion` {#conversion}
 
 ```ts
@@ -270,19 +381,126 @@ Both throw `LibError` for missing generated metadata or cyclic input. With a kno
 import type { MinLength, TSerde, TValidation } from '@exprtlabs/golem/tags';
 ```
 
-Every export is a type. Intersect a tag with a field type. Assignment is unchanged and generation never runs your code.
+Every export is a type. Intersect a tag with a field type. Assignment is unchanged and generation never runs your code. A tag that is not intersected with a value type is an error ([RUNM1045](/reference/diagnostics#runm1045)).
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
-| Built-in constraints | `Integer`, `Minimum<N>`, `MinLength<N>`, `Pattern<S>`, `Format<S>`, … | JSON Schema keywords ([built-in constraints](/guide/tags#built-in-validation-constraints)). |
+| Built-in constraints | `Integer`, `Minimum<N>`, `MinLength<N>`, `Pattern<S>`, `Format<S>`, … | JSON Schema keywords ([built-in tags](#built-in-tags)). |
 | Short names | `Min`, `Max`, `ExclusiveMin`, `ExclusiveMax`, `MinProps`, `MaxProps` | Aliases of `Minimum`, `Maximum`, `ExclusiveMinimum`, `ExclusiveMaximum`, `MinProperties`, `MaxProperties`. |
-| `TValidation` | `TValidation<typeof predicate>` | Runs an exported synchronous function that returns `true` or an error message ([custom rule](/guide/tags#add-a-custom-field-rule)). |
-| `TSerde` | `TSerde<typeof serialize, typeof deserialize>` | Converts the field between model value and JSON value ([serialize formatter](/guide/serialization#change-the-json-form)). |
+| `TValidation` | `TValidation<typeof predicate>` | Runs an exported synchronous function that returns `true`, `false` or an error message ([`TValidation`](#tvalidation)). |
+| `TSerde` | `TSerde<typeof serialize, typeof deserialize>` | Converts the field between model value and JSON value ([`TSerde`](#tserde)). |
 | `TSerdeWire` | `TSerdeWire<Value>` | `[Wire]`, the deserializer's input type, or `[]` without `TSerde`. |
 | `BuiltinModelTag` | union type | Every built-in constraint. |
-| `ModelValidationFunction`, `ModelSerializeFunction`, `ModelDeserializeFunction` | function types | The function shapes that `TValidation` and `TSerde` accept. |
+| `ModelValidationFunction` | `(value: unknown) => boolean \| string` | The shape that `TValidation` accepts. |
+| `ModelSerializeFunction`, `ModelDeserializeFunction` | `(value: unknown) => unknown` | The shapes that `TSerde` accepts. |
 
-The `TSerde` deserializer's parameter type sets the JSON schema of the field ([which type controls validation](/guide/serialization#which-type-controls-validation)).
+### `TSerde` {#tserde}
+
+```ts
+type TSerde<
+  Serialize extends (...args: never[]) => unknown,
+  Deserialize extends (...args: never[]) => unknown,
+>;
+```
+
+| Part | Names | Rule |
+| --- | --- | --- |
+| `Serialize` | `typeof` an exported function from the model value to the JSON value | Its parameter accepts the model type of the field. Its return type is assignable to the parameter type of `Deserialize`. |
+| `Deserialize` | `typeof` an exported function from the JSON value to the model value | Its parameter type is the JSON type of the field. Its return type is assignable to the model type of the field. |
+
+- Each function has one call signature and one required parameter. It is synchronous: a function that returns a thenable is an error.
+- Declare each function in its own module and export it. A function in a `*.model.ts` file stops generation ([RUNM1065](/reference/diagnostics#runm1065)).
+- A function from an installed package needs a package `exports` entry that reaches its file ([RUNM1060](/reference/diagnostics#runm1060)).
+- In a type alias, write `typeof` an exported function. A type parameter is an error ([RUNM1061](/reference/diagnostics#runm1061)).
+- A field has one `TSerde` pair. Two different pairs on one field stop generation.
+- The deserializer parameter type sets the JSON schema of the field. A tag on that type checks the JSON value. A plain `string` parameter drops the tags of an alias such as `string & MinLength<3>`.
+- Tags on the field type check the model value, after decoding and before encoding. Tags on the return type of `Serialize` add no JSON check.
+- A parameter of type `any` or `unknown` is an error unless `allowAny` is `true` ([RUNM1011](/reference/diagnostics#runm1011)).
+- The JSON value is checked before decoding and after encoding. `{ validate: false }` skips the checks and keeps the functions.
+- `Serialize` returns JSON-compatible data. A non-finite number or a cycle throws `Serialization`, also with `validate: false`.
+- A field can hold a class instance or a `bigint`. The class needs a name and an export, and no type parameter without a default ([RUNM1063](/reference/diagnostics#runm1063)).
+- The [Temporal](#temporal) tags are `TSerde` tags with their own functions.
+
+| Failure | Where | Result |
+| --- | --- | --- |
+| A function throws | `parse`, `stringify`, `fromWireFormat`, `toWireFormat` | `LibError` of kind `Serialization` (`Serialize`) or `Deserialization` (`Deserialize`). `cause` holds the exception, `causedByInput` is `false`, and the issue has source `serde`. A `LibError` that a function throws passes through. |
+| JSON or model value fails a check | the same calls | `LibError` of kind `Validation` with the issues. |
+| A function is not usable | generation | [RUNM1040](/reference/diagnostics#runm1040), [RUNM1042](/reference/diagnostics#runm1042), [RUNM1046](/reference/diagnostics#runm1046), [RUNM1047](/reference/diagnostics#runm1047) |
+| A type does not fit the pair | generation | [RUNM1049](/reference/diagnostics#runm1049) |
+
+The usage is in [Change the JSON form](/guide/serialization#change-the-json-form). The declarations are compared in [Which type controls validation](/guide/serialization#which-type-controls-validation), and class fields are in [Class values](/guide/serialization#class-values).
+
+### `TValidation` {#tvalidation}
+
+```ts
+type TValidation<Predicate extends (...args: never[]) => boolean | string>;
+```
+
+| Predicate result | Effect |
+| --- | --- |
+| `true` | The value passes. |
+| `false` or `''` | The value fails with an issue of code `custom` and the default message. |
+| A non-empty string | The value fails with an issue of code `custom`. `reason` and `message` hold the string. |
+| Any other value | The check throws `TypeError`. |
+
+- The predicate is an exported function with one required parameter. It is synchronous and returns `boolean`, `string` or a union of the two.
+- Declare it in its own module. A predicate in a `*.model.ts` file stops generation ([RUNM1065](/reference/diagnostics#runm1065)). The package and alias rules of [`TSerde`](#tserde) apply ([RUNM1060](/reference/diagnostics#runm1060), [RUNM1061](/reference/diagnostics#runm1061)).
+- The model type of the field is assignable to the predicate parameter ([RUNM1050](/reference/diagnostics#runm1050)).
+- The predicate runs only after the built-in checks of the same value passed. It never sees a value of the wrong shape. Do not depend on the order of several predicates on one value.
+- On a model type, it checks the model value. On the parameter type of a `TSerde` decoder, it checks the JSON value.
+- `Money & TValidation<typeof extra>` adds a rule to an SDK type. The rule runs with the checks of that type.
+- A predicate does not become part of an OpenAPI document. The document carries the JSON schema only.
+- `validateInstance` and `ModelValidator.validate` wrap an exception from a predicate in a `LibError` of kind `Validation`. `cause` holds the exception and `causedByInput` is `false`.
+
+| Failure | Where | Result |
+| --- | --- | --- |
+| The predicate rejects | any checked call | Issue with code `custom`, source `custom` and optional `reason` ([`Issue`](#errors)). |
+| The function is not usable | generation | [RUNM1040](/reference/diagnostics#runm1040), [RUNM1041](/reference/diagnostics#runm1041), [RUNM1046](/reference/diagnostics#runm1046), [RUNM1047](/reference/diagnostics#runm1047), [RUNM1048](/reference/diagnostics#runm1048) |
+
+[Add a custom field rule](/guide/tags#add-a-custom-field-rule) shows the usage.
+
+### Built-in tags {#built-in-tags}
+
+Each built-in tag writes one JSON Schema keyword. A tag that does not fit the field type stops generation ([RUNM1051](/reference/diagnostics#runm1051)).
+
+| Group | Tag | JSON Schema keyword | Field types |
+| --- | --- | --- | --- |
+| Numbers | `Integer` | `type: integer` | `number` |
+| Numbers | `Minimum<N>`, `Min<N>` | `minimum` | `number` |
+| Numbers | `Maximum<N>`, `Max<N>` | `maximum` | `number` |
+| Numbers | `ExclusiveMinimum<N>`, `ExclusiveMin<N>` | `exclusiveMinimum` | `number` |
+| Numbers | `ExclusiveMaximum<N>`, `ExclusiveMax<N>` | `exclusiveMaximum` | `number` |
+| Numbers | `MultipleOf<N>` | `multipleOf` | `number` |
+| Strings | `MinLength<N>` | `minLength` | `string` |
+| Strings | `MaxLength<N>` | `maxLength` | `string` |
+| Strings | `Pattern<S>` | `pattern` | `string` |
+| Strings | `Format<S>` | `format` | `string` |
+| Arrays | `MinItems<N>` | `minItems` | array or tuple |
+| Arrays | `MaxItems<N>` | `maxItems` | array or tuple |
+| Arrays | `UniqueItems` | `uniqueItems` | array or tuple |
+| Arrays | `Contains<T>` | `contains` | array or tuple |
+| Arrays | `MinContains<N>` | `minContains` | array or tuple, with `Contains` |
+| Arrays | `MaxContains<N>` | `maxContains` | array or tuple, with `Contains` |
+| Objects | `MinProperties<N>`, `MinProps<N>` | `minProperties` | object |
+| Objects | `MaxProperties<N>`, `MaxProps<N>` | `maxProperties` | object |
+| Objects | `PropertyNames<T>` | `propertyNames` | object |
+| Objects | `PatternProperties<Map>` | `patternProperties` | object |
+| Objects | `AdditionalProperties<T>` | `additionalProperties` | object |
+| Objects | `UnevaluatedProperties<T>` | `unevaluatedProperties` | object |
+| Related fields | `DependentRequired<Map>` | `dependentRequired` | object |
+| Related fields | `DependentSchemas<Map>` | `dependentSchemas` | object |
+| Alternatives | `OneOf<Tuple>` | `oneOf` | any type |
+| Alternatives | `Not<T>` | `not` | any type |
+| Alternatives | `IfThenElse<Condition, Then, Else>` | `if`, `then`, `else` | any type |
+
+- An object type is not an array, a tuple or a function type.
+- A union fits when every member fits. `null`, `undefined`, `any` and `unknown` always fit, so an optional or nullable field keeps its tags.
+- The same rules apply to the JSON value of a `TSerde` field.
+- `N` is a finite numeric literal. Length, item, property and count limits are non-negative integers. `MultipleOf` is positive ([RUNM1043](/reference/diagnostics#runm1043)).
+- `Pattern` is a valid Unicode regular expression. `Format` and the keys of `DependentRequired` are string literals ([RUNM1044](/reference/diagnostics#runm1044)).
+- A schema-valued argument is a type that golem can describe as a schema ([RUNM1043](/reference/diagnostics#runm1043)).
+
+The usage is in [Built-in validation constraints](/guide/tags#built-in-validation-constraints), and the format names are in [Formats](/guide/tags#formats). [Validation tags](/guide/tags) is the guide.
 
 ## `@exprtlabs/golem/temporal` {#temporal}
 
@@ -290,7 +508,7 @@ Temporal field types for models. Each converts to an ISO 8601 string on the wire
 
 | Tag | Model type | Wire string |
 | --- | --- | --- |
-| `TemporalInstant` | `Temporal.Instant` | `2025-01-02T03:04:05.123Z` |
+| `TemporalInstant` | `Temporal.Instant` | `2025-01-02T03:04:05Z`, with fractional seconds only when the value has them |
 | `TemporalZonedDateTime` | `Temporal.ZonedDateTime` | `2025-01-02T03:04:05+01:00[Europe/Paris]` |
 | `TemporalPlainDate` | `Temporal.PlainDate` | `2025-01-02` |
 | `TemporalPlainDateTime` | `Temporal.PlainDateTime` | `2025-01-02T03:04:05` |
@@ -310,7 +528,9 @@ import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem
 <<< ../../examples/models/src/read-json.ts#read-json
 
 ::: warning Build with golem
-`parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` and `validate<T>` throw `ValidationUnavailable` unless a [build host](/guide/build) rewrote them. `tsc` does not rewrite them.
+`parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` and `validate<T>` throw unless a [build host](/guide/build) rewrote them. `tsc` does not rewrite them.
+
+The error is a `LibError` of kind `ValidationUnavailable`. Its message starts with the call, as in `parse<T> was not rewritten to a generated function`, and then lists the hosts that rewrite calls.
 :::
 
 `T` names a generated `IObject` or `IModel`. A type alias returns a plain object. Your class returns an instance of it.
@@ -366,20 +586,14 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 - Resolved validators are cached per context object, reference and mode. Create a new context when schemas change.
 - A validator returns an array of issues, empty when the value is valid. Any other result throws `TypeError`. A promise throws `ValidationUnavailable` in synchronous serde calls.
 
-### Codec registry
+### Look up a codec
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
-| `registerObjectCodec` | `(codec: ObjectCodec): void` | Stores a codec under its id. |
 | `getObjectCodec` | `(id): ObjectCodec \| undefined` | Returns the codec whose id is exactly `id`. A short model name finds nothing. |
 | `getIModelClass` | `(id): class \| undefined` | Returns the `IModel` class registered under the exact id `id`. |
-| `findCodecIdForConstructor` | `(constructor): string \| undefined` | Returns the id that the codec of a generated class is registered under. |
-| `resolveModelValidationContextValidator` | `(context, reference, mode): Validator` | Returns the validator that a `ModelValidationContext` gives for a reference. Caches it per context. |
-| `validationFailure` | `(issues): never` | Throws `LibError` `Validation` with the issues. |
-| `serdeFailFast` | `(options): boolean` | Returns `false` only when `failFast` is `false`. |
-| `resolveGeneratedModelSchemaRefs` | `(schema, plane): object` | Replaces the model `$ref` placeholders in a schema with registered schema ids. |
 
-Types: `AllowGetterOptions`, `ObjectCodec`, `ObjectCodecImpl`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`. `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
+Types: `AllowGetterOptions`, `ObjectCodec`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`. `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
 ## `@exprtlabs/golem/nest` {#nest}
 
@@ -461,6 +675,8 @@ Generated files import these names. Application code does not call them. They fo
 
 `registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelConstructor`, `ModelInit` and the `generatedModel*Brand` symbols.
 
+The module also exports the metadata types that the generators and the runtime use. Generated files do not import them, and application code does not use them: `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile`, `GeneratedModelValidatorEnhancer`, `ModelTypeMetadata`, `ModelTypeDescriptor`, `ModelConstraint`, `ConstraintSchemaValue`, `UnionDiscriminator` and `DiscriminatorValue`.
+
 ### From `validation`
 
 `operationValidators` resolves the input and response validators of an operation once per client. `validateOperationInput` checks a request input. `responseCheck` is the response check that `ClientRuntime.readResponse` runs on each decoded body or stream item.
@@ -472,6 +688,8 @@ Generated files import these names. Application code does not call them. They fo
 ### From `serde`
 
 `createObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `requireIModelClass`, `assertModelValue`, `isValidModelValue`, `modelValueIssues`, `parseJson`, `serdeValidates`, `validationUnavailable`, `withoutInstanceState` and the `stringifyJson*` writers.
+
+The module exports more helpers for the runtime itself. Application code does not call them: `registerObjectCodec`, `findCodecIdForConstructor`, `resolveModelValidationContextValidator`, `validationFailure`, `serdeFailFast`, `resolveGeneratedModelSchemaRefs` and the type `ObjectCodecImpl`.
 
 ### From `nest`
 

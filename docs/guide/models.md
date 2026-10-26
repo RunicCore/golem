@@ -55,11 +55,15 @@ The generated file puts `.generated` before the final extension of its source: `
 
 Your class holds methods, getters, defaults and extra constructor state. The base constructor assigns the supplied values, so call `super(values)` before you read a field. With [MobX](/guide/mobx) on, call `asGenObservable(this)` right after `super(values)`.
 
-`toWireFormat` emits declared fields only. Getters and other state on your class stay on the instance. A key on an instance that its model does not declare is program state, and codecs ignore it ([Objects and exact](/guide/field-types#objects-and-exact)).
+`toWireFormat` emits declared fields only. Getters and other state on your class stay on the instance. A key on an instance that its model does not declare is program state, and codecs ignore it. The `exact` option of the model decides whether extra keys in input fail validation ([options `exact` and `allowAny`](/guide/field-types#the-options-exact-and-allowany)).
 
 ## Type-only model files
 
-A file that exports only types, such as `export type TLabel = IObject<{ text: string }>`, needs no import of its generated file. The [build host](/guide/build) loads the generated file of each model that a `parse`, `stringify`, `validate` or wire-format call names. It does the same for each model of a Nest `@Body()` or `@Query()` parameter and of a handler return.
+A file that exports only types, such as `export type TLabel = IObject<{ text: string }>`, needs no import of its generated file. The [build host](/guide/build) loads the generated file of each model that one of these names:
+
+- a `parse`, `stringify`, `validate` or wire-format call
+- a Nest `@Body()` or `@Query()` parameter
+- a Nest handler return
 
 A codec that is still missing at run time throws an error that starts with `golem fault`. Run `golem generate`, then build again.
 
@@ -75,7 +79,12 @@ After you change a declaration, generate again:
 npx golem generate
 ```
 
-Generation type-checks the project first. It stops on a TypeScript error in a model source or in a file the job writes, and reports it in the compiler's form, `file(line,column): error TSnnnn: message`. A type error in any other file does not stop generation. Then generation replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`). Your classes do not change.
+Generation type-checks the project first, then writes the files:
+
+- It stops on a TypeScript error in a model source or in a file the job writes. It reports the error in the compiler's form, `file(line,column): error TSnnnn: message`.
+- A type error in any other file does not stop generation.
+- It replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`).
+- Your classes do not change.
 
 `golem build` generates first, so a build needs no separate `golem generate`. In CI, run `golem build`, or run `golem generate` and then `npx golem check` ([Generate, watch and check](/guide/watch)). [Ignore the generated files](/reference/generated-files#gitignore) in git.
 

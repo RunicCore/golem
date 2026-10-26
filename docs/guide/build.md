@@ -6,7 +6,9 @@ Choose and set up the build host that rewrites `parse<T>` and five other calls.
 
 `parse<T>`, `stringify<T>`, `toWireFormat<T>`, `fromWireFormat<T>`, `validate<T>` and `assertValue<T>` take a type argument. TypeScript erases that argument at run time. A host is a tool that compiles or loads your TypeScript. It reads each of these calls with your project's TypeScript and replaces the call with a call to the generated code. `tsc` does not rewrite these calls.
 
-A call that no host rewrote throws `parse<T> was not rewritten to a generated function`. A call that no host can rewrite fails the build with its file, its line and what to run. `golem check` reports the same calls.
+A call that no host rewrote throws a `LibError` of kind `ValidationUnavailable` (`validation_unavailable`). The message starts with the name of the call, as in `parse<T> was not rewritten to a generated function`. It then lists the hosts that rewrite the call.
+
+A call that no host can rewrite fails the build with its file, its line and what to run. `golem check` reports the same calls.
 
 Generated classes and `validateInstance` work without a host.
 
@@ -21,9 +23,23 @@ Generated classes and `validateInstance` work without a host.
 
 Every host works with TypeScript 6 and 7 and produces the same rewrite.
 
-The plugins and the loader open your project from `golem.yaml`. A plugin uses its `config` option first. Then it reads the `GOLEM_CONFIG` environment variable, then it opens `./golem.yaml`. The loader reads `GOLEM_CONFIG`, then `./golem.yaml`.
+The plugins and the loader open your project from `golem.yaml`:
+
+- A plugin uses its `config` option first. Then it reads the `GOLEM_CONFIG` environment variable, then it opens `./golem.yaml`.
+- The loader reads `GOLEM_CONFIG`, then `./golem.yaml`.
 
 The plugins and the loader scan your files themselves. They need the generated files to exist. Run `golem generate` once before you use them.
+
+## Node versions
+
+Golem needs Node.js 22.15 or newer ([requirements](/guide/install#requirements)). The flags that each host needs depend on the Node.js version:
+
+| Node.js version | `golem build` | Vite and esbuild plugins | Node loader |
+| --- | --- | --- | --- |
+| 22.15 to 22.17 | No flag | No flag | Add `--experimental-strip-types` |
+| 22.18 or newer | No flag | No flag | No flag |
+
+`golem build` writes JavaScript, and the plugins run inside Vite or esbuild, which strip the types. Only the loader gives TypeScript files to Node.
 
 ## Build with golem build
 
@@ -43,13 +59,19 @@ The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project se
 
 <<< ../../examples/payments/vite.config.ts#vite-config
 
-`golem()` rewrites each TypeScript module in memory before Vite strips its types, in the dev server and in builds. Put it before plugins that transform TypeScript. The `config` option is optional. It names the `golem.yaml` relative to the Vite root. Without it, the plugin reads `GOLEM_CONFIG`, then `./golem.yaml`. While you run [`golem watch`](/guide/watch#watch), the dev server transforms again only the modules whose rewrite changed.
+- `golem()` rewrites each TypeScript module in memory before Vite strips its types. This holds in the dev server and in builds.
+- Put `golem()` before plugins that transform TypeScript.
+- The `config` option is optional. It names the `golem.yaml` relative to the Vite root. Without it, the plugin reads `GOLEM_CONFIG`, then `./golem.yaml`.
+- While you run [`golem watch`](/guide/watch#watch), the dev server transforms again only the modules whose rewrite changed.
 
 ## esbuild
 
 <<< ../../examples/models/bundle.mjs#esbuild-bundle{js}
 
-`golem()` rewrites each TypeScript file in memory before esbuild strips its types. It takes each TypeScript file outside `node_modules` that holds a call to rewrite. Other files go to the next plugins. A plugin that needs a file that `golem()` takes goes before `golem()` in `plugins`. `config` names the `golem.yaml` relative to `absWorkingDir`.
+- `golem()` rewrites each TypeScript file in memory before esbuild strips its types.
+- It takes each TypeScript file outside `node_modules` that holds a call to rewrite. Other files go to the next plugins.
+- A plugin that needs a file that `golem()` takes goes before `golem()` in `plugins`.
+- `config` names the `golem.yaml` relative to `absWorkingDir`.
 
 ## Node loader
 
@@ -57,7 +79,11 @@ The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project se
 node --import @exprtlabs/golem/register src/main.ts
 ```
 
-The loader rewrites TypeScript files as Node loads them. Run `golem generate` once, so the generated files exist. The loader needs ES modules, so use `"type": "module"` or `.mts` files. Node before 22.18 needs `--experimental-strip-types` as well. A NestJS app needs a second loader that compiles decorators ([set up TypeScript](/guide/nestjs-requests#set-up-typescript)).
+- The loader rewrites TypeScript files as Node loads them.
+- Run `golem generate` once, so the generated files exist.
+- The loader needs ES modules. Use `"type": "module"` or `.mts` files.
+- Node before 22.18 needs `--experimental-strip-types` as well ([Node versions](#node-versions)).
+- A NestJS app needs a second loader that compiles decorators ([run with the Node loader](/guide/nestjs-requests#run-with-the-node-loader)).
 
 ## Editor setup (generate or watch)
 

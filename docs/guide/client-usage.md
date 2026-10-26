@@ -46,7 +46,7 @@ A feature that uses one endpoint imports its operation factory:
 
 The factory has the name of the operation and takes the client options. It returns the same operation as `client.getCharge()`, with `loading` when MobX is on. Create the operation once and call `.execute()` for each request. If `.execute()` fails with a `ValidationUnavailable` error and the message `Missing generated input validator for <operation>`, run `golem generate` again.
 
-For a schema named `Charge`, the SDK has `Charge`, the JSON data type, and `ChargeModel`, its runtime class. A response body is plain data. Call `fromWireFormat<T>` to get a model instance:
+The SDK names each schema in PascalCase and adds `Model` for the runtime class ([Generated SDK names](/reference/generated-files#generated-sdk-names)). The schema `Charge` gives the JSON data type `Charge` and the class `ChargeModel`. A response body is plain data. Call `fromWireFormat<T>` to get a model instance:
 
 <<< ../../examples/payments/server/provider/charges.ts#charge-model
 

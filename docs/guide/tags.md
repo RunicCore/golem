@@ -27,17 +27,16 @@ Give a combination of tags a type alias and use the alias as the field type. A t
 
 ## Built-in validation constraints
 
-| Value | Tags |
-| --- | --- |
-| Numbers | `Integer`, `Minimum<N>`, `Maximum<N>`, `ExclusiveMinimum<N>`, `ExclusiveMaximum<N>`, `MultipleOf<N>` |
-| Strings | `MinLength<N>`, `MaxLength<N>`, `Pattern<'...'>`, `Format<'...'>` |
-| Arrays | `MinItems<N>`, `MaxItems<N>`, `UniqueItems`, `Contains<T>`, `MinContains<N>`, `MaxContains<N>` |
-| Objects | `MinProperties<N>`, `MaxProperties<N>`, `PropertyNames<T>`, `PatternProperties<Map>`, `AdditionalProperties<T>`, `UnevaluatedProperties<T>` |
-| Related fields | `DependentRequired<Map>`, `DependentSchemas<Map>` |
-| Alternatives | `OneOf<Tuple>`, `Not<T>`, `IfThenElse<Condition, Then, Else>` |
+Each family has its own tags. Every tag, its JSON Schema keyword and the field types it fits are in [Built-in tags](/reference/runtime-api#built-in-tags).
 
-- Length and item limits must be nonnegative integers. `MultipleOf` must be positive.
-- The generator rejects malformed patterns and validation constraints attached to incompatible types.
+| Family | What it checks | Example |
+| --- | --- | --- |
+| [Numbers](/reference/runtime-api#built-in-tags) | Range, whole numbers and multiples | `Minimum<N>` |
+| [Strings](/reference/runtime-api#built-in-tags) | Length, pattern and format | `MaxLength<N>` |
+| [Arrays](/reference/runtime-api#built-in-tags) | Item count, uniqueness and matching items | `UniqueItems` |
+| [Objects](/reference/runtime-api#built-in-tags) | Property count, names and extra keys | `MinProperties<N>` |
+| [Related fields](/reference/runtime-api#built-in-tags) | Fields that depend on each other | `DependentRequired<Map>` |
+| [Alternatives](/reference/runtime-api#built-in-tags) | Branches of a schema | `OneOf<Tuple>` |
 
 ## Object and array validation constraints
 
@@ -53,13 +52,13 @@ Schema-valued tags describe another TypeScript contract:
 
 ## Formats
 
-`Format<'name'>` checks a string or a number against a named format. Golem checks these names:
+On a model field, `Format<'name'>` applies to a `string`. The number formats apply to schemas from an OpenAPI document, where a number schema has `format: int32`. A field such as `number & Format<'int32'>` stops generation. Golem checks these names:
 
-| Value | Format names |
-| --- | --- |
-| Strings | `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `byte`, `json-pointer`, `relative-json-pointer` |
-| Numbers | `int32`, `int64`, `float`, `double` |
-| Any string | `password`, `binary`, `media-range` |
+| Value | Format names | Applies to |
+| --- | --- | --- |
+| Strings | `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `byte`, `json-pointer`, `relative-json-pointer` | Model fields and OpenAPI schemas |
+| Numbers | `int32`, `int64`, `float`, `double` | OpenAPI schemas |
+| Any string | `password`, `binary`, `media-range` | Model fields and OpenAPI schemas |
 
 A format name that golem does not check stops generation. Set `unknownFormats: warn` in [`golem.yaml`](/reference/config#root-keys) to report it and continue.
 
