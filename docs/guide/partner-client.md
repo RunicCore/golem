@@ -144,10 +144,19 @@ Put your rules in a class of your own, not in the SDK:
 
 - Declare a field with the SDK type, such as `money: TMoney`. The field is a `TMoneyModel`, so `this.money.amount` reads a field of the SDK model. The web project has its own SDK, so this import reads `../sdk/index.js` of that project.
 - A method such as `summary` goes in the class body. It reads `this.money.amount`.
-- To add a method such as `isOverdue()`, declare a field of the partner's type, such as `charge: Charge`, and compare its `settlesOn` with today's date in the class body, the same way.
 - Golem links a class to its model through `extends <Alias>BaseModel` ([generated names](/reference/generated-files#generated-names)). Keep methods in that class.
 - Run `golem generate` before you write the class. It writes the base class that the class extends.
 - This example turns MobX on. With `mobx: false`, leave out the MobX import and the `asGenObservable` call.
+
+A model can also hold a type of the partner, such as `Charge`. This model adds `isOverdue()`:
+
+<<< ../../examples/payments/server/provider/charge-record.model.ts#charge-record-declaration
+
+<<< ../../examples/payments/server/provider/charge-record.model.ts#charge-record-class
+
+- The field `charge: Charge` is the SDK class `ChargeModel`. Its `settlesOn` is a `Temporal.PlainDate`.
+- `isOverdue` takes today's date as an argument, so a test can fix the date. The settlement day itself is not overdue.
+- The `temporal-polyfill/global` import gives the global `Temporal` ([Step 6](/guide/partner-client#step-6-read-dates-as-temporal-values)).
 
 Build the model from the body of a response:
 

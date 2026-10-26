@@ -44,6 +44,7 @@ Payment 1: USD 12.50, charge charge-1 is pending
 | `server/src/price.model.ts`, `decimal-text.ts` | Integer minor units written as decimal text |
 | `server/provider/provider.yaml` | The provider's OpenAPI document |
 | `server/provider/*.ts` | Provider client usage: auth, headers, codecs, streams, dates |
+| `server/provider/charge-record.model.ts` | Model that holds a provider `Charge` and adds `isOverdue()` |
 | `web/src/payment-editor.model.ts` | Observable payment editor model |
 | `web/src/payment-store.ts` | Validate, save, cancel and retry |
 | `web/src/App.tsx` | The editor view |
