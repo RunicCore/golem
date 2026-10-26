@@ -56,7 +56,8 @@ for (const [name, files] of PRINTED) {
     using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config });
     const diagnostics = ts.getPreEmitDiagnostics(program);
     assert.equal(ts.formatDiagnostics(diagnostics, host(root)), tsc(root, ['--pretty', 'false']));
-    const pretty = diagnostics.length === 0 ? '' : `${ts.formatDiagnosticsWithColorAndContext(diagnostics, host(root))}\n${ts.formatErrorSummary(diagnostics, host(root))}`;
+    const printed = diagnostics.map((diagnostic) => `${ts.formatDiagnosticsWithColorAndContext([diagnostic], host(root))}\n`).join('');
+    const pretty = `${printed}${ts.formatErrorSummary(diagnostics, host(root))}`;
     assert.equal(pretty, tsc(root, ['--pretty', 'true']));
   });
 }

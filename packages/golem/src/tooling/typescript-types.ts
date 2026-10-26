@@ -721,7 +721,10 @@ export interface TypeScriptBackend {
   forEachChild<T>(node: Node, callback: (node: Node) => T | undefined): T | undefined;
   /** The compiler's plain form, `path(line,col): error TS1234: message`, one line each with chained messages indented below. */
   formatDiagnostics(diagnostics: readonly Diagnostic[], host: DiagnosticFormatHost): string;
-  /** The compiler's pretty form: colored, with the source line and a squiggle under each diagnostic. */
+  /**
+   * The compiler's pretty form: colored, with the source line and a squiggle under each diagnostic. Call it for one diagnostic at a
+   * time and end each result with a line break, as `tsc` prints: the two compilers differ in what they put between several diagnostics.
+   */
   formatDiagnosticsWithColorAndContext(diagnostics: readonly Diagnostic[], host: DiagnosticFormatHost): string;
   getDecorators(node: Node): readonly Decorator[] | undefined;
   getModifiers(node: Node): readonly Node[] | undefined;
