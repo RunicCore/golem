@@ -43,6 +43,7 @@ export const {
   getModifiers,
   getPreEmitDiagnostics,
   getTrailingCommentRanges,
+  getTscDiagnostics,
   isArrayLiteralExpression,
   isArrayTypeNode,
   isArrowFunction,

@@ -545,6 +545,8 @@ export interface Diagnostic {
   readonly code?: number;
   /** Where the diagnostic starts in its file. */
   readonly pos?: number;
+  /** Where the diagnostic ends in its file. */
+  readonly end?: number;
   /** The file the diagnostic is about; absent for a diagnostic about the program as a whole. */
   readonly fileName?: string;
   /** 1 for an error: the category the error summary counts. */
@@ -612,7 +614,13 @@ export interface OpenProgramOptions {
    * path is relative to the configuration). The session serves them as a virtual configuration that extends the original, so
    * the original stays observed and the virtual file is not reported as an input.
    */
-  readonly compilerOptionOverrides?: Readonly<Record<string, string | number | boolean | null>>;
+  readonly compilerOptionOverrides?: Readonly<Record<string, string | number | boolean | null | readonly string[]>>;
+  /**
+   * Compiler command-line arguments (`--strict false`, `--lib es2020,dom`) that replace the configuration's options for this program
+   * only, as `tsc -p` takes them. They act through the same virtual configuration as `compilerOptionOverrides`, which wins over them.
+   * An argument the compiler rejects throws.
+   */
+  readonly flags?: readonly string[];
   readonly onInput?: (filename: string) => void;
 }
 
@@ -729,6 +737,12 @@ export interface TypeScriptBackend {
   getDecorators(node: Node): readonly Decorator[] | undefined;
   getModifiers(node: Node): readonly Node[] | undefined;
   getPreEmitDiagnostics(program: Program): readonly Diagnostic[];
+  /**
+   * The diagnostics `tsc` reports for a check of the program, in its order and without repeats: the configuration's, then the syntax
+   * errors alone when there are any, else the options', the global and the semantic ones (and the declaration ones under `noEmit`).
+   * `emitDiagnostics` are those of an emit of the same program, which `tsc` adds before it sorts.
+   */
+  getTscDiagnostics(program: Program, emitDiagnostics?: readonly Diagnostic[]): readonly Diagnostic[];
   /** The comments between `position` and the next token that start on a later line (all of them at position 0), in source order. Undefined when there are none. */
   getLeadingCommentRanges(text: string, position: number): readonly CommentRange[] | undefined;
   /** The comments that follow `position` on its own line, in source order. Undefined when there are none. */

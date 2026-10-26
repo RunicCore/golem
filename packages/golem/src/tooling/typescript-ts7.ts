@@ -29,7 +29,7 @@ import {
 import * as ast from 'typescript/ast';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed } from './typescript-config.js';
+import { assertConfigParsed, flagsAsConfigOptions } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
@@ -254,6 +254,8 @@ export interface Program {
   getSemanticDiagnostics(file?: string): readonly SyncDiagnostic[];
   getDeclarationDiagnostics(file?: string): readonly SyncDiagnostic[];
   getProgramDiagnostics(): readonly SyncDiagnostic[];
+  getGlobalDiagnostics(): readonly SyncDiagnostic[];
+  getConfigFileParsingDiagnostics(): readonly SyncDiagnostic[];
   emitToMemory(kind: EmitKind): MemoryEmit;
   readonly project: Project;
   readonly snapshot: Snapshot;
@@ -716,6 +718,14 @@ class CompatProgram implements Program {
     return this.project.program.getProgramDiagnostics();
   }
 
+  getGlobalDiagnostics(): readonly SyncDiagnostic[] {
+    return this.project.program.getGlobalDiagnostics();
+  }
+
+  getConfigFileParsingDiagnostics(): readonly SyncDiagnostic[] {
+    return this.project.program.getConfigFileParsingDiagnostics();
+  }
+
   /**
    * The compiler's `getJavaScriptEmit` and `getDeclarationEmit` over the program's own sources: they return the text and write
    * nothing. They ignore `noEmit` and the declaration options, so the classic compiler's rule for what a program emits is applied here.
@@ -823,6 +833,31 @@ export function getPreEmitDiagnostics(program: Program): readonly SyncDiagnostic
   ];
 }
 
+/** The order `tsc` sorts diagnostics in: file, start, end, code, message. A diagnostic without a file comes first. */
+function compareDiagnostics(left: SyncDiagnostic, right: SyncDiagnostic): number {
+  const text = (diagnostic: SyncDiagnostic): string => [diagnostic.text, ...(diagnostic.messageChain ?? []).map((chained) => chained.text)].join('\n');
+  const order = (a: string | number | undefined, b: string | number | undefined): number => (a === b ? 0 : a === undefined ? -1 : b === undefined ? 1 : a < b ? -1 : 1);
+  return order(left.fileName, right.fileName) || order(left.pos, right.pos) || order(left.end, right.end) || order(left.code, right.code) || order(text(left), text(right));
+}
+
+/**
+ * The diagnostics of `tsc`'s own report, in its steps: the configuration's, then the syntax errors alone when there are any, else the
+ * options', the global and the semantic ones, then the declaration ones under `noEmit` (an emit reports its own); sorted without repeats.
+ */
+export function getTscDiagnostics(program: Program, emitDiagnostics: readonly SyncDiagnostic[] = []): readonly SyncDiagnostic[] {
+  const options = program.getCompilerOptions();
+  const found = [...program.getConfigFileParsingDiagnostics()];
+  const configured = found.length;
+  found.push(...program.getSyntacticDiagnostics());
+  if (found.length === configured) {
+    found.push(...program.getProgramDiagnostics(), ...program.getGlobalDiagnostics());
+    if (found.length === configured) found.push(...program.getSemanticDiagnostics());
+    if (options.noEmit === true && (options.declaration === true || options.composite === true) && found.length === configured) found.push(...program.getDeclarationDiagnostics());
+  }
+  const sorted = [...found, ...emitDiagnostics].sort(compareDiagnostics);
+  return sorted.filter((diagnostic, index) => index === 0 || compareDiagnostics(sorted[index - 1]!, diagnostic) !== 0);
+}
+
 export function canHaveDecorators(node: Node): boolean {
   return 'modifiers' in node || ast.isClassDeclaration(node) || ast.isMethodDeclaration(node)
     || ast.isParameterDeclaration(node) || ast.isPropertyDeclaration(node);
@@ -858,7 +893,9 @@ export interface OpenProgramOptions {
   readonly configFile?: string;
   readonly overlays?: ReadonlyMap<string, string>;
   /** Compiler options that replace the configuration's own for this program only, as tsconfig JSON values (an enum is its name). */
-  readonly compilerOptionOverrides?: Readonly<Record<string, string | number | boolean | null>>;
+  readonly compilerOptionOverrides?: Readonly<Record<string, string | number | boolean | null | readonly string[]>>;
+  /** Command-line arguments that replace the configuration's options for this program only; `compilerOptionOverrides` win over them. */
+  readonly flags?: readonly string[];
   readonly onInput?: (filename: string) => void;
 }
 
@@ -1058,6 +1095,20 @@ export class ProgramSession implements Disposable {
   }
 
   /**
+   * The options of a program with its command-line `flags` among its option overrides, which win over the flags. The compiler builds a
+   * program from a configuration alone, so the flags travel in the virtual configuration that `compilerOptionOverrides` already uses.
+   */
+  private withFlags(options: OpenProgramOptions): OpenProgramOptions {
+    const { flags } = options;
+    if (flags === undefined || flags.length === 0) return options;
+    const flagged = this.withCompiler('parse', (api) => flagsAsConfigOptions(flags, (args) => {
+      const { options: parsed, fileNames, errors } = api.parseCommandLine(args);
+      return { options: parsed, fileNames, errors };
+    }));
+    return { ...options, compilerOptionOverrides: { ...flagged, ...options.compilerOptionOverrides } };
+  }
+
+  /**
    * Parse one source text on its own, without a program. The syntax tree reads from its own buffer, so the compiler's lease on
    * the file ends here.
    */
@@ -1107,7 +1158,7 @@ export class ProgramSession implements Disposable {
 
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
   openProgram(options: OpenProgramOptions): Program {
-    const base = programRequest(options);
+    const base = programRequest(this.withFlags(options));
     return this.withCompiler('snapshot', (api, reused) => {
       const request = this.withRequestedRoots(api, base, options.onInput);
       // A program sees only its own overlays: a held program keeps the snapshot it was opened in.

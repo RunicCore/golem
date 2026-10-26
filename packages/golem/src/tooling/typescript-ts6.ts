@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed } from './typescript-config.js';
+import { assertConfigParsed, flagsAsConfigOptions } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
@@ -91,6 +91,10 @@ interface ClassicProgram {
   getCompilerOptions(): Golem.CompilerOptions;
   getSyntacticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
   getSemanticDiagnostics(file?: Golem.SourceFile): readonly ClassicDiagnostic[];
+  getConfigFileParsingDiagnostics(): readonly ClassicDiagnostic[];
+  getOptionsDiagnostics(): readonly ClassicDiagnostic[];
+  getGlobalDiagnostics(): readonly ClassicDiagnostic[];
+  getDeclarationDiagnostics(): readonly ClassicDiagnostic[];
   emit(
     targetSourceFile: undefined,
     writeFile: (filename: string, text: string) => void,
@@ -110,6 +114,7 @@ interface ClassicMessageChain {
 interface ClassicDiagnostic {
   readonly file?: Golem.SourceFile;
   readonly start?: number;
+  readonly length?: number;
   readonly code: number;
   readonly category: number;
   readonly messageText: string | ClassicMessageChain;
@@ -149,7 +154,7 @@ interface ParsedConfigHost {
 
 // Names that this module implements itself; every other seam name is the classic API's own member.
 type Implemented = 'ProgramSession' | 'CheckFlags' | 'sys' | 'createCompilerHost' | 'createProgramFromSources'
-  | 'getPreEmitDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
+  | 'getPreEmitDiagnostics' | 'getTscDiagnostics' | 'typeParameterDefault' | 'typeReferenceTarget';
 
 interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 'ObjectFlags' | 'SignatureKind'> {
   readonly SignatureKind: Golem.TypeScriptBackend['SignatureKind'] & { readonly Construct: Golem.SignatureKind };
@@ -173,7 +178,8 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     host: ParsedConfigHost,
   ): { readonly options: Golem.CompilerOptions; readonly fileNames: string[]; readonly errors: readonly ClassicDiagnostic[] } | undefined;
   getPreEmitDiagnostics(program: ClassicProgram): readonly ClassicDiagnostic[];
-  parseCommandLine(flags: readonly string[]): { readonly options: Golem.CompilerOptions; readonly errors: readonly ClassicDiagnostic[] };
+  parseCommandLine(flags: readonly string[]): { readonly options: Golem.CompilerOptions; readonly fileNames: readonly string[]; readonly errors: readonly ClassicDiagnostic[] };
+  sortAndDeduplicateDiagnostics(diagnostics: readonly ClassicDiagnostic[]): readonly ClassicDiagnostic[];
   resolveModuleName(
     moduleName: string,
     containingFile: string,
@@ -668,12 +674,32 @@ export function getPreEmitDiagnostics(program: Golem.Program): readonly Golem.Di
   return classic.getPreEmitDiagnostics(program.program).map(withText);
 }
 
+/**
+ * The diagnostics of `tsc`'s own report, in its steps: the configuration's, then the syntax errors alone when there are any, else the
+ * options', the global and the semantic ones, then the declaration ones under `noEmit` (an emit reports its own); sorted without repeats.
+ */
+export function getTscDiagnostics(program: Golem.Program, emitDiagnostics: readonly Golem.Diagnostic[] = []): readonly Golem.Diagnostic[] {
+  if (!(program instanceof CompatProgram)) throw new TypeError('getTscDiagnostics needs a program opened by the TypeScript 6 backend.');
+  const classicProgram = program.program;
+  const options = classicProgram.getCompilerOptions();
+  const found = [...classicProgram.getConfigFileParsingDiagnostics()];
+  const configured = found.length;
+  found.push(...classicProgram.getSyntacticDiagnostics());
+  if (found.length === configured) {
+    found.push(...classicProgram.getOptionsDiagnostics(), ...classicProgram.getGlobalDiagnostics());
+    if (found.length === configured) found.push(...classicProgram.getSemanticDiagnostics());
+    if (options.noEmit === true && (options.declaration === true || options.composite === true) && found.length === configured) found.push(...classicProgram.getDeclarationDiagnostics());
+  }
+  return classic.sortAndDeduplicateDiagnostics([...found, ...emitDiagnostics as readonly ClassicDiagnostic[]]).map(withText);
+}
+
 // Object.create returns `any`; the result is the classic diagnostic with `text` added.
 function withText(diagnostic: ClassicDiagnostic): Golem.Diagnostic & ClassicDiagnostic {
   const { file, start } = diagnostic;
   return Object.create(diagnostic, {
     text: { value: headText(diagnostic.messageText), enumerable: true },
     pos: { value: start, enumerable: true },
+    end: { value: start === undefined ? undefined : start + (diagnostic.length ?? 0), enumerable: true },
     fileName: { value: file?.fileName, enumerable: true },
     startPosition: { value: file && start !== undefined ? file.getLineAndCharacterOfPosition(start) : undefined, enumerable: true },
   }) as Golem.Diagnostic & ClassicDiagnostic;
@@ -787,7 +813,7 @@ export class ProgramSession implements Disposable {
   /** Open a program that reflects every file change since the previous one. */
   openProgram(options: Golem.OpenProgramOptions): Golem.Program {
     this.assertOpen();
-    const request = programRequest(options);
+    const request = programRequest(this.withFlags(options));
     this.observe(options.onInput, request.hidden);
     const resolutionsChanged = this.resolutionsChanged();
     for (const filename of [...this.observed]) this.report(filename);
@@ -805,6 +831,16 @@ export class ProgramSession implements Disposable {
     this.held.add(held);
     this.retainFilesOf(held);
     return held;
+  }
+
+  /** The options of a program with its command-line `flags` among its option overrides, which win over the flags. */
+  private withFlags(options: Golem.OpenProgramOptions): Golem.OpenProgramOptions {
+    if (options.flags === undefined || options.flags.length === 0) return options;
+    const parse = (flags: readonly string[]) => {
+      const { options: parsed, fileNames, errors } = classic.parseCommandLine(flags);
+      return { options: parsed, fileNames, errors: errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })) };
+    };
+    return { ...options, compilerOptionOverrides: { ...flagsAsConfigOptions(options.flags, parse), ...options.compilerOptionOverrides } };
   }
 
   /** Parse one source text on its own, without a program. */
