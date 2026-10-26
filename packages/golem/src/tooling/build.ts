@@ -117,7 +117,12 @@ const TSC_COMMAND_OPTIONS = [
   { name: 'generateTrace', flag: '--generateTrace <dir>', set: (value: unknown) => typeof value === 'string' && value !== '' },
   { name: 'extendedDiagnostics', flag: '--extendedDiagnostics', set: (value: unknown) => value === true },
   { name: 'explainFiles', flag: '--explainFiles', set: (value: unknown) => value === true },
+  { name: 'traceResolution', flag: '--traceResolution', set: (value: unknown) => value === true },
+  { name: 'diagnostics', flag: '--diagnostics', set: (value: unknown) => value === true },
 ] as const;
+
+/** Options that only the `tsc` command takes: they ask it to print or write something other than a build. */
+const TSC_COMMANDS = ['showConfig', 'listFilesOnly', 'version', 'help', 'init'] as const;
 
 /** Fail on a configuration the staged copy cannot mirror: the tsconfig's, with the forwarded arguments applied. It reads options alone, so it runs before anything is generated. */
 function assertSupported(configFile: string, parsed: { readonly options: ts.CompilerOptions; readonly fileNames: readonly string[] }): void {
@@ -131,6 +136,9 @@ function assertSupported(configFile: string, parsed: { readonly options: ts.Comp
   if (Array.isArray(options.rootDirs)) throw unsupported('rootDirs');
   if (options.inlineSourceMap === true) throw unsupported('inlineSourceMap');
   if (stringOption(options, 'sourceRoot') !== undefined) throw unsupported('sourceRoot');
+  for (const name of TSC_COMMANDS) {
+    if (options[name] === true) throw new Error(`golem build does not support --${name} (${displayPath(configFile)}): it is a command of tsc, not an option of a build. Run tsc --${name} instead.`);
+  }
   // The tsconfig and the forwarded arguments are the same to the build: a setting in either is refused, never ignored.
   for (const option of TSC_COMMAND_OPTIONS) {
     if (option.set(options[option.name])) {

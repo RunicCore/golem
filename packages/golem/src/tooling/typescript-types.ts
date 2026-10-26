@@ -545,8 +545,6 @@ export interface Diagnostic {
   readonly code?: number;
   /** Where the diagnostic starts in its file. */
   readonly pos?: number;
-  /** Where the diagnostic ends in its file. */
-  readonly end?: number;
   /** The file the diagnostic is about; absent for a diagnostic about the program as a whole. */
   readonly fileName?: string;
   /** 1 for an error: the category the error summary counts. */

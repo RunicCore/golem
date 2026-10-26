@@ -10,7 +10,7 @@ import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed, flagsAsConfigOptions } from './typescript-config.js';
+import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, emitWanted, flagsAsConfigOptions } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
@@ -114,7 +114,6 @@ interface ClassicMessageChain {
 interface ClassicDiagnostic {
   readonly file?: Golem.SourceFile;
   readonly start?: number;
-  readonly length?: number;
   readonly code: number;
   readonly category: number;
   readonly messageText: string | ClassicMessageChain;
@@ -637,9 +636,8 @@ class CompatProgram implements Golem.Program {
   emitToMemory(kind: Golem.EmitKind): Golem.MemoryEmit {
     const options = this.getCompilerOptions();
     const declarations = kind === 'declarations';
-    const wanted = options.noEmit !== true && (declarations ? options.declaration === true || options.composite === true : options.emitDeclarationOnly !== true);
     const files = new Map<string, string>();
-    if (!wanted) return { emitSkipped: true, files, diagnostics: [] };
+    if (!emitWanted(options, declarations)) return { emitSkipped: true, files, diagnostics: [] };
     const result = this.program.emit(undefined, (filename, text) => {
       if (DECLARATION_OUTPUT.test(filename) === declarations) files.set(canonical(filename), text);
     }, undefined, declarations);
@@ -681,15 +679,14 @@ export function getPreEmitDiagnostics(program: Golem.Program): readonly Golem.Di
 export function getTscDiagnostics(program: Golem.Program, emitDiagnostics: readonly Golem.Diagnostic[] = []): readonly Golem.Diagnostic[] {
   if (!(program instanceof CompatProgram)) throw new TypeError('getTscDiagnostics needs a program opened by the TypeScript 6 backend.');
   const classicProgram = program.program;
-  const options = classicProgram.getCompilerOptions();
-  const found = [...classicProgram.getConfigFileParsingDiagnostics()];
-  const configured = found.length;
-  found.push(...classicProgram.getSyntacticDiagnostics());
-  if (found.length === configured) {
-    found.push(...classicProgram.getOptionsDiagnostics(), ...classicProgram.getGlobalDiagnostics());
-    if (found.length === configured) found.push(...classicProgram.getSemanticDiagnostics());
-    if (options.noEmit === true && (options.declaration === true || options.composite === true) && found.length === configured) found.push(...classicProgram.getDeclarationDiagnostics());
-  }
+  const found = collectTscDiagnostics<ClassicDiagnostic>({
+    config: () => classicProgram.getConfigFileParsingDiagnostics(),
+    syntactic: () => classicProgram.getSyntacticDiagnostics(),
+    options: () => classicProgram.getOptionsDiagnostics(),
+    global: () => classicProgram.getGlobalDiagnostics(),
+    semantic: () => classicProgram.getSemanticDiagnostics(),
+    declaration: () => classicProgram.getDeclarationDiagnostics(),
+  }, classicProgram.getCompilerOptions());
   return classic.sortAndDeduplicateDiagnostics([...found, ...emitDiagnostics as readonly ClassicDiagnostic[]]).map(withText);
 }
 
@@ -699,7 +696,6 @@ function withText(diagnostic: ClassicDiagnostic): Golem.Diagnostic & ClassicDiag
   return Object.create(diagnostic, {
     text: { value: headText(diagnostic.messageText), enumerable: true },
     pos: { value: start, enumerable: true },
-    end: { value: start === undefined ? undefined : start + (diagnostic.length ?? 0), enumerable: true },
     fileName: { value: file?.fileName, enumerable: true },
     startPosition: { value: file && start !== undefined ? file.getLineAndCharacterOfPosition(start) : undefined, enumerable: true },
   }) as Golem.Diagnostic & ClassicDiagnostic;
@@ -807,6 +803,7 @@ export class ProgramSession implements Disposable {
     this.assertOpen();
     this.observe(onInput, new Set());
     const commandLine = classic.parseCommandLine(flags);
+    assertNoSourceFiles(commandLine.fileNames);
     return this.parseConfig(configPath, new Map(), commandLine);
   }
 

@@ -29,7 +29,7 @@ import {
 import * as ast from 'typescript/ast';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed, flagsAsConfigOptions } from './typescript-config.js';
+import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, emitWanted, flagsAsConfigOptions } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
@@ -59,6 +59,7 @@ import {
 } from 'typescript/sync';
 import { serverFS, type FileSystemCallbacks } from 'typescript/fs';
 import type { Node, SourceFile, TypeNode } from 'typescript/ast';
+import type { EmitKind, MemoryEmit } from './typescript-types.js';
 
 export {
   API,
@@ -116,14 +117,6 @@ export enum IndexKind {
 
 export const isFunctionLike = ast.isFunctionLikeDeclaration;
 export const isTypeAssertionExpression = ast.isTypeAssertion;
-
-export type EmitKind = 'javascript' | 'declarations';
-
-export interface MemoryEmit {
-  readonly emitSkipped: boolean;
-  readonly files: ReadonlyMap<string, string>;
-  readonly diagnostics: readonly SyncDiagnostic[];
-}
 
 export interface Diagnostic {
   readonly fileName?: string;
@@ -733,10 +726,9 @@ class CompatProgram implements Program {
   emitToMemory(kind: EmitKind): MemoryEmit {
     const options = this.getCompilerOptions();
     const declarations = kind === 'declarations';
-    const wanted = options.noEmit !== true && (declarations ? options.declaration === true || options.composite === true : options.emitDeclarationOnly !== true);
-    if (!wanted) return { emitSkipped: true, files: new Map(), diagnostics: [] };
+    if (!emitWanted(options, declarations)) return { emitSkipped: true, files: new Map(), diagnostics: [] };
     const sources = this.getSourceFiles()
-      .filter((file) => !file.isDeclarationFile && !this.isSourceFileDefaultLibrary(file) && !this.isSourceFileFromExternalLibrary(file) && !file.fileName.split(/[\\/]/).includes('node_modules'))
+      .filter((file) => !file.isDeclarationFile && !this.isSourceFileDefaultLibrary(file) && !this.isSourceFileFromExternalLibrary(file))
       .map((file) => file.fileName);
     const output = declarations ? this.project.program.getDeclarationEmit(sources) : this.project.program.getJavaScriptEmit(sources);
     return {
@@ -845,15 +837,14 @@ function compareDiagnostics(left: SyncDiagnostic, right: SyncDiagnostic): number
  * options', the global and the semantic ones, then the declaration ones under `noEmit` (an emit reports its own); sorted without repeats.
  */
 export function getTscDiagnostics(program: Program, emitDiagnostics: readonly SyncDiagnostic[] = []): readonly SyncDiagnostic[] {
-  const options = program.getCompilerOptions();
-  const found = [...program.getConfigFileParsingDiagnostics()];
-  const configured = found.length;
-  found.push(...program.getSyntacticDiagnostics());
-  if (found.length === configured) {
-    found.push(...program.getProgramDiagnostics(), ...program.getGlobalDiagnostics());
-    if (found.length === configured) found.push(...program.getSemanticDiagnostics());
-    if (options.noEmit === true && (options.declaration === true || options.composite === true) && found.length === configured) found.push(...program.getDeclarationDiagnostics());
-  }
+  const found = collectTscDiagnostics<SyncDiagnostic>({
+    config: () => program.getConfigFileParsingDiagnostics(),
+    syntactic: () => program.getSyntacticDiagnostics(),
+    options: () => program.getProgramDiagnostics(),
+    global: () => program.getGlobalDiagnostics(),
+    semantic: () => program.getSemanticDiagnostics(),
+    declaration: () => program.getDeclarationDiagnostics(),
+  }, program.getCompilerOptions());
   const sorted = [...found, ...emitDiagnostics].sort(compareDiagnostics);
   return sorted.filter((diagnostic, index) => index === 0 || compareDiagnostics(sorted[index - 1]!, diagnostic) !== 0);
 }
@@ -1084,6 +1075,7 @@ export class ProgramSession implements Disposable {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
       const commandLine = api.parseCommandLine(flags);
+      assertNoSourceFiles(commandLine.fileNames);
       const { allowJs, resolveJsonModule, outDir, declarationDir } = commandLine.options;
       const matching = Object.fromEntries(Object.entries({ allowJs, resolveJsonModule, outDir, declarationDir }).filter(([, value]) => value !== undefined));
       const virtual = join(dirname(configPath), `${basename(configPath, '.json')}.flags.json`);

@@ -10,8 +10,9 @@ import { TSC } from './support/build-project.js';
 
 const COMPILER = { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, types: [] };
 
-function project(t: TestContext, files: Readonly<Record<string, string>>, compilerOptions: object = {}): { root: string; config: string } {
-  const root = createFixtureProject(t, 'golem-seam-build-');
+function project(t: TestContext, files: Readonly<Record<string, string>>, compilerOptions: object = {}, inside = ''): { root: string; config: string } {
+  const root = path.join(createFixtureProject(t, 'golem-seam-build-'), inside);
+  fs.mkdirSync(root, { recursive: true });
   fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'seam-build', private: true, type: 'module' }));
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({ compilerOptions: { ...COMPILER, ...compilerOptions }, include: ['src'] }));
   for (const [name, text] of Object.entries(files)) {
@@ -120,4 +121,25 @@ test('arguments reach a program as the options of a configuration parsed under t
   assert.equal(ts.getTscDiagnostics(flagged).length, 0);
   assert.equal(ts.getTscDiagnostics(overridden).length, 1, 'an override wins over an argument');
   assert.throws(() => session.openProgram({ root, sources, configFile: config, flags: ['--noSuchFlag'] }), /TS5023/);
+});
+
+test('an argument value is trimmed, an empty one is an empty list and a negative number is a number', t => {
+  // protects: T-461 --lib "es2020, dom", --lib "" and --maxNodeModuleJsDepth -1 reach a program as the configuration parsed under them has them
+  const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n' });
+  using session = new ts.ProgramSession({ cwd: root });
+  const picked = (options: ts.CompilerOptions) => ({ lib: options.lib, types: options.types, maxNodeModuleJsDepth: options.maxNodeModuleJsDepth });
+  for (const flags of [['--lib', 'es2020, dom', '--maxNodeModuleJsDepth', '-1'], ['--lib', '', '--types', '']]) {
+    const parsed = session.parseConfigFileWithFlags(config, flags);
+    using program = session.openProgram({ root, sources: parsed.fileNames, configFile: config, flags });
+    assert.deepEqual(picked(program.getCompilerOptions()), picked(parsed.options), flags.join(' '));
+  }
+  assert.throws(() => session.parseConfigFileWithFlags(config, ['src/a.ts']), /name source files \(src\/a\.ts\).*TS5042/);
+});
+
+test('a package built in place under node_modules emits its declarations', t => {
+  // protects: T-461 a project below a node_modules folder emits declarations to memory on both lanes
+  const { root, config } = project(t, { 'src/a.ts': 'export const a: number = 1;\n' }, { declaration: true, outDir: 'build', rootDir: 'src' }, 'node_modules/pkg');
+  using session = new ts.ProgramSession({ cwd: root });
+  using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config });
+  assert.deepEqual([...program.emitToMemory('declarations').files.keys()], [path.join(root, 'build/a.d.ts')]);
 });

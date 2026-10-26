@@ -24,7 +24,7 @@ function failingProject(t: Parameters<typeof serdeProject>[0], name: string): st
   return root;
 }
 
-for (const [option, flag] of [['generateTrace', ['--generateTrace', 'trace']], ['extendedDiagnostics', ['--extendedDiagnostics']], ['explainFiles', ['--explainFiles']]] as const) {
+for (const [option, flag] of [['generateTrace', ['--generateTrace', 'trace']], ['extendedDiagnostics', ['--extendedDiagnostics']], ['explainFiles', ['--explainFiles']], ['traceResolution', ['--traceResolution']], ['diagnostics', ['--diagnostics']]] as const) {
   for (const source of ['tsconfig', 'flag'] as const) {
     test(`golem build refuses ${option} from the ${source} before it generates, and names the tsc command that gives it`, async (t) => {
       // protects: T-461 D-78 the tsc-command options are refused the same from a tsconfig and a flag
@@ -77,19 +77,46 @@ test('a declaration-less build with a type error and noEmitOnError stops before 
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
 });
 
-test('no tsc process starts for the check: a check-only build spawns none, and an emitting build spawns the emit run alone', async (t) => {
-  // protects: T-461 the check and the declarations run in process
+test('no tsc process starts for the check of a check-only build', async (t) => {
+  // protects: T-461 the check runs in process
   const root = serdeProject(t, 'build-no-tsc-spawn');
   write(root, 'src/plain.ts', 'export const answer: number = 42;\n');
+  editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.noEmit = true; tsconfig.compilerOptions.declaration = false; });
   const spawn = mock.method(childProcess, 'spawn');
   syncBuiltinESMExports();
   t.after(() => { mock.restoreAll(); syncBuiltinESMExports(); });
-  const compilerRuns = (): number => spawn.mock.calls.filter((call) => (call.arguments[1] as readonly unknown[] | undefined)?.some((argument) => typeof argument === 'string' && argument.endsWith(path.join('bin', 'tsc')))).length;
-  const config = path.join(root, 'golem.yaml');
-  editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.noEmit = true; tsconfig.compilerOptions.declaration = false; });
-  assert.deepEqual(await runBuild({ watch: false, config }), { exitCode: 0 });
-  assert.equal(compilerRuns(), 0);
-  editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.noEmit = false; tsconfig.compilerOptions.declaration = true; });
-  assert.deepEqual(await runBuild({ watch: false, config }), { exitCode: 0 });
-  assert.equal(compilerRuns(), 1, 'the emit run only');
+  assert.deepEqual(await runBuild({ watch: false, config: path.join(root, 'golem.yaml') }), { exitCode: 0 });
+  const compilerRuns = spawn.mock.calls.filter((call) => (call.arguments[1] as readonly unknown[] | undefined)?.some((argument) => typeof argument === 'string' && argument.endsWith(path.join('bin', 'tsc'))));
+  assert.equal(compilerRuns.length, 0);
+});
+
+test('golem build refuses the tsc commands and the arguments that name files before it generates', async (t) => {
+  // protects: T-461 an option only tsc takes, or a file argument, fails at once instead of building something else
+  const root = serdeProject(t, 'build-refuse-commands');
+  write(root, 'src/plain.ts', 'export const answer: number = 42;\n');
+  fs.rmSync(path.join(root, '.golem'), { recursive: true, force: true });
+  for (const name of ['showConfig', 'listFilesOnly', 'version', 'help', 'init']) {
+    const result = await golemBuild(root, [`--${name}`]);
+    assert.notEqual(result.code, 0, name);
+    assert.match(result.stderr, new RegExp(`golem build does not support --${name} \\(.*tsconfig\\.json\\): it is a command of tsc`), name);
+  }
+  const files = await golemBuild(root, ['src/plain.ts']);
+  assert.notEqual(files.code, 0);
+  assert.match(files.stderr, /name source files \(src\/plain\.ts\).*TS5042/);
+  assert.equal(fs.existsSync(path.join(root, 'build')), false, 'nothing is emitted');
+  assert.equal(fs.existsSync(path.join(root, '.golem')), false, 'nothing is generated');
+});
+
+test('with noEmitOnError a syntax error alone is printed, as tsc prints it, and nothing is emitted', async (t) => {
+  // protects: T-461 a syntax error hides the type errors of the report, and noEmitOnError stops the build
+  const root = serdeProject(t, 'build-syntax-no-emit-on-error');
+  write(root, 'src/a.ts', "export const a: number = 'a';\n");
+  write(root, 'src/b.ts', 'export const = ;\n');
+  const flags = ['--noEmitOnError', '--pretty', 'false'];
+  const result = await golemBuild(root, flags);
+  assert.equal(printed(result.stdout), printed(await tsc(root, flags)));
+  assert.match(result.stdout, /src\/b\.ts\(1,14\): error TS1389/);
+  assert.doesNotMatch(result.stdout, /TS2322/);
+  assert.equal(result.code, 1);
+  assert.equal(fs.existsSync(path.join(root, 'build')), false);
 });
