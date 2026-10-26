@@ -36,6 +36,7 @@ import {
   CheckFlags as SyncCheckFlags,
   Checker,
   ElementFlags,
+  JsxEmit,
   ModuleKind,
   NodeBuilderFlags,
   ObjectFlags,
@@ -50,6 +51,7 @@ import {
   type Diagnostic as SyncDiagnostic,
   formatDiagnostics,
   type ModuleResolver,
+  type RawCompilerOptions,
   type ResolutionMode,
   type Signature as SyncSignature,
   type Type as SyncType,
@@ -61,6 +63,7 @@ export {
   API,
   formatDiagnostics,
   ElementFlags,
+  JsxEmit,
   ModuleKind,
   NodeBuilderFlags,
   ObjectFlags,
@@ -1008,6 +1011,15 @@ export class ProgramSession implements Disposable {
       } finally {
         retained.dispose();
       }
+    });
+  }
+
+  /** Compile one source text on its own, with the compiler's single-file transpile: no snapshot, no program. */
+  transpileModule(filename: string, text: string, compilerOptions: CompilerOptions): { readonly outputText: string; readonly sourceMapText: string; readonly diagnostics: readonly SyncDiagnostic[] } {
+    return this.withCompiler('parse', (api) => {
+      const { outputText, sourceMapText, diagnostics = [] } = api.transpileModule(text, { fileName: filename, compilerOptions: compilerOptions as RawCompilerOptions, reportDiagnostics: true });
+      if (sourceMapText === undefined) throw new Error(`The TypeScript compiler returned no source map for ${displayPath(filename)}`);
+      return { outputText, sourceMapText, diagnostics };
     });
   }
 

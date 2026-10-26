@@ -145,13 +145,13 @@ To write the response with a codec other than the one of the declared return typ
 
 ## Run with the Node loader
 
-Node's type stripping rejects the parameter decorators of a NestJS controller. To run the app through the Node loader, add a second loader that compiles decorators.
+Node's type stripping rejects the parameter decorators of a NestJS controller. The Node loader compiles each file that has a decorator with your TypeScript, so the app needs no second loader.
 
-1. Write `decorators.mjs` with a `load` hook. The hook calls `nextLoad` to get the file as golem rewrote it, then compiles the decorators.
-2. Register it after golem's loader:
+1. Set `experimentalDecorators` and `emitDecoratorMetadata` in the tsconfig that `golem.yaml` names.
+2. Run the entry file through golem's loader:
 
 ```sh
-node --import @exprtlabs/golem/register --import ./decorators.mjs src/main.ts
+node --import @exprtlabs/golem/register src/main.ts
 ```
 
 The [`register`](/reference/runtime-api#register) entry describes the loader.

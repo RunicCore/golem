@@ -234,6 +234,12 @@ export interface ControllerContext {
    * class that extends the generated base of one, is matched to its model through the file this job writes for it.
    */
   readonly models?: ControllerModels;
+  /**
+   * Where the jobs after this one in the same golem.yaml write, absolute: a directory for an openapi job, a file for a controllers job.
+   * The models job is not listed: its generated files are stubbed in the controllers program. A model file that imports one of these
+   * paths is not read by the controllers analysis, because the import does not resolve until that job has run.
+   */
+  readonly laterOutputs?: readonly string[];
   readonly onInput?: InputObserver;
   readonly session?: GeneratorSession;
 }

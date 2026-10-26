@@ -7,69 +7,12 @@ import test, { type TestContext } from 'node:test';
 
 import { load } from '#golem/loader';
 import { runPipeline } from '#golem/cli';
-import { copyFixtureFile, createFixtureProject, linkProjectPackages, readFixture, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
+import { createFixtureProject, linkProjectPackages, readFixture, snapshotFilesystem } from './fixture-project.js';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { createModelProject } from './model-project.js';
-import { command, workspace, type CommandResult } from './support/process.js';
+import { command, workspace } from './support/process.js';
+import { MAIN, MODELS_YAML, NODE_FLAGS, SERDE, frameLine, lineOf, project, run, write } from './support/loader-project.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
-
-const NODE_FLAGS = ['--import', '@exprtlabs/golem/register', '--experimental-strip-types', '--enable-source-maps'] as const;
-const SERDE = '@exprtlabs/golem/serde';
-const MODELS_YAML = 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n';
-
-/** Under Node's type stripping every relative import names its `.ts` file. */
-const MAIN = `import { parse, stringify } from '${SERDE}';
-import type { TMoney } from './money.model.ts';
-import './money.model.ts';
-import { twice } from './util.ts';
-
-const text = stringify<TMoney>({ currency: 'USD', value: '1' });
-const money = parse<TMoney>(text);
-console.log(JSON.stringify({ money, twice: twice(21) }));
-const trace = new Error('where am I').stack;
-console.log(trace);
-`;
-const UTIL = 'export const twice = (value: number): number => value * 2;\n';
-
-function write(root: string, relative: string, text: string): void {
-  writeGeneratedArtifacts([{ path: path.join(root, relative), content: text }]);
-}
-
-function lineOf(source: string, prefix: string): number {
-  return source.split(/\r?\n/).findIndex((text) => text.replace(/^\uFEFF/, '').startsWith(prefix)) + 1;
-}
-
-/** The mapped line of the stack frame that names `file`. */
-function frameLine(output: string, file: string): number {
-  const frame = new RegExp(`${file.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}:(\\d+):\\d+\\)?$`, 'm');
-  return Number(output.match(frame)?.[1]);
-}
-
-/** A project that runs under Node's type stripping. It runs `golem generate` unless told not to. */
-async function project(t: TestContext, name: string, options: { readonly generate?: boolean; readonly preserveSymlinks?: boolean } = {}): Promise<string> {
-  const { root } = createModelProject(t, {
-    prefix: 'golem-loader-',
-    name,
-    linkTypescript: true,
-    packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
-    compilerOptions: { noEmit: true, allowImportingTsExtensions: true, ...(options.preserveSymlinks === true ? { preserveSymlinks: true } : {}) },
-  });
-  write(root, 'golem.yaml', MODELS_YAML);
-  copyFixtureFile(root, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
-  write(root, 'src/money.model.ts', fs.readFileSync(path.join(root, 'src/money.model.ts'), 'utf8').replace('.generated.js', '.generated.ts'));
-  write(root, 'src/main.ts', MAIN);
-  write(root, 'src/util.ts', UTIL);
-  if (options.generate !== false) await runPipeline(path.join(root, 'golem.yaml'));
-  return root;
-}
-
-/** Runs the loader in a child Node, then asserts that the loader changed no file of the project: bytes and mtimes. */
-async function run(root: string, file: string, options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv; readonly flags?: readonly string[] } = {}): Promise<CommandResult> {
-  const before = snapshotFilesystem(root);
-  const result = await command(options.cwd ?? root, process.execPath, [...NODE_FLAGS, ...(options.flags ?? []), file], { allowFailure: true, ...(options.env ? { env: options.env } : {}) });
-  assert.deepEqual(snapshotFilesystem(root), before, 'the loader changed a file of the project');
-  return result;
-}
 
 test('node runs a TypeScript file whose parse and stringify calls the host rewrites', async (t) => {
   const root = await project(t, 'loader-run');
@@ -347,19 +290,6 @@ test('CommonJS TypeScript with no rewrite still runs', async (t) => {
   }
 });
 
-/**
- * Node cannot parse decorators, so the test chains a loader hook after golem's that compiles them with esbuild. The
- * hook sees the controller as golem's hook rewrote it.
- */
-const DECORATOR_HOOK = `import { transform } from 'esbuild';
-export async function load(url, context, nextLoad) {
-  const loaded = await nextLoad(url, context);
-  if (!url.endsWith('.controller.ts')) return loaded;
-  const { code } = await transform(String(loaded.source), { loader: 'ts', format: 'esm', tsconfigRaw: { compilerOptions: { experimentalDecorators: true } } });
-  return { ...loaded, format: 'module', source: code };
-}
-`;
-const DECORATOR_REGISTER = "import { register } from 'node:module';\nregister('./decorator-hook.mjs', import.meta.url);\n";
 const NEST_CONTROLLER = `import { Body, Controller, Post } from '@nestjs/common';
 import { Payment } from './payment.model.ts';
 
@@ -392,13 +322,11 @@ test('a Nest controller with a @Body() model parameter carries nestModelCodec me
       'src/payment.model.ts': readFixture('controllers/nest-plugin/project/payment.model.ts').replace('.generated.js', '.generated.ts'),
       'src/payments.controller.ts': NEST_CONTROLLER,
       'src/main.ts': NEST_MAIN,
-      'decorator-hook.mjs': DECORATOR_HOOK,
-      'decorator-register.mjs': DECORATOR_REGISTER,
     },
   });
   await runPipeline(path.join(root, 'golem.yaml'));
   write(root, 'golem.yaml', `${MODELS_YAML}controllers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n`);
-  const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });
+  const result = await run(root, 'src/main.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { stamped: true, parsed: { id: '1', note: 'hello' } });
 });
@@ -417,8 +345,6 @@ async function nestCodecProject(t: TestContext, controller: string, main: string
       'src/payment.model.ts': readFixture('controllers/nest-plugin/project/payment.model.ts').replace('.generated.js', '.generated.ts'),
       'src/payments.controller.ts': controller,
       'src/main.ts': main,
-      'decorator-hook.mjs': DECORATOR_HOOK,
-      'decorator-register.mjs': DECORATOR_REGISTER,
     },
   });
   await runPipeline(path.join(root, 'golem.yaml'));
@@ -446,7 +372,7 @@ test('a @Body() IObject alias named only as a type has its codec registered with
     "console.log(JSON.stringify({ stamped: codec !== undefined, parsed: codec?.parse('{\"note\":\"hello\"}') }));",
     '',
   ].join('\n'));
-  const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });
+  const result = await run(root, 'src/main.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { stamped: true, parsed: { note: 'hello' } });
 });
@@ -472,19 +398,18 @@ test('a model named only in an async Promise return has its codec registered wit
     "console.log(JSON.stringify({ registered: getObjectCodec(id) !== undefined }));",
     '',
   ].join('\n'));
-  const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });
+  const result = await run(root, 'src/main.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { registered: true });
 });
 
-test('files under node_modules, .tsx files, other schemes and non-TypeScript files pass through without opening a project', async (t) => {
+test('files under node_modules, other schemes and non-TypeScript files pass through without opening a project', async (t) => {
   const root = createFixtureProject(t, 'golem-loader-passthrough-');
   const before = snapshotFilesystem(root);
   const next = { format: 'module', source: 'marker' };
   const nextLoad = () => next;
   for (const url of [
     pathToFileURL(path.join(root, 'node_modules/dep/index.ts')).href,
-    pathToFileURL(path.join(root, 'src/view.tsx')).href,
     pathToFileURL(path.join(root, 'src/plain.js')).href,
     pathToFileURL(path.join(root, 'src/data.json')).href,
     'node:fs',

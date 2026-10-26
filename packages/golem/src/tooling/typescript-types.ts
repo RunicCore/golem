@@ -13,6 +13,7 @@ export type ElementFlags = number & { readonly __elementFlags?: never };
 export type NodeBuilderFlags = number & { readonly __nodeBuilderFlags?: never };
 export type SignatureKind = number & { readonly __signatureKind?: never };
 export type IndexKind = number & { readonly __indexKind?: never };
+export type JsxEmit = number & { readonly __jsxEmit?: never };
 export type ModuleKind = number & { readonly __moduleKind?: never };
 export type ModuleResolutionKind = number & { readonly __moduleResolutionKind?: never };
 export type ScriptTarget = number & { readonly __scriptTarget?: never };
@@ -286,6 +287,12 @@ export interface EnumMember extends Node {
 export interface ModuleDeclaration extends Node {
   readonly kind: KindOf<'ModuleDeclaration'>;
   readonly name: Identifier | StringLiteral;
+  /** A block, or the next name of a dotted namespace; none for `declare module 'x';`. */
+  readonly body?: Node;
+}
+export interface ModuleBlock extends Node {
+  readonly kind: KindOf<'ModuleBlock'>;
+  readonly statements: readonly Node[];
 }
 export interface VariableDeclaration extends Node {
   readonly kind: KindOf<'VariableDeclaration'>;
@@ -587,6 +594,11 @@ export interface ProgramSession extends Disposable {
   openProgram(options: OpenProgramOptions): Program;
   /** Parse one source text on its own, without a program: its syntax tree, with no types and no diagnostics. */
   parseSourceFile(filename: string, text: string): SourceFile;
+  /**
+   * Compile one source text on its own to JavaScript, with no program and no type check: `compilerOptions` set how decorators and JSX
+   * lower, and the map describes the text given. `diagnostics` are the syntax and option errors; the output is the compiler's recovery from them.
+   */
+  transpileModule(filename: string, text: string, compilerOptions: CompilerOptions): { readonly outputText: string; readonly sourceMapText: string; readonly diagnostics: readonly Diagnostic[] };
   /** Resolve a module name that no program imports, such as one an SDK manifest names, as the compiler resolves an import of `containingFile`: the disk and `virtualFiles` count. */
   resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles?: ReadonlySet<string>): { resolvedModule?: ResolvedModule };
 }
@@ -595,13 +607,18 @@ export interface ProgramSession extends Disposable {
 // members golem reads; the type `X` above is the number those members hold.
 export interface TypeScriptBackend {
   readonly SyntaxKind: {
+    readonly DeclareKeyword: SyntaxKind;
     readonly ExportKeyword: SyntaxKind;
     readonly ExtendsKeyword: SyntaxKind;
     readonly FalseKeyword: SyntaxKind;
     readonly ImportKeyword: SyntaxKind;
     readonly MinusToken: SyntaxKind;
     readonly NullKeyword: SyntaxKind;
+    readonly OverrideKeyword: SyntaxKind;
     readonly PlusToken: SyntaxKind;
+    readonly PrivateKeyword: SyntaxKind;
+    readonly ProtectedKeyword: SyntaxKind;
+    readonly PublicKeyword: SyntaxKind;
     readonly ReadonlyKeyword: SyntaxKind;
     readonly StaticKeyword: SyntaxKind;
     readonly ThisKeyword: SyntaxKind;
@@ -650,7 +667,8 @@ export interface TypeScriptBackend {
   readonly NodeBuilderFlags: { readonly NoTruncation: NodeBuilderFlags };
   readonly SignatureKind: { readonly Call: SignatureKind };
   readonly IndexKind: { readonly String: IndexKind };
-  readonly ModuleKind: { readonly NodeNext: ModuleKind };
+  readonly JsxEmit: { readonly Preserve: JsxEmit; readonly ReactNative: JsxEmit };
+  readonly ModuleKind: { readonly ESNext: ModuleKind; readonly NodeNext: ModuleKind };
   readonly ModuleResolutionKind: { readonly NodeNext: ModuleResolutionKind };
   readonly ScriptTarget: { readonly ES2022: ScriptTarget };
   readonly CheckFlags: { readonly Readonly: number; readonly Mapped: number };
@@ -717,6 +735,7 @@ export interface TypeScriptBackend {
   isMappedTypeNode(node: Node): node is MappedTypeNode;
   isMethodDeclaration(node: Node): node is MethodDeclaration;
   isMethodSignature(node: Node): node is MethodSignature;
+  isModuleBlock(node: Node): node is ModuleBlock;
   isModuleDeclaration(node: Node): node is ModuleDeclaration;
   isNamedExports(node: Node): node is NamedExports;
   isNamedImports(node: Node): node is NamedImports;

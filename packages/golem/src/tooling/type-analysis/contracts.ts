@@ -2,12 +2,13 @@ import * as path from 'node:path';
 import * as ts from '../typescript-ns.js';
 import { collectSpecifications, type ModelSpecification, type TypeAnalysisContext } from './models.js';
 import { descriptorBuilder, type ModelConversionDescriptor } from './types.js';
-import { byRealPath, companionFilename, includedModelSources, isGeneratedCompanion, typeScriptErrorAt, type ModelBoundary } from './project.js';
+import { byRealPath, companionFilename, filesReadingOutputs, includedModelSources, inNodeModules, isGeneratedCompanion, isUnderOutputs, typeScriptErrorAt, type ModelBoundary } from './project.js';
 import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
+import { canonicalPath, displayPath } from '../generator-api.js';
 import { canonicalDescriptorKey } from '../schema.js';
 import { deduplicateProjections } from './graph.js';
-import { diagnostic, linkedClasses, modelSpecificationForClass } from './symbols.js';
+import { diagnostic, linkedClasses, modelSpecificationForClass, resolveSymbol } from './symbols.js';
 import { manifestModelOfSymbol, type ManifestIndex } from './provenance.js';
 import { codecPublicId, createSchemaGraph, internDescriptors } from '../schema-graph.js';
 
@@ -39,17 +40,25 @@ export function createContractAnalysis(
     readonly boundary?: ModelBoundary;
     /** The model manifests of the program, as the models job reads them: a model a manifest lists has the codec id of its manifest entry. */
     readonly manifests?: ManifestIndex;
+    /** Where the jobs after the controllers job write, absolute. A model file that imports a path under one is not read: its answer would depend on whether the job has run. */
+    readonly laterOutputs?: readonly string[];
     /** The component name a class declares for its model, such as `@ApiSchema({ name })`. It renames the OpenAPI component only; the model name and the codec ids stay. */
     readonly classComponentName?: (declaration: ts.ClassDeclaration) => string | undefined;
   },
 ): ContractAnalysis {
   const checker = program.getTypeChecker();
+  // The rule is the same in every run, so run 1 (no SDK yet) and run 2 (SDK present) describe the same models: a file under a later job's
+  // output, and a file that imports one by a relative import, directly or through the files it imports, is read by none of them.
+  // The files stay in the program, so a controller type still resolves.
+  const laterOutputs = (options.laterOutputs ?? []).map(canonicalPath);
+  const excluded = laterOutputs.length === 0 ? new Set<string>() : filesReadingOutputs(program, laterOutputs);
   const ownSources = program.getSourceFiles().filter(source => !source.isDeclarationFile
-    && !source.fileName.replace(/\\/g, '/').includes('/node_modules/')
+    && !inNodeModules(source.fileName)
+    && !excluded.has(source.fileName)
     && !isGeneratedCompanion(source.fileName)).map(source => source.fileName);
   // With the models job known, a model file of an installed package or a declaration file is a shared model file of the app, as it is for that job.
   const sharedSources = options.boundary === undefined ? [] : includedModelSources(
-    program.getSourceFiles().filter(source => !program.isSourceFileDefaultLibrary(source)).map(source => source.fileName),
+    program.getSourceFiles().filter(source => !program.isSourceFileDefaultLibrary(source) && !excluded.has(source.fileName)).map(source => source.fileName),
     options.boundary.suffixes,
   );
   // A file has one name: TypeScript's own spelling and the normalized one of a shared file are the same file.
@@ -140,6 +149,69 @@ export function createContractAnalysis(
     return sameFields ? candidate : !type.isUnion() ? modelSpecificationForClass(checker, type, specifications) : undefined;
   };
 
+  /**
+   * The file a controller type reaches that a later job decides: a declaration in an excluded file, or an import that points under a
+   * later output, even where the import does not resolve yet. Any reach counts, whatever field of the file the type keeps. The
+   * controller's own file does not count as a reach.
+   */
+  const reachedLaterOutput = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): string | undefined => {
+    if (laterOutputs.length === 0) return undefined;
+    const own = node.getSourceFile().fileName;
+    // Every program file under an output is in `excluded`; only a file of node_modules can reach one, through a symlink.
+    const linked = new Map<string, boolean>();
+    const later = (symbol: ts.Symbol | undefined): string | undefined => symbol?.declarations
+      ?.map((declaration) => declaration.getSourceFile().fileName).find((file) => file !== own && (excluded.has(file)
+        || (inNodeModules(file) && (linked.get(file) ?? linked.set(file, isUnderOutputs(laterOutputs, file)).get(file)))));
+    let found: string | undefined;
+    // The local types a controller type names are read too: `type Local = { m: Money }` keeps the SDK import of its file.
+    const declarationsSeen = new Set<ts.Node>();
+    const visitNode = (visited: ts.Node): void => {
+      if (found !== undefined) return;
+      if (ts.isIdentifier(visited)) {
+        const symbol = checker.getSymbolAtLocation(visited);
+        for (const declaration of symbol?.declarations ?? []) {
+          let owner: ts.Node | undefined = declaration;
+          while (owner && !ts.isImportDeclaration(owner)) owner = owner.parent;
+          const specifier = owner && ts.isImportDeclaration(owner) && ts.isStringLiteral(owner.moduleSpecifier) ? owner.moduleSpecifier.text : undefined;
+          const target = specifier?.startsWith('.') ? path.resolve(path.dirname(declaration.getSourceFile().fileName), specifier) : undefined;
+          if (target !== undefined && isUnderOutputs(laterOutputs, target)) found = target;
+        }
+        const resolved = resolveSymbol(checker, symbol);
+        found ??= later(resolved);
+        for (const declaration of resolved?.declarations ?? []) {
+          const file = declaration.getSourceFile();
+          if (found !== undefined || declarationsSeen.has(declaration) || file.isDeclarationFile || program.isSourceFileDefaultLibrary(file) || inNodeModules(file.fileName)) continue;
+          if (ts.isTypeAliasDeclaration(declaration) || ts.isInterfaceDeclaration(declaration) || ts.isClassDeclaration(declaration)) {
+            declarationsSeen.add(declaration);
+            visitNode(declaration);
+          }
+        }
+      }
+      ts.forEachChild(visited, visitNode);
+    };
+    const seen = new Set<ts.Type>();
+    const visitType = (visited: ts.Type): void => {
+      if (found !== undefined || seen.has(visited)) return;
+      seen.add(visited);
+      found = later(visited.aliasSymbol) ?? later(visited.getSymbol());
+      if (found !== undefined) return;
+      for (const argument of visited.aliasTypeArguments ?? []) visitType(argument);
+      if (visited.isUnion() || visited.isIntersection()) visited.types.forEach(visitType);
+      // The compiler shims return no arguments for a type that is no reference.
+      checker.getTypeArguments(visited).forEach(visitType);
+      const declared = visited.getSymbol()?.declarations?.[0]?.getSourceFile();
+      if (!(visited.flags & ts.TypeFlags.Object) || (declared && (program.isSourceFileDefaultLibrary(declared) || inNodeModules(declared.fileName)))) return;
+      for (const property of checker.getPropertiesOfType(visited)) {
+        found ??= later(property);
+        if (found === undefined && property.declarations[0]) visitType(checker.getTypeOfSymbolAtLocation(property, property.declarations[0]));
+      }
+    };
+    const syntax = typeNode ?? (ts.isTypeNode(node) ? node : undefined);
+    if (syntax) visitNode(syntax);
+    visitType(type);
+    return found;
+  };
+
   const describeController = (type: ts.Type, node: ts.Node, typeNode?: ts.TypeNode): ModelConversionDescriptor => {
     const syntax = typeNode ?? (ts.isTypeNode(node) ? node : undefined);
     const location = syntax ?? checker.typeToTypeNode(type, node, ts.NodeBuilderFlags.NoTruncation);
@@ -177,6 +249,10 @@ export function createContractAnalysis(
       return intact ? codecBySpec.get(intact) : undefined;
     },
     describe(type, node, typeNode) {
+      const reached = reachedLaterOutput(type, node, typeNode);
+      if (reached !== undefined) {
+        throw diagnostic(node.getSourceFile(), node, '1084', `Generated input dependency cycle: the controllers job reads ${displayPath(reached)}, which is, or imports, a file that a later job writes. The jobs run in the order generators, controllers, openapi, models, so the controllers job cannot read it. Move the model out of what the controllers reach.`);
+      }
       const intact = intactModel(type, node, typeNode);
       if (intact) {
         return { kind: 'reference', name: componentName(intact) };
