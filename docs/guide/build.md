@@ -58,6 +58,7 @@ The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project se
 - It prints type errors as `tsc -p` does. It uses colors and a `Found N errors` line when the `pretty` option is true, or when stdout is a terminal and `NO_COLOR` is not set.
 - A failed check still writes JavaScript, unless `noEmitOnError` is true. The exit status is not `0` after a failed check.
 - It writes an output file only when the file changes. A build with nothing changed writes no file.
+- A source map points at your original sources, not at the rewritten text. This holds for `sourceMap`, `inlineSourceMap`, `sourceRoot`, `mapRoot` and `inlineSources`.
 - `--listFiles` prints the files of the program. `--generateTrace`, `--extendedDiagnostics`, `--explainFiles`, `--traceResolution` and `--diagnostics` stop the build with a message, also when the tsconfig sets them. Run `tsc -p <tsconfig> --noEmit` with the option instead.
 - Do not run `tsc -p` without `--noEmit` on the same project. It writes JavaScript with no rewrite into the same `outDir`.
 

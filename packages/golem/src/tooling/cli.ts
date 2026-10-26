@@ -30,10 +30,6 @@ const BUILD_OWNED_ARGUMENTS: Readonly<Record<string, { readonly why: string; rea
     ['--composite', 'the emit program is not a composite build, and the check program must report what it reports'],
     ['--outFile', 'the emit program writes one file per source into the outDir of the tsconfig'],
     ['--declarationDir', 'the check program writes the declarations from your sources into the directory of the tsconfig'],
-    ['--sourceRoot', 'golem points source maps at your sources, which the emit program reads at their own paths'],
-    ['--mapRoot', 'golem points the maps of the emit program at your sources, and a forwarded map location would change what they resolve against'],
-    ['--inlineSourceMap', 'golem maps each source map back to your sources and cannot reach a map inside the JavaScript'],
-    ['--inlineSources', 'the maps of the emit program embed the sources of the tsconfig setting, and a forwarded one would embed the rewritten text'],
   ] as const).map(([flag, why]) => [flag.toLowerCase(), { why, workaround: 'set it in tsconfig.json' }])),
 };
 
