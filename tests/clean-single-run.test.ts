@@ -29,6 +29,14 @@ const statusModel = [
   '',
 ].join('\n');
 
+// A second model that holds the SDK model: it is left out with it.
+const orderModel = [
+  "import type { IModel } from '@exprtlabs/golem/model';",
+  "import type { TCart } from './cart.model.js';",
+  'export type TOrder = IModel<{ cart: TCart }>;',
+  '',
+].join('\n');
+
 const controllerReturning = (type: string, value: string): string => [
   "import { Controller, Get } from '@nestjs/common';",
   "import type { TCart } from './cart.model.js';",
@@ -48,7 +56,7 @@ function cleanProject(t: TestContext, controller: string): string {
     packageName: 'clean-run',
     links: 'workspace',
     tsconfig: JSON.parse(readFixture('packed/profile/tsconfig.json')) as Record<string, unknown>,
-    files: { 'golem.yaml': config, 'src/catalog.controller.ts': controller, 'src/status.model.ts': statusModel },
+    files: { 'golem.yaml': config, 'src/catalog.controller.ts': controller, 'src/status.model.ts': statusModel, 'src/order.model.ts': orderModel },
   });
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
   copyFixtureFile(root, 'packed/profile/src/cart.model.ts', 'src/cart.model.ts');
@@ -62,7 +70,7 @@ test('a clean tree generates in one run when an unreached model under the contro
 
   await runPipeline(path.join(root, 'golem.yaml'));
 
-  for (const written of ['generated/openapi.json', 'sdk/index.ts', 'src/cart.model.generated.ts']) {
+  for (const written of ['generated/openapi.json', 'sdk/index.ts', 'src/cart.model.generated.ts', 'src/order.model.generated.ts']) {
     assert.equal(fs.existsSync(path.join(root, written)), true, `${written} is written`);
   }
   await runPipeline(path.join(root, 'golem.yaml'), { check: true });
