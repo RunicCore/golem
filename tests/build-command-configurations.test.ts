@@ -206,6 +206,18 @@ test('a tsconfig that includes ../shared builds the output tree that tsc emits, 
   assert.equal((await importBuilt(app, 'app/src/main.js')).doubled, 42);
 });
 
+for (const [name, compilerOptions] of [['a rootDir that does not hold it', { rootDir: 'src' }], ['no rootDir', { rootDir: undefined }]] as const) {
+  test(`a source outside the project folder under ${name} is refused before any file is written, and the error names the file`, async (t) => {
+    // protects: T-462 the compiler would write its output beside the source, outside outDir, over files of the project
+    const { outer, app } = appBesideShared(t, `build-shared-outside-${name.replaceAll(' ', '-')}`, compilerOptions);
+    write(app, 'src/main.ts', 'export const main: number = 1;\n');
+    write(outer, 'shared/util.ts', 'export const value: number = 2;\n');
+    await assert.rejects(build(app), /golem build would write .*shared\/util\.(js|d\.ts) outside .*build.*Set rootDir/);
+    assert.deepEqual(fs.readdirSync(path.join(outer, 'shared')), ['util.ts']);
+    assert.equal(fs.existsSync(path.join(app, 'build')), false);
+  });
+}
+
 test('an app model with fields of plain shared types generates, builds and runs', async (t) => {
   const { outer, app } = appBesideShared(t, 'build-shared-fields');
   write(outer, 'shared/money.ts', 'export type TMoneyFields = { currency: string; value: string };\n');

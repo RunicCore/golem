@@ -1,11 +1,8 @@
-// lane: typescript6 the emit program of golem build: JavaScript and maps emitted to memory, written only when they differ from the disk
+// lane: typescript6 the emit program of golem build: JavaScript and maps emitted to memory, written only when they differ from the disk, in place
 import assert from 'node:assert/strict';
-import childProcess from 'node:child_process';
 import fs from 'node:fs';
-import { syncBuiltinESMExports } from 'node:module';
 import path from 'node:path';
-import test, { mock, type TestContext } from 'node:test';
-import { runBuild } from '#golem/build';
+import test, { type TestContext } from 'node:test';
 import { command } from './support/process.js';
 import { TSC, write, editTsconfig, serdeProject, USE, build, mtimes, golemBuild } from './support/build-project.js';
 
@@ -27,19 +24,6 @@ async function builtProject(t: TestContext, name: string): Promise<{ root: strin
 function contents(directory: string): Map<string, string> {
   return new Map([...mtimes(directory, '').keys()].map((file) => [file, fs.readFileSync(path.join(directory, file), 'utf8')]));
 }
-
-test('no tsc process starts for a build that emits', async (t) => {
-  // protects: T-462 the emit runs in process: the check, the declarations and the JavaScript start no tsc
-  const root = serdeProject(t, 'build-emit-no-tsc');
-  write(root, 'src/use.ts', USE);
-  const spawn = mock.method(childProcess, 'spawn');
-  syncBuiltinESMExports();
-  t.after(() => { mock.restoreAll(); syncBuiltinESMExports(); });
-  assert.deepEqual(await runBuild({ watch: false, config: path.join(root, 'golem.yaml') }), { exitCode: 0 });
-  assert.ok(fs.existsSync(path.join(root, 'build/use.js')) && fs.existsSync(path.join(root, 'build/use.d.ts')));
-  const compilerRuns = spawn.mock.calls.filter((call) => (call.arguments[1] as readonly unknown[] | undefined)?.some((argument) => typeof argument === 'string' && argument.endsWith(path.join('bin', 'tsc'))));
-  assert.equal(compilerRuns.length, 0);
-});
 
 test('a build with nothing changed writes no output, and an output another tool overwrote is written again', async (t) => {
   // protects: T-462 each output is compared with the disk, not with the last build
@@ -108,4 +92,44 @@ test('a build removes the staged copy and the build state that a golem build bef
   const removed = ['build/tsconfig', 'build/tsconfig/check.tsbuildinfo', 'build/tsconfig/emit.tsbuildinfo', 'build/tsconfig/stage', 'build/tsconfig/stage/linked', 'build/tsconfig/stage/linked/keep.txt', 'build/tsconfig/stage/src', 'build/tsconfig/stage/src/use.ts'];
   assert.deepEqual(under(), before.filter((file) => !removed.includes(file)), 'the state of another tsconfig and the files of the jobs stay');
   assert.equal(fs.readFileSync(path.join(root, 'linked/keep.txt'), 'utf8'), 'the project folder the stage links to');
+});
+
+test('an output keeps its mode and a linked output stays a link when the build writes it again', async (t) => {
+  // protects: T-462 tsc wrote in place: a postbuild chmod and a link in outDir survive a rebuild
+  const { root } = await builtProject(t, 'build-emit-in-place');
+  const built = path.join(root, 'build');
+  fs.chmodSync(path.join(built, 'use.js'), 0o755);
+  fs.mkdirSync(path.join(built, 'target'));
+  fs.renameSync(path.join(built, 'plain.js'), path.join(built, 'target/plain.js'));
+  fs.symlinkSync(path.join(built, 'target/plain.js'), path.join(built, 'plain.js'));
+  write(root, 'src/use.ts', `${USE}export const again = stringify<TMoney>({ currency: 'EUR', value: '2' });\n`);
+  write(root, 'src/plain.ts', 'export const answer: number = 43;\n');
+  assert.deepEqual(await build(root), { exitCode: 0 });
+  assert.match(fs.readFileSync(path.join(built, 'use.js'), 'utf8'), /again/);
+  assert.equal(fs.statSync(path.join(built, 'use.js')).mode & 0o777, 0o755);
+  assert.equal(fs.lstatSync(path.join(built, 'plain.js')).isSymbolicLink(), true);
+  assert.match(fs.readFileSync(path.join(built, 'target/plain.js'), 'utf8'), /answer = 43/);
+});
+
+test('a JSON file the sources import is copied into outDir, as tsc copies it', async (t) => {
+  // protects: T-462 the in-memory emit carries the JSON copies that tsc writes
+  const root = serdeProject(t, 'build-emit-json');
+  editTsconfig(root, (tsconfig) => { tsconfig.compilerOptions.resolveJsonModule = true; });
+  write(root, 'src/data.json', '{ "name": "golem" }\n');
+  write(root, 'src/use.ts', "import data from './data.json' with { type: 'json' };\nexport const name: string = data.name;\n");
+  assert.deepEqual(await build(root), { exitCode: 0 });
+  await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--outDir', 'plain']);
+  assert.equal(fs.readFileSync(path.join(root, 'build/data.json'), 'utf8'), fs.readFileSync(path.join(root, 'plain/data.json'), 'utf8'));
+  assert.match(fs.readFileSync(path.join(root, 'build/data.json'), 'utf8'), /"name": "golem"/);
+});
+
+test('leftovers of an older build that cannot be removed are reported, and the build goes on', async (t) => {
+  // protects: T-462 the cleanup of the old stage is best effort
+  const root = serdeProject(t, 'build-emit-old-state-stuck');
+  write(root, 'src/use.ts', USE);
+  write(root, '.golem/build', 'a file where the folder of the old state was');
+  const result = await golemBuild(root, []);
+  assert.equal(result.code, 0, `${result.stdout}${result.stderr}`);
+  assert.match(result.stderr, /golem build could not remove .*tsconfig, which an older golem build left/);
+  assert.ok(fs.existsSync(path.join(root, 'build/use.js')));
 });

@@ -257,12 +257,12 @@ test('composing maps resolves an output position to the original, whatever the o
   const original = 'const a = 1;\nconst x = parse<T>(v);\n';
   const applied = applyRewrites(original, rewriteOf([replace(original, 'parse<T>', '__golem_requireObjectCodec("T_1").parse')]));
   const rewritten = { code: applied.code, map: { ...applied.map, sources: ['src/x.ts'] } };
-  // The compiler dropped the first statement and indented the second by two spaces, naming the staged copy.
+  // The compiler dropped the first statement and indented the second by two spaces, naming the source the compiler read.
   const secondLine = rewritten.code.split('\n')[1]!;
   const outer: SourceMapV3 = {
     version: 3,
     file: 'x.js',
-    sources: ['../stage/src/x.ts'],
+    sources: ['../elsewhere/src/x.ts'],
     names: [],
     mappings: encodeMappings([[
       [2, 0, 1, 0],

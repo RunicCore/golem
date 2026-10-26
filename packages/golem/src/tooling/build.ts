@@ -5,7 +5,7 @@ import path from 'node:path';
 import { canonicalFile, modelsRootOf, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
-import { displayPath, errorMessage, GolemDiagnosticSeverity, isInsideDirectory } from './generator-api.js';
+import { displayPath, errorMessage, GolemDiagnosticSeverity, hasErrorCode, isInsideDirectory } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { nodeSpecifierEdits } from './node-specifiers.js';
 import { atomicWrite } from './outputs.js';
@@ -329,6 +329,8 @@ interface BuildRun {
   readonly emitted?: Map<string, Set<string>>;
   /** For a watching build, what the build reads first and what it was then: the only baseline a file the build has not met before can have. */
   baseline?: RunBaseline;
+  /** Whether the leftovers of an older golem build were looked for: once for each run, not for each build of a watch. */
+  oldStateRemoved: boolean;
   readonly generation: GeneratorSessionResources;
   readonly onGenerated?: (ran: ReadonlySet<string>) => void;
   /** The last generate run that finished: the next run reruns only the jobs a changed input reaches. Empty after a failed run. */
@@ -371,14 +373,20 @@ const BUILD_INFO = /\.tsbuildinfo$/;
 /**
  * Remove what a golem build before the in-process emit kept under `.golem/build/<config name>`: the staged copy of the sources, with the
  * links it holds to the `node_modules` of the project (a link is removed, never entered), and the build state of the check and of the emit.
- * Nothing reads them now. Only these paths go, and then the folders they leave empty.
+ * Nothing reads them now. Only these paths go, and then the folders they leave empty. A failure is a warning, once for each run.
  */
 function removeOldBuildState(root: string, configFile: string): void {
   const build = path.join(root, '.golem', 'build');
   const directory = path.join(build, path.basename(configFile).replace(/\.json$/, ''));
-  for (const old of ['stage', 'emit.tsbuildinfo', 'check.tsbuildinfo']) fs.rmSync(path.join(directory, old), { recursive: true, force: true });
-  for (const folder of [directory, build]) {
-    if (fs.existsSync(folder) && fs.readdirSync(folder).length === 0) fs.rmdirSync(folder);
+  try {
+    for (const old of ['stage', 'emit.tsbuildinfo', 'check.tsbuildinfo']) fs.rmSync(path.join(directory, old), { recursive: true, force: true });
+    for (const folder of [directory, build]) {
+      if (fs.existsSync(folder) && fs.readdirSync(folder).length === 0) fs.rmdirSync(folder);
+    }
+  } catch (error) {
+    // The leftovers are of no use to the build, so a file system that will not give them up (a permission, a busy file, a file where a folder was) does not stop it.
+    if (!['EACCES', 'EPERM', 'EBUSY', 'ENOTDIR', 'ENOTEMPTY'].some((code) => hasErrorCode(error, code))) throw error;
+    process.stderr.write(`golem build could not remove ${displayPath(directory)}, which an older golem build left: ${errorMessage(error)}\n`);
   }
 }
 
@@ -404,12 +412,34 @@ function pointSourceMap(mapFile: string, text: string, rewriteMaps: ReadonlyMap<
   });
 }
 
-/** Write one output when it differs from the file on disk, so a file another tool changed is repaired and a file that is current keeps its time stamp. A failure names the file. */
+/**
+ * Write one output when it differs from the file on disk, so a file another tool changed is repaired and a file that is current keeps its time stamp.
+ * A file that exists is written in place, as `tsc` does: a link stays a link and the mode of the file, such as an exec bit, stays. A new file is
+ * published whole, so no reader sees half of it. A failure names the file.
+ */
 function writeOutput(file: string, text: string): void {
   try {
-    atomicWrite(file, text);
+    const existing = fs.statSync(file, { throwIfNoEntry: false });
+    if (existing === undefined) atomicWrite(file, text);
+    else if (existing.isFile() && fs.readFileSync(file, 'utf8') !== text) fs.writeFileSync(file, text);
+    else if (!existing.isFile()) throw new Error('it is not a file');
   } catch (error) {
     throw new Error(`golem build could not write ${displayPath(file)}: ${errorMessage(error)}`, { cause: error });
+  }
+}
+
+/**
+ * Refuse a build whose compiler would place an output outside the directory it belongs in: the outDir for JavaScript and maps, the declarationDir
+ * (else the outDir) for declarations. With no `rootDir`, or one that does not hold every source, a source outside the project folder lands beside
+ * itself, where the build would overwrite files of the project. Nothing is written before every output is checked.
+ */
+function assertContained(project: Project, configFile: string, javascript: ReadonlyMap<string, string>, declarations: ReadonlyMap<string, string>): void {
+  const directories: readonly [ReadonlyMap<string, string>, string][] = [[javascript, project.outDir], [declarations, project.declarationDir ?? project.outDir]];
+  for (const [files, directory] of directories) {
+    for (const file of files.keys()) {
+      if (isInsideDirectory(directory, file)) continue;
+      throw new Error(`golem build would write ${displayPath(file)} outside ${displayPath(directory)}, because a source of ${displayPath(configFile)} is outside its rootDir or, with no rootDir, outside the project folder. Set rootDir to a folder that holds every source, or keep the sources inside it.`);
+    }
   }
 }
 
@@ -434,7 +464,10 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   }
   observe(configFile);
   requestTypeScriptRoot(root);
-  removeOldBuildState(root, configFile);
+  if (!run.oldStateRemoved) {
+    run.oldStateRemoved = true;
+    removeOldBuildState(root, configFile);
+  }
   // The options of the tsconfig with the forwarded arguments applied, as `tsc -p` resolves them. A configuration the build cannot mirror fails before anything is generated.
   const parseOptions = (): { options: ts.CompilerOptions; fileNames: string[] } => (run.tscArguments.length === 0
     ? session.parseConfigFile(configFile, observe)
@@ -472,11 +505,12 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   if (stopped) return checkCode;
   const sources = projectSources(program);
   for (const source of sources) observe(source.fileName);
+  // Nothing is written until the emit has succeeded: a failed build leaves the outputs of the build before as they were.
   const written = declarations === undefined ? new Map<string, string>() : rewriteDeclarations(session, project, sources, parsed.fileNames, run.tscArguments, declarations.files);
-  for (const [file, text] of written) writeOutput(file, text);
-  const checkFiles = [...written.keys()];
   if (!project.emitsJavaScript) {
-    settleOutputs(run, project, sources, checkFiles);
+    assertContained(project, configFile, new Map(), written);
+    for (const [file, text] of written) writeOutput(file, text);
+    settleOutputs(run, project, sources, [...written.keys()]);
     return checkCode;
   }
   const checker = program.getTypeChecker();
@@ -510,14 +544,16 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
       const printed = diagnosticText(root, emitProgram.getCompilerOptions(), emitted.diagnostics);
       process.stdout.write(printed === '' ? `golem build: the compiler emitted no JavaScript for ${displayPath(configFile)}.\n` : printed);
     }
-    return checkFailed ? checkCode : 1;
+    // The declarations of the check are not written either, so the status is not the check's 2.
+    return 1;
   }
   const files = new Map<string, string>();
   for (const [file, text] of emitted.files) {
     if (!BUILD_INFO.test(file)) files.set(file, JS_SOURCE_MAP.test(file) ? pointSourceMap(file, text, rewriteMaps) : text);
   }
-  for (const [file, text] of files) writeOutput(file, text);
-  settleOutputs(run, project, sources, [...checkFiles, ...files.keys()]);
+  assertContained(project, configFile, files, written);
+  for (const [file, text] of [...written, ...files]) writeOutput(file, text);
+  settleOutputs(run, project, sources, [...written.keys(), ...files.keys()]);
   return checkFailed ? checkCode : 0;
 }
 
@@ -545,6 +581,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     outputs,
     owned: new Set<string>(),
     ...(options.watch ? { emitted: new Map<string, Set<string>>() } : {}),
+    oldStateRemoved: false,
     generation,
     ...(options.onGenerated === undefined ? {} : { onGenerated: options.onGenerated }),
   };
