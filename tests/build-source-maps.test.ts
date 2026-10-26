@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { decodeMappings, pointInlineSourceMap } from '#golem/source-map';
-import { build, editTsconfig, serdeProject, USE, write } from './support/build-project.js';
+import { build, editTsconfig, golemBuild, serdeProject, USE, write } from './support/build-project.js';
 
 interface EmittedMap { readonly sourceRoot?: string; readonly sources: readonly string[]; readonly sourcesContent?: readonly string[]; readonly mappings: string }
 
@@ -63,7 +63,18 @@ for (const setup of SETUPS) {
   });
 }
 
-test('an inline source map that cannot be read stops the build at its file', () => {
+test('a rewritten call maps back with an inlineSources that comes from the command line', async (t) => {
+  // protects: T-475 golem build refused --inlineSources and the other source-map flags
+  const root = serdeProject(t, 'build-source-map-flag');
+  write(root, 'src/use.ts', USE);
+  const result = await golemBuild(root, ['--inlineSources']);
+  assert.equal(result.code, 0, `${result.stdout}${result.stderr}`);
+  const used = readMap(root, 'build/use.js');
+  assert.deepEqual(originOfCall(used), ORIGINAL);
+  assert.deepEqual(used.map.sourcesContent, [USE]);
+});
+
+test('pointInlineSourceMap names the file of an inline source map that is missing or cannot be read', () => {
   // protects: T-475 a map that cannot be composed is never written as one that points at the rewritten text
   const inner = { version: 3, sources: [''], names: [], mappings: 'AAAA' } as const;
   const code = `export {};\n//# sourceMappingURL=data:application/json;base64,${Buffer.from('not json').toString('base64')}\n`;
