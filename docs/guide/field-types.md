@@ -22,7 +22,7 @@ Pick the TypeScript shape of a field and see how golem constructs, converts and 
 
 An `undefined` property is left out of JSON. `bigint` needs a codec that writes it as JSON, such as a string. Without one, `stringify` rejects it.
 
-[Validation tags](/guide/tags) add checks to these shapes, such as `MinLength` on a string. A `Date` is always checked as an ISO date-time string in JSON. `Format` checks a string or a number ([Formats](/guide/tags#formats)), so use [`TValidation`](/guide/tags#add-a-custom-field-rule) for your own rule on a `Date`.
+[Validation tags](/guide/tags) add checks to these shapes, such as `MinLength` on a string. A `Date` is always checked as an ISO date-time string in JSON. On a model field, `Format` applies to a string ([Formats](/guide/tags#formats)), so use [`TValidation`](/guide/tags#add-a-custom-field-rule) for your own rule on a `Date`.
 
 ## Objects and exact
 
