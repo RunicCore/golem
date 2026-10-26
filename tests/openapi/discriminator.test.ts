@@ -361,6 +361,8 @@ test('a variant shared by two discriminated unions gets both union classes, in e
     const tabby = decodeGeneratedModel(FelineModel, { kind: 'tabby', name: 'Miso' });
     assert.ok(tabby instanceof CatModel);
     assert.deepEqual(encodeGeneratedModel(tabby), { kind: 'tabby', name: 'Miso' });
+    // A variant that only this union selects still extends it; the shared one keeps its own base.
+    assert.equal(Object.getPrototypeOf(DogModel), PetModel);
     // A union class answers instanceof for the variants it selects, and only those.
     const dog = decodeGeneratedModel(PetModel, { kind: 'canine', bark: true });
     assert.deepEqual([cat, dog, tabby].map(value => value instanceof PetModel), [true, true, true]);
@@ -380,6 +382,24 @@ test('a variant shared by two discriminated unions gets both union classes, in e
     assert.ok(Array.isArray(owner.pets) && owner.pets[0] instanceof DogModel);
     assert.deepEqual(encodeGeneratedModel(owner), json);
   }
+});
+
+test('a union with no shared variant is extended by its variants and keeps the plain instanceof', async t => {
+  // protects: T-385 only a union with a shared variant changes form
+  const suffix = 'Ordinary';
+  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-ordinary-'), 'sdk');
+  await generateMaterializedSdk(petDocument(suffix, explicitMapping(suffix)), { output, name: 'Pets', profile: profiles[1] });
+  compileGeneratedSdk(output, [], { strict: true });
+  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'models');
+  const PetModel = modelClass(models, `Pet${suffix}Model`);
+  const cat = decodeGeneratedModel(PetModel, { kind: 'feline', name: 'Miso' });
+  assert.deepEqual(
+    [Object.getPrototypeOf(modelClass(models, `Cat${suffix}Model`)) === PetModel, Object.getPrototypeOf(modelClass(models, `Dog${suffix}Model`)) === PetModel],
+    [true, true],
+  );
+  assert.equal(Object.getOwnPropertyDescriptor(PetModel, Symbol.hasInstance), undefined);
+  assert.ok(cat instanceof PetModel);
+  assert.equal(encodeGeneratedModel(cat).kind, 'feline');
 });
 
 test('a discriminator over a non-model variant is reported and left to the union shape', async t => {

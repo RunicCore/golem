@@ -39,12 +39,14 @@ export interface ModelDefinition {
   baseName: string | null;
   /** The other models the allOf refers to; their fields are in `properties`, and a slot narrows each of them. */
   otherBaseNames: readonly string[];
-  /** The union models that select this model as a variant. A variant does not extend them, but it narrows each one. */
+  /** The union models that select this model as a variant. It narrows each of them, also when it does not extend them. */
   variantOf: string[];
   properties: Map<string, unknown>;
   additionalProperties: unknown;
   required: Set<string>;
   variants?: readonly string[];
+  /** The variants of a union that another union also selects. They extend their own base, so the union class answers `instanceof` for them. */
+  sharedVariants?: readonly string[];
   discriminator?: unknown;
   isUnion?: boolean;
 }
