@@ -1,5 +1,6 @@
 import type { Linter, Rule } from 'eslint';
 
+import { lineStarts } from './rewrite.js';
 import { openRewriteProject, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
 
 export type { GolemHostOptions };
@@ -7,24 +8,50 @@ export type { GolemHostOptions };
 /** `cwd` is where `golem.yaml` is looked for when `config` and `GOLEM_CONFIG` name none. Default: the current directory. */
 export interface GolemEslintOptions extends GolemHostOptions {
   readonly cwd?: string;
-  /** `'text'` also sets a parser that gives ESLint an empty program, for a project with no ESLint parser for TypeScript. Without it, another config object sets the parser. */
+  /** `'text'` also sets a parser that gives ESLint an empty program with the comments of the file, for a project with no ESLint parser for TypeScript. Without it, another config object sets the parser. */
   readonly parser?: 'text';
 }
 
-/** The rule reads the text of the file, so ESLint needs no syntax tree: this parser returns a valid empty program and no scope analysis. */
-const textParser: Linter.Parser = {
-  meta: { name: 'golem-text' },
-  parseForESLint: (code) => ({
-    ast: { type: 'Program', body: [], comments: [], tokens: [], sourceType: 'module', range: [0, code.length], loc: { start: { line: 1, column: 0 }, end: { line: 1, column: 0 } } },
-  }),
-};
+/** The 1-based line and 0-based column of an offset of `code`, as ESLint counts them. */
+function locator(code: string): (offset: number) => { line: number; column: number } {
+  const starts = lineStarts(code);
+  return (offset) => {
+    let low = 0;
+    let high = starts.length - 1;
+    while (low < high) {
+      const middle = (low + high + 1) >> 1;
+      if (starts[middle]! <= offset) low = middle; else high = middle - 1;
+    }
+    return { line: low + 1, column: offset - starts[low]! };
+  };
+}
 
-/** The rule that reports each serde call the golem hosts cannot rewrite: the errors of `golem check`, one scan path. */
+/**
+ * The rule reads the text of the file, so ESLint needs no syntax tree: this parser returns a valid empty program and no scope
+ * analysis. It does return the comments, which ESLint reads for `eslint-disable` and the other directives.
+ */
+function textParser(project: RewriteProject): Linter.Parser {
+  return {
+    meta: { name: 'golem-text' },
+    parseForESLint: (code, options) => {
+      const at = locator(code);
+      const comments = options?.filePath === undefined ? [] : project.comments(options.filePath, code).map(({ block, pos, end }) => ({
+        type: block ? 'Block' : 'Line',
+        value: code.slice(pos + 2, block ? end - 2 : end),
+        range: [pos, end],
+        loc: { start: at(pos), end: at(end) },
+      }));
+      return { ast: { type: 'Program', body: [], comments, tokens: [], sourceType: 'module', range: [0, code.length], loc: { start: { line: 1, column: 0 }, end: at(code.length) } } };
+    },
+  };
+}
+
+/** The rule that reports each error of the rewrite scan of a file, the errors that `golem check` reports: code that no golem host can rewrite. */
 function unrewritableSerdeCall(project: RewriteProject): Rule.RuleModule {
   return {
     meta: {
       type: 'problem',
-      docs: { description: 'Report a stringify, parse, validate, assertValue, toWireFormat or fromWireFormat call that golem cannot rewrite, so it would throw when it runs.' },
+      docs: { description: 'Report the code in a file that golem cannot rewrite, such as a stringify, parse, validate, assertValue, toWireFormat or fromWireFormat call used as a value, so it would throw when it runs.' },
       schema: [],
       messages: { unrewritable: '{{ code }}: {{ text }}' },
     },
@@ -53,7 +80,7 @@ export async function golem(options: GolemEslintOptions = {}): Promise<Linter.Co
   return {
     name: 'golem',
     files: ['**/*.ts', '**/*.mts', '**/*.cts', '**/*.tsx'],
-    ...(parser === 'text' ? { languageOptions: { parser: textParser } } : {}),
+    ...(parser === 'text' ? { languageOptions: { parser: textParser(project) } } : {}),
     plugins: { golem: { rules: { 'unrewritable-serde-call': unrewritableSerdeCall(project) } } },
     rules: { 'golem/unrewritable-serde-call': 'error' },
   };
