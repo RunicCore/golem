@@ -5,7 +5,7 @@ export const BENCH_SERIES_COUNT = 4;
 
 export const REPOSITORY_BLOB_URL = 'https://github.com/RunicCore/golem/blob/master';
 
-export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout' | 'checkout-plain' | 'serde-none' | 'serde-many';
+export type PayloadId = 'simple' | 'nested' | 'array' | 'checkout' | 'checkout-plain' | 'serde-none' | 'serde-many' | 'union-tagged' | 'union-class';
 /** The operations of the compare table. */
 export type CompareOperationId = 'parse' | 'stringify' | 'validate';
 /** The operations that only the golem cost table times: value to and from a plain object, with no JSON text. */
@@ -16,7 +16,12 @@ export type GroupId = 'plain' | 'classes' | 'validated-classes';
 export type Support = 'full' | 'none';
 export type ProjectKind = 'plain' | 'validating';
 
-export interface PayloadSpec { readonly id: PayloadId; readonly fixture: string; readonly label: string; readonly description: string; readonly sourceFile: string }
+export interface PayloadSpec { readonly id: PayloadId; readonly fixture: string; readonly label: string; readonly description: string; readonly sourceFile: string;
+  /** The adapters that time the payload; every adapter when absent. */
+  readonly adapters?: readonly AdapterId[];
+  /** The payload has no broken variant, so the invalid-input timing skips it. */
+  readonly noInvalid?: true;
+}
 export interface OperationSpec<Id extends OperationId = OperationId> { readonly id: Id; readonly fixtureOperation: Operation; readonly label: string; readonly description: string }
 export interface GroupSpec {
   readonly id: GroupId; readonly label: string; readonly description: string;
@@ -40,11 +45,14 @@ export const PAYLOADS: readonly PayloadSpec[] = [
 
 /**
  * The payloads that only the golem cost table times: one shape of 21 fields, with every field converting (serde-many) or
- * none converting (serde-none). The compare table does not list them.
+ * none converting (serde-none). The compare table does not list them. The union pair is one wire value in two models, a union of
+ * inline tagged objects and a union of model classes, timed on the IModel adapters only (E-42).
  */
 export const COST_PAYLOADS: readonly PayloadSpec[] = [
   { id: 'serde-none', fixture: 'serde-none', label: 'Serde none', description: 'Twenty-one fields on plain strings and numbers: nothing converts.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
   { id: 'serde-many', fixture: 'serde-many', label: 'Serde many', description: 'The same shape with every field converting: money, hex codes, permission bits, yes/no flags, dates and date tuples.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
+  { id: 'union-tagged', fixture: 'union-tagged', label: 'Union, tagged', description: 'A hundred events, each one of four shapes picked by a kind tag. The shapes are inline objects, so the encoder dispatches on the tag. Each event holds one date.', sourceFile: 'scripts/benchmark/fixtures/features/union-dispatch.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
+  { id: 'union-class', fixture: 'union-class', label: 'Union, class-first', description: 'The same hundred events and the same JSON text, with the four shapes as generated model classes, so the encoder picks the branch by class first. Each event holds one date.', sourceFile: 'scripts/benchmark/fixtures/features/union-dispatch.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
 ];
 
 /** Every payload a run can time. */
@@ -131,6 +139,7 @@ export const COST_ROW_OPERATIONS: readonly OperationId[] = ['parse', 'stringify'
 export const COST_CASES: readonly CaseSpec[] = ALL_PAYLOADS.flatMap(payload => COST_ROW_OPERATIONS.flatMap(operation =>
   Object.values(VALIDATION_COLUMNS).flatMap(pair => (['off', 'on'] as const)
     .filter(mode => operation !== 'validate' || mode === 'on')
+    .filter(mode => payload.adapters === undefined || payload.adapters.includes(pair[mode]))
     .map(mode => ({ payload: payload.id, operation, adapter: pair[mode], support: 'full' }) satisfies CaseSpec)
     .filter(c => !COMPARE_CASES.some(k => k.payload === c.payload && k.operation === c.operation && k.adapter === c.adapter)))));
 
@@ -138,7 +147,7 @@ export const COST_CASES: readonly CaseSpec[] = ALL_PAYLOADS.flatMap(payload => C
  * The cases that time invalid input: the reading operations of IModel with validation on (PO4), on one broken variant of each payload.
  * The first broken variant of the verify step is the fixed choice. The invalid path has no rank and no stop rule (F-250).
  */
-export const INVALID_CASES: readonly CaseSpec[] = ALL_PAYLOADS.flatMap(payload =>
+export const INVALID_CASES: readonly CaseSpec[] = ALL_PAYLOADS.filter(payload => payload.noInvalid !== true).flatMap(payload =>
   (['parse', 'decode', 'validate'] as const).map(operation => ({ payload: payload.id, operation, adapter: VALIDATION_COLUMNS.imodel.on, support: 'full' }) satisfies CaseSpec));
 
 /** The control times native JSON on the compare table's payloads; the spread of these numbers is the run's noise band. */
