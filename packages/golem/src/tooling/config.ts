@@ -376,10 +376,11 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
     }
   }
   if (!jobs.length) throw new Error('Configure at least one generators, controllers, openapi, or models section.');
-  // A controllers job runs before the jobs after it, so what they write is absent when it reads the project.
+  // A controllers job runs before the jobs after it, so what they write is absent when it reads the project. The files of the models job
+  // are not listed: the controllers analysis stubs them, so a model that imports one resolves in every run.
   for (const [index, job] of jobs.entries()) {
     if (job.kind !== 'controllers') continue;
-    const laterOutputs = jobs.slice(index + 1).flatMap(later => later.options.output ?? []);
+    const laterOutputs = jobs.slice(index + 1).flatMap(later => later.kind === 'models' ? [] : later.options.output ?? []);
     if (laterOutputs.length) jobs[index] = { ...job, options: { ...job.options, laterOutputs } };
   }
   // A misspelled path is that, not a tsconfig the jobs happen to find elsewhere.
