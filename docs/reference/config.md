@@ -80,7 +80,11 @@ With `validation: false`, a named `IObject` or `IModel` with `{ validation: true
 
 Custom predicates and serde bindings must be exported functions that the generator can import. An unresolved binding or imported schema stops generation with a diagnostic.
 
-A `format` is checked only when golem implements it. These formats are checked: `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `byte`, `json-pointer`, `relative-json-pointer`, `int32`, `int64`, `float` and `double`. The formats `password`, `binary` and `media-range` are known and check nothing. Any other format stops generation. Set `unknownFormats: warn` to report it as a warning and skip its check.
+A `format` is checked only when golem implements it:
+
+- These formats are checked: `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `byte`, `json-pointer`, `relative-json-pointer`, `int32`, `int64`, `float` and `double`.
+- The formats `password`, `binary` and `media-range` are known and check nothing.
+- Any other format stops generation. Set `unknownFormats: warn` to report it as a warning and skip its check.
 
 Disabling validation does not disable conversion guards, codecs, JSON representability checks or generation diagnostics.
 
@@ -142,7 +146,18 @@ Install `@exprtlabs/golem-openapi` to use `openapi`. Each job reads one YAML or 
 | `refTimeoutMs` | positive integer | No | `10000` | Timeout for a remote reference read, in milliseconds. |
 | `dates` | `date` or `temporal` | No | `date` | `temporal` maps `format: date-time` to `Temporal.Instant`, `date` to `Temporal.PlainDate` and `duration` to `Temporal.Duration`. [`@exprtlabs/golem/temporal`](/reference/runtime-api#temporal) converts them. `time` stays a string. Encoding a `Temporal.Instant` writes `Z`, so the original offset is lost. |
 
-The generator assembles local and allowed remote `$ref`s into one document. Local references stay within the directory of the input document. Schemas from other files become components named after their path, such as `schemas/user.json` → `schemas.user` (model `SchemasUser`). A root component that is only a `$ref` to an external file keeps its own name, such as `components.schemas.Money: { $ref: './money.json' }`. A root component with a `$ref` and other keys is not an alias, so its target gets the path-based name. Two sources with the same name stop generation, and the message names both locations.
+The generator assembles local and allowed remote `$ref`s into one document. These rules apply:
+
+- Local references stay within the directory of the input document.
+- Schemas from other files become components named after their path.
+- A root component that is only a `$ref` to an external file keeps its own name.
+- A root component with a `$ref` and other keys is not an alias, so its target gets the path-based name.
+- Two sources with the same name stop generation. The message names both locations.
+
+```text
+schemas/user.json → component schemas.user (model SchemasUser)
+components.schemas.Money: { $ref: './money.json' } → component Money
+```
 
 Reference limits (`maxRefBytes`, `maxRefDocuments` and `refTimeoutMs`) apply also with `validation: false`. That flag controls only the generated runtime checks.
 

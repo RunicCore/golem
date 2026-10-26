@@ -2,7 +2,15 @@
 
 Check what the client generator supports for each OpenAPI version, feature and profile. The generator turns the validation keywords of a schema into model and client validation, whichever tool produced the document.
 
-The table opens on OpenAPI 3.1 with MobX off and validation on. Each row names the feature, its support status and what to expect.
+## Feature support
+
+The table shows one row for each feature, for one OpenAPI version and one set of generation settings. It opens on OpenAPI 3.1 with MobX off and validation on.
+
+- Choose the OpenAPI version and the generation settings above the table. The rows change with your choice.
+- The small label under a feature name is its surface: runtime behavior, TypeScript types or generated metadata. A feature with more than one surface has one row for each surface.
+- The support column gives the status. The meaning of each status is in the list under the table.
+- The last column lists what to expect, such as a condition or a setting that the row needs.
+- Type a word in "Find a feature" to show only the rows that match.
 
 <SupportTable />
 
@@ -34,7 +42,12 @@ When several response declarations could match, the client selects an exact stat
 
 ## Text bodies and streams
 
-A text body or response whose schema is not a plain string and not unknown needs a `bodyEncoders` or `responseDecoders` entry for its media type ([body formats](/guide/codecs)). This holds for a `$ref` and for `allOf`, `oneOf` and `anyOf` too. An unknown or absent text schema stays a raw string. Disabling validation does not turn that string into a decoded number, because decoding and validation are separate steps.
+A text body or response whose schema is not a plain string and not unknown needs an entry for its media type ([body formats](/guide/codecs)):
+
+- A text body needs a `bodyEncoders` entry.
+- A text response needs a `responseDecoders` entry.
+- This holds for a `$ref` and for `allOf`, `oneOf` and `anyOf` too.
+- An unknown or absent text schema stays a raw string. Disabling validation does not turn that string into a decoded number, because decoding and validation are separate steps.
 
 The required-codec check applies to the operation, response status and media type that declared it. An unrelated operation still uses built-in handling even when another operation on the same client requires a custom codec.
 

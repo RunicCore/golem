@@ -29,25 +29,58 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 | `exec --watch -- <command> [args...]` | Runs the child command and keeps the generator watching |
 | `build [--config golem.yaml] [-p tsconfig.build.json] [--watch] [tsc arguments...]` | Generates, type-checks your sources, then emits JavaScript with the generic serde calls rewritten |
 
-`generate` skips a job when its inputs and options did not change since its last run and its outputs exist. A file whose new content is identical keeps its modification time.
+### Generate and check
 
-`check` generates the expected files in memory. It fails when a file is missing, stale or in conflict, or when a file of a removed job remains. It reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run. It checks that the Nest codecs agree with the generated registry. With no earlier `generate` or `build`, it stops with one message that tells you to run one of them first.
+`generate` runs the configured jobs in the order set by [configuration](/reference/config). It skips a job when its inputs and options did not change since its last run and its outputs exist. A file whose new content is identical keeps its modification time.
+
+`check` generates the expected files in memory and writes nothing. It fails in these cases:
+
+- A file is missing, stale or in conflict.
+- A file of a removed job remains.
+
+`check` also does these things:
+
+- It reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run.
+- It checks that the Nest codecs agree with the generated registry.
+- With no earlier `generate` or `build`, it stops with one message. The message tells you to run one of them first.
+
+### Watch
 
 `watch` runs the affected jobs again when a configuration, API, model, TypeScript or manifest input changes.
 
-`watch` and `build --watch` wait for file-system events from the operating system. They do not poll, so an idle watch reads no file and uses no CPU. An event wakes the watch after 50 ms; it then compares the inputs with what the last run left, so a burst of saves starts one run. A package manager's install starts a full run: a change to `.package-lock.json`, `.modules.yaml`, `.yarn-state.yml` or `.yarn-integrity` in the `node_modules` folder of the tsconfig's folder or of a folder above it. Files inside `node_modules` are not watched, except those of a workspace package that a link in `node_modules` leads to.
+`watch` and `build --watch` wait for file-system events from the operating system:
 
-If the system cannot watch a folder, for example when it runs out of inotify watches (raise `fs.inotify.max_user_watches`) or open files, the watch reports it once with the fix and goes on without that folder. When it can watch no folder at all, it reports that, stops, and exits with code `1`; `build --watch` exits with `1` too. Inside a Docker bind mount, a host edit, a new file, a saved file and a deleted folder start a run, but a deleted file alone does not. The watch notices that delete at the next save of a watched file.
+- They do not poll, so an idle watch reads no file and uses no CPU.
+- An event wakes the watch after 50 ms. The watch then compares the inputs with what the last run left, so a burst of saves starts one run.
+- A package manager's install starts a full run. This is a change to `.package-lock.json`, `.modules.yaml`, `.yarn-state.yml` or `.yarn-integrity` in the `node_modules` folder of the tsconfig's folder or of a folder above it.
+- Files inside `node_modules` are not watched. The exception is a workspace package that a link in `node_modules` leads to.
 
-`exec` starts the child command after generation succeeds, and forwards its exit status and signals. With `--watch`, the generator keeps watching until the child exits.
+When the system cannot watch a folder:
 
-`generate` runs the configured jobs in the order set by [configuration](/reference/config). `exec` needs the `--` separator. Arguments after it go to the child process unchanged. `--watch` is valid only with `exec`. An unknown option fails before generation starts.
+- The cause can be a lack of inotify watches (raise `fs.inotify.max_user_watches`) or of open files. The watch reports it once with the fix and goes on without that folder.
+- When it can watch no folder at all, the watch reports that and stops. It exits with code `1`. `build --watch` exits with `1` too.
+- Inside a Docker bind mount, a host edit, a new file, a saved file and a deleted folder start a run. A deleted file alone does not. The watch notices that delete at the next save of a watched file.
 
-Each good run of `watch` prints one line: the result of each job, then the time of the run. A job shows the files it updated or removed. A job that did not run, or wrote nothing new, shows `unchanged`. The first good run after a failed run starts with `Recovered:`. `exec --watch` prints the same line for its first run. A failed run prints its error. When a job fails before it writes, the run also says that the job wrote no files and that its last good output stays in place; a job that finished earlier in the same run has written its files.
+Each good run of `watch` prints one line: the result of each job, then the time of the run.
 
 ```text
 models: 2 files updated · openapi:sdk: unchanged · 412 ms
 ```
+
+- A job shows the files it updated or removed.
+- A job that did not run, or wrote nothing new, shows `unchanged`.
+- The first good run after a failed run starts with `Recovered:`.
+- `exec --watch` prints the same line for its first run.
+- A failed run prints its error.
+- When a job fails before it writes, the run also says that the job wrote no files and that its last good output stays in place. A job that finished earlier in the same run has written its files.
+
+### Exec
+
+- `exec` starts the child command after generation succeeds. It forwards the exit status and the signals of the child.
+- With `--watch`, the generator keeps watching until the child exits.
+- `exec` needs the `--` separator. Arguments after it go to the child process unchanged.
+- `--watch` is valid only with `exec` and `build`.
+- An unknown option fails before generation starts.
 
 ## Build
 
@@ -67,11 +100,33 @@ A build runs three steps:
 2. It type-checks the sources you wrote with the TypeScript in your project ([supported versions](/compatibility#supported-versions)). It prints the messages of the compiler unchanged. An error points at your line. The declarations come from your sources, and their import paths change as in [import paths](#import-paths).
 3. It emits JavaScript with the calls rewritten and the import paths that Node loads ([import paths](#import-paths)). Source maps point at your sources.
 
-The build starts from `golem.yaml`: the one in the working directory, or the one that `--config` names. Without one it stops with `golem build needs a golem.yaml; run it next to one or pass --config`. It never searches the folders above. It builds the tsconfig that `golem.yaml` names with [`tsconfig`](/reference/config#root-keys), which is the `tsconfig.json` beside `golem.yaml` by default. So `golem generate` and `golem build` always agree on the project.
+The build starts from `golem.yaml`:
 
-`-p` names another build config of the same project, such as `tsconfig.build.json` without your tests. It takes a file, or a directory that holds `tsconfig.json`. It must lie in the directory of the tsconfig that `golem.yaml` names. With `--watch` the build repeats when a source, a tsconfig or `golem.yaml` changes. It generates first, so editing a model source regenerates its file and rebuilds once. The models job reads every source of the project, so editing any other source runs it again before the rebuild. A job that reads no changed input does not run. Deleting `outDir` while the build watches starts one build that writes it again. When you delete a source, the build removes the JavaScript, declaration and map files that it emitted for that source from `outDir` and `declarationDir`. It also removes the folders that become empty. It removes no file that it did not write.
+- It uses the `golem.yaml` in the working directory, or the one that `--config` names.
+- Without one it stops with `golem build needs a golem.yaml; run it next to one or pass --config`. It never searches the folders above.
+- It builds the tsconfig that `golem.yaml` names with [`tsconfig`](/reference/config#root-keys). The default is the `tsconfig.json` beside `golem.yaml`.
+- So `golem generate` and `golem build` always agree on the project.
 
-A build never edits your source files. It writes the generated files that `golem.yaml` configures, and the declarations and JavaScript that the tsconfig asks for into `outDir`. Ignore the generated files and `.golem/` ([ignore generated files](/reference/generated-files#gitignore)). Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
+Rules of `-p`:
+
+- `-p` names another build config of the same project, such as `tsconfig.build.json` without your tests.
+- It takes a file, or a directory that holds `tsconfig.json`.
+- It must lie in the directory of the tsconfig that `golem.yaml` names.
+
+Rules of `--watch`:
+
+- The build repeats when a source, a tsconfig or `golem.yaml` changes.
+- The build generates first, so editing a model source regenerates its file and rebuilds once.
+- The models job reads every source of the project, so editing any other source runs it again before the rebuild. A job that reads no changed input does not run.
+- Deleting `outDir` while the build watches starts one build that writes it again.
+- When you delete a source, the build removes the JavaScript, declaration and map files that it emitted for that source from `outDir` and `declarationDir`. It also removes the folders that become empty. It removes no file that it did not write.
+
+A build never edits your source files:
+
+- It writes the generated files that `golem.yaml` configures.
+- It writes the declarations and JavaScript that the tsconfig asks for into `outDir`.
+- Ignore the generated files and `.golem/` ([ignore generated files](/reference/generated-files#gitignore)).
+- Delete `outDir`, or `declarationDir` when you set one, and the next build writes it again.
 
 ### Import paths
 
@@ -87,7 +142,10 @@ Every other specifier stays: a bare package name, a `#` import, a URL, a specifi
 
 ### Compiler arguments
 
-`golem build` takes `--config`, `-p` or `--project`, and `--watch` or `-w`. It passes every other argument unchanged to both compiler runs, the check and the emit, so `tsc` decides what it means. `--declaration`, `--noEmitOnError`, `--listFiles` and `--generateTrace` work as they do for `tsc -p`. The build asks the compiler how the arguments change `declaration` and `noEmitOnError`, so a forwarded `--declaration` writes the declarations from your sources.
+- `golem build` takes `--config`, `-p` or `--project`, and `--watch` or `-w`.
+- It passes every other argument unchanged to both compiler runs, the check and the emit, so `tsc` decides what it means.
+- `--declaration`, `--noEmitOnError`, `--listFiles` and `--generateTrace` work as they do for `tsc -p`.
+- The build asks the compiler how the arguments change `declaration` and `noEmitOnError`, so a forwarded `--declaration` writes the declarations from your sources.
 
 The build sets some arguments itself. Passing one stops the build with `golem build sets <argument> itself (<reason>); <workaround>`.
 
@@ -119,7 +177,10 @@ Like `tsc`, the build emits JavaScript after a failed check unless `noEmitOnErro
 - `extends` may name a file anywhere. `paths` and `baseUrl` targets under the directory work as they do for `tsc`.
 - `golem build --watch` or `-w` watches. The `tsc --watch` file watcher does not start.
 
-The directory of the tsconfig is the project root. The build covers every file that the tsconfig includes. For a parent tsconfig that includes several packages, put `golem.yaml` in a package and point `tsconfig` at the parent, as in `tsconfig: ../../tsconfig.json`. The build adds the Nest codec decorators to every file of the project when `golem.yaml` has a `controllers` job. A `golem.yaml` with no tsconfig file, such as one with only `openapi` jobs, has nothing to build.
+- The directory of the tsconfig is the project root. The build covers every file that the tsconfig includes.
+- For a parent tsconfig that includes several packages, put `golem.yaml` in a package and point `tsconfig` at the parent, as in `tsconfig: ../../tsconfig.json`.
+- The build adds the Nest codec decorators to every file of the project when `golem.yaml` has a `controllers` job.
+- A `golem.yaml` with no tsconfig file, such as one with only `openapi` jobs, has nothing to build.
 
 One `golem.yaml` serves one tsconfig. `generate`, `check` and `build` stop in these cases:
 
