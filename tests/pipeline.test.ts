@@ -455,10 +455,14 @@ test('a new version of a generator package with the same code does not rerun its
   assert.equal((await runPipeline(config)).ran.size, 0);
 });
 
-test('a watch input the job did not announce has no digest from the read, so its job always runs', async (t: TestContext) => {
-  const { config } = generatorProject(t, false);
+test('a watch input the job did not announce is digested when the job returns, so the next run skips the job until the input changes', async (t: TestContext) => {
+  // protects: T-383 an unannounced watch input no longer reruns its job every time
+  const { root, config } = generatorProject(t, false);
   assert.equal((await runPipeline(config)).ran.size, 1);
+  assert.equal((await runPipeline(config)).ran.size, 0);
+  fs.writeFileSync(path.join(root, 'input.txt'), 'y');
   assert.equal((await runPipeline(config)).ran.size, 1);
+  assert.match(fs.readFileSync(path.join(root, 'out/out.txt'), 'utf8'), /y$/);
 });
 
 test('a run that fails after a job wrote new output leaves that job to run again when its input returns', async (t: TestContext) => {

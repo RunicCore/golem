@@ -19,7 +19,7 @@ export interface JobRecord {
   readonly providerCode: string;
   /** JSON of the job's resolved options. */
   readonly options: string;
-  /** Every input, by the digest it had when the job read it: a file's content, the file listing of a directory under the golem.yaml's directory, `directory` for one outside it, `missing` for an absent path, `unstable` for a reported input the job never announced. */
+  /** Every input, by the digest it had when the job read it: a file's content, the file listing of a directory under the golem.yaml's directory, `directory` for one outside it, `missing` for an absent path. A reported watch input the job never announced has the digest it had when the job returned. */
   readonly inputs: Readonly<Record<string, string>>;
   /** The manifests of the jobs before it that the job received as `manifestInputs`. */
   readonly manifestInputs: readonly string[];
@@ -31,7 +31,6 @@ export interface JobRecord {
 }
 
 const MISSING = 'missing';
-const UNSTABLE = 'unstable';
 const OUTSIDE_DIRECTORY = 'directory';
 const RECORDS_VERSION = 2;
 
@@ -259,13 +258,12 @@ export class JobInputs {
   }
 
   /**
-   * The record's inputs. A reported watch input the job never announced has no digest from the read: it is `unstable`,
-   * which never matches, so the job runs again. `own` are the job's own outputs, which are not inputs.
+   * The record's inputs. A reported watch input the job never announced was not digested at a read: it is digested now, when the
+   * job has returned, so a later change still reruns the job. `own` are the job's own outputs, which are not inputs.
    */
   finish(config: GolemConfig, watchInputs: readonly string[], own: ReadonlySet<string>): Record<string, string> {
     for (const input of watchInputs) {
-      const resolved = path.resolve(input);
-      if (!this.digests.has(resolved)) this.digests.set(resolved, UNSTABLE);
+      if (!own.has(path.resolve(input))) this.read(input);
     }
     return Object.fromEntries([...this.digests]
       .filter(([input]) => !own.has(input))
