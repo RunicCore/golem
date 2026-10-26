@@ -168,7 +168,8 @@ function responseDefaults(
   const status = statusOverride ?? DEFAULT_RESPONSE_STATUS[httpMethod];
   return [{
     status,
-    description: status === '201' ? 'Created' : status === '202' ? 'Accepted' : status === '204' ? 'No Content' : 'Success',
+    // As Nest Swagger: a route with no response decorator gets an empty description.
+    description: '',
     ...(type ? { type } : {}),
     explicit: false,
   }];
