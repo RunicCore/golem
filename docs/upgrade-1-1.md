@@ -24,6 +24,13 @@ Get the exact id from one of these:
 - The `.golem/codec-keys.json` file in the directory of `golem.yaml`, which maps each `<file>#<name>` to its id.
 - The `codecId` of a model in the `model-manifest.json` of an SDK.
 
+## Update `$ref`s to renamed model classes {#api-schema-names}
+
+A model class with `@ApiSchema({ name: 'PlacedOrder' })` is now the component `PlacedOrder` in the OpenAPI document of the `controllers` job. In 1.0 the document used the class name and ignored `@ApiSchema`. The codec ids and the generated models keep the model's name.
+
+- Update the `$ref`s and the generated-client code that use the class name of such a model.
+- Remove `@ApiSchema` from the model class when you want to keep the class name.
+
 ## Move to TypeScript 7.1 or 6
 
 Install one of the supported versions, then update the Golem packages:

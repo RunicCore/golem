@@ -7,7 +7,7 @@ import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
 import { canonicalDescriptorKey } from '../schema.js';
 import { deduplicateProjections } from './graph.js';
-import { linkedClassNames, modelSpecificationForClass } from './symbols.js';
+import { diagnostic, linkedClassNames, modelSpecificationForClass } from './symbols.js';
 import { manifestModelOfSymbol, type ManifestIndex } from './provenance.js';
 import { codecPublicId, createSchemaGraph, internDescriptors } from '../schema-graph.js';
 
@@ -39,6 +39,8 @@ export function createContractAnalysis(
     readonly boundary?: ModelBoundary;
     /** The model manifests of the program, as the models job reads them: a model a manifest lists has the codec id of its manifest entry. */
     readonly manifests?: ManifestIndex;
+    /** The component name a class declares for its model, such as `@ApiSchema({ name })`. It renames the OpenAPI component only; the model name and the codec ids stay. */
+    readonly classComponentName?: (declaration: ts.ClassDeclaration) => string | undefined;
   },
 ): ContractAnalysis {
   const checker = program.getTypeChecker();
@@ -56,11 +58,21 @@ export function createContractAnalysis(
   const emptyManifests: ManifestIndex = {
     byId: new Map(), byProvenance: new Map(), files: [], localFiles: [], validationSchemaClosure: [], runtimeExports: () => new Set(), externalModelForType: () => undefined,
   };
-  // A model with exactly one linked class is named by that class, any other model by its alias.
-  const baseNames = new Map(specifications.map((specification) => {
+  // A model with exactly one linked class is named by that class, or by the name the class declares; any other model by its alias.
+  const baseNames = new Map<ModelSpecification, string>();
+  const declaredNames = new Set<string>();
+  for (const specification of specifications) {
     const linked = linkedClassNames(checker, specification, specifications);
-    return [specification, linked.length === 1 ? linked[0]! : specification.name] as const;
-  }));
+    const declaration = linked.length === 1
+      ? specification.sourceFile.statements.find((statement): statement is ts.ClassDeclaration => ts.isClassDeclaration(statement) && statement.name?.text === linked[0])
+      : undefined;
+    const name = (declaration && options.classComponentName?.(declaration)) ?? (linked.length === 1 ? linked[0]! : specification.name);
+    // Two models of one file cannot share a name: the classes of two models would otherwise take one component.
+    const key = `${specification.sourceFile.fileName}\0${name}`;
+    if (declaredNames.has(key)) throw diagnostic(specification.sourceFile, specification.declaration, '1005', `Generated model name "${name}" is already declared in this model source.`);
+    declaredNames.add(key);
+    baseNames.set(specification, name);
+  }
   // OpenAPI describes the full contract even when runtime validation is omitted.
   // The document describes an SDK model by its type; only the codec ids see it as the manifest reference the models job hashes.
   const buildDescribe = (nameFor?: (specification: ModelSpecification) => string, manifests: ManifestIndex = emptyManifests) => descriptorBuilder(checker, specifications, manifests, true, options.allowAny ?? false, options.root, false, nameFor, undefined, undefined, (node) => typeScriptErrorAt(program, node), file => program.isSourceFileDefaultLibrary(file));

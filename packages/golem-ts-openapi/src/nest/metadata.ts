@@ -29,12 +29,17 @@ export interface MetadataReader {
 
 const SCHEMA_PREFIX = '#/components/schemas/';
 
+/** The name a class declares with `@ApiSchema({ name })`, as Nest Swagger reads it; undefined when it declares none. */
+export function apiSchemaName(checker: ts.TypeChecker, declaration: ts.ClassDeclaration): string | undefined {
+  const apiSchema = hasDecorator(decoratorsOf(checker, declaration), 'ApiSchema', NEST_SWAGGER);
+  return (apiSchema && decoratorOptions({ checker }, apiSchema).string('name')) || undefined;
+}
+
 /** The component name Nest Swagger gives a class: its `@ApiSchema({ name })`, else the class name. */
 function schemaComponentName(reader: MetadataReader, symbol: ts.Symbol): string {
   for (const declaration of symbol.declarations ?? []) {
     if (!ts.isClassDeclaration(declaration)) continue;
-    const apiSchema = hasDecorator(decoratorsOf(reader.checker, declaration), 'ApiSchema', NEST_SWAGGER);
-    const name = apiSchema && decoratorOptions(reader, apiSchema).string('name');
+    const name = apiSchemaName(reader.checker, declaration);
     if (name) return name;
   }
   return symbol.getName();

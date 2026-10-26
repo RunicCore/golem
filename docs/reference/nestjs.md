@@ -65,7 +65,7 @@ A model's component name comes from the types it was declared with:
 | `type TMerchant = IModel<…>` with no class | `TMerchant`, the exact alias |
 | `type TPaymentInput = IObject<…>` | `TPaymentInput`, the exact alias |
 
-A type derived from a model, such as `Omit<TMerchant, 'id'>`, is named from the model's component, as in `TMerchantOmitId`. Two models with the same component name and an identical schema share one component. For `getSchemaPath()` and `refs()` from `@nestjs/swagger`, a class named with `@ApiSchema({ name })` resolves to that name.
+A type derived from a model, such as `Omit<TMerchant, 'id'>`, is named from the model's component, as in `TMerchantOmitId`. Two models with the same component name and an identical schema share one component. A model class named with `@ApiSchema({ name })` is the component of that name, in every `$ref` to it; its codec id and its generated model keep the model's name. Two model classes of one file with the same `@ApiSchema` name stop generation with [`RUNM1005`](/reference/diagnostics#runm1005). A plain DTO class stays inline in the document, and its `@ApiSchema({ name })` names it only for `getSchemaPath()` and `refs()` from `@nestjs/swagger`.
 
 Two models with the same name and different schemas are qualified by where they are declared. Each takes the shortest trailing run of its file's directory segments, relative to the project root, that tells the models apart, joined with `.`: `orders.Payment` and `billing.Payment`. Models in the same directory add the file name without `.model.ts` or `.ts`: `billing.payment.Payment` and `billing.refund.Payment`. Characters other than letters, digits and underscores in a segment become `_`.
 
