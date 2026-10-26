@@ -230,5 +230,5 @@ test('SDK Money $ref plus extra TValidation, local TValidation, and TSerde compi
   const validateTCheckout = companion.match(/export function validateTCheckout[\s\S]*?\n\}/)?.[0] ?? '';
   assert.notEqual(validateTCheckout, '', 'validateTCheckout is found in the companion');
   // Kept pin: how the emitted validator calls its shared check is the claim; the validation results above run it.
-  assert.match(validateTCheckout, /isValidModelValue\(value, options, validate_\w+_[0-9a-f]{8}, /);
+  assert.match(validateTCheckout, /isValidModelValue\(value, options, options\?\.validationContext === undefined && structure_(\w+_[0-9a-f]{8})\(value\) \? predicates_\1 : validate_\1, /);
 });

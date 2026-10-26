@@ -92,8 +92,9 @@ async function orderCodec(descriptor: ModelTypeDescriptor, fastPath: boolean, ne
     Bytes,
     ...Object.fromEntries(Object.entries(binding.scope).map(([name, run]) => [name, countValidator(name, run)])),
     ...Object.fromEntries(Object.entries(binding.fastScope).map(([name, run]) => [name, countFast(name, run)])),
+    ...binding.passScope,
   };
-  const source = emitCodecRuntimeText(graph, { validatorName: (id) => identifier(binding.validatorName(id)), fastCheckName: (id) => { const name = binding.fastCheckName(id); return name === undefined ? undefined : identifier(name); }, serde: BYTES_SERDE });
+  const source = emitCodecRuntimeText(graph, { validatorName: (id) => identifier(binding.validatorName(id)), fastCheckName: (id) => { const name = binding.fastCheckName(id); return name === undefined ? undefined : identifier(name); }, passCheckNames: (id) => { const names = binding.passCheckNames(id); return names === undefined ? undefined : { structure: identifier(names.structure), predicates: identifier(names.predicates) }; }, serde: BYTES_SERDE });
   return { functions: instantiateRuntime(source, scope), calls, binding, codecId: root.codecId };
 }
 
@@ -318,14 +319,67 @@ for (const [plane, suffix, valid, invalid] of PLANE_ROOTS) {
   });
 }
 
-test('generated codec with a TValidation predicate keeps the validator route, and the predicate runs once per conversion', async () => {
+test('generated codec with a TValidation predicate checks the structure, then runs the predicate once, with no full validator', async () => {
+  // protects: T-469 valid and predicate-failing values never reach the full validator
   const { functions, calls, binding, codecId } = await orderCodec(order({ amount: { kind: 'number', validations: ['positive'] } }, ['amount']), true);
   assert.equal(binding.fastCheckName(codecId), undefined, 'a root that reaches a predicate has no fast check');
+  assert.notEqual(binding.passCheckNames(codecId), undefined, 'a root that reaches a predicate conjunctively has a structure check');
   Reflect.set(globalThis, 'positiveCalls', 0);
   assert.equal(functions.validateOrder({ amount: 5 }), true);
   assert.throws(() => functions.assertOrder({ amount: -1 }), LibError);
-  assert.deepEqual({ ...take(calls), predicate: Reflect.get(globalThis, 'positiveCalls') }, { validator: ['model', 'model'], fast: [], predicate: 2 });
+  assert.deepEqual({ ...take(calls), predicate: Reflect.get(globalThis, 'positiveCalls') }, { validator: [], fast: [], predicate: 2 });
 });
+
+// A model with a converter (the Date), so decode and parse check the model-only plane; two fields beside the predicate to fail the structure.
+const GUARDED = order({ amount: { kind: 'number', validations: ['positive'] }, name: { kind: 'string' }, at: { kind: 'date' } }, ['amount', 'name']);
+const AT = new Date(0);
+const AT_WIRE = '1970-01-01T00:00:00.000Z';
+
+/** Each public site of a codec, the value it takes and what it does with a value that fails. */
+const SITES: readonly (readonly [site: string, run: (functions: Record<string, RuntimeFunction>, input: Record<string, unknown>) => unknown, form: 'model' | 'wire'])[] = [
+  ['toWireFormat', (functions, input) => functions.toWireFormatOrder(input), 'model'],
+  ['stringify', (functions, input) => functions.stringifyOrder(input), 'model'],
+  ['validate', (functions, input) => functions.validateOrder(input), 'model'],
+  ['assertValue', (functions, input) => functions.assertOrder(input), 'model'],
+  ['fromWireFormat', (functions, input) => functions.fromWireFormatOrder(input), 'wire'],
+  ['parse', (functions, input) => functions.parseOrder(JSON.stringify(input)), 'wire'],
+];
+
+/** The predicate calls of one site on `values`, and whether it reported a failure (a thrown LibError, or `false` from validate). */
+function predicateRun(run: () => unknown): { readonly predicate: number; readonly failed: boolean } {
+  Reflect.set(globalThis, 'positiveCalls', 0);
+  let failed = false;
+  try {
+    failed = run() === false;
+  } catch (error) {
+    if (!(error instanceof LibError)) throw error;
+    failed = true;
+  }
+  return { predicate: Number(Reflect.get(globalThis, 'positiveCalls')), failed };
+}
+
+for (const [site, run, form] of SITES) {
+  test(`${site} of a model with a predicate runs the predicate once on a valid value and once on a failing predicate`, async () => {
+    // protects: T-469 each predicate runs exactly once at each validated site
+    const { functions } = await orderCodec(GUARDED, true);
+    const input = (amount: number): Record<string, unknown> => ({ amount, name: 'a', at: form === 'model' ? AT : AT_WIRE });
+    assert.deepEqual(
+      { valid: predicateRun(() => run(functions, input(5))), predicateFails: predicateRun(() => run(functions, input(-1))) },
+      { valid: { predicate: 1, failed: false }, predicateFails: { predicate: 1, failed: true } },
+    );
+  });
+}
+
+for (const [site, run, form] of SITES) {
+  test(`${site} of a model whose structure fails runs the full validator, and each predicate at most once`, async () => {
+    // protects: T-469 a structure failure runs the full validator, no predicate before it
+    const { functions } = await orderCodec(GUARDED, true);
+    const bad = { amount: 5, name: 1, at: form === 'model' ? AT : AT_WIRE };
+    const { predicate, failed } = predicateRun(() => run(functions, bad));
+    assert.ok(predicate <= 1, `the predicate ran ${predicate} times`);
+    assert.equal(failed, true);
+  });
+}
 
 // Golden: a failing value gives the same error, issues and messages with the fast check as without it.
 const FAILING: readonly (readonly [descriptor: ModelTypeDescriptor, value: unknown, nested?: true])[] = [
@@ -333,6 +387,9 @@ const FAILING: readonly (readonly [descriptor: ModelTypeDescriptor, value: unkno
   [order({ id: { kind: 'string' }, at: { kind: 'date' } }, ['id', 'at']), { at: 'x', extra: true }],
   [order({ lines: { kind: 'array', item: LINE } }, ['lines']), { lines: [{ qty: 'one' }, 5] }],
   [order({ amount: { kind: 'number', validations: ['positive'] } }, ['amount']), { amount: -1 }],
+  [GUARDED, { amount: -1, name: 'a' }],
+  [GUARDED, { amount: 5, name: 1 }],
+  [GUARDED, { amount: -1, name: 1, at: 'x' }],
 ];
 
 /** The error `run` throws as data. Any error that is not a LibError is a fault of the test, so it ends the test. */

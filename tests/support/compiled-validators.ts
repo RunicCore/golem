@@ -126,11 +126,19 @@ export async function compileValidationPlanBinding(
 ): Promise<{
   readonly validatorName: (id: string) => string;
   readonly fastCheckName: (id: string) => string | undefined;
+  /** The export names of the structure check and the predicates-only pass of a root that has them. */
+  readonly passCheckNames: (id: string) => { readonly structure: string; readonly predicates: string } | undefined;
   readonly scope: Readonly<Record<string, Validator>>;
   readonly fastScope: Readonly<Record<string, FastCheck>>;
+  /** The structure checks and predicates-only passes of the roots that have them, by export name. */
+  readonly passScope: Readonly<Record<string, FastCheck | Validator>>;
 }> {
   const compiled = await compileValidatorModule({ ...input, roots: planRoots(plan) });
   const fastNames = new Map(Object.keys(compiled.fastByRoot).map(root => [root, `is_${(compiled.exports.get(root) ?? '').slice('validate_'.length)}`] as const));
+  const passNames = new Map(Object.keys(compiled.passByRoot).map(root => {
+    const rest = (compiled.exports.get(root) ?? '').slice('validate_'.length);
+    return [root, { structure: `structure_${rest}`, predicates: `predicates_${rest}` }] as const;
+  }));
   return {
     validatorName: id => {
       const name = compiled.exports.get(id);
@@ -138,6 +146,8 @@ export async function compileValidationPlanBinding(
       return name;
     },
     fastCheckName: id => fastNames.get(id),
+    passCheckNames: id => passNames.get(id),
+    passScope: Object.fromEntries([...passNames].flatMap(([root, names]) => [[names.structure, compiled.passByRoot[root].structure], [names.predicates, compiled.passByRoot[root].predicates]] as const)),
     scope: compiled.byExport,
     fastScope: Object.fromEntries([...fastNames].map(([root, name]) => [name, compiled.fastByRoot[root]] as const)),
   };

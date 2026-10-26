@@ -929,7 +929,7 @@ interface AppOutputs {
    * The generated validators module, the name it exports each root under and the name of each root's fast check (see
    * `PlanValidators.exports` and `fastExports`); set when the app validates.
    */
-  readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string>; readonly fastExports: ReadonlyMap<string, string> };
+  readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string>; readonly fastExports: ReadonlyMap<string, string>; readonly passExports: ReadonlyMap<string, { readonly structure: string; readonly predicates: string }> };
   /** The validation plan's resolved schemas by codec id and plane. A validating model file publishes its own as its codecs' schemas. */
   readonly planSchemas?: Readonly<Record<string, object | boolean>>;
 }
@@ -1827,7 +1827,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
   const validators = appOutputs.validators;
   const validatorsSource = validators ? new ImportSource(sourceImportPath(validators.module, output)) : undefined;
   const validatorNames = validators && validatorsSource
-    ? new Map([...new Set([...validators.exports.values(), ...validators.fastExports.values()])].sort().map((name) => [name, validatorsSource.name(name)] as const))
+    ? new Map([...new Set([...validators.exports.values(), ...validators.fastExports.values(), ...[...validators.passExports.values()].flatMap(({ structure, predicates }) => [structure, predicates])])].sort().map((name) => [name, validatorsSource.name(name)] as const))
     : new Map<string, Code>();
   // The plan's resolved schemas of this file's codecs: a validating codec publishes these instead of its unresolved ones.
   const ownSchemaKeys = new Set([...schemaGraph.nodes.values()]
@@ -1858,6 +1858,10 @@ function emitCodecSection(context: EmitContext): CodecSection {
         fastCheckName: (id: string) => {
           const name = validators.fastExports.get(id);
           return name === undefined ? undefined : validatorNames.get(name) ?? identifier(name);
+        },
+        passCheckNames: (id: string) => {
+          const names = validators.passExports.get(id);
+          return names === undefined ? undefined : { structure: validatorNames.get(names.structure) ?? identifier(names.structure), predicates: validatorNames.get(names.predicates) ?? identifier(names.predicates) };
         },
       } : {}),
       ...(hasPlanSchemas ? { resolvedSchemasExpr: identifier('modelSchemas') } : {}),
