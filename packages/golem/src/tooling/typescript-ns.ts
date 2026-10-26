@@ -79,6 +79,7 @@ export const {
   isMappedTypeNode,
   isMethodDeclaration,
   isMethodSignature,
+  isModuleBlock,
   isModuleDeclaration,
   isNamedExports,
   isNamedImports,

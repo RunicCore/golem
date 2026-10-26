@@ -65,6 +65,7 @@ in the sections below.
 
 ### Generation
 
+- The Node loader compiles a file that has a decorator, an `enum`, a namespace with a value or a constructor parameter property with your TypeScript, because Node cannot strip them. A NestJS app now runs through the loader alone. Before, it needed a second loader that compiles decorators, registered after golem's.
 - The Node loader loads `.tsx` files. It rewrites the calls, then compiles the file with your TypeScript, and the `jsx` options of your tsconfig set the output. A relative `.js` import also names a `.tsx` source. Before, a `.tsx` file failed to load. A `.tsx` file in a project with no `jsx` option stops with an error that names the option.
 - With `preserveSymlinks`, the Node loader, the Vite plugin and the esbuild plugin rewrite the `parse<T>()` calls of a workspace package linked into `node_modules`, as they do without it. Before, the call failed at run time with `parse<T> was not rewritten`. A package installed in `node_modules` is still not rewritten.
 - **Breaking:** golem commands and generators print a local file relative to the working directory, as `tsc` does, in errors, warnings and diagnostics. Before, many messages printed the absolute path. A tool that parses these messages must read the new form. See [Upgrade to 1.1](docs/upgrade-1-1.md#message-paths).

@@ -12,8 +12,9 @@ import type { RewriteProject } from './rewrite-host.js';
  * the working directory; with neither, a TypeScript file outside `node_modules` fails the load. The scan needs
  * TypeScript, so the first TypeScript file loads it. The loader thread owns its own compiler session, a second-tier
  * cost beside the one of the build: the program is opened once in the thread and reopened for a file it does not hold.
- * Node's type stripping cannot load a `.tsx` file, so the hook compiles it with the project's TypeScript instead,
- * following the `jsx` and `target` options of its tsconfig; every other file stays with Node.
+ * Node's type stripping cannot load a `.tsx` file, nor a file with a decorator, an `enum`, a namespace with a value or a
+ * parameter property, so the hook compiles those with the project's TypeScript instead, following the `jsx`, decorator
+ * and `target` options of its tsconfig; every other file stays with Node.
  * The `resolve` hook lets a relative `.js`, `.mjs` or `.cjs` import name the TypeScript source (`.ts` or `.tsx`) that has no built file yet,
  * the way the generated companions and validators name their siblings. ES modules only: a rewrite adds imports, which CommonJS cannot run.
  */

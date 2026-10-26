@@ -85,7 +85,7 @@ node --import @exprtlabs/golem/register src/main.ts
 - Run `golem generate` once, so the generated files exist.
 - The loader needs ES modules. Use `"type": "module"` or `.mts` files.
 - Node before 22.18 needs `--experimental-strip-types` as well ([Node versions](#node-versions)).
-- A NestJS app needs a second loader that compiles decorators ([run with the Node loader](/guide/nestjs-requests#run-with-the-node-loader)).
+- The loader compiles the files that Node cannot strip, such as a file with a decorator or an `enum`, with your TypeScript. A NestJS app needs no second loader ([run with the Node loader](/guide/nestjs-requests#run-with-the-node-loader)).
 
 ## Editor setup (generate or watch)
 

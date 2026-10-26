@@ -1,5 +1,5 @@
 // lane: typescript6 ProgramSession.transpileModule: the loader compiles what Node's type stripping cannot load
-// The Node loader compiles a `.tsx` file with the project's TypeScript, after it rewrites the calls.
+// The Node loader compiles a `.tsx` file and a file with a decorator with the project's TypeScript, after it rewrites the calls.
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
@@ -42,6 +42,75 @@ test('a relative .js import names the .tsx source that has no built file', async
   const result = await run(root, 'src/main.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout), { tag: 'i', props: null, children: ['ok'] });
+});
+
+/** A Nest app whose constructor takes a parameter decorator and a typed parameter, and whose file holds a `parse<T>()` call. */
+const NEST_APP = `import 'reflect-metadata';
+import { Controller, Get, Inject, Injectable, Module, Query } from '@nestjs/common';
+import { NestFactory } from '@nestjs/core';
+import { parse } from '${SERDE}';
+import type { TMoney } from './money.model.ts';
+import './money.model.ts';
+
+@Injectable()
+class Greeter {
+  greet(name: string): string { return 'hello ' + name; }
+}
+
+@Controller()
+class AppController {
+  constructor(private readonly greeter: Greeter, @Inject('SUFFIX') private readonly suffix: string) {}
+  @Get()
+  get(@Query('name') name: string): string { return this.greeter.greet(name) + this.suffix; }
+}
+
+@Module({ controllers: [AppController], providers: [Greeter, { provide: 'SUFFIX', useValue: '!' }] })
+class AppModule {}
+
+const app = await NestFactory.createApplicationContext(AppModule, { logger: false });
+${PARSE_MONEY}
+console.log(JSON.stringify({ greeting: app.get(AppController).get('Ada'), money }));
+await app.close();
+`;
+
+test('a NestJS app with parameter decorators and injected types starts through the loader alone', async (t) => {
+  // protects: T-381 a Nest app runs through the Node loader with no second decorator loader
+  const root = await project(t, 'loader-nest', {
+    compilerOptions: { experimentalDecorators: true, emitDecoratorMetadata: true },
+    packages: Object.fromEntries(['@nestjs/common', '@nestjs/core', 'reflect-metadata', 'rxjs'].map((name) => [name, path.join(workspace, 'node_modules', name)])),
+  });
+  write(root, 'src/app.ts', NEST_APP);
+  const result = await run(root, 'src/app.ts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { greeting: 'hello Ada!', money: { currency: 'USD', value: '1' } });
+});
+
+test('a decorated .cts file fails the run: the compiled module is an ES module', async (t) => {
+  // protects: T-381 a CommonJS file the loader must compile fails with the file named
+  const root = await project(t, 'loader-nest-cts', { compilerOptions: { experimentalDecorators: true } });
+  write(root, 'src/decorated.cts', 'function tag(target: unknown): void { void target; }\n@tag\nclass Plain {}\nvoid Plain;\n');
+  const result = await run(root, 'src/decorated.cts');
+  assert.notEqual(result.code, 0);
+  assert.ok(result.stderr.includes('golem compiles to ES modules only; src/decorated.cts loads as CommonJS'), result.stderr);
+});
+
+test('a file with an enum, a namespace with a value and a parameter property runs through the loader', async (t) => {
+  // protects: T-381 one rule for what Node cannot strip: the loader compiles enums, value namespaces and parameter properties too
+  const root = await project(t, 'loader-strip-only');
+  write(root, 'src/plain.ts', [
+    "enum Color { Red = 'red' }",
+    'namespace Util { export const twice = (value: number): number => value * 2; }',
+    'namespace Shapes { export interface Point { x: number } }',
+    'class Box {',
+    '  constructor(private readonly value: number, public label: string) {}',
+    '  show(): string { return `${this.label}:${this.value}`; }',
+    '}',
+    'console.log(JSON.stringify({ color: Color.Red, twice: Util.twice(2), box: new Box(1, "a").show() }));',
+    '',
+  ].join('\n'));
+  const result = await run(root, 'src/plain.ts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), { color: 'red', twice: 4, box: 'a:1' });
 });
 
 test('a .tsx file in a project with no jsx option fails the run with the file and the option to set', async (t) => {

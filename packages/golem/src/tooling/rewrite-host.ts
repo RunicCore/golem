@@ -32,6 +32,35 @@ export function withInlineSourceMap(code: string, map: SourceMapV3, file: string
 const TSX_FILE = /\.tsx$/;
 const SOURCE_MAP_COMMENT = '//# sourceMappingURL=';
 
+/** Text that can hold a construct Node cannot strip: a decorator, an enum, a namespace, or a parameter property's modifier. */
+const COMPILE_HINT = /@|\b(?:enum|namespace|module|private|protected|public|readonly|override)\b/;
+
+/** Whether a namespace or module declaration holds a value, so that it runs code. A dotted name nests one declaration in the next. */
+function isInstantiated(compiler: typeof ts, node: ts.ModuleDeclaration): boolean {
+  const { body } = node;
+  if (body === undefined) return false;
+  if (compiler.isModuleDeclaration(body)) return isInstantiated(compiler, body);
+  return compiler.isModuleBlock(body) && body.statements.some((statement) =>
+    !(compiler.isInterfaceDeclaration(statement) || compiler.isTypeAliasDeclaration(statement) || compiler.isModuleDeclaration(statement) && !isInstantiated(compiler, statement)));
+}
+
+/**
+ * Whether `node` or a node below it is a construct that Node's type stripping rejects, because it needs code and not only the
+ * removal of types: a decorator, an `enum`, a namespace with a value, or a constructor parameter with an accessibility,
+ * `override` or `readonly` modifier. A `declare` form is only a type.
+ */
+function needsCompile(compiler: typeof ts, node: ts.Node): boolean {
+  const { SyntaxKind } = compiler;
+  const modifiers = compiler.canHaveModifiers(node) ? compiler.getModifiers(node) ?? [] : [];
+  const ambient = modifiers.some((modifier) => modifier.kind === SyntaxKind.DeclareKeyword);
+  const parameterProperty = [SyntaxKind.PublicKeyword, SyntaxKind.PrivateKeyword, SyntaxKind.ProtectedKeyword, SyntaxKind.OverrideKeyword, SyntaxKind.ReadonlyKeyword];
+  const here = compiler.isDecorator(node)
+    || compiler.isEnumDeclaration(node) && !ambient
+    || compiler.isModuleDeclaration(node) && !ambient && isInstantiated(compiler, node)
+    || compiler.isParameter(node) && modifiers.some((modifier) => parameterProperty.includes(modifier.kind));
+  return here || compiler.forEachChild(node, (child) => needsCompile(compiler, child) || undefined) === true;
+}
+
 /** A host cannot rewrite a file; the message names the file and line and what to run. */
 export class GolemHostError extends Error {
   /** The file and 1-based line of the first scan error, for a host that reports locations itself. */
@@ -60,8 +89,10 @@ export interface RewriteProject {
   /** Tell the session these files changed on disk (new, edited or removed). */
   changed(filenames: readonly string[]): void;
   /**
-   * The JavaScript of a file that Node's own type stripping cannot load: a `.tsx` file. It is an ES module that follows the
-   * tsconfig's `jsx` and `target` options, with a source map back to `text`; undefined for any other file. `rewritten` is the result of `rewrite` for the same `text`, which the module then compiles in place of `text`.
+   * The JavaScript of a file that Node's own type stripping cannot load: a `.tsx` file, or a file with a decorator, an `enum`, a
+   * namespace with a value or a parameter property. It is an ES module that follows the tsconfig's `jsx`, decorator and `target`
+   * options, with a source map back to `text`; undefined for any other file. `rewritten` is the result of `rewrite` for the same
+   * `text`, which the module then compiles in place of `text`. A `.tsx` file with no `jsx` option throws a `GolemHostError`.
    */
   transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined): { code: string; map: SourceMapV3 } | undefined;
   close(): void;
@@ -155,10 +186,12 @@ class ScanningProject {
 
   transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined): { code: string; map: SourceMapV3 } | undefined {
     const file = this.compiler.canonicalFilename(filename);
-    if (!TSX_FILE.test(file)) return undefined;
-    this.holds(file, withoutByteOrderMark(text));
+    const held = this.holds(file, withoutByteOrderMark(text)).getSourceFile(file);
+    const tsx = TSX_FILE.test(file);
+    // The walk is for the files whose text can hold such a construct.
+    if (!tsx && !(COMPILE_HINT.test(text) && held !== undefined && needsCompile(this.compiler.ts, held))) return undefined;
     // Node cannot run JSX, so a file that no `jsx` option compiles would fail later with a syntax error.
-    if (!this.options.jsx) throw new GolemHostError(`golem cannot compile ${displayPath(file)}: set compilerOptions.jsx in ${displayPath(this.config.tsconfig)}`, { file });
+    if (tsx && !this.options.jsx) throw new GolemHostError(`golem cannot compile ${displayPath(file)}: set compilerOptions.jsx in ${displayPath(this.config.tsconfig)}`, { file });
     const { ts } = this.compiler;
     // Node runs ES modules only, and a module resolution that matches another `module` is of no use to a single file.
     const options = { ...this.options, module: ts.ModuleKind.ESNext, moduleResolution: undefined, sourceMap: true, inlineSourceMap: false, inlineSources: false };

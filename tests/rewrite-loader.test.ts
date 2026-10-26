@@ -290,19 +290,6 @@ test('CommonJS TypeScript with no rewrite still runs', async (t) => {
   }
 });
 
-/**
- * Node cannot parse decorators, so the test chains a loader hook after golem's that compiles them with esbuild. The
- * hook sees the controller as golem's hook rewrote it.
- */
-const DECORATOR_HOOK = `import { transform } from 'esbuild';
-export async function load(url, context, nextLoad) {
-  const loaded = await nextLoad(url, context);
-  if (!url.endsWith('.controller.ts')) return loaded;
-  const { code } = await transform(String(loaded.source), { loader: 'ts', format: 'esm', tsconfigRaw: { compilerOptions: { experimentalDecorators: true } } });
-  return { ...loaded, format: 'module', source: code };
-}
-`;
-const DECORATOR_REGISTER = "import { register } from 'node:module';\nregister('./decorator-hook.mjs', import.meta.url);\n";
 const NEST_CONTROLLER = `import { Body, Controller, Post } from '@nestjs/common';
 import { Payment } from './payment.model.ts';
 
@@ -335,13 +322,11 @@ test('a Nest controller with a @Body() model parameter carries nestModelCodec me
       'src/payment.model.ts': readFixture('controllers/nest-plugin/project/payment.model.ts').replace('.generated.js', '.generated.ts'),
       'src/payments.controller.ts': NEST_CONTROLLER,
       'src/main.ts': NEST_MAIN,
-      'decorator-hook.mjs': DECORATOR_HOOK,
-      'decorator-register.mjs': DECORATOR_REGISTER,
     },
   });
   await runPipeline(path.join(root, 'golem.yaml'));
   write(root, 'golem.yaml', `${MODELS_YAML}controllers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n`);
-  const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });
+  const result = await run(root, 'src/main.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { stamped: true, parsed: { id: '1', note: 'hello' } });
 });
@@ -360,8 +345,6 @@ async function nestCodecProject(t: TestContext, controller: string, main: string
       'src/payment.model.ts': readFixture('controllers/nest-plugin/project/payment.model.ts').replace('.generated.js', '.generated.ts'),
       'src/payments.controller.ts': controller,
       'src/main.ts': main,
-      'decorator-hook.mjs': DECORATOR_HOOK,
-      'decorator-register.mjs': DECORATOR_REGISTER,
     },
   });
   await runPipeline(path.join(root, 'golem.yaml'));
@@ -389,7 +372,7 @@ test('a @Body() IObject alias named only as a type has its codec registered with
     "console.log(JSON.stringify({ stamped: codec !== undefined, parsed: codec?.parse('{\"note\":\"hello\"}') }));",
     '',
   ].join('\n'));
-  const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });
+  const result = await run(root, 'src/main.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { stamped: true, parsed: { note: 'hello' } });
 });
@@ -415,7 +398,7 @@ test('a model named only in an async Promise return has its codec registered wit
     "console.log(JSON.stringify({ registered: getObjectCodec(id) !== undefined }));",
     '',
   ].join('\n'));
-  const result = await run(root, 'src/main.ts', { flags: ['--import', './decorator-register.mjs'] });
+  const result = await run(root, 'src/main.ts');
   assert.equal(result.code, 0, result.stderr);
   assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { registered: true });
 });

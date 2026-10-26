@@ -286,6 +286,12 @@ export interface EnumMember extends Node {
 export interface ModuleDeclaration extends Node {
   readonly kind: KindOf<'ModuleDeclaration'>;
   readonly name: Identifier | StringLiteral;
+  /** A block, or the next name of a dotted namespace; none for `declare module 'x';`. */
+  readonly body?: Node;
+}
+export interface ModuleBlock extends Node {
+  readonly kind: KindOf<'ModuleBlock'>;
+  readonly statements: readonly Node[];
 }
 export interface VariableDeclaration extends Node {
   readonly kind: KindOf<'VariableDeclaration'>;
@@ -597,13 +603,18 @@ export interface ProgramSession extends Disposable {
 // members golem reads; the type `X` above is the number those members hold.
 export interface TypeScriptBackend {
   readonly SyntaxKind: {
+    readonly DeclareKeyword: SyntaxKind;
     readonly ExportKeyword: SyntaxKind;
     readonly ExtendsKeyword: SyntaxKind;
     readonly FalseKeyword: SyntaxKind;
     readonly ImportKeyword: SyntaxKind;
     readonly MinusToken: SyntaxKind;
     readonly NullKeyword: SyntaxKind;
+    readonly OverrideKeyword: SyntaxKind;
     readonly PlusToken: SyntaxKind;
+    readonly PrivateKeyword: SyntaxKind;
+    readonly ProtectedKeyword: SyntaxKind;
+    readonly PublicKeyword: SyntaxKind;
     readonly ReadonlyKeyword: SyntaxKind;
     readonly StaticKeyword: SyntaxKind;
     readonly ThisKeyword: SyntaxKind;
@@ -719,6 +730,7 @@ export interface TypeScriptBackend {
   isMappedTypeNode(node: Node): node is MappedTypeNode;
   isMethodDeclaration(node: Node): node is MethodDeclaration;
   isMethodSignature(node: Node): node is MethodSignature;
+  isModuleBlock(node: Node): node is ModuleBlock;
   isModuleDeclaration(node: Node): node is ModuleDeclaration;
   isNamedExports(node: Node): node is NamedExports;
   isNamedImports(node: Node): node is NamedImports;
