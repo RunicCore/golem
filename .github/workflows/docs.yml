@@ -32,7 +32,15 @@ jobs:
         with:
           node-version: '22.15.0'
           cache: npm
-      - run: npm ci
+      # The checked-in package-lock.json comes from macOS and lacks the Linux and
+      # Windows platform binaries. Resolve a lockfile for this runner first, the way
+      # the test runner does (scripts/test-runner/entrypoint.sh); never commit it.
+      - name: Install dependencies
+        shell: bash
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only --no-audit --no-fund
+          npm ci --no-audit --no-fund
       - run: npx playwright install --with-deps chromium
       - run: npm run public:check
       - run: npm run check:openapi-compliance
@@ -61,7 +69,15 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
-      - run: npm ci
+      # The checked-in package-lock.json comes from macOS and lacks the Linux and
+      # Windows platform binaries. Resolve a lockfile for this runner first, the way
+      # the test runner does (scripts/test-runner/entrypoint.sh); never commit it.
+      - name: Install dependencies
+        shell: bash
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only --no-audit --no-fund
+          npm ci --no-audit --no-fund
       - run: npm run test:native
 
   deploy:
@@ -83,7 +99,15 @@ jobs:
           cache: npm
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
         id: pages
-      - run: npm ci
+      # The checked-in package-lock.json comes from macOS and lacks the Linux and
+      # Windows platform binaries. Resolve a lockfile for this runner first, the way
+      # the test runner does (scripts/test-runner/entrypoint.sh); never commit it.
+      - name: Install dependencies
+        shell: bash
+        run: |
+          rm -f package-lock.json
+          npm install --package-lock-only --no-audit --no-fund
+          npm ci --no-audit --no-fund
       - run: npx vitepress build docs
         env:
           DOCS_BASE: ${{ steps.pages.outputs.base_path }}
