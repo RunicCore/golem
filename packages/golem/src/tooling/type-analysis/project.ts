@@ -533,8 +533,11 @@ export function classModelNames(file: ts.SourceFile): string[] {
  * after a model change, so the program reads each class model's base from an overlay instead: an empty abstract class that
  * has the fields of the model (`IModel<F>` is `F`). The checker then resolves every use of an app class, and every utility
  * type over it, from the model as it is now. A companion that no model declares any more reads as `export {}`.
- * The stubs come from the model files of `modelFiles`, read before the program opens; a model file that only the
- * program reaches (a shared folder) gets its stub from a second program opened from the same session.
+ * The stubs come from the model files of `modelFiles` and from every other model file the tsconfig lists, read before
+ * the program opens, so one program serves a project whose models lie in more than one folder. A model file that only
+ * the program reaches (outside the tsconfig, such as a shared package) gets its stub from a second program opened from
+ * the same session. Every reached model file ends up stubbed either way, and a stub of a file the program does not
+ * reach changes nothing.
  */
 export function createModelStubProgram(
   sources: readonly string[],
@@ -572,7 +575,7 @@ export function createModelStubProgram(
     }
     return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput, overlays);
   };
-  const stubs = stubsOf(modelFiles);
+  const stubs = stubsOf([...modelFiles, ...byRealPath(includedModelSources(parsed.projectFiles, boundary.suffixes))]);
   const info = open(stubs);
   let next: ProgramInfo;
   try {
