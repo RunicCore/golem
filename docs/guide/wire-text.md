@@ -19,7 +19,7 @@ The code value of each field differs from its wire value. You have two ways to c
 
 `TSerde` names two functions. The first turns the code value into the wire value. The second turns the wire value back into the code value. Use it for each field whose code value differs from its wire value.
 
-The steps below use the task, price and reminder models of the examples. A model of your own declares the three fields side by side.
+Steps 2 and 3 use one order model of the examples. It holds the three fields side by side, as a model of your own does.
 
 ## Step 1: Install
 
@@ -38,7 +38,7 @@ Priority is a number in code and a word on the wire:
 
 An amount is an integer in cents in code and decimal text on the wire:
 
-<<< ../../examples/payments/server/src/decimal-text.ts#decimal-text
+<<< ../../examples/models/src/decimal-text.ts#decimal-text
 
 - Export each function. Each function is synchronous and takes one parameter.
 - Type the parameter of the second function as the wire value. `PriorityWord` limits the words, and `DecimalText` limits the text to a pattern. Golem checks the wire value against this type before it calls the function.
@@ -48,16 +48,12 @@ An amount is an integer in cents in code and decimal text on the wire:
 
 Write `typeof` each function in `TSerde`, and import the functions as types:
 
-<<< ../../examples/models/src/task.model.ts#task-declaration
-
-<<< ../../examples/payments/server/src/price.model.ts#decimal-price
+<<< ../../examples/models/src/order.model.ts#order-declaration
 
 - Tags on the field type, such as `Integer` and `Minimum<0>`, check the code value. They run after decoding and before encoding.
 - Generation never runs your functions.
 
-A `Date` field needs no `TSerde`. Golem writes it as an ISO text and reads it back as a `Date`:
-
-<<< ../../examples/models/src/reminder.model.ts#date-field
+The `remindAt` field is a `Date` and needs no `TSerde`. Golem writes it as an ISO text and reads it back as a `Date`.
 
 - A `Date` does not keep its text. Golem writes it in UTC with milliseconds. The text `"2025-01-02T03:04:05+07:00"` reads as the same instant and writes back as `"2025-01-01T20:04:05.000Z"`.
 - To keep the exact text, declare the field as `string & Format<'date-time'>`. Golem checks the RFC 3339 format and keeps the string as it is ([Formats](/guide/tags#formats)).
@@ -76,10 +72,10 @@ npx golem generate
 
 ## Step 5: Parse the JSON
 
-<<< ../../examples/models/src/read-json.ts#read-json
+<<< ../../examples/models/src/order-json.ts#read-order
 
-- `parse<Task>` returns a `Task`. For `"high"`, its `priority` is `3`.
-- `parse<TTask>` returns a plain object with the same fields.
+- `parse<Order>` returns an `Order`. For `"12.50"`, its `amount` is `1250`. For `"high"`, its `priority` is `3`.
+- `parse<TOrder>` returns a plain object with the same fields.
 - A wire value that fails its type makes `parse` throw a `LibError`. Examples are a word that is not in the list and a text that does not match the pattern ([Errors and issues](/guide/validation#errors-and-issues)).
 
 ## Step 6: Bind a form
@@ -113,7 +109,7 @@ Validate the editor. The errors then appear in the validator that each field rea
 
 ## Step 7: Write back with stringify
 
-<<< ../../examples/models/src/read-json.ts#write-task
+<<< ../../examples/models/src/order-json.ts#write-order
 
 - `stringify` calls the first function of each `TSerde`. Priority `3` becomes `"high"`, and `1250` becomes `"12.50"`. A `Date` becomes UTC text with milliseconds.
 - It checks the code value and the wire value. A model that is not valid makes it throw a `LibError`, so validate in the form first.
