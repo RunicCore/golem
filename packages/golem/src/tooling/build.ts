@@ -365,6 +365,23 @@ function diagnosticText(root: string, options: ts.CompilerOptions, diagnostics: 
 /** The options of the emit program: it emits JavaScript and its maps from the rewritten text, and leaves the check and the declarations to the check program. Each beats a forwarded argument. */
 const EMIT_OPTIONS = { noCheck: true, declaration: false, declarationMap: false, composite: false, noEmit: false, emitDeclarationOnly: false, noEmitOnError: false } as const;
 
+/** The build state file that a program with `incremental` or `composite` hands out with its outputs: golem keeps no TypeScript build state, so it is not written. */
+const BUILD_INFO = /\.tsbuildinfo$/;
+
+/**
+ * Remove what a golem build before the in-process emit kept under `.golem/build/<config name>`: the staged copy of the sources, with the
+ * links it holds to the `node_modules` of the project (a link is removed, never entered), and the build state of the check and of the emit.
+ * Nothing reads them now. Only these paths go, and then the folders they leave empty.
+ */
+function removeOldBuildState(root: string, configFile: string): void {
+  const build = path.join(root, '.golem', 'build');
+  const directory = path.join(build, path.basename(configFile).replace(/\.json$/, ''));
+  for (const old of ['stage', 'emit.tsbuildinfo', 'check.tsbuildinfo']) fs.rmSync(path.join(directory, old), { recursive: true, force: true });
+  for (const folder of [directory, build]) {
+    if (fs.existsSync(folder) && fs.readdirSync(folder).length === 0) fs.rmdirSync(folder);
+  }
+}
+
 /** The map file of a JavaScript output. */
 const JS_SOURCE_MAP = /\.[cm]?jsx?\.map$/;
 
@@ -417,6 +434,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   }
   observe(configFile);
   requestTypeScriptRoot(root);
+  removeOldBuildState(root, configFile);
   // The options of the tsconfig with the forwarded arguments applied, as `tsc -p` resolves them. A configuration the build cannot mirror fails before anything is generated.
   const parseOptions = (): { options: ts.CompilerOptions; fileNames: string[] } => (run.tscArguments.length === 0
     ? session.parseConfigFile(configFile, observe)
@@ -495,7 +513,9 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     return checkFailed ? checkCode : 1;
   }
   const files = new Map<string, string>();
-  for (const [file, text] of emitted.files) files.set(file, JS_SOURCE_MAP.test(file) ? pointSourceMap(file, text, rewriteMaps) : text);
+  for (const [file, text] of emitted.files) {
+    if (!BUILD_INFO.test(file)) files.set(file, JS_SOURCE_MAP.test(file) ? pointSourceMap(file, text, rewriteMaps) : text);
+  }
   for (const [file, text] of files) writeOutput(file, text);
   settleOutputs(run, project, sources, [...checkFiles, ...files.keys()]);
   return checkFailed ? checkCode : 0;
