@@ -399,7 +399,7 @@ test('a union with no shared variant is extended by its variants and keeps the p
   );
   assert.equal(Object.getOwnPropertyDescriptor(PetModel, Symbol.hasInstance), undefined);
   assert.ok(cat instanceof PetModel);
-  assert.equal(encodeGeneratedModel(cat).kind, 'feline');
+  assert.deepEqual(encodeGeneratedModel(cat), { kind: 'feline', name: 'Miso' });
 });
 
 test('a discriminator over a non-model variant is reported and left to the union shape', async t => {
