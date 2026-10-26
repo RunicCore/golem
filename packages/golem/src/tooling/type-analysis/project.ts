@@ -653,8 +653,13 @@ export function unresolvedImportsIn(program: ts.Program, fileName: string): stri
   const file = program.getSourceFile(fileName);
   if (file === undefined) return [];
   // Each diagnostic starts at the string literal of the import.
-  return program.getSemanticDiagnostics(fileName)
-    .flatMap((error) => (error.code === 2307 || error.code === 2792) && error.pos !== undefined ? [/^(['"`])(.*?)\1/.exec(file.text.slice(error.pos))?.[2] ?? []] : []);
+  const specifiers: string[] = [];
+  for (const error of program.getSemanticDiagnostics(fileName)) {
+    if ((error.code !== 2307 && error.code !== 2792) || error.pos === undefined) continue;
+    const specifier = /^(['"`])(.*?)\1/.exec(file.text.slice(error.pos))?.[2];
+    if (specifier !== undefined) specifiers.push(specifier);
+  }
+  return specifiers;
 }
 
 export function formatDiagnostics(diagnostics: readonly ts.Diagnostic[]): string {
