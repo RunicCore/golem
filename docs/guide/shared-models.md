@@ -2,9 +2,13 @@
 
 Declare models in one folder or package, and generate them in each app.
 
+## What a shared model file is
+
+A shared model file is a model file whose real path is outside `models.root`, such as a file in a folder or package that several apps include. An app links the folder or installs the package. The folder needs no `golem.yaml`, and golem writes no file in it. Each app generates the shared models in its own output.
+
 ## Include the folder
 
-Several apps can include one folder of types, link it, or install it from `node_modules`. The folder needs no `golem.yaml`, and the app needs no configuration for it.
+The app needs no configuration for the folder.
 
 Each app includes the folder in its own tsconfig, with a `rootDir` that contains both:
 
@@ -25,7 +29,12 @@ An alias in a file that does not end in a model suffix is not a model. A field t
 
 ## Where each app writes
 
-A model file whose real path is inside `models.root` is a model file of the app, and its generated file stays beside it. Golem follows folder links to find the real path. Every other model file is a shared model file. It does not matter whether the app reaches it by a plain include, a folder link, a linked workspace package or `node_modules`. Its aliases are models of the app. A declaration file such as `customer.model.d.ts` is always a shared model file, also inside `models.root`, because it cannot hold your class. The models of a generated SDK ([SDK types in your models](/guide/models-and-client)) are the exception to these rules. They keep the generated code of the SDK.
+Golem follows folder links to find the real path of a model file. The real path decides:
+
+- A model file whose real path is inside `models.root` is a model file of the app. Its generated file stays beside it.
+- Every other model file is a shared model file. It does not matter whether the app reaches it by a plain include, a folder link, a linked workspace package or `node_modules`. Its aliases are models of the app.
+- A declaration file such as `customer.model.d.ts` is always a shared model file, also inside `models.root`, because it cannot hold your class.
+- The models of a generated SDK ([SDK types in your models](/guide/models-and-client)) are the exception to these rules. They keep the generated code of the SDK.
 
 Each app generates the shared models in its own `models.output`, so several apps never write to one file. Golem writes nothing into the shared folder. The generated file is at:
 
@@ -33,7 +42,13 @@ Each app generates the shared models in its own `models.output`, so several apps
 <models.output>/<package name>/<path of the file in the package>.generated.ts
 ```
 
-The package is the nearest folder above the file whose `package.json` has a `name`, and the package name is that `name`. When no such folder exists, the package is the top folder below the folder that holds both the file and your `golem.yaml`. The package name is the folder name. With a `package.json` named `@acme/shared`, the file `shared/customer.model.ts` gives `src/generated/models/@acme/shared/customer.model.generated.ts` in `apps/web`. For a declaration file, the generated name drops `.d`.
+Golem finds the package of a shared model file in this way:
+
+- The package is the nearest folder above the file whose `package.json` has a `name`. The package name is that `name`.
+- When no such folder exists, the package is the top folder below the folder that holds both the file and your `golem.yaml`. The package name is the folder name.
+- For a declaration file, the generated name drops `.d`.
+
+With a `package.json` named `@acme/shared`, the file `shared/customer.model.ts` gives `src/generated/models/@acme/shared/customer.model.generated.ts` in `apps/web`.
 
 A package name that is absolute or has a `..` segment stops generation, because the name is a folder of `models.output`. Two shared model files that get one path stop generation with [RUNM1078](/reference/diagnostics#runm1078).
 
@@ -54,7 +69,11 @@ A shared folder can also hold:
 - Plain types. A plain type is a field type of a model. Its constraints, such as `MinLength`, apply in the generated file of that model.
 - `TSerde` and `TValidation` functions. Golem imports a function of the folder by a relative path. This holds also when a named package above the app, such as a monorepo root, holds the folder.
 
-A `package.json` in the folder with a `name` makes the folder a package. Golem then imports its functions by that name. Each app must resolve the name, and an `exports` entry must reach the file of the function. Without it, generation fails with [RUNM1060](/reference/diagnostics#runm1060). A file in `node_modules` always imports by the package name. A `package.json` without a `name` has no effect on these imports.
+A `package.json` in the folder with a `name` makes the folder a package. Golem then imports its functions by that name:
+
+- Each app must resolve the name, and an `exports` entry must reach the file of the function. Without it, generation fails with [RUNM1060](/reference/diagnostics#runm1060).
+- A file in `node_modules` always imports by the package name.
+- A `package.json` without a `name` has no effect on these imports.
 
 ## What a shared folder must not hold
 

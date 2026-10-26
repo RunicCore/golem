@@ -15,24 +15,28 @@ export const SIDEBAR: readonly SidebarGroup[] = [
     { text: 'Validation tags', link: '/guide/tags' },
     { text: 'Validate models', link: '/guide/validation' },
     { text: 'JSON conversion', link: '/guide/serialization' },
+    { text: 'Number in code, text on the wire', link: '/guide/wire-text' },
     { text: 'Dates and times', link: '/guide/dates' },
-    { text: 'Share models between apps', link: '/guide/shared-models' },
+    { text: 'SDK types in your models', link: '/guide/models-and-client' },
     { text: 'MobX and React', link: '/guide/mobx' },
+    { text: 'Share models between apps', link: '/guide/shared-models' },
   ] },
   { text: 'API clients', items: [
     { text: 'Generate a client', link: '/guide/client' },
+    { text: 'Call a partner API', link: '/guide/partner-client' },
     { text: 'Call operations', link: '/guide/client-usage' },
     { text: 'Authentication', link: '/guide/auth' },
     { text: 'Body formats', link: '/guide/codecs' },
     { text: 'Streaming responses', link: '/guide/streams' },
-    { text: 'SDK types in your models', link: '/guide/models-and-client' },
   ] },
   { text: 'NestJS', items: [
+    { text: 'Build a NestJS endpoint', link: '/guide/nestjs-endpoint' },
     { text: 'OpenAPI from controllers', link: '/guide/nestjs' },
     { text: 'Convert requests', link: '/guide/nestjs-requests' },
   ] },
   { text: 'Extend Golem', items: [
     { text: 'Write a generator', link: '/guide/generators' },
+    { text: 'Run the generators from code', link: '/guide/generator-api' },
   ] },
   { text: 'Reference', items: [
     { text: 'Configuration', link: '/reference/config' },
@@ -50,6 +54,7 @@ export const SIDEBAR: readonly SidebarGroup[] = [
     { text: 'Upgrade to 1.0', link: '/migrating' },
     { text: 'Release notes', link: '/changelog' },
     { text: 'Benchmarks', link: '/benchmarks' },
+    { text: 'Run the benchmarks', link: '/guide/benchmarks' },
   ] },
 ];
 

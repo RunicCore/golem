@@ -22,17 +22,25 @@ Pick the TypeScript shape of a field and see how golem constructs, converts and 
 
 An `undefined` property is left out of JSON. `bigint` needs a codec that writes it as JSON, such as a string. Without one, `stringify` rejects it.
 
-[Validation tags](/guide/tags) add checks to these shapes, such as a format check on a `Date`.
+[Validation tags](/guide/tags) add checks to these shapes, such as `MinLength` on a string. A `Date` is always checked as an ISO date-time string in JSON. On a model field, `Format` applies to a string ([Formats](/guide/tags#formats)), so use [`TValidation`](/guide/tags#add-a-custom-field-rule) for your own rule on a `Date`.
 
 ## Objects and exact
 
-The second type argument of `IModel` and `IObject` controls extra properties, `any` and `unknown`:
+The second type argument of `IModel` and `IObject` sets two options for that declaration. `exact` controls extra properties. `allowAny` controls `any` and `unknown`.
 
 <<< ../../examples/models/src/metadata.model.ts#exact-and-any
 
-`exact` defaults to `true`: extra properties fail validation, including in nested plain objects. A key on an instance that its model does not declare is program state, not an extra property. Codecs never report it as an unknown key and never write it to JSON, also inside an `unknown` or `any` field. Input from JSON or a request stays exact. Constructors assign declared fields only.
+### The options exact and allowAny
 
-Set `exact: false` in `golem.yaml` to change the default for every model. The option on the declaration overrides `golem.yaml`, and `golem.yaml` overrides the default.
+| Option | Default | Where you set it | Effect |
+| --- | --- | --- | --- |
+| `exact` | `true` | The root of `golem.yaml` for every model, or the options of one `IObject` or `IModel` | `true`: an extra property fails validation, also in a nested plain object. `false`: a key that the model does not list is admitted. |
+| `allowAny` | `false` | The root of `golem.yaml` for every model, or the options of one `IObject` or `IModel` | `false`: a field typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011). `true`: the field is allowed ([`any` and `unknown`](#any-and-unknown)). |
+
+- The option on the declaration overrides `golem.yaml`, and `golem.yaml` overrides the default. `{ allowAny: false }` tightens a permissive `golem.yaml`.
+- A controllers job reads the types that a controller signature spells out, such as an inline body, with `exact: false`, whatever `golem.yaml` says. A model that a signature names keeps its own `exact` ([derived type names](/reference/generated-files#derived-type-names)).
+- A key on an instance that its model does not declare is program state, not an extra property. Codecs never report it as an unknown key and never write it to JSON, also inside an `unknown` or `any` field.
+- Input from JSON or a request stays exact. Constructors assign declared fields only.
 
 ## Nested models and derived types
 
@@ -82,8 +90,11 @@ A type alias that does not refer to itself stays part of the field type. A recur
 
 ## `any` and `unknown`
 
-A field typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`. The `TIntegrationEvent` declaration above sets it for one model. Set `allowAny: true` in `golem.yaml` to allow it in every model. The option on the declaration overrides `golem.yaml`, and `{ allowAny: false }` tightens a permissive `golem.yaml`.
+A field typed `any` or `unknown` fails unless `allowAny` is `true` ([the options table](#the-options-exact-and-allowany)). The `TIntegrationEvent` declaration above sets it for one model.
 
-`allowAny: true` skips inferred structure and conversion for that field. Explicit tags still run, and the JSON value must still be representable as JSON. Neither `allowAny` nor `exact` changes which fields `toWireFormat` emits. A referenced model keeps its own policy.
+- `allowAny: true` skips inferred structure and conversion for that field.
+- Explicit tags still run, and the JSON value must still be representable as JSON.
+- Neither `allowAny` nor `exact` changes which fields `toWireFormat` emits.
+- A referenced model keeps its own policy.
 
 Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

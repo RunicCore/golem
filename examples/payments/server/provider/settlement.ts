@@ -1,6 +1,8 @@
+// #region temporal-imports
 import 'temporal-polyfill/global';
 import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
 import { ChargeModel, type ProviderClient } from './sdk/index.js';
+// #endregion temporal-imports
 
 // #region read-dates
 export async function readSettlementDate(client: ProviderClient, id: string): Promise<Temporal.PlainDate | undefined> {

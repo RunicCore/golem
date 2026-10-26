@@ -2,7 +2,9 @@
 
 Check models and data, show field errors in a form, and read the errors that golem reports.
 
-Generated validators check the [validation tags](/guide/tags) on your field types. `validateInstance(model)` returns an issue list. `getValidator(model)` stores field errors for an editor. Both stop at the first issue by default. Pass `{ failFast: false }` to collect every issue, for example to show all field errors in a form.
+Validation checks a value against the [validation tags](/guide/tags) on the field types of a model. Golem generates the checks. They run when you call a validation function and when you convert JSON ([JSON conversion](/guide/serialization#checks-during-conversion)). Constructors and field assignments do not run them, so you can keep an incomplete model while someone edits it.
+
+`failFast` is an option of the validation calls. A call stops at the first issue by default. Pass `{ failFast: false }` to collect every issue, for example to show all field errors in a form.
 
 <<< ../../examples/models/src/task-input.model.ts#custom-rule
 
@@ -10,7 +12,14 @@ Generated validators check the [validation tags](/guide/tags) on your field type
 
 `validation` defaults to `true`. [Validation profiles](/reference/config#validation-profiles) set it in `golem.yaml`. `IObject` and `IModel` accept `{ validation: false }` to skip checks for that declaration. A nested `IObject` or `IModel` uses its own setting.
 
-Constructors and field assignments do not validate. You can keep an incomplete model while someone edits it.
+## The calls
+
+| Call | Returns | Stops at the first issue | Throws |
+| --- | --- | --- | --- |
+| `validateInstance(model)` | A promise of the issue list, empty when the model is valid | Yes. `{ failFast: false }` returns every issue. | Nothing for an invalid value. `LibError` when validation cannot run. |
+| `getValidator(model).validate()` | A promise of `true` or `false`. It stores the field errors on the validator. | Yes. `{ failFast: false }` stores every field error. | Nothing for an invalid value. `LibError` when validation cannot run. |
+| `validate<T>(value)` | `true` or `false`, and narrows `value` to `T` | Yes. `{ failFast: false }` does not change the result. | Nothing for an invalid value. `LibError` when validation cannot run or no build rewrote the call. |
+| `assertValue<T>(value)` | The value, typed as `T` | Yes. `{ failFast: false }` puts every issue in the error. | `LibError` of kind `validation` with the issues when the value is invalid. |
 
 ## Choose a check
 
@@ -75,7 +84,10 @@ The next `validator.validate()` replaces these messages with its own results. Th
 
 ## Errors and issues
 
-An invalid value is an ordinary result for `validateInstance` and `validate()`. A call that converts a value throws a `LibError` instead: `parse`, `stringify`, `fromWireFormat`, `toWireFormat` and `assertValue`. A validator also throws `LibError` when validation cannot run, for example when the model was generated with `validation: false`. It also throws `LibError` when a rule or a converter throws.
+- An invalid value is an ordinary result for `validateInstance` and `validate()`.
+- A call that converts a value throws a `LibError` instead: `parse`, `stringify`, `fromWireFormat`, `toWireFormat` and `assertValue`.
+- A validator also throws `LibError` when validation cannot run, for example when the model was generated with `validation: false`.
+- A validator throws `LibError` when a rule or a converter throws.
 
 <<< ../../examples/models/src/read-errors.ts#lib-error
 

@@ -15,7 +15,11 @@ These calls convert a named [`IObject` or `IModel`](/guide/models#iobject-or-imo
 
 <<< ../../examples/models/src/read-json.ts#read-json
 
-The type argument picks the model and the result: `parse<TMoney>` returns a plain object, and `parse<Task>` returns a `Task`. `new Task(parse<TTask>(text))` parses an `IObject` and passes it to the `Task` constructor. Use it when the constructor takes extra arguments. Nested fields follow the field type, not the root type argument.
+The type argument picks the model and the result:
+
+- `parse<TMoney>` returns a plain object, and `parse<Task>` returns a `Task`.
+- `new Task(parse<TTask>(text))` parses an `IObject` and passes it to the `Task` constructor. Use it when the constructor takes extra arguments.
+- Nested fields follow the field type, not the root type argument.
 
 ::: info Build with golem
 `parse`, `stringify`, `fromWireFormat`, `toWireFormat`, `validate` and `assertValue` throw unless a build rewrote them. Choose a host in [Build your app](/guide/build). `tsc` does not rewrite them.
@@ -30,9 +34,18 @@ Do not write `stringify(toWireFormat(x))` or `fromWireFormat(parse(text))` on th
 
 ## Model value and JSON value
 
-The model value is what your code holds. The JSON value is what `toWireFormat` returns and `stringify` writes. For most fields the two are equal. A `Date` is a `Date` in the model and an ISO string in JSON. A [`TSerde`](#change-the-json-form) field has the form that its functions give.
+The model value is what your code holds. The JSON value is what `toWireFormat` returns and `stringify` writes. For most fields the two are equal. These differ:
 
-A `Date` decodes with ECMAScript `Date` parsing. A value that is not a string, or that does not parse, throws `Deserialization` with `causedByInput: true`. Put format rules on `Format<'date-time'>` or `TValidation`. A `Date` encodes as UTC ISO text with milliseconds. A year outside 0000-9999 throws `Serialization`. A function, a symbol or an array hole is not a JSON value and fails the JSON check.
+- A `Date` is a `Date` in the model and an ISO string in JSON.
+- A [`TSerde`](#change-the-json-form) field has the form that its functions give.
+
+A `Date` converts in these ways:
+
+- It decodes with ECMAScript `Date` parsing. A value that is not a string, or that does not parse, throws `Deserialization` with `causedByInput: true`.
+- It encodes as UTC ISO text with milliseconds. A year outside 0000-9999 throws `Serialization`.
+- Put your own rule on a `Date` with [`TValidation`](/guide/tags#add-a-custom-field-rule).
+
+A function, a symbol or an array hole is not a JSON value and fails the JSON check.
 
 `WireFormat<T>` names the JSON shape of a model. Generated JSON types end in `JSON`, such as `TTaskJSON`.
 
@@ -66,9 +79,8 @@ Here `PermissionWire` is a string tagged with a hexadecimal pattern, and the mod
 - The decoder parameter type defines the JSON schema.
 - The encoder return type is checked for TypeScript compatibility. Tags on the return type alone add no JSON validation.
 - A plain `string` parameter keeps the string check and drops the tagged validation constraints on the JSON value. This also applies to aliases such as `ProjectName = string & MinLength<3>`.
-- A parameter typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless `allowAny` is `true`, in `golem.yaml` or in the options of the model. Type the parameter as the JSON value that the decoder reads.
-
-Calling `encodePermissions()` or `decodePermissions()` directly runs only the function body. Type annotations do not perform runtime checks by themselves.
+- A parameter typed `any` or `unknown` fails with [`RUNM1011`](/reference/diagnostics#runm1011) unless [`allowAny`](/guide/field-types#the-options-exact-and-allowany) is `true`, in `golem.yaml` or in the options of the model. Type the parameter as the JSON value that the decoder reads.
+- Calling `encodePermissions()` or `decodePermissions()` directly runs only the function body. Type annotations do not perform runtime checks by themselves.
 
 ## Class values
 
@@ -110,8 +122,9 @@ With validation on, the default, each call checks the value. The JSON value and 
 
 ## Copies and references
 
-`fromWireFormat` and `parse` copy objects, maps (`Record<string, V>`) and arrays. Values typed `unknown` or `any` (the model sets `allowAny: true`) are carried by reference, including the undeclared properties of an open object. The result holds the same object as the input.
-
-Cyclic input throws a `LibError` of kind `deserialization`. Encoding a cyclic value throws a `LibError` of kind `serialization`.
+- `fromWireFormat` and `parse` copy objects, maps (`Record<string, V>`) and arrays.
+- Values typed `unknown` or `any` (the model sets `allowAny: true`) are carried by reference, including the undeclared properties of an open object. The result holds the same object as the input.
+- Cyclic input throws a `LibError` of kind `deserialization`.
+- Encoding a cyclic value throws a `LibError` of kind `serialization`.
 
 Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

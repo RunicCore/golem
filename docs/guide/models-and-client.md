@@ -6,7 +6,7 @@ Use an SDK type such as `TMoney` as a field of your own model, add your methods 
 
 <<< ../../examples/payments/web/src/payment-editor.model.ts#model-methods
 
-The generated class builds the `money` field as the SDK's runtime class, `TMoneyModel`. Your `PaymentEditor` adds methods and a validation rule for `note`.
+The generated class builds the `money` field as the SDK's runtime class. The schema `TMoney` gives the type `TMoney` and the class `TMoneyModel` ([Generated SDK names](/reference/generated-files#generated-sdk-names)). Your `PaymentEditor` adds methods and a validation rule for `note`.
 
 ## Install
 

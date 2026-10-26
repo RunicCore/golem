@@ -1,6 +1,8 @@
+// #region client-imports
 import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { ChargeModel, isProviderUndeclaredResponseError, ProviderClient } from './sdk/index.js';
+// #endregion client-imports
 import { getCharge } from './sdk/operations/getCharge.js';
 
 // #region create-and-list
