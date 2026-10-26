@@ -107,6 +107,16 @@ export function golem(options: GolemHostOptions = {}): Plugin {
     if (invalidated > 0) reloadSoon();
   };
 
+  /** Closes the project, which the next transform opens again. */
+  const release = (): void => {
+    clearTimeout(reloadTimer);
+    reloadTimer = undefined;
+    const closing = opening;
+    opening = undefined;
+    project = undefined;
+    void closing?.then((opened) => { opened.close(); }, () => undefined);
+  };
+
   return {
     name: 'golem',
     enforce: 'pre',
@@ -139,13 +149,15 @@ export function golem(options: GolemHostOptions = {}): Plugin {
       // The map's source is the module's own file name: a served map resolves `sources` against the module's URL.
       return { code: rewritten.code, map: { version: 3, sources: [path.basename(id)], sourcesContent: [code], names: [...map.names], mappings: map.mappings } };
     },
-    closeBundle() {
-      clearTimeout(reloadTimer);
-      reloadTimer = undefined;
-      const closing = opening;
-      opening = undefined;
-      project = undefined;
-      void closing?.then((opened) => { opened.close(); }, () => undefined);
+    watchChange(id) {
+      // The kept project of a watch build learns of an edit as the dev server's does, in fileChanged.
+      if (!server) project?.changed([id]);
     },
+    closeBundle() {
+      // A watch build keeps the project for its next build and closes it in closeWatcher; the dev server has no closeWatcher and also reports watchMode.
+      if (this.meta.watchMode && !server) return;
+      release();
+    },
+    closeWatcher: release,
   };
 }

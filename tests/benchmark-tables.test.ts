@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { COST_CASES, INVALID_CASES } from '../scripts/benchmark/cases.js';
 import type { ResultCase } from '../scripts/benchmark/results-schema.js';
 import { costTable, releaseVerdict } from '../scripts/benchmark/tables.js';
 
@@ -102,4 +103,14 @@ test('the release verdict refuses to pass a check that compared nothing or has n
   assert.throws(() => releaseVerdict([], 0.1), /no case was timed on both sides/);
   assert.throws(() => releaseVerdict([release('a/b/golem', 100)], Number.NaN), /noise band is NaN/);
   assert.throws(() => releaseVerdict([{ key: 'a/b/golem', ...pair(0, 100), halves: [pair(0, 100)] }], 0.1), /invalid timing for a\/b\/golem/);
+});
+
+// protects: T-384 the tagged and class-first union payloads are timed by the IModel adapters only, on every operation, with no invalid-input case
+test('the union pair is timed on the two IModel adapters and has no invalid-input case', () => {
+  for (const payload of ['union-tagged', 'union-class']) {
+    const mine = COST_CASES.filter(c => c.payload === payload);
+    assert.deepEqual([...new Set(mine.map(c => c.adapter))].sort(), ['golem', 'golem-validated']);
+    assert.deepEqual([...new Set(mine.map(c => c.operation))].sort(), ['decode', 'encode', 'parse', 'stringify', 'validate']);
+    assert.deepEqual(INVALID_CASES.filter(c => c.payload === payload), []);
+  }
 });

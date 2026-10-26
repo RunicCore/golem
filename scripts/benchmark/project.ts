@@ -13,7 +13,7 @@ const sharedFeatureDirectory = path.join(root, 'tests/fixtures/models/serde-feat
 const featureSources = [
   'payloads.ts',
   'features-class-transformer.models.ts', 'features-class-validator.models.ts',
-  'comparison-features-golem.ts', 'comparison-features-golem-object.ts',
+  'comparison-features-golem.ts', 'comparison-features-golem-object.ts', 'union-dispatch.model.ts', 'union-dispatch.ts',
   'comparison-features-class-transformer.ts', 'comparison-features-class-validator.ts',
 ];
 const sharedFeatureSources = ['feature-tags.ts', 'features.model.ts', 'features.iobject.model.ts', 'access-rules.ts'];

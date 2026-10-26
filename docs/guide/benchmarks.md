@@ -23,7 +23,7 @@ Name them with `--adapters` and `--payloads`:
 npm run bench -- --adapters golem-object --payloads simple,nested
 ```
 
-- The payloads are `simple`, `nested`, `array`, `checkout`, `checkout-plain`, `serde-none` and `serde-many`.
+- The payloads are `simple`, `nested`, `array`, `checkout`, `checkout-plain`, `serde-none`, `serde-many`, `union-tagged` and `union-class`.
 - A name that is not valid stops the run before it starts, with exit code 2. The message lists the valid names.
 - A run with `--adapters` or `--payloads` writes `.cache/benchmark/results.json`. It leaves the committed results unchanged.
 
