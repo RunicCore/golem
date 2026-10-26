@@ -680,6 +680,17 @@ Golem does not try the variants in turn, so generation stops. The message names 
 - Pass the same type arguments back, such as `next?: Box<T>`.
 - Or end the nesting with a named type.
 
+### RUNM1084
+
+**A controller reads a later job's output.** A model that a controller reaches imports a file that a later job of the same `golem.yaml` writes, such as the SDK directory of an `openapi` job or the output of the `models` job. The jobs run in the order `generators`, `controllers`, `openapi`, `models`, so the file does not exist when the `controllers` job reads the model. The message names the model file and the import.
+
+A model that no controller reaches, with such an import, does not stop the `controllers` job: the `models` job reads it after the file exists.
+
+**Fix:**
+
+- Move the model out of the controllers root, so that no controller reaches it.
+- Or do not import a later job's output from a model that the `controllers` job reads.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.
