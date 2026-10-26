@@ -137,7 +137,7 @@ class ScanningProject {
     }
     if (scanned.edits.length === 0) return undefined;
     const relative = path.relative(this.root, file).split(path.sep).join('/');
-    const applied = applyRewrites(text, scanned, relative);
+    const applied = applyRewrites(text, scanned, file);
     return { code: applied.code, map: { ...applied.map, sources: [relative] }, dependencies: scanned.dependencies.map((dependency) => path.join(this.root, dependency)) };
   }
 
