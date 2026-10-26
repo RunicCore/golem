@@ -42,19 +42,22 @@ test('a configuration parsed under flags takes the flags over its options and li
   assert.throws(() => session.parseConfigFileWithFlags(config, ['--noSuchFlag']), /TS5023/);
 });
 
-const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>])[] = [
+const PRINTED: readonly (readonly [string, Readonly<Record<string, string>>, object?])[] = [
   ['no error', { 'src/a.ts': 'export const a: string = "x";\n' }],
+  ['a syntax error hides the type errors', { 'src/a.ts': 'export const a: string = 1;\n', 'src/b.ts': 'export const = ;\n' }],
+  ['errors in files created out of order', { 'src/z.ts': 'export const z: string = 1;\n', 'src/a.ts': 'export const a: string = 1;\n', 'src/m.ts': 'export const m: string = 1;\n' }],
+  ['no library: global errors', { 'src/a.ts': 'export const a = 1;\n' }, { noLib: true }],
   ['one error', { 'src/a.ts': 'export const a: string = 1;\n' }],
   ['two errors in one file', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n' }],
   ['errors in two files', { 'src/a.ts': 'export const a: string = 1;\nexport const b: string = 2;\n', 'src/b.ts': 'export const c: string = 3;\n' }],
 ];
-for (const [name, files] of PRINTED) {
+for (const [name, files, options] of PRINTED) {
   test(`diagnostics print as tsc prints them: ${name}`, t => {
-    // protects: T-460 the seam's diagnostics, formatters and Found N errors summary equal tsc's plain and pretty output
-    const { root, config } = project(t, files, { noEmit: true });
+    // protects: T-460 T-461 the seam's tsc-form diagnostics (set and order), formatters and Found N errors summary equal tsc's plain and pretty output
+    const { root, config } = project(t, files, { noEmit: true, ...options });
     using session = new ts.ProgramSession({ cwd: root });
     using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config });
-    const diagnostics = ts.getPreEmitDiagnostics(program);
+    const diagnostics = ts.getTscDiagnostics(program);
     assert.equal(ts.formatDiagnostics(diagnostics, host(root)), tsc(root, ['--pretty', 'false']));
     const printed = diagnostics.map((diagnostic) => `${ts.formatDiagnosticsWithColorAndContext([diagnostic], host(root))}\n`).join('');
     const pretty = `${printed}${ts.formatErrorSummary(diagnostics, host(root))}`;
@@ -98,4 +101,23 @@ test('compiler option overrides apply to one program through a virtual configura
   assert.equal(fs.existsSync(path.join(root, 'tsconfig.options.json')), false);
   assert.equal(inputs.some((file) => file.endsWith('tsconfig.options.json')), false);
   assert.equal(inputs.includes(config), true);
+});
+
+test('arguments reach a program as the options of a configuration parsed under them: an enum, a list, a number and a boolean', t => {
+  // protects: T-461 forwarded arguments (--target es2020, --lib es2020,dom) act on the check program
+  const { root, config } = project(t, { 'src/a.ts': 'export const a: string = null;\n' });
+  const flags = ['--target', 'es2020', '--lib', 'es2020,dom', '--maxNodeModuleJsDepth', '2', '--strict', 'false'];
+  using session = new ts.ProgramSession({ cwd: root });
+  const parsed = session.parseConfigFileWithFlags(config, flags);
+  const sources = parsed.fileNames;
+  using flagged = session.openProgram({ root, sources, configFile: config, flags });
+  using plain = session.openProgram({ root, sources, configFile: config });
+  using overridden = session.openProgram({ root, sources, configFile: config, flags, compilerOptionOverrides: { strict: true } });
+  const picked = (options: ts.CompilerOptions) => ({ target: options.target, lib: options.lib, maxNodeModuleJsDepth: options.maxNodeModuleJsDepth, strict: options.strict });
+  assert.deepEqual(picked(flagged.getCompilerOptions()), picked(parsed.options));
+  assert.notDeepEqual(picked(plain.getCompilerOptions()), picked(parsed.options));
+  assert.equal(ts.getTscDiagnostics(plain).length, 1);
+  assert.equal(ts.getTscDiagnostics(flagged).length, 0);
+  assert.equal(ts.getTscDiagnostics(overridden).length, 1, 'an override wins over an argument');
+  assert.throws(() => session.openProgram({ root, sources, configFile: config, flags: ['--noSuchFlag'] }), /TS5023/);
 });
