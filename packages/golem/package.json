@@ -197,7 +197,7 @@
   "peerDependencies": {
     "@nestjs/common": "^11.0.0",
     "esbuild": "^0.25.12",
-    "eslint": "^9.0.0",
+    "eslint": "^9.0.0 || ^10.0.0",
     "mobx": "^6.13.0",
     "rxjs": "^7.8.0",
     "typescript": ">=6.0.0 <7 || >=7.1.0-0 <8",
@@ -229,7 +229,7 @@
   "devDependencies": {
     "@nestjs/common": "11.2.3",
     "esbuild": "0.25.12",
-    "eslint": "9.39.5",
+    "eslint": "10.13.0",
     "mobx": "^6.16.1",
     "rxjs": "7.8.2",
     "typescript": "7.1.0-beta"

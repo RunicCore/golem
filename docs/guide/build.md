@@ -104,7 +104,7 @@ A host rewrites each call that it can read. It cannot rewrite `parse<TPayment>` 
 import { golem } from '@exprtlabs/golem/eslint';
 import tseslint from 'typescript-eslint';
 
-export default [...tseslint.configs.base, await golem()];
+export default [tseslint.configs.base, await golem()];
 ```
 
 - `golem()` returns one flat-config object. It turns the rule on for `.ts`, `.mts`, `.cts` and `.tsx` files.

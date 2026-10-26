@@ -1,3 +1,4 @@
+// lane: typescript6 ProgramSession resolution updates in the ESLint rewrite project, which reopens its program for ESLint's text
 // The ESLint config of `@exprtlabs/golem/eslint` reports, at lint time, each serde call that the golem hosts cannot rewrite.
 import assert from 'node:assert/strict';
 import path from 'node:path';

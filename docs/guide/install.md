@@ -54,7 +54,7 @@ The generators declare the compiler as a peer dependency, so npm installs one co
 - `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8`, for `golem build`, the plugins and the loader
 - `vite` `>=5`, for the Vite plugin
 - `esbuild` `^0.25.12`, for the esbuild plugin
-- `eslint` `^9.0.0`, for the ESLint rule
+- `eslint` `^9.0.0 || ^10.0.0`, for the ESLint rule
 - `mobx` `^6.13.0`, for MobX models
 - `@nestjs/common` `^11.0.0` and `rxjs` `^7.8.0`, for `NestModelInterceptor`
 
