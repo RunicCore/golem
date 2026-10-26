@@ -141,7 +141,8 @@ const RESET = '\x1b[0m';
 /**
  * The line `tsc --pretty` prints after the diagnostics, and nothing when no diagnostic is an error: `Found 3 errors in 2 files.` and
  * a table of the errors in each file. `tsc` prints no summary in its plain form. The text is the one both compilers print (English).
- * A file prints relative to the host's current directory, followed by the line of its first error.
+ * A file prints relative to the host's current directory, followed by the line of its first error. `tsc` 7 ends the table with an
+ * empty line that `tsc` 6 leaves out; each lane follows its own `tsc`.
  */
 export function formatErrorSummary(diagnostics: readonly Golem.Diagnostic[], host: { getCurrentDirectory(): string; getNewLine(): string }): string {
   const errors = diagnostics.filter((diagnostic) => diagnostic.category === ERROR_CATEGORY);
@@ -160,7 +161,7 @@ export function formatErrorSummary(diagnostics: readonly Golem.Diagnostic[], hos
     ? ['Errors  Files', ...files.map((file) => {
       const count = inFiles.filter((error) => error.fileName === file).length;
       return `${String(count).padStart(6)}  ${reference(inFiles.find((error) => error.fileName === file)!)}`;
-    })].join('\n') + `\n${newLine}`
+    })].join('\n') + `\n${selected.major === 7 ? newLine : ''}`
     : '';
   return `${newLine}${headline}${newLine}${newLine}${table}`;
 }
