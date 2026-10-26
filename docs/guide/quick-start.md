@@ -29,11 +29,11 @@ Check the [requirements](/guide/install#requirements). Add `"type": "module"` to
 
 ## Declare your fields
 
-`priority` is a number in your code and a word in JSON, so first write the two functions that convert it in `src/priority-word.ts`. The generated file imports them, so they cannot live in the model file ([`TSerde`](/guide/serialization#change-the-json-form)):
+`priority` is a number in your code and a word in JSON. A [`TSerde`](/guide/serialization#change-the-json-form) tag names the two functions that convert a field to and from its JSON form. First write them in `src/priority-word.ts`. The generated file imports them, so they cannot live in the model file:
 
 <<< ../../examples/models/src/priority-word.ts#priority-word
 
-Then mark a type with `IModel` in `src/task.model.ts`. `TSerde` ties `priority` to those functions:
+Then mark a type with `IModel` in `src/task.model.ts`. The `TSerde` tag ties `priority` to those functions:
 
 <<< ../../examples/models/src/task.model.ts#task-declaration
 
@@ -77,7 +77,7 @@ Create `src/main.ts`:
 
 <<< ../../examples/models/src/main.ts#use-task
 
-`toWireFormat<Task>(task)` returns the JSON form of the task as an object. `@exprtlabs/golem/serde` also exports `parse` and `stringify`. `parse<Task>(text)` builds a `Task`. `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
+`toWireFormat<Task>(task)` returns the JSON form of the task as an object. TypeScript erases the `<Task>` argument at run time, so a build host must replace the call with generated code ([Build your app](/guide/build)). `@exprtlabs/golem/serde` also exports `parse` and `stringify`. `parse<Task>(text)` builds a `Task`. `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
 
 ## Run it
 
@@ -91,6 +91,6 @@ Built tsconfig.json.
 []
 ```
 
-`golem build` generates first, checks your sources, and writes JavaScript with the `toWireFormat` call rewritten into `.build/`. A bundler plugin or the Node loader can rewrite the calls instead ([Build your app](/guide/build)). Run `golem watch` to regenerate while you edit ([daily loop](/guide/watch)).
+`golem build` is a build host. It generates first, checks your sources, and writes JavaScript into `.build/` with the `toWireFormat` call replaced by generated code. A bundler plugin or the Node loader can act as the host instead ([Build your app](/guide/build)). Run `golem watch` to regenerate while you edit ([daily loop](/guide/watch)).
 
 Your `main.ts` holds only the code above, so this is all it prints. The full example's `main.ts` continues with one line per feature. `npm start` in [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models) prints them all.

@@ -10,7 +10,10 @@ A `Date` field is an ISO date-time string in JSON. `parse` and `fromWireFormat` 
 
 <<< ../../examples/models/src/read-reminder.ts#read-reminder
 
-[Validation tags](/guide/tags) add format checks.
+Golem writes a `Date` in UTC with milliseconds. A reader that gets `"2026-01-02T10:00:00Z"` holds a `Date` and writes back `"2026-01-02T10:00:00.000Z"`. A string with an offset, such as `+02:00`, is converted to UTC and written with `Z`. The `Date` keeps the moment, not the original text.
+
+- To keep the exact text, declare the field as `string & Format<'date-time'>`. The value stays a string, and golem checks that it is a date-time ([Formats](/guide/tags#formats)).
+- To write another form, declare it as `Date & TSerde<typeof encode, typeof decode>`. Your `encode` function writes the text and `decode` reads it ([change the JSON form](/guide/serialization#change-the-json-form)). The text comes from the `Date`, so it fits a fixed form, such as seconds with no milliseconds.
 
 ## Use Temporal fields
 
@@ -29,6 +32,8 @@ Declare a field with a type from [`@exprtlabs/golem/temporal`](/reference/runtim
 | `TemporalPlainDate` | `Temporal.PlainDate` | `2025-01-02` |
 | `TemporalDuration` | `Temporal.Duration` | `PT1H30M` |
 
+A `Temporal` value is written in its own `toString()` form. A `TemporalInstant` shows fractional seconds only when it has them, for example `2025-01-02T03:04:05.250Z`.
+
 `TemporalZonedDateTime`, `TemporalPlainDateTime` and `TemporalPlainTime` work the same way.
 
 ## Use Temporal values in a client
@@ -37,7 +42,7 @@ Set `dates: temporal` on the [OpenAPI job](/reference/config#openapi-jobs). The 
 
 <<< ../../examples/payments/server/golem.yaml#openapi-dates-job
 
-The response `body` keeps the JSON strings. Convert it with the generated model class to get Temporal values:
+The response `body` keeps the JSON strings. Import `fromWireFormat` from `@exprtlabs/golem/serde` and the model class from the generated SDK. Convert the body with the model class to get Temporal values:
 
 <<< ../../examples/payments/server/provider/settlement.ts#read-dates
 

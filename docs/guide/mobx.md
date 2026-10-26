@@ -21,6 +21,12 @@ Install MobX in the application. Your class constructors and the generated SDK m
 npm install mobx
 ```
 
+A React app also needs `mobx-react-lite`, which provides `observer` ([Use it in React](#use-it-in-react)):
+
+```sh
+npm install mobx-react-lite
+```
+
 Set the profile and regenerate:
 
 <<< ../../examples/payments/web/golem.yaml
@@ -74,6 +80,11 @@ The amount field in [`src/App.tsx`](https://github.com/RunicCore/golem/blob/mast
 
 <<< ../../examples/payments/web/src/App.tsx#observer-component
 
-`getValidator` reads the editor's validation issues ([Validate models](/guide/validation)) for the field to render. The field calls an action method, `setAmount`, on change. [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments) runs this editor against a local demo server.
+`getValidator` reads the editor's validation issues ([Validate models](/guide/validation)) for the field to render. The field calls an action method, `setAmount`, on change.
 
-Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
+- Import `getValidator` from `@exprtlabs/golem/validation`. When the model is generated with `mobx: true` and `validation: true`, the validator it returns is already observable, so `observer` re-renders when its issues change.
+- Import it from `@exprtlabs/golem/mobx-validation` when a model is generated without both settings and a component must still re-render on its issues. It returns the same validator for that instance, made observable.
+
+A text input holds a string. For a number field, keep a draft string in the form and convert it when the input changes. Write the converted number to the model, and show the draft string in the input.
+
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments) runs this editor against a local demo server.
