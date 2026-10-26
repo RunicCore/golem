@@ -4,7 +4,7 @@ import path from 'node:path';
 import { modelsRootOf, resolveConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
-import { GolemDiagnosticSeverity } from './generator-api.js';
+import { displayPath, GolemDiagnosticSeverity } from './generator-api.js';
 import { applyRewrites } from './rewrite.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
 import type { RewriteScanner } from './rewrite-scan.js';
@@ -131,8 +131,8 @@ class ScanningProject {
     if (errors.length > 0) {
       const line = errors.find((diagnostic) => diagnostic.line !== undefined)?.line;
       throw new GolemHostError([
-        `golem cannot rewrite ${path.relative(this.root, file).split(path.sep).join('/')}:`,
-        ...errors.map((diagnostic) => `  ${diagnostic.file ?? ''}${diagnostic.line === undefined ? '' : `:${diagnostic.line}`}${diagnostic.column === undefined ? '' : `:${diagnostic.column}`} ${diagnostic.code}: ${diagnostic.message}`),
+        `golem cannot rewrite ${displayPath(file)}:`,
+        ...errors.map((diagnostic) => `  ${diagnostic.file === undefined ? '' : displayPath(path.resolve(this.root, diagnostic.file))}${diagnostic.line === undefined ? '' : `:${diagnostic.line}`}${diagnostic.column === undefined ? '' : `:${diagnostic.column}`} ${diagnostic.code}: ${diagnostic.message}`),
         'If a model changed, run golem generate.',
       ].join('\n'), { file, ...(line === undefined ? {} : { line }) });
     }
@@ -186,7 +186,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
   // An empty config option or GOLEM_CONFIG is no setting: it would resolve to the working directory itself.
   const named = options.config || process.env.GOLEM_CONFIG || undefined;
   const requested = path.resolve(options.cwd, named ?? 'golem.yaml');
-  if (!existsSync(requested)) throw new GolemHostError(named === undefined ? NO_GOLEM_YAML : `${NO_GOLEM_YAML} (${requested} does not exist)`);
+  if (!existsSync(requested)) throw new GolemHostError(named === undefined ? NO_GOLEM_YAML : `${NO_GOLEM_YAML} (${displayPath(requested)} does not exist)`);
   const config = resolveConfig(requested);
   const key = config.configFile;
   let shared = projects.get(key);
@@ -194,7 +194,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
     shared = {
       holders: 0,
       project: (async (): Promise<ScanningProject> => {
-        if (!existsSync(config.tsconfig)) throw new GolemHostError(`golem cannot find ${config.tsconfig}, the tsconfig ${config.configFile} names; create it or name another with tsconfig:`);
+        if (!existsSync(config.tsconfig)) throw new GolemHostError(`golem cannot find ${displayPath(config.tsconfig)}, the tsconfig ${displayPath(config.configFile)} names; create it or name another with tsconfig:`);
         // The compiler seam loads once per process, so the project's TypeScript is requested before the seam is imported.
         requestTypeScriptRoot(path.dirname(config.tsconfig));
         const [seam, scan, analysis] = await Promise.all([import('./typescript-ns.js'), import('./rewrite-scan.js'), import('./type-analysis/project.js')]);

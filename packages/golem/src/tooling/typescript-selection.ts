@@ -1,4 +1,5 @@
 import { realpathSync } from 'node:fs';
+import { displayPath } from './generator-api.js';
 import { resolveTypeScript } from './typescript-version.js';
 
 /** The TypeScript install a process loads, as `resolveTypeScript` describes it. */
@@ -35,8 +36,8 @@ function chosenRoot(): { readonly root: string; readonly source: SelectionSource
 }
 
 function origin(chosen: Selection): string {
-  if (chosen.source === 'request') return `the project at ${chosen.root}`;
-  return `the working directory ${chosen.root}, before any project asked for its TypeScript: a module that loads the compiler early selected it`;
+  if (chosen.source === 'request') return `the project at ${displayPath(chosen.root)}`;
+  return `the working directory ${displayPath(chosen.root)}, before any project asked for its TypeScript: a module that loads the compiler early selected it`;
 }
 
 /**
@@ -74,5 +75,5 @@ export function requestTypeScriptRoot(root: string, options: { readonly lazy?: b
     return;
   }
   if (held.source === 'GOLEM_TYPESCRIPT_ROOT' || realpathSync(held.typescript.packageDir) === realpathSync(wanted.packageDir)) return;
-  throw new Error(`One golem process loads one TypeScript: ${held.typescript.version} at ${held.typescript.packageDir} was selected from ${origin(held)}, but the project at ${root} uses ${wanted.version} at ${wanted.packageDir}. Run one golem host per TypeScript install.`);
+  throw new Error(`One golem process loads one TypeScript: ${held.typescript.version} at ${displayPath(held.typescript.packageDir)} was selected from ${origin(held)}, but the project at ${displayPath(root)} uses ${wanted.version} at ${displayPath(wanted.packageDir)}. Run one golem host per TypeScript install.`);
 }

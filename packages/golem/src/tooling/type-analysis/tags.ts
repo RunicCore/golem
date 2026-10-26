@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { displayPath } from '../generator-api.js';
 import * as ts from '../typescript-ns.js';
 import { canonicalFilename, portableRelativeFilename } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
@@ -304,7 +305,7 @@ function valueBindingForSymbol(
     throw context.diagnostic(
       node,
       '1060',
-      `${kind} function ${exportName} is in package ${resolved.packageName}, but no "exports" entry in ${resolved.packageRoot}/package.json reaches ${path.relative(resolved.packageRoot, sourceFile.fileName)}. Export that file from the package.`,
+      `${kind} function ${exportName} is in package ${resolved.packageName}, but no "exports" entry in ${displayPath(path.join(resolved.packageRoot, 'package.json'))} reaches ${path.relative(resolved.packageRoot, sourceFile.fileName)}. Export that file from the package.`,
     );
   }
   if (resolved.kind === 'package') {

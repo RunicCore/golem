@@ -54,7 +54,7 @@ export interface ResolvedGolemProfile extends GolemProfile {
 
 /** The error for a `models.sources` entry whose real path is outside `models.root`: the yaml and the API stop with this text. */
 export function outsideModelsRootMessage(entry: string, root: string): string {
-  return `RUNM1075: models.sources entry ${entry} is outside the models root ${root}. A models job generates only files inside its root.`;
+  return `RUNM1075: models.sources entry ${displayPath(entry)} is outside the models root ${displayPath(root)}. A models job generates only files inside its root.`;
 }
 
 /**

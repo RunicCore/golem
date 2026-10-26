@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { GolemDiagnosticSeverity, canonicalPath, compareText, isRecord } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, isRecord } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
 import { OPERATION_METHOD_KEYS_EXPORT, operationCodecRegistryPath, operationCodecSlot, operationSlotCodec, type OperationMethodCodecs } from './generated-paths.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
@@ -112,7 +112,7 @@ function readCodecKeysFile(filename: string): Readonly<Record<string, string>> {
   }
   const keys = isRecord(parsed) && parsed.version === 1 ? parsed.keys : undefined;
   if (!isRecord(keys) || !Object.values(keys).every((id) => typeof id === 'string')) {
-    throw new Error(`${filename} is not a golem codec key file; run golem generate.`);
+    throw new Error(`${displayPath(filename)} is not a golem codec key file; run golem generate.`);
   }
   return keys as Readonly<Record<string, string>>;
 }
@@ -726,11 +726,11 @@ function constructOptionEdits(file: ts.SourceFile, call: ts.CallExpression, targ
  * What to wait for when the generated file of the model `alias` declares is missing, so the key table cannot name the model
  * yet; undefined when the file exists. An older file is no sign of a pending run: a save that changes nothing generated leaves it older.
  */
-function pendingGeneration(root: string, boundary: ModelBoundary, alias: ts.TypeAliasDeclaration): string | undefined {
+function pendingGeneration(boundary: ModelBoundary, alias: ts.TypeAliasDeclaration): string | undefined {
   const source = alias.getSourceFile().fileName;
   const companion = companionFilename(boundary, source);
   if (fs.existsSync(companion)) return undefined;
-  return `${path.relative(root, companion).split(path.sep).join('/')} is missing. Wait for golem generate or golem watch to write it.`;
+  return `${displayPath(companion)} is missing. Wait for golem generate or golem watch to write it.`;
 }
 
 function scanFile(
@@ -772,7 +772,7 @@ function scanFile(
       const model = fieldProvenance(checker, call.typeArguments[0], []).anonymous;
       const alias = model && declaredModelAlias(model);
       const foreign = alias ? foreignModelReason(alias, boundary) : undefined;
-      const pending = alias && foreign === undefined ? pendingGeneration(root, boundary, alias) : undefined;
+      const pending = alias && foreign === undefined ? pendingGeneration(boundary, alias) : undefined;
       scan.diagnostics.push(foreign !== undefined
         ? locate(root, file, call, CODE_FOREIGN_MODEL, foreign)
         : locate(root, file, call, CODE_NO_CODEC, `${method}<${call.typeArguments[0].getText(file)}> has no unique codec id${pending === undefined ? '' : `. ${pending}`}`));

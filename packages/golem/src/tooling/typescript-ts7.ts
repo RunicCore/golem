@@ -27,6 +27,7 @@ import {
   sep,
 } from 'node:path';
 import * as ast from 'typescript/ast';
+import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { assertConfigParsed } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
@@ -1068,7 +1069,7 @@ export class ProgramSession implements Disposable {
         // The project of the request's own configuration (the derived one when roots were added), so every run of a job
         // sees the same files. Another project would be the wrong program.
         const project = snapshot.getConfiguredProject(request.configPath);
-        if (!project) throw new Error(`The compiler did not open the TypeScript project ${request.configPath} for ${options.root}.`);
+        if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
         const program = new CompatProgram(this, snapshot, project);
         this.held.set(program, request);
         return program;
