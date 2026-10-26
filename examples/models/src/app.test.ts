@@ -6,6 +6,7 @@ import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem
 import { validateInstance } from '@exprtlabs/golem/validation';
 import { createTask, saveTask } from './task-app.js';
 import { Task } from './task.model.js';
+import { readOrder, writeOrder } from './order-json.js';
 import type { TTask } from './task.model.js';
 import type { TTaskJSON } from './task.model.generated.js';
 import { readTask, readTaskData, writeTask } from './read-json.js';
@@ -223,4 +224,15 @@ test('a TSerde field can hold a class instance such as Uint8Array', async () => 
   assert.deepEqual(result.wire, { name: 'checksum.bin', content: 'AQID' });
   assert.deepEqual([...result.copy.content], [1, 2, 3]);
   assert.deepEqual(logged, [[true]]);
+});
+
+test('an order reads decimal text, a priority word and a Date, and writes the same JSON back', () => {
+  // protects: task T-455 one model with money text, a priority word and a Date
+  const text = '{"amount":"12.50","priority":"high","remindAt":"2025-01-02T03:04:05.000Z"}';
+  const order = readOrder(text);
+
+  assert.equal(order.amount, 1250);
+  assert.equal(order.priority, 3);
+  assert.equal(order.remindAt.toISOString(), '2025-01-02T03:04:05.000Z');
+  assert.equal(writeOrder(order), text);
 });
