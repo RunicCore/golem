@@ -29,7 +29,8 @@ import {
 import * as ast from 'typescript/ast';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, emitWanted, flagsAsConfigOptions } from './typescript-config.js';
+import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, emitWanted, flagPathOptions, flagsAsConfigOptions } from './typescript-config.js';
+import type { ResolveAtCurrentFolder } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
@@ -726,7 +727,7 @@ class CompatProgram implements Program {
   emitToMemory(kind: EmitKind): MemoryEmit {
     const options = this.getCompilerOptions();
     const declarations = kind === 'declarations';
-    if (!emitWanted(options, declarations)) return { emitSkipped: true, files: new Map(), diagnostics: [] };
+    if (!emitWanted(options, declarations)) return { emitSkipped: true, files: new Map(), sources: new Map(), diagnostics: [] };
     const sources = this.getSourceFiles()
       .filter((file) => !file.isDeclarationFile && !this.isSourceFileDefaultLibrary(file) && !this.isSourceFileFromExternalLibrary(file))
       .map((file) => file.fileName);
@@ -734,6 +735,7 @@ class CompatProgram implements Program {
     return {
       emitSkipped: output.emitSkipped,
       files: new Map([...output.outputFiles].map(([filename, { text }]) => [canonical(filename), text])),
+      sources: new Map([...output.outputFiles].flatMap(([filename, { sourceFileName }]) => (sourceFileName === undefined ? [] : [[canonical(filename), canonical(sourceFileName)] as const]))),
       diagnostics: output.diagnostics,
     };
   }
@@ -742,6 +744,17 @@ class CompatProgram implements Program {
 function canonical(filename: string): string {
   return normalize(resolvePath(filename));
 }
+
+const parseFlags = (api: API) => (flags: readonly string[]) => {
+  const { options, fileNames, errors } = api.parseCommandLine(flags);
+  return { options, fileNames, errors };
+};
+
+/** The options read as a tsconfig of the current folder: the compiler's parse makes the path options absolute from it. It lists no file. */
+const resolveAtCurrentFolder = (api: API): ResolveAtCurrentFolder => (options) => api.parseJsonConfigFileContent(
+  { compilerOptions: options, files: [] },
+  { configFileName: join(process.cwd(), 'tsconfig.golem-flags.json') },
+).options as Readonly<Record<string, unknown>>;
 
 export const sys: ModuleResolutionHost & {
   useCaseSensitiveFileNames: boolean;
@@ -1086,7 +1099,9 @@ export class ProgramSession implements Disposable {
       const virtual = join(dirname(configPath), `${basename(configPath, '.json')}.flags.json`);
       const result = api.parseJsonConfigFileContent({ extends: `./${basename(configPath)}`, compilerOptions: matching }, { configFileName: virtual });
       assertConfigParsed(configPath, [...commandLine.errors, ...result.errors]);
-      return { options: { ...result.options, ...commandLine.options, configFilePath: configPath }, fileNames: result.fileNames };
+      // A path in a flag is read from the current folder, as `tsc` reads it; the API's parse reads it from the folder of the session.
+      const paths = flagPathOptions(flags, parseFlags(api), resolveAtCurrentFolder(api));
+      return { options: { ...result.options, ...commandLine.options, ...paths, configFilePath: configPath }, fileNames: result.fileNames };
     });
     return { options: parsed.options as CompilerOptions, fileNames: parsed.fileNames };
   }
@@ -1098,10 +1113,7 @@ export class ProgramSession implements Disposable {
   private withFlags(options: OpenProgramOptions): OpenProgramOptions {
     const { flags } = options;
     if (flags === undefined || flags.length === 0) return options;
-    const flagged = this.withCompiler('parse', (api) => flagsAsConfigOptions(flags, (args) => {
-      const { options: parsed, fileNames, errors } = api.parseCommandLine(args);
-      return { options: parsed, fileNames, errors };
-    }));
+    const flagged = this.withCompiler('parse', (api) => flagsAsConfigOptions(flags, parseFlags(api), resolveAtCurrentFolder(api)));
     return { ...options, compilerOptionOverrides: { ...flagged, ...options.compilerOptionOverrides } };
   }
 

@@ -26,15 +26,10 @@ const BUILD_OWNED_ARGUMENTS: Readonly<Record<string, { readonly why: string; rea
   '--outdir': { why: 'the emit program writes into the outDir of the tsconfig', workaround: 'set outDir in the tsconfig, or pass -p a tsconfig that extends it and sets another outDir' },
   '--listemittedfiles': { why: 'golem writes the outputs itself and prints no list of them', workaround: 'list the files in outDir after the build' },
   ...Object.fromEntries(([
-    ['--rootDir', 'golem lays out its outputs and the import paths of the declarations from the rootDir of the tsconfig'],
     ['--baseUrl', 'golem reads the baseUrl and paths of the tsconfig to give each import the path Node loads'],
     ['--composite', 'the emit program is not a composite build, and the check program must report what it reports'],
     ['--outFile', 'the emit program writes one file per source into the outDir of the tsconfig'],
     ['--declarationDir', 'the check program writes the declarations from your sources into the directory of the tsconfig'],
-    ['--sourceRoot', 'golem points source maps at your sources, which the emit program reads at their own paths'],
-    ['--mapRoot', 'golem points the maps of the emit program at your sources, and a forwarded map location would change what they resolve against'],
-    ['--inlineSourceMap', 'golem maps each source map back to your sources and cannot reach a map inside the JavaScript'],
-    ['--inlineSources', 'the maps of the emit program embed the sources of the tsconfig setting, and a forwarded one would embed the rewritten text'],
   ] as const).map(([flag, why]) => [flag.toLowerCase(), { why, workaround: 'set it in tsconfig.json' }])),
 };
 

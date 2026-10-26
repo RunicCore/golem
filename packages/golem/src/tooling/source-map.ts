@@ -90,6 +90,28 @@ export function decodeMappings(mappings: string): number[][][] {
 }
 
 /**
+ * The place in the original for a position of the rewritten text, from the segments of the map of that rewrite (those with a source):
+ * `[srcIndex, srcLine, srcCol]`, or nothing when the map does not cover the line or starts after the column. Only an unchanged run advances
+ * alike on both sides; text inserted or replaced by an edit maps to its start.
+ */
+function locate(lines: readonly (readonly (readonly number[])[])[], line: number, col: number): readonly [number, number, number] | undefined {
+  const segments = lines[line];
+  if (!segments) return undefined;
+  let index = -1;
+  for (let low = 0, high = segments.length - 1; low <= high;) {
+    const middle = (low + high) >> 1;
+    if (segments[middle]![0]! <= col) { index = middle; low = middle + 1; } else high = middle - 1;
+  }
+  const start = segments[index];
+  if (!start) return undefined;
+  const next = segments[index + 1];
+  const linear = !next || (next[1] === start[1] && next[2] === start[2] && next[3]! - start[3]! === next[0]! - start[0]!);
+  return [start[1]!, start[2]!, start[3]! + (linear ? col - start[0]! : 0)];
+}
+
+const mappedSegments = (mappings: string): number[][][] => decodeMappings(mappings).map((line) => line.filter((segment) => segment.length >= 4));
+
+/**
  * Compose by position: `outer` maps the rewritten text to the output, `inner`
  * maps the original to the rewritten text; the result maps the original to the
  * output. `outer` describes one source (the rewritten file), so its `sources`
@@ -98,25 +120,12 @@ export function decodeMappings(mappings: string): number[][][] {
  * segment of their line, or on a line the inner map does not cover, are dropped.
  */
 export function composeSourceMaps(outer: SourceMapV3, inner: SourceMapV3): SourceMapV3 {
-  const innerLines = decodeMappings(inner.mappings).map((line) => line.filter((segment) => segment.length >= 4));
-  const lines = decodeMappings(outer.mappings).map((line) => {
+  const innerLines = mappedSegments(inner.mappings);
+  const lines = mappedSegments(outer.mappings).map((line) => {
     const composed: MappingSegment[] = [];
     for (const segment of line) {
-      if (segment.length < 4) continue;
-      const rewrittenLine = innerLines[segment[2]!];
-      if (!rewrittenLine) continue;
-      const rewrittenCol = segment[3]!;
-      let index = -1;
-      for (let low = 0, high = rewrittenLine.length - 1; low <= high;) {
-        const middle = (low + high) >> 1;
-        if (rewrittenLine[middle]![0]! <= rewrittenCol) { index = middle; low = middle + 1; } else high = middle - 1;
-      }
-      const start = rewrittenLine[index];
-      if (!start) continue;
-      // Only an unchanged run advances alike on both sides; text inserted or replaced by an edit maps to its start.
-      const next = rewrittenLine[index + 1];
-      const linear = !next || (next[1] === start[1] && next[2] === start[2] && next[3]! - start[3]! === next[0]! - start[0]!);
-      composed.push([segment[0]!, start[1]!, start[2]!, start[3]! + (linear ? rewrittenCol - start[0]! : 0)]);
+      const original = locate(innerLines, segment[2]!, segment[3]!);
+      if (original) composed.push([segment[0]!, ...original]);
     }
     return composed;
   });
@@ -128,4 +137,59 @@ export function composeSourceMaps(outer: SourceMapV3, inner: SourceMapV3): Sourc
     names: [],
     mappings: encodeMappings(lines),
   };
+}
+
+/**
+ * Point the JSON text of a map the compiler made for a rewritten file at the original: `inner` is the rewrite map of that file. Every
+ * field the compiler wrote stays as it wrote it (`file`, `sourceRoot`, `sources`) except the mappings, which now name positions of the original,
+ * the names, which the composition drops, and the embedded sources, which are the original text and not the rewritten one.
+ */
+export function pointSourceMap(text: string, inner: SourceMapV3): string {
+  const emitted = JSON.parse(text) as SourceMapV3;
+  return JSON.stringify({
+    ...emitted,
+    names: [],
+    mappings: composeSourceMaps(emitted, inner).mappings,
+    ...(emitted.sourcesContent === undefined ? {} : { sourcesContent: inner.sourcesContent }),
+  });
+}
+
+/**
+ * Point the JSON text of a declaration map at the declaration after an edit of its text: `edit` is the rewrite map of the declaration, which maps
+ * the edited text to the text the compiler wrote. The edit moves the generated side of the compiler's map, where the rewrite of a JavaScript file
+ * moves its source side, so each segment keeps its original and finds its place in the edited text. Every field the compiler wrote stays as it wrote it
+ * (`file`, `sourceRoot`, `sources`, `sourcesContent`) except the mappings and the names, which the move drops.
+ */
+export function pointDeclarationMap(text: string, edit: SourceMapV3): string {
+  const emitted = JSON.parse(text) as SourceMapV3;
+  // The edit read the other way: from a position of the compiler's text to its position in the edited text.
+  const edited: number[][][] = [];
+  decodeMappings(edit.mappings).forEach((line, editedLine) => {
+    for (const segment of line) if (segment.length >= 4) (edited[segment[2]!] ??= []).push([segment[3]!, 0, editedLine, segment[0]!]);
+  });
+  for (const line of edited) line?.sort((left, right) => left[0]! - right[0]!);
+  const lines: MappingSegment[][] = [];
+  mappedSegments(emitted.mappings).forEach((line, written) => {
+    for (const segment of line) {
+      const place = locate(edited, written, segment[0]!);
+      if (place) (lines[place[1]] ??= []).push([place[2], segment[1]!, segment[2]!, segment[3]!]);
+    }
+  });
+  for (const line of lines) line?.sort((left, right) => left[0] - right[0]);
+  return JSON.stringify({ ...emitted, names: [], mappings: encodeMappings(Array.from(lines, (line) => line ?? [])) });
+}
+
+/** The inline source map `inlineSourceMap` puts at the end of a JavaScript file: the comment up to its data, the data, and what follows it. */
+const INLINE_SOURCE_MAP = /(\/\/# sourceMappingURL=data:application\/json(?:;charset=[^;,]*)?;base64,)([A-Za-z0-9+/=]*)(\s*)$/;
+
+/** `pointSourceMap` for the data URL at the end of the JavaScript text of `file`. A map that is missing or cannot be read is an error that names the file. */
+export function pointInlineSourceMap(file: string, code: string, inner: SourceMapV3): string {
+  const match = INLINE_SOURCE_MAP.exec(code);
+  if (!match) throw new Error(`golem build could not find the inline source map at the end of ${file}.`);
+  try {
+    const pointed = pointSourceMap(Buffer.from(match[2]!, 'base64').toString('utf8'), inner);
+    return code.slice(0, match.index) + match[1]! + Buffer.from(pointed).toString('base64') + match[3]!;
+  } catch (error) {
+    throw new Error(`golem build could not read the inline source map of ${file}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
+  }
 }

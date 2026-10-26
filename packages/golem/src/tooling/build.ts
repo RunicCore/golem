@@ -14,7 +14,7 @@ import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
 import type { FileRewrite } from './rewrite.js';
 import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.js';
-import { composeSourceMaps } from './source-map.js';
+import { pointDeclarationMap, pointInlineSourceMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
@@ -53,7 +53,6 @@ interface Project {
   readonly files: readonly string[];
   readonly outDir: string;
   readonly declarationDir?: string;
-  readonly rootDir?: string;
   /** The original configuration emits declarations, so the check writes them from the original sources and the build changes their import paths. */
   readonly declaration: boolean;
   /** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: the build is the check alone. */
@@ -121,8 +120,6 @@ function assertSupported(configFile: string, parsed: { readonly options: ts.Comp
   if (stringOption(options, 'outDir') === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
   if (stringOption(options, 'outFile') !== undefined) throw unsupported('outFile');
   if (Array.isArray(options.rootDirs)) throw unsupported('rootDirs');
-  if (options.inlineSourceMap === true) throw unsupported('inlineSourceMap');
-  if (stringOption(options, 'sourceRoot') !== undefined) throw unsupported('sourceRoot');
   for (const name of TSC_COMMANDS) {
     if (options[name] === true) throw new Error(`golem build does not support --${name} (${displayPath(configFile)}): it is a command of tsc, not an option of a build. Run tsc --${name} instead.`);
   }
@@ -140,7 +137,6 @@ function readProject(configFile: string, parsed: { readonly options: ts.Compiler
   const root = path.dirname(configFile);
   const outDir = stringOption(options, 'outDir');
   if (outDir === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
-  const rootDir = stringOption(options, 'rootDir');
   const declarationDir = stringOption(options, 'declarationDir');
   const noEmit = options.noEmit === true;
   return {
@@ -149,7 +145,6 @@ function readProject(configFile: string, parsed: { readonly options: ts.Compiler
     files: parsed.fileNames,
     outDir,
     ...(declarationDir === undefined ? {} : { declarationDir }),
-    ...(rootDir === undefined ? {} : { rootDir }),
     declaration: options.declaration === true || options.composite === true,
     emitsJavaScript: emitsJavaScript(options),
     noEmit,
@@ -163,28 +158,6 @@ function scanFailure(root: string, errors: readonly GolemDiagnostic[]): Error {
     `golem rewrite scan reported ${errors.length} error diagnostic${errors.length === 1 ? '' : 's'}:`,
     ...errors.map((diagnostic) => `  ${diagnostic.code}${location(diagnostic)}: ${diagnostic.message}`),
   ].join('\n'));
-}
-
-/** The deepest directory that holds every one of `directories`. */
-function commonDirectory(directories: readonly string[]): string {
-  const [first, ...others] = directories.map((directory) => path.resolve(directory).split(path.sep));
-  if (first === undefined) throw new Error('golem build has no directory to lay its output out from.');
-  let length = first.length;
-  for (const other of others) {
-    let shared = 0;
-    while (shared < length && shared < other.length && other[shared] === first[shared]) shared += 1;
-    length = shared;
-  }
-  if (length === 0) throw new Error(`golem build cannot lay out sources that share no directory: ${directories.map(displayPath).join(', ')}.`);
-  return path.resolve(`${first.slice(0, length).join(path.sep)}${path.sep}`);
-}
-
-/**
- * The directory the compiler writes outputs relative to: the common directory of the tsconfig's directory, the `rootDir` and every source.
- * With a `rootDir` the output layout starts at that directory instead.
- */
-function sourceBase(project: Project, sources: readonly ts.SourceFile[]): string {
-  return commonDirectory([project.root, ...sources.map((source) => path.dirname(source.fileName)), ...project.rootDir === undefined ? [] : [project.rootDir]]);
 }
 
 /**
@@ -208,91 +181,64 @@ function withNodeSpecifiers(root: string, sources: readonly ts.SourceFile[], che
   return rewrites;
 }
 
-/** How the compiler names the declaration file of a source by its extension, and the extension of the file that holds that declaration's text in the program that reads it. */
-const DECLARATION_FILES: Readonly<Record<string, { readonly declaration: string; readonly module: string }>> = {
-  '.ts': { declaration: '.d.ts', module: '.ts' },
-  '.tsx': { declaration: '.d.ts', module: '.ts' },
-  '.js': { declaration: '.d.ts', module: '.ts' },
-  '.jsx': { declaration: '.d.ts', module: '.ts' },
-  '.mts': { declaration: '.d.mts', module: '.mts' },
-  '.mjs': { declaration: '.d.mts', module: '.mts' },
-  '.cts': { declaration: '.d.cts', module: '.cts' },
-  '.cjs': { declaration: '.d.cts', module: '.cts' },
-};
+/** The extension of the file that holds a declaration's text in the program that reads it: `.d.ts` is read as `.ts`, `.d.mts` as `.mts`, `.d.cts` as `.cts`. */
+const DECLARATION_MODULE = /\.d(\.[cm]?ts)$/;
+const DECLARATION_MAP = /\.d\.[cm]?ts\.map$/;
 
 /**
  * Give the declarations the check program emitted from the original sources the import paths Node resolves, as the emitted JavaScript has
  * them (`nodeSpecifierEdits`): a NodeNext consumer reads these files. A declaration's text is read as a module beside its source, so
  * a specifier resolves from where the source's own does, and the edits apply to the declaration. The result is the emitted files with
- * the edited text of those that needed an edit.
+ * the edited text of those that needed an edit, and the declaration map of each of them pointed at the edited text. The compiler names the source
+ * of each output, and the declaration map is found from that, as the JavaScript map is, never from the name of the declaration.
  */
-function rewriteDeclarations(session: ts.ProgramSession, project: Project, sources: readonly ts.SourceFile[], rootNames: readonly string[], flags: readonly string[], emitted: ReadonlyMap<string, string>): ReadonlyMap<string, string> {
-  const layoutRoot = project.rootDir ?? sourceBase(project, sources);
-  const directory = project.declarationDir ?? project.outDir;
+function rewriteDeclarations(session: ts.ProgramSession, project: Project, sources: readonly ts.SourceFile[], rootNames: readonly string[], flags: readonly string[], emitted: ts.MemoryEmit): ReadonlyMap<string, string> {
+  // The seam names a source by its resolved path; the overlay takes the program's own file name for it, as the program reads it.
+  const projectFiles = new Map(sources.filter((candidate) => !candidate.isDeclarationFile).map((candidate) => [path.resolve(candidate.fileName), candidate.fileName]));
   const declarations = new Map<string, { readonly file: string; readonly text: string }>();
-  for (const source of sources.filter((candidate) => !candidate.isDeclarationFile)) {
-    const extension = Object.keys(DECLARATION_FILES).find((candidate) => source.fileName.endsWith(candidate));
-    if (extension === undefined) continue;
-    const kind = DECLARATION_FILES[extension]!;
-    const stem = source.fileName.slice(0, source.fileName.length - extension.length);
-    const file = path.join(directory, `${path.relative(layoutRoot, stem)}${kind.declaration}`);
-    const text = emitted.get(file);
-    if (text !== undefined) declarations.set(`${stem}.golem-declaration${kind.module}`, { file, text });
+  for (const [file, text] of emitted.files) {
+    const kind = DECLARATION_MODULE.exec(file)?.[1];
+    const source = projectFiles.get(emitted.sources.get(file) ?? '');
+    if (kind === undefined || source === undefined) continue;
+    declarations.set(`${source.slice(0, source.length - path.extname(source).length)}.golem-declaration${kind}`, { file, text });
   }
-  if (declarations.size === 0) return emitted;
+  if (declarations.size === 0) return emitted.files;
   const overlays = new Map([...declarations].map(([module, { text }]) => [module, text]));
   using program = session.openProgram({ root: project.root, sources: [...rootNames, ...overlays.keys()], configFile: project.configFile, flags, overlays });
   const checker = program.getTypeChecker();
   const options = { compilerOptions: program.getCompilerOptions(), projectSources: new Set(sources.map((source) => source.fileName)) };
-  const rewritten = new Map(emitted);
+  const rewritten = new Map(emitted.files);
+  const editMaps = new Map<string, SourceMapV3>();
   for (const [module, { file, text }] of declarations) {
     const declaration = program.getSourceFile(module);
     if (declaration === undefined) throw new Error(`golem build could not read the declaration ${displayPath(file)} to change its import paths.`);
     const { edits } = nodeSpecifierEdits(declaration, checker, options);
-    if (edits.length > 0) rewritten.set(file, applyRewrites(text, { edits, imports: [], importsAt: 0 }, file).code);
+    if (edits.length === 0) continue;
+    const edited = applyRewrites(text, { edits, imports: [], importsAt: 0 }, file);
+    rewritten.set(file, edited.code);
+    editMaps.set(emitted.sources.get(file)!, edited.map);
+  }
+  for (const [file, text] of emitted.files) {
+    const edit = editMaps.get(emitted.sources.get(file) ?? '');
+    if (edit !== undefined && DECLARATION_MAP.test(file)) rewritten.set(file, pointDeclarationMap(text, edit));
   }
   return rewritten;
-}
-
-/** The endings of the files the compiler writes for a source, longest first: the JavaScript, the declaration and their maps. */
-const EMITTED_ENDINGS = ['.d.ts.map', '.d.mts.map', '.d.cts.map', '.d.ts', '.d.mts', '.d.cts', '.js.map', '.mjs.map', '.cjs.map', '.jsx.map', '.js', '.mjs', '.cjs', '.jsx'] as const;
-
-/**
- * The source an emitted file belongs to: the one whose path, without its extension, is the file's path under the output directory,
- * from a folder that holds every source. Undecided when none or several do, so the file is not attributed and not removed later.
- */
-function sourceOfEmitted(project: Project, local: readonly ts.SourceFile[], file: string): string | undefined {
-  const ending = EMITTED_ENDINGS.find((candidate) => file.endsWith(candidate));
-  if (ending === undefined) return undefined;
-  const stem = file.slice(0, file.length - ending.length);
-  const directory = ending.startsWith('.d.') ? project.declarationDir ?? project.outDir : project.outDir;
-  const relative = path.relative(directory, stem);
-  if (relative.startsWith('..') || path.isAbsolute(relative)) return undefined;
-  const matches = local.filter((source) => {
-    const extension = Object.keys(DECLARATION_FILES).find((candidate) => source.fileName.endsWith(candidate));
-    if (extension === undefined) return false;
-    const sourceStem = source.fileName.slice(0, source.fileName.length - extension.length);
-    if (sourceStem !== relative && !sourceStem.endsWith(`${path.sep}${relative}`)) return false;
-    const layoutRoot = sourceStem.slice(0, sourceStem.length - relative.length);
-    return local.every((other) => isInsideDirectory(layoutRoot, other.fileName));
-  });
-  return matches.length === 1 ? matches[0]!.fileName : undefined;
 }
 
 /**
  * Keep the files the compiler emitted for each source of the program, and remove those of a source that left the program since
  * the build before: its JavaScript, declaration and maps, and the directories that leave empty inside the output. A file that a
- * source still in the program owns stays. Only the files recorded here are removed: a file another tool wrote is never touched.
+ * source still in the program owns stays. `emitted` names the source the compiler made each output from. Only the files recorded here are removed: a file another tool wrote is never touched.
  */
-function settleOutputs(run: BuildRun, project: Project, sources: readonly ts.SourceFile[], emitted: readonly string[]): void {
+function settleOutputs(run: BuildRun, project: Project, sources: readonly ts.SourceFile[], emitted: ReadonlyMap<string, string>): void {
   const { emitted: record } = run;
   if (record === undefined) return;
   const local = sources.filter((source) => !source.isDeclarationFile);
-  for (const file of emitted) {
-    const source = sourceOfEmitted(project, local, path.resolve(file));
-    if (source !== undefined) record.set(source, new Set([...record.get(source) ?? [], path.resolve(file)]));
+  // The seam names a source by its resolved path, and the program by its own file name (with `/` on Windows): both are compared resolved.
+  const present = new Set(local.map((source) => path.resolve(source.fileName)));
+  for (const [file, source] of emitted) {
+    if (present.has(source)) record.set(source, new Set([...record.get(source) ?? [], path.resolve(file)]));
   }
-  const present = new Set(local.map((source) => source.fileName));
   const kept = new Set([...record].filter(([source]) => present.has(source)).flatMap(([, files]) => [...files]));
   for (const [source, files] of [...record]) {
     if (present.has(source)) continue;
@@ -392,25 +338,8 @@ function removeOldBuildState(root: string, configFile: string): void {
 
 /** The map file of a JavaScript output. */
 const JS_SOURCE_MAP = /\.[cm]?jsx?\.map$/;
-
-/**
- * Point the map the compiler made for a rewritten file at the original. The compiler read the rewritten text, so a position in the emitted
- * JavaScript is a position in that text; composing with the applier's map gives the original line and column.
- */
-function pointSourceMap(mapFile: string, text: string, rewriteMaps: ReadonlyMap<string, SourceMapV3>): string {
-  const emitted = JSON.parse(text) as SourceMapV3;
-  const [source] = emitted.sources;
-  if (emitted.sources.length !== 1 || source === undefined) return text;
-  const inner = rewriteMaps.get(path.resolve(path.dirname(mapFile), source));
-  const composed = inner ? composeSourceMaps(emitted, inner) : emitted;
-  const { sourcesContent, ...kept } = composed;
-  return JSON.stringify({
-    ...kept,
-    sources: [source],
-    // Keep embedded sources only when the compiler embedded them; they are the original text.
-    ...(emitted.sourcesContent === undefined ? {} : { sourcesContent: inner ? inner.sourcesContent : sourcesContent }),
-  });
-}
+/** A JavaScript output. */
+const JS_OUTPUT = /\.[cm]?jsx?$/;
 
 /**
  * Write one output when it differs from the file on disk, so a file another tool changed is repaired and a file that is current keeps its time stamp.
@@ -506,11 +435,11 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const sources = projectSources(program);
   for (const source of sources) observe(source.fileName);
   // Nothing is written until the emit has succeeded: a failed build leaves the outputs of the build before as they were.
-  const written = declarations === undefined ? new Map<string, string>() : rewriteDeclarations(session, project, sources, parsed.fileNames, run.tscArguments, declarations.files);
+  const written = declarations === undefined ? new Map<string, string>() : rewriteDeclarations(session, project, sources, parsed.fileNames, run.tscArguments, declarations);
   if (!project.emitsJavaScript) {
     assertContained(project, configFile, new Map(), written);
     for (const [file, text] of written) writeOutput(file, text);
-    settleOutputs(run, project, sources, [...written.keys()]);
+    settleOutputs(run, project, sources, declarations?.sources ?? new Map());
     return checkCode;
   }
   const checker = program.getTypeChecker();
@@ -547,13 +476,21 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     // The declarations of the check are not written either, so the status is not the check's 2.
     return 1;
   }
+  // The compiler names the source of each output; the rewrite map is found from that, never from the `sources` text of the map, which sourceRoot and mapRoot change.
+  // A map that is composed keeps every field the compiler wrote, and the mappings name the original. A file with no rewrite keeps the map as the compiler wrote it.
+  const inline = emitProgram.getCompilerOptions().inlineSourceMap === true;
   const files = new Map<string, string>();
   for (const [file, text] of emitted.files) {
-    if (!BUILD_INFO.test(file)) files.set(file, JS_SOURCE_MAP.test(file) ? pointSourceMap(file, text, rewriteMaps) : text);
+    if (BUILD_INFO.test(file)) continue;
+    const source = emitted.sources.get(file);
+    const rewriteMap = source === undefined ? undefined : rewriteMaps.get(path.resolve(source));
+    if (rewriteMap !== undefined && JS_SOURCE_MAP.test(file)) files.set(file, pointSourceMap(text, rewriteMap));
+    else if (rewriteMap !== undefined && inline && JS_OUTPUT.test(file)) files.set(file, pointInlineSourceMap(displayPath(file), text, rewriteMap));
+    else files.set(file, text);
   }
   assertContained(project, configFile, files, written);
   for (const [file, text] of [...written, ...files]) writeOutput(file, text);
-  settleOutputs(run, project, sources, [...written.keys(), ...files.keys()]);
+  settleOutputs(run, project, sources, new Map([...declarations?.sources ?? [], ...emitted.sources]));
   return checkFailed ? checkCode : 0;
 }
 

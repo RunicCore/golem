@@ -163,15 +163,10 @@ The build sets some arguments itself. Passing one stops the build with `golem bu
 | `--tsBuildInfoFile`, `--incremental` | Golem keeps no TypeScript build state: it compares each output with the file on disk | Leave it out. A build with nothing changed writes no file |
 | `--outDir` | The emit program writes into the `outDir` of the tsconfig | Set `outDir` in the tsconfig, or pass `-p` a tsconfig that extends it and sets another `outDir` |
 | `--listEmittedFiles` | Golem writes the outputs itself and prints no list of them | List the files in `outDir` after the build |
-| `--rootDir` | Golem lays out its outputs and the import paths of the declarations from the `rootDir` of the tsconfig | Set it in `tsconfig.json` |
 | `--baseUrl` | Golem reads the `baseUrl` and `paths` of the tsconfig to give each import the path Node loads | Set it in `tsconfig.json` |
 | `--composite` | The emit program is not a composite build, and the check program must report what it reports | Set it in `tsconfig.json` |
 | `--outFile` | The emit program writes one file per source into the `outDir` of the tsconfig | Set it in `tsconfig.json` |
 | `--declarationDir` | The check program writes the declarations from your sources into the directory of the tsconfig | Set it in `tsconfig.json` |
-| `--sourceRoot` | Golem points source maps at your sources, which the emit program reads at their own paths | Set it in `tsconfig.json` |
-| `--mapRoot` | Golem points the maps of the emit program at your sources, and a forwarded map location would change what they resolve against | Set it in `tsconfig.json` |
-| `--inlineSourceMap` | Golem maps each source map back to your sources and cannot reach a map inside the JavaScript | Set it in `tsconfig.json` |
-| `--inlineSources` | The maps of the emit program embed the sources of the tsconfig setting, and a forwarded one would embed the rewritten text | Set it in `tsconfig.json` |
 
 The build refuses two more kinds of option. It refuses them before it generates anything, whether the tsconfig sets them or a flag does:
 
@@ -196,7 +191,11 @@ Like `tsc`, the build emits JavaScript after a failed check unless `noEmitOnErro
 
 ### Output folders
 
-The build stops before it writes when an output would land outside its folder. The folder is `outDir` for JavaScript and maps, and `declarationDir`, else `outDir`, for declarations. This happens when a source lies outside the `rootDir`, or outside the project folder when you set no `rootDir`. The message is `golem build would write <file> outside <folder>, because a source of <tsconfig> is outside its rootDir or, with no rootDir, outside the project folder.` Set `rootDir` to a folder that holds every source.
+The compiler decides where each output goes. The build writes every file at the path that `tsc -p` gives it. JavaScript and maps go below `outDir`. Declarations go below `declarationDir`, else `outDir`.
+
+The layout starts at `rootDir`. Without a `rootDir`, it starts at the folder of the tsconfig. Set `rootDir` in the tsconfig, or pass `--rootDir <folder>`. The build forwards the argument to the compiler, as `tsc` takes it.
+
+The build stops before it writes when an output would land outside its folder. This happens when a source lies outside the `rootDir`, or outside the project folder when you set no `rootDir`. The message is `golem build would write <file> outside <folder>, because a source of <tsconfig> is outside its rootDir or, with no rootDir, outside the project folder.` Set `rootDir` to a folder that holds every source.
 
 ### What the tsconfig needs
 
@@ -205,7 +204,7 @@ The build stops before it writes when an output would land outside its folder. T
 - Every source file the tsconfig includes builds, inside the directory of the tsconfig or outside it, such as `../shared/*.ts`. The output under `outDir` has the layout that `tsc` emits. As with `tsc`, a `rootDir` must contain every included file. A tsconfig that includes `../shared` sets `rootDir` to a common parent such as `..`.
 - The tsconfig emits one file for each source. `outFile` stops the build with `golem build does not support outFile (<tsconfig>).` Emit per file, then bundle with esbuild or Vite and the golem plugin.
 - The tsconfig names one directory tree. `rootDirs` stops the build with a message of the same form. Merge the directories, or build each package separately.
-- Set `sourceMap` for source maps. `inlineSourceMap` and `sourceRoot` stop the build with a message of the same form, because the build writes its own map files.
+- Set `sourceMap` or `inlineSourceMap` for source maps. A map points at your original sources: a rewritten call maps back to its line and column in your file. `sourceRoot`, `mapRoot` and `inlineSources` work as they do for `tsc`. The build keeps the `sourceRoot`, the `sources` and the `sourceMappingURL` that the compiler wrote, and `inlineSources` embeds your original text. An inline map that the build cannot read stops the build with the file name, and the build writes no file.
 - `extends` may name a file anywhere. `paths` and `baseUrl` targets under the directory work as they do for `tsc`.
 - `golem build --watch` or `-w` watches. The `tsc --watch` file watcher does not start.
 
