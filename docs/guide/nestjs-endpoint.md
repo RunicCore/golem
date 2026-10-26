@@ -57,7 +57,7 @@ Use these options in `tsconfig.json`:
 - `outDir` is where `golem build` writes the JavaScript that Node runs ([what the tsconfig needs](/reference/cli#what-the-tsconfig-needs)).
 - With `NodeNext`, relative imports end in `.js`, also for generated files.
 - Import `reflect-metadata` first in the entry file, before any application module. Step 5 shows the line.
-- To run the TypeScript files with the Node loader, add a second loader that compiles decorators ([run with the Node loader](/guide/nestjs-requests#run-with-the-node-loader)).
+- To run the TypeScript files with the Node loader, use `experimentalDecorators` and `emitDecoratorMetadata`. The loader compiles the decorators ([run with the Node loader](/guide/nestjs-requests#run-with-the-node-loader)).
 
 ## Step 3: Declare the body model
 

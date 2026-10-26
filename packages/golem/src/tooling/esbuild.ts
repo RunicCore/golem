@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { Plugin } from 'esbuild';
 
-import { BUNDLER_TYPESCRIPT_FILE, GolemHostError, openRewriteProject, withInlineSourceMap, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
+import { TYPESCRIPT_FILE, GolemHostError, openRewriteProject, withInlineSourceMap, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
 import { isInstalledFile } from './type-analysis/path-identity.js';
 
 /**
@@ -46,7 +46,7 @@ export function golem(options: GolemHostOptions = {}): Plugin {
         project = undefined;
         void closing?.then((opened) => { opened.close(); }, () => undefined);
       });
-      build.onLoad({ filter: BUNDLER_TYPESCRIPT_FILE, namespace: 'file' }, async ({ path: file }) => {
+      build.onLoad({ filter: TYPESCRIPT_FILE, namespace: 'file' }, async ({ path: file }) => {
         if (isInstalledFile(file)) return undefined;
         try {
           const rewriting = await open();
