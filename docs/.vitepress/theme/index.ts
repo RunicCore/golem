@@ -8,8 +8,11 @@ import '@fontsource/space-grotesk/600.css';
 import '@fontsource/space-grotesk/700.css';
 import '@fontsource/jetbrains-mono/400.css';
 import './tokens.css';
+import './home.css';
 import BenchmarkChart from './BenchmarkChart.vue';
 import HeroMascot from './HeroMascot.vue';
+import HomeEcosystem from './HomeEcosystem.vue';
+import HomeGates from './HomeGates.vue';
 import HomeStage from './HomeStage.vue';
 import HowItWorks from './HowItWorks.vue';
 import SupportTable from './SupportTable.vue';
@@ -24,6 +27,8 @@ const theme: Theme = {
     app.component('SupportTable', SupportTable);
     app.component('BenchmarkChart', BenchmarkChart);
     app.component('HowItWorks', HowItWorks);
+    app.component('HomeEcosystem', HomeEcosystem);
+    app.component('HomeGates', HomeGates);
   },
 };
 
