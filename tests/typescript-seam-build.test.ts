@@ -83,7 +83,7 @@ test('a program emits JavaScript and declarations to memory, equal to what tsc w
 
 test('compiler option overrides apply to one program through a virtual configuration that is no file', t => {
   // protects: T-460 the emit program takes noCheck and declaration false through a virtual tsconfig that extends the original
-  const { root, config } = project(t, { 'src/a.ts': "export const a: number = 'x';\n" }, { declaration: true, outDir: 'build' });
+  const { root, config } = project(t, { 'src/a.ts': "export const a: number = 'x';\n" }, { declaration: true, outDir: 'build', rootDir: 'src' });
   using session = new ts.ProgramSession({ cwd: root });
   const sources = session.parseConfigFile(config).fileNames;
   const inputs: string[] = [];

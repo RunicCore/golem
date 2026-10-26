@@ -160,7 +160,7 @@ export function formatErrorSummary(diagnostics: readonly Golem.Diagnostic[], hos
     ? ['Errors  Files', ...files.map((file) => {
       const count = inFiles.filter((error) => error.fileName === file).length;
       return `${String(count).padStart(6)}  ${reference(inFiles.find((error) => error.fileName === file)!)}`;
-    })].join('\n') + '\n'
+    })].join('\n') + `\n${newLine}`
     : '';
   return `${newLine}${headline}${newLine}${newLine}${table}`;
 }
