@@ -154,7 +154,7 @@ Every [build host](/guide/build) scans each TypeScript file it compiles or loads
 | `toWireFormat<T>(value)` | the generated `toWireFormat` for `T` |
 | `fromWireFormat<T>(wire)` | the generated `fromWireFormat` for `T`, constructing your class when `T` is a class |
 
-With a `controllers` job in `golem.yaml`, the rewrite also inserts `nestModelCodec` on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model ([Exports for generated code](/reference/runtime-api#generated-code)). `golem build`, [`loader`](/reference/runtime-api#loader), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild) use this subpath to apply their edits.
+With a `controllers` job in `golem.yaml`, the rewrite also inserts `nestModelCodec` (`nestModelUnion` for a union of models) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model ([Exports for generated code](/reference/runtime-api#generated-code)). `golem build`, [`loader`](/reference/runtime-api#loader), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild) use this subpath to apply their edits.
 
 | Member | Signature | Behavior |
 | --- | --- | --- |

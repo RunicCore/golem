@@ -72,7 +72,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1108
 
-**Lossy query flatten.** OpenAPI 3.1.2 flattens a whole `@Query()` object into independent parameters, and this object's constraints or codecs can't survive that. **Fix:** Generate against OpenAPI 3.2, which keeps a whole query object as one `querystring` schema, or declare a named primitive query contract.
+**Lossy query flatten.** OpenAPI 3.1.2 flattens a whole `@Query()` object into independent parameters, and this object's constraints or codecs can't survive that. A union of models can't survive it either. **Fix:** Generate against OpenAPI 3.2, which keeps a whole query object as one `querystring` schema, or declare a named primitive query contract.
 
 ### NEST1201
 
@@ -637,7 +637,9 @@ The type can be:
 
 - A plain interface or a plain class.
 - An inline object type.
-- A primitive, a union, or an array of arrays.
+- A primitive, or an array of arrays.
+- A union with a member that is no model, or a union of models that share no required literal field with a value of its own.
+- An array of a union of models, or a union in a one-field parameter such as `@Body('shape')`. Golem converts a union of models as a whole parameter only.
 
 [`NestModelInterceptor`](/guide/nestjs-requests#what-happens-to-a-request) throws on such a parameter and Nest answers HTTP 500. The message shows the type and the decorator, such as `NoteInput is not a golem model, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type`, and the position of the type.
 
@@ -648,8 +650,7 @@ What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `g
 
 **Fix:**
 
-- Declare the input as an `IModel` or `IObject`.
-- Or bind one field whose type is a model, such as `@Body('address') address: Address`.
+- Declare the input as an `IModel` or `IObject`, or bind one field whose type is a model, such as `@Body('address') address: Address`. For a union, give each model a required literal field such as `kind: 'circle'`, and use the union as a whole parameter.
 - An app that handles these parameters with its own interceptor sets `nonModelInputs: warn`.
 
 ### RUNM1082

@@ -49,7 +49,7 @@ The interceptor converts HTTP handlers. A handler of another context, such as RP
 
 ## Parameter types and arrays
 
-Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type. A `@Query()` parameter needs one object model; a union type, such as `TFilterA | TFilterB`, stops with [`RUNM1081`](/reference/diagnostics#runm1081). For any other type, the interceptor throws a `TypeError` that names the controller, the method and the parameter, and Nest answers HTTP 500. This holds for a plain interface, a plain class, a primitive and a parameter with no type. The interceptor throws on each request to the handler, not at startup. Return types are not affected. `golem build` and `golem check` report [`RUNM1081`](/reference/diagnostics#runm1081) for a typed parameter of that kind. If your own interceptor handles those parameters, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys) to turn the error into a warning.
+Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type, or a [union of models](#union-of-models). A `@Query()` parameter needs one object model or such a union. For any other type, the interceptor throws a `TypeError` that names the controller, the method and the parameter, and Nest answers HTTP 500. This holds for a plain interface, a plain class, a primitive and a parameter with no type. The interceptor throws on each request to the handler, not at startup. Return types are not affected. `golem build` and `golem check` report [`RUNM1081`](/reference/diagnostics#runm1081) for a typed parameter of that kind. If your own interceptor handles those parameters, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys) to turn the error into a warning.
 
 A whole `@Body() items: Item[]` converts item by item. An invalid item returns HTTP 400. Each issue path starts with the item index, such as `[1, 'name']`. A value that is not an array returns HTTP 400 with a `type` issue. A whole `@Query()` is an object, so declare it as one model and not as an array.
 
@@ -89,6 +89,17 @@ HTTP query values are strings, and repeated keys arrive as string arrays. Declar
 - `PaymentStatus | PaymentStatus[]` is the [supported query union](/guide/field-types#unions).
 
 OpenAPI 3.2 emits the whole query schema, and its SDK calls `.execute({ querystring: { limit: 10, status: ['paid'] } })`. OpenAPI 3.1.2 flattens a query object into named parameters ([query compatibility](/reference/nestjs#query-compatibility)).
+
+## Union of models
+
+A whole `@Body()` or `@Query()` parameter can be a union of models, such as `TCircle | TRect` or an alias of one. Each model needs a required literal field with a value of its own, such as `kind: 'circle'` ([unions](/guide/field-types#unions)).
+
+- The interceptor reads the tag and converts the input with the model that the tag picks. A missing or unknown tag returns HTTP 400.
+- A query string holds the tag as text. The interceptor decodes it to the type that the picked model declares.
+- The `controllers` job documents a body as `oneOf` with a `discriminator`. A query union needs OpenAPI 3.2; OpenAPI 3.1.2 stops with [`NEST1108`](/reference/diagnostics#nest1108).
+- A union converts only as a whole parameter. An array of a union and a union in `@Body('field')` stop with [`RUNM1081`](/reference/diagnostics#runm1081).
+- A union of models with no shared tag stops with [`RUNM1081`](/reference/diagnostics#runm1081).
+- A union return stays Nest JSON.
 
 ## Model responses
 
