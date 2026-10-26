@@ -189,7 +189,7 @@ for (const [place, specifier, manifest] of [
     const resolve = importResolver(t, root, [specifier]);
 
     assert.throws(() => resolve(specifier), (error: unknown) => error instanceof Error
-      && error.message.startsWith(`Cannot read ${path.join(fs.realpathSync(root), manifest)} to resolve a package import: `)
+      && error.message.startsWith(`Cannot read ${path.relative(process.cwd(), path.join(fs.realpathSync(root), manifest))} to resolve a package import: `)
       && error.cause instanceof SyntaxError);
   });
 }
@@ -240,13 +240,14 @@ test('a disk edit that changes a file signature gives a new SourceFile without i
 
 test('a configuration with errors fails to parse with the compiler messages, and one that lists no file does not', t => {
   // protects: E-34 the errors of a parsed configuration are reported, not dropped
+  // protects: T-375 the configuration is named relative to the working directory
   const root = createFixtureProject(t, 'golem-config-errors-');
   fs.writeFileSync(path.join(root, 'a.ts'), 'export const a = 1;\n');
   fs.writeFileSync(path.join(root, 'tsconfig.bad.json'), JSON.stringify({ compilerOptions: { nope: 1 }, include: ['a.ts'] }));
   fs.writeFileSync(path.join(root, 'tsconfig.empty.json'), JSON.stringify({ include: [] }));
   using session = new ts.ProgramSession({ cwd: root });
   assert.throws(() => session.parseConfigFile(path.join(root, 'tsconfig.bad.json')), (error: unknown) => error instanceof Error
-    && error.message === `The TypeScript configuration ${path.join(root, 'tsconfig.bad.json')} has errors:\n  TS5023: Unknown compiler option 'nope'.`);
+    && error.message === `The TypeScript configuration ${path.relative(process.cwd(), path.join(root, 'tsconfig.bad.json'))} has errors:\n  TS5023: Unknown compiler option 'nope'.`);
   assert.deepEqual(session.parseConfigFile(path.join(root, 'tsconfig.empty.json')).fileNames, []);
 });
 

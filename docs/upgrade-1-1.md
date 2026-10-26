@@ -24,6 +24,18 @@ Get the exact id from one of these:
 - The `.golem/codec-keys.json` file in the directory of `golem.yaml`, which maps each `<file>#<name>` to its id.
 - The `codecId` of a model in the `model-manifest.json` of an SDK.
 
+## Read local paths relative to the working directory {#message-paths}
+
+Golem commands and generators now print a local file relative to the working directory. This is the form that `tsc` uses. In 1.0, many messages printed the absolute path.
+
+```text
+The TypeScript configuration packages/app/tsconfig.json has errors:
+```
+
+A path in a message that does not lie below the working directory starts with `..`. The working directory itself prints as `.`. A URL and a path that is already relative stay as they are. Paths that golem writes into generated files and JSON files do not change.
+
+When a script or an editor task parses golem messages, change it to read this form. Run the command from the folder where you want the paths to start.
+
 ## Move to TypeScript 7.1 or 6
 
 Install one of the supported versions, then update the Golem packages:

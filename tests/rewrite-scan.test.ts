@@ -528,7 +528,7 @@ test('golem check reports the sites golem cannot rewrite with their code and pos
   await runPipeline(config, { check: true });
 
   fs.writeFileSync(path.join(root, 'src/use.ts'), "import { parse } from '@exprtlabs/golem/serde';\nexport const bad = parse<string | null>('{}');\n");
-  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(src\/use\.ts:2:20\): parse type argument must be a single type name or typeof expression/);
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(.*src\/use\.ts:2:20\): parse type argument must be a single type name or typeof expression/);
   fs.writeFileSync(path.join(root, 'src/use.ts'), "import { parse } from '@exprtlabs/golem/serde';\nimport { Payment } from './money.model.js';\nexport const payment = parse<Payment>('{}');\n");
   await runPipeline(config, { check: true });
 });
@@ -581,7 +581,7 @@ function appBesideForeignModels(t: TestContext, site: string): { readonly app: s
 
 test('golem check reports a serde call on a model of an installed package whose file has no model suffix, with the model and the suffix', async (t) => {
   // protects: R-20 RUNM1074 keeps one reason in golem check: the model file has no model suffix
-  const { declaration, config } = appBesideForeignModels(t, `import { stringify } from '@exprtlabs/golem/serde';
+  const { app, declaration, config } = appBesideForeignModels(t, `import { stringify } from '@exprtlabs/golem/serde';
 import type { TPkgMoney } from '@acme/money';
 declare const money: TPkgMoney;
 export const text = stringify<TPkgMoney>(money);
@@ -589,7 +589,7 @@ export const text = stringify<TPkgMoney>(money);
   await runPipeline(config);
   await assert.rejects(
     runPipeline(config, { check: true }),
-    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (src/use.ts:4:21): ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
+    { message: `golem rewrite scan reported 1 error diagnostic:\n  RUNM1074 (${path.relative(process.cwd(), path.join(app, 'src/use.ts'))}:4:21): ${path.relative(process.cwd(), declaration)}#TPkgMoney is declared in a file whose name has no model suffix. Golem reads a model from a file whose name ends in .model.ts or .models.ts. Move the model into such a file.` },
   );
 });
 
@@ -610,7 +610,7 @@ export const money = parse<MoneyModel>(text);
   await runPipeline(config);
   await runPipeline(config, { check: true });
   fs.appendFileSync(use, "export const bad = parse<string | null>('{}');\n");
-  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(src\/use\.ts:5:20\)/);
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(.*src\/use\.ts:5:20\)/);
 });
 
 test('a file outside the project root with a rewrite site is rewritten by the project scan and by the per-file scan', (t) => {
@@ -697,7 +697,7 @@ test('RUNM1067 for a model whose generated file is missing says to wait for gole
   });
   const messages = (): string[] => scan(root).diagnostics.map(({ message }) => message);
 
-  assert.deepEqual(messages(), ['parse<TA> has no unique codec id. src/a.model.generated.ts is missing. Wait for golem generate or golem watch to write it.']);
+  assert.deepEqual(messages(), [`parse<TA> has no unique codec id. ${path.relative(process.cwd(), path.join(root, 'src/a.model.generated.ts'))} is missing. Wait for golem generate or golem watch to write it.`]);
 
   // A generated file that exists but lacks the key is not something to wait for, however old it is.
   const companion = path.join(root, 'src/a.model.generated.ts');

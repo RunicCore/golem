@@ -240,7 +240,7 @@ test('two shared model files with one companion path stop generation with an err
   }
   const app = appWithShared(outer, 'web', false, { 'src/a.ts': 'export {};\n' }, ['src/**/*.ts', '../one/**/*.ts', '../two/**/*.ts']);
 
-  assert.throws(() => generate({ root: app, profile: PROFILE }), new RegExp(`^Error: RUNM1078: the shared model files ${path.join(outer, 'one/twin.model.ts')} and ${path.join(outer, 'two/twin.model.ts')} have one generated file`.replace(/^Error: /, '')));
+  assert.throws(() => generate({ root: app, profile: PROFILE }), new RegExp(`^Error: RUNM1078: the shared model files ${path.relative(process.cwd(), path.join(outer, 'one/twin.model.ts'))} and ${path.relative(process.cwd(), path.join(outer, 'two/twin.model.ts'))} have one generated file`.replace(/^Error: /, '')));
 });
 
 test('an alias in an installed package generates like a shared-folder alias, and its companion imports the package by name', (t: TestContext) => {
@@ -288,7 +288,7 @@ for (const name of ['../escape', '/escape', 'a/../../escape']) {
     fs.writeFileSync(path.join(outer, 'shared/package.json'), JSON.stringify({ name, type: 'module' }));
     const app = appWithShared(outer, 'web', false, { 'src/use.ts': "import type { TCustomer } from '../../shared/customer.model.js';\nexport type Used = TCustomer;\n" });
 
-    assert.throws(() => generate({ root: app, profile: PROFILE }), (error: Error) => error.message.startsWith(`${path.join(fs.realpathSync(outer), 'shared/package.json')} names the package "${name}"`));
+    assert.throws(() => generate({ root: app, profile: PROFILE }), (error: Error) => error.message.startsWith(`${path.relative(process.cwd(), path.join(fs.realpathSync(outer), 'shared/package.json'))} names the package "${name}"`));
   });
 }
 
@@ -620,6 +620,6 @@ test('generate stops and names the package.json of an imported package when it i
   const app = appWithShared(outer, 'lib', false, { 'src/order.model.ts': order, 'tsconfig.json': tsconfig }, ['src/**/*.ts']);
 
   assert.throws(() => generate({ root: app, profile: PROFILE }), (error: unknown) => error instanceof Error
-    && error.message.startsWith(`Cannot read ${path.join(fs.realpathSync(outer), 'node_modules/dep/package.json')} to resolve a package import: `)
+    && error.message.startsWith(`Cannot read ${path.relative(process.cwd(), path.join(fs.realpathSync(outer), 'node_modules/dep/package.json'))} to resolve a package import: `)
     && error.cause instanceof SyntaxError);
 });

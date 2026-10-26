@@ -31,7 +31,7 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
     fs.writeFileSync(path.join(root, 'src/other.model.ts'), "import type { IObject } from '@exprtlabs/golem/model';\nexport type TOther = IObject<{ term: string }>;\n");
     fs.writeFileSync(path.join(root, 'src/helper.controller.ts'), "import { Controller, Get, Query } from '@nestjs/common';\nimport type { TOther } from './other.model.js';\n@Controller('helper')\nexport class HelperController {\n  @Get() list(@Query() other: TOther): void {}\n}\n");
     await runPipeline(config);
-    await assert.rejects(runPipeline(config, { check: true }), /RUNM1072 \(src\/helper\.controller\.ts:5:\d+\): @Query\(\) type TOther disagrees with generated operation keys/);
+    await assert.rejects(runPipeline(config, { check: true }), /RUNM1072 \(.*src\/helper\.controller\.ts:5:\d+\): @Query\(\) type TOther disagrees with generated operation keys/);
   });
 }
 
@@ -78,7 +78,7 @@ test('golem check fails a @Query() model that only another operation holds, and 
   // The model is the body of `create`, but no route holds it as the query of `helper`.
   fs.writeFileSync(path.join(root, 'src/a.controller.ts'), "import { Body, Controller, Post, Query } from '@nestjs/common';\nimport { Base } from './base.js';\nimport type { TSearch } from './search.model.js';\n@Controller('a')\nexport class AController extends Base {\n  @Post() create(@Body() search: TSearch): void {}\n  helper(@Query() search: TSearch): void {}\n}\n");
   await runPipeline(config);
-  await assert.rejects(runPipeline(config, { check: true }), /RUNM1072 \(src\/a\.controller\.ts:7:\d+\): @Query\(\) type TSearch disagrees with generated operation keys/);
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1072 \(.*src\/a\.controller\.ts:7:\d+\): @Query\(\) type TSearch disagrees with generated operation keys/);
 });
 
 test('two controllers with one class name and one method name stop generation with NEST1313 and name both files, and a method with two paths is no clash', async (t) => {

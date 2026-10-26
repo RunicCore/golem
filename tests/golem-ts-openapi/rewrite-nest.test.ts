@@ -367,13 +367,14 @@ test('a controllers job turns nest on, and golem check fails a parameter the gen
   // A method outside the controllers job's sources is stamped by the scan but is in no generated operation.
   fs.writeFileSync(path.join(root, 'src/helper.controller.ts'), readFixture(`${CHECKS}/helper.controller.ts`));
   await runPipeline(config);
-  await assert.rejects(runPipeline(config, { check: true }), /RUNM1072 \(src\/helper\.controller\.ts:4:\d+\): @Query\(\) type TPaymentFilter disagrees with generated operation keys/);
+  await assert.rejects(runPipeline(config, { check: true }), /RUNM1072 \(.*src\/helper\.controller\.ts:4:\d+\): @Query\(\) type TPaymentFilter disagrees with generated operation keys/);
 });
 
 test('golem check stops on a body or query parameter that is no model, and nonModelInputs: warn reports it and continues', async (t) => {
   // protects: T-258 R-13 the user's choice: error by default, a golem.yaml setting makes it a warning
   const root = controllersJobProject(t);
   const config = path.join(root, 'golem.yaml');
+  const site = path.relative(process.cwd(), path.join(root, 'src/note.controller.ts'));
   await runPipeline(config);
   fs.writeFileSync(path.join(root, 'src/note.controller.ts'), [
     "import { Body, Controller, Post, Query } from '@nestjs/common';",
@@ -383,14 +384,14 @@ test('golem check stops on a body or query parameter that is no model, and nonMo
     "  @Post() create(@Body() note: Note, @Query('page') page: number): number { return page; }",
     '}',
   ].join('\n'));
-  await assert.rejects(runPipeline(config, { check: true }), (error: Error) => error.message.includes(`RUNM1081 (src/note.controller.ts:5:32): ${notAModel('Body', 'Note')}`) && error.message.includes(`RUNM1081 (src/note.controller.ts:5:59): ${notAModel('Query', 'number')}`));
+  await assert.rejects(runPipeline(config, { check: true }), (error: Error) => error.message.includes(`RUNM1081 (${site}:5:32): ${notAModel('Body', 'Note')}`) && error.message.includes(`RUNM1081 (${site}:5:59): ${notAModel('Query', 'number')}`));
 
   fs.writeFileSync(config, `nonModelInputs: warn\n${fs.readFileSync(config, 'utf8')}`);
   const written: string[] = [];
   t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array) => { written.push(String(chunk)); return true; });
   await runPipeline(config, { check: true });
   assert.deepEqual(written.filter(line => line.startsWith('RUNM1081')), [
-    `RUNM1081 (src/note.controller.ts:5:32): ${notAModel('Body', 'Note', 'warn')}\n`,
-    `RUNM1081 (src/note.controller.ts:5:59): ${notAModel('Query', 'number', 'warn')}\n`,
+    `RUNM1081 (${site}:5:32): ${notAModel('Body', 'Note', 'warn')}\n`,
+    `RUNM1081 (${site}:5:59): ${notAModel('Query', 'number', 'warn')}\n`,
   ]);
 });

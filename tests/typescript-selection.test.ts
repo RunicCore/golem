@@ -47,7 +47,8 @@ test('a second project on the install the process holds is accepted, reached thr
   const first = fakeInstall('6.0.3');
   const sameInstall = linkedTo(first);
   const other = fakeInstall('6.0.4');
-  const answer = await run(directory(), `import { requestTypeScriptRoot, selectedTypeScript } from '${tooling('typescript-selection.js')}';
+  const cwd = directory();
+  const answer = await run(cwd, `import { requestTypeScriptRoot, selectedTypeScript } from '${tooling('typescript-selection.js')}';
 ${attempt}
 const accepted = [attempt(() => requestTypeScriptRoot(${JSON.stringify(first)})), attempt(() => requestTypeScriptRoot(${JSON.stringify(sameInstall)}))];
 const version = selectedTypeScript().version;
@@ -56,7 +57,7 @@ console.log(JSON.stringify({ accepted, version, refused }));`);
   assert.deepEqual(answer, {
     accepted: [null, null],
     version: '6.0.3',
-    refused: `One golem process loads one TypeScript: 6.0.3 at ${fs.realpathSync(path.join(first, 'node_modules/typescript'))} was selected from the project at ${first}, but the project at ${other} uses 6.0.4 at ${fs.realpathSync(path.join(other, 'node_modules/typescript'))}. Run one golem host per TypeScript install.`,
+    refused: `One golem process loads one TypeScript: 6.0.3 at ${path.relative(cwd, fs.realpathSync(path.join(first, 'node_modules/typescript')))} was selected from the project at ${path.relative(cwd, first)}, but the project at ${path.relative(cwd, other)} uses 6.0.4 at ${path.relative(cwd, fs.realpathSync(path.join(other, 'node_modules/typescript')))}. Run one golem host per TypeScript install.`,
   });
 });
 

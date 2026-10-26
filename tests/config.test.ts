@@ -129,7 +129,7 @@ test('a models or controllers job root must lie inside the directory of the yaml
     const filename = path.join(root, layout.directory, 'golem.yaml');
     fs.writeFileSync(filename, layout.yaml);
     assert.throws(() => loadConfig(filename), (error: Error) => {
-      assert.equal(error.message, `job root ${path.join(root, layout.jobRoot)} is outside ${path.join(root, layout.project)}; use one golem.yaml per tsconfig.`);
+      assert.equal(error.message, `job root ${path.relative(process.cwd(), path.join(root, layout.jobRoot))} is outside ${path.relative(process.cwd(), path.join(root, layout.project))}; use one golem.yaml per tsconfig.`);
       return true;
     });
   }
@@ -154,7 +154,7 @@ for (const [name, output, resolved] of [
     const filename = path.join(root, 'project/golem.yaml');
     fs.writeFileSync(filename, `version: 1\nmodels:\n  root: .\n  output: ${output}\n`);
     assert.throws(() => loadConfig(filename), (error: Error) => {
-      assert.equal(error.message, `Job models:.: output ${path.join(root, resolved)} is outside the tsconfig directory ${path.join(root, 'project')}. Move it inside.`);
+      assert.equal(error.message, `Job models:.: output ${path.relative(process.cwd(), path.join(root, resolved))} is outside the tsconfig directory ${path.relative(process.cwd(), path.join(root, 'project'))}. Move it inside.`);
       return true;
     });
     assert.deepEqual(fs.readdirSync(path.join(root, 'outside')), []);
@@ -163,7 +163,7 @@ for (const [name, output, resolved] of [
 
 test('the yaml tsconfig must be the tsconfig a models or controllers job finds from its root', (t: TestContext) => {
   const message = (yaml: string, config: string, found: string, job: string, root: string, declared: boolean): string => (
-    `${yaml} uses the tsconfig ${config}, but the ${job} job reads ${found}, the tsconfig it finds from its root ${root}. `
+    `${path.relative(process.cwd(), yaml)} uses the tsconfig ${path.relative(process.cwd(), config)}, but the ${job} job reads ${path.relative(process.cwd(), found)}, the tsconfig it finds from its root ${path.relative(process.cwd(), root)}. `
     + (declared
       ? 'A non-default tsconfig: that differs from the job\'s own tsconfig is not supported yet; name the file the job finds.'
       : 'A default tsconfig.json that differs from the job\'s own tsconfig is not supported yet; name the file the job finds with tsconfig:.')
@@ -308,6 +308,7 @@ test('a suffix that is empty, malformed, repeated or names a generated file is a
 });
 
 test('a models.sources entry outside models.root stops with RUNM1075 naming the entry and the root', (t: TestContext) => {
+  // protects: T-375 a config error names its local files relative to the working directory
   const { root, filename } = fixture(t, 'version: 1\nmodels:\n  root: app\n  sources: [shared/money.model.ts]\n');
   fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
   fs.mkdirSync(path.join(root, 'app/src'), { recursive: true });
@@ -315,7 +316,7 @@ test('a models.sources entry outside models.root stops with RUNM1075 naming the 
   fs.writeFileSync(path.join(root, 'shared/money.model.ts'), 'export {};\n');
 
   assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error
-    && error.message === `RUNM1075: models.sources entry ${path.join(root, 'shared/money.model.ts')} is outside the models root ${path.join(root, 'app')}. A models job generates only files inside its root.`);
+    && error.message === `RUNM1075: models.sources entry ${path.relative(process.cwd(), path.join(root, 'shared/money.model.ts'))} is outside the models root ${path.relative(process.cwd(), path.join(root, 'app'))}. A models job generates only files inside its root.`);
 });
 
 test('a models.sources entry that links to a file outside the root stops with RUNM1075', (t: TestContext) => {
@@ -327,5 +328,5 @@ test('a models.sources entry that links to a file outside the root stops with RU
   fs.symlinkSync('../../shared/money.model.ts', path.join(root, 'app/src/money.model.ts'));
 
   assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error
-    && error.message === `RUNM1075: models.sources entry ${path.join(root, 'shared/money.model.ts')} is outside the models root ${path.join(root, 'app')}. A models job generates only files inside its root.`);
+    && error.message === `RUNM1075: models.sources entry ${path.relative(process.cwd(), path.join(root, 'shared/money.model.ts'))} is outside the models root ${path.relative(process.cwd(), path.join(root, 'app'))}. A models job generates only files inside its root.`);
 });

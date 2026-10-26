@@ -257,9 +257,9 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** `filename` as a message prints it: an absolute path relative to the working directory, any other name (a URL, a relative path) as written. */
+/** `filename` as a message prints it: an absolute path relative to the working directory (`.` for the directory itself), any other name (a URL, a relative path) as written. */
 export function displayPath(filename: string): string {
-  return path.isAbsolute(filename) ? path.relative(process.cwd(), filename) : filename;
+  return path.isAbsolute(filename) ? path.relative(process.cwd(), filename) || '.' : filename;
 }
 
 /** A YAML file that does not parse: the developer's input to fix. The message starts with `<file>:<line>:<column>`; `cause` is the parser's error. */
