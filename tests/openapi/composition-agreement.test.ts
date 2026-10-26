@@ -246,6 +246,16 @@ const rows: readonly Row[] = [
     rejected: [{ a: 'x', b: B }, { b: B }],
     warnings: [/^OPENAPI_COMPOSITION_PROPERTY_NEVER: Property "b" of schema "Derived" at #\/components\/schemas\/Derived .*Remove additionalProperties: false/],
   },
+  // protects: T-279 an optional property that one member types as date-time and another as a model is disjoint: `x?: never` and a warning
+  {
+    shape: 'members that type an optional property as a Date and as a model',
+    fixture: 'date-and-model-optional',
+    root: 'Visit',
+    document: visitDocument({ m: { allOf: [object({ x: dateTime }), object({ x: ref('M') })] } }, { M: object({ n: text }) }),
+    accepted: [{ wire: { m: {} }, model: { m: {} } }],
+    rejected: [{ m: { x: AT } }, { m: { x: { n: 'a' } } }],
+    warnings: [/^OPENAPI_COMPOSITION_PROPERTY_NEVER: Property "x" of schema "Visit" at #\/components\/schemas\/Visit\/properties\/m has no value that every member accepts/],
+  },
   // The user's answer: strict JSON Schema, and `unevaluatedProperties: false` closes an object to every name that any member
   // declares. An open base and a derived component that sets it accept the base and own names and reject any other name.
   {
@@ -993,10 +1003,17 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*"a" has no value that every member accepts/,
     document: visitDocument({ m: { allOf: [object({ a: text }, { required: ['a'] }), object({ a: { type: 'number' } })] } }),
   },
+  // protects: T-279 a required property that members type as a Date and as a model stops as unsatisfiable, naming the property
   {
-    shape: 'members that convert one property to a Date and to a model',
+    shape: 'members that type a required property as a Date and as a model',
+    error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*the required property "x" has no value that every member accepts/,
+    document: visitDocument({ m: { allOf: [object({ x: dateTime }, { required: ['x'] }), object({ x: ref('M') })] } }, { M: object({ n: text }) }),
+  },
+  // protects: T-279 members that convert one property in two ways but share a JSON type keep the conversion conflict
+  {
+    shape: 'members that convert one property to two different models',
     error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
-    document: visitDocument({ m: { allOf: [object({ x: dateTime }), object({ x: ref('M') })] } }, { M: object({ n: text }) }),
+    document: visitDocument({ m: { allOf: [object({ x: ref('M') }), object({ x: ref('N') })] } }, { M: object({ n: text }), N: object({ k: text }) }),
   },
   {
     shape: 'a model base beside a union with a variant that is no object',
@@ -1028,18 +1045,18 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     ),
   },
   {
-    shape: 'an array component whose items convert one property to a Date and to a model',
-    error: /schema "Events" at #\/components\/schemas\/Events\/items(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
+    shape: 'an array component whose items type a required property as a Date and as a model',
+    error: /schema "Events" at #\/components\/schemas\/Events\/items(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*"x"/,
     document: visitDocument(
       { e: ref('Events') },
-      { Events: { type: 'array', items: { allOf: [object({ x: dateTime }), object({ x: ref('M') })] } }, M: object({ n: text }) },
+      { Events: { type: 'array', items: { allOf: [object({ x: dateTime }, { required: ['x'] }), object({ x: ref('M') })] } }, M: object({ n: text }) },
     ),
   },
   {
-    shape: 'array items whose members convert one property to a Date and to a model',
-    error: /#\/components\/schemas\/Visit\/properties\/e\/items(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
+    shape: 'array items whose members type a required property as a Date and as a model',
+    error: /#\/components\/schemas\/Visit\/properties\/e\/items(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*"x"/,
     document: visitDocument(
-      { e: { type: 'array', items: { allOf: [object({ x: dateTime }), object({ x: ref('M') })] } } },
+      { e: { type: 'array', items: { allOf: [object({ x: dateTime }, { required: ['x'] }), object({ x: ref('M') })] } } },
       { M: object({ n: text }) },
     ),
   },

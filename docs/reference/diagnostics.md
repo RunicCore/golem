@@ -765,7 +765,7 @@ Annotation keywords and keywords that start with `x-` are ignored without a diag
 
 ### OPENAPI_COMPOSITION_CONVERSION_CONFLICT
 
-**allOf members that convert one value in two ways.** The members of an `allOf` give one property, or the value itself, two conversions, such as `format: date-time` (a `Date`) and a `$ref` to a model. No generated value can be both.
+**allOf members that convert one value in two ways.** The members of an `allOf` give one property, or the value itself, two conversions that read the same JSON type, such as `$ref` to two different models. No generated value can be both. Members that type the property as different JSON types, such as `format: date-time` and a `$ref` to a model, have no common value and follow [OPENAPI_COMPOSITION_PROPERTY_NEVER](#openapi-composition-property-never).
 
 The message names the schema, and the property when the conflict is in one property.
 
@@ -786,7 +786,7 @@ The message names the schema, and the property when the conflict is in one prope
 **allOf property that cannot hold a value.** An optional property of an `allOf` has no value that every member accepts. This is a warning: generation continues, and the property is typed `never`. Two causes are possible:
 
 - A member with `additionalProperties: false` judges each name that its own `properties` do not list, also the names of its sibling members.
-- Two members give the property types that have no common value.
+- Two members give the property types that have no common value, such as `format: date-time` in one member and a `$ref` to an object schema in another.
 
 **Fix:**
 

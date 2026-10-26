@@ -11,7 +11,7 @@
  *    converts: a scalar decider takes their
  *    constraints, and an object or array decider also takes each other child as a whole-value check; a scalar
  *    intersection reduces (`string` and `'cat'` give `'cat'`); disjoint JSON types give `never`; and children
- *    that convert differently are rejected.
+ *    that convert differently but share a JSON type are rejected.
  * 4. The required names are the union of the parts' lists. A name that only a list mentions is judged by the value schemas.
  * 5. The names that no part lists take every part's value schema; one closed part closes them.
  */
@@ -127,7 +127,9 @@ function combineDescriptors(children: readonly ModelTypeDescriptor[], models: Mo
   const [decider] = converting;
   if (decider) {
     const conversion = conversionKey(decider);
-    if (converting.some((child) => conversionKey(child) !== conversion)) return { rejected: 'two parts convert it differently' };
+    if (converting.some((child) => conversionKey(child) !== conversion)) {
+      return hasCommonJsonType(converting) ? { rejected: 'two parts convert it differently' } : NEVER;
+    }
     const others = distinct.filter((child) => !converting.includes(child));
     const wire = scalarWireKind(decider);
     if (wire !== undefined) {
@@ -390,6 +392,12 @@ function jsonType(descriptor: ModelTypeDescriptor): string | undefined {
     default:
       return undefined;
   }
+}
+
+/** Whether the children can share a wire value: a child with no one JSON type (a union, an intersection) may. */
+function hasCommonJsonType(children: readonly ModelTypeDescriptor[]): boolean {
+  const types = children.map(jsonType);
+  return types.some((type) => type === undefined) || new Set(types).size === 1;
 }
 
 /** A child as one constraint that its whole schema must hold. */
