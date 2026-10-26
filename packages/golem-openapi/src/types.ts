@@ -1,7 +1,7 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/generator-api';
-import { code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { refName } from './names.js';
 import {
   effectiveSchemaTypes,
@@ -810,7 +810,7 @@ function responseVariantTypes(document: unknown, response: NormalizedResponse, c
 
 /** The file ends with its last line, not with blank lines. */
 function dropTrailingBlankLines(lines: Code[]): void {
-  while (lines.at(-1)?.parts.length === 0) lines.pop();
+  while (lines.length > 0 && isEmpty(lines.at(-1)!)) lines.pop();
 }
 
 export function generateTypes(

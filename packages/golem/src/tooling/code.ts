@@ -156,7 +156,14 @@ abstract class CodeValue implements Code {
     return this.#parts === undefined ? this.write(out, pending) : append(out, pending, this.#parts);
   }
 
+  /** Whether the code writes no part, which `parts.length === 0` also tells, but this reads no parts of a code that was not flattened. */
+  public isEmpty(): boolean {
+    return this.#parts === undefined ? this.writesNothing() : this.#parts.length === 0;
+  }
+
   protected abstract write(out: Part[], pending: string): string;
+
+  protected abstract writesNothing(): boolean;
 
   public toString(): never {
     throw new TypeError('a Code was put in a string template or a string; put it in the code tag, or in render');
@@ -171,6 +178,10 @@ class PartsCode extends CodeValue {
 
   protected write(out: Part[], pending: string): string {
     return append(out, pending, this.held);
+  }
+
+  protected writesNothing(): boolean {
+    return !this.held.some((part) => part.kind !== 'text' || part.text !== '');
   }
 }
 
@@ -190,6 +201,10 @@ class TagCode extends CodeValue {
     }
     return pending;
   }
+
+  protected writesNothing(): boolean {
+    return this.strings.every((text) => text === '') && this.values.every((value) => !value || isEmpty(value));
+  }
 }
 
 /** The pieces of a `join`, and the separator between them. */
@@ -205,6 +220,10 @@ class JoinCode extends CodeValue {
       pending = appendCode(out, pending, pieces[index]!);
     }
     return pending;
+  }
+
+  protected writesNothing(): boolean {
+    return this.pieces.every(isEmpty) && (this.pieces.length < 2 || isEmpty(this.separator));
   }
 }
 
@@ -224,6 +243,15 @@ class LinesCode extends CodeValue {
     }
     return pending;
   }
+
+  protected writesNothing(): boolean {
+    return this.lines.every(({ spaces, body }) => spaces === 0 && isEmpty(body)) && (this.lines.length < 2 || isEmpty(this.separator));
+  }
+}
+
+/** Whether `piece` writes nothing, as `piece.parts.length === 0` says. It does not write the parts of a piece that holds other pieces. */
+export function isEmpty(piece: Code): boolean {
+  return piece instanceof CodeValue ? piece.isEmpty() : piece.parts.length === 0;
 }
 
 /** The Code of one runtime part: the value `name` of a runtime module, or its type when `typeOnly`. The rt tables make these. */
