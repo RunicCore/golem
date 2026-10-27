@@ -930,7 +930,7 @@ function resolveUnconditionalTarget(
   }
   if (!resources) return undefined;
   const resource = lookupCanonicalResource(reference, currentBase, resources);
-  return resource ? { schema: resource.schema, base: resource.hasId ? resource.canonical : currentBase } : undefined;
+  return resource ? { schema: resource.schema, base: resource.hasId ? resource.canonical : rootBase } : undefined;
 }
 
 function propertyHasExclusion(schema: unknown, context: ProjectionContext): boolean {

@@ -385,18 +385,24 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
     }
     return undefined; // chain too deep to be a real document
   };
-  const requires = (schema: unknown, property: string, base: string, visiting: Set<unknown>): boolean => {
+  /**
+   * `visiting` holds the schemas on the current path only, so a schema shared by two branches is judged in each.
+   * `judgedFalse` keeps the schemas already found not to require the property: that result does not depend on
+   * the path, so a diamond of shared members is judged once.
+   */
+  const requires = (schema: unknown, property: string, base: string, visiting: Set<unknown>, judgedFalse: Set<unknown>): boolean => {
     const resolved = resolveSchema(schema, base);
     if (!isJsonObject(resolved) || visiting.has(resolved)) return true;
+    if (judgedFalse.has(resolved)) return false;
     if (Array.isArray(resolved.required) && resolved.required.includes(property)) return true;
-    // `visiting` holds the schemas on the current path only, so a schema shared by two branches is judged in each.
     visiting.add(resolved);
     try {
-      if (Array.isArray(resolved.allOf) && resolved.allOf.some((item) => requires(item, property, base, visiting))) return true;
+      if (Array.isArray(resolved.allOf) && resolved.allOf.some((item) => requires(item, property, base, visiting, judgedFalse))) return true;
       for (const keyword of ['oneOf', 'anyOf'] as const) {
         const list = resolved[keyword];
-        if (Array.isArray(list) && list.length > 0 && list.every((item) => requires(item, property, base, visiting))) return true;
+        if (Array.isArray(list) && list.length > 0 && list.every((item) => requires(item, property, base, visiting, judgedFalse))) return true;
       }
+      judgedFalse.add(resolved);
       return false;
     } finally {
       visiting.delete(resolved);
@@ -410,7 +416,7 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
       const pointer = `${walkerPointer.slice(1)}/discriminator`;
       const defaultMapping = discriminator.defaultMapping;
       if (defaultMapping === undefined) {
-        if (!requires(schema, discriminator.propertyName, currentBase, new Set())) {
+        if (!requires(schema, discriminator.propertyName, currentBase, new Set(), new Set())) {
           problems.push({
             ruleId: 'spec-discriminator-defaultMapping',
             message: `discriminator property ${JSON.stringify(discriminator.propertyName)} is optional, so defaultMapping is required`,
