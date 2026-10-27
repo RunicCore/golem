@@ -95,6 +95,11 @@ export interface CodecRuntimeOptions {
   readonly exportAnonymousCodecs?: boolean;
   /** Codecs whose functions stay module-private, such as a model job's derived projections. */
   readonly privateCodec?: (node: SchemaNode) => boolean;
+  /**
+   * The bases the generator declares for each model, by model name; without it, the bases come from the intersection that the
+   * model's node holds.
+   */
+  readonly modelBases?: ModelBases;
 }
 
 interface EmitCtx {
@@ -127,6 +132,7 @@ interface EmitCtx {
   readonly exportWireStringify?: boolean | ((node: SchemaNode) => boolean);
   readonly exportAnonymousCodecs?: boolean;
   readonly privateCodec?: (node: SchemaNode) => boolean;
+  readonly modelBases?: ModelBases;
   /** Nodes being inlined into the current wire stringify, to reject unbounded expansion. */
   readonly wireInlining?: ReadonlySet<string>;
   readonly inlineLocals?: Set<string>;
@@ -731,6 +737,7 @@ export function emitStringifyFunction(
     strictCoreIds: extra?.strictCoreIds,
     trustedOptions: extra?.trustedOptions,
     withoutOptions: extra?.withoutOptions,
+    modelBases: extra?.modelBases,
     wireInlining: extra?.wireIdentity ? new Set([node.id]) : undefined,
     inlineLocals: new Set(),
     guardInline: !extra?.wireIdentity && node.descriptor.kind === 'union' && reachesNode(node.descriptor, node.id, { graph }),
@@ -1077,6 +1084,20 @@ function graphModelBases(graph: SchemaGraph): ModelBases {
   };
 }
 
+/**
+ * The bases the generator declares, read in the names a descriptor uses: a descriptor names a model by its name or by the
+ * codec id of its node, so a model's name comes from its node and a base answers under its name and each codec id of that name.
+ */
+function modelBasesOf({ graph, modelBases }: EmitCtx): ModelBases {
+  if (modelBases === undefined) return graphModelBases(graph);
+  return {
+    basesOf(id) {
+      const declared = modelBases.basesOf(graph.nodeFor({ kind: 'reference', name: id })?.name ?? id);
+      return declared.flatMap((base) => [base, ...[...graph.nodes.values()].filter((node) => node.name === base).map((node) => node.codecId)]);
+    },
+  };
+}
+
 function resolveObjectDescriptor(
   descriptor: ModelTypeDescriptor,
   ctx: EmitCtx,
@@ -1084,7 +1105,7 @@ function resolveObjectDescriptor(
   if (descriptor.kind === 'object') return descriptor;
   if (descriptor.kind === 'intersection') {
     const objects = descriptor.variants.flatMap((variant) => resolveObjectDescriptor(variant, ctx) ?? []);
-    return objects.length > 1 ? requireComposedObject(objects, graphModelBases(ctx.graph)) : objects[0];
+    return objects.length > 1 ? requireComposedObject(objects, modelBasesOf(ctx)) : objects[0];
   }
   const short = descriptor.kind === 'generated-model'
     ? codecShortName(descriptor.id)
@@ -1421,7 +1442,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
     return emitUnionDecode(descriptor, value, ctx);
   }
   // An intersection of objects decodes as the one merged object, so each member's fields convert.
-  const decodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, graphModelBases(ctx.graph)) : undefined;
+  const decodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, modelBasesOf(ctx)) : undefined;
   if (decodedMerge) return emitDecodeValue(decodedMerge, value, ctx);
   if (descriptor.kind === 'object' && typeof descriptor.additionalProperties === 'object') {
     const listed = Object.keys(descriptor.properties);
@@ -1750,7 +1771,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
       item: (item, itemValue) => ({ code: emitEncodeValue(item, itemValue, ctx), throws: false }),
     });
   }
-  const encodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, graphModelBases(ctx.graph)) : undefined;
+  const encodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, modelBasesOf(ctx)) : undefined;
   if (encodedMerge) return emitEncodeValue(encodedMerge, value, ctx);
   if (descriptor.kind === 'union') {
     return emitUnionEncode(descriptor, value, ctx);
@@ -1944,7 +1965,7 @@ function emitExternalNodeRuntime(node: SchemaNode, moduleCtx: EmitCtx): Code {
   if (imported) return code``;
   const id = literal(node.codecId);
   return rowsToText([
-    emitStringifyFunction(node, moduleCtx.graph, moduleCtx.serde),
+    emitStringifyFunction(node, moduleCtx.graph, moduleCtx.serde, { modelBases: moduleCtx.modelBases }),
     code`export function ${identifier(fromWireFunctionName(node.id))}(wire: unknown, options?: ${SERDE_OPTIONS}): unknown {`,
     code`  return ${rt.serde.requireObjectCodec}(${id}).fromWireFormat(wire, options);`,
     code`}`,
@@ -2398,6 +2419,7 @@ export function emitCodecRuntimeCode(
     fieldsType: options.fieldsType,
     exportAnonymousCodecs: options.exportAnonymousCodecs,
     privateCodec: options.privateCodec,
+    modelBases: options.modelBases,
     fillThrows: new Map(),
   };
   const runtimes: Code[] = [];
