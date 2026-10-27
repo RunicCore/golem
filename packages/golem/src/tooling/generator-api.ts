@@ -166,6 +166,8 @@ export interface ModelContext {
   readonly suffixes?: readonly string[];
   readonly output?: string;
   readonly sources?: readonly string[];
+  /** The tsconfig the job's program opens from, absolute: the one the golem.yaml names. Omitted means the nearest `tsconfig.json` from `root` upward. */
+  readonly tsconfig?: string;
   readonly profile: GolemProfile;
   /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
   readonly exact?: boolean;
@@ -226,6 +228,8 @@ export interface ControllerContext {
   readonly uriVersioning?: ControllerUriVersioning;
   /** The most bytes of JSON that a route path or version can fold to, a positive safe integer; omitted means 1 MiB (1048576). A larger result stops with RUNT2106. */
   readonly maxResultBytes?: number;
+  /** The tsconfig the job's program opens from, absolute: the one the golem.yaml names. Omitted means the nearest `tsconfig.json` from `root` upward. */
+  readonly tsconfig?: string;
   readonly profile: GolemProfile;
   /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
   readonly exact?: boolean;
