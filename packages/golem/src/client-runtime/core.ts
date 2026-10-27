@@ -284,9 +284,10 @@ export class ClientRuntime {
     this.operationValidatorOverrides = options.operationValidators;
   }
 
-  public url(route: string, query: readonly string[]): string {
+  /** `serverUrl` is the base URL of an operation that other servers override; `baseUrl` still wins over it. */
+  public url(route: string, query: readonly string[], serverUrl?: string): string {
     const suffix = query.length ? `?${query.join('&')}` : '';
-    return `${this.baseUrl}${route}${suffix}`;
+    return `${this.options.baseUrl === undefined ? serverUrl ?? this.baseUrl : this.baseUrl}${route}${suffix}`;
   }
 
   private matchesStatus(status: number, expected: string): boolean {

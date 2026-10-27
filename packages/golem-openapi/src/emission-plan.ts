@@ -64,6 +64,10 @@ export interface EmissionPlan {
   readonly profile: OpenApiGenerationProfile;
   readonly artifacts: ReadonlySet<ArtifactFile>;
   readonly servers: readonly ServerObject[];
+  /** The base URL of each distinct override list: its first server, variable defaults filled. */
+  readonly operationServers: readonly string[];
+  /** Operation name to its entry in `operationServers`; an operation on the document list has none. */
+  readonly operationServerIndex: ReadonlyMap<string, number>;
   readonly hasComponentSchemas: boolean;
   readonly hasModels: boolean;
   readonly hasOutboundOperations: boolean;
@@ -114,8 +118,7 @@ function mediaList(operations: readonly NormalizedOperation[]): OpenApiMediaType
 }
 
 /** The validator has checked the document, so a server whose `url` or variable `default` is not a string is a broken invariant. */
-function documentServers(document: unknown): readonly ServerObject[] {
-  const servers = asRecord(document).servers;
+function normalizeServers(servers: unknown): readonly ServerObject[] {
   if (!Array.isArray(servers)) return [];
   return servers.map((server, index): ServerObject => {
     const { url, description, name, variables } = asRecord(server);
@@ -132,6 +135,25 @@ function documentServers(document: unknown): readonly ServerObject[] {
       ...(declared.length ? { variables: Object.fromEntries(declared) } : {}),
     };
   });
+}
+
+/**
+ * OpenAPI lets an operation's `servers`, else its path item's, override the document's. A client choice selects within the document list only,
+ * so an operation on another list goes to that list's first server with its variable defaults.
+ */
+function operationServerBases(operations: readonly NormalizedOperation[], root: readonly ServerObject[]): Pick<EmissionPlan, 'operationServers' | 'operationServerIndex'> {
+  const bases: string[] = [];
+  const index = new Map<string, number>();
+  const rootKey = JSON.stringify(root);
+  for (const operation of operations) {
+    const list = normalizeServers(operation.servers);
+    if (!list.length || JSON.stringify(list) === rootKey) continue;
+    const { url, variables = {} } = list[0]!;
+    const base = url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => Object.hasOwn(variables, name) ? variables[name]!.default : placeholder).replace(/\/$/, '');
+    if (!bases.includes(base)) bases.push(base);
+    index.set(operation.name, bases.indexOf(base));
+  }
+  return { operationServers: bases, operationServerIndex: index };
 }
 
 function hasLinks(operations: readonly NormalizedOperation[]): boolean {
@@ -373,7 +395,8 @@ export function buildEmissionPlan(
     artifacts.add('input-schemas.ts');
     artifacts.add('output-schemas.ts');
   }
-  const servers = documentServers(document);
+  const servers = normalizeServers(asRecord(document).servers);
+  const overrides = servers.length ? operationServerBases(outbound, servers) : { operationServers: [], operationServerIndex: new Map<string, number>() };
   if (hasOutboundOperations) artifacts.add('client.ts');
   if (hasOutboundOperations && servers.length) artifacts.add('servers.ts');
   if (hasInboundOperations) artifacts.add('inbound.ts');
@@ -383,6 +406,7 @@ export function buildEmissionPlan(
     profile,
     artifacts,
     servers,
+    ...overrides,
     hasComponentSchemas,
     hasModels,
     hasOutboundOperations,
