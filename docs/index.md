@@ -73,7 +73,7 @@ hero:
 </article>
 <article class="home-card">
 <h3>Your own JSON forms</h3>
-<p>A serde tag ties a field to two functions. Your code keeps a number, a Temporal date or minor units. The wire carries a word, an ISO string or decimal text.</p>
+<p>A serde tag ties a field to two functions. Your code keeps a number, a Temporal date or minor units. The JSON holds a word, an ISO string or decimal text.</p>
 <code class="home-card-proof">TSerde&lt;typeof to, typeof from&gt;</code>
 </article>
 <article class="home-card">
@@ -197,17 +197,17 @@ Run `npx golem generate` for your editor, then `npx golem build` to compile. The
 
 [Validation tags](/guide/tags) · [Validate models](/guide/validation)
 
-## One toolchain replaces five libraries
+## What Golem does for each job
 
-A typical TypeScript API stack assembles a library for each job and keeps their declarations in sync by hand. Golem reads the types you already write and generates every piece from them.
+Golem reads the types you already write and generates each piece from them. You keep one declaration for each model.
 
-| Job | Usually | With Golem |
-| --- | --- | --- |
-| Classes from JSON | class-transformer | `parse<Task>(text)` |
-| Validation | class-validator decorators or a Zod schema | tags on the field type |
-| Custom wire formats | hand-written mappers | a serde tag on the field type |
-| OpenAPI from NestJS | `@ApiProperty` on every DTO field | read from the controller's types |
-| API client | openapi-generator or orval | typed operations with validated models |
+| Job | How Golem does it |
+| --- | --- |
+| Classes from JSON | `parse<Task>(text)` |
+| Validation | tags on the field type |
+| Your own JSON forms | a serde tag on the field type |
+| OpenAPI from NestJS | read from the controller's types |
+| API client | typed operations with validated models |
 
 ## What it runs on
 

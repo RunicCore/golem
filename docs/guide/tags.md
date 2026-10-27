@@ -20,9 +20,7 @@ Give a combination of tags a type alias and use the alias as the field type. A t
 <<< ../../examples/models/src/tag-aliases.model.ts#tag-aliases
 
 - `Handle<20>` checks `maxLength: 20` and the pattern. Aliases can use other aliases.
-- The argument must be a literal where you use the alias. `Varchar<number>` fails with [RUNM1043](/reference/diagnostics#runm1043).
-- An alias can hold one tag of each kind that depends on a type parameter ([RUNM1062](/reference/diagnostics#runm1062)).
-- `TSerde` and `TValidation` inside an alias take `typeof` an exported function, not a type parameter ([RUNM1061](/reference/diagnostics#runm1061)).
+- Inside an alias, `TSerde` and `TValidation` take `typeof` an exported function.
 - An alias or codec can come from an installed package. The generated file imports the codec through the `exports` of the package. When the package has no `exports` field, it imports by the path inside the package ([RUNM1060](/reference/diagnostics#runm1060)).
 
 ## Built-in validation constraints
@@ -52,7 +50,7 @@ Schema-valued tags describe another TypeScript contract:
 
 ## Formats
 
-On a model field, `Format<'name'>` applies to a `string`. The number formats apply to schemas from an OpenAPI document, where a number schema has `format: int32`. A field such as `number & Format<'int32'>` stops generation. Golem checks these names:
+On a model field, `Format<'name'>` applies to a `string`. The number formats apply to schemas from an OpenAPI document, where a number schema has `format: int32`. Golem checks these names:
 
 | Value | Format names | Applies to |
 | --- | --- | --- |

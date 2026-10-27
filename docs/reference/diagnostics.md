@@ -816,7 +816,7 @@ An `integer` member and a `number` member share the integers. A member that decl
 
 **Implicit discriminator value.** A discriminated-union variant has no explicit `discriminator.mapping` entry, so it's selected by its raw component name — which differs from the generated model name. This is a warning: generation continues, and decoding still works using the raw component name as the implicit value.
 
-**Fix:** Add an explicit `mapping` entry if the wire value should differ from the raw component name.
+**Fix:** Add an explicit `mapping` entry if the JSON value should differ from the raw component name.
 
 ### OPENAPI_DISCRIMINATOR_INHERITANCE_UNSUPPORTED
 

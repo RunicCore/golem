@@ -69,11 +69,7 @@ Write the model in `src/payment.model.ts`. The generator reads files that end in
 - A tag follows the type with `&`. `MinLength<2>`, `Pattern<'…'>` and `MaxLength<140>` are checked on each request and written into the document ([validation tags](/guide/tags)).
 - A field with no tag still has its type checked, and a missing required field fails.
 
-### Extra keys in the body
-
-A named model such as `TPaymentInput` is exact. A request with an undeclared key, such as `"tracking": "x"`, gets HTTP 400 before the handler runs. The body of the response has an `issues` list, and the issue has the code `unknownKey` and the path of that key.
-
-How the `exact` option, `golem.yaml` and an inline body type change this is in [Extra properties](/guide/nestjs-requests#extra-properties).
+A named model such as `TPaymentInput` is exact. A request with an undeclared key gets HTTP 400 before the handler runs. The `exact` option, `golem.yaml` and an inline body type change this ([Extra properties](/guide/nestjs-requests#extra-properties)).
 
 ## Step 4: Write the controller
 
@@ -99,7 +95,7 @@ Register `NestModelInterceptor` once, for the whole app:
 - `useGlobalInterceptors(new NestModelInterceptor())` turns on the conversion for every controller. It works with the Express and Fastify adapters.
 - `import './payment.model.js'` loads the model module once at run time, so its generated codec registers. A model that never loaded makes the request fail with HTTP 500 ([what happens to a request](/guide/nestjs-requests#what-happens-to-a-request)).
 
-For each request, the interceptor validates the `@Body()`, answers HTTP 400 with `issues` when it fails, and passes a valid model to the handler. The steps and the rules for arrays and query objects are in [NestJS requests](/guide/nestjs-requests#what-happens-to-a-request).
+The steps for each request and the rules for arrays and query objects are in [NestJS requests](/guide/nestjs-requests#what-happens-to-a-request).
 
 ## Step 6: Configure golem.yaml
 
@@ -143,16 +139,11 @@ The frontend team gets `api/openapi.yaml`. It holds the operation `createPayment
 - **Tags:** each validation tag of the model becomes one keyword. `MinLength<2>` becomes `minLength: 2`, and `Pattern<'…'>` becomes `pattern`. The table of all tags is in [tag keywords](/reference/nestjs#tag-keywords). `TSerde` and `TValidation` write no keyword.
 - **The 400 response:** the document holds it because of `@ApiBadRequestResponse`. Without that decorator the document has no `400` response, although the interceptor still answers HTTP 400.
 
-The document is a generated file, so git does not hold it. The frontend team gets it from the project that owns the controllers:
-
-1. Run `npx golem generate` or `npx golem build` in that project. Either command writes the document again.
-2. In the frontend project, set the document as the `input` of an `openapi` job. This example reads the document of the server project:
+The frontend project sets the document as the `input` of an `openapi` job. This example reads the document of the server project:
 
 <<< ../../examples/payments/web/golem.yaml
 
-3. Run `npx golem generate` in the frontend project to write the client ([Generate an SDK](/guide/client)).
-
-In CI, run `npx golem generate` or `npx golem build` in the owning project before the steps of the project that reads the document. `golem check` in the owning project fails when the document is missing or differs from the document that the `controllers` job writes. It writes nothing ([check](/guide/watch#check-without-writing)).
+Then `npx golem generate` in the frontend project writes the client ([Generate an SDK](/guide/client)). How the document reaches another project, and what to run in CI, is in [generated files](/reference/generated-files#gitignore).
 
 ## Details in the reference
 

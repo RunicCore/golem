@@ -190,7 +190,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 | `message` | `string` | Display text. |
 | `path` | `IssuePath` | String and number segments, such as `['items', 0, 'amount']`. |
 | `source` | `IssueSource` | `typescript`, `openapi`, `custom`, `external`, `json` or `serde`. |
-| `representation` | `IssueRepresentation` | Optional: `model` or `wire` (JSON) value. |
+| `representation` | `IssueRepresentation` | Optional: `model` for the model value, `wire` for the JSON value. |
 
 `Issue` is a union keyed by `code`. Check `issue.code` and TypeScript narrows to that code's fields, such as `issue.limit` after `issue.code === 'tooSmall'`.
 
@@ -507,9 +507,9 @@ The usage is in [Built-in validation constraints](/guide/tags#built-in-validatio
 
 ## `@exprtlabs/golem/temporal` {#temporal}
 
-Temporal field types for models. Each converts to an ISO 8601 string on the wire. [Use Temporal fields](/guide/field-types#use-temporal-fields) shows the setup.
+Temporal field types for models. Each converts to an ISO 8601 string in JSON. [Use Temporal fields](/guide/field-types#use-temporal-fields) shows the setup.
 
-| Tag | Model type | Wire string |
+| Tag | Model type | JSON string |
 | --- | --- | --- |
 | `TemporalInstant` | `Temporal.Instant` | `2025-01-02T03:04:05Z`, with fractional seconds only when the value has them |
 | `TemporalZonedDateTime` | `Temporal.ZonedDateTime` | `2025-01-02T03:04:05+01:00[Europe/Paris]` |
@@ -518,7 +518,7 @@ Temporal field types for models. Each converts to an ISO 8601 string on the wire
 | `TemporalPlainTime` | `Temporal.PlainTime` | `03:04:05.123` |
 | `TemporalDuration` | `Temporal.Duration` | `P1DT2H` |
 
-The wire string has a four-digit year and no calendar annotation.
+The JSON string has a four-digit year and no calendar annotation.
 
 Each tag `TemporalX` has the functions `serializeTemporalX` and `deserializeTemporalX` and the type `TemporalXWire`. Its `TSerde` uses the two functions.
 

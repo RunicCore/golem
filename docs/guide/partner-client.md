@@ -53,7 +53,7 @@ Golem reads OpenAPI 3.1 and 3.2 documents ([OpenAPI support](/reference/openapi-
 npx golem generate
 ```
 
-The command writes `provider/sdk/`. Keep it out of git ([generated files](/reference/generated-files#gitignore)). Run the command again when the partner publishes a new version of the document.
+The command writes `provider/sdk/`. You choose whether to ignore or commit the generated files ([ignore or commit them](/reference/generated-files#gitignore)). Run the command again when the partner publishes a new version of the document.
 
 Import from `sdk/index.js`. Each schema in `components.schemas` gets a set of names. The schema `Charge` gives the class `ChargeModel`. The JSON type, the type guard and the other names are in [Generated SDK names](/reference/generated-files#generated-sdk-names).
 
@@ -67,15 +67,7 @@ Import from `sdk/index.js`. Each schema in `components.schemas` gets a set of na
 - The client sends `Authorization: Bearer <token>` with each request.
 - Pass a function instead of a string when the token changes while the client lives. The client calls it for each request.
 
-<<< ../../examples/payments/server/provider/client.ts#current-token
-
-Golem reads security from the document, so the client has an `auth` option only when the document has both parts:
-
-<<< ../../examples/payments/server/provider/provider.yaml#bearer-security-scheme
-
-<<< ../../examples/payments/server/provider/provider.yaml#bearer-security-requirement
-
-If the partner's document lacks one part, ask the partner to add it. Or keep a copy of the document in your project, add the parts to the copy and point `input` at the copy ([use a document you do not own](/guide/auth#use-a-document-you-do-not-own)). The other schemes are in the [client reference](/reference/runtime-api#client-authentication).
+The client has an `auth` option only when the document declares the security scheme and requires it. Other schemes, a document that lacks the security scheme, and mutual TLS are in [Authentication](/guide/auth).
 
 ## Step 5: Call an operation and read the response
 
@@ -93,11 +85,11 @@ Reuse, shared headers and cancel are in [Call operations](/guide/client-usage).
 
 ## Step 6: Read dates as Temporal values
 
-- `dates: temporal` in Step 2 makes `format: date-time` a `Temporal.Instant`, `format: date` a `Temporal.PlainDate` and `format: duration` a `Temporal.Duration`. A `format: time` value stays a string.
+- `dates: temporal` in Step 2 makes `format: date-time` a `Temporal.Instant`, `format: date` a `Temporal.PlainDate` and `format: duration` a `Temporal.Duration`.
 - A `Temporal` must exist when golem converts a value. Install `temporal-polyfill` and import `temporal-polyfill/global` once, before the first conversion. A runtime that has a global `Temporal` needs no polyfill. Without any, conversion fails with "Temporal is not available".
-- The wire form stays an ISO 8601 string. The response `body` holds the strings, and the model class holds the Temporal values:
+- The JSON form stays an ISO 8601 string. The response `body` holds the strings, and the model class holds the Temporal values:
 
-| Schema `format` | Wire | In your code |
+| Schema `format` | JSON text | In your code |
 | --- | --- | --- |
 | `date-time` | `2025-01-02T03:04:05Z` | `Temporal.Instant` |
 | `date` | `2025-02-01` | `Temporal.PlainDate` |
@@ -115,11 +107,7 @@ A request or a response that breaks its schema rejects `.execute()`. This catch 
 
 <<< ../../examples/payments/server/provider/charges.ts#invalid-charge
 
-A body that breaks its schema gives a `LibError` of kind `Validation`, with `causedByInput` set to `true` and `issues` with source `openapi`.
-
-- The error does not keep the response body. Log what you need from each issue: `code`, `path` and `message`. Add the operation name and the id that you sent.
-- A reply with a status or media type that the document does not declare gives a `LibError` of kind `Response`. Test for it with `is<Client>UndeclaredResponseError(error)`, which is `isProviderUndeclaredResponseError` here. It narrows the error to `status`, `headers`, `contentType`, `operation` and `client`.
-- A network failure rejects with the error of `fetch`, unchanged.
+A request or a response that breaks its schema gives a `LibError` of kind `Validation`. An undeclared status or media type gives kind `Response`. A network failure rejects with the error of `fetch`. Each failure, the guard [`isProviderUndeclaredResponseError`](/guide/client-usage#handle-errors) and the issue fields are in [Read responses and handle failures](/guide/client-usage#read-responses-and-handle-failures).
 
 <<< ../../examples/payments/server/provider/charges.ts#handle-errors
 
@@ -177,7 +165,7 @@ Build the model from the body of a response:
 - [Generated client](/reference/runtime-api#generated-client): options, results and failures of the client.
 - [Client authentication](/reference/runtime-api#client-authentication): the schemes and what the client sends.
 - [Generated SDK names](/reference/generated-files#generated-sdk-names): the names for each schema.
-- [Temporal types](/reference/runtime-api#temporal): the six types and their wire strings.
+- [Temporal types](/reference/runtime-api#temporal): the six types and their JSON strings.
 - [OpenAPI support](/reference/openapi-support): the features that the generator reads.
 - Guides: [Call operations](/guide/client-usage), [Authentication](/guide/auth), [Dates and times](/guide/field-types#dates-and-times), [SDK types in your models](/guide/models-and-client), [Build tools](/guide/build).
 

@@ -136,7 +136,7 @@ Non-default settings, from the model option or from `golem.yaml`, add suffixes i
 | --- | --- |
 | `Loose` | `exact: false` |
 | `Any` | `allowAny: true` |
-| `Wire` | The wire representation |
+| `Wire` | The JSON form |
 
 A controllers job always reads the types that a signature spells out, such as an inline body, with `exact: false`, whatever `exact` says in `golem.yaml`. Their derived names end in `Loose`, such as `PaymentsCreateBodyMerchantLoose` for the `merchant` field of an inline body. A model that a signature names keeps its own `exact` and its own name.
 
