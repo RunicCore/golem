@@ -4,11 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sourcePath } from './test-file-timings.js';
+import { describeResume, finishRun, readRecord, runStateFromEnv, type PlannedStep, type RunRecord } from './test-runner/run-state.js';
 import type { OrderedRun } from './test-run-ordered.js';
 
 export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
 /** `fileTimings` is the JSON-lines file that the test-file reporter fills while the step runs. */
-export interface Step { readonly label: string; readonly run: () => Promise<number>; readonly fileTimings?: string }
+/** `always`: the step runs again in a resume, because its result lives outside the run record (see `pack`). */
+export interface Step { readonly label: string; readonly run: () => Promise<number>; readonly fileTimings?: string; readonly always?: true }
 /** The steps of a chain run one after another. The chains of a group run at the same time; groups run in order. */
 export type Group = readonly (readonly Step[])[];
 /** Each step is a group of its own: the steps run in order. */
@@ -109,6 +111,13 @@ function run(executable: string, args: readonly string[], cwd: string = root, en
 /** The seconds of each test file in the last runs of this tier, by step label. */
 const recordedFileSeconds = new Map<string, Readonly<Record<string, number>>>();
 
+/** What an earlier run of this tier on this tree left done (see run-state.ts); undefined for a run from zero. */
+let resumed: RunRecord | undefined;
+/** The files of each test step, by step label, whether or not this run starts them: the summary line counts them all. */
+const stepFiles = new Map<string, readonly string[]>();
+/** Steps that start only the files the earlier run did not finish. */
+const resumedSteps = new Set<string>();
+
 /**
  * The record of a tier lives in the shared cache volume (beside the packed dir), not in the checkout's results, so the first
  * run in a fresh checkout starts its files in the same order. A record from another branch only changes the order.
@@ -196,8 +205,18 @@ function nodeTest(label: string, patterns: readonly string[], concurrency: numbe
         process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
         return Promise.resolve(STEP_FAULT);
       }
-      const { ordered, recordedCount } = longestFirst(files, recordedFileSeconds.get(label));
-      process.stdout.write(`${label}: ${ordered.length} files, ${recordedCount} ordered by record, ${ordered.length - recordedCount} new first\n`);
+      const sources = new Map(files.map(file => [sourcePath(path.resolve(root, file), root), file]));
+      stepFiles.set(label, [...sources.keys()].sort());
+      const finished = new Set(Object.keys(resumed?.steps[label]?.passed ?? {}));
+      const remaining = files.filter(file => !finished.has(sourcePath(path.resolve(root, file), root)));
+      if (!remaining.length) {
+        process.stdout.write(`${label}: all ${files.length} files passed in the earlier run\n`);
+        return Promise.resolve(STEP_NOTHING_LEFT);
+      }
+      const { ordered, recordedCount } = longestFirst(remaining, recordedFileSeconds.get(label));
+      const earlier = files.length - remaining.length;
+      if (earlier) resumedSteps.add(label);
+      process.stdout.write(`${label}: ${ordered.length} files, ${recordedCount} ordered by record, ${ordered.length - recordedCount} new first${earlier ? `; ${earlier} passed in the earlier run` : ''}\n`);
       const request: OrderedRun = { label, concurrency, execArgv: extra, files: ordered };
       return run(process.execPath, [fileURLToPath(new URL('./test-run-ordered.js', import.meta.url)), JSON.stringify(request)], root, env);
     },
@@ -206,6 +225,8 @@ function nodeTest(label: string, patterns: readonly string[], concurrency: numbe
 
 /** The status of a step that failed before it ran a file (no files selected, or a fault of the runner itself). */
 const STEP_FAULT = 2;
+/** The status of a step whose every file passed in the earlier run: it started nothing and has no result of its own. */
+const STEP_NOTHING_LEFT = -1;
 
 /** Environment that points the compiler seam at the container's TypeScript 6 install. */
 function typescript6Env(): NodeJS.ProcessEnv {
@@ -229,7 +250,8 @@ function splitTypescriptLane(args: readonly string[]): { readonly lane6: boolean
 }
 
 const npmRun = (label: string, script: string): Step => ({ label, run: () => run('npm', ['run', script]) });
-const pack: Step = { label: 'pack', run: () => run(process.execPath, ['.build/scripts/test-pack.js']) };
+// The packed set lives in /cache/packed, which keeps only the newest set: another checkout can replace it, so a resume packs again (a present set is reused at once).
+const pack: Step = { label: 'pack', always: true, run: () => run(process.execPath, ['.build/scripts/test-pack.js']) };
 // Prepare only fills caches; it never runs a test.
 const prepareSteps: Group[] = inOrder(
   pack,
@@ -362,7 +384,16 @@ async function main(argv: readonly string[]): Promise<void> {
   if (resultsDir) {
     fs.mkdirSync(resultsDir, { recursive: true });
     // A run's results never mix with an earlier run's.
-    for (const name of fs.readdirSync(resultsDir)) if (name.endsWith('.tap') || name.endsWith('-timings.json') || name.endsWith('.files.jsonl')) fs.rmSync(path.join(resultsDir, name));
+    for (const name of fs.readdirSync(resultsDir)) if (name.endsWith('.tap') || name.endsWith('-timings.json') || name.endsWith('.files.jsonl') || name.endsWith('-complete.json')) fs.rmSync(path.join(resultsDir, name));
+  }
+  const plan = steps(tier, args, native);
+  const state = runStateFromEnv();
+  if (state && !state.again) {
+    resumed = readRecord(state.recordFile);
+    for (const step of plan.flat(2)) if (step.always && resumed?.steps[step.label]) resumed.steps[step.label].ended = false;
+    const line = resumed && describeResume(resumed, state);
+    if (line) process.stdout.write(`${tier} ${line}\n`);
+    else resumed = undefined;
   }
   const orderRecord = fileSecondsRecord(tier);
   loadFileSeconds(orderRecord);
@@ -380,6 +411,10 @@ async function main(argv: readonly string[]): Promise<void> {
     fs.renameSync(`${file}.tmp`, file);
   };
   const runStep = async (step: Step): Promise<void> => {
+    if (!step.always && resumed?.steps[step.label]?.ended) {
+      process.stdout.write(`${tier} ${step.label}: passed in the earlier run\n`);
+      return;
+    }
     running.add(step.label);
     writeTimings();
     const loadStart = loadAverages();
@@ -391,6 +426,7 @@ async function main(argv: readonly string[]): Promise<void> {
     } finally {
       running.delete(step.label);
     }
+    if (status === STEP_NOTHING_LEFT) return;
     const seconds = Math.round((Date.now() - stepStarted) / 1000);
     // The verdict of the step is recorded before its file timings are read, so a bad timings file cannot lose it.
     const loadEnd = loadAverages();
@@ -404,19 +440,27 @@ async function main(argv: readonly string[]): Promise<void> {
       writeTimings();
       // A failed step can hold cut or crashed files with short seconds, which would misplace them next time.
       if (status === 0) {
-        recordedFileSeconds.set(step.label, fileSeconds);
+        // A resumed step timed only the files it ran; the record keeps the others.
+        recordedFileSeconds.set(step.label, resumedSteps.has(step.label) ? { ...recordedFileSeconds.get(step.label), ...fileSeconds } : fileSeconds);
         saveFileSeconds(orderRecord);
       }
     }
   };
-  for (const group of steps(tier, args, native)) {
+  for (const group of plan) {
     // A chain that fails to start a step leaves the other chains running; wait for all of them before the fault is reported.
     const chains = await Promise.allSettled(group.map(async chain => { for (const step of chain) await runStep(step); }));
     for (const chain of chains) if (chain.status === 'rejected') throw chain.reason;
   }
-  process.stdout.write(`${tier} finished in ${Math.round((Date.now() - started) / 1000)}s\n`);
-  if (timings.some(entry => entry.status !== 0)) process.exitCode = 1;
+  const seconds = Math.round((Date.now() - started) / 1000);
+  process.stdout.write(`${tier} finished in ${seconds}s\n`);
+  const failed = timings.some(entry => entry.status !== 0);
+  if (failed) process.exitCode = 1;
   if (timingsFault) process.exitCode = 2;
+  if (state && resultsDir) {
+    // A test step that passed whole in the earlier run never expanded its files here; the record counts them.
+    const planned: PlannedStep[] = plan.flat(2).map(step => ({ label: step.label, files: step.fileTimings && resumed?.steps[step.label]?.ended ? Object.keys(resumed.steps[step.label].passed) : stepFiles.get(step.label) }));
+    process.stdout.write(`${finishRun(state, resumed, planned, resultsDir, tier, failed || timingsFault, seconds)}\n`);
+  }
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

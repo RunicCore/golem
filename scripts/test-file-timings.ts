@@ -9,7 +9,7 @@ EventEmitter.defaultMaxListeners = 20;
 
 interface TestEvent {
   readonly type: string;
-  readonly data: { readonly nesting?: number; readonly name?: string; readonly file?: string; readonly details?: { readonly duration_ms?: number } };
+  readonly data: { readonly nesting?: number; readonly name?: string; readonly file?: string; readonly details?: { readonly duration_ms?: number; readonly passed?: boolean } };
 }
 
 /** `.build/tests/x.test.js` is the compiled form of `tests/x.test.ts`. */
@@ -24,7 +24,7 @@ function isFileTest(data: TestEvent['data']): data is TestEvent['data'] & { read
 
 /**
  * node:test reporter that writes one JSON line when a test file starts, `{"file":"tests/x.test.ts"}`, and one when it
- * ends, `{"file":"tests/x.test.ts","seconds":1.2}`. Pipe it to a file: the lines stay
+ * ends, `{"file":"tests/x.test.ts","seconds":1.2,"passed":true}`. `passed` is false when a test of the file failed or the file crashed. Pipe it to a file: the lines stay
  * on disk when the run is killed, so `unfinishedFiles` can name the files that were running.
  *
  * The runner holds the events of a file until the files before it have reported, so the arrival time of an event
@@ -36,10 +36,10 @@ export default async function* testFileTimings(source: AsyncIterable<TestEvent>)
     if (!isFileTest(data)) continue;
     if (type === 'test:dequeue') yield `${JSON.stringify({ file: sourcePath(data.file, process.cwd()) })}\n`;
     if (type !== 'test:complete') continue;
-    const durationMs = data.details?.duration_ms;
+    const { duration_ms: durationMs, passed } = data.details ?? {};
     // Deliberate: the image pins Node 22.15.0 (assertContainer), so a changed event contract cannot pass unnoticed.
     if (durationMs === undefined) throw new Error(`The test file ${data.file} ended with no duration_ms; the node:test event contract changed.`);
-    yield `${JSON.stringify({ file: sourcePath(data.file, process.cwd()), seconds: Math.round(durationMs / 100) / 10 })}\n`;
+    yield `${JSON.stringify({ file: sourcePath(data.file, process.cwd()), seconds: Math.round(durationMs / 100) / 10, passed: passed === true })}\n`;
   }
 }
 
