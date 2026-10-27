@@ -25,6 +25,7 @@ import {
   rt,
   rtType,
   type Code,
+  runtimeLinesOf,
   type ImportOptions,
 } from '@exprtlabs/golem/internal/emitter';
 import {
@@ -364,11 +365,7 @@ ${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${body}
     modules: ['client', 'mobx', 'validation'],
     order: { client: ['ClientRuntime', ...[...usedFunctions].sort(), 'createApiOperation', 'ApiOperation', 'RuntimeResponseContract', 'RuntimeSecuritySchemes', 'OperationValidationSources'] },
   };
-  const runtime = new Map(importSet(file, imports).map((entry) => [entry.module, entry] as const));
-  const runtimeLines = (module: 'client' | 'mobx' | 'validation'): readonly Code[] => {
-    const entry = runtime.get(module);
-    return entry ? importLines(entry, imports) : [];
-  };
+  const runtimeLines = runtimeLinesOf(file, imports);
   const clientImports = fileImports(file, [clientModule], { elsewhere: [typesModule, validatorsSource, serversModule] });
   const typesImports = fileImports(file, [typesModule], { elsewhere: [clientModule, validatorsSource, serversModule] });
   const serversImports = fileImports(file, [serversModule], { elsewhere: [typesModule, clientModule, validatorsSource] });

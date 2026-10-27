@@ -4,7 +4,11 @@ import { PACKAGE_VERSION } from './package-info.js';
 import {
   emitModelFromJSON,
   blockComment,
-  calleeOf,
+  isCode,
+  runtimeLinesOf,
+  SERDE_IMPORT_ORDER,
+  wrapRootConversion,
+  type Piece,
   code,
   emitCodecRuntimeCode,
   fileImports,
@@ -17,8 +21,6 @@ import {
   importedNames,
   MODULE_CONSTANT_HELPERS,
   placeHelpers,
-  importLines,
-  importSet,
   ImportSource,
   join,
   literal,
@@ -30,10 +32,8 @@ import {
   type Helper,
   type ImportOptions,
   type JsonValue,
-  type RuntimeModule,
   emitModelFromInit,
   emitModelToJSON,
-  FIELD_CONVERSION_INPUT,
   stringifyFunctionName,
   wireStringifyExportName,
   fromWireFunctionName,
@@ -1288,9 +1288,6 @@ interface ModelResolvers {
 /** The record that a projection function reads its fields from: the walker takes it as an input and the function binds it to `data`. */
 const DATA = inputSlot('data', 'name', true);
 
-/** The local that a conversion shape probe reads, and the local of a field conversion function. */
-const FIELD_INPUT = identifier(FIELD_CONVERSION_INPUT);
-
 function externalModel(context: EmitContext, id: string): ExternalModel {
   const found = context.imports.external.get(id);
   if (!found) throw new Error(`Generated model manifest id is missing: ${id}`);
@@ -1495,30 +1492,9 @@ interface ModelFieldEmission {
   readonly init: readonly Code[];
 }
 
-/**
- * `emit(FIELD_INPUT)` shows the shape of a field conversion. A single call passes its function and the
- * field value to `convertModelField`; any other conversion becomes a module-level function of the field value,
- * so no field allocates a closure.
- */
-function wrapRootConversion(
-  helpers: Code[],
-  model: string,
-  direction: 'serialize' | 'deserialize',
-  field: Code,
-  input: Code,
-  emit: (value: Code) => Code,
-  inputType: Code,
-): Code {
-  const converted = emit(FIELD_INPUT);
-  if (sameCode(converted, FIELD_INPUT)) return input;
-  let convert = calleeOf(converted);
-  if (!convert) {
-    const name = identifier(`__convert_${model}_${helpers.length}_${direction === 'serialize' ? 'encode' : 'decode'}`);
-    helpers.push(code`function ${name}(${FIELD_INPUT}: ${inputType}) { return ${converted}; }`);
-    convert = name;
-  }
-  return code`${rt.conversion.convertModelField}(${literal(direction)}, ${field}, ${convert}, ${input})`;
-}
+/** The name of the module-level function that converts one root field of a model. */
+const rootHelperName = (model: string, direction: 'serialize' | 'deserialize') => (index: number): string =>
+  `__convert_${model}_${index}_${direction === 'serialize' ? 'encode' : 'decode'}`;
 
 function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): ModelFieldEmission[] {
   const { checker } = context;
@@ -1559,7 +1535,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const optional = (field.flags & ts.SymbolFlags.Optional) !== 0;
       // The guard below excludes an undefined value of an optional field before the conversion runs.
       const inputType = optional ? code`Exclude<${baseName}[${name}], undefined>` : code`${baseName}[${name}]`;
-      const converted = wrapRootConversion(helpers, specification.name, 'serialize', name, input, emitEncode, inputType);
+      const converted = wrapRootConversion(helpers, rootHelperName(specification.name, 'serialize'), 'serialize', name, input, emitEncode, inputType);
       // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do.
       const present = optional
         ? code`Object.prototype.hasOwnProperty.call(model, ${name}) && ${input} !== undefined`
@@ -1587,7 +1563,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
         },
       );
       const fromInit = emitModelFromInit(descriptor, input, resolveFromAny);
-      const converted = wrapRootConversion(helpers, specification.name, 'deserialize', name, input, emitDecode, code`unknown`);
+      const converted = wrapRootConversion(helpers, rootHelperName(specification.name, 'deserialize'), 'deserialize', name, input, emitDecode, code`unknown`);
       if (!sameCode(converted, input)) {
         decodeCaptures.push([field.getName(), input]);
         decode.push(code`  if (${input} !== undefined) ${rt.conversion.defineModelProperty}(result, ${name}, ${converted});`);
@@ -1616,8 +1592,8 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const known = identifier(`__knownKeys_${specification.name}`);
       helpers.push(code`const ${known}: ReadonlySet<string> = new Set<string>([${join(fields.map((field) => literal(field.getName())), code`, `)}]);`);
       const serde = serdeResolver(context);
-      const decodeMapValue = wrapRootConversion(helpers, specification.name, 'deserialize', identifier('key'), identifier('value'), (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), code`unknown`);
-      const encodeMapValue = wrapRootConversion(helpers, specification.name, 'serialize', identifier('key'), identifier('value'), (value) => emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value }), fieldsValue);
+      const decodeMapValue = wrapRootConversion(helpers, rootHelperName(specification.name, 'deserialize'), 'deserialize', identifier('key'), identifier('value'), (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), code`unknown`);
+      const encodeMapValue = wrapRootConversion(helpers, rootHelperName(specification.name, 'serialize'), 'serialize', identifier('key'), identifier('value'), (value) => emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value }), fieldsValue);
       const initMapValue = emitModelFromInit(mapValue, identifier('value'), resolveFromAny);
       if (!sameCode(decodeMapValue, identifier('value'))) {
         decode.push(code`  for (const key of Object.keys(result)) if (!${known}.has(key)) { const value = result[key]; if (value !== undefined) ${rt.conversion.defineModelProperty}(result, key, ${decodeMapValue}); }`);
@@ -1633,11 +1609,6 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
 function observesValidator(context: EmitContext, specification: ModelSpecification): boolean {
   return context.profile.mobx && (specification.validation ?? context.profile.validation);
 }
-
-/** A line of the file, or a helper that stands where its definition goes if the code calls the helper. */
-type Piece = Code | Helper;
-
-const isCode = (piece: Piece): piece is Code => 'parts' in piece;
 
 const BLANK = code``;
 
@@ -1904,11 +1875,7 @@ const IMPORT_OPTIONS: ImportOptions = {
       'convertModelItems', 'convertModelTupleItems', 'defineModelProperty', 'unknownDiscriminatorValue', 'withDiscriminatorValue',
       'jsonWithDiscriminator', 'requireModelObject', 'deserializeDate', 'serializeDate',
     ],
-    serde: [
-      'assertModelValue', 'createObjectCodec', 'isValidModelValue', 'parseJson', 'registerIModelClass', 'requireIModelClass', 'requireObjectCodec',
-      'serdeValidates', 'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString',
-      'validationUnavailable', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
-    ],
+    serde: SERDE_IMPORT_ORDER,
   },
 };
 
@@ -1940,9 +1907,7 @@ export function emitSource(
   // What the file calls decides its imports and which helpers it defines: a helper stands where its definition goes.
   const calls = join(pieces.filter(isCode), code`\n`);
   assertExternalImportsExported(calls, context);
-  const runtime = new Map(importSet(calls, IMPORT_OPTIONS).map((entry) => [entry.module, entry] as const));
-  const runtimeLines = (...modules: readonly RuntimeModule[]): readonly Code[] =>
-    modules.flatMap((module) => { const entry = runtime.get(module); return entry ? importLines(entry, IMPORT_OPTIONS) : []; });
+  const runtimeLines = runtimeLinesOf(calls, IMPORT_OPTIONS);
   const otherSources = [...codecs.sources, ...context.imports.classSources, ...context.imports.sources];
   const lines: readonly Code[] = [
     blockComment(`Generated by @exprtlabs/golem-model ${PACKAGE_VERSION}. Do not edit.`),

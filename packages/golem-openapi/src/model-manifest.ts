@@ -13,6 +13,7 @@ import {
   type ModelDefinition,
   type OpenApiModelAnalysis,
   modelEnv,
+  modelStableId,
   withSchemaBase,
   modelSchemaReference,
   modelFieldType,
@@ -26,8 +27,7 @@ export function generateModelManifest(
   profile = requireProfile(profile);
   const { ordered, schemaGraph } = modelAnalysis;
   const digest = sourceDigest(document);
-  const stableId = (definition: ModelDefinition) =>
-    `openapi:${digest.slice(0, 16)}#/components/schemas/${definition.schemaName}`;
+  const stableId = (definition: ModelDefinition) => modelStableId(digest, definition);
   const byName = modelAnalysis.definitions;
   const sharedSchemaContext = schemaContext(document, { resources: modelAnalysis.resources });
   const models = ordered.map((definition) => {
