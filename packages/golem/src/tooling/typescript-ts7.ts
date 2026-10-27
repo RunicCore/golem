@@ -508,7 +508,10 @@ class CompatChecker implements TypeChecker {
     const to = unwrapType(target);
     return this.assignable
       .get(unwrapType(source), () => new Memo())
-      .get(to, () => this.inner.isTypeAssignableTo(unwrapType(source), to));
+      .get(to, () => {
+        if (checkerRequestedChannel.hasSubscribers) checkerRequestedChannel.publish({ request: 'isTypeAssignableTo' });
+        return this.inner.isTypeAssignableTo(unwrapType(source), to);
+      });
   }
 
   isArrayType(type: CompatType): boolean {
@@ -526,6 +529,7 @@ class CompatChecker implements TypeChecker {
     const key = `${objectId(enclosingDeclaration)}:${flags ?? ''}`;
     let text = strings.get(key);
     if (text === undefined) {
+      if (checkerRequestedChannel.hasSubscribers) checkerRequestedChannel.publish({ request: 'typeToString' });
       text = this.inner.typeToString(inner, enclosingDeclaration, flags);
       strings.set(key, text);
     }
@@ -985,6 +989,7 @@ const inputsChangedChannel = channel(GOLEM_CHANNELS.inputsChanged);
 const sessionDisposedChannel = channel(GOLEM_CHANNELS.sessionDisposed);
 const compilerStartedChannel = channel(GOLEM_CHANNELS.compilerStarted);
 const compilerClosedChannel = channel(GOLEM_CHANNELS.compilerClosed);
+const checkerRequestedChannel = channel(GOLEM_CHANNELS.checkerRequested);
 const snapshotRequestedChannel = channel(GOLEM_CHANNELS.snapshotRequested);
 const snapshotSettledChannel = channel(GOLEM_CHANNELS.snapshotSettled);
 
