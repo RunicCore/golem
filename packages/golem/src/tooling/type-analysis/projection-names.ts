@@ -103,28 +103,73 @@ export function projectionBaseName(
   return (node && readable(checker, node, modelNameOf, 0)) || fallback;
 }
 
+const CLOSER = new Map([['(', ')'], ['[', ']'], ['{', '}'], ['<', '>']]);
+/** Tokens that end a run of union operands: `A | B` in `k: A | B`, `Foo<A | B, C>` or `() => A | B` is a union of its own. */
+const OPERAND_ENDS = new Set([',', ';', ':', '=>', '?', '=', 'in', 'extends', 'is', 'as', 'asserts']);
+/** Members that the checker makes before any program text: their type ids, and so their place in a printed union, do not depend on the program. */
+const FIXED_ORDER_MEMBERS = new Set(['string', 'number', 'bigint', 'boolean', 'symbol', 'object', 'null', 'undefined', 'void', 'never', 'unknown', 'any', 'true', 'false']);
+
 /**
- * The text of a type with its union members in sorted order, so it does not depend on the order in which TypeScript prints a union (type-id order: the same union prints
- * `"b" | "a"` or `"a" | "b"` by which file the checker reads first). A union, an array and a tuple are rebuilt from their members; every other type, and a union with a name of its own
- * or an enum, keeps its `typeToString` text.
+ * The text of `type` as `checker.typeToString` prints it, with the members of every union in it in sorted order, wherever the union is: an argument, a property, a parameter, a
+ * return. TypeScript prints union members in type-id order, which follows the order in which the checker first met each member, so the same union prints `"b" | "a"` or
+ * `"a" | "b"` by which file the checker read first. The members that the checker makes itself (`string`, `null`) keep their places; the others are sorted by their own text.
+ * The text is split at its brackets and at the tokens that end a union (`:`, `,`, `;`, `=>`), so a union inside a bracket is sorted inside it. A type that nothing sorts keeps its text.
  */
 export function orderIndependentTypeText(checker: ts.TypeChecker, type: ts.Type): string {
-  if (type.isUnion() && !type.aliasSymbol && (type.flags & ts.TypeFlags.Boolean) === 0 && ((type.getSymbol()?.flags ?? 0) & ts.SymbolFlags.Enum) === 0) {
-    const members = type.types.map(member => orderIndependentTypeText(checker, member));
-    const texts = members.includes('true') && members.includes('false') ? [...members.filter(text => text !== 'true' && text !== 'false'), 'boolean'] : members;
-    return [...new Set(texts)].sort(compareText).join(' | ');
-  }
-  const array = checker.isArrayType(type);
-  if (array || checker.isTupleType(type)) {
-    const items = checker.getTypeArguments(type as ts.TypeReference);
-    const texts = items.map(item => orderIndependentTypeText(checker, item));
-    const printed = checker.typeToString(type);
-    // An array or tuple whose items print the same either way keeps its own text (`readonly`, tuple labels).
-    if (texts.every((text, index) => text === checker.typeToString(items[index]!))) return printed;
-    const prefix = printed.startsWith('readonly ') ? 'readonly ' : '';
-    return array ? `${prefix}${items[0]!.isUnion() ? `(${texts[0]})` : texts[0]}[]` : `${prefix}[${texts.join(', ')}]`;
-  }
-  return checker.typeToString(type);
+  const text = checker.typeToString(type, undefined, ts.NodeBuilderFlags.NoTruncation);
+  const scanner = ts.createScanner(true, text);
+  const tokens: { readonly start: number; readonly end: number }[] = [];
+  do {
+    scanner.scan();
+    if (scanner.getTokenStart() < text.length) tokens.push({ start: scanner.getTokenStart(), end: scanner.getTokenEnd() });
+  } while (scanner.getTokenEnd() < text.length);
+  let next = 0;
+  let taken = 0;
+  /** The text up to the token that closes the group, with that token. A group that never closes ends with the text. */
+  const group = (closer: string | undefined): string => {
+    let out = '';
+    let operands: string[] = [];
+    let current: string | undefined;
+    let lead = '';
+    const commit = (): void => {
+      if (current !== undefined) operands.push(current);
+      const slots = operands.map((operand, index) => index).filter(index => !FIXED_ORDER_MEMBERS.has(operands[index]!));
+      const sorted = slots.map(index => operands[index]!).sort(compareText);
+      slots.forEach((slot, position) => { operands[slot] = sorted[position]!; });
+      out += lead + operands.join(' | ');
+      operands = [];
+      current = undefined;
+      lead = '';
+    };
+    const append = (gap: string, chunk: string): void => {
+      if (current === undefined) {
+        current = '';
+        if (operands.length === 0) lead = gap;
+      } else current += gap;
+      current += chunk;
+    };
+    while (next < tokens.length) {
+      const { start, end } = tokens[next++]!;
+      const gap = text.slice(taken, start);
+      const token = text.slice(start, end);
+      taken = end;
+      if (token === closer) {
+        commit();
+        return `${out}${gap}${token}`;
+      }
+      if (CLOSER.has(token)) append(gap, `${token}${group(CLOSER.get(token))}`);
+      else if (token === '|') {
+        if (current !== undefined) operands.push(current);
+        current = undefined;
+      } else if (OPERAND_ENDS.has(token)) {
+        commit();
+        out += `${gap}${token}`;
+      } else append(gap, token);
+    }
+    commit();
+    return out;
+  };
+  return group(undefined) + text.slice(taken);
 }
 
 /** A type argument as part of a name: `string[]` is `StringArray`, so `Page<string[]>` and `Page<string[][]>` differ. Undefined when nothing identifier-like remains. */
