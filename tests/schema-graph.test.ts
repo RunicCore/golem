@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph, emitCodecDeclarationTable, codecPublicId } from '@exprtlabs/golem/internal/schema-graph';
-import { emitGraphStringify, identifier, render } from '@exprtlabs/golem/internal/emitter';
+import { identifier, render } from '@exprtlabs/golem/internal/emitter';
+import { emitGraphStringify } from './support/stringify-graph.js';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import * as serde from '@exprtlabs/golem/serde';

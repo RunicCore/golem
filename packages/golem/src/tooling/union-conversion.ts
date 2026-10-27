@@ -115,6 +115,7 @@ export function presentUnionVariants(
   return descriptor.variants.filter((variant) => variant.kind !== 'null' && variant.kind !== 'undefined');
 }
 
+/** A JSON scalar or a union of them. It does not accept `never` or an intersection, which `isScalarDescriptor` of the stringify emitter does. */
 export function isScalarishDescriptor(descriptor: ModelTypeDescriptor): boolean {
   if (['null', 'undefined', 'string', 'number', 'boolean', 'bigint', 'literal'].includes(descriptor.kind)) {
     return true;

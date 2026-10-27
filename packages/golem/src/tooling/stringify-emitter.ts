@@ -774,11 +774,6 @@ export function emitStringifyFunction(
   return stringifyFunction(header, [...inlineLocalLines(ctx), code`  return ${value};`], guard, valueSlot);
 }
 
-/** The stringify functions of every node of a graph, in dependency order. */
-export function emitGraphStringify(graph: SchemaGraph, serde?: StringifySerdeResolver): Code {
-  return join(graph.topo().map((node) => emitStringifyFunction(node, graph, serde)), code`\n`);
-}
-
 function asRecordCode(expression: Code): Code {
   return code`(${expression} as Record<string, unknown>)`;
 }
@@ -824,7 +819,10 @@ function mapValueDescriptor(descriptor: Extract<ModelTypeDescriptor, { kind: 'ob
   return typeof schema === 'object' && schema !== null && 'kind' in schema ? schema as ModelTypeDescriptor : undefined;
 }
 
-/** A value that holds no object, so assigning it copies it. */
+/**
+ * A value that holds no object, so assigning it copies it. It also accepts `never` and an intersection of scalars, which
+ * `isScalarishDescriptor` (the JSON-scalar test of the union walkers) does not: a copied closed object may hold them.
+ */
 function isScalarDescriptor(descriptor: ModelTypeDescriptor): boolean {
   switch (descriptor.kind) {
     case 'string':
