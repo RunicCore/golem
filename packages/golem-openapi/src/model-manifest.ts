@@ -1,5 +1,5 @@
 import { reachesRecursiveNode, render } from '@exprtlabs/golem/internal/emitter';
-import { codecPublicId, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
@@ -135,5 +135,7 @@ export function openApiValidationSchemaClosure(
 
 /** The runtime codec id of a model: what the manifest records and a rewrite stamps. */
 function openApiCodecId(analysis: OpenApiModelAnalysis, name: string): string {
-  return analysis.nodesByName.get(name)?.codecId ?? codecPublicId(name, { kind: 'unknown' }, undefined, { source: 'openapi', constructs: true });
+  const node = analysis.nodesByName.get(name);
+  if (!node) throw new Error(`Internal error: no schema node for model "${name}".`);
+  return node.codecId;
 }

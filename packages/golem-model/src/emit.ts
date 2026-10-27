@@ -1074,7 +1074,8 @@ function buildFileImports(
     concrete.set(item.name, source.name(name));
     sources.push(source);
   }
-  // A model of another file is imported from the module the manifest names.
+  // A model of another file is imported from the module the manifest names. This module never imports the handwritten
+  // class of its own file: that would be an ESM TDZ error when the user file extends this companion.
   const external = new Map<string, ExternalModel>();
   for (const id of graph.externalIds) {
     const model = manifestIndex.byId.get(id);

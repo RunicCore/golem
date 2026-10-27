@@ -300,7 +300,7 @@ export function declaredModelBases(definitions: ModelDefinitions): Pick<Composit
   return { basesOf: (id) => modelBases(definitions.get(id)) };
 }
 
-export function modelSchemaReference(schema: unknown, env: ModelResolveEnv): string | null {
+function modelSchemaReference(schema: unknown, env: ModelResolveEnv): string | null {
   return directComponentSchemaRef(schema, withSchemaBase(env, schema));
 }
 
