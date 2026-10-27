@@ -5,7 +5,7 @@
 
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
 import { MODEL_FIELDS_KEY } from '../schema-keywords.js';
-import { code, identifier, join, literal, sameCode, type Code } from './code.js';
+import { code, join, literal, sameCode, type Code } from './code.js';
 import { rt } from './rt.js';
 import {
   emitArrayItems,
@@ -73,6 +73,18 @@ export function presentKeysCode(
 }
 
 /**
+ * The test that `key` is one of `names` (or, for `keyIsNotListed`, none of them), as comparisons: the generated code builds
+ * no list each time it runs. `names` is not empty.
+ */
+export function keyIsListed(key: Code, names: readonly string[]): Code {
+  return join(names.map((name) => code`${key} === ${literal(name)}`), code` || `);
+}
+
+export function keyIsNotListed(key: Code, names: readonly string[]): Code {
+  return join(names.map((name) => code`${key} !== ${literal(name)}`), code` && `);
+}
+
+/**
  * The names that the own model of a golem model instance declares, or `undefined` when the value holds no program state: the
  * declaration of the `instanceFields` function and its key, as code. The nearest prototype that owns a field entry decides,
  * also when the entry is `null` (a model that allows additional keys has no program state). A plain value, or a model of an
@@ -103,6 +115,7 @@ export function presentUnionVariants(
   return descriptor.variants.filter((variant) => variant.kind !== 'null' && variant.kind !== 'undefined');
 }
 
+/** A JSON scalar or a union of them. It does not accept `never` or an intersection, which `isScalarDescriptor` of the stringify emitter does. */
 export function isScalarishDescriptor(descriptor: ModelTypeDescriptor): boolean {
   if (['null', 'undefined', 'string', 'number', 'boolean', 'bigint', 'literal'].includes(descriptor.kind)) {
     return true;
@@ -471,7 +484,7 @@ export function emitUnionConversion(
     const { sequence, scalars } = pair;
     const scalar = scalarBranch(scalars);
     const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
-    return joined(conversion, mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
+    return conversion.joinSequence?.(mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
   }
   const jsonValue = scalarArrayObject(present);
   if (jsonValue) {
@@ -484,7 +497,7 @@ export function emitUnionConversion(
       : json
         ? code`(${objectValueExpression(expression)} ? ${converted} : ${scalar})`
         : code`${objectValueExpression(expression)} ? (${converted}) : ${scalar}`;
-    return joined(conversion, mapped, rest) ?? emitScalarOrArrayConversion(expression, mapped, rest);
+    return conversion.joinSequence?.(mapped, rest) ?? emitScalarOrArrayConversion(expression, mapped, rest);
   }
   const tagged = conversion.tagged();
   if (tagged !== undefined) return tagged;
@@ -524,12 +537,6 @@ export function emitUnionConversion(
   }
   if (objectsOrModels.length > 1) throw new ObjectUnionDiscriminatorError(present);
   throw new AmbiguousUnionConversionError(present);
-}
-
-/** The walker's own join of the sequence and the scalar, when it gives one. */
-function joined(conversion: UnionConversion, mapped: Code, scalar: Code): Code | undefined {
-  const result = conversion.joinSequence?.(mapped, scalar);
-  return result === undefined ? undefined : result;
 }
 
 function generatedWithObjects(
