@@ -16,8 +16,11 @@ import {
 // Scheme names that Object.prototype also has, and one that a document never declares.
 const reserved = ['constructor', 'toString', 'hasOwnProperty', '__proto__'];
 const operationOf = (scheme: string): string => `use_${scheme}`;
-// The first operation links to the second with a request body that holds an own '__proto__' key.
-const linked = { 204: { description: 'ok', links: { next: { operationId: operationOf('toString'), requestBody: Object.fromEntries([['__proto__', { kept: true }], ['plain', 1]]) } } } };
+// The first operation links to the second, with a request body that holds an own '__proto__' key and a link named '__proto__'.
+const linked = { 204: { description: 'ok', links: Object.fromEntries([
+  ['next', { operationId: operationOf('toString'), requestBody: Object.fromEntries([['__proto__', { kept: true }], ['plain', 1]]) }],
+  ['__proto__', { operationId: operationOf('toString') }],
+]) } };
 const noContent = { 204: { description: 'ok' } };
 
 function reservedDocument(): Record<string, unknown> {
@@ -78,10 +81,12 @@ test('a requirement that names an undeclared reserved word finds no scheme', asy
   await assert.rejects(() => call('valueOf', { valueOf: 'x' }), /Unknown OpenAPI security scheme: valueOf/);
 });
 
-test('a document constant with a __proto__ key keeps it as an own key in the generated module', async () => {
+test('a document constant or link with a __proto__ key keeps it as an own key in the generated module', async () => {
   // protects: T-510 documentLiteral writes an own __proto__ key at any depth, not a prototype
   const { root } = await loadSdk();
   const links = requireRecord(await import(pathToFileURL(path.join(root, 'sdk/dist/links.js')).href), 'links module');
-  const body = requireRecord(requireRecord(requireRecord(requireRecord(links.responseLinks, 'responseLinks')['use_constructor'], 'operation')['204'], 'status').next, 'link').requestBody;
+  const status = requireRecord(requireRecord(requireRecord(links.responseLinks, 'responseLinks')['use_constructor'], 'operation')['204'], 'status');
+  const body = requireRecord(status.next, 'link').requestBody;
+  assert.deepEqual(Object.keys(status), ['next', '__proto__']);
   assert.deepEqual(Object.entries(requireRecord(body, 'requestBody')), [['__proto__', { kept: true }], ['plain', 1]]);
 });

@@ -20,6 +20,11 @@ function isEncodedBody(value: BodyInit | EncodedBody): value is EncodedBody {
     !(value instanceof ArrayBuffer);
 }
 
+/** The Encoding Object of a body key, from own keys only: a key such as `constructor` must not find Object.prototype. */
+function ownEncoding(encoding: Readonly<Record<string, EncodingMetadata>>, name: string): EncodingMetadata | undefined {
+  return Object.hasOwn(encoding, name) ? encoding[name] : undefined;
+}
+
 function findBodyEncoder(encoders: Record<string, BodyEncoder>, contentType: string): BodyEncoder | undefined {
   if (Object.hasOwn(encoders, contentType)) return encoders[contentType];
   const essence = (contentType.split(';', 1)[0] || '').trim().toLowerCase();
@@ -73,7 +78,7 @@ export function encodeBody(
     const fields: string[] = [];
     if (typeof value === 'object' && value !== null) {
       for (const [name, item] of Object.entries(value)) {
-        const itemEncoding = metadata.encoding[name] || {};
+        const itemEncoding = ownEncoding(metadata.encoding, name) || {};
         addQueryParameter(
           runtime,
           fields,
@@ -110,7 +115,7 @@ export function encodeBody(
       for (const [name, item] of Object.entries(value)) {
         const values = Array.isArray(item) ? item : [item];
         for (const entry of values) {
-          const partType = encoding[name]?.contentType;
+          const partType = ownEncoding(encoding, name)?.contentType;
           if (entry instanceof Blob) form.append(name, entry);
           else if (partType) {
             const serialized = typeof entry === 'object' && entry !== null ? JSON.stringify(entry) : String(entry);
