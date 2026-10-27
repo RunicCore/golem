@@ -5,7 +5,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { API, ProgramSession } from '#golem/typescript-ts7';
+import { observeTooling, type ToolingObserver } from '#golem/observe';
 import { createFixtureProject, readFixture } from './fixture-project.js';
 import { generate as generateController } from '#controllers/generator';
 import { generate as generateModel } from '#model/generator';
@@ -28,8 +28,8 @@ interface ApiChildTracker {
   readonly seen: () => number;
   /** The process ids of the compilers of this test that are still alive. */
   readonly live: () => readonly number[];
-  /** The compilers the sessions started, in start order. */
-  readonly started: () => readonly API[];
+  /** The compiler processes the sessions started, in start order. */
+  readonly started: () => readonly ChildProcess[];
   readonly assertClosed: (label: string) => Promise<void>;
   /** Waits until one compiler is gone. */
   readonly gone: (pid: number) => Promise<void>;
@@ -39,29 +39,13 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
-// A program session starts its compiler through its `compiler` method, golem's own seam: a test sees each compiler the
-// session starts without a patch on a Node or TypeScript type. The hook is added once and each test adds its own.
-const compilerHooks = new Set<(api: API) => void>();
-{
-  const sessionPrototype = ProgramSession.prototype as unknown as { compiler(this: ProgramSession): API };
-  const sessionCompiler = sessionPrototype.compiler;
-  sessionPrototype.compiler = function hookedCompiler(this: ProgramSession): API {
-    const api = sessionCompiler.call(this);
-    for (const hook of compilerHooks) hook(api);
-    return api;
-  };
-}
-
-function onCompiler(t: TestContext, hook: (api: API) => void): void {
-  compilerHooks.add(hook);
-  t.after(() => { compilerHooks.delete(hook); });
-}
-
 function trackApiChildren(t: TestContext): ApiChildTracker {
   // Compilers that were alive before this test belong to nobody here: the operating system's process list is the evidence.
   const before = new Set(compilerChildren(process.pid));
-  const started = new Set<API>();
-  onCompiler(t, api => { started.add(api); });
+  // golem reports each compiler it starts; the process list is the evidence of what is alive.
+  const started: (ChildProcess | undefined)[] = [];
+  const observing = observeTooling({ compilerStarted: compiler => { started.push(compiler); } });
+  t.after(() => observing[Symbol.dispose]());
   const live = (): number[] => compilerChildren(process.pid).filter(pid => !before.has(pid));
   const waitUntilGone = async (pids: readonly number[]): Promise<void> => {
     const deadline = Date.now() + 2_000;
@@ -74,9 +58,9 @@ function trackApiChildren(t: TestContext): ApiChildTracker {
   });
 
   return {
-    seen: () => started.size,
+    seen: () => started.length,
     live,
-    started: () => [...started],
+    started: () => started.flatMap(compiler => compiler ?? []),
     assertClosed: async (label: string): Promise<void> => {
       await waitUntilGone(live());
       assert.deepEqual(live(), [], `${label} left TypeScript --api children alive while the parent remained alive`);
@@ -148,39 +132,20 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
 }
 
 /**
- * Wrap each snapshot request a program session sends, through its one sending method. TypeScript 7.1 sends the first
- * request with `createSnapshot` and later ones through the newest snapshot, so the session is the seam both go through.
- * Returns the restore.
+ * Watch each snapshot request a program session sends. TypeScript 7.1 sends the first request with `createSnapshot` and later
+ * ones through the newest snapshot; golem reports both. The disposal ends the watch before the test does.
  */
-function wrapSnapshotRequests(t: TestContext, wrap: (api: API, params: unknown, send: () => unknown) => unknown): () => void {
-  const prototype = ProgramSession.prototype as unknown as { advance(this: ProgramSession, api: API, params: unknown): unknown };
-  const original = prototype.advance;
-  prototype.advance = function wrappedAdvance(this: ProgramSession, api: API, params: unknown): unknown {
-    return wrap(api, params, () => original.call(this, api, params));
-  };
-  const restore = (): void => { prototype.advance = original; };
-  t.after(restore);
-  return restore;
+function observeSnapshots(t: TestContext, snapshotRequested: NonNullable<ToolingObserver['snapshotRequested']>): Disposable {
+  const observing = observeTooling({ snapshotRequested });
+  t.after(() => observing[Symbol.dispose]());
+  return observing;
 }
 
 function throwAfterRealClose(t: TestContext, failure: Error): () => number {
-  const failing = new WeakSet<API>();
   let calls = 0;
-  // The failing close sits on the compiler a session started, not on a TypeScript prototype. TypeScript 7.1 defines `close`
-  // as a prototype getter that returns the method, so the compiler's own property shadows it.
-  onCompiler(t, api => {
-    if (failing.has(api)) return;
-    failing.add(api);
-    const realClose = api.close.bind(api);
-    Object.defineProperty(api, 'close', {
-      configurable: true,
-      value: () => {
-        realClose();
-        calls += 1;
-        throw failure;
-      },
-    });
-  });
+  // golem reports a compiler it has closed; the failure thrown there is the close's own, as if the API had thrown after the real close.
+  const observing = observeTooling({ compilerClosed: () => { calls += 1; throw failure; } });
+  t.after(() => observing[Symbol.dispose]());
   return () => calls;
 }
 
@@ -411,14 +376,14 @@ test('a reused program session replays recorded inputs, sees file changes and re
   assert.match(open().diagnostics.join('\n'), /'"first"' is not assignable to type '"second"'/, 'a changed file is read');
   fs.rmSync(imported);
   assert.match(open().diagnostics.join('\n'), /Cannot find module '\.\/imported\.js'/, 'a deleted file is not served from the cache');
-  assert.equal(tracker.seen(), 1, 'every program shares one compiler');
-
-  const [compiler] = tracker.live();
+  const [compiler, ...others] = tracker.live();
   assert.ok(compiler);
+  assert.deepEqual(others, [], 'every program shares one compiler');
   process.kill(compiler, 'SIGKILL');
   await tracker.gone(compiler);
   assert.ok(open().inputs.has(imported), 'the replacement compiler opens the program');
-  assert.equal(tracker.seen(), 2, 'an exited compiler is replaced once');
+  assert.equal(tracker.live().length, 1, 'an exited compiler is replaced by one');
+  assert.equal(tracker.live().includes(compiler), false);
   session[Symbol.dispose]();
   await tracker.assertClosed('disposed program session');
 });
@@ -437,9 +402,9 @@ test('closing a program session ends the compiler with a signal it cannot report
     using program = session.openProgram({ root: fixture.root, sources: [source] });
     assert.deepEqual(ts.getPreEmitDiagnostics(program), []);
   }
-  // The exit signal is only on the child object, which golem itself reads at this place to end the compiler.
-  const [api] = tracker.started();
-  const compiler = (api as unknown as { readonly client: { readonly channel: { readonly child: ChildProcess } } }).client.channel.child;
+  // The exit signal is only on the child object, which golem reports when it starts the compiler.
+  const [compiler] = tracker.started();
+  assert.ok(compiler);
   assert.equal(tracker.live().length, 1);
   const exited = new Promise<{ readonly code: number | null; readonly signal: NodeJS.Signals | null }>(resolve => {
     compiler.once('exit', (code, signal) => resolve({ code, signal }));
@@ -453,23 +418,16 @@ test('closing a program session ends the compiler with a signal it cannot report
 
 function captureSnapshotRequests(t: TestContext): unknown[] {
   const requests: unknown[] = [];
-  wrapSnapshotRequests(t, (_api, params, send) => {
-    requests.push(params);
-    return send();
-  });
+  observeSnapshots(t, request => { requests.push(request); });
   return requests;
 }
 
 /** Whether a snapshot update is running: the compiler's file system callbacks of a snapshot arrive while it is. */
 function snapshotRunning(t: TestContext): () => boolean {
   let running = false;
-  wrapSnapshotRequests(t, (_api, _params, send) => {
+  observeSnapshots(t, () => {
     running = true;
-    try {
-      return send();
-    } finally {
-      running = false;
-    }
+    return () => { running = false; };
   });
   return () => running;
 }
@@ -493,10 +451,9 @@ test('a compiler that exits during a snapshot update is replaced and the program
 
   // Kill the warm compiler as the next snapshot update is sent, so the request itself fails.
   let updates = 0;
-  const restore = wrapSnapshotRequests(t, (_api, _params, send) => {
+  const watching = observeSnapshots(t, () => {
     updates++;
     if (updates === 1) process.kill(compiler, 'SIGKILL');
-    return send();
   });
 
   fs.writeFileSync(imported, "export type Imported = { shape: 'second' };\n");
@@ -505,10 +462,12 @@ test('a compiler that exits during a snapshot update is replaced and the program
   assert.equal(updates, 2, 'the failed update is retried once on a new compiler');
   // The exit event of the unref'd child arrives on a later turn; the loop bounds the wait, it is not a delay.
   await tracker.gone(compiler);
-  assert.equal(tracker.seen(), 2, 'one replacement compiler');
-  restore();
+  const [replacement, ...others] = tracker.live();
+  assert.ok(replacement);
+  assert.deepEqual(others, [], 'one replacement compiler');
+  watching[Symbol.dispose]();
   assert.equal(diagnostics().length > 0, true, 'the replacement stays warm for the next program');
-  assert.equal(tracker.seen(), 2);
+  assert.deepEqual(tracker.live(), [replacement]);
   session[Symbol.dispose]();
   await tracker.assertClosed('program session after an update crash');
 });
@@ -636,10 +595,10 @@ test('a configuration error keeps the warm compiler running', async t => {
   const session = new ts.ProgramSession({ cwd: fixture.root });
   t.after(() => session[Symbol.dispose]());
   session.openProgram({ root: fixture.root, sources: [source] }).close();
+  const warm = tracker.live();
+  assert.equal(warm.length, 1);
   assert.throws(() => session.parseConfigFile(path.join(fixture.root, 'missing.json')), /could not read file/);
-  assert.equal(tracker.seen(), 1);
   session.openProgram({ root: fixture.root, sources: [source] }).close();
-  assert.equal(tracker.seen(), 1, 'a deterministic failure does not replace the compiler');
-  assert.equal(tracker.live().length, 1);
+  assert.deepEqual(tracker.live(), warm, 'a deterministic failure does not replace the compiler');
 });
 

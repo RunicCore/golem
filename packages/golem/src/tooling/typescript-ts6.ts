@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
+import { observed } from './observe.js';
 import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
@@ -861,7 +862,9 @@ export class ProgramSession implements Disposable {
 
   /** Report inputs a host observed changing; their parsed files are parsed again. */
   inputsChanged(filenames: Iterable<string>): void {
-    for (const filename of filenames) {
+    const names = [...filenames];
+    observed.inputsChanged(this, names);
+    for (const filename of names) {
       const path = canonical(filename);
       this.hinted.add(path);
       this.files.delete(path);
@@ -888,6 +891,7 @@ export class ProgramSession implements Disposable {
 
   /** Open a program that reflects every file change since the previous one. */
   openProgram(options: Golem.OpenProgramOptions): Golem.Program {
+    observed.programOpened(this, options);
     this.assertOpen();
     const request = programRequest(this.withFlags(options), (configPath, overlays) => this.configReferencesOf(configPath, overlays));
     this.observe(options.onInput, request.hidden);
@@ -958,6 +962,7 @@ export class ProgramSession implements Disposable {
   }
 
   [Symbol.dispose](): void {
+    observed.sessionDisposed(this);
     this.disposed = true;
     this.close();
   }

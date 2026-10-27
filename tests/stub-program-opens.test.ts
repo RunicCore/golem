@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import * as ts from '@exprtlabs/golem/internal/ts';
 import { runPipeline } from '#golem/cli';
+import { observeTooling } from '#golem/observe';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { operationCodecRegistryPath } from '#golem/generated-paths';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
@@ -14,8 +14,6 @@ const model = (name: string, fields: string, imports = ''): string => [
   `export type ${name} = IModel<{ ${fields} }>;`,
   '',
 ].join('\n');
-
-type OpenOptions = Parameters<ts.ProgramSession['openProgram']>[0];
 
 const controller = [
   "import { Controller, Get } from '@nestjs/common';",
@@ -56,12 +54,9 @@ function outputs(root: string): Record<string, string> {
 test('the controllers and models jobs each open one stub program when every model lies in the tsconfig, and a rerun writes the same files', async (t: TestContext) => {
   const root = twoFolderProject(t);
   const yaml = path.join(root, 'golem.yaml');
-  const opened: OpenOptions[] = [];
-  const openProgram = ts.ProgramSession.prototype.openProgram;
-  t.mock.method(ts.ProgramSession.prototype, 'openProgram', function (this: ts.ProgramSession, options: OpenOptions) {
-    opened.push(options);
-    return openProgram.call(this, options);
-  });
+  const opened: (string | undefined)[] = [];
+  const observing = observeTooling({ programOpened: (_session, options) => { opened.push(options.configFile); } });
+  t.after(() => observing[Symbol.dispose]());
   using session = new GeneratorSessionResources();
 
   const first = await runPipeline(yaml, { session });

@@ -7,12 +7,11 @@ import * as ts from '@exprtlabs/golem/internal/ts';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 import { createProgram, loadModelManifests } from '@exprtlabs/golem/internal/type-analysis';
 import { runPipeline } from '#golem/cli';
+import { observeTooling } from '#golem/observe';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { filesUnder, writeFixture } from './support/consumer.js';
 import { workspace } from './support/process.js';
-
-type OpenOptions = Parameters<ts.ProgramSession['openProgram']>[0];
 
 /** The project of a golem.yaml with an openapi job that writes the SDK and a models job that validates the SDK's manifest. */
 function sdkProject(t: TestContext): { root: string; config: string; api: string; manifest: string } {
@@ -28,11 +27,8 @@ function sdkProject(t: TestContext): { root: string; config: string; api: string
 /** The manifest validation programs opened from now on; each one lists the SDK modules in its own configuration. */
 function countValidationPrograms(t: TestContext): { readonly count: () => number } {
   let opened = 0;
-  const openProgram = ts.ProgramSession.prototype.openProgram;
-  t.mock.method(ts.ProgramSession.prototype, 'openProgram', function (this: ts.ProgramSession, options: OpenOptions) {
-    if (options.configFile?.endsWith('.golem-manifest-validation.json')) opened += 1;
-    return openProgram.call(this, options);
-  });
+  const observing = observeTooling({ programOpened: (_session, options) => { if (options.configFile?.endsWith('.golem-manifest-validation.json')) opened += 1; } });
+  t.after(() => observing[Symbol.dispose]());
   return { count: () => opened };
 }
 
