@@ -21,7 +21,7 @@ import { canonicalSchemaKey } from './canonical-schema-key.js';
 import { compareText, isRecord } from './generator-api.js';
 
 export { assertSupportedModelFieldName } from '../model-field-names.js';
-export { escapePointerToken, unescapePointerToken } from '../json-pointer.js';
+export { decodeUriFragment, escapePointerToken, unescapePointerToken } from '../json-pointer.js';
 export { canonicalSchemaKey };
 export type { ConstraintSchemaValue, ModelConstraint } from '../model.js';
 export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CODEC_IDS_KEY, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };

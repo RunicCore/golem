@@ -71,6 +71,16 @@ export interface TagAnalysisContext {
 type FunctionRole = 'validation' | 'serialize' | 'deserialize';
 type WrittenFunctions = Readonly<Record<FunctionRole, Map<ts.Type, ts.Symbol | null>>>;
 
+/** Generated validators compile JSON Schema patterns with the Unicode flag; analysis parses each pattern the same way, so a malformed one fails before any output is written. */
+function isUnicodePattern(pattern: string): boolean {
+  try {
+    void new RegExp(pattern, 'u');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function newWrittenFunctions(): WrittenFunctions {
   return { validation: new Map(), serialize: new Map(), deserialize: new Map() };
 }
@@ -548,14 +558,7 @@ function patternSchemaMap(
 ): Readonly<Record<string, ConstraintSchemaValue>> {
   const result = schemaMap(context, type, node, owner, label);
   for (const pattern of Object.keys(result)) {
-    try {
-      // Generated validators compile JSON Schema patterns with the Unicode flag. Validate the
-      // same expression during analysis so malformed metadata never reaches
-      // generated output.
-      void new RegExp(pattern, 'u');
-    } catch {
-      throw context.diagnostic(owner, '1044', `${label} requires valid Unicode regular expression keys.`);
-    }
+    if (!isUnicodePattern(pattern)) throw context.diagnostic(owner, '1044', `${label} requires valid Unicode regular expression keys.`);
   }
   return result;
 }
@@ -651,13 +654,7 @@ function stringTag(kind: 'pattern' | 'format'): TagReader {
     const value = literalValue(context.checker, args[0], 'string');
     if (typeof value !== 'string') throw context.diagnostic(at, '1044', `${name} requires a string literal argument.`);
     if (kind === 'pattern') {
-      try {
-        // Generated validators compile JSON Schema patterns with the Unicode flag. Parse the same expression here so
-        // malformed patterns fail before any generated artifact can be written.
-        void new RegExp(value, 'u');
-      } catch {
-        throw context.diagnostic(at, '1044', `${name} requires a valid Unicode regular expression.`);
-      }
+      if (!isUnicodePattern(value)) throw context.diagnostic(at, '1044', `${name} requires a valid Unicode regular expression.`);
     }
     return constraintOnly({ kind, value });
   };

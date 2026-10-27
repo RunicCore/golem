@@ -9,9 +9,16 @@ export function escapePointerToken(name: string): string {
   return encodeURIComponent(name.replace(/~/g, '~0').replace(/\//g, '~1'));
 }
 
+/** A URI fragment with its percent escapes decoded; a malformed escape keeps the text as written. */
+export function decodeUriFragment(fragment: string): string {
+  try {
+    return decodeURIComponent(fragment);
+  } catch {
+    return fragment;
+  }
+}
+
 /** The name a URI-fragment pointer token denotes; a malformed percent escape is kept literally. */
 export function unescapePointerToken(token: string): string {
-  let decoded = token;
-  try { decoded = decodeURIComponent(token); } catch { /* keep the token as written */ }
-  return decoded.replace(/~1/g, '/').replace(/~0/g, '~');
+  return decodeUriFragment(token).replace(/~1/g, '/').replace(/~0/g, '~');
 }

@@ -2,7 +2,7 @@ import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import { identifier } from '@exprtlabs/golem/generator-api';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
-import { escapePointerToken, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
+import { decodeUriFragment, escapePointerToken, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import {
   normalizeDocument,
   parameterSchema,
@@ -498,8 +498,7 @@ function rewriteResourceReference(
     const fragment = reference.slice(fragmentIndex + 1);
     if (fragment && !fragment.startsWith('/')) {
       const raw = asRecord(index.resourceById.get(scopedId)?.raw);
-      let anchor = fragment;
-      try { anchor = decodeURIComponent(fragment); } catch { /* Preserve malformed source text for normal resolution. */ }
+      const anchor = decodeUriFragment(fragment);
       if (anchor === raw.$anchor || anchor === raw.$dynamicAnchor) return scopedId;
     }
   }
