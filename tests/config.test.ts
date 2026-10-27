@@ -161,40 +161,21 @@ for (const [name, output, resolved] of [
   });
 }
 
-test('the yaml tsconfig must be the tsconfig a models or controllers job finds from its root', (t: TestContext) => {
-  const message = (yaml: string, config: string, found: string, job: string, root: string, declared: boolean): string => (
-    `${path.relative(process.cwd(), yaml)} uses the tsconfig ${path.relative(process.cwd(), config)}, but the ${job} job reads ${path.relative(process.cwd(), found)}, the tsconfig it finds from its root ${path.relative(process.cwd(), root)}. `
-    + (declared
-      ? 'A non-default tsconfig: that differs from the job\'s own tsconfig is not supported yet; name the file the job finds.'
-      : 'A default tsconfig.json that differs from the job\'s own tsconfig is not supported yet; name the file the job finds with tsconfig:.')
-  );
-  // A named tsconfig beside the one the job finds.
+test('a models or controllers job reads the tsconfig the yaml names, not the one nearer to its root', (t: TestContext) => {
+  // protects: T-480 every job reads the tsconfig of golem.yaml
   const named = fixture(t, 'version: 1\ntsconfig: ./tsconfig.app.json\nmodels:\n  root: .\n');
   fs.writeFileSync(path.join(named.root, 'tsconfig.json'), '{}');
   fs.writeFileSync(path.join(named.root, 'tsconfig.app.json'), '{}');
-  assert.throws(() => loadConfig(named.filename), (error: Error) => {
-    assert.equal(error.message, message(named.filename, path.join(named.root, 'tsconfig.app.json'), path.join(named.root, 'tsconfig.json'), 'models:.', named.root, true));
-    return true;
-  });
-  // The same file the job finds.
-  fs.writeFileSync(named.filename, 'version: 1\ntsconfig: ./tsconfig.json\nmodels:\n  root: .\n');
-  assert.equal(loadConfig(named.filename).tsconfig, path.join(named.root, 'tsconfig.json'));
+  const [models] = loadConfig(named.filename).jobs;
+  assert.equal(models!.kind === 'models' && models.options.tsconfig, path.join(named.root, 'tsconfig.app.json'));
 
   // A controllers job in a package with its own tsconfig, under the default tsconfig beside the yaml.
   const nested = fixture(t, 'version: 1\ncontrollers:\n  - root: packages/api\n    output: api.json\n    info: { title: Api, version: "1" }\n');
   fs.mkdirSync(path.join(nested.root, 'packages/api'), { recursive: true });
   fs.writeFileSync(path.join(nested.root, 'tsconfig.json'), '{}');
   fs.writeFileSync(path.join(nested.root, 'packages/api/tsconfig.json'), '{}');
-  assert.throws(() => loadConfig(nested.filename), (error: Error) => {
-    assert.equal(error.message, message(nested.filename, path.join(nested.root, 'tsconfig.json'), path.join(nested.root, 'packages/api/tsconfig.json'), 'controllers:api.json', path.join(nested.root, 'packages/api'), false));
-    return true;
-  });
-
-  // An openapi job analyses no TypeScript, so the tsconfig it would find does not matter.
-  const none = fixture(t, 'version: 1\ntsconfig: tsconfig.app.json\nopenapi:\n  - input: api.yaml\n    output: sdk\n');
-  fs.writeFileSync(path.join(none.root, 'tsconfig.app.json'), '{}');
-  fs.writeFileSync(path.join(none.root, 'tsconfig.json'), '{}');
-  assert.equal(loadConfig(none.filename).jobs.length, 1);
+  const [controllers] = loadConfig(nested.filename).jobs;
+  assert.equal(controllers!.kind === 'controllers' && controllers.options.tsconfig, path.join(nested.root, 'tsconfig.json'));
 });
 
 test('configuration errors reject unknown overrides, duplicate keys and overlapping outputs', (t: TestContext) => {

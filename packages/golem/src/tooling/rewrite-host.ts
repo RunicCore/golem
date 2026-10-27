@@ -11,6 +11,7 @@ import { sourceComments } from './source-comments.js';
 import type { SourceComment } from './source-comments.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { applyRewrites } from './rewrite.js';
+import { assertNotSolutionTsconfig } from './typescript-config.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
 import type { FileScanResult, RewriteScanner } from './rewrite-scan.js';
 import { composeSourceMaps, decodeMappings } from './source-map.js';
@@ -176,6 +177,7 @@ class ScanningProject {
     const signature = fileSignature(this.config.inventoryFile);
     const recorded = this.readsRecord ? this.recordedFiles() : [];
     const parsed = this.session.parseConfigFile(this.config.tsconfig);
+    assertNotSolutionTsconfig(this.config.tsconfig, parsed, 'yaml');
     this.options = parsed.options;
     const { canonicalFilename } = this.compiler;
     const sources = [...new Set([...parsed.fileNames.map(canonicalFilename), ...this.extras])];

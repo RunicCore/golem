@@ -528,19 +528,6 @@ The message shows the decorator and the type, such as `@Body() type Payment has 
 - Run `golem generate`.
 - If the parameter belongs to a method that is not a route, add its file to the controllers job's `sources`, or give the parameter a primitive type.
 
-### RUNM1073
-
-**Job reads the tsconfig above its root.** A `models` or `controllers` job's `root` has no `tsconfig.json`, and `golem.yaml` sets no `tsconfig`. The job then reads the nearest `tsconfig.json` above its root, as `tsc` does, and the `paths` and compiler options of that file apply to the job. This is a warning: generation continues.
-
-- When that file is a solution tsconfig, the options of the referenced project that holds the job's sources apply. The message names the solution file.
-- The job prints the warning when it runs, before it generates, so a failure that follows still names the file. A job skipped as unchanged prints nothing.
-- The message names the job and the file.
-
-**Fix:**
-
-- Add a `tsconfig.json` to the job's root to give it its own options.
-- Or set `tsconfig` in `golem.yaml` to the file the message names, to state that the job is meant to use it.
-
 ### RUNM1074
 
 **Model declared in a file that is not a model file.** A model field, or a `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` call, names an `IModel` or `IObject` alias that sits in a file whose name does not end in one of the `models.suffixes`.

@@ -63,7 +63,6 @@ function fixture(
     configFile: path.join(root, 'golem.yaml'),
     inventoryFile: path.join(root, '.golem/outputs.json'),
     tsconfig: path.join(root, 'tsconfig.json'),
-    tsconfigNamed: false,
     profile: generationProfile,
     jobs: [job],
   };

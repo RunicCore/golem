@@ -1,9 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { GolemDiagnosticSeverity, canonicalPath, displayPath, isInsideDirectory, isRecord, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-api.js';
+import { canonicalPath, displayPath, isInsideDirectory, isRecord, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-api.js';
 import { defaultModelOutput } from './generated-paths.js';
 import type {
-  GolemDiagnostic,
   GolemProfile,
   ControllerContext,
   ControllerTag,
@@ -25,8 +24,6 @@ export interface GolemConfig {
   readonly directory: string;
   /** The project's tsconfig: where `golem generate` and `golem build` start. Its directory is the project root a rewrite names files from. A tsconfig the yaml names exists; the default beside the yaml need not. */
   readonly tsconfig: string;
-  /** Whether the yaml sets `tsconfig`, as opposed to the default beside it. */
-  readonly tsconfigNamed: boolean;
   readonly profile: GolemProfile;
   /** What the rewrite scan does with a `@Body()` or `@Query()` parameter that is no golem model: `error` (the default) stops, `warn` reports and continues. Not part of the profile: no generated file records it. */
   readonly nonModelInputs?: 'error' | 'warn';
@@ -154,54 +151,17 @@ export function canonicalFile(filename: string): string {
   return path.join(canonicalPath(path.dirname(resolved)), path.basename(resolved));
 }
 
-/** The tsconfig the models and controllers analysis finds from a job root: the nearest `tsconfig.json` upward, as `tsc` does. */
-function tsconfigFoundFrom(root: string): string | undefined {
-  for (let directory = root; ; directory = path.dirname(directory)) {
-    const candidate = path.join(directory, 'tsconfig.json');
-    if (fs.statSync(candidate, { throwIfNoEntry: false })?.isFile()) return canonicalFile(candidate);
-    if (path.dirname(directory) === directory) return undefined;
-  }
-}
-
-const CODE_TSCONFIG_ABOVE_ROOT = 'RUNM1073';
-
 /**
- * The diagnostics for a models or controllers job whose root has no tsconfig.json while the golem.yaml names none: its analysis
- * uses the nearest tsconfig.json above the root, as `tsc` does. It names that file and never stops the run.
- */
-export function jobTsconfigDiagnostics(config: GolemConfig, job: GolemJob): readonly GolemDiagnostic[] {
-  if ((job.kind !== 'models' && job.kind !== 'controllers') || config.tsconfigNamed) return [];
-  const { root } = job.options;
-  const found = tsconfigFoundFrom(root);
-  if (found === undefined || path.dirname(found) === root) return [];
-  return [{
-    code: CODE_TSCONFIG_ABOVE_ROOT,
-    severity: GolemDiagnosticSeverity.Warning,
-    message: `The ${job.id} job has no tsconfig.json in its root ${displayPath(root)}, so it uses ${displayPath(found)}, the nearest one above it.`,
-  }];
-}
-
-/**
- * One golem.yaml serves one tsconfig. The rewrite scan and the build read the tsconfig the yaml names, while the models and
- * controllers analysis still reads the one it finds from its job root, so a job must lie inside the yaml tsconfig's directory
- * and find that same file. The models output lies inside that directory too, because the app's own program imports the companions
+ * One golem.yaml serves one tsconfig, and every job reads it. A job must lie inside the yaml tsconfig's directory, which the scan, the
+ * build and the build tools cover. The models output lies inside that directory too, because the app's own program imports the companions
  * that the models job writes there. An SDK or a document that no app program imports may lie anywhere.
  */
-function assertJobsMatchTsconfig(configFile: string, tsconfig: string, declared: boolean, jobs: readonly GolemJob[]): void {
+function assertJobsMatchTsconfig(tsconfig: string, jobs: readonly GolemJob[]): void {
   const directory = path.dirname(tsconfig);
   for (const job of jobs) {
     if (job.kind !== 'models' && job.kind !== 'controllers') continue;
     const { root } = job.options;
     if (!isInsideDirectory(directory, root)) throw new Error(`job root ${displayPath(root)} is outside ${displayPath(directory)}; use one golem.yaml per tsconfig.`);
-    const found = tsconfigFoundFrom(root);
-    if (found !== undefined && found !== tsconfig) {
-      throw new Error(
-        `${displayPath(configFile)} uses the tsconfig ${displayPath(tsconfig)}, but the ${job.id} job reads ${displayPath(found)}, the tsconfig it finds from its root ${displayPath(root)}. `
-        + (declared
-          ? "A non-default tsconfig: that differs from the job's own tsconfig is not supported yet; name the file the job finds."
-          : "A default tsconfig.json that differs from the job's own tsconfig is not supported yet; name the file the job finds with tsconfig:."),
-      );
-    }
   }
   for (const job of jobs) {
     // The output is a real path already, so an output that leaves through a link shows as the place it reaches.
@@ -303,6 +263,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       jobs.push({ id: `controllers:${path.relative(directory, output) || '.'}`, kind: 'controllers', package: '@exprtlabs/golem-ts-openapi', options: {
         root,
         output,
+        tsconfig,
         profile,
         ...exact,
         openapiVersion,
@@ -368,7 +329,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       }
     }
     const sourceSuffixes = suffixes(value.models.suffixes, 'models.suffixes');
-    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, directory, output, profile, ...exact, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) } });
+    jobs.push({ id: `models:${path.relative(directory, root) || '.'}`, kind: 'models', package: '@exprtlabs/golem-model', options: { root, directory, output, tsconfig, profile, ...exact, ...(sources ? { sources } : {}), ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) } });
     // A controllers job reads the same boundary: the models job writes the generated file of a shared model where a controller class extends it.
     const models = { root, directory, output, ...(sourceSuffixes ? { suffixes: sourceSuffixes } : {}) };
     for (const [index, job] of jobs.entries()) {
@@ -385,7 +346,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   }
   // A misspelled path is that, not a tsconfig the jobs happen to find elsewhere.
   if (value.tsconfig !== undefined) existing(tsconfig, 'file', 'tsconfig');
-  assertJobsMatchTsconfig(configFile, tsconfig, value.tsconfig !== undefined, jobs);
+  assertJobsMatchTsconfig(tsconfig, jobs);
   for (const [index, job] of jobs.entries()) {
     const inputs = job.kind === 'openapi' ? [job.options.input] : job.kind === 'generator' ? [] : job.options.sources ?? [];
     for (const input of inputs) {
@@ -394,7 +355,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       }
     }
   }
-  return { configFile, directory, tsconfig, tsconfigNamed: value.tsconfig !== undefined, profile, nonModelInputs: value.nonModelInputs ?? 'error', jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
+  return { configFile, directory, tsconfig, profile, nonModelInputs: value.nonModelInputs ?? 'error', jobs, inventoryFile: path.join(directory, '.golem', 'outputs.json') };
 }
 
 /** The `models.root` of the config's models job: where its own model sources are. Without a models job, the directory of the golem.yaml. */

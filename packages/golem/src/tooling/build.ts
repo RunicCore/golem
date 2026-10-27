@@ -16,7 +16,7 @@ import type { FileRewrite } from './rewrite.js';
 import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.js';
 import { pointDeclarationMap, pointInlineSourceMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
-import { referenceClosure } from './typescript-config.js';
+import { assertNotSolutionTsconfig, referenceClosure, referencedCommand, referencesRefusal } from './typescript-config.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
@@ -113,27 +113,11 @@ const TSC_COMMAND_OPTIONS = [
 /** Options that only the `tsc` command takes: they ask it to print or write something other than a build. */
 const TSC_COMMANDS = ['showConfig', 'listFilesOnly', 'version', 'help', 'init'] as const;
 
-/** The command that builds a referenced project: its own golem.yaml names it. */
-function referencedCommand(project: string): string {
-  return `golem build --config ${displayPath(path.join(path.dirname(project), 'golem.yaml'))}`;
-}
-
-/**
- * The refusal of a build that would follow project references. A golem.yaml names one project, and `tsc -b` would also build projects that have
- * no golem.yaml, whose calls would not be rewritten. It names each referenced project with the command that builds it.
- */
-function referencesRefusal(configFile: string, references: readonly ts.ProjectReference[], reason: string): Error {
-  const commands = references.map((reference) => `  ${displayPath(reference.path)}: ${referencedCommand(reference.path)}`);
-  return new Error([`${reason} A golem.yaml names one project.${commands.length === 0 ? '' : ` Build each project of ${displayPath(configFile)} with its own golem.yaml, in dependency order:`}`, ...commands].join('\n'));
-}
-
 /** Fail on a configuration the build cannot emit: the tsconfig's, with the forwarded arguments applied. It reads options alone, so it runs before anything is generated. */
-function assertSupported(configFile: string, parsed: ts.ParsedProject): void {
+function assertSupported(configFile: string, parsed: ts.ParsedProject, named: 'yaml' | 'project'): void {
   const { options } = parsed;
-  if (parsed.fileNames.length === 0) {
-    if (parsed.projectReferences.length > 0) throw referencesRefusal(configFile, parsed.projectReferences, `${displayPath(configFile)} only lists project references, so it has no files to build.`);
-    throw new Error(`${displayPath(configFile)} includes no files.`);
-  }
+  assertNotSolutionTsconfig(configFile, parsed, named);
+  if (parsed.fileNames.length === 0) throw new Error(`${displayPath(configFile)} includes no files.`);
   if (stringOption(options, 'outDir') === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
   // The lanes disagree on outFile: TS 6 writes one file, TS 7 ignores it and writes one file per source. One build cannot write the same files on both.
   if (stringOption(options, 'outFile') !== undefined) {
@@ -457,7 +441,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     ? session.parseConfigFile(configFile, observe)
     : session.parseConfigFileWithFlags(configFile, run.tscArguments, observe));
   const configured = parseOptions();
-  assertSupported(configFile, configured);
+  assertSupported(configFile, configured, run.project === undefined ? 'yaml' : 'project');
   // The generated files are part of the program the next steps read, so they are written first. A job whose inputs did not change is skipped.
   const previous = run.pipeline;
   run.pipeline = undefined;
@@ -569,7 +553,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   if (options.compilerBuild) {
     const configFile = resolveProject(options.project, first);
     requestTypeScriptRoot(root);
-    throw referencesRefusal(configFile, session.parseConfigFile(configFile).projectReferences, 'golem build does not take -b or --build: `tsc -b` would also build projects that have no golem.yaml, whose calls golem would not rewrite.');
+    throw referencesRefusal(configFile, session.parseConfigFile(configFile).projectReferences, 'golem build does not take -b or --build: `tsc -b` would also build projects that have no golem.yaml, whose calls golem would not rewrite. A golem.yaml names one project.');
   }
   using generation = new GeneratorSessionResources();
   const inputs = new Set<string>();

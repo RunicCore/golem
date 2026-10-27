@@ -30,7 +30,6 @@ function fixture(t: TestContext, inventory = true): OutputFixture {
     configFile: path.join(directory, 'golem.yaml'),
     inventoryFile: path.join(directory, '.golem/outputs.json'),
     tsconfig: path.join(directory, 'tsconfig.json'),
-    tsconfigNamed: false,
     jobs: [job],
   };
   if (inventory) fs.mkdirSync(path.dirname(config.inventoryFile), { recursive: true });

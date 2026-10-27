@@ -70,6 +70,8 @@ export interface GolemModelContext {
   readonly sources?: readonly string[];
   /** File-name endings that make a file below root/src a model source; defaults to `.model.ts` and `.models.ts`. */
   readonly suffixes?: readonly string[];
+  /** The tsconfig the program opens from, absolute. Omit it to use the nearest `tsconfig.json` from `root` upward. */
+  readonly tsconfig?: string;
   /** Runtime features selected for generated model companions. */
   readonly profile: GolemModelProfile;
   /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
@@ -94,6 +96,7 @@ interface NormalizedContext {
   readonly output: string;
   readonly sources: readonly string[] | undefined;
   readonly suffixes: readonly string[];
+  readonly tsconfig: string | undefined;
   readonly profile: ResolvedGolemProfile;
   readonly exact: boolean | undefined;
   readonly manifestInputs: readonly string[];
@@ -141,6 +144,7 @@ function validateContext(context: GolemModelContext): NormalizedContext {
     output,
     sources,
     suffixes: context.suffixes ?? DEFAULT_MODEL_SUFFIXES,
+    tsconfig: context.tsconfig === undefined ? undefined : assertAbsolute(context.tsconfig, 'context.tsconfig'),
     profile,
     exact: context.exact,
     manifestInputs,
@@ -434,6 +438,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
     discovered,
     normalized.onInput,
     retainedProgramSession(normalized.session, SESSION_OWNER, normalized.root),
+    normalized.tsconfig,
   );
   using program = programInfo.program;
   // The program holds the files the tsconfig includes and the files they import. A model file is the job's own only when its

@@ -127,8 +127,6 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
           inputs.set(job.options.root, strongestInputKind(inputs.get(job.options.root), 'controllers'));
         } else if (job.kind === 'openapi') inputs.set(job.options.input, strongestInputKind(inputs.get(job.options.input), 'openapi'));
         if (job.kind !== 'models' && job.kind !== 'controllers') continue;
-        const tsconfig = path.join(job.options.root, 'tsconfig.json');
-        inputs.set(tsconfig, strongestInputKind(inputs.get(tsconfig), job.kind));
         // A job reads every source of its root; a controllers job reads `src`.
         if (!job.options.sources) descend.push(job.kind === 'models' ? job.options.root : path.join(job.options.root, 'src'));
       }
