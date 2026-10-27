@@ -53,6 +53,6 @@ export function editProjectSources(root: string): ReadonlyMap<string, EditedSour
   return new Map(sources.filter(file => !file.isDeclarationFile).map(file => {
     const relative = path.relative(root, file.fileName);
     const edited = nodeSpecifierEdits(file, checker, options);
-    return [relative, { ...edited, code: applyRewrites(file.text, { edits: edited.edits, imports: [], importsAt: 0 }, relative).code }];
+    return [relative, { ...edited, code: applyRewrites(file.text, { edits: edited.edits, imports: [], importsAt: 0 }, file.fileName).code }];
   }));
 }

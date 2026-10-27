@@ -18,7 +18,6 @@ import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
 import { runRewritten } from './support/rewritten-module.js';
 import { until } from './support/watch-wait.js';
-import { corruptScans } from './support/corrupt-scan.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
 
 const SERDE = '@exprtlabs/golem/serde';
@@ -342,18 +341,6 @@ test('the rewrite project of one golem.yaml is shared, and its session lives unt
   const third = await openRewriteProject({ cwd: root });
   t.after(() => third.close());
   assert.deepEqual(requestedCodecIds(third.rewrite(file, text)?.code), Array(3).fill(codecId(root, 'TMoney')));
-});
-
-test('an inconsistent rewrite in a host names the file relative to the working directory, not the project root', async (t) => {
-  // protects: T-452 the host passed a root-relative name, which the message printed as written
-  const root = await generatedProject(t, 'inconsistent-host-path');
-  const file = path.join(root, 'src/main.ts');
-  corruptScans(t);
-  const host = await openRewriteProject({ cwd: root });
-  t.after(() => host.close());
-  const shown = path.relative(process.cwd(), file);
-  assert.notEqual(shown, path.relative(root, file), 'the test runs from a folder other than the project root');
-  assert.throws(() => host.rewrite(file, fs.readFileSync(file, 'utf8')), (error: unknown) => error instanceof Error && error.message.startsWith(`golem rewrite is inconsistent for ${shown} at line `));
 });
 
 /**

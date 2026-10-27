@@ -4,13 +4,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import * as ts from '@exprtlabs/golem/internal/ts';
 import { build as vite } from 'vite';
 
 import { runPipeline } from '#golem/cli';
 import { golem as vitePlugin } from '#golem/vite';
 import { copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
+import { subscribe } from './support/golem-channels.js';
 import { workspace } from './support/process.js';
 import { until } from './support/watch-wait.js';
 
@@ -40,19 +40,10 @@ async function generatedProject(t: TestContext, name: string): Promise<string> {
 
 /** The compiler sessions the plugin has opened a program in, and how many sessions were disposed, counted from the point of the call. */
 function countSessions(t: TestContext): { readonly opened: () => number; readonly disposed: () => number } {
-  const sessions = new Set<unknown>();
+  const sessions = new Set<object>();
   let disposed = 0;
-  const openProgram = ts.ProgramSession.prototype.openProgram;
-  t.mock.method(ts.ProgramSession.prototype, 'openProgram', function (this: unknown, ...args: Parameters<typeof openProgram>) {
-    sessions.add(this);
-    return openProgram.apply(this as ts.ProgramSession, args);
-  });
-  const dispose = ts.ProgramSession.prototype[Symbol.dispose];
-  ts.ProgramSession.prototype[Symbol.dispose] = function (this: ts.ProgramSession) {
-    disposed += 1;
-    return dispose.call(this);
-  };
-  t.after(() => { ts.ProgramSession.prototype[Symbol.dispose] = dispose; });
+  subscribe(t, 'programOpened', (message: { readonly session: object }) => { sessions.add(message.session); });
+  subscribe(t, 'sessionDisposed', () => { disposed += 1; });
   return { opened: () => sessions.size, disposed: () => disposed };
 }
 

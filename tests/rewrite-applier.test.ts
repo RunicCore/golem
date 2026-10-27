@@ -123,17 +123,18 @@ test('overlapping edits, a wrong expectation and an out-of-range edit are an inc
   assert.equal(applyRewrites(text, rewriteOf([...around].reverse())).code, `const result = /*a*/${CALL_TEXT}/*b*/(text);\n`);
 });
 
-test('an inconsistent rewrite names its file and line when the caller gives the file, in the applier', () => {
+test('an inconsistent rewrite names its file and line when the caller gives an absolute file, and a relative file is an internal error, in the applier', () => {
+  // protects: T-452 a call site passed a name relative to the wrong base, which the message printed as written
   const text = 'const first = 1;\r\nconst result = parse<TPayment>(text);\r\n';
   const wrong = { ...replace(text, CALL, CALL_TEXT), expect: 'parse<TOther>' };
   assert.throws(
     () => applyRewrites(text, rewriteOf([wrong]), 'src/pay.ts'),
-    (error: unknown) => error instanceof Error && error.message.startsWith('golem rewrite is inconsistent for src/pay.ts at line 2: ') && error.message.endsWith('run golem generate'),
+    (error: unknown) => error instanceof Error && error.message.startsWith('Internal error: applyRewrites names its file by an absolute path, got src/pay.ts'),
   );
   const absolute = path.resolve('..', 'other', 'pay.ts');
   assert.throws(
     () => applyRewrites(text, rewriteOf([wrong]), absolute),
-    (error: unknown) => error instanceof Error && error.message.startsWith(`golem rewrite is inconsistent for ${path.relative(process.cwd(), absolute)} at line 2: `),
+    (error: unknown) => error instanceof Error && error.message.startsWith(`golem rewrite is inconsistent for ${path.relative(process.cwd(), absolute)} at line 2: `) && error.message.endsWith('run golem generate'),
   );
   assert.throws(
     () => applyRewrites(text, rewriteOf([wrong])),

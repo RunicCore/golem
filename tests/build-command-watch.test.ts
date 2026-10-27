@@ -5,10 +5,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
-import * as ts from '@exprtlabs/golem/internal/ts';
 import { runBuild } from '#golem/build';
 import { createModelProject, MINIMAL_GOLEM_YAML } from './model-project.js';
 import { write, serdeProject, sourceOnlyProject, countingGenerator, editTsconfig, USE, snapshot } from './support/build-project.js';
+import { subscribe } from './support/golem-channels.js';
 import { workspace } from './support/process.js';
 import { count, watching } from './support/build-watching.js';
 import { quietly, until } from './support/watch-wait.js';
@@ -50,12 +50,7 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
   // The compiler session compares file signatures, which an edit within the timestamp resolution of the file system leaves as they were: the build
   // also tells the session which files it generated.
   const hinted: string[] = [];
-  const inputsChanged = ts.ProgramSession.prototype.inputsChanged;
-  t.mock.method(ts.ProgramSession.prototype, 'inputsChanged', function (this: unknown, filenames: Iterable<string>) {
-    const names = [...filenames];
-    hinted.push(...names);
-    inputsChanged.call(this, names);
-  });
+  subscribe(t, 'inputsChanged', (message: { readonly filenames: readonly string[] }) => { hinted.push(...message.filenames); });
   const finished = runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal, onGenerated: (jobs) => ran.push([...jobs].sort()) });
   const built = (name: string): string => { const file = path.join(root, 'build', name); return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''; };
   const companion = path.join(root, 'src/money.model.generated.ts');
