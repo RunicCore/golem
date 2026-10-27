@@ -5,7 +5,7 @@ import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex,
 import type { InputFiles } from './input-watcher.js';
 import { realOutputFiles } from './outputs.js';
 import type { OutputFiles } from './outputs.js';
-import { GeneratorSessionResources, jobFailedBeforeWriting, runPipeline, strongestInputKind } from './pipeline.js';
+import { GeneratorSessionResources, jobFailedBeforeWriting, jobFailedSavingRecord, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, JobReport, PipelineState } from './pipeline.js';
 
 /** The names a job reads as sources, and what they are: a path with one of these endings is a source whether or not a run has read it. */
@@ -74,6 +74,13 @@ export interface WatchOptions {
   readonly onRun?: (line: string) => void;
   /** The file-system calls of the watch and of its runs' output writes: internal, for tests that fault or count them. */
   readonly files?: Partial<InputFiles> & Partial<OutputFiles>;
+}
+
+/** The error as the user reads it, with what the job that failed left on disk when that is known. */
+function withWrittenFiles(error: unknown): unknown {
+  if (jobFailedBeforeWriting(error)) return new Error(`${errorMessage(error)}\nThe job that failed wrote no files; its last good output stays in place.`, { cause: error });
+  if (jobFailedSavingRecord(error)) return new Error(`${errorMessage(error)}\nThe job that failed wrote its files, but could not save its record.`, { cause: error });
+  return error;
 }
 
 /**
@@ -189,7 +196,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       } catch (error) {
         retryFull = true;
         failed = true;
-        reportError(jobFailedBeforeWriting(error) ? new Error(`${errorMessage(error)}\nThe job that failed wrote no files; its last good output stays in place.`, { cause: error }) : error);
+        reportError(withWrittenFiles(error));
       }
       attempted = latestAttempt;
       try {

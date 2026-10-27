@@ -468,12 +468,19 @@ type JobOutcome =
 
 /** The errors `applyJob` threw. */
 const failedWhileWriting = new WeakSet<object>();
+/** The errors of saving a job's record, which `runJob` does after the job wrote its files. */
+const failedSavingRecord = new WeakSet<object>();
 /** The errors of a job that failed before it wrote anything. */
 const failedBeforeWriting = new WeakSet<object>();
 
 /** Whether `error` came from a job that failed before it wrote a file: that job's output is as its last good run left it. */
 export function jobFailedBeforeWriting(error: unknown): boolean {
   return typeof error === 'object' && error !== null && failedBeforeWriting.has(error);
+}
+
+/** Whether `error` came from saving the record of a job that had already written its files: the files are in place and the record is not. */
+export function jobFailedSavingRecord(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && failedSavingRecord.has(error);
 }
 
 /** Two generators emitting one output is an error, also within one job. */
@@ -649,7 +656,14 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     throw error;
   }
   // The job's record and its written output change together: a later job's failure leaves a record that matches the files.
-  if (nextRecord) saveJobRecords(config, new Map(progress.nextRecords).set(job.id, nextRecord));
+  if (nextRecord) {
+    try {
+      saveJobRecords(config, new Map(progress.nextRecords).set(job.id, nextRecord), options.files);
+    } catch (error) {
+      if (typeof error === 'object' && error !== null) failedSavingRecord.add(error);
+      throw error;
+    }
+  }
   for (const input of result.watchInputs) observer.observe(input, job.kind, job.id);
   return {
     kind: 'ran',
@@ -725,7 +739,7 @@ async function finalizePipeline(run: PipelineRun, plan: PipelinePlan, progress: 
   const used = new Map(progress.used);
   if (options.check) await scanRewriteSites(config, session, used);
   // The last save drops the records of removed jobs, which a run where every job is current has not saved. `check` writes nothing.
-  if (!options.check) saveJobRecords(config, progress.nextRecords);
+  if (!options.check) saveJobRecords(config, progress.nextRecords, options.files);
   for (const output of progress.owned) observer.inputs.delete(output);
   session.retainUsed(new Set(config.jobs.map((job) => job.id)), used);
   return { config, results: progress.results, inputs: observer.inputs, dependencies: observer.dependencies, owned: progress.owned, ran: progress.ran, reports: progress.reports, retired: plan.retired, skippedOutputs: progress.skippedOutputs };
@@ -743,7 +757,7 @@ export async function runPipeline(filename: string, options: PipelineOptions = {
     try {
       outcome = await runJob(job, run, plan, progress);
     } catch (error) {
-      if (typeof error === 'object' && error !== null && !failedWhileWriting.has(error)) failedBeforeWriting.add(error);
+      if (typeof error === 'object' && error !== null && !failedWhileWriting.has(error) && !failedSavingRecord.has(error)) failedBeforeWriting.add(error);
       throw error;
     }
     absorbOutcome(progress, job, outcome, Math.round(performance.now() - started));

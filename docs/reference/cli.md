@@ -73,6 +73,7 @@ models: 2 files updated · openapi:sdk: unchanged · 412 ms
 - `exec --watch` prints the same line for its first run.
 - A failed run prints its error.
 - When a job fails before it writes, the run also says that the job wrote no files and that its last good output stays in place. A job that finished earlier in the same run has written its files.
+- When a job writes its files and then cannot save its record in `.golem/`, the run says that the job wrote its files but could not save its record.
 
 ### Exec
 
