@@ -149,7 +149,7 @@ test('normalizes ordinary DTO nullable properties, enums, and response overlays'
 
 for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
   test(`keeps the TypeScript schema under a nullable type or Record overlay on ${openapiVersion}`, async t => {
-    // protects: T-419 nullable and additionalProperties overlays keep the TypeScript schema, as Nest Swagger keeps them
+    // protects: T-419 nullable and additionalProperties overlays keep the TypeScript schema, as Nest Swagger keeps them; T-457 a matching additionalProperties is accepted and written
     const root = fixture(t, readFixture('controllers/overlay/keeps-the-typescript-schema-under-a-nullable-type-or-record-overlay/controller.ts'));
     const document = documentOf(await generate({ root, output: path.join(root, 'openapi.json'), openapiVersion, info: { title: 'Overlay', version: '1' }, profile: { mobx: false, validation: false } }));
     const properties = document.paths['/widgets']?.get?.responses['200']?.content?.['application/json']?.schema?.properties;
@@ -158,6 +158,8 @@ for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
     const scores = await compileSchema(standardSchema(document, properties.scores));
     assert.deepEqual([middle('a', true), middle(null, true)], [[], []]);
     assert.notDeepEqual(middle(3, true), []);
+    const written = properties.scores.$ref?.replace('#/components/schemas/', '');
+    assert.deepEqual(written && document.components?.schemas?.[written], { type: 'object', properties: {}, additionalProperties: { type: 'number' } });
     assert.deepEqual(scores({ a: 1 }, true), []);
     assert.notDeepEqual(scores({ a: 'x' }, true), []);
   });
@@ -225,4 +227,13 @@ test('rejects Swagger required:false for required IModel querystring contracts a
       error => expectCode(error, 'NEST1503'),
     );
   }
+});
+
+test('rejects an @ApiProperty additionalProperties that conflicts with a Record property type', async t => {
+  // protects: T-457 additionalProperties on @ApiProperty was dropped, so a conflict with Record<string, number> went unreported
+  const root = fixture(t, readFixture('controllers/overlay/rejects-an-apiproperty-additionalproperties-that-conflicts-with-a-record/controller.ts'));
+  await assert.rejects(
+    generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Overlay', version: '1' }, profile: { mobx: false, validation: false } }),
+    error => expectCode(error, 'NEST1503'),
+  );
 });
