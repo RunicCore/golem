@@ -6,9 +6,19 @@ Read the highlights of each Golem release.
 
 Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+ and 7.1+, and it drops TypeScript 7.0.
 
-- **Breaking:** TypeScript 7.0 fails at load. Install TypeScript 7.1 or 6, or stay on Golem 1.0 with TypeScript 7.0.
+- **Breaking:** TypeScript 7.0 fails at load. Install TypeScript 7.1 or 6, or stay on Golem 1.0 with TypeScript 7.0 ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
 - Run generation on TypeScript 6.0+ and 7.1+, including 7.1.0-beta ([Compatibility](/compatibility#ts)).
-- **Breaking:** a TypeScript error that stops generation prints in the compiler's plain form, `src/a.ts(3,7): error TS2322: ...`, as `tsc` prints them without `--pretty`. Before, they printed as `src/a.ts:3:7 - error TS2322: ...`.
+- **Breaking:** `golem build` checks and emits inside the `golem` process and starts no `tsc`. It keeps no `.golem/build` stage ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
+- **Breaking:** a `golem.yaml` whose tsconfig is a solution file, with only `references`, stops `golem generate` and `golem check`. Name the app's tsconfig, such as `tsconfig.app.json` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
+- **Breaking:** one `golem generate` from a clean tree passes when a model of a `controllers` root imports the SDK of an `openapi` job, and a controller that reaches such a model stops with `RUNM1084` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
+- **Breaking:** golem prints a local file relative to the working directory, not as an absolute path, in errors, warnings and diagnostics ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
+- **Breaking:** a TypeScript error that stops generation prints in the compiler's plain form, `src/a.ts(3,7): error TS2322: ...`, as `tsc` prints it without `--pretty`. Before, it printed as `src/a.ts:3:7 - error TS2322: ...` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
+- **Breaking:** `FileRewrite` from `@exprtlabs/golem/rewrite` has a required `importsAt` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
+- **Breaking:** `@exprtlabs/golem/model` no longer exports `GeneratedModelFields`. Use the derived `T<Name>Fields` type ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
+- **Breaking:** `@exprtlabs/golem/manifest` no longer exports `manifestMarker` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
+- **Breaking:** `getObjectCodec`, `getIModelClass`, `requireObjectCodec`, `requireIModelClass` and `registerIModelClass` find a model only by its full id. A short model name no longer matches ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
+- **Breaking:** a model class with `@ApiSchema({ name })` is the OpenAPI component of that name ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- The `model-manifest.json` of a generated SDK no longer lists `modelReferences` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - An untagged `anyOf` whose branches state different JSON types checks a value only with the branches of its type.
 
 Read the [CHANGELOG](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#unreleased) for every change.
@@ -27,6 +37,6 @@ Golem 1.0.0 brings TypeScript models, NestJS controller contracts and OpenAPI cl
 - [Share models between apps](/guide/shared-models). Each app generates its own copy.
 - Enable [MobX](/guide/mobx) for reactive fields and nested SDK models.
 - Run generation on TypeScript 6.x or 7.x ([Compatibility](/compatibility#ts)).
-- The public subpaths of `@exprtlabs/golem` follow semver, and tooling lives under `internal/` ([public API](/compatibility#public-api)).
+- The public subpaths of `@exprtlabs/golem` follow semver, and tooling lives under `internal/`. `@exprtlabs/golem/cli` is removed; run the `golem` command ([public API](/compatibility#public-api)).
 
 Read the [CHANGELOG](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#100) for every change.

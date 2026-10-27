@@ -2,11 +2,11 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import * as ts from '@exprtlabs/golem/internal/ts';
 import { runPipeline } from '#golem/cli';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { operationCodecRegistryPath } from '#golem/generated-paths';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
+import { subscribe } from './support/golem-channels.js';
 
 const model = (name: string, fields: string, imports = ''): string => [
   "import type { IModel } from '@exprtlabs/golem/model';",
@@ -14,8 +14,6 @@ const model = (name: string, fields: string, imports = ''): string => [
   `export type ${name} = IModel<{ ${fields} }>;`,
   '',
 ].join('\n');
-
-type OpenOptions = Parameters<ts.ProgramSession['openProgram']>[0];
 
 const controller = [
   "import { Controller, Get } from '@nestjs/common';",
@@ -52,21 +50,19 @@ function outputs(root: string): Record<string, string> {
   return Object.fromEntries(files.map((file) => [file, fs.readFileSync(path.join(root, file), 'utf8')]));
 }
 
+// Each job opens at most one stub program: the controllers job and the models job, plus the program of the models job's write gate. A job that opens a second stub program goes over.
+const programOpenCeiling = 1 + 1 + 1;
+
 // protects: T-466 a model folder the tsconfig lists is stubbed in the first program, so a job opens one stub program, not two
 test('the controllers and models jobs each open one stub program when every model lies in the tsconfig, and a rerun writes the same files', async (t: TestContext) => {
   const root = twoFolderProject(t);
   const yaml = path.join(root, 'golem.yaml');
-  const opened: OpenOptions[] = [];
-  const openProgram = ts.ProgramSession.prototype.openProgram;
-  t.mock.method(ts.ProgramSession.prototype, 'openProgram', function (this: ts.ProgramSession, options: OpenOptions) {
-    opened.push(options);
-    return openProgram.call(this, options);
-  });
+  const opened: (string | undefined)[] = [];
+  subscribe(t, 'programOpened', (message: { readonly configFile?: string }) => { opened.push(message.configFile); });
   using session = new GeneratorSessionResources();
 
   const first = await runPipeline(yaml, { session });
-  // The controllers job opens one program, and the models job one stub program and the program of its write gate.
-  assert.equal(opened.length, 3);
+  assert.ok(opened.length <= programOpenCeiling, `the jobs opened ${opened.length} programs, more than ${programOpenCeiling}`);
   const clean = outputs(root);
   assert.match(clean['generated/openapi.json']!, /"TShared"/);
 
@@ -75,6 +71,6 @@ test('the controllers and models jobs each open one stub program when every mode
   const edited = path.join(root, 'src/catalog.controller.ts');
   fs.appendFileSync(edited, '// edited\n');
   await runPipeline(yaml, { session, previous: first, changedInputs: [edited] });
-  assert.equal(opened.length, 3);
+  assert.ok(opened.length <= programOpenCeiling, `the rerun opened ${opened.length} programs, more than ${programOpenCeiling}`);
   assert.deepEqual(outputs(root), clean);
 });

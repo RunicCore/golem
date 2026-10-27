@@ -10,6 +10,7 @@ import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { OwnedOutputIndex, realInputFiles } from '#golem/input-watcher';
 import type { InputFiles } from '#golem/input-watcher';
+import { write } from './support/build-project.js';
 import { workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
 import { countingInputFiles, quietly, until } from './support/watch-wait.js';
@@ -187,6 +188,36 @@ test('a scan that fails after a good run is reported, and the run keeps its line
     assert.match(runs.lines[1], /^Recovered: .* · \d+ ms$/);
     assert.match(String(errors[1]), /EMFILE/);
     assert.equal(errors.length, 2, 'the scan fault is reported once');
+  } finally {
+    stop();
+  }
+});
+
+test('a job record that cannot be saved after the job wrote its files is reported as files written', async (t: TestContext) => {
+  // protects: T-484 a failed record save does not say that the job wrote no files
+  const { root, config } = generationWatchFixture(t);
+  const model = path.join(root, 'src/cart.model.ts');
+  const companion = path.join(root, 'src/cart.model.generated.ts');
+  const runs = countRuns();
+  const errors: unknown[] = [];
+  let armed = false;
+  const rename = (from: string, to: string): void => {
+    if (armed && path.basename(to) === 'jobs.json') {
+      armed = false;
+      throw Object.assign(new Error(`EACCES: permission denied, rename '${from}' -> '${to}'`), { code: 'EACCES' });
+    }
+    fs.renameSync(from, to);
+  };
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files: { rename } });
+  try {
+    await until(() => runs() === 1, 'initial generation');
+    armed = true;
+    fs.writeFileSync(model, fs.readFileSync(model, 'utf8').replace('note: string', 'note: string; afterWrite?: boolean'));
+    await until(() => errors.length === 1, () => `the record save fault is reported (errors=${errors.map(String).join('; ')})`);
+    assert.ok(fs.readFileSync(companion, 'utf8').includes('afterWrite'), 'the job wrote its file before the save failed');
+    assert.ok(errors[0] instanceof Error);
+    assert.match(errors[0].message, /EACCES[^]*\nThe job that failed wrote its files, but could not save its record\.$/);
+    assert.doesNotMatch(errors[0].message, /wrote no files/);
   } finally {
     stop();
   }
@@ -478,7 +509,7 @@ test('a watch that can watch no folder reports it with its fix, runs nothing and
   try {
     await until(() => unwatchable === 1, 'the caller is told');
     assert.match(errors.map(String).join('\n'), /fs\.inotify\.max_user_watches/);
-    assert.match(errors.map(String).join('\n'), /cannot watch any folder, so it stops/);
+    assert.match(errors.map(String).join('\n'), /cannot watch any source folder, so it stops/);
     assert.equal(runs(), 0);
   } finally {
     stop();
@@ -641,4 +672,25 @@ test('an edit during a running generation triggers exactly one follow-up run wit
     stop();
   }
   assert.deepEqual(errors, []);
+});
+
+test('a watch that reports with the default reporter prints the stack and cause of a TypeError in a generator', async (t: TestContext) => {
+  // protects: T-490 the default reporter of watchPipeline printed errorMessage only, so a generator's TypeError lost its stack and cause
+  const { root, config } = generationWatchFixture(t);
+  write(root, 'node_modules/@fixture/throwing/package.json', JSON.stringify({ name: '@fixture/throwing', version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
+  write(root, 'node_modules/@fixture/throwing/index.js', `export const apiVersion = 1;
+export function generate() { throw new TypeError('generator state is broken', { cause: new RangeError('index out of range') }); }
+`);
+  const document = YAML.parse(fs.readFileSync(config, 'utf8')) as Record<string, unknown>;
+  fs.writeFileSync(config, YAML.stringify({ ...document, generators: [{ package: '@fixture/throwing', output: 'out' }] }));
+  let printed = '';
+  t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array) => { printed += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString(); return true; });
+  const stop = watchPipeline(config);
+  try {
+    await until(() => printed.includes('index out of range'), () => `the failure is reported (output=${printed})`);
+    assert.match(printed, /TypeError: generator state is broken\n\s+at /);
+    assert.match(printed, /\[cause\]: RangeError: index out of range/);
+  } finally {
+    stop();
+  }
 });

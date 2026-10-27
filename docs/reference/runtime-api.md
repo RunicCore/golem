@@ -25,9 +25,9 @@ Find every `@exprtlabs/golem` subpath that your application, NestJS app or build
 | [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
 | [`eslint`](#eslint) | ESLint config with a rule that reports code no build tool can rewrite | `eslint` |
 
-A path that starts with `internal/` is for the generators and may change in any release. Do not import it ([Compatibility](/compatibility#public-api)).
+A path that starts with `internal/` is for the generators and may change in any release. These subpaths are internal: `internal/emitter`, `internal/generated-paths`, `internal/schema`, `internal/schema-graph`, `internal/static-value`, `internal/ts`, `internal/type-analysis`, `internal/validation-plan` and `internal/validator-compiler`. Do not import them ([Compatibility](/compatibility#public-api)).
 
-With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). Generated files also import the names in [Exports for generated code](#generated-code).
+With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). Generated files also import the names in [Exports for generated code](/reference/generator-api#generated-code).
 
 ## `@exprtlabs/golem/model` {#model}
 
@@ -61,7 +61,6 @@ Types of generated models:
 
 | Type | Describes |
 | --- | --- |
-| `GeneratedModelFields<Model>` | The field types of a generated model. |
 | `GeneratedModelResult<Constructor>` | The instance type of a generated class. |
 
 ## `@exprtlabs/golem/validation` {#validation}
@@ -191,7 +190,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 | `message` | `string` | Display text. |
 | `path` | `IssuePath` | String and number segments, such as `['items', 0, 'amount']`. |
 | `source` | `IssueSource` | `typescript`, `openapi`, `custom`, `external`, `json` or `serde`. |
-| `representation` | `IssueRepresentation` | Optional: `model` or `wire` (JSON) value. |
+| `representation` | `IssueRepresentation` | Optional: `model` for the model value, `wire` for the JSON value. |
 
 `Issue` is a union keyed by `code`. Check `issue.code` and TypeScript narrows to that code's fields, such as `issue.limit` after `issue.code === 'tooSmall'`.
 
@@ -240,7 +239,7 @@ interface ApiOperation<Input, Result, Options = unknown> {
 - Overlapping `execute` calls all run. Each one after the first logs `Concurrent execute() invocation for <name>`.
 - An operation caches no results or errors.
 
-[Create a client](/guide/client-usage#create-a-client) shows the generated client options. Generated SDKs call the request runtime in [Exports for generated code](#generated-code).
+[Create a client](/guide/client-usage#create-a-client) shows the generated client options. Generated SDKs call the request runtime in [Exports for generated code](/reference/generator-api#generated-code).
 
 ### Generated client {#generated-client}
 
@@ -508,9 +507,9 @@ The usage is in [Built-in validation constraints](/guide/tags#built-in-validatio
 
 ## `@exprtlabs/golem/temporal` {#temporal}
 
-Temporal field types for models. Each converts to an ISO 8601 string on the wire. [Use Temporal fields](/guide/field-types#use-temporal-fields) shows the setup.
+Temporal field types for models. Each converts to an ISO 8601 string in JSON. [Use Temporal fields](/guide/field-types#use-temporal-fields) shows the setup.
 
-| Tag | Model type | Wire string |
+| Tag | Model type | JSON string |
 | --- | --- | --- |
 | `TemporalInstant` | `Temporal.Instant` | `2025-01-02T03:04:05Z`, with fractional seconds only when the value has them |
 | `TemporalZonedDateTime` | `Temporal.ZonedDateTime` | `2025-01-02T03:04:05+01:00[Europe/Paris]` |
@@ -519,7 +518,7 @@ Temporal field types for models. Each converts to an ISO 8601 string on the wire
 | `TemporalPlainTime` | `Temporal.PlainTime` | `03:04:05.123` |
 | `TemporalDuration` | `Temporal.Duration` | `P1DT2H` |
 
-The wire string has a four-digit year and no calendar annotation.
+The JSON string has a four-digit year and no calendar annotation.
 
 Each tag `TemporalX` has the functions `serializeTemporalX` and `deserializeTemporalX` and the type `TemporalXWire`. Its `TSerde` uses the two functions.
 
@@ -612,9 +611,10 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 | `NestModelInterceptor` | `class NestModelInterceptor implements NestInterceptor` | Converts model-typed `@Body()` and `@Query()` parameters before the handler and writes model returns ([request contract](/guide/nestjs-requests#what-happens-to-a-request)). |
 | `nestModelStringifyInterceptor` | `(codec: ObjectCodec): NestInterceptor` | Writes every non-null result with that codec's `stringify`, an array item by item. |
 | `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that `nestModelCodec` placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
+| `nestUnionFromMetatype` | `(metatype: unknown): NestUnionInput \| undefined` | The converter of a parameter token for a union of models, such as the `design:paramtypes` entry of a `@Body()` or `@Query()` parameter typed `TCircle \| TRect`. `fromWireFormat(wire, options?)` returns the model of the variant that the tag picks and throws a `LibError` for a missing or unknown tag or invalid input. `decodeQuery(query)` turns query strings into the types that variant declares. `undefined` for any other token. |
 | `nestModelConstruct` | `(metatype: unknown)` | The class that token constructs, or `undefined`. |
 
-For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`.
+For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. For a union of models, use `nestUnionFromMetatype`.
 
 ## `@exprtlabs/golem/loader` {#loader}
 
@@ -690,55 +690,3 @@ export default [await golem()];
 
 - The rule reports the errors that `golem check` reports for the file, with the code and the position. It reads the text that ESLint holds.
 - Without `parser: 'text'`, put a config object with a TypeScript parser before it.
-
-## Exports for generated code {#generated-code}
-
-Generated files import these names. Application code does not call them. They follow semver ([Compatibility](/compatibility#public-api)).
-
-### From `model`
-
-`registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelConstructor`, `ModelInit` and the `generatedModel*Brand` symbols.
-
-The module also exports the metadata types that the generators and the runtime use. Generated files do not import them, and application code does not use them: `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile`, `GeneratedModelValidatorEnhancer`, `ModelTypeMetadata`, `ModelTypeDescriptor`, `ModelConstraint`, `ConstraintSchemaValue`, `UnionDiscriminator` and `DiscriminatorValue`.
-
-### From `validation`
-
-`operationValidators` resolves the input and response validators of an operation once per client. `validateOperationInput` checks a request input. `responseCheck` is the response check that `ClientRuntime.readResponse` runs on each decoded body or stream item.
-
-### From `conversion`
-
-`encodeGeneratedModel`, `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelTupleItems`, `defineModelProperty`, `requireModelObject`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
-
-### From `serde`
-
-`createObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `requireIModelClass`, `assertModelValue`, `isValidModelValue`, `modelValueIssues`, `parseJson`, `serdeValidates`, `validationUnavailable`, `withoutInstanceState` and the `stringifyJson*` writers.
-
-The module exports more helpers for the runtime itself. Application code does not call them: `registerObjectCodec`, `findCodecIdForConstructor`, `resolveModelValidationContextValidator`, `validationFailure`, `serdeFailFast`, `resolveGeneratedModelSchemaRefs` and the type `ObjectCodecImpl`.
-
-### From `nest`
-
-| Member | Signature | Behavior |
-| --- | --- | --- |
-| `nestModelCodec` | `(id: string, array?: boolean): ParameterDecorator` | The rewrite inserts it on `@Body()` and `@Query()` parameters typed with a model or an array of one. It replaces the parameter type with a token that carries the codec and class of the model. |
-| `nestModelUnion` | `(property: string, variants: readonly [values: readonly (string \| number \| boolean)[], id: string][]): ParameterDecorator` | The rewrite inserts it on a whole `@Body()` or `@Query()` typed as a union of models. `property` is the tag that every model requires, and each variant lists its tag values and the model it stands for. `NestModelInterceptor` converts the input with the model that the tag picks. |
-| `nestModelReturn` | `(id: string, array?: boolean): MethodDecorator` | The rewrite inserts it on a handler that returns a model. `NestModelInterceptor` reads it. |
-
-### From `client`
-
-| Member | Behavior |
-| --- | --- |
-| `ClientRuntime` | Holds a client's options and sends its requests. `new ClientRuntime(client, options, servers?)`, where `servers` is the `servers` list of the document. `readResponse` selects the declared response, decodes it and runs the operation's response check. |
-| `isUndeclaredResponseError` | `(error, client?)`: true for a status or media type the operation does not declare |
-| `serializePath` | Writes a path parameter |
-| `addQueryParameter` | Adds a query parameter |
-| `setQueryString` | Sets a whole querystring parameter |
-| `appendQuery` | Appends one encoded query pair |
-| `serializeHeaderSimple` | Writes a header value |
-| `serializeContentParameter` | Writes a parameter with a media type |
-| `addCookieParameter` | Adds a cookie parameter |
-| `addCookieStyleParameter` | Adds a cookie-style parameter |
-| `encodeBody` | Encodes a request body for its media type |
-| `applySecurity` | Adds credentials for the operation's security requirements |
-| `encode` | Percent-encodes a value |
-
-The module also exports the types these functions use: `ClientOptions`, `RequestOptions`, `ParameterSerializer`, `EncodedBody`, `BodyEncoder`, `MutualTlsTransport`, `ResponseHeaderDecoder`, `StreamDecoder`, `ResponseDecoder`, `UndeclaredResponseError`, `AuthContext`, `TokenAuthValue`, `BasicCredentials`, `BasicAuthValue` and `RuntimeSecuritySchemes`. Each SDK aliases the option types with its client name, such as `PaymentsClientOptions`.

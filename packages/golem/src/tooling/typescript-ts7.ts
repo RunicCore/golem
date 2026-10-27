@@ -10,6 +10,7 @@
 export * from 'typescript/ast';
 
 import { ChildProcess } from 'node:child_process';
+import { channel } from 'node:diagnostics_channel';
 import {
   lstatSync,
   readdirSync,
@@ -24,13 +25,14 @@ import {
   join,
   normalize,
   resolve as resolvePath,
-  sep,
 } from 'node:path';
 import * as ast from 'typescript/ast';
+import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, referenceClosure, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
+import { inNodeModules } from './type-analysis/path-identity.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
@@ -209,7 +211,6 @@ export interface TypeChecker {
   getSignaturesOfType(type: CompatType, kind: SignatureKind): readonly CompatSignature[];
   getReturnTypeOfSignature(signature: CompatSignature): CompatType;
   getTypeArguments(type: CompatType): readonly CompatType[];
-  getApparentType(type: CompatType): CompatType;
   isTypeAssignableTo(source: CompatType, target: CompatType): boolean;
   isArrayType(type: CompatType): boolean;
   isTupleType(type: CompatType): boolean;
@@ -220,9 +221,6 @@ export interface TypeChecker {
   getNumberType(): CompatType;
   getBooleanType(): CompatType;
   getUnknownType(): CompatType;
-  getNeverType(): CompatType;
-  getNullType(): CompatType;
-  getUndefinedType(): CompatType;
   getExportsOfModule(symbol: CompatSymbol): readonly CompatSymbol[];
   tryGetMemberInModuleExports(name: string, moduleSymbol: CompatSymbol): CompatSymbol | undefined;
   getRootSymbols(symbol: CompatSymbol): readonly CompatSymbol[];
@@ -232,7 +230,6 @@ export interface TypeChecker {
   getDeclaredTypeOfSymbol(symbol: CompatSymbol): CompatType;
   getConstantValue(node: Node): string | number | undefined;
   getSignatureFromDeclaration(node: Node): CompatSignature | undefined;
-  getExportSpecifierLocalTargetSymbol(node: Node): CompatSymbol | undefined;
 }
 
 export interface Program {
@@ -507,15 +504,14 @@ class CompatChecker implements TypeChecker {
     return this.inner.getTypeArguments(inner).map((argument) => wrapType(argument, this));
   }
 
-  getApparentType(type: CompatType): CompatType {
-    return wrapType(this.inner.getApparentType(unwrapType(type)) ?? unwrapType(type), this);
-  }
-
   isTypeAssignableTo(source: CompatType, target: CompatType): boolean {
     const to = unwrapType(target);
     return this.assignable
       .get(unwrapType(source), () => new Memo())
-      .get(to, () => this.inner.isTypeAssignableTo(unwrapType(source), to));
+      .get(to, () => {
+        if (checkerRequestedChannel.hasSubscribers) checkerRequestedChannel.publish({ request: 'isTypeAssignableTo' });
+        return this.inner.isTypeAssignableTo(unwrapType(source), to);
+      });
   }
 
   isArrayType(type: CompatType): boolean {
@@ -533,6 +529,7 @@ class CompatChecker implements TypeChecker {
     const key = `${objectId(enclosingDeclaration)}:${flags ?? ''}`;
     let text = strings.get(key);
     if (text === undefined) {
+      if (checkerRequestedChannel.hasSubscribers) checkerRequestedChannel.publish({ request: 'typeToString' });
       text = this.inner.typeToString(inner, enclosingDeclaration, flags);
       strings.set(key, text);
     }
@@ -561,18 +558,6 @@ class CompatChecker implements TypeChecker {
 
   getUnknownType(): CompatType {
     return this.intrinsic('Unknown', () => this.inner.getUnknownType());
-  }
-
-  getNeverType(): CompatType {
-    return this.intrinsic('Never', () => this.inner.getNeverType());
-  }
-
-  getNullType(): CompatType {
-    return this.intrinsic('Null', () => this.inner.getNullType());
-  }
-
-  getUndefinedType(): CompatType {
-    return this.intrinsic('Undefined', () => this.inner.getUndefinedType());
   }
 
   getExportsOfModule(symbol: CompatSymbol): readonly CompatSymbol[] {
@@ -619,11 +604,6 @@ class CompatChecker implements TypeChecker {
   getSignatureFromDeclaration(node: Node): CompatSignature | undefined {
     const signature = this.inner.getSignatureFromDeclaration(node);
     return signature ? wrapSignature(signature, this) : undefined;
-  }
-
-  getExportSpecifierLocalTargetSymbol(node: Node): CompatSymbol | undefined {
-    const symbol = this.inner.getExportSpecifierLocalTargetSymbol(node);
-    return symbol ? wrapSymbol(symbol, this) : undefined;
   }
 }
 
@@ -960,7 +940,7 @@ function directoryEntries(directory: string): string {
 
 /** A change to a package manifest or an installed package invalidates cached module resolution. */
 function affectsResolution(filename: string): boolean {
-  return basename(filename) === 'package.json' || filename.split(sep).includes('node_modules');
+  return basename(filename) === 'package.json' || inNodeModules(filename);
 }
 
 /** The compiler process exited or its channel closed; a server-reported error leaves it running. */
@@ -1003,6 +983,16 @@ function programRequest(options: OpenProgramOptions, referencesOf: (configPath: 
   return { configPath, files: [...new Set(options.sources.map(canonical))], overlays, hidden };
 }
 
+// Internal notices for golem's own tests (`node:diagnostics_channel`, names in diagnostics-channels.ts), with no promise of stability; nothing is built unless a subscriber exists.
+const programOpenedChannel = channel(GOLEM_CHANNELS.programOpened);
+const inputsChangedChannel = channel(GOLEM_CHANNELS.inputsChanged);
+const sessionDisposedChannel = channel(GOLEM_CHANNELS.sessionDisposed);
+const compilerStartedChannel = channel(GOLEM_CHANNELS.compilerStarted);
+const compilerClosedChannel = channel(GOLEM_CHANNELS.compilerClosed);
+const checkerRequestedChannel = channel(GOLEM_CHANNELS.checkerRequested);
+const snapshotRequestedChannel = channel(GOLEM_CHANNELS.snapshotRequested);
+const snapshotSettledChannel = channel(GOLEM_CHANNELS.snapshotSettled);
+
 /** The compiler process of an API, or undefined when this TypeScript build keeps it somewhere else. */
 function compilerProcess(api: API): ChildProcess | undefined {
   const child: unknown = (api as unknown as { readonly client?: { readonly channel?: { readonly child?: unknown } } }).client?.channel?.child;
@@ -1017,8 +1007,13 @@ function compilerProcess(api: API): ChildProcess | undefined {
  * API then releases its side of the channel. `session.close()` has already released every snapshot.
  */
 function closeCompiler(api: API): void {
-  compilerProcess(api)?.kill('SIGKILL');
-  api.close();
+  const compiler = compilerProcess(api);
+  compiler?.kill('SIGKILL');
+  try {
+    api.close();
+  } finally {
+    if (compilerClosedChannel.hasSubscribers) compilerClosedChannel.publish({ compiler });
+  }
 }
 
 /** Release a module resolver; one on an exited compiler is already gone. */
@@ -1113,7 +1108,9 @@ export class ProgramSession implements Disposable {
    * still reaches the compiler.
    */
   inputsChanged(filenames: Iterable<string>): void {
-    for (const filename of filenames) this.hinted.add(canonical(filename));
+    const names = [...filenames];
+    if (inputsChangedChannel.hasSubscribers) inputsChangedChannel.publish({ session: this, filenames: names });
+    for (const filename of names) this.hinted.add(canonical(filename));
   }
 
   /** Parse a project configuration with the session compiler. */
@@ -1260,6 +1257,7 @@ export class ProgramSession implements Disposable {
 
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
   openProgram(options: OpenProgramOptions): Program {
+    if (programOpenedChannel.hasSubscribers) programOpenedChannel.publish({ session: this, configFile: options.configFile });
     const base = programRequest(this.withFlags(options), (configPath, overlays) => this.configReferencesOf(configPath, overlays));
     return this.withCompiler('snapshot', (api, reused) => {
       const request = this.withRequestedRoots(api, base, options.onInput);
@@ -1330,7 +1328,13 @@ export class ProgramSession implements Disposable {
     // TypeScript 7.1 rebuilds a program that a change made dirty only when the request asks for it; without this the
     // snapshot serves the previous program. The session keeps one project open, so every project is the requested one.
     const params: CreateSnapshotParams = { ...changes, ensurePrograms: true };
-    const snapshot = previous === undefined ? api.createSnapshot(params) : previous.update(params);
+    if (snapshotRequestedChannel.hasSubscribers) snapshotRequestedChannel.publish({ request: changes });
+    let snapshot: Snapshot;
+    try {
+      snapshot = previous === undefined ? api.createSnapshot(params) : previous.update(params);
+    } finally {
+      if (snapshotSettledChannel.hasSubscribers) snapshotSettledChannel.publish({ request: changes });
+    }
     this.latest = snapshot;
     if (previous && previous !== snapshot && !this.heldBy(previous)) disposeSnapshot(previous);
     return snapshot;
@@ -1396,6 +1400,7 @@ export class ProgramSession implements Disposable {
   }
 
   [Symbol.dispose](): void {
+    if (sessionDisposedChannel.hasSubscribers) sessionDisposedChannel.publish({ session: this });
     this.disposed = true;
     this.close();
   }
@@ -1427,7 +1432,10 @@ export class ProgramSession implements Disposable {
   }
 
   private compiler(): API {
-    this.api ??= new API({ cwd: this.options.cwd, fs: this.fileSystem() });
+    if (this.api === undefined) {
+      this.api = new API({ cwd: this.options.cwd, fs: this.fileSystem() });
+      if (compilerStartedChannel.hasSubscribers) compilerStartedChannel.publish({ compiler: compilerProcess(this.api) });
+    }
     return this.api;
   }
 

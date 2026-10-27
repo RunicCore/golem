@@ -1,11 +1,11 @@
 import path from 'node:path';
 import type { GolemConfig } from './config.js';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, isInsideDirectory, suffixPattern } from './generator-api.js';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, failureText, isInsideDirectory, suffixPattern } from './generator-api.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
 import type { InputFiles } from './input-watcher.js';
 import { realOutputFiles } from './outputs.js';
 import type { OutputFiles } from './outputs.js';
-import { GeneratorSessionResources, jobFailedBeforeWriting, runPipeline, strongestInputKind } from './pipeline.js';
+import { GeneratorSessionResources, jobFailedBeforeWriting, jobFailedSavingRecord, runPipeline, strongestInputKind } from './pipeline.js';
 import type { InputKind, JobReport, PipelineState } from './pipeline.js';
 
 /** The names a job reads as sources, and what they are: a path with one of these endings is a source whether or not a run has read it. */
@@ -76,6 +76,13 @@ export interface WatchOptions {
   readonly files?: Partial<InputFiles> & Partial<OutputFiles>;
 }
 
+/** The error as the user reads it, with what the job that failed left on disk when that is known. */
+function withWrittenFiles(error: unknown): unknown {
+  if (jobFailedBeforeWriting(error)) return new Error(`${errorMessage(error)}\nThe job that failed wrote no files; its last good output stays in place.`, { cause: error });
+  if (jobFailedSavingRecord(error)) return new Error(`${errorMessage(error)}\nThe job that failed wrote its files, but could not save its record.`, { cause: error });
+  return error;
+}
+
 /**
  * Serialized runs on file-system events for specific inputs, including reads attempted by failed runs, and for the folders around
  * them, so a source added to one of them starts a run. An event only wakes the watch: it then compares the inputs with what the last
@@ -85,7 +92,7 @@ export interface WatchOptions {
  * before it after a failed run) once the watch has recorded what the run read, or has reported why it could not. The watch prints nothing about its runs; the caller
  * says it. An exception from `onRun` goes to `reportError`, and the watch goes on.
  */
-export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, options: WatchOptions = {}): () => void {
+export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${failureText(error)}\n`); }, options: WatchOptions = {}): () => void {
   const { session = new GeneratorSessionResources(), firstBaseline, onUnwatchable = () => {}, onRun = () => {} } = options;
   const inputFiles: InputFiles = { ...realInputFiles, ...options.files };
   const outputFiles: OutputFiles = { ...realOutputFiles, ...options.files };
@@ -189,7 +196,7 @@ export function watchPipeline(initial: PipelineState | string, reportError: (err
       } catch (error) {
         retryFull = true;
         failed = true;
-        reportError(jobFailedBeforeWriting(error) ? new Error(`${errorMessage(error)}\nThe job that failed wrote no files; its last good output stays in place.`, { cause: error }) : error);
+        reportError(withWrittenFiles(error));
       }
       attempted = latestAttempt;
       try {

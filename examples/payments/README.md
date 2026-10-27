@@ -4,7 +4,7 @@ A merchant payments app: one TypeScript contract becomes a NestJS API, an OpenAP
 
 ## What it shows
 
-- `server/`: a NestJS API whose controllers generate `server/api/openapi.yaml`, with `NestModelInterceptor` validating bodies and queries. Amounts are decimal strings on the wire.
+- `server/`: a NestJS API whose controllers generate `server/api/openapi.yaml`, with `NestModelInterceptor` validating bodies and queries. Amounts are decimal strings in JSON.
 - `web/`: a React + MobX editor that uses the client generated from that document.
 - `server/provider/`: a client generated from `provider.yaml` with bearer auth, an `Idempotency-Key` header, NDJSON event streams, Temporal settlement dates and a custom money media type.
 - Each saved payment is charged through the provider client (bearer token, one `Idempotency-Key` per payment), and the editor shows the charge status.

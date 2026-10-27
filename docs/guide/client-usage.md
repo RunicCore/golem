@@ -28,7 +28,14 @@ A response holds the HTTP `status` and the decoded `body`. This includes declare
 | `auth` | credentials by security-scheme name ([Authentication](/guide/auth)) |
 | `operationValidators` | validators that replace generated ones ([Runtime API](/reference/runtime-api#runtime-validators)) |
 
-An empty `baseUrl` is an error. The client has `server` and `serverVariables` only when the document lists `servers`. `server` and `serverVariables` choose from the `servers` of the document root. An operation that lists its own `servers`, or whose path item does, goes to the first server of that list with its variable defaults, whatever `server` is; the operation list replaces the document list, as OpenAPI says. A variable that you leave out uses its default. A value outside its `enum`, or a variable that the server does not declare, is an error. A relative server URL such as `/api` is used as written, so it works where `fetch` accepts a relative URL, such as a browser. `auth` values can be functions that return the credentials. `operationValidators` replaces the generated validator of each named operation.
+- An empty `baseUrl` is an error.
+- The client has `server` and `serverVariables` only when the document lists `servers`.
+- `server` and `serverVariables` choose from the `servers` list of the document root.
+- An operation, or a path item, that lists its own `servers` uses the first server of that list with its variable defaults, whatever `server` is. `baseUrl` still wins.
+- A variable that you leave out uses its default. A value outside its `enum`, or a variable that the server does not declare, is an error.
+- A relative server URL such as `/api` is used as written. It works where `fetch` accepts a relative URL, such as a browser.
+- A value of `auth` can be a function that returns the credentials.
+- `operationValidators` replaces the generated validator of each named operation.
 
 ## Pass parameters and a body
 
@@ -167,4 +174,4 @@ For a header parameter in the API document, use the `header` argument of the ope
 
 Check `controller.signal.aborted` before you rethrow a caught error. An error that has nothing to do with the abort must still propagate.
 
-Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments).

@@ -4,7 +4,12 @@ import { PACKAGE_VERSION } from './package-info.js';
 import {
   emitModelFromJSON,
   blockComment,
-  calleeOf,
+  isCode,
+  runtimeLinesOf,
+  emitPlanSchemas,
+  MODEL_IMPORT_ORDER,
+  wrapRootConversion,
+  type Piece,
   code,
   emitCodecRuntimeCode,
   fileImports,
@@ -17,8 +22,6 @@ import {
   importedNames,
   MODULE_CONSTANT_HELPERS,
   placeHelpers,
-  importLines,
-  importSet,
   ImportSource,
   join,
   literal,
@@ -30,10 +33,8 @@ import {
   type Helper,
   type ImportOptions,
   type JsonValue,
-  type RuntimeModule,
   emitModelFromInit,
   emitModelToJSON,
-  FIELD_CONVERSION_INPUT,
   stringifyFunctionName,
   wireStringifyExportName,
   fromWireFunctionName,
@@ -91,17 +92,6 @@ function richDescriptor(descriptor: ModelConversionDescriptor): RichDescriptor {
 
 function bindingImportPath(binding: { readonly module: string; readonly specifier?: string }, output: string): string {
   return binding.specifier ?? sourceImportPath(binding.module, output);
-}
-
-/**
- * Keep descriptor payloads as JSON data in generated modules.  Embedding a
- * JSON string and parsing it at module load preserves own `__proto__` keys;
- * an object literal would invoke the legacy prototype setter instead.
- */
-function jsonDataExpression(value: unknown): Code {
-  const json = JSON.stringify(value);
-  if (json === undefined) throw new TypeError('Generated descriptor data is not JSON serializable.');
-  return code`JSON.parse(${literal(json)}) as object`;
 }
 
 function isModelDescriptor(value: unknown): value is ModelConversionDescriptor {
@@ -896,13 +886,13 @@ export function codecEntriesForGraph(
 }> {
   const internedSchemaGraph = schemaGraph ?? internSourceDefinitions(graph.definitions, graph.emitted);
   return graph.emitted.map((specification) => {
-    const descriptor = graph.definitions[specification.name];
-    const node = descriptor ? internedSchemaGraph.nodeFor(descriptor, specification.name, specification.emitClass) : undefined;
+    const descriptor = descriptorOf(graph.definitions, specification.name);
+    const node = internedSchemaGraph.nodeFor(descriptor, specification.name, specification.emitClass);
     return {
       source: portableRelativeFilename(specification.sourceFile.fileName, graph.identityRoot),
       name: specification.name,
       classNames: linkedClassNames(checker, specification, specifications),
-      codecId: node?.codecId ?? codecPublicId(specification.name, descriptor ?? { kind: 'unknown' }, undefined, { source: 'typescript', constructs: specification.emitClass }),
+      codecId: node?.codecId ?? codecPublicId(specification.name, descriptor, undefined, { source: 'typescript', constructs: specification.emitClass }),
     };
   });
 }
@@ -1084,17 +1074,14 @@ function buildFileImports(
     concrete.set(item.name, source.name(name));
     sources.push(source);
   }
-  // Same-file nested class fields look up `requireIModelClass(id)` at decode
-  // time. This module never imports the handwritten class (ESM TDZ if the user
-  // file extends this companion). The build-time rewrite registers the class under
-  // the hashed codec id after the handwritten module finishes evaluating.
-  // Cross-file class fields import the class.
+  // A model of another file is imported from the module the manifest names. This module never imports the handwritten
+  // class of its own file: that would be an ESM TDZ error when the user file extends this companion.
   const external = new Map<string, ExternalModel>();
   for (const id of graph.externalIds) {
     const model = manifestIndex.byId.get(id);
     if (!model) throw new Error(`Generated model manifest id is missing: ${id}`);
     const localName = graph.externalNames.get(id);
-    if (!localName) throw new Error(`Generated model manifest id is missing: ${id}`);
+    if (!localName) throw new Error(`Generated model local name is missing: ${id}`);
     const exported = model.generated.export;
     const source = new ImportSource(sourceImportPath(model.generatedFile, output));
     const short = codecShortName(id);
@@ -1153,7 +1140,7 @@ function buildEmitContext(
   const { cyclicSiblings } = siblingCodecs;
   const emitted = graph.emitted;
   const local = emitted.filter(item => canonicalFilename(item.sourceFile.fileName) === canonicalFilename(source));
-  const localNames = new Set([...emitted].map((specification) => specification.name));
+  const localNames = new Set(emitted.map((specification) => specification.name));
   const fileLocalNames = new Set(local.map((specification) => specification.name));
   // A class-valued TSerde field names its class in the generated types. Each class is imported once under a
   // generated name, so two classes called `Money` from different modules do not collide.
@@ -1174,26 +1161,26 @@ function buildEmitContext(
   const siblingObjects = graph.siblings.filter((specification) => !specification.emitClass);
   const siblingObjectNames = new Set(siblingObjects.map((specification) => specification.name));
   const objectOnlyNames = new Set(
-    [...emitted]
+    emitted
       .filter((specification) => !specification.emitClass && !siblingObjectNames.has(specification.name))
       .map((specification) => specification.name),
   );
   const concreteNames = new Map(
-    [...emitted]
+    emitted
       .filter((specification) => !cyclicSiblings?.has(specification.name))
       .map((specification) => [specification.name, exportedConcreteClass(checker, specification, specifications)] as const)
       .filter((entry): entry is readonly [string, string] => entry[1] !== undefined),
   );
   const linkedByName = new Map(
-    [...emitted]
+    emitted
       .filter((specification) => !cyclicSiblings?.has(specification.name))
       .map((specification) => [specification.name, linkedClassNames(checker, specification, specifications)] as const),
   );
-  const referenceNames = [...Object.values(definitions)].reduce(
+  const referenceNames = Object.values(definitions).reduce(
     (found, descriptor) => descriptorReferences(descriptor, found),
     new Set<string>(),
   );
-  const localImports = [...emitted]
+  const localImports = emitted
     .filter((specification) => !local.some((item) => item === specification) && !siblingObjectNames.has(specification.name))
     .sort((left, right) => compareText(left.name, right.name) || compareText(left.sourceFile.fileName, right.sourceFile.fileName));
   const schemaGraph = preparedSchemaGraph ?? internSourceDefinitions(definitions, emitted, { siblings: graph.siblings, defaultValidation: profile.validation });
@@ -1288,8 +1275,12 @@ interface ModelResolvers {
 /** The record that a projection function reads its fields from: the walker takes it as an input and the function binds it to `data`. */
 const DATA = inputSlot('data', 'name', true);
 
-/** The local that a conversion shape probe reads, and the local of a field conversion function. */
-const FIELD_INPUT = identifier(FIELD_CONVERSION_INPUT);
+/** The descriptor of a model of the job; every emitted model has one. */
+function descriptorOf(definitions: Readonly<Record<string, ModelConversionDescriptor>>, name: string): ModelConversionDescriptor {
+  const descriptor = definitions[name];
+  if (!descriptor) throw new Error(`Internal error: no descriptor for model "${name}".`);
+  return descriptor;
+}
 
 function externalModel(context: EmitContext, id: string): ExternalModel {
   const found = context.imports.external.get(id);
@@ -1384,8 +1375,7 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     if (context.projectionNames.has(id)) return resolveProjection(id);
     if (context.siblingObjectNames.has(id)) return resolveSiblingObject(id);
     if (context.fileLocalNames.has(id)) {
-      const definition = context.graph.definitions[id];
-      const codecId = context.schemaGraph.nodeFor(definition ?? { kind: 'unknown' }, id)?.codecId;
+      const codecId = context.schemaGraph.nodeFor(descriptorOf(context.graph.definitions, id), id)?.codecId;
       return { ...resolveLocalModel(context, id, codecId), discriminators: discriminatorsOf(context, id) };
     }
     if (context.localImports.some((item) => item.name === id) && context.classModelNames.has(id)) return resolveImportedModel(id);
@@ -1422,12 +1412,6 @@ interface Projections {
   readonly helpers: ReadonlyMap<string, ProjectionHelper>;
 }
 
-/** The input check that every projection and model decoder calls. */
-const MODEL_OBJECT = helper('modelObject', () => code`function modelObject(json: unknown, name: string): Record<string, unknown> {
-  return ${rt.conversion.requireModelObject}(json, name);
-}
-`);
-
 /** Projections of the same shape (types and expressions) share the functions of the first of them. */
 function buildProjections(context: EmitContext): Projections {
   const { projectionNames } = context;
@@ -1441,7 +1425,7 @@ function buildProjections(context: EmitContext): Projections {
     const fields = identifier(`${name}Fields`);
     const input = (): Code => definitions[name]?.kind === 'object'
       // A body that is not an object takes the value itself; only an object checks that the input is one.
-      ? code`const data = ${helperName(MODEL_OBJECT)}(value, ${literal(name)});`
+      ? code`const data = ${rt.conversion.requireModelObject}(value, ${literal(name)});`
       : code`const data = value as Record<string, unknown>;`;
     const expressions = (): ProjectionExpressions => {
       const found = final.get(name);
@@ -1495,30 +1479,9 @@ interface ModelFieldEmission {
   readonly init: readonly Code[];
 }
 
-/**
- * `emit(FIELD_INPUT)` shows the shape of a field conversion. A single call passes its function and the
- * field value to `convertModelField`; any other conversion becomes a module-level function of the field value,
- * so no field allocates a closure.
- */
-function wrapRootConversion(
-  helpers: Code[],
-  model: string,
-  direction: 'serialize' | 'deserialize',
-  field: Code,
-  input: Code,
-  emit: (value: Code) => Code,
-  inputType: Code,
-): Code {
-  const converted = emit(FIELD_INPUT);
-  if (sameCode(converted, FIELD_INPUT)) return input;
-  let convert = calleeOf(converted);
-  if (!convert) {
-    const name = identifier(`__convert_${model}_${helpers.length}_${direction === 'serialize' ? 'encode' : 'decode'}`);
-    helpers.push(code`function ${name}(${FIELD_INPUT}: ${inputType}) { return ${converted}; }`);
-    convert = name;
-  }
-  return code`${rt.conversion.convertModelField}(${literal(direction)}, ${field}, ${convert}, ${input})`;
-}
+/** The name of the module-level function that converts one root field of a model. */
+const rootHelperName = (model: string, direction: 'serialize' | 'deserialize') => (index: number): string =>
+  `__convert_${model}_${index}_${direction === 'serialize' ? 'encode' : 'decode'}`;
 
 function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): ModelFieldEmission[] {
   const { checker } = context;
@@ -1559,7 +1522,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const optional = (field.flags & ts.SymbolFlags.Optional) !== 0;
       // The guard below excludes an undefined value of an optional field before the conversion runs.
       const inputType = optional ? code`Exclude<${baseName}[${name}], undefined>` : code`${baseName}[${name}]`;
-      const converted = wrapRootConversion(helpers, specification.name, 'serialize', name, input, emitEncode, inputType);
+      const converted = wrapRootConversion(helpers, rootHelperName(specification.name, 'serialize'), 'serialize', name, input, emitEncode, inputType);
       // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do.
       const present = optional
         ? code`Object.prototype.hasOwnProperty.call(model, ${name}) && ${input} !== undefined`
@@ -1587,7 +1550,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
         },
       );
       const fromInit = emitModelFromInit(descriptor, input, resolveFromAny);
-      const converted = wrapRootConversion(helpers, specification.name, 'deserialize', name, input, emitDecode, code`unknown`);
+      const converted = wrapRootConversion(helpers, rootHelperName(specification.name, 'deserialize'), 'deserialize', name, input, emitDecode, code`unknown`);
       if (!sameCode(converted, input)) {
         decodeCaptures.push([field.getName(), input]);
         decode.push(code`  if (${input} !== undefined) ${rt.conversion.defineModelProperty}(result, ${name}, ${converted});`);
@@ -1616,8 +1579,8 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const known = identifier(`__knownKeys_${specification.name}`);
       helpers.push(code`const ${known}: ReadonlySet<string> = new Set<string>([${join(fields.map((field) => literal(field.getName())), code`, `)}]);`);
       const serde = serdeResolver(context);
-      const decodeMapValue = wrapRootConversion(helpers, specification.name, 'deserialize', identifier('key'), identifier('value'), (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), code`unknown`);
-      const encodeMapValue = wrapRootConversion(helpers, specification.name, 'serialize', identifier('key'), identifier('value'), (value) => emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value }), fieldsValue);
+      const decodeMapValue = wrapRootConversion(helpers, rootHelperName(specification.name, 'deserialize'), 'deserialize', identifier('key'), identifier('value'), (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), code`unknown`);
+      const encodeMapValue = wrapRootConversion(helpers, rootHelperName(specification.name, 'serialize'), 'serialize', identifier('key'), identifier('value'), (value) => emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value }), fieldsValue);
       const initMapValue = emitModelFromInit(mapValue, identifier('value'), resolveFromAny);
       if (!sameCode(decodeMapValue, identifier('value'))) {
         decode.push(code`  for (const key of Object.keys(result)) if (!${known}.has(key)) { const value = result[key]; if (value !== undefined) ${rt.conversion.defineModelProperty}(result, key, ${decodeMapValue}); }`);
@@ -1634,23 +1597,18 @@ function observesValidator(context: EmitContext, specification: ModelSpecificati
   return context.profile.mobx && (specification.validation ?? context.profile.validation);
 }
 
-/** A line of the file, or a helper that stands where its definition goes if the code calls the helper. */
-type Piece = Code | Helper;
-
-const isCode = (piece: Piece): piece is Code => 'parts' in piece;
-
 const BLANK = code``;
 
-/** The serde functions the file calls, each typed `unknown` to `unknown`. */
-function emitSerdeWrappers(context: EmitContext): Piece[] {
+/** The serde functions the file calls: each import, typed `unknown` to `unknown`. */
+function emitSerdeFunctions(context: EmitContext): Piece[] {
   if (context.serdeBindings.length === 0) return [];
   return [
     ...context.serdeBindings.flatMap((binding) => {
       const names = context.serdeNames.get(binding.id);
       const imported = context.imports.serde.get(binding.id);
       return names && imported ? [
-        code`const ${identifier(names.serialize)} = (value: unknown): unknown => ((${imported.serialize}) as (value: unknown) => unknown)(value);`,
-        code`const ${identifier(names.deserialize)} = (value: unknown): unknown => ((${imported.deserialize}) as (value: unknown) => unknown)(value);`,
+        code`const ${identifier(names.serialize)} = ${imported.serialize} as (value: unknown) => unknown;`,
+        code`const ${identifier(names.deserialize)} = ${imported.deserialize} as (value: unknown) => unknown;`,
       ] : [];
     }),
     BLANK,
@@ -1685,7 +1643,7 @@ function emitObjectHelperExports(context: EmitContext, helpers: ReadonlyMap<stri
   const lines: Piece[] = [];
   for (const name of context.objectOnlyNames) {
     if (!context.fileLocalNames.has(name)) continue;
-    const codecId = context.schemaGraph.nodeFor(context.graph.definitions[name] ?? { kind: 'unknown' }, name)?.codecId;
+    const codecId = context.schemaGraph.nodeFor(descriptorOf(context.graph.definitions, name), name)?.codecId;
     const functions = helpers.get(name);
     if (!codecId || !functions) continue;
     lines.push(
@@ -1705,8 +1663,10 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
   const fieldsName = identifier(`${specification.name}Fields`);
   const jsonName = identifier(`${specification.name}JSON`);
   const initName = identifier(`${specification.name}Init`);
-  const definition = context.graph.definitions[specification.name] ?? { kind: 'unknown' } as ModelConversionDescriptor;
-  const codecId = literal(schemaGraph.nodeFor(definition, specification.name)?.codecId ?? specification.name);
+  const definition = descriptorOf(context.graph.definitions, specification.name);
+  const node = schemaGraph.nodeFor(definition, specification.name);
+  if (!node) throw new Error(`Internal error: no schema node for model "${specification.name}".`);
+  const codecId = literal(node.codecId);
   const decodeModel = identifier(`decode${specification.name}Model`);
   const encodeModel = identifier(`encode${specification.name}Model`);
   return [
@@ -1731,7 +1691,7 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     BLANK,
     ...helpers.flatMap((each) => [each, BLANK]),
     code`function ${decodeModel}(constructor: ${rtType.model.GeneratedModelConstructor}, json: unknown): ${baseName} {`,
-    code`  const values = ${helperName(MODEL_OBJECT)}(json, ${literal(`${specification.name}BaseModel`)});`,
+    code`  const values = ${rt.conversion.requireModelObject}(json, ${literal(`${specification.name}BaseModel`)});`,
     ...(decodeFields.length
       ? [
         code`  const result: Record<string, unknown> = { ...values };`,
@@ -1886,7 +1846,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
   return {
     sources: [...(validatorsSource ? [validatorsSource] : []), ...siblingWireSources],
     lines: [
-      ...(hasPlanSchemas ? [code`const modelSchemas = ${jsonDataExpression(ownPlanSchemas)} as Readonly<Record<string, object>>;`, BLANK] : []),
+      ...(hasPlanSchemas ? [emitPlanSchemas(ownPlanSchemas), BLANK] : []),
       codecRuntime,
     ],
   };
@@ -1896,20 +1856,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
 const IMPORT_OPTIONS: ImportOptions = {
   typeNames: 'inline',
   modules: ['model', 'conversion', 'serde', 'mobx-validation'],
-  order: {
-    model: ['GeneratedModel', 'GeneratedModelConstructor', 'generatedModelWireBrand', 'generatedModelFieldsBrand', 'GeneratedModelWire'],
-    conversion: [
-      'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'decodeCheckedInput',
-      'decodeDetachedInput', 'endDecode', 'endEncode', 'decodeGeneratedModelTrusted', 'encodeGeneratedModel', 'convertModelField',
-      'convertModelItems', 'convertModelTupleItems', 'defineModelProperty', 'unknownDiscriminatorValue', 'withDiscriminatorValue',
-      'jsonWithDiscriminator', 'requireModelObject', 'deserializeDate', 'serializeDate',
-    ],
-    serde: [
-      'assertModelValue', 'createObjectCodec', 'isValidModelValue', 'parseJson', 'registerIModelClass', 'requireIModelClass', 'requireObjectCodec',
-      'serdeValidates', 'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString',
-      'validationUnavailable', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
-    ],
-  },
+  order: MODEL_IMPORT_ORDER,
 };
 
 /** Writes the model file of one source: one section after another, in the order of the file. */
@@ -1930,8 +1877,7 @@ export function emitSource(
   const emissions = buildFieldEmissions(context, modelResolvers(context, projections.helpers));
   const codecs = emitCodecSection(context);
   const pieces: Piece[] = [
-    ...emitSerdeWrappers(context),
-    MODEL_OBJECT,
+    ...emitSerdeFunctions(context),
     ...emitProjectionTypes(context, projections),
     ...emitObjectHelperExports(context, projections.helpers),
     ...emitClassModels(context, emissions),
@@ -1940,9 +1886,7 @@ export function emitSource(
   // What the file calls decides its imports and which helpers it defines: a helper stands where its definition goes.
   const calls = join(pieces.filter(isCode), code`\n`);
   assertExternalImportsExported(calls, context);
-  const runtime = new Map(importSet(calls, IMPORT_OPTIONS).map((entry) => [entry.module, entry] as const));
-  const runtimeLines = (...modules: readonly RuntimeModule[]): readonly Code[] =>
-    modules.flatMap((module) => { const entry = runtime.get(module); return entry ? importLines(entry, IMPORT_OPTIONS) : []; });
+  const runtimeLines = runtimeLinesOf(calls, IMPORT_OPTIONS);
   const otherSources = [...codecs.sources, ...context.imports.classSources, ...context.imports.sources];
   const lines: readonly Code[] = [
     blockComment(`Generated by @exprtlabs/golem-model ${PACKAGE_VERSION}. Do not edit.`),

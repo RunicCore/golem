@@ -82,6 +82,13 @@ function withCallers(seed: Iterable<number>, callers: ReadonlyMap<number, readon
   return reachable(seed, id => callers.get(id) ?? []);
 }
 
+/** Records `caller` among the callers of `callee`. */
+function addCaller(callers: Map<number, number[]>, callee: number, caller: number): void {
+  const known = callers.get(callee);
+  if (known === undefined) callers.set(callee, [caller]);
+  else known.push(caller);
+}
+
 /** The functions whose IR call graph reaches a validation function. These have no fast check, so each predicate runs once per conversion. */
 export function reachingValidation(functions: readonly IrFunction[]): ReadonlySet<number> {
   const callers = new Map<number, number[]>();
@@ -89,7 +96,7 @@ export function reachingValidation(functions: readonly IrFunction[]): ReadonlySe
   for (const fn of functions) {
     visitChecks(fn.body, check => {
       if (check.kind === 'validation') reaching.add(fn.id);
-      for (const callee of calledFunctions(check)) callers.set(callee, [...(callers.get(callee) ?? []), fn.id]);
+      for (const callee of calledFunctions(check)) addCaller(callers, callee, fn.id);
     });
   }
   return withCallers(reaching, callers);
@@ -118,7 +125,7 @@ function conjunctiveValidation(functions: readonly IrFunction[]): ReadonlySet<nu
       if (check.kind === 'validation' && !conjunctive) spoiled.add(fn.id);
       const conjunctiveTarget = conjunctive ? conjunctiveCallee(check) : undefined;
       for (const callee of calledFunctions(check).filter(id => reaching.has(id))) {
-        if (callee === conjunctiveTarget) callers.set(callee, [...(callers.get(callee) ?? []), fn.id]);
+        if (callee === conjunctiveTarget) addCaller(callers, callee, fn.id);
         else spoiled.add(fn.id);
       }
     });

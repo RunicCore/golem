@@ -1,4 +1,5 @@
 import { asRecord, isJsonObject, objectEntries } from './json.js';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import { identifier } from '@exprtlabs/golem/generator-api';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
 import { escapePointerToken, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
@@ -93,45 +94,29 @@ function operationRuntimeSchemas(
   ]));
 }
 
-function normalizeRuntimeSchemaRecursive(schema: unknown): unknown {
+function normalizeRuntimeSchema(schema: unknown): unknown {
   if (typeof schema === 'boolean') return schema;
   if (!isJsonObject(schema) || Array.isArray(schema)) return schema;
   const result: Record<string, unknown> = { ...schema };
-  const mapKeywords = ['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas'];
-  const singleKeywords = [
-    'items',
-    'additionalProperties',
-    'additionalItems',
-    'contains',
-    'not',
-    'if',
-    'then',
-    'else',
-    'propertyNames',
-    'unevaluatedProperties',
-    'unevaluatedItems',
-    'contentSchema',
-  ];
-  const arrayKeywords = ['allOf', 'anyOf', 'oneOf', 'prefixItems'];
-  for (const keyword of mapKeywords) {
+  for (const keyword of SCHEMA_MAP_KEYWORDS) {
     if (isJsonObject(result[keyword])) {
       result[keyword] = Object.fromEntries(
         objectEntries(result[keyword]).map(([name, child]) => [
           name,
-          normalizeRuntimeSchemaRecursive(child),
+          normalizeRuntimeSchema(child),
         ]),
       );
     }
   }
-  for (const keyword of singleKeywords) {
+  for (const keyword of SCHEMA_SINGLE_KEYWORDS) {
     if (typeof result[keyword] === 'boolean') continue;
     if (isJsonObject(result[keyword])) {
-      result[keyword] = normalizeRuntimeSchemaRecursive(result[keyword]);
+      result[keyword] = normalizeRuntimeSchema(result[keyword]);
     }
   }
-  for (const keyword of arrayKeywords) {
+  for (const keyword of SCHEMA_ARRAY_KEYWORDS) {
     if (Array.isArray(result[keyword])) {
-      result[keyword] = result[keyword].map((child) => normalizeRuntimeSchemaRecursive(child));
+      result[keyword] = result[keyword].map((child) => normalizeRuntimeSchema(child));
     }
   }
   if (result.format === 'binary') {
@@ -142,10 +127,6 @@ function normalizeRuntimeSchemaRecursive(schema: unknown): unknown {
     }
   }
   return result;
-}
-
-function normalizeRuntimeSchema(schema: unknown): unknown {
-  return normalizeRuntimeSchemaRecursive(schema);
 }
 
 function runtimeRegistry(registry: Record<string, unknown>): Record<string, unknown> {
@@ -277,8 +258,6 @@ interface OpenApiOperationValidationSchemaBundle {
   readonly operationName: string;
 }
 
-
-
 /**
  * A name inside a registry URN. URN parsers reject `~`,
  * and URI normalization decodes `%7E` back to it, so `~` is written as `$7E`.
@@ -298,14 +277,10 @@ function stableResourceSuffix(value: string): string {
   return hash.toString(16).padStart(16, '0');
 }
 
-const schemaMapKeywords = new Set([
-  '$defs', 'definitions', 'properties', 'patternProperties', 'dependentSchemas', 'dependencies',
-]);
-const schemaValueKeywords = new Set([
-  'additionalItems', 'additionalProperties', 'contains', 'contentSchema', 'else', 'if',
-  'items', 'not', 'propertyNames', 'then', 'unevaluatedItems', 'unevaluatedProperties',
-]);
-const schemaArrayKeywords = new Set(['allOf', 'anyOf', 'oneOf', 'prefixItems']);
+// The shared keyword tables as sets, with the legacy `dependencies` keyword added where a schema is walked.
+const schemaMapKeywords = new Set([...SCHEMA_MAP_KEYWORDS, 'dependencies']);
+const schemaValueKeywords = new Set(SCHEMA_SINGLE_KEYWORDS);
+const schemaArrayKeywords = new Set(SCHEMA_ARRAY_KEYWORDS);
 
 function mapSchemaPositions(
   value: unknown,
@@ -768,8 +743,9 @@ export function buildOperationValidationSchemaBundle(
   operation: NormalizedOperation,
   preparedData?: ReturnType<typeof buildSchemaData>,
 ): OpenApiOperationValidationSchemaBundle {
-  return buildOperationValidationSchemaBundles(document, [operation], preparedData).get(operation.name)
-    ?? (() => { throw new Error(`Missing OpenAPI operation ${JSON.stringify(operation.name)}.`); })();
+  const bundle = buildOperationValidationSchemaBundles(document, [operation], preparedData).get(operation.name);
+  if (!bundle) throw new Error(`Missing OpenAPI operation ${JSON.stringify(operation.name)}.`);
+  return bundle;
 }
 
 export type { OpenApiSchema };

@@ -56,11 +56,8 @@ The interceptor converts HTTP handlers. A handler of another context, such as RP
 Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type, or a [union of models](#union-of-models):
 
 - **Accepted types:** an `IModel`, an `IObject`, your class that extends a generated model class, or a tagged union of models.
-- **`@Query()`:** it needs one object model or a tagged union of models. A union with no shared tag, such as `TFilterA | TFilterB` without a tag field, stops with [`RUNM1081`](/reference/diagnostics#runm1081).
-- **Other types:** the interceptor throws a `TypeError` that names the controller, the method and the parameter. Nest answers HTTP 500. This holds for a plain interface, a plain class, a primitive and a parameter with no type.
-- **Timing:** the interceptor throws on each request to the handler, not at startup. Return types are not affected.
-- **Build report:** `golem build` and `golem check` report [`RUNM1081`](/reference/diagnostics#runm1081) for a typed parameter of that kind.
-- **Option `nonModelInputs`:** if your own interceptor handles those parameters, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys). The error becomes a warning.
+- **`@Query()`:** it needs one object model or a tagged union of models.
+- **Option `nonModelInputs`:** if your own interceptor handles parameters of other types, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys). `golem build` then reports [`RUNM1081`](/reference/diagnostics#runm1081) as a warning, not an error.
 
 A whole `@Body()` parameter reads the request body as follows:
 
@@ -127,7 +124,8 @@ A whole `@Body()` or `@Query()` parameter can be a union of models, such as `TCi
 - A union converts only as a whole parameter. An array of a union and a union in `@Body('field')` stop with [`RUNM1081`](/reference/diagnostics#runm1081).
 - A union of models with no shared tag stops with [`RUNM1081`](/reference/diagnostics#runm1081).
 - A union return stays Nest JSON.
-- A custom interceptor cannot read a union binding: `objectCodecFromMetatype` returns nothing for a union parameter.
+
+Your own interceptor or pipe converts a union parameter with [`nestUnionFromMetatype`](/reference/runtime-api#nest), as it uses [`objectCodecFromMetatype`](/reference/runtime-api#nest) for one model. Pass it the `design:paramtypes` entry of the parameter, which `Reflect.getMetadata('design:paramtypes', Controller.prototype, 'method')` returns, such as `nestUnionFromMetatype(type)?.fromWireFormat(request.body, { failFast: true })`. For a query, call `decodeQuery(request.query)` first.
 
 ## Model responses
 
@@ -156,4 +154,4 @@ node --import @exprtlabs/golem/register src/main.ts
 
 The [`register`](/reference/runtime-api#register) entry describes the loader.
 
-Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments).

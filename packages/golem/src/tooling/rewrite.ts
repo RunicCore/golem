@@ -1,3 +1,4 @@
+import { isAbsolute } from 'node:path';
 import { encodeMappings, type MappingSegment, type SourceMapV3 } from './source-map.js';
 import { displayPath } from './generator-api.js';
 
@@ -88,9 +89,10 @@ export function lineStarts(text: string): number[] {
  * as the compiler sees it: a leading U+FEFF is not counted and is kept in the
  * output. The map's one source is named `''` and holds the text without the
  * mark; a host that knows the file name sets `sources`. `file`, when given,
- * names the file in the error of an inconsistent rewrite.
+ * is an absolute path and names the file in the error of an inconsistent rewrite.
  */
 export function applyRewrites(source: string, rewrite: FileRewrite, file?: string): { readonly code: string; readonly map: SourceMapV3 } {
+  if (file !== undefined && !isAbsolute(file)) throw new Error(`Internal error: applyRewrites names its file by an absolute path, got ${file}.`);
   const text = withoutByteOrderMark(source);
   const mark = source.slice(0, source.length - text.length);
 

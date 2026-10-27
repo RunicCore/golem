@@ -16,17 +16,13 @@ The table shows one row for each feature, for one OpenAPI version and one set of
 
 ## Generated names
 
-Generation reports a schema field that is named like an `Object.prototype` member, such as `__proto__` or `toString`, or like a generated model member, such as `toJSON`. Rename the field in the API contract.
-
-An operation name that is a JavaScript reserved word receives a `_` suffix (`operationId: delete` generates `delete_`), as does a client member name such as `constructor`. Generation reports the rename as a warning ([`OPENAPI_OPERATION_RENAMED`](/reference/diagnostics#openapi-operation-renamed)). Operation names that differ only by letter case stop generation, because their modules would collide on case-insensitive file systems.
-
-A security scheme named `constructor` keeps that name on the generated `auth` option. When an `auth` object omits that credential, set `constructor: undefined`, for example `auth: { bearerAuth: 'token', constructor: undefined }`.
+An operation name that is a JavaScript reserved word receives a `_` suffix (`operationId: delete` generates `delete_`), as does a client member name such as `constructor`. Generation reports the rename as a warning ([`OPENAPI_OPERATION_RENAMED`](/reference/diagnostics#openapi-operation-renamed)).
 
 ## Recursive schemas
 
 A component schema that refers to itself through `$ref` generates, also when it is not an object. For example, a `JsonValue` component that is a `oneOf` of scalars, an array of `JsonValue` and an object with `additionalProperties` of `JsonValue` becomes the type `JsonValue`. A model field of that component has the type `Types.JsonValue`.
 
-A recursive component that holds a `date-time` value or a model has a second type for the models. In the model, the value is a `Date` or a model instance at each level. On the wire, it is the string or the plain object. The client converts between the two for you.
+A recursive component that holds a `date-time` value or a model has a second type for the models. In the model, the value is a `Date` or a model instance at each level. In JSON, it is the string or the plain object. The client converts between the two for you.
 
 A component that does not refer to itself stays part of each field that uses it.
 

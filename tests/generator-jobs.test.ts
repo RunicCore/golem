@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { runPipeline } from '#golem/cli';
-import { loadConfig } from '#golem/config';
+import { loadConfig } from './support/load-config.js';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { command, golem, workspace } from './support/process.js';
 import { TSC } from './support/build-project.js';

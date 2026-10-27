@@ -1,15 +1,20 @@
 import {
+  AmbiguousUnionConversionError,
   CompositionConflictError,
   ObjectUnionDiscriminatorError,
   emitModelFromJSON,
-  calleeOf,
   code,
+  isCode,
+  runtimeLinesOf,
+  emitPlanSchemas,
+  MODEL_IMPORT_ORDER,
+  wrapRootConversion,
+  type Piece,
   emitCodecRuntimeCode,
   exportFrom,
   fileImports,
   helper,
   bindInput,
-  docComment,
   helperName,
   indentation,
   inputCount,
@@ -20,8 +25,6 @@ import {
   importedNames,
   MODULE_CONSTANT_HELPERS,
   placeHelpers,
-  importLines,
-  importSet,
   ImportSource,
   join,
   lineBreak,
@@ -37,7 +40,6 @@ import {
   type Helper,
   type ImportOptions,
   type NameSlot,
-  FIELD_CONVERSION_INPUT,
   emitModelFromInit,
   emitModelToJSON,
   fillFunctionName,
@@ -49,15 +51,14 @@ import {
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
   type ModelDiscriminators,
-  type RuntimeModule,
 } from '@exprtlabs/golem/internal/emitter';
 import { type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecValidationPlan, PlanValidators, SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
-import { buildCodecValidationPlan, uniqueDiagnostics } from '@exprtlabs/golem/internal/validation-plan';
+import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { isJsonObject } from './json.js';
-import { compareText, NameScope, RESERVED_MODEL_MEMBERS, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { compareText, NameScope, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/generator-api';
 import { componentOrigin, componentPlace, ComponentNameScope, LocatedError, type OriginLocator } from './origin.js';
 import { COMPOSITION_CONVERSION_CONFLICT, conflictMessage } from './composition.js';
 import { generatedBannerComment } from './package-info.js';
@@ -84,6 +85,7 @@ import {
   declaredModelBases,
   modelBases,
   modelFieldType,
+  modelStableId,
   modelConversionDescriptor,
   CompositionError,
   componentSite,
@@ -91,7 +93,6 @@ import {
 } from './model-resolution.js';
 import { openApiValidationSchemaClosure } from './model-manifest.js';
 import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView } from './model-schema-graph.js';
-
 
 /**
  * Calls the `@exprtlabs/golem/temporal` codec a `temporal:` serde id names; other ids never reach OpenAPI models.
@@ -262,6 +263,14 @@ function codedConflict(thrown: unknown): unknown {
   return thrown;
 }
 
+/** The errors that golem's emitters and resolvers throw for a schema the user wrote; any other throw is a golem fault and passes through. */
+function isConversionConflict(thrown: unknown): boolean {
+  return thrown instanceof CompositionError
+    || thrown instanceof CompositionConflictError
+    || thrown instanceof ObjectUnionDiscriminatorError
+    || thrown instanceof AmbiguousUnionConversionError;
+}
+
 /** A conversion error of the model path carries its code and names the component, or the inline schema, it converts. */
 function withConflictCode<Result>(owner: string | CompositionSite, emit: () => Result): Result {
   try {
@@ -290,7 +299,6 @@ const COPY_ADDITIONAL_PROPERTIES = helper('copyAdditionalProperties', () => join
 const VALUES = inputSlot('values', 'name');
 const MODEL = inputSlot('model', 'name');
 const VALUE = identifier('value');
-const FIELD_INPUT = identifier(FIELD_CONVERSION_INPUT);
 
 function modelFromJSONCode(
   schema: unknown,
@@ -368,31 +376,6 @@ export function checkModelToJSON(
   modelToJSONCode(schema, identifier(expression), definitions, env, owner, checkContext());
 }
 
-/**
- * `emit(FIELD_CONVERSION_INPUT)` shows the shape of a field conversion. A single call passes its function and the
- * field value to `convertModelField`; any other conversion becomes a module-level function of the field value,
- * so no field allocates a closure.
- */
-function rootFieldConversion(
-  helpers: Code[],
-  helperName: (index: number) => string,
-  direction: 'deserialize' | 'serialize',
-  field: string,
-  input: Code,
-  emit: (value: Code) => Code,
-  inputType: Code,
-): Code {
-  const converted = emit(FIELD_INPUT);
-  if (sameCode(converted, FIELD_INPUT)) return input;
-  let convert = calleeOf(converted);
-  if (!convert) {
-    const name = helperName(helpers.length);
-    helpers.push(code`function ${identifier(name)}(${FIELD_INPUT}: ${inputType}) { return ${converted}; }`);
-    convert = identifier(name);
-  }
-  return code`${rt.conversion.convertModelField}(${literal(direction)}, ${literal(field)}, ${convert}, ${input})`;
-}
-
 function modelFieldDeclaration(
   name: string,
   schema: unknown,
@@ -463,12 +446,11 @@ export function generateOpenApiModelArtifacts(
      */
     readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly locateModel: (name: string) => SchemaPlace }) => Pick<PlanValidators, 'exports' | 'fastExports' | 'passExports'>;
   } = {},
-): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: Code; readonly diagnostics: readonly GolemDiagnostic[] } {
+): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: Code } {
   const { schemaGraph, definitions, ordered, grouping } = analysis;
   const { groups, owner, runtimeEdges } = grouping;
   const digest = sourceDigest(document);
-  const stableId = (definition: ModelDefinition) =>
-    `openapi:${digest.slice(0, 16)}#/components/schemas/${definition.schemaName}`;
+  const stableId = (definition: ModelDefinition) => modelStableId(digest, definition);
   // A model is named by its identifier form; the document names the component by its own key.
   const schemaNameByModelName = new Map(ordered.flatMap((definition) => {
     const node = analysis.nodesByName.get(definition.name);
@@ -477,7 +459,6 @@ export function generateOpenApiModelArtifacts(
   const validationClosure = profile.validation
     ? openApiValidationSchemaClosure(schemaGraph, ordered, stableId)
     : [];
-  const groupById = new Map(groups.map((group) => [group.id, group]));
   const groupForModel = new Map<string, string>();
   const definitionsByGroup = new Map<string, ModelDefinition[]>();
   for (const group of groups) for (const name of group.models) groupForModel.set(name, group.id);
@@ -523,7 +504,6 @@ export function generateOpenApiModelArtifacts(
     const ownerId = groupForModel.get(reference);
     return ownerId !== undefined && ownerId !== own ? groupModules.get(ownerId) : undefined;
   };
-  const calledInitializers = new Map<string, readonly (readonly [groupId: string, reference: string])[]>();
   for (const group of groups) {
     const groupDefinitions = definitionsByGroup.get(group.id) ?? [];
     const external = initializerOwner(group.id);
@@ -536,16 +516,13 @@ export function generateOpenApiModelArtifacts(
       const used = new Set(importedNames(initializerCalls, source));
       return (definitionsByGroup.get(groupId) ?? []).filter((definition) => definition.isUnion && used.has(`initialize${definition.name}`)).map((definition) => [groupId, definition.name] as const);
     });
-    calledInitializers.set(group.id, called);
     for (const [groupId, reference] of called) {
       const exports = exportedInitializersByGroup.get(groupId) ?? new Set<string>();
       exports.add(reference);
       exportedInitializersByGroup.set(groupId, exports);
     }
   }
-  const aliasByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
   const files = new Map<string, string>();
-  const diagnostics: GolemDiagnostic[] = [];
   const codecExports = (name: string): readonly (readonly [local: string, exported: string])[] => {
     const node = analysis.nodesByName.get(name);
     if (!node) return [];
@@ -625,7 +602,6 @@ export function generateOpenApiModelArtifacts(
     const modelModule = generateModels(document, profile, {
       ...helpers,
       copyAdditionalProperties: groupDefinitions.some((definition) => Boolean(definition.additionalProperties)),
-      objectFromJSON: group.models.size > 0,
       analysis,
       onlyNames: group.models,
       graphNodeIds: localIds,
@@ -662,7 +638,7 @@ export function generateOpenApiModelArtifacts(
     exportFrom([`${definition.name}Model`, ...codecExports(definition.name).map(([, exported]) => exported)], `./models/${definition.name}.js`),
     exportFrom([`${definition.name}Fields`, `${definition.name}JSON`, `${definition.name}Init`], `./models/${definition.name}.js`, true),
   ]);
-  return { files, entryReexports: join(reexports, lineBreak), diagnostics: uniqueDiagnostics(diagnostics) };
+  return { files, entryReexports: join(reexports, lineBreak) };
 }
 
 /**
@@ -684,6 +660,7 @@ function unionConversion(
       ? emitModelFromJSON(descriptor, VALUE, resolve, TEMPORAL_SERDE)
       : emitModelFromInit(descriptor, VALUE, resolve);
   } catch (thrown) {
+    if (!isConversionConflict(thrown)) throw thrown;
     const error = codedConflict(thrown);
     const message = error instanceof Error ? error.message : String(error);
     const named = `schema ${JSON.stringify(definition.schemaName)}`;
@@ -710,6 +687,7 @@ function emitSchemaCodecRuntime(
   try {
     return emitCodecRuntimeCode(graph, options);
   } catch (thrown) {
+    if (!isConversionConflict(thrown)) throw thrown;
     // A conversion conflict that the emitter finds carries the resolver's code.
     const error = codedConflict(thrown);
     const message = error instanceof Error ? error.message : String(error);
@@ -717,7 +695,8 @@ function emitSchemaCodecRuntime(
       try {
         emitCodecRuntimeCode({ ...schemaGraphView(graph, new Set(graph.nodes.keys())), topo: () => [node] }, options);
         return false;
-      } catch {
+      } catch (probed) {
+        if (!isConversionConflict(probed)) throw probed;
         return true;
       }
     });
@@ -736,34 +715,14 @@ function emitSchemaCodecRuntime(
 const IMPORT_OPTIONS: ImportOptions = {
   typeNames: 'ordered',
   modules: ['mobx-validation', 'model', 'conversion', 'temporal', 'serde', 'mobx'],
-  order: {
-    model: ['registerGeneratedModel', 'ModelInit', 'GeneratedModelConstructor', 'generatedModelWireBrand', 'generatedModelFieldsBrand', 'generatedModelResultBrand', 'findGeneratedModelDefinition', 'findGeneratedModelDefinitionForConstructor'],
-    conversion: [
-      'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'decodeCheckedInput', 'decodeDetachedInput', 'endDecode', 'endEncode',
-      'convertModelField', 'convertModelItems', 'convertModelTupleItems', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'encodeGeneratedModel', 'deserializeDate', 'serializeDate',
-      'unknownDiscriminatorValue', 'withDiscriminatorValue', 'jsonWithDiscriminator', 'requireModelObject',
-    ],
-    serde: [
-      'assertModelValue', 'createObjectCodec', 'isValidModelValue', 'parseJson', 'registerIModelClass', 'requireIModelClass', 'requireObjectCodec', 'serdeValidates',
-      'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString', 'validationUnavailable', 'withoutInstanceState',
-      'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
-    ],
-  },
+  order: MODEL_IMPORT_ORDER,
 };
-
-/** A piece of a model module: code, or a helper that stands where its definition goes and is written only when the code calls it. */
-type Piece = Code | Helper;
-
-function isCode(piece: Piece): piece is Code {
-  return 'parts' in piece;
-}
 
 export function generateModels(
   document: unknown,
   profile: OpenApiGenerationProfile,
   helpers: {
     readonly copyAdditionalProperties?: boolean;
-    readonly objectFromJSON?: boolean;
     readonly analysis?: OpenApiModelAnalysis;
     readonly onlyNames?: ReadonlySet<string>;
     readonly graphNodeIds?: ReadonlySet<string>;
@@ -800,11 +759,9 @@ export function generateModels(
     ? analysis.ordered.filter((definition) => helpers.onlyNames?.has(definition.name))
     : analysis.ordered;
   const moduleScope = new ComponentNameScope('models.ts');
-  const emitObjectFromJSON = helpers.objectFromJSON !== false;
   const emitCopy = helpers.copyAdditionalProperties === true
     || (helpers.copyAdditionalProperties === undefined
       && ordered.some((definition) => definition.additionalProperties));
-  if (emitObjectFromJSON) moduleScope.claim('objectFromJSON', 'internal helper objectFromJSON');
   if (emitCopy) moduleScope.claim('copyAdditionalProperties', 'internal helper copyAdditionalProperties');
   moduleScope.claim('Types', 'import binding Types');
   moduleScope.claim('ModelInit', 'import binding ModelInit');
@@ -856,7 +813,7 @@ export function generateModels(
     let defined: Code | undefined;
     unionInitializers.set(typeName, helper(`initialize${typeName}`, () => defined ??= join([
       code`${helpers.moduleFile ? code`export ` : code``}function ${identifier(`initialize${typeName}`)}(json: unknown): ${variantUnion} {`,
-      code`  const value = ${identifier('objectFromJSON')}<Record<string, unknown>>(json, ${literal(className)});`,
+      code`  const value = ${rt.conversion.requireModelObject}(json, ${literal(className)});`,
       code`  const initialized: unknown = ${unionConversion(definition, 'fromInit', definitions, envOf(definition), context)};`,
       code`  return initialized as ${variantUnion};`,
       code`}`,
@@ -865,12 +822,6 @@ export function generateModels(
   }
   const BLANK = code``;
   const body: Piece[] = [
-    ...(emitObjectFromJSON ? [
-      code`function objectFromJSON<T extends object>(json: unknown, modelName: string): Partial<T> {`,
-      code`  return ${rt.conversion.requireModelObject}(json, modelName) as Partial<T>;`,
-      code`}`,
-      BLANK,
-    ] : []),
     COPY_ADDITIONAL_PROPERTIES,
   ];
 
@@ -917,8 +868,8 @@ export function generateModels(
     };
     const jsonProperties = fields.map(([name, schema], index) => {
       const input = modelPresentLocal(index);
-      const converted = rootFieldConversion(
-        fieldHelpers, fieldHelperName('encode'), 'serialize', name, input,
+      const converted = wrapRootConversion(
+        fieldHelpers, fieldHelperName('encode'), 'serialize', literal(name), input,
         (value) => modelToJSONCode(schema, value, definitions, fieldEnv, definition.schemaName, context),
         // The guard on the property excludes an undefined value before the conversion runs.
         code`Exclude<${identifier(className)}${modelPropertyAccess(name)}, undefined>`,
@@ -939,8 +890,8 @@ export function generateModels(
     const decodeConversions: Code[] = [];
     for (const [name, schema] of allProperties) {
       const expression = modelPresentLocal(decodeCaptures.length);
-      const rootConverted = rootFieldConversion(
-        fieldHelpers, fieldHelperName('decode'), 'deserialize', name, expression,
+      const rootConverted = wrapRootConversion(
+        fieldHelpers, fieldHelperName('decode'), 'deserialize', literal(name), expression,
         (input) => modelFromJSONCode(schema, input, definitions, fieldEnv, definition.schemaName, context),
         code`unknown`,
       );
@@ -1005,7 +956,7 @@ export function generateModels(
       ...fieldHelpers.flatMap(each => [each, BLANK]),
       ...(!definition.isUnion ? [
         code`function ${identifier(`deserialize${typeName}Fields`)}(json: unknown): ${identifier(`${typeName}Init`)} {`,
-        code`  const value = objectFromJSON<Record<string, unknown>>(json, ${literal(className)});`,
+        code`  const value = ${rt.conversion.requireModelObject}(json, ${literal(className)});`,
         ...(identityDeserialize
           ? [code`  return value as ${identifier(`${typeName}Init`)};`]
           : [
@@ -1018,9 +969,7 @@ export function generateModels(
         BLANK,
       ] : initializer ? [initializer] : []),
       code`export ${definition.isUnion ? code`abstract ` : code``}class ${identifier(className)}${baseClass ? code` extends ${baseClass}` : code``}${implementsType} {`,
-      ...(additionalPropertyType && !additionalIsUnknown
-        ? [code`  ${docComment('Dynamic map values are preserved during conversion.')}`]
-        : additionalPropertyType ? [code`  [key: string]: unknown;`] : []),
+      ...(additionalPropertyType && additionalIsUnknown ? [code`  [key: string]: unknown;`] : []),
       ...declarations,
       code`  declare readonly [${rtType.model.generatedModelWireBrand}]: ${typesNamespace}.${identifier(typeName)};`,
       code`  declare readonly [${rtType.model.generatedModelFieldsBrand}]: ${identifier(`${typeName}Fields`)};`,
@@ -1037,7 +986,7 @@ export function generateModels(
       BLANK,
       ...(definition.isUnion ? [
         code`function ${identifier(`decode${typeName}`)}(json: unknown): ${variantUnion} {`,
-        code`  const value = objectFromJSON<${typesNamespace}.${identifier(typeName)}>(json, ${literal(className)});`,
+        code`  const value = ${rt.conversion.requireModelObject}(json, ${literal(className)}) as Partial<${typesNamespace}.${identifier(typeName)}>;`,
         code`  const decoded: unknown = ${unionConversion(definition, 'fromJSON', definitions, env, context)};`,
         code`  return decoded as ${variantUnion};`,
         code`}`,
@@ -1081,7 +1030,7 @@ export function generateModels(
     }
   }
   if (helpers.resolvedSchemas) {
-    body.push(code`const modelSchemas = JSON.parse(${literal(JSON.stringify(helpers.resolvedSchemas))}) as Readonly<Record<string, object>>;`, BLANK);
+    body.push(emitPlanSchemas(helpers.resolvedSchemas), BLANK);
   }
   const validatorsSource = helpers.validatorsSource;
   const aliasesByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
@@ -1153,9 +1102,7 @@ export function generateModels(
   // What the code calls decides the runtime imports and which helpers the module defines.
   const exportedInitializers = [...unionInitializers].filter(([name]) => helpers.exportedInitializerNames?.has(name)).map(([, each]) => helperName(each));
   const calls = join([...body.filter(isCode), ...exportedInitializers], code`\n`);
-  const runtime = new Map(importSet(calls, IMPORT_OPTIONS).map((entry) => [entry.module, entry] as const));
-  const runtimeLines = (...modules: readonly RuntimeModule[]): readonly Code[] =>
-    modules.flatMap((module) => { const entry = runtime.get(module); return entry ? importLines(entry, IMPORT_OPTIONS) : []; });
+  const runtimeLines = runtimeLinesOf(calls, IMPORT_OPTIONS);
   const bodyLines = placeHelpers(calls, body, MODULE_CONSTANT_HELPERS);
   const bodyCode = join(bodyLines, code`\n`);
   const moduleSources = helpers.moduleSources?.() ?? [];

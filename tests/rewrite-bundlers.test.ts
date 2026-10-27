@@ -17,17 +17,10 @@ import { copyFixtureFile, createFixtureProject, linkProjectPackages, snapshotFil
 import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
 import { runRewritten } from './support/rewritten-module.js';
-import { until } from './support/watch-wait.js';
-import { corruptScans } from './support/corrupt-scan.js';
+import { quietly, until } from './support/watch-wait.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
 
 const SERDE = '@exprtlabs/golem/serde';
-
-/** Vite caches a transform only when it starts after the module's invalidation, to the millisecond: returns once the clock has left the millisecond of the call. */
-function pastThisMillisecond(): void {
-  const start = Date.now();
-  while (Date.now() === start);
-}
 
 /** Bundlers resolve `.js` specifiers to their `.ts` files, so the imports are the ones tsc accepts. */
 const MAIN = `import { parse, stringify } from '${SERDE}';
@@ -344,41 +337,102 @@ test('the rewrite project of one golem.yaml is shared, and its session lives unt
   assert.deepEqual(requestedCodecIds(third.rewrite(file, text)?.code), Array(3).fill(codecId(root, 'TMoney')));
 });
 
-test('an inconsistent rewrite in a host names the file relative to the working directory, not the project root', async (t) => {
-  // protects: T-452 the host passed a root-relative name, which the message printed as written
-  const root = await generatedProject(t, 'inconsistent-host-path');
-  const file = path.join(root, 'src/main.ts');
-  corruptScans(t);
-  const host = await openRewriteProject({ cwd: root });
-  t.after(() => host.close());
-  const shown = path.relative(process.cwd(), file);
-  assert.notEqual(shown, path.relative(root, file), 'the test runs from a folder other than the project root');
-  assert.throws(() => host.rewrite(file, fs.readFileSync(file, 'utf8')), (error: unknown) => error instanceof Error && error.message.startsWith(`golem rewrite is inconsistent for ${shown} at line `));
-});
+/** The plugin's window in which file events share one reload. */
+const RELOAD_WINDOW_MS = 100;
+
+/** A real Vite dev server on a loopback port with its own file watcher, and a client on its websocket that records every message. */
+interface LiveServer {
+  readonly server: ViteDevServer;
+  /** Resolves once the server has sent `count` full-reload messages in all. */
+  reloads(count: number): Promise<void>;
+  /** The number of full-reload messages the client has received. */
+  reloadCount(): number;
+  /** Resolves once the reload count has not moved for three reload windows of the plugin. */
+  reloadsSettled(): Promise<void>;
+  /** Resolves when the watcher reports a change of `file`, after the plugin has handled it (the plugin listens first). Call it before the edit. */
+  changed(file: string): Promise<void>;
+}
 
 /**
- * A Vite dev server with no file watching: closing a server before its watcher finished scanning leaves a handle open and the test process alive.
- * The plugin's contract with Vite is a full-reload message on `server.ws` and a watch on its key table through `server.watcher`; both are documented
- * members of ViteDevServer. A test reads the message by replacing `server.ws.send`: with the socket off there is no client to read it, and a real
- * socket would add a port. Vite is pinned in the root package.json, so a change shows in these tests.
+ * Starts Vite's dev server as a browser tool would, and waits until its watcher has scanned the project and its websocket accepts a client:
+ * an edit made before that is lost, and closing a server before the scan ends leaves a handle open. Every wait ends with a timeout.
  */
-async function serve(t: TestContext, root: string): Promise<ViteDevServer> {
+async function serve(t: TestContext, root: string): Promise<LiveServer> {
+  let scanned!: () => void;
+  const scan = new Promise<void>((resolve) => { scanned = resolve; });
   const server = await createServer({
     root,
     configFile: false,
     logLevel: 'silent',
     appType: 'custom',
-    plugins: [vitePlugin()],
-    server: { middlewareMode: true, ws: false, watch: null },
+    plugins: [vitePlugin(), { name: 'test-watch-ready', configureServer: (devServer) => { devServer.watcher.once('ready', scanned); } }],
+    server: { host: '127.0.0.1', port: 0, strictPort: true },
     optimizeDeps: { noDiscovery: true },
   });
-  t.after(() => server.close());
-  return server;
+  let socket: WebSocket | undefined;
+  t.after(async () => {
+    try {
+      if (socket && socket.readyState !== WebSocket.CLOSED) {
+        const closing = socket;
+        await new Promise<void>((resolve) => {
+          closing.addEventListener('close', () => { resolve(); });
+          setTimeout(resolve, 2_000).unref();
+          closing.close();
+        });
+      }
+      // A watcher closed while an add is still opening its file watch leaves that watch open and the test process alive. chokidar's add returns the watcher, not a promise, and has no event
+      // for its end, so wait until the set of watched paths has not changed for 500 ms.
+      let watched = '';
+      let since = Date.now();
+      await until(() => {
+        const now = JSON.stringify(server.watcher.getWatched());
+        if (now !== watched) { watched = now; since = Date.now(); }
+        return Date.now() - since >= 500;
+      }, 'the watcher settles before the server closes', 10_000);
+    } finally {
+      await server.close();
+    }
+  });
+  await server.listen();
+  const address = server.httpServer?.address();
+  assert.ok(address && typeof address === 'object', 'the dev server listens on a port');
+  const messages: { readonly type?: string }[] = [];
+  socket = new WebSocket(`ws://127.0.0.1:${address.port}/`, 'vite-hmr');
+  socket.addEventListener('message', (event) => { messages.push(JSON.parse(String(event.data)) as { readonly type?: string }); });
+  await until(() => messages.some((message) => message.type === 'connected'), 'the websocket client connects to the dev server', 10_000);
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => { reject(new Error('Timed out: the watcher has not scanned the project')); }, 10_000);
+    void scan.then(() => { clearTimeout(timer); resolve(); });
+  });
+  const reloadCount = (): number => messages.filter((message) => message.type === 'full-reload').length;
+  return {
+    server,
+    reloadCount,
+    reloads: (count) => until(() => reloadCount() >= count, () => `${count} full-reload messages; got ${reloadCount()}`),
+    reloadsSettled: () => {
+      let last = reloadCount();
+      let since = Date.now();
+      return until(() => {
+        if (reloadCount() !== last) { last = reloadCount(); since = Date.now(); }
+        return Date.now() - since >= 3 * RELOAD_WINDOW_MS;
+      }, 'the reloads settle', 10_000);
+    },
+    changed: (file) => new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => { server.watcher.off('change', listener); reject(new Error(`Timed out: the watcher reports no change of ${file}`)); }, 10_000);
+      const listener = (changedFile: string): void => {
+        if (path.resolve(changedFile) !== file) return;
+        clearTimeout(timer);
+        server.watcher.off('change', listener);
+        resolve();
+      };
+      server.watcher.on('change', listener);
+    }),
+  };
 }
 
 test('vite serve: a transformed module is rewritten and its map names the module by its own file name', async (t) => {
   const root = await generatedProject(t, 'vite-serve');
-  const server = await serve(t, root);
+  const { server } = await serve(t, root);
   const before = snapshotFilesystem(root);
   const result = await server.transformRequest('/src/main.ts');
   assert.deepEqual(requestedCodecIds(result?.code), Array(3).fill(codecId(root, 'TMoney')));
@@ -391,44 +445,56 @@ test('vite serve: a transformed module is rewritten and its map names the module
 
 test('vite serve: a new file with its first parse call, added after the server started, is rewritten', async (t) => {
   const root = await generatedProject(t, 'vite-new-file');
-  const server = await serve(t, root);
+  const { server } = await serve(t, root);
   assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(codecId(root, 'TMoney')));
   write(root, 'src/later.ts', CALL);
   assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/later.ts'))?.code), [codecId(root, 'TMoney')]);
 });
 
-test('vite serve: regenerating a model transforms again the module that used it, and no other', async (t) => {
+test('vite serve: regenerating a model serves the module that used it with the new codec id, and a key table that did not change invalidates no module', async (t) => {
   const root = await generatedProject(t, 'vite-regenerate');
-  const server = await serve(t, root);
-  const send = t.mock.method(server.ws, 'send', () => undefined);
-  const reloads = (): number => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length;
+  const live = await serve(t, root);
+  const { server } = live;
   const moduleOf = (file: string) => server.moduleGraph.getModuleById(path.join(root, file));
   const oldId = codecId(root, 'TMoney');
-  const watched: string[] = [];
-  const add = server.watcher.add.bind(server.watcher);
-  server.watcher.add = (paths) => { watched.push(...[paths].flat()); return add(paths); };
 
   assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(oldId));
   assert.ok((await server.transformRequest('/src/tag.ts'))?.code);
-  assert.ok(watched.includes(keyTable(root)), `the key table is not watched: ${watched.join(', ')}`);
   assert.ok(moduleOf('src/main.ts')?.transformResult && moduleOf('src/tag.ts')?.transformResult, 'both modules are cached after their first transform');
 
+  const keyChanged = live.changed(keyTable(root));
   await changeMoney(root);
   const newId = codecId(root, 'TMoney');
   assert.notEqual(newId, oldId);
-  server.watcher.emit('change', keyTable(root));
+  await live.reloads(1);
+  // The plugin has handled the key table once the watcher reports it; the regeneration's other files may still bring a reload.
+  await keyChanged;
+  await live.reloadsSettled();
   assert.equal(moduleOf('src/main.ts')?.transformResult, null);
-  assert.ok(moduleOf('src/tag.ts')?.transformResult);
-  await until(() => reloads() === 1, 'the reload of the regenerated model');
-
-  // Vite caches a transform only when it starts after the module's invalidation, to the millisecond.
-  pastThisMillisecond();
   assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(newId));
+  // Vite itself invalidates tag.ts, which imports the regenerated companion; it is transformed again here so that the next steps start with both cached.
+  assert.ok((await server.transformRequest('/src/tag.ts'))?.code);
 
-  // The same files announced again change no rewrite: nothing is invalidated and no reload is sent.
-  server.watcher.emit('change', keyTable(root));
-  assert.ok(moduleOf('src/main.ts')?.transformResult, 'main.ts stays cached when the same files are announced again');
-  assert.ok(moduleOf('src/tag.ts')?.transformResult, 'tag.ts stays cached when the same files are announced again');
+  // A key table with other bytes changes the rewrite of main.ts: the plugin invalidates it and sends a reload.
+  const otherId = 'TMoney_99999999';
+  const otherBytes = live.changed(keyTable(root));
+  const beforeOther = live.reloadCount();
+  fs.writeFileSync(keyTable(root), fs.readFileSync(keyTable(root), 'utf8').replace(newId, otherId));
+  await otherBytes;
+  await live.reloads(beforeOther + 1);
+  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(otherId));
+  assert.ok((await server.transformRequest('/src/tag.ts'))?.code);
+  await live.reloadsSettled();
+
+  // The same bytes written again change no rewrite: once the watcher reports the write (the plugin has handled it) and its reload window has passed, nothing is invalidated and no reload came.
+  const reloaded = live.reloadCount();
+  const sameBytes = live.changed(keyTable(root));
+  fs.writeFileSync(keyTable(root), fs.readFileSync(keyTable(root)));
+  await sameBytes;
+  await quietly(3 * RELOAD_WINDOW_MS);
+  assert.equal(live.reloadCount(), reloaded, 'no reload for a key table that did not change');
+  assert.ok(moduleOf('src/main.ts')?.transformResult, 'main.ts stays cached when the same bytes are written again');
+  assert.ok(moduleOf('src/tag.ts')?.transformResult, 'tag.ts stays cached when the same bytes are written again');
 });
 
 test('vite serve: retargeting an alias that a module parses through transforms it again with the new codec id', async (t) => {
@@ -436,13 +502,14 @@ test('vite serve: retargeting an alias that a module parses through transforms i
   const root = await generatedProject(t, 'vite-alias');
   write(root, 'src/alias.ts', "export type { TMoney as TAlias } from './money.model.js';\n");
   write(root, 'src/use-alias.ts', `import { parse } from '${SERDE}';\nimport type { TAlias } from './alias.js';\n\nexport const value = parse<TAlias>('{}');\n`);
-  const server = await serve(t, root);
+  const live = await serve(t, root);
+  const { server } = live;
   const moneyId = codecId(root, 'TMoney');
   const tagId = codecId(root, 'TTag');
 
   assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/use-alias.ts'))?.code), [moneyId]);
   write(root, 'src/alias.ts', "export type { TTag as TAlias } from './money.model.js';\n");
-  server.watcher.emit('change', path.join(root, 'src/alias.ts'));
+  await live.reloads(1);
   assert.equal(server.moduleGraph.getModuleById(path.join(root, 'src/use-alias.ts'))?.transformResult, null);
   assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/use-alias.ts'))?.code), [tagId]);
 });
@@ -454,22 +521,24 @@ test('vite serve: retargeting an alias or an export * that a module reaches thro
   write(root, 'src/other.ts', "export type { TTag as TAlias } from './money.model.js';\n");
   write(root, 'src/barrel.ts', "export * from './alias.js';\n");
   write(root, 'src/use-barrel.ts', `import { parse } from '${SERDE}';\nimport type { TAlias } from './barrel.js';\n\nexport const value = parse<TAlias>('{}');\n`);
-  const server = await serve(t, root);
-  const idsIn = async (): Promise<readonly string[]> => requestedCodecIds((await server.transformRequest('/src/use-barrel.ts'))?.code);
-  const changed = (file: string): void => { server.watcher.emit('change', path.join(root, file)); };
+  const live = await serve(t, root);
+  const idsIn = async (): Promise<readonly string[]> => requestedCodecIds((await live.server.transformRequest('/src/use-barrel.ts'))?.code);
+  /** Writes `text` to `file` and waits for the reload that the real file event brings. */
+  const edit = async (file: string, text: string): Promise<void> => {
+    const before = live.reloadCount();
+    write(root, file, text);
+    await live.reloads(before + 1);
+  };
   const moneyId = codecId(root, 'TMoney');
   const tagId = codecId(root, 'TTag');
 
   assert.deepEqual(await idsIn(), [moneyId]);
-  write(root, 'src/alias.ts', "export type { TTag as TAlias } from './money.model.js';\n");
-  changed('src/alias.ts');
+  await edit('src/alias.ts', "export type { TTag as TAlias } from './money.model.js';\n");
   assert.deepEqual(await idsIn(), [tagId]);
 
-  write(root, 'src/alias.ts', "export type { TMoney as TAlias } from './money.model.js';\n");
-  changed('src/alias.ts');
+  await edit('src/alias.ts', "export type { TMoney as TAlias } from './money.model.js';\n");
   assert.deepEqual(await idsIn(), [moneyId]);
-  write(root, 'src/barrel.ts', "export * from './other.js';\n");
-  changed('src/barrel.ts');
+  await edit('src/barrel.ts', "export * from './other.js';\n");
   assert.deepEqual(await idsIn(), [tagId]);
 });
 
@@ -480,45 +549,52 @@ test('vite serve: the file events of one run invalidate every module they change
     write(root, `src/${name}-alias.ts`, "export type { TMoney as TAlias } from './money.model.js';\n");
     write(root, `src/use-${name}.ts`, `import { parse } from '${SERDE}';\nimport type { TAlias } from './${name}-alias.js';\n\nexport const value = parse<TAlias>('{}');\n`);
   }
-  const server = await serve(t, root);
-  const send = t.mock.method(server.ws, 'send', () => undefined);
-  const reloads = (): number => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length;
+  const live = await serve(t, root);
+  const { server } = live;
   for (const name of ['first', 'second']) await server.transformRequest(`/src/use-${name}.ts`);
 
-  for (const name of ['first', 'second']) {
+  // The batching window is a timing property, so the two events are delivered together by hand: with the project unwatched, real events cannot arrive between them under load. The other tests prove real delivery.
+  server.watcher.unwatch(root);
+  const edited = ['first', 'second'].map((name) => {
     write(root, `src/${name}-alias.ts`, "export type { TTag as TAlias } from './money.model.js';\n");
-    server.watcher.emit('change', path.join(root, `src/${name}-alias.ts`));
-  }
+    return path.join(root, `src/${name}-alias.ts`);
+  });
+  for (const file of edited) server.watcher.emit('change', file);
 
+  await live.reloads(1);
   for (const name of ['first', 'second']) {
     assert.equal(server.moduleGraph.getModuleById(path.join(root, `src/use-${name}.ts`))?.transformResult, null, `${name} is invalidated by its own event`);
   }
-  await until(() => reloads() > 0, 'the reload of the run');
-  assert.equal(reloads(), 1, 'both events share one reload');
+  await quietly(3 * RELOAD_WINDOW_MS);
+  assert.equal(live.reloadCount(), 1, 'both events share one reload');
 });
 
 test('vite serve: a module whose model had no generated code transforms again once golem generate has written it', async (t) => {
   const root = await generatedProject(t, 'vite-recover', { generate: false });
-  const server = await serve(t, root);
-  const send = t.mock.method(server.ws, 'send', () => undefined);
-  await assert.rejects(server.transformRequest('/src/main.ts'), /run golem generate/);
+  const live = await serve(t, root);
+  await assert.rejects(live.server.transformRequest('/src/main.ts'), /run golem generate/);
   await runPipeline(path.join(root, 'golem.yaml'));
-  server.watcher.emit('add', keyTable(root));
-  await until(() => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length === 1, 'the reload once golem generate has written the model');
-  pastThisMillisecond();
-  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(codecId(root, 'TMoney')));
+  await live.reloads(1);
+  assert.deepEqual(requestedCodecIds((await live.server.transformRequest('/src/main.ts'))?.code), Array(3).fill(codecId(root, 'TMoney')));
 });
 
 test('vite serve: a generated model file outside the project root transforms again a module that failed, as one inside does', async (t) => {
   const root = await generatedProject(t, 'vite-recover-outside', { generate: false });
-  const server = await serve(t, root);
-  const send = t.mock.method(server.ws, 'send', () => undefined);
-  await assert.rejects(server.transformRequest('/src/main.ts'), /run golem generate/);
+  const live = await serve(t, root);
+  await assert.rejects(live.server.transformRequest('/src/main.ts'), /run golem generate/);
+  // Vite watches a file outside its root once a module loads it; the test watches the folder the same way, and probes it until the watcher reports a file created there.
+  const outside = createFixtureProject(t, 'golem-bundler-outside-');
+  let probed = false;
+  live.server.watcher.on('add', (file) => { probed ||= path.basename(file).startsWith('probe-'); });
+  live.server.watcher.add(outside);
+  let probes = 0;
+  await until(() => { write(outside, `probe-${probes++}.txt`, ''); return probed; }, 'the watcher reports a file created outside the project root', 10_000);
+  // The project's own generated files must not reach the plugin, or they would recover the module and hide what the outside file does.
+  live.server.watcher.unwatch(root);
   await runPipeline(path.join(root, 'golem.yaml'));
-  server.watcher.emit('add', path.join(createFixtureProject(t, 'golem-bundler-outside-'), 'shared.model.generated.ts'));
-  await until(() => send.mock.calls.filter((call) => (call.arguments[0] as { type?: string } | undefined)?.type === 'full-reload').length === 1, 'the reload once the outside model file exists');
-  pastThisMillisecond();
-  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(codecId(root, 'TMoney')));
+  write(outside, 'shared.model.generated.ts', '');
+  await live.reloads(1);
+  assert.deepEqual(requestedCodecIds((await live.server.transformRequest('/src/main.ts'))?.code), Array(3).fill(codecId(root, 'TMoney')));
 });
 
 /** An esbuild context in watch mode that writes the bundle; `built(n)` waits for build n and gives its error texts. */
@@ -556,7 +632,7 @@ test('esbuild: a build of a validating model bundles its generated validators fr
 
 test('vite serve: a validating model file imports its validators, which resolve from the .js specifier to the TypeScript file', async (t) => {
   const root = await generatedProject(t, 'vite-validating', { validation: true });
-  const server = await serve(t, root);
+  const { server } = await serve(t, root);
   const companion = await server.transformRequest('/src/money.model.generated.ts');
   const imported = server.moduleGraph.getModuleById(path.join(root, 'src/money.model.generated.ts'))?.importedModules ?? new Set();
   assert.ok(companion && [...imported].some((module) => module.file === path.join(root, 'src/generated/models/models.validators.generated.ts')), 'the .js specifier resolves to the .ts file');

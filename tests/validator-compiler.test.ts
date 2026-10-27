@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { test } from 'node:test';
+import { test, type TestContext } from 'node:test';
 import vm from 'node:vm';
 
 import { build } from 'esbuild';
@@ -382,30 +382,45 @@ test('anyOf and oneOf without a discriminator report a union with the matched co
   await assertIssues(oneOf, 'a', [{ path: [], code: 'union', matched: 0 }]);
 });
 
-test('an anyOf of branches that differ by JSON type checks a valid value with the one branch of its type', async () => {
+/**
+ * Bundles the named exports of an emitted validator module with esbuild and runs the bundle in a fresh context, a realm of its
+ * own: a test that counts what the bundle calls patches that realm's globals with `setup` and never the test process's.
+ */
+async function loadBundle(t: TestContext, source: string, names: readonly string[], context: object = {}, setup = ''): Promise<{ readonly values: readonly Validator[]; readonly text: string }> {
+  const directory = mkdtempSync(path.join(tmpdir(), 'golem-validators-bundle-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(path.join(directory, 'validators.js'), source);
+  writeFileSync(path.join(directory, 'entry.js'), `import { ${names.join(', ')} } from './validators.js';\nglobalThis.used = [${names.join(', ')}];\n`);
+  const result = await build({ entryPoints: [path.join(directory, 'entry.js')], bundle: true, format: 'cjs', write: false, treeShaking: true, external: ['golem-validation-runtime'] });
+  const runtime = await import('@exprtlabs/golem/validation-runtime');
+  const fresh = vm.createContext({ ...context, require: () => runtime });
+  vm.runInContext(setup, fresh);
+  vm.runInContext(result.outputFiles[0].text, fresh);
+  return { values: fresh.used, text: result.outputFiles[0].text };
+}
+
+test('an anyOf of branches that differ by JSON type checks a valid value with the one branch of its type', async t => {
   // protects: T-255 one type switch for a disjoint union (F-250); `Number.isInteger` runs only in the integer branch, which comes first.
-  const compiled = await compileValidatorModule({
-    roots: { root: { anyOf: [{ type: 'integer' }, { type: 'string' }, { type: 'null' }, { type: 'array', items: { type: 'string' } }, { type: 'object' }] } },
-    fastPath: true,
-  });
-  const isInteger = Number.isInteger;
-  let calls = 0;
-  Number.isInteger = (value: unknown): value is number => (calls++, isInteger(value));
-  try {
-    const checks = [compiled.fastByRoot.root, (value: unknown) => compiled.byRoot.root(value, false).length === 0];
-    for (const check of checks) {
-      const run = (value: unknown): readonly [boolean, number] => {
-        calls = 0;
-        return [check(value), calls];
-      };
-      assert.deepEqual(run('a'), [true, 0]);
-      assert.deepEqual(run(null), [true, 0]);
-      assert.deepEqual(run(['a']), [true, 0]);
-      assert.deepEqual(run({ a: 1 }), [true, 0]);
-      assert.deepEqual(run(3), [true, 1]);
-    }
-  } finally {
-    Number.isInteger = isInteger;
+  const { source, exports, fastExports } = compile(
+    { roots: new Map([['root', { anyOf: [{ type: 'integer' }, { type: 'string' }, { type: 'null' }, { type: 'array', items: { type: 'string' } }, { type: 'object' }] }]]) },
+    { unknownFormats: 'warn', runtimeModule: 'golem-validation-runtime', fastPath: true },
+  );
+  const counts = { isInteger: 0 };
+  const { values } = await loadBundle(t, source, [fastExports.get('root')!, exports.get('root')!], { counts }, 'const real = Number.isInteger; Number.isInteger = value => (counts.isInteger++, real(value));');
+  const [fast, full] = values;
+  const checks = [fast as unknown as (value: unknown) => boolean, (value: unknown) => full(value, false).length === 0];
+  for (const check of checks) {
+    const callsFor = (value: unknown): readonly [boolean, number] => {
+      counts.isInteger = 0;
+      return [check(value), counts.isInteger];
+    };
+    assert.deepEqual(callsFor('a'), [true, 0]);
+    assert.deepEqual(callsFor(null), [true, 0]);
+    assert.deepEqual(callsFor(['a']), [true, 0]);
+    assert.deepEqual(callsFor({ a: 1 }), [true, 0]);
+    const [verdict, isIntegerCalls] = callsFor(3);
+    assert.equal(verdict, true);
+    assert.ok(isIntegerCalls <= 1, `the integer branch called Number.isInteger ${isIntegerCalls} times`);
   }
 });
 
@@ -640,6 +655,7 @@ test('recursive $ref validates a three-level tree and reports the deepest path',
 });
 
 test('own-property checks hold for __proto__ and constructor keys', async () => {
+  // protects: a schema key named like an Object.prototype member (__proto__, constructor) is checked as an own property, never read from the prototype
   const schema = JSON.parse('{"properties":{"__proto__":{"type":"integer"},"constructor":{"type":"integer"},"toString":{}},"required":["__proto__","constructor","toString"],"additionalProperties":false}') as unknown;
   const validate = await compileSchema(schema);
   assert.deepEqual(validate({}, true), [
@@ -659,6 +675,7 @@ test('own-property checks hold for __proto__ and constructor keys', async () => 
 });
 
 test('root names with # and - become valid function names and verbatim keys', async () => {
+  // protects: a root name with # or - gives a valid exported function name and keeps its verbatim key
   const names = ['TPayment_1234abcd#wire', 'list-items', '#', '__proto__'];
   const validators = await compileValidators({ roots: Object.fromEntries(names.map(name => [name, { type: 'integer' }])) });
   assert.deepEqual(Object.keys(validators).sort(), [...names].sort());
@@ -669,6 +686,7 @@ test('root names with # and - become valid function names and verbatim keys', as
 });
 
 test('$dynamicRef is an unsupported keyword error at its JSON pointer and leaves no source', () => {
+  // protects: an unsupported keyword stops generation with its JSON pointer, never a validator that skips it
   const result = compile(
     { roots: new Map([['root', { properties: { a: { $dynamicRef: '#node' } } }]]) },
     { unknownFormats: 'warn', documentName: 'orders.yaml' },
@@ -734,6 +752,22 @@ test('a $ref that does not resolve is an error naming the reference', () => {
   ]);
   assert.match(result.diagnostics[0].message, /#\/\$defs\/missing/);
   assert.match(result.diagnostics[0].message, /orders\.yaml/);
+});
+
+test('a $ref that names a value that is no schema is an error naming the reference and its target', () => {
+  // protects: T-509 a $ref to a non-schema value is an error, not a validator that accepts everything
+  const result = compile({ roots: new Map([['root', { info: { title: 'x' }, properties: { a: { $ref: '#/info/title' } } }]]) }, { unknownFormats: 'warn' });
+  assert.equal(result.source, '');
+  assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path, entry.message]), [
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, '/properties/a/$ref', 'schema "root" at /properties/a/$ref: the value of $ref is not valid: expected a reference to a schema; "#/info/title" names /info/title, which is no schema'],
+  ]);
+});
+
+test('an if with no then or else, whose value is a schema, compiles without a diagnostic', () => {
+  // protects: T-509 a schema value of if is not reported when nothing lowers it
+  const result = compile({ roots: new Map([['root', { properties: { a: { if: { type: 'string' } } } }]]) }, { unknownFormats: 'warn' });
+  assert.deepEqual(result.diagnostics, []);
+  assert.notEqual(result.source, '');
 });
 
 test('a pattern that is not a valid unicode regular expression is an error', () => {
@@ -927,8 +961,8 @@ test('a validation function reports at the path of the value its schema describe
 
 test('a validation function that returns neither a boolean nor a string throws a TypeError', async () => {
   const validate = await compileRules({ exprtValidation: { schema: true, bindings: ['rules.count'] } }, ['rules.count']);
-  assert.throws(() => validate(1, true), new TypeError('Validation functions must return boolean or string.'));
-  assert.throws(() => validate(1, false), new TypeError('Validation functions must return boolean or string.'));
+  assert.throws(() => validate(1, true), new TypeError('Validation function count must return boolean or string.'));
+  assert.throws(() => validate(1, false), new TypeError('Validation function count must return boolean or string.'));
 });
 
 test('validation functions run only when the structural schema passes', async () => {
@@ -1129,34 +1163,15 @@ test('a bundle of one validator drops an unused validator with its constants', a
     ['unused', { type: 'object', properties: { code: { type: 'string', pattern: '^unused-pattern-[0-9]+$' }, kind: { enum: ['unused-literal-a', 'unused-literal-b'] } }, additionalProperties: false }],
   ]);
   const { source, exports } = compile({ roots }, { unknownFormats: 'warn', runtimeModule: 'golem-validation-runtime' });
-  const directory = mkdtempSync(path.join(tmpdir(), 'golem-validators-bundle-'));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
-  writeFileSync(path.join(directory, 'validators.js'), source);
-  const runtime = await import('@exprtlabs/golem/validation-runtime');
-  /** Bundles the named validators, runs the bundle in a fresh context and counts the constants it builds while it loads. */
-  const load = async (names: readonly string[]): Promise<{ readonly built: object; readonly validators: readonly Validator[] }> => {
-    writeFileSync(path.join(directory, 'entry.js'), `import { ${names.join(', ')} } from './validators.js';\nglobalThis.used = [${names.join(', ')}];\n`);
-    const result = await build({ entryPoints: [path.join(directory, 'entry.js')], bundle: true, format: 'cjs', write: false, treeShaking: true, external: ['golem-validation-runtime'] });
-    const counts = { RegExp: 0, Set: 0, 'JSON.parse': 0 };
-    const context = vm.createContext({ counts, require: () => runtime });
-    vm.runInContext(`
-      for (const name of ['RegExp', 'Set']) {
-        globalThis[name] = new Proxy(globalThis[name], { construct(target, args, newTarget) { counts[name]++; return Reflect.construct(target, args, newTarget); } });
-      }
-      const parse = JSON.parse;
-      JSON.parse = (...args) => { counts['JSON.parse']++; return parse(...args); };
-    `, context);
-    vm.runInContext(result.outputFiles[0].text, context);
-    return { built: counts, validators: context.used };
-  };
   const kept = exports.get('kept') ?? '';
   const unused = exports.get('unused') ?? '';
-  const one = await load([kept]);
-  assert.deepEqual(one.built, { RegExp: 1, Set: 0, 'JSON.parse': 0 });
-  assert.deepEqual(JSON.parse(JSON.stringify(one.validators[0]('kept-pattern-7', true))), []);
-  assert.deepEqual(JSON.parse(JSON.stringify(one.validators[0]('other', true))), [{ path: [], code: 'pattern', pattern: '^kept-pattern-[0-9]+$' }]);
-  const both = await load([kept, unused]);
-  assert.deepEqual(both.built, { RegExp: 2, Set: 1, 'JSON.parse': 1 });
+  const one = await loadBundle(t, source, [kept]);
+  const both = await loadBundle(t, source, [kept, unused]);
+  const unusedConstants = /unused-pattern|unused-literal/;
+  assert.equal(unusedConstants.test(both.text), true, 'a bundle that imports the unused validator holds its constants');
+  assert.equal(unusedConstants.test(one.text), false, 'a bundle of the kept validator holds none of them');
+  assert.deepEqual(JSON.parse(JSON.stringify(one.values[0]('kept-pattern-7', true))), []);
+  assert.deepEqual(JSON.parse(JSON.stringify(one.values[0]('other', true))), [{ path: [], code: 'pattern', pattern: '^kept-pattern-[0-9]+$' }]);
 });
 
 test('a diagnostic is placed where the locator says and reported once per place', () => {

@@ -359,6 +359,9 @@ export interface NamespaceImport extends Node {
 }
 export interface ImportEqualsDeclaration extends Node {
   readonly kind: KindOf<'ImportEqualsDeclaration'>;
+  readonly isTypeOnly: boolean;
+  /** An `ExternalModuleReference` for `require('...')`. */
+  readonly moduleReference: Node;
 }
 export interface ExportDeclaration extends Node {
   readonly kind: KindOf<'ExportDeclaration'>;
@@ -380,6 +383,8 @@ export interface NamespaceExport extends Node {
 }
 export interface ExportAssignment extends Node {
   readonly kind: KindOf<'ExportAssignment'>;
+  /** `export = x`; false for `export default x`. */
+  readonly isExportEquals: boolean;
 }
 
 // Type nodes
@@ -689,6 +694,7 @@ export interface TypeScriptBackend {
     readonly TemplateTail: SyntaxKind;
     readonly DeclareKeyword: SyntaxKind;
     readonly ExportKeyword: SyntaxKind;
+    readonly ExternalModuleReference: SyntaxKind;
     readonly ExtendsKeyword: SyntaxKind;
     readonly FalseKeyword: SyntaxKind;
     readonly ImportKeyword: SyntaxKind;

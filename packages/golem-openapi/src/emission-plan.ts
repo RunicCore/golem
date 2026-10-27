@@ -1,6 +1,8 @@
 import { isBinaryMediaType, isJsonSeqMediaType, isNdjsonMediaType, isServerSentEventsMediaType, mediaEssence } from './client/codecs.js';
 import type { ServerObject } from '@exprtlabs/golem/client';
+import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import { collectOpenApiModelDefinitions } from './models.js';
 import {
   resolveLocal,
@@ -156,6 +158,19 @@ function operationFirstServers(operations: readonly NormalizedOperation[], root:
   return { operationServers: firstServers, operationServerIndex: index };
 }
 
+/**
+ * A document with no root `servers` makes `baseUrl` required, and `baseUrl` wins over every list, so the `servers` of an operation
+ * or its path item have no effect there.
+ */
+export function serverOverrideDiagnostics(document: unknown, operations: readonly NormalizedOperation[]): GolemDiagnostic[] {
+  if (normalizeServers(asRecord(document).servers).length) return [];
+  return operations.filter((operation) => normalizeServers(operation.servers).length).map((operation) => ({
+    code: 'OPENAPI_SERVER_OVERRIDE_IGNORED',
+    severity: GolemDiagnosticSeverity.Warning,
+    message: `operation ${operation.name} lists its own servers; the client uses baseUrl for it`,
+  }));
+}
+
 function hasLinks(operations: readonly NormalizedOperation[]): boolean {
   return operations.some((operation) =>
     operation.responses.some((response) => Object.keys(response.links).length > 0),
@@ -192,13 +207,13 @@ function usesComponentRef(
     }
     uris.delete(identity);
   }
-  for (const keyword of ['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas']) {
+  for (const keyword of SCHEMA_MAP_KEYWORDS) {
     if (objectEntries(schema[keyword]).some(([, child]) => usesComponentRef(child, nested, visiting, uris))) return true;
   }
-  for (const keyword of ['items', 'additionalProperties', 'additionalItems', 'contains', 'not', 'if', 'then', 'else', 'propertyNames', 'unevaluatedProperties', 'unevaluatedItems', 'contentSchema']) {
+  for (const keyword of SCHEMA_SINGLE_KEYWORDS) {
     if (usesComponentRef(schema[keyword], nested, visiting, uris)) return true;
   }
-  for (const keyword of ['allOf', 'anyOf', 'oneOf', 'prefixItems']) {
+  for (const keyword of SCHEMA_ARRAY_KEYWORDS) {
     const children = schema[keyword];
     if (Array.isArray(children) && children.some(child => usesComponentRef(child, nested, visiting, uris))) return true;
   }
@@ -233,7 +248,7 @@ function referencedSchemes(
   }
   const result = new Map<string, unknown>();
   for (const name of names) {
-    if (name in raw) result.set(name, resolveLocal(document, raw[name]));
+    if (Object.hasOwn(raw, name)) result.set(name, resolveLocal(document, raw[name]));
   }
   return result;
 }

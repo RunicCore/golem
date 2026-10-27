@@ -24,6 +24,8 @@ import {
   discriminatorMatch,
   emitDispatch,
   emitUnionConversion,
+  keyIsListed,
+  keyIsNotListed,
   literalDiscriminator,
   ObjectUnionDiscriminatorError,
   objectValueExpression,
@@ -153,6 +155,8 @@ interface EmitCtx {
   readonly hoisted?: HoistedConverters;
   /** Whether the fill of a local node can throw, by node id. */
   readonly fillThrows?: Map<string, boolean>;
+  /** The name of the module constant of each patternProperties pattern, by pattern text; the module declares them all once. */
+  readonly patternConstants?: Map<string, Code>;
   /** Locals a decoder assigns; the function that holds the decoder declares them. Without it the decoder re-reads. */
   readonly decodeLocals?: string[];
   /**
@@ -258,7 +262,8 @@ export function validateFunctionName(id: string): string {
   return `validate${id}`;
 }
 
-function isRecordExpression(expression: Code): boolean {
+/** Whether the code is one input that stands for a record, whose properties a read takes without a cast. */
+export function isRecordExpression(expression: Code): boolean {
   const [only, ...more] = expression.parts;
   return only?.kind === 'input' && more.length === 0 && only.slot.record;
 }
@@ -490,16 +495,17 @@ function emitObjectInline(
   if (properties.every(([name]) => required.has(name))) {
     return code`'{' + ${emitRequiredObjectConcat(properties, value, ctx)}`;
   }
+  // Each present member carries its comma before it, so the first comma is cut off and no list is built when the code runs.
   const parts = properties.map(([name, property], index) => emitInlineObjectField(
     name,
     property,
     required.has(name),
     value,
     index,
-    false,
+    true,
     ctx,
   ));
-  return code`'{' + [${join(parts, code`, `)}].filter(Boolean).join(',') + '}'`;
+  return code`'{' + (${join(parts, code` + `)}).slice(1) + '}'`;
 }
 
 function stringifyParameters(value: Code, ctx: EmitCtx): Code {
@@ -700,7 +706,7 @@ function emitObjectStringify(
     // `additionalProperties: true` makes them data of unknown type.
     lines.push(
       code`  for (const key of Object.keys(${value})) {`,
-      ...(properties.length === 0 ? [] : [code`    if (${literal(properties.map(([property]) => property))}.includes(key)) continue;`]),
+      ...(properties.length === 0 ? [] : [code`    if (${keyIsListed(identifier('key'), properties.map(([property]) => property))}) continue;`]),
       code`    const __golemExtra = ${value}[key];`,
       code`    if (__golemExtra === undefined) continue;`,
       code`    if (sep) out += ",";`,
@@ -768,11 +774,6 @@ export function emitStringifyFunction(
   return stringifyFunction(header, [...inlineLocalLines(ctx), code`  return ${value};`], guard, valueSlot);
 }
 
-/** The stringify functions of every node of a graph, in dependency order. */
-export function emitGraphStringify(graph: SchemaGraph, serde?: StringifySerdeResolver): Code {
-  return join(graph.topo().map((node) => emitStringifyFunction(node, graph, serde)), code`\n`);
-}
-
 function asRecordCode(expression: Code): Code {
   return code`(${expression} as Record<string, unknown>)`;
 }
@@ -818,7 +819,10 @@ function mapValueDescriptor(descriptor: Extract<ModelTypeDescriptor, { kind: 'ob
   return typeof schema === 'object' && schema !== null && 'kind' in schema ? schema as ModelTypeDescriptor : undefined;
 }
 
-/** A value that holds no object, so assigning it copies it. */
+/**
+ * A value that holds no object, so assigning it copies it. It also accepts `never` and an intersection of scalars, which
+ * `isScalarishDescriptor` (the JSON-scalar test of the union walkers) does not: a copied closed object may hold them.
+ */
 function isScalarDescriptor(descriptor: ModelTypeDescriptor): boolean {
   switch (descriptor.kind) {
     case 'string':
@@ -1203,12 +1207,10 @@ function emitTaggedVariantUnion(
  * emitting module binds is used, so a guard never looks up a registry.
  */
 function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx): Code | undefined {
-  const name = variant.kind === 'generated-model'
-    ? ctx.nestedGenerated?.(variant.id)
-    : variant.kind === 'reference' && shouldConstructNested(variant, ctx)
-      ? ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.kind === 'reference' ? variant.className : undefined)
-      : undefined;
-  return name;
+  if (variant.kind === 'generated-model') return ctx.nestedGenerated?.(variant.id);
+  return variant.kind === 'reference' && shouldConstructNested(variant, ctx)
+    ? ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.className)
+    : undefined;
 }
 
 /** Object variants of a union mixed with one generated model; their literal tags must dispatch. */
@@ -1364,8 +1366,7 @@ function emitUnionDecode(
   return emitUnion('decode', descriptor, value, ctx, {
     walk: (variant, scope) => emitDecodeValue(variant, value, scope),
     generatedText: (generated) => {
-      const className = ctx.nestedGenerated?.(generated.id);
-      const name = className ? className : undefined;
+      const name = ctx.nestedGenerated?.(generated.id);
       return name
         ? code`${value} instanceof ${name} ? ${value} : ${fallibleConversion(ctx, code`${rt.conversion.decodeGeneratedModelTrusted}(${name}, ${value})`)}`
         : undefined;
@@ -1458,7 +1459,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
       : decoded;
     const entries = code`Object.entries((${value} ?? {}) as Record<string, unknown>)`;
     if (listed.length === 0) return code`Object.fromEntries(${entries}.map(([key, value]) => [key, ${entry}]))`;
-    const extras = code`Object.fromEntries(${entries}.filter(([key]) => !${literal(listed)}.includes(key)).map(([key, value]) => [key, ${entry}]))`;
+    const extras = code`Object.fromEntries(${entries}.filter(([key]) => ${keyIsNotListed(identifier('key'), listed)}).map(([key, value]) => [key, ${entry}]))`;
     return asObjectLiteral(code`{ ...${extras}, ...${emitDecodedRecord(descriptor, value, ctx)} }`);
   }
   const named = ctx.graph.nodeFor(descriptor);
@@ -1584,6 +1585,23 @@ function emitFillValue(
   return { statements: [code`const ${identifier(local)} = ${input};`], value: emitDecodeValue(property, identifier(local), ctx), converted, checked, fallible };
 }
 
+/**
+ * The name of the module constant that holds the regular expression of `pattern`, as the validator reads it, with the `u`
+ * flag. The module declares one for each pattern text (`withModuleConstants`), so the expression is built once, not for
+ * each key of each call. A function name is a verb followed by a node id (`fill<Id>`, `parse<Id>`), so a node id cannot
+ * make the name `__golemPattern<N>`, and one pattern text has one name in the whole module.
+ */
+function patternConstant(ctx: EmitCtx, pattern: string): Code {
+  const constants = ctx.patternConstants;
+  if (!constants) throw new Error('Internal error: the emitter has no module table for the patternProperties expressions.');
+  let name = constants.get(pattern);
+  if (!name) {
+    name = identifier(`__golemPattern${constants.size}`);
+    constants.set(pattern, name);
+  }
+  return name;
+}
+
 function emitFillFunction(
   node: SchemaNode,
   ctx: EmitCtx,
@@ -1696,10 +1714,9 @@ function emitFillFunction(
     ...propertyWrites,
   ];
   if (additionalSchema || carriesExtras || patternConstraints.length > 0) {
-    const known = join(properties.map(([name]) => literal(name)), code`, `);
     rows.push(
       code`  for (const key of Object.keys(wire)) {`,
-      properties.length > 0 ? code`    if ([${known}].includes(key)) continue;` : code`    if (false) continue;`,
+      ...(properties.length > 0 ? [code`    if (${keyIsListed(identifier('key'), properties.map(([name]) => name))}) continue;`] : []),
       // An undeclared key whose value is undefined is absent, as the validator and encode treat it.
       code`    const __golemExtra = wire[key];`,
       code`    if (__golemExtra === undefined) continue;`,
@@ -1722,7 +1739,7 @@ function emitFillFunction(
         ? pattern.schema as ModelTypeDescriptor
         : undefined;
       rows.push(
-        code`    if (new RegExp(${literal(pattern.pattern)}).test(key)) {`,
+        code`    if (${patternConstant(ctx, pattern.pattern)}.test(key)) {`,
         ...emitExtra(schema, 6),
         code`      continue;`,
         code`    }`,
@@ -1823,7 +1840,7 @@ function emitEncodedRecord(
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
   const extra = inputSlot('extra', 'name');
   const keyParameter = fields.length === 0 ? code`` : code`key`;
-  const unlisted = fields.length === 0 ? code`` : code` && !${literal(fields.map(([name]) => name))}.includes(key)`;
+  const unlisted = fields.length === 0 ? code`` : code` && ${keyIsNotListed(identifier('key'), fields.map(([name]) => name))}`;
   const extras = additional || descriptor.additionalPropertiesDeclared
     ? [code`...Object.fromEntries(Object.entries(${asRecordCode(inputOf(self))}).filter(([${keyParameter}, extra]) => extra !== undefined${unlisted}).map(([key, extra]) => [key, ${bindInput(emitEncodeValue(additional ?? { kind: 'unknown' }, inputOf(extra), ctx), extra, code`extra`)}]))`]
     : [];
@@ -2055,9 +2072,12 @@ function emitStringifySection(runtime: NodeRuntime): Code {
   const emitsValidatedWire = validationEnabled && !node.sameSchema;
   const encoded = encodedContext(runtime);
   const stringifyValue = inputSlot('value', 'name', true);
-  const encodedExpr = objectDescriptor
-    ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(stringifyValue), encoded), stringifyValue, code`value`)
-    : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encoded));
+  // The validated wire write is the only reader of the encoding, and it fills the inline locals that `encoded` declares.
+  const encodedExpr = emitsValidatedWire
+    ? objectDescriptor
+      ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(stringifyValue), encoded), stringifyValue, code`value`)
+      : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encoded))
+    : undefined;
   const exportsWire = codecIsExported(node, ctx) && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true);
   const wireStringifySrc = emitsValidatedWire
     ? code`${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true, functionName: `${stringifyName}Wire` })}${exportsWire
@@ -2074,7 +2094,7 @@ function emitStringifySection(runtime: NodeRuntime): Code {
       code`  if (validates) {`,
       ...(runtime.reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
       code`    ${assertId}(value, options);`,
-      ...(emitsValidatedWire ? [
+      ...(encodedExpr ? [
         code`    const wire = ${encodedExpr};`,
         // The full model check already ran; check only the JSON encoding produced.
         ...(node.wireOnlyJsonSchema !== undefined ? [code`    ${wireOnlyAssertId}(wire, options);`] : []),
@@ -2392,6 +2412,7 @@ export function emitCodecRuntimeCode(
   const defaultEnabled = options.validationEnabled !== false;
   const validates = (node: SchemaNode): boolean => nodeValidates(node, defaultEnabled);
   const nodes = [...graph.topo()];
+  const patternConstants = new Map<string, Code>();
   const ctx: EmitCtx = {
     graph,
     // emitNodeRuntime emits stringify<Id>Wire exactly for these nodes.
@@ -2421,6 +2442,7 @@ export function emitCodecRuntimeCode(
     privateCodec: options.privateCodec,
     modelBases: options.modelBases,
     fillThrows: new Map(),
+    patternConstants,
   };
   const runtimes: Code[] = [];
   for (const node of nodes) {
@@ -2428,15 +2450,18 @@ export function emitCodecRuntimeCode(
     if (!isEmpty(runtime)) runtimes.push(runtime);
   }
   // A blank line stands between two functions' runtimes, and none ends the last.
-  return withModuleConstants(join(runtimes, code`\n\n`));
+  return withModuleConstants(join(runtimes, code`\n\n`), patternConstants);
 }
 
 /** The helpers whose definitions `withModuleConstants` writes into the runtime code, so the file places no definition of them. */
 export const MODULE_CONSTANT_HELPERS: readonly Helper[] = [TRUSTED_HELPER, CHECKED_KEY_HELPER, CHECKED_HELPER];
 
-/** One frozen object of each kind serves every nested call that passes options to another module's function. */
-function withModuleConstants(runtime: Code): Code {
+/** One frozen object of each kind serves every nested call that passes options to another module's function; one expression of each pattern serves every fill. */
+function withModuleConstants(runtime: Code, patterns: ReadonlyMap<string, Code>): Code {
   const used = new Set(helperSet(runtime).map((found) => found.id));
-  const constants = MODULE_CONSTANT_HELPERS.filter((found) => used.has(found.id)).map((found) => found.define());
+  const constants = [
+    ...MODULE_CONSTANT_HELPERS.filter((found) => used.has(found.id)).map((found) => found.define()),
+    ...[...patterns].map(([pattern, name]) => code`const ${name} = /*#__PURE__*/ new RegExp(${literal(pattern)}, 'u');`),
+  ];
   return constants.length ? code`${join(constants, code`\n`)}\n\n${runtime}` : runtime;
 }

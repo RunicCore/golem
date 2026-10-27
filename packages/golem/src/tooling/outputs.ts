@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-import { canonicalPath, compareText, displayPath, hasErrorCode, isInsideDirectory, isRecord } from './generator-api.js';
+import { canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isInsideDirectory, isRecord } from './generator-api.js';
 import type { GolemArtifact } from './generator-api.js';
 import { codecKeysPath, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
 import type { GolemConfig, GolemJob } from './config.js';
@@ -296,8 +296,15 @@ export function atomicWrite(filename: string, content: string, files: OutputFile
   try {
     files.create(temporary, content);
     files.rename(temporary, filename);
-  } finally {
-    try { files.unlink(temporary); } catch (error) { if (!hasErrorCode(error, 'ENOENT')) throw error; }
+  } catch (error) {
+    // The create or rename failure is the cause; a failed cleanup is told beside it and never replaces it.
+    try { files.unlink(temporary); } catch (cleanup) {
+      if (!hasErrorCode(cleanup, 'ENOENT')) {
+        // The thrown error keeps the `code` of the first failure, so a caller that tells failures apart by it still can.
+        throw Object.assign(new Error(`${errorMessage(error).replace(/\.$/, '')}. Golem could not remove the temporary file ${displayPath(temporary)} either: ${errorMessage(cleanup)}`, { cause: error }), isRecord(error) && error.code !== undefined ? { code: error.code } : {});
+      }
+    }
+    throw error;
   }
   return true;
 }

@@ -132,7 +132,7 @@ An OpenAPI job writes `model-manifest.json` beside its SDK. A model job reads it
 | `ModelManifest` | `{ profile, models, validationSchemaClosure? }` | The generation profile, one `ModelManifestEntry` per model, and the schemas a project needs to validate those models. |
 | `MODEL_MANIFEST_FILENAME` | `'model-manifest.json'` | The file name. |
 
-Names the generators import: `ModelManifestEntry`, `ModelManifestProvenance`, `MODEL_MANIFEST_MARKER`, `manifestMarker`, `modelManifestProfile`, `validateModelProfile`, `stableJson`, `stableIdentity`, `sourceDigest`.
+Names the generators import: `ModelManifestEntry`, `ModelManifestProvenance`, `MODEL_MANIFEST_MARKER`, `modelManifestProfile`, `validateModelProfile`, `stableJson`, `stableIdentity`, `sourceDigest`.
 
 ## `@exprtlabs/golem/rewrite` {#rewrite}
 
@@ -151,7 +151,7 @@ Every [build tool](/guide/build) scans each TypeScript file it compiles or loads
 | `toWireFormat<T>(value)` | the generated `toWireFormat` for `T` |
 | `fromWireFormat<T>(wire)` | the generated `fromWireFormat` for `T`, constructing your class when `T` is a class |
 
-With a `controllers` job in `golem.yaml`, the rewrite also inserts `nestModelCodec` (`nestModelUnion` for a union of models) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model ([Exports for generated code](/reference/runtime-api#generated-code)). `golem build`, [`loader`](/reference/runtime-api#loader), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild) use this subpath to apply their edits.
+With a `controllers` job in `golem.yaml`, the rewrite also inserts `nestModelCodec` (`nestModelUnion` for a union of models) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model ([Exports for generated code](#generated-code)). `golem build`, [`loader`](/reference/runtime-api#loader), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild) use this subpath to apply their edits.
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
@@ -317,3 +317,55 @@ A result is an in-memory plan. A build tool that applies it:
 - chooses its own write policy, stale-file policy and record of written files.
 
 The `golem` CLI applies results in the [job order](/reference/config) of the configuration. Usage: [Apply the results](/guide/generator-api#apply-the-results).
+
+## Exports for generated code {#generated-code}
+
+Generated files import these names. Application code does not call them. They follow semver ([Compatibility](/compatibility#public-api)).
+
+### From `model`
+
+`registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelConstructor`, `ModelInit` and the `generatedModel*Brand` symbols.
+
+The module also exports the metadata types that the generators and the runtime use. Generated files do not import them, and application code does not use them: `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile`, `GeneratedModelValidatorEnhancer`, `ModelTypeMetadata`, `ModelTypeDescriptor`, `ModelConstraint`, `ConstraintSchemaValue`, `UnionDiscriminator` and `DiscriminatorValue`.
+
+### From `validation`
+
+`operationValidators` resolves the input and response validators of an operation once per client. `validateOperationInput` checks a request input. `responseCheck` is the response check that `ClientRuntime.readResponse` runs on each decoded body or stream item.
+
+### From `conversion`
+
+`encodeGeneratedModel`, `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelTupleItems`, `defineModelProperty`, `requireModelObject`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
+
+### From `serde`
+
+`createObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `requireIModelClass`, `assertModelValue`, `isValidModelValue`, `modelValueIssues`, `parseJson`, `serdeValidates`, `validationUnavailable`, `withoutInstanceState` and the `stringifyJson*` writers.
+
+The module exports more helpers for the runtime itself. Application code does not call them: `registerObjectCodec`, `findCodecIdForConstructor`, `resolveModelValidationContextValidator`, `validationFailure`, `serdeFailFast`, `resolveGeneratedModelSchemaRefs` and the type `ObjectCodecImpl`.
+
+### From `nest`
+
+| Member | Signature | Behavior |
+| --- | --- | --- |
+| `nestModelCodec` | `(id: string, array?: boolean): ParameterDecorator` | The rewrite inserts it on `@Body()` and `@Query()` parameters typed with a model or an array of one. It replaces the parameter type with a token that carries the codec and class of the model. |
+| `nestModelUnion` | `(property: string, variants: readonly [values: readonly (string \| number \| boolean)[], id: string][]): ParameterDecorator` | The rewrite inserts it on a whole `@Body()` or `@Query()` typed as a union of models. `property` is the tag that every model requires, and each variant lists its tag values and the model it stands for. `NestModelInterceptor` converts the input with the model that the tag picks. |
+| `nestModelReturn` | `(id: string, array?: boolean): MethodDecorator` | The rewrite inserts it on a handler that returns a model. `NestModelInterceptor` reads it. |
+
+### From `client`
+
+| Member | Behavior |
+| --- | --- |
+| `ClientRuntime` | Holds a client's options and sends its requests. `new ClientRuntime(client, options, servers?)`, where `servers` is the `servers` list of the document. `readResponse` selects the declared response, decodes it and runs the operation's response check. |
+| `isUndeclaredResponseError` | `(error, client?)`: true for a status or media type the operation does not declare |
+| `serializePath` | Writes a path parameter |
+| `addQueryParameter` | Adds a query parameter |
+| `setQueryString` | Sets a whole querystring parameter |
+| `appendQuery` | Appends one encoded query pair |
+| `serializeHeaderSimple` | Writes a header value |
+| `serializeContentParameter` | Writes a parameter with a media type |
+| `addCookieParameter` | Adds a cookie parameter |
+| `addCookieStyleParameter` | Adds a cookie-style parameter |
+| `encodeBody` | Encodes a request body for its media type |
+| `applySecurity` | Adds credentials for the operation's security requirements |
+| `encode` | Percent-encodes a value |
+
+The module also exports the types these functions use: `ClientOptions`, `RequestOptions`, `ParameterSerializer`, `EncodedBody`, `BodyEncoder`, `MutualTlsTransport`, `ResponseHeaderDecoder`, `StreamDecoder`, `ResponseDecoder`, `UndeclaredResponseError`, `AuthContext`, `TokenAuthValue`, `BasicCredentials`, `BasicAuthValue` and `RuntimeSecuritySchemes`. Each SDK aliases the option types with its client name, such as `PaymentsClientOptions`.

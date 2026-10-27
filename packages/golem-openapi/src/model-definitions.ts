@@ -124,7 +124,6 @@ function modelAdditionalProperties(
   return result;
 }
 
-/** One JSON Pointer token. */
 export function collectOpenApiModelDefinitions(document: unknown, resources?: ResourceIndex): {
   definitions: ModelDefinitions;
   ordered: ModelDefinition[];
@@ -263,7 +262,6 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
     if (isJsonObject(rawSchema)) selections.set(rawSchema, selection ?? null);
     if (!selection) {
       warn('OPENAPI_DISCRIMINATOR_NOT_LOWERED', `schema ${JSON.stringify(rawName)} has a discriminator, but not every oneOf/anyOf variant is a component model; its discriminator is not used for conversion`);
-      continue;
     }
   }
 

@@ -73,7 +73,9 @@ function bodyKey({ pieces, callees }: BodyKey, groups: ReadonlyMap<number, numbe
   let key = pieces[0]!;
   for (let index = 0; index < callees.length; index += 1) {
     const callee = callees[index]!;
-    key += `n${callee.fast},${groups.get(callee.id) ?? -1},${pieces[index + 1]!}`;
+    const group = groups.get(callee.id);
+    if (group === undefined) throw new Error(`The validator compiler has no emitted function for the schema function ${callee.id}.`);
+    key += `n${callee.fast},${group},${pieces[index + 1]!}`;
   }
   return key;
 }

@@ -58,9 +58,13 @@ models:
 
 The `output` of a job marks where it writes its main files. Golem replaces only files that it generated ([files Golem owns](/guide/watch#files-golem-owns)).
 
+Each kind of job writes its files in one place:
+
 - A `generators` or `openapi` job writes only below its `output` directory.
 - A `controllers` job writes its `output` document and `src/generated/operation-codecs.ts` below its `root`.
 - A `models` job writes `models.validators.generated.ts` and the generated files of shared model files below its `output`. It writes the generated file of each model source beside that source inside `root`.
+
+These rules apply to every `output`:
 
 - An `output` is relative to `golem.yaml`. For example, `output: ../shared-sdk` writes an SDK to a sibling folder.
 - Outputs of different jobs must not overlap. An output inside another output stops loading `golem.yaml`.
@@ -102,7 +106,7 @@ Install `@exprtlabs/golem-ts-openapi` to use `controllers`. A job reads static N
 | `output` | path | Yes | — | One config-relative `.json`, `.yaml` or `.yml` document. |
 | `openapiVersion` | `'3.2.0'` or `'3.1.2'` | No | `3.2.0` | Document dialect. Use `3.1.2` for consumers that need it. A contract that `3.1.2` cannot represent stops generation. |
 | `info` | object | Yes | — | OpenAPI information object with the API `title` and `version`. |
-| `servers` | array of objects | No | — | OpenAPI server objects, each with a `url`. |
+| `servers` | array of objects | No | — | OpenAPI server objects, each with a `url`. On `3.2.0` a server can also take a `name`, unique in the list. |
 | `tags` | array of objects | No | — | OpenAPI tag objects with a `name` and an optional description. |
 | `securitySchemes` | object | No | — | Named OpenAPI security schemes that controller metadata references. |
 | `globalPrefix` | string | No | — | Prefix for every route. Match the Nest application configuration. |

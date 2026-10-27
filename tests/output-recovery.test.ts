@@ -127,6 +127,22 @@ test('a failed second replacement preserves the earlier per-file success and las
   assert.equal(loadInventory(config).files['src/second.model.generated.ts']?.digest, digest(content(4)));
 });
 
+test('a failed cleanup of the temporary file does not hide the rename failure that caused it', (t: TestContext) => {
+  // protects: T-490 the unlink in the finally block threw over the first error, so the report named only the cleanup
+  const { directory, config, job } = fixture(t);
+  const target = path.join(directory, 'src/first.model.generated.ts');
+  const renameFailure = Object.assign(new Error('simulated artifact rename failure'), { code: 'EIO' });
+  const failing: OutputFiles = {
+    ...realOutputFiles,
+    rename: () => { throw renameFailure; },
+    unlink: () => { throw Object.assign(new Error('simulated unlink refusal'), { code: 'EACCES' }); },
+  };
+  assert.throws(
+    () => applyJob(config, loadInventory(config), job, [artifact(target, 1)], false, failing),
+    (error: Error & { code?: string }) => /^simulated artifact rename failure\. Golem could not remove the temporary file .*\.tmp either: simulated unlink refusal$/.test(error.message) && error.cause === renameFailure && error.code === 'EIO',
+  );
+});
+
 test('a failed stale unlink leaves earlier removal visible and retry tolerates its missing file', (t: TestContext) => {
   const { directory, config, job } = fixture(t);
   const kept = path.join(directory, 'src/kept.model.generated.ts');

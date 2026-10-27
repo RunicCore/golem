@@ -14,7 +14,8 @@ import type { RewriteProject } from './rewrite-host.js';
  * cost beside the one of the build: the program is opened once in the thread and reopened for a file it does not hold.
  * Node's type stripping cannot load a `.tsx` file, nor a file with a decorator, an `enum`, a namespace with a value or a
  * parameter property, so the hook compiles those with the project's TypeScript instead, following the `jsx`, decorator
- * and `target` options of its tsconfig; every other file stays with Node.
+ * and `target` options of its tsconfig; every other file stays with Node. A file with `import x = require()` or `export =`
+ * stops the load with a message that names the line and the ES module form to write, because both are CommonJS only.
  * The `resolve` hook lets a relative `.js`, `.mjs` or `.cjs` import name the TypeScript source (`.ts` or `.tsx`) that has no built file yet,
  * the way the generated companions and validators name their siblings. ES modules only: a rewrite adds imports, which CommonJS cannot run.
  */
@@ -73,7 +74,7 @@ export async function load(url: string, context: LoadContext, nextLoad: NextLoad
   const loaded: LoadResult = TSX_FILE.test(file) ? { format: 'module', source: await readFile(file), shortCircuit: true } : await nextLoad(url, context);
   const text = sourceText(loaded.source);
   const rewritten = rewriting.rewrite(file, text);
-  const compiled = rewriting.transpile(file, text, rewritten);
+  const compiled = rewriting.transpile(file, text, rewritten, loaded.format !== 'commonjs-typescript');
   const output = compiled ?? rewritten;
   if (!output) return loaded;
   // The rewrite prepends ES imports and the compile emits an ES module; CommonJS runs neither.

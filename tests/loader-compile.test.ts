@@ -140,13 +140,61 @@ test('a syntax error in a decorated file stops the load with the file, the line 
   assert.match(result.stderr, new RegExp(`golem cannot compile .*broken\\.ts:\n.*broken\\.ts:${lineOf(source, 'const broken')} TS\\d+: `), result.stderr);
 });
 
-test('a .tsx file whose tsconfig leaves JSX in the output fails the run with the file and the option to set', async (t) => {
-  // protects: T-380 a .tsx file that no jsx option compiles stops with a golem error, not a Node syntax error
-  for (const compilerOptions of [{}, { jsx: 'preserve' }]) {
+for (const [label, compilerOptions] of [['sets no jsx option', {}], ['sets jsx to preserve', { jsx: 'preserve' }]] as const) {
+  test(`a .tsx file whose tsconfig ${label} fails the run with the file and the option to set`, async (t) => {
+    // protects: T-380 a .tsx file that no jsx option compiles stops with a golem error, not a Node syntax error
     const root = await project(t, 'loader-tsx-no-jsx', { include: JSX_PROJECT.include, compilerOptions });
     write(root, 'src/view.tsx', VIEW);
     const result = await run(root, 'src/view.tsx');
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, /golem cannot compile .*view\.tsx: set compilerOptions\.jsx in .*tsconfig\.json/, result.stderr);
-  }
+  });
+}
+
+test('a file with import x = require() stops the load with its line and what to write instead', async (t) => {
+  // protects: T-485 CommonJS-only forms get a golem message before Node's ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX
+  const root = await project(t, 'loader-import-equals');
+  write(root, 'src/required.ts', "// the first line\nimport fs = require('node:fs');\nconsole.log(fs.existsSync('.'));\n");
+  const result = await run(root, 'src/required.ts');
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /golem cannot load .*required\.ts:2: import <name> = require\(\) is CommonJS only, and golem compiles to ES modules only\. Write import <name> from '<module>' or import \* as <name> from '<module>'/, result.stderr);
+  assert.ok(!result.stderr.includes('ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX'), result.stderr);
+});
+
+test('a file with export = stops the load with its line and what to write instead', async (t) => {
+  // protects: T-485 CommonJS-only forms get a golem message before Node's ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX
+  const root = await project(t, 'loader-export-equals');
+  write(root, 'src/value.ts', 'const value = { answer: 42 };\nexport = value;\n');
+  const result = await run(root, 'src/value.ts');
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /golem cannot load .*value\.ts:2: export = is CommonJS only, and golem compiles to ES modules only\. Write export default <value>/, result.stderr);
+  assert.ok(!result.stderr.includes('ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX'), result.stderr);
+});
+
+test('a .tsx file with export = stops the load with the golem message, not the compiler output', async (t) => {
+  // protects: T-485 a .tsx file gets the CommonJS-only check too
+  const root = await project(t, 'loader-tsx-export-equals', JSX_PROJECT);
+  write(root, 'src/view.tsx', `${H}\nconst view = <i>{'ok'}</i>;\nexport = view;\n`);
+  const result = await run(root, 'src/view.tsx');
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /golem cannot load .*view\.tsx:3: export = is CommonJS only/, result.stderr);
+});
+
+test('a .cts file with export = gets the CommonJS refusal, which names the module formats to use', async (t) => {
+  // protects: T-485 advice to write ES module forms is for ES module files only
+  const root = await project(t, 'loader-cts-export-equals');
+  write(root, 'src/value.cts', 'const value = { answer: 42 };\nexport = value;\n');
+  const result = await run(root, 'src/value.cts');
+  assert.notEqual(result.code, 0);
+  assert.ok(result.stderr.includes('golem compiles to ES modules only; src/value.cts loads as CommonJS'), result.stderr);
+  assert.ok(!result.stderr.includes('golem cannot load'), result.stderr);
+});
+
+test('export default and a type-only import = require() still load: they are types or plain exports', async (t) => {
+  // protects: T-485 only export = and a value import = require() are CommonJS-only
+  const root = await project(t, 'loader-export-default');
+  write(root, 'src/default.ts', "import type fs = require('node:fs');\nconst value = { answer: 42 };\nexport default value;\nconst unused: fs.Stats | undefined = undefined;\nconsole.log(JSON.stringify({ value, unused }));\n");
+  const result = await run(root, 'src/default.ts');
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(result.stdout, '{"value":{"answer":42}}\n');
 });

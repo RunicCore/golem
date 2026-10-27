@@ -4,6 +4,7 @@ import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
 import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-api.js';
 import type { CompileInput, CompileOptions } from './index.js';
 import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrFunction, IrInstance, IrModule, IrSchema, IrTypeName, IrValidationImport } from './ir.js';
+import { JSON_TYPES } from './json-types.js';
 import { baseInside, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';
 
 export const VALIDATE_UNSUPPORTED_KEYWORD = 'VALIDATE_UNSUPPORTED_KEYWORD';
@@ -24,6 +25,23 @@ const EVALUATION_KEYWORDS: readonly string[] = ['unevaluatedProperties', 'uneval
 
 const TYPE_NAMES: readonly IrTypeName[] = ['string', 'number', 'integer', 'boolean', 'null', 'object', 'array'];
 
+const isStringList = (value: unknown): boolean => Array.isArray(value) && value.every(item => typeof item === 'string');
+
+/** The shapes of standard keyword values that would loosen or crash validation if lowering dropped them. A wrong shape is an error. This is not the whole 2020-12 meta-schema: it does not check uniqueness, or a list's minimum length. */
+const KEYWORD_SHAPES: readonly { readonly keywords: readonly string[]; readonly accepts: (value: unknown) => boolean; readonly expected: string }[] = [
+  { keywords: ['type'], accepts: value => isTypeName(value) || (Array.isArray(value) && value.length > 0 && value.every(isTypeName)), expected: `a type name or a non-empty list of type names (${TYPE_NAMES.join(', ')})` },
+  { keywords: ['enum'], accepts: Array.isArray, expected: 'a list' },
+  { keywords: ['minLength', 'maxLength', 'minItems', 'maxItems', 'minProperties', 'maxProperties', 'minContains', 'maxContains'], accepts: value => typeof value === 'number' && Number.isInteger(value) && value >= 0, expected: 'a non-negative integer' },
+  { keywords: ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum'], accepts: value => finiteNumber(value) !== undefined, expected: 'a finite number' },
+  { keywords: ['multipleOf'], accepts: value => typeof value === 'number' && Number.isFinite(value) && value > 0, expected: 'a finite number above 0' },
+  { keywords: ['pattern', 'format'], accepts: value => typeof value === 'string', expected: 'a string' },
+  { keywords: ['required'], accepts: isStringList, expected: 'a list of strings' },
+  { keywords: ['uniqueItems'], accepts: value => typeof value === 'boolean', expected: 'true or false' },
+  { keywords: ['properties', 'patternProperties', 'dependentSchemas'], accepts: isRecord, expected: 'an object' },
+  { keywords: ['dependentRequired'], accepts: value => isRecord(value) && Object.values(value).every(isStringList), expected: 'an object whose values are lists of strings' },
+  { keywords: ['allOf', 'anyOf', 'oneOf', 'prefixItems'], accepts: Array.isArray, expected: 'a list' },
+];
+
 /** A step that hands the same value to another function, so no part of the value is consumed. */
 interface SameValueEdge {
   readonly to: number;
@@ -42,7 +60,7 @@ interface RecordContext {
   readonly otherValueFunction: (keyword: string, value: unknown, ...more: readonly (string | number)[]) => number;
   readonly sameValueFunction: (keyword: string, value: unknown, ...more: readonly (string | number)[]) => number;
   readonly inPlaceBranch: (keyword: string, branch: unknown, position: number) => IrSchema;
-  readonly malformed: (keyword: string, expected: string) => void;
+  readonly malformed: (keyword: string, expected: string, ...inside: readonly string[]) => void;
 }
 
 /** `not` passes the value on, but what its schema evaluates does not count for the schema that holds it. */
@@ -87,16 +105,6 @@ function holdsEvaluationKeyword(node: unknown): boolean {
 // Keywords that describe a schema and never reject a value.
 const ANNOTATION_KEYWORDS: ReadonlySet<string> = new Set(['title', 'description', 'default', 'examples', '$comment', 'deprecated', 'readOnly', 'writeOnly']);
 
-const TYPE_TESTS: Readonly<Record<IrTypeName, (value: unknown) => boolean>> = {
-  string: value => typeof value === 'string',
-  number: value => typeof value === 'number' && Number.isFinite(value),
-  integer: value => Number.isInteger(value),
-  boolean: value => typeof value === 'boolean',
-  null: value => value === null,
-  object: value => typeof value === 'object' && value !== null && !Array.isArray(value),
-  array: value => Array.isArray(value),
-};
-
 /**
  * The values a branch allows when its only validation keywords are `const` or `enum`, and a `type` that every value
  * satisfies; undefined for any other branch.
@@ -105,10 +113,12 @@ function literalBranchValues(branch: unknown): readonly unknown[] | undefined {
   if (!isRecord(branch) || Object.hasOwn(branch, 'const') === Array.isArray(branch.enum)) return undefined;
   if (!Object.keys(branch).every(key => key === 'const' || key === 'enum' || key === 'type' || ANNOTATION_KEYWORDS.has(key) || key.startsWith('x-'))) return undefined;
   const values = Object.hasOwn(branch, 'const') ? [branch.const] : branch.enum as readonly unknown[];
+  // A value with no JSON form is left to the branch's own lowering, which reports it.
+  if (holdsNonFiniteNumber(values)) return undefined;
   if (!Object.hasOwn(branch, 'type')) return values;
   const names = typeof branch.type === 'string' ? [branch.type] : Array.isArray(branch.type) ? branch.type as readonly unknown[] : [];
   if (names.length === 0 || !names.every(isTypeName)) return undefined;
-  return values.every(value => names.some(name => TYPE_TESTS[name](value))) ? values : undefined;
+  return values.every(value => names.some(name => JSON_TYPES[name].test(value))) ? values : undefined;
 }
 
 /**
@@ -130,6 +140,13 @@ function referenceName(target: SchemaLocation): string | undefined {
 
 function isTypeName(value: unknown): value is IrTypeName {
   return TYPE_NAMES.some(name => name === value);
+}
+
+/** True when the value is, or holds at any depth, a number that is not finite. */
+function holdsNonFiniteNumber(value: unknown): boolean {
+  if (typeof value === 'number') return !Number.isFinite(value);
+  if (Array.isArray(value)) return value.some(holdsNonFiniteNumber);
+  return isRecord(value) && Object.values(value).some(holdsNonFiniteNumber);
 }
 
 function finiteNumber(value: unknown): number | undefined {
@@ -162,8 +179,10 @@ interface LoweringResult {
 }
 
 /**
- * Lowers every root, and every schema a root reaches through `$ref`, to validation IR. Schemas are
- * assumed valid against the 2020-12 meta-schema; a keyword whose value has the wrong shape is ignored.
+ * Lowers every root, and every schema a root reaches through `$ref`, to validation IR. A standard keyword
+ * whose value has the wrong shape (see `KEYWORD_SHAPES`), and an `enum` or `const` that holds a number JSON
+ * cannot write, is an error: the callers that read a document check it against the 2020-12 meta-schema, which
+ * leaves non-finite numbers to this step, and `writeSdk` takes a document unchecked.
  */
 export function lower(input: CompileInput, options: Pick<CompileOptions, 'unknownFormats' | 'documentName' | 'locate'>): LoweringResult {
   return new Lowering(input, options).run();
@@ -387,6 +406,7 @@ class Lowering {
       if (UNSUPPORTED_KEYWORDS.has(keyword)) this.report(VALIDATE_UNSUPPORTED_KEYWORD, GolemDiagnosticSeverity.Error, here, keyword, `the keyword ${keyword} is not supported`);
     }
     const cx = this.recordContext(node, here, sameValue);
+    this.checkShapes(cx);
     this.lowerTypeAndValues(cx);
     this.lowerReference(cx);
     this.lowerString(cx);
@@ -403,11 +423,15 @@ class Lowering {
 
   /** The context of one schema object: its child locations, and the ways to lower a child that applies to the same value or to another. */
   private recordContext(node: Readonly<Record<string, unknown>>, here: SchemaLocation, sameValue: SameValueEdge[]): RecordContext {
-    const child = (keyword: string, value: unknown, ...more: readonly (string | number)[]): SchemaLocation => ({
-      ...here,
-      node: value,
-      pointer: more.reduce<string>((path, token) => path + pointerSegment(token), here.pointer + pointerSegment(keyword)),
-    });
+    // Every schema position of a keyword comes through here, so a value that is no schema is one error in one place.
+    const child = (keyword: string, value: unknown, ...more: readonly (string | number)[]): SchemaLocation => {
+      if (typeof value !== 'boolean' && !isRecord(value)) malformed(keyword, 'expected a boolean or a schema object', ...more.map(String));
+      return {
+        ...here,
+        node: value,
+        pointer: more.reduce<string>((path, token) => path + pointerSegment(token), here.pointer + pointerSegment(keyword)),
+      };
+    };
     // A child that reads part of the value (a property, an item) starts a new chain of same-value steps. A child
     // that holds `unevaluatedProperties` or `unevaluatedItems` is its own function, because its record belongs to the
     // child value, not to this one.
@@ -429,8 +453,17 @@ class Lowering {
       return this.lowerSchema(child(keyword, branch, position), sameValue);
     };
     // A golem keyword with a malformed value is an error: dropping it would accept data its rule rejects.
-    const malformed = (keyword: string, expected: string): void => this.report(VALIDATE_UNSUPPORTED_KEYWORD, GolemDiagnosticSeverity.Error, here, keyword, `the value of ${keyword} is not valid: ${expected}`);
+    const malformed = (keyword: string, expected: string, ...inside: readonly string[]): void => this.report(VALIDATE_UNSUPPORTED_KEYWORD, GolemDiagnosticSeverity.Error, here, keyword, `the value of ${keyword} is not valid: ${expected}`, ...inside);
     return { node, here, sameValue, checks: [], child, lowerChild, otherValueFunction, sameValueFunction, inPlaceBranch, malformed };
+  }
+
+  /** One error for each standard keyword of the schema whose value has the wrong shape. */
+  private checkShapes({ node, malformed }: RecordContext): void {
+    for (const { keywords, accepts, expected } of KEYWORD_SHAPES) {
+      for (const keyword of keywords) {
+        if (Object.hasOwn(node, keyword) && !accepts(node[keyword])) malformed(keyword, `expected ${expected}`);
+      }
+    }
   }
 
   private lowerTypeAndValues({ node, checks, malformed }: RecordContext): void {
@@ -448,14 +481,23 @@ class Lowering {
       else checks.push(instance);
     }
 
-    if (Object.hasOwn(node, 'const')) checks.push({ kind: 'literal', values: [node.const] });
-    if (Array.isArray(node.enum)) checks.push({ kind: 'literal', values: node.enum as readonly unknown[] });
+    // The validators write these values as JSON, which turns Infinity and NaN into null: a null would pass.
+    if (Object.hasOwn(node, 'const')) {
+      if (holdsNonFiniteNumber(node.const)) malformed('const', 'expected a JSON value; a number that is not finite has no JSON form');
+      else checks.push({ kind: 'literal', values: [node.const] });
+    }
+    if (Array.isArray(node.enum)) {
+      if (holdsNonFiniteNumber(node.enum)) malformed('enum', 'expected JSON values; a number that is not finite has no JSON form');
+      else checks.push({ kind: 'literal', values: node.enum as readonly unknown[] });
+    }
   }
 
-  private lowerReference({ node, here, sameValue, checks }: RecordContext): void {
+  private lowerReference({ node, here, sameValue, checks, malformed }: RecordContext): void {
     if (typeof node.$ref !== 'string') return;
     const target = this.resolver.resolve(node.$ref, here.base);
-    if (target) {
+    if (target && typeof target.node !== 'boolean' && !isRecord(target.node)) {
+      malformed('$ref', `expected a reference to a schema; ${JSON.stringify(node.$ref)} names ${target.pointer === '' ? 'the whole document' : target.pointer}, which is no schema`);
+    } else if (target) {
       const to = this.functionFor(target, referenceName(target));
       sameValue.push({ to, location: here, keyword: '$ref' });
       checks.push({ kind: 'call', fn: to });
@@ -579,7 +621,9 @@ class Lowering {
   }
 
   /** `if` with `then` and `else`, and `dependentSchemas`. */
-  private lowerConditional({ node, checks, sameValueFunction }: RecordContext): void {
+  private lowerConditional({ node, checks, child, sameValueFunction }: RecordContext): void {
+    // An `if` with no `then` or `else`, and a `then` or `else` with no `if`, are not lowered, but their values are still schemas.
+    for (const keyword of ['if', 'then', 'else'] as const) if (node[keyword] !== undefined) child(keyword, node[keyword]);
     // `then` and `else` apply only next to an `if`; an `if` with neither changes nothing unless it marks what it evaluates.
     if (node.if !== undefined && (node.then !== undefined || node.else !== undefined || this.tracksEvaluation)) {
       checks.push({

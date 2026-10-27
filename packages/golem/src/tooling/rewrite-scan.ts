@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, isRecord } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
 import { OPERATION_METHOD_KEYS_EXPORT, operationCodecRegistryPath, operationCodecSlot, operationSlotCodecs, type OperationMethodCodecs } from './generated-paths.js';
 import { sharedTag } from './union-conversion.js';
@@ -10,7 +10,7 @@ import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import { evaluateStaticValue } from './static-value.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { readModelManifest } from './model-manifest.js';
-import { isInstalledFile } from './type-analysis/path-identity.js';
+import { inNodeModules, isInstalledFile } from './type-analysis/path-identity.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
 import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { advertisedModelManifests } from './type-analysis/provenance.js';
@@ -597,7 +597,7 @@ function nestUnionBinding(
     if (name) addAliasChainFiles(checker, { root, from: file, dependencies }, name);
     // A union written in another file is part of this file's rewrite.
     const written = member.getSourceFile();
-    if (written !== file && !written.fileName.split(/[\\/]/).includes('node_modules')) dependencies.add(portable(root, written.fileName));
+    if (written !== file && !inNodeModules(written.fileName)) dependencies.add(portable(root, written.fileName));
     return { member, name, id: symbol ? codecIdOf(checker, keys, symbol, dependencies) : '', golemModel: symbol ? isGolemModel(checker, symbol) : modelDeclarationKind(checker, member) !== undefined };
   });
   const golemModel = variants.every((variant) => variant.golemModel);
@@ -696,7 +696,7 @@ function loadCodecModule(
   const { root, checker, keys, file } = input;
   const module = keys.moduleOf(id);
   if (module === file.fileName) return;
-  const project = module !== undefined && !module.split(/[\\/]/).includes('node_modules') && !/\.d\.[cm]?ts$/.test(module);
+  const project = module !== undefined && !inNodeModules(module) && !/\.d\.[cm]?ts$/.test(module);
   const installed = module === undefined || project ? undefined : packageSpecifier(module, file.fileName, root);
   const specifier = project ? relativeSpecifier(file.fileName, module)
     : installed?.kind === 'package' ? installed.specifier
@@ -1013,7 +1013,7 @@ function resultOf(scan: FileScan, file: ts.SourceFile): FileScanResult {
 export function projectSources(program: ts.Program): ts.SourceFile[] {
   return program.getSourceFiles().filter((file) => !program.isSourceFileDefaultLibrary(file)
     && !program.isSourceFileFromExternalLibrary(file)
-    && !file.fileName.split(/[\\/]/).includes('node_modules'));
+    && !inNodeModules(file.fileName));
 }
 
 /** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: `golem build` runs no emit program then. */
@@ -1138,14 +1138,20 @@ function sameIds(held: readonly string[] | undefined, ids: readonly string[]): b
  * declares the method, so a method matches by its name, in any controller. A missing registry, and a parameter of no method, disagree with every site. `roots` are the controllers job roots whose registries the project's sites may belong to.
  */
 export function checkNestCodecs(roots: string | readonly string[], scanned: { readonly nestCodecSites: readonly NestCodecSite[] }): GolemDiagnostic[] {
-  const registries = (typeof roots === 'string' ? [roots] : roots).flatMap((root) => {
+  const registries: { filename: string; text: string }[] = [];
+  const unreadable: GolemDiagnostic[] = [];
+  for (const root of typeof roots === 'string' ? [roots] : roots) {
     const filename = operationCodecRegistryPath(root);
     try {
-      return [{ filename, text: fs.readFileSync(filename, 'utf8') }];
-    } catch {
-      return [];
+      registries.push({ filename, text: fs.readFileSync(filename, 'utf8') });
+    } catch (error) {
+      // No registry yet is the normal case before the controllers job ran. Any other failure is reported once for the file, not as a disagreement of every site.
+      if (!hasErrorCode(error, 'ENOENT')) {
+        unreadable.push({ code: CODE_NEST_REGISTRY, severity: GolemDiagnosticSeverity.Error, message: `the generated operation keys cannot be read (${errorMessage(error)}), so the @Body() and @Query() types cannot be checked against them`, file: filename });
+      }
     }
-  });
+  }
+  if (unreadable.length > 0) return unreadable;
   const methods: (readonly [string, OperationMethodCodecs])[] = [];
   if (registries.length > 0) {
     using session = new ts.ProgramSession({ cwd: path.dirname(registries[0]!.filename), closeWhenIdle: true });

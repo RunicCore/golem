@@ -30,6 +30,11 @@ import {
   type ResourceIndex,
 } from './schema-projection.js';
 
+/** The id of an OpenAPI schema's model: the manifest and the validation closure name a model by it. */
+export function modelStableId(digest: string, definition: ModelDefinition): string {
+  return `openapi:${digest.slice(0, 16)}#/components/schemas/${definition.schemaName}`;
+}
+
 export interface ModelDefinition {
   readonly name: string;
   readonly schemaName: string;
@@ -295,7 +300,7 @@ export function declaredModelBases(definitions: ModelDefinitions): Pick<Composit
   return { basesOf: (id) => modelBases(definitions.get(id)) };
 }
 
-export function modelSchemaReference(schema: unknown, env: ModelResolveEnv): string | null {
+function modelSchemaReference(schema: unknown, env: ModelResolveEnv): string | null {
   return directComponentSchemaRef(schema, withSchemaBase(env, schema));
 }
 

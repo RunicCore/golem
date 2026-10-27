@@ -5,6 +5,7 @@ import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import { loadReferenceGraph, type ReferenceGraph } from '#openapi/reference-loader';
+import { loadValidatedDocument } from '#openapi/resolver';
 import { createFixtureProject } from '../fixture-project.js';
 
 function write(directory: string, name: string, value: unknown): string {
@@ -91,10 +92,13 @@ test('a missing referenced file is named relative to the working directory', asy
   // protects: T-450 a message names a local file relative to the working directory
   const directory = createFixtureProject(t, 'golem-loader-missing-relative-');
   const document = root({ components: { schemas: { A: { $ref: './later.json' } } } });
-  await assert.rejects(
-    () => loadReferenceGraph(write(directory, 'api.json', document), document),
-    (error: unknown) => error instanceof Error && error.message.match(/^referenced document does not exist: (.*)$/)?.[1] === path.relative(process.cwd(), path.join(directory, 'later.json')),
-  );
+  const error = await loadReferenceGraph(write(directory, 'api.json', document), document).then(() => undefined, (cause: unknown) => cause);
+  assert.ok(error instanceof Error);
+  // Literal checks, not path.relative: a relative path ends with the folder and the file, and reaches the file from the working directory.
+  const shown = error.message.match(/^referenced document does not exist: (.*)$/)?.[1] ?? '';
+  assert.ok(shown.endsWith(`${path.basename(directory)}${path.sep}later.json`), shown);
+  assert.equal(path.isAbsolute(shown), false);
+  assert.equal(path.resolve(shown), path.join(directory, 'later.json'));
 });
 
 test('a referenced file that fails to parse is observed and named in the error', async (t) => {
@@ -107,6 +111,18 @@ test('a referenced file that fails to parse is observed and named in the error',
     (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), path.join(directory, 'broken.yaml'))}:1:`) && error.cause instanceof YAML.YAMLParseError,
   );
   assert.ok(observed.includes(path.join(directory, 'broken.yaml')));
+});
+
+test('a root openapi.json that fails to parse is named in the error', async (t) => {
+  // protects: T-491 a root JSON syntax error names the file
+  const directory = createFixtureProject(t, 'golem-loader-root-parse-');
+  const filename = write(directory, 'openapi.json', '{"openapi": "3.1.0", "info": }');
+  await assert.rejects(
+    () => loadValidatedDocument(filename),
+    (error: unknown) => error instanceof Error
+      && error.message.startsWith(`failed to parse ${path.relative(process.cwd(), filename)}: `)
+      && error.cause instanceof SyntaxError,
+  );
 });
 
 test('refs to an absolute $id are preserved and never fetched', async (t) => {

@@ -102,13 +102,13 @@ A field typed with your class, such as `office: Place`, holds an instance of tha
 
 <<< ../../examples/models/src/assignee.model.ts#nested-and-derived
 
-A derived type keeps field conversion and validation. It does not keep `Place` methods, constructor defaults or rules added with [`getValidator(model).extend()`](/guide/validation#instance-rules). `Readonly` keeps the TypeScript modifier and does not freeze the value.
+A derived type keeps field conversion and validation.
 
 A derived type is exact by default, like any model. Put a whole-object [`TValidation`](/guide/tags#add-a-custom-field-rule) predicate or [`TSerde`](/guide/serialization#change-the-json-form) formatter on the derived type itself. Do not reuse one that you wrote for another shape.
 
 ## Unions
 
-Golem converts the unions below. Generation fails for any other union, because conversion never tries the variants one by one.
+Golem converts the unions below.
 
 Supported:
 
@@ -124,15 +124,6 @@ Supported:
 A discriminated union of two models:
 
 <<< ../../examples/models/src/contact.model.ts#discriminated-union
-
-Generation fails for:
-
-- a root `IModel` or `IObject` whose fields are not an object type, such as `IModel<TEmail | TPhone>` or `IModel<string[]>`: declare the fields in an object type, and put the union, array or scalar in a field ([`RUNM1052`](/reference/diagnostics#runm1052))
-- object unions without a unique required literal discriminator: give each variant a required literal field such as `kind: 'cat'` ([`RUNM1080`](/reference/diagnostics#runm1080))
-- several undiscriminated SDK model classes, or an SDK model class plus an array, `any`, `unknown`, intersection or untagged object ([`RUNM1030`](/reference/diagnostics#runm1030))
-- any other union that would need to probe alternatives ([`RUNM1082`](/reference/diagnostics#runm1082))
-
-`Extract` and `Exclude` keep your class only when the selected branch is the unchanged named model. A structurally identical plain object does not gain its methods.
 
 ## Recursive type aliases
 
@@ -151,4 +142,4 @@ A field typed `any` or `unknown` fails unless `allowAny` is `true` ([the options
 - Neither `allowAny` nor `exact` changes which fields `toWireFormat` emits.
 - A referenced model keeps its own policy.
 
-Full examples: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models) and [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
+Full examples: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models) and [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments).

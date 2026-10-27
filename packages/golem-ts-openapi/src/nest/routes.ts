@@ -7,7 +7,7 @@ import {
   TsToOpenApiDiagnosticCode,
   diagnostic,
 } from '../diagnostics.js';
-import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator } from './analysis-utils.js';
+import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator, staticMethodName } from './analysis-utils.js';
 import { callStringValues, decoratorOptions, parseSecurity, parseTags, readBoolean, type MetadataReader } from './metadata.js';
 import { resolveValueSymbol, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, propertyInitializer, staticObject } from './symbols.js';
@@ -54,6 +54,7 @@ export function discoverControllerSources(
 ): string[] {
   return discoverSources(path.join(root, 'src'), { source: suffixPattern(suffixes), onInput });
 }
+
 function normalizeSegment(value: string): string {
   return value.trim().replace(/^\/+|\/+$/g, '');
 }
@@ -69,7 +70,6 @@ function normalizePathParameters(value: string): string {
   return value
     .replace(/:([A-Za-z_$][\w$]*)/g, '{$1}')
     .replace(/\/+/g, '/')
-    .replace(/\/{2,}/g, '/')
     .replace(/\/$/, '') || '/';
 }
 
@@ -141,10 +141,15 @@ function classMethods(
   const own = classDeclaration.members.filter(
     (member): member is ts.MethodDeclaration => ts.isMethodDeclaration(member) && !member.modifiers?.some(item => item.kind === ts.SyntaxKind.StaticKeyword),
   );
+  // A computed name has no static identity to override by, so the route loop sees every such method and reports one that carries a route.
   const byName = new Map<string, ts.MethodDeclaration>();
-  for (const method of inherited) if (method.name && ts.isIdentifier(method.name)) byName.set(method.name.text, method);
-  for (const method of own) if (method.name && ts.isIdentifier(method.name)) byName.set(method.name.text, method);
-  return [...byName.values()].sort((left, right) => {
+  const unnamed: ts.MethodDeclaration[] = [];
+  for (const method of [...inherited, ...own]) {
+    const name = staticMethodName(method);
+    if (name !== undefined) byName.set(name, method);
+    else unnamed.push(method);
+  }
+  return [...byName.values(), ...unnamed].sort((left, right) => {
     return compareText(left.getSourceFile().fileName, right.getSourceFile().fileName) || left.getStart() - right.getStart();
   });
 }
@@ -370,6 +375,15 @@ async function analyzeController(
     if (routeExcluded(context, decorators)) continue;
     const selected = routeDecorator(context, decorators);
     if (!selected) continue;
+    const methodName = staticMethodName(method);
+    if (methodName === undefined) {
+      throw new TsToOpenApiError(diagnostic(
+        method.getSourceFile(),
+        method.name,
+        TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator,
+        `Nest route method ${method.name.getText()} in ${controllerName} has a computed name that the static analysis cannot read; use an identifier name, or exclude the route with @ApiExcludeEndpoint().`,
+      ));
+    }
     const routeExpansion = expandOptionalSegments(await evaluateStringValues(selected.path, context, ['']), selected.decorator.decorator);
     const routePaths = routeExpansion.paths;
     const optionalNames = new Set([...classExpansion.optionalNames, ...routeExpansion.optionalNames]);
@@ -377,11 +391,10 @@ async function analyzeController(
     const parameterResult = parseParameters(context, method, classDeclaration);
     const methodVersions = await versionValues(versionExpressions(decorators), context);
     const versions = methodVersions.length > 0 ? methodVersions : classVersionValues.length > 0 ? classVersionValues : uriVersioning.defaultVersions.length > 0 ? uriVersioning.defaultVersions : [''];
-    const normalizedVersions = versions.length > 0 ? versions : [''];
     const effectiveVersions = uriVersioning.enabled
-      ? normalizedVersions
-      : normalizedVersions.filter(version => version === '');
-    if (!uriVersioning.enabled && normalizedVersions.some(version => version !== '')) {
+      ? versions
+      : versions.filter(version => version === '');
+    if (!uriVersioning.enabled && versions.some(version => version !== '')) {
       throw new TsToOpenApiError(diagnostic(method.getSourceFile(), method, TsToOpenApiDiagnosticCode.VersionWithoutUriRouting, 'Route versions require uriVersioning.type="URI" so each version has a distinct OpenAPI path.'));
     }
     const responses = parseResponses(context, method, selected.method, classDeclaration);
@@ -398,54 +411,54 @@ async function analyzeController(
     };
     const pathExpansion = routePaths.length > 1 || classPaths.length > 1;
     const versionExpansion = effectiveVersions.length > 1;
-    const operationBase = operation.operationId ?? `${controllerName}_${method.name.getText()}`;
+    const operationBase = operation.operationId ?? `${controllerName}_${methodName}`;
     let pathExpansionIndex = 0;
     for (let classPathIndex = 0; classPathIndex < classPaths.length; classPathIndex += 1) {
       for (let pathIndex = 0; pathIndex < routePaths.length; pathIndex += 1) {
-      for (let versionIndex = 0; versionIndex < effectiveVersions.length; versionIndex += 1) {
-        const version = effectiveVersions[versionIndex];
-        const versionPath = version && uriVersioning.enabled
-          ? joinRoutePath(`${uriVersioning.prefix}${version}`)
-          : undefined;
-        const routePath = normalizePathParameters(joinRoutePath(
-          globalPrefix,
-          versionPath,
-          classPaths[classPathIndex],
-          routePaths[pathIndex],
-        ));
-        const suffix = [
-          pathExpansion ? `path_${pathExpansionIndex + 1}` : '',
-          versionExpansion ? `version_${versionIndex + 1}` : '',
-        ].filter(Boolean).join('__');
-        const operationId = suffix ? `${operationBase}__${suffix}` : operationBase;
-        const placeholders = [...routePath.matchAll(/\{([^{}]+)\}/g)].map(match => match[1]);
-        // A parameter of an optional segment is absent from the paths without that segment.
-        const parameters = parameterResult.parameters.filter(parameter => parameter.location !== 'path'
-          || placeholders.includes(String(parameter.name))
-          || !optionalNames.has(String(parameter.name)));
-        routes.push({
-          controller: controllerName,
-          methodName: method.name.getText(),
-          method,
-          sourceFile: method.getSourceFile(),
-          httpMethod: selected.method,
-          path: routePath,
-          operationId,
-          ...(operation.summary ? { summary: operation.summary } : {}),
-          ...(operation.description ? { description: operation.description } : {}),
-          tags: [...new Set([...classTags, ...operation.tags])],
-          parameters,
-          ...(parameterResult.body ? { body: parameterResult.body } : {}),
-          responses,
-          ...(apiBody ? { requestBody: apiBody } : {}),
-          ...(Object.keys(parameterOverrides).length > 0 ? { parameterOverrides } : {}),
-          ...(operation.consumes ? { consumes: operation.consumes } : {}),
-          ...(operation.produces ? { produces: operation.produces } : {}),
-          ...(security.length > 0 ? { security } : {}),
-          ...(operation.deprecated === undefined ? {} : { deprecated: operation.deprecated }),
-        });
-      }
-      pathExpansionIndex += 1;
+        for (let versionIndex = 0; versionIndex < effectiveVersions.length; versionIndex += 1) {
+          const version = effectiveVersions[versionIndex];
+          const versionPath = version && uriVersioning.enabled
+            ? joinRoutePath(`${uriVersioning.prefix}${version}`)
+            : undefined;
+          const routePath = normalizePathParameters(joinRoutePath(
+            globalPrefix,
+            versionPath,
+            classPaths[classPathIndex],
+            routePaths[pathIndex],
+          ));
+          const suffix = [
+            pathExpansion ? `path_${pathExpansionIndex + 1}` : '',
+            versionExpansion ? `version_${versionIndex + 1}` : '',
+          ].filter(Boolean).join('__');
+          const operationId = suffix ? `${operationBase}__${suffix}` : operationBase;
+          const placeholders = [...routePath.matchAll(/\{([^{}]+)\}/g)].map(match => match[1]);
+          // A parameter of an optional segment is absent from the paths without that segment.
+          const parameters = parameterResult.parameters.filter(parameter => parameter.location !== 'path'
+            || placeholders.includes(String(parameter.name))
+            || !optionalNames.has(String(parameter.name)));
+          routes.push({
+            controller: controllerName,
+            methodName,
+            method,
+            sourceFile: method.getSourceFile(),
+            httpMethod: selected.method,
+            path: routePath,
+            operationId,
+            ...(operation.summary ? { summary: operation.summary } : {}),
+            ...(operation.description ? { description: operation.description } : {}),
+            tags: [...new Set([...classTags, ...operation.tags])],
+            parameters,
+            ...(parameterResult.body ? { body: parameterResult.body } : {}),
+            responses,
+            ...(apiBody ? { requestBody: apiBody } : {}),
+            ...(Object.keys(parameterOverrides).length > 0 ? { parameterOverrides } : {}),
+            ...(operation.consumes ? { consumes: operation.consumes } : {}),
+            ...(operation.produces ? { produces: operation.produces } : {}),
+            ...(security.length > 0 ? { security } : {}),
+            ...(operation.deprecated === undefined ? {} : { deprecated: operation.deprecated }),
+          });
+        }
+        pathExpansionIndex += 1;
       }
     }
   }

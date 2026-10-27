@@ -93,6 +93,26 @@ test('operation-parameters-unique reports duplicates within one list only', () =
   assert.deepEqual(found(document, 'operation-parameters-unique'), ['/paths/~1a/get/parameters/1']);
 });
 
+test('operation-parameters-unique treats header names that differ only by case as one parameter', () => {
+  // protects: T-491 header parameter names are case-insensitive
+  const header = (name: string) => ({ name, in: 'header', schema: { type: 'string' } });
+  const document = documentBase('3.1.0', {
+    paths: {
+      '/a': { get: { parameters: [header('X-Trace'), header('x-trace'), { name: 'Q', in: 'query' }, { name: 'q', in: 'query' }], responses: ok } },
+    },
+  });
+  assert.deepEqual(found(document, 'operation-parameters-unique'), ['/paths/~1a/get/parameters/1']);
+});
+
+test('no-duplicated-server-names reports a repeated 3.2 server name within one list', () => {
+  // protects: T-491 3.2 server names are unique
+  const document = documentBase('3.2.0', {
+    servers: [{ url: 'https://a.example', name: 'prod' }, { url: 'https://b.example', name: 'prod' }, { url: 'https://c.example', name: 'dev' }],
+    paths: { '/a': { servers: [{ url: 'https://d.example', name: 'prod' }], get: { responses: ok } } },
+  });
+  assert.deepEqual(found(document, 'no-duplicated-server-names'), ['/servers/1/name']);
+});
+
 test('path-parameters-defined checks both directions', () => {
   const document = documentBase('3.1.0', {
     paths: {
@@ -226,6 +246,36 @@ test('spec-discriminator-defaultMapping follows a $ref chain before checking req
     },
   });
   assert.deepEqual(found(document, 'spec-discriminator-defaultMapping'), []);
+});
+
+test('spec-discriminator-defaultMapping judges a schema shared by two oneOf branches in each branch', () => {
+  // protects: T-491 a shared allOf member must not hide an optional discriminator property
+  const document = documentBase('3.2.0', {
+    paths: {},
+    components: {
+      schemas: {
+        Common: { type: 'object', properties: { kind: { type: 'string' } } },
+        Pet: {
+          oneOf: [
+            { allOf: [{ $ref: '#/components/schemas/Common' }, { required: ['kind'] }] },
+            { allOf: [{ $ref: '#/components/schemas/Common' }] },
+          ],
+          discriminator: { propertyName: 'kind' },
+        },
+      },
+    },
+  });
+  assert.deepEqual(found(document, 'spec-discriminator-defaultMapping'), ['/components/schemas/Pet/discriminator']);
+});
+
+test('no-unresolved-refs checks webhooks named example and examples', () => {
+  // protects: T-491 a webhook name is not an OpenAPI literal key
+  const hook = { post: { parameters: [{ $ref: '#/components/parameters/Missing' }], responses: ok } };
+  const document = documentBase('3.1.0', { webhooks: { example: hook, examples: hook } });
+  assert.deepEqual(found(document, 'no-unresolved-refs').sort(), [
+    '/webhooks/example/post/parameters/0/$ref',
+    '/webhooks/examples/post/parameters/0/$ref',
+  ]);
 });
 
 test('rules skip x- extension keys under paths and webhooks as path items', () => {

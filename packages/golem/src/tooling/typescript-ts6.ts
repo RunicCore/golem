@@ -6,13 +6,16 @@
  * module adds only what the classic objects lack: the `ProgramSession` overlay and input-observation contract, and
  * wrappers that give types, symbols and signatures the members golem reads.
  */
+import { channel } from 'node:diagnostics_channel';
 import { createRequire } from 'node:module';
-import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath } from 'node:path';
+import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
+import { inNodeModules } from './type-analysis/path-identity.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
 
@@ -96,8 +99,7 @@ interface ClassicProgram {
   getOptionsDiagnostics(): readonly ClassicDiagnostic[];
   getGlobalDiagnostics(): readonly ClassicDiagnostic[];
   getDeclarationDiagnostics(): readonly ClassicDiagnostic[];
-  /** Members the compiler keeps to itself: the module an import resolved to, and the project reference that owns a source (with the declaration file its imports read). */
-  getResolvedModuleFromModuleSpecifier(specifier: unknown, file: Golem.SourceFile): { readonly resolvedModule?: { readonly resolvedFileName: string } } | undefined;
+  /** Internal to the classic compiler: the project reference that owns a source, with the declaration file its imports read. */
   getRedirectFromSourceFile(fileName: string): { readonly outputDts?: string } | undefined;
   emit(
     targetSourceFile: undefined,
@@ -598,13 +600,17 @@ class CompatProgram implements Golem.Program {
   resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: ReadonlySet<string>): Golem.ResolvedModule | undefined {
     const file = specifier.getSourceFile();
     assertPackageManifestsParse(specifier.text, file.fileName);
-    // The lookup the program stored is internal to the classic compiler: stop with a clear error if a release drops it.
-    if (typeof this.program.getResolvedModuleFromModuleSpecifier !== 'function') {
-      throw new Error(`TypeScript ${selected.version} gives golem no way to read how a program resolved an import: its program has no getResolvedModuleFromModuleSpecifier.`);
-    }
+    this.requireStoredResolution();
     const resolved = this.program.getResolvedModuleFromModuleSpecifier(specifier, file)?.resolvedModule;
     if (resolved || !virtualFiles || virtualFiles.size === 0) return resolved;
     return this.session.resolveModuleName(specifier.text, file.fileName, this.getCompilerOptions(), this.program.getModeForUsageLocation(file, specifier), virtualFiles).resolvedModule;
+  }
+
+  /** The lookup the program stored for an import is internal to the classic compiler: stop with a clear error if a release drops it. */
+  private requireStoredResolution(): void {
+    if (typeof this.program.getResolvedModuleFromModuleSpecifier !== 'function') {
+      throw new Error(`TypeScript ${selected.version} gives golem no way to read how a program resolved an import: its program has no getResolvedModuleFromModuleSpecifier.`);
+    }
   }
 
   getTypeChecker(): Golem.TypeChecker {
@@ -654,18 +660,19 @@ class CompatProgram implements Golem.Program {
   }
 
   /**
-   * The classic emit with a collecting `writeFile`: it writes nothing. A declaration output is told from JavaScript by its name. The
-   * source of an output is the one file `writeFile` gets for it; the files are the compiler's transformed copies, so the name is used.
-   */
-  /**
    * The compiler redirects an import of a source of a referenced project to that project's declaration output. When the program holds no file
    * for that output, the source is one an import reached without a declaration output. The compiler's own redirect and resolution say so, not its message.
    */
   unbuiltReferences(): readonly string[] {
+    // The imports of a source and the project redirect are internal to the classic compiler too: stop with a clear error if a release drops one.
+    this.requireStoredResolution();
+    if (typeof this.program.getRedirectFromSourceFile !== 'function') throw new Error(`TypeScript ${selected.version} lacks getRedirectFromSourceFile; golem build needs it for project references.`);
     const unbuilt = new Set<string>();
     for (const file of this.program.getSourceFiles()) {
       if (file.isDeclarationFile) continue;
-      for (const specifier of (file as { readonly imports?: readonly unknown[] }).imports ?? []) {
+      const imports = (file as { readonly imports?: readonly Golem.StringLiteralLike[] }).imports;
+      if (imports === undefined) throw new Error(`TypeScript ${selected.version} lacks SourceFile.imports; golem build needs it for project references.`);
+      for (const specifier of imports) {
         const source = this.program.getResolvedModuleFromModuleSpecifier(specifier, file)?.resolvedModule?.resolvedFileName;
         const output = source === undefined ? undefined : this.program.getRedirectFromSourceFile(source)?.outputDts;
         if (source !== undefined && output !== undefined && this.program.getSourceFile(output) === undefined) unbuilt.add(source);
@@ -674,6 +681,10 @@ class CompatProgram implements Golem.Program {
     return [...unbuilt];
   }
 
+  /**
+   * The classic emit with a collecting `writeFile`: it writes nothing. A declaration output is told from JavaScript by its name. The
+   * source of an output is the one file `writeFile` gets for it; the files are the compiler's transformed copies, so the name is used.
+   */
   emitToMemory(kind: Golem.EmitKind): Golem.MemoryEmit {
     const options = this.getCompilerOptions();
     const declarations = kind === 'declarations';
@@ -759,7 +770,7 @@ function withText(diagnostic: ClassicDiagnostic): Golem.Diagnostic & ClassicDiag
 
 /** A change to a package manifest or an installed package invalidates cached module resolution. */
 function affectsResolution(filename: string): boolean {
-  return basename(filename) === 'package.json' || filename.split(sep).includes('node_modules');
+  return basename(filename) === 'package.json' || inNodeModules(filename);
 }
 
 function languageVersionKey(languageVersionOrOptions: LanguageVersionOrOptions): string {
@@ -827,6 +838,11 @@ interface CachedSourceFile {
   readonly sourceFile: Golem.SourceFile;
 }
 
+// Internal notices for golem's own tests (`node:diagnostics_channel`, names in diagnostics-channels.ts), with no promise of stability; nothing is built unless a subscriber exists.
+const programOpenedChannel = channel(GOLEM_CHANNELS.programOpened);
+const inputsChangedChannel = channel(GOLEM_CHANNELS.inputsChanged);
+const sessionDisposedChannel = channel(GOLEM_CHANNELS.sessionDisposed);
+
 /**
  * The programs of a generation run or watch session, sharing one cache of parsed files.
  *
@@ -853,7 +869,9 @@ export class ProgramSession implements Disposable {
 
   /** Report inputs a host observed changing; their parsed files are parsed again. */
   inputsChanged(filenames: Iterable<string>): void {
-    for (const filename of filenames) {
+    const names = [...filenames];
+    if (inputsChangedChannel.hasSubscribers) inputsChangedChannel.publish({ session: this, filenames: names });
+    for (const filename of names) {
       const path = canonical(filename);
       this.hinted.add(path);
       this.files.delete(path);
@@ -880,6 +898,7 @@ export class ProgramSession implements Disposable {
 
   /** Open a program that reflects every file change since the previous one. */
   openProgram(options: Golem.OpenProgramOptions): Golem.Program {
+    if (programOpenedChannel.hasSubscribers) programOpenedChannel.publish({ session: this, configFile: options.configFile });
     this.assertOpen();
     const request = programRequest(this.withFlags(options), (configPath, overlays) => this.configReferencesOf(configPath, overlays));
     this.observe(options.onInput, request.hidden);
@@ -950,6 +969,7 @@ export class ProgramSession implements Disposable {
   }
 
   [Symbol.dispose](): void {
+    if (sessionDisposedChannel.hasSubscribers) sessionDisposedChannel.publish({ session: this });
     this.disposed = true;
     this.close();
   }

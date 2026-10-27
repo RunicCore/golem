@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { errorMessage, hasErrorCode, isInsideDirectory } from './generator-api.js';
+import { inNodeModules } from './type-analysis/path-identity.js';
 
 /**
  * The stat, listing and folder-watch calls a watch makes between two runs. A watch uses the real ones; a test passes its own to fault a
@@ -137,11 +138,6 @@ export class OwnedOutputIndex {
   covers(input: string): boolean {
     return this.covered.has(pathKey(input));
   }
-}
-
-/** Whether a path lies in an installed package's folder. */
-function inNodeModules(filename: string): boolean {
-  return filename.split(path.sep).includes(NODE_MODULES);
 }
 
 /**
@@ -338,7 +334,8 @@ export interface InputWatcherOptions {
  * Events carry no meaning of their own: one marks the loop dirty, and a tick works out from the scan what changed. Ticks never overlap.
  */
 export class InputWatcher {
-  private readonly folders = new Map<string, fs.FSWatcher>();
+  /** The watcher of each folder, and whether it is a `node_modules` folder watched only for the install markers. */
+  private readonly folders = new Map<string, { readonly watcher: fs.FSWatcher; readonly markers: boolean }>();
   private readonly reported = new Set<string>();
   private installed = false;
   private dirty = false;
@@ -370,7 +367,7 @@ export class InputWatcher {
       if (this.folders.has(folder) || !fs.existsSync(folder)) continue;
       const watcher = this.open(folder, markers);
       if (watcher === undefined) continue;
-      this.folders.set(folder, watcher);
+      this.folders.set(folder, { watcher, markers });
       opened = true;
     }
     this.checkWatchable();
@@ -399,7 +396,7 @@ export class InputWatcher {
   }
 
   private drop(folder: string): void {
-    this.folders.get(folder)?.close();
+    this.folders.get(folder)?.watcher.close();
     this.folders.delete(folder);
   }
 
@@ -436,11 +433,11 @@ export class InputWatcher {
     this.options.onError(new Error(`golem cannot watch ${folder} (${code}): ${errorMessage(error)}\nChanges there are not seen until it can; to fix: ${fix}.`, { cause: error }));
   }
 
-  /** Not one folder is watched although some failed to open: the loop would sleep forever, so it is told to end. */
+  /** Not one source folder is watched although some failed to open: the loop would sleep forever, so it is told to end. A watch on a `node_modules` marker folder wakes the loop only for an install, so it does not count. */
   private checkWatchable(): void {
-    if (this.unwatchable || this.closed || this.failures === 0 || this.folders.size > 0) return;
+    if (this.unwatchable || this.closed || this.failures === 0 || [...this.folders.values()].some(({ markers }) => !markers)) return;
     this.unwatchable = true;
-    this.options.onError(new Error('golem cannot watch any folder, so it stops.'));
+    this.options.onError(new Error('golem cannot watch any source folder, so it stops.'));
     this.options.onUnwatchable();
   }
 

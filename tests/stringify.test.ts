@@ -9,7 +9,8 @@ import {
   stringifyJsonString,
 } from '@exprtlabs/golem/serde';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { emitGraphStringify, render } from '@exprtlabs/golem/internal/emitter';
+import { render } from '@exprtlabs/golem/internal/emitter';
+import { emitGraphStringify } from './support/stringify-graph.js';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { instantiate, instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';

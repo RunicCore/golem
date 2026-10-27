@@ -94,16 +94,25 @@ function validateKnownKeys(
   }
 }
 
-function validateServers(value: unknown): void {
+/** A server `name` is an OpenAPI 3.2 field; 3.1 servers have only a URL, a description and variables. */
+function validateServers(value: unknown, openapi: '3.2.0' | '3.1.2'): void {
   if (value === undefined) return;
   if (!Array.isArray(value)) {
     invalidDocument(TsToOpenApiDiagnosticCode.InvalidServer, 'OpenAPI servers must be an array.');
   }
+  const names = new Set<string>();
   for (const [index, rawServer] of value.entries()) {
     const pathName = `servers[${index}]`;
     const server = recordValue(rawServer, pathName, TsToOpenApiDiagnosticCode.InvalidServer);
-    validateKnownKeys(server, pathName, ['url', 'description', 'variables'], TsToOpenApiDiagnosticCode.InvalidServer);
+    validateKnownKeys(server, pathName, openapi === '3.2.0' ? ['url', 'name', 'description', 'variables'] : ['url', 'description', 'variables'], TsToOpenApiDiagnosticCode.InvalidServer);
     nonEmptyDocumentString(server.url, `${pathName}.url`, TsToOpenApiDiagnosticCode.InvalidServer);
+    if (server.name !== undefined) {
+      const name = documentString(server.name, `${pathName}.name`, TsToOpenApiDiagnosticCode.InvalidServer);
+      if (names.has(name)) {
+        invalidDocument(TsToOpenApiDiagnosticCode.InvalidServer, `OpenAPI ${pathName}.name "${name}" repeats the name of an earlier server.`);
+      }
+      names.add(name);
+    }
     if (server.description !== undefined) {
       documentString(server.description, `${pathName}.description`, TsToOpenApiDiagnosticCode.InvalidServer);
     }
@@ -311,7 +320,7 @@ export async function buildDocument(
     title: requiredString(infoRecord.title, 'title'),
     version: requiredString(infoRecord.version, 'version'),
   };
-  validateServers(context.servers);
+  validateServers(context.servers, openapi);
   const configuredSecuritySchemes = context.securitySchemes === undefined
     ? undefined
     : recordValue(context.securitySchemes, 'securitySchemes', TsToOpenApiDiagnosticCode.InvalidSecurityScheme);

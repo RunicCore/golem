@@ -1,30 +1,16 @@
 import { code, identifier as identifierCode, join, joinIndented, literal as literalCode, type Code, type IndentedLine } from '../code.js';
-import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation } from './ir.js';
+import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrNumber, IrObject, IrPatternProperty, IrSchema, IrString, IrType, IrTypeName, IrUnion, IrValidation, IrValidationImport } from './ir.js';
 import { rt } from '../rt.js';
 import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
+import { JSON_TYPES, dispatchTest } from './json-types.js';
 import { localName, lazyStateTest } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
 import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyTest, type WriterMode } from './modes.js';
 
 const runtime = rt['validation-runtime'];
 
-const TYPE_TESTS: Readonly<Record<IrTypeName, (value: Code) => Code>> = {
-  string: value => code`typeof ${value} === 'string'`,
-  // JSON has no NaN or infinity; a model value that holds one is not a number.
-  number: value => code`(typeof ${value} === 'number' && Number.isFinite(${value}))`,
-  integer: value => code`Number.isInteger(${value})`,
-  boolean: value => code`typeof ${value} === 'boolean'`,
-  null: value => code`${value} === null`,
-  object: value => code`${localName('isObject')}(${value})`,
-  array: value => code`Array.isArray(${value})`,
-};
-
-/** The tests that tell the JSON type of a value for a union; a `number` branch tests finiteness itself. */
-const DISPATCH_TESTS: Readonly<Record<IrTypeName, (value: Code) => Code>> = {
-  ...TYPE_TESTS,
-  number: value => code`typeof ${value} === 'number'`,
-};
+const objectTest = JSON_TYPES.object.code;
 
 /** The model class of `value` among the codec ids `among`, which the module keeps as one frozen list. */
 function selectedModelCall(state: ModuleState, value: Code, among: readonly string[]): Code {
@@ -91,6 +77,7 @@ export class FunctionWriter {
   public constructor(
     public readonly state: ModuleState,
     public readonly functions: readonly IrFunction[],
+    private readonly validations: readonly IrValidationImport[],
     public readonly target: (id: number) => number,
     private readonly fn: IrFunction,
     private mode: WriterMode,
@@ -245,7 +232,7 @@ export class FunctionWriter {
   private check(check: IrCheck, value: Code, types?: readonly IrTypeName[]): void {
     switch (check.kind) {
       case 'type':
-        return this.leaf({ fails: code`!(${join(check.names.map(name => TYPE_TESTS[name](value)), code` || `)})`, issue: code`code: 'type', expected: ${literalCode(check.names)}` });
+        return this.leaf({ fails: code`!(${join(check.names.map(name => JSON_TYPES[name].code(value)), code` || `)})`, issue: code`code: 'type', expected: ${literalCode(check.names)}` });
       case 'literal': {
         const values = (): Code => this.state.constant('lit', code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(check.values))}))`, JSON.stringify(check.values));
         const equal = (item: Code): Code => code`${runtime.jsonEqual}(${value}, ${item})`;
@@ -281,7 +268,7 @@ export class FunctionWriter {
         return this.leaf({ fails: this.call(check.fn, { value, issues: code`[]`, all: code`false` }), issue: code`code: 'not'` });
       case 'conditional': return this.conditionalCheck(check, value);
       case 'dependentSchemas': {
-        const presence = this.mode.presence(this.state, value);
+        const presence = objectPresence(value);
         this.open(code`if (${localName('isObject')}(${value}))`);
         for (const { trigger, fn } of check.entries) {
           this.open(code`if (${presence.present(trigger)})`);
@@ -321,7 +308,7 @@ export class FunctionWriter {
         const result = this.fresh('result');
         this.line(code`const ${result} = ${this.state.validationFunction(index)}(${value});`);
         this.open(code`if (typeof ${result} !== 'boolean' && typeof ${result} !== 'string')`);
-        this.line(code`throw new TypeError("Validation functions must return boolean or string.");`);
+        this.line(code`throw new TypeError(${literalCode(`Validation function ${this.validations[index]!.exportName} must return boolean or string.`)});`);
         this.close();
         this.leaf({ fails: code`${result} !== true`, issue: code`code: 'custom', ...(typeof ${result} === 'string' && ${result}.length > 0 ? { reason: ${result} } : {})` });
       }
@@ -474,17 +461,17 @@ export class FunctionWriter {
   }
 
   private objectCheck(check: IrObject, value: Code, types: readonly IrTypeName[] | undefined): void {
-    this.guarded(code`if (${TYPE_TESTS.object(value)})`, ['object'], types, () => this.objectKeywords(check, value), true);
+    this.guarded(code`if (${objectTest(value)})`, ['object'], types, () => this.objectKeywords(check, value), true);
   }
 
   /** The type check that requires an object, and the object keywords in its `else`: the value is tested once. */
   private objectOrTypeIssue(type: IrType, check: IrObject, value: Code): void {
     // A mode that leaves at a failure needs no `else`: the keywords follow the type test.
     if (this.mode.fail.leaves) {
-      this.failWhen(code`!${TYPE_TESTS.object(value)}`);
+      this.failWhen(code`!${objectTest(value)}`);
       return this.objectKeywords(check, value);
     }
-    this.open(code`if (!${TYPE_TESTS.object(value)})`);
+    this.open(code`if (!${objectTest(value)})`);
     this.issue(code`code: 'type', expected: ${literalCode(type.names)}`);
     this.depth--;
     this.line(code`} else {`);
@@ -718,7 +705,7 @@ export class FunctionWriter {
       .map(name => ({ name, group: branches.filter((_, position) => typesOf[position]?.includes(name)) }))
       .filter(({ group }) => group.length > 0);
     if (groups.length < 2 || groups.some(({ group }) => group.length === branches.length)) return undefined;
-    return code`${join(groups.map(({ name, group }) => code`${DISPATCH_TESTS[name](value)} ? ${join(group.map(attempt), code` || `)} : `), code``)}false`;
+    return code`${join(groups.map(({ name, group }) => code`${dispatchTest(name, value)} ? ${join(group.map(attempt), code` || `)} : `), code``)}false`;
   }
 
   /** The JSON types a value must have to pass the function `id` (after forwarding): those of its first `type` check, `integer` as `number`; undefined when it has none. */
@@ -759,7 +746,7 @@ export class FunctionWriter {
       for (const target of targets) this.merging.delete(target);
       return;
     }
-    const presence = this.mode.presence(this.state, value);
+    const presence = objectPresence(value);
     const property = literalCode(discriminator.property);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');
@@ -840,7 +827,7 @@ export class FunctionWriter {
    * not name to be absent. Every read is of an own enumerable key.
    */
   private mergedUnion(branches: readonly IrObject[], discriminator: IrDiscriminator, value: Code): void {
-    this.failWhen(code`!${TYPE_TESTS.object(value)}`);
+    this.failWhen(code`!${objectTest(value)}`);
     const reads = branches.map(object => readSet(object, false));
     const named = branches.map(object => new Set(object.properties.map(property => property.key)));
     // A merged branch reads every value only when `additionalProperties: false` closes it (see `mergedBranches`).
@@ -893,7 +880,7 @@ export class FunctionWriter {
         for (const [name, local] of absent) this.failWhen(code`${local} !== undefined && !${localName('isInstanceState')}(${value}, ${literalCode(name)})`);
         if (unknown !== undefined) this.failWhen(unknown);
       }
-      this.objectKeywords(object, value, { presence: objectPresence(this.state, value, captured) });
+      this.objectKeywords(object, value, { presence: objectPresence(value, captured) });
       this.close();
     });
   }

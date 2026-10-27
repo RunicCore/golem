@@ -76,13 +76,13 @@ function functionName(index: number, schemaName: string | undefined, fast: boole
 }
 
 function writeFunction(state: ModuleState, module: IrModule, target: (id: number) => number, calleeSlot: CalleeSlot, fn: IrFunction, mode: WriterMode): WrittenFunction {
-  const writer = new FunctionWriter(state, module.functions, target, fn, mode, calleeSlot);
+  const writer = new FunctionWriter(state, module.functions, module.validations, target, fn, mode, calleeSlot);
   const body = writer.write();
   return { id: fn.id, parameters: functionParameters(fn), body, calls: writer.calls };
 }
 
 function writeFastCheck(state: ModuleState, module: IrModule, target: (id: number) => number, calleeSlot: CalleeSlot, fn: IrFunction, mode: WriterMode): WrittenFastCheck {
-  const writer = new FunctionWriter(state, module.functions, target, fn, mode, calleeSlot);
+  const writer = new FunctionWriter(state, module.functions, module.validations, target, fn, mode, calleeSlot);
   return { body: writer.write(), calls: writer.calls, fastCalls: writer.fastCalls };
 }
 

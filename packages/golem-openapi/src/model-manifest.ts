@@ -1,5 +1,5 @@
 import { reachesRecursiveNode, render } from '@exprtlabs/golem/internal/emitter';
-import { codecPublicId, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
@@ -13,8 +13,8 @@ import {
   type ModelDefinition,
   type OpenApiModelAnalysis,
   modelEnv,
+  modelStableId,
   withSchemaBase,
-  modelSchemaReference,
   modelFieldType,
 } from './model-resolution.js';
 
@@ -26,8 +26,7 @@ export function generateModelManifest(
   profile = requireProfile(profile);
   const { ordered, schemaGraph } = modelAnalysis;
   const digest = sourceDigest(document);
-  const stableId = (definition: ModelDefinition) =>
-    `openapi:${digest.slice(0, 16)}#/components/schemas/${definition.schemaName}`;
+  const stableId = (definition: ModelDefinition) => modelStableId(digest, definition);
   const byName = modelAnalysis.definitions;
   const sharedSchemaContext = schemaContext(document, { resources: modelAnalysis.resources });
   const models = ordered.map((definition) => {
@@ -43,13 +42,8 @@ export function generateModelManifest(
       name,
       required: definition.required.has(name),
       type: render(modelFieldType(schema, byName, fieldEnv)),
-      modelReferences: [...new Set([
-        modelSchemaReference(schema, fieldEnv),
-        ...(isJsonObject(schema) && schema.type === 'array'
-          ? [modelSchemaReference(schema.items, fieldEnv)]
-          : []),
-      ].filter((reference): reference is string => Boolean(reference && byName.has(reference))))].sort(),
     }));
+    const base = definition.baseName ? byName.get(definition.baseName) : undefined;
     return {
       id: stableId(definition),
       codecId: openApiCodecId(modelAnalysis, definition.name),
@@ -65,9 +59,7 @@ export function generateModelManifest(
         export: `${definition.name}Model`,
       },
       fields,
-      inheritance: definition.baseName && byName.get(definition.baseName)
-        ? { baseModelId: stableId(byName.get(definition.baseName) ?? definition) }
-        : null,
+      inheritance: base ? { baseModelId: stableId(base) } : null,
       discriminator: definition.discriminator || null,
       variants: definition.variants || [],
     };
@@ -136,12 +128,14 @@ export function openApiValidationSchemaClosure(
         node.id,
         node.name,
         node.codecId,
-        ...(idsByName.has(node.name) ? [idsByName.get(node.name) ?? ''] : []),
-      ].filter(Boolean))],
+        idsByName.get(node.name),
+      ].filter((alias): alias is string => Boolean(alias)))],
     }));
 }
 
 /** The runtime codec id of a model: what the manifest records and a rewrite stamps. */
 function openApiCodecId(analysis: OpenApiModelAnalysis, name: string): string {
-  return analysis.nodesByName.get(name)?.codecId ?? codecPublicId(name, { kind: 'unknown' }, undefined, { source: 'openapi', constructs: true });
+  const node = analysis.nodesByName.get(name);
+  if (!node) throw new Error(`Internal error: no schema node for model "${name}".`);
+  return node.codecId;
 }

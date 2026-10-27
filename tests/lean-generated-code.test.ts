@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { code, emitGraphStringify, emitModelFromInit, emitModelFromJSON, emitModelToJSON, identifier, render, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
+import { code, emitModelFromInit, emitModelFromJSON, emitModelToJSON, identifier, render, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import * as conversion from '@exprtlabs/golem/conversion';
@@ -11,6 +11,7 @@ import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
 import { runModule } from './support/run-module.js';
+import { emitGraphStringify } from './support/stringify-graph.js';
 
 // The lean-code guards of the generated codecs. Each counts something the generated code does or holds: the calls on an
 // array, the parameters of a function, the validators compiled into scope, the passes over a field. A change that adds

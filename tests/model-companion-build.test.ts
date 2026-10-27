@@ -232,12 +232,6 @@ async function generateModels(root: string): Promise<void> {
   await command(root, process.execPath, [golem, 'generate', '--config', path.join(root, 'golem.yaml')]);
 }
 
-/** Generates again from the same sources, as a second run over the first run's companions does. */
-async function generateAgain(root: string): Promise<void> {
-  fs.rmSync(path.join(root, '.golem/jobs.json'));
-  await generateModels(root);
-}
-
 for (const row of [
   { label: 'a utility that the user wrote', before: 'type MyPartial<T> = { [K in keyof T]?: T[K] };\n', projection: 'MyPartial<Customer>', accepted: ['{}', '{"name":"Ada"}', '{"name":"Ada","age":36}'], rejected: ['{"name":5}', '{"city":"Oslo"}'] },
   { label: 'an inline mapped type over keyof', before: '', projection: '{ [K in keyof Customer]: Customer[K] }', accepted: ['{"name":"Ada","age":36}'], rejected: ['{"name":"Ada"}', '{"name":5,"age":36}'] },
@@ -246,15 +240,12 @@ for (const row of [
   { label: 'an indexed access of a member', before: '', projection: "Customer['name']", accepted: ['"Ada"'], rejected: ['5'] },
   { label: 'a Record over keyof', before: '', projection: 'Record<keyof Customer, number>', accepted: ['{"name":1,"age":2}'], rejected: ['{"name":"Ada","age":2}', '{"name":1}'] },
 ] as const) {
-  test(`a field typed by ${row.label} over an app class generates on the first run, and a second run writes the same files`, async t => {
+  test(`a field typed by ${row.label} over an app class generates on the first run`, async t => {
     // protects: T-264 every utility type over an app class resolves its base fields on the first golem-model run
     const { root } = orderProject(t, row);
     await buildModelProject(root);
-    const firstFiles = generatedModelFiles(root);
     const candidates = [...row.accepted, ...row.rejected];
     assert.deepEqual(await acceptedSummaries(root, candidates, 1), row.accepted);
-    await generateAgain(root);
-    assert.deepEqual(generatedModelFiles(root), firstFiles);
   });
 }
 

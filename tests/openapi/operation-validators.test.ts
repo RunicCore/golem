@@ -325,7 +325,7 @@ test('an OpenAPI format golem does not check stops generation by default, and un
   );
   assert.match((stopped.diagnostics ?? [])[0]?.message ?? '', /the format "money" is not implemented, so golem cannot check it\./);
   const warned = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
-  assert.ok(warned.artifacts.length > 0);
+  assert.ok(warned.artifacts.some(artifact => artifact.path === path.join(output, 'validators.generated.ts')), 'the warned run writes the SDK validators');
   assert.ok((warned.diagnostics ?? []).some(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT' && entry.severity === GolemDiagnosticSeverity.Warning));
 });
 
@@ -346,6 +346,47 @@ test('an unknown format in an inline operation schema is reported with the opera
   assert.deepEqual(errors.map(entry => entry.severity), [GolemDiagnosticSeverity.Error]);
   assert.match(errors[0].message, /^operation "credit" at \/input\/properties\/body\/format: /);
   const warned = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
-  assert.ok(warned.artifacts.length > 0);
+  assert.ok(warned.artifacts.some(artifact => artifact.path === path.join(output, 'validators.generated.ts')), 'the warned run writes the SDK validators');
   assert.ok((warned.diagnostics ?? []).some(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT' && entry.severity === GolemDiagnosticSeverity.Warning));
+});
+
+test('writeSdk reports each standard keyword with a wrong shape that a document never checked holds, and writes no files', () => {
+  // protects: T-486 a wrong-shape standard keyword is an error, not a looser validator
+  const schema = { type: 'object', properties: {
+    kind: { type: 'integr' }, tag: { enum: 'a' }, name: { type: 'string', minLength: '3' }, code: { type: 'string', pattern: 5 },
+  } };
+  const document = {
+    openapi: '3.1.0', info: { title: 'Shapes', version: '1' },
+    paths: { '/a': { post: { operationId: 'send', requestBody: { content: { 'application/json': { schema } } }, responses: { 200: { description: 'ok' } } } } },
+  };
+  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-wrong-shapes'), profile: { mobx: false, validation: true } });
+  assert.deepEqual(result.artifacts, []);
+  assert.deepEqual((result.diagnostics ?? []).map(entry => [entry.code, entry.severity, entry.message]), [
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/kind/type: the value of type is not valid: expected a type name or a non-empty list of type names (string, number, integer, boolean, null, object, array)'],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/tag/enum: the value of enum is not valid: expected a list'],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/name/minLength: the value of minLength is not valid: expected a non-negative integer'],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/code/pattern: the value of pattern is not valid: expected a string'],
+  ]);
+});
+
+test('writeSdk reports each schema keyword that holds a value that is no schema, and writes no files', () => {
+  // protects: T-509 a schema keyword with a non-schema value is an error, not a looser or a rejecting validator
+  const schema = { type: 'object', properties: {
+    list: { items: 5 }, wanted: { contains: 'x' }, other: { not: 5 }, extra: { additionalProperties: 'x' }, cond: { if: 3 }, branch: { allOf: [true, 7] },
+  } };
+  const document = {
+    openapi: '3.1.0', info: { title: 'Schemas', version: '1' },
+    paths: { '/a': { post: { operationId: 'send', requestBody: { content: { 'application/json': { schema } } }, responses: { 200: { description: 'ok' } } } } },
+  };
+  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-non-schema-values'), profile: { mobx: false, validation: true } });
+  assert.deepEqual(result.artifacts, []);
+  const expected = 'expected a boolean or a schema object';
+  assert.deepEqual((result.diagnostics ?? []).map(entry => [entry.code, entry.severity, entry.message]), [
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/list/items: the value of items is not valid: ${expected}`],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/wanted/contains: the value of contains is not valid: ${expected}`],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/other/not: the value of not is not valid: ${expected}`],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/extra/additionalProperties: the value of additionalProperties is not valid: ${expected}`],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/cond/if: the value of if is not valid: ${expected}`],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/branch/allOf/1: the value of allOf is not valid: ${expected}`],
+  ]);
 });

@@ -67,7 +67,7 @@ npx --no-install golem check
 
 `check` exits with code 1 when a generated file is missing or stale, and it writes nothing. It also reports each `parse<T>()` call that no build tool can rewrite, with its file and line and what to run.
 
-`check` needs generated files, so CI runs `golem build` or `golem generate` first ([ignore generated files](/reference/generated-files#gitignore)). When Golem has not generated yet, `check` stops with one message. The message tells you to run `golem generate` or `golem build` first.
+`check` needs generated files. If you ignore them in git, CI runs `golem build` or `golem generate` first. If you commit them, CI runs `golem check`, and a stale file fails the run ([ignore or commit generated files](/reference/generated-files#gitignore)). When Golem has not generated yet, `check` stops with one message. The message tells you to run `golem generate` or `golem build` first.
 
 With `--no-install`, `npx` fails when the project does not [install Golem](/guide/quick-start#packages-for-each-generator).
 
