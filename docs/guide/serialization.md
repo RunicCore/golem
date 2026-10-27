@@ -1,8 +1,10 @@
-# JSON conversion
+# Serialization
 
 Convert models to and from JSON, and change the JSON form of a field.
 
 ## Convert to and from JSON
+
+The JSON form of a value is the value as JSON holds it, also called its JSON value. The API names it "wire" in `toWireFormat`, `fromWireFormat` and `WireFormat<T>`.
 
 These calls convert a named [`IObject` or `IModel`](/guide/models#iobject-or-imodel).
 
@@ -34,7 +36,7 @@ Do not write `stringify(toWireFormat(x))` or `fromWireFormat(parse(text))` on th
 
 ## Model value and JSON value
 
-The model value is what your code holds. The JSON value is what `toWireFormat` returns and `stringify` writes. For most fields the two are equal. These differ:
+The model value is what your code holds. The JSON form is what `toWireFormat` returns and `stringify` writes. For most fields the two are equal. These differ:
 
 - A `Date` is a `Date` in the model and an ISO string in JSON.
 - A [`TSerde`](#change-the-json-form) field has the form that its functions give.
@@ -60,10 +62,52 @@ A function, a symbol or an array hole is not a JSON value and fails the JSON che
 <<< ../../examples/models/src/permission-input.model.ts#serde-tag
 
 - The same behavior applies when the field is nested.
-- Declare the encoder and decoder in their own module, like a `TValidation` predicate. In a model file they are a generation error ([RUNM1065](/reference/diagnostics#runm1065)).
+- Declare the encoder and decoder in their own module, like a `TValidation` predicate. The generated file imports them, and the model file imports the generated file. A function in the model file makes the two files import each other, and generation stops with [RUNM1065](/reference/diagnostics#runm1065).
 - `TSerde` functions run during conversion, never during generation.
 - A function that throws is wrapped once in a `LibError` with the exception as its `cause`.
 - An encoder must return JSON-compatible data. Non-finite numbers, cycles and other values that JSON cannot hold still fail with validation disabled.
+- The signature and the failures are in the [`TSerde` reference](/reference/runtime-api#tserde).
+
+### Example: money and priority
+
+An order holds an amount as integer cents and a priority as a number, so your code can add and sort them. Its JSON holds decimal text and a word, which people and other systems read.
+
+| Field | Model value | JSON form |
+| --- | --- | --- |
+| `amount` | `1250`, an integer in cents | `"12.50"`, decimal text |
+| `priority` | `3` | `"high"` |
+| `remindAt` | a `Date` | `"2025-01-02T03:04:05.000Z"` |
+
+Without `TSerde`, you write a mapper for each direction and call it wherever JSON enters or leaves your code. With `TSerde`, golem converts the field in every call and checks the value on both sides.
+
+Write the two functions in their own module. Priority is a number in code and a word in JSON:
+
+<<< ../../examples/models/src/priority-word.ts#priority-word
+
+An amount is an integer in cents in code and decimal text in JSON:
+
+<<< ../../examples/models/src/decimal-text.ts#decimal-text
+
+- Export each function. Each function is synchronous and takes one parameter.
+- Type the parameter of the decoder as the JSON value. `PriorityWord` limits the words, and `DecimalText` limits the text to a pattern. Golem checks the JSON value against this type before it calls the function ([Which type controls validation](#which-type-controls-validation)).
+
+Write `typeof` each function in `TSerde`, and import the functions as types:
+
+<<< ../../examples/models/src/order.model.ts#order-declaration
+
+- `Integer` and `Minimum<0>` check the model value.
+- `remindAt` is a `Date` and needs no `TSerde`. [Use Date fields](/guide/dates#use-date-fields) shows how golem writes it and how to keep its exact text.
+
+Run `npx golem generate`, then convert the JSON:
+
+<<< ../../examples/models/src/order-json.ts#read-order
+
+<<< ../../examples/models/src/order-json.ts#write-order
+
+- `parse<Order>` returns an `Order`. For `"12.50"`, its `amount` is `1250`. For `"high"`, its `priority` is `3`. `parse<TOrder>` returns a plain object with the same fields.
+- A JSON value that fails its type makes `parse` throw a `LibError`. Examples are a word that is not in the list and a text that does not match the pattern ([Errors and issues](/guide/validation#errors-and-issues)).
+- `stringify` calls the encoder of each `TSerde`. Priority `3` becomes `"high"`, and `1250` becomes `"12.50"`.
+- A model that is not valid makes `stringify` throw a `LibError`, so [validate](/guide/validation) the model first.
 
 ## Which type controls validation
 
@@ -107,7 +151,7 @@ With validation on, the default, each call checks the value. The JSON value and 
 | `parse<T>(text, { validate: false })` | | ✓ | |
 | `stringify<T>(value)` | ✓ | ✓ | ✓ |
 | `stringify<T>(value, { validate: false })` | | ✓ | |
-| `fromWireFormat<T>(wire)` | ✓ | ✓ | ✓ |
+| `fromWireFormat<T>(json)` | ✓ | ✓ | ✓ |
 | `toWireFormat<T>(value)` | ✓ | ✓ | ✓ |
 | `validate<T>(value)` | | | ✓ |
 

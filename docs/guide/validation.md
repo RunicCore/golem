@@ -2,7 +2,7 @@
 
 Check models and data, show field errors in a form, and read the errors that golem reports.
 
-Validation checks a value against the [validation tags](/guide/tags) on the field types of a model. Golem generates the checks. They run when you call a validation function and when you convert JSON ([JSON conversion](/guide/serialization#checks-during-conversion)). Constructors and field assignments do not run them, so you can keep an incomplete model while someone edits it.
+Validation checks a value against the [validation tags](/guide/tags) on the field types of a model. Golem generates the checks. They run when you call a validation function and when you convert JSON ([Serialization](/guide/serialization#checks-during-conversion)). Constructors and field assignments do not run them, so you can keep an incomplete model while someone edits it.
 
 `failFast` is an option of the validation calls. A call stops at the first issue by default. Pass `{ failFast: false }` to collect every issue, for example to show all field errors in a form.
 
@@ -28,7 +28,7 @@ Validation checks a value against the [validation tags](/guide/tags) on the fiel
 | Check a model you built | `validateInstance(model)` |
 | Show field errors in a form | `getValidator(model)` |
 | Check untrusted data against a type | `validate<T>(value)` (type predicate) |
-| Check while converting | the default in `parse` and `fromWireFormat` ([JSON conversion](/guide/serialization#checks-during-conversion)) |
+| Check while converting | the default in `parse` and `fromWireFormat` ([Serialization](/guide/serialization#checks-during-conversion)) |
 | Check `@Body()` and `@Query()` in NestJS | `NestModelInterceptor` ([Convert requests](/guide/nestjs-requests)) |
 | Call an API | a generated client validates the request and response ([Call operations](/guide/client-usage)) |
 

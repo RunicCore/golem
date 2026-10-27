@@ -60,7 +60,7 @@ test('dispose aborts the request in flight', async () => {
 });
 
 test('a draft that converts writes the number to the model', () => {
-  // protects: task T-454 the draft-number example of mobx.md and wire-text.md Step 6
+  // protects: task T-454 the draft-number example of mobx.md Bind a text input to a number field
   const store = storeWith(async () => Response.json(saved, { status: 201 }));
   store.setPartsDraft('3');
   assert.equal(store.split.parts, 3);
@@ -69,7 +69,7 @@ test('a draft that converts writes the number to the model', () => {
 });
 
 test('a draft that does not convert keeps the number and shows the draft', () => {
-  // protects: task T-454 the draft-number example of mobx.md and wire-text.md Step 6
+  // protects: task T-454 the draft-number example of mobx.md Bind a text input to a number field
   const store = storeWith(async () => Response.json(saved, { status: 201 }));
   store.setPartsDraft('3');
   store.setPartsDraft('3.');
@@ -79,7 +79,7 @@ test('a draft that does not convert keeps the number and shows the draft', () =>
 });
 
 test('an empty draft does not convert', () => {
-  // protects: task T-454 the draft-number example of mobx.md and wire-text.md Step 6
+  // protects: task T-454 the draft-number example of mobx.md Bind a text input to a number field
   const store = storeWith(async () => Response.json(saved, { status: 201 }));
   store.setPartsDraft('3');
   store.setPartsDraft('');
@@ -89,7 +89,7 @@ test('an empty draft does not convert', () => {
 });
 
 test('a draft in exponent form does not convert', () => {
-  // protects: task T-454 the draft-number example of mobx.md and wire-text.md Step 6
+  // protects: task T-454 the draft-number example of mobx.md Bind a text input to a number field
   const store = storeWith(async () => Response.json(saved, { status: 201 }));
   store.setPartsDraft('3');
   store.setPartsDraft('1e3');
@@ -99,7 +99,7 @@ test('a draft in exponent form does not convert', () => {
 });
 
 test('a draft above the safe integer range does not convert', () => {
-  // protects: task T-454 the draft-number example of mobx.md and wire-text.md Step 6
+  // protects: task T-454 the draft-number example of mobx.md Bind a text input to a number field
   const store = storeWith(async () => Response.json(saved, { status: 201 }));
   store.setPartsDraft('3');
   store.setPartsDraft('99999999999999999999');
@@ -109,7 +109,7 @@ test('a draft above the safe integer range does not convert', () => {
 });
 
 test('a draft of 0 does not convert because the model needs one part or more', () => {
-  // protects: task T-454 the draft-number example of mobx.md and wire-text.md Step 6
+  // protects: task T-454 the draft-number example of mobx.md Bind a text input to a number field
   const store = storeWith(async () => Response.json(saved, { status: 201 }));
   store.setPartsDraft('3');
   store.setPartsDraft('0');
