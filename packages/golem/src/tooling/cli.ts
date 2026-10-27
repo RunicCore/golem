@@ -26,7 +26,7 @@ const BUILD_OWNED_ARGUMENTS: Readonly<Record<string, { readonly why: string; rea
   ...Object.fromEntries(([
     ['--baseUrl', 'golem reads the baseUrl and paths of the tsconfig to give each import the path Node loads'],
     ['--composite', 'the emit program is not a composite build, and the check program must report what it reports'],
-    ['--outFile', 'the emit program writes one file per source into the outDir of the tsconfig'],
+    ['--outFile', 'TypeScript 7 removed outFile and TypeScript 6 deprecates it, so the emit program writes one file per source into the outDir of the tsconfig'],
     ['--declarationDir', 'the check program writes the declarations from your sources into the directory of the tsconfig'],
   ] as const).map(([flag, why]) => [flag.toLowerCase(), { why, workaround: 'set it in tsconfig.json' }])),
 };

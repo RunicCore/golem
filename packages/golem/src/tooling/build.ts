@@ -130,13 +130,15 @@ function referencesRefusal(configFile: string, references: readonly ts.ProjectRe
 /** Fail on a configuration the build cannot emit: the tsconfig's, with the forwarded arguments applied. It reads options alone, so it runs before anything is generated. */
 function assertSupported(configFile: string, parsed: ts.ParsedProject): void {
   const { options } = parsed;
-  const unsupported = (what: string): Error => new Error(`golem build does not support ${what} (${displayPath(configFile)}).`);
   if (parsed.fileNames.length === 0) {
     if (parsed.projectReferences.length > 0) throw referencesRefusal(configFile, parsed.projectReferences, `${displayPath(configFile)} only lists project references, so it has no files to build.`);
     throw new Error(`${displayPath(configFile)} includes no files.`);
   }
   if (stringOption(options, 'outDir') === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
-  if (stringOption(options, 'outFile') !== undefined) throw unsupported('outFile');
+  // The lanes disagree on outFile: TS 6 writes one file, TS 7 ignores it and writes one file per source. One build cannot write the same files on both.
+  if (stringOption(options, 'outFile') !== undefined) {
+    throw new Error(`golem build does not support outFile (${displayPath(configFile)}): TypeScript 7 removed it (TS5102) and TypeScript 6 deprecates it (TS5101), so one build cannot write the same files on both. Emit one file for each source, then bundle with esbuild or Vite and the golem plugin.`);
+  }
   for (const name of TSC_COMMANDS) {
     if (options[name] === true) throw new Error(`golem build does not support --${name} (${displayPath(configFile)}): it is a command of tsc, not an option of a build. Run tsc --${name} instead.`);
   }
