@@ -103,6 +103,30 @@ export function projectionBaseName(
   return (node && readable(checker, node, modelNameOf, 0)) || fallback;
 }
 
+/**
+ * The text of a type with its union members in sorted order, so it does not depend on the order in which TypeScript prints a union (type-id order: the same union prints
+ * `"b" | "a"` or `"a" | "b"` by which file the checker reads first). A union, an array and a tuple are rebuilt from their members; every other type, and a union with a name of its own
+ * or an enum, keeps its `typeToString` text.
+ */
+export function orderIndependentTypeText(checker: ts.TypeChecker, type: ts.Type): string {
+  if (type.isUnion() && !type.aliasSymbol && (type.flags & ts.TypeFlags.Boolean) === 0 && ((type.getSymbol()?.flags ?? 0) & ts.SymbolFlags.Enum) === 0) {
+    const members = type.types.map(member => orderIndependentTypeText(checker, member));
+    const texts = members.includes('true') && members.includes('false') ? [...members.filter(text => text !== 'true' && text !== 'false'), 'boolean'] : members;
+    return [...new Set(texts)].sort(compareText).join(' | ');
+  }
+  const array = checker.isArrayType(type);
+  if (array || checker.isTupleType(type)) {
+    const items = checker.getTypeArguments(type as ts.TypeReference);
+    const texts = items.map(item => orderIndependentTypeText(checker, item));
+    const printed = checker.typeToString(type);
+    // An array or tuple whose items print the same either way keeps its own text (`readonly`, tuple labels).
+    if (texts.every((text, index) => text === checker.typeToString(items[index]!))) return printed;
+    const prefix = printed.startsWith('readonly ') ? 'readonly ' : '';
+    return array ? `${prefix}${items[0]!.isUnion() ? `(${texts[0]})` : texts[0]}[]` : `${prefix}[${texts.join(', ')}]`;
+  }
+  return checker.typeToString(type);
+}
+
 /** A type argument as part of a name: `string[]` is `StringArray`, so `Page<string[]>` and `Page<string[][]>` differ. Undefined when nothing identifier-like remains. */
 function typeArgumentName(checker: ts.TypeChecker, argument: ts.Type): string | undefined {
   if (checker.isArrayType(argument)) {
@@ -114,7 +138,7 @@ function typeArgumentName(checker: ts.TypeChecker, argument: ts.Type): string | 
     const names = checker.getTypeArguments(argument as ts.TypeReference).map(item => typeArgumentName(checker, item));
     return names.every((name): name is string => name !== undefined) ? `Tuple${names.join('')}` : undefined;
   }
-  return pascalIdentifier(checker.typeToString(argument));
+  return pascalIdentifier(orderIndependentTypeText(checker, argument));
 }
 
 /**
@@ -226,7 +250,7 @@ export function unionVariantNaming(
   }
   const matched = named.every(variant => indexOf(variant) >= 0);
   const order = matched ? undefined : [...named].sort((left, right) => {
-    return compareText(checker.typeToString(left), checker.typeToString(right));
+    return compareText(orderIndependentTypeText(checker, left), orderIndependentTypeText(checker, right));
   });
   named.forEach(variant => {
     const position = order ? order.indexOf(variant) : indexOf(variant);

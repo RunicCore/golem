@@ -120,3 +120,26 @@ test('the same chain of recursive types in two files generates in linear time', 
     [['a', 'TA', { n: { child: { child: {} } } }], ['b', 'TB', { n: { next: {} } }]],
     [...Array.from({ length: links }, (_, index) => `L${index}`), 'TA', 'TB']);
 });
+
+/** The names that the generated files give a `<name>Fields` type, for one project. */
+async function projectionNames(t: TestContext, sources: Record<string, string>): Promise<string[]> {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-names-', name: 'recursive-names' });
+  writeModelSources(sourceRoot, sources);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  const built = await buildModelProject(root);
+  assert.equal(built.code, 0, `${built.stdout}${built.stderr}`);
+  const generated = Object.keys(sources).map(file => fs.readFileSync(path.join(sourceRoot, file.replace(/\.ts$/, '.generated.ts')), 'utf8')).join('\n');
+  return [...new Set([...generated.matchAll(/\b(\w+)Fields\b/g)].map(match => match[1]!))].sort();
+}
+
+test('a generic instance named by a literal union argument gets one name whichever way TypeScript orders the union', async (t: TestContext) => {
+  // protects: T-512 F-37 the same files on both TypeScript lines: Page<'east' | 'west'> is PageEastWest whichever literal the checker meets first
+  const sources = (union: string): Record<string, string> => ({
+    'a.model.ts': `${HEAD}export interface Page<T> { items: T[]; next?: Page<T> }\nexport type TA = IModel<{ p: Page<number> }>;\n`,
+    'z.model.ts': `${HEAD}export interface Page<T> { rows: T[]; next?: Page<T> }\nexport type TZ = IModel<{ p: Page<${union}> }>;\n`,
+  });
+  const forward = await projectionNames(t, sources("'east' | 'west'"));
+  const reversed = await projectionNames(t, sources("'west' | 'east'"));
+  assert.deepEqual(reversed, forward);
+  assert.deepEqual(forward, ['Page', 'PageEastWest', 'TA', 'TZ']);
+});
