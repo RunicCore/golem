@@ -31,7 +31,7 @@ Set the profile and regenerate:
 
 <<< ../../examples/payments/web/golem.yaml
 
-`mobx: true` applies to every generator in the configuration. The example also sets `validation: true`. Validation is independent of MobX ([Validate models](/guide/validation)). An OpenAPI client also gains observable operation loading ([Call operations](/guide/client-usage#observe-loading-with-mobx)).
+`mobx: true` applies to every generator in the configuration. The example also sets `validation: true`. Validation is independent of MobX ([Validate models](/guide/validation)). An SDK also gains observable operation loading ([Call operations](/guide/client-usage#observe-loading-with-mobx)).
 
 ## Initialize your class
 

@@ -4,7 +4,7 @@
 
 One toolchain for a TypeScript app's API contract. Write models as
 TypeScript types, and Golem generates validation, JSON conversion, OpenAPI
-documents and typed API clients from them. Start from TypeScript models, an
+documents and a typed SDK from them. Start from TypeScript models, an
 OpenAPI document or NestJS controllers. A build tool rewrites the `parse<T>()`
 calls into generated code ([Build tools](docs/guide/build.md)).
 

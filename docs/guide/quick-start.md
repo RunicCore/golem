@@ -107,7 +107,7 @@ Each generator is a development dependency:
 | To generate | Development dependency |
 | --- | --- |
 | TypeScript models | `npm install --save-dev @exprtlabs/golem-model` |
-| An OpenAPI client | `npm install --save-dev @exprtlabs/golem-openapi` |
+| An OpenAPI to TypeScript SDK | `npm install --save-dev @exprtlabs/golem-openapi` |
 | OpenAPI from NestJS controllers | `npm install --save-dev @exprtlabs/golem-ts-openapi` |
 
 Generated models and clients import the runtime:

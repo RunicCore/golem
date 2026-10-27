@@ -3,7 +3,7 @@ layout: home
 hero:
   name: Golem
   text: 'Write the type once. <span class="clip">Generate the rest.</span>'
-  tagline: One toolchain for a TypeScript app's API contract, end to end. Models, validation, JSON conversion, OpenAPI documents and typed API clients come from the types you already write.
+  tagline: One toolchain for a TypeScript app's API contract, end to end. Models, validation, JSON conversion, OpenAPI documents and a typed SDK come from the types you already write.
   actions:
     - theme: brand
       text: Quick start →
@@ -207,7 +207,7 @@ Golem reads the types you already write and generates each piece from them. You 
 | Validation | tags on the field type |
 | Your own JSON forms | a serde tag on the field type |
 | OpenAPI from NestJS | read from the controller's types |
-| TypeScript SDK from OpenAPI | typed operations with validated models |
+| OpenAPI to TypeScript SDK | typed operations with validated models |
 
 ## What it runs on
 
