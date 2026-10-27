@@ -138,6 +138,7 @@ Converting the model writes the JSON form and restores the instance:
 
 <<< ../../examples/models/src/attachment-json.ts#attachment-json
 
+- The `Base64` pattern accepts only well-formed base64. A malformed value fails the JSON check as input, before `atob` runs.
 - The class must have a name and have no type parameter without a default. A module must export it, under any name or as the default export ([RUNM1063](/reference/diagnostics#runm1063)).
 - A `TemporalInstant` is this kind of field. The [Temporal types](/guide/field-types#use-temporal-fields) ship their own codecs.
 

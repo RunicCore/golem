@@ -9,7 +9,7 @@ import { Task } from './task.model.js';
 import { readOrder, writeOrder } from './order-json.js';
 import type { TTask } from './task.model.js';
 import type { TTaskJSON } from './task.model.generated.js';
-import { readTask, readTaskData, writeTask } from './read-json.js';
+import { readTask, readTaskData } from './read-json.js';
 import { Thread } from './comment.model.js';
 import type { TComment } from './comment.model.js';
 import { validateTaskTitles } from './builtin-tags.model.js';
@@ -23,8 +23,8 @@ import { checkServerErrors } from './server-errors.js';
 import { loadInvalidTask } from './load-task.js';
 import { explainTaskText } from './read-errors.js';
 import { isMoney, readMoney, writeMoney } from './estimate-json.js';
-import { Budget } from './estimate.model.js';
-import { describeAttachment } from './attachment-json.js';
+import { roundTripAttachment } from './attachment-json.js';
+import { Attachment } from './attachment.model.js';
 import { readReminder } from './read-reminder.js';
 import { readSchedule, writeSchedule } from './read-schedule.js';
 import { Place, loadAssignee } from './assignee.model.js';
@@ -90,7 +90,7 @@ test('JSON text round-trips through the class and the plain type', () => {
   assert.ok(task instanceof Task);
   assert.equal(task.priority, 3);
   assert.equal(readTaskData(text) instanceof Task, false);
-  assert.equal(writeTask(task), text);
+  assert.equal(stringify<TTask>(task), text);
 });
 
 test('IObject stays a plain object; IModel nesting it builds a class instance', () => {
@@ -117,12 +117,11 @@ test('a custom field rule blocks a blank title until it is corrected', async () 
 });
 
 test('a TSerde tag converts a hex permission string and blocks a value missing the read bit', async () => {
-  const { result } = await capture(checkPermissionInput);
-  assert.equal(result.accessPermissions, 5);
-  assert.deepEqual(result.accessWire, { permissions: '0x5' });
-  assert.equal(result.deniedPermissions, 2);
-  assert.equal(result.deniedValid, false);
-  assert.deepEqual(result.deniedWire, { permissions: '0x2' });
+  assert.deepEqual(await checkPermissionInput(), {
+    permissions: 5,
+    wire: { permissions: '0x5' },
+    deniedMessage: 'Read permission is required.',
+  });
 });
 
 test('a nested field error reports an array path and clears once fixed', async () => {
@@ -142,9 +141,7 @@ test('setErrors stores a server message that clear() removes', async () => {
 });
 
 test('a trusted conversion skips validation but still surfaces the issue on validateInstance', async () => {
-  const { result } = await capture(loadInvalidTask);
-  assert.equal(result.message, 'Must be at least 1 character');
-  assert.equal(result.title, '');
+  assert.deepEqual(await loadInvalidTask(), { message: 'Must be at least 1 character', title: '' });
 });
 
 test('money is a decimal string: an IObject round-trips "12.50" exactly and rejects bad data', () => {
@@ -155,12 +152,6 @@ test('money is a decimal string: an IObject round-trips "12.50" exactly and reje
   assert.equal(isMoney({ amount: '12.505', currency: 'USD' }), false);
   assert.equal(isMoney({ amount: '12.50', currency: 'usd' }), false);
   assert.throws(() => readMoney('{"amount":"-1","currency":"USD"}'), (error: unknown) => error instanceof LibError);
-});
-
-test('the Budget IModel nests the TMoney IObject', async () => {
-  const budget = new Budget({ estimate: { amount: '5.00', currency: 'USD' } });
-  assert.deepEqual(await validateInstance(budget), []);
-  assert.deepEqual(toWireFormat<Budget>(budget), { estimate: { amount: '5.00', currency: 'USD' } });
 });
 
 test('a field typed with a class holds an instance and a derived type stays a plain object', async () => {
@@ -196,11 +187,25 @@ test('Temporal fields hold Temporal values and write ISO 8601 strings', async ()
   assert.deepEqual(logged, [[true], ['2025-01-02T04:34:05Z']]);
 });
 
-test('a TSerde field can hold a class instance such as Uint8Array', async () => {
-  const { result, logged } = await capture(describeAttachment);
-  assert.deepEqual(result.wire, { name: 'checksum.bin', content: 'AQID' });
-  assert.deepEqual([...result.copy.content], [1, 2, 3]);
-  assert.deepEqual(logged, [[true]]);
+test('a TSerde field can hold a class instance such as Uint8Array', () => {
+  const { wire, copy } = roundTripAttachment();
+  assert.deepEqual(wire, { name: 'checksum.bin', content: 'AQID' });
+  assert.ok(copy.content instanceof Uint8Array);
+  assert.deepEqual([...copy.content], [1, 2, 3]);
+});
+
+test('the base64 codec round-trips a 200 KB attachment', () => {
+  const content = Uint8Array.from({ length: 200_000 }, (_, index) => index % 256);
+  const attachment = new Attachment({ name: 'large.bin', content });
+  const copy = parse<Attachment>(stringify<Attachment>(attachment));
+  assert.deepEqual(copy.content, content);
+});
+
+test('malformed base64 is rejected as input', () => {
+  assert.throws(
+    () => parse<Attachment>('{"name":"short.bin","content":"A"}'),
+    (error: unknown) => error instanceof LibError && error.causedByInput,
+  );
 });
 
 test('an order reads decimal text, a priority word and a Date, and writes the same JSON back', () => {

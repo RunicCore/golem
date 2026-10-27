@@ -13,21 +13,10 @@ export class PermissionInput extends TPermissionInputBaseModel {}
 
 export async function checkPermissionInput() {
   const access = fromWireFormat<TPermissionInput>({ permissions: '0x5' });
-  console.log(access.permissions); // 5: JSON pattern, numeric validation constraints and read rule passed
-  console.log(toWireFormat<TPermissionInput>(access)); // { permissions: '0x5' }
+  const wire = toWireFormat<TPermissionInput>(access);
+  const issues = await validateInstance(new PermissionInput({ permissions: 2 }));
 
-  const denied = fromWireFormat<TPermissionInput>({ permissions: '0x2' }, { validate: false });
-  console.log(denied.permissions); // 2: trusted conversion does not validate
-  const deniedValid = (await validateInstance(new PermissionInput(denied))).length === 0;
-  console.log(deniedValid); // false: hasReadPermission rejects the model value
-  console.log(toWireFormat<TPermissionInput>(denied, { validate: false })); // { permissions: '0x2' }
-
-  return {
-    accessPermissions: access.permissions,
-    accessWire: toWireFormat<TPermissionInput>(access),
-    deniedPermissions: denied.permissions,
-    deniedValid,
-    deniedWire: toWireFormat<TPermissionInput>(denied, { validate: false }),
-  };
+  // -> { permissions: 5, wire: { permissions: '0x5' }, deniedMessage: 'Read permission is required.' }
+  return { permissions: access.permissions, wire, deniedMessage: issues[0]?.message };
 }
 // #endregion serde-tag

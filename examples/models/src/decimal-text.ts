@@ -1,5 +1,4 @@
 // #region decimal-text
-// TSerde functions live in their own module: generated files import them, and a model file cannot be imported back.
 import type { Pattern } from '@exprtlabs/golem/tags';
 
 export type DecimalText = string & Pattern<'^[0-9]+(?:\\.[0-9]{2})$'>;
