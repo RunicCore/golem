@@ -50,7 +50,7 @@ test('golem build --watch regenerates and rebuilds once after a model edit; any 
   // The compiler session compares file signatures, which an edit within the timestamp resolution of the file system leaves as they were: the build
   // also tells the session which files it generated.
   const hinted: string[] = [];
-  subscribe(t, 'golem:inputs-changed', (message: { readonly filenames: readonly string[] }) => { hinted.push(...message.filenames); });
+  subscribe(t, 'inputsChanged', (message: { readonly filenames: readonly string[] }) => { hinted.push(...message.filenames); });
   const finished = runBuild({ watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal, onGenerated: (jobs) => ran.push([...jobs].sort()) });
   const built = (name: string): string => { const file = path.join(root, 'build', name); return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : ''; };
   const companion = path.join(root, 'src/money.model.generated.ts');

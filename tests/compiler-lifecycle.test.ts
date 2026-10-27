@@ -45,7 +45,7 @@ function trackApiChildren(t: TestContext): ApiChildTracker {
   const before = new Set(compilerChildren(process.pid));
   // golem reports each compiler it starts; the process list is the evidence of what is alive.
   const started: (ChildProcess | undefined)[] = [];
-  subscribe(t, 'golem:compiler-started', (message: { readonly compiler: ChildProcess | undefined }) => { started.push(message.compiler); });
+  subscribe(t, 'compilerStarted', (message: { readonly compiler: ChildProcess | undefined }) => { started.push(message.compiler); });
   const live = (): number[] => compilerChildren(process.pid).filter(pid => !before.has(pid));
   const waitUntilGone = async (pids: readonly number[]): Promise<void> => {
     const deadline = Date.now() + 2_000;
@@ -137,8 +137,8 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
  * moment the request is about to go. `settled` runs when the request has ended. The returned function unsubscribes both.
  */
 function observeSnapshots(t: TestContext, requested: (request: unknown) => void, settled?: () => void): () => void {
-  const stopRequested = subscribe(t, 'golem:snapshot-requested', (message: { readonly request: unknown }) => { requested(message.request); });
-  const stopSettled = subscribe(t, 'golem:snapshot-settled', () => { settled?.(); });
+  const stopRequested = subscribe(t, 'snapshotRequested', (message: { readonly request: unknown }) => { requested(message.request); });
+  const stopSettled = subscribe(t, 'snapshotSettled', () => { settled?.(); });
   return () => { stopRequested(); stopSettled(); };
 }
 
@@ -156,7 +156,7 @@ function failTimingRecordOnClose(t: TestContext): { readonly closed: () => numbe
     fs.rmSync(path.dirname(file), { recursive: true, force: true });
   });
   let closed = 0;
-  subscribe(t, 'golem:compiler-closed', () => { closed += 1; });
+  subscribe(t, 'compilerClosed', () => { closed += 1; });
   return { closed: () => closed, failure: error => error instanceof Error && /^(EEXIST|ENOTDIR)$/.test(String((error as NodeJS.ErrnoException).code)) };
 }
 

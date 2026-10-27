@@ -55,7 +55,7 @@ test('the controllers and models jobs each open one stub program when every mode
   const root = twoFolderProject(t);
   const yaml = path.join(root, 'golem.yaml');
   const opened: (string | undefined)[] = [];
-  subscribe(t, 'golem:program-opened', (message: { readonly configFile?: string }) => { opened.push(message.configFile); });
+  subscribe(t, 'programOpened', (message: { readonly configFile?: string }) => { opened.push(message.configFile); });
   using session = new GeneratorSessionResources();
 
   const first = await runPipeline(yaml, { session });

@@ -27,7 +27,7 @@ function sdkProject(t: TestContext): { root: string; config: string; api: string
 /** The manifest validation programs opened from now on; each one lists the SDK modules in its own configuration. */
 function countValidationPrograms(t: TestContext): { readonly count: () => number } {
   let opened = 0;
-  subscribe(t, 'golem:program-opened', (message: { readonly configFile?: string }) => { if (message.configFile?.endsWith('.golem-manifest-validation.json')) opened += 1; });
+  subscribe(t, 'programOpened', (message: { readonly configFile?: string }) => { if (message.configFile?.endsWith('.golem-manifest-validation.json')) opened += 1; });
   return { count: () => opened };
 }
 

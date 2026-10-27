@@ -9,6 +9,7 @@
 import { channel } from 'node:diagnostics_channel';
 import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
+import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, referencedConfigFile } from './typescript-config.js';
@@ -836,10 +837,10 @@ interface CachedSourceFile {
   readonly sourceFile: Golem.SourceFile;
 }
 
-// Notices for tests and tools that watch the sessions of this process (`node:diagnostics_channel`); nothing is built unless a subscriber exists.
-const programOpenedChannel = channel('golem:program-opened');
-const inputsChangedChannel = channel('golem:inputs-changed');
-const sessionDisposedChannel = channel('golem:session-disposed');
+// Internal notices for golem's own tests (`node:diagnostics_channel`, names in diagnostics-channels.ts), with no promise of stability; nothing is built unless a subscriber exists.
+const programOpenedChannel = channel(GOLEM_CHANNELS.programOpened);
+const inputsChangedChannel = channel(GOLEM_CHANNELS.inputsChanged);
+const sessionDisposedChannel = channel(GOLEM_CHANNELS.sessionDisposed);
 
 /**
  * The programs of a generation run or watch session, sharing one cache of parsed files.

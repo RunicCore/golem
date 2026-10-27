@@ -28,6 +28,7 @@ import {
   sep,
 } from 'node:path';
 import * as ast from 'typescript/ast';
+import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, referenceClosure, referencedConfigFile } from './typescript-config.js';
@@ -1004,14 +1005,14 @@ function programRequest(options: OpenProgramOptions, referencesOf: (configPath: 
   return { configPath, files: [...new Set(options.sources.map(canonical))], overlays, hidden };
 }
 
-// Notices for tests and tools that watch the sessions of this process (`node:diagnostics_channel`); nothing is built unless a subscriber exists.
-const programOpenedChannel = channel('golem:program-opened');
-const inputsChangedChannel = channel('golem:inputs-changed');
-const sessionDisposedChannel = channel('golem:session-disposed');
-const compilerStartedChannel = channel('golem:compiler-started');
-const compilerClosedChannel = channel('golem:compiler-closed');
-const snapshotRequestedChannel = channel('golem:snapshot-requested');
-const snapshotSettledChannel = channel('golem:snapshot-settled');
+// Internal notices for golem's own tests (`node:diagnostics_channel`, names in diagnostics-channels.ts), with no promise of stability; nothing is built unless a subscriber exists.
+const programOpenedChannel = channel(GOLEM_CHANNELS.programOpened);
+const inputsChangedChannel = channel(GOLEM_CHANNELS.inputsChanged);
+const sessionDisposedChannel = channel(GOLEM_CHANNELS.sessionDisposed);
+const compilerStartedChannel = channel(GOLEM_CHANNELS.compilerStarted);
+const compilerClosedChannel = channel(GOLEM_CHANNELS.compilerClosed);
+const snapshotRequestedChannel = channel(GOLEM_CHANNELS.snapshotRequested);
+const snapshotSettledChannel = channel(GOLEM_CHANNELS.snapshotSettled);
 
 /** The compiler process of an API, or undefined when this TypeScript build keeps it somewhere else. */
 function compilerProcess(api: API): ChildProcess | undefined {

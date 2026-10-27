@@ -42,8 +42,8 @@ async function generatedProject(t: TestContext, name: string): Promise<string> {
 function countSessions(t: TestContext): { readonly opened: () => number; readonly disposed: () => number } {
   const sessions = new Set<object>();
   let disposed = 0;
-  subscribe(t, 'golem:program-opened', (message: { readonly session: object }) => { sessions.add(message.session); });
-  subscribe(t, 'golem:session-disposed', () => { disposed += 1; });
+  subscribe(t, 'programOpened', (message: { readonly session: object }) => { sessions.add(message.session); });
+  subscribe(t, 'sessionDisposed', () => { disposed += 1; });
   return { opened: () => sessions.size, disposed: () => disposed };
 }
 
