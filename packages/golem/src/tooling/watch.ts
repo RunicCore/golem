@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { GolemConfig } from './config.js';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, isInsideDirectory, suffixPattern } from './generator-api.js';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, failureText, isInsideDirectory, suffixPattern } from './generator-api.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
 import type { InputFiles } from './input-watcher.js';
 import { realOutputFiles } from './outputs.js';
@@ -92,7 +92,7 @@ function withWrittenFiles(error: unknown): unknown {
  * before it after a failed run) once the watch has recorded what the run read, or has reported why it could not. The watch prints nothing about its runs; the caller
  * says it. An exception from `onRun` goes to `reportError`, and the watch goes on.
  */
-export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${errorMessage(error)}\n`); }, options: WatchOptions = {}): () => void {
+export function watchPipeline(initial: PipelineState | string, reportError: (error: unknown) => void = error => { process.stderr.write(`${failureText(error)}\n`); }, options: WatchOptions = {}): () => void {
   const { session = new GeneratorSessionResources(), firstBaseline, onUnwatchable = () => {}, onRun = () => {} } = options;
   const inputFiles: InputFiles = { ...realInputFiles, ...options.files };
   const outputFiles: OutputFiles = { ...realOutputFiles, ...options.files };

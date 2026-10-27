@@ -105,6 +105,7 @@ test('a model file is own only inside the models root: a folder, a folder link, 
 
 test('a golem.yaml in a shared folder gives one warning that names it, and generation goes on without it', (t: TestContext) => {
   // protects: D-34 warn about a golem.yaml in a shared package, no hard reject
+  // protects: T-490 the warning names the paths the way the other messages do, relative to the working directory
   const { outer, root } = appBesideShared(t, undefined, {
     'golem.yaml': 'version: 1\n',
     'address.model.ts': tsSource`import type { IObject } from '@exprtlabs/golem/model';
@@ -116,7 +117,8 @@ export type TAddress = IObject<{ street: string }>;
   const result = generate({ root, profile: PROFILE });
 
   assert.deepEqual(result.diagnostics?.map(({ code, severity, file }) => ({ code, severity, file })), [{ code: 'RUNM1076', severity: 'warning', file: yaml }]);
-  assert.match(result.diagnostics?.[0].message ?? '', new RegExp(`^${yaml.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} is a golem.yaml in the shared folder of the model file .*Golem does not read it. A shared package holds no golem.yaml. Delete it.$`));
+  const shown = path.relative(process.cwd(), yaml);
+  assert.match(result.diagnostics?.[0].message ?? '', new RegExp(`^${shown.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} is a golem.yaml in the shared folder of the model file .*Golem does not read it. A shared package holds no golem.yaml. Delete it.$`));
   assert.ok(result.artifacts.some((artifact) => artifact.path === path.join(root, 'src/order.model.generated.ts')));
 });
 
@@ -439,6 +441,7 @@ for (const [importer, appType, form] of [['a CommonJS app', undefined, 'd.cts'],
 
 test('a generated .d.ts beside the .model.d.ts file of an installed package gives one warning that names it, and the app writes its own companion', (t: TestContext) => {
   // protects: D-34 warn about a companion in an installed package, no hard reject
+  // protects: T-490 the warning names the paths the way the other messages do, relative to the working directory
   const outer = createFixtureProject(t, 'golem-shared-installed-');
   linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   const declaration = installSharedDeclarations(outer);
@@ -449,7 +452,7 @@ test('a generated .d.ts beside the .model.d.ts file of an installed package give
   const { artifacts, diagnostics } = generate({ root: app, profile: PROFILE });
 
   assert.deepEqual(diagnostics?.map(({ code, file }) => ({ code, file })), [{ code: 'RUNM1076', file: published }]);
-  assert.ok(diagnostics?.[0].message.startsWith(`${published} is a generated file beside the shared model file ${declaration}. Golem does not use it`));
+  assert.ok(diagnostics?.[0].message.startsWith(`${path.relative(process.cwd(), published)} is a generated file beside the shared model file ${path.relative(process.cwd(), declaration)}. Golem does not use it`));
   assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/customer.model.generated.ts')));
 });
 

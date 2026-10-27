@@ -267,7 +267,7 @@ export function ignoredSharedFileWarnings(sharedFiles: readonly string[], appDir
     for (const companion of companionsBeside(modelFile)) {
       onInput?.(companion);
       if (existsSync(companion) && !warnings.has(companion)) {
-        warn(companion, `${companion} is a generated file beside the shared model file ${modelFile}. Golem does not use it: this app uses its own generated file in models.output. Delete it.`);
+        warn(companion, `${displayPath(companion)} is a generated file beside the shared model file ${displayPath(modelFile)}. Golem does not use it: this app uses its own generated file in models.output. Delete it.`);
       }
     }
   }
@@ -275,7 +275,7 @@ export function ignoredSharedFileWarnings(sharedFiles: readonly string[], appDir
 }
 
 function ignoredGolemYamlMessage(golemYaml: string, modelFile: string): string {
-  const ignored = `${golemYaml} is a golem.yaml in the shared folder of the model file ${modelFile}. Golem does not read it.`;
+  const ignored = `${displayPath(golemYaml)} is a golem.yaml in the shared folder of the model file ${displayPath(modelFile)}. Golem does not read it.`;
   let belongsToAnApp = false;
   try {
     belongsToAnApp = declaresAny(readGolemYaml(golemYaml), JOB_KEYS);

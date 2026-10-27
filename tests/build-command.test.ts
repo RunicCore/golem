@@ -7,7 +7,8 @@ import { parseArguments } from '#golem/cli';
 import { corruptScans } from './support/corrupt-scan.js';
 import { assertMoneyCodec } from './support/rewritten-module.js';
 
-import { write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
+import { command, golem } from './support/process.js';
+import { write, SERDE_GOLEM_YAML, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
 
 // Original sources are checked, rewritten sources are emitted
 
@@ -207,4 +208,32 @@ test('-b and --build are rejected', async (t) => {
   assert.deepEqual(parseArguments(['build']), { action: 'build', watch: false });
   assert.deepEqual(parseArguments(['build', '--config', 'app/golem.yaml']), { action: 'build', watch: false, config: 'app/golem.yaml' });
   assert.throws(() => parseArguments(['build', '--config']), { message: '--config requires a filename.' });
+});
+
+test('golem build prints the stack and cause of an internal failure, and only the message of a condition the user fixes', async (t) => {
+  // protects: T-490 the CLI entry printed errorMessage only, so a TypeError in a generator lost its stack and cause
+  const root = sourceOnlyProject(t, 'build-failure-text');
+  write(root, 'node_modules/@fixture/throwing/package.json', JSON.stringify({ name: '@fixture/throwing', version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
+  write(root, 'node_modules/@fixture/throwing/index.js', `export const apiVersion = 1;
+export function generate() { throw new TypeError('generator state is broken', { cause: new RangeError('index out of range') }); }
+`);
+  write(root, 'golem.yaml', `${fs.readFileSync(path.join(root, 'golem.yaml'), 'utf8')}generators:\n  - package: '@fixture/throwing'\n    output: out\n`);
+  const internal = await golemBuild(root, []);
+  assert.equal(internal.code, 1);
+  assert.match(internal.stderr, /TypeError: generator state is broken\n\s+at /);
+  assert.match(internal.stderr, /\[cause\]: RangeError: index out of range/);
+
+  // Conditions the user fixes print as their message: a golem.yaml key it does not know.
+  write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: true\nmodels:\n  root: .\nunknownKey: true\n');
+  const named = await golemBuild(root, []);
+  assert.equal(named.code, 1);
+  assert.doesNotMatch(named.stderr, /\n\s+at /);
+  assert.match(named.stderr, /unknownKey/);
+
+  // A command that does not exist reaches the top as a system error, `spawn … ENOENT`: the user fixes the command, so it prints as its message.
+  write(root, 'golem.yaml', SERDE_GOLEM_YAML);
+  const missing = await command(root, process.execPath, [golem, 'exec', '--', 'golem-no-such-command'], { allowFailure: true });
+  assert.equal(missing.code, 1);
+  assert.match(missing.stderr, /spawn golem-no-such-command ENOENT/);
+  assert.doesNotMatch(missing.stderr, /\n\s+at /);
 });

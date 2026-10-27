@@ -5,7 +5,7 @@ import path from 'node:path';
 import { canonicalFile, modelsRootOf, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
-import { displayPath, errorMessage, GolemDiagnosticSeverity, hasErrorCode, isInsideDirectory } from './generator-api.js';
+import { displayPath, errorMessage, failureText, GolemDiagnosticSeverity, hasErrorCode, isInsideDirectory } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { nodeSpecifierEdits } from './node-specifiers.js';
 import { atomicWrite } from './outputs.js';
@@ -259,7 +259,7 @@ function rewriteDeclarations(session: ts.ProgramSession, project: Project, sourc
   }
   for (const [file, text] of emitted.files) {
     const edit = editMaps.get(emitted.sources.get(file) ?? '');
-    if (edit !== undefined && DECLARATION_MAP.test(file)) rewritten.set(file, pointDeclarationMap(text, edit));
+    if (edit !== undefined && DECLARATION_MAP.test(file)) rewritten.set(file, pointDeclarationMap(text, edit, file));
   }
   return rewritten;
 }
@@ -532,7 +532,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     if (BUILD_INFO.test(file)) continue;
     const source = emitted.sources.get(file);
     const rewriteMap = source === undefined ? undefined : rewriteMaps.get(path.resolve(source));
-    const pointed = (mapText: string): string => (rewriteMap === undefined ? mapText : pointSourceMap(mapText, rewriteMap));
+    const pointed = (mapText: string): string => (rewriteMap === undefined ? mapText : pointSourceMap(mapText, rewriteMap, file));
     if (JS_SOURCE_MAP.test(file)) {
       if (!inline) files.set(file, pointed(text));
     } else if (inline && JS_OUTPUT.test(file)) {
@@ -634,7 +634,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
           changed = changedPaths(previous, current, (filename) => own.covers(filename));
           unreadable = undefined;
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = failureText(error);
           if (message !== unreadable) process.stderr.write(`${message}\n`);
           unreadable = message;
           return;
@@ -648,7 +648,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
         if (options.signal?.aborted || unwatchable) finish();
       }
     },
-    onError: (error) => { process.stderr.write(`${error.message}\n`); },
+    onError: (error) => { process.stderr.write(`${failureText(error)}\n`); },
     // Nothing will start another build, so the watch ends, and its exit code says it failed.
     onUnwatchable: () => {
       unwatchable = true;
@@ -672,7 +672,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     } catch (error) {
       exitCode = 1;
       wrote = false;
-      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.stderr.write(`${failureText(error)}\n`);
       record();
     }
     options.onBuilt?.({ label, exitCode });

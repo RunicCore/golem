@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { inspect } from 'node:util';
 import YAML from 'yaml';
 /** Shared API-1 contracts. Providers return contents; the CLI owns all writes. */
 export {
@@ -302,6 +303,26 @@ export function parseYamlFile(text: string, filename: string, options?: YAML.Doc
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** The faults of golem or of a tool it runs. A system error, a `SyntaxError` from a file the user wrote and a golem error name a condition the user fixes. */
+const FAULTS = [TypeError, RangeError, ReferenceError, AggregateError];
+
+/** An error that is a fault, or has one in its `cause` chain. The `seen` set stops a chain that leads back to itself. */
+function holdsFault(error: unknown, seen = new Set<unknown>()): boolean {
+  if (!(error instanceof Error) || seen.has(error)) return false;
+  seen.add(error);
+  return FAULTS.some((type) => error instanceof type) || holdsFault(error.cause, seen);
+}
+
+/**
+ * What the golem command prints for a failure. Golem's own errors and the conditions the user fixes (a missing or unreadable file, a file that
+ * is not JSON, a command that does not exist) print as their message. A programming fault (a `TypeError`, `RangeError` or `ReferenceError`,
+ * also as the `cause` of the error that wraps it) and an `AggregateError`, golem's own collection of cleanup failures whose message does not
+ * name its members, print with their stack and cause chain, which the message alone would lose.
+ */
+export function failureText(error: unknown): string {
+  return holdsFault(error) ? inspect(error) : errorMessage(error);
 }
 
 export function hasErrorCode(error: unknown, code: string): boolean {

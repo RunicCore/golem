@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, isRecord } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
 import { OPERATION_METHOD_KEYS_EXPORT, operationCodecRegistryPath, operationCodecSlot, operationSlotCodecs, type OperationMethodCodecs } from './generated-paths.js';
 import { sharedTag } from './union-conversion.js';
@@ -1138,14 +1138,20 @@ function sameIds(held: readonly string[] | undefined, ids: readonly string[]): b
  * declares the method, so a method matches by its name, in any controller. A missing registry, and a parameter of no method, disagree with every site. `roots` are the controllers job roots whose registries the project's sites may belong to.
  */
 export function checkNestCodecs(roots: string | readonly string[], scanned: { readonly nestCodecSites: readonly NestCodecSite[] }): GolemDiagnostic[] {
-  const registries = (typeof roots === 'string' ? [roots] : roots).flatMap((root) => {
+  const registries: { filename: string; text: string }[] = [];
+  const unreadable: GolemDiagnostic[] = [];
+  for (const root of typeof roots === 'string' ? [roots] : roots) {
     const filename = operationCodecRegistryPath(root);
     try {
-      return [{ filename, text: fs.readFileSync(filename, 'utf8') }];
-    } catch {
-      return [];
+      registries.push({ filename, text: fs.readFileSync(filename, 'utf8') });
+    } catch (error) {
+      // No registry yet is the normal case before the controllers job ran. Any other failure is reported once for the file, not as a disagreement of every site.
+      if (!hasErrorCode(error, 'ENOENT')) {
+        unreadable.push({ code: CODE_NEST_REGISTRY, severity: GolemDiagnosticSeverity.Error, message: `the generated operation keys cannot be read (${errorMessage(error)}), so the @Body() and @Query() types cannot be checked against them`, file: filename });
+      }
     }
-  });
+  }
+  if (unreadable.length > 0) return unreadable;
   const methods: (readonly [string, OperationMethodCodecs])[] = [];
   if (registries.length > 0) {
     using session = new ts.ProgramSession({ cwd: path.dirname(registries[0]!.filename), closeWhenIdle: true });
