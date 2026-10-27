@@ -611,9 +611,10 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 | `NestModelInterceptor` | `class NestModelInterceptor implements NestInterceptor` | Converts model-typed `@Body()` and `@Query()` parameters before the handler and writes model returns ([request contract](/guide/nestjs-requests#what-happens-to-a-request)). |
 | `nestModelStringifyInterceptor` | `(codec: ObjectCodec): NestInterceptor` | Writes every non-null result with that codec's `stringify`, an array item by item. |
 | `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that `nestModelCodec` placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
+| `nestUnionFromMetatype` | `(metatype: unknown): NestUnionInput \| undefined` | The converter of a parameter token for a union of models, such as the `design:paramtypes` entry of a `@Body()` or `@Query()` parameter typed `TCircle \| TRect`. `fromWireFormat(wire, options?)` returns the model of the variant that the tag picks and throws a `LibError` for a missing or unknown tag or invalid input. `decodeQuery(query)` turns query strings into the types that variant declares. `undefined` for any other token. |
 | `nestModelConstruct` | `(metatype: unknown)` | The class that token constructs, or `undefined`. |
 
-For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`.
+For inbound conversion in your own interceptor or pipe, get the codec with `objectCodecFromMetatype` and call its `fromWireFormat`. For a union of models, use `nestUnionFromMetatype`.
 
 ## `@exprtlabs/golem/loader` {#loader}
 

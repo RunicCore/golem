@@ -124,6 +124,7 @@ A whole `@Body()` or `@Query()` parameter can be a union of models, such as `TCi
 - A union converts only as a whole parameter. An array of a union and a union in `@Body('field')` stop with [`RUNM1081`](/reference/diagnostics#runm1081).
 - A union of models with no shared tag stops with [`RUNM1081`](/reference/diagnostics#runm1081).
 - A union return stays Nest JSON.
+- Your own interceptor or pipe converts a union parameter with [`nestUnionFromMetatype`](/reference/runtime-api#nest), as it uses `objectCodecFromMetatype` for one model. Pass the `design:paramtypes` entry of the parameter, such as `nestUnionFromMetatype(type)?.fromWireFormat(request.body, { failFast: true })`. For a query, call `decodeQuery(request.query)` first.
 
 ## Model responses
 

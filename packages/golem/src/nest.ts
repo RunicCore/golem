@@ -10,7 +10,7 @@
  * result onto `req`. When the handler returns that model, the interceptor
  * stringifies it. Any other return type stays Nest JSON. Consumers may
  * register the interceptor or write their own interceptor or pipe with
- * `objectCodecFromMetatype`. `nestModelStringifyInterceptor` stays for a
+ * `objectCodecFromMetatype`, or `nestUnionFromMetatype` for a union of models. `nestModelStringifyInterceptor` stays for a
  * response whose codec is not the declared return type.
  */
 import {
@@ -84,21 +84,25 @@ type NestModelConstruct = abstract new (values?: never) => object;
 type NestUnionVariant = readonly [values: readonly DiscriminatorValue[], id: string];
 
 /** A tagged union of registered codecs that converts a wire value through the codec its tag picks. */
-interface NestUnionInput {
-  /** The property and variants of the union: two parameters with one key are one input type. */
-  readonly key: string;
+export interface NestUnionInput {
+  /** The model of the variant that the tag of `wire` picks. A missing or unknown tag, or input the variant rejects, throws a `LibError`. */
   fromWireFormat(wire: unknown, options?: SerdeOptions): unknown;
   /** Decodes the query fields to what the picked variant declares; a query whose tag picks none stays as it is. */
   decodeQuery(query: unknown): unknown;
 }
 
+interface NestUnionBinding extends NestUnionInput {
+  /** The property and variants of the union: two parameters with one key are one input type. */
+  readonly key: string;
+}
+
 /** What the interceptor converts a whole or one-field input with. */
-type ModelInput = ObjectCodec | NestUnionInput;
+type ModelInput = ObjectCodec | NestUnionBinding;
 
 type NestModelToken = Function & {
   readonly [NEST_MODEL_CODEC_ID]?: unknown;
   readonly [NEST_MODEL_CODEC]?: ObjectCodec;
-  readonly [NEST_MODEL_UNION]?: NestUnionInput;
+  readonly [NEST_MODEL_UNION]?: NestUnionBinding;
   readonly [NEST_MODEL_CONSTRUCT]?: NestModelConstruct;
   readonly [NEST_MODEL_ARRAY]?: true;
 };
@@ -136,7 +140,7 @@ function boundCodec(metatype: unknown): ObjectCodec | undefined {
   return asToken(metatype)?.[NEST_MODEL_CODEC];
 }
 
-function boundUnion(metatype: unknown): NestUnionInput | undefined {
+function boundUnion(metatype: unknown): NestUnionBinding | undefined {
   return asToken(metatype)?.[NEST_MODEL_UNION];
 }
 
@@ -196,18 +200,19 @@ export function nestModelCodec(id: string, array?: boolean): ParameterDecorator 
 /**
  * Binds a parameter typed as a union of models, such as `TCircle | TRect`. `property` is the tag every variant requires with a
  * literal type, and each variant lists the values of its tag and its codec id. The interceptor converts
- * the input through the codec of the variant that its tag picks. Only `NestModelInterceptor` reads this binding.
+ * the input through the codec of the variant that its tag picks. `NestModelInterceptor` and `nestUnionFromMetatype` read this binding.
  */
 export function nestModelUnion(property: string, variants: readonly NestUnionVariant[]): ParameterDecorator {
   // The token is named after its variants, which the interceptor's fault messages show.
   const token = nestModelMetatype(variants.map(([, id]) => id).join(' | '), false);
-  const union = nestUnionInput(property, variants);
-  if (union) Object.defineProperty(token, NEST_MODEL_UNION, { value: union });
+  // The codecs of the variants register when their generated modules load, which can be after this class loads, so the first read resolves them.
+  let union: NestUnionBinding | undefined;
+  Object.defineProperty(token, NEST_MODEL_UNION, { get: () => union ??= nestUnionInput(property, variants) });
   return bindMetatype(token);
 }
 
 /** The union of the variants, or undefined while the codec of one is not registered. */
-function nestUnionInput(property: string, variants: readonly NestUnionVariant[]): NestUnionInput | undefined {
+function nestUnionInput(property: string, variants: readonly NestUnionVariant[]): NestUnionBinding | undefined {
   const members = variants.map(([values, id]) => ({ values, codec: getObjectCodec(id), construct: getIModelClass(id) }));
   const registered = members.flatMap((member) => member.codec === undefined ? [] : [{ ...member, codec: member.codec }]);
   if (registered.length !== members.length) return undefined;
@@ -244,6 +249,15 @@ export function objectCodecFromMetatype<T = unknown>(metatype: unknown): ObjectC
   const id = codecIdFromMetatype(metatype);
   if (!id) return undefined;
   return getObjectCodec<T>(id);
+}
+
+/**
+ * The converter of a parameter token that `nestModelUnion` placed, such as the `design:paramtypes` entry of a `@Body()` or
+ * `@Query()` parameter typed as a union of models. It is the converter `NestModelInterceptor` uses. `undefined` for any other token,
+ * and for a union whose variant codecs are not registered yet.
+ */
+export function nestUnionFromMetatype(metatype: unknown): NestUnionInput | undefined {
+  return boundUnion(metatype);
 }
 
 export function nestModelConstruct(metatype: unknown): (abstract new (values?: never) => object) | undefined {
