@@ -134,6 +134,7 @@ function resolveObjects<S>(
   scope: S,
   reader: CompositionReader<S>,
   position: 'field' | 'definition',
+  originalMembers?: readonly number[],
 ): Composition<S> {
   if (!isJsonObject(schema) || !Array.isArray(schema.allOf) || schema.allOf.length === 0) return { kind: 'members' };
   if (schema.oneOf !== undefined || schema.anyOf !== undefined || isSequenceSchema(schema)) return { kind: 'members' };
@@ -143,7 +144,7 @@ function resolveObjects<S>(
   if (deciding.length === 0) return { kind: 'members' };
   const constraints = members.flatMap(({ descriptor }) => isConstraintOnlyPart(descriptor) ? descriptor.constraints ?? [] : []);
   if (position === 'field') {
-    const distributed = distributeUnion(schema, scope, nested, reader);
+    const distributed = distributeUnion(schema, scope, nested, reader, originalMembers);
     if (distributed) return distributed;
   }
   const rule = slotRule(reader);
@@ -162,7 +163,7 @@ function resolveObjects<S>(
     }
     const composed = composeObjects(parts, rule);
     if (isRejected(composed)) return conflict(composed.rejected);
-    const never = neverSlots(composed, parts, partNames(schema, ownPart, deciding, nested, reader));
+    const never = neverSlots(composed, parts, partNames(schema, ownPart, deciding, nested, reader, originalMembers));
     const required = never.filter(({ name }) => composed.required.includes(name));
     if (required.length) return unsatisfiable(required);
     const closes = schema.unevaluatedProperties === false && parts.every((part) => part.extra.mode === 'open');
@@ -188,7 +189,7 @@ function resolveObjects<S>(
   parts.push({ slots: {}, required: composedRequired(schema), extra: { mode: 'open' } });
   const composed = composeObjects(parts, rule);
   if (isRejected(composed)) return conflict(composed.rejected);
-  const never = neverSlots(composed, parts, partNames(schema, ownPart, deciding, nested, reader));
+  const never = neverSlots(composed, parts, partNames(schema, ownPart, deciding, nested, reader, originalMembers));
   const unsatisfied = never.filter(({ name }) => composed.required.includes(name));
   if (unsatisfied.length) return unsatisfiable(unsatisfied);
   const extra = composed.extra.mode === 'open' ? unevaluatedExtra(schema, nested, reader) : composed.extra;
@@ -213,6 +214,7 @@ function distributeUnion<S>(
   scope: S,
   nested: S,
   reader: CompositionReader<S>,
+  originalMembers?: readonly number[],
 ): Composition<S> | undefined {
   const members = Array.isArray(schema.allOf) ? schema.allOf : [];
   const unions = members.flatMap((member, index) =>
@@ -232,7 +234,10 @@ function distributeUnion<S>(
   const rest = Object.keys(beside).length ? [beside] : [];
   const objects: ObjectComposition<S>[] = [];
   for (const variant of variants) {
-    const composed = resolveObjects({ ...schema, allOf: members.flatMap((member, at) => at === index ? [...rest, variant] : [member]) }, scope, reader, 'field');
+    // The rebuilt allOf has shifted positions; its messages name each member by the position in the schema's own allOf,
+    // also when this allOf is itself a rebuilt one.
+    const rebuilt = members.flatMap((member, at) => at === index ? [...rest, variant].map((replacement) => ({ member: replacement, at: originalMembers?.[at] ?? at })) : [{ member, at: originalMembers?.[at] ?? at }]);
+    const composed = resolveObjects({ ...schema, allOf: rebuilt.map(({ member }) => member) }, scope, reader, 'field', rebuilt.map(({ at }) => at));
     if (composed.kind === 'rejected') return composed;
     if (composed.kind !== 'object') return unspread;
     objects.push(composed);
@@ -279,11 +284,12 @@ function partNames<S>(
   deciding: readonly { readonly member: unknown }[],
   scope: S,
   reader: CompositionReader<S>,
+  originalMembers?: readonly number[],
 ): (string | undefined)[] {
   const members = Array.isArray(schema.allOf) ? schema.allOf : [];
   return [
     ...(ownPart ? ['the schema itself'] : []),
-    ...deciding.map(({ member }) => reader.reference(member, scope) ? undefined : `allOf member ${members.indexOf(member)}`),
+    ...deciding.map(({ member }) => reader.reference(member, scope) ? undefined : `allOf member ${originalMembers?.[members.indexOf(member)] ?? members.indexOf(member)}`),
   ];
 }
 

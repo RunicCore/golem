@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { createSchemaGraph, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { compareText } from '@exprtlabs/golem/generator-api';
@@ -222,25 +223,25 @@ function schemaGraphGroups(
   for (const id of [...schemaGraph.nodes.keys()].sort()) if (!indices.has(id)) visit(id);
 
   const owner = new Map<string, string>();
+  const described = new Map<string, readonly string[]>();
   const groups = components.map((ids) => {
     const models = new Set(ids.flatMap((id) => {
       const model = definitionNameByNodeId.get(id);
       return model === undefined ? [] : [model];
     }));
     const id = `group-${hashGroup([...ids].map((nodeId) => schemaGraph.nodes.get(nodeId)?.codecId ?? nodeId))}`;
+    const other = described.get(id);
+    if (other) throw new Error(`Internal error: the schema groups [${other.join(', ')}] and [${ids.join(', ')}] have the same id ${id}; one would overwrite the other's file models/_${id}.ts`);
+    described.set(id, ids);
     for (const nodeId of ids) owner.set(nodeId, id);
     return { id, filename: `models/_${id}.ts`, nodes: new Set(ids), models };
   }).sort((left, right) => compareText(left.id, right.id));
   return { groups, owner, runtimeEdges };
 }
 
+/** A sha256 prefix of the group's sorted codec ids, so that two groups do not share an id by chance. */
 function hashGroup(ids: readonly string[]): string {
-  let hash = 0x811c9dc5;
-  for (const character of [...ids].sort().join('\0')) {
-    hash ^= character.charCodeAt(0);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
+  return createHash('sha256').update(JSON.stringify([...ids].sort())).digest('hex').slice(0, 16);
 }
 
 export function reachableSchemaNodes(

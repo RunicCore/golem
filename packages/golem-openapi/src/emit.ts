@@ -3,7 +3,7 @@ import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from 
 import { isRecord, stableJson } from '@exprtlabs/golem/generator-api';
 import { buildOperationValidationSchemas, generateClientModules } from './client/emit.js';
 import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes } from './document.js';
-import { buildEmissionPlan, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
+import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
 import { assertPortableFilenames, identifier } from '@exprtlabs/golem/generator-api';
 import { assertUniqueExportNames, code, documentLiteral, exportedName, identifier as identifierPart, join, renderModule, type Code, type PublicModule, type RenderedModule } from '@exprtlabs/golem/internal/emitter';
@@ -265,7 +265,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   modules.set('index.ts', { exports: index.exports, stars: index.stars });
   assertUniqueExportNames(modules);
   assertPortableFilenames(files.keys());
-  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
+  return { files, output, clientName, operations, inboundOperations, diagnostics: uniqueDiagnostics([...ir.diagnostics, ...browserCookieDiagnostics(document, operations), ...serverOverrideDiagnostics(document, operations), ...modelAnalysis.diagnostics, ...inlineDiagnostics, ...modelDiagnostics]) };
 }
 
 /**

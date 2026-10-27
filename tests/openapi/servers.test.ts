@@ -37,7 +37,7 @@ function twoServerDocument(): unknown {
 
 async function loadSdk(t: TestContext, document: unknown, name: string, assertSource: string) {
   const output = path.join(createFixtureProject(t, 'golem-openapi-servers-'), 'sdk');
-  await generateMaterializedSdk(document, { output, name, profile: { mobx: false, validation: false } });
+  const { diagnostics = [] } = await generateMaterializedSdk(document, { output, name, profile: { mobx: false, validation: false } });
   const assertFile = path.join(output, 'servers-assert.ts');
   writeFileSync(assertFile, assertSource);
   compileGeneratedSdk(output, [assertFile], { strict: true });
@@ -45,7 +45,7 @@ async function loadSdk(t: TestContext, document: unknown, name: string, assertSo
   const Client = (await load('client.js'))[`${name}Client`];
   assert.equal(isGeneratedClientClass(Client), true);
   if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client`);
-  return { Client, load };
+  return { Client, load, diagnostics };
 }
 
 /** The URL of the one request that `send` makes when it gets options whose fetch records it. */
@@ -195,9 +195,13 @@ test('an operation module uses its override server too', async (t) => {
 test('a document with no root servers keeps baseUrl for every operation, whatever path servers it lists', async (t) => {
   // protects: T-458 no root servers: baseUrl is required and wins
   const document = { openapi: '3.1.0', info: { title: 'Overrides', version: '1' }, paths: { '/files': { servers: [hostOf('https://files.example')], get: op('listFiles') } } };
-  const { Client } = await loadSdk(t, document, 'Overrides', `import type { OverridesClientOptions } from './client.js';
+  const { Client, diagnostics } = await loadSdk(t, document, 'Overrides', `import type { OverridesClientOptions } from './client.js';
 const options: OverridesClientOptions = { baseUrl: 'https://own.example' };
 void options;
 `);
+  // protects: T-492 a dropped operation or path servers list is warned about
+  assert.deepEqual(diagnostics.filter(({ code }) => code === 'OPENAPI_SERVER_OVERRIDE_IGNORED').map(({ severity, message }) => ({ severity, message })), [
+    { severity: 'warning', message: 'operation listFiles lists its own servers; the client uses baseUrl for it' },
+  ]);
   assert.equal(await callUrl(Client, { baseUrl: 'https://own.example' }, 'listFiles'), 'https://own.example/files');
 });
