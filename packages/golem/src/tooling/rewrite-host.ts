@@ -40,8 +40,8 @@ export function withInlineSourceMap(code: string, map: SourceMapV3, file: string
 
 const SOURCE_MAP_COMMENT = '//# sourceMappingURL=';
 
-/** Text that can hold a construct Node cannot strip: a decorator, an enum, a namespace, or a parameter property's modifier. */
-const COMPILE_HINT = /@|\b(?:enum|namespace|module|private|protected|public|readonly|override)\b/;
+/** Text that can hold a construct Node cannot strip: a decorator, an enum, a namespace, a parameter property's modifier, `import x = require()` or `export =`. */
+const COMPILE_HINT = /@|=\s*require\b|\bexport\s*=|\b(?:enum|namespace|module|private|protected|public|readonly|override)\b/;
 
 /** Whether a namespace or module declaration holds a value, so that it runs code. A dotted name nests one declaration in the next. */
 function isInstantiated(compiler: typeof ts, node: ts.ModuleDeclaration): boolean {
@@ -52,22 +52,47 @@ function isInstantiated(compiler: typeof ts, node: ts.ModuleDeclaration): boolea
     !(compiler.isInterfaceDeclaration(statement) || compiler.isTypeAliasDeclaration(statement) || compiler.isModuleDeclaration(statement) && !isInstantiated(compiler, statement)));
 }
 
+/** What a walk of one file found: whether a construct needs the compile, and the first construct that only CommonJS holds. */
+interface Forms {
+  compiled: boolean;
+  commonJsOnly?: ts.Node;
+}
+
 /**
- * Whether `node` or a node below it is a construct that Node's type stripping rejects, because it needs code and not only the
- * removal of types: a decorator, an `enum`, a namespace with a value, or a constructor parameter with an accessibility,
- * `override` or `readonly` modifier. A `declare` form is only a type, with everything inside it.
+ * Walks `node` and the nodes below it into `forms`. The walk stops at the first CommonJS-only construct, and returns true
+ * then. Nothing inside a `declare` form runs, so the walk skips it.
  */
-function needsCompile(compiler: typeof ts, node: ts.Node): boolean {
-  const { SyntaxKind } = compiler;
+function findForms(compiler: typeof ts, node: ts.Node, forms: Forms): boolean {
   const modifiers = compiler.canHaveModifiers(node) ? compiler.getModifiers(node) ?? [] : [];
-  // Nothing inside a `declare` form runs.
-  if (modifiers.some((modifier) => modifier.kind === SyntaxKind.DeclareKeyword)) return false;
+  if (modifiers.some((modifier) => modifier.kind === compiler.SyntaxKind.DeclareKeyword)) return false;
+  if (isCommonJsOnlyForm(compiler, node)) {
+    forms.commonJsOnly = node;
+    return true;
+  }
+  if (isCompiledForm(compiler, node)) forms.compiled = true;
+  return compiler.forEachChild(node, (child) => findForms(compiler, child, forms) || undefined) === true;
+}
+
+/**
+ * A construct that Node's type stripping rejects, because it needs code and not only the removal of types: a decorator, an
+ * `enum`, a namespace with a value, or a constructor parameter with an accessibility, `override` or `readonly` modifier.
+ */
+function isCompiledForm(compiler: typeof ts, node: ts.Node): boolean {
+  const { SyntaxKind } = compiler;
   const parameterProperty = [SyntaxKind.PublicKeyword, SyntaxKind.PrivateKeyword, SyntaxKind.ProtectedKeyword, SyntaxKind.OverrideKeyword, SyntaxKind.ReadonlyKeyword];
-  const here = compiler.isDecorator(node)
+  return compiler.isDecorator(node)
     || compiler.isEnumDeclaration(node)
     || compiler.isModuleDeclaration(node) && isInstantiated(compiler, node)
-    || compiler.isParameter(node) && modifiers.some((modifier) => parameterProperty.includes(modifier.kind));
-  return here || compiler.forEachChild(node, (child) => needsCompile(compiler, child) || undefined) === true;
+    || compiler.isParameter(node) && (compiler.getModifiers(node) ?? []).some((modifier) => parameterProperty.includes(modifier.kind));
+}
+
+/**
+ * A construct that Node rejects and that only CommonJS holds: `import x = require('...')` and `export = x`. A type-only
+ * `import type x = require()` is erased. In an ES module golem names it and does not compile it.
+ */
+function isCommonJsOnlyForm(compiler: typeof ts, node: ts.Node): boolean {
+  return compiler.isImportEqualsDeclaration(node) && !node.isTypeOnly && node.moduleReference.kind === compiler.SyntaxKind.ExternalModuleReference
+    || compiler.isExportAssignment(node) && node.isExportEquals;
 }
 
 /** The 1-based line of `position` in `text`; with `map`, the line of the original file that the line maps to, or undefined when it maps to none. */
@@ -118,9 +143,10 @@ export interface RewriteProject {
    * The JavaScript of a file that Node's own type stripping cannot load: a `.tsx` file, or a file with a decorator, an `enum`, a
    * namespace with a value or a parameter property. It is an ES module that follows the tsconfig's `jsx`, decorator and `target`
    * options, with a source map back to `text`; undefined for any other file. `rewritten` is the result of `rewrite` for the same
-   * `text`, which the module then compiles in place of `text`. A `.tsx` file with no `jsx` option throws a `GolemHostError`.
+   * `text`, which the module then compiles in place of `text`. A `.tsx` file with no `jsx` option throws a `GolemHostError`. So does an
+   * ES module (`esModule`) with `import x = require()` or `export =`, which only CommonJS holds.
    */
-  transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined): { code: string; map: SourceMapV3 } | undefined;
+  transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined, esModule: boolean): { code: string; map: SourceMapV3 } | undefined;
   close(): void;
 }
 
@@ -261,12 +287,23 @@ class ScanningProject {
     return { code: applied.code, map: { ...applied.map, sources: [relative] }, dependencies: scanned.dependencies.map((dependency) => path.join(this.root, dependency)) };
   }
 
-  transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined): { code: string; map: SourceMapV3 } | undefined {
+  transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined, esModule: boolean): { code: string; map: SourceMapV3 } | undefined {
     const file = this.compiler.canonicalFilename(filename);
     const held = this.holds(file, withoutByteOrderMark(text)).getSourceFile(file);
     const tsx = TSX_FILE.test(file);
     // The walk is for the files whose text can hold such a construct.
-    if (!tsx && !(COMPILE_HINT.test(text) && held !== undefined && needsCompile(this.compiler.ts, held))) return undefined;
+    const forms: Forms = { compiled: false };
+    if (held !== undefined && COMPILE_HINT.test(text)) findForms(this.compiler.ts, held, forms);
+    const { commonJsOnly } = forms;
+    // A CommonJS file is refused by the loader after the compile, with the module format named.
+    if (esModule && held !== undefined && commonJsOnly !== undefined) {
+      const line = held.getLineAndCharacterOfPosition(commonJsOnly.getStart(held)).line + 1;
+      const [form, instead] = this.compiler.ts.isExportAssignment(commonJsOnly)
+        ? ['export =', 'export default <value>']
+        : ['import <name> = require()', "import <name> from '<module>' or import * as <name> from '<module>'"];
+      throw new GolemHostError(`golem cannot load ${displayPath(file)}:${line}: ${form} is CommonJS only, and golem compiles to ES modules only. Write ${instead}`, { file, line });
+    }
+    if (!tsx && !forms.compiled && commonJsOnly === undefined) return undefined;
     const { ts } = this.compiler;
     // Node cannot run JSX, so a file that no `jsx` option turns into calls would fail later with a syntax error.
     const { jsx } = this.options;
@@ -369,7 +406,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
     rewrite: (filename, text) => project.rewrite(filename, text),
     diagnose: (filename, text) => project.diagnose(filename, text),
     comments: (filename, text) => project.comments(filename, text),
-    transpile: (filename, text, rewritten) => project.transpile(filename, text, rewritten),
+    transpile: (filename, text, rewritten, esModule) => project.transpile(filename, text, rewritten, esModule),
     changed: (filenames) => { project.changed(filenames); },
     close() {
       if (closed) return;
