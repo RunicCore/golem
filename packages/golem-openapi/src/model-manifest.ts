@@ -1,4 +1,4 @@
-import { reachesRecursiveNode, render } from '@exprtlabs/golem/internal/emitter';
+import { modelStableId, reachesRecursiveNode, render } from '@exprtlabs/golem/internal/emitter';
 import { codecPublicId, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
@@ -26,8 +26,7 @@ export function generateModelManifest(
   profile = requireProfile(profile);
   const { ordered, schemaGraph } = modelAnalysis;
   const digest = sourceDigest(document);
-  const stableId = (definition: ModelDefinition) =>
-    `openapi:${digest.slice(0, 16)}#/components/schemas/${definition.schemaName}`;
+  const stableId = (definition: ModelDefinition) => modelStableId(digest, definition);
   const byName = modelAnalysis.definitions;
   const sharedSchemaContext = schemaContext(document, { resources: modelAnalysis.resources });
   const models = ordered.map((definition) => {

@@ -39,8 +39,8 @@ export {
   type Rejected,
   type SlotRule,
 } from './composition.js';
-import { blockComment, bindInput, code, codeKey, identifier, inputOf, inputSlot, isEmpty, join, literal, sameCode, type Code } from './code.js';
-import { rt } from './rt.js';
+import { blockComment, bindInput, code, codeKey, identifier, importLines, importSet, inputOf, inputSlot, isEmpty, join, literal, sameCode, type Code, type Helper, type ImportOptions } from './code.js';
+import { rt, type RuntimeModule } from './rt.js';
 import { MODEL_MANIFEST_FILENAME, MODEL_MANIFEST_MARKER } from './model-manifest.js';
 export { assertUniqueExportNames, type PublicModule } from './names.js';
 import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
@@ -270,8 +270,8 @@ function unionGeneratedToJson(
   return code`${value} instanceof ${model.className} ? ${encodeCall(model, expression)} : ${value}`;
 }
 
-/** The input of a field conversion that is emitted once to find its shape. No nested conversion binds this name. */
-const FIELD_INPUT = identifier(FIELD_CONVERSION_INPUT);
+/** The input of a field conversion that is emitted once to find its shape, and the parameter of a field conversion function. No nested conversion binds this name. */
+export const FIELD_INPUT = identifier(FIELD_CONVERSION_INPUT);
 
 /**
  * A converted value at a nested field. `emit(FIELD_INPUT)` shows the conversion's shape: a single call
@@ -629,4 +629,52 @@ export function emitModelFromInit(
 /** The marker comment of a file that names its model manifest, as Code. */
 export function manifestMarkerComment(relative = `./${MODEL_MANIFEST_FILENAME}`): Code {
   return blockComment(`${MODEL_MANIFEST_MARKER} ${relative}`);
+}
+
+/** The id of an OpenAPI schema's model: the manifest and the validation closure name a model by it. */
+export function modelStableId(digest: string, definition: { readonly schemaName: string }): string {
+  return `openapi:${digest.slice(0, 16)}#/components/schemas/${definition.schemaName}`;
+}
+
+/** A line of a generated file, or a helper that stands where its definition goes if the code calls the helper. */
+export type Piece = Code | Helper;
+
+export const isCode = (piece: Piece): piece is Code => 'parts' in piece;
+
+/**
+ * `emit(FIELD_INPUT)` shows the shape of a field conversion. A single call passes its function and the
+ * field value to `convertModelField`; any other conversion becomes a module-level function of the field value,
+ * so no field allocates a closure.
+ */
+export function wrapRootConversion(
+  helpers: Code[],
+  helperName: (index: number) => string,
+  direction: 'serialize' | 'deserialize',
+  field: Code,
+  input: Code,
+  emit: (value: Code) => Code,
+  inputType: Code,
+): Code {
+  const converted = emit(FIELD_INPUT);
+  if (sameCode(converted, FIELD_INPUT)) return input;
+  let convert = calleeOf(converted);
+  if (!convert) {
+    const name = identifier(helperName(helpers.length));
+    helpers.push(code`function ${name}(${FIELD_INPUT}: ${inputType}) { return ${converted}; }`);
+    convert = name;
+  }
+  return code`${rt.conversion.convertModelField}(${literal(direction)}, ${field}, ${convert}, ${input})`;
+}
+
+/** The order of the names in each serde import of a generated model file. */
+export const SERDE_IMPORT_ORDER: readonly string[] = [
+  'assertModelValue', 'createObjectCodec', 'isValidModelValue', 'parseJson', 'registerIModelClass', 'requireIModelClass', 'requireObjectCodec',
+  'serdeValidates', 'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString',
+  'validationUnavailable', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
+];
+
+/** The runtime import lines of what `root` calls: each call lists the modules to write, and a module that the code does not use writes none. */
+export function runtimeLinesOf(root: Code, options: ImportOptions): (...modules: readonly RuntimeModule[]) => readonly Code[] {
+  const runtime = new Map(importSet(root, options).map((entry) => [entry.module, entry] as const));
+  return (...modules) => modules.flatMap((module) => { const entry = runtime.get(module); return entry ? importLines(entry, options) : []; });
 }

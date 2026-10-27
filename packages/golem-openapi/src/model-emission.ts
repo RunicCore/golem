@@ -3,8 +3,13 @@ import {
   CompositionConflictError,
   ObjectUnionDiscriminatorError,
   emitModelFromJSON,
-  calleeOf,
   code,
+  isCode,
+  modelStableId,
+  runtimeLinesOf,
+  SERDE_IMPORT_ORDER,
+  wrapRootConversion,
+  type Piece,
   emitCodecRuntimeCode,
   exportFrom,
   fileImports,
@@ -21,8 +26,6 @@ import {
   importedNames,
   MODULE_CONSTANT_HELPERS,
   placeHelpers,
-  importLines,
-  importSet,
   ImportSource,
   join,
   lineBreak,
@@ -38,7 +41,6 @@ import {
   type Helper,
   type ImportOptions,
   type NameSlot,
-  FIELD_CONVERSION_INPUT,
   emitModelFromInit,
   emitModelToJSON,
   fillFunctionName,
@@ -50,7 +52,6 @@ import {
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
   type ModelDiscriminators,
-  type RuntimeModule,
 } from '@exprtlabs/golem/internal/emitter';
 import { type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecValidationPlan, PlanValidators, SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
@@ -299,7 +300,6 @@ const COPY_ADDITIONAL_PROPERTIES = helper('copyAdditionalProperties', () => join
 const VALUES = inputSlot('values', 'name');
 const MODEL = inputSlot('model', 'name');
 const VALUE = identifier('value');
-const FIELD_INPUT = identifier(FIELD_CONVERSION_INPUT);
 
 function modelFromJSONCode(
   schema: unknown,
@@ -377,31 +377,6 @@ export function checkModelToJSON(
   modelToJSONCode(schema, identifier(expression), definitions, env, owner, checkContext());
 }
 
-/**
- * `emit(FIELD_CONVERSION_INPUT)` shows the shape of a field conversion. A single call passes its function and the
- * field value to `convertModelField`; any other conversion becomes a module-level function of the field value,
- * so no field allocates a closure.
- */
-function rootFieldConversion(
-  helpers: Code[],
-  helperName: (index: number) => string,
-  direction: 'deserialize' | 'serialize',
-  field: string,
-  input: Code,
-  emit: (value: Code) => Code,
-  inputType: Code,
-): Code {
-  const converted = emit(FIELD_INPUT);
-  if (sameCode(converted, FIELD_INPUT)) return input;
-  let convert = calleeOf(converted);
-  if (!convert) {
-    const name = helperName(helpers.length);
-    helpers.push(code`function ${identifier(name)}(${FIELD_INPUT}: ${inputType}) { return ${converted}; }`);
-    convert = identifier(name);
-  }
-  return code`${rt.conversion.convertModelField}(${literal(direction)}, ${literal(field)}, ${convert}, ${input})`;
-}
-
 function modelFieldDeclaration(
   name: string,
   schema: unknown,
@@ -476,8 +451,7 @@ export function generateOpenApiModelArtifacts(
   const { schemaGraph, definitions, ordered, grouping } = analysis;
   const { groups, owner, runtimeEdges } = grouping;
   const digest = sourceDigest(document);
-  const stableId = (definition: ModelDefinition) =>
-    `openapi:${digest.slice(0, 16)}#/components/schemas/${definition.schemaName}`;
+  const stableId = (definition: ModelDefinition) => modelStableId(digest, definition);
   // A model is named by its identifier form; the document names the component by its own key.
   const schemaNameByModelName = new Map(ordered.flatMap((definition) => {
     const node = analysis.nodesByName.get(definition.name);
@@ -755,20 +729,9 @@ const IMPORT_OPTIONS: ImportOptions = {
       'convertModelField', 'convertModelItems', 'convertModelTupleItems', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'encodeGeneratedModel', 'deserializeDate', 'serializeDate',
       'unknownDiscriminatorValue', 'withDiscriminatorValue', 'jsonWithDiscriminator', 'requireModelObject',
     ],
-    serde: [
-      'assertModelValue', 'createObjectCodec', 'isValidModelValue', 'parseJson', 'registerIModelClass', 'requireIModelClass', 'requireObjectCodec', 'serdeValidates',
-      'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString', 'validationUnavailable', 'withoutInstanceState',
-      'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
-    ],
+    serde: SERDE_IMPORT_ORDER,
   },
 };
-
-/** A piece of a model module: code, or a helper that stands where its definition goes and is written only when the code calls it. */
-type Piece = Code | Helper;
-
-function isCode(piece: Piece): piece is Code {
-  return 'parts' in piece;
-}
 
 export function generateModels(
   document: unknown,
@@ -929,8 +892,8 @@ export function generateModels(
     };
     const jsonProperties = fields.map(([name, schema], index) => {
       const input = modelPresentLocal(index);
-      const converted = rootFieldConversion(
-        fieldHelpers, fieldHelperName('encode'), 'serialize', name, input,
+      const converted = wrapRootConversion(
+        fieldHelpers, fieldHelperName('encode'), 'serialize', literal(name), input,
         (value) => modelToJSONCode(schema, value, definitions, fieldEnv, definition.schemaName, context),
         // The guard on the property excludes an undefined value before the conversion runs.
         code`Exclude<${identifier(className)}${modelPropertyAccess(name)}, undefined>`,
@@ -951,8 +914,8 @@ export function generateModels(
     const decodeConversions: Code[] = [];
     for (const [name, schema] of allProperties) {
       const expression = modelPresentLocal(decodeCaptures.length);
-      const rootConverted = rootFieldConversion(
-        fieldHelpers, fieldHelperName('decode'), 'deserialize', name, expression,
+      const rootConverted = wrapRootConversion(
+        fieldHelpers, fieldHelperName('decode'), 'deserialize', literal(name), expression,
         (input) => modelFromJSONCode(schema, input, definitions, fieldEnv, definition.schemaName, context),
         code`unknown`,
       );
@@ -1165,9 +1128,7 @@ export function generateModels(
   // What the code calls decides the runtime imports and which helpers the module defines.
   const exportedInitializers = [...unionInitializers].filter(([name]) => helpers.exportedInitializerNames?.has(name)).map(([, each]) => helperName(each));
   const calls = join([...body.filter(isCode), ...exportedInitializers], code`\n`);
-  const runtime = new Map(importSet(calls, IMPORT_OPTIONS).map((entry) => [entry.module, entry] as const));
-  const runtimeLines = (...modules: readonly RuntimeModule[]): readonly Code[] =>
-    modules.flatMap((module) => { const entry = runtime.get(module); return entry ? importLines(entry, IMPORT_OPTIONS) : []; });
+  const runtimeLines = runtimeLinesOf(calls, IMPORT_OPTIONS);
   const bodyLines = placeHelpers(calls, body, MODULE_CONSTANT_HELPERS);
   const bodyCode = join(bodyLines, code`\n`);
   const moduleSources = helpers.moduleSources?.() ?? [];
