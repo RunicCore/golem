@@ -7,7 +7,7 @@ import {
   TsToOpenApiDiagnosticCode,
   diagnostic,
 } from '../diagnostics.js';
-import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator } from './analysis-utils.js';
+import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator, staticMethodName } from './analysis-utils.js';
 import { callStringValues, decoratorOptions, parseSecurity, parseTags, readBoolean, type MetadataReader } from './metadata.js';
 import { resolveValueSymbol, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, propertyInitializer, staticObject } from './symbols.js';
@@ -124,14 +124,6 @@ function assertPortablePath(value: string, node: ts.Node): void {
     ));
   }
 }
-/** The name a method answers to: an identifier, a quoted name or a number. A computed name has none. */
-function staticMethodName(method: ts.MethodDeclaration): string | undefined {
-  const name = method.name;
-  return ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name) || ts.isNumericLiteral(name)
-    ? name.text
-    : undefined;
-}
-
 function classMethods(
   checker: ts.TypeChecker,
   classDeclaration: ts.ClassLikeDeclaration,

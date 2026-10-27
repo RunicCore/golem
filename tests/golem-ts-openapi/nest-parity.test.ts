@@ -111,6 +111,11 @@ class Base { @Get() 'list-items'(): TItem { return { id: 'a' }; } }
 @Controller('items') export class ItemsController extends Base { @Post() 'list-items'(): TItem { return { id: 'b' }; } }
 `);
   assert.deepEqual(Object.keys(document.paths['/items']!), ['post']);
+  const generic = await build(t, `${ITEM}
+class Base<T extends object> { @Get() 'find-one'(): T { return {} as T; } }
+@Controller('items') export class ItemsController extends Base<TItem> {}
+`);
+  assert.deepEqual(generic.paths['/items']!.get!.responses['200']!.content['application/json']!.schema, { additionalProperties: true, properties: { id: { type: 'string' } }, required: ['id'], type: 'object' });
   const computed = await rejection(build(t, `${ITEM}const NAME = 'list';\n@Controller('items') export class ItemsController { @Get() [NAME](): TItem { return { id: 'a' }; } }`));
   assert.ok(computed.codes.includes('NEST1201'), computed.text);
   assert.match(computed.text, /\[NAME\].*identifier/);
