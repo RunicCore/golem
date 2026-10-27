@@ -23,7 +23,7 @@ import {
   unionModelIds,
 } from './analysis-utils.js';
 import { evaluateStaticValue, isStaticArray } from '@exprtlabs/golem/internal/static-value';
-import { decoratorOptions, headerOptionsList, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
+import { decoratorOptions, headerOptionsList, inApplicationOrder, readString, type DecoratorOptions, type MetadataReader } from './metadata.js';
 import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, staticObject } from './symbols.js';
 import type { ControllerParameter, DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';
 
@@ -52,25 +52,6 @@ function parameterOptionsOf(
     if (decorator.name !== 'ApiHeaders') return [{ decorator, options: decoratorOptions(reader, decorator) }];
     return headerOptionsList(reader, decorator).map(options => ({ decorator, options }));
   });
-}
-
-/**
- * The decorators in the order TypeScript applies them: bottom-up within one
- * declaration. `@nestjs/swagger` appends each parameter as its decorator runs, so
- * stacked `@ApiHeader(A) @ApiHeader(B)` lists B first. The declarations of a class
- * chain keep their order, base class first.
- */
-function inApplicationOrder(decorators: readonly DecoratorInfo[]): readonly DecoratorInfo[] {
-  const ordered: DecoratorInfo[] = [];
-  let run: DecoratorInfo[] = [];
-  for (const decorator of decorators) {
-    if (run.length > 0 && run[0].decorator.parent !== decorator.decorator.parent) {
-      ordered.push(...run.reverse());
-      run = [];
-    }
-    run.push(decorator);
-  }
-  return [...ordered, ...run.reverse()];
 }
 
 /**
@@ -406,6 +387,9 @@ export function parseParameters(
     const name = location.name;
     if (location.location === 'body') {
       // The interceptor reads a whole body or its fields, never both, and it converts only a model field.
+      if (name === undefined && body !== undefined) {
+        throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, 'A second whole @Body() cannot share an operation with the first: both read the whole request body. Declare the body as one model.'));
+      }
       if (name !== undefined ? body !== undefined : parameters.some(item => item.location === 'body')) {
         throw new TsToOpenApiError(diagnostic(parameter.getSourceFile(), parameter, TsToOpenApiDiagnosticCode.NamedBodyParameter, `@Body(${name === undefined ? '' : `"${name}"`}) cannot share an operation with ${name === undefined ? 'a one-field @Body("field")' : 'a whole @Body()'}: both read the request body. Declare the whole body as one model, or use one-field parameters only.`));
       }

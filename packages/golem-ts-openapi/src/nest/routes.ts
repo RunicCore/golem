@@ -7,7 +7,7 @@ import {
   TsToOpenApiDiagnosticCode,
   diagnostic,
 } from '../diagnostics.js';
-import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator } from './analysis-utils.js';
+import { baseClassDeclarations, classHierarchyBaseToDerived, evaluateContextExpression, evaluateStringValues, hasAnyDecorator, hasDecorator, staticMethodName } from './analysis-utils.js';
 import { callStringValues, decoratorOptions, parseSecurity, parseTags, readBoolean, type MetadataReader } from './metadata.js';
 import { resolveValueSymbol, unwrapExpression } from '@exprtlabs/golem/internal/static-value';
 import { NEST_COMMON, NEST_SWAGGER, callArguments, decoratorsOf, propertyInitializer, staticObject } from './symbols.js';
@@ -141,10 +141,15 @@ function classMethods(
   const own = classDeclaration.members.filter(
     (member): member is ts.MethodDeclaration => ts.isMethodDeclaration(member) && !member.modifiers?.some(item => item.kind === ts.SyntaxKind.StaticKeyword),
   );
+  // A computed name has no static identity to override by, so the route loop sees every such method and reports one that carries a route.
   const byName = new Map<string, ts.MethodDeclaration>();
-  for (const method of inherited) if (method.name && ts.isIdentifier(method.name)) byName.set(method.name.text, method);
-  for (const method of own) if (method.name && ts.isIdentifier(method.name)) byName.set(method.name.text, method);
-  return [...byName.values()].sort((left, right) => {
+  const unnamed: ts.MethodDeclaration[] = [];
+  for (const method of [...inherited, ...own]) {
+    const name = staticMethodName(method);
+    if (name !== undefined) byName.set(name, method);
+    else unnamed.push(method);
+  }
+  return [...byName.values(), ...unnamed].sort((left, right) => {
     return compareText(left.getSourceFile().fileName, right.getSourceFile().fileName) || left.getStart() - right.getStart();
   });
 }
@@ -370,6 +375,15 @@ async function analyzeController(
     if (routeExcluded(context, decorators)) continue;
     const selected = routeDecorator(context, decorators);
     if (!selected) continue;
+    const methodName = staticMethodName(method);
+    if (methodName === undefined) {
+      throw new TsToOpenApiError(diagnostic(
+        method.getSourceFile(),
+        method.name,
+        TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator,
+        `Nest route method ${method.name.getText()} in ${controllerName} has a computed name that the static analysis cannot read; use an identifier name, or exclude the route with @ApiExcludeEndpoint().`,
+      ));
+    }
     const routeExpansion = expandOptionalSegments(await evaluateStringValues(selected.path, context, ['']), selected.decorator.decorator);
     const routePaths = routeExpansion.paths;
     const optionalNames = new Set([...classExpansion.optionalNames, ...routeExpansion.optionalNames]);
@@ -398,7 +412,7 @@ async function analyzeController(
     };
     const pathExpansion = routePaths.length > 1 || classPaths.length > 1;
     const versionExpansion = effectiveVersions.length > 1;
-    const operationBase = operation.operationId ?? `${controllerName}_${method.name.getText()}`;
+    const operationBase = operation.operationId ?? `${controllerName}_${methodName}`;
     let pathExpansionIndex = 0;
     for (let classPathIndex = 0; classPathIndex < classPaths.length; classPathIndex += 1) {
       for (let pathIndex = 0; pathIndex < routePaths.length; pathIndex += 1) {
@@ -425,7 +439,7 @@ async function analyzeController(
           || !optionalNames.has(String(parameter.name)));
         routes.push({
           controller: controllerName,
-          methodName: method.name.getText(),
+          methodName,
           method,
           sourceFile: method.getSourceFile(),
           httpMethod: selected.method,

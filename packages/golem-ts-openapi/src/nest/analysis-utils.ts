@@ -171,6 +171,14 @@ export function unionModelIds(context: NestAnalysisContext, parameter: ts.Parame
   return ids.every((id): id is string => id !== undefined) ? ids : undefined;
 }
 
+/** The name a method answers to: an identifier, a quoted name or a number. A computed name has none. */
+export function staticMethodName(method: ts.MethodDeclaration): string | undefined {
+  const name = method.name;
+  return ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name) || ts.isNumericLiteral(name)
+    ? name.text
+    : undefined;
+}
+
 /**
  * The method's call signature as seen from the analysed controller. An
  * inherited method from a generic base (`CrudController<User>`) is
@@ -182,8 +190,9 @@ export function controllerMethodSignature(
   controllerClass: ts.ClassDeclaration,
 ): ts.Signature | undefined {
   const declared = checker.getSignatureFromDeclaration(method);
-  if (method.parent === controllerClass || !ts.isIdentifier(method.name)) return declared;
-  const member = checker.getPropertyOfType(checker.getTypeAtLocation(controllerClass), method.name.text);
+  const name = staticMethodName(method);
+  if (method.parent === controllerClass || name === undefined) return declared;
+  const member = checker.getPropertyOfType(checker.getTypeAtLocation(controllerClass), name);
   if (!member) return declared;
   const signatures = checker.getSignaturesOfType(
     checker.getTypeOfSymbolAtLocation(member, controllerClass),

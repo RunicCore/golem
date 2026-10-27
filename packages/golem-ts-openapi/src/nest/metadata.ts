@@ -321,12 +321,31 @@ export function decoratorOptions(
   return objectOptions(reader, callArguments(info)[index], `@${info.name ?? 'decorator'}`, code);
 }
 
+/**
+ * The decorators in the order TypeScript applies them: bottom-up within one
+ * declaration. `@nestjs/swagger` appends each parameter as its decorator runs, so
+ * stacked `@ApiHeader(A) @ApiHeader(B)` lists B first. The declarations of a class
+ * chain keep their order, base class first.
+ */
+export function inApplicationOrder(decorators: readonly DecoratorInfo[]): readonly DecoratorInfo[] {
+  const ordered: DecoratorInfo[] = [];
+  let run: DecoratorInfo[] = [];
+  for (const decorator of decorators) {
+    if (run.length > 0 && run[0].decorator.parent !== decorator.decorator.parent) {
+      ordered.push(...run.reverse());
+      run = [];
+    }
+    run.push(decorator);
+  }
+  return [...ordered, ...run.reverse()];
+}
+
 export function parseTags(
   reader: MetadataReader,
   decorators: readonly DecoratorInfo[],
 ): readonly string[] {
   const tags: string[] = [];
-  for (const decorator of hasAnyDecorator(decorators, ['ApiTags'], NEST_SWAGGER)) {
+  for (const decorator of hasAnyDecorator(inApplicationOrder(decorators), ['ApiTags'], NEST_SWAGGER)) {
     for (const argument of callArguments(decorator)) {
       tags.push(...readStringList(reader, argument, '@ApiTags()') ?? []);
     }
@@ -350,7 +369,7 @@ export function parseSecurity(
   decorators: readonly DecoratorInfo[],
 ): readonly Record<string, string[]>[] | undefined {
   const values: Record<string, string[]>[] = [];
-  for (const decorator of decorators) {
+  for (const decorator of inApplicationOrder(decorators)) {
     if (decorator.packageName !== NEST_SWAGGER || decorator.name === undefined) continue;
     const label = `@${decorator.name}()`;
     const arguments_ = callArguments(decorator);

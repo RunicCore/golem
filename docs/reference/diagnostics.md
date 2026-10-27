@@ -32,11 +32,12 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1103
 
-**Named body parameter.** A one-field `@Body('field')` is not valid in these cases:
+**Named body parameter.** A `@Body` parameter is not valid in these cases:
 
-- Its type is no `IModel`, `IObject` or array of them.
-- It is optional.
-- It shares an operation with a whole `@Body()`.
+- A one-field `@Body('field')` has a type that is no `IModel`, `IObject` or array of them.
+- A one-field `@Body('field')` is optional.
+- A one-field `@Body('field')` shares an operation with a whole `@Body()`.
+- A second whole `@Body()` in the same method.
 
 `NestModelInterceptor` converts only a model field, and it cannot convert a whole body and a field of it together.
 
@@ -45,6 +46,7 @@ An error prints its code, location when known, and message, then stops generatio
 - Give the field a required `IModel` or `IObject` type, or an array of one.
 - Or use `@Body()` for the whole object and declare an explicit request-body contract.
 - Use one-field parameters only, or one whole parameter only.
+- Declare the body as one model when a method has two whole `@Body()` parameters.
 
 ### NEST1105
 
@@ -81,12 +83,14 @@ An error prints its code, location when known, and message, then stops generatio
 - An unsupported method decorator such as `@All()` or `@Sse()`.
 - An unmapped `@RequestMapping({ method })`.
 - A non-constant option on a route-level decorator such as `@Header()` or `@Version()`.
+- A route method with a computed name, such as `[NAME]()`.
 
 **Fix:**
 
 - Exclude the route with `@ApiExcludeEndpoint()`.
 - Or use a supported HTTP method decorator.
 - Or make the decorator's option a compile-time constant.
+- Or give a route method an identifier name.
 
 ### NEST1202
 
@@ -181,11 +185,12 @@ An error prints its code, location when known, and message, then stops generatio
 - A non-object entry.
 - An unsupported property.
 - A missing or empty `url`.
+- A `name` on OpenAPI 3.1.2, or the same `name` on two servers of OpenAPI 3.2.0.
 - A `variables` entry whose `default` isn't a string included in its `enum`.
 
 **Fix:**
 
-- Shape each server as `{ url, description?, variables? }`.
+- Shape each server as `{ url, description?, variables? }`, with a unique `name?` on OpenAPI 3.2.0 only.
 - Make a variable's `default` one of its `enum` values.
 
 ### NEST1404
