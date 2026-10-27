@@ -29,8 +29,8 @@ import {
 import * as ast from 'typescript/ast';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, emitWanted, flagPathOptions, flagsAsConfigOptions } from './typescript-config.js';
-import type { ResolveAtCurrentFolder } from './typescript-config.js';
+import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, referencedConfigFile } from './typescript-config.js';
+import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
   API,
@@ -55,12 +55,13 @@ import {
   type ModuleResolver,
   type RawCompilerOptions,
   type ResolutionMode,
+  type SyntheticProjectId,
   type Signature as SyncSignature,
   type Type as SyncType,
 } from 'typescript/sync';
 import { serverFS, type FileSystemCallbacks } from 'typescript/fs';
 import type { Node, SourceFile, TypeNode } from 'typescript/ast';
-import type { EmitKind, MemoryEmit } from './typescript-types.js';
+import type { EmitKind, MemoryEmit, ParsedProject } from './typescript-types.js';
 
 export {
   API,
@@ -921,6 +922,25 @@ interface ProgramRequest {
   readonly overlays: ReadonlyMap<string, string>;
   /** Configuration paths the observer is not told about: virtual configurations are derived input. */
   readonly hidden: ReadonlySet<string>;
+  /** Set for a project that has references: the compiler is given a synthetic program, not the project. */
+  readonly synthetic?: SyntheticProgram;
+}
+
+/**
+ * A program of a project with references, as the compiler takes it from the API. A program that is given `projectReferences`
+ * reads the referenced sources, so the program takes a module resolver that answers with the declaration output of a referenced source instead.
+ */
+interface SyntheticProgram {
+  readonly rootFiles: readonly string[];
+  readonly compilerOptions: CompilerOptions;
+  readonly resolver: ModuleResolver;
+}
+
+/** A project a tsconfig references, parsed: the source files it owns and where `tsc` finds its declaration output. */
+interface ReferencedProject {
+  readonly configFile: string;
+  readonly options: CompilerOptions;
+  readonly sources: ReadonlySet<string>;
 }
 
 function directoryEntries(directory: string): string {
@@ -944,7 +964,7 @@ function compilerExited(error: unknown): boolean {
   return /Unexpected EOF while reading from child process|SyncRpcChannel is closed/.test(message);
 }
 
-function programRequest(options: OpenProgramOptions): ProgramRequest {
+function programRequest(options: OpenProgramOptions, referencesOf: (configPath: string, overlays: ReadonlyMap<string, string>) => readonly ConfigReference[]): ProgramRequest {
   const overlays = new Map([...options.overlays ?? []].map(([filename, content]) => [canonical(filename), content]));
   const baseConfigPath = canonical(options.configFile === undefined
     ? join(options.root, 'tsconfig.json')
@@ -966,9 +986,11 @@ function programRequest(options: OpenProgramOptions): ProgramRequest {
   }
   let configPath = baseConfigPath;
   if (options.compilerOptionOverrides !== undefined) {
-    // A virtual configuration that extends the original replaces the options for this program only: the API has no override.
+    // A virtual configuration that extends the original replaces the options for this program only: the API has no override. It sits beside
+    // the original, so the references, which an extending configuration does not inherit, keep their meaning when copied.
     configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.options.json`);
-    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides }));
+    const references = referencesOf(baseConfigPath, overlays);
+    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides, ...(references.length === 0 ? {} : { references }) }));
     hidden.add(configPath);
   }
   return { configPath, files: [...new Set(options.sources.map(canonical))], overlays, hidden };
@@ -1055,6 +1077,12 @@ export class ProgramSession implements Disposable {
   /** The compiler's module resolver of each set of options (by their JSON), made when a lookup first needs it. */
   private readonly resolvers = new Map<string, ModuleResolver>();
   /**
+   * The synthetic program the newest snapshot holds, and the module resolver it was made with. The next program of a project with references
+   * replaces the program's configuration and the resolver; the snapshots before keep theirs. TypeScript 7.1.0-beta panics when a program is removed.
+   */
+  private syntheticProgram: SyntheticProjectId | undefined;
+  private referenceResolver: ModuleResolver | undefined;
+  /**
    * The newest snapshot stays alive until the next one exists: TypeScript 7.1 builds each snapshot as an update of a
    * live one, and refuses to update a disposed snapshot.
    */
@@ -1073,14 +1101,14 @@ export class ProgramSession implements Disposable {
   }
 
   /** Parse a project configuration with the session compiler. */
-  parseConfigFile(configPath: string, onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] } {
+  parseConfigFile(configPath: string, onInput?: (filename: string) => void): ParsedProject {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
       const result = api.parseConfigFile(configPath);
       assertConfigParsed(configPath, result.errors);
       return result;
     });
-    return { options: parsed.options as CompilerOptions, fileNames: parsed.fileNames };
+    return projectOf(parsed);
   }
 
   /**
@@ -1089,7 +1117,7 @@ export class ProgramSession implements Disposable {
    * (`allowJs`, `resolveJsonModule` and the output directories the default `exclude` skips) first go through a virtual configuration
    * that extends the original, so the file list follows the merged options.
    */
-  parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] } {
+  parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): ParsedProject {
     const parsed = this.withCompiler('parse', (api) => {
       this.observe(onInput, new Set());
       const commandLine = api.parseCommandLine(flags);
@@ -1097,13 +1125,14 @@ export class ProgramSession implements Disposable {
       const { allowJs, resolveJsonModule, outDir, declarationDir } = commandLine.options;
       const matching = Object.fromEntries(Object.entries({ allowJs, resolveJsonModule, outDir, declarationDir }).filter(([, value]) => value !== undefined));
       const virtual = join(dirname(configPath), `${basename(configPath, '.json')}.flags.json`);
-      const result = api.parseJsonConfigFileContent({ extends: `./${basename(configPath)}`, compilerOptions: matching }, { configFileName: virtual });
+      const references = configReferences(api.readConfigFile(configPath).config);
+      const result = api.parseJsonConfigFileContent({ extends: `./${basename(configPath)}`, compilerOptions: matching, ...(references.length === 0 ? {} : { references }) }, { configFileName: virtual });
       assertConfigParsed(configPath, [...commandLine.errors, ...result.errors]);
       // A path in a flag is read from the current folder, as `tsc` reads it; the API's parse reads it from the folder of the session.
       const paths = flagPathOptions(flags, parseFlags(api), resolveAtCurrentFolder(api));
-      return { options: { ...result.options, ...commandLine.options, ...paths, configFilePath: configPath }, fileNames: result.fileNames };
+      return { options: { ...result.options, ...commandLine.options, ...paths, configFilePath: configPath }, fileNames: result.fileNames, projectReferences: result.projectReferences };
     });
-    return { options: parsed.options as CompilerOptions, fileNames: parsed.fileNames };
+    return projectOf(parsed);
   }
 
   /**
@@ -1151,10 +1180,7 @@ export class ProgramSession implements Disposable {
   resolveModuleName(moduleName: string, containingFile: string, compilerOptions: CompilerOptions, resolutionMode?: ModuleKind, virtualFiles: ReadonlySet<string> = new Set()): { resolvedModule?: ResolvedModule } {
     assertPackageManifestsParse(moduleName, containingFile);
     return this.withCompiler('parse', (api) => {
-      // Options that parse alike share a resolver, so a watch that parses its configuration again does not make a new one.
-      const key = JSON.stringify(compilerOptions);
-      let resolver = this.resolvers.get(key);
-      if (!resolver) this.resolvers.set(key, resolver = api.createModuleResolver(compilerOptions));
+      const resolver = this.plainResolver(api, compilerOptions);
       const previous = this.overlays;
       this.setOverlays(new Map([...virtualFiles].map((filename) => [canonical(filename), 'export {}\n'])));
       try {
@@ -1165,9 +1191,56 @@ export class ProgramSession implements Disposable {
     });
   }
 
+  /** The compiler's module resolver for these options. Options that parse alike share one, so a watch that parses its configuration again does not make a new one. */
+  private plainResolver(api: API, compilerOptions: CompilerOptions): ModuleResolver {
+    const key = JSON.stringify(compilerOptions);
+    let resolver = this.resolvers.get(key);
+    if (!resolver) this.resolvers.set(key, resolver = api.createModuleResolver(compilerOptions));
+    return resolver;
+  }
+
+  /** The `references` a tsconfig writes, read from its text alone, over the overlays of a request: no `include` is expanded. */
+  private configReferencesOf(configPath: string, overlays: ReadonlyMap<string, string>): ConfigReference[] {
+    return this.withCompiler('parse', (api) => {
+      const previous = this.overlays;
+      this.setOverlays(overlays);
+      try {
+        return configReferences(api.readConfigFile(configPath).config);
+      } finally {
+        this.setOverlays(previous);
+      }
+    });
+  }
+
+  /**
+   * The module resolver of a program that has references. It resolves as the compiler does, and a source file of a referenced project resolves to the
+   * declaration file `tsc` writes for it, which is what `tsc -p` reads for an import of that source. A declaration file or a JSON file of a
+   * referenced project resolves as it is, as `tsc` leaves it. Whether the declaration file exists is the compiler's to find: a missing one is an import it cannot resolve.
+   */
+  private referenceResolverFor(api: API, compilerOptions: CompilerOptions, projects: readonly ReferencedProject[]): ModuleResolver {
+    const plain = this.plainResolver(api, compilerOptions);
+    return api.createModuleResolver(compilerOptions as RawCompilerOptions, {
+      resolveModuleName: (moduleName, directory, mode, { snapshot }) => {
+        const resolved = plain.resolveModuleName(moduleName, directory, mode, { snapshot }).resolvedModule;
+        if (!resolved) return undefined;
+        const { resolvedFileName, originalPath, packageId } = resolved;
+        const file = canonical(resolvedFileName);
+        const owner = hasDeclarationOutput(file) ? projects.find((project) => project.sources.has(file)) : undefined;
+        if (owner) return { resolvedFileName: declarationOutputOf(file, owner.configFile, owner.options) };
+        return { resolvedFileName, ...(originalPath === undefined ? {} : { originalPath }), ...(packageId === undefined ? {} : { packageId }) };
+      },
+    });
+  }
+
+  /** The change that gives a snapshot the program of a project with references: the first one creates it, the later ones give it a new configuration. */
+  private syntheticChange(synthetic: SyntheticProgram): CreateSnapshotParams {
+    const program = { rootFiles: [...synthetic.rootFiles], compilerOptions: synthetic.compilerOptions as RawCompilerOptions, options: { moduleResolver: synthetic.resolver, configFileParsingDiagnostics: [] } };
+    return this.syntheticProgram === undefined ? { createPrograms: [program] } : { reconfigurePrograms: [{ id: this.syntheticProgram, ...program }] };
+  }
+
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
   openProgram(options: OpenProgramOptions): Program {
-    const base = programRequest(this.withFlags(options));
+    const base = programRequest(this.withFlags(options), (configPath, overlays) => this.configReferencesOf(configPath, overlays));
     return this.withCompiler('snapshot', (api, reused) => {
       const request = this.withRequestedRoots(api, base, options.onInput);
       // A program sees only its own overlays: a held program keeps the snapshot it was opened in.
@@ -1185,23 +1258,31 @@ export class ProgramSession implements Disposable {
       };
       // The request's configuration lists every root, so no file is opened on its own: TypeScript 7.1.0-beta panics while it
       // searches a default project for an open file outside every tsconfig directory.
-      const projects = new Set([request.configPath]);
+      const { synthetic } = request;
+      const projects = new Set(synthetic ? [] : [request.configPath]);
       // Invalidating every file leaves a parsed configuration as it is, so its change is reported first.
       if (pending?.full && changes) this.advance(api, { fileNotifications: changes });
       const snapshot = this.advance(api, {
-        openProjects: this.openProjects.has(request.configPath) ? undefined : [request.configPath],
+        openProjects: synthetic || this.openProjects.has(request.configPath) ? undefined : [request.configPath],
         closeProjects: nonEmpty([...this.openProjects].filter((project) => !projects.has(project))),
+        ...(synthetic ? this.syntheticChange(synthetic) : {}),
         fileNotifications: pending?.full ? { invalidateAll: true } : changes,
       });
       pending?.commit();
       if (full) this.fullRecordCount = this.observed.size;
       this.hinted.clear();
       replaceAll(this.openProjects, projects);
+      if (synthetic) {
+        this.referenceResolver?.dispose();
+        this.referenceResolver = synthetic.resolver;
+      }
       try {
         // The project of the request's own configuration (the derived one when roots were added), so every run of a job
         // sees the same files. Another project would be the wrong program.
-        const project = snapshot.getConfiguredProject(request.configPath);
+        const created = synthetic ? this.syntheticProgram ?? snapshot.operation.createdPrograms?.[0]?.id : undefined;
+        const project = created === undefined ? snapshot.getConfiguredProject(request.configPath) : snapshot.getProject(created);
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
+        this.syntheticProgram = created ?? this.syntheticProgram;
         const program = new CompatProgram(this, snapshot, project);
         this.held.set(program, request);
         return program;
@@ -1238,13 +1319,24 @@ export class ProgramSession implements Disposable {
     const previous = this.overlays;
     this.setOverlays(base.overlays);
     this.observe(onInput, base.hidden);
-    let parsed: { readonly fileNames: readonly string[] };
+    let parsed: { readonly fileNames: readonly string[]; readonly options: CompilerOptions };
+    let referenced: ReferencedProject[];
     try {
       const result = api.parseConfigFile(base.configPath);
       assertConfigParsed(base.configPath, result.errors);
       parsed = result;
+      referenced = (result.projectReferences ?? []).map((reference) => {
+        const configFile = referencedConfigFile(reference.path);
+        const project = api.parseConfigFile(configFile);
+        assertConfigParsed(configFile, project.errors);
+        return { configFile, options: project.options as CompilerOptions, sources: new Set(project.fileNames.map(canonical)) };
+      });
     } finally {
       this.setOverlays(previous);
+    }
+    if (referenced.length > 0) {
+      const options = parsed.options as CompilerOptions;
+      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.files])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced) } };
     }
     if (base.files.length === 0) return base;
     const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}.roots.json`);
@@ -1332,6 +1424,8 @@ export class ProgramSession implements Disposable {
     this.hinted.clear();
     this.openProjects.clear();
     this.held.clear();
+    this.syntheticProgram = undefined;
+    this.referenceResolver = undefined;
   }
 
   private setOverlays(overlays: ReadonlyMap<string, string>): void {
@@ -1462,6 +1556,11 @@ export class ProgramSession implements Disposable {
       },
     };
   }
+}
+
+/** The seam's view of a parse: each referenced project by its tsconfig file. */
+function projectOf(parsed: { readonly options: unknown; readonly fileNames: string[]; readonly projectReferences?: readonly { readonly path: string }[] }): ParsedProject {
+  return { options: parsed.options as ParsedProject['options'], fileNames: parsed.fileNames, projectReferences: (parsed.projectReferences ?? []).map((reference) => ({ path: referencedConfigFile(reference.path) })) };
 }
 
 function nonEmpty<T>(values: readonly T[]): T[] | undefined {

@@ -16,6 +16,7 @@ import type { FileRewrite } from './rewrite.js';
 import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.js';
 import { pointDeclarationMap, pointInlineSourceMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
+import { declarationOutputOf, hasDeclarationOutput } from './typescript-config.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
@@ -28,6 +29,8 @@ interface BuildOptions {
    */
   readonly project?: string;
   readonly watch: boolean;
+  /** `-b` or `--build` was given: the build refuses it before it generates, with the command for each project the tsconfig references. */
+  readonly compilerBuild?: boolean;
   /** The golem.yaml the build starts from; `golem.yaml` in the working directory without it. */
   readonly config?: string;
   /** Stops a watching build; the returned promise resolves when the current build has finished. */
@@ -110,12 +113,27 @@ const TSC_COMMAND_OPTIONS = [
 /** Options that only the `tsc` command takes: they ask it to print or write something other than a build. */
 const TSC_COMMANDS = ['showConfig', 'listFilesOnly', 'version', 'help', 'init'] as const;
 
+/** The command that builds a referenced project: its own golem.yaml names it. */
+function referencedCommand(project: string): string {
+  return `golem build --config ${displayPath(path.join(path.dirname(project), 'golem.yaml'))}`;
+}
+
+/**
+ * The refusal of a build that would follow project references. A golem.yaml names one project, and `tsc -b` would also build projects that have
+ * no golem.yaml, whose calls would not be rewritten. It names each referenced project with the command that builds it.
+ */
+function referencesRefusal(configFile: string, references: readonly ts.ProjectReference[], reason: string): Error {
+  const commands = references.map((reference) => `  ${displayPath(reference.path)}: ${referencedCommand(reference.path)}`);
+  return new Error([`${reason} A golem.yaml names one project.${commands.length === 0 ? '' : ` Build each project of ${displayPath(configFile)} with its own golem.yaml, in dependency order:`}`, ...commands].join('\n'));
+}
+
 /** Fail on a configuration the build cannot emit: the tsconfig's, with the forwarded arguments applied. It reads options alone, so it runs before anything is generated. */
-function assertSupported(configFile: string, parsed: { readonly options: ts.CompilerOptions; readonly fileNames: readonly string[] }): void {
+function assertSupported(configFile: string, parsed: ts.ParsedProject): void {
   const { options } = parsed;
   const unsupported = (what: string): Error => new Error(`golem build does not support ${what} (${displayPath(configFile)}).`);
   if (parsed.fileNames.length === 0) {
-    throw new Error(`${displayPath(configFile)} includes no files. golem build builds one project and does not follow project references; run golem build -p <tsconfig> per project.`);
+    if (parsed.projectReferences.length > 0) throw referencesRefusal(configFile, parsed.projectReferences, `${displayPath(configFile)} only lists project references, so it has no files to build.`);
+    throw new Error(`${displayPath(configFile)} includes no files.`);
   }
   if (stringOption(options, 'outDir') === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
   if (stringOption(options, 'outFile') !== undefined) throw unsupported('outFile');
@@ -128,6 +146,35 @@ function assertSupported(configFile: string, parsed: { readonly options: ts.Comp
       throw new Error(`golem build does not support ${option.name} (${displayPath(configFile)}): it measures the tsc process. Run tsc -p ${displayPath(configFile)} --noEmit ${option.flag} to get it.`);
     }
   }
+}
+
+/** A referenced project with its parse: `tsc -p` reads the declaration output of its sources in place of the sources. */
+interface ReferencedProject {
+  readonly configFile: string;
+  readonly options: ts.CompilerOptions;
+  readonly fileNames: readonly string[];
+}
+
+/** Parse the referenced projects. A project that is not composite is an error of `tsc -p` (TS6306), and the TypeScript 7 program would not report it. */
+function readReferences(session: ts.ProgramSession, configFile: string, references: readonly ts.ProjectReference[], observe: (filename: string) => void): ReferencedProject[] {
+  return references.map((reference) => {
+    const { options, fileNames } = session.parseConfigFile(reference.path, observe);
+    if (options.composite !== true) {
+      throw new Error(`${displayPath(reference.path)} is referenced by ${displayPath(configFile)}, so it must set composite: true (TS6306).`);
+    }
+    return { configFile: reference.path, options, fileNames };
+  });
+}
+
+/**
+ * The lines that name the referenced projects `tsc -p` found no declaration output for. The compiler reports the failed import; this names the
+ * project to build first: the first source of each whose output is missing.
+ */
+function unbuiltReferences(references: readonly ReferencedProject[]): string[] {
+  return references.flatMap((reference) => {
+    const source = reference.fileNames.find((file) => hasDeclarationOutput(file) && !fs.existsSync(declarationOutputOf(file, reference.configFile, reference.options)));
+    return source === undefined ? [] : [`${displayPath(reference.configFile)} has not been built: ${displayPath(source)} has no declaration output. Build it first with ${referencedCommand(reference.configFile)}.`];
+  });
 }
 
 /** Read the build settings from a configuration `assertSupported` accepted. */
@@ -263,6 +310,7 @@ function writtenDirectories(project: Project): Set<string> {
 /** What one build and the builds after it share: the files a watching build looks at, and the generate step's state. */
 interface BuildRun {
   readonly project: string | undefined;
+  readonly compilerBuild: boolean;
   readonly config: string | undefined;
   readonly tscArguments: readonly string[];
   /** Every file the build read, for a watching build to look at. */
@@ -371,6 +419,10 @@ function assertContained(project: Project, configFile: string, javascript: Reado
   }
 }
 
+/** The compiler's codes for an import it cannot resolve (TypeScript 7), and for a referenced source whose output is not built (TypeScript 6). */
+const UNRESOLVED_MODULE = 2307;
+const UNBUILT_REFERENCE = 6305;
+
 /** One build: generate, check the original sources, emit the rewritten ones. `changed` are the inputs that changed since the build before. */
 async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: readonly string[]): Promise<number> {
   const { inputs, outputs } = run;
@@ -397,10 +449,11 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     removeOldBuildState(root, configFile);
   }
   // The options of the tsconfig with the forwarded arguments applied, as `tsc -p` resolves them. A configuration the build cannot mirror fails before anything is generated.
-  const parseOptions = (): { options: ts.CompilerOptions; fileNames: string[] } => (run.tscArguments.length === 0
+  const parseOptions = (): ts.ParsedProject => (run.tscArguments.length === 0
     ? session.parseConfigFile(configFile, observe)
     : session.parseConfigFileWithFlags(configFile, run.tscArguments, observe));
   const configured = parseOptions();
+  if (run.compilerBuild) throw referencesRefusal(configFile, configured.projectReferences, 'golem build does not take -b or --build: `tsc -b` would also build projects that have no golem.yaml, whose calls golem would not rewrite.');
   assertSupported(configFile, configured);
   // The generated files are part of the program the next steps read, so they are written first. A job whose inputs did not change is skipped.
   const previous = run.pipeline;
@@ -415,6 +468,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   run.onGenerated?.(generated.ran);
   const parsed = parseOptions();
   const project = readProject(configFile, parsed);
+  const referenced = readReferences(session, configFile, parsed.projectReferences, observe);
   // The sources are inputs from here on: a failed check ends the build before any later step reads them.
   for (const filename of parsed.fileNames) observe(filename);
   outputs.clear();
@@ -426,6 +480,14 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   const declarations = writesDeclarations ? program.emitToMemory('declarations') : undefined;
   const diagnostics = ts.getTscDiagnostics(program, declarations?.diagnostics);
   reportCheck(root, program, diagnostics);
+  // An import that the compiler could not resolve in a referenced project that has no output yet: name the project to build first, and write nothing.
+  if (diagnostics.some((diagnostic) => diagnostic.code === UNRESOLVED_MODULE || diagnostic.code === UNBUILT_REFERENCE)) {
+    const unbuilt = unbuiltReferences(referenced);
+    if (unbuilt.length > 0) {
+      process.stdout.write(`${unbuilt.join('\n')}\n`);
+      return 1;
+    }
+  }
   const checkFailed = diagnostics.length > 0;
   // Like the compiler: a failed check still emits unless noEmitOnError is set. The exit status is the check's: 2 when it wrote the declarations, else 1.
   const stopped = checkFailed && project.noEmitOnError;
@@ -511,6 +573,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   let wrote = true;
   const state: BuildRun = {
     project: options.project,
+    compilerBuild: options.compilerBuild === true,
     config: options.config,
     tscArguments: options.tscArguments ?? [],
     inputs,

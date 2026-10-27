@@ -9,11 +9,10 @@ export { providersFor, runPipeline } from './pipeline.js';
 export { watchPipeline } from './watch.js';
 export type { PipelineOptions, PipelineState } from './pipeline.js';
 // `golem build` loads its compiler seam only when it runs: no other command needs TypeScript to start.
-const BUILD_REFERENCES_REJECTION = 'golem build does not support project references (-b); run golem build -p <tsconfig> per project.';
 
 export type Arguments =
   | { action: 'help' }
-  | { action: 'build'; project?: string; watch: boolean; config?: string; tscArguments?: readonly string[] }
+  | { action: 'build'; project?: string; watch: boolean; config?: string; compilerBuild?: true; tscArguments?: readonly string[] }
   | { action: 'generate' | 'check' | 'watch' | 'exec'; config: string; watch: boolean; command: string[] };
 
 /** The arguments `golem build` sets itself in its check and emit programs, by lowercase name, with why and what to do instead. */
@@ -38,10 +37,11 @@ function parseBuildArguments(args: readonly string[]): Arguments {
   let project: string | undefined;
   let watch = false;
   let config: string | undefined;
+  let compilerBuild = false;
   const tscArguments: string[] = [];
   for (let i = 0; i < args.length; i += 1) {
-    if (args[i] === '-b' || args[i] === '--build') throw new Error(BUILD_REFERENCES_REJECTION);
-    if (args[i] === '-p' || args[i] === '--project') {
+    if (args[i] === '-b' || args[i] === '--build') compilerBuild = true;
+    else if (args[i] === '-p' || args[i] === '--project') {
       if (!args[i + 1] || args[i + 1].startsWith('-')) throw new Error(`${args[i]} requires a tsconfig path.`);
       project = args[++i];
     } else if (args[i] === '--config') {
@@ -55,7 +55,7 @@ function parseBuildArguments(args: readonly string[]): Arguments {
       tscArguments.push(args[i]);
     }
   }
-  return { action: 'build', watch, ...(project === undefined ? {} : { project }), ...(config === undefined ? {} : { config }), ...(tscArguments.length === 0 ? {} : { tscArguments }) };
+  return { action: 'build', watch, ...(compilerBuild ? { compilerBuild: true as const } : {}), ...(project === undefined ? {} : { project }), ...(config === undefined ? {} : { config }), ...(tscArguments.length === 0 ? {} : { tscArguments }) };
 }
 
 export function parseArguments(argv: readonly string[]): Arguments {
@@ -108,7 +108,7 @@ export async function main(argv = process.argv.slice(2)) {
       if (exitCode === 0) process.stdout.write(`Built ${label}.\n`);
       else if (options.watch) process.stdout.write('Build failed.\n');
     };
-    const { exitCode } = await runBuild({ watch: options.watch, signal: controller.signal, onBuilt, ...(options.project === undefined ? {} : { project: options.project }), ...(options.config === undefined ? {} : { config: options.config }), ...(options.tscArguments === undefined ? {} : { tscArguments: options.tscArguments }) });
+    const { exitCode } = await runBuild({ watch: options.watch, signal: controller.signal, onBuilt, ...(options.compilerBuild ? { compilerBuild: true } : {}), ...(options.project === undefined ? {} : { project: options.project }), ...(options.config === undefined ? {} : { config: options.config }), ...(options.tscArguments === undefined ? {} : { tscArguments: options.tscArguments }) });
     process.exitCode = signalled ?? exitCode;
     return;
   }

@@ -166,3 +166,23 @@ test('a value of a list option is trimmed and empty means no items, and a negati
   assert.deepEqual(flagsAsConfigOptions(['--lib', ' es2020 , dom '], parse, (options) => options), { lib: ['es2020', 'dom'] });
   assert.deepEqual(flagsAsConfigOptions(['--lib', ''], parse, (options) => options), { lib: [] });
 });
+
+test('a project with references reads the declaration output of each referenced project as tsc -p does, also after it is built again', t => {
+  // protects: T-477 the seam parses the references and opens the program on the declaration outputs, on both lanes
+  const { root, config } = project(t, { 'src/main.ts': "import { x } from '../shared/src/x.js';\nexport const y: number = x;\n", 'shared/src/x.ts': "export const x = 'a';\n" }, { outDir: 'build', rootDir: 'src' });
+  fs.writeFileSync(path.join(root, 'shared/tsconfig.json'), JSON.stringify({ compilerOptions: { ...COMPILER, composite: true, outDir: 'dist', rootDir: 'src' }, include: ['src'] }));
+  fs.writeFileSync(config, JSON.stringify({ compilerOptions: { ...COMPILER, outDir: 'build', rootDir: 'src', noEmit: true }, include: ['src'], references: [{ path: './shared' }] }));
+  const printed = (session: InstanceType<typeof ts.ProgramSession>): string => {
+    using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config, compilerOptionOverrides: { strict: true } });
+    return ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
+  };
+  using session = new ts.ProgramSession({ cwd: root });
+  assert.deepEqual(session.parseConfigFile(config).projectReferences, [{ path: path.join(root, 'shared/tsconfig.json') }]);
+  spawnSync(process.execPath, [TSC, '-p', 'shared'], { cwd: root });
+  assert.match(printed(session), /^src\/main\.ts\(2,14\): error TS2322: Type 'string' is not assignable to type 'number'\.\n$/);
+  assert.equal(printed(session), tsc(root, ['--pretty', 'false']));
+  fs.writeFileSync(path.join(root, 'shared/src/x.ts'), 'export const x = 1;\n');
+  spawnSync(process.execPath, [TSC, '-p', 'shared'], { cwd: root });
+  assert.equal(printed(session), '');
+  assert.equal(tsc(root, ['--pretty', 'false']), '');
+});

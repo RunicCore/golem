@@ -10,8 +10,8 @@ import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, emitWanted, flagPathOptions, flagsAsConfigOptions } from './typescript-config.js';
-import type { ResolveAtCurrentFolder } from './typescript-config.js';
+import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, referencedConfigFile } from './typescript-config.js';
+import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import type * as Golem from './typescript-types.js';
@@ -126,6 +126,13 @@ type LanguageVersionOrOptions = number | {
   readonly jsDocParsingMode?: number;
 };
 
+/** A project reference of the classic compiler: `path` is absolute and names a folder or a tsconfig file. */
+interface ClassicProjectReference {
+  readonly path: string;
+  readonly originalPath?: string;
+  readonly circular?: boolean;
+}
+
 interface ClassicHost extends Golem.CompilerHost {
   directoryExists?(directory: string): boolean;
   getCurrentDirectory(): string;
@@ -170,6 +177,7 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     readonly rootNames: readonly string[];
     readonly options: Golem.CompilerOptions;
     readonly host: ClassicHost;
+    readonly projectReferences?: readonly ClassicProjectReference[];
     readonly oldProgram?: ClassicProgram;
   }): ClassicProgram;
   createSourceFile(filename: string, text: string, languageVersionOrOptions: LanguageVersionOrOptions, setParentNodes?: boolean): Golem.SourceFile;
@@ -178,7 +186,8 @@ interface ClassicTypeScript extends Omit<Golem.TypeScriptBackend, Implemented | 
     configFilename: string,
     optionsToExtend: Golem.CompilerOptions | undefined,
     host: ParsedConfigHost,
-  ): { readonly options: Golem.CompilerOptions; readonly fileNames: string[]; readonly errors: readonly ClassicDiagnostic[] } | undefined;
+  ): { readonly options: Golem.CompilerOptions; readonly fileNames: string[]; readonly projectReferences?: readonly ClassicProjectReference[]; readonly errors: readonly ClassicDiagnostic[] } | undefined;
+  readConfigFile(configFilename: string, readFile: (filename: string) => string | undefined): { readonly config?: unknown };
   getPreEmitDiagnostics(program: ClassicProgram): readonly ClassicDiagnostic[];
   parseJsonConfigFileContent(json: object, host: Pick<ParsedConfigHost, 'useCaseSensitiveFileNames' | 'readDirectory' | 'fileExists' | 'readFile'>, basePath: string): { readonly options: Golem.CompilerOptions };
   parseCommandLine(flags: readonly string[]): { readonly options: Golem.CompilerOptions; readonly fileNames: readonly string[]; readonly errors: readonly ClassicDiagnostic[] };
@@ -739,6 +748,17 @@ function languageVersionKey(languageVersionOrOptions: LanguageVersionOrOptions):
   return `${languageVersion}:${impliedNodeFormat}:${jsDocParsingMode}`;
 }
 
+interface ParsedConfig {
+  readonly options: Golem.CompilerOptions;
+  readonly fileNames: string[];
+  readonly projectReferences: readonly ClassicProjectReference[];
+}
+
+/** The seam's view of a parse: each referenced project by its tsconfig file. */
+function projectOf(parsed: ParsedConfig): Golem.ParsedProject {
+  return { options: parsed.options, fileNames: parsed.fileNames, projectReferences: parsed.projectReferences.map((reference) => ({ path: referencedConfigFile(reference.path) })) };
+}
+
 interface ProgramRequest {
   readonly configPath: string;
   readonly overlays: ReadonlyMap<string, string>;
@@ -747,7 +767,7 @@ interface ProgramRequest {
   readonly rootNames: readonly string[];
 }
 
-function programRequest(options: Golem.OpenProgramOptions): ProgramRequest {
+function programRequest(options: Golem.OpenProgramOptions, referencesOf: (configPath: string, overlays: ReadonlyMap<string, string>) => readonly ConfigReference[]): ProgramRequest {
   const overlays = new Map([...options.overlays ?? []].map(([filename, content]) => [canonical(filename), content]));
   const baseConfigPath = canonical(options.configFile === undefined
     ? join(options.root, 'tsconfig.json')
@@ -769,9 +789,11 @@ function programRequest(options: Golem.OpenProgramOptions): ProgramRequest {
   }
   let configPath = baseConfigPath;
   if (options.compilerOptionOverrides !== undefined) {
-    // A virtual configuration that extends the original replaces the options for this program only.
+    // A virtual configuration that extends the original replaces the options for this program only. It sits beside the original, so the
+    // references, which an extending configuration does not inherit, keep their meaning when copied.
     configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.options.json`);
-    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides }));
+    const references = referencesOf(baseConfigPath, overlays);
+    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides, ...(references.length === 0 ? {} : { references }) }));
     hidden.add(configPath);
   }
   return { configPath, overlays, hidden, rootNames: [...new Set(options.sources.map(canonical))] };
@@ -819,27 +841,27 @@ export class ProgramSession implements Disposable {
   }
 
   /** Parse a project configuration with the session compiler. */
-  parseConfigFile(configPath: string, onInput?: (filename: string) => void): { options: Golem.CompilerOptions; fileNames: string[] } {
+  parseConfigFile(configPath: string, onInput?: (filename: string) => void): Golem.ParsedProject {
     this.assertOpen();
     this.observe(onInput, new Set());
-    return this.parseConfig(configPath, new Map());
+    return projectOf(this.parseConfig(configPath, new Map()));
   }
 
   /** Parse a project configuration under compiler command-line arguments, as the classic `tsc -p` does. */
-  parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): { options: Golem.CompilerOptions; fileNames: string[] } {
+  parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): Golem.ParsedProject {
     this.assertOpen();
     this.observe(onInput, new Set());
     const commandLine = classic.parseCommandLine(flags);
     assertNoSourceFiles(commandLine.fileNames);
     // A path in a flag is read from the current folder, as `tsc` reads it; the session works from the tsconfig's folder.
     const paths = flagPathOptions(flags, parseFlags, resolveAtCurrentFolder);
-    return this.parseConfig(configPath, new Map(), { ...commandLine, options: { ...commandLine.options, ...paths } });
+    return projectOf(this.parseConfig(configPath, new Map(), { ...commandLine, options: { ...commandLine.options, ...paths } }));
   }
 
   /** Open a program that reflects every file change since the previous one. */
   openProgram(options: Golem.OpenProgramOptions): Golem.Program {
     this.assertOpen();
-    const request = programRequest(this.withFlags(options));
+    const request = programRequest(this.withFlags(options), (configPath, overlays) => this.configReferencesOf(configPath, overlays));
     this.observe(options.onInput, request.hidden);
     const resolutionsChanged = this.resolutionsChanged();
     for (const filename of [...this.observed]) this.report(filename);
@@ -850,6 +872,7 @@ export class ProgramSession implements Disposable {
       rootNames: [...new Set([...parsed.fileNames.map(canonical), ...request.rootNames])],
       options: parsed.options,
       host: this.host(parsed.options, request.overlays),
+      ...(parsed.projectReferences.length === 0 ? {} : { projectReferences: parsed.projectReferences }),
       ...(reusable && this.latest ? { oldProgram: this.latest.program } : {}),
     });
     this.latest = { program, overlayPaths };
@@ -950,7 +973,13 @@ export class ProgramSession implements Disposable {
     return changed;
   }
 
-  private parseConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions; readonly errors: readonly ClassicDiagnostic[] }): { options: Golem.CompilerOptions; fileNames: string[] } {
+  /** The `references` a tsconfig writes, read from its text alone: no `include` is expanded. */
+  private configReferencesOf(configPath: string, overlays: ReadonlyMap<string, string>): ConfigReference[] {
+    const { config } = classic.readConfigFile(configPath, (filename) => overlays.get(this.probe(filename, overlays)) ?? sys.readFile(filename));
+    return configReferences(config);
+  }
+
+  private parseConfig(configPath: string, overlays: ReadonlyMap<string, string>, commandLine?: { readonly options: Golem.CompilerOptions; readonly errors: readonly ClassicDiagnostic[] }): ParsedConfig {
     const parsed = classic.getParsedCommandLineOfConfigFile(configPath, commandLine?.options, {
       useCaseSensitiveFileNames: sys.useCaseSensitiveFileNames,
       readDirectory: (root, extensions, excludes, includes, depth) => sys.readDirectory(root, extensions, excludes, includes, depth),
@@ -963,7 +992,7 @@ export class ProgramSession implements Disposable {
     });
     if (!parsed) throw new Error(`The TypeScript configuration ${displayPath(configPath)} could not be parsed.`);
     assertConfigParsed(configPath, [...commandLine?.errors ?? [], ...parsed.errors].map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })));
-    return { options: parsed.options, fileNames: parsed.fileNames };
+    return { options: parsed.options, fileNames: parsed.fileNames, projectReferences: parsed.projectReferences ?? [] };
   }
 
   /** The compiler host of one program: overlays over disk, input observation, and the session's parsed files. */

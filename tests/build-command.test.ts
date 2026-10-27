@@ -7,7 +7,7 @@ import { parseArguments } from '#golem/cli';
 import { corruptScans } from './support/corrupt-scan.js';
 import { assertMoneyCodec } from './support/rewritten-module.js';
 
-import { REJECTION, write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
+import { write, editTsconfig, serdeProject, sourceOnlyProject, countingGenerator, USE, snapshot, build, buildAndListJobs, mtimes, importBuilt, golemBuild, assertCallMap } from './support/build-project.js';
 
 // Original sources are checked, rewritten sources are emitted
 
@@ -188,12 +188,12 @@ test('a forwarded --declaration writes declarations from the original sources', 
 });
 
 test('-b and --build are rejected', async (t) => {
-  assert.throws(() => parseArguments(['build', '-b']), { message: REJECTION });
-  assert.throws(() => parseArguments(['build', '--build']), { message: REJECTION });
+  assert.deepEqual(parseArguments(['build', '-b']), { action: 'build', watch: false, compilerBuild: true });
+  assert.deepEqual(parseArguments(['build', '--build']), { action: 'build', watch: false, compilerBuild: true });
   const root = serdeProject(t, 'build-reject');
-  const result = await golemBuild(root, ['-b']);
+  const result = await golemBuild(root, ['--build']);
   assert.notEqual(result.code, 0);
-  assert.ok(result.stderr.includes(REJECTION), result.stderr);
+  assert.ok(result.stderr.includes('golem build does not take -b or --build'), result.stderr);
   assert.deepEqual(parseArguments(['build', '-w']), { action: 'build', watch: true }, '-w is --watch, as in tsc');
   assert.deepEqual(parseArguments(['build', '--project', 'a/tsconfig.json', '--watch']), { action: 'build', project: 'a/tsconfig.json', watch: true });
   // Every other argument goes to the compiler runs unchanged, in order.
