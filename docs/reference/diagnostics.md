@@ -829,6 +829,15 @@ An `integer` member and a `number` member share the integers. A member that decl
 
 **Fix:** Give the operation an `operationId` that isn't a JavaScript reserved word or client member name, if you need the two to match exactly.
 
+### OPENAPI_SERVER_OVERRIDE_IGNORED
+
+**Operation servers ignored.** The document has no root `servers`, and an operation, or its path item, lists its own `servers`. A client of a document without servers requires `baseUrl`, and `baseUrl` wins over every server list, so the client uses `baseUrl` for that operation. This is a warning: generation continues.
+
+**Fix:**
+
+- Pass `baseUrl` to the client.
+- Or list the servers at the root of the document, so that the operation list can override them.
+
 ### OPENAPI_UNION_DISCRIMINATOR_MISSING
 
 **Object union with no literal tag.** A `oneOf`/`anyOf` of objects needs a conversion (a variant holds a `date-time` string, or a model), and no property tells the variants apart:

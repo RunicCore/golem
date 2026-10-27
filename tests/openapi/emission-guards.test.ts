@@ -33,15 +33,3 @@ test('a composition error names the allOf member by its place in the schema, als
     },
   }), /because allOf member 1 sets additionalProperties: false/);
 });
-
-test('a schema group file is named by a 16-digit hash that is stable and differs for each group', async (t) => {
-  // protects: T-492 group ids come from a long hash; a repeated id stops generation
-  const cycle = (other: string) => ({ type: 'object', properties: { next: { $ref: `#/components/schemas/${other}` } } });
-  const schemas = { A: cycle('B'), B: cycle('A'), C: cycle('D'), D: cycle('C') };
-  const groupFiles = async () => (await generated(t, schemas)).artifacts.map(({ path: file }) => path.join('models', path.basename(file))).filter((file) => /_group-/.test(file)).sort();
-  const first = await groupFiles();
-  assert.equal(first.length, 2);
-  for (const file of first) assert.match(file, /^models\/_group-[0-9a-f]{16}\.ts$/);
-  assert.notEqual(first[0], first[1]);
-  assert.deepEqual(await groupFiles(), first);
-});

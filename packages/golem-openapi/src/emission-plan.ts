@@ -1,5 +1,6 @@
 import { isBinaryMediaType, isJsonSeqMediaType, isNdjsonMediaType, isServerSentEventsMediaType, mediaEssence } from './client/codecs.js';
 import type { ServerObject } from '@exprtlabs/golem/client';
+import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { collectOpenApiModelDefinitions } from './models.js';
 import {
@@ -154,6 +155,19 @@ function operationFirstServers(operations: readonly NormalizedOperation[], root:
     index.set(operation.name, position);
   }
   return { operationServers: firstServers, operationServerIndex: index };
+}
+
+/**
+ * A document with no root `servers` makes `baseUrl` required, and `baseUrl` wins over every list, so the `servers` of an operation
+ * or its path item have no effect there.
+ */
+export function serverOverrideDiagnostics(document: unknown, operations: readonly NormalizedOperation[]): GolemDiagnostic[] {
+  if (normalizeServers(asRecord(document).servers).length) return [];
+  return operations.filter((operation) => normalizeServers(operation.servers).length).map((operation) => ({
+    code: 'OPENAPI_SERVER_OVERRIDE_IGNORED',
+    severity: GolemDiagnosticSeverity.Warning,
+    message: `operation ${operation.name} lists its own servers; the client uses baseUrl for it`,
+  }));
 }
 
 function hasLinks(operations: readonly NormalizedOperation[]): boolean {
