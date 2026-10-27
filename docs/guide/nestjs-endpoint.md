@@ -1,6 +1,6 @@
-# Build a NestJS endpoint
+# Add Golem to a NestJS API
 
-Add a POST endpoint to a NestJS 11 app that validates its body, answers HTTP 400 for bad input, and publishes an OpenAPI document.
+Add Golem to a NestJS 11 API for a checked body, HTTP 400 for bad input and an OpenAPI document, while NestJS builds the endpoint.
 
 ## What golem does for an endpoint
 
@@ -29,7 +29,7 @@ npm install --save-dev @exprtlabs/golem-model @exprtlabs/golem-ts-openapi typesc
 | `@nestjs/swagger` | The `Api…` decorators that the `controllers` job reads |
 | `typescript` | The compiler that the generators and `golem build` use |
 
-Check the [requirements](/guide/install#requirements) and add `"type": "module"` to `package.json`.
+Check the [requirements](/guide/quick-start#requirements) and add `"type": "module"` to `package.json`.
 
 ## Step 2: Set up TypeScript
 
@@ -99,7 +99,7 @@ Register `NestModelInterceptor` once, for the whole app:
 - `useGlobalInterceptors(new NestModelInterceptor())` turns on the conversion for every controller. It works with the Express and Fastify adapters.
 - `import './payment.model.js'` loads the model module once at run time, so its generated codec registers. A model that never loaded makes the request fail with HTTP 500 ([what happens to a request](/guide/nestjs-requests#what-happens-to-a-request)).
 
-For each request, the interceptor validates the `@Body()`, answers HTTP 400 with `issues` when it fails, and passes a valid model to the handler. The steps and the rules for arrays and query objects are in [Convert requests](/guide/nestjs-requests#what-happens-to-a-request).
+For each request, the interceptor validates the `@Body()`, answers HTTP 400 with `issues` when it fails, and passes a valid model to the handler. The steps and the rules for arrays and query objects are in [NestJS requests](/guide/nestjs-requests#what-happens-to-a-request).
 
 ## Step 6: Configure golem.yaml
 
@@ -124,7 +124,7 @@ npx golem build
 
 - `golem generate` writes the generated model files and the document. Your editor needs them now.
 - `golem build` generates first, type-checks, and writes JavaScript with the request conversion in `.build/`.
-- Run the compiled entry file under your `outDir` with `node` ([Build your app](/guide/build)).
+- Run the compiled entry file under your `outDir` with `node` ([Build tools](/guide/build)).
 - Keep the generated files and the document out of git ([ignore generated files](/reference/generated-files#gitignore)).
 
 Send these bodies to the endpoint. The handler runs only for the first:
@@ -150,13 +150,13 @@ The document is a generated file, so git does not hold it. The frontend team get
 
 <<< ../../examples/payments/web/golem.yaml
 
-3. Run `npx golem generate` in the frontend project to write the client ([Generate a client](/guide/client)).
+3. Run `npx golem generate` in the frontend project to write the client ([Generate an SDK](/guide/client)).
 
 In CI, run `npx golem generate` or `npx golem build` in the owning project before the steps of the project that reads the document. `golem check` in the owning project fails when the document is missing or differs from the document that the `controllers` job writes. It writes nothing ([check](/guide/watch#check-without-writing)).
 
 ## Details in the reference
 
-- [Convert requests](/guide/nestjs-requests): parameter types, arrays, one-field parameters, query objects and responses.
+- [NestJS requests](/guide/nestjs-requests): parameter types, arrays, one-field parameters, query objects and responses.
 - [OpenAPI from controllers](/guide/nestjs): the controller job and the document it writes.
 - [NestJS controllers](/reference/nestjs): route helpers, tag keywords, component names, status codes and Swagger decorators.
 - [Configuration](/reference/config#controller-jobs): every key of a `controllers` job.

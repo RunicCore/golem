@@ -59,7 +59,7 @@ Your class holds methods, getters, defaults and extra constructor state. The bas
 
 ## Type-only model files
 
-A file that exports only types, such as `export type TLabel = IObject<{ text: string }>`, needs no import of its generated file. The [build host](/guide/build) loads the generated file of each model that one of these names:
+A file that exports only types, such as `export type TLabel = IObject<{ text: string }>`, needs no import of its generated file. The [build tool](/guide/build) loads the generated file of each model that one of these names:
 
 - a `parse`, `stringify`, `validate` or wire-format call
 - a Nest `@Body()` or `@Query()` parameter
@@ -86,6 +86,6 @@ Generation type-checks the project first, then writes the files:
 - It replaces every `*.model.generated.ts` file and the shared files under `models.output` (default `src/generated/models/`).
 - Your classes do not change.
 
-`golem build` generates first, so a build needs no separate `golem generate`. In CI, run `golem build`, or run `golem generate` and then `npx golem check` ([Generate, watch and check](/guide/watch)). [Ignore the generated files](/reference/generated-files#gitignore) in git.
+`golem build` generates first, so a build needs no separate `golem generate`. In CI, run `golem build`, or run `golem generate` and then `npx golem check` ([Generate and watch](/guide/watch)). [Ignore the generated files](/reference/generated-files#gitignore) in git.
 
 Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)

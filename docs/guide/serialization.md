@@ -24,7 +24,7 @@ The type argument picks the model and the result:
 - Nested fields follow the field type, not the root type argument.
 
 ::: info Build with golem
-`parse`, `stringify`, `fromWireFormat`, `toWireFormat`, `validate` and `assertValue` throw unless a build rewrote them. Choose a host in [Build your app](/guide/build). `tsc` does not rewrite them.
+`parse`, `stringify`, `fromWireFormat`, `toWireFormat`, `validate` and `assertValue` throw unless a build rewrote them. Choose a build tool in [Build tools](/guide/build). `tsc` does not rewrite them.
 :::
 
 - `T` must be a named generated `IObject` or `IModel`. An inline object type is not enough.
@@ -96,7 +96,7 @@ Write `typeof` each function in `TSerde`, and import the functions as types:
 <<< ../../examples/models/src/order.model.ts#order-declaration
 
 - `Integer` and `Minimum<0>` check the model value.
-- `remindAt` is a `Date` and needs no `TSerde`. [Use Date fields](/guide/dates#use-date-fields) shows how golem writes it and how to keep its exact text.
+- `remindAt` is a `Date` and needs no `TSerde`. [Use Date fields](/guide/field-types#use-date-fields) shows how golem writes it and how to keep its exact text.
 
 Run `npx golem generate`, then convert the JSON:
 
@@ -139,7 +139,7 @@ Converting the model writes the JSON form and restores the instance:
 <<< ../../examples/models/src/attachment-json.ts#attachment-json
 
 - The class must have a name and have no type parameter without a default. A module must export it, under any name or as the default export ([RUNM1063](/reference/diagnostics#runm1063)).
-- A `TemporalInstant` is this kind of field. The [Temporal types](/guide/dates#use-temporal-fields) ship their own codecs.
+- A `TemporalInstant` is this kind of field. The [Temporal types](/guide/field-types#use-temporal-fields) ship their own codecs.
 
 ## Checks during conversion
 

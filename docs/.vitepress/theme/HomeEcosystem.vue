@@ -21,7 +21,7 @@ const JOBS = ['1 generators', '2 controllers', '3 openapi', '4 models'] as const
 <template>
   <figure class="home-ecosystem">
     <div class="frame">
-      <svg viewBox="0 0 1000 480" role="img" aria-label="TypeScript types, an OpenAPI document or server controllers go into three generators. The golem command runs the generators in a fixed order and writes model files, an SDK and an OpenAPI document. A build host rewrites parse calls in your source, and the running app uses the golem runtime.">
+      <svg viewBox="0 0 1000 480" role="img" aria-label="TypeScript types, an OpenAPI document or server controllers go into three generators. The golem command runs the generators in a fixed order and writes model files, an SDK and an OpenAPI document. A build tool rewrites parse calls in your source, and the running app uses the golem runtime.">
         <defs>
           <marker id="eco-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="tip" d="M0,0 L10,5 L0,10 z" /></marker>
         </defs>
@@ -72,7 +72,7 @@ const JOBS = ['1 generators', '2 controllers', '3 openapi', '4 models'] as const
         <text class="lbl" x="150" y="420" text-anchor="middle">Your source</text>
         <text class="sub" x="150" y="440" text-anchor="middle">parse&lt;Task&gt;(text)</text>
         <rect class="box key" x="350" y="392" width="300" height="64" rx="4" />
-        <text class="lbl" x="500" y="420" text-anchor="middle">Build host</text>
+        <text class="lbl" x="500" y="420" text-anchor="middle">Build tool</text>
         <text class="sub" x="500" y="440" text-anchor="middle">golem build · Vite · esbuild · Node</text>
         <rect class="box" x="720" y="392" width="260" height="64" rx="4" />
         <text class="lbl" x="850" y="420" text-anchor="middle">Running app</text>

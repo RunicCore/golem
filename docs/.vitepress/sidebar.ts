@@ -5,37 +5,44 @@ export const SIDEBAR: readonly SidebarGroup[] = [
   { text: 'Get started', items: [
     { text: 'What is Golem', link: '/guide/' },
     { text: 'Quick start', link: '/guide/quick-start' },
-    { text: 'Install', link: '/guide/install' },
-    { text: 'Build your app', link: '/guide/build' },
-    { text: 'Generate, watch and check', link: '/guide/watch' },
+  ] },
+  { text: 'Build', items: [
+    { text: 'Build tools', link: '/guide/build' },
+    { text: 'Generate and watch', link: '/guide/watch' },
   ] },
   { text: 'Objects and models', items: [
     { text: 'Define models', link: '/guide/models' },
     { text: 'Field types', link: '/guide/field-types' },
+    { text: 'SDK types in models', link: '/guide/models-and-client' },
+    { text: 'Share models', link: '/guide/shared-models' },
+    { text: 'MobX and React', link: '/guide/mobx' },
+  ] },
+  { text: 'Validation', items: [
     { text: 'Validation tags', link: '/guide/tags' },
     { text: 'Validate models', link: '/guide/validation' },
-    { text: 'Serialization', link: '/guide/serialization' },
-    { text: 'Dates and times', link: '/guide/dates' },
-    { text: 'SDK types in your models', link: '/guide/models-and-client' },
-    { text: 'MobX and React', link: '/guide/mobx' },
-    { text: 'Share models between apps', link: '/guide/shared-models' },
   ] },
-  { text: 'API clients', items: [
-    { text: 'Generate a client', link: '/guide/client' },
-    { text: 'Call a partner API', link: '/guide/partner-client' },
+  { text: 'Serialization', items: [
+    { text: 'Serialization', link: '/guide/serialization' },
+  ] },
+  { text: 'TypeScript to OpenAPI', items: [
+    { text: 'OpenAPI from controllers', link: '/guide/nestjs' },
+    { text: 'NestJS requests', link: '/guide/nestjs-requests' },
+    { text: 'NestJS controllers', link: '/reference/nestjs' },
+  ] },
+  { text: 'OpenAPI to TypeScript SDK', items: [
+    { text: 'Generate an SDK', link: '/guide/client' },
     { text: 'Call operations', link: '/guide/client-usage' },
     { text: 'Authentication', link: '/guide/auth' },
     { text: 'Body formats', link: '/guide/codecs' },
-    { text: 'Streaming responses', link: '/guide/streams' },
-  ] },
-  { text: 'NestJS', items: [
-    { text: 'Build a NestJS endpoint', link: '/guide/nestjs-endpoint' },
-    { text: 'OpenAPI from controllers', link: '/guide/nestjs' },
-    { text: 'Convert requests', link: '/guide/nestjs-requests' },
+    { text: 'OpenAPI support', link: '/reference/openapi-support' },
   ] },
   { text: 'Extend Golem', items: [
     { text: 'Write a generator', link: '/guide/generators' },
     { text: 'Run the generators from code', link: '/guide/generator-api' },
+  ] },
+  { text: 'Examples', items: [
+    { text: 'Add Golem to a NestJS API', link: '/guide/nestjs-endpoint' },
+    { text: "Call a partner's API", link: '/guide/partner-client' },
   ] },
   { text: 'Reference', items: [
     { text: 'Configuration', link: '/reference/config' },
@@ -43,17 +50,12 @@ export const SIDEBAR: readonly SidebarGroup[] = [
     { text: 'Runtime API', link: '/reference/runtime-api' },
     { text: 'Generator and tool API', link: '/reference/generator-api' },
     { text: 'Generated files', link: '/reference/generated-files' },
-    { text: 'OpenAPI support', link: '/reference/openapi-support' },
-    { text: 'NestJS controllers', link: '/reference/nestjs' },
     { text: 'Diagnostics', link: '/reference/diagnostics' },
   ] },
   { text: 'Project', items: [
     { text: 'Compatibility', link: '/compatibility' },
-    { text: 'Upgrade to 1.1', link: '/upgrade-1-1' },
-    { text: 'Upgrade to 1.0', link: '/migrating' },
     { text: 'Release notes', link: '/changelog' },
     { text: 'Benchmarks', link: '/benchmarks' },
-    { text: 'Run the benchmarks', link: '/guide/benchmarks' },
   ] },
 ];
 

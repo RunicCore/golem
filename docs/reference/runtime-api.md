@@ -23,7 +23,7 @@ Find every `@exprtlabs/golem` subpath that your application, NestJS app or build
 | [`register`](#register) | `node --import` entry that installs the loader | none |
 | [`vite`](#vite) | Vite plugin that rewrites TypeScript before Vite strips its types | `vite` |
 | [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
-| [`eslint`](#eslint) | ESLint config with a rule that reports code no host can rewrite | `eslint` |
+| [`eslint`](#eslint) | ESLint config with a rule that reports code no build tool can rewrite | `eslint` |
 
 A path that starts with `internal/` is for the generators and may change in any release. Do not import it ([Compatibility](/compatibility#public-api)).
 
@@ -264,7 +264,7 @@ client.<operation>().execute(input, options?: <Client>RequestOptions): Promise<H
 | `responseDecoders` | response content | Response codecs by media type ([Codec options](/guide/codecs#codec-options)). |
 | `parameterSerializers` | a parameter that uses `content`, or a `querystring` parameter | Parameter writers by media type. |
 | `responseHeaderDecoders` | a response header that declares `content` | Header decoders by media type. |
-| `streamDecoders` | a response that declares `itemSchema` | Framing decoders for streams other than NDJSON, JSON-seq and SSE ([Connect a custom stream decoder](/guide/streams#connect-a-custom-stream-decoder)). |
+| `streamDecoders` | a response that declares `itemSchema` | Framing decoders for streams other than NDJSON, JSON-seq and SSE ([Connect a custom stream decoder](/guide/client-usage#connect-a-custom-stream-decoder)). |
 | `operationValidators` | `validation` turned on | A map of operation name to validators. Each entry replaces the generated validators of that operation ([Runtime validators](#runtime-validators)). |
 
 | Request option | Value |
@@ -283,7 +283,7 @@ client.<operation>().execute(input, options?: <Client>RequestOptions): Promise<H
 | `matched` | `status` for an exact status code, `range` for a range such as `2XX`, `default` for the `default` response. |
 | `status` | The HTTP status of the reply. |
 | `contentType` | The declared media type that matched the reply, or `null` when the response declares no content. |
-| `body` | The decoded body. A response that declares no content has no body. A stream response has an `AsyncIterable` ([Streaming responses](/guide/streams)). |
+| `body` | The decoded body. A response that declares no content has no body. A stream response has an `AsyncIterable` ([Streaming responses](/guide/client-usage#streaming-responses)). |
 | `headers` | The declared response headers that the reply holds, decoded. |
 
 - A stream body is lazy. With validation on, each item is checked when your loop reads it. A failed item throws from `for await`, not from `execute`.
@@ -508,7 +508,7 @@ The usage is in [Built-in validation constraints](/guide/tags#built-in-validatio
 
 ## `@exprtlabs/golem/temporal` {#temporal}
 
-Temporal field types for models. Each converts to an ISO 8601 string on the wire. [Use Temporal fields](/guide/dates#use-temporal-fields) shows the setup.
+Temporal field types for models. Each converts to an ISO 8601 string on the wire. [Use Temporal fields](/guide/field-types#use-temporal-fields) shows the setup.
 
 | Tag | Model type | Wire string |
 | --- | --- | --- |
@@ -532,9 +532,9 @@ import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem
 <<< ../../examples/models/src/read-json.ts#read-json
 
 ::: warning Build with golem
-`parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` and `validate<T>` throw unless a [build host](/guide/build) rewrote them. `tsc` does not rewrite them.
+`parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` and `validate<T>` throw unless a [build tool](/guide/build) rewrote them. `tsc` does not rewrite them.
 
-The error is a `LibError` of kind `ValidationUnavailable`. Its message starts with the call, as in `parse<T> was not rewritten to a generated function`, and then lists the hosts that rewrite calls.
+The error is a `LibError` of kind `ValidationUnavailable`. Its message starts with the call, as in `parse<T> was not rewritten to a generated function`, and then lists the build tools that rewrite calls.
 :::
 
 `T` names a generated `IObject` or `IModel`. A type alias returns a plain object. Your class returns an instance of it.

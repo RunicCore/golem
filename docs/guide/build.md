@@ -1,27 +1,27 @@
-# Build your app
+# Build tools
 
-Choose and set up the build host that rewrites `parse<T>` and five other calls.
+Choose and set up the build tool that rewrites `parse<T>` and five other calls.
 
-## Why a host is needed
+## Why a build tool is needed
 
-`parse<T>`, `stringify<T>`, `toWireFormat<T>`, `fromWireFormat<T>`, `validate<T>` and `assertValue<T>` take a type argument. TypeScript erases that argument at run time. A host is a tool that compiles or loads your TypeScript. It reads each of these calls with your project's TypeScript and replaces the call with a call to the generated code. `tsc` does not rewrite these calls.
+`parse<T>`, `stringify<T>`, `toWireFormat<T>`, `fromWireFormat<T>`, `validate<T>` and `assertValue<T>` take a type argument. TypeScript erases that argument at run time. A build tool compiles or loads your TypeScript. It reads each of these calls with your project's TypeScript and replaces the call with a call to the generated code. `tsc` does not rewrite these calls.
 
-A call that no host rewrote throws a `LibError` of kind `ValidationUnavailable` (`validation_unavailable`). The message starts with the name of the call, as in `parse<T> was not rewritten to a generated function`. It then lists the hosts that rewrite the call.
+A call that no build tool rewrote throws a `LibError` of kind `ValidationUnavailable` (`validation_unavailable`). The message starts with the name of the call, as in `parse<T> was not rewritten to a generated function`. It then lists the build tools that rewrite the call.
 
-A call that no host can rewrite fails the build with its file, its line and what to run. `golem check` reports the same calls.
+A call that no build tool can rewrite fails the build with its file, its line and what to run. `golem check` reports the same calls.
 
-Generated classes and `validateInstance` work without a host.
+Generated classes and `validateInstance` work without a build tool.
 
-## Choose a host
+## Supported build tools
 
-| Host | Use it when | Setup |
+| Build tool | Use it when | Setup |
 | --- | --- | --- |
 | [`golem build`](#build-with-golem-build) | You compile with `tsc` and run the JavaScript | Replace `tsc -p` |
 | [Vite plugin](#vite) | Vite bundles your app | `golem()` in `plugins` |
 | [esbuild plugin](#esbuild) | esbuild bundles your app | `golem()` in `plugins` |
 | [Node loader](#node-loader) | Node runs your TypeScript files | `--import` flag |
 
-Every host works with TypeScript 6 and 7 and produces the same rewrite.
+Every build tool works with TypeScript 6 and 7 and produces the same rewrite.
 
 The plugins and the loader open your project from `golem.yaml`:
 
@@ -32,7 +32,7 @@ The plugins and the loader scan your files themselves. They need the generated f
 
 ## Node versions
 
-Golem needs Node.js 22.15 or newer ([requirements](/guide/install#requirements)). The flags that each host needs depend on the Node.js version:
+Golem needs Node.js 22.15 or newer ([requirements](/guide/quick-start#requirements)). The flags that each build tool needs depend on the Node.js version:
 
 | Node.js version | `golem build` | Vite and esbuild plugins | Node loader |
 | --- | --- | --- | --- |
@@ -53,7 +53,7 @@ npx golem build
 node .build/src/main.js
 ```
 
-The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project settings](/guide/install#project-settings).
+The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project settings](/guide/quick-start#project-settings).
 
 - It prints type errors as `tsc -p` does. It uses colors and a `Found N errors` line when the `pretty` option is true, or when stdout is a terminal and `NO_COLOR` is not set.
 - A failed check still writes JavaScript, unless `noEmitOnError` is true. The exit status is not `0` after a failed check.
@@ -109,7 +109,7 @@ node --import @exprtlabs/golem/register src/main.ts
 
 ## Lint for unrewritable code {#lint}
 
-A host rewrites each call that it can read. It cannot rewrite `parse<TPayment>` used as a value, such as `texts.map(parse<TPayment>)`. That code throws when it runs. `golem build` and `golem check` report it. The ESLint rule `golem/no-unrewritable-code` reports the same errors when ESLint runs, also in your editor.
+A build tool rewrites each call that it can read. It cannot rewrite `parse<TPayment>` used as a value, such as `texts.map(parse<TPayment>)`. That code throws when it runs. `golem build` and `golem check` report it. The ESLint rule `golem/no-unrewritable-code` reports the same errors when ESLint runs, also in your editor.
 
 `golem()` returns one flat-config object. It turns the rule on for `.ts`, `.mts`, `.cts` and `.tsx` files. ESLint needs a parser for these files. Choose one setup:
 
@@ -131,14 +131,14 @@ import { golem } from '@exprtlabs/golem/eslint';
 export default [await golem({ parser: 'text' })];
 ```
 
-- The rule reads your `golem.yaml` and your `tsconfig.json`, as the hosts do. The `config` option names another `golem.yaml`, and `cwd` sets the folder where the search starts. Without them, `golem()` reads `GOLEM_CONFIG`, then `./golem.yaml` in the working directory.
+- The rule reads your `golem.yaml` and your `tsconfig.json`, as the build tools do. The `config` option names another `golem.yaml`, and `cwd` sets the folder where the search starts. Without them, `golem()` reads `GOLEM_CONFIG`, then `./golem.yaml` in the working directory.
 - Run `golem generate` first, so the generated files exist. A lint run that goes on while you run `golem generate` reads the new files.
 - `eslint-disable` comments work with both setups.
 - A report names the code, such as `RUNM1079`, and the position. The [diagnostics](/reference/diagnostics) page gives the fix for each code.
 
 ## Editor setup (generate or watch)
 
-A host rewrites calls. It does not give your editor the generated files. Run `npx golem generate` once, or keep `npx golem watch` running ([Generate, watch and check](/guide/watch)). The editor then sees `TTaskBaseModel` and the other generated names.
+A build tool rewrites calls. It does not give your editor the generated files. Run `npx golem generate` once, or keep `npx golem watch` running ([Generate and watch](/guide/watch)). The editor then sees `TTaskBaseModel` and the other generated names.
 
 ## Build in CI
 
@@ -146,4 +146,4 @@ A host rewrites calls. It does not give your editor the generated files. Run `np
 npx --no-install golem build
 ```
 
-`golem build` generates first, so a clone needs no committed generated files. With `--no-install`, `npx` fails when the project does not [install Golem](/guide/install#packages-for-each-generator). [`golem check`](/guide/watch#check-without-writing) reports stale generated files without writing.
+`golem build` generates first, so a clone needs no committed generated files. With `--no-install`, `npx` fails when the project does not [install Golem](/guide/quick-start#packages-for-each-generator). [`golem check`](/guide/watch#check-without-writing) reports stale generated files without writing.

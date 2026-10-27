@@ -458,7 +458,7 @@ When the generated file loads first, the model class extends a base class that i
 
 ### RUNM1066
 
-**Serde type argument is not a type name.** A call to `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` has a type argument that is not a single type name or `typeof` expression, such as `parse<TPayment | null>(text)`, `parse<Array<TPayment>>(text)` or `parse<TPayment, TMoney>(text)`. The message names the function and the position of the call, and `golem check` and every host report it.
+**Serde type argument is not a type name.** A call to `stringify`, `parse`, `validate`, `assertValue`, `toWireFormat` or `fromWireFormat` has a type argument that is not a single type name or `typeof` expression, such as `parse<TPayment | null>(text)`, `parse<Array<TPayment>>(text)` or `parse<TPayment, TMoney>(text)`. The message names the function and the position of the call, and `golem check` and every build tool report it.
 
 **Fix:**
 
@@ -611,7 +611,7 @@ The message names both model files and the path.
 - `texts.map(parse<TPayment>)`
 - `parse?.<TPayment>(text)`
 
-Golem rewrites a call only, so this code stays as you wrote it and throws when it runs. The message names the function, the form, and the position. `golem build`, `golem check` and every host report it. The [ESLint rule](/guide/build#lint) reports it too.
+Golem rewrites a call only, so this code stays as you wrote it and throws when it runs. The message names the function, the form, and the position. `golem build`, `golem check` and every build tool report it. The [ESLint rule](/guide/build#lint) reports it too.
 
 **Fix:**
 
