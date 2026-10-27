@@ -12,6 +12,7 @@ import {
   importLines,
   importSet,
   ImportSource,
+  isEmpty,
   join,
   literal,
   docComment,
@@ -308,8 +309,8 @@ function operationSource(
   const securityCall = appliesSecurity
     ? code`    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);`
     : BLANK;
-  const usesQuery = queryLines.length > 0 || queryStringLine.parts.length > 0 || securityCall.parts.length > 0;
-  const usesCookies = cookieLines.length > 0 || securityCall.parts.length > 0;
+  const usesQuery = queryLines.length > 0 || !isEmpty(queryStringLine) || !isEmpty(securityCall);
+  const usesCookies = cookieLines.length > 0 || !isEmpty(securityCall);
   const bodyLines = [
     profile.validation ? code`    await ${rt.validation.validateOperationInput}(${literal(operation.name)}, input, validators);` : BLANK,
     usesQuery ? code`    const query: string[] = [];` : BLANK,
@@ -335,7 +336,7 @@ function operationSource(
     code`      response,`,
     code`      responseContracts,${validatesWithSources ? code`\n      checkResponse,` : BLANK}`,
     code`    );`,
-  ].filter(line => line.parts.length > 0);
+  ].filter(line => !isEmpty(line));
   const body = code`  return ${createApiOperation}(${literal(operation.name)}, async (${inputName}: ${inputType}, options: ${requestOptions} = {}): Promise<${responseType}> => {
 ${join(bodyLines, code`\n`)}
   });`;
@@ -343,14 +344,14 @@ ${join(bodyLines, code`\n`)}
     securityDeclaration,
     code`const responseContracts: readonly ${rtType.client.RuntimeResponseContract}[] = ${documentLiteral(responseContracts)};`,
     validationSources,
-  ].filter((part) => part.parts.length > 0), code`\n`);
+  ].filter((part) => !isEmpty(part)), code`\n`);
   const factoryCode = identifierPart(factoryName);
   const functions = code`export function ${identifierPart(operation.name)}(options: ${clientOptions}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
   return ${factoryCode}(new ${clientRuntime}(${literal(clientName)}, options${plan.servers.length ? code`, ${serversCode}` : BLANK}));
 }
 
 export function ${factoryCode}(runtime: ${clientRuntime}): ${apiOperation}<${inputType}, ${responseType}, ${requestOptions}> {
-${validatorSetup.parts.length > 0 ? code`${validatorSetup}\n` : BLANK}${body}
+${!isEmpty(validatorSetup) ? code`${validatorSetup}\n` : BLANK}${body}
 }
 `;
   const file = join([declarations, functions], code`\n`);
@@ -379,7 +380,7 @@ ${validatorSetup.parts.length > 0 ? code`${validatorSetup}\n` : BLANK}${body}
     ...validatorImportLines,
     ...runtimeLines('validation'),
     BLANK,
-    ...(declarations.parts.length > 0 ? [declarations] : []),
+    ...(!isEmpty(declarations) ? [declarations] : []),
   ], code`\n`)}
 
 ${functions}`);

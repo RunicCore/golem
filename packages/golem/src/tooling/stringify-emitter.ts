@@ -12,7 +12,7 @@ import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { modelName, requireComposedObject, type ModelBases } from './composition.js';
 import {
-  aliased, asObjectLiteral, bindInput, bindRead, code, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, join, literal, readShape, sameCode,
+  aliased, asObjectLiteral, bindInput, bindRead, code, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
 import { rt, rtType } from './rt.js';
@@ -1902,7 +1902,7 @@ function rowsToText(rows: readonly Code[]): Code {
 
 /** The blocks of a file, one after another. A block that writes nothing leaves no blank line. */
 function blocksToText(blocks: readonly Code[]): Code {
-  return join(blocks.filter((block) => block.parts.length > 0), code`\n`);
+  return join(blocks.filter((block) => !isEmpty(block)), code`\n`);
 }
 
 interface NodeFields {
@@ -2403,7 +2403,7 @@ export function emitCodecRuntimeCode(
   const runtimes: Code[] = [];
   for (const node of nodes) {
     const runtime = emitNodeRuntime(node, ctx, validates(node));
-    if (runtime.parts.length > 0) runtimes.push(runtime);
+    if (!isEmpty(runtime)) runtimes.push(runtime);
   }
   // A blank line stands between two functions' runtimes, and none ends the last.
   return withModuleConstants(join(runtimes, code`\n\n`));
