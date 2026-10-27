@@ -9,7 +9,8 @@ import type { OrderedRun } from './test-run-ordered.js';
 
 export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
 /** `fileTimings` is the JSON-lines file that the test-file reporter fills while the step runs. */
-export interface Step { readonly label: string; readonly run: () => Promise<number>; readonly fileTimings?: string }
+/** `always`: the step runs again in a resume, because its result lives outside the run record (see `pack`). */
+export interface Step { readonly label: string; readonly run: () => Promise<number>; readonly fileTimings?: string; readonly always?: true }
 /** The steps of a chain run one after another. The chains of a group run at the same time; groups run in order. */
 export type Group = readonly (readonly Step[])[];
 /** Each step is a group of its own: the steps run in order. */
@@ -206,7 +207,7 @@ function nodeTest(label: string, patterns: readonly string[], concurrency: numbe
       }
       const sources = new Map(files.map(file => [sourcePath(path.resolve(root, file), root), file]));
       stepFiles.set(label, [...sources.keys()].sort());
-      const finished = new Set(resumed?.steps[label]?.passed);
+      const finished = new Set(Object.keys(resumed?.steps[label]?.passed ?? {}));
       const remaining = files.filter(file => !finished.has(sourcePath(path.resolve(root, file), root)));
       if (!remaining.length) {
         process.stdout.write(`${label}: all ${files.length} files passed in the earlier run\n`);
@@ -249,7 +250,8 @@ function splitTypescriptLane(args: readonly string[]): { readonly lane6: boolean
 }
 
 const npmRun = (label: string, script: string): Step => ({ label, run: () => run('npm', ['run', script]) });
-const pack: Step = { label: 'pack', run: () => run(process.execPath, ['.build/scripts/test-pack.js']) };
+// The packed set lives in /cache/packed, which keeps only the newest set: another checkout can replace it, so a resume packs again (a present set is reused at once).
+const pack: Step = { label: 'pack', always: true, run: () => run(process.execPath, ['.build/scripts/test-pack.js']) };
 // Prepare only fills caches; it never runs a test.
 const prepareSteps: Group[] = inOrder(
   pack,
@@ -382,11 +384,13 @@ async function main(argv: readonly string[]): Promise<void> {
   if (resultsDir) {
     fs.mkdirSync(resultsDir, { recursive: true });
     // A run's results never mix with an earlier run's.
-    for (const name of fs.readdirSync(resultsDir)) if (name.endsWith('.tap') || name.endsWith('-timings.json') || name.endsWith('.files.jsonl')) fs.rmSync(path.join(resultsDir, name));
+    for (const name of fs.readdirSync(resultsDir)) if (name.endsWith('.tap') || name.endsWith('-timings.json') || name.endsWith('.files.jsonl') || name.endsWith('-complete.json')) fs.rmSync(path.join(resultsDir, name));
   }
+  const plan = steps(tier, args, native);
   const state = runStateFromEnv();
   if (state && !state.again) {
     resumed = readRecord(state.recordFile);
+    for (const step of plan.flat(2)) if (step.always && resumed?.steps[step.label]) resumed.steps[step.label].ended = false;
     const line = resumed && describeResume(resumed, state);
     if (line) process.stdout.write(`${tier} ${line}\n`);
     else resumed = undefined;
@@ -407,7 +411,7 @@ async function main(argv: readonly string[]): Promise<void> {
     fs.renameSync(`${file}.tmp`, file);
   };
   const runStep = async (step: Step): Promise<void> => {
-    if (resumed?.steps[step.label]?.ended) {
+    if (!step.always && resumed?.steps[step.label]?.ended) {
       process.stdout.write(`${tier} ${step.label}: passed in the earlier run\n`);
       return;
     }
@@ -442,7 +446,6 @@ async function main(argv: readonly string[]): Promise<void> {
       }
     }
   };
-  const plan = steps(tier, args, native);
   for (const group of plan) {
     // A chain that fails to start a step leaves the other chains running; wait for all of them before the fault is reported.
     const chains = await Promise.allSettled(group.map(async chain => { for (const step of chain) await runStep(step); }));
@@ -455,7 +458,7 @@ async function main(argv: readonly string[]): Promise<void> {
   if (timingsFault) process.exitCode = 2;
   if (state && resultsDir) {
     // A test step that passed whole in the earlier run never expanded its files here; the record counts them.
-    const planned: PlannedStep[] = plan.flat(2).map(step => ({ label: step.label, files: step.fileTimings && resumed?.steps[step.label]?.ended ? resumed.steps[step.label].passed : stepFiles.get(step.label) }));
+    const planned: PlannedStep[] = plan.flat(2).map(step => ({ label: step.label, files: step.fileTimings && resumed?.steps[step.label]?.ended ? Object.keys(resumed.steps[step.label].passed) : stepFiles.get(step.label) }));
     process.stdout.write(`${finishRun(state, resumed, planned, resultsDir, tier, failed || timingsFault, seconds)}\n`);
   }
 }

@@ -18,9 +18,8 @@ if [ "$tier" = full ] || [ "$tier" = acceptance ]; then
     shift || true
   done
   set -- "$tier" ${rest[@]+"${rest[@]}"}
-  for number in "$load_limit" "$load_wait"; do
-    [ -z "$number" ] || [[ "$number" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--load-limit and --load-wait take a number, got '$number'" >&2; exit 2; }
-  done
+  [ -z "$load_limit" ] || [[ "$load_limit" =~ ^[0-9]+([.][0-9]+)?$ ]] || { echo "--load-limit takes a number, got '$load_limit'" >&2; exit 2; }
+  [ -z "$load_wait" ] || [[ "$load_wait" =~ ^[0-9]+$ ]] || { echo "--load-wait takes whole seconds, got '$load_wait'" >&2; exit 2; }
 fi
 
 exec 9>/cache/run.lock
@@ -31,7 +30,7 @@ mkdir -p /cache/work /cache/npm /cache/packed /cache/linux-lock /cache/ttsc /cac
 # builds stay warm. Build output and installs live only in the work tree.
 rsync -a --delete \
   --exclude node_modules/ --exclude .build/ --exclude dist/ --exclude .cache/ \
-  --exclude .git/ --exclude .private/ --exclude .superpowers/ --exclude .code-review-graph/ \
+  --exclude .git/ --exclude .DS_Store --exclude .private/ --exclude .superpowers/ --exclude .code-review-graph/ \
   --exclude .vitepress/cache/ --exclude .vitepress/dist/ \
   /src/ /cache/work/
 cd /cache/work
@@ -41,7 +40,7 @@ cd /cache/work
 # macOS one here; the Linux lockfile has its own part of the key.
 tree_hash=""
 if [ "$tier" = full ] || [ "$tier" = acceptance ]; then
-  tree_hash="$(find . \( -name node_modules -o -name .build -o -name dist -o -name .cache -o -name .git -o -name .private -o -name .superpowers -o -name .code-review-graph \
+  tree_hash="$(find . \( -name node_modules -o -name .build -o -name dist -o -name .cache -o -name .git -o -name .DS_Store -o -name .private -o -name .superpowers -o -name .code-review-graph \
     -o -path '*/.vitepress/cache' -o -path '*/.vitepress/dist' \) -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-32)"
 fi
 
@@ -99,18 +98,23 @@ fi
 lock_hash="$(sha256sum package-lock.json | cut -c1-64)"
 
 # A Full or Acceptance run is kept by the key of what it tests: the tier, the source tree, the runner image, the Linux lockfile
-# (its slot and content) and the denied-text rules of the public-content scans. A tree that passed is not run again, and a run
+# (its slot and content) and the host values that change what a tier checks (the denied-text rules and GOLEM_TYPESCRIPT_ROOT). A tree that passed is not run again, and a run
 # that the ceiling cut is finished by the next run of the same key (scripts/test-runner/run-state.ts). The records sit in the
 # cache volume, so any checkout of the same tree finds them; those older than 14 days are removed.
 if [ -n "$tree_hash" ]; then
   export GOLEM_RUN_TREE="$tree_hash" GOLEM_RUN_STATE="/cache/test-state/$tier"
-  GOLEM_RUN_KEY="$(printf '%s\n' "$tier" "$tree_hash" "${GOLEM_IMAGE_TAG:-}" "$manifest_hash" "$lock_hash" "$(printf '%s' "${PUBLIC_CONTENT_DENIED_TEXT:-}" | sha256sum)" | sha256sum | cut -c1-32)"
+  # Every value that run.sh takes from the host environment and that changes what a tier checks: the denied-text rules of the
+  # public-content scans (set and required) and the TypeScript root of a focused run.
+  host_env_hash="$(printf '%s\0' "${PUBLIC_CONTENT_DENIED_TEXT-unset}" "${PUBLIC_CONTENT_REQUIRE_DENIED_TEXT-unset}" "${GOLEM_TYPESCRIPT_ROOT-unset}" | sha256sum | cut -c1-64)"
+  GOLEM_RUN_KEY="$(printf '%s\n' "$tier" "$tree_hash" "${GOLEM_IMAGE_TAG:-}" "$manifest_hash" "$lock_hash" "$host_env_hash" | sha256sum | cut -c1-32)"
   export GOLEM_RUN_KEY
   mkdir -p "$GOLEM_RUN_STATE"
   find "$GOLEM_RUN_STATE" -type f -mtime +14 -delete
   if [ "$again" -eq 1 ]; then
     export GOLEM_RUN_AGAIN=1
-  elif [ -f "$GOLEM_RUN_STATE/$GOLEM_RUN_KEY.passed" ]; then
+    # A run that executes and does not finish passing (failed, cut or killed) must leave no old pass for the next plain run to skip on.
+    rm -f "$GOLEM_RUN_STATE/$GOLEM_RUN_KEY.passed"
+  elif [ -s "$GOLEM_RUN_STATE/$GOLEM_RUN_KEY.passed" ]; then
     echo "The $tier tier is not run: this tree already passed it. $(cat "$GOLEM_RUN_STATE/$GOLEM_RUN_KEY.passed")"
     echo "Run it anyway with --again."
     exit 0
