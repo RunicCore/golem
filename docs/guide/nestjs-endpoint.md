@@ -125,7 +125,7 @@ npx golem build
 - `golem generate` writes the generated model files and the document. Your editor needs them now.
 - `golem build` generates first, type-checks, and writes JavaScript with the request conversion in `.build/`.
 - Run the compiled entry file under your `outDir` with `node` ([Build tools](/guide/build)).
-- Keep the generated files and the document out of git ([ignore generated files](/reference/generated-files#gitignore)).
+- Ignore or commit the generated files and the document, as you choose ([ignore or commit generated files](/reference/generated-files#gitignore)). Ignore `.golem/` in both cases.
 
 Send these bodies to the endpoint. The handler runs only for the first:
 
@@ -160,4 +160,4 @@ In CI, run `npx golem generate` or `npx golem build` in the owning project befor
 - [OpenAPI from controllers](/guide/nestjs): the controller job and the document it writes.
 - [NestJS controllers](/reference/nestjs): route helpers, tag keywords, component names, status codes and Swagger decorators.
 - [Configuration](/reference/config#controller-jobs): every key of a `controllers` job.
-- [Generated files](/reference/generated-files#gitignore): which files to ignore, and how the document reaches other projects.
+- [Generated files](/reference/generated-files#gitignore): ignore or commit them, and how the document reaches other projects.

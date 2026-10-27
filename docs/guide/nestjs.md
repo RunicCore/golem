@@ -93,16 +93,4 @@ npm install @exprtlabs/golem reflect-metadata
 
 <<< ../../examples/payments/web/src/submit-payment.ts#payment-client
 
-## Run the example
-
-The example is in the Golem repository's [`examples/payments/`](https://github.com/RunicCore/golem/tree/master/examples/payments). The controllers are under `server/`. Run these steps in `examples/payments/`:
-
-1. Run `npm install`.
-2. Run `npm run generate`.
-3. Run `npm start`. The API listens at `http://127.0.0.1:3000/api/payments/transactions`, which is `globalPrefix: api` plus the controller route `payments/transactions`.
-
-Set `API_PORT` to use another port.
-
-To see the whole flow, run `npm run demo`. It starts the API on a free port with a stand-in payment provider and submits one payment through the generated client. It prints a line that begins `Payment 1: USD 12.50`.
-
-Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments).

@@ -151,4 +151,4 @@ A field typed `any` or `unknown` fails unless `allowAny` is `true` ([the options
 - Neither `allowAny` nor `exact` changes which fields `toWireFormat` emits.
 - A referenced model keeps its own policy.
 
-Full examples: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models) and [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
+Full examples: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models) and [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments).

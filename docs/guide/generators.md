@@ -48,4 +48,4 @@ npm install --save-dev your-generator-package
 
 The example project exports `./generator` from its own `package.json`, so it runs without an install.
 
-Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments).

@@ -4,7 +4,7 @@ Declare models in one folder or package, and generate them in each app.
 
 ## What a shared model file is
 
-A shared model file is a model file whose real path is outside `models.root`, such as a file in a folder or package that several apps include. An app links the folder or installs the package. The folder needs no `golem.yaml`, and golem writes no file in it. Each app generates the shared models in its own output.
+A shared model file is a model file whose real path is outside `models.root`, such as a file in a folder or package that several apps include. An app includes the folder, links it or installs the package. Golem follows links to the real path of the file. A declaration file such as `customer.model.d.ts` is always a shared model file. The folder needs no `golem.yaml`, and golem writes no file in it. Each app generates the shared models in its own output.
 
 ## Include the folder
 
@@ -25,32 +25,17 @@ Declare the `IModel` or `IObject` aliases in a model file, a file whose name end
 
 <<< ../../examples/shared-folder/shared/customer.model.ts#shared-model
 
-An alias in a file that does not end in a model suffix is not a model. A field type or a serde call that uses it stops with [RUNM1074](/reference/diagnostics#runm1074). Move the alias into a model file.
+An alias in a file that does not end in a model suffix is not a model ([RUNM1074](/reference/diagnostics#runm1074)).
 
 ## Where each app writes
 
-Golem follows folder links to find the real path of a model file. The real path decides:
-
-- A model file whose real path is inside `models.root` is a model file of the app. Its generated file stays beside it.
-- Every other model file is a shared model file. It does not matter whether the app reaches it by a plain include, a folder link, a linked workspace package or `node_modules`. Its aliases are models of the app.
-- A declaration file such as `customer.model.d.ts` is always a shared model file, also inside `models.root`, because it cannot hold your class.
-- The models of a generated SDK ([SDK types in your models](/guide/models-and-client)) are the exception to these rules. They keep the generated code of the SDK.
-
-Each app generates the shared models in its own `models.output`, so several apps never write to one file. Golem writes nothing into the shared folder. The generated file is at:
+Each app generates the shared models in its own `models.output`, and golem writes nothing into the shared folder. The generated file is at:
 
 ```text
 <models.output>/<package name>/<path of the file in the package>.generated.ts
 ```
 
-Golem finds the package of a shared model file in this way:
-
-- The package is the nearest folder above the file whose `package.json` has a `name`. The package name is that `name`.
-- When no such folder exists, the package is the top folder below the folder that holds both the file and your `golem.yaml`. The package name is the folder name.
-- For a declaration file, the generated name drops `.d`.
-
-With a `package.json` named `@acme/shared`, the file `shared/customer.model.ts` gives `src/generated/models/@acme/shared/customer.model.generated.ts` in `apps/web`.
-
-A package name that is absolute or has a `..` segment stops generation, because the name is a folder of `models.output`. Two shared model files that get one path stop generation with [RUNM1078](/reference/diagnostics#runm1078).
+The package name is the `name` in the nearest `package.json` above the file. With a `package.json` named `@acme/shared`, the file `shared/customer.model.ts` gives `src/generated/models/@acme/shared/customer.model.generated.ts` in `apps/web`.
 
 ## Extend in each app
 
@@ -77,13 +62,10 @@ A `package.json` in the folder with a `name` makes the folder a package. Golem t
 
 ## What a shared folder must not hold
 
-A shared folder holds no `golem.yaml` and no generated file. When one is there, golem writes the warning [RUNM1076](/reference/diagnostics#runm1076), ignores the file and continues:
+A shared folder holds no `golem.yaml` and no generated file. Each case has a diagnostic:
 
-- A `golem.yaml` in the folder of a shared model file, or in a folder between the file and its package folder. Golem does not read it.
-- A generated file beside a shared model file, such as `customer.model.generated.ts`, `.generated.js` or `.generated.d.ts`. Golem does not use it. The app uses its own generated file.
-
-A `golem.yaml` with a `models` job below the `models.root` of another `golem.yaml` stops `golem generate` and `golem check` with [RUNM1077](/reference/diagnostics#runm1077). Both jobs would write the same generated files. Remove the `models` job from the nested `golem.yaml`, or move its folder out of the root.
-
-`golem generate`, `golem check`, `golem build` and `golem watch` write each warning once for each run.
+- A `golem.yaml` or a generated file in a shared folder is ignored: [RUNM1076](/reference/diagnostics#runm1076).
+- A `models` job below the `models.root` of another `golem.yaml` stops generation: [RUNM1077](/reference/diagnostics#runm1077).
+- Two shared model files with one generated path stop generation: [RUNM1078](/reference/diagnostics#runm1078).
 
 Full example: [`examples/shared-folder`](https://github.com/RunicCore/golem/tree/master/examples/shared-folder), with a shared folder that declares a model, one app that includes the folder and one that reaches it through a folder link.
