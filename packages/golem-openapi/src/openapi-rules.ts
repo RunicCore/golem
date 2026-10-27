@@ -437,6 +437,30 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
   return problems;
 }
 
+/**
+ * Each number in the document that JSON cannot write (`Infinity`, `-Infinity`, `NaN`), as a YAML `.inf`, `-.inf`
+ * or `.nan`, or a JSON `1e999`, parses into. The meta-schemas let one through inside a keyword that takes any
+ * value, such as `enum`, `const`, `default` or `example`, and type emission cannot write it as a literal.
+ */
+export function checkNonFiniteNumbers(document: unknown): OpenApiProblem[] {
+  const problems: OpenApiProblem[] = [];
+  const ancestors = new Set<object>();
+  const visit = (value: unknown, pointer: string): void => {
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) {
+        problems.push({ ruleId: 'no-non-finite-numbers', message: `${value} is not a JSON number; use a finite number`, pointer });
+      }
+      return;
+    }
+    if (typeof value !== 'object' || value === null || ancestors.has(value)) return;
+    ancestors.add(value);
+    for (const [key, child] of Object.entries(value)) visit(child, pointerJoin(pointer, key));
+    ancestors.delete(value);
+  };
+  visit(document, '');
+  return problems;
+}
+
 export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
   // Every other rule indexes schema resources, which needs each `$id` to be unique.
   const duplicates = findDuplicateSchemaIds(document);
