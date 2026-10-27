@@ -85,12 +85,32 @@ The amount field in [`src/App.tsx`](https://github.com/RunicCore/golem/blob/mast
 - Import `getValidator` from `@exprtlabs/golem/validation`. When the model is generated with `mobx: true` and `validation: true`, the validator it returns is already observable, so `observer` re-renders when its issues change.
 - Import it from `@exprtlabs/golem/mobx-validation` when a model is generated without both settings and a component must still re-render on its issues. It returns the same validator for that instance, made observable.
 
-A text input holds a string. For a number field, keep a draft string in the store and convert it when the input changes. The store writes the converted number to the model through an action, and the input shows the draft ([Bind a text input to a number field](/guide/wire-text#bind-a-text-input-to-a-number-field)):
+### Bind a text input to a number field
+
+A text input holds a string. The amount field above holds text, so its input needs no draft. The instalments field holds a number, so its input keeps a draft string. The model has the number and an action:
+
+<<< ../../examples/payments/web/src/split-editor.model.ts#split-model
+
+The store converts the draft and calls the action only when the draft converts:
 
 <<< ../../examples/payments/web/src/payment-store.ts#draft-conversion
 
 <<< ../../examples/payments/web/src/payment-store.ts#draft-number
 
 - Mark `partsDraft` observable, `partsDraftError` computed and `setPartsDraft` an action in `makeObservable`.
+
+The input shows the draft, never the number. It also shows the message for a draft that does not convert:
+
+<<< ../../examples/payments/web/src/App.tsx#number-input
+
+### Show field errors
+
+Validate the editor. The errors then appear in the validator that each field reads:
+
+<<< ../../examples/payments/web/src/payment-store.ts#validate-and-save
+
+- `validate({ failFast: false })` stores every error. A change to a field does not clear its old error, so validate again.
+- `validator.error('note')` returns the first message of a field. The other members are in [Stored validation state](/guide/validation#stored-validation-state).
+- The tags of the number field check the number. A negative amount fails `Minimum<0>`. The text of the draft is your check.
 
 Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments) runs this editor against a local demo server.

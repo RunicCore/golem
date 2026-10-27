@@ -9,13 +9,12 @@ export const SIDEBAR: readonly SidebarGroup[] = [
     { text: 'Build your app', link: '/guide/build' },
     { text: 'Generate, watch and check', link: '/guide/watch' },
   ] },
-  { text: 'Models', items: [
+  { text: 'Objects and models', items: [
     { text: 'Define models', link: '/guide/models' },
     { text: 'Field types', link: '/guide/field-types' },
     { text: 'Validation tags', link: '/guide/tags' },
     { text: 'Validate models', link: '/guide/validation' },
-    { text: 'JSON conversion', link: '/guide/serialization' },
-    { text: 'Number in code, text on the wire', link: '/guide/wire-text' },
+    { text: 'Serialization', link: '/guide/serialization' },
     { text: 'Dates and times', link: '/guide/dates' },
     { text: 'SDK types in your models', link: '/guide/models-and-client' },
     { text: 'MobX and React', link: '/guide/mobx' },
