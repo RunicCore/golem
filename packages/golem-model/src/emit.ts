@@ -886,13 +886,13 @@ export function codecEntriesForGraph(
 }> {
   const internedSchemaGraph = schemaGraph ?? internSourceDefinitions(graph.definitions, graph.emitted);
   return graph.emitted.map((specification) => {
-    const descriptor = graph.definitions[specification.name];
-    const node = descriptor ? internedSchemaGraph.nodeFor(descriptor, specification.name, specification.emitClass) : undefined;
+    const descriptor = descriptorOf(graph.definitions, specification.name);
+    const node = internedSchemaGraph.nodeFor(descriptor, specification.name, specification.emitClass);
     return {
       source: portableRelativeFilename(specification.sourceFile.fileName, graph.identityRoot),
       name: specification.name,
       classNames: linkedClassNames(checker, specification, specifications),
-      codecId: node?.codecId ?? codecPublicId(specification.name, descriptor ?? { kind: 'unknown' }, undefined, { source: 'typescript', constructs: specification.emitClass }),
+      codecId: node?.codecId ?? codecPublicId(specification.name, descriptor, undefined, { source: 'typescript', constructs: specification.emitClass }),
     };
   });
 }
@@ -1074,17 +1074,13 @@ function buildFileImports(
     concrete.set(item.name, source.name(name));
     sources.push(source);
   }
-  // Same-file nested class fields look up `requireIModelClass(id)` at decode
-  // time. This module never imports the handwritten class (ESM TDZ if the user
-  // file extends this companion). The build-time rewrite registers the class under
-  // the hashed codec id after the handwritten module finishes evaluating.
-  // Cross-file class fields import the class.
+  // A model of another file is imported from the module the manifest names.
   const external = new Map<string, ExternalModel>();
   for (const id of graph.externalIds) {
     const model = manifestIndex.byId.get(id);
     if (!model) throw new Error(`Generated model manifest id is missing: ${id}`);
     const localName = graph.externalNames.get(id);
-    if (!localName) throw new Error(`Generated model manifest id is missing: ${id}`);
+    if (!localName) throw new Error(`Generated model local name is missing: ${id}`);
     const exported = model.generated.export;
     const source = new ImportSource(sourceImportPath(model.generatedFile, output));
     const short = codecShortName(id);
@@ -1143,7 +1139,7 @@ function buildEmitContext(
   const { cyclicSiblings } = siblingCodecs;
   const emitted = graph.emitted;
   const local = emitted.filter(item => canonicalFilename(item.sourceFile.fileName) === canonicalFilename(source));
-  const localNames = new Set([...emitted].map((specification) => specification.name));
+  const localNames = new Set(emitted.map((specification) => specification.name));
   const fileLocalNames = new Set(local.map((specification) => specification.name));
   // A class-valued TSerde field names its class in the generated types. Each class is imported once under a
   // generated name, so two classes called `Money` from different modules do not collide.
@@ -1164,26 +1160,26 @@ function buildEmitContext(
   const siblingObjects = graph.siblings.filter((specification) => !specification.emitClass);
   const siblingObjectNames = new Set(siblingObjects.map((specification) => specification.name));
   const objectOnlyNames = new Set(
-    [...emitted]
+    emitted
       .filter((specification) => !specification.emitClass && !siblingObjectNames.has(specification.name))
       .map((specification) => specification.name),
   );
   const concreteNames = new Map(
-    [...emitted]
+    emitted
       .filter((specification) => !cyclicSiblings?.has(specification.name))
       .map((specification) => [specification.name, exportedConcreteClass(checker, specification, specifications)] as const)
       .filter((entry): entry is readonly [string, string] => entry[1] !== undefined),
   );
   const linkedByName = new Map(
-    [...emitted]
+    emitted
       .filter((specification) => !cyclicSiblings?.has(specification.name))
       .map((specification) => [specification.name, linkedClassNames(checker, specification, specifications)] as const),
   );
-  const referenceNames = [...Object.values(definitions)].reduce(
+  const referenceNames = Object.values(definitions).reduce(
     (found, descriptor) => descriptorReferences(descriptor, found),
     new Set<string>(),
   );
-  const localImports = [...emitted]
+  const localImports = emitted
     .filter((specification) => !local.some((item) => item === specification) && !siblingObjectNames.has(specification.name))
     .sort((left, right) => compareText(left.name, right.name) || compareText(left.sourceFile.fileName, right.sourceFile.fileName));
   const schemaGraph = preparedSchemaGraph ?? internSourceDefinitions(definitions, emitted, { siblings: graph.siblings, defaultValidation: profile.validation });
@@ -1278,6 +1274,13 @@ interface ModelResolvers {
 /** The record that a projection function reads its fields from: the walker takes it as an input and the function binds it to `data`. */
 const DATA = inputSlot('data', 'name', true);
 
+/** The descriptor of a model of the job; every emitted model has one. */
+function descriptorOf(definitions: Readonly<Record<string, ModelConversionDescriptor>>, name: string): ModelConversionDescriptor {
+  const descriptor = definitions[name];
+  if (!descriptor) throw new Error(`Internal error: no descriptor for model "${name}".`);
+  return descriptor;
+}
+
 function externalModel(context: EmitContext, id: string): ExternalModel {
   const found = context.imports.external.get(id);
   if (!found) throw new Error(`Generated model manifest id is missing: ${id}`);
@@ -1371,8 +1374,7 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     if (context.projectionNames.has(id)) return resolveProjection(id);
     if (context.siblingObjectNames.has(id)) return resolveSiblingObject(id);
     if (context.fileLocalNames.has(id)) {
-      const definition = context.graph.definitions[id];
-      const codecId = context.schemaGraph.nodeFor(definition ?? { kind: 'unknown' }, id)?.codecId;
+      const codecId = context.schemaGraph.nodeFor(descriptorOf(context.graph.definitions, id), id)?.codecId;
       return { ...resolveLocalModel(context, id, codecId), discriminators: discriminatorsOf(context, id) };
     }
     if (context.localImports.some((item) => item.name === id) && context.classModelNames.has(id)) return resolveImportedModel(id);
@@ -1640,7 +1642,7 @@ function emitObjectHelperExports(context: EmitContext, helpers: ReadonlyMap<stri
   const lines: Piece[] = [];
   for (const name of context.objectOnlyNames) {
     if (!context.fileLocalNames.has(name)) continue;
-    const codecId = context.schemaGraph.nodeFor(context.graph.definitions[name] ?? { kind: 'unknown' }, name)?.codecId;
+    const codecId = context.schemaGraph.nodeFor(descriptorOf(context.graph.definitions, name), name)?.codecId;
     const functions = helpers.get(name);
     if (!codecId || !functions) continue;
     lines.push(
@@ -1660,8 +1662,10 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
   const fieldsName = identifier(`${specification.name}Fields`);
   const jsonName = identifier(`${specification.name}JSON`);
   const initName = identifier(`${specification.name}Init`);
-  const definition = context.graph.definitions[specification.name] ?? { kind: 'unknown' } as ModelConversionDescriptor;
-  const codecId = literal(schemaGraph.nodeFor(definition, specification.name)?.codecId ?? specification.name);
+  const definition = descriptorOf(context.graph.definitions, specification.name);
+  const node = schemaGraph.nodeFor(definition, specification.name);
+  if (!node) throw new Error(`Internal error: no schema node for model "${specification.name}".`);
+  const codecId = literal(node.codecId);
   const decodeModel = identifier(`decode${specification.name}Model`);
   const encodeModel = identifier(`encode${specification.name}Model`);
   return [

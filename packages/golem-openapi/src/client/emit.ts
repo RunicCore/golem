@@ -45,6 +45,21 @@ type ClientFunction = keyof typeof rt.client;
 
 const BLANK = code``;
 
+const CONTENT_PARAMETER_LOCATION = { path: code`'path'`, query: code`'query'`, header: code`'header'`, cookie: code`'cookie'` } as const;
+
+/** A parameter that carries its value as a media type: the runtime serializes it by the first media type its `content` names. */
+function serializedContentParameter(
+  operation: NormalizedOperation,
+  use: (name: ClientFunction) => Code,
+  location: keyof typeof CONTENT_PARAMETER_LOCATION,
+  name: string,
+  content: object,
+  value: Code,
+): Code {
+  const contentType = Object.keys(content)[0] || 'text/plain';
+  return code`${use('serializeContentParameter')}(runtime, ${value}, { operation: ${literal(operation.name)}, name: ${literal(name)}, in: ${CONTENT_PARAMETER_LOCATION[location]}, contentType: ${literal(contentType)} })`;
+}
+
 function routeExpression(operation: NormalizedOperation, use: (name: ClientFunction) => Code): { declarations: Code; expression: Code } {
   const parameters = new Map(operation.parameters.filter((item) => item.in === 'path').map(item => [item.name, item]));
   const variables = new Map<string, Code>();
@@ -62,8 +77,7 @@ function routeExpression(operation: NormalizedOperation, use: (name: ClientFunct
     variables.set(parameter.name, variable);
     parts.push(variable);
     if (parameter.content) {
-      const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      declarations.push(code`    const ${variable} = ${use('encode')}(${use('serializeContentParameter')}(runtime, input.path[${literal(parameter.name)}], { operation: ${literal(operation.name)}, name: ${literal(parameter.name)}, in: 'path', contentType: ${literal(contentType)} }));`);
+      declarations.push(code`    const ${variable} = ${use('encode')}(${serializedContentParameter(operation, use, 'path', parameter.name, parameter.content, code`input.path[${literal(parameter.name)}]`)});`);
       continue;
     }
     const style = parameter.style || 'simple';
@@ -209,22 +223,19 @@ function operationSource(
   const appliesSecurity = (surfaces.auth || surfaces.mutualTls) && operation.security.length > 0;
   const queryLines = queryParameters.map((parameter) => {
     if (parameter.content) {
-      const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      return code`    if (input.query?.[${literal(parameter.name)}] !== undefined) ${use('appendQuery')}(runtime, query, ${literal(parameter.name)}, ${use('serializeContentParameter')}(runtime, input.query[${literal(parameter.name)}], { operation: ${literal(operation.name)}, name: ${literal(parameter.name)}, in: 'query', contentType: ${literal(contentType)} }), ${literal(parameter.allowReserved === true)});`;
+      return code`    if (input.query?.[${literal(parameter.name)}] !== undefined) ${use('appendQuery')}(runtime, query, ${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'query', parameter.name, parameter.content, code`input.query[${literal(parameter.name)}]`)}, ${literal(parameter.allowReserved === true)});`;
     }
     return code`    ${use('addQueryParameter')}(runtime, query, ${literal(parameter.name)}, input.query?.[${literal(parameter.name)}], ${literal(parameter.style || 'form')}, ${literal(parameter.explode === undefined ? true : parameter.explode)}, ${literal(parameter.allowReserved === true)});`;
   });
   const headerLines = headerParameters.map((parameter) => {
     if (parameter.content) {
-      const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeContentParameter')}(runtime, input.header[${literal(parameter.name)}], { operation: ${literal(operation.name)}, name: ${literal(parameter.name)}, in: 'header', contentType: ${literal(contentType)} }));`;
+      return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'header', parameter.name, parameter.content, code`input.header[${literal(parameter.name)}]`)});`;
     }
     return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, input.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}));`;
   });
   const cookieLines = cookieParameters.map((parameter) => {
     if (parameter.content) {
-      const contentType = Object.keys(parameter.content)[0] || 'text/plain';
-      return code`    if (input.cookie?.[${literal(parameter.name)}] !== undefined) cookies.push(${literal(parameter.name)} + '=' + encodeURIComponent(${use('serializeContentParameter')}(runtime, input.cookie[${literal(parameter.name)}], { operation: ${literal(operation.name)}, name: ${literal(parameter.name)}, in: 'cookie', contentType: ${literal(contentType)} })));`;
+      return code`    if (input.cookie?.[${literal(parameter.name)}] !== undefined) cookies.push(${literal(parameter.name)} + '=' + encodeURIComponent(${serializedContentParameter(operation, use, 'cookie', parameter.name, parameter.content, code`input.cookie[${literal(parameter.name)}]`)}));`;
     }
     if (parameter.style === 'cookie') {
       return code`    ${use('addCookieStyleParameter')}(runtime, cookies, ${literal(parameter.name)}, input.cookie?.[${literal(parameter.name)}], ${literal(parameter.explode === true)});`;
@@ -719,4 +730,3 @@ export function generateClientModules(
   const client = emitClient(clientName, operations, profile, plan, rawSecuritySchemes);
   return { client, operations: emittedOperations };
 }
-

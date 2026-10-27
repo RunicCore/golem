@@ -221,7 +221,6 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
     });
     for (const [name, source] of models.files) files.set(name, source);
     modelReexports = models.entryReexports;
-    modelDiagnostics.push(...models.diagnostics);
   }
   if (operationValidation && !validators.compiled) compileValidators(undefined);
   if (validators.compiled) {

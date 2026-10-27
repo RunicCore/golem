@@ -149,7 +149,6 @@ export function schemaGraphView(
         ...node,
         descriptor: { kind: 'generated-model', id: node.name },
         edges: [],
-        emitClass: node.emitClass,
         kind: 'reference',
       });
     }

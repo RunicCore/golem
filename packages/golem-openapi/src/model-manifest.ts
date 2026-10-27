@@ -15,7 +15,6 @@ import {
   modelEnv,
   modelStableId,
   withSchemaBase,
-  modelSchemaReference,
   modelFieldType,
 } from './model-resolution.js';
 
@@ -43,13 +42,8 @@ export function generateModelManifest(
       name,
       required: definition.required.has(name),
       type: render(modelFieldType(schema, byName, fieldEnv)),
-      modelReferences: [...new Set([
-        modelSchemaReference(schema, fieldEnv),
-        ...(isJsonObject(schema) && schema.type === 'array'
-          ? [modelSchemaReference(schema.items, fieldEnv)]
-          : []),
-      ].filter((reference): reference is string => Boolean(reference && byName.has(reference))))].sort(),
     }));
+    const base = definition.baseName ? byName.get(definition.baseName) : undefined;
     return {
       id: stableId(definition),
       codecId: openApiCodecId(modelAnalysis, definition.name),
@@ -65,9 +59,7 @@ export function generateModelManifest(
         export: `${definition.name}Model`,
       },
       fields,
-      inheritance: definition.baseName && byName.get(definition.baseName)
-        ? { baseModelId: stableId(byName.get(definition.baseName) ?? definition) }
-        : null,
+      inheritance: base ? { baseModelId: stableId(base) } : null,
       discriminator: definition.discriminator || null,
       variants: definition.variants || [],
     };
@@ -136,8 +128,8 @@ export function openApiValidationSchemaClosure(
         node.id,
         node.name,
         node.codecId,
-        ...(idsByName.has(node.name) ? [idsByName.get(node.name) ?? ''] : []),
-      ].filter(Boolean))],
+        idsByName.get(node.name),
+      ].filter((alias): alias is string => Boolean(alias)))],
     }));
 }
 
