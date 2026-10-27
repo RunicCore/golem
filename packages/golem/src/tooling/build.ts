@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { inspect } from 'node:util';
 
 import { canonicalFile, modelsRootOf, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
@@ -191,6 +192,18 @@ function readProject(configFile: string, parsed: { readonly options: ts.Compiler
   };
 }
 
+/**
+ * What a watching build prints for a failure. Golem's own errors, a plain `Error` with a message that says what failed and what to do, print
+ * as their message. A failure that is not one (a runtime error such as a `TypeError`, a system error, anything thrown that is no `Error`) is
+ * a fault in golem or in a tool it runs: it prints with its stack and its cause, which the message alone would lose.
+ */
+function failureText(error: unknown): string {
+  const internal = !(error instanceof Error)
+    || [TypeError, RangeError, ReferenceError, SyntaxError, EvalError, URIError, AggregateError].some((type) => error instanceof type)
+    || 'syscall' in error;
+  return internal ? inspect(error) : error.message;
+}
+
 function scanFailure(root: string, errors: readonly GolemDiagnostic[]): Error {
   const location = (diagnostic: GolemDiagnostic): string => (diagnostic.file === undefined ? '' : ` (${displayPath(path.resolve(root, diagnostic.file))}${diagnostic.line === undefined ? '' : `:${diagnostic.line}${diagnostic.column === undefined ? '' : `:${diagnostic.column}`}`})`);
   return new Error([
@@ -259,7 +272,7 @@ function rewriteDeclarations(session: ts.ProgramSession, project: Project, sourc
   }
   for (const [file, text] of emitted.files) {
     const edit = editMaps.get(emitted.sources.get(file) ?? '');
-    if (edit !== undefined && DECLARATION_MAP.test(file)) rewritten.set(file, pointDeclarationMap(text, edit));
+    if (edit !== undefined && DECLARATION_MAP.test(file)) rewritten.set(file, pointDeclarationMap(text, edit, file));
   }
   return rewritten;
 }
@@ -532,7 +545,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     if (BUILD_INFO.test(file)) continue;
     const source = emitted.sources.get(file);
     const rewriteMap = source === undefined ? undefined : rewriteMaps.get(path.resolve(source));
-    const pointed = (mapText: string): string => (rewriteMap === undefined ? mapText : pointSourceMap(mapText, rewriteMap));
+    const pointed = (mapText: string): string => (rewriteMap === undefined ? mapText : pointSourceMap(mapText, rewriteMap, file));
     if (JS_SOURCE_MAP.test(file)) {
       if (!inline) files.set(file, pointed(text));
     } else if (inline && JS_OUTPUT.test(file)) {
@@ -634,7 +647,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
           changed = changedPaths(previous, current, (filename) => own.covers(filename));
           unreadable = undefined;
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message = failureText(error);
           if (message !== unreadable) process.stderr.write(`${message}\n`);
           unreadable = message;
           return;
@@ -648,7 +661,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
         if (options.signal?.aborted || unwatchable) finish();
       }
     },
-    onError: (error) => { process.stderr.write(`${error.message}\n`); },
+    onError: (error) => { process.stderr.write(`${failureText(error)}\n`); },
     // Nothing will start another build, so the watch ends, and its exit code says it failed.
     onUnwatchable: () => {
       unwatchable = true;
@@ -672,7 +685,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
     } catch (error) {
       exitCode = 1;
       wrote = false;
-      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.stderr.write(`${failureText(error)}\n`);
       record();
     }
     options.onBuilt?.({ label, exitCode });

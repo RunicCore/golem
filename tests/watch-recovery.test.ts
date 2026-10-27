@@ -508,7 +508,7 @@ test('a watch that can watch no folder reports it with its fix, runs nothing and
   try {
     await until(() => unwatchable === 1, 'the caller is told');
     assert.match(errors.map(String).join('\n'), /fs\.inotify\.max_user_watches/);
-    assert.match(errors.map(String).join('\n'), /cannot watch any folder, so it stops/);
+    assert.match(errors.map(String).join('\n'), /cannot watch any source folder, so it stops/);
     assert.equal(runs(), 0);
   } finally {
     stop();

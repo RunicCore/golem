@@ -249,6 +249,21 @@ test('an SDK manifest with no unknownFormats record is a profile mismatch that s
   assert.equal(fs.existsSync(path.join(sourceRoot, 'x.model.generated.ts')), false);
 });
 
+test('a profile mismatch names each setting that differs and how to align it', (t) => {
+  // protects: T-490 the message gave the whole expected profile and left the reader to find the differing setting
+  const { root } = project(t);
+  const manifest = path.join(root, 'external-model-manifest.json');
+  const source = copyFixtureFile(root, 'models/model-generator/api-profiles/src/payment.model.ts', 'src/x.model.ts');
+  const profile = { mobx: false, validation: true, allowAny: false };
+  fs.writeFileSync(manifest, JSON.stringify({ profile: { ...profile, validation: false, unknownFormats: 'warn' }, models: [] }));
+  assert.throws(
+    () => generate({ root, sources: [source], profile, manifestInputs: [manifest] }),
+    (error: Error) => error.message.includes('validation: manifest false, project true; unknownFormats: manifest warn, project error.')
+      && /Regenerate the SDK manifest with the same profile before model generation, or set the project to the manifest value in golem\.yaml\.$/.test(error.message)
+      && !error.message.includes('mobx: manifest'),
+  );
+});
+
 test('prospective companions permit a concrete subclass field rename and still reject unrelated errors', (t: TestContext) => {
   const { root, sourceRoot } = project(t);
   const source = path.join(sourceRoot, 'account.model.ts');

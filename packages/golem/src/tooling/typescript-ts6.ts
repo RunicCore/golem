@@ -96,8 +96,7 @@ interface ClassicProgram {
   getOptionsDiagnostics(): readonly ClassicDiagnostic[];
   getGlobalDiagnostics(): readonly ClassicDiagnostic[];
   getDeclarationDiagnostics(): readonly ClassicDiagnostic[];
-  /** Members the compiler keeps to itself: the module an import resolved to, and the project reference that owns a source (with the declaration file its imports read). */
-  getResolvedModuleFromModuleSpecifier(specifier: unknown, file: Golem.SourceFile): { readonly resolvedModule?: { readonly resolvedFileName: string } } | undefined;
+  /** Internal to the classic compiler: the project reference that owns a source, with the declaration file its imports read. */
   getRedirectFromSourceFile(fileName: string): { readonly outputDts?: string } | undefined;
   emit(
     targetSourceFile: undefined,
@@ -654,18 +653,23 @@ class CompatProgram implements Golem.Program {
   }
 
   /**
-   * The classic emit with a collecting `writeFile`: it writes nothing. A declaration output is told from JavaScript by its name. The
-   * source of an output is the one file `writeFile` gets for it; the files are the compiler's transformed copies, so the name is used.
-   */
-  /**
    * The compiler redirects an import of a source of a referenced project to that project's declaration output. When the program holds no file
    * for that output, the source is one an import reached without a declaration output. The compiler's own redirect and resolution say so, not its message.
    */
   unbuiltReferences(): readonly string[] {
+    // The imports of a source, the stored resolution and the project redirect are internal to the classic compiler: stop with a clear error if a release drops one.
+    for (const [name, present] of [
+      ['getResolvedModuleFromModuleSpecifier', typeof this.program.getResolvedModuleFromModuleSpecifier === 'function'],
+      ['getRedirectFromSourceFile', typeof this.program.getRedirectFromSourceFile === 'function'],
+    ] as const) {
+      if (!present) throw new Error(`TypeScript ${selected.version} lacks ${name}; golem build needs it for project references.`);
+    }
     const unbuilt = new Set<string>();
     for (const file of this.program.getSourceFiles()) {
       if (file.isDeclarationFile) continue;
-      for (const specifier of (file as { readonly imports?: readonly unknown[] }).imports ?? []) {
+      const imports = (file as { readonly imports?: readonly Golem.StringLiteralLike[] }).imports;
+      if (imports === undefined) throw new Error(`TypeScript ${selected.version} lacks SourceFile.imports; golem build needs it for project references.`);
+      for (const specifier of imports) {
         const source = this.program.getResolvedModuleFromModuleSpecifier(specifier, file)?.resolvedModule?.resolvedFileName;
         const output = source === undefined ? undefined : this.program.getRedirectFromSourceFile(source)?.outputDts;
         if (source !== undefined && output !== undefined && this.program.getSourceFile(output) === undefined) unbuilt.add(source);
@@ -674,6 +678,10 @@ class CompatProgram implements Golem.Program {
     return [...unbuilt];
   }
 
+  /**
+   * The classic emit with a collecting `writeFile`: it writes nothing. A declaration output is told from JavaScript by its name. The
+   * source of an output is the one file `writeFile` gets for it; the files are the compiler's transformed copies, so the name is used.
+   */
   emitToMemory(kind: Golem.EmitKind): Golem.MemoryEmit {
     const options = this.getCompilerOptions();
     const declarations = kind === 'declarations';

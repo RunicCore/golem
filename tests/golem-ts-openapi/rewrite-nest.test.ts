@@ -329,6 +329,18 @@ test('the operation-codec check passes when the registry holds every id the scan
   assert.equal(checkNestCodecs(root, result).length, 6, 'a missing registry disagrees with every site');
 });
 
+test('a registry that cannot be read is reported once with its file, not as a disagreement of every site', (t) => {
+  // protects: T-490 only a missing registry means "no keys yet"; a read error such as EACCES must not become six RUNM1072 sites
+  const root = paymentsProject(t);
+  const result = scan(root);
+  const registry = path.join(root, 'src/generated/operation-codecs.ts');
+  fs.mkdirSync(registry, { recursive: true });
+  const failures = checkNestCodecs(root, result);
+  assert.equal(result.nestCodecSites.length, 6);
+  assert.deepEqual(failures.map(({ code, file }) => ({ code, file })), [{ code: 'RUNM1072', file: registry }]);
+  assert.match(failures[0]!.message, /^the generated operation keys cannot be read \(EISDIR/);
+});
+
 test('the operation-codec check has nothing to compare when the project has no nest sites', (t) => {
   const root = paymentsProject(t);
   assert.deepEqual(checkNestCodecs(root, scan(root, false)), [], 'no registry is needed when nest is off');

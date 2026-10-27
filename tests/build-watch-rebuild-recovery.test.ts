@@ -110,3 +110,30 @@ test('golem build --watch with an onBuilt that throws on the first build says it
   controller.abort();
   assert.equal((await finished).exitCode, 0);
 });
+
+test('golem build --watch prints the stack and cause of a failure that is not one of golem\'s own errors, and only the message of one that is', async (t) => {
+  // protects: T-490 a watching build kept only error.message, so a TypeError inside golem lost its stack and cause
+  const root = serdeProject(t, 'build-watch-failure-text');
+  write(root, 'src/use.ts', USE);
+  const controller = new AbortController();
+  t.after(() => controller.abort());
+  const printed = capturedOutput(t);
+  const failures = [new TypeError('generator state is broken', { cause: new RangeError('index out of range') }), new Error('golem build: the plain failure')];
+  const codes: number[] = [];
+  const finished = runBuild({
+    watch: true, config: path.join(root, 'golem.yaml'), signal: controller.signal,
+    onGenerated: () => { const failure = failures.shift(); if (failure) throw failure; },
+    onBuilt: ({ exitCode }) => { codes.push(exitCode); },
+  });
+  await until(() => codes.length === 1, 'the first build fails');
+  assert.match(printed(), /TypeError: generator state is broken\n\s+at /);
+  assert.match(printed(), /\[cause\]: RangeError: index out of range/);
+
+  write(root, 'src/use.ts', `${USE}export const second = 2;\n`);
+  await until(() => codes.length === 2, () => `the second build fails (output=${printed()})`);
+  assert.match(printed(), /golem build: the plain failure\n/);
+  assert.doesNotMatch(printed(), /Error: golem build: the plain failure|golem build: the plain failure\n\s+at /);
+  controller.abort();
+  assert.deepEqual(codes, [1, 1]);
+  await finished;
+});

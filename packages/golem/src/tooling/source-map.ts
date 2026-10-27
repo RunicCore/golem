@@ -1,3 +1,5 @@
+import { displayPath, errorMessage } from './generator-api.js';
+
 export interface SourceMapV3 {
   readonly version: 3;
   readonly file?: string;
@@ -139,13 +141,22 @@ export function composeSourceMaps(outer: SourceMapV3, inner: SourceMapV3): Sourc
   };
 }
 
+/** The map the compiler wrote, read as JSON: a text that is not JSON is named by its file, not left as a bare SyntaxError. */
+function parseEmittedMap(text: string, filename: string): SourceMapV3 {
+  try {
+    return JSON.parse(text) as SourceMapV3;
+  } catch (error) {
+    throw new Error(`golem build: the source map ${displayPath(filename)} that the compiler wrote is not JSON: ${errorMessage(error)}`, { cause: error });
+  }
+}
+
 /**
  * Point the JSON text of a map the compiler made for a rewritten file at the original: `inner` is the rewrite map of that file. Every
  * field the compiler wrote stays as it wrote it (`file`, `sourceRoot`, `sources`) except the mappings, which now name positions of the original,
  * the names, which the composition drops, and the embedded sources, which are the original text and not the rewritten one.
  */
-export function pointSourceMap(text: string, inner: SourceMapV3): string {
-  const emitted = JSON.parse(text) as SourceMapV3;
+export function pointSourceMap(text: string, inner: SourceMapV3, filename: string): string {
+  const emitted = parseEmittedMap(text, filename);
   return JSON.stringify({
     ...emitted,
     names: [],
@@ -160,8 +171,8 @@ export function pointSourceMap(text: string, inner: SourceMapV3): string {
  * moves its source side, so each segment keeps its original and finds its place in the edited text. Every field the compiler wrote stays as it wrote it
  * (`file`, `sourceRoot`, `sources`, `sourcesContent`) except the mappings and the names, which the move drops.
  */
-export function pointDeclarationMap(text: string, edit: SourceMapV3): string {
-  const emitted = JSON.parse(text) as SourceMapV3;
+export function pointDeclarationMap(text: string, edit: SourceMapV3, filename: string): string {
+  const emitted = parseEmittedMap(text, filename);
   // The edit read the other way: from a position of the compiler's text to its position in the edited text.
   const edited: number[][][] = [];
   decodeMappings(edit.mappings).forEach((line, editedLine) => {

@@ -274,7 +274,7 @@ test('a folder that cannot be watched is reported once with its fix, and the wat
   watchers[0].emit('error', Object.assign(new Error('EMFILE: too many open files'), { code: 'EMFILE' }));
   assert.equal(errors.length, 3);
   assert.match(errors[1].message, /\(EMFILE\)[^]*open-file limit/);
-  assert.match(errors[2].message, /cannot watch any folder/, 'the last working watcher failed');
+  assert.match(errors[2].message, /cannot watch any source folder/, 'the last working watcher failed');
   assert.equal(ticks.length, 0);
 });
 
@@ -297,7 +297,22 @@ test('no folder can be watched: the watcher says so once and tells the loop to e
   assert.deepEqual(unwatchable, [true]);
   assert.equal(errors.length, 2);
   assert.match(errors[0].message, /fs\.inotify\.max_user_watches/);
-  assert.equal(errors[1].message, 'golem cannot watch any folder, so it stops.');
+  assert.equal(errors[1].message, 'golem cannot watch any source folder, so it stops.');
+});
+
+test('a watch that opened only the node_modules marker folders ends when every source folder failed', (t) => {
+  // protects: T-490 an install-marker watch is no source watch: counting it left the loop asleep for ever
+  const { root } = projectFolders(t);
+  fs.mkdirSync(path.join(root, 'node_modules'));
+  const files: Pick<InputFiles, 'watch'> = {
+    watch: (folder, listener) => {
+      if (path.basename(folder) !== 'node_modules') throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' });
+      return realInputFiles.watch(folder, listener);
+    },
+  };
+  const { errors, unwatchable } = ticking(t, root, [path.join(root, 'src')], files);
+  assert.deepEqual(unwatchable, [true]);
+  assert.equal(errors[errors.length - 1]!.message, 'golem cannot watch any source folder, so it stops.');
 });
 
 test('a watcher that errors because its folder is gone is dropped without a report, and the folder is looked at again', async (t) => {
