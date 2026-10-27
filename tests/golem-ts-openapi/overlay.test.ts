@@ -226,3 +226,21 @@ test('rejects Swagger required:false for required IModel querystring contracts a
     );
   }
 });
+
+test('rejects an @ApiProperty additionalProperties that conflicts with a Record property type', async t => {
+  // protects: T-457 additionalProperties on @ApiProperty was dropped, so a conflict with Record<string, number> went unreported
+  const root = fixture(t, readFixture('controllers/overlay/rejects-an-apiproperty-additionalproperties-that-conflicts-with-a-record/controller.ts'));
+  await assert.rejects(
+    generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Overlay', version: '1' }, profile: { mobx: false, validation: false } }),
+    error => expectCode(error, 'NEST1503'),
+  );
+});
+
+test('writes an @ApiProperty additionalProperties that matches a Record property type', async t => {
+  // protects: T-457 a matching additionalProperties on @ApiProperty is accepted and written to the document
+  const root = fixture(t, readFixture('controllers/overlay/accepts-an-apiproperty-additionalproperties-that-matches-a-record/controller.ts'));
+  const document = documentOf(await generate({ root, output: path.join(root, 'openapi.json'), info: { title: 'Overlay', version: '1' }, profile: { mobx: false, validation: false } }));
+  const properties = document.paths['/widgets']?.get?.responses['200']?.content?.['application/json']?.schema?.properties;
+  const scores = properties?.scores?.$ref?.replace('#/components/schemas/', '');
+  assert.deepEqual(scores && document.components?.schemas?.[scores], { type: 'object', properties: {}, additionalProperties: { type: 'number' } });
+});
