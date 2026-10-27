@@ -27,8 +27,8 @@ hero:
 <div class="home-grid home-grid-4">
 <article class="home-card home-card-key">
 <code class="home-card-name">@exprtlabs/golem</code>
-<h3>Runtime, CLI and build hosts</h3>
-<p>Every generated model and client imports it. It holds <code>parse</code>, <code>stringify</code>, the CLI, the build hosts and the optional integrations.</p>
+<h3>Runtime, CLI and build tools</h3>
+<p>Every generated model and client imports it. It holds <code>parse</code>, <code>stringify</code>, the CLI, the build tools and the optional integrations.</p>
 <span class="home-card-foot">dependencies</span>
 </article>
 <article class="home-card">
@@ -51,7 +51,7 @@ hero:
 </article>
 </div>
 
-[Which package you need](/guide/#which-package-you-need) · [Install](/guide/install)
+[Which package you need](/guide/#which-package-you-need) · [Quick start](/guide/quick-start)
 
 ## What you get from one declaration
 
@@ -92,13 +92,13 @@ hero:
 <code class="home-card-proof">npx golem check</code>
 </article>
 <article class="home-card">
-<h3>Any build host</h3>
-<p>A host rewrites <code>parse&lt;T&gt;()</code> and the other serde calls to generated code. Use golem build with tsc, the Vite plugin, the esbuild plugin or the Node loader.</p>
+<h3>Any build tool</h3>
+<p>A build tool rewrites <code>parse&lt;T&gt;()</code> and the other serde calls to generated code. Use golem build with tsc, the Vite plugin, the esbuild plugin or the Node loader.</p>
 <code class="home-card-proof">npx golem build</code>
 </article>
 </div>
 
-[Define models](/guide/models) · [Validation tags](/guide/tags) · [Serialization](/guide/serialization) · [Build your app](/guide/build)
+[Define models](/guide/models) · [Validation tags](/guide/tags) · [Serialization](/guide/serialization) · [Build tools](/guide/build)
 
 ## Bring the libraries you already use
 
@@ -137,7 +137,7 @@ hero:
 </article>
 </div>
 
-[NestJS](/guide/nestjs) · [MobX and React](/guide/mobx) · [Build your app](/guide/build) · [Write a generator](/guide/generators)
+[NestJS](/guide/nestjs) · [MobX and React](/guide/mobx) · [Build tools](/guide/build) · [Write a generator](/guide/generators)
 
 ## Bad data stops at three gates
 

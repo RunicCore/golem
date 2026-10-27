@@ -2,7 +2,7 @@
 
 Create a client, send requests, read responses and errors, and share or cancel requests.
 
-These examples use the `ProviderClient` that [Generate a client](/guide/client) creates. You can use the same operations from your own API.
+These examples use the `ProviderClient` that [Generate an SDK](/guide/client) creates. You can use the same operations from your own API.
 
 | Operation | Request | Declared responses |
 | --- | --- | --- |
@@ -78,6 +78,64 @@ An undeclared status or media type rejects `.execute()` with `LibErrorKind.Respo
 
 A network failure rejects with the `fetch` error.
 
+## Streaming responses
+
+Read the items of a streaming response one at a time instead of waiting for one body.
+
+An operation that declares `itemSchema` in an OpenAPI 3.2 document has a `response.body` that is an `AsyncIterable` of decoded items. Read it with `for await`.
+
+<<< ../../examples/payments/server/provider/events.ts#read-events
+
+### Describe the items
+
+For an API that sends one JSON object per line, describe the response in `provider.yaml`:
+
+<<< ../../examples/payments/server/provider/provider.yaml#events-operation
+
+The `openapi` job in `golem.yaml` reads that document, as in [Generate an SDK](/guide/client#point-to-your-openapi-document). Run `npx golem generate` to update the client.
+
+### Read items
+
+- `.execute()` returns the response. Reading the items is a separate step.
+- A connection, decoding or validation failure throws inside the loop. Wrap the loop in `try` and `catch`.
+- With validation on, the client checks each item before your loop receives it. With validation off, items arrive unchecked.
+
+### Stop reading
+
+For the same `readEvents` operation, `provider/events.ts` reads one item. Leaving the loop cancels its reader:
+
+<<< ../../examples/payments/server/provider/events.ts#first-event
+
+`provider/events.ts` also cancels from outside the loop:
+
+<<< ../../examples/payments/server/provider/events.ts#cancel-events
+
+### Stream formats
+
+| Content type | Items returned |
+| --- | --- |
+| `application/x-ndjson`, `application/ndjson`, `application/jsonl`, or a media type that ends with `+jsonl` | a decoded JSON value per line |
+| `application/json-seq`, or a media type that ends with `+json-seq` | a decoded JSON value per record |
+| `text/event-stream` | an event object, `{ data: string, event?, id?, retry? }` |
+
+A JSON-seq record can span lines. SSE `data` stays a string. Parse it in your application if the server sends JSON in that field. A malformed or truncated JSON-seq body fails the iteration and releases the reader. Any other framing needs a `streamDecoders` entry.
+
+### Connect a custom stream decoder
+
+Declare `application/vnd.provider.events` with `itemSchema` on a `readEventIds` operation, then generate `ProviderClient` again. The decoder below reads integer lines and yields the objects that `itemSchema` declares. The same file connects it:
+
+<<< ../../examples/payments/server/provider/events.ts#custom-events
+
+| Decoder contract | Requirement |
+| --- | --- |
+| Signature | `(response: Response, context: ProviderStreamDecoderContext) => AsyncIterable<unknown>` |
+| Context | The operation name and the actual response content type |
+| Output | Decoded items that match `itemSchema` |
+| Cleanup | Cancel and release each reader you acquire when the iteration ends or fails |
+
+- The client uses the exact media-type key first. This is the actual content type, then the declared one. Next it tries the type and subtype in lowercase without parameters, then `*/*`.
+- A configured decoder replaces the built-in framing.
+
 ## Reuse an operation
 
 <<< ../../examples/payments/server/provider/charges.ts#reuse-request
@@ -95,7 +153,7 @@ Set `mobx: true` in `golem.yaml`, install `mobx`, and generate again.
 - `loading` is observable without more setup.
 - It stays true until every pending call ends, including failed and cancelled calls.
 - With MobX off, the operation has no `loading` property.
-- For a streaming response, `loading` ends when `execute` resolves, before you read the body ([Streaming responses](/guide/streams)).
+- For a streaming response, `loading` ends when `execute` resolves, before you read the body ([Streaming responses](#streaming-responses)).
 
 ## Share headers
 

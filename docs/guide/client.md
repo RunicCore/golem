@@ -1,4 +1,4 @@
-# Generate a client
+# Generate an SDK
 
 Generate a typed SDK from an OpenAPI document, then call its operations with checked requests and responses.
 
@@ -9,7 +9,7 @@ npm install @exprtlabs/golem
 npm install --save-dev @exprtlabs/golem-openapi typescript@~7.1.0-beta
 ```
 
-Requests and responses are validated by default ([validation profiles](/reference/config#validation-profiles)). Choose how to build in [Build your app](/guide/build). Include the generated `sdk/` directory in the TypeScript program that builds your app. Ignore it in git with the other [generated files](/reference/generated-files#gitignore).
+Requests and responses are validated by default ([validation profiles](/reference/config#validation-profiles)). Choose how to build in [Build tools](/guide/build). Include the generated `sdk/` directory in the TypeScript program that builds your app. Ignore it in git with the other [generated files](/reference/generated-files#gitignore).
 
 ## Point to your OpenAPI document
 

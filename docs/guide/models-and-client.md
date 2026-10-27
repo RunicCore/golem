@@ -15,7 +15,7 @@ npm install @exprtlabs/golem
 npm install --save-dev @exprtlabs/golem-model @exprtlabs/golem-openapi typescript@~7.1.0-beta
 ```
 
-Choose how to build in [Build your app](/guide/build). Include both `src/**/*.ts` and the generated `sdk/**/*.ts` in your TypeScript program.
+Choose how to build in [Build tools](/guide/build). Include both `src/**/*.ts` and the generated `sdk/**/*.ts` in your TypeScript program.
 
 ## Configure both generators
 

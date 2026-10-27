@@ -48,7 +48,7 @@ Call the synchronous `generate` with a [`ModelContext`](/reference/generator-api
 
 ## Skip work that did not change
 
-Pass `onInput` to learn which files a run read. Watch the returned `watchInputs` and run the generator again when one changes. The rules for `onInput` and `session` are in the [host rules](/reference/generator-api#host-rules).
+Pass `onInput` to learn which files a run read. Watch the returned `watchInputs` and run the generator again when one changes. The rules for `onInput` and `session` are in the [build tool rules](/reference/generator-api#build-tool-rules).
 
 ## Apply the results
 

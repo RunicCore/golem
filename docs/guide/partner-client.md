@@ -23,7 +23,7 @@ npm install --save-dev @exprtlabs/golem-openapi @exprtlabs/golem-model typescrip
 ```
 
 - `@exprtlabs/golem-model` is for your own model in Step 8. Leave it out when you do not write one.
-- Check the [requirements](/guide/install#requirements) and the [project settings](/guide/install#project-settings), such as `"type": "module"`.
+- Check the [requirements](/guide/quick-start#requirements) and the [project settings](/guide/quick-start#project-settings), such as `"type": "module"`.
 - Add `"esnext.temporal"` to `compilerOptions.lib` in `tsconfig.json`.
 - Include the output directory of the job in the TypeScript program, for example `provider/sdk/**/*.ts`, so it holds the generated client.
 
@@ -113,7 +113,7 @@ Reuse, shared headers and cancel are in [Call operations](/guide/client-usage).
 
 <<< ../../examples/payments/server/provider/settlement.ts#read-dates
 
-`toWireFormat<ChargeModel>(charge)` writes the strings back. A `Temporal.Instant` is written with `Z`. [Dates and times](/guide/dates#use-temporal-values-in-a-client) shows the write.
+`toWireFormat<ChargeModel>(charge)` writes the strings back. A `Temporal.Instant` is written with `Z`. [Dates and times](/guide/field-types#use-temporal-values-in-a-client) shows the write.
 
 ## Step 7: Handle a reply that breaks the contract
 
@@ -166,9 +166,9 @@ Build the model from the body of a response:
 
 ## Step 9: Run with Node
 
-`fromWireFormat<T>`, `toWireFormat<T>` and four more calls need a host that rewrites them ([Build your app](/guide/build)). Choose one:
+`fromWireFormat<T>`, `toWireFormat<T>` and four more calls need a build tool that rewrites them ([Build tools](/guide/build)). Choose one:
 
-| Host | Command |
+| Build tool | Command |
 | --- | --- |
 | Build, then run the JavaScript | `npx golem build`, then `node` on the compiled entry file under your `outDir` |
 | Let Node load the TypeScript | `node --import @exprtlabs/golem/register src/main.ts` |
@@ -185,6 +185,6 @@ Build the model from the body of a response:
 - [Generated SDK names](/reference/generated-files#generated-sdk-names): the names for each schema.
 - [Temporal types](/reference/runtime-api#temporal): the six types and their wire strings.
 - [OpenAPI support](/reference/openapi-support): the features that the generator reads.
-- Guides: [Call operations](/guide/client-usage), [Authentication](/guide/auth), [Dates and times](/guide/dates), [SDK types in your models](/guide/models-and-client), [Build your app](/guide/build).
+- Guides: [Call operations](/guide/client-usage), [Authentication](/guide/auth), [Dates and times](/guide/field-types#dates-and-times), [SDK types in your models](/guide/models-and-client), [Build tools](/guide/build).
 
 Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)

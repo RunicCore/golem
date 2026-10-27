@@ -1,4 +1,4 @@
-# Convert requests
+# NestJS requests
 
 Convert and validate the `@Body()` and `@Query()` models of your NestJS 11 controllers, and write model responses as JSON.
 
@@ -21,7 +21,7 @@ Import `reflect-metadata` first in the application entry file, before any applic
 
 TypeScript erases the types of `@Body()`, `@Query()` and return values. With a `controllers` job in `golem.yaml`, the build rewrite records them for `NestModelInterceptor`.
 
-- Every host applies the rewrite ([Build your app](/guide/build)).
+- Every build tool applies the rewrite ([Build tools](/guide/build)).
 - The rewrite also loads the generated module of each model it records, so the codec exists before the first request.
 - Write the parameter type and the return type explicitly, because the rewrite reads the annotation.
 

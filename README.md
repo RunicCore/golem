@@ -5,8 +5,8 @@
 One toolchain for a TypeScript app's API contract. Write models as
 TypeScript types, and Golem generates validation, JSON conversion, OpenAPI
 documents and typed API clients from them. Start from TypeScript models, an
-OpenAPI document or NestJS controllers. A build host rewrites the `parse<T>()`
-calls into generated code ([Build your app](docs/guide/build.md)).
+OpenAPI document or NestJS controllers. A build tool rewrites the `parse<T>()`
+calls into generated code ([Build tools](docs/guide/build.md)).
 
 ## Install
 
@@ -35,8 +35,7 @@ npm install --save-dev @exprtlabs/golem-ts-openapi typescript@~7.1.0-beta
 
 - [What is Golem](docs/guide/index.md)
 - [Quick start](docs/guide/quick-start.md)
-- [Install](docs/guide/install.md)
-- [Build your app](docs/guide/build.md)
+- [Build tools](docs/guide/build.md)
 - [Configuration](docs/reference/config.md)
 
 MIT License. Copyright (c) 2026 exprtlabs.ai.

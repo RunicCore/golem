@@ -14,7 +14,7 @@ npm install @exprtlabs/golem
 npm install --save-dev @exprtlabs/golem-openapi typescript@~7.1.0-beta
 ```
 
-[Generate a client](../../docs/guide/client.md) walks through calling the
+[Generate an SDK](../../docs/guide/client.md) walks through calling the
 generated SDK. [Compatibility](../../docs/compatibility.md) has supported
 versions. Feature support by OpenAPI version and profile is in
 [MATRIX.md](MATRIX.md); third-party attribution is in

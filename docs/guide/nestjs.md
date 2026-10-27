@@ -78,7 +78,7 @@ To convert and validate the request at runtime, [register the interceptor](/guid
 
 ## Generate a client from the document
 
-The controller job writes `api/openapi.yaml`. An OpenAPI job reads that document and generates the client ([Generate a client](/guide/client)). The example runs it from `web/golem.yaml`. The controller job in `server/golem.yaml`:
+The controller job writes `api/openapi.yaml`. An OpenAPI job reads that document and generates the client ([Generate an SDK](/guide/client)). The example runs it from `web/golem.yaml`. The controller job in `server/golem.yaml`:
 
 <<< ../../examples/payments/server/golem.yaml#controllers-job
 

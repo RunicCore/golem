@@ -55,7 +55,7 @@ export function selectedTypeScript(): SelectedTypeScript {
 /**
  * A project asks for the TypeScript beside its tsconfig; the golem command and every host ask here. It takes effect when
  * nothing has selected one yet; afterwards the process must already hold the same install, compared by real path so that two
- * projects sharing a hoisted or linked install agree. A different install throws: run one host per TypeScript install.
+ * projects sharing a hoisted or linked install agree. A different install throws: run one build tool per TypeScript install.
  * GOLEM_TYPESCRIPT_ROOT overrides every request and is never compared.
  *
  * A request resolves the project's TypeScript now, so a root without a usable one throws before the module that loads the
@@ -75,5 +75,5 @@ export function requestTypeScriptRoot(root: string, options: { readonly lazy?: b
     return;
   }
   if (held.source === 'GOLEM_TYPESCRIPT_ROOT' || realpathSync(held.typescript.packageDir) === realpathSync(wanted.packageDir)) return;
-  throw new Error(`One golem process loads one TypeScript: ${held.typescript.version} at ${displayPath(held.typescript.packageDir)} was selected from ${origin(held)}, but the project at ${displayPath(root)} uses ${wanted.version} at ${displayPath(wanted.packageDir)}. Run one golem host per TypeScript install.`);
+  throw new Error(`One golem process loads one TypeScript: ${held.typescript.version} at ${displayPath(held.typescript.packageDir)} was selected from ${origin(held)}, but the project at ${displayPath(root)} uses ${wanted.version} at ${displayPath(wanted.packageDir)}. Run one golem build tool per TypeScript install.`);
 }

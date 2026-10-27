@@ -12,7 +12,7 @@ Check which versions Golem supports and which APIs stay stable.
 | OpenAPI input documents | 3.1, 3.2 |
 | OpenAPI output (`openapiVersion`) | `3.2.0` (default) or `3.1.2` |
 
-Generation, `golem build` and the `parse<T>` rewrite write the same files on TypeScript 6 and on TypeScript 7. Every build host is supported ([Build your app](/guide/build)).
+Generation, `golem build` and the `parse<T>` rewrite write the same files on TypeScript 6 and on TypeScript 7. Every build tool is supported ([Build tools](/guide/build)).
 
 OpenAPI feature support depends on the document version and generation profile ([OpenAPI support](/reference/openapi-support)).
 
@@ -28,11 +28,11 @@ A path that starts with `internal/` may change in any release. Do not import it.
 
 ## TypeScript resolution {#ts}
 
-Golem uses the `typescript` package that resolves from the directory of the tsconfig that your `golem.yaml` names. The `golem` command and every host look there, wherever the process runs from. The hosts are the [Vite](/reference/runtime-api#vite) and [esbuild](/reference/runtime-api#esbuild) plugins and the [Node loader](/reference/runtime-api#loader). Every lookup falls back to the copy beside Golem.
+Golem uses the `typescript` package that resolves from the directory of the tsconfig that your `golem.yaml` names. The `golem` command and every build tool look there, wherever the process runs from. The build tools are the [Vite](/reference/runtime-api#vite) and [esbuild](/reference/runtime-api#esbuild) plugins and the [Node loader](/reference/runtime-api#loader). Every lookup falls back to the copy beside Golem.
 
-Set `GOLEM_TYPESCRIPT_ROOT` to a directory to use the `typescript` installed there instead. It overrides every project. Library use outside a host looks in `GOLEM_TYPESCRIPT_ROOT`, or in the current directory when the variable is not set.
+Set `GOLEM_TYPESCRIPT_ROOT` to a directory to use the `typescript` installed there instead. It overrides every project. Library use outside a build tool looks in `GOLEM_TYPESCRIPT_ROOT`, or in the current directory when the variable is not set.
 
-A process loads one TypeScript. A host fails when it opens a second project whose `typescript` is a different install. The message tells you to run one host for each TypeScript install. Projects that share one install, through a link or a hoisted `node_modules`, can open in one process.
+A process loads one TypeScript. A build tool fails when it opens a second project whose `typescript` is a different install. The message tells you to run one build tool for each TypeScript install. Projects that share one install, through a link or a hoisted `node_modules`, can open in one process.
 
 A `typescript` version outside the range in the table fails at load:
 

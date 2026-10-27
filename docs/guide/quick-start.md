@@ -1,6 +1,6 @@
 # Quick start
 
-Declare a model, generate its class, add a method, and run it.
+Install Golem, declare a model, generate its class, add a method, and run it.
 
 ## Install
 
@@ -9,7 +9,7 @@ npm install @exprtlabs/golem
 npm install --save-dev @exprtlabs/golem-model typescript@~7.1.0-beta
 ```
 
-Check the [requirements](/guide/install#requirements). Add `"type": "module"` to `package.json` and this to `tsconfig.json`:
+Check the [requirements](#requirements). Add `"type": "module"` to `package.json` and this to `tsconfig.json`:
 
 ```json
 {
@@ -55,13 +55,7 @@ npx golem generate
 Generated configured outputs.
 ```
 
-You get `src/task.model.generated.ts` beside the declaration, with the generated class `TTaskBaseModel` and the `TTaskFields` type. Shared files go to `models.output` (default `src/generated/models/`). Add the generated files and `.golem/` to `.gitignore` ([ignore generated files](/reference/generated-files#gitignore)):
-
-```text
-.golem/
-*.generated.ts
-src/generated/
-```
+You get `src/task.model.generated.ts` beside the declaration, with the generated class `TTaskBaseModel` and the `TTaskFields` type. Shared files go to `models.output` (default `src/generated/models/`). You choose whether to commit the generated files ([commit or ignore them](/reference/generated-files#gitignore)).
 
 ## Add methods
 
@@ -77,7 +71,7 @@ Create `src/main.ts`:
 
 <<< ../../examples/models/src/main.ts#use-task
 
-`toWireFormat<Task>(task)` returns the JSON form of the task as an object. TypeScript erases the `<Task>` argument at run time, so a build host must replace the call with generated code ([Build your app](/guide/build)). `@exprtlabs/golem/serde` also exports `parse` and `stringify`. `parse<Task>(text)` builds a `Task`. `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
+`toWireFormat<Task>(task)` returns the JSON form of the task as an object. TypeScript erases the `<Task>` argument at run time, so a build tool must replace the call with generated code ([Build tools](/guide/build)). `@exprtlabs/golem/serde` also exports `parse` and `stringify`. `parse<Task>(text)` builds a `Task`. `parse<TTask>(text)` returns a plain object. `stringify` returns JSON text.
 
 ## Run it
 
@@ -91,6 +85,89 @@ Built tsconfig.json.
 []
 ```
 
-`golem build` is a build host. It generates first, checks your sources, and writes JavaScript into `.build/` with the `toWireFormat` call replaced by generated code. A bundler plugin or the Node loader can act as the host instead ([Build your app](/guide/build)). Run `golem watch` to regenerate while you edit ([daily loop](/guide/watch)).
+`golem build` is a build tool. It generates first, checks your sources, and writes JavaScript into `.build/` with the `toWireFormat` call replaced by generated code. A bundler plugin or the Node loader can be the build tool instead ([Build tools](/guide/build)). Run `golem watch` to regenerate while you edit ([daily loop](/guide/watch)).
 
 Your `main.ts` holds only the code above, so this is all it prints. The full example's `main.ts` continues with one line per feature. `npm start` in [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models) prints them all.
+
+## Requirements
+
+| Tool | Version |
+| --- | --- |
+| Node.js | `22.15` or newer |
+| `typescript` | `>=6.0.0 <7` or `>=7.1.0-0 <8` |
+
+The Node loader needs `--experimental-strip-types` before Node.js 22.18 ([Node versions](/guide/build#node-versions)).
+
+Golem uses the `typescript` installed in your project. Generation writes the same files on TypeScript 6.0+ and 7.1+.
+
+## Packages for each generator
+
+Each generator is a development dependency:
+
+| To generate | Development dependency |
+| --- | --- |
+| TypeScript models | `npm install --save-dev @exprtlabs/golem-model` |
+| An OpenAPI client | `npm install --save-dev @exprtlabs/golem-openapi` |
+| OpenAPI from NestJS controllers | `npm install --save-dev @exprtlabs/golem-ts-openapi` |
+
+Generated models and clients import the runtime:
+
+```sh
+npm install @exprtlabs/golem
+```
+
+Generating OpenAPI from controllers needs no runtime. A NestJS app that registers `NestModelInterceptor` does need it.
+
+The `golem` command comes from `@exprtlabs/golem`, which every generator depends on:
+
+- Install it in the project before you run `npx golem`. An unrelated npm package is also named `golem`.
+- Without a local install, `npx` offers to download and run that package. In CI, `npx` runs it without asking.
+- In scripts and CI, run `npx --no-install golem`. It fails instead of running the other package.
+
+The `@exprtlabs/*` package subpaths are ESM-only. Import them from ESM application code, or invoke the CLI directly.
+
+## Peer dependencies
+
+The generators declare the compiler as a peer dependency, so npm installs one copy in your project:
+
+| Package | Peer dependencies |
+| --- | --- |
+| `@exprtlabs/golem-model` | `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` |
+| `@exprtlabs/golem-ts-openapi` | `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8` |
+| `@exprtlabs/golem-openapi` | none, add `typescript` to compile the SDK |
+
+`@exprtlabs/golem` has only optional peer dependencies:
+
+- `typescript` `>=6.0.0 <7` or `>=7.1.0-0 <8`, for `golem build`, the plugins and the loader
+- `vite` `>=5`, for the Vite plugin
+- `esbuild` `^0.25.12`, for the esbuild plugin
+- `eslint` `^9.0.0 || ^10.0.0`, for the ESLint rule
+- `mobx` `^6.13.0`, for MobX models
+- `@nestjs/common` `^11.0.0` and `rxjs` `^7.8.0`, for `NestModelInterceptor`
+
+```sh
+npm install --save-dev typescript@~7.1.0-beta
+```
+
+## Project settings
+
+- `"type": "module"` in `package.json`
+- `"module": "NodeNext"` and `"moduleResolution": "NodeNext"`, or `"module": "ESNext"` and `"moduleResolution": "Bundler"`
+- target `ES2022` or newer for top-level `await`
+- With NodeNext, `.js` extensions on relative imports, including generated files. With Bundler resolution, imports with no extension: `golem build` adds the full file name to the JavaScript it writes ([import paths](/reference/cli#import-paths))
+- `"outDir": ".build"`
+- `"rootDir": "."`
+
+`golem.yaml` names the project with [`tsconfig`](/reference/config#root-keys), the `tsconfig.json` beside it by default. A NestJS app needs more compiler settings ([set up TypeScript](/guide/nestjs-requests#set-up-typescript)). Choose the build tool in [Build tools](/guide/build).
+
+## Runtime dependencies
+
+Validation is on and MobX is off by default.
+
+| Setting in `golem.yaml` | Extra application dependencies |
+| --- | --- |
+| Validation on (`validation: true`) | none |
+| MobX on (`mobx: true`) | `npm install mobx` |
+| Validation off (`validation: false`) | none |
+
+These keys go at the top level of `golem.yaml` ([all settings](/reference/config#validation-profiles)).

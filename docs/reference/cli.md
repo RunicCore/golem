@@ -4,7 +4,7 @@ Look up every command, option and exit code.
 
 The `golem` command comes from `@exprtlabs/golem`. Run it from the directory that contains `golem.yaml`. It reads the configuration, runs the configured generators, and writes their files to the configured destinations.
 
-`golem build` compiles your project and rewrites the calls that a build host rewrites ([Build your app](/guide/build)).
+`golem build` compiles your project and rewrites the calls that a build tool rewrites ([Build tools](/guide/build)).
 
 A job replaces only files that Golem generated. Another file at an output path stops `generate` and `check` ([files Golem owns](/guide/watch#files-golem-owns)).
 
@@ -40,7 +40,7 @@ Commands that need TypeScript use the one installed in the directory of the tsco
 
 `check` also does these things:
 
-- It reports every `parse<T>()` call that no host can rewrite, with its file, its line and what to run.
+- It reports every `parse<T>()` call that no build tool can rewrite, with its file, its line and what to run.
 - It checks that the Nest codecs agree with the generated registry.
 - With no earlier `generate` or `build`, it stops with one message. The message tells you to run one of them first.
 
@@ -84,7 +84,7 @@ models: 2 files updated · openapi:sdk: unchanged · 412 ms
 
 ## Build
 
-`golem build` rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) while it compiles. It generates the code that `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite when it loads your TypeScript ([Build your app](/guide/build)).
+`golem build` rewrites the generic serde calls (`parse<T>()`, `stringify<T>()` and the others) while it compiles. It generates the code that `golem.yaml` configures first, so a checkout with no generated files builds in one command. A bundler or Node can apply the same rewrite when it loads your TypeScript ([Build tools](/guide/build)).
 
 ```sh
 npx golem build
@@ -254,4 +254,4 @@ npx golem exec --watch -- npm run dev
 
 ## Runtime and imports
 
-The CLI runs on the [supported Node.js versions](/compatibility#supported-versions). Generated code needs the [project settings](/guide/install#project-settings), and the serde calls need a [build host](/guide/build).
+The CLI runs on the [supported Node.js versions](/compatibility#supported-versions). Generated code needs the [project settings](/guide/quick-start#project-settings), and the serde calls need a [build tool](/guide/build).

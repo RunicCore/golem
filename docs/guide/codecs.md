@@ -63,4 +63,4 @@ Declare it on a `createChargeText` operation and generate `ProviderClient` again
 
 A text body whose schema allows a type other than string (including `nullable`) needs a codec. Without one, `.execute()` rejects and names the missing option.
 
-A response that sends items one at a time uses [stream decoders](/guide/streams#connect-a-custom-stream-decoder) instead.
+A response that sends items one at a time uses [stream decoders](/guide/client-usage#connect-a-custom-stream-decoder) instead.

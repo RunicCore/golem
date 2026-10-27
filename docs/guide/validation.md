@@ -29,7 +29,7 @@ Validation checks a value against the [validation tags](/guide/tags) on the fiel
 | Show field errors in a form | `getValidator(model)` |
 | Check untrusted data against a type | `validate<T>(value)` (type predicate) |
 | Check while converting | the default in `parse` and `fromWireFormat` ([Serialization](/guide/serialization#checks-during-conversion)) |
-| Check `@Body()` and `@Query()` in NestJS | `NestModelInterceptor` ([Convert requests](/guide/nestjs-requests)) |
+| Check `@Body()` and `@Query()` in NestJS | `NestModelInterceptor` ([NestJS requests](/guide/nestjs-requests)) |
 | Call an API | a generated client validates the request and response ([Call operations](/guide/client-usage)) |
 
 ## Validate a model
