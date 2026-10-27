@@ -1,5 +1,5 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
-import { createChargeOnce } from '../provider/charges.js';
+import { createChargeWithKey } from '../provider/charges.js';
 import { isProviderUndeclaredResponseError, ProviderClient } from '../provider/sdk/index.js';
 
 export interface ProviderOptions {
@@ -20,7 +20,7 @@ export class ProviderCharges {
   public async charge(money: { amount: string; currency: string }, idempotencyKey: string) {
     try {
       // The key is the Idempotency-Key header parameter of createCharge, set per call.
-      const response = await createChargeOnce(this.client, money, idempotencyKey);
+      const response = await createChargeWithKey(this.client, money, idempotencyKey);
       return { id: response.body.id, status: response.body.status, settlesOn: response.body.settlesOn.toString() };
     } catch (error) {
       if (isProviderUndeclaredResponseError(error)) {

@@ -2,7 +2,7 @@ import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createAuthorizedClient, createClientWithSharedHeaders, createMoneyTextClient, createRefreshingClient } from './client.js';
-import { chargeAmountIssues, createChargeOnce, fetchCharge, readCharge, readTwoCharges } from './charges.js';
+import { chargeAmountIssues, createChargeWithKey, fetchCharge, readCharge, readTwoCharges } from './charges.js';
 import { createEventLinesClient, firstEvent, firstEventId, readCaptured, readEvents, readUntilClosed } from './events.js';
 import { describeCharge, readSettlementDate } from './settlement.js';
 import { ChargeRecord } from './charge-record.model.js';
@@ -53,8 +53,8 @@ test('the idempotency key is set for one call and the next call from the same cl
   await withFetch(request => { keys.push(request.headers.get('idempotency-key')); return Response.json(created, { status: 201 }); }, async () => {
     const client = createAuthorizedClient(base, 't');
     const money = { amount: '25.00', currency: 'USD' };
-    await createChargeOnce(client, money, 'key-1');
-    await createChargeOnce(client, money, 'key-2');
+    await createChargeWithKey(client, money, 'key-1');
+    await createChargeWithKey(client, money, 'key-2');
     await client.createCharge().execute({ body: money });
   });
   assert.deepEqual(keys, ['key-1', 'key-2', null]);

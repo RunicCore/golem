@@ -33,7 +33,7 @@ export async function createCharge(client: ProviderClient, amount: string) {
 // #endregion request-arguments
 
 // #region per-call-header
-export async function createChargeOnce(client: ProviderClient, money: { amount: string; currency: string }, idempotencyKey: string) {
+export async function createChargeWithKey(client: ProviderClient, money: { amount: string; currency: string }, idempotencyKey: string) {
   return client.createCharge().execute({
     header: { 'Idempotency-Key': idempotencyKey }, // Sent with this call only.
     body: money,
