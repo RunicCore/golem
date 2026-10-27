@@ -435,3 +435,27 @@ test('a model class registered at run time satisfies a generated model-instance 
   assert.deepEqual(validate(new Dog(), true), [{ path: [], code: 'instance', model: 'GeneratedValidatorsCat_0a1b2c3d' }]);
   assert.deepEqual(validate({}, true), [{ path: [], code: 'instance', model: 'GeneratedValidatorsCat_0a1b2c3d' }]);
 });
+
+test('a model literal type that is not a finite number stops generation with an error that names the model', async t => {
+  // protects: T-486 a non-finite enum or const is rejected where the schema is lowered, with a clear error
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'huge.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    'export type THuge = IModel<{ amount: 1e999 }>;',
+    '',
+  ].join('\n'));
+  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  await assert.rejects(runPipeline(path.join(value.root, 'golem.yaml')), /VALIDATE_UNSUPPORTED_KEYWORD: .*the value of const is not valid: expected a JSON value; a number that is not finite has no JSON form/);
+});
+
+test('a model union of a literal that is not a finite number and another literal stops generation too', async t => {
+  // protects: T-486 a union of literals does not write a non-finite value as null
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'either.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "export type TEither = IModel<{ amount: 1e999 | 'a' }>;",
+    '',
+  ].join('\n'));
+  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  await assert.rejects(runPipeline(path.join(value.root, 'golem.yaml')), /VALIDATE_UNSUPPORTED_KEYWORD: .*the value of const is not valid: expected a JSON value; a number that is not finite has no JSON form/);
+});
