@@ -202,7 +202,7 @@ function casesNamedBy(output: string, casesByFolder: ReadonlyMap<string, string>
 if (!typescript6Root) {
   // The entrypoint of the test container installs TypeScript 6 and exports its root; without it there is nothing to compare.
   test('TypeScript 6 is installed for the identity test', () => {
-    assert.fail('GOLEM_TYPESCRIPT6_ROOT is not set: run this in the test container (npm run test -- tests/typescript-identity.test.ts), where the entrypoint installs TypeScript 6');
+    assert.fail('GOLEM_TYPESCRIPT6_ROOT is not set: run this in the test container (npm run test -- tests/typescript-identity.acceptance.ts), where the entrypoint installs TypeScript 6');
   });
 } else {
   test('the TypeScript 7 children ran TypeScript 7 and the TypeScript 6 children ran TypeScript 6', async () => {
