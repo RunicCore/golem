@@ -4,10 +4,12 @@ An offline task tracker built from golem models: one TypeScript declaration per 
 
 ## What it shows
 
-- `Task`: `IModel` fields, a generated base class with your own `toggle()`, and a priority that is a number in code and a word in JSON (`TSerde`).
+- `Task`: `IModel` fields, a generated base class with your own `toggle()`, and a priority that is a number from 1 to 3 in code and a word in JSON (`TSerde`).
 - Tags and rules: built-in and generic tags, collection tags, a custom field rule, instance rules, server errors and a permission bit mask that is hexadecimal in JSON.
 - Composition: nested and derived models, an assignee contact union, an open metadata model, and an attachment whose `Uint8Array` is base64 in JSON.
 - Dates: a `Date` reminder and Temporal schedule fields.
+- Orders: an amount that is integer cents in code and decimal text in JSON, a priority word and a `Date`, converted by `TSerde`.
+- Errors: a `LibError` of bad input lists the failed checks by path.
 - Money is a decimal string with an ISO 4217 currency code, never a float.
 
 The example depends on `1.1.0-rc.0` of `@exprtlabs/golem*`. Run it from this repository checkout: it resolves the packages from the root `node_modules`, so run `npm install` at the repository root first.
@@ -16,6 +18,7 @@ The example depends on `1.1.0-rc.0` of `@exprtlabs/golem*`. Run it from this rep
 
 ```sh
 npm run generate   # write the generated model classes, for your editor
+npm run check      # generate, check the generated outputs and type-check
 npm test           # offline: one case per feature; golem build generates first
 npm start          # the walkthrough below
 npm run bundle     # the same walkthrough, bundled with the esbuild plugin
@@ -27,9 +30,9 @@ npm run start:loader  # the same walkthrough, run through the Node loader
 ```text
 { title: 'Review the draft', done: true, priority: 'normal' }
 []
-saved task: { title: 'Ship the generators', done: true, priority: 'high' }
+task JSON: { title: 'Ship the generators', done: true, priority: 'high' }
 estimate: {"amount":"12.50","currency":"USD"}
-assignee contact: phone
+contact kind: phone
 attachment: { name: 'checksum.bin', content: 'AQID' }
 reminder: 2025-01-02T03:04:05.000Z
 schedule ends: 2025-01-02T04:34:05Z
@@ -42,9 +45,10 @@ blank title: Enter a title.
 | File | Responsibility |
 | --- | --- |
 | `src/task.model.ts`, `priority-word.ts` | The task and its priority word |
-| `src/task-app.ts`, `read-json.ts`, `main.ts` | Create, validate and save a task; read it from JSON; the `npm start` entrypoint |
+| `src/order.model.ts`, `order-json.ts`, `decimal-text.ts` | An order: amount in cents as decimal text, priority word and `Date` |
+| `src/task-app.ts`, `read-json.ts`, `main.ts` | Create a task, validate it and write its JSON; read it from JSON; the `npm start` entrypoint |
 | `src/task-input.model.ts`, `task-input-rule.ts`, `task-input-checks.ts`, `title-rule.ts`, `server-errors.ts`, `load-task.ts` | A task form: field rule, instance rule, server errors, trusted conversion |
-| `src/checklist-input.model.ts` | Checklist items with array-path errors |
+| `src/checklist-input.model.ts`, `read-errors.ts` | Checklist items with array-path errors; reading a `LibError` of bad input |
 | `src/builtin-tags.model.ts`, `tag-aliases.model.ts`, `collection-tags.model.ts` | Built-in, generic and collection tags |
 | `src/permission-input.model.ts`, `permission-rules.ts` | A member's permission bits as a hexadecimal `TSerde` |
 | `src/assignee.model.ts`, `contact.model.ts`, `metadata.model.ts` | Nested and derived models, the contact union, exact and open metadata |

@@ -8,11 +8,3 @@ export type TMoney = IObject<{
   currency: string & Pattern<'^[A-Z]{3}$'>;
 }>;
 // #endregion money-model
-
-// Budget uses TMoney as a field. Without a model that nests TMoney somewhere,
-// the generated file's helper functions for TMoney go unused and fail the build.
-import type { IModel } from '@exprtlabs/golem/model';
-import { TBudgetBaseModel } from './estimate.model.generated.js';
-
-export type TBudget = IModel<{ estimate: TMoney }>;
-export class Budget extends TBudgetBaseModel {}

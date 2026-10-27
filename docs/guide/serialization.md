@@ -95,7 +95,7 @@ Write `typeof` each function in `TSerde`, and import the functions as types:
 
 <<< ../../examples/models/src/order.model.ts#order-declaration
 
-- `Integer` and `Minimum<0>` check the model value.
+- `Integer`, `Minimum` and `Maximum` check the model values: `amount` is a whole number of cents, `priority` is 1 to 3.
 - `remindAt` is a `Date` and needs no `TSerde`. [Use Date fields](/guide/field-types#use-date-fields) shows how golem writes it and how to keep its exact text.
 
 Run `npx golem generate`, then convert the JSON:
@@ -138,6 +138,7 @@ Converting the model writes the JSON form and restores the instance:
 
 <<< ../../examples/models/src/attachment-json.ts#attachment-json
 
+- The `Base64` pattern accepts only well-formed base64. A malformed value fails the JSON check as input, before `atob` runs.
 - The class must have a name and have no type parameter without a default. A module must export it, under any name or as the default export ([RUNM1063](/reference/diagnostics#runm1063)).
 - A `TemporalInstant` is this kind of field. The [Temporal types](/guide/field-types#use-temporal-fields) ship their own codecs.
 

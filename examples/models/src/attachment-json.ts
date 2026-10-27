@@ -2,11 +2,12 @@
 import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
 import { Attachment } from './attachment.model.js';
 
-export function describeAttachment() {
+export function roundTripAttachment() {
   const attachment = new Attachment({ name: 'checksum.bin', content: Uint8Array.of(1, 2, 3) });
-  const wire = toWireFormat<Attachment>(attachment); // { name: 'checksum.bin', content: 'AQID' }
+  const wire = toWireFormat<Attachment>(attachment);
   const copy = fromWireFormat<Attachment>(wire);
-  console.log(copy.content instanceof Uint8Array); // true
+
+  // -> { wire: { name: 'checksum.bin', content: 'AQID' }, copy }, where copy.content is a Uint8Array
   return { wire, copy };
 }
 // #endregion attachment-json
