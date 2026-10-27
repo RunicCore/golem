@@ -17,7 +17,7 @@ export class Account extends TAccountBaseModel {}
 export async function validateHandles(): Promise<[boolean, boolean]> {
   const valid = new Account({ displayName: 'Ada', handle: 'ada_l' });
   const tooLong = new Account({ displayName: 'Ada', handle: 'a'.repeat(21) });
+  // -> [true, false]
   return [(await validateInstance(valid)).length === 0, (await validateInstance(tooLong)).length === 0];
-  // [true, false]
 }
 // #endregion tag-aliases

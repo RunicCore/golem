@@ -7,12 +7,11 @@ export function checkServerErrors() {
   const validator = getValidator(task);
   validator.setErrors({ title: 'This title is already used.' });
   const beforeClear = validator.error('title');
-  console.log(beforeClear); // 'This title is already used.'
 
   validator.clear();
   const afterClear = validator.error('title');
-  console.log(afterClear); // undefined
 
+  // -> { beforeClear: 'This title is already used.', afterClear: undefined }
   return { beforeClear, afterClear };
 }
 // #endregion server-errors

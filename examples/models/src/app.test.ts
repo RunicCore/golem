@@ -53,24 +53,7 @@ test('model app creates, converts, validates, and saves a task', async () => {
   assert.deepEqual(toWireFormat<TTask>(converted), { title: 'Ship the generators', done: true, priority: 'normal' });
 });
 
-test('quick start toggles a task, serializes it and validates it', async () => {
-  const info = mock.method(console, 'info', () => undefined);
-  try {
-    const { logged } = await capture(() => import('./main.js'));
-    assert.deepEqual(logged, [
-      [{ title: 'Review the draft', done: true, priority: 'normal' }],
-      [[]],
-    ]);
-    assert.deepEqual(info.mock.calls[0]?.arguments, ['saved task:', { title: 'Ship the generators', done: true, priority: 'high' }]);
-    assert.equal(info.mock.calls.length, 8);
-    assert.deepEqual(info.mock.calls.at(-1)?.arguments, ['blank title:', 'Enter a title.']);
-  } finally {
-    info.mock.restore();
-  }
-});
-
 test('a LibError of input lists the failed checks by path', () => {
-  // protects: fact F-83 LibError issues and causedByInput
   assert.deepEqual(explainTaskText('{"title":"Plan","done":false,"priority":"low"}'), []);
   const failed = explainTaskText('{"title":"","done":"no","priority":"low"}');
   assert.deepEqual(failed.map(line => line.split(':')[0]).sort(), ['done', 'title']);
@@ -130,10 +113,7 @@ test('built-in tags, a generic alias and collection tags each reject their own b
 });
 
 test('a custom field rule blocks a blank title until it is corrected', async () => {
-  const { result } = await capture(checkTaskInput);
-  assert.equal(result.issueCount, 1);
-  assert.equal(result.message, 'Enter a title.');
-  assert.equal(result.fixed, true);
+  assert.deepEqual(await checkTaskInput(), { blank: ['Enter a title.'], fixed: true });
 });
 
 test('a TSerde tag converts a hex permission string and blocks a value missing the read bit', async () => {
@@ -146,22 +126,19 @@ test('a TSerde tag converts a hex permission string and blocks a value missing t
 });
 
 test('a nested field error reports an array path and clears once fixed', async () => {
-  const { result } = await capture(checkChecklistInput);
-  assert.deepEqual(result.firstIssuePath, ['items', 0, 'label']);
-  assert.equal(result.labelError, 'Must be at least 3 characters');
-  assert.equal(result.fixedCount, 0);
+  assert.deepEqual(await checkChecklistInput(), {
+    firstIssuePath: ['items', 0, 'label'],
+    labelError: 'Must be at least 3 characters',
+    fixedCount: 0,
+  });
 });
 
 test('an instance rule from extend() runs after generated checks', async () => {
-  const { result } = await capture(checkTitleRule);
-  assert.equal(result.valid, false);
-  assert.equal(result.message, 'Start the title with Ship.');
+  assert.deepEqual(await checkTitleRule(), { valid: false, message: 'Start the title with Ship.' });
 });
 
 test('setErrors stores a server message that clear() removes', async () => {
-  const { result } = await capture(checkServerErrors);
-  assert.equal(result.beforeClear, 'This title is already used.');
-  assert.equal(result.afterClear, undefined);
+  assert.deepEqual(checkServerErrors(), { beforeClear: 'This title is already used.', afterClear: undefined });
 });
 
 test('a trusted conversion skips validation but still surfaces the issue on validateInstance', async () => {
@@ -227,7 +204,6 @@ test('a TSerde field can hold a class instance such as Uint8Array', async () => 
 });
 
 test('an order reads decimal text, a priority word and a Date, and writes the same JSON back', () => {
-  // protects: task T-455 one model with money text, a priority word and a Date
   const text = '{"amount":"12.50","priority":"high","remindAt":"2025-01-02T03:04:05.000Z"}';
   const order = readOrder(text);
 

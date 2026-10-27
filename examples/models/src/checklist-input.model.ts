@@ -12,17 +12,15 @@ export class ChecklistInput extends TChecklistInputBaseModel {}
 export async function checkChecklistInput() {
   const checklist = new ChecklistInput({ items: [{ label: 'x' }] });
   const issues = await validateInstance(checklist);
-  console.log(issues[0]?.path); // ['items', 0, 'label']
 
   const validator = getValidator(checklist);
   await validator.validate();
   const labelError = validator.error(['items', 0, 'label']);
-  console.log(labelError); // 'Must be at least 3 characters'
 
   checklist.items = [{ label: 'Tag' }];
   const fixedCount = (await validateInstance(checklist)).length;
-  console.log(fixedCount); // 0
 
+  // -> { firstIssuePath: ['items', 0, 'label'], labelError: 'Must be at least 3 characters', fixedCount: 0 }
   return { firstIssuePath: issues[0]?.path, labelError, fixedCount };
 }
 // #endregion nested-field-errors

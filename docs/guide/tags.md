@@ -11,7 +11,7 @@ A **type tag** is a type-only annotation that you intersect with a field type. A
 
 ## Add a built-in tag
 
-Intersect the field type with each validation tag. The title above is `string & MinLength<3> & MaxLength<80>`. Run `npx golem generate` after you save the model file.
+Intersect the field type with each validation tag. `TaggedTitle` above is `string & MinLength<3> & MaxLength<80>`. Run `npx golem generate` after you save the model file.
 
 ## Name a tag combination
 

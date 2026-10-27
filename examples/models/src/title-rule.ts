@@ -10,9 +10,8 @@ export async function checkTitleRule() {
   });
 
   const valid = await validator.validate();
-  console.log(valid); // false
-  console.log(validator.error('title')); // 'Start the title with Ship.'
 
+  // -> { valid: false, message: 'Start the title with Ship.' }
   return { valid, message: validator.error('title') };
 }
 // #endregion instance-rules
