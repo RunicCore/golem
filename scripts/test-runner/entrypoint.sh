@@ -108,8 +108,8 @@ lock_hash="$(sha256sum package-lock.json | cut -c1-64)"
 if [ -n "$tree_hash" ]; then
   export GOLEM_RUN_TREE="$tree_hash" GOLEM_RUN_STATE="/cache/test-state/$tier"
   # Every value that run.sh takes from the host environment and that changes what a tier checks: the denied-text rules of the
-  # public-content scans (set and required) and the TypeScript root of a focused run.
-  host_env_hash="$(printf '%s\0' "${PUBLIC_CONTENT_DENIED_TEXT-unset}" "${PUBLIC_CONTENT_REQUIRE_DENIED_TEXT-unset}" "${GOLEM_TYPESCRIPT_ROOT-unset}" | sha256sum | cut -c1-64)"
+  # public-content scans and the TypeScript root of a focused run.
+  host_env_hash="$(printf '%s\0' "${PUBLIC_CONTENT_DENIED_TEXT-unset}" "${GOLEM_TYPESCRIPT_ROOT-unset}" | sha256sum | cut -c1-64)"
   GOLEM_RUN_KEY="$(printf '%s\n' "$tier" "$tree_hash" "${GOLEM_IMAGE_TAG:-}" "$manifest_hash" "$lock_hash" "$host_env_hash" | sha256sum | cut -c1-32)"
   export GOLEM_RUN_KEY
   mkdir -p "$GOLEM_RUN_STATE"

@@ -327,7 +327,7 @@ function readJson<T>(file: string): T | undefined {
 
 function assertContainer(tier: Tier, native: boolean): void {
   if (native) {
-    if (tier !== 'full') throw new Error('--native runs only the full tier (unit tests), for CI platform jobs.');
+    if (tier !== 'full') throw new Error('--native runs only the full tier (the unit tests), without Docker.');
     return;
   }
   const command = { prepare: 'npm run test:prepare', focused: 'npm run test -- <files>', full: 'npm run test:full', acceptance: 'npm run test:acceptance', docs: 'npm run docs:check' }[tier];
