@@ -3,7 +3,7 @@ import { schemaIssueMessage, type SchemaIssue, type Validator } from '@exprtlabs
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 import { openApiLine, type OpenApiLine } from './json.js';
-import { checkOpenApiRules } from './openapi-rules.js';
+import { checkNonFiniteNumbers, checkOpenApiRules } from './openapi-rules.js';
 import { JSON_SCHEMA_2020_12_ID, JSON_SCHEMA_2020_12_META_SCHEMAS } from './openapi-schemas/json-schema-2020-12.js';
 import { OAS_3_1_DOCUMENT_SCHEMA } from './openapi-schemas/oas-3-1.js';
 import { OAS_3_2_DOCUMENT_SCHEMA } from './openapi-schemas/oas-3-2.js';
@@ -126,10 +126,13 @@ export function checkSchemaObjects(document: unknown): OpenApiProblem[] {
 }
 
 /**
- * Runs the structure, Schema Object and hand-written rule checks and returns
+ * Runs the non-finite number, structure, Schema Object and hand-written rule checks and returns
  * the found problems.
  */
 export function validateOpenApiDocument(document: unknown): OpenApiProblem[] {
+  // A number that JSON cannot write has no meaning for the later checks; they report it as a type error or not at all.
+  const nonFinite = checkNonFiniteNumbers(document);
+  if (nonFinite.length) return nonFinite;
   const structure = checkOpenApiStructure(document);
   if (structure.length) return structure;
   return uniqueProblems([...checkSchemaObjects(document), ...checkOpenApiRules(document)]);
