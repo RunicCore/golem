@@ -26,22 +26,26 @@ exec 9>/cache/run.lock
 flock -n 9 || { echo "Another golem test run holds /cache/run.lock; wait for it to finish." >&2; exit 2; }
 
 mkdir -p /cache/work /cache/npm /cache/packed /cache/linux-lock /cache/ttsc /cache/gomod
+# What is not golem source: build output, installs, git, and local tool state such as the dev center store, which changes on
+# every write. The copy leaves these out and the tree hash skips them, from this one list.
+local_names=(node_modules .build dist .cache .git .DS_Store .private .superpowers .code-review-graph .devcenter .claude)
+local_paths=(.vitepress/cache .vitepress/dist)
+rsync_excludes=()
+find_prune=()
+for name in "${local_names[@]}"; do rsync_excludes+=(--exclude "$name"); find_prune+=(-name "$name" -o); done
+for local_path in "${local_paths[@]}"; do rsync_excludes+=(--exclude "$local_path"); find_prune+=(-path "*/$local_path" -o); done
+unset 'find_prune[${#find_prune[@]}-1]'
 # Copy the read-only source into the work tree, keeping mtimes so incremental
 # builds stay warm. Build output and installs live only in the work tree.
-rsync -a --delete \
-  --exclude node_modules/ --exclude .build/ --exclude dist/ --exclude .cache/ \
-  --exclude .git/ --exclude .DS_Store --exclude .private/ --exclude .superpowers/ --exclude .code-review-graph/ \
-  --exclude .vitepress/cache/ --exclude .vitepress/dist/ \
-  /src/ /cache/work/
+rsync -a --delete "${rsync_excludes[@]}" /src/ /cache/work/
 cd /cache/work
 
-# The hash of the source tree that this run tests: the rsync'd files, without the folders that rsync leaves out, so builds and
-# installs of earlier runs do not change it. It is the first part of the run key below. package-lock.json is the checked-in
-# macOS one here; the Linux lockfile has its own part of the key.
+# The hash of the source tree that this run tests: the rsync'd files, without what rsync leaves out, so builds and installs of
+# earlier runs do not change it. It is the first part of the run key below. package-lock.json is the checked-in macOS one
+# here; the Linux lockfile has its own part of the key.
 tree_hash=""
 if [ "$tier" = full ] || [ "$tier" = acceptance ]; then
-  tree_hash="$(find . \( -name node_modules -o -name .build -o -name dist -o -name .cache -o -name .git -o -name .DS_Store -o -name .private -o -name .superpowers -o -name .code-review-graph \
-    -o -path '*/.vitepress/cache' -o -path '*/.vitepress/dist' \) -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-32)"
+  tree_hash="$(find . \( "${find_prune[@]}" \) -prune -o -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -c1-32)"
 fi
 
 export npm_config_cache=/cache/npm \
