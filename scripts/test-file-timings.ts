@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
+import { stepResultFile } from './test-runner/run-state.js';
 
 // Spec, TAP and this reporter put 11 `end` listeners on the run's event stream, and node warns above 10.
 // The limit is needed in the process that runs the files, where this module loads before the third reporter attaches.
@@ -45,7 +46,7 @@ export default async function* testFileTimings(source: AsyncIterable<TestEvent>)
 
 /**
  * The message that the entrypoint prints when the tier ceiling stops a run: each step that was running (`running` in
- * `<tier>-timings.json`) and the files of that step that started and did not end (its `.files.jsonl`).
+ * `<tier>-timings.json`) and the files of that step that started and did not end (its `<tier>.<step>.files.jsonl`).
  * A missing results file is part of the message. A results file that cannot be read throws, and the entrypoint prints that.
  */
 export function ceilingReport(resultsDir: string, tier: string): string {
@@ -53,11 +54,10 @@ export function ceilingReport(resultsDir: string, tier: string): string {
   if (!fs.existsSync(timingsFile)) return `No ${tier}-timings.json: the run ended before its first step.`;
   const { running } = JSON.parse(fs.readFileSync(timingsFile, 'utf8')) as { running?: readonly string[] };
   if (running === undefined || running.length === 0) return 'No step was running.';
-  return running.map(label => stepReport(resultsDir, label)).join('\n');
+  return running.map(label => stepReport(stepResultFile(resultsDir, tier, label, 'files.jsonl'), label)).join('\n');
 }
 
-function stepReport(resultsDir: string, running: string): string {
-  const stepFile = path.join(resultsDir, `${running}.files.jsonl`);
+function stepReport(stepFile: string, running: string): string {
   if (!fs.existsSync(stepFile)) return `The ${running} step was running; it runs no test files.`;
   const started = new Set<string>();
   const ended = new Set<string>();

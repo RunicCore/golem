@@ -28,6 +28,15 @@ export function runStateFromEnv(env: NodeJS.ProcessEnv = process.env): RunState 
   return { recordFile: path.join(dir, `${key}.json`), passedFile: path.join(dir, `${key}.passed`), again: env.GOLEM_RUN_AGAIN === '1', tree: (tree ?? key).slice(0, 8) };
 }
 
+/**
+ * A test step of a tier writes `<tier>.<step>.tap` and `<tier>.<step>.files.jsonl` in the results folder. Step names repeat
+ * across tiers (Full and Acceptance both run `unit`), so the tier in the name keeps each tier's files apart.
+ */
+export const stepResultFile = (resultsDir: string, tier: string, label: string, kind: 'tap' | 'files.jsonl'): string => path.join(resultsDir, `${tier}.${label}.${kind}`);
+
+/** The results of one tier: its step files, `<tier>-timings.json` and `<tier>-complete.json`. A tier run replaces only these. */
+export const isTierResult = (name: string, tier: string): boolean => name.startsWith(`${tier}.`) || name === `${tier}-timings.json` || name === `${tier}-complete.json`;
+
 const emptyRecord = (): RunRecord => ({ steps: {}, parts: [] });
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -66,15 +75,16 @@ function writeWhole(file: string, text: string): void {
 }
 
 /**
- * Adds what the results folder holds to the record: the files that ended passed (`<step>.files.jsonl`) and the steps that
+ * Adds what the results folder holds for the tier to the record: the files that ended passed (`<tier>.<step>.files.jsonl`) and the steps that
  * ended with status 0 (`<tier>-timings.json`). A step that the ceiling cut keeps its finished files. A line that a kill cut short is
  * skipped; that file runs again, so a lost line costs time and never a wrong pass.
  */
 export function foldResults(record: RunRecord, resultsDir: string, tier: string): RunRecord {
   const steps = structuredClone(record.steps);
   const step = (label: string): StepRecord => (steps[label] ??= { passed: {}, ended: false });
-  for (const name of fs.readdirSync(resultsDir).filter(entry => entry.endsWith('.files.jsonl'))) {
-    const label = name.slice(0, -'.files.jsonl'.length);
+  const prefix = `${tier}.`;
+  for (const name of fs.readdirSync(resultsDir).filter(entry => entry.startsWith(prefix) && entry.endsWith('.files.jsonl'))) {
+    const label = name.slice(prefix.length, -'.files.jsonl'.length);
     for (const line of fs.readFileSync(path.join(resultsDir, name), 'utf8').split('\n').filter(Boolean)) {
       try {
         const { file, seconds, passed } = JSON.parse(line) as { file: string; seconds?: number; passed?: boolean };
