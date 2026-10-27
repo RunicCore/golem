@@ -597,13 +597,17 @@ class CompatProgram implements Golem.Program {
   resolveImport(specifier: Golem.StringLiteralLike, virtualFiles?: ReadonlySet<string>): Golem.ResolvedModule | undefined {
     const file = specifier.getSourceFile();
     assertPackageManifestsParse(specifier.text, file.fileName);
-    // The lookup the program stored is internal to the classic compiler: stop with a clear error if a release drops it.
-    if (typeof this.program.getResolvedModuleFromModuleSpecifier !== 'function') {
-      throw new Error(`TypeScript ${selected.version} gives golem no way to read how a program resolved an import: its program has no getResolvedModuleFromModuleSpecifier.`);
-    }
+    this.requireStoredResolution();
     const resolved = this.program.getResolvedModuleFromModuleSpecifier(specifier, file)?.resolvedModule;
     if (resolved || !virtualFiles || virtualFiles.size === 0) return resolved;
     return this.session.resolveModuleName(specifier.text, file.fileName, this.getCompilerOptions(), this.program.getModeForUsageLocation(file, specifier), virtualFiles).resolvedModule;
+  }
+
+  /** The lookup the program stored for an import is internal to the classic compiler: stop with a clear error if a release drops it. */
+  private requireStoredResolution(): void {
+    if (typeof this.program.getResolvedModuleFromModuleSpecifier !== 'function') {
+      throw new Error(`TypeScript ${selected.version} gives golem no way to read how a program resolved an import: its program has no getResolvedModuleFromModuleSpecifier.`);
+    }
   }
 
   getTypeChecker(): Golem.TypeChecker {
@@ -657,13 +661,9 @@ class CompatProgram implements Golem.Program {
    * for that output, the source is one an import reached without a declaration output. The compiler's own redirect and resolution say so, not its message.
    */
   unbuiltReferences(): readonly string[] {
-    // The imports of a source, the stored resolution and the project redirect are internal to the classic compiler: stop with a clear error if a release drops one.
-    for (const [name, present] of [
-      ['getResolvedModuleFromModuleSpecifier', typeof this.program.getResolvedModuleFromModuleSpecifier === 'function'],
-      ['getRedirectFromSourceFile', typeof this.program.getRedirectFromSourceFile === 'function'],
-    ] as const) {
-      if (!present) throw new Error(`TypeScript ${selected.version} lacks ${name}; golem build needs it for project references.`);
-    }
+    // The imports of a source and the project redirect are internal to the classic compiler too: stop with a clear error if a release drops one.
+    this.requireStoredResolution();
+    if (typeof this.program.getRedirectFromSourceFile !== 'function') throw new Error(`TypeScript ${selected.version} lacks getRedirectFromSourceFile; golem build needs it for project references.`);
     const unbuilt = new Set<string>();
     for (const file of this.program.getSourceFiles()) {
       if (file.isDeclarationFile) continue;

@@ -10,6 +10,7 @@ import { isInsideDirectory } from '#golem/generator-api';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { OwnedOutputIndex, realInputFiles } from '#golem/input-watcher';
 import type { InputFiles } from '#golem/input-watcher';
+import { write } from './support/build-project.js';
 import { workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
 import { countingInputFiles, quietly, until } from './support/watch-wait.js';
@@ -671,4 +672,25 @@ test('an edit during a running generation triggers exactly one follow-up run wit
     stop();
   }
   assert.deepEqual(errors, []);
+});
+
+test('a watch that reports with the default reporter prints the stack and cause of a TypeError in a generator', async (t: TestContext) => {
+  // protects: T-490 the default reporter of watchPipeline printed errorMessage only, so a generator's TypeError lost its stack and cause
+  const { root, config } = generationWatchFixture(t);
+  write(root, 'node_modules/@fixture/throwing/package.json', JSON.stringify({ name: '@fixture/throwing', version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
+  write(root, 'node_modules/@fixture/throwing/index.js', `export const apiVersion = 1;
+export function generate() { throw new TypeError('generator state is broken', { cause: new RangeError('index out of range') }); }
+`);
+  const document = YAML.parse(fs.readFileSync(config, 'utf8')) as Record<string, unknown>;
+  fs.writeFileSync(config, YAML.stringify({ ...document, generators: [{ package: '@fixture/throwing', output: 'out' }] }));
+  let printed = '';
+  t.mock.method(process.stderr, 'write', (chunk: string | Uint8Array) => { printed += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString(); return true; });
+  const stop = watchPipeline(config);
+  try {
+    await until(() => printed.includes('index out of range'), () => `the failure is reported (output=${printed})`);
+    assert.match(printed, /TypeError: generator state is broken\n\s+at /);
+    assert.match(printed, /\[cause\]: RangeError: index out of range/);
+  } finally {
+    stop();
+  }
 });

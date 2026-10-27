@@ -305,18 +305,24 @@ export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-const RUNTIME_ERRORS = [TypeError, RangeError, ReferenceError, SyntaxError, EvalError, URIError, AggregateError];
+/** The faults of golem or of a tool it runs. A system error, a `SyntaxError` from a file the user wrote and a golem error name a condition the user fixes. */
+const FAULTS = [TypeError, RangeError, ReferenceError, AggregateError];
+
+/** An error that is a fault, or has one in its `cause` chain. The `seen` set stops a chain that leads back to itself. */
+function holdsFault(error: unknown, seen = new Set<unknown>()): boolean {
+  if (!(error instanceof Error) || seen.has(error)) return false;
+  seen.add(error);
+  return FAULTS.some((type) => error instanceof type) || holdsFault(error.cause, seen);
+}
 
 /**
- * What the golem command prints for a failure. Golem's own errors, a plain `Error` with a message that says what failed and what to do, print
- * as their message. A failure that is not one (a system error, anything thrown that is no `Error`, a runtime error such as a `TypeError`, also
- * as the `cause` of a golem error that wraps it) is a fault in golem or in a tool it runs: it prints with its stack and its cause chain,
- * which the message alone would lose.
+ * What the golem command prints for a failure. Golem's own errors and the conditions the user fixes (a missing or unreadable file, a file that
+ * is not JSON, a command that does not exist) print as their message. A programming fault (a `TypeError`, `RangeError` or `ReferenceError`,
+ * also as the `cause` of the error that wraps it) and an `AggregateError`, golem's own collection of cleanup failures whose message does not
+ * name its members, print with their stack and cause chain, which the message alone would lose.
  */
 export function failureText(error: unknown): string {
-  const internal = !(error instanceof Error) || 'syscall' in error;
-  const runtime = (candidate: unknown): boolean => candidate instanceof Error && (RUNTIME_ERRORS.some((type) => candidate instanceof type) || runtime(candidate.cause));
-  return internal || runtime(error) ? inspect(error) : (error as Error).message;
+  return holdsFault(error) ? inspect(error) : errorMessage(error);
 }
 
 export function hasErrorCode(error: unknown, code: string): boolean {

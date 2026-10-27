@@ -139,7 +139,7 @@ test('a failed cleanup of the temporary file does not hide the rename failure th
   };
   assert.throws(
     () => applyJob(config, loadInventory(config), job, [artifact(target, 1)], false, failing),
-    (error: Error) => /^simulated artifact rename failure Golem could not remove the temporary file .*\.tmp either: simulated unlink refusal$/.test(error.message) && error.cause === renameFailure,
+    (error: Error & { code?: string }) => /^simulated artifact rename failure\. Golem could not remove the temporary file .*\.tmp either: simulated unlink refusal$/.test(error.message) && error.cause === renameFailure && error.code === 'EIO',
   );
 });
 

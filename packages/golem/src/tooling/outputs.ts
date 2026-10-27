@@ -299,7 +299,10 @@ export function atomicWrite(filename: string, content: string, files: OutputFile
   } catch (error) {
     // The create or rename failure is the cause; a failed cleanup is told beside it and never replaces it.
     try { files.unlink(temporary); } catch (cleanup) {
-      if (!hasErrorCode(cleanup, 'ENOENT')) throw new Error(`${errorMessage(error)} Golem could not remove the temporary file ${displayPath(temporary)} either: ${errorMessage(cleanup)}`, { cause: error });
+      if (!hasErrorCode(cleanup, 'ENOENT')) {
+        // The thrown error keeps the `code` of the first failure, so a caller that tells failures apart by it still can.
+        throw Object.assign(new Error(`${errorMessage(error).replace(/\.$/, '')}. Golem could not remove the temporary file ${displayPath(temporary)} either: ${errorMessage(cleanup)}`, { cause: error }), isRecord(error) && error.code !== undefined ? { code: error.code } : {});
+      }
     }
     throw error;
   }
