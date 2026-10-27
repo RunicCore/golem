@@ -192,6 +192,36 @@ test('a scan that fails after a good run is reported, and the run keeps its line
   }
 });
 
+test('a job record that cannot be saved after the job wrote its files is reported as files written', async (t: TestContext) => {
+  // protects: T-484 a failed record save does not say that the job wrote no files
+  const { root, config } = generationWatchFixture(t);
+  const model = path.join(root, 'src/cart.model.ts');
+  const companion = path.join(root, 'src/cart.model.generated.ts');
+  const runs = countRuns();
+  const errors: unknown[] = [];
+  let armed = false;
+  const rename = (from: string, to: string): void => {
+    if (armed && path.basename(to) === 'jobs.json') {
+      armed = false;
+      throw Object.assign(new Error(`EACCES: permission denied, rename '${from}' -> '${to}'`), { code: 'EACCES' });
+    }
+    fs.renameSync(from, to);
+  };
+  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files: { rename } });
+  try {
+    await until(() => runs() === 1, 'initial generation');
+    armed = true;
+    fs.writeFileSync(model, fs.readFileSync(model, 'utf8').replace('note: string', 'note: string; afterWrite?: boolean'));
+    await until(() => errors.length === 1, () => `the record save fault is reported (errors=${errors.map(String).join('; ')})`);
+    assert.ok(fs.readFileSync(companion, 'utf8').includes('afterWrite'), 'the job wrote its file before the save failed');
+    assert.ok(errors[0] instanceof Error);
+    assert.match(errors[0].message, /EACCES[^]*\nThe job that failed wrote its files, but could not save its record\.$/);
+    assert.doesNotMatch(errors[0].message, /wrote no files/);
+  } finally {
+    stop();
+  }
+});
+
 test('watch keeps model dependencies outside the models root after a run that reuses the models job', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
   const app = path.join(root, 'app');

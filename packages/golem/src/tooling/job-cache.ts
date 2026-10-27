@@ -6,7 +6,7 @@ import type { GolemConfig, GolemJob } from './config.js';
 import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, isRecord } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { atomicWrite, loadInventory } from './outputs.js';
-import type { Inventory, InventoryEntry } from './outputs.js';
+import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
 
 /**
  * What one job read and wrote the last time it ran, kept in `.golem/jobs.json` beside `.golem/outputs.json`. A later run
@@ -88,7 +88,7 @@ export function loadJobRecords(config: GolemConfig): Map<string, JobRecord> {
   return records;
 }
 
-export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string, JobRecord>): void {
+export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string, JobRecord>, files?: OutputFiles): void {
   const jobs = Object.fromEntries([...records]
     .sort(([left], [right]) => compareText(left, right))
     .map(([id, record]) => [id, {
@@ -101,7 +101,7 @@ export function saveJobRecords(config: GolemConfig, records: ReadonlyMap<string,
       manifests: record.manifests,
       warnings: record.warnings,
     }]));
-  atomicWrite(jobsFile(config), `${JSON.stringify({ version: RECORDS_VERSION, jobs }, null, 2)}\n`);
+  atomicWrite(jobsFile(config), `${JSON.stringify({ version: RECORDS_VERSION, jobs }, null, 2)}\n`, files);
 }
 
 /** The files the inventory records as generated, as absolute paths. */
