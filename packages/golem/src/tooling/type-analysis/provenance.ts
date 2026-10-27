@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import {
   MODEL_MANIFEST_MARKER,
@@ -11,6 +11,7 @@ import type {
   ModelManifestEntry,
 } from '../model-manifest.js';
 import { canonicalPath, displayPath, type GolemProfile, type InputObserver } from '../generator-api.js';
+import { MISSING, fileSignature } from '../input-watcher.js';
 import type { CodecSchemaClosureEntry } from '../validation-plan.js';
 import { canonicalFilename, effectiveConfigPath } from './project.js';
 import type { ProgramInfo } from './project.js';
@@ -73,6 +74,22 @@ function isRuntimeExport(symbol: ts.Symbol, checker: ts.TypeChecker): boolean {
   return (resolved.flags & ts.SymbolFlags.Value) !== 0;
 }
 
+/**
+ * A validation that passed: the request it answered, the signature of each file it depended on, and the exports it found. A failed
+ * validation leaves none, so a failure is never taken for a pass.
+ */
+interface ValidatedModules {
+  readonly request: string;
+  /** Every path the program reported, which the job's observer hears again when the program is not opened. */
+  readonly reported: readonly string[];
+  /** The signature, as it was before the program read the file, of each manifest, each source file of the program except the default library, each probe that found nothing and each package.json. */
+  readonly signatures: ReadonlyMap<string, string>;
+  readonly exportsById: ReadonlyMap<string, ReadonlySet<string>>;
+}
+
+/** The last passed validation of each compiler session, which a watch keeps across its cycles. A session that closes takes its record with it. */
+const lastValidated = new WeakMap<object, ValidatedModules>();
+
 function validateGeneratedModules(
   info: ProgramInfo,
   root: string,
@@ -114,6 +131,24 @@ function validateGeneratedModules(
   // options: the referenced project of a solution tsconfig, not the solution.
   const sources = [...new Set(files.values())];
   const appConfig = effectiveConfigPath(info);
+  // The program is opened only when something it validates changed since the last pass: the request (the entries, the modules they
+  // resolve to, the compiler options), a manifest, or a source file of the last program, which the openapi job can rewrite between two cycles.
+  const request = JSON.stringify([root, appConfig, sources, models.map((model) => [model.id, model.manifestFile, model.generated.export])])
+    + JSON.stringify(options, (key, value: unknown) => (key === 'configFile' ? undefined : value));
+  const manifestSignatures = new Map(models.map((model) => [model.manifestFile, fileSignature(model.manifestFile)]));
+  const previous = lastValidated.get(info.program.session);
+  lastValidated.delete(info.program.session);
+  if (previous?.request === request && [...previous.signatures].every(([filename, signature]) => fileSignature(filename) === signature)) {
+    previous.reported.forEach((filename) => onInput?.(filename));
+    lastValidated.set(info.program.session, previous);
+    return previous.exportsById;
+  }
+  // A path reported again, as a session does for every file it has read, keeps the signature of its first report.
+  const reported = new Map<string, string>();
+  const observe: InputObserver = (filename) => {
+    if (!reported.has(filename)) reported.set(filename, fileSignature(filename));
+    onInput?.(filename);
+  };
   const configFile = join(root, '.golem-manifest-validation.json');
   const validationConfig = appConfig
     ? { extends: appConfig, files: sources, include: [] }
@@ -134,7 +169,7 @@ function validateGeneratedModules(
     configFile,
     sources,
     overlays: new Map([[canonicalFilename(configFile), JSON.stringify(validationConfig)]]),
-    onInput,
+    onInput: observe,
   });
   const checker = moduleProgram.getTypeChecker();
   const runtimeExports = new Map<string, ReadonlySet<string>>();
@@ -156,6 +191,18 @@ function validateGeneratedModules(
     }
     exportsById.set(model.id, exports);
   }
+  const signatures = new Map(manifestSignatures);
+  for (const file of moduleProgram.getSourceFiles()) {
+    if (moduleProgram.isSourceFileDefaultLibrary(file)) continue;
+    const filename = canonicalFilename(file.fileName);
+    signatures.set(filename, reported.get(filename) ?? fileSignature(filename));
+  }
+  // A file the program probed and did not find (a new file can shadow what it resolved to) and each package.json (its "type", "exports" and
+  // "types" decide resolution) are dependencies too. The other reported paths are not: a session replays everything it ever read.
+  for (const [filename, signature] of reported) {
+    if (signature === MISSING || basename(filename) === 'package.json') signatures.set(filename, signature);
+  }
+  lastValidated.set(info.program.session, { request, reported: [...reported.keys()], signatures, exportsById });
   return exportsById;
 }
 
