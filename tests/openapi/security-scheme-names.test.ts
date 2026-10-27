@@ -16,6 +16,8 @@ import {
 // Scheme names that Object.prototype also has, and one that a document never declares.
 const reserved = ['constructor', 'toString', 'hasOwnProperty', '__proto__'];
 const operationOf = (scheme: string): string => `use_${scheme}`;
+// The first operation links to the second with a request body that holds an own '__proto__' key.
+const linked = { 204: { description: 'ok', links: { next: { operationId: operationOf('toString'), requestBody: Object.fromEntries([['__proto__', { kept: true }], ['plain', 1]]) } } } };
 const noContent = { 204: { description: 'ok' } };
 
 function reservedDocument(): Record<string, unknown> {
@@ -26,7 +28,7 @@ function reservedDocument(): Record<string, unknown> {
   ]);
   const paths = Object.fromEntries([...reserved, 'valueOf'].map((scheme) => [
     `/auth/${scheme}`,
-    { get: { operationId: operationOf(scheme), security: [{ [scheme]: [] }], responses: noContent } },
+    { get: { operationId: operationOf(scheme), security: [{ [scheme]: [] }], responses: scheme === 'constructor' ? linked : noContent } },
   ]));
   return { openapi: '3.1.0', info: { title: 'Reserved', version: '1' }, components: { securitySchemes }, paths };
 }
@@ -36,20 +38,24 @@ after(() => {
   if (sdk) fs.rmSync(sdk.root, { recursive: true, force: true });
 });
 
+async function loadSdk(): Promise<{ root: string; Client: GeneratedClientClass }> {
+  if (sdk) return sdk;
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-openapi-reserved-schemes-')));
+  await generateMaterializedSdk(reservedDocument(), { output: path.join(root, 'sdk'), name: 'Reserved', profile: { mobx: false, validation: false } });
+  compileGeneratedSdk(path.join(root, 'sdk'), [], { strict: true });
+  const module = requireRecord(await import(pathToFileURL(path.join(root, 'sdk/dist/index.js')).href), 'reserved client');
+  if (!isGeneratedClientClass(module.ReservedClient)) throw new TypeError('ReservedClient must be a class');
+  sdk = { root, Client: module.ReservedClient };
+  return sdk;
+}
+
 async function call(scheme: string, auth: object, sent: Array<string | null> = []): Promise<unknown> {
-  if (!sdk) {
-    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-openapi-reserved-schemes-')));
-    await generateMaterializedSdk(reservedDocument(), { output: path.join(root, 'sdk'), name: 'Reserved', profile: { mobx: false, validation: false } });
-    compileGeneratedSdk(path.join(root, 'sdk'), [], { strict: true });
-    const module = requireRecord(await import(pathToFileURL(path.join(root, 'sdk/dist/index.js')).href), 'reserved client');
-    if (!isGeneratedClientClass(module.ReservedClient)) throw new TypeError('ReservedClient must be a class');
-    sdk = { root, Client: module.ReservedClient };
-  }
+  const { Client } = await loadSdk();
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
     sent.push(captureRequest(input as string, init).init.headers.get(`X-${scheme}`));
     return new Response(null, { status: 204 });
   };
-  const client = new sdk.Client({ baseUrl: 'https://api.test', fetchImpl, auth });
+  const client = new Client({ baseUrl: 'https://api.test', fetchImpl, auth });
   return Reflect.apply(Reflect.get(client, operationOf(scheme)), client, []).execute({});
 }
 
@@ -70,4 +76,12 @@ test('a requirement that names an undeclared reserved word finds no scheme', asy
   // protects: T-510 an undeclared scheme named like an Object.prototype member is not a declared scheme
   await assert.rejects(() => call('valueOf', {}), /No configured credentials satisfy/);
   await assert.rejects(() => call('valueOf', { valueOf: 'x' }), /Unknown OpenAPI security scheme: valueOf/);
+});
+
+test('a document constant with a __proto__ key keeps it as an own key in the generated module', async () => {
+  // protects: T-510 documentLiteral writes an own __proto__ key at any depth, not a prototype
+  const { root } = await loadSdk();
+  const links = requireRecord(await import(pathToFileURL(path.join(root, 'sdk/dist/links.js')).href), 'links module');
+  const body = requireRecord(requireRecord(requireRecord(requireRecord(links.responseLinks, 'responseLinks')['use_constructor'], 'operation')['204'], 'status').next, 'link').requestBody;
+  assert.deepEqual(Object.entries(requireRecord(body, 'requestBody')), [['__proto__', { kept: true }], ['plain', 1]]);
 });
