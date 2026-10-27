@@ -45,4 +45,4 @@ Change `provider.yaml` and generate again when the contract changes.
 
 Set `baseUrl` to your service and pass credentials as in [Authentication](/guide/auth). `client.listCharges()` creates a reusable operation. `.execute({})` sends `GET /charges` and returns the response. Add [parameters and a body](/guide/client-usage#pass-parameters-and-a-body), and [read the response](/guide/client-usage#read-responses-and-handle-failures) and check the `status` before you read the `body`.
 
-Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments).

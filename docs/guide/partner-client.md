@@ -55,13 +55,7 @@ npx golem generate
 
 The command writes `provider/sdk/`. Keep it out of git ([generated files](/reference/generated-files#gitignore)). Run the command again when the partner publishes a new version of the document.
 
-Import from `sdk/index.js`. Each schema in `components.schemas` gets a set of names. This row shows one of them, for the schema `Charge`:
-
-| What | Name for `Charge` |
-| --- | --- |
-| Class | `ChargeModel` |
-
-The JSON type, the type guard and the other names are in [Generated SDK names](/reference/generated-files#generated-sdk-names).
+Import from `sdk/index.js`. Each schema in `components.schemas` gets a set of names. The schema `Charge` gives the class `ChargeModel`. The JSON type, the type guard and the other names are in [Generated SDK names](/reference/generated-files#generated-sdk-names).
 
 <<< ../../examples/payments/server/provider/charges.ts#client-imports
 
@@ -187,4 +181,4 @@ Build the model from the body of a response:
 - [OpenAPI support](/reference/openapi-support): the features that the generator reads.
 - Guides: [Call operations](/guide/client-usage), [Authentication](/guide/auth), [Dates and times](/guide/field-types#dates-and-times), [SDK types in your models](/guide/models-and-client), [Build tools](/guide/build).
 
-Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments).

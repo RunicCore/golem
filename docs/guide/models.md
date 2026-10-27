@@ -88,4 +88,4 @@ Generation type-checks the project first, then writes the files:
 
 `golem build` generates first, so a build needs no separate `golem generate`. In CI, run `golem build`, or run `golem generate` and then `npx golem check` ([Generate and watch](/guide/watch)). [Ignore the generated files](/reference/generated-files#gitignore) in git.
 
-Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)
+Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models).

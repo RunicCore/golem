@@ -58,9 +58,13 @@ models:
 
 The `output` of a job marks where it writes its main files. Golem replaces only files that it generated ([files Golem owns](/guide/watch#files-golem-owns)).
 
+Each kind of job writes its files in one place:
+
 - A `generators` or `openapi` job writes only below its `output` directory.
 - A `controllers` job writes its `output` document and `src/generated/operation-codecs.ts` below its `root`.
 - A `models` job writes `models.validators.generated.ts` and the generated files of shared model files below its `output`. It writes the generated file of each model source beside that source inside `root`.
+
+These rules apply to every `output`:
 
 - An `output` is relative to `golem.yaml`. For example, `output: ../shared-sdk` writes an SDK to a sibling folder.
 - Outputs of different jobs must not overlap. An output inside another output stops loading `golem.yaml`.

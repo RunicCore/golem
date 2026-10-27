@@ -51,4 +51,4 @@ Before you send, `getValidator(editor).validate({ failFast: false })` checks eve
 
 <<< ../../examples/payments/web/src/payment-store.ts#send-payment
 
-Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments).

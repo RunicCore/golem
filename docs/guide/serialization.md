@@ -171,4 +171,4 @@ With validation on, the default, each call checks the value. The JSON value and 
 - Cyclic input throws a `LibError` of kind `deserialization`.
 - Encoding a cyclic value throws a `LibError` of kind `serialization`.
 
-Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)
+Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models).

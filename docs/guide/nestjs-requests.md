@@ -156,4 +156,4 @@ node --import @exprtlabs/golem/register src/main.ts
 
 The [`register`](/reference/runtime-api#register) entry describes the loader.
 
-Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments)
+Full example: [`examples/payments`](https://github.com/RunicCore/golem/tree/master/examples/payments).

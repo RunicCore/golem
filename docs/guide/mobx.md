@@ -97,7 +97,7 @@ The store converts the draft and calls the action only when the draft converts:
 
 <<< ../../examples/payments/web/src/payment-store.ts#draft-number
 
-- Mark `partsDraft` observable, `partsDraftError` computed and `setPartsDraft` an action in `makeObservable`.
+In `makeObservable`, mark `partsDraft` observable, `partsDraftError` computed and `setPartsDraft` an action.
 
 The input shows the draft, never the number. It also shows the message for a draft that does not convert:
 

@@ -104,4 +104,4 @@ Each issue has a `code`, a `path`, a `message` and a `source`. Check `issue.code
 
 Constraints on the models of a NestJS controller reach the OpenAPI document that golem writes. Constraints in an OpenAPI document reach the generated validators and clients. The tag-to-keyword mapping is in [Model schemas](/reference/nestjs#model-schemas), and the supported keywords are in [OpenAPI support](/reference/openapi-support).
 
-Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models)
+Full example: [`examples/models`](https://github.com/RunicCore/golem/tree/master/examples/models).
