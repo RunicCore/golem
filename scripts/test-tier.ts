@@ -57,9 +57,9 @@ export const ACCEPTANCE_UNIT_FILES = ['.build/tests/*.acceptance.js', '.build/te
 // files, so two at once is the most that helps.
 const UNIT_CAP = 8;
 const PACKED_CAP = 2;
-// Beside: the TypeScript 6 lane and the acceptance unit tests run beside the packed chain in Acceptance. The lane alone peaks at
-// 5.4 GiB of a 7.7 GiB VM (measured), and with eight files at once the packed chain's esbuild was OOM-killed, so these two run
-// two files fewer and leave those cores and that memory to the chain.
+// Beside: the TypeScript 6 lane in Acceptance runs beside packed and browser. The lane alone peaks at 5.4 GiB of a 7.7 GiB VM
+// (measured) and, with eight files at once, the esbuild of packed was OOM-killed, so the lane runs two files fewer: the memory
+// headroom for packed and browser beside it.
 export const CONCURRENCY = {
   unit: Math.min(UNIT_CAP, os.availableParallelism()),
   beside: Math.max(1, Math.min(UNIT_CAP, os.availableParallelism()) - 2),
@@ -291,8 +291,7 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
   // Acceptance: after unit, the side chain adds the steps that need nothing from the TypeScript 6 lane. Packed and browser read
   // /cache/packed after pack (this chain's own step); the lane reads /cache/typescript6 and the workspace. Each test file makes
   // its own temp folders and registry and server ports, so no step reads a file that another step writes. Acceptance unit
-  // runs last in the side chain, in the lane's idle tail, so the identity corpus does not compete with the lane's first files.
-  // Both beside steps run CONCURRENCY.beside files at once, which keeps the lane and the chain inside the VM's memory.
+  // (the identity corpus peaks at 2.9 GiB) runs alone after both chains, so it never overlaps the lane's 5.4 GiB.
   return [
     ...inOrder(
       { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
@@ -304,8 +303,8 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
       smoke,
       nodeTest('packed', PACKED_FILES, CONCURRENCY.packed),
       nodeTest('browser', BROWSER_FILES, CONCURRENCY.packed),
-      nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.beside),
     ]],
+    ...inOrder(nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.unit)),
   ];
 }
 
