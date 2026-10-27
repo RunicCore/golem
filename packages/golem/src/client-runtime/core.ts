@@ -235,13 +235,18 @@ function serverBaseUrl(client: string, options: ClientOptions, servers: readonly
       ? `${client}Client found no server ${JSON.stringify(server)} in the document; it lists ${servers.length}`
       : `${client}Client requires a non-empty baseUrl`);
   }
-  const declared = picked.variables ?? {};
+  return fillServerUrl(client, picked, server, serverVariables);
+}
+
+/** The URL of `server` with its `{variables}` filled from `serverVariables`, else their defaults. `choice` names the server in errors. */
+function fillServerUrl(client: string, server: ServerObject, choice: number | string, serverVariables: Readonly<Record<string, string>>): string {
+  const declared = server.variables ?? {};
   for (const name of Object.keys(serverVariables)) {
     if (!Object.hasOwn(declared, name)) {
-      throw new Error(`${client}Client server ${JSON.stringify(server)} declares no variable ${JSON.stringify(name)}`);
+      throw new Error(`${client}Client server ${JSON.stringify(choice)} declares no variable ${JSON.stringify(name)}`);
     }
   }
-  return picked.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => {
+  return server.url.replace(/\{([^{}]+)\}/g, (placeholder, name: string) => {
     if (!Object.hasOwn(declared, name)) return placeholder;
     const variable = declared[name]!;
     const value = Object.hasOwn(serverVariables, name) ? serverVariables[name]! : variable.default;
@@ -263,6 +268,7 @@ export class ClientRuntime {
   public readonly operationValidatorOverrides: ReadonlyMap<string, OperationRuntimeValidators> | undefined;
   /** @internal Read by `operationValidators` in `validation.ts`. */
   public readonly operationValidatorCache = new Map<string, OperationRuntimeValidators>();
+  private readonly overrideBaseUrls = new Map<ServerObject, string>();
 
   /** `options` stays readable so request-side helpers can read the settings they own. */
   constructor(
@@ -284,10 +290,19 @@ export class ClientRuntime {
     this.operationValidatorOverrides = options.operationValidators;
   }
 
-  /** `serverUrl` is the base URL of an operation that other servers override; `baseUrl` still wins over it. */
-  public url(route: string, query: readonly string[], serverUrl?: string): string {
+  /** `server` is the first server of an operation whose own `servers` replace the document's; `baseUrl` still wins over it. */
+  public url(route: string, query: readonly string[], server?: ServerObject): string {
     const suffix = query.length ? `?${query.join('&')}` : '';
-    return `${this.options.baseUrl === undefined ? serverUrl ?? this.baseUrl : this.baseUrl}${route}${suffix}`;
+    return `${this.options.baseUrl === undefined && server ? this.overrideBaseUrl(server) : this.baseUrl}${route}${suffix}`;
+  }
+
+  private overrideBaseUrl(server: ServerObject): string {
+    let baseUrl = this.overrideBaseUrls.get(server);
+    if (baseUrl === undefined) {
+      baseUrl = fillServerUrl(this.client, server, 0, {}).replace(/\/$/, '');
+      this.overrideBaseUrls.set(server, baseUrl);
+    }
+    return baseUrl;
   }
 
   private matchesStatus(status: number, expected: string): boolean {

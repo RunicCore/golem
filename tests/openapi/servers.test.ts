@@ -187,7 +187,10 @@ test('an operation goes to the servers its operation, path item or document assi
   assert.equal(await callUrl(Client, {}, 'ping'), 'https://prod.example/ping');
   assert.equal(await callUrl(Client, {}, 'listFiles'), 'https://files-a.example/files');
   const { operationServers } = requireRecord(await load('servers.js'), 'servers.js');
-  assert.deepEqual(operationServers, ['https://files-a.example', 'https://b1.upload.example/v1'], 'each override list is held once');
+  assert.deepEqual(operationServers, [
+    { url: 'https://files-a.example/' },
+    { url: 'https://{bucket}.upload.example/{base}', variables: { bucket: { default: 'b1' }, base: { default: 'v1' } } },
+  ], 'the first server of each override list is held once');
 });
 
 test('baseUrl wins over document and override servers', async (t) => {
