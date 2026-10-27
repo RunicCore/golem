@@ -310,7 +310,14 @@ function applyPropertyMetadata(
   const explicitSchema = staticSchema('schema');
   if (explicitSchema !== undefined) mergeExplicit(explicitSchema);
   const additionalProperties = staticSchema('additionalProperties');
-  if (additionalProperties !== undefined) mergeExplicit({ additionalProperties });
+  if (additionalProperties !== undefined) {
+    // A TypeScript schema with `additionalProperties: true` (a Map) states no value type, so the explicit value
+    // documents it instead of conflicting. A stated value type must agree.
+    if (!options.authoritative && isRecord(propertySchema) && propertySchema.additionalProperties === true) {
+      propertySchema = Object.fromEntries(Object.entries(propertySchema).filter(([key]) => key !== 'additionalProperties'));
+    }
+    mergeExplicit({ additionalProperties });
+  }
   if (typeof propertySchema !== 'boolean') {
     // An ordinary DTO field documented as another primitive (an upload object as
     // `{ type: 'string', format: 'binary' }`) takes that shape instead of its own.
