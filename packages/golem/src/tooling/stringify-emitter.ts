@@ -153,6 +153,8 @@ interface EmitCtx {
   readonly hoisted?: HoistedConverters;
   /** Whether the fill of a local node can throw, by node id. */
   readonly fillThrows?: Map<string, boolean>;
+  /** The name of the module constant of each patternProperties pattern, by pattern text; the module declares them all once. */
+  readonly patternConstants?: Map<string, Code>;
   /** Locals a decoder assigns; the function that holds the decoder declares them. Without it the decoder re-reads. */
   readonly decodeLocals?: string[];
   /**
@@ -1584,6 +1586,23 @@ function emitFillValue(
   return { statements: [code`const ${identifier(local)} = ${input};`], value: emitDecodeValue(property, identifier(local), ctx), converted, checked, fallible };
 }
 
+/**
+ * The name of the module constant that holds the regular expression of `pattern`, as the validator reads it, with the `u`
+ * flag. The module declares one for each pattern text (`withModuleConstants`), so the expression is built once, not for
+ * each key of each call. A function name is a verb followed by a node id (`fill<Id>`, `parse<Id>`), so a node id cannot
+ * make the name `__golemPattern<N>`, and one pattern text has one name in the whole module.
+ */
+function patternConstant(ctx: EmitCtx, pattern: string): Code {
+  const constants = ctx.patternConstants;
+  if (!constants) throw new Error('Internal error: the emitter has no module table for the patternProperties expressions.');
+  let name = constants.get(pattern);
+  if (!name) {
+    name = identifier(`__golemPattern${constants.size}`);
+    constants.set(pattern, name);
+  }
+  return name;
+}
+
 function emitFillFunction(
   node: SchemaNode,
   ctx: EmitCtx,
@@ -1722,7 +1741,7 @@ function emitFillFunction(
         ? pattern.schema as ModelTypeDescriptor
         : undefined;
       rows.push(
-        code`    if (new RegExp(${literal(pattern.pattern)}).test(key)) {`,
+        code`    if (${patternConstant(ctx, pattern.pattern)}.test(key)) {`,
         ...emitExtra(schema, 6),
         code`      continue;`,
         code`    }`,
@@ -2392,6 +2411,7 @@ export function emitCodecRuntimeCode(
   const defaultEnabled = options.validationEnabled !== false;
   const validates = (node: SchemaNode): boolean => nodeValidates(node, defaultEnabled);
   const nodes = [...graph.topo()];
+  const patternConstants = new Map<string, Code>();
   const ctx: EmitCtx = {
     graph,
     // emitNodeRuntime emits stringify<Id>Wire exactly for these nodes.
@@ -2421,6 +2441,7 @@ export function emitCodecRuntimeCode(
     privateCodec: options.privateCodec,
     modelBases: options.modelBases,
     fillThrows: new Map(),
+    patternConstants,
   };
   const runtimes: Code[] = [];
   for (const node of nodes) {
@@ -2428,15 +2449,18 @@ export function emitCodecRuntimeCode(
     if (!isEmpty(runtime)) runtimes.push(runtime);
   }
   // A blank line stands between two functions' runtimes, and none ends the last.
-  return withModuleConstants(join(runtimes, code`\n\n`));
+  return withModuleConstants(join(runtimes, code`\n\n`), patternConstants);
 }
 
 /** The helpers whose definitions `withModuleConstants` writes into the runtime code, so the file places no definition of them. */
 export const MODULE_CONSTANT_HELPERS: readonly Helper[] = [TRUSTED_HELPER, CHECKED_KEY_HELPER, CHECKED_HELPER];
 
-/** One frozen object of each kind serves every nested call that passes options to another module's function. */
-function withModuleConstants(runtime: Code): Code {
+/** One frozen object of each kind serves every nested call that passes options to another module's function; one expression of each pattern serves every fill. */
+function withModuleConstants(runtime: Code, patterns: ReadonlyMap<string, Code>): Code {
   const used = new Set(helperSet(runtime).map((found) => found.id));
-  const constants = MODULE_CONSTANT_HELPERS.filter((found) => used.has(found.id)).map((found) => found.define());
+  const constants = [
+    ...MODULE_CONSTANT_HELPERS.filter((found) => used.has(found.id)).map((found) => found.define()),
+    ...[...patterns].map(([pattern, name]) => code`const ${name} = /*#__PURE__*/ new RegExp(${literal(pattern)}, 'u');`),
+  ];
   return constants.length ? code`${join(constants, code`\n`)}\n\n${runtime}` : runtime;
 }
