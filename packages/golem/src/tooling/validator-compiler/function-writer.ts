@@ -3,30 +3,14 @@ import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrNumbe
 import { rt } from '../rt.js';
 import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
+import { JSON_TYPES, dispatchTest } from './json-types.js';
 import { localName, lazyStateTest } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
 import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyTest, type WriterMode } from './modes.js';
 
 const runtime = rt['validation-runtime'];
 
-/** The test of each JSON type, once as a value check (lowering) and once as the code the validator writes. */
-export const JSON_TYPES: Readonly<Record<IrTypeName, { readonly test: (value: unknown) => boolean; readonly code: (value: Code) => Code }>> = {
-  string: { test: value => typeof value === 'string', code: value => code`typeof ${value} === 'string'` },
-  // JSON has no NaN or infinity; a model value that holds one is not a number.
-  number: { test: value => typeof value === 'number' && Number.isFinite(value), code: value => code`(typeof ${value} === 'number' && Number.isFinite(${value}))` },
-  integer: { test: value => Number.isInteger(value), code: value => code`Number.isInteger(${value})` },
-  boolean: { test: value => typeof value === 'boolean', code: value => code`typeof ${value} === 'boolean'` },
-  null: { test: value => value === null, code: value => code`${value} === null` },
-  object: { test: value => typeof value === 'object' && value !== null && !Array.isArray(value), code: value => code`${localName('isObject')}(${value})` },
-  array: { test: value => Array.isArray(value), code: value => code`Array.isArray(${value})` },
-};
-
 const objectTest = JSON_TYPES.object.code;
-
-/** The test that tells the JSON type of a value for a union; a `number` branch tests finiteness itself. */
-function dispatchTest(name: IrTypeName, value: Code): Code {
-  return name === 'number' ? code`typeof ${value} === 'number'` : JSON_TYPES[name].code(value);
-}
 
 /** The model class of `value` among the codec ids `among`, which the module keeps as one frozen list. */
 function selectedModelCall(state: ModuleState, value: Code, among: readonly string[]): Code {
@@ -284,7 +268,7 @@ export class FunctionWriter {
         return this.leaf({ fails: this.call(check.fn, { value, issues: code`[]`, all: code`false` }), issue: code`code: 'not'` });
       case 'conditional': return this.conditionalCheck(check, value);
       case 'dependentSchemas': {
-        const presence = this.mode.presence(value);
+        const presence = objectPresence(value);
         this.open(code`if (${localName('isObject')}(${value}))`);
         for (const { trigger, fn } of check.entries) {
           this.open(code`if (${presence.present(trigger)})`);
@@ -762,7 +746,7 @@ export class FunctionWriter {
       for (const target of targets) this.merging.delete(target);
       return;
     }
-    const presence = this.mode.presence(value);
+    const presence = objectPresence(value);
     const property = literalCode(discriminator.property);
     const tag = this.fresh('tag');
     const selected = this.fresh('branch');

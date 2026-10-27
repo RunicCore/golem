@@ -4,7 +4,7 @@ import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
 import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-api.js';
 import type { CompileInput, CompileOptions } from './index.js';
 import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrFunction, IrInstance, IrModule, IrSchema, IrTypeName, IrValidationImport } from './ir.js';
-import { JSON_TYPES } from './function-writer.js';
+import { JSON_TYPES } from './json-types.js';
 import { baseInside, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';
 
 export const VALIDATE_UNSUPPORTED_KEYWORD = 'VALIDATE_UNSUPPORTED_KEYWORD';

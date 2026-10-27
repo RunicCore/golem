@@ -103,12 +103,10 @@ export function readSet(check: IrObject, marks: boolean): ReadSet {
 
 /**
  * The mode of a `FunctionWriter`: one traversal and one definition of each leaf check, written as the function the mode
- * asks for. `presence` gives the reader for the object `value`.
+ * asks for.
  */
 export interface WriterMode {
   readonly fail: FailMode;
-  /** `captured` names a local for each declared key the object's checks read; a key outside it is read on its own. */
-  readonly presence: (value: Code, captured?: readonly Capture[]) => PresenceReader;
   /** The form the mode writes of a check that has a full form and may have a cheaper fast one. */
   readonly form: <Form extends Lazy>(full: Form, fast: Form | undefined) => Form;
   /** Writes the key test of an object: it reads the declared keys, and in the fast check also tests the unknown keys and counts the keys. */
@@ -147,7 +145,6 @@ export const FULL_VALIDATOR: WriterMode = {
     fail: () => REPORT_FAILURE,
     leaves: false,
   },
-  presence: objectPresence,
   form: full => full,
   // Reads the declared keys; the checks after it loop over the key list for unknown keys and patterns.
   keyTest: (writer, { check, value, captured, reads }) => {
@@ -264,7 +261,6 @@ export function fastCheckMode(plan: FastPlan): WriterMode {
   };
   return {
     fail: { start: [], end: code`return true;`, issue: () => [code`return false;`], fail: () => code`return false;`, leaves: true },
-    presence: objectPresence,
     form: (full, fast) => fast ?? full,
     keyTest: fastKeyTest,
     call: (writer, id, args) => {
