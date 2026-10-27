@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { flagsAsConfigOptions } from '#golem/typescript-config';
+import { declarationOutputOf, flagsAsConfigOptions } from '#golem/typescript-config';
 import { createFixtureProject } from './fixture-project.js';
 import { TSC } from './support/build-project.js';
 
@@ -186,3 +186,17 @@ test('a project with references reads the declaration output of each referenced 
   assert.equal(printed(session), '');
   assert.equal(tsc(root, ['--pretty', 'false']), '');
 });
+
+for (const [name, source, options, output] of [
+  ['an outDir and a rootDir', '/p/src/a/x.ts', { outDir: '/p/dist', rootDir: '/p/src' }, '/p/dist/a/x.d.ts'],
+  ['a declarationDir before the outDir', '/p/src/x.ts', { outDir: '/p/dist', declarationDir: '/p/types', rootDir: '/p/src' }, '/p/types/x.d.ts'],
+  ['no outDir: beside the source', '/p/src/x.tsx', { rootDir: '/p/src' }, '/p/src/x.d.ts'],
+  ['a module source', '/p/src/x.mts', { outDir: '/p/dist', rootDir: '/p/src' }, '/p/dist/x.d.mts'],
+  ['a commonjs source', '/p/src/x.cts', { outDir: '/p/dist', rootDir: '/p/src' }, '/p/dist/x.d.cts'],
+  ['no rootDir: from the tsconfig folder', '/p/src/x.ts', { outDir: '/p/dist' }, '/p/dist/src/x.d.ts'],
+] as const) {
+  test(`the declaration file of a composite project's source: ${name}`, () => {
+    // protects: T-477 the 7.1 resolver names the output as tsc does
+    assert.equal(declarationOutputOf(source, '/p/tsconfig.json', options), output);
+  });
+}

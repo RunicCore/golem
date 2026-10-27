@@ -194,6 +194,9 @@ test('-b and --build are rejected', async (t) => {
   const result = await golemBuild(root, ['--build']);
   assert.notEqual(result.code, 0);
   assert.ok(result.stderr.includes('golem build does not take -b or --build'), result.stderr);
+  const watching = await golemBuild(root, ['-b', '--watch']);
+  assert.equal(watching.code, 1, 'a refused -b ends a watching build too');
+  assert.ok(watching.stderr.includes('golem build does not take -b or --build'), watching.stderr);
   assert.deepEqual(parseArguments(['build', '-w']), { action: 'build', watch: true }, '-w is --watch, as in tsc');
   assert.deepEqual(parseArguments(['build', '--project', 'a/tsconfig.json', '--watch']), { action: 'build', project: 'a/tsconfig.json', watch: true });
   // Every other argument goes to the compiler runs unchanged, in order.

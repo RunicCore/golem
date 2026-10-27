@@ -608,6 +608,11 @@ export interface Program extends Disposable {
   getSemanticDiagnostics(filename: string): readonly Diagnostic[];
   /** Emit the program's own sources (no declaration file, default library or package) to memory, as `tsc` would write them. */
   emitToMemory(kind: EmitKind): MemoryEmit;
+  /**
+   * The sources of referenced projects that an import of this program reached and whose declaration output does not exist, as the compiler
+   * found them (`tsc -p` reads that output in place of the source). An import that fails for another reason is not among them.
+   */
+  unbuiltReferences(): readonly string[];
   readonly session: ProgramSession;
 }
 

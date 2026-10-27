@@ -36,6 +36,23 @@ export function referencedConfigFile(reference: string): string {
   return reference.endsWith('.json') ? reference : join(reference, 'tsconfig.json');
 }
 
+/**
+ * Every project that the references reach, the references of the referenced projects too, each once. `tsc` loads the whole closure, and an
+ * import may reach a source of any project in it, such as a `paths` alias that points into a project only a referenced project references.
+ */
+export function referenceClosure<P extends { readonly projectReferences?: readonly { readonly path: string }[] }>(references: readonly { readonly path: string }[], parse: (configFile: string) => P): { readonly configFile: string; readonly parsed: P }[] {
+  const found = new Map<string, P>();
+  const visit = (reference: { readonly path: string }): void => {
+    const configFile = referencedConfigFile(reference.path);
+    if (found.has(configFile)) return;
+    const parsed = parse(configFile);
+    found.set(configFile, parsed);
+    for (const next of parsed.projectReferences ?? []) visit(next);
+  };
+  references.forEach(visit);
+  return [...found].map(([configFile, parsed]) => ({ configFile, parsed }));
+}
+
 /** A source `tsc` replaces with a declaration output when another project reads it through a reference: not a declaration file, not JSON. */
 export function hasDeclarationOutput(source: string): boolean {
   return !/\.d\.[cm]?ts$/.test(source) && !/\.json$/.test(source);

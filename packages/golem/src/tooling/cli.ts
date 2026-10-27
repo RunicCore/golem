@@ -8,7 +8,6 @@ import { baselineBeforeRun, summarizeRun, watchPipeline } from './watch.js';
 export { providersFor, runPipeline } from './pipeline.js';
 export { watchPipeline } from './watch.js';
 export type { PipelineOptions, PipelineState } from './pipeline.js';
-// `golem build` loads its compiler seam only when it runs: no other command needs TypeScript to start.
 
 export type Arguments =
   | { action: 'help' }
@@ -103,6 +102,7 @@ export async function main(argv = process.argv.slice(2)) {
     const controller = new AbortController();
     let signalled: number | undefined;
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { signalled = signal === 'SIGINT' ? 130 : 143; controller.abort(); });
+    // `golem build` loads its compiler seam only when it runs: no other command needs TypeScript to start.
     const { runBuild } = await import('./build.js');
     const onBuilt = ({ label, exitCode }: { readonly label: string; readonly exitCode: number }): void => {
       if (exitCode === 0) process.stdout.write(`Built ${label}.\n`);

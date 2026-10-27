@@ -29,7 +29,7 @@ import {
 import * as ast from 'typescript/ast';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, referencedConfigFile } from './typescript-config.js';
+import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, referenceClosure, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
@@ -635,8 +635,13 @@ class CompatProgram implements Program {
     readonly session: ProgramSession,
     readonly snapshot: Snapshot,
     readonly project: Project,
+    private readonly unbuilt: ReadonlySet<string> = new Set(),
   ) {
     this.checker = new CompatChecker(project.checker, project, this);
+  }
+
+  unbuiltReferences(): readonly string[] {
+    return [...this.unbuilt];
   }
 
   getTypeChecker(): TypeChecker {
@@ -934,6 +939,8 @@ interface SyntheticProgram {
   readonly rootFiles: readonly string[];
   readonly compilerOptions: CompilerOptions;
   readonly resolver: ModuleResolver;
+  /** The sources of referenced projects that an import reached and that have no declaration output. The resolver fills it while the program is made. */
+  readonly unbuilt: ReadonlySet<string>;
 }
 
 /** A project a tsconfig references, parsed: the source files it owns and where `tsc` finds its declaration output. */
@@ -1012,6 +1019,15 @@ function compilerProcess(api: API): ChildProcess | undefined {
 function closeCompiler(api: API): void {
   compilerProcess(api)?.kill('SIGKILL');
   api.close();
+}
+
+/** Release a module resolver; one on an exited compiler is already gone. */
+function disposeResolver(resolver: ModuleResolver | undefined): void {
+  try {
+    resolver?.dispose();
+  } catch (error) {
+    if (!compilerExited(error)) throw error;
+  }
 }
 
 /** Release a snapshot; one on an exited compiler is already gone. */
@@ -1217,7 +1233,7 @@ export class ProgramSession implements Disposable {
    * declaration file `tsc` writes for it, which is what `tsc -p` reads for an import of that source. A declaration file or a JSON file of a
    * referenced project resolves as it is, as `tsc` leaves it. Whether the declaration file exists is the compiler's to find: a missing one is an import it cannot resolve.
    */
-  private referenceResolverFor(api: API, compilerOptions: CompilerOptions, projects: readonly ReferencedProject[]): ModuleResolver {
+  private referenceResolverFor(api: API, compilerOptions: CompilerOptions, projects: readonly ReferencedProject[], unbuilt: Set<string>): ModuleResolver {
     const plain = this.plainResolver(api, compilerOptions);
     return api.createModuleResolver(compilerOptions as RawCompilerOptions, {
       resolveModuleName: (moduleName, directory, mode, { snapshot }) => {
@@ -1226,7 +1242,11 @@ export class ProgramSession implements Disposable {
         const { resolvedFileName, originalPath, packageId } = resolved;
         const file = canonical(resolvedFileName);
         const owner = hasDeclarationOutput(file) ? projects.find((project) => project.sources.has(file)) : undefined;
-        if (owner) return { resolvedFileName: declarationOutputOf(file, owner.configFile, owner.options) };
+        if (owner) {
+          const output = declarationOutputOf(file, owner.configFile, owner.options);
+          if (!sys.fileExists(output)) unbuilt.add(file);
+          return { resolvedFileName: output };
+        }
         return { resolvedFileName, ...(originalPath === undefined ? {} : { originalPath }), ...(packageId === undefined ? {} : { packageId }) };
       },
     });
@@ -1272,8 +1292,10 @@ export class ProgramSession implements Disposable {
       if (full) this.fullRecordCount = this.observed.size;
       this.hinted.clear();
       replaceAll(this.openProjects, projects);
+      const previousResolver = this.referenceResolver;
+      const previousSynthetic = this.syntheticProgram;
       if (synthetic) {
-        this.referenceResolver?.dispose();
+        disposeResolver(previousResolver);
         this.referenceResolver = synthetic.resolver;
       }
       try {
@@ -1283,11 +1305,17 @@ export class ProgramSession implements Disposable {
         const project = created === undefined ? snapshot.getConfiguredProject(request.configPath) : snapshot.getProject(created);
         if (!project) throw new Error(`The compiler did not open the TypeScript project ${displayPath(request.configPath)} for ${displayPath(options.root)}.`);
         this.syntheticProgram = created ?? this.syntheticProgram;
-        const program = new CompatProgram(this, snapshot, project);
+        const program = new CompatProgram(this, snapshot, project, synthetic?.unbuilt);
         this.held.set(program, request);
         return program;
       } catch (error) {
+        // The snapshot takes its program with it; the resolver made for the program goes too, and the session keeps no id of a program that was not made.
         snapshot.dispose();
+        if (synthetic) {
+          disposeResolver(synthetic.resolver);
+          this.referenceResolver = undefined;
+          this.syntheticProgram = previousSynthetic;
+        }
         throw error;
       }
     });
@@ -1325,18 +1353,18 @@ export class ProgramSession implements Disposable {
       const result = api.parseConfigFile(base.configPath);
       assertConfigParsed(base.configPath, result.errors);
       parsed = result;
-      referenced = (result.projectReferences ?? []).map((reference) => {
-        const configFile = referencedConfigFile(reference.path);
+      referenced = referenceClosure(result.projectReferences ?? [], (configFile) => {
         const project = api.parseConfigFile(configFile);
         assertConfigParsed(configFile, project.errors);
-        return { configFile, options: project.options as CompilerOptions, sources: new Set(project.fileNames.map(canonical)) };
-      });
+        return project;
+      }).map(({ configFile, parsed: project }) => ({ configFile, options: project.options as CompilerOptions, sources: new Set(project.fileNames.map(canonical)) }));
     } finally {
       this.setOverlays(previous);
     }
     if (referenced.length > 0) {
       const options = parsed.options as CompilerOptions;
-      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.files])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced) } };
+      const unbuilt = new Set<string>();
+      return { ...base, synthetic: { rootFiles: [...new Set([...parsed.fileNames.map(canonical), ...base.files])], compilerOptions: options, resolver: this.referenceResolverFor(api, options, referenced, unbuilt), unbuilt } };
     }
     if (base.files.length === 0) return base;
     const configPath = join(dirname(base.configPath), `${basename(base.configPath, '.json')}.roots.json`);

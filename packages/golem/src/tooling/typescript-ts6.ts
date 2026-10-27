@@ -654,6 +654,14 @@ class CompatProgram implements Golem.Program {
    * The classic emit with a collecting `writeFile`: it writes nothing. A declaration output is told from JavaScript by its name. The
    * source of an output is the one file `writeFile` gets for it; the files are the compiler's transformed copies, so the name is used.
    */
+  /** The compiler reports TS6305 for each referenced source whose declaration output is missing, and names the source in the text. */
+  unbuiltReferences(): readonly string[] {
+    const unbuilt = [...this.program.getOptionsDiagnostics(), ...this.program.getGlobalDiagnostics(), ...this.program.getSemanticDiagnostics()]
+      .filter((diagnostic) => diagnostic.code === 6305)
+      .flatMap((diagnostic) => /^Output file '.*' has not been built from source file '(.*)'\.$/s.exec(classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))?.[1] ?? []);
+    return [...new Set(unbuilt)];
+  }
+
   emitToMemory(kind: Golem.EmitKind): Golem.MemoryEmit {
     const options = this.getCompilerOptions();
     const declarations = kind === 'declarations';

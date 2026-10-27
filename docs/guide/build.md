@@ -68,6 +68,7 @@ A tsconfig with `references` builds as `tsc -p` builds it. The check reads the d
 
 - Build each referenced project first. A project with golem calls builds with `golem build --config <project folder>/golem.yaml`. A project with none builds with `tsc -p <project folder>`.
 - A referenced project must set `composite: true`.
+- A model that a referenced project declares gets its codec in your project when the name of its declaration file ends in `.model.d.ts` or `.models.d.ts`. A declaration file with another name stops the build with `RUNM1074`.
 - A referenced project that is not built stops the build. You see the compiler error and the line `<tsconfig> has not been built: <file> has no declaration output. Build it first with golem build --config <project folder>/golem.yaml.` The build writes no file.
 - `-b`, `--build` and a solution tsconfig (a tsconfig that only lists `references`) stop the build. The message gives the `golem build --config` command for each referenced project.
 
