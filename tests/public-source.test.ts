@@ -65,7 +65,6 @@ function publicFixture(t: TestContext): string {
   writeFixture(root, 'examples/model/package.json', '{"name":"model-example"}\n');
   writeFixture(root, 'examples/model/src/main.ts', 'export {};\n');
   writeFixture(root, 'examples/model/sdk/model-manifest.json', '{"manifestVersion":2}\n');
-  writeFixture(root, '.github/workflows/check.yml', 'name: checks\n');
   return root;
 }
 
@@ -120,7 +119,6 @@ test('public source inventory keeps licenses, generated example metadata, and so
     'packages/golem-ts-openapi/LICENSE',
     'packages/golem-ts-openapi/src/index.ts',
     'examples/model/sdk/model-manifest.json',
-    '.github/workflows/check.yml',
   ];
   for (const relative of expected) assert.ok(files.includes(relative), relative);
   assert.deepEqual(files, [...files].sort());
@@ -367,5 +365,4 @@ test('denied text from the environment rejects content without reporting the val
   assert.equal(JSON.stringify(issues).includes(marker), false);
 
   assert.deepEqual(publicContentOptions(root, {}), {});
-  assert.throws(() => publicContentOptions(root, { PUBLIC_CONTENT_REQUIRE_DENIED_TEXT: '1' }), /No denied text is configured/);
 });

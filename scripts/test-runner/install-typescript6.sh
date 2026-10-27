@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Installs the TypeScript 6 spec of scripts/third-party-installs.ts into <root>, once per spec.
-# The container entrypoint and the CI unit job both call it. It needs `.build/scripts` (npm run build:scripts).
+# The container entrypoint calls it. It needs `.build/scripts` (npm run build:scripts).
 set -euo pipefail
 root="${1:?usage: install-typescript6.sh <root>}"
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

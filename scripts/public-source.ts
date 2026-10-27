@@ -42,7 +42,6 @@ function allowedSource(filename: string): boolean {
     return rest[0] === 'src' || rest[0] === 'compliance' || rest[0] === 'LICENSES'
       || (rest.length === 1 && (packageFiles.has(rest[0]) || /^tsconfig(?:\.[\w-]+)?\.json$/.test(rest[0])));
   }
-  if (top === '.github') return folder === 'workflows' && /\.ya?ml$/.test(filename);
   return ['scripts', 'tests', 'examples', 'docs'].includes(top);
 }
 
@@ -142,7 +141,7 @@ function filesIn(root: string, sourceOnly: boolean): string[] {
       const relative = portable(path.relative(canonicalRoot, absolute));
       if (sourceOnly && (forbiddenPath(relative) || ignored(rules, relative, entry.isDirectory()))) continue;
       if (sourceOnly && !relative.includes('/') && entry.isDirectory()
-        && !['packages', 'scripts', 'tests', 'examples', 'docs', '.github'].includes(relative)) continue;
+        && !['packages', 'scripts', 'tests', 'examples', 'docs'].includes(relative)) continue;
       if (entry.isSymbolicLink()) {
         const resolved = fs.realpathSync(absolute);
         const target = path.relative(canonicalRoot, resolved);
@@ -201,10 +200,8 @@ export function scanPublicContent(root: string, files?: readonly string[], optio
   return issues;
 }
 
-/** Environment variable with extra denied text, one entry per line (CI secret). */
+/** Environment variable with extra denied text, one entry per line. scripts/test-runner/run.sh fills it from `.private/` for the test container. */
 export const DENIED_TEXT_VARIABLE = 'PUBLIC_CONTENT_DENIED_TEXT';
-/** Set to `1` to fail when no denied text is configured. */
-export const REQUIRE_DENIED_TEXT_VARIABLE = 'PUBLIC_CONTENT_REQUIRE_DENIED_TEXT';
 
 /** Denied text from `.private/public-content.json` and the environment. Values never appear in reports. */
 export function publicContentOptions(root: string, env: NodeJS.ProcessEnv = process.env): PublicContentOptions {
@@ -220,9 +217,6 @@ export function publicContentOptions(root: string, env: NodeJS.ProcessEnv = proc
   }
   deniedText.push(...(env[DENIED_TEXT_VARIABLE] ?? '').split(/\r?\n/).map(value => value.trim()));
   const configured = deniedText.filter(value => value.length > 0);
-  if (!configured.length && env[REQUIRE_DENIED_TEXT_VARIABLE] === '1') {
-    throw new Error(`No denied text is configured; set ${DENIED_TEXT_VARIABLE} or add .private/public-content.json.`);
-  }
   return configured.length ? { deniedText: configured } : {};
 }
 
@@ -238,7 +232,7 @@ function digestFiles(root: string, files: readonly string[]): string {
 
 // Public-source roots that npm pack never reads: the packages, root manifests,
 // tsconfigs and scripts/verify-package.ts build the tarballs.
-const PACK_UNREAD_ROOTS: readonly string[] = ['.github', 'docs', 'tests'];
+const PACK_UNREAD_ROOTS: readonly string[] = ['docs', 'tests'];
 
 /** Key of a packed set: the digest of the public source files the pack step can read. A test or docs edit keeps the set. */
 export function packedSetDigest(root: string): string {
