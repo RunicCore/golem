@@ -60,6 +60,7 @@ The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project se
 - It writes an output file only when the file changes. A build with nothing changed writes no file.
 - A source map points at your original sources, not at the rewritten text. This holds for `sourceMap`, `inlineSourceMap`, `sourceRoot`, `mapRoot` and `inlineSources`.
 - `--listFiles` prints the files of the program. `--generateTrace`, `--extendedDiagnostics`, `--explainFiles`, `--traceResolution` and `--diagnostics` stop the build with a message, also when the tsconfig sets them. Run `tsc -p <tsconfig> --noEmit` with the option instead.
+- `outFile` stops the build. TypeScript 7 removed it (TS5102) and TypeScript 6 deprecates it (TS5101), so one build cannot write the same files on both. Emit one file for each source, then bundle with [esbuild](#esbuild) or [Vite](#vite) and the golem plugin.
 - Do not run `tsc -p` without `--noEmit` on the same project. It writes JavaScript with no rewrite into the same `outDir`.
 
 ### Project references
