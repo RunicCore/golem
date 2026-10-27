@@ -12,6 +12,8 @@ import { getValidator } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from '../support/consumer.js';
 import {
   compileGeneratedSdk,
+  compileStrictUnusedSdk,
+  documentBase,
   generateMaterializedSdk,
   requireRecord,
 } from './helpers.js';
@@ -1500,4 +1502,14 @@ test('an object field with own additionalProperties and an allOf member that add
 
   assert.doesNotThrow(() => codec.fromWireFormat({ members: { b: '2024-05-07T08:09:10.000Z' } }, { construct }));
   assert.doesNotThrow(() => codec.fromWireFormat({ members: { x: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }, { construct }));
+});
+
+test('a model field that is only a map of dates compiles with noUnusedLocals and noUnusedParameters', async t => {
+  // protects: T-498 the extra-key filter of an object with no declared field leaves no unused `key` parameter
+  const output = path.join(createFixtureProject(t, 'golem-openapi-date-map-'), 'sdk');
+  const dates = { type: 'object', additionalProperties: { type: 'string', format: 'date-time' } };
+  await generateMaterializedSdk(documentBase('3.1.0', {
+    components: { schemas: { Problem: { type: 'object', required: ['field'], properties: { field: dates } } } },
+  }), { output, name: 'DateMap', profile: { mobx: false, validation: false } });
+  compileStrictUnusedSdk(output);
 });

@@ -511,7 +511,7 @@ function emitNestedUncached(
     if (!knownChanged && !additionalChanged) return value;
     const record = recordExpression(expression);
     const base = additionalChanged
-      ? code`Object.fromEntries(Object.entries(${record}).filter(([key, value]) => value !== undefined${unlisted}).map(([key, value]) => [key, ${additional}]))`
+      ? code`Object.fromEntries(Object.entries(${record}).filter(([${knownNames.length === 0 ? code`` : code`key`}, value]) => value !== undefined${unlisted}).map(([key, value]) => [key, ${additional}]))`
       : record;
     const fields = assignments.map(({ name, property, sourceValue, unchanged, value: converted }) => {
       if (omitsUndefined(name)) return code`...(${sourceValue} !== undefined ? { [${property}]: ${converted} } : undefined)`;
