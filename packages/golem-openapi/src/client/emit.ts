@@ -257,6 +257,8 @@ function operationSource(
   if (appliesSecurity) importedNames.push(['RuntimeSecuritySchemes', 'security scheme type import']);
   if (profile.validation) importedNames.push(['OperationValidationSources', 'validation source type import']);
   if (plan.servers.length) importedNames.push(['__golemServers', 'document servers import']);
+  const overrideIndex = plan.operationServerIndex.get(operation.name);
+  if (overrideIndex !== undefined) importedNames.push(['__golemOperationServers', 'operation servers import']);
   const moduleScope = new NameScope(`operation ${JSON.stringify(operation.name)}`);
   for (const [name, origin] of importedNames) {
     moduleScope.claim(name, origin);
@@ -288,6 +290,7 @@ function operationSource(
   const clientModule = new ImportSource('../client.js', true);
   const serversModule = new ImportSource('../servers.js');
   const serversCode = plan.servers.length ? serversModule.name('servers', { alias: '__golemServers' }) : BLANK;
+  const overrideCode = overrideIndex === undefined ? BLANK : code`, ${serversModule.name('operationServers', { alias: '__golemOperationServers' })}[${literal(overrideIndex)}]`;
   const clientOptions = clientModule.name(`${clientName}ClientOptions`, { alias: 'ClientOptions' });
   const requestOptions = clientModule.name(`${clientName}RequestOptions`, { alias: 'RequestOptions' });
   const clientRuntime = rt.client.ClientRuntime;
@@ -330,7 +333,7 @@ function operationSource(
     code`    };`,
     code`    if (options.signal !== undefined) request.signal = options.signal;`,
     requestBody ? code`    if (encodedBody.body !== undefined) request.body = encodedBody.body;` : BLANK,
-    code`    const response = await runtime.fetchImpl(runtime.url(${route.expression}, ${usesQuery ? code`query` : code`[]`}), request);`,
+    code`    const response = await runtime.fetchImpl(runtime.url(${route.expression}, ${usesQuery ? code`query` : code`[]`}${overrideCode}), request);`,
     code`    return runtime.readResponse<${responseType}>(`,
     code`      ${literal(operation.name)},`,
     code`      response,`,

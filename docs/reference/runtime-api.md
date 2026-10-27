@@ -254,8 +254,8 @@ client.<operation>().execute(input, options?: <Client>RequestOptions): Promise<H
 | Option | Present when the API has | Value |
 | --- | --- | --- |
 | `baseUrl` | always | The API address. It wins over `server`. Required when the document lists no `servers`. |
-| `server` | `servers` in the document | A number is the index of a server. A string is its `name` or `description`; a `name` wins. The default is the first server. |
-| `serverVariables` | `servers` in the document | A record of values for the `{variables}` in the URL of the chosen server. |
+| `server` | `servers` in the document | A number is the index of a server in the document's `servers`. A string is its `name` or `description`; a `name` wins. The default is the first server. An operation whose own `servers`, or its path item's, replace the document's list ignores `server` and goes to the first server of that list. |
+| `serverVariables` | `servers` in the document | A record of values for the `{variables}` in the URL of the chosen document server. An operation that has its own servers uses their variable defaults. |
 | `fetchImpl` | always | A `fetch` function. The default is the global `fetch`. |
 | `headers` | always | `HeadersInit` that the client adds to every request. |
 | `auth` | a security scheme that is not mutual TLS | Credentials by scheme name, or functions that return them ([Client authentication](#client-authentication)). |
