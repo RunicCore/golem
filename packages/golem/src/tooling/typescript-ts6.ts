@@ -96,6 +96,9 @@ interface ClassicProgram {
   getOptionsDiagnostics(): readonly ClassicDiagnostic[];
   getGlobalDiagnostics(): readonly ClassicDiagnostic[];
   getDeclarationDiagnostics(): readonly ClassicDiagnostic[];
+  /** Members the compiler keeps to itself: the module an import resolved to, and the project reference that owns a source (with the declaration file its imports read). */
+  getResolvedModuleFromModuleSpecifier(specifier: unknown, file: Golem.SourceFile): { readonly resolvedModule?: { readonly resolvedFileName: string } } | undefined;
+  getRedirectFromSourceFile(fileName: string): { readonly outputDts?: string } | undefined;
   emit(
     targetSourceFile: undefined,
     writeFile: (filename: string, text: string, writeByteOrderMark: boolean, onError: undefined, sourceFiles: readonly Golem.SourceFile[] | undefined) => void,
@@ -654,12 +657,21 @@ class CompatProgram implements Golem.Program {
    * The classic emit with a collecting `writeFile`: it writes nothing. A declaration output is told from JavaScript by its name. The
    * source of an output is the one file `writeFile` gets for it; the files are the compiler's transformed copies, so the name is used.
    */
-  /** The compiler reports TS6305 for each referenced source whose declaration output is missing, and names the source in the text. */
+  /**
+   * The compiler redirects an import of a source of a referenced project to that project's declaration output. When the program holds no file
+   * for that output, the source is one an import reached without a declaration output. The compiler's own redirect and resolution say so, not its message.
+   */
   unbuiltReferences(): readonly string[] {
-    const unbuilt = [...this.program.getOptionsDiagnostics(), ...this.program.getGlobalDiagnostics(), ...this.program.getSemanticDiagnostics()]
-      .filter((diagnostic) => diagnostic.code === 6305)
-      .flatMap((diagnostic) => /^Output file '.*' has not been built from source file '(.*)'\.$/s.exec(classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n'))?.[1] ?? []);
-    return [...new Set(unbuilt)];
+    const unbuilt = new Set<string>();
+    for (const file of this.program.getSourceFiles()) {
+      if (file.isDeclarationFile) continue;
+      for (const specifier of (file as { readonly imports?: readonly unknown[] }).imports ?? []) {
+        const source = this.program.getResolvedModuleFromModuleSpecifier(specifier, file)?.resolvedModule?.resolvedFileName;
+        const output = source === undefined ? undefined : this.program.getRedirectFromSourceFile(source)?.outputDts;
+        if (source !== undefined && output !== undefined && this.program.getSourceFile(output) === undefined) unbuilt.add(source);
+      }
+    }
+    return [...unbuilt];
   }
 
   emitToMemory(kind: Golem.EmitKind): Golem.MemoryEmit {

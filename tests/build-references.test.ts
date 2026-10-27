@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { editTsconfig, build, golemBuild, SERDE_GOLEM_YAML, serdeProject, sourceOnlyProject, TSC, USE, write } from './support/build-project.js';
+import { count, watching } from './support/build-watching.js';
 import { command } from './support/process.js';
+import { until } from './support/watch-wait.js';
 
 const SHARED_TSCONFIG = JSON.stringify({ compilerOptions: { composite: true, strict: true, module: 'NodeNext', moduleResolution: 'NodeNext', target: 'ES2022', skipLibCheck: true, outDir: 'dist', rootDir: 'src' }, include: ['src'] });
 
@@ -110,4 +112,16 @@ test('parse<T> on a model of a referenced project stops the build when its decla
   assert.equal(result.code, 1);
   assert.match(result.stderr, /RUNM1074 \(src\/use\.ts:3:22\): shared\/dist\/money\.d\.ts#TOutside is declared in a file whose name has no model suffix/);
   assert.equal(fs.existsSync(path.join(root, 'build')), false);
+});
+
+test('golem build --watch reports an unbuilt reference, keeps watching, and builds when the reference is built', async (t) => {
+  // protects: T-477 the declaration output of a referenced project is an input of the watch
+  const root = await referencing(t, 'build-references-watch', false);
+  const watcher = watching(t, root);
+  await until(() => count(watcher.output(), /^Build failed\./) === 1, () => `the first build fails. Output:\n${watcher.output()}`);
+  assert.match(watcher.output(), /shared\/tsconfig\.json has not been built: shared\/src\/x\.ts has no declaration output\./);
+  await command(root, process.execPath, [TSC, '-p', 'shared']);
+  await until(() => count(watcher.output(), /^Built /) === 1, () => `the build after the reference is built. Output:\n${watcher.output()}`);
+  assert.ok(fs.existsSync(path.join(root, 'build/use.js')));
+  assert.equal(await watcher.stop(), 130);
 });
