@@ -67,7 +67,9 @@ The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project se
 
 A tsconfig with `references` builds as `tsc -p` builds it. The check reads the declaration files that the referenced projects wrote, not their sources.
 
+- Set `composite: true` in each referenced project.
 - Build each referenced project first. A project with golem calls builds with `golem build --config <project folder>/golem.yaml`. A project with none builds with `tsc -p <project folder>`.
+- Point `tsconfig` in `golem.yaml` at the project that lists the files, and build each referenced project with its own command above.
 - A model that a referenced project declares gets its codec in your project when the name of its declaration file ends in `.model.d.ts` or `.models.d.ts`.
 
 The options, the import paths that the build changes and the compiler arguments that it passes on are in the [CLI reference](/reference/cli#build).
@@ -87,7 +89,7 @@ The options, the import paths that the build changes and the compiler arguments 
 
 - `golem()` rewrites each TypeScript file in memory before esbuild strips its types.
 - It takes each TypeScript file outside `node_modules` that holds a call to rewrite. Other files go to the next plugins.
-- A workspace package that is linked into `node_modules` counts as outside it, also with `preserveSymlinks`.
+- A workspace package that is linked into `node_modules` counts as outside it, also with `preserveSymlinks`. Build a linked workspace package with its own `golem build`.
 - A plugin that needs a file that `golem()` takes goes before `golem()` in `plugins`.
 - `config` names the `golem.yaml` relative to `absWorkingDir`.
 

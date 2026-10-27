@@ -61,7 +61,7 @@ Your class holds methods, getters, defaults and extra constructor state. The bas
 
 A file that exports only types, such as `export type TLabel = IObject<{ text: string }>`, needs no import of its generated file. The [build tool](/guide/build) loads the generated file of each model that one of these names:
 
-- a `parse`, `stringify`, `validate` or wire-format call
+- a `parse`, `stringify`, `validate`, `toWireFormat` or `fromWireFormat` call
 - a Nest `@Body()` or `@Query()` parameter
 - a Nest handler return
 

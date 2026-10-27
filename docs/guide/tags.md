@@ -20,6 +20,7 @@ Give a combination of tags a type alias and use the alias as the field type. A t
 <<< ../../examples/models/src/tag-aliases.model.ts#tag-aliases
 
 - `Handle<20>` checks `maxLength: 20` and the pattern. Aliases can use other aliases.
+- Inside an alias, `TSerde` and `TValidation` take `typeof` an exported function.
 - An alias or codec can come from an installed package. The generated file imports the codec through the `exports` of the package. When the package has no `exports` field, it imports by the path inside the package ([RUNM1060](/reference/diagnostics#runm1060)).
 
 ## Built-in validation constraints

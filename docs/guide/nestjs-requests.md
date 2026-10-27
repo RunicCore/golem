@@ -57,7 +57,7 @@ Every `@Body()` and `@Query()` parameter needs an `IModel` or `IObject` type, or
 
 - **Accepted types:** an `IModel`, an `IObject`, your class that extends a generated model class, or a tagged union of models.
 - **`@Query()`:** it needs one object model or a tagged union of models.
-- **Option `nonModelInputs`:** if your own interceptor handles parameters of other types, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys). The error for those parameters becomes a warning.
+- **Option `nonModelInputs`:** if your own interceptor handles parameters of other types, set `nonModelInputs: warn` in [golem.yaml](/reference/config#root-keys). `golem build` then reports [`RUNM1081`](/reference/diagnostics#runm1081) as a warning, not an error.
 
 A whole `@Body()` parameter reads the request body as follows:
 

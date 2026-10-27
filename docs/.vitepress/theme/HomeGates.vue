@@ -27,7 +27,7 @@
         <text class="sub" x="870" y="108" text-anchor="middle">gets a valid model</text>
 
         <line class="wire" x1="220" y1="92" x2="427" y2="92" marker-end="url(#gate-arrow)" />
-        <text class="edge" x="324" y="82" text-anchor="middle">sends wire JSON</text>
+        <text class="edge" x="324" y="82" text-anchor="middle">sends JSON</text>
         <line class="wire" x1="660" y1="92" x2="757" y2="92" marker-end="url(#gate-arrow)" />
         <text class="edge" x="708" y="82" text-anchor="middle">valid</text>
 

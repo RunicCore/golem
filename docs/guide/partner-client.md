@@ -107,7 +107,7 @@ A request or a response that breaks its schema rejects `.execute()`. This catch 
 
 <<< ../../examples/payments/server/provider/charges.ts#invalid-charge
 
-A request or a response that breaks its schema gives a `LibError` of kind `Validation`. An undeclared status or media type gives kind `Response`. A network failure rejects with the error of `fetch`. Each failure, the guard `isProviderUndeclaredResponseError` and the issue fields are in [Read responses and handle failures](/guide/client-usage#read-responses-and-handle-failures).
+A request or a response that breaks its schema gives a `LibError` of kind `Validation`. An undeclared status or media type gives kind `Response`. A network failure rejects with the error of `fetch`. Each failure, the guard [`isProviderUndeclaredResponseError`](/guide/client-usage#handle-errors) and the issue fields are in [Read responses and handle failures](/guide/client-usage#read-responses-and-handle-failures).
 
 <<< ../../examples/payments/server/provider/charges.ts#handle-errors
 
