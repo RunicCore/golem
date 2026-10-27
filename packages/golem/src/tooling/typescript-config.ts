@@ -1,4 +1,4 @@
-import { isAbsolute } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 import { displayPath } from './generator-api.js';
 
 /** The diagnostic code of a configuration that matches no file. */
@@ -10,6 +10,67 @@ export function assertConfigParsed(configPath: string, errors: readonly { readon
   if (reported.length > 0) {
     throw new Error([`The TypeScript configuration ${displayPath(configPath)} has errors:`, ...reported.map((diagnostic) => `  TS${diagnostic.code}: ${diagnostic.text}`)].join('\n'));
   }
+}
+
+/** A project reference as a tsconfig writes it: `path` names a folder or a tsconfig file, relative to the tsconfig that holds it. */
+export interface ConfigReference {
+  readonly path: string;
+  readonly circular?: boolean;
+}
+
+/**
+ * The `references` of a tsconfig as written. A tsconfig that extends another does not inherit them, so a derived configuration copies
+ * them from the original. An entry that is not a path is the compiler's to report, and its parse of the original does.
+ */
+export function configReferences(config: unknown): ConfigReference[] {
+  const references = (config as { readonly references?: unknown } | null | undefined)?.references;
+  if (!Array.isArray(references)) return [];
+  return references.flatMap((entry: unknown): ConfigReference[] => {
+    const { path, circular } = (entry ?? {}) as { readonly path?: unknown; readonly circular?: unknown };
+    return typeof path === 'string' ? [{ path, ...(circular === true ? { circular } : {}) }] : [];
+  });
+}
+
+/** The tsconfig file a project reference names: the reference itself when it names a `.json` file, else `tsconfig.json` in the folder. */
+export function referencedConfigFile(reference: string): string {
+  return reference.endsWith('.json') ? reference : join(reference, 'tsconfig.json');
+}
+
+/**
+ * Every project that the references reach, the references of the referenced projects too, each once. `tsc` loads the whole closure, and an
+ * import may reach a source of any project in it, such as a `paths` alias that points into a project only a referenced project references.
+ */
+export function referenceClosure<P extends { readonly projectReferences?: readonly { readonly path: string }[] }>(references: readonly { readonly path: string }[], parse: (configFile: string) => P): { readonly configFile: string; readonly parsed: P }[] {
+  const found = new Map<string, P>();
+  const visit = (reference: { readonly path: string }): void => {
+    const configFile = referencedConfigFile(reference.path);
+    if (found.has(configFile)) return;
+    const parsed = parse(configFile);
+    found.set(configFile, parsed);
+    for (const next of parsed.projectReferences ?? []) visit(next);
+  };
+  references.forEach(visit);
+  return [...found].map(([configFile, parsed]) => ({ configFile, parsed }));
+}
+
+/** A source `tsc` replaces with a declaration output when another project reads it through a reference: not a declaration file, not JSON. */
+export function hasDeclarationOutput(source: string): boolean {
+  return !/\.d\.[cm]?ts$/.test(source) && !/\.json$/.test(source);
+}
+
+/**
+ * The declaration file `tsc` writes for a source of a composite project, which another project that references it reads in place of the source:
+ * in the `declarationDir`, else the `outDir`, else beside the source, laid out from the `rootDir`, else from the folder of the tsconfig.
+ * The extension follows the source: `.d.ts`, `.d.mts` or `.d.cts`.
+ */
+export function declarationOutputOf(source: string, configFile: string, options: { readonly rootDir?: unknown; readonly outDir?: unknown; readonly declarationDir?: unknown }): string {
+  const text = (value: unknown): string | undefined => (typeof value === 'string' ? value : undefined);
+  const root = text(options.rootDir) ?? dirname(configFile);
+  const directory = text(options.declarationDir) ?? text(options.outDir) ?? root;
+  const extension = /\.[cm]?[jt]sx?$/.exec(source)?.[0] ?? '';
+  const declaration = /^\.[cm]/.test(extension) ? `.d.${extension[1]}ts` : '.d.ts';
+  const laidOut = relative(root, source);
+  return join(directory, `${laidOut.slice(0, laidOut.length - extension.length)}${declaration}`);
 }
 
 /** Whether the options ask a program for an emit of this kind: `noEmit` asks for none, declarations need `declaration` or `composite`, JavaScript is skipped by `emitDeclarationOnly`. */

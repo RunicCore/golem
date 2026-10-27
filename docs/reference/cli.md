@@ -165,7 +165,7 @@ The build sets some arguments itself. Passing one stops the build with `golem bu
 | `--listEmittedFiles` | Golem writes the outputs itself and prints no list of them | List the files in `outDir` after the build |
 | `--baseUrl` | Golem reads the `baseUrl` and `paths` of the tsconfig to give each import the path Node loads | Set it in `tsconfig.json` |
 | `--composite` | The emit program is not a composite build, and the check program must report what it reports | Set it in `tsconfig.json` |
-| `--outFile` | The emit program writes one file per source into the `outDir` of the tsconfig | Set it in `tsconfig.json` |
+| `--outFile` | TypeScript 7 removed `outFile` and TypeScript 6 deprecates it, so one build cannot write the same files on both | Emit one file for each source, then bundle with [esbuild](/guide/build#esbuild) or [Vite](/guide/build#vite) and the golem plugin |
 | `--declarationDir` | The check program writes the declarations from your sources into the directory of the tsconfig | Set it in `tsconfig.json` |
 
 The build refuses two more kinds of option. It refuses them before it generates anything, whether the tsconfig sets them or a flag does:
@@ -200,10 +200,13 @@ The build stops before it writes when an output would land outside its folder. T
 ### What the tsconfig needs
 
 - `outDir` is set. Without it the build stops with `golem build requires compilerOptions.outDir in <tsconfig>: it emits the rewritten sources there.`
-- The tsconfig includes at least one file and describes one project. A solution tsconfig that only lists `references` stops the build, and `-b` and `--build` stop it with `golem build does not support project references (-b); run golem build -p <tsconfig> per project.` Run `golem build -p <tsconfig>` for each project, in dependency order.
+- The tsconfig includes at least one file. A solution tsconfig that only lists `references` stops the build. `-b` and `--build` stop it too. The message names each referenced project with its command, `golem build --config <project folder>/golem.yaml`. Run that command for each project, in dependency order.
+- A tsconfig with `references` and files builds as `tsc -p` builds it: the compiler reads the declaration files of the referenced projects. Each referenced project sets `composite: true` and is built first. A project that is not built stops the build with the compiler error and the line `<tsconfig> has not been built: <file> has no declaration output. Build it first with golem build --config <project folder>/golem.yaml.` The build writes no file.
 - Every source file the tsconfig includes builds, inside the directory of the tsconfig or outside it, such as `../shared/*.ts`. The output under `outDir` has the layout that `tsc` emits. As with `tsc`, a `rootDir` must contain every included file. A tsconfig that includes `../shared` sets `rootDir` to a common parent such as `..`.
-- The tsconfig emits one file for each source. `outFile` stops the build with `golem build does not support outFile (<tsconfig>).` Emit per file, then bundle with esbuild or Vite and the golem plugin.
-- The tsconfig names one directory tree. `rootDirs` stops the build with a message of the same form. Merge the directories, or build each package separately.
+- The tsconfig emits one file for each source. `outFile` stops the build with `golem build does not support outFile (<tsconfig>): TypeScript 7 removed it (TS5102) and TypeScript 6 deprecates it (TS5101), so one build cannot write the same files on both. Emit one file for each source, then bundle with esbuild or Vite and the golem plugin.`
+  - TypeScript 6 writes one joined file for `outFile`. TypeScript 7 ignores it and writes one file for each source. Golem rewrites and maps each file alone, so a joined file does not fit.
+  - To get one file, emit one file for each source, then bundle with [esbuild](/guide/build#esbuild) or [Vite](/guide/build#vite) and the golem plugin.
+- `rootDirs` works as it does for `tsc`: the compiler resolves a relative import through the virtual folders. The layout of `outDir` does not change. When the plain relative path does not reach the target, the emitted files do not sit side by side. The build then keeps the specifier as you wrote it, as `tsc` does. A declaration file target also stays as written.
 - Set `sourceMap` or `inlineSourceMap` for source maps. A map points at your original sources: a rewritten call maps back to its line and column in your file. `sourceRoot`, `mapRoot` and `inlineSources` work as they do for `tsc`. The build keeps the `sourceRoot`, the `sources` and the `sourceMappingURL` that the compiler wrote, and `inlineSources` embeds your original text. An inline map that the build cannot read stops the build with the file name, and the build writes no file.
 - `extends` may name a file anywhere. `paths` and `baseUrl` targets under the directory work as they do for `tsc`.
 - `golem build --watch` or `-w` watches. The `tsc --watch` file watcher does not start.

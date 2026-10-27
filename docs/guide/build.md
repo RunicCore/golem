@@ -60,7 +60,18 @@ The build needs a `golem.yaml` and a tsconfig with `outDir`. Use the [project se
 - It writes an output file only when the file changes. A build with nothing changed writes no file.
 - A source map points at your original sources, not at the rewritten text. This holds for `sourceMap`, `inlineSourceMap`, `sourceRoot`, `mapRoot` and `inlineSources`.
 - `--listFiles` prints the files of the program. `--generateTrace`, `--extendedDiagnostics`, `--explainFiles`, `--traceResolution` and `--diagnostics` stop the build with a message, also when the tsconfig sets them. Run `tsc -p <tsconfig> --noEmit` with the option instead.
+- `outFile` stops the build. TypeScript 7 removed it (TS5102) and TypeScript 6 deprecates it (TS5101), so one build cannot write the same files on both. Emit one file for each source, then bundle with [esbuild](#esbuild) or [Vite](#vite) and the golem plugin.
 - Do not run `tsc -p` without `--noEmit` on the same project. It writes JavaScript with no rewrite into the same `outDir`.
+
+### Project references
+
+A tsconfig with `references` builds as `tsc -p` builds it. The check reads the declaration files that the referenced projects wrote, not their sources.
+
+- Build each referenced project first. A project with golem calls builds with `golem build --config <project folder>/golem.yaml`. A project with none builds with `tsc -p <project folder>`.
+- A referenced project must set `composite: true`.
+- A model that a referenced project declares gets its codec in your project when the name of its declaration file ends in `.model.d.ts` or `.models.d.ts`. A declaration file with another name stops the build with `RUNM1074`.
+- A referenced project that is not built stops the build. You see the compiler error and the line `<tsconfig> has not been built: <file> has no declaration output. Build it first with golem build --config <project folder>/golem.yaml.` The build writes no file.
+- `-b`, `--build` and a solution tsconfig (a tsconfig that only lists `references`) stop the build. The message gives the `golem build --config` command for each referenced project.
 
 The options, the import paths that the build changes and the compiler arguments that it passes on are in the [CLI reference](/reference/cli#build).
 

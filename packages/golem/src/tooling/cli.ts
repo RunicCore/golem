@@ -8,12 +8,10 @@ import { baselineBeforeRun, summarizeRun, watchPipeline } from './watch.js';
 export { providersFor, runPipeline } from './pipeline.js';
 export { watchPipeline } from './watch.js';
 export type { PipelineOptions, PipelineState } from './pipeline.js';
-// `golem build` loads its compiler seam only when it runs: no other command needs TypeScript to start.
-const BUILD_REFERENCES_REJECTION = 'golem build does not support project references (-b); run golem build -p <tsconfig> per project.';
 
 export type Arguments =
   | { action: 'help' }
-  | { action: 'build'; project?: string; watch: boolean; config?: string; tscArguments?: readonly string[] }
+  | { action: 'build'; project?: string; watch: boolean; config?: string; compilerBuild?: true; tscArguments?: readonly string[] }
   | { action: 'generate' | 'check' | 'watch' | 'exec'; config: string; watch: boolean; command: string[] };
 
 /** The arguments `golem build` sets itself in its check and emit programs, by lowercase name, with why and what to do instead. */
@@ -24,11 +22,11 @@ const BUILD_OWNED_ARGUMENTS: Readonly<Record<string, { readonly why: string; rea
   '--tsbuildinfofile': { why: 'golem keeps no TypeScript build state: it compares each output with the file on disk', workaround: 'leave it out; a build with nothing changed writes no file' },
   '--incremental': { why: 'golem keeps no TypeScript build state: it compares each output with the file on disk', workaround: 'leave it out; a build with nothing changed writes no file' },
   '--outdir': { why: 'the emit program writes into the outDir of the tsconfig', workaround: 'set outDir in the tsconfig, or pass -p a tsconfig that extends it and sets another outDir' },
+  '--outfile': { why: 'TypeScript 7 removed outFile and TypeScript 6 deprecates it, so one build cannot write the same files on both', workaround: 'emit one file for each source, then bundle with esbuild or Vite and the golem plugin' },
   '--listemittedfiles': { why: 'golem writes the outputs itself and prints no list of them', workaround: 'list the files in outDir after the build' },
   ...Object.fromEntries(([
     ['--baseUrl', 'golem reads the baseUrl and paths of the tsconfig to give each import the path Node loads'],
     ['--composite', 'the emit program is not a composite build, and the check program must report what it reports'],
-    ['--outFile', 'the emit program writes one file per source into the outDir of the tsconfig'],
     ['--declarationDir', 'the check program writes the declarations from your sources into the directory of the tsconfig'],
   ] as const).map(([flag, why]) => [flag.toLowerCase(), { why, workaround: 'set it in tsconfig.json' }])),
 };
@@ -38,10 +36,11 @@ function parseBuildArguments(args: readonly string[]): Arguments {
   let project: string | undefined;
   let watch = false;
   let config: string | undefined;
+  let compilerBuild = false;
   const tscArguments: string[] = [];
   for (let i = 0; i < args.length; i += 1) {
-    if (args[i] === '-b' || args[i] === '--build') throw new Error(BUILD_REFERENCES_REJECTION);
-    if (args[i] === '-p' || args[i] === '--project') {
+    if (args[i] === '-b' || args[i] === '--build') compilerBuild = true;
+    else if (args[i] === '-p' || args[i] === '--project') {
       if (!args[i + 1] || args[i + 1].startsWith('-')) throw new Error(`${args[i]} requires a tsconfig path.`);
       project = args[++i];
     } else if (args[i] === '--config') {
@@ -55,7 +54,7 @@ function parseBuildArguments(args: readonly string[]): Arguments {
       tscArguments.push(args[i]);
     }
   }
-  return { action: 'build', watch, ...(project === undefined ? {} : { project }), ...(config === undefined ? {} : { config }), ...(tscArguments.length === 0 ? {} : { tscArguments }) };
+  return { action: 'build', watch, ...(compilerBuild ? { compilerBuild: true as const } : {}), ...(project === undefined ? {} : { project }), ...(config === undefined ? {} : { config }), ...(tscArguments.length === 0 ? {} : { tscArguments }) };
 }
 
 export function parseArguments(argv: readonly string[]): Arguments {
@@ -103,12 +102,13 @@ export async function main(argv = process.argv.slice(2)) {
     const controller = new AbortController();
     let signalled: number | undefined;
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { signalled = signal === 'SIGINT' ? 130 : 143; controller.abort(); });
+    // `golem build` loads its compiler seam only when it runs: no other command needs TypeScript to start.
     const { runBuild } = await import('./build.js');
     const onBuilt = ({ label, exitCode }: { readonly label: string; readonly exitCode: number }): void => {
       if (exitCode === 0) process.stdout.write(`Built ${label}.\n`);
       else if (options.watch) process.stdout.write('Build failed.\n');
     };
-    const { exitCode } = await runBuild({ watch: options.watch, signal: controller.signal, onBuilt, ...(options.project === undefined ? {} : { project: options.project }), ...(options.config === undefined ? {} : { config: options.config }), ...(options.tscArguments === undefined ? {} : { tscArguments: options.tscArguments }) });
+    const { exitCode } = await runBuild({ watch: options.watch, signal: controller.signal, onBuilt, ...(options.compilerBuild ? { compilerBuild: true } : {}), ...(options.project === undefined ? {} : { project: options.project }), ...(options.config === undefined ? {} : { config: options.config }), ...(options.tscArguments === undefined ? {} : { tscArguments: options.tscArguments }) });
     process.exitCode = signalled ?? exitCode;
     return;
   }

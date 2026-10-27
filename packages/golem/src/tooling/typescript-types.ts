@@ -608,6 +608,11 @@ export interface Program extends Disposable {
   getSemanticDiagnostics(filename: string): readonly Diagnostic[];
   /** Emit the program's own sources (no declaration file, default library or package) to memory, as `tsc` would write them. */
   emitToMemory(kind: EmitKind): MemoryEmit;
+  /**
+   * The sources of referenced projects that an import of this program reached and whose declaration output does not exist, as the compiler
+   * found them (`tsc -p` reads that output in place of the source). An import that fails for another reason is not among them.
+   */
+  unbuiltReferences(): readonly string[];
   readonly session: ProgramSession;
 }
 
@@ -631,6 +636,18 @@ export interface OpenProgramOptions {
   readonly onInput?: (filename: string) => void;
 }
 
+/** A project a tsconfig lists in `references`: the tsconfig file of that project, as an absolute path. */
+export interface ProjectReference {
+  readonly path: string;
+}
+
+/** What the compiler's parse of a tsconfig gives: its options, the files it includes and the projects it references. */
+export interface ParsedProject {
+  readonly options: CompilerOptions;
+  readonly fileNames: string[];
+  readonly projectReferences: readonly ProjectReference[];
+}
+
 export interface ProgramSessionOptions {
   readonly cwd: string;
   readonly closeWhenIdle?: boolean;
@@ -638,13 +655,13 @@ export interface ProgramSessionOptions {
 
 export interface ProgramSession extends Disposable {
   inputsChanged(filenames: Iterable<string>): void;
-  parseConfigFile(configPath: string, onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] };
+  parseConfigFile(configPath: string, onInput?: (filename: string) => void): ParsedProject;
   /**
    * Parse a project configuration under compiler command-line arguments (`--strict false`, `--allowJs`), as `tsc -p` does: an
    * argument replaces the same option of the configuration, and the file list follows the merged options. An argument the compiler
    * rejects throws. The TypeScript 6 lane keeps a relative path argument as written; the TypeScript 7 lane makes it absolute.
    */
-  parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): { options: CompilerOptions; fileNames: string[] };
+  parseConfigFileWithFlags(configPath: string, flags: readonly string[], onInput?: (filename: string) => void): ParsedProject;
   openProgram(options: OpenProgramOptions): Program;
   /** Parse one source text on its own, without a program: its syntax tree, with no types and no diagnostics. */
   parseSourceFile(filename: string, text: string): SourceFile;
