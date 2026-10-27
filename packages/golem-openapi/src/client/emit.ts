@@ -141,6 +141,23 @@ function operationSecuritySchemeData(
   return Object.fromEntries(Object.entries(schemes).filter(([name]) => names.has(name)));
 }
 
+function hasPrototypeKey(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasPrototypeKey);
+  return isJsonObject(value) && (Object.hasOwn(value, '__proto__') || Object.values(value).some(hasPrototypeKey));
+}
+
+/**
+ * A JSON literal of document data keyed by scheme names. In an object literal, `"__proto__": v` sets the prototype
+ * instead of an own key, so a scheme named `__proto__` would vanish from the requirement; a computed key defines it.
+ */
+function documentLiteralOwnKeys(value: unknown, indent?: number): Code {
+  if (!hasPrototypeKey(value)) return documentLiteral(value, indent);
+  if (Array.isArray(value)) return code`[${join(value.map((item) => documentLiteralOwnKeys(item)), code`, `)}]`;
+  if (!isJsonObject(value)) return documentLiteral(value);
+  const members = Object.entries(value).map(([key, child]) => code`[${documentLiteral(key)}]: ${documentLiteralOwnKeys(child)}`);
+  return code`{ ${join(members, code`, `)} }`;
+}
+
 function literalType(value: unknown): Code {
   if (value === undefined) return code`undefined`;
   if (value === null) return code`null`;
@@ -216,7 +233,7 @@ function operationSource(
       }];
     }),
   ));
-  const security = documentLiteral(operation.security || []);
+  const security = documentLiteralOwnKeys(operation.security || []);
   const surfaces = plan.clientSurfaces;
   // An empty effective requirement list (an operation-level `security: []` or no
   // security anywhere) is a no-op in applySecurity, so the call is not emitted.
@@ -319,7 +336,7 @@ function operationSource(
   const securitySchemesType = rtType.client.RuntimeSecuritySchemes;
   // The client module imports `__golemSecuritySchemes` from every operation module.
   const securityDeclaration = surfaces.auth || surfaces.mutualTls
-    ? code`export const __golemSecuritySchemes = ${documentLiteral(securitySchemes, 2)} as const;${appliesSecurity ? code`\nconst securitySchemes: ${securitySchemesType} = __golemSecuritySchemes;` : BLANK}`
+    ? code`export const __golemSecuritySchemes = ${documentLiteralOwnKeys(securitySchemes, 2)} as const;${appliesSecurity ? code`\nconst securitySchemes: ${securitySchemesType} = __golemSecuritySchemes;` : BLANK}`
     : BLANK;
   const securityCall = appliesSecurity
     ? code`    await ${use('applySecurity')}(runtime, ${security}, query, headers, cookies, securitySchemes);`
