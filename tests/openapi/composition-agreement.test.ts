@@ -969,6 +969,24 @@ function operationDocument(operation: Record<string, unknown>): Record<string, u
   };
 }
 
+/** `Derived` extends `Base`, whose `pet` is the union `Pet` of `Cat` and `Dog`; `Derived` narrows `pet` to `narrowed`. */
+function petDocument(narrowed: Record<string, unknown>): Record<string, unknown> {
+  const kinds = (tag: string, own: Record<string, unknown>): Record<string, unknown> =>
+    ({ allOf: [ref('Animal'), object({ kind: { const: tag }, ...own }, { required: ['kind'] })] });
+  return componentDocument('Derived', {
+    Animal: object({ kind: text }, { required: ['kind'] }),
+    Cat: kinds('cat', { lives: { type: 'integer' } }),
+    Dog: kinds('dog', { bark: { type: 'boolean' } }),
+    Bird: kinds('bird', { wings: { type: 'integer' } }),
+    Pet: {
+      oneOf: [ref('Cat'), ref('Dog')],
+      discriminator: { propertyName: 'kind', mapping: { cat: '#/components/schemas/Cat', dog: '#/components/schemas/Dog' } },
+    },
+    Base: object({ pet: ref('Pet') }, { required: ['pet'] }),
+    Derived: { allOf: [ref('Base'), object({ pet: narrowed })] },
+  });
+}
+
 /**
  * Shapes that stop generation: no object satisfies them, or two members convert one value in two ways. The error names
  * its code, the schema pointer and the fix.
@@ -1078,6 +1096,12 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
       { M: object({ n: text }), N: object({ k: text }) },
     ),
   },
+  // protects: T-456 a component that narrows a union property to a model outside the union still stops with the conflict
+  {
+    shape: 'a component that narrows a union property to a model that is not a variant',
+    error: /schema "Derived" at #\/components\/schemas\/Derived(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: /,
+    document: petDocument(ref('Bird')),
+  },
   {
     shape: 'an inline request body whose members give the value a Date and a model',
     error: /schema of request body application\/json of operation "postVisit" at #\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*string.*object/,
@@ -1127,4 +1151,18 @@ test('an inline response narrows an inherited oneOf property to one of its varia
   const result = await generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
   assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+});
+
+// protects: T-456 a component that narrows an inherited union property to one of its variants generates and decodes to that variant
+test('a component narrows an inherited union property to one of its variants', async t => {
+  const output = path.join(createFixtureProject(t, 'golem-composition-narrowed-'), 'sdk');
+  const result = await generateMaterializedSdk(petDocument(ref('Cat')), { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
+  assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated narrowed models');
+  const Derived = models.DerivedModel as ModelConstructor;
+  const Cat = models.CatModel as ModelConstructor;
+  const decoded = decodeGeneratedModel(Derived, { pet: { kind: 'cat', lives: 9 } });
+  assert.ok(decoded.pet instanceof Cat, 'pet decodes to Cat');
+  assert.deepEqual(withoutUndefined(encodeGeneratedModel(asGenerated(decoded))), { pet: { kind: 'cat', lives: 9 } });
 });

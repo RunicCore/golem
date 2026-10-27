@@ -290,6 +290,11 @@ export function modelBases(definition: ModelDefinition | undefined): readonly st
   return definition ? [...(definition.baseName ? [definition.baseName] : []), ...definition.otherBaseNames, ...definition.variantOf] : [];
 }
 
+/** The bases that each model declares, which the composition check and the codec emitter both read. */
+export function declaredModelBases(definitions: ModelDefinitions): Pick<CompositionReader<never>, 'basesOf'> {
+  return { basesOf: (id) => modelBases(definitions.get(id)) };
+}
+
 export function modelSchemaReference(schema: unknown, env: ModelResolveEnv): string | null {
   return directComponentSchemaRef(schema, withSchemaBase(env, schema));
 }
@@ -686,7 +691,7 @@ function compositionReader(
     },
     nested: (schema, env) => withSchemaBase(env, schema),
     descriptor: (schema, env) => seen.has(schema) ? undefined : modelConversionDescriptor(schema, definitions, env, direction, seen),
-    basesOf: (id) => modelBases(definitions.get(id)),
+    ...declaredModelBases(definitions),
   };
 }
 
