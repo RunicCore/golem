@@ -73,7 +73,7 @@ function getValidator<Fields extends object, Owner extends object>(
 ): ModelValidator<Fields, Owner>;
 ```
 
-<<< ../../examples/models/src/task-input-checks.ts#validate-a-model
+<<< ../../examples/models/src/title-rule.ts#instance-rules
 
 | Member | Signature | Behavior |
 | --- | --- | --- |

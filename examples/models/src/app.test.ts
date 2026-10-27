@@ -4,8 +4,9 @@ import { test } from 'node:test';
 import { LibError } from '@exprtlabs/golem/errors';
 import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem/serde';
 import { validateInstance } from '@exprtlabs/golem/validation';
-import { createTask, saveTask } from './task-app.js';
+import { createTask, toValidTaskJSON } from './task-app.js';
 import { Task } from './task.model.js';
+import { Order } from './order.model.js';
 import { readOrder, writeOrder } from './order-json.js';
 import type { TTask } from './task.model.js';
 import type { TTaskJSON } from './task.model.generated.js';
@@ -31,12 +32,12 @@ import { Place, loadAssignee } from './assignee.model.js';
 import { readContactKind } from './contact.model.js';
 import { readIntegrationPayload, readLabelName, rejectsExtraProperty } from './metadata.model.js';
 
-test('model app creates, converts, validates, and saves a task', async () => {
+test('model app creates, validates, writes and converts a task', async () => {
   const task = createTask({ title: 'Ship the generators' });
 
   assert.deepEqual(await validateInstance(task), []);
   task.toggle();
-  assert.deepEqual(await saveTask(task), { title: 'Ship the generators', done: true, priority: 'normal' });
+  assert.deepEqual(await toValidTaskJSON(task), { title: 'Ship the generators', done: true, priority: 'normal' });
 
   const converted = parse<TTask>(stringify<TTask>(task));
   assert.deepEqual(toWireFormat<TTask>(converted), { title: 'Ship the generators', done: true, priority: 'normal' });
@@ -60,17 +61,30 @@ test('an unknown priority word fails conversion', () => {
   assert.throws(() => fromWireFormat<Task>(wire), (error: unknown) => error instanceof LibError);
 });
 
-test('an empty title fails validation and blocks saving', async () => {
+test('an empty title fails validation and blocks conversion', async () => {
   const task = createTask({ title: '' });
   assert.deepEqual((await validateInstance(task)).map(issue => issue.path), [['title']]);
-  await assert.rejects(saveTask(task), /invalid task/i);
+  await assert.rejects(toValidTaskJSON(task), /invalid task/i);
 });
+
+for (const priority of [0, 4]) {
+  test(`a task with priority ${priority} fails validation before it can be written`, async () => {
+    const task = createTask({ title: 'Plan the release', priority });
+    assert.deepEqual((await validateInstance(task)).map(issue => issue.path), [['priority']]);
+    await assert.rejects(toValidTaskJSON(task), /invalid task/i);
+  });
+
+  test(`an order with priority ${priority} fails validation`, async () => {
+    const order = new Order({ amount: 1250, priority, remindAt: new Date(0) });
+    assert.deepEqual((await validateInstance(order)).map(issue => issue.path), [['priority']]);
+  });
+}
 
 test('model validation reports a type issue for a non-string title value', async () => {
   const invalid = new Task({ title: 42 as unknown as string, done: false, priority: 2 });
   const issues = await validateInstance(invalid, { failFast: false });
   assert.ok(issues.some(issue => issue.path.length === 1 && issue.path[0] === 'title' && issue.source === 'typescript'));
-  await assert.rejects(saveTask(invalid), /invalid task/i);
+  await assert.rejects(toValidTaskJSON(invalid), /invalid task/i);
 });
 
 test('JSON text round-trips through the class and the plain type', () => {

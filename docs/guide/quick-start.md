@@ -33,7 +33,7 @@ Check the [requirements](#requirements). Add `"type": "module"` to `package.json
 
 <<< ../../examples/models/src/priority-word.ts#priority-word
 
-Then mark a type with `IModel` in `src/task.model.ts`. The `TSerde` tag ties `priority` to those functions:
+Then mark a type with `IModel` in `src/task.model.ts`. The `TSerde` tag ties `priority` to those functions. `Integer`, `Minimum<1>` and `Maximum<3>` keep the number between 1 and 3, so a task with another priority fails validation:
 
 <<< ../../examples/models/src/task.model.ts#task-declaration
 
@@ -47,6 +47,8 @@ Add `golem.yaml` at the project root and run the generator. Your editor needs th
 
 <<< ../../examples/models/golem.yaml
 
+`models: {}` turns on the [models job](/reference/config#typescript-models) with its defaults.
+
 ```sh
 npx golem generate
 ```
@@ -59,9 +61,9 @@ You get `src/task.model.generated.ts` beside the declaration, with the generated
 
 ## Add methods
 
-Extend the generated class in `src/task.model.ts`, below the declaration:
+Import `TTaskBaseModel` from the generated file and extend it in `src/task.model.ts`, below the declaration:
 
-<<< ../../examples/models/src/task.model.ts#task-model
+<<< ../../examples/models/src/task.model.ts#task-class
 
 To add a field later, change `TTask` and generate again. Only `task.model.generated.ts` is replaced. `toggle()` stays.
 

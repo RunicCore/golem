@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "generate": "golem generate",
-    "check": "golem generate && tsc --noEmit",
+    "check": "golem generate && golem check && tsc --noEmit",
     "test": "golem build && node --test .build/src/app.test.js",
     "start": "golem build && node .build/src/main.js",
     "bundle": "golem generate && node bundle.mjs && node .build/bundle/main.js",
