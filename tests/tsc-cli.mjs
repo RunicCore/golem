@@ -23,6 +23,7 @@ if (args.some((arg) => arg === '-p' || arg === '--project' || arg === '-b' || ar
 }
 
 const booleanFlags = new Set([
+  '--allowJs',
   '--noEmit',
   '--strict',
   '--skipLibCheck',

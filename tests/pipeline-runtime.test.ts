@@ -3,7 +3,7 @@ import { copyFixtureFile, createFixtureProject, linkProjectPackages, writeGenera
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
 
 import { runPipeline, watchPipeline } from '#golem/cli';
@@ -12,7 +12,6 @@ import { workspace } from './support/process.js';
 import { until } from './support/watch-wait.js';
 import { runLines } from './support/watch-runs.js';
 import { writeFixture } from './support/consumer.js';
-import { compileGeneratedSdk } from './openapi/helpers.js';
 
 interface CombinedFixture {
   readonly root: string;
@@ -182,6 +181,22 @@ async function generatedOpenApiFixture(
   fs.writeFileSync(path.join(output, 'package.json'), '{"type":"module"}');
   linkProjectPackages(output, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   return output;
+}
+
+/** The generated SDKs under `sdks` (case name to folder), type-checked in one compiler run; a failure names each case whose files the compiler reports. */
+function compileGeneratedSdks(sdks: Readonly<Record<string, string>>, flags: readonly string[]): void {
+  const javascript = (directory: string): string[] => fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const filename = path.join(directory, entry.name);
+    if (entry.isDirectory()) return entry.name === 'node_modules' ? [] : javascript(filename);
+    return entry.name.endsWith('.generated.js') ? [filename] : [];
+  });
+  const files = Object.values(sdks).flatMap((sdk) => [path.join(sdk, 'index.ts'), ...javascript(sdk)]);
+  const compiled = spawnSync(process.execPath, [
+    path.join(workspace, 'tests/tsc-cli.mjs'), '--noEmit', '--allowJs', '--lib', 'ES2023,ESNext.Collection,DOM,DOM.Iterable', ...flags, ...files,
+  ], { encoding: 'utf8' });
+  const output = `${compiled.stdout}${compiled.stderr}`;
+  const failed = Object.entries(sdks).filter(([, sdk]) => output.includes(path.basename(path.dirname(sdk)))).map(([name]) => name);
+  assert.equal(compiled.status, 0, `the generated SDK compiles; the compiler reports ${failed.join(', ') || 'no case by name'}:\n${output}`);
 }
 
 function errorText(error: unknown): string {
@@ -522,19 +537,18 @@ test('public OpenAPI generation rejects names colliding across exported index mo
 });
 
 test('public OpenAPI generation permits SchemaName, ValidationResult and repeated fields', async (t: TestContext) => {
+  const sdks: Record<string, string> = {};
   for (const name of ['SchemaName', 'ValidationResult']) {
     for (const validation of [false, true]) {
-      const sdk = await generatedOpenApiFixture(t, [name], validation);
-      compileGeneratedSdk(sdk, [], { noEmit: true, skipLibCheck: true });
+      sdks[`${name} with validation ${validation}`] = await generatedOpenApiFixture(t, [name], validation);
     }
   }
-
-  const repeatedFields = await generatedOpenApiFixture(t, ['First', 'Second'], false);
-  compileGeneratedSdk(repeatedFields, [], { noEmit: true, skipLibCheck: true });
+  sdks['repeated fields'] = await generatedOpenApiFixture(t, ['First', 'Second'], false);
+  compileGeneratedSdks(sdks, ['--skipLibCheck']);
 
   const noLinks = await generatedOpenApiFixture(t, ['ResponseLink'], true);
   assert.equal(fs.existsSync(path.join(noLinks, 'links.ts')), false);
-  compileGeneratedSdk(noLinks, [], { noEmit: true, strict: true, noUnusedLocals: true, noUnusedParameters: true, skipLibCheck: true });
+  compileGeneratedSdks({ 'no links': noLinks }, ['--strict', '--noUnusedLocals', '--noUnusedParameters', '--skipLibCheck']);
 });
 
 test('pipeline rejects malformed or profile-mismatched returned manifests before any output write', async t => {
