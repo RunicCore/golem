@@ -157,9 +157,11 @@ test('an argument golem build sets itself is rejected with the reason and the wo
     assert.throws(() => parseArguments(['build', flag, 'value']), (error: Error) => error.message.startsWith(`golem build sets ${flag} itself (`) && error.message.includes('); '), flag);
   }
   // The emit program sets these: an argument would beat the tsconfig it reads. The tsconfig is where they are set.
-  for (const flag of ['--baseUrl', '--composite', '--outFile', '--declarationDir']) {
+  for (const flag of ['--baseUrl', '--composite', '--declarationDir']) {
     assert.throws(() => parseArguments(['build', flag, 'value']), (error: Error) => error.message.startsWith(`golem build sets ${flag} itself (`) && error.message.endsWith('); set it in tsconfig.json'), flag);
   }
+  // outFile has no tsconfig way out: the message gives the reason and the bundle route instead.
+  assert.throws(() => parseArguments(['build', '--outFile', 'all.js']), { message: 'golem build sets --outFile itself (TypeScript 7 removed outFile and TypeScript 6 deprecates it, so one build cannot write the same files on both); emit one file for each source, then bundle with esbuild or Vite and the golem plugin' });
   const root = serdeProject(t, 'build-owned-flag');
   const result = await golemBuild(root, ['--noCheck']);
   assert.notEqual(result.code, 0);

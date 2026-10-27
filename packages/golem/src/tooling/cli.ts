@@ -22,11 +22,11 @@ const BUILD_OWNED_ARGUMENTS: Readonly<Record<string, { readonly why: string; rea
   '--tsbuildinfofile': { why: 'golem keeps no TypeScript build state: it compares each output with the file on disk', workaround: 'leave it out; a build with nothing changed writes no file' },
   '--incremental': { why: 'golem keeps no TypeScript build state: it compares each output with the file on disk', workaround: 'leave it out; a build with nothing changed writes no file' },
   '--outdir': { why: 'the emit program writes into the outDir of the tsconfig', workaround: 'set outDir in the tsconfig, or pass -p a tsconfig that extends it and sets another outDir' },
+  '--outfile': { why: 'TypeScript 7 removed outFile and TypeScript 6 deprecates it, so one build cannot write the same files on both', workaround: 'emit one file for each source, then bundle with esbuild or Vite and the golem plugin' },
   '--listemittedfiles': { why: 'golem writes the outputs itself and prints no list of them', workaround: 'list the files in outDir after the build' },
   ...Object.fromEntries(([
     ['--baseUrl', 'golem reads the baseUrl and paths of the tsconfig to give each import the path Node loads'],
     ['--composite', 'the emit program is not a composite build, and the check program must report what it reports'],
-    ['--outFile', 'TypeScript 7 removed outFile and TypeScript 6 deprecates it, so the emit program writes one file per source into the outDir of the tsconfig'],
     ['--declarationDir', 'the check program writes the declarations from your sources into the directory of the tsconfig'],
   ] as const).map(([flag, why]) => [flag.toLowerCase(), { why, workaround: 'set it in tsconfig.json' }])),
 };

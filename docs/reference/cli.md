@@ -165,7 +165,7 @@ The build sets some arguments itself. Passing one stops the build with `golem bu
 | `--listEmittedFiles` | Golem writes the outputs itself and prints no list of them | List the files in `outDir` after the build |
 | `--baseUrl` | Golem reads the `baseUrl` and `paths` of the tsconfig to give each import the path Node loads | Set it in `tsconfig.json` |
 | `--composite` | The emit program is not a composite build, and the check program must report what it reports | Set it in `tsconfig.json` |
-| `--outFile` | TypeScript 7 removed `outFile` and TypeScript 6 deprecates it, so the emit program writes one file per source into the `outDir` of the tsconfig | Do not use `outFile`. Emit one file for each source, then bundle it ([`outFile`](#what-the-tsconfig-needs)) |
+| `--outFile` | TypeScript 7 removed `outFile` and TypeScript 6 deprecates it, so one build cannot write the same files on both | Emit one file for each source, then bundle with [esbuild](/guide/build#esbuild) or [Vite](/guide/build#vite) and the golem plugin |
 | `--declarationDir` | The check program writes the declarations from your sources into the directory of the tsconfig | Set it in `tsconfig.json` |
 
 The build refuses two more kinds of option. It refuses them before it generates anything, whether the tsconfig sets them or a flag does:
