@@ -248,7 +248,7 @@ function referencedSchemes(
   }
   const result = new Map<string, unknown>();
   for (const name of names) {
-    if (name in raw) result.set(name, resolveLocal(document, raw[name]));
+    if (Object.hasOwn(raw, name)) result.set(name, resolveLocal(document, raw[name]));
   }
   return result;
 }

@@ -393,12 +393,36 @@ export function literal(value: JsonValue): Code {
 
 /**
  * A JSON literal of a value that comes from a document, so its type is not known here, pretty-printed with `indent` spaces
- * when given. A value with no JSON text, such as `undefined`, is an error.
+ * when given. A value with no JSON text, such as `undefined`, is an error. An own `__proto__` key, at any depth, is written
+ * as the computed key `["__proto__"]`: in an object literal the plain key would set the prototype and the key would vanish.
  */
 export function documentLiteral(value: unknown, indent?: number): Code {
   const written = JSON.stringify(value, null, indent);
   if (written === undefined) throw new TypeError('documentLiteral cannot write a value that has no JSON text');
-  return fromParts([{ kind: 'text', text: written }]);
+  if (!written.includes('"__proto__"')) return fromParts([{ kind: 'text', text: written }]);
+  const plain: unknown = JSON.parse(written);
+  if (!hasPrototypeKey(plain)) return fromParts([{ kind: 'text', text: written }]);
+  return fromParts([{ kind: 'text', text: writeOwnPrototypeKeys(plain, Math.min(indent ?? 0, 10), 0) }]);
+}
+
+function hasPrototypeKey(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasPrototypeKey);
+  return typeof value === 'object' && value !== null && (Object.hasOwn(value, '__proto__') || Object.values(value).some(hasPrototypeKey));
+}
+
+/** JSON.stringify's layout of parsed JSON, with each `__proto__` key written as a computed key. */
+function writeOwnPrototypeKeys(value: unknown, indent: number, level: number): string {
+  if (typeof value !== 'object' || value === null) return JSON.stringify(value);
+  const newline = indent > 0 ? `\n${' '.repeat(indent * (level + 1))}` : '';
+  const closing = indent > 0 ? `\n${' '.repeat(indent * level)}` : '';
+  const members = Array.isArray(value)
+    ? value.map((item) => writeOwnPrototypeKeys(item, indent, level + 1))
+    : Object.entries(value).map(([key, child]) => {
+      const name = key === '__proto__' ? `[${JSON.stringify(key)}]` : JSON.stringify(key);
+      return `${name}:${indent > 0 ? ' ' : ''}${writeOwnPrototypeKeys(child, indent, level + 1)}`;
+    });
+  const [open, close] = Array.isArray(value) ? ['[', ']'] : ['{', '}'];
+  return members.length === 0 ? `${open}${close}` : `${open}${newline}${members.join(`,${newline}`)}${closing}${close}`;
 }
 
 function jsonText(value: JsonValue): string {

@@ -38,11 +38,12 @@ interface WriteSdkOptions {
 
 function generateLinks(operations: readonly NormalizedOperation[]): RenderedModule {
   const operationNames = new Set(operations.map((operation) => operation.name));
-  const links: Record<string, Record<string, Record<string, unknown>>> = {};
+  // Object.fromEntries defines own keys: assigning a link named `__proto__` would set a prototype and drop the link.
+  const linkEntries: Array<[string, Record<string, Record<string, unknown>>]> = [];
   for (const operation of operations) {
-    const responses: Record<string, Record<string, unknown>> = {};
+    const responseEntries: Array<[string, Record<string, unknown>]> = [];
     for (const response of operation.responses) {
-      const responseLinks: Record<string, unknown> = {};
+      const linkEntriesOfResponse: Array<[string, unknown]> = [];
       for (const [name, link] of Object.entries(response.links || {})) {
         if (!isRecord(link)) continue;
         let target: Record<string, unknown>;
@@ -61,18 +62,19 @@ function generateLinks(operations: readonly NormalizedOperation[]): RenderedModu
             `response link "${operation.name}.${response.status}.${name}" must declare operationId or operationRef`,
           );
         }
-        responseLinks[name] = {
+        linkEntriesOfResponse.push([name, {
           ...target,
           parameters: link.parameters || {},
           ...(link.requestBody === undefined ? {} : { requestBody: link.requestBody }),
           ...(link.description === undefined ? {} : { description: link.description }),
           ...(link.server === undefined ? {} : { server: link.server }),
-        };
+        }]);
       }
-      if (Object.keys(responseLinks).length) responses[response.status] = responseLinks;
+      if (linkEntriesOfResponse.length) responseEntries.push([response.status, Object.fromEntries(linkEntriesOfResponse)]);
     }
-    if (Object.keys(responses).length) links[operation.name] = responses;
+    if (responseEntries.length) linkEntries.push([operation.name, Object.fromEntries(responseEntries)]);
   }
+  const links = Object.fromEntries(linkEntries);
   return renderModule(code`${generatedBannerComment()}
 ${operationNameType('OperationName', operations)}
 

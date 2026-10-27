@@ -20,16 +20,21 @@ export type BasicAuthValue<Context extends AuthContext = AuthContext> =
 
 type ResolvedAuthValue = string | BasicCredentials;
 
+/** A declared scheme only: a name such as `constructor` must not find a member of Object.prototype. */
+function declaredScheme(securitySchemes: RuntimeSecuritySchemes, name: string): RuntimeSecuritySchemes[string] | undefined {
+  return Object.hasOwn(securitySchemes, name) ? securitySchemes[name] : undefined;
+}
+
 async function authValue(
   runtime: ClientRuntime,
   name: string,
   scopes: readonly string[],
   securitySchemes: RuntimeSecuritySchemes,
 ): Promise<ResolvedAuthValue | undefined> {
-  if (securitySchemes[name]?.type === 'mutualTLS') {
+  const definition = declaredScheme(securitySchemes, name);
+  if (definition?.type === 'mutualTLS') {
     return runtime.options.mutualTls ? 'mutualTLS' : undefined;
   }
-  const definition = securitySchemes[name];
   const auth = runtime.options.auth;
   if (!auth || !Object.hasOwn(auth, name)) return undefined;
   const configured: unknown = Reflect.get(auth, name);
@@ -72,7 +77,7 @@ function applyAuthScheme(
   securitySchemes: RuntimeSecuritySchemes,
 ): void {
   if (value === undefined) return;
-  const scheme = securitySchemes[name];
+  const scheme = declaredScheme(securitySchemes, name);
   if (!scheme) throw new Error(`Unknown OpenAPI security scheme: ${name}`);
   if (scheme.type === 'mutualTLS') return;
   const text = typeof value === 'string' ? value : basicCredentials(value.username, value.password);
