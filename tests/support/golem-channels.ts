@@ -11,3 +11,10 @@ export function subscribe<Message>(t: TestContext, channel: keyof typeof GOLEM_C
   t.after(unsubscribe);
   return unsubscribe;
 }
+
+/** Counts the questions the TypeScript 7 checker asks the compiler because its memo holds no answer, by method, until the test ends. */
+export function countCheckerRequests(t: TestContext): { readonly typeToString: number; readonly isTypeAssignableTo: number } {
+  const counts = { typeToString: 0, isTypeAssignableTo: 0 };
+  subscribe(t, 'checkerRequested', (message: { readonly request: keyof typeof counts }) => { counts[message.request]++; });
+  return counts;
+}

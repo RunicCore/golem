@@ -13,6 +13,8 @@ export const GOLEM_CHANNELS = {
   compilerStarted: 'golem:compiler-started',
   /** `{ compiler }`: the compiler process was killed and its API closed, also when closing the API threw. */
   compilerClosed: 'golem:compiler-closed',
+  /** `{ request }`: the TypeScript 7 checker is about to ask the compiler `typeToString` or `isTypeAssignableTo`, because its memo holds no answer. The TypeScript 6 lane has no memo and publishes nothing. */
+  checkerRequested: 'golem:checker-requested',
   /** `{ request }`: the TypeScript 7 lane is about to send a snapshot request. */
   snapshotRequested: 'golem:snapshot-requested',
   /** `{ request }`: that request has ended, also by an exception. */
