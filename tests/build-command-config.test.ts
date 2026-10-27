@@ -339,5 +339,5 @@ export const money = parse<TMoney>(text);
     tsconfig.compilerOptions.rootDir = '..';
   });
   assert.equal((await build(app)).exitCode, 0);
-  assertMoneyCodec(path.join(app, 'build/shared/site.js'));
+  assertMoneyCodec(path.join(app, 'build/shared/site.js'), undefined, ['text']);
 });

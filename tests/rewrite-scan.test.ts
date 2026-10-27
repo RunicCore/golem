@@ -153,6 +153,7 @@ test('a class named through a type-only namespace import is constructed through 
     { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
   ]);
   const code = rewritten(root, result, 'type-only-namespace.ts');
+  assert.deepEqual(runRewritten(code, ['text']).codecIds, ['TPayment_22222222', 'TPayment_22222222', 'TLedger_33333333'], 'the module runs with every name it uses imported or declared');
   assertLines(code, [
     "import { Payment as __golem_Payment } from './payment.model.js';",
     'export const payment = __golem_requireObjectCodec("TPayment_22222222").parse(text, { construct: __golem_Payment });',
@@ -232,6 +233,7 @@ test('a class imported only as a type is constructed through an aliased value im
     { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
   ]);
   const code = rewritten(root, result, 'type-only.ts');
+  assert.deepEqual(runRewritten(code, ['text']).codecIds, ['TPayment_22222222', 'TLedger_33333333', 'TPayment_22222222'], 'the module runs with every name it uses imported or declared');
   assertLines(code, [
     "import { Ledger as __golem_Ledger } from './ledger.model.js';",
     "import { Payment as __golem_Payment } from './payment.model.js';",
@@ -341,7 +343,9 @@ test('a type from an installed SDK resolves through the codec id of its manifest
   fs.writeFileSync(path.join(root, 'src/use-sdk.ts'), USE_SDK);
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
-  assertLines(rewritten(root, result, 'use-sdk.ts'), [
+  const code = rewritten(root, result, 'use-sdk.ts');
+  assert.deepEqual(runRewritten(code, ['text']).codecIds, [id], 'the module runs with every name it uses imported or declared');
+  assertLines(code, [
     `export const money = __golem_requireObjectCodec("${id}").parse(text, { construct: __golem_MoneyModel });`,
     "import { MoneyModel as __golem_MoneyModel } from 'sdk';",
   ]);
@@ -416,10 +420,12 @@ test('a user type that shares a file name and a type name with an SDK type never
 
 test('a regenerated codec key file changes what the next scan stamps', (t) => {
   const root = project(t, ['calls.ts']);
-  assert.deepEqual([...new Set(runRewritten(rewritten(root, scan(root), 'calls.ts')).codecIds)], ['TMoney_11111111']);
+  // calls.ts declares these two names itself (`declare const`), so the run supplies them.
+  const stamped = (): readonly string[] => [...new Set(runRewritten(rewritten(root, scan(root), 'calls.ts'), ['money', 'text']).codecIds)];
+  assert.deepEqual(stamped(), ['TMoney_11111111']);
   const file = path.join(root, CODEC_KEYS);
   fs.writeFileSync(file, fs.readFileSync(file, 'utf8').replace('TMoney_11111111', 'TMoney_99999999'));
-  assert.deepEqual([...new Set(runRewritten(rewritten(root, scan(root), 'calls.ts')).codecIds)], ['TMoney_99999999']);
+  assert.deepEqual(stamped(), ['TMoney_99999999']);
 });
 
 test('a codec key file that is not golem\'s fails the scan with the file and what to run', (t) => {
