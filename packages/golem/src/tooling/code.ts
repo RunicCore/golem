@@ -133,7 +133,8 @@ export interface Code {
  *
  * A Code made from other Codes (the code tag, `join`, `joinIndented`) holds them and writes no parts when it is built: the
  * parts of a piece that other pieces contain would be copied once for each level that contains it. `parts` writes them the
- * first time a step reads them, in one pass over the leaves, and a Code is never changed, so they are kept.
+ * first time a step reads them, in one pass over the leaves, and a Code is never changed, so they are kept. The pass keeps
+ * its own stack, so the depth of the nesting is not limited by the call stack.
  */
 abstract class CodeValue implements Code {
   public readonly objectLiteral?: true;
@@ -146,106 +147,144 @@ abstract class CodeValue implements Code {
   public get parts(): readonly Part[] {
     if (this.#parts === undefined) {
       const out: Part[] = [];
-      this.#parts = finishParts(out, this.appendTo(out, ''));
+      let pending = '';
+      walk(this, (text) => { pending += text; return false; }, (parts) => { pending = append(out, pending, parts); return false; });
+      this.#parts = finishParts(out, pending);
     }
     return this.#parts;
   }
 
-  /** Append the parts of this Code to `out` as `append` does, and return the text still pending. */
-  public appendTo(out: Part[], pending: string): string {
-    return this.#parts === undefined ? this.write(out, pending) : append(out, pending, this.#parts);
+  /** The parts of this Code when they are written already, or `undefined` when a pass over its slots has to write them. */
+  public ready(): readonly Part[] | undefined {
+    return this.#parts;
   }
 
   /** Whether the code writes no part, which `parts.length === 0` also tells, but this reads no parts of a code that was not flattened. */
   public isEmpty(): boolean {
-    return this.#parts === undefined ? this.writesNothing() : this.#parts.length === 0;
+    if (this.#parts !== undefined) return this.#parts.length === 0;
+    let empty = true;
+    walk(this, () => { empty = false; return true; }, (parts) => { empty = !parts.some(writesSomething); return !empty; });
+    return empty;
   }
 
-  protected abstract write(out: Part[], pending: string): string;
+  /** The number of slots: each is a text or a Code, and the slots in order write the code. */
+  public abstract slotCount(): number;
 
-  protected abstract writesNothing(): boolean;
+  public abstract slot(index: number): string | Code | undefined;
 
   public toString(): never {
     throw new TypeError('a Code was put in a string template or a string; put it in the code tag, or in render');
   }
 }
 
-/** A Code that holds its parts. */
+function writesSomething(part: Part): boolean {
+  return part.kind !== 'text' || part.text !== '';
+}
+
+/**
+ * Give `onText` the text and `onParts` the parts of the leaves of `root` in order, until one of them returns true. A leaf is
+ * a text, a Code with its parts written, or a Code that holds its parts. The walk keeps a stack of the slots still to read.
+ */
+function walk(root: CodeValue, onText: (text: string) => boolean, onParts: (parts: readonly Part[]) => boolean): void {
+  const nodes: CodeValue[] = [root];
+  const next: number[] = [0];
+  while (nodes.length > 0) {
+    const top = nodes.length - 1;
+    const node = nodes[top]!;
+    const index = next[top]!;
+    if (index >= node.slotCount()) {
+      nodes.pop();
+      next.pop();
+      continue;
+    }
+    next[top] = index + 1;
+    const item = node.slot(index);
+    if (typeof item === 'string') {
+      if (item !== '' && onText(item)) return;
+    } else if (item instanceof CodeValue) {
+      const ready = item.ready();
+      if (ready === undefined) {
+        nodes.push(item);
+        next.push(0);
+      } else if (onParts(ready)) return;
+    } else if (item && onParts(item.parts)) return;
+  }
+}
+
+/** A Code that holds its parts, which are written already: adjacent text is one text. */
 class PartsCode extends CodeValue {
   public constructor(private readonly held: readonly Part[], objectLiteral: boolean = false) {
     super(objectLiteral);
   }
 
-  protected write(out: Part[], pending: string): string {
-    return append(out, pending, this.held);
+  public override get parts(): readonly Part[] {
+    return this.held;
   }
 
-  protected writesNothing(): boolean {
-    return !this.held.some((part) => part.kind !== 'text' || part.text !== '');
+  public override ready(): readonly Part[] {
+    return this.held;
+  }
+
+  public override isEmpty(): boolean {
+    return !this.held.some(writesSomething);
+  }
+
+  public slotCount(): number {
+    return 0;
+  }
+
+  public slot(): undefined {
+    return undefined;
   }
 }
 
-/** The text between the values of a code tag, and the values. */
+/** The text between the values of a code tag, and the values: the slots are text, value, text, value, ..., text. */
 class TagCode extends CodeValue {
   public constructor(private readonly strings: readonly string[], private readonly values: readonly Code[], objectLiteral: boolean = false) {
     super(objectLiteral);
   }
 
-  protected write(out: Part[], pending: string): string {
-    const { strings, values } = this;
-    pending += strings[0]!;
-    for (let index = 0; index < values.length; index += 1) {
-      const value = values[index];
-      if (value) pending = appendCode(out, pending, value);
-      pending += strings[index + 1]!;
-    }
-    return pending;
+  public slotCount(): number {
+    return this.values.length * 2 + 1;
   }
 
-  protected writesNothing(): boolean {
-    return this.strings.every((text) => text === '') && this.values.every((value) => !value || isEmpty(value));
+  public slot(index: number): string | Code | undefined {
+    return index % 2 === 0 ? this.strings[index / 2] : this.values[(index - 1) / 2];
   }
 }
 
-/** The pieces of a `join`, and the separator between them. */
+/** The pieces of a `join`, and the separator between them: the slots are piece, separator, piece, ..., piece. */
 class JoinCode extends CodeValue {
   public constructor(private readonly pieces: readonly Code[], private readonly separator: Code) {
     super();
   }
 
-  protected write(out: Part[], pending: string): string {
-    const { pieces, separator } = this;
-    for (let index = 0; index < pieces.length; index += 1) {
-      if (index > 0) pending = appendCode(out, pending, separator);
-      pending = appendCode(out, pending, pieces[index]!);
-    }
-    return pending;
+  public slotCount(): number {
+    return Math.max(0, this.pieces.length * 2 - 1);
   }
 
-  protected writesNothing(): boolean {
-    return this.pieces.every(isEmpty) && (this.pieces.length < 2 || isEmpty(this.separator));
+  public slot(index: number): Code | undefined {
+    return index % 2 === 0 ? this.pieces[index / 2] : this.separator;
   }
 }
 
-/** The lines of a `joinIndented`, and the separator between them. */
+/** The lines of a `joinIndented`, and the separator between them: the slots of each line are its separator (not the first line's), its spaces and its body. */
 class LinesCode extends CodeValue {
   public constructor(private readonly lines: readonly IndentedLine[], private readonly separator: Code) {
     super();
   }
 
-  protected write(out: Part[], pending: string): string {
-    const { lines, separator } = this;
-    for (let index = 0; index < lines.length; index += 1) {
-      if (index > 0) pending = appendCode(out, pending, separator);
-      const { spaces, body } = lines[index]!;
-      pending += ' '.repeat(spaces);
-      pending = appendCode(out, pending, body);
-    }
-    return pending;
+  public slotCount(): number {
+    return this.lines.length * 3;
   }
 
-  protected writesNothing(): boolean {
-    return this.lines.every(({ spaces, body }) => spaces === 0 && isEmpty(body)) && (this.lines.length < 2 || isEmpty(this.separator));
+  public slot(index: number): string | Code | undefined {
+    const line = Math.floor(index / 3);
+    switch (index % 3) {
+      case 0: return line > 0 ? this.separator : undefined;
+      case 1: return ' '.repeat(this.lines[line]!.spaces);
+      default: return this.lines[line]!.body;
+    }
   }
 }
 
@@ -294,11 +333,6 @@ function append(out: Part[], pending: string, source: readonly Part[]): string {
     }
   }
   return pending;
-}
-
-/** `append` for a Code: a Code that holds other Codes appends their leaves, not a copy of their parts. */
-function appendCode(out: Part[], pending: string, source: Code): string {
-  return source instanceof CodeValue ? source.appendTo(out, pending) : append(out, pending, source.parts);
 }
 
 function finishParts(out: Part[], pending: string): readonly Part[] {

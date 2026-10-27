@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  ImportSource, NameTable, aliased, bindRead, fileImports, code, helper, helperDefinitions, helperName, helperSet, identifier, importSet, inputOf, inputSlot, join, literal,
+  ImportSource, NameTable, aliased, bindRead, fileImports, code, helper, helperDefinitions, helperName, helperSet, identifier, importSet, inputOf, isEmpty, inputSlot, join, literal,
   nameOf, nameSlot, render, runtimeImports, sameCode, nest, lineBreak, placeHelpers, runtimeCode,
 } from '#golem/code';
 import { rt, rtType } from '#golem/rt';
@@ -172,4 +172,20 @@ test('a helper that the code names and the file neither places nor writes into i
   const lost = helper('lostHelper', () => code`function lostHelper() {}`);
   assert.throws(() => placeHelpers(code`${helperName(lost)}()`, []), /names the helper "lostHelper", which the file does not place/);
   assert.deepEqual(placeHelpers(code`${helperName(lost)}()`, [lost]).map((piece) => render(piece)), ['function lostHelper() {}']);
+});
+
+test('a chain of guards nested 20000 deep renders and tests for empty without a call per level', () => {
+  // protects: T-356 review finding (the lazy flatten recursed once per nesting level and threw RangeError at depth 8000)
+  const depth = 20000;
+  let chain = code`fallback`;
+  let expected = 'fallback';
+  for (let level = 0; level < depth; level += 1) {
+    chain = code`guard${literal(level)} ? (value${literal(level)}) : (${chain})`;
+    expected = `guard${level} ? (value${level}) : (${expected})`;
+  }
+  assert.equal(render(chain), expected);
+  assert.equal(isEmpty(chain), false);
+  let nothing = code``;
+  for (let level = 0; level < depth; level += 1) nothing = join([nothing, code``], code``);
+  assert.equal(isEmpty(nothing), true);
 });
