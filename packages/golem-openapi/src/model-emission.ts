@@ -81,6 +81,7 @@ import {
   aliasConvertsValue,
   aliasModelTypeName,
   aliasUseType,
+  declaredModelBases,
   modelBases,
   modelFieldType,
   modelConversionDescriptor,
@@ -705,7 +706,7 @@ function emitSchemaCodecRuntime(
 ): Code {
   // Group modules import each other's codec functions, anonymous ones included.
   // A variant that a union selects extends the union: the declared bases say so, as the composition check reads them.
-  options = { ...options, exportAnonymousCodecs: true, modelBases: { basesOf: (id) => modelBases(definitions.get(id)) } };
+  options = { ...options, exportAnonymousCodecs: true, modelBases: declaredModelBases(definitions) };
   try {
     return emitCodecRuntimeCode(graph, options);
   } catch (thrown) {
