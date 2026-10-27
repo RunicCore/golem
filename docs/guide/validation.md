@@ -6,6 +6,10 @@ Validation checks a value against the [validation tags](/guide/tags) on the fiel
 
 `failFast` is an option of the validation calls. A call stops at the first issue by default. Pass `{ failFast: false }` to collect every issue, for example to show all field errors in a form.
 
+The examples use a task form. Its title must not be blank. `MinLength<1>` rejects an empty string, and the custom rule `TValidation<typeof notBlank>` also rejects a title of spaces ([Validation tags](/guide/tags#add-a-custom-field-rule)).
+
+<<< ../../examples/models/src/task-input-rule.ts#custom-rule-fn
+
 <<< ../../examples/models/src/task-input.model.ts#custom-rule
 
 <<< ../../examples/models/src/task-input-checks.ts#validate-a-model
@@ -34,7 +38,7 @@ Validation checks a value against the [validation tags](/guide/tags) on the fiel
 
 ## Validate a model
 
-The title rule in the check above is declared in [Validation tags](/guide/tags#add-a-custom-field-rule). `MinLength<1>` rejects an empty string. `TValidation<typeof notBlank>` also rejects a title that holds only spaces.
+`validateInstance(task)` returns the issues of the task. The check above reports one issue for the blank title and none once the title is fixed. Use `getValidator(model)` when a form needs the errors of each field.
 
 ### Stored validation state
 

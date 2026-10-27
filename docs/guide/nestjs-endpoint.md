@@ -93,7 +93,6 @@ Register `NestModelInterceptor` once, for the whole app:
 - `controllers: [PaymentsController, …]` lists the controller in a module, as for any NestJS controller.
 - `setGlobalPrefix('api')` sets the prefix that `globalPrefix` repeats in Step 6.
 - `useGlobalInterceptors(new NestModelInterceptor())` turns on the conversion for every controller. It works with the Express and Fastify adapters.
-- `import './payment.model.js'` loads the model module once at run time, so its generated codec registers. A model that never loaded makes the request fail with HTTP 500 ([what happens to a request](/guide/nestjs-requests#what-happens-to-a-request)).
 
 The steps for each request and the rules for arrays and query objects are in [NestJS requests](/guide/nestjs-requests#what-happens-to-a-request).
 

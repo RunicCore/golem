@@ -1,5 +1,4 @@
 version: 1
-mobx: true
 validation: true
 models:
   root: .

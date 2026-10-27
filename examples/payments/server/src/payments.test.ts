@@ -13,7 +13,7 @@ const provider = {
 };
 
 async function withApi(run: (api: string) => Promise<void>, options = provider): Promise<void> {
-  const application = await createApplication(undefined, options);
+  const application = await createApplication(options);
   await application.listen(0, '127.0.0.1');
   try {
     await run(`${await application.getUrl()}/api`);
@@ -52,11 +52,18 @@ test('a saved payment is charged through the provider with a bearer token and it
   assert.equal(await charged[0]?.text(), JSON.stringify({ amount: '12.50', currency: 'USD' }));
 }));
 
-test('a failing provider is a 502 with a clear message and no payment', () => withApi(async api => {
+test('a failing provider is a 502 with a clear message and saves no payment', () => withApi(async api => {
+  const listed = async () => (await (await fetch(`${api}/payments/transactions`)).json()).length;
+  const before = await listed();
   const created = await post(`${api}/payments/transactions`, input);
   assert.equal(created.status, 502);
   assert.equal((await created.json()).message, 'The payment provider declined or is unavailable.');
+  assert.equal(await listed(), before);
 }, { ...provider, fetchImpl: (async () => new Response('down', { status: 500 })) as typeof fetch }));
+
+test('a provider connection failure is not reported as a provider answer', () => withApi(async api => {
+  assert.equal((await post(`${api}/payments/transactions`, input)).status, 500);
+}, { ...provider, fetchImpl: (async () => { throw new TypeError('fetch failed'); }) as typeof fetch }));
 
 test('a float amount and a bad currency are rejected before the handler', () => withApi(async api => {
   const float = await post(`${api}/payments/transactions`, { ...input, money: { amount: 12.5, currency: 'USD' } });
@@ -67,12 +74,33 @@ test('a float amount and a bad currency are rejected before the handler', () => 
   assert.deepEqual(issues[0].path, ['money', 'currency']);
 }));
 
-test('a class body is built from JSON and the query limit decodes to a number', () => withApi(async api => {
+test('a class body is checked and stored as a payment', () => withApi(async api => {
   const created = await post(`${api}/payments/transactions/as-class`, { id: 'p-1', ...input });
   assert.equal(created.status, 201);
-  assert.equal((await fetch(`${api}/payments/transactions?limit=1`)).status, 200);
+  assert.deepEqual(await (await fetch(`${api}/payments/transactions/p-1`)).json(), { id: 'p-1', ...input });
+  const bad = await post(`${api}/payments/transactions/as-class`, { id: 'p-2', ...input, money: { amount: '12.50', currency: 'usd' } });
+  assert.equal(bad.status, 400);
+}));
+
+test('the query limit decodes to a number and limits the list', () => withApi(async api => {
+  await post(`${api}/payments/transactions/as-class`, { id: 'p-3', ...input });
+  await post(`${api}/payments/transactions/as-class`, { id: 'p-4', ...input });
+  const limited = await fetch(`${api}/payments/transactions?limit=1`);
+  assert.equal(limited.status, 200);
+  assert.equal((await limited.json()).length, 1);
   assert.equal((await fetch(`${api}/payments/transactions?limit=0`)).status, 400);
-  assert.equal((await post(`${api}/payments/transactions/drafts`, { note: '' })).status, 400);
+}));
+
+test('a query with an undeclared key or an unknown status is 400, and repeated known statuses pass', () => withApi(async api => {
+  assert.equal((await fetch(`${api}/payments/transactions?tracking=x`)).status, 400);
+  assert.equal((await fetch(`${api}/payments/transactions?status=refunded`)).status, 400);
+  assert.equal((await fetch(`${api}/payments/transactions?status=paid&status=pending`)).status, 200);
+}));
+
+test('a draft needs a note of two characters or more', () => withApi(async api => {
+  const draft = await post(`${api}/payments/transactions/drafts`, { note: 'Lunch' });
+  assert.deepEqual(await draft.json(), { note: 'Lunch' });
+  assert.equal((await post(`${api}/payments/transactions/drafts`, { note: 'x' })).status, 400);
 }));
 
 test('an unknown payment is a 404', () => withApi(async api => {

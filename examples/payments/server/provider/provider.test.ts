@@ -1,8 +1,8 @@
 import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createAuthorizedClient, createClientWithIdempotencyKey, createMoneyTextClient, createRefreshingClient } from './client.js';
-import { createChargeWithAmount, fetchCharge, readCharge, readTwoCharges } from './charges.js';
+import { createAuthorizedClient, createClientWithSharedHeaders, createMoneyTextClient, createRefreshingClient } from './client.js';
+import { chargeAmountIssues, createChargeWithKey, fetchCharge, readCharge, readTwoCharges } from './charges.js';
 import { createEventLinesClient, firstEvent, firstEventId, readCaptured, readEvents, readUntilClosed } from './events.js';
 import { describeCharge, readSettlementDate } from './settlement.js';
 import { ChargeRecord } from './charge-record.model.js';
@@ -37,14 +37,27 @@ test('a bearer token string and a token callback are sent as Authorization', asy
   assert.deepEqual(seen, ['Bearer token-1', 'Bearer first', 'Bearer refreshed']);
 });
 
-test('the idempotency key goes on every request from the client', async () => {
-  const keys: (string | null)[] = [];
-  await withFetch(request => { keys.push(request.headers.get('idempotency-key')); return Response.json([]); }, async () => {
-    const client = createClientWithIdempotencyKey(base, 'token-1', 'key-1');
+test('a shared header goes on every request from the client', async () => {
+  const names: (string | null)[] = [];
+  await withFetch(request => { names.push(request.headers.get('x-client-name')); return Response.json([]); }, async () => {
+    const client = createClientWithSharedHeaders(base, 'token-1');
     await client.listCharges().execute({});
     await client.listCharges().execute({});
   });
-  assert.deepEqual(keys, ['key-1', 'key-1']);
+  assert.deepEqual(names, ['payments-example', 'payments-example']);
+});
+
+test('the idempotency key is set for one call and the next call from the same client does not carry it', async () => {
+  const keys: (string | null)[] = [];
+  const created = { ...charge, id: 'charge-2' };
+  await withFetch(request => { keys.push(request.headers.get('idempotency-key')); return Response.json(created, { status: 201 }); }, async () => {
+    const client = createAuthorizedClient(base, 't');
+    const money = { amount: '25.00', currency: 'USD' };
+    await createChargeWithKey(client, money, 'key-1');
+    await createChargeWithKey(client, money, 'key-2');
+    await client.createCharge().execute({ body: money });
+  });
+  assert.deepEqual(keys, ['key-1', 'key-2', null]);
 });
 
 test('a charge reads its settlement date as a Temporal value and writes it back as ISO text', async () => {
@@ -59,8 +72,8 @@ test('a declared 404 is data, an invalid amount is a validation issue, an undecl
     assert.equal(await readCharge(createAuthorizedClient(base, 't'), 'x'), 'No such charge');
   });
   await withFetch(() => { throw new Error('the invalid request must not be sent'); }, async () => {
-    const issues = await createChargeWithAmount(createAuthorizedClient(base, 't'), '12,50');
-    assert.ok(Array.isArray(issues) && issues.some(([, path]) => (path as readonly unknown[]).includes('amount')));
+    const issues = await chargeAmountIssues(createAuthorizedClient(base, 't'), '12,50');
+    assert.ok(issues.some(issue => issue.path.includes('amount')));
   });
   const log = console.error;
   console.error = () => undefined;
@@ -121,16 +134,19 @@ test('aborting while events are read ends the read', async () => {
   }
 });
 
-test('a custom stream decoder reads integer lines, and event models parse JSON', async () => {
-  const lines = () => new Response('7\n8\n', { headers: { 'content-type': 'application/vnd.provider.events' } });
-  assert.equal(await withFetch(lines, () => firstEventId(createEventLinesClient(base, 't'))), 7);
+test('a custom stream decoder reads integer lines, skips blank lines and rejects other text, and event models parse JSON', async () => {
+  const lines = (text: string) => () => new Response(text, { headers: { 'content-type': 'application/vnd.provider.events' } });
+  const firstId = (text: string) => withFetch(lines(text), () => firstEventId(createEventLinesClient(base, 't')));
+  assert.equal(await firstId('7\n8\n'), 7);
+  assert.equal(await firstId('\n7\n'), 7);
+  await assert.rejects(firstId('seven\n'), /Expected an integer event id, got "seven"/);
   const captured = readCaptured('{"paymentId":"p-1","amount":"25.00"}');
   assert.ok(captured instanceof PaymentCaptured);
   assert.equal(captured.amount, '25.00');
 });
 
 test('a charge is overdue the day after its settlement date and not on that day', () => {
-  // protects: task T-453 the isOverdue example of partner-client.md Step 8
+  // The isOverdue example of partner-client.md Step 8.
   const record = fromWireFormat<ChargeRecord>({ charge });
   assert.equal(record.isOverdue(Temporal.PlainDate.from('2025-02-02')), true);
   assert.equal(record.isOverdue(Temporal.PlainDate.from('2025-02-01')), false);

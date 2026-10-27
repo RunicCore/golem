@@ -8,13 +8,12 @@ export function hasReadPermission(value: number): boolean | string {
 
 export type PermissionWire = string & Pattern<'^0x[0-9a-fA-F]+$'>;
 
+// TSerde functions live in their own module: generated files import them, and a model file cannot be imported back.
 export function encodePermissions(value: number): PermissionWire {
   return `0x${value.toString(16)}`;
 }
 
 export function decodePermissions(value: PermissionWire): number {
-  // This guard also runs when generated validation is disabled.
-  if (!/^0x[0-9a-fA-F]+$/.test(value)) throw new TypeError('Permissions must be hexadecimal.');
   return Number.parseInt(value.slice(2), 16);
 }
 

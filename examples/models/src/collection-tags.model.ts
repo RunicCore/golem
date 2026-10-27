@@ -9,32 +9,33 @@ import type {
 import { validateInstance } from '@exprtlabs/golem/validation';
 import { TSubscriptionBaseModel } from './collection-tags.model.generated.js';
 
-type Email = string & Format<'email'>;
-type Watchers = string[] & Contains<Email> & MinContains<1>;
+type WatcherEmail = string & Format<'email'>;
+type Watchers = string[] & Contains<WatcherEmail> & MinContains<1>;
 
-type Reminders = {
+type DueDates = {
   dueOn?: string;
   remindOn?: string;
 } & DependentRequired<{ remindOn: ['dueOn'] }>;
 
 export type TSubscription = IModel<{
   watchers: Watchers;
-  reminders: Reminders;
+  dates: DueDates;
 }>;
 export class Subscription extends TSubscriptionBaseModel {}
 
 export async function checkSubscription(): Promise<[boolean, boolean]> {
   const accepted = {
     watchers: ['mina@example.com'],
-    reminders: { dueOn: '2025-01-02', remindOn: '2025-01-01' },
+    dates: { dueOn: '2025-01-02', remindOn: '2025-01-01' },
   };
   const rejected = {
     watchers: ['mina@example.com'],
-    reminders: { remindOn: '2025-01-01' },
+    dates: { remindOn: '2025-01-01' },
   };
+  // -> [true, false]: the rejected dates have remindOn but no dueOn
   return [
-    (await validateInstance(new Subscription(accepted))).length === 0, // true
-    (await validateInstance(new Subscription(rejected))).length === 0, // false: dueOn is missing
+    (await validateInstance(new Subscription(accepted))).length === 0,
+    (await validateInstance(new Subscription(rejected))).length === 0,
   ];
 }
 // #endregion collection-tags

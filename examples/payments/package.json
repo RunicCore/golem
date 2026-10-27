@@ -7,7 +7,7 @@
   },
   "scripts": {
     "generate": "golem generate --config server/golem.yaml && golem generate --config web/golem.yaml",
-    "check": "npm run generate && tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
+    "check": "npm run generate && golem check --config server/golem.yaml && golem check --config web/golem.yaml && tsc -p server/tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
     "test": "golem build --config server/golem.yaml && golem build --config web/golem.yaml && node --test \".build/**/*.test.js\"",
     "start": "golem build --config server/golem.yaml && node .build/server/src/main.js",
     "demo": "golem build --config server/golem.yaml && golem build --config web/golem.yaml && tsc -p tsconfig.node.json && node scripts/demo.js",

@@ -1,7 +1,7 @@
 # Golem examples
 
 Three complete TypeScript projects, each with its source contract, configuration
-and a runnable entrypoint. None commits its generated files. Browse them in the
+and tests. None commits its generated files. Browse them in the
 [Golem repository](https://github.com/RunicCore/golem). The documentation pages
 explain the examples and show source regions from these maintained files.
 
@@ -13,8 +13,12 @@ explain the examples and show source regions from these maintained files.
 
 The guides walk through them: [Define models](../docs/guide/models.md),
 [Share models between apps](../docs/guide/shared-models.md),
+[Validate models](../docs/guide/validation.md),
 [Validation tags](../docs/guide/tags.md),
+[Field types](../docs/guide/field-types.md),
 [OpenAPI from controllers](../docs/guide/nestjs.md),
+[Add Golem to a NestJS API](../docs/guide/nestjs-endpoint.md),
+[NestJS requests](../docs/guide/nestjs-requests.md),
 [Generate an SDK](../docs/guide/client.md),
 [SDK types in your models](../docs/guide/models-and-client.md) and
 [MobX and React](../docs/guide/mobx.md).
@@ -39,6 +43,5 @@ npm test           # offline; golem build generates first
 
 Files under `sdk/`, the `*.model.generated.ts` files, `src/generated/` and `.golem/` are generated output, and each example's `.gitignore` lists them.
 Edit the authored contract or handwritten source, then run `npm run generate`.
-The [Quick start](../docs/guide/quick-start.md) page lists the packages and profiles.
-
-[Quick start](../docs/guide/quick-start.md) shows how to add the packages to an existing application.
+The [Quick start](../docs/guide/quick-start.md) page lists the packages and profiles,
+and shows how to add them to an existing application.

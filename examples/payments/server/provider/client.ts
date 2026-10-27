@@ -24,17 +24,11 @@ export function createRefreshingClient(baseUrl: string, currentToken: () => stri
 // #endregion current-token
 
 // #region shared-headers
-export function createClientWithIdempotencyKey(
-  baseUrl: string,
-  token: string,
-  key: string,
-  options: Partial<ProviderClientOptions> = {},
-): ProviderClient {
+export function createClientWithSharedHeaders(baseUrl: string, token: string): ProviderClient {
   return new ProviderClient({
-    ...options,
     baseUrl,
     auth: { bearerAuth: token },
-    headers: { 'Idempotency-Key': key }, // Sent with every request from this client.
+    headers: { 'X-Client-Name': 'payments-example' }, // Sent with every request from this client.
   });
 }
 // #endregion shared-headers

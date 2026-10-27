@@ -1,5 +1,4 @@
 // #region priority-word
-// TSerde functions live in their own module: generated files import them, and a model file cannot be imported back.
 const PRIORITY_WORDS = ['low', 'normal', 'high'] as const;
 export type PriorityWord = (typeof PRIORITY_WORDS)[number];
 

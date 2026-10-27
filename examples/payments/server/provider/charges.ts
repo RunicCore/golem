@@ -1,9 +1,8 @@
 // #region client-imports
 import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { ChargeModel, isProviderUndeclaredResponseError, ProviderClient } from './sdk/index.js';
+import { ChargeModel, isProviderUndeclaredResponseError, type Money, ProviderClient } from './sdk/index.js';
 // #endregion client-imports
-import { getCharge } from './sdk/operations/getCharge.js';
 
 // #region create-and-list
 export async function listCharges(baseUrl: string, token: string) {
@@ -33,6 +32,15 @@ export async function createCharge(client: ProviderClient, amount: string) {
 }
 // #endregion request-arguments
 
+// #region per-call-header
+export async function createChargeWithKey(client: ProviderClient, money: Money, idempotencyKey: string) {
+  return client.createCharge().execute({
+    header: { 'Idempotency-Key': idempotencyKey }, // Sent with this call only.
+    body: money,
+  });
+}
+// #endregion per-call-header
+
 // #region read-charge
 export async function readCharge(client: ProviderClient, id: string) {
   const response = await client.getCharge().execute({ path: { id } });
@@ -52,13 +60,13 @@ export function loadCharge(data: unknown): ChargeModel {
 // #endregion charge-model
 
 // #region invalid-charge
-export async function createChargeWithAmount(client: ProviderClient, amount: string) {
+export async function chargeAmountIssues(client: ProviderClient, amount: string) {
   try {
-    return await client.createCharge().execute({ body: { amount, currency: 'USD' } });
+    await client.createCharge().execute({ body: { amount, currency: 'USD' } });
+    return [];
   } catch (error) {
     if (error instanceof LibError && error.kind === LibErrorKind.Validation) {
-      // "12,50" violates the amount pattern; issue.path identifies the field.
-      return error.issues.map(issue => [issue.code, issue.path, issue.message] as const);
+      return error.issues; // "12,50" violates the amount pattern; issue.path identifies the field.
     }
     throw error;
   }
@@ -95,6 +103,8 @@ export async function listWithCancelButton(client: ProviderClient, button: { onc
 // #endregion cancel-request
 
 // #region standalone-operation
+import { getCharge } from './sdk/operations/getCharge.js';
+
 export function readChargeDirectly(baseUrl: string, token: string, id: string) {
   const chargeRequest = getCharge({ baseUrl, auth: { bearerAuth: token } });
   return chargeRequest.execute({ path: { id } });
