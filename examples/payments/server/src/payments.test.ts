@@ -91,7 +91,7 @@ test('the query limit decodes to a number and limits the list', () => withApi(as
   assert.equal((await fetch(`${api}/payments/transactions?limit=0`)).status, 400);
 }));
 
-test('a query with an undeclared key or an unknown status is 400', () => withApi(async api => {
+test('a query with an undeclared key or an unknown status is 400, and repeated known statuses pass', () => withApi(async api => {
   assert.equal((await fetch(`${api}/payments/transactions?tracking=x`)).status, 400);
   assert.equal((await fetch(`${api}/payments/transactions?status=refunded`)).status, 400);
   assert.equal((await fetch(`${api}/payments/transactions?status=paid&status=pending`)).status, 200);
@@ -100,7 +100,7 @@ test('a query with an undeclared key or an unknown status is 400', () => withApi
 test('a draft needs a note of two characters or more', () => withApi(async api => {
   const draft = await post(`${api}/payments/transactions/drafts`, { note: 'Lunch' });
   assert.deepEqual(await draft.json(), { note: 'Lunch' });
-  assert.equal((await post(`${api}/payments/transactions/drafts`, { note: '' })).status, 400);
+  assert.equal((await post(`${api}/payments/transactions/drafts`, { note: 'x' })).status, 400);
 }));
 
 test('an unknown payment is a 404', () => withApi(async api => {

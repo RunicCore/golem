@@ -113,8 +113,8 @@ paths:
                 required: [id]
                 properties:
                   id: { type: integer }
+# region bearer-security-scheme
 components:
-  # region bearer-security-scheme
   securitySchemes:
     bearerAuth:
       type: http

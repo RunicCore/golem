@@ -21,7 +21,7 @@ Each app includes the folder in its own tsconfig, with a `rootDir` that contains
 
 ## Link the folder
 
-An app can also reach the folder through a path inside its own folder. Make a folder link, a symlink, or install the folder as a workspace package.
+An app can also reach the folder through a path inside its own folder. Link the folder with a symlink, or install it as a workspace package.
 
 - A symlink, from the app folder: `ln -s ../../shared apps/worker/shared`. The app then lists `shared/**/*.ts` in its tsconfig `include`. Golem follows the link to the real path, so the models still count as shared model files.
 - A workspace package: give the folder a `package.json` with a `name`, list it in the `workspaces` of the root `package.json`, and import it by that name in the app. The generated folder carries that name, and the functions of the folder import by it (see below).
@@ -44,7 +44,7 @@ Each app generates the shared models in its own `models.output`, and golem write
 <models.output>/<package name>/<path of the file in the package>.generated.ts
 ```
 
-The package name is the `name` in the nearest `package.json` that has one, going up from the file and stopping below the app. A `package.json` without a `name` only sets the module format and is passed over. When no `package.json` below the app has a `name`, the package name is the name of the top folder below the app root. With a `package.json` named `@acme/shared`, the file `shared/customer.model.ts` gives `src/generated/models/@acme/shared/customer.model.generated.ts` in `apps/web`. With no named `package.json`, as in the example, it gives `src/generated/models/shared/customer.model.generated.ts`.
+The package name is the `name` in the nearest `package.json` that has one, going up from the file to the nearest folder that also holds the app. A `package.json` without a `name` only sets the module format and is passed over. When none has a `name`, the package name is the name of the first folder below that common folder: in the example, `shared`, below `examples/shared-folder`. With a `package.json` named `@acme/shared`, the file `shared/customer.model.ts` gives `src/generated/models/@acme/shared/customer.model.generated.ts` in `apps/web`. With no named `package.json`, as in the example, it gives `src/generated/models/shared/customer.model.generated.ts`.
 
 ## Extend in each app
 

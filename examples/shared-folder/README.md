@@ -10,7 +10,7 @@ The example depends on `1.1.0-rc.0` of `@exprtlabs/golem*`. Run it from this rep
 - `apps/web` includes `../../shared` in its tsconfig. It has `validation: true`. Its class `Customer` extends `TCustomerBaseModel`, which it imports from its own `src/generated/models/shared/customer.model.generated.ts`, and adds `label()`.
 - `apps/worker` reaches the folder through `apps/worker/shared`, a folder link to `../../shared`. It has `validation: false`. It reads and writes `TCustomer`. It imports no generated file: `golem build` adds that import.
 - The link is not committed, because a symlink does not survive every checkout or archive. `npm run link-shared` makes it before `generate` and `test`, and `.gitignore` lists it.
-- Each app generates the model in its own `models.output`, in a folder named for the shared package. Here that is `shared`, the top folder below the app root, because the `package.json` has no `name`. The shared folder stays as its author wrote it.
+- Each app generates the model in its own `models.output`, in a folder named for the shared package. Here that is `shared`, the first folder below `examples/shared-folder`, the nearest folder that holds both the model and the app, because the `package.json` has no `name`. The shared folder stays as its author wrote it.
 - An empty city and a currency that `isCurrencyCode` refuses fail in the web app. An empty city passes in the worker.
 - [Share models between apps](../../docs/guide/shared-models.md) states the rules.
 

@@ -1,7 +1,7 @@
 // #region client-imports
 import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { ChargeModel, isProviderUndeclaredResponseError, ProviderClient } from './sdk/index.js';
+import { ChargeModel, isProviderUndeclaredResponseError, type Money, ProviderClient } from './sdk/index.js';
 // #endregion client-imports
 
 // #region create-and-list
@@ -33,7 +33,7 @@ export async function createCharge(client: ProviderClient, amount: string) {
 // #endregion request-arguments
 
 // #region per-call-header
-export async function createChargeWithKey(client: ProviderClient, money: { amount: string; currency: string }, idempotencyKey: string) {
+export async function createChargeWithKey(client: ProviderClient, money: Money, idempotencyKey: string) {
   return client.createCharge().execute({
     header: { 'Idempotency-Key': idempotencyKey }, // Sent with this call only.
     body: money,

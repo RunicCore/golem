@@ -6,9 +6,9 @@ export function hasReadPermission(value: number): boolean | string {
   return (value & 1) !== 0 ? true : 'Read permission is required.';
 }
 
-// TSerde functions live in their own module: generated files import them, and a model file cannot be imported back.
 export type PermissionWire = string & Pattern<'^0x[0-9a-fA-F]+$'>;
 
+// TSerde functions live in their own module: generated files import them, and a model file cannot be imported back.
 export function encodePermissions(value: number): PermissionWire {
   return `0x${value.toString(16)}`;
 }
