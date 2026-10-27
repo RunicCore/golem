@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import * as ts from '../typescript-ns.js';
 import {
   MODEL_MANIFEST_MARKER,
@@ -11,7 +11,7 @@ import type {
   ModelManifestEntry,
 } from '../model-manifest.js';
 import { canonicalPath, displayPath, type GolemProfile, type InputObserver } from '../generator-api.js';
-import { fileSignature } from '../input-watcher.js';
+import { MISSING, fileSignature } from '../input-watcher.js';
 import type { CodecSchemaClosureEntry } from '../validation-plan.js';
 import { canonicalFilename, effectiveConfigPath } from './project.js';
 import type { ProgramInfo } from './project.js';
@@ -82,7 +82,7 @@ interface ValidatedModules {
   readonly request: string;
   /** Every path the program reported, which the job's observer hears again when the program is not opened. */
   readonly reported: readonly string[];
-  /** The signature, as it was before the program read the file, of each manifest and each source file of the program except the default library. */
+  /** The signature, as it was before the program read the file, of each manifest, each source file of the program except the default library, each probe that found nothing and each package.json. */
   readonly signatures: ReadonlyMap<string, string>;
   readonly exportsById: ReadonlyMap<string, ReadonlySet<string>>;
 }
@@ -196,6 +196,11 @@ function validateGeneratedModules(
     if (moduleProgram.isSourceFileDefaultLibrary(file)) continue;
     const filename = canonicalFilename(file.fileName);
     signatures.set(filename, reported.get(filename) ?? fileSignature(filename));
+  }
+  // A file the program probed and did not find (a new file can shadow what it resolved to) and each package.json (its "type", "exports" and
+  // "types" decide resolution) are dependencies too. The other reported paths are not: a session replays everything it ever read.
+  for (const [filename, signature] of reported) {
+    if (signature === MISSING || basename(filename) === 'package.json') signatures.set(filename, signature);
   }
   lastValidated.set(info.program.session, { request, reported: [...reported.keys()], signatures, exportsById });
   return exportsById;

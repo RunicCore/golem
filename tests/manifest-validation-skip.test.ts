@@ -83,12 +83,18 @@ test('a cycle after a manifest edit opens the validation program again', async (
   assert.equal(count(), 2);
 });
 
-// protects: T-470 an SDK source rewritten by the openapi job validates again
-test('a cycle after the SDK module changed, with its manifest as it was, opens the validation program again', async (t: TestContext) => {
+// protects: T-470 a file that shadows what an SDK import resolved to validates again
+test('a cycle after a new file shadows what an SDK import resolved to opens the validation program again', async (t: TestContext) => {
   const { load, manifest, count } = await loadManifestOnSession(t);
-  load();
   const { models } = JSON.parse(fs.readFileSync(manifest, 'utf8')) as { models: { generated: { module: string } }[] };
-  fs.appendFileSync(path.resolve(path.dirname(manifest), models[0]!.generated.module.replace(/\.js$/, '.ts')), '\n// rewritten\n');
+  const module = path.resolve(path.dirname(manifest), models[0]!.generated.module.replace(/\.js$/, '.ts'));
+  fs.writeFileSync(path.join(path.dirname(module), 'util.d.ts'), 'export declare const util: number;\n');
+  fs.appendFileSync(module, "import './util.js';\n");
+  load();
+  load();
+  assert.equal(count(), 1);
+  // The compiler tries util.ts before util.d.ts, so the new file replaces the declaration that the import resolved to.
+  fs.writeFileSync(path.join(path.dirname(module), 'util.ts'), 'export const util = 1;\n');
   load();
   assert.equal(count(), 2);
 });
