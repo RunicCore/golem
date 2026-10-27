@@ -6,7 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { runPipeline, type PipelineState } from '#golem/cli';
-import { loadConfig } from '#golem/config';
+import { loadConfig } from './support/load-config.js';
 import { applyJob, loadInventory } from '#golem/outputs';
 import { runBuild } from '#golem/build';
 import { command, workspace } from './support/process.js';

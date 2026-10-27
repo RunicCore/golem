@@ -237,10 +237,6 @@ type WireArray<Value extends readonly unknown[]> = Value extends readonly (infer
     : { [Index in keyof Value]: WireFormat<Value[Index]> }
   : never;
 
-export type GeneratedModelFields<Model> = Model extends {
-  readonly [generatedModelFieldsBrand]: infer Fields extends object;
-} ? Fields : never;
-
 export type GeneratedModelConstructor =
   abstract new (...arguments_: never[]) => object;
 

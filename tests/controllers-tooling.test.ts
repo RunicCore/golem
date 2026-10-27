@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { loadConfig } from '#golem/config';
+import { loadConfig } from './support/load-config.js';
 import { runPipeline } from '#golem/cli';
 import { applyJob, digest, loadInventory, removeRetiredJobs } from '#golem/outputs';
 import { strongestInputKind } from '#golem/pipeline';

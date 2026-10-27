@@ -10,7 +10,7 @@ import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import { evaluateStaticValue } from './static-value.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
 import { readModelManifest } from './model-manifest.js';
-import { isInstalledFile } from './type-analysis/path-identity.js';
+import { inNodeModules, isInstalledFile } from './type-analysis/path-identity.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
 import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { advertisedModelManifests } from './type-analysis/provenance.js';
@@ -597,7 +597,7 @@ function nestUnionBinding(
     if (name) addAliasChainFiles(checker, { root, from: file, dependencies }, name);
     // A union written in another file is part of this file's rewrite.
     const written = member.getSourceFile();
-    if (written !== file && !written.fileName.split(/[\\/]/).includes('node_modules')) dependencies.add(portable(root, written.fileName));
+    if (written !== file && !inNodeModules(written.fileName)) dependencies.add(portable(root, written.fileName));
     return { member, name, id: symbol ? codecIdOf(checker, keys, symbol, dependencies) : '', golemModel: symbol ? isGolemModel(checker, symbol) : modelDeclarationKind(checker, member) !== undefined };
   });
   const golemModel = variants.every((variant) => variant.golemModel);
@@ -696,7 +696,7 @@ function loadCodecModule(
   const { root, checker, keys, file } = input;
   const module = keys.moduleOf(id);
   if (module === file.fileName) return;
-  const project = module !== undefined && !module.split(/[\\/]/).includes('node_modules') && !/\.d\.[cm]?ts$/.test(module);
+  const project = module !== undefined && !inNodeModules(module) && !/\.d\.[cm]?ts$/.test(module);
   const installed = module === undefined || project ? undefined : packageSpecifier(module, file.fileName, root);
   const specifier = project ? relativeSpecifier(file.fileName, module)
     : installed?.kind === 'package' ? installed.specifier
@@ -1013,7 +1013,7 @@ function resultOf(scan: FileScan, file: ts.SourceFile): FileScanResult {
 export function projectSources(program: ts.Program): ts.SourceFile[] {
   return program.getSourceFiles().filter((file) => !program.isSourceFileDefaultLibrary(file)
     && !program.isSourceFileFromExternalLibrary(file)
-    && !file.fileName.split(/[\\/]/).includes('node_modules'));
+    && !inNodeModules(file.fileName));
 }
 
 /** `noEmit` and `emitDeclarationOnly` leave no JavaScript to emit: `golem build` runs no emit program then. */

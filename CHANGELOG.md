@@ -111,6 +111,8 @@ Details for each package are in the sections below.
 - **Breaking:** a `golem.yaml` whose tsconfig is a solution file, one with no files and only `references`, such as the default `tsconfig.json` of a create-vite project, stops `golem generate` and `golem check` with a message that names each referenced project. Name the app's tsconfig, for example `tsconfig.app.json`, in the `tsconfig` key of `golem.yaml`.
 - Generated model files call the runtime directly: a model file no longer holds a `modelObject` function, an OpenAPI model module no longer holds an `objectFromJSON` function, a `TSerde` function is imported once and cast, not wrapped in a second function, the plan schemas of both generators are one `JSON.parse` constant, and the runtime imports of both generators come in one order (alphabetical by export name). A model class with a typed map no longer holds the comment line "Dynamic map values are preserved during conversion."
 - Generated stringify and conversion code is leaner: a key check compares the key with each name where it ran an `includes` on a list that the code built at each call, an inline object joins its members with one `slice(1)` where it built and joined an array, and an object with no declared field no longer gets a dead `if (false) continue;` in its extra-key loop.
+- **Breaking:** `@exprtlabs/golem/model` no longer exports the type `GeneratedModelFields`. Use the derived `T<Name>Fields` type that generation writes for the model.
+- **Breaking:** `@exprtlabs/golem/manifest` no longer exports `manifestMarker`. Nothing in golem called it.
 
 ## 1.0.0
 

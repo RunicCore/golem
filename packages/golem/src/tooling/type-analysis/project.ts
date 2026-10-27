@@ -5,7 +5,7 @@ import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { readManifest } from './package-specifier.js';
 import { DEFAULT_MODEL_SUFFIXES, displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
-import { canonicalFilename } from './path-identity.js';
+import { canonicalFilename, inNodeModules } from './path-identity.js';
 
 export { canonicalFilename };
 
@@ -127,7 +127,7 @@ export function isModelFileName(boundary: Pick<ModelBoundary, 'suffixes'>, filen
 export function isOwnModelFile(boundary: ModelBoundary, filename: string): boolean {
   const real = canonicalPath(filename);
   return isInsideDirectory(boundary.root, real)
-    && !relative(boundary.root, real).split(sep).includes('node_modules')
+    && !inNodeModules(relative(boundary.root, real))
     && !isAmbientDeclaration(real);
 }
 
@@ -300,7 +300,7 @@ export function projectFilesImportedBy(file: ts.SourceFile, checker: ts.TypeChec
     if (specifier === undefined || !ts.isStringLiteralLike(specifier)) continue;
     const resolved = checker.resolveImport(specifier)?.resolvedFileName;
     if (resolved === undefined) continue;
-    if ((isAmbientDeclaration(resolved) || /(?:^|[\\/])node_modules[\\/]/.test(resolved)) && !isModelFile.test(resolved)) continue;
+    if ((isAmbientDeclaration(resolved) || inNodeModules(resolved)) && !isModelFile.test(resolved)) continue;
     found.add(canonicalFilename(resolved));
   }
   return [...found];
@@ -654,11 +654,6 @@ export function isUnderOutputs(outputs: readonly string[], filename: string): bo
   return outputs.some((output) => output === target || isInsideDirectory(output, target));
 }
 
-/** Whether a path lies in a `node_modules` folder. */
-export function inNodeModules(filename: string): boolean {
-  return filename.replace(/\\/g, '/').includes('/node_modules/');
-}
-
 /** The file of `files` that a relative import resolves to, with the `.js` of a written specifier standing for its `.ts` source. Names compare as the program spells them. */
 function importedFile(files: ReadonlySet<string>, target: string): string | undefined {
   const stem = target.replace(/\.[cm]?jsx?$/, '');
@@ -756,7 +751,7 @@ export function projectWatchInputs(
 ): string[] {
   const inputs = new Set<string>([
     // An installed package's model file is no watch input: a new install needs a new `golem generate`.
-    ...sources.filter((source) => !canonicalPath(source).split(sep).includes('node_modules')),
+    ...sources.filter((source) => !inNodeModules(canonicalPath(source))),
     ...manifestPaths,
     ...(info.configPath ? [info.configPath] : []),
     ...info.projectFiles,
@@ -766,7 +761,7 @@ export function projectWatchInputs(
     // Every local program source is consumed, including one imported from
     // outside the root. Packages resolved through node_modules (linked ones
     // resolve to a path without that segment) and TypeScript libraries are not.
-    if (filename.split(sep).includes('node_modules')) continue;
+    if (inNodeModules(filename)) continue;
     if (program.isSourceFileFromExternalLibrary(sourceFile) || program.isSourceFileDefaultLibrary(sourceFile)) continue;
     inputs.add(filename);
   }
