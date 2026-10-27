@@ -65,11 +65,15 @@ export interface ClientOptions {
   /** The API endpoint. It wins over `server`. A client whose document lists no servers requires it. */
   baseUrl?: string;
   /**
-   * The document server to use: its index, or its `name` or `description`. The default is the first server.
-   * Ignored when `baseUrl` is set.
+   * The server to use from the document's `servers` list: its index, or its `name` or `description`. The default is the first server.
+   * An operation or path item with its own `servers` list ignores it and uses that list's first server, with variable defaults.
+   * Ignored when `baseUrl` is set; `baseUrl` wins over every list.
    */
   server?: number | string;
-  /** Values for the `{variables}` of the chosen server URL. A variable you leave out uses its default. */
+  /**
+   * Values for the `{variables}` of the chosen server URL from the document's `servers` list. A variable you leave out uses its default.
+   * An operation or path item server list always uses defaults.
+   */
   serverVariables?: Readonly<Record<string, string>>;
   fetchImpl?: typeof fetch;
   headers?: HeadersInit;

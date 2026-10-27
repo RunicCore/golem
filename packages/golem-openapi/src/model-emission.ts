@@ -1,4 +1,5 @@
 import {
+  AmbiguousUnionConversionError,
   CompositionConflictError,
   ObjectUnionDiscriminatorError,
   emitModelFromJSON,
@@ -260,6 +261,13 @@ function codedConflict(thrown: unknown): unknown {
   if (thrown instanceof CompositionConflictError) return new CompositionError(COMPOSITION_CONVERSION_CONFLICT, conflictMessage(thrown.reason));
   if (thrown instanceof ObjectUnionDiscriminatorError) return new CompositionError(UNION_DISCRIMINATOR_MISSING, `${thrown.message} ${UNION_DISCRIMINATOR_FIX}`);
   return thrown;
+}
+
+/** The three errors that golem's emitters throw for a schema the user wrote; any other throw is a golem fault and passes through. */
+function isConversionConflict(thrown: unknown): boolean {
+  return thrown instanceof CompositionConflictError
+    || thrown instanceof ObjectUnionDiscriminatorError
+    || thrown instanceof AmbiguousUnionConversionError;
 }
 
 /** A conversion error of the model path carries its code and names the component, or the inline schema, it converts. */
@@ -684,6 +692,7 @@ function unionConversion(
       ? emitModelFromJSON(descriptor, VALUE, resolve, TEMPORAL_SERDE)
       : emitModelFromInit(descriptor, VALUE, resolve);
   } catch (thrown) {
+    if (!isConversionConflict(thrown)) throw thrown;
     const error = codedConflict(thrown);
     const message = error instanceof Error ? error.message : String(error);
     const named = `schema ${JSON.stringify(definition.schemaName)}`;
@@ -710,6 +719,7 @@ function emitSchemaCodecRuntime(
   try {
     return emitCodecRuntimeCode(graph, options);
   } catch (thrown) {
+    if (!isConversionConflict(thrown)) throw thrown;
     // A conversion conflict that the emitter finds carries the resolver's code.
     const error = codedConflict(thrown);
     const message = error instanceof Error ? error.message : String(error);
@@ -717,7 +727,8 @@ function emitSchemaCodecRuntime(
       try {
         emitCodecRuntimeCode({ ...schemaGraphView(graph, new Set(graph.nodes.keys())), topo: () => [node] }, options);
         return false;
-      } catch {
+      } catch (probed) {
+        if (!isConversionConflict(probed)) throw probed;
         return true;
       }
     });
