@@ -24,6 +24,8 @@ import {
   discriminatorMatch,
   emitDispatch,
   emitUnionConversion,
+  keyIsListed,
+  keyIsNotListed,
   literalDiscriminator,
   ObjectUnionDiscriminatorError,
   objectValueExpression,
@@ -260,7 +262,8 @@ export function validateFunctionName(id: string): string {
   return `validate${id}`;
 }
 
-function isRecordExpression(expression: Code): boolean {
+/** Whether the code is one input that stands for a record, whose properties a read takes without a cast. */
+export function isRecordExpression(expression: Code): boolean {
   const [only, ...more] = expression.parts;
   return only?.kind === 'input' && more.length === 0 && only.slot.record;
 }
@@ -492,16 +495,17 @@ function emitObjectInline(
   if (properties.every(([name]) => required.has(name))) {
     return code`'{' + ${emitRequiredObjectConcat(properties, value, ctx)}`;
   }
+  // Each present member carries its comma before it, so the first comma is cut off and no list is built when the code runs.
   const parts = properties.map(([name, property], index) => emitInlineObjectField(
     name,
     property,
     required.has(name),
     value,
     index,
-    false,
+    true,
     ctx,
   ));
-  return code`'{' + [${join(parts, code`, `)}].filter(Boolean).join(',') + '}'`;
+  return code`'{' + (${join(parts, code` + `)}).slice(1) + '}'`;
 }
 
 function stringifyParameters(value: Code, ctx: EmitCtx): Code {
@@ -702,7 +706,7 @@ function emitObjectStringify(
     // `additionalProperties: true` makes them data of unknown type.
     lines.push(
       code`  for (const key of Object.keys(${value})) {`,
-      ...(properties.length === 0 ? [] : [code`    if (${literal(properties.map(([property]) => property))}.includes(key)) continue;`]),
+      ...(properties.length === 0 ? [] : [code`    if (${keyIsListed(identifier('key'), properties.map(([property]) => property))}) continue;`]),
       code`    const __golemExtra = ${value}[key];`,
       code`    if (__golemExtra === undefined) continue;`,
       code`    if (sep) out += ",";`,
@@ -1205,12 +1209,10 @@ function emitTaggedVariantUnion(
  * emitting module binds is used, so a guard never looks up a registry.
  */
 function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx): Code | undefined {
-  const name = variant.kind === 'generated-model'
-    ? ctx.nestedGenerated?.(variant.id)
-    : variant.kind === 'reference' && shouldConstructNested(variant, ctx)
-      ? ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.kind === 'reference' ? variant.className : undefined)
-      : undefined;
-  return name;
+  if (variant.kind === 'generated-model') return ctx.nestedGenerated?.(variant.id);
+  return variant.kind === 'reference' && shouldConstructNested(variant, ctx)
+    ? ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.className)
+    : undefined;
 }
 
 /** Object variants of a union mixed with one generated model; their literal tags must dispatch. */
@@ -1366,8 +1368,7 @@ function emitUnionDecode(
   return emitUnion('decode', descriptor, value, ctx, {
     walk: (variant, scope) => emitDecodeValue(variant, value, scope),
     generatedText: (generated) => {
-      const className = ctx.nestedGenerated?.(generated.id);
-      const name = className ? className : undefined;
+      const name = ctx.nestedGenerated?.(generated.id);
       return name
         ? code`${value} instanceof ${name} ? ${value} : ${fallibleConversion(ctx, code`${rt.conversion.decodeGeneratedModelTrusted}(${name}, ${value})`)}`
         : undefined;
@@ -1460,7 +1461,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
       : decoded;
     const entries = code`Object.entries((${value} ?? {}) as Record<string, unknown>)`;
     if (listed.length === 0) return code`Object.fromEntries(${entries}.map(([key, value]) => [key, ${entry}]))`;
-    const extras = code`Object.fromEntries(${entries}.filter(([key]) => !${literal(listed)}.includes(key)).map(([key, value]) => [key, ${entry}]))`;
+    const extras = code`Object.fromEntries(${entries}.filter(([key]) => ${keyIsNotListed(identifier('key'), listed)}).map(([key, value]) => [key, ${entry}]))`;
     return asObjectLiteral(code`{ ...${extras}, ...${emitDecodedRecord(descriptor, value, ctx)} }`);
   }
   const named = ctx.graph.nodeFor(descriptor);
@@ -1715,10 +1716,9 @@ function emitFillFunction(
     ...propertyWrites,
   ];
   if (additionalSchema || carriesExtras || patternConstraints.length > 0) {
-    const known = join(properties.map(([name]) => literal(name)), code`, `);
     rows.push(
       code`  for (const key of Object.keys(wire)) {`,
-      properties.length > 0 ? code`    if ([${known}].includes(key)) continue;` : code`    if (false) continue;`,
+      ...(properties.length > 0 ? [code`    if (${keyIsListed(identifier('key'), properties.map(([name]) => name))}) continue;`] : []),
       // An undeclared key whose value is undefined is absent, as the validator and encode treat it.
       code`    const __golemExtra = wire[key];`,
       code`    if (__golemExtra === undefined) continue;`,
@@ -1842,7 +1842,7 @@ function emitEncodedRecord(
   const additional = typeof descriptor.additionalProperties === 'object' ? descriptor.additionalProperties : undefined;
   const extra = inputSlot('extra', 'name');
   const keyParameter = fields.length === 0 ? code`` : code`key`;
-  const unlisted = fields.length === 0 ? code`` : code` && !${literal(fields.map(([name]) => name))}.includes(key)`;
+  const unlisted = fields.length === 0 ? code`` : code` && ${keyIsNotListed(identifier('key'), fields.map(([name]) => name))}`;
   const extras = additional || descriptor.additionalPropertiesDeclared
     ? [code`...Object.fromEntries(Object.entries(${asRecordCode(inputOf(self))}).filter(([${keyParameter}, extra]) => extra !== undefined${unlisted}).map(([key, extra]) => [key, ${bindInput(emitEncodeValue(additional ?? { kind: 'unknown' }, inputOf(extra), ctx), extra, code`extra`)}]))`]
     : [];
@@ -2074,9 +2074,12 @@ function emitStringifySection(runtime: NodeRuntime): Code {
   const emitsValidatedWire = validationEnabled && !node.sameSchema;
   const encoded = encodedContext(runtime);
   const stringifyValue = inputSlot('value', 'name', true);
-  const encodedExpr = objectDescriptor
-    ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(stringifyValue), encoded), stringifyValue, code`value`)
-    : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encoded));
+  // The validated wire write is the only reader of the encoding, and it fills the inline locals that `encoded` declares.
+  const encodedExpr = emitsValidatedWire
+    ? objectDescriptor
+      ? bindInput(emitEncodedRecord(objectDescriptor, inputOf(stringifyValue), encoded), stringifyValue, code`value`)
+      : onCastValue((cast) => emitEncodeValue(node.descriptor, cast, encoded))
+    : undefined;
   const exportsWire = codecIsExported(node, ctx) && (typeof ctx.exportWireStringify === 'function' ? ctx.exportWireStringify(node) : ctx.exportWireStringify === true);
   const wireStringifySrc = emitsValidatedWire
     ? code`${emitStringifyFunction(node, ctx.graph, ctx.serde, { ...ctx, wireIdentity: true, withoutOptions: true, functionName: `${stringifyName}Wire` })}${exportsWire
@@ -2093,7 +2096,7 @@ function emitStringifySection(runtime: NodeRuntime): Code {
       code`  if (validates) {`,
       ...(runtime.reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
       code`    ${assertId}(value, options);`,
-      ...(emitsValidatedWire ? [
+      ...(encodedExpr ? [
         code`    const wire = ${encodedExpr};`,
         // The full model check already ran; check only the JSON encoding produced.
         ...(node.wireOnlyJsonSchema !== undefined ? [code`    ${wireOnlyAssertId}(wire, options);`] : []),

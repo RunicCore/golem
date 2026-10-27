@@ -5,7 +5,7 @@
 
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
 import { MODEL_FIELDS_KEY } from '../schema-keywords.js';
-import { code, identifier, join, literal, sameCode, type Code } from './code.js';
+import { code, join, literal, sameCode, type Code } from './code.js';
 import { rt } from './rt.js';
 import {
   emitArrayItems,
@@ -70,6 +70,18 @@ export function presentKeysCode(
   const cases = join(captures.map(([key, local]) => code`case ${literal(key)}: ${local} = ${object}[${literal(key)}]; break;`), code` `);
   const other = otherwise === undefined ? code`` : code` default: ${otherwise}`;
   return code`let ${join(captures.map(([, local]) => declare(local)), code`, `)}; for (const __golemKey of Object.keys(${object})) switch (__golemKey) { ${cases}${other} }`;
+}
+
+/**
+ * The test that `key` is one of `names` (or, for `keyIsNotListed`, none of them), as comparisons: the generated code builds
+ * no list each time it runs. `names` is not empty.
+ */
+export function keyIsListed(key: Code, names: readonly string[]): Code {
+  return join(names.map((name) => code`${key} === ${literal(name)}`), code` || `);
+}
+
+export function keyIsNotListed(key: Code, names: readonly string[]): Code {
+  return join(names.map((name) => code`${key} !== ${literal(name)}`), code` && `);
 }
 
 /**
@@ -471,7 +483,7 @@ export function emitUnionConversion(
     const { sequence, scalars } = pair;
     const scalar = scalarBranch(scalars);
     const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
-    return joined(conversion, mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
+    return conversion.joinSequence?.(mapped, scalar) ?? emitScalarOrArrayConversion(expression, mapped, scalar);
   }
   const jsonValue = scalarArrayObject(present);
   if (jsonValue) {
@@ -484,7 +496,7 @@ export function emitUnionConversion(
       : json
         ? code`(${objectValueExpression(expression)} ? ${converted} : ${scalar})`
         : code`${objectValueExpression(expression)} ? (${converted}) : ${scalar}`;
-    return joined(conversion, mapped, rest) ?? emitScalarOrArrayConversion(expression, mapped, rest);
+    return conversion.joinSequence?.(mapped, rest) ?? emitScalarOrArrayConversion(expression, mapped, rest);
   }
   const tagged = conversion.tagged();
   if (tagged !== undefined) return tagged;
@@ -524,12 +536,6 @@ export function emitUnionConversion(
   }
   if (objectsOrModels.length > 1) throw new ObjectUnionDiscriminatorError(present);
   throw new AmbiguousUnionConversionError(present);
-}
-
-/** The walker's own join of the sequence and the scalar, when it gives one. */
-function joined(conversion: UnionConversion, mapped: Code, scalar: Code): Code | undefined {
-  const result = conversion.joinSequence?.(mapped, scalar);
-  return result === undefined ? undefined : result;
 }
 
 function generatedWithObjects(
