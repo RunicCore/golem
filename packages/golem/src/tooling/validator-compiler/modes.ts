@@ -3,7 +3,7 @@ import type { IrObject, IrPatternProperty } from './ir.js';
 import { presentKeysCode } from '../union-conversion.js';
 import { PATH, COMMA, ISSUES, ALL, callFunction, type CallArguments } from './function-names.js';
 import { localName, stateTest } from './local-helpers.js';
-import { patternExpression, type ModuleState } from './module-state.js';
+import { patternExpression } from './module-state.js';
 import type { FunctionWriter } from './function-writer.js';
 import type { FastPlan } from './fast-plan.js';
 
@@ -103,12 +103,10 @@ export function readSet(check: IrObject, marks: boolean): ReadSet {
 
 /**
  * The mode of a `FunctionWriter`: one traversal and one definition of each leaf check, written as the function the mode
- * asks for. `presence` gives the reader for the object `value`.
+ * asks for.
  */
 export interface WriterMode {
   readonly fail: FailMode;
-  /** `captured` names a local for each declared key the object's checks read; a key outside it is read on its own. */
-  readonly presence: (state: ModuleState, value: Code, captured?: readonly Capture[]) => PresenceReader;
   /** The form the mode writes of a check that has a full form and may have a cheaper fast one. */
   readonly form: <Form extends Lazy>(full: Form, fast: Form | undefined) => Form;
   /** Writes the key test of an object: it reads the declared keys, and in the fast check also tests the unknown keys and counts the keys. */
@@ -128,7 +126,7 @@ export interface WriterMode {
 
 const REPORT_FAILURE = code`ok = false; if (!${ALL}) { ${PATH}.length = pl; return false; }`;
 
-export function objectPresence(_state: ModuleState, value: Code, captured: readonly Capture[] = []): PresenceReader {
+export function objectPresence(value: Code, captured: readonly Capture[] = []): PresenceReader {
   // One Object.keys pass reads the declared keys of an object; the faster exact form of the JSON view.
   const locals = new Map(captured);
   return {
@@ -147,11 +145,10 @@ export const FULL_VALIDATOR: WriterMode = {
     fail: () => REPORT_FAILURE,
     leaves: false,
   },
-  presence: objectPresence,
   form: full => full,
   // Reads the declared keys; the checks after it loop over the key list for unknown keys and patterns.
   keyTest: (writer, { check, value, captured, reads }) => {
-    const presence = objectPresence(writer.state, value, captured);
+    const presence = objectPresence(value, captured);
     for (const line of presence.setup) writer.line(line);
     const keys = writer.fresh('keys');
     if (reads.all) writer.line(code`const ${keys} = ${localName('definedKeys')}(${value});`);
@@ -191,7 +188,7 @@ export const FULL_VALIDATOR: WriterMode = {
  * passes over the key list read them, and a failure of theirs reads the rest before it leaves (`KeyTest.failure`).
  */
 function fastKeyTest(writer: FunctionWriter, { check, value, captured, reads }: KeyTestRequest): KeyTest {
-  const presence = objectPresence(writer.state, value, captured);
+  const presence = objectPresence(value, captured);
   if (!reads.all) {
     for (const line of presence.setup) writer.line(line);
     return { presence };
@@ -264,7 +261,6 @@ export function fastCheckMode(plan: FastPlan): WriterMode {
   };
   return {
     fail: { start: [], end: code`return true;`, issue: () => [code`return false;`], fail: () => code`return false;`, leaves: true },
-    presence: objectPresence,
     form: (full, fast) => fast ?? full,
     keyTest: fastKeyTest,
     call: (writer, id, args) => {
