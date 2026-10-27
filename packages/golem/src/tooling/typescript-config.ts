@@ -53,6 +53,31 @@ export function referenceClosure<P extends { readonly projectReferences?: readon
   return [...found].map(([configFile, parsed]) => ({ configFile, parsed }));
 }
 
+/** The command that builds a referenced project: its own golem.yaml names it. */
+export function referencedCommand(project: string): string {
+  return `golem build --config ${displayPath(join(dirname(project), 'golem.yaml'))}`;
+}
+
+/**
+ * The refusal of a tsconfig that would follow project references. `tsc -b` would also build projects that have no golem.yaml, whose calls
+ * would not be rewritten, so the message names each referenced project with the command that builds it. `reason` says why and what to do.
+ */
+export function referencesRefusal(configFile: string, references: readonly { readonly path: string }[], reason: string): Error {
+  const commands = references.map((reference) => `  ${displayPath(reference.path)}: ${referencedCommand(reference.path)}`);
+  return new Error([`${reason}${commands.length === 0 ? '' : ` Build each project of ${displayPath(configFile)} with its own golem.yaml, in dependency order:`}`, ...commands].join('\n'));
+}
+
+/**
+ * Refuse a solution tsconfig, one with no files and only references. Every consumer of a tsconfig that a golem.yaml or `golem build -p`
+ * names (the jobs, the check scan, the build and the build tools) calls this once it has parsed the file. `named` is where the file was
+ * named: the `tsconfig` key of the golem.yaml, or `-p`.
+ */
+export function assertNotSolutionTsconfig(configFile: string, parsed: { readonly fileNames: readonly string[]; readonly projectReferences: readonly { readonly path: string }[] }, named: 'yaml' | 'project'): void {
+  if (parsed.fileNames.length > 0 || parsed.projectReferences.length === 0) return;
+  const lead = `${displayPath(configFile)} only lists project references, so it has no files.`;
+  throw referencesRefusal(configFile, parsed.projectReferences, named === 'yaml' ? `${lead} Name one referenced project in the tsconfig key of golem.yaml.` : `${lead} A golem.yaml names one project.`);
+}
+
 /** A source `tsc` replaces with a declaration output when another project reads it through a reference: not a declaration file, not JSON. */
 export function hasDeclarationOutput(source: string): boolean {
   return !/\.d\.[cm]?ts$/.test(source) && !/\.json$/.test(source);
