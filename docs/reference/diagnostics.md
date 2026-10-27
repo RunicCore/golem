@@ -32,13 +32,12 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1103
 
-**Named body parameter.** A one-field `@Body('field')` is not valid in these cases:
+**Named body parameter.** A `@Body` parameter is not valid in these cases:
 
-- Its type is no `IModel`, `IObject` or array of them.
-- It is optional.
-- It shares an operation with a whole `@Body()`.
-
-A second whole `@Body()` in one method is also invalid, because both read the whole body.
+- A one-field `@Body('field')` has a type that is no `IModel`, `IObject` or array of them.
+- A one-field `@Body('field')` is optional.
+- A one-field `@Body('field')` shares an operation with a whole `@Body()`.
+- A second whole `@Body()` in the same method.
 
 `NestModelInterceptor` converts only a model field, and it cannot convert a whole body and a field of it together.
 
@@ -84,7 +83,7 @@ A second whole `@Body()` in one method is also invalid, because both read the wh
 - An unsupported method decorator such as `@All()` or `@Sse()`.
 - An unmapped `@RequestMapping({ method })`.
 - A non-constant option on a route-level decorator such as `@Header()` or `@Version()`.
-- A route method with a quoted or computed name, such as `'list-items'()` or `[NAME]()`.
+- A route method with a computed name, such as `[NAME]()`.
 
 **Fix:**
 

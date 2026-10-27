@@ -139,7 +139,7 @@ function componentReferenceName(value: string): string | undefined {
 /** Maps whose keys are names the document author picks, so a key such as `example` or `$ref` there is a name, not a keyword. */
 const NAME_MAP_KEYWORDS: ReadonlySet<string> = new Set([
   'properties', 'patternProperties', 'dependentSchemas', '$defs', 'definitions', 'encoding',
-  'schemas', 'responses', 'parameters', 'requestBodies', 'headers', 'callbacks', 'pathItems', 'links', 'securitySchemes',
+  'schemas', 'responses', 'parameters', 'requestBodies', 'headers', 'callbacks', 'pathItems', 'links', 'securitySchemes', 'webhooks', 'mediaTypes',
 ]);
 /** Keywords whose value is data, not a schema: a `$ref` key inside it is not a reference. */
 const DATA_KEYWORDS: ReadonlySet<string> = new Set(['example', 'examples', 'default', 'const', 'enum']);

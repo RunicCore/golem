@@ -124,6 +124,14 @@ function assertPortablePath(value: string, node: ts.Node): void {
     ));
   }
 }
+/** The name a method answers to: an identifier, a quoted name or a number. A computed name has none. */
+function staticMethodName(method: ts.MethodDeclaration): string | undefined {
+  const name = method.name;
+  return ts.isIdentifier(name) || ts.isStringLiteral(name) || ts.isNoSubstitutionTemplateLiteral(name) || ts.isNumericLiteral(name)
+    ? name.text
+    : undefined;
+}
+
 function classMethods(
   checker: ts.TypeChecker,
   classDeclaration: ts.ClassLikeDeclaration,
@@ -141,11 +149,12 @@ function classMethods(
   const own = classDeclaration.members.filter(
     (member): member is ts.MethodDeclaration => ts.isMethodDeclaration(member) && !member.modifiers?.some(item => item.kind === ts.SyntaxKind.StaticKeyword),
   );
-  // A quoted or computed name has no static identity to override by, so the route loop sees every such method and reports one that carries a route.
+  // A computed name has no static identity to override by, so the route loop sees every such method and reports one that carries a route.
   const byName = new Map<string, ts.MethodDeclaration>();
   const unnamed: ts.MethodDeclaration[] = [];
   for (const method of [...inherited, ...own]) {
-    if (ts.isIdentifier(method.name)) byName.set(method.name.text, method);
+    const name = staticMethodName(method);
+    if (name !== undefined) byName.set(name, method);
     else unnamed.push(method);
   }
   return [...byName.values(), ...unnamed].sort((left, right) => {
@@ -374,12 +383,13 @@ async function analyzeController(
     if (routeExcluded(context, decorators)) continue;
     const selected = routeDecorator(context, decorators);
     if (!selected) continue;
-    if (!ts.isIdentifier(method.name)) {
+    const methodName = staticMethodName(method);
+    if (methodName === undefined) {
       throw new TsToOpenApiError(diagnostic(
         method.getSourceFile(),
         method.name,
         TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator,
-        `Nest route method ${method.name.getText()} in ${controllerName} has a quoted or computed name that the static analysis cannot read; use an identifier name, or exclude the route with @ApiExcludeEndpoint().`,
+        `Nest route method ${method.name.getText()} in ${controllerName} has a computed name that the static analysis cannot read; use an identifier name, or exclude the route with @ApiExcludeEndpoint().`,
       ));
     }
     const routeExpansion = expandOptionalSegments(await evaluateStringValues(selected.path, context, ['']), selected.decorator.decorator);
@@ -410,7 +420,7 @@ async function analyzeController(
     };
     const pathExpansion = routePaths.length > 1 || classPaths.length > 1;
     const versionExpansion = effectiveVersions.length > 1;
-    const operationBase = operation.operationId ?? `${controllerName}_${method.name.getText()}`;
+    const operationBase = operation.operationId ?? `${controllerName}_${methodName}`;
     let pathExpansionIndex = 0;
     for (let classPathIndex = 0; classPathIndex < classPaths.length; classPathIndex += 1) {
       for (let pathIndex = 0; pathIndex < routePaths.length; pathIndex += 1) {
@@ -437,7 +447,7 @@ async function analyzeController(
           || !optionalNames.has(String(parameter.name)));
         routes.push({
           controller: controllerName,
-          methodName: method.name.getText(),
+          methodName,
           method,
           sourceFile: method.getSourceFile(),
           httpMethod: selected.method,

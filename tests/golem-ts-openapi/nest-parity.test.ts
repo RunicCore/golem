@@ -104,11 +104,13 @@ test('a server name is written on OpenAPI 3.2.0, refused on 3.1.2, and refused w
   assert.match(repeated.text, /servers\[1\]\.name "production" repeats the name of an earlier server/);
 });
 
-test('a controller method with a quoted or computed name and a route decorator is reported, not dropped', async t => {
+test('a quoted route method name resolves like an identifier, and a computed one is reported, not dropped', async t => {
   // protects: T-493 a route method the analysis cannot name is a diagnostic, not a missing operation
-  const quoted = await rejection(build(t, `${ITEM}@Controller('items') export class ItemsController { @Get() 'list-items'(): TItem { return { id: 'a' }; } }`));
-  assert.ok(quoted.codes.includes('NEST1201'), quoted.text);
-  assert.match(quoted.text, /list-items.*identifier/);
+  const document = await build(t, `${ITEM}
+class Base { @Get() 'list-items'(): TItem { return { id: 'a' }; } }
+@Controller('items') export class ItemsController extends Base { @Post() 'list-items'(): TItem { return { id: 'b' }; } }
+`);
+  assert.deepEqual(Object.keys(document.paths['/items']!), ['post']);
   const computed = await rejection(build(t, `${ITEM}const NAME = 'list';\n@Controller('items') export class ItemsController { @Get() [NAME](): TItem { return { id: 'a' }; } }`));
   assert.ok(computed.codes.includes('NEST1201'), computed.text);
   assert.match(computed.text, /\[NAME\].*identifier/);
@@ -158,4 +160,34 @@ export class ItemsController {
   const holder = document.paths['/items']!.get!.responses['200']!.content['application/json']!.schema;
   assert.deepEqual(holder.properties, { alias: { type: ['string', 'null'] }, name: { type: 'string' } });
   assert.deepEqual(holder.required, ['alias', 'name']);
+});
+
+test('model fields named like keywords stay names: both components are written', async t => {
+  // protects: T-493 a property called example or enum is not skipped as data when references are collected
+  const document = await build(t, `
+export type TExample = IModel<{ id: string }>;
+export type TEnum = IModel<{ id: string }>;
+export type TCarrier = IModel<{ example: TExample; enum: TEnum }>;
+@Controller('items')
+export class ItemsController {
+  @Get() list(): TCarrier { return { example: { id: 'a' }, enum: { id: 'b' } }; }
+}
+`);
+  assert.deepEqual(Object.keys(document.components?.schemas ?? {}).sort(), ['TCarrier', 'TEnum', 'TExample']);
+});
+
+test('tags and security of a base controller come first, then the derived controller, bottom decorator first in each', async t => {
+  // protects: T-493 class metadata accumulates base first through Reflect.getMetadata inheritance, as @nestjs/swagger does
+  const document = await build(t, `${ITEM}
+@ApiTags('b1') @ApiTags('b2') @ApiBearerAuth() @ApiBasicAuth()
+class Base {}
+@ApiTags('d1') @ApiTags('d2') @ApiBasicAuth() @ApiBearerAuth()
+@Controller('items')
+export class ItemsController extends Base {
+  @Get() list(): TItem { return { id: 'a' }; }
+}
+`);
+  const operation = document.paths['/items']!.get!;
+  assert.deepEqual(operation.tags, ['b2', 'b1', 'd2', 'd1']);
+  assert.deepEqual(operation.security, [{ basic: [] }, { bearer: [] }, { bearer: [] }, { basic: [] }]);
 });

@@ -102,7 +102,7 @@ Install `@exprtlabs/golem-ts-openapi` to use `controllers`. A job reads static N
 | `output` | path | Yes | — | One config-relative `.json`, `.yaml` or `.yml` document. |
 | `openapiVersion` | `'3.2.0'` or `'3.1.2'` | No | `3.2.0` | Document dialect. Use `3.1.2` for consumers that need it. A contract that `3.1.2` cannot represent stops generation. |
 | `info` | object | Yes | — | OpenAPI information object with the API `title` and `version`. |
-| `servers` | array of objects | No | — | OpenAPI server objects, each with a `url`. |
+| `servers` | array of objects | No | — | OpenAPI server objects, each with a `url`. On `3.2.0` a server can also take a `name`, unique in the list. |
 | `tags` | array of objects | No | — | OpenAPI tag objects with a `name` and an optional description. |
 | `securitySchemes` | object | No | — | Named OpenAPI security schemes that controller metadata references. |
 | `globalPrefix` | string | No | — | Prefix for every route. Match the Nest application configuration. |
