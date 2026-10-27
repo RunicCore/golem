@@ -2,4 +2,5 @@
 .build/
 *.generated.ts
 apps/*/src/generated/
+# the folder link that `npm run link-shared` makes
 apps/worker/shared
