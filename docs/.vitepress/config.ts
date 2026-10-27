@@ -24,7 +24,7 @@ function docsOutDir(): string {
 export default defineConfig({
   lang: 'en-US',
   title: 'ExprtLabs Golem',
-  description: 'TypeScript models, validation and serialization, with OpenAPI clients and optional MobX integration.',
+  description: 'TypeScript models, validation and serialization, with an OpenAPI to TypeScript SDK and optional MobX integration.',
   srcDir: '.',
   base: docsBase(),
   outDir: docsOutDir(),

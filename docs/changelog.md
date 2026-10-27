@@ -18,6 +18,9 @@ Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+
 - **Breaking:** `@exprtlabs/golem/manifest` no longer exports `manifestMarker` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
 - **Breaking:** `getObjectCodec`, `getIModelClass`, `requireObjectCodec`, `requireIModelClass` and `registerIModelClass` find a model only by its full id. A short model name no longer matches ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - **Breaking:** a model class with `@ApiSchema({ name })` is the OpenAPI component of that name ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- **Breaking:** a route with no response decorator gets an empty description (`""`) on its default response, as Nest Swagger writes. Before, it got `Success`. Regenerate, and update a test that compares the generated document ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- **Breaking:** an `allOf` with a property typed `format: date-time` in one member and as a `$ref` to an object in another stops generation. Give the property one type in every member ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- **Breaking:** a `@Body()` or `@Query()` parameter that `NestModelInterceptor` cannot convert, such as a union of models with no shared tag, stops generation with `RUNM1081`. To keep your own interceptor, set `nonModelInputs: warn` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
 - The `model-manifest.json` of a generated SDK no longer lists `modelReferences` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - An untagged `anyOf` whose branches state different JSON types checks a value only with the branches of its type.
 
@@ -25,12 +28,12 @@ Read the [CHANGELOG](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md
 
 ## 1.0.0
 
-Golem 1.0.0 brings TypeScript models, NestJS controller contracts and OpenAPI clients into one generation workflow. Install the generators on their own, or combine them in one `golem.yaml`.
+Golem 1.0.0 brings TypeScript models, NestJS controller contracts and an OpenAPI to TypeScript SDK into one generation workflow. Install the generators on their own, or combine them in one `golem.yaml`.
 
-- Define [models](/guide/models) in TypeScript, extend the generated base class with your methods, and convert typed wire values with `fromWireFormat` and `toWireFormat` ([Serialization](/guide/serialization)).
+- Define [models](/guide/models) in TypeScript, extend the generated base class with your methods, and convert typed JSON values with `fromWireFormat` and `toWireFormat` ([Serialization](/guide/serialization)).
 - [Validate models](/guide/validation) with generated TypeScript validators that run without extra packages. [Tags](/guide/tags) add built-in constraints, predicates and conversion pairs.
 - Compose nested models with TypeScript utilities such as `Pick` and `Omit` ([field types](/guide/field-types#nested-models-and-derived-types)).
-- [Generate typed API clients](/guide/client) with authentication, cancellation, codecs and [streaming responses](/guide/client-usage#streaming-responses).
+- [Generate a typed SDK from OpenAPI](/guide/client) with authentication, cancellation, codecs and [streaming responses](/guide/client-usage#streaming-responses).
 - Generate an OpenAPI document from NestJS controllers without starting the application ([OpenAPI from controllers](/guide/nestjs)). [NestJS requests](/guide/nestjs-requests) with `NestModelInterceptor`.
 - Build with [`golem build`](/reference/cli#build) or another build tool ([Build tools](/guide/build)).
 - Keep generated files current with [`watch`](/guide/watch), or run the read-only `check` command in CI.

@@ -195,4 +195,4 @@ npm run bench -- --adapters golem-object --payloads simple
 - The payloads are `simple`, `nested`, `array`, `checkout`, `checkout-plain`, `serde-none`, `serde-many`, `union-tagged` and `union-class`.
 - The run prints its tables to the console and writes `.cache/benchmark/results.json`.
 - A name that is not valid stops the run before it starts, with exit code 2. The message lists the valid names.
-- The run stores the host load with the numbers, so stop other work on the machine first.
+- The run stores the machine load with the numbers, so stop other work on the machine first.

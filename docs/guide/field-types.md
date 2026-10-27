@@ -26,7 +26,7 @@ An `undefined` property is left out of JSON. `bigint` needs a codec that writes 
 
 ## Dates and times
 
-Hold dates in models and API clients as `Date` or as Temporal values, and send them as ISO 8601 strings.
+Hold dates in models and the SDK as `Date` or as Temporal values, and send them as ISO 8601 strings.
 
 <<< ../../examples/models/src/reminder.model.ts#date-field
 
