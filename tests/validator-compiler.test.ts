@@ -736,6 +736,22 @@ test('a $ref that does not resolve is an error naming the reference', () => {
   assert.match(result.diagnostics[0].message, /orders\.yaml/);
 });
 
+test('a $ref that names a value that is no schema is an error naming the reference and its target', () => {
+  // protects: T-509 a $ref to a non-schema value is an error, not a validator that accepts everything
+  const result = compile({ roots: new Map([['root', { info: { title: 'x' }, properties: { a: { $ref: '#/info/title' } } }]]) }, { unknownFormats: 'warn' });
+  assert.equal(result.source, '');
+  assert.deepEqual(result.diagnostics.map(entry => [entry.code, entry.severity, entry.path, entry.message]), [
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, '/properties/a/$ref', 'schema "root" at /properties/a/$ref: the value of $ref is not valid: expected a reference to a schema; "#/info/title" names /info/title, which is no schema'],
+  ]);
+});
+
+test('an if with no then or else, whose value is a schema, compiles without a diagnostic', () => {
+  // protects: T-509 a schema value of if is not reported when nothing lowers it
+  const result = compile({ roots: new Map([['root', { properties: { a: { if: { type: 'string' } } } }]]) }, { unknownFormats: 'warn' });
+  assert.deepEqual(result.diagnostics, []);
+  assert.notEqual(result.source, '');
+});
+
 test('a pattern that is not a valid unicode regular expression is an error', () => {
   const result = compile({ roots: new Map([['root', { properties: { a: { pattern: '[' } } }]]) }, { unknownFormats: 'warn' });
   assert.equal(result.source, '');

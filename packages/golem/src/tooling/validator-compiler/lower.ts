@@ -501,10 +501,12 @@ class Lowering {
     }
   }
 
-  private lowerReference({ node, here, sameValue, checks }: RecordContext): void {
+  private lowerReference({ node, here, sameValue, checks, malformed }: RecordContext): void {
     if (typeof node.$ref !== 'string') return;
     const target = this.resolver.resolve(node.$ref, here.base);
-    if (target) {
+    if (target && typeof target.node !== 'boolean' && !isRecord(target.node)) {
+      malformed('$ref', `expected a reference to a schema; ${JSON.stringify(node.$ref)} names ${target.pointer === '' ? 'the whole document' : target.pointer}, which is no schema`);
+    } else if (target) {
       const to = this.functionFor(target, referenceName(target));
       sameValue.push({ to, location: here, keyword: '$ref' });
       checks.push({ kind: 'call', fn: to });
