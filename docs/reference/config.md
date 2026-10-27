@@ -5,7 +5,7 @@ Look up every `golem.yaml` key with its type, default and effect.
 Put `golem.yaml` in the project that owns the source files. Paths in the file are relative to its directory. The `--config` value is relative to the current directory.
 
 - `version: 1` selects the configuration format. It is independent of the package release.
-- `tsconfig` names the TypeScript project that `golem generate` reads and `golem build` builds. The Vite and esbuild plugins and the Node loader open the same project from `golem.yaml`. They read the `config` option of the plugin, then `GOLEM_CONFIG`, then `./golem.yaml`.
+- `tsconfig` names the TypeScript project. Every job reads it: `golem generate`, `golem check` and `golem build`, and the Vite and esbuild plugins and the Node loader, which open the same project from `golem.yaml`. They read the `config` option of the plugin, then `GOLEM_CONFIG`, then `./golem.yaml`.
 - `mobx`, `validation` and `allowAny` apply to every job. `exact` applies to the models job and to the models that controller jobs describe. A named `IObject` or `IModel` can still set `validation`, `allowAny` and `exact` for that declaration.
 - Unknown keys are errors.
 - Configure at least one `generators`, `controllers`, `openapi` or `models` job.
@@ -29,7 +29,8 @@ The CLI runs [generator jobs](#generator-jobs) first, then controller jobs, then
 | `openapi` | array of OpenAPI jobs | No | — | Non-empty list of OpenAPI SDK jobs |
 | `models` | object | No | — | One TypeScript model job |
 
-- `tsconfig` must name an existing file when you set the key. One `golem.yaml` serves one tsconfig ([what the tsconfig needs](/reference/cli#what-the-tsconfig-needs)).
+- `tsconfig` must name an existing file when you set the key. Name a build-specific file such as `tsconfig.build.json` or `tsconfig.app.json` to give every job its `paths` and options. A tsconfig nearer to a job root is not read.
+- One `golem.yaml` serves one tsconfig ([what the tsconfig needs](/reference/cli#what-the-tsconfig-needs)). A tsconfig that has only `references` stops every job: name one referenced project.
 - A named `IObject` or `IModel` with `{ validation: true or false }` overrides `validation` for its declaration.
 - `allowAny: true` permits those fields. A declaration can override it ([`any` and `unknown`](/guide/field-types#any-and-unknown)).
 - `exact: false` admits keys that a model does not list. A declaration can override it ([Objects and exact](/guide/field-types#objects-and-exact)).
