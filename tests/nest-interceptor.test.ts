@@ -17,14 +17,17 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { defaultIfEmpty, firstValueFrom, of, type Observable } from 'rxjs';
+import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
 import {
   nestModelCodec,
   nestModelReturn,
+  nestModelUnion,
   NestModelInterceptor,
   nestModelStringifyInterceptor,
+  nestUnionFromMetatype,
   objectCodecFromMetatype,
 } from '@exprtlabs/golem/nest';
+import { LibError } from '@exprtlabs/golem/errors';
 import { decodeGeneratedModel, deserializeDate, unknownDiscriminatorValue } from '@exprtlabs/golem/conversion';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
@@ -1071,6 +1074,81 @@ test('NestModelInterceptor answers 500 for a marked return with no codec and pas
     await new Promise<void>((resolve) => setImmediate(resolve));
     assert.equal(errors.length, 1, errors.join('\n'));
     assert.match(errors[0] ?? '', /^TypeError: golem fault: the build marked the return of UnloadedController\.marked with model "NeverLoaded_cccccccc", but the generated module of that model did not load/);
+  } finally {
+    await application.close();
+  }
+});
+
+/** A variant codec of a union that tells which variant converted the wire value. */
+function variantCodec(id: string, schema?: object) {
+  return createObjectCodec(id, {
+    stringify: (value) => JSON.stringify(value),
+    parse: (text) => JSON.parse(text) as never,
+    validate: () => true,
+    assert: (value) => value as never,
+    toWireFormat: (value) => value,
+    fromWireFormat: (wire) => ({ variant: id, wire }),
+    ...(schema ? { schema } : {}),
+  });
+}
+
+test('a union binding resolves its variant codecs on first use, so a variant that registers after the controller class still converts', () => {
+  // protects: T-511 a union token decorated before its variant codecs register is not left unbound
+  const klass = inputController('LateUnion', Body, undefined, Object);
+  nestModelUnion('kind', [[['a'], 'LateUnionA_11111111'], [['b'], 'LateUnionB_22222222']])(klass.prototype, 'handle', 0);
+  variantCodec('LateUnionA_11111111');
+  const type = (Reflect.getMetadata('design:paramtypes', klass.prototype, 'handle') as unknown[])[0];
+  const request = { body: { kind: 'b' }, query: {} };
+  const context = { getHandler: () => klass.prototype.handle, getClass: () => klass, getType: () => 'http', switchToHttp: () => ({ getRequest: () => request }) } as unknown as ExecutionContext;
+  assert.equal(nestUnionFromMetatype(type), undefined);
+  assert.throws(() => new NestModelInterceptor().intercept(context, { handle: () => of(undefined) }), new TypeError(
+    'golem fault: NestModelInterceptor found no registered codec "LateUnionB_22222222" for the union "LateUnionA_11111111 | LateUnionB_22222222" for @Body() parameter 0 of LateUnion.handle. The rewrite loads the generated module of the model, and that module did not load. Run golem generate and rewrite the file again.',
+  ));
+  variantCodec('LateUnionB_22222222');
+  const resolved = nestUnionFromMetatype(type);
+  assert.ok(resolved);
+  assert.equal(resolved, (type as { [key: symbol]: unknown })[Symbol.for('@exprtlabs/golem:nestModelCodec.union')], 'the interceptor converts with this object');
+  new NestModelInterceptor().intercept(context, { handle: () => of(undefined) });
+  assert.deepEqual(request.body, { variant: 'LateUnionB_22222222', wire: { kind: 'b' } });
+});
+
+test('a custom interceptor converts a union @Body() and @Query() with nestUnionFromMetatype; a model token and a non-model give undefined', async () => {
+  // protects: T-511 a custom interceptor reads a union binding through a public function
+  variantCodec('Circle_33333333', { type: 'object', properties: { kind: { const: 'circle' }, radius: { type: 'number' } } });
+  variantCodec('Rect_44444444', { type: 'object', properties: { kind: { const: 'rect' }, width: { type: 'number' } } });
+  const union = (decorator: typeof Body | typeof Query, name: string) => {
+    const klass = inputController(name, decorator, undefined, Object, (input) => ({ received: input }));
+    nestModelUnion('kind', [[['circle'], 'Circle_33333333'], [['rect'], 'Rect_44444444']])(klass.prototype, 'handle', 0);
+    return klass;
+  };
+  const bodyController = union(Body, 'UnionBody');
+  const queryController = union(Query, 'UnionQuery');
+  const types = (klass: Function) => Reflect.getMetadata('design:paramtypes', klass.prototype, 'handle') as unknown[];
+  const metatype = types(bodyController)[0];
+  assert.equal(nestUnionFromMetatype(nestModelCodec('Circle_33333333')), undefined);
+  assert.equal(nestUnionFromMetatype(Object), undefined);
+  assert.throws(() => nestUnionFromMetatype(metatype)!.fromWireFormat({ kind: 'triangle' }), (error) => error instanceof LibError && error.causedByInput);
+  // The interceptor answers with what it converted; the handler runs on the raw input.
+  const custom: NestInterceptor = {
+    intercept: (context, next) => {
+      const klass = context.getClass();
+      const request = context.switchToHttp().getRequest<{ body?: unknown; query?: unknown }>();
+      const union = nestUnionFromMetatype(types(klass)[0])!;
+      const picked = klass === bodyController ? union.fromWireFormat(request.body) : union.fromWireFormat(union.decodeQuery(request.query));
+      return next.handle().pipe(map(() => ({ picked })));
+    },
+  };
+  class AppModule {}
+  Module({ controllers: [bodyController, queryController] as never[] })(AppModule);
+  const application = await NestFactory.create(AppModule, { logger: false });
+  application.useGlobalInterceptors(custom);
+  await application.listen(0, '127.0.0.1');
+  try {
+    const base = await application.getUrl();
+    const post = await fetch(`${base}/UnionBody`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'rect', width: 3 }) });
+    assert.deepEqual(await post.json(), { picked: { variant: 'Rect_44444444', wire: { kind: 'rect', width: 3 } } });
+    const query = await fetch(`${base}/UnionQuery?kind=circle&radius=2.5`, { method: 'POST' });
+    assert.deepEqual(await query.json(), { picked: { variant: 'Circle_33333333', wire: { kind: 'circle', radius: 2.5 } } }, 'decodeQuery turns the query text into the number the variant declares');
   } finally {
     await application.close();
   }

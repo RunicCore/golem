@@ -125,6 +125,8 @@ A whole `@Body()` or `@Query()` parameter can be a union of models, such as `TCi
 - A union of models with no shared tag stops with [`RUNM1081`](/reference/diagnostics#runm1081).
 - A union return stays Nest JSON.
 
+Your own interceptor or pipe converts a union parameter with [`nestUnionFromMetatype`](/reference/runtime-api#nest), as it uses [`objectCodecFromMetatype`](/reference/runtime-api#nest) for one model. Pass it the `design:paramtypes` entry of the parameter, which `Reflect.getMetadata('design:paramtypes', Controller.prototype, 'method')` returns, such as `nestUnionFromMetatype(type)?.fromWireFormat(request.body, { failFast: true })`. For a query, call `decodeQuery(request.query)` first.
+
 ## Model responses
 
 The interceptor stringifies a return only when its declared type is a model:
