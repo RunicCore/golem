@@ -597,7 +597,7 @@ export class ItemsController {
 });
 
 test('a DTO field typed with a built-in type keeps its schema and gains no field from the type\'s symbol keys', async t => {
-  // protects: F-39 RUNM1070 is for symbol keys the user wrote; the [Symbol.toStringTag] of a library type is no field and no error
+  // protects: F-39 RUNM1070 is for symbol keys the user wrote; the [Symbol.toStringTag] of a library type is no field and no error; T-457 a Map field keeps the additionalProperties the user wrote
   const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger';
 
@@ -623,6 +623,7 @@ export class BlobsController {
   const schema = expectSchema(responseOf(document, '/blobs', 'get', '200').content?.['application/json']?.schema, 'BlobDto');
   assert.deepEqual(Object.keys(schema.properties ?? {}).sort(), ['at', 'file', 'tags']);
   assert.deepEqual(schema.properties?.file, { format: 'binary', type: 'string' });
+  assert.deepEqual(expectSchema(schema.properties?.tags, 'tags').additionalProperties, { type: 'string' });
 });
 
 test('isModel is false for a model class with a whole-value TSerde and true for the model class itself', async t => {

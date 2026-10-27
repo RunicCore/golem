@@ -128,11 +128,13 @@ ${include('links.ts') ? code`export * from './links.js';` : code``}
 `), stars };
 }
 
-/** The document's servers as data. The client and every operation module pass it to the runtime. */
-function generateServers(servers: EmissionPlan['servers']): RenderedModule {
+/** The document's servers as data, and the base URLs of the operations that other servers override. The client and every operation module pass them to the runtime. */
+function generateServers(plan: EmissionPlan): RenderedModule {
   return renderModule(code`${generatedBannerComment()}
-export const ${exportedName('servers')} = ${documentLiteral(servers, 2)} as const;
-`);
+export const ${exportedName('servers')} = ${documentLiteral(plan.servers, 2)} as const;
+${plan.operationServers.length ? code`
+export const ${exportedName('operationServers')} = ${documentLiteral(plan.operationServers, 2)} as const;
+` : code``}`);
 }
 
 function generateInbound(clientName: string, operations: readonly NormalizedOperation[]): RenderedModule {
@@ -244,7 +246,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
     for (const [name, source] of clientModules.operations) files.set(name, source);
   }
   if (plan.artifacts.has('servers.ts')) {
-    const serversModule = generateServers(plan.servers);
+    const serversModule = generateServers(plan);
     files.set('servers.ts', serversModule.source);
     modules.set('servers.ts', { exports: serversModule.exports, stars: [] });
   }

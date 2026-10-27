@@ -278,13 +278,8 @@ function normalizeOperation(
     responseSchema: responses.find((response) => response.success)?.schema ?? null,
     security,
     callbacks: asRecord(operation.callbacks),
-    servers: Array.isArray(operation.servers)
-      ? operation.servers
-      : Array.isArray(pathItem.servers)
-        ? pathItem.servers
-        : Array.isArray(documentRecord.servers)
-          ? documentRecord.servers
-          : [],
+    // An empty `servers` list counts as not given.
+    servers: [operation.servers, pathItem.servers, documentRecord.servers].filter(Array.isArray).find((list) => list.length > 0) ?? [],
   };
 }
 

@@ -291,16 +291,32 @@ function applyPropertyMetadata(
 
   // An unconstrained ordinary field (`unknown`) is the `true` schema; give its metadata an object to live on.
   let propertySchema: DtoSchema = existing === true && !options.authoritative ? {} : existing as DtoSchema;
-  const explicitSchema = read?.value('schema');
-  if (explicitSchema !== undefined) {
-    if (!isRecord(explicitSchema) && typeof explicitSchema !== 'boolean') {
-      fail(TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata, `Swagger property ${name} schema must be a static object or boolean.`);
-    }
-    propertySchema = mergeSchemaMetadata(propertySchema, explicitSchema as DtoSchema, {
+  // The `schema` option and `additionalProperties` are explicit schema metadata: each must agree with the
+  // TypeScript schema, and a match merges into the written property.
+  const mergeExplicit = (override: DtoSchema): void => {
+    propertySchema = mergeSchemaMetadata(propertySchema, override, {
       ...options,
       node: entry.node,
       location: `${options.location ?? 'schema'}.properties.${name}`,
     });
+  };
+  const staticSchema = (option: string): DtoSchema | undefined => {
+    const value = read?.value(option);
+    if (value !== undefined && !isRecord(value) && typeof value !== 'boolean') {
+      fail(TsToOpenApiDiagnosticCode.UnsupportedSchemaMetadata, `Swagger property ${name} ${option} must be a static object or boolean.`);
+    }
+    return value as DtoSchema | undefined;
+  };
+  const explicitSchema = staticSchema('schema');
+  if (explicitSchema !== undefined) mergeExplicit(explicitSchema);
+  const additionalProperties = staticSchema('additionalProperties');
+  if (additionalProperties !== undefined) {
+    // A TypeScript schema with `additionalProperties: true` (a Map) states no value type, so the explicit value
+    // documents it instead of conflicting. A stated value type must agree.
+    if (!options.authoritative && isRecord(propertySchema) && propertySchema.additionalProperties === true) {
+      propertySchema = Object.fromEntries(Object.entries(propertySchema).filter(([key]) => key !== 'additionalProperties'));
+    }
+    mergeExplicit({ additionalProperties });
   }
   if (typeof propertySchema !== 'boolean') {
     // An ordinary DTO field documented as another primitive (an upload object as

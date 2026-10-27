@@ -197,11 +197,6 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
     };
     collectRequired(definition.rawSchema);
   }
-  for (const [rawName, rawSchema] of objectEntries(schemas)) {
-    const definition = definitions.get(identifier(rawName));
-    const model = definition?.schemaName === rawName ? definition : undefined;
-    checkComposition(componentSite(rawName), model ? model.rawSchema : rawSchema, model, definitions, document, resources, warn);
-  }
 
   // A union model is decided against declared inheritance only, so the result does not depend on
   // component order. A variant that one union selects extends that union's class. A variant that
@@ -270,6 +265,15 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
       warn('OPENAPI_DISCRIMINATOR_NOT_LOWERED', `schema ${JSON.stringify(rawName)} has a discriminator, but not every oneOf/anyOf variant is a component model; its discriminator is not used for conversion`);
       continue;
     }
+  }
+
+  // The composition check reads the unions: a variant that a union selects extends it, so a derived component narrows an
+  // inherited union property to that variant. A union component itself is read at field position, as the schemas that refer
+  // to it read it.
+  for (const [rawName, rawSchema] of objectEntries(schemas)) {
+    const definition = definitions.get(identifier(rawName));
+    const model = definition?.schemaName === rawName && !definition.isUnion ? definition : undefined;
+    checkComposition(componentSite(rawName), model ? model.rawSchema : rawSchema, model, definitions, document, resources, warn);
   }
 
   const ordered: ModelDefinition[] = [];
