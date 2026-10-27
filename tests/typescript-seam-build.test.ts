@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { flagsAsConfigOptions } from '#golem/typescript-config';
+import { declarationOutputOf, flagsAsConfigOptions } from '#golem/typescript-config';
 import { createFixtureProject } from './fixture-project.js';
 import { TSC } from './support/build-project.js';
 
@@ -166,3 +166,37 @@ test('a value of a list option is trimmed and empty means no items, and a negati
   assert.deepEqual(flagsAsConfigOptions(['--lib', ' es2020 , dom '], parse, (options) => options), { lib: ['es2020', 'dom'] });
   assert.deepEqual(flagsAsConfigOptions(['--lib', ''], parse, (options) => options), { lib: [] });
 });
+
+test('a project with references reads the declaration output of each referenced project as tsc -p does, also after it is built again', t => {
+  // protects: T-477 the seam parses the references and opens the program on the declaration outputs, on both lanes
+  const { root, config } = project(t, { 'src/main.ts': "import { x } from '../shared/src/x.js';\nexport const y: number = x;\n", 'shared/src/x.ts': "export const x = 'a';\n" }, { outDir: 'build', rootDir: 'src' });
+  fs.writeFileSync(path.join(root, 'shared/tsconfig.json'), JSON.stringify({ compilerOptions: { ...COMPILER, composite: true, outDir: 'dist', rootDir: 'src' }, include: ['src'] }));
+  fs.writeFileSync(config, JSON.stringify({ compilerOptions: { ...COMPILER, outDir: 'build', rootDir: 'src', noEmit: true }, include: ['src'], references: [{ path: './shared' }] }));
+  const printed = (session: InstanceType<typeof ts.ProgramSession>): string => {
+    using program = session.openProgram({ root, sources: session.parseConfigFile(config).fileNames, configFile: config, compilerOptionOverrides: { strict: true } });
+    return ts.formatDiagnostics(ts.getTscDiagnostics(program), host(root));
+  };
+  using session = new ts.ProgramSession({ cwd: root });
+  assert.deepEqual(session.parseConfigFile(config).projectReferences, [{ path: path.join(root, 'shared/tsconfig.json') }]);
+  spawnSync(process.execPath, [TSC, '-p', 'shared'], { cwd: root });
+  assert.match(printed(session), /^src\/main\.ts\(2,14\): error TS2322: Type 'string' is not assignable to type 'number'\.\n$/);
+  assert.equal(printed(session), tsc(root, ['--pretty', 'false']));
+  fs.writeFileSync(path.join(root, 'shared/src/x.ts'), 'export const x = 1;\n');
+  spawnSync(process.execPath, [TSC, '-p', 'shared'], { cwd: root });
+  assert.equal(printed(session), '');
+  assert.equal(tsc(root, ['--pretty', 'false']), '');
+});
+
+for (const [name, source, options, output] of [
+  ['an outDir and a rootDir', '/p/src/a/x.ts', { outDir: '/p/dist', rootDir: '/p/src' }, '/p/dist/a/x.d.ts'],
+  ['a declarationDir before the outDir', '/p/src/x.ts', { outDir: '/p/dist', declarationDir: '/p/types', rootDir: '/p/src' }, '/p/types/x.d.ts'],
+  ['no outDir: beside the source', '/p/src/x.tsx', { rootDir: '/p/src' }, '/p/src/x.d.ts'],
+  ['a module source', '/p/src/x.mts', { outDir: '/p/dist', rootDir: '/p/src' }, '/p/dist/x.d.mts'],
+  ['a commonjs source', '/p/src/x.cts', { outDir: '/p/dist', rootDir: '/p/src' }, '/p/dist/x.d.cts'],
+  ['no rootDir: from the tsconfig folder', '/p/src/x.ts', { outDir: '/p/dist' }, '/p/dist/src/x.d.ts'],
+] as const) {
+  test(`the declaration file of a composite project's source: ${name}`, () => {
+    // protects: T-477 the 7.1 resolver names the output as tsc does
+    assert.equal(declarationOutputOf(source, '/p/tsconfig.json', options), output);
+  });
+}
