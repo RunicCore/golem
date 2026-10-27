@@ -57,7 +57,8 @@ function rewriteStage(item: IdentityProject, lines: string[]): ReadonlyMap<strin
     });
     for (const diagnostic of scan.diagnostics) lines.push(describeDiagnostic('rewrite', diagnostic));
     for (const [relative, fileScan] of scan.files) {
-      rewritten.set(relative, applyRewrites(fs.readFileSync(path.join(item.root, relative), 'utf8'), fileScan, relative).code);
+      const filename = path.join(item.root, relative);
+      rewritten.set(relative, applyRewrites(fs.readFileSync(filename, 'utf8'), fileScan, filename).code);
     }
   } catch (error) {
     lines.push(describeError('rewrite', error));
