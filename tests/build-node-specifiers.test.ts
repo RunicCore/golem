@@ -75,17 +75,48 @@ async function buildFixture(compilerOptions: Readonly<Record<string, unknown>>) 
 const built = onceShared(() => buildFixture({ sourceMap: true, declaration: true }));
 const declarationsOnly = onceShared(() => buildFixture({ emitDeclarationOnly: true, declaration: true, declarationDir: 'types' }));
 
-/** Type-check a NodeNext consumer of the declarations in `declarations` under the root, with `skipLibCheck` off so the declarations themselves are checked. */
-async function checkConsumer(root: string, declarations: string): Promise<{ readonly code: number | null; readonly output: string }> {
-  const consumer = path.join(root, 'consumer');
-  fs.mkdirSync(consumer, { recursive: true });
-  fs.writeFileSync(path.join(consumer, 'index.mts'), consumerSource(declarations));
-  fs.writeFileSync(path.join(consumer, 'tsconfig.json'), JSON.stringify({
+// A build with no rootDir and sources in two folders: the compiler's output root is the tsconfig directory, so the declarations land in build/src/ and build/tools/.
+const noRootDir = onceShared(async () => {
+  const root = fixtureProject({ declaration: true, rootDir: undefined });
+  writeModelSources(root, { 'tools/probe.ts': "export { thing } from '../src/api';\n" });
+  editTsconfig(root, tsconfig => { tsconfig.include = ['src/**/*.ts', 'src/**/*.js', 'tools/**/*.ts']; });
+  return { root, result: await build(root) };
+});
+
+/**
+ * Type-checks the NodeNext consumer of each build's declarations in one compiler run, with `skipLibCheck` off so the declarations themselves
+ * are checked. The compiler's diagnostics are split by the project they name: a failing consumer shows its own lines, and no other.
+ */
+const consumerOutputs = onceShared(async (): Promise<ReadonlyMap<string, string>> => {
+  const sites = [
+    { root: (await built()).root, declarations: 'build' },
+    { root: (await declarationsOnly()).root, declarations: 'types' },
+    { root: (await noRootDir()).root, declarations: 'build/src' },
+  ];
+  const files = sites.map(({ root, declarations }) => {
+    const file = path.join(root, 'consumer/index.mts');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, consumerSource(declarations));
+    return file;
+  });
+  const tsconfig = path.join(sites[0]!.root, 'consumer/tsconfig.json');
+  fs.writeFileSync(tsconfig, JSON.stringify({
     compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', noEmit: true, skipLibCheck: false, types: [] },
-    files: ['index.mts'],
+    files,
   }));
-  const checked = await command(consumer, process.execPath, [TSC, '-p', 'tsconfig.json'], { allowFailure: true });
-  return { code: checked.code, output: `${checked.stdout}${checked.stderr}` };
+  const checked = await command(path.dirname(tsconfig), process.execPath, [TSC, '-p', 'tsconfig.json', '--pretty', 'false'], { allowFailure: true });
+  const lines = new Map(sites.map(({ root }) => [root, [] as string[]]));
+  let owner: string | undefined;
+  for (const line of `${checked.stdout}${checked.stderr}`.split('\n').filter(text => text !== '')) {
+    // A diagnostic starts at the margin and names its file; the lines under it are indented and belong to it.
+    if (/^\S/.test(line)) owner = sites.find(({ root }) => line.includes(path.basename(root)))?.root;
+    for (const [root, own] of lines) if (owner === undefined || owner === root) own.push(line);
+  }
+  return new Map([...lines].map(([root, own]) => [root, own.join('\n')]));
+});
+
+async function consumerOutput(root: string): Promise<string> {
+  return (await consumerOutputs()).get(root)!;
 }
 
 async function runBuilt(file: string): Promise<string> {
@@ -128,7 +159,7 @@ test('a second golem build keeps the codec key of the class model that imports i
 test('a NodeNext consumer type-checks against the declarations that golem build writes for a Bundler project', async () => {
   // protects: T-144 the declarations carry the specifiers Node resolves, as the JavaScript does
   const { root } = await built();
-  assert.deepEqual(await checkConsumer(root, 'build'), { code: 0, output: '' });
+  assert.equal(await consumerOutput(root), '', 'the consumer of the declarations in build/ type-checks');
 });
 
 test('a declarations-only build writes the same Node-resolvable declarations into its declarationDir', async () => {
@@ -136,18 +167,15 @@ test('a declarations-only build writes the same Node-resolvable declarations int
   const { root, result } = await declarationsOnly();
   assert.equal(result.exitCode, 0);
   assert.equal(fs.existsSync(path.join(root, 'build')), false, 'no JavaScript and no declaration lands in the outDir');
-  assert.deepEqual(await checkConsumer(root, 'types'), { code: 0, output: '' });
+  assert.equal(await consumerOutput(root), '', 'the consumer of the declarations in types/ type-checks');
 });
 
 test('a build with no rootDir rewrites the declarations where the compiler wrote them, below the tsconfig directory', async () => {
   // protects: T-144 the declaration path follows tsc's rule: below the tsconfig directory when the sources share no deeper folder
-  const root = fixtureProject({ declaration: true, rootDir: undefined });
-  // With sources in two folders the compiler's output root is the tsconfig directory, so the declarations land in build/src/ and build/tools/.
-  writeModelSources(root, { 'tools/probe.ts': "export { thing } from '../src/api';\n" });
-  editTsconfig(root, tsconfig => { tsconfig.include = ['src/**/*.ts', 'src/**/*.js', 'tools/**/*.ts']; });
-  assert.equal((await build(root)).exitCode, 0);
+  const { root, result } = await noRootDir();
+  assert.equal(result.exitCode, 0);
   assert.ok(fs.existsSync(path.join(root, 'build/tools/probe.d.ts')));
-  assert.deepEqual(await checkConsumer(root, 'build/src'), { code: 0, output: '' });
+  assert.equal(await consumerOutput(root), '', 'the consumer of the declarations in build/src/ type-checks');
 });
 
 // The TypeScript 7.1 forms. Import attributes are TypeScript 6 syntax too, so that build runs on both lanes; es2026 and `import source` are TypeScript 7.1 only.

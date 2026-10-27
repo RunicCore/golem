@@ -1,17 +1,53 @@
-import { test, before, after } from 'node:test';
+import { test, before, after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { build } from 'esbuild';
 import { workspace, command, npm, cli } from '../support/process.js';
 import { writeFixture, filesUnder } from '../support/consumer.js';
-import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
+import { startRegistry, packageSpec, registryNpmrc, type PackedRegistry } from '../../scripts/packed-registry.js';
 import { MOBX, NEST_COMMON, NEST_SWAGGER, TYPESCRIPT } from '../../scripts/third-party-installs.js';
 import { copyFixture, copyFixtureFile } from '../fixture-project.js';
 
 let registry: PackedRegistry;
 before(async () => { registry = await startRegistry(); });
-after(async () => { if (registry) await registry.close(); });
+after(async () => {
+  if (registry) await registry.close();
+  for (const folder of setFolders) fs.rmSync(folder, { recursive: true, force: true });
+});
+
+// One install for each package set: the model and OpenAPI generators as dev dependencies, then golem (with mobx or
+// not) as production dependencies. A case that prunes or edits node_modules gets its own copy of the finished tree.
+const installedSets = new Map<string, Promise<string>>();
+const setFolders: string[] = [];
+
+function installPackageSet(mobx: boolean): Promise<string> {
+  const key = `mobx-${mobx}`;
+  let installed = installedSets.get(key);
+  if (!installed) {
+    const folder = fs.mkdtempSync(path.join(os.tmpdir(), `golem-consumer-set-${key}-`));
+    setFolders.push(folder);
+    fs.writeFileSync(path.join(folder, 'package.json'), JSON.stringify({ name: 'packed-consumer', version: '1.0.0', private: true, type: 'module' }));
+    fs.writeFileSync(path.join(folder, '.npmrc'), registryNpmrc(registry.url));
+    installed = (async () => {
+      await npm(folder, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')]);
+      await npm(folder, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem'), ...(mobx ? [MOBX] : [])]);
+      return folder;
+    })();
+    installedSets.set(key, installed);
+  }
+  return installed;
+}
+
+async function consumerWithGenerators(t: TestContext, label: string, mobx: boolean): Promise<string> {
+  const folder = await installPackageSet(mobx);
+  const root = registry.create(t, label);
+  for (const name of ['package.json', 'package-lock.json']) fs.copyFileSync(path.join(folder, name), path.join(root, name));
+  // Symlinks stay relative (node_modules/.bin) and timestamps stay, so npm still trusts the hidden lockfile.
+  fs.cpSync(path.join(folder, 'node_modules'), path.join(root, 'node_modules'), { recursive: true, verbatimSymlinks: true, preserveTimestamps: true });
+  return root;
+}
 
 test('packed binary ownership survives either generator installation order and uninstall', async t => {
   for (const order of [
@@ -55,11 +91,7 @@ for (const profile of [
   { mobx: true, validation: true },
 ]) {
   test(`packed SDK and frontend model compose with mobx=${profile.mobx}, validation=${profile.validation}`, async t => {
-    const root = registry.create(t, `profile-${profile.mobx}-${profile.validation}`);
-    await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')]);
-    const production = [packageSpec(registry, '@exprtlabs/golem')];
-    if (profile.mobx) production.push(MOBX);
-    await npm(root, ['install', '--save-prod', ...production]);
+    const root = await consumerWithGenerators(t, `profile-${profile.mobx}-${profile.validation}`, profile.mobx);
     writeFixture(root, profile);
     await cli(root, ['generate']);
     const manifest = JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8'));
@@ -158,9 +190,7 @@ test('packed public generator declarations retain synchronous models and asynchr
 
 
 test('packed model and SDK validators work without code generation from strings', async t => {
-  const root = registry.create(t, 'generated-runtime');
-  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')], { includeOptional: true });
-  await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem')]);
+  const root = await consumerWithGenerators(t, 'generated-runtime', false);
   copyFixture(root, 'packed/generated-runtime');
   copyFixtureFile(root, 'packed/profile/api.json', 'api.json');
   await cli(root, ['generate']);
