@@ -141,10 +141,14 @@ function classMethods(
   const own = classDeclaration.members.filter(
     (member): member is ts.MethodDeclaration => ts.isMethodDeclaration(member) && !member.modifiers?.some(item => item.kind === ts.SyntaxKind.StaticKeyword),
   );
+  // A quoted or computed name has no static identity to override by, so the route loop sees every such method and reports one that carries a route.
   const byName = new Map<string, ts.MethodDeclaration>();
-  for (const method of inherited) if (method.name && ts.isIdentifier(method.name)) byName.set(method.name.text, method);
-  for (const method of own) if (method.name && ts.isIdentifier(method.name)) byName.set(method.name.text, method);
-  return [...byName.values()].sort((left, right) => {
+  const unnamed: ts.MethodDeclaration[] = [];
+  for (const method of [...inherited, ...own]) {
+    if (ts.isIdentifier(method.name)) byName.set(method.name.text, method);
+    else unnamed.push(method);
+  }
+  return [...byName.values(), ...unnamed].sort((left, right) => {
     return compareText(left.getSourceFile().fileName, right.getSourceFile().fileName) || left.getStart() - right.getStart();
   });
 }
@@ -370,6 +374,14 @@ async function analyzeController(
     if (routeExcluded(context, decorators)) continue;
     const selected = routeDecorator(context, decorators);
     if (!selected) continue;
+    if (!ts.isIdentifier(method.name)) {
+      throw new TsToOpenApiError(diagnostic(
+        method.getSourceFile(),
+        method.name,
+        TsToOpenApiDiagnosticCode.UnsupportedRouteDecorator,
+        `Nest route method ${method.name.getText()} in ${controllerName} has a quoted or computed name that the static analysis cannot read; use an identifier name, or exclude the route with @ApiExcludeEndpoint().`,
+      ));
+    }
     const routeExpansion = expandOptionalSegments(await evaluateStringValues(selected.path, context, ['']), selected.decorator.decorator);
     const routePaths = routeExpansion.paths;
     const optionalNames = new Set([...classExpansion.optionalNames, ...routeExpansion.optionalNames]);

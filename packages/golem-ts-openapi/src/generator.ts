@@ -136,25 +136,23 @@ function componentReferenceName(value: string): string | undefined {
   return value.slice(prefix.length).replaceAll('~1', '/').replaceAll('~0', '~');
 }
 
-function assertResolvedLocalReferences(
-  document: Readonly<Record<string, unknown>>,
-): void {
-  const components = objectRecord(document.components);
-  const schemas = objectRecord(components?.schemas) ?? {};
+/** Maps whose keys are names the document author picks, so a key such as `example` or `$ref` there is a name, not a keyword. */
+const NAME_MAP_KEYWORDS: ReadonlySet<string> = new Set([
+  'properties', 'patternProperties', 'dependentSchemas', '$defs', 'definitions', 'encoding',
+  'schemas', 'responses', 'parameters', 'requestBodies', 'headers', 'callbacks', 'pathItems', 'links', 'securitySchemes',
+]);
+/** Keywords whose value is data, not a schema: a `$ref` key inside it is not a reference. */
+const DATA_KEYWORDS: ReadonlySet<string> = new Set(['example', 'examples', 'default', 'const', 'enum']);
+
+/** Calls `onReference` with each `$ref` value and each `discriminator.mapping` target under `root`. */
+function visitReferences(root: unknown, onReference: (reference: string) => void): void {
   const seen = new Set<object>();
   const visit = (value: unknown, key?: string): void => {
     if (key === '$ref' && typeof value === 'string') {
-      const name = componentReferenceName(value);
-      if (name && schemas[name] === undefined) {
-        throw new TsToOpenApiError({
-          severity: GolemDiagnosticSeverity.Error,
-          code: TsToOpenApiDiagnosticCode.UnresolvedSchemaReference,
-          message: `OpenAPI metadata references missing local schema component ${value}.`,
-        });
-      }
+      onReference(value);
       return;
     }
-    if (typeof value === 'string') return;
+    if (key !== undefined && DATA_KEYWORDS.has(key)) return;
     if (value === null || typeof value !== 'object') return;
     if (seen.has(value)) return;
     seen.add(value);
@@ -162,25 +160,39 @@ function assertResolvedLocalReferences(
       for (const item of value) visit(item);
       return;
     }
-    for (const [childKey, item] of Object.entries(value)) visit(item, childKey);
+    const mapping = key === 'discriminator' ? objectRecord((value as Record<string, unknown>).mapping) : undefined;
+    for (const target of Object.values(mapping ?? {})) if (typeof target === 'string') onReference(target);
+    const namesOnly = key !== undefined && NAME_MAP_KEYWORDS.has(key);
+    for (const [childKey, item] of Object.entries(value)) {
+      if (mapping !== undefined && childKey === 'mapping') continue;
+      visit(item, namesOnly ? undefined : childKey);
+    }
   };
-  visit(document);
+  visit(root);
 }
 
-function collectComponentReferences(value: unknown, names: Set<string>, seen = new Set<object>()): void {
-  if (typeof value === 'string') {
-    const name = componentReferenceName(value);
+function assertResolvedLocalReferences(
+  document: Readonly<Record<string, unknown>>,
+): void {
+  const components = objectRecord(document.components);
+  const schemas = objectRecord(components?.schemas) ?? {};
+  visitReferences(document, reference => {
+    const name = componentReferenceName(reference);
+    if (name && schemas[name] === undefined) {
+      throw new TsToOpenApiError({
+        severity: GolemDiagnosticSeverity.Error,
+        code: TsToOpenApiDiagnosticCode.UnresolvedSchemaReference,
+        message: `OpenAPI metadata references missing local schema component ${reference}.`,
+      });
+    }
+  });
+}
+
+function collectComponentReferences(value: unknown, names: Set<string>): void {
+  visitReferences(value, reference => {
+    const name = componentReferenceName(reference);
     if (name) names.add(name);
-    return;
-  }
-  if (value === null || typeof value !== 'object') return;
-  if (seen.has(value)) return;
-  seen.add(value);
-  if (Array.isArray(value)) {
-    for (const item of value) collectComponentReferences(item, names, seen);
-    return;
-  }
-  for (const item of Object.values(value)) collectComponentReferences(item, names, seen);
+  });
 }
 
 type NormalizedContext = ReturnType<typeof validateContext>;
