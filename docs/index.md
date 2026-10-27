@@ -174,7 +174,7 @@ Then add its job to `golem.yaml`:
 
 <<< ../examples/models/golem.yaml [TypeScript types]
 
-<<< ../examples/payments/server/golem.yaml#openapi-dates-job [OpenAPI document]
+<<< ../examples/payments/server/golem.yaml#openapi-job [OpenAPI document]
 
 <<< ../examples/payments/server/golem.yaml#controllers-job [Server controllers]
 
