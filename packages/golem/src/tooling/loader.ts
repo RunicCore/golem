@@ -74,7 +74,7 @@ export async function load(url: string, context: LoadContext, nextLoad: NextLoad
   const loaded: LoadResult = TSX_FILE.test(file) ? { format: 'module', source: await readFile(file), shortCircuit: true } : await nextLoad(url, context);
   const text = sourceText(loaded.source);
   const rewritten = rewriting.rewrite(file, text);
-  const compiled = rewriting.transpile(file, text, rewritten);
+  const compiled = rewriting.transpile(file, text, rewritten, loaded.format !== 'commonjs-typescript');
   const output = compiled ?? rewritten;
   if (!output) return loaded;
   // The rewrite prepends ES imports and the compile emits an ES module; CommonJS runs neither.

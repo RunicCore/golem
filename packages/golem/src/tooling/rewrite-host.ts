@@ -52,11 +52,25 @@ function isInstantiated(compiler: typeof ts, node: ts.ModuleDeclaration): boolea
     !(compiler.isInterfaceDeclaration(statement) || compiler.isTypeAliasDeclaration(statement) || compiler.isModuleDeclaration(statement) && !isInstantiated(compiler, statement)));
 }
 
-/** The first node of `node`'s tree, `node` included, that `matches`. Nothing inside a `declare` form runs, so the walk skips it. */
-function findForm(compiler: typeof ts, node: ts.Node, matches: (node: ts.Node) => boolean): ts.Node | undefined {
+/** What a walk of one file found: whether a construct needs the compile, and the first construct that only CommonJS holds. */
+interface Forms {
+  compiled: boolean;
+  commonJsOnly?: ts.Node;
+}
+
+/**
+ * Walks `node` and the nodes below it into `forms`. The walk stops at the first CommonJS-only construct, and returns true
+ * then. Nothing inside a `declare` form runs, so the walk skips it.
+ */
+function findForms(compiler: typeof ts, node: ts.Node, forms: Forms): boolean {
   const modifiers = compiler.canHaveModifiers(node) ? compiler.getModifiers(node) ?? [] : [];
-  if (modifiers.some((modifier) => modifier.kind === compiler.SyntaxKind.DeclareKeyword)) return undefined;
-  return matches(node) ? node : compiler.forEachChild(node, (child) => findForm(compiler, child, matches));
+  if (modifiers.some((modifier) => modifier.kind === compiler.SyntaxKind.DeclareKeyword)) return false;
+  if (isCommonJsOnlyForm(compiler, node)) {
+    forms.commonJsOnly = node;
+    return true;
+  }
+  if (isCompiledForm(compiler, node)) forms.compiled = true;
+  return compiler.forEachChild(node, (child) => findForms(compiler, child, forms) || undefined) === true;
 }
 
 /**
@@ -72,7 +86,10 @@ function isCompiledForm(compiler: typeof ts, node: ts.Node): boolean {
     || compiler.isParameter(node) && (compiler.getModifiers(node) ?? []).some((modifier) => parameterProperty.includes(modifier.kind));
 }
 
-/** The constructs that Node rejects and that only CommonJS holds, so golem names them and does not compile them: `import x = require('...')` and `export = x`. A type-only `import type x = require()` is erased. */
+/**
+ * A construct that Node rejects and that only CommonJS holds: `import x = require('...')` and `export = x`. A type-only
+ * `import type x = require()` is erased. In an ES module golem names it and does not compile it.
+ */
 function isCommonJsOnlyForm(compiler: typeof ts, node: ts.Node): boolean {
   return compiler.isImportEqualsDeclaration(node) && !node.isTypeOnly && node.moduleReference.kind === compiler.SyntaxKind.ExternalModuleReference
     || compiler.isExportAssignment(node) && node.isExportEquals;
@@ -126,9 +143,10 @@ export interface RewriteProject {
    * The JavaScript of a file that Node's own type stripping cannot load: a `.tsx` file, or a file with a decorator, an `enum`, a
    * namespace with a value or a parameter property. It is an ES module that follows the tsconfig's `jsx`, decorator and `target`
    * options, with a source map back to `text`; undefined for any other file. `rewritten` is the result of `rewrite` for the same
-   * `text`, which the module then compiles in place of `text`. A `.tsx` file with no `jsx` option throws a `GolemHostError`.
+   * `text`, which the module then compiles in place of `text`. A `.tsx` file with no `jsx` option throws a `GolemHostError`. So does an
+   * ES module (`esModule`) with `import x = require()` or `export =`, which only CommonJS holds.
    */
-  transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined): { code: string; map: SourceMapV3 } | undefined;
+  transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined, esModule: boolean): { code: string; map: SourceMapV3 } | undefined;
   close(): void;
 }
 
@@ -269,21 +287,23 @@ class ScanningProject {
     return { code: applied.code, map: { ...applied.map, sources: [relative] }, dependencies: scanned.dependencies.map((dependency) => path.join(this.root, dependency)) };
   }
 
-  transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined): { code: string; map: SourceMapV3 } | undefined {
+  transpile(filename: string, text: string, rewritten: { code: string; map: SourceMapV3 } | undefined, esModule: boolean): { code: string; map: SourceMapV3 } | undefined {
     const file = this.compiler.canonicalFilename(filename);
     const held = this.holds(file, withoutByteOrderMark(text)).getSourceFile(file);
     const tsx = TSX_FILE.test(file);
     // The walk is for the files whose text can hold such a construct.
-    const hinted = !tsx && COMPILE_HINT.test(text) ? held : undefined;
-    const commonJsOnly = hinted !== undefined ? findForm(this.compiler.ts, hinted, (node) => isCommonJsOnlyForm(this.compiler.ts, node)) : undefined;
-    if (hinted !== undefined && commonJsOnly !== undefined) {
-      const line = hinted.getLineAndCharacterOfPosition(commonJsOnly.getStart(hinted)).line + 1;
+    const forms: Forms = { compiled: false };
+    if (held !== undefined && COMPILE_HINT.test(text)) findForms(this.compiler.ts, held, forms);
+    const { commonJsOnly } = forms;
+    // A CommonJS file is refused by the loader after the compile, with the module format named.
+    if (esModule && held !== undefined && commonJsOnly !== undefined) {
+      const line = held.getLineAndCharacterOfPosition(commonJsOnly.getStart(held)).line + 1;
       const [form, instead] = this.compiler.ts.isExportAssignment(commonJsOnly)
-        ? ['export =', "export default <value>"]
+        ? ['export =', 'export default <value>']
         : ['import <name> = require()', "import <name> from '<module>' or import * as <name> from '<module>'"];
       throw new GolemHostError(`golem cannot load ${displayPath(file)}:${line}: ${form} is CommonJS only, and golem compiles to ES modules only. Write ${instead}`, { file, line });
     }
-    if (!tsx && !(hinted !== undefined && findForm(this.compiler.ts, hinted, (node) => isCompiledForm(this.compiler.ts, node)) !== undefined)) return undefined;
+    if (!tsx && !forms.compiled && commonJsOnly === undefined) return undefined;
     const { ts } = this.compiler;
     // Node cannot run JSX, so a file that no `jsx` option turns into calls would fail later with a syntax error.
     const { jsx } = this.options;
@@ -386,7 +406,7 @@ export async function openRewriteProject(options: GolemHostOptions & { cwd: stri
     rewrite: (filename, text) => project.rewrite(filename, text),
     diagnose: (filename, text) => project.diagnose(filename, text),
     comments: (filename, text) => project.comments(filename, text),
-    transpile: (filename, text, rewritten) => project.transpile(filename, text, rewritten),
+    transpile: (filename, text, rewritten, esModule) => project.transpile(filename, text, rewritten, esModule),
     changed: (filenames) => { project.changed(filenames); },
     close() {
       if (closed) return;

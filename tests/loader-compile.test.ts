@@ -171,6 +171,25 @@ test('a file with export = stops the load with its line and what to write instea
   assert.ok(!result.stderr.includes('ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX'), result.stderr);
 });
 
+test('a .tsx file with export = stops the load with the golem message, not the compiler output', async (t) => {
+  // protects: T-485 a .tsx file gets the CommonJS-only check too
+  const root = await project(t, 'loader-tsx-export-equals', JSX_PROJECT);
+  write(root, 'src/view.tsx', `${H}\nconst view = <i>{'ok'}</i>;\nexport = view;\n`);
+  const result = await run(root, 'src/view.tsx');
+  assert.notEqual(result.code, 0);
+  assert.match(result.stderr, /golem cannot load .*view\.tsx:3: export = is CommonJS only/, result.stderr);
+});
+
+test('a .cts file with export = gets the CommonJS refusal, which names the module formats to use', async (t) => {
+  // protects: T-485 advice to write ES module forms is for ES module files only
+  const root = await project(t, 'loader-cts-export-equals');
+  write(root, 'src/value.cts', 'const value = { answer: 42 };\nexport = value;\n');
+  const result = await run(root, 'src/value.cts');
+  assert.notEqual(result.code, 0);
+  assert.ok(result.stderr.includes('golem compiles to ES modules only; src/value.cts loads as CommonJS'), result.stderr);
+  assert.ok(!result.stderr.includes('golem cannot load'), result.stderr);
+});
+
 test('export default and a type-only import = require() still load: they are types or plain exports', async (t) => {
   // protects: T-485 only export = and a value import = require() are CommonJS-only
   const root = await project(t, 'loader-export-default');
