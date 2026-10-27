@@ -40,8 +40,8 @@ export function withInlineSourceMap(code: string, map: SourceMapV3, file: string
 
 const SOURCE_MAP_COMMENT = '//# sourceMappingURL=';
 
-/** Text that can hold a construct Node cannot strip: a decorator, an enum, a namespace, or a parameter property's modifier. */
-const COMPILE_HINT = /@|\b(?:enum|namespace|module|private|protected|public|readonly|override)\b/;
+/** Text that can hold a construct Node cannot strip: a decorator, an enum, a namespace, a parameter property's modifier, `import x = require()` or `export =`. */
+const COMPILE_HINT = /@|=\s*require\b|\bexport\s*=|\b(?:enum|namespace|module|private|protected|public|readonly|override)\b/;
 
 /** Whether a namespace or module declaration holds a value, so that it runs code. A dotted name nests one declaration in the next. */
 function isInstantiated(compiler: typeof ts, node: ts.ModuleDeclaration): boolean {
@@ -52,22 +52,30 @@ function isInstantiated(compiler: typeof ts, node: ts.ModuleDeclaration): boolea
     !(compiler.isInterfaceDeclaration(statement) || compiler.isTypeAliasDeclaration(statement) || compiler.isModuleDeclaration(statement) && !isInstantiated(compiler, statement)));
 }
 
-/**
- * Whether `node` or a node below it is a construct that Node's type stripping rejects, because it needs code and not only the
- * removal of types: a decorator, an `enum`, a namespace with a value, or a constructor parameter with an accessibility,
- * `override` or `readonly` modifier. A `declare` form is only a type, with everything inside it.
- */
-function needsCompile(compiler: typeof ts, node: ts.Node): boolean {
-  const { SyntaxKind } = compiler;
+/** The first node of `node`'s tree, `node` included, that `matches`. Nothing inside a `declare` form runs, so the walk skips it. */
+function findForm(compiler: typeof ts, node: ts.Node, matches: (node: ts.Node) => boolean): ts.Node | undefined {
   const modifiers = compiler.canHaveModifiers(node) ? compiler.getModifiers(node) ?? [] : [];
-  // Nothing inside a `declare` form runs.
-  if (modifiers.some((modifier) => modifier.kind === SyntaxKind.DeclareKeyword)) return false;
+  if (modifiers.some((modifier) => modifier.kind === compiler.SyntaxKind.DeclareKeyword)) return undefined;
+  return matches(node) ? node : compiler.forEachChild(node, (child) => findForm(compiler, child, matches));
+}
+
+/**
+ * A construct that Node's type stripping rejects, because it needs code and not only the removal of types: a decorator, an
+ * `enum`, a namespace with a value, or a constructor parameter with an accessibility, `override` or `readonly` modifier.
+ */
+function isCompiledForm(compiler: typeof ts, node: ts.Node): boolean {
+  const { SyntaxKind } = compiler;
   const parameterProperty = [SyntaxKind.PublicKeyword, SyntaxKind.PrivateKeyword, SyntaxKind.ProtectedKeyword, SyntaxKind.OverrideKeyword, SyntaxKind.ReadonlyKeyword];
-  const here = compiler.isDecorator(node)
+  return compiler.isDecorator(node)
     || compiler.isEnumDeclaration(node)
     || compiler.isModuleDeclaration(node) && isInstantiated(compiler, node)
-    || compiler.isParameter(node) && modifiers.some((modifier) => parameterProperty.includes(modifier.kind));
-  return here || compiler.forEachChild(node, (child) => needsCompile(compiler, child) || undefined) === true;
+    || compiler.isParameter(node) && (compiler.getModifiers(node) ?? []).some((modifier) => parameterProperty.includes(modifier.kind));
+}
+
+/** The constructs that Node rejects and that only CommonJS holds, so golem names them and does not compile them: `import x = require('...')` and `export = x`. A type-only `import type x = require()` is erased. */
+function isCommonJsOnlyForm(compiler: typeof ts, node: ts.Node): boolean {
+  return compiler.isImportEqualsDeclaration(node) && !node.isTypeOnly && node.moduleReference.kind === compiler.SyntaxKind.ExternalModuleReference
+    || compiler.isExportAssignment(node) && node.isExportEquals;
 }
 
 /** The 1-based line of `position` in `text`; with `map`, the line of the original file that the line maps to, or undefined when it maps to none. */
@@ -266,7 +274,16 @@ class ScanningProject {
     const held = this.holds(file, withoutByteOrderMark(text)).getSourceFile(file);
     const tsx = TSX_FILE.test(file);
     // The walk is for the files whose text can hold such a construct.
-    if (!tsx && !(COMPILE_HINT.test(text) && held !== undefined && needsCompile(this.compiler.ts, held))) return undefined;
+    const hinted = !tsx && COMPILE_HINT.test(text) ? held : undefined;
+    const commonJsOnly = hinted !== undefined ? findForm(this.compiler.ts, hinted, (node) => isCommonJsOnlyForm(this.compiler.ts, node)) : undefined;
+    if (hinted !== undefined && commonJsOnly !== undefined) {
+      const line = hinted.getLineAndCharacterOfPosition(commonJsOnly.getStart(hinted)).line + 1;
+      const [form, instead] = this.compiler.ts.isExportAssignment(commonJsOnly)
+        ? ['export =', "export default <value>"]
+        : ['import <name> = require()', "import <name> from '<module>' or import * as <name> from '<module>'"];
+      throw new GolemHostError(`golem cannot load ${displayPath(file)}:${line}: ${form} is CommonJS only, and golem compiles to ES modules only. Write ${instead}`, { file, line });
+    }
+    if (!tsx && !(hinted !== undefined && findForm(this.compiler.ts, hinted, (node) => isCompiledForm(this.compiler.ts, node)) !== undefined)) return undefined;
     const { ts } = this.compiler;
     // Node cannot run JSX, so a file that no `jsx` option turns into calls would fail later with a syntax error.
     const { jsx } = this.options;
