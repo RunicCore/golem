@@ -121,25 +121,15 @@ test('a tsconfig key names the project that golem build builds', async (t) => {
   assert.ok(fs.existsSync(path.join(root, 'build/use.test.js')));
 });
 
-test('a tsconfig key that differs from the tsconfig the job finds from its root fails in golem generate, golem check and golem build', async (t) => {
-  const root = await generatedProject(t, 'build-differing-tsconfig', { yaml: 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./tsconfig.app.json\nmodels:\n  root: .\n', generate: false });
-  fs.writeFileSync(path.join(root, 'tsconfig.app.json'), JSON.stringify({ extends: './tsconfig.json', exclude: ['src/**/*.test.ts'] }));
-  const yaml = path.join(root, 'golem.yaml');
-  const real = fs.realpathSync(root);
-  const unsupported = (error: Error): boolean => {
-    assert.ok(error.message.includes(path.join(real, 'tsconfig.app.json')), error.message);
-    assert.ok(error.message.includes(path.join(real, 'tsconfig.json')), error.message);
-    assert.match(error.message, /is not supported yet/);
-    return true;
-  };
-  await assert.rejects(runPipeline(yaml), unsupported);
-  await assert.rejects(runPipeline(yaml, { check: true }), unsupported);
-  await assert.rejects(build(root), unsupported);
-  const result = await golemBuild(root, []);
-  assert.notEqual(result.code, 0);
-  assert.match(result.stderr, /is not supported yet/);
-  assert.equal(fs.existsSync(path.join(root, '.golem')), false, 'a refused configuration writes no state');
-  assert.equal(fs.existsSync(path.join(root, 'build')), false, 'and no build');
+test('a tsconfig key that names a build tsconfig with a paths alias generates and builds', async (t) => {
+  // protects: T-480 the models job reads the tsconfig golem.yaml names, not the nearest one
+  const root = await generatedProject(t, 'build-named-paths-tsconfig', { yaml: 'version: 1\nmobx: false\nvalidation: false\ntsconfig: ./tsconfig.build.json\nmodels:\n  root: .\n', generate: false });
+  fs.writeFileSync(path.join(root, 'tsconfig.build.json'), JSON.stringify({ extends: './tsconfig.json', compilerOptions: { paths: { '@lib/*': ['./src/lib/*'] } } }));
+  write(root, 'src/lib/ids.ts', 'export type Id = string;\n');
+  write(root, 'src/item.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Id } from '@lib/ids.js';\nexport type TItem = IModel<{ id: Id }>;\n");
+  await runPipeline(path.join(root, 'golem.yaml'));
+  assert.ok(fs.existsSync(path.join(root, 'src/item.model.generated.ts')), 'the model that uses the alias generated');
+  assert.equal((await build(root)).exitCode, 0);
 });
 
 test('a job root outside the directory of the yaml tsconfig fails in golem generate, golem check and golem build', async (t) => {

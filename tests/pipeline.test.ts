@@ -621,37 +621,11 @@ async function assertItemFieldsTyped(jobRoot: string, root: string): Promise<voi
   await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
 }
 
-test('a models job whose root has no tsconfig.json analyses with the parent tsconfig and warns once, naming it', async (t: TestContext) => {
+test('a models job whose root has no tsconfig.json analyses with the tsconfig beside golem.yaml and warns of nothing', async (t: TestContext) => {
   const { root, jobRoot } = parentTsconfigProject(t, ['version: 1', 'models:', '  root: pkg']);
   const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
   const result = await command(root, process.execPath, [binary, 'generate']);
   // The alias and the extensionless import resolve only under the parent's options; without them both fields are `unknown`.
-  await assertItemFieldsTyped(jobRoot, root);
-  assert.equal(
-    result.stderr,
-    `RUNM1073: The models:pkg job has no tsconfig.json in its root ${path.relative(root, jobRoot)}, so it uses tsconfig.json, the nearest one above it.\n`,
-  );
-});
-
-test('a models job whose root has no tsconfig.json names the parent tsconfig when that tsconfig makes generation fail', async (t: TestContext) => {
-  const { root, jobRoot } = parentTsconfigProject(t, ['version: 1', 'models:', '  root: pkg']);
-  const parent = path.join(root, 'tsconfig.json');
-  const options = JSON.parse(fs.readFileSync(parent, 'utf8')) as { compilerOptions: { paths?: unknown } };
-  delete options.compilerOptions.paths;
-  fs.writeFileSync(parent, JSON.stringify(options));
-  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
-  const warning = `RUNM1073: The models:pkg job has no tsconfig.json in its root ${path.relative(root, jobRoot)}, so it uses ${path.relative(root, parent)}, the nearest one above it.\n`;
-  await assert.rejects(command(root, process.execPath, [binary, 'generate']), (error: Error) => {
-    assert.ok(error.message.includes(warning), error.message);
-    assert.match(error.message, /TS2307: Cannot find module '@lib\/ids'/);
-    return true;
-  });
-});
-
-test('a models job whose root has no tsconfig.json does not warn when golem.yaml names the tsconfig it uses', async (t: TestContext) => {
-  const { root, jobRoot } = parentTsconfigProject(t, ['version: 1', 'tsconfig: tsconfig.json', 'models:', '  root: pkg']);
-  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
-  const result = await command(root, process.execPath, [binary, 'generate']);
   await assertItemFieldsTyped(jobRoot, root);
   assert.equal(result.stderr, '');
 });

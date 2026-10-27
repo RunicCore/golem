@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-import { modelsRootOf, resolveConfig } from './config.js';
+import { assertNotSolutionTsconfig, modelsRootOf, resolveConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import type { GolemConfig } from './config.js';
 import { displayPath, GolemDiagnosticSeverity } from './generator-api.js';
@@ -176,6 +176,7 @@ class ScanningProject {
     const signature = fileSignature(this.config.inventoryFile);
     const recorded = this.readsRecord ? this.recordedFiles() : [];
     const parsed = this.session.parseConfigFile(this.config.tsconfig);
+    assertNotSolutionTsconfig(this.config.tsconfig, parsed);
     this.options = parsed.options;
     const { canonicalFilename } = this.compiler;
     const sources = [...new Set([...parsed.fileNames.map(canonicalFilename), ...this.extras])];

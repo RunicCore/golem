@@ -63,6 +63,7 @@ function validateContext(context: TsToOpenApiContext): {
   readonly output: string;
   readonly sources?: readonly string[];
   readonly suffixes: readonly string[];
+  readonly tsconfig?: string;
   readonly openapiVersion: '3.2.0' | '3.1.2';
   readonly maxResultBytes: number;
   readonly profile: ResolvedGolemProfile;
@@ -109,7 +110,7 @@ function validateContext(context: TsToOpenApiContext): {
     { directory: assertAbsolute(models.directory, 'context.models.directory'), output: assertAbsolute(models.output, 'context.models.output') },
   );
   const laterOutputs = (context.laterOutputs ?? []).map((later) => assertAbsolute(later, 'context.laterOutputs entry'));
-  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, openapiVersion, maxResultBytes, profile, exact: context.exact, ...(boundary ? { boundary } : {}), laterOutputs, onInput: context.onInput };
+  return { root, output, ...(sources ? { sources } : {}), suffixes: context.suffixes ?? DEFAULT_CONTROLLER_SUFFIXES, ...(context.tsconfig === undefined ? {} : { tsconfig: assertAbsolute(context.tsconfig, 'context.tsconfig') }), openapiVersion, maxResultBytes, profile, exact: context.exact, ...(boundary ? { boundary } : {}), laterOutputs, onInput: context.onInput };
 }
 
 function asGolemDiagnostic(value: TsToOpenApiDiagnostic): GolemDiagnostic {
@@ -450,8 +451,8 @@ function openProgram(
   // With the models job known, a generated base class is a stub of its model, as in that job's program: the generated file on
   // disk is missing on the first run and stale until the models job rewrites it, which runs after this job.
   return normalized.boundary
-    ? createModelStubProgram(sources, normalized.root, normalized.boundary, discoverModelSources(normalized.boundary.root, undefined, normalized.boundary.suffixes), observe, session)
-    : createProgram(sources, normalized.root, observe, session);
+    ? createModelStubProgram(sources, normalized.root, normalized.boundary, discoverModelSources(normalized.boundary.root, undefined, normalized.boundary.suffixes), observe, session, normalized.tsconfig)
+    : createProgram(sources, normalized.root, observe, session, normalized.tsconfig);
 }
 
 function analyzeContracts(

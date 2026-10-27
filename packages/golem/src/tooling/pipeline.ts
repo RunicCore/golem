@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
-import { jobTsconfigDiagnostics, modelsRootOf, resolveConfig, validateConfigInputs } from './config.js';
+import { modelsRootOf, resolveConfig, validateConfigInputs } from './config.js';
 import type { GolemConfig, GolemJob } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
@@ -601,8 +601,6 @@ async function runJob(job: GolemJob, run: PipelineRun, plan: PipelinePlan, progr
     ...(record?.outputs ?? []).map(output => absoluteRecordPath(config, output)),
     ...Object.entries(inventory.files).filter(([, entry]) => entry.job === job.id).map(([key]) => path.resolve(config.directory, key)),
   ]);
-  // The tsconfig the job analyses with is named before it runs, so a failure that the tsconfig explains still names it.
-  writeWarnings(jobTsconfigDiagnostics(config, job));
   const loadedProviders = new Map<string, LoadedProvider>();
   let provider = progress.providers.get(job.package);
   if (!provider) {

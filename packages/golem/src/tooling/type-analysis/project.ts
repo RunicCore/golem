@@ -1,6 +1,7 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
+import { assertNotSolutionTsconfig } from '../config.js';
 import * as ts from '../typescript-ns.js';
 import { readManifest } from './package-specifier.js';
 import { DEFAULT_MODEL_SUFFIXES, displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
@@ -407,8 +408,10 @@ function parsedProject(
     };
   }
   let project = { configPath, parsed: session.parseConfigFile(configPath, onInput) };
-  // A solution tsconfig lists no files of its own; the referenced project that holds the sources has the files and options.
-  const referenced = project.parsed.fileNames.length === 0 ? referencedProject(configPath, sources, session, onInput) : undefined;
+  // The tsconfig a golem.yaml names is the project: a solution is refused. Without one, a solution lists no files of its own, and the
+  // referenced project that holds the sources has the files and options.
+  if (configFile !== undefined) assertNotSolutionTsconfig(configPath, project.parsed);
+  const referenced = configFile === undefined && project.parsed.fileNames.length === 0 ? referencedProject(configPath, sources, session, onInput) : undefined;
   if (referenced) project = referenced;
   const { parsed } = project;
   const projectFiles = uniqueFilenames(parsed.fileNames);
@@ -469,9 +472,11 @@ export function createProgram(
   root: string,
   onInput?: InputObserver,
   retained?: ts.ProgramSession,
+  /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
+  configFile?: string,
 ): ProgramInfo {
   const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
-  const parsed = parsedProject(root, sources, session, onInput);
+  const parsed = parsedProject(root, sources, session, onInput, configFile);
   return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput);
 }
 
@@ -546,9 +551,11 @@ export function createModelStubProgram(
   modelFiles: readonly string[],
   onInput?: InputObserver,
   retained?: ts.ProgramSession,
+  /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
+  configFile?: string,
 ): ProgramInfo {
   const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
-  const parsed = parsedProject(root, sources, session, onInput);
+  const parsed = parsedProject(root, sources, session, onInput, configFile);
   const stubbed = new Set<string>();
   const stubsOf = (files: readonly string[]): Map<string, string> => {
     const stubs = new Map<string, string>();
