@@ -26,7 +26,7 @@ const TYPE_NAMES: readonly IrTypeName[] = ['string', 'number', 'integer', 'boole
 
 const isStringList = (value: unknown): boolean => Array.isArray(value) && value.every(item => typeof item === 'string');
 
-/** The shape each standard keyword with a plain value must have. A wrong one is an error: lowering would drop it, and the validator would accept more than the schema says. */
+/** The shapes of standard keyword values that would loosen or crash validation if lowering dropped them. A wrong shape is an error. This is not the whole 2020-12 meta-schema: it does not check uniqueness, or a list's minimum length. */
 const KEYWORD_SHAPES: readonly { readonly keywords: readonly string[]; readonly accepts: (value: unknown) => boolean; readonly expected: string }[] = [
   { keywords: ['type'], accepts: value => isTypeName(value) || (Array.isArray(value) && value.length > 0 && value.every(isTypeName)), expected: `a type name or a non-empty list of type names (${TYPE_NAMES.join(', ')})` },
   { keywords: ['enum'], accepts: Array.isArray, expected: 'a list' },
@@ -36,7 +36,8 @@ const KEYWORD_SHAPES: readonly { readonly keywords: readonly string[]; readonly 
   { keywords: ['pattern', 'format'], accepts: value => typeof value === 'string', expected: 'a string' },
   { keywords: ['required'], accepts: isStringList, expected: 'a list of strings' },
   { keywords: ['uniqueItems'], accepts: value => typeof value === 'boolean', expected: 'true or false' },
-  { keywords: ['properties', 'patternProperties', 'dependentSchemas', 'dependentRequired'], accepts: isRecord, expected: 'an object' },
+  { keywords: ['properties', 'patternProperties', 'dependentSchemas'], accepts: isRecord, expected: 'an object' },
+  { keywords: ['dependentRequired'], accepts: value => isRecord(value) && Object.values(value).every(isStringList), expected: 'an object whose values are lists of strings' },
   { keywords: ['allOf', 'anyOf', 'oneOf', 'prefixItems'], accepts: Array.isArray, expected: 'a list' },
 ];
 
@@ -121,6 +122,8 @@ function literalBranchValues(branch: unknown): readonly unknown[] | undefined {
   if (!isRecord(branch) || Object.hasOwn(branch, 'const') === Array.isArray(branch.enum)) return undefined;
   if (!Object.keys(branch).every(key => key === 'const' || key === 'enum' || key === 'type' || ANNOTATION_KEYWORDS.has(key) || key.startsWith('x-'))) return undefined;
   const values = Object.hasOwn(branch, 'const') ? [branch.const] : branch.enum as readonly unknown[];
+  // A value with no JSON form is left to the branch's own lowering, which reports it.
+  if (holdsNonFiniteNumber(values)) return undefined;
   if (!Object.hasOwn(branch, 'type')) return values;
   const names = typeof branch.type === 'string' ? [branch.type] : Array.isArray(branch.type) ? branch.type as readonly unknown[] : [];
   if (names.length === 0 || !names.every(isTypeName)) return undefined;
