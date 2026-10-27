@@ -1,8 +1,8 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
-import { assertNotSolutionTsconfig } from '../config.js';
 import * as ts from '../typescript-ns.js';
+import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { readManifest } from './package-specifier.js';
 import { DEFAULT_MODEL_SUFFIXES, displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
 import { canonicalFilename } from './path-identity.js';
@@ -410,7 +410,7 @@ function parsedProject(
   let project = { configPath, parsed: session.parseConfigFile(configPath, onInput) };
   // The tsconfig a golem.yaml names is the project: a solution is refused. Without one, a solution lists no files of its own, and the
   // referenced project that holds the sources has the files and options.
-  if (configFile !== undefined) assertNotSolutionTsconfig(configPath, project.parsed);
+  if (configFile !== undefined) assertNotSolutionTsconfig(configPath, project.parsed, 'yaml');
   const referenced = configFile === undefined && project.parsed.fileNames.length === 0 ? referencedProject(configPath, sources, session, onInput) : undefined;
   if (referenced) project = referenced;
   const { parsed } = project;

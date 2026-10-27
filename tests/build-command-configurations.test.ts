@@ -145,7 +145,7 @@ test('golem build rejects a tsconfig it cannot emit', async (t) => {
   await assert.rejects(build(root, 'no-outdir.json'), /requires compilerOptions\.outDir/);
   await assert.rejects(build(root, config({ outFile: 'build/all.js' }, 'out-file.json')), /outFile/);
   fs.writeFileSync(path.join(root, 'solution.json'), JSON.stringify({ files: [], references: [{ path: './tsconfig.json' }] }));
-  await assert.rejects(build(root, 'solution.json'), /only lists project references/);
+  await assert.rejects(build(root, 'solution.json'), /only lists project references, so it has no files\. A golem\.yaml names one project\./);
   assert.equal(fs.existsSync(path.join(root, 'build')), false, 'a rejected project writes no output');
 });
 

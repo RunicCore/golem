@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { assertNotSolutionTsconfig, canonicalFile, modelsRootOf, referencedCommand, referencesRefusal, resolveConfig } from './config.js';
+import { canonicalFile, modelsRootOf, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
 import { displayPath, errorMessage, GolemDiagnosticSeverity, hasErrorCode, isInsideDirectory } from './generator-api.js';
@@ -16,7 +16,7 @@ import type { FileRewrite } from './rewrite.js';
 import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.js';
 import { pointDeclarationMap, pointInlineSourceMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
-import { referenceClosure } from './typescript-config.js';
+import { assertNotSolutionTsconfig, referenceClosure, referencedCommand, referencesRefusal } from './typescript-config.js';
 import * as ts from './typescript-ns.js';
 import { requestTypeScriptRoot } from './typescript-selection.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
@@ -114,9 +114,9 @@ const TSC_COMMAND_OPTIONS = [
 const TSC_COMMANDS = ['showConfig', 'listFilesOnly', 'version', 'help', 'init'] as const;
 
 /** Fail on a configuration the build cannot emit: the tsconfig's, with the forwarded arguments applied. It reads options alone, so it runs before anything is generated. */
-function assertSupported(configFile: string, parsed: ts.ParsedProject): void {
+function assertSupported(configFile: string, parsed: ts.ParsedProject, named: 'yaml' | 'project'): void {
   const { options } = parsed;
-  assertNotSolutionTsconfig(configFile, parsed);
+  assertNotSolutionTsconfig(configFile, parsed, named);
   if (parsed.fileNames.length === 0) throw new Error(`${displayPath(configFile)} includes no files.`);
   if (stringOption(options, 'outDir') === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
   // The lanes disagree on outFile: TS 6 writes one file, TS 7 ignores it and writes one file per source. One build cannot write the same files on both.
@@ -441,7 +441,7 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
     ? session.parseConfigFile(configFile, observe)
     : session.parseConfigFileWithFlags(configFile, run.tscArguments, observe));
   const configured = parseOptions();
-  assertSupported(configFile, configured);
+  assertSupported(configFile, configured, run.project === undefined ? 'yaml' : 'project');
   // The generated files are part of the program the next steps read, so they are written first. A job whose inputs did not change is skipped.
   const previous = run.pipeline;
   run.pipeline = undefined;
@@ -553,7 +553,7 @@ export async function runBuild(options: BuildOptions): Promise<{ exitCode: numbe
   if (options.compilerBuild) {
     const configFile = resolveProject(options.project, first);
     requestTypeScriptRoot(root);
-    throw referencesRefusal(configFile, session.parseConfigFile(configFile).projectReferences, 'golem build does not take -b or --build: `tsc -b` would also build projects that have no golem.yaml, whose calls golem would not rewrite.');
+    throw referencesRefusal(configFile, session.parseConfigFile(configFile).projectReferences, 'golem build does not take -b or --build: `tsc -b` would also build projects that have no golem.yaml, whose calls golem would not rewrite. A golem.yaml names one project.');
   }
   using generation = new GeneratorSessionResources();
   const inputs = new Set<string>();

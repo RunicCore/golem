@@ -151,30 +151,6 @@ export function canonicalFile(filename: string): string {
   return path.join(canonicalPath(path.dirname(resolved)), path.basename(resolved));
 }
 
-/** The command that builds a referenced project: its own golem.yaml names it. */
-export function referencedCommand(project: string): string {
-  return `golem build --config ${displayPath(path.join(path.dirname(project), 'golem.yaml'))}`;
-}
-
-/**
- * The refusal of a tsconfig that would follow project references. A golem.yaml names one project, and `tsc -b` would also build projects that have
- * no golem.yaml, whose calls would not be rewritten. It names each referenced project with the command that builds it.
- */
-export function referencesRefusal(configFile: string, references: readonly { readonly path: string }[], reason: string): Error {
-  const commands = references.map((reference) => `  ${displayPath(reference.path)}: ${referencedCommand(reference.path)}`);
-  return new Error([`${reason} A golem.yaml names one project.${commands.length === 0 ? '' : ` Build each project of ${displayPath(configFile)} with its own golem.yaml, in dependency order:`}`, ...commands].join('\n'));
-}
-
-/**
- * Refuse a solution tsconfig, one with no files and only references, where a golem.yaml or `-p` names it: every consumer of the
- * named tsconfig (the jobs, the check scan, the build and the build tools) calls this once it has parsed the file.
- */
-export function assertNotSolutionTsconfig(configFile: string, parsed: { readonly fileNames: readonly string[]; readonly projectReferences: readonly { readonly path: string }[] }): void {
-  if (parsed.fileNames.length === 0 && parsed.projectReferences.length > 0) {
-    throw referencesRefusal(configFile, parsed.projectReferences, `${displayPath(configFile)} only lists project references, so it has no files; name the referenced project in tsconfig:.`);
-  }
-}
-
 /**
  * One golem.yaml serves one tsconfig, and every job reads it. A job must lie inside the yaml tsconfig's directory, which the scan, the
  * build and the build tools cover. The models output lies inside that directory too, because the app's own program imports the companions
