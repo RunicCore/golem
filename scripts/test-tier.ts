@@ -21,7 +21,7 @@ export const UNIT_FILES = ['.build/tests/*.test.js', '.build/tests/openapi/*.tes
 export const PACKED_FILES = ['.build/tests/packed/consumers.test.js', '.build/tests/packed/nest-workflows.test.js'] as const;
 const SMOKE_FILE = '.build/tests/packed/model-only.test.js';
 // The TypeScript 6 lane runs the test files whose first line is `// lane: typescript6 <the shim place the file proves>`, with
-// GOLEM_TYPESCRIPT_ROOT at the container's TypeScript 6 install. The identity test (typescript-identity, unit step) proves that
+// GOLEM_TYPESCRIPT_ROOT at the container's TypeScript 6 install. The identity test (typescript-identity.acceptance, acceptance unit step: it generates the corpus on both versions, so Full leaves it out) proves that
 // TypeScript 6 and 7 write the same bytes for its corpus and compiles that corpus once on TypeScript 6, so the lane reruns only
 // the tests that reach a place of the TypeScript 6 shim that the identity test does not (typescript-ts6.ts, build.ts). A test
 // file that reaches such a place carries the tag, so the lane cannot miss it.
