@@ -32,7 +32,8 @@
     "docs:preview": "vitepress preview docs",
     "lint": "npm run build && npm run build:scripts && node .build/scripts/check-imports.js",
     "public:check": "npm run build:scripts && node .build/scripts/public-source.js check",
-    "public:export": "npm run build:scripts && node .build/scripts/public-source.js export"
+    "public:export": "npm run build:scripts && node .build/scripts/public-source.js export",
+    "knip": "knip"
   },
   "devDependencies": {
     "@fontsource/inter": "5.3.0",
@@ -45,6 +46,7 @@
     "class-validator": "0.15.1",
     "esbuild": "0.25.12",
     "eslint": "10.13.0",
+    "knip": "6.41.0",
     "mobx": "^6.16.1",
     "reflect-metadata": "0.2.2",
     "temporal-polyfill": "^1.0.5",
@@ -62,5 +64,89 @@
     "#controllers/*": "./packages/golem-ts-openapi/dist/*.js"
   },
   "description": "Generate OpenAPI from TypeScript controllers and generate TypeScript models and API clients, with validation, serialization and optional MobX integration.",
-  "license": "MIT"
+  "license": "MIT",
+  "knip": {
+    "$schema": "https://unpkg.com/knip@6.41.0/schema-package-json.json",
+    "ignore": [
+      "tests/fixtures/**",
+      "scripts/benchmark/fixtures/**",
+      "**/*.generated.ts",
+      "**/sdk/**"
+    ],
+    "workspaces": {
+      ".": {
+        "entry": [
+          "scripts/benchmark/generation.ts",
+          "scripts/benchmark/release-check.ts",
+          "scripts/benchmark/run.ts",
+          "scripts/benchmark/worker.ts",
+          "scripts/benchmark/typia-validation.ts",
+          "scripts/check-imports.ts",
+          "scripts/clean-tests.ts",
+          "scripts/examples.ts",
+          "scripts/public-source.ts",
+          "scripts/test-file-timings.ts",
+          "scripts/test-pack.ts",
+          "scripts/test-run-ordered.ts",
+          "scripts/test-runner/run-state.ts",
+          "scripts/test-tier.ts",
+          "scripts/test-warm.ts",
+          "scripts/third-party-installs.ts",
+          "scripts/vendor-openapi-schemas.ts",
+          "scripts/verify-package.ts",
+          "tests/**/*.{test,acceptance,site-test}.ts",
+          "docs/.vitepress/config.ts",
+          "docs/.vitepress/theme/index.ts",
+          "tests/support/identity-generate.ts"
+        ],
+        "project": [
+          "scripts/**/*.ts",
+          "tests/**/*.ts"
+        ],
+        "ignoreDependencies": [
+          "ttsc",
+          "ajv",
+          "class-transformer",
+          "class-validator",
+          "typia",
+          "zod"
+        ]
+      },
+      "packages/*": {
+        "project": [
+          "src/**/*.ts"
+        ]
+      },
+      "packages/golem-openapi": {
+        "entry": [
+          "compliance/generate-matrix.ts"
+        ],
+        "project": [
+          "src/**/*.ts",
+          "compliance/**/*.ts"
+        ]
+      },
+      "examples/payments": {
+        "entry": [
+          "server/**/*.ts",
+          "web/src/**/*.{ts,tsx}",
+          "scripts/*.js",
+          "dev/provider.ts",
+          "generators/*.js"
+        ],
+        "project": [
+          "**/*.{ts,tsx,js}"
+        ],
+        "ignoreDependencies": [
+          "@exprtlabs/golem-model",
+          "@exprtlabs/golem-openapi",
+          "@exprtlabs/golem-ts-openapi"
+        ]
+      }
+    },
+    "ignoreUnresolved": [
+      "\\.generated\\.js$",
+      "^\\.\\./shared/"
+    ]
+  }
 }
