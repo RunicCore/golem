@@ -3,8 +3,6 @@ import { parse } from '@exprtlabs/golem/serde';
 import { Reminder } from './reminder.model.js';
 
 export function readReminder(text: string): Reminder {
-  const reminder = parse<Reminder>(text);
-  console.log(reminder.remindAt instanceof Date); // true
-  return reminder;
+  return parse<Reminder>(text); // -> a Reminder whose remindAt is a Date
 }
 // #endregion read-reminder

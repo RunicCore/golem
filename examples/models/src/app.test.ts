@@ -1,6 +1,6 @@
 import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
-import { mock, test } from 'node:test';
+import { test } from 'node:test';
 import { LibError } from '@exprtlabs/golem/errors';
 import { fromWireFormat, parse, stringify, toWireFormat } from '@exprtlabs/golem/serde';
 import { validateInstance } from '@exprtlabs/golem/validation';
@@ -30,17 +30,6 @@ import { readSchedule, writeSchedule } from './read-schedule.js';
 import { Place, loadAssignee } from './assignee.model.js';
 import { readContactKind } from './contact.model.js';
 import { readIntegrationPayload, readLabelName, rejectsExtraProperty } from './metadata.model.js';
-
-// Run a snippet that logs to the console and return what it logged.
-async function capture<T>(run: () => T | Promise<T>): Promise<{ result: T; logged: unknown[][] }> {
-  const log = mock.method(console, 'log', () => undefined);
-  try {
-    const result = await run();
-    return { result, logged: log.mock.calls.map(call => call.arguments) };
-  } finally {
-    log.mock.restore();
-  }
-}
 
 test('model app creates, converts, validates, and saves a task', async () => {
   const task = createTask({ title: 'Ship the generators' });
@@ -154,11 +143,10 @@ test('money is a decimal string: an IObject round-trips "12.50" exactly and reje
   assert.throws(() => readMoney('{"amount":"-1","currency":"USD"}'), (error: unknown) => error instanceof LibError);
 });
 
-test('a field typed with a class holds an instance and a derived type stays a plain object', async () => {
-  const { result, logged } = await capture(loadAssignee);
-  assert.ok(result.office instanceof Place);
-  assert.equal(Object.getPrototypeOf(result.site), Object.prototype);
-  assert.deepEqual(logged, [[true], [true]]);
+test('a field typed with a class holds an instance and a derived type stays a plain object', () => {
+  const assignee = loadAssignee();
+  assert.ok(assignee.office instanceof Place);
+  assert.equal(Object.getPrototypeOf(assignee.site), Object.prototype);
 });
 
 test('a discriminated union converts by its kind', () => {
@@ -173,18 +161,19 @@ test('exact models reject extra properties, open models accept them and allowAny
   assert.deepEqual(readIntegrationPayload('{"payload":{"anything":[1,"two"]}}'), { anything: [1, 'two'] });
 });
 
-test('a Date field is an ISO string in JSON and a Date in the model', async () => {
-  const { result, logged } = await capture(() => readReminder('{"title":"Call","remindAt":"2025-01-02T03:04:05.000Z"}'));
-  assert.equal(result.remindAt.toISOString(), '2025-01-02T03:04:05.000Z');
-  assert.deepEqual(logged, [[true]]);
+test('a Date field is an ISO string in JSON and a Date in the model', () => {
+  const reminder = readReminder('{"title":"Call","remindAt":"2025-01-02T03:04:05.000Z"}');
+  assert.ok(reminder.remindAt instanceof Date);
+  assert.equal(reminder.remindAt.toISOString(), '2025-01-02T03:04:05.000Z');
 });
 
-test('Temporal fields hold Temporal values and write ISO 8601 strings', async () => {
+test('Temporal fields hold Temporal values and write ISO 8601 strings', () => {
   const text = '{"startsAt":"2025-01-02T03:04:05Z","day":"2025-01-02","length":"PT1H30M"}';
-  const { result, logged } = await capture(() => readSchedule(text));
-  assert.ok(result.day instanceof Temporal.PlainDate);
-  assert.equal(writeSchedule(result), text);
-  assert.deepEqual(logged, [[true], ['2025-01-02T04:34:05Z']]);
+  const schedule = readSchedule(text);
+  assert.ok(schedule.startsAt instanceof Temporal.Instant);
+  assert.ok(schedule.day instanceof Temporal.PlainDate);
+  assert.equal(schedule.endsAt.toString(), '2025-01-02T04:34:05Z');
+  assert.equal(writeSchedule(schedule), text);
 });
 
 test('a TSerde field can hold a class instance such as Uint8Array', () => {
