@@ -10,8 +10,9 @@
  * result onto `req`. When the handler returns that model, the interceptor
  * stringifies it. Any other return type stays Nest JSON. Consumers may
  * register the interceptor or write their own interceptor or pipe with
- * `objectCodecFromMetatype`, or `nestUnionFromMetatype` for a union of models. `nestModelStringifyInterceptor` stays for a
- * response whose codec is not the declared return type.
+ * `objectCodecFromMetatype`, or `nestUnionFromMetatype` for a union of
+ * models. `nestModelStringifyInterceptor` stays for a response whose codec is
+ * not the declared return type.
  */
 import {
   BadRequestException,
@@ -32,6 +33,7 @@ const NEST_MODEL_CODEC = Symbol.for('@exprtlabs/golem:nestModelCodec.codec');
 const NEST_MODEL_CONSTRUCT = Symbol.for('@exprtlabs/golem:nestModelCodec.construct');
 const NEST_MODEL_ARRAY = Symbol.for('@exprtlabs/golem:nestModelCodec.array');
 const NEST_MODEL_UNION = Symbol.for('@exprtlabs/golem:nestModelCodec.union');
+const NEST_MODEL_UNION_IDS = Symbol.for('@exprtlabs/golem:nestModelCodec.unionIds');
 const NEST_MODEL_RETURN = '@exprtlabs/golem:nestModelReturn';
 const ROUTE_ARGS_METADATA = '__routeArguments__';
 const NEST_BODY = 3;
@@ -103,6 +105,7 @@ type NestModelToken = Function & {
   readonly [NEST_MODEL_CODEC_ID]?: unknown;
   readonly [NEST_MODEL_CODEC]?: ObjectCodec;
   readonly [NEST_MODEL_UNION]?: NestUnionBinding;
+  readonly [NEST_MODEL_UNION_IDS]?: readonly string[];
   readonly [NEST_MODEL_CONSTRUCT]?: NestModelConstruct;
   readonly [NEST_MODEL_ARRAY]?: true;
 };
@@ -204,7 +207,9 @@ export function nestModelCodec(id: string, array?: boolean): ParameterDecorator 
  */
 export function nestModelUnion(property: string, variants: readonly NestUnionVariant[]): ParameterDecorator {
   // The token is named after its variants, which the interceptor's fault messages show.
-  const token = nestModelMetatype(variants.map(([, id]) => id).join(' | '), false);
+  const ids = variants.map(([, id]) => id);
+  const token = nestModelMetatype(ids.join(' | '), false);
+  Object.defineProperty(token, NEST_MODEL_UNION_IDS, { value: ids });
   // The codecs of the variants register when their generated modules load, which can be after this class loads, so the first read resolves them.
   let union: NestUnionBinding | undefined;
   Object.defineProperty(token, NEST_MODEL_UNION, { get: () => union ??= nestUnionInput(property, variants) });
@@ -653,9 +658,11 @@ export class NestModelInterceptor implements NestInterceptor {
             // A controller declaration fault, not bad input: Nest answers 500 for this request.
             const where = `${inputDecorator(paramtype, field)} parameter ${meta.index} of ${klass.name}.${handler.name}`;
             const id = codecIdFromMetatype(metatype);
+            const variantIds = asToken(metatype)?.[NEST_MODEL_UNION_IDS];
+            const missing = variantIds?.filter((variant) => getObjectCodec(variant) === undefined).map((variant) => `"${variant}"`).join(' and ');
             throw new TypeError(id === undefined
               ? `NestModelInterceptor needs an IModel or IObject type for ${where}. Declare the input as an IModel or IObject, or write your own interceptor.`
-              : `golem fault: NestModelInterceptor found no registered codec "${id}" for ${where}. The rewrite loads the generated module of the model, and that module did not load. Run golem generate and rewrite the file again.`);
+              : `golem fault: NestModelInterceptor found no registered codec ${missing ?? `"${id}"`}${variantIds ? ` for the union "${id}"` : ''} for ${where}. The rewrite loads the generated module of the model, and that module did not load. Run golem generate and rewrite the file again.`);
           }
           const construct = boundConstruct(metatype);
           const array = boundArray(metatype);

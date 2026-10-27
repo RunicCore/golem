@@ -1096,9 +1096,18 @@ test('a union binding resolves its variant codecs on first use, so a variant tha
   // protects: T-511 a union token decorated before its variant codecs register is not left unbound
   const klass = inputController('LateUnion', Body, undefined, Object);
   nestModelUnion('kind', [[['a'], 'LateUnionA_11111111'], [['b'], 'LateUnionB_22222222']])(klass.prototype, 'handle', 0);
-  for (const id of ['LateUnionA_11111111', 'LateUnionB_22222222']) variantCodec(id);
+  variantCodec('LateUnionA_11111111');
+  const type = (Reflect.getMetadata('design:paramtypes', klass.prototype, 'handle') as unknown[])[0];
   const request = { body: { kind: 'b' }, query: {} };
   const context = { getHandler: () => klass.prototype.handle, getClass: () => klass, getType: () => 'http', switchToHttp: () => ({ getRequest: () => request }) } as unknown as ExecutionContext;
+  assert.equal(nestUnionFromMetatype(type), undefined);
+  assert.throws(() => new NestModelInterceptor().intercept(context, { handle: () => of(undefined) }), new TypeError(
+    'golem fault: NestModelInterceptor found no registered codec "LateUnionB_22222222" for the union "LateUnionA_11111111 | LateUnionB_22222222" for @Body() parameter 0 of LateUnion.handle. The rewrite loads the generated module of the model, and that module did not load. Run golem generate and rewrite the file again.',
+  ));
+  variantCodec('LateUnionB_22222222');
+  const resolved = nestUnionFromMetatype(type);
+  assert.ok(resolved);
+  assert.equal(resolved, (type as { [key: symbol]: unknown })[Symbol.for('@exprtlabs/golem:nestModelCodec.union')], 'the interceptor converts with this object');
   new NestModelInterceptor().intercept(context, { handle: () => of(undefined) });
   assert.deepEqual(request.body, { variant: 'LateUnionB_22222222', wire: { kind: 'b' } });
 });
