@@ -91,7 +91,7 @@ export class ItemsController {
 const ITEM = 'export type TItem = IModel<{ id: string }>;\n';
 const SOURCE = `${ITEM}@Controller('items') export class ItemsController { @Get() list(): TItem { return { id: 'a' }; } }`;
 
-test('a server name is written on OpenAPI 3.2.0 and refused on 3.1.2', async t => {
+test('a server name is written on OpenAPI 3.2.0, refused on 3.1.2, and refused when two servers share it', async t => {
   // protects: T-493 OAS 3.2 server objects carry a name; 3.1 has none
   const servers = [{ url: 'https://api.example.test', name: 'production' }];
   const document = await build(t, SOURCE, { servers });
@@ -99,6 +99,9 @@ test('a server name is written on OpenAPI 3.2.0 and refused on 3.1.2', async t =
   const refused = await rejection(build(t, SOURCE, { servers, openapiVersion: '3.1.2' }));
   assert.ok(refused.codes.includes('NEST1403'), refused.text);
   assert.match(refused.text, /servers\[0\] contains unsupported property "name"/);
+  const repeated = await rejection(build(t, SOURCE, { servers: [...servers, { url: 'https://eu.example.test', name: 'production' }] }));
+  assert.ok(repeated.codes.includes('NEST1403'), repeated.text);
+  assert.match(repeated.text, /servers\[1\]\.name "production" repeats the name of an earlier server/);
 });
 
 test('a controller method with a quoted or computed name and a route decorator is reported, not dropped', async t => {

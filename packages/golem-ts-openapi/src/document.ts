@@ -100,12 +100,19 @@ function validateServers(value: unknown, openapi: '3.2.0' | '3.1.2'): void {
   if (!Array.isArray(value)) {
     invalidDocument(TsToOpenApiDiagnosticCode.InvalidServer, 'OpenAPI servers must be an array.');
   }
+  const names = new Set<string>();
   for (const [index, rawServer] of value.entries()) {
     const pathName = `servers[${index}]`;
     const server = recordValue(rawServer, pathName, TsToOpenApiDiagnosticCode.InvalidServer);
     validateKnownKeys(server, pathName, openapi === '3.2.0' ? ['url', 'name', 'description', 'variables'] : ['url', 'description', 'variables'], TsToOpenApiDiagnosticCode.InvalidServer);
     nonEmptyDocumentString(server.url, `${pathName}.url`, TsToOpenApiDiagnosticCode.InvalidServer);
-    if (server.name !== undefined) documentString(server.name, `${pathName}.name`, TsToOpenApiDiagnosticCode.InvalidServer);
+    if (server.name !== undefined) {
+      const name = documentString(server.name, `${pathName}.name`, TsToOpenApiDiagnosticCode.InvalidServer);
+      if (names.has(name)) {
+        invalidDocument(TsToOpenApiDiagnosticCode.InvalidServer, `OpenAPI ${pathName}.name "${name}" repeats the name of an earlier server.`);
+      }
+      names.add(name);
+    }
     if (server.description !== undefined) {
       documentString(server.description, `${pathName}.description`, TsToOpenApiDiagnosticCode.InvalidServer);
     }
