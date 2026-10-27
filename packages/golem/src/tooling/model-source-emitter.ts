@@ -21,7 +21,7 @@ export { calleeOf, FIELD_CONVERSION_INPUT, type TupleConversionDescriptor } from
 export { presentKeysCode } from './union-conversion.js';
 /** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
-  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importLines, importSet, ImportSource, inputOf, inputSlot, join, lineBreak, literal, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
+  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importLines, importSet, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
   type Code, type Helper, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
 export { rt, rtType, type RuntimeModule } from './rt.js';
@@ -39,7 +39,7 @@ export {
   type Rejected,
   type SlotRule,
 } from './composition.js';
-import { blockComment, bindInput, code, codeKey, identifier, inputOf, inputSlot, join, literal, sameCode, type Code } from './code.js';
+import { blockComment, bindInput, code, codeKey, identifier, inputOf, inputSlot, isEmpty, join, literal, sameCode, type Code } from './code.js';
 import { rt } from './rt.js';
 import { MODEL_MANIFEST_FILENAME, MODEL_MANIFEST_MARKER } from './model-manifest.js';
 export { assertUniqueExportNames, type PublicModule } from './names.js';
@@ -552,7 +552,7 @@ function emitNestedUncached(
         : omitsUndefined(name)
           ? code`if (${sourceValue} !== undefined) ${defineProperty}(out, ${property}, ${converted});`
           : code`if (Object.hasOwn(source, ${property})) ${defineProperty}(out, ${property}, ${sourceValue} === undefined ? undefined : (${converted}));`);
-      const body = bindInput(join([...capture, ...fields, extras].filter(piece => piece.parts.length > 0), code` `), sourceRecord, source);
+      const body = bindInput(join([...capture, ...fields, extras].filter(piece => !isEmpty(piece)), code` `), sourceRecord, source);
       return code`${objectValueExpression(expression)} ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; ${body} return out; })(${recordExpression(expression)}) : ${value}`;
     }
     if (!knownChanged && !additionalChanged) return value;
