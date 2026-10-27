@@ -79,6 +79,7 @@ function cleanProject(t: TestContext, source: string, yaml = config, files: Reco
 }
 
 const read = (root: string, file: string): string => fs.readFileSync(path.join(root, file), 'utf8');
+const sdkUnknownFormats = (root: string): string => (JSON.parse(read(root, 'sdk/model-manifest.json')) as { profile: { unknownFormats: string } }).profile.unknownFormats;
 
 // protects: T-464 a clean run and a run with the SDK present give the same document and registry
 test('a clean tree generates in one run, and the run after it writes the same document and registry', async (t: TestContext) => {
@@ -99,6 +100,20 @@ test('a clean tree generates in one run, and the run after it writes the same do
   fs.appendFileSync(path.join(root, 'src/catalog.controller.ts'), '// second run\n');
   await runPipeline(yaml);
   assert.deepEqual({ document: read(root, 'generated/openapi.json'), registry: read(root, registry) }, first);
+  await runPipeline(yaml, { check: true });
+});
+
+// protects: T-517 a profile option change failed on the SDK manifest of the run before, which the openapi job was about to rewrite
+test('a profile option changed after a run regenerates the SDK manifest with the new profile in one run', async (t: TestContext) => {
+  const root = cleanProject(t, keeps);
+  const yaml = path.join(root, 'golem.yaml');
+  await runPipeline(yaml);
+  assert.equal(sdkUnknownFormats(root), 'error');
+
+  fs.writeFileSync(yaml, config.replace('validation: true\n', 'validation: true\nunknownFormats: warn\n'));
+  await runPipeline(yaml);
+
+  assert.equal(sdkUnknownFormats(root), 'warn');
   await runPipeline(yaml, { check: true });
 });
 

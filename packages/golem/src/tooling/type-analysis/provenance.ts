@@ -13,7 +13,7 @@ import type {
 import { canonicalPath, displayPath, type GolemProfile, type InputObserver } from '../generator-api.js';
 import { MISSING, fileSignature } from '../input-watcher.js';
 import type { CodecSchemaClosureEntry } from '../validation-plan.js';
-import { canonicalFilename, effectiveConfigPath } from './project.js';
+import { canonicalFilename, effectiveConfigPath, isUnderOutputs } from './project.js';
 import type { ProgramInfo } from './project.js';
 
 export interface ResolvedModelManifestEntry extends ModelManifestEntry {
@@ -224,13 +224,17 @@ function advertisedPath(file: ts.SourceFile): string | undefined {
   return undefined;
 }
 
-/** The manifests the program's files advertise with the `@golem-model-manifest` marker comment. Throws for one that does not exist. */
-export function advertisedModelManifests(program: ts.Program, onInput?: InputObserver): Set<string> {
+/**
+ * The manifests the program's files advertise with the `@golem-model-manifest` marker comment. Throws for one that does not exist.
+ * A manifest under `laterOutputs` (canonical paths) is left out: a later job of the run writes it.
+ */
+export function advertisedModelManifests(program: ts.Program, onInput?: InputObserver, laterOutputs: readonly string[] = []): Set<string> {
   const advertised = new Set<string>();
   for (const sourceFile of program.getSourceFiles()) {
     const manifestPath = advertisedPath(sourceFile);
     if (manifestPath === undefined) continue;
     const filename = canonicalFilename(resolve(dirname(sourceFile.fileName), manifestPath));
+    if (isUnderOutputs(laterOutputs, filename)) continue;
     onInput?.(filename);
     if (!existsSync(filename)) {
       throw new Error(
@@ -270,15 +274,24 @@ export function sdkModelFiles(manifestIndex: ManifestIndex): ReadonlySet<string>
   return files;
 }
 
+/**
+ * The model manifests of a job: the ones its root holds and its program advertises, then `explicit`. A manifest under
+ * `laterOutputs` (where the jobs after this one write) is not read: this run rewrites it, and its profile and models from the
+ * run before would make a clean run and a second run differ.
+ */
 export function loadModelManifests(
   root: string,
   info: ProgramInfo,
   explicit: readonly string[],
   profile: GolemProfile,
   onInput?: InputObserver,
+  laterOutputs: readonly string[] = [],
 ): ManifestIndex {
-  const advertised = advertisedModelManifests(info.program, onInput);
-  const discovered = discoverModelManifests(root, onInput).map(canonicalFilename);
+  const outputs = laterOutputs.map(canonicalPath);
+  const advertised = advertisedModelManifests(info.program, onInput, outputs);
+  const discovered = discoverModelManifests(root, (filename) => { if (!isUnderOutputs(outputs, filename)) onInput?.(filename); })
+    .map(canonicalFilename)
+    .filter((filename) => !isUnderOutputs(outputs, filename));
   discovered.forEach((filename) => onInput?.(filename));
   const localFiles = [...new Set([...discovered, ...advertised])].sort();
   const local = new Set(localFiles);

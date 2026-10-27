@@ -482,7 +482,8 @@ function analyzeContracts(
     laterOutputs: normalized.laterOutputs,
     classComponentName: declaration => apiSchemaName(programInfo.program.getTypeChecker(), declaration),
     // With the models job known, the manifests the program advertises decide which model files are SDK files, as they do for that job.
-    ...(normalized.boundary ? { boundary: normalized.boundary, manifests: loadModelManifests(normalized.root, programInfo, [], normalized.profile, observe) } : {}),
+    // A manifest that a later job writes is not read, as no file under a later output is.
+    ...(normalized.boundary ? { boundary: normalized.boundary, manifests: loadModelManifests(normalized.root, programInfo, [], normalized.profile, observe, normalized.laterOutputs) } : {}),
   });
 }
 
