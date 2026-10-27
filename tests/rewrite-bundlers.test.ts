@@ -350,6 +350,9 @@ test('an inconsistent rewrite in a host names the file relative to the working d
   assert.throws(() => host.rewrite(file, fs.readFileSync(file, 'utf8')), (error: unknown) => error instanceof Error && error.message.startsWith(`golem rewrite is inconsistent for ${shown} at line `));
 });
 
+/** The plugin's window in which file events share one reload. */
+const RELOAD_WINDOW_MS = 100;
+
 /** A real Vite dev server on a loopback port with its own file watcher, and a client on its websocket that records every message. */
 interface LiveServer {
   readonly server: ViteDevServer;
@@ -357,6 +360,10 @@ interface LiveServer {
   reloads(count: number): Promise<void>;
   /** The number of full-reload messages the client has received. */
   reloadCount(): number;
+  /** Resolves once the reload count has not moved for three reload windows of the plugin. */
+  reloadsSettled(): Promise<void>;
+  /** Resolves when the watcher reports a change of `file`, after the plugin has handled it (the plugin listens first). Call it before the edit. */
+  changed(file: string): Promise<void>;
 }
 
 /**
@@ -375,27 +382,36 @@ async function serve(t: TestContext, root: string): Promise<LiveServer> {
     server: { host: '127.0.0.1', port: 0, strictPort: true },
     optimizeDeps: { noDiscovery: true },
   });
+  let socket: WebSocket | undefined;
+  t.after(async () => {
+    try {
+      if (socket && socket.readyState !== WebSocket.CLOSED) {
+        const closing = socket;
+        await new Promise<void>((resolve) => {
+          closing.addEventListener('close', () => { resolve(); });
+          setTimeout(resolve, 2_000).unref();
+          closing.close();
+        });
+      }
+      // A watcher closed while an add is still opening its file watch leaves that watch open and the test process alive. chokidar's add returns the watcher, not a promise, and has no event
+      // for its end, so wait until the set of watched paths has not changed for 500 ms.
+      let watched = '';
+      let since = Date.now();
+      await until(() => {
+        const now = JSON.stringify(server.watcher.getWatched());
+        if (now !== watched) { watched = now; since = Date.now(); }
+        return Date.now() - since >= 500;
+      }, 'the watcher settles before the server closes', 10_000);
+    } finally {
+      await server.close();
+    }
+  });
   await server.listen();
   const address = server.httpServer?.address();
   assert.ok(address && typeof address === 'object', 'the dev server listens on a port');
   const messages: { readonly type?: string }[] = [];
-  const socket = new WebSocket(`ws://127.0.0.1:${address.port}/`, 'vite-hmr');
+  socket = new WebSocket(`ws://127.0.0.1:${address.port}/`, 'vite-hmr');
   socket.addEventListener('message', (event) => { messages.push(JSON.parse(String(event.data)) as { readonly type?: string }); });
-  t.after(async () => {
-    const closed = new Promise<void>((resolve) => { socket.addEventListener('close', () => { resolve(); }); });
-    socket.close();
-    await closed;
-    // A watcher closed while an add is still opening its file watch leaves that watch open and the test process alive; chokidar has no event for the end of an add, so wait until the watched set stops changing.
-    let watched = '';
-    let steady = 0;
-    await until(() => {
-      const now = JSON.stringify(server.watcher.getWatched());
-      steady = now === watched ? steady + 1 : 0;
-      watched = now;
-      return steady >= 3;
-    }, 'the watcher settles before the server closes', 10_000);
-    await server.close();
-  });
   await until(() => messages.some((message) => message.type === 'connected'), 'the websocket client connects to the dev server', 10_000);
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => { reject(new Error('Timed out: the watcher has not scanned the project')); }, 10_000);
@@ -406,6 +422,24 @@ async function serve(t: TestContext, root: string): Promise<LiveServer> {
     server,
     reloadCount,
     reloads: (count) => until(() => reloadCount() >= count, () => `${count} full-reload messages; got ${reloadCount()}`),
+    reloadsSettled: () => {
+      let last = reloadCount();
+      let since = Date.now();
+      return until(() => {
+        if (reloadCount() !== last) { last = reloadCount(); since = Date.now(); }
+        return Date.now() - since >= 3 * RELOAD_WINDOW_MS;
+      }, 'the reloads settle', 10_000);
+    },
+    changed: (file) => new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => { server.watcher.off('change', listener); reject(new Error(`Timed out: the watcher reports no change of ${file}`)); }, 10_000);
+      const listener = (changedFile: string): void => {
+        if (path.resolve(changedFile) !== file) return;
+        clearTimeout(timer);
+        server.watcher.off('change', listener);
+        resolve();
+      };
+      server.watcher.on('change', listener);
+    }),
   };
 }
 
@@ -441,24 +475,39 @@ test('vite serve: regenerating a model serves the module that used it with the n
   assert.ok((await server.transformRequest('/src/tag.ts'))?.code);
   assert.ok(moduleOf('src/main.ts')?.transformResult && moduleOf('src/tag.ts')?.transformResult, 'both modules are cached after their first transform');
 
+  const keyChanged = live.changed(keyTable(root));
   await changeMoney(root);
   const newId = codecId(root, 'TMoney');
   assert.notEqual(newId, oldId);
   await live.reloads(1);
+  // The plugin has handled the key table once the watcher reports it; the regeneration's other files may still bring a reload.
+  await keyChanged;
+  await live.reloadsSettled();
   assert.equal(moduleOf('src/main.ts')?.transformResult, null);
   assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(newId));
-  // Vite itself invalidates tag.ts, which imports the regenerated companion; it is transformed again here so that the next step starts with both cached.
+  // Vite itself invalidates tag.ts, which imports the regenerated companion; it is transformed again here so that the next steps start with both cached.
   assert.ok((await server.transformRequest('/src/tag.ts'))?.code);
 
-  // The key table written again with the same bytes changes no rewrite: nothing is invalidated and no reload is sent.
-  // The files of the regeneration arrive as events over some time, each burst with its own reload: the count is taken once they have settled.
-  await quietly();
+  // A key table with other bytes changes the rewrite of main.ts: the plugin invalidates it and sends a reload.
+  const otherId = 'TMoney_99999999';
+  const otherBytes = live.changed(keyTable(root));
+  const beforeOther = live.reloadCount();
+  fs.writeFileSync(keyTable(root), fs.readFileSync(keyTable(root), 'utf8').replace(newId, otherId));
+  await otherBytes;
+  await live.reloads(beforeOther + 1);
+  assert.deepEqual(requestedCodecIds((await server.transformRequest('/src/main.ts'))?.code), Array(3).fill(otherId));
+  assert.ok((await server.transformRequest('/src/tag.ts'))?.code);
+  await live.reloadsSettled();
+
+  // The same bytes written again change no rewrite: once the watcher reports the write (the plugin has handled it) and its reload window has passed, nothing is invalidated and no reload came.
   const reloaded = live.reloadCount();
+  const sameBytes = live.changed(keyTable(root));
   fs.writeFileSync(keyTable(root), fs.readFileSync(keyTable(root)));
-  await quietly();
+  await sameBytes;
+  await quietly(3 * RELOAD_WINDOW_MS);
   assert.equal(live.reloadCount(), reloaded, 'no reload for a key table that did not change');
-  assert.ok(moduleOf('src/main.ts')?.transformResult, 'main.ts stays cached when the same file is written again');
-  assert.ok(moduleOf('src/tag.ts')?.transformResult, 'tag.ts stays cached when the same file is written again');
+  assert.ok(moduleOf('src/main.ts')?.transformResult, 'main.ts stays cached when the same bytes are written again');
+  assert.ok(moduleOf('src/tag.ts')?.transformResult, 'tag.ts stays cached when the same bytes are written again');
 });
 
 test('vite serve: retargeting an alias that a module parses through transforms it again with the new codec id', async (t) => {
@@ -517,14 +566,20 @@ test('vite serve: the file events of one run invalidate every module they change
   const { server } = live;
   for (const name of ['first', 'second']) await server.transformRequest(`/src/use-${name}.ts`);
 
-  for (const name of ['first', 'second']) write(root, `src/${name}-alias.ts`, "export type { TTag as TAlias } from './money.model.js';\n");
+  // The batching window is a timing property, so the two events are delivered together by hand: with the project unwatched, real events cannot arrive between them under load. The other tests prove real delivery.
+  server.watcher.unwatch(root);
+  const edited = ['first', 'second'].map((name) => {
+    write(root, `src/${name}-alias.ts`, "export type { TTag as TAlias } from './money.model.js';\n");
+    return path.join(root, `src/${name}-alias.ts`);
+  });
+  for (const file of edited) server.watcher.emit('change', file);
 
   await live.reloads(1);
   for (const name of ['first', 'second']) {
-    assert.equal(server.moduleGraph.getModuleById(path.join(root, `src/use-${name}.ts`))?.transformResult, null, `${name} is invalidated by its own edit`);
+    assert.equal(server.moduleGraph.getModuleById(path.join(root, `src/use-${name}.ts`))?.transformResult, null, `${name} is invalidated by its own event`);
   }
-  await quietly();
-  assert.equal(live.reloadCount(), 1, 'both edits share one reload');
+  await quietly(3 * RELOAD_WINDOW_MS);
+  assert.equal(live.reloadCount(), 1, 'both events share one reload');
 });
 
 test('vite serve: a module whose model had no generated code transforms again once golem generate has written it', async (t) => {
