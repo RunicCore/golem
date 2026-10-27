@@ -4,6 +4,7 @@ import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
 import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-api.js';
 import type { CompileInput, CompileOptions } from './index.js';
 import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrFunction, IrInstance, IrModule, IrSchema, IrTypeName, IrValidationImport } from './ir.js';
+import { JSON_TYPES } from './function-writer.js';
 import { baseInside, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';
 
 export const VALIDATE_UNSUPPORTED_KEYWORD = 'VALIDATE_UNSUPPORTED_KEYWORD';
@@ -104,16 +105,6 @@ function holdsEvaluationKeyword(node: unknown): boolean {
 // Keywords that describe a schema and never reject a value.
 const ANNOTATION_KEYWORDS: ReadonlySet<string> = new Set(['title', 'description', 'default', 'examples', '$comment', 'deprecated', 'readOnly', 'writeOnly']);
 
-const TYPE_TESTS: Readonly<Record<IrTypeName, (value: unknown) => boolean>> = {
-  string: value => typeof value === 'string',
-  number: value => typeof value === 'number' && Number.isFinite(value),
-  integer: value => Number.isInteger(value),
-  boolean: value => typeof value === 'boolean',
-  null: value => value === null,
-  object: value => typeof value === 'object' && value !== null && !Array.isArray(value),
-  array: value => Array.isArray(value),
-};
-
 /**
  * The values a branch allows when its only validation keywords are `const` or `enum`, and a `type` that every value
  * satisfies; undefined for any other branch.
@@ -127,7 +118,7 @@ function literalBranchValues(branch: unknown): readonly unknown[] | undefined {
   if (!Object.hasOwn(branch, 'type')) return values;
   const names = typeof branch.type === 'string' ? [branch.type] : Array.isArray(branch.type) ? branch.type as readonly unknown[] : [];
   if (names.length === 0 || !names.every(isTypeName)) return undefined;
-  return values.every(value => names.some(name => TYPE_TESTS[name](value))) ? values : undefined;
+  return values.every(value => names.some(name => JSON_TYPES[name].test(value))) ? values : undefined;
 }
 
 /**

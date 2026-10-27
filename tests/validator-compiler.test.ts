@@ -943,8 +943,8 @@ test('a validation function reports at the path of the value its schema describe
 
 test('a validation function that returns neither a boolean nor a string throws a TypeError', async () => {
   const validate = await compileRules({ exprtValidation: { schema: true, bindings: ['rules.count'] } }, ['rules.count']);
-  assert.throws(() => validate(1, true), new TypeError('Validation functions must return boolean or string.'));
-  assert.throws(() => validate(1, false), new TypeError('Validation functions must return boolean or string.'));
+  assert.throws(() => validate(1, true), new TypeError('Validation function count must return boolean or string.'));
+  assert.throws(() => validate(1, false), new TypeError('Validation function count must return boolean or string.'));
 });
 
 test('validation functions run only when the structural schema passes', async () => {
