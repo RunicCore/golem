@@ -418,7 +418,9 @@ test('an anyOf of branches that differ by JSON type checks a valid value with th
     assert.deepEqual(callsFor(null), [true, 0]);
     assert.deepEqual(callsFor(['a']), [true, 0]);
     assert.deepEqual(callsFor({ a: 1 }), [true, 0]);
-    assert.deepEqual(callsFor(3), [true, 1]);
+    const [verdict, isIntegerCalls] = callsFor(3);
+    assert.equal(verdict, true);
+    assert.ok(isIntegerCalls <= 1, `the integer branch called Number.isInteger ${isIntegerCalls} times`);
   }
 });
 

@@ -107,7 +107,7 @@ test('legacy markers are never adopted or removed', (t: TestContext) => {
 });
 
 test('unrecorded generated-marker leftovers are preserved by generate and reported by check', (t: TestContext) => {
-  // protects: E-34 the scan for unrecorded outputs runs only with check; generate neither reports nor touches a leftover
+  // protects: E-34 the scan for unrecorded outputs runs only with check; generate neither fails on nor touches a leftover
   const { config, job, filename } = fixture(t);
   fs.mkdirSync(path.dirname(filename), { recursive: true });
   const orphan = path.join(config.directory, 'src/orphan.model.generated.ts');
