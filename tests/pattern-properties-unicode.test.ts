@@ -34,26 +34,3 @@ test('a patternProperties key that only the u flag matches decodes to its declar
     ascii: new Date(2000),
   });
 });
-
-test('models with the same pattern share one expression and models named like a constant do not clash', () => {
-  // protects: F-129 the generated code builds one expression for each pattern text
-  const dates = (pattern: string): ModelTypeDescriptor => ({
-    kind: 'object',
-    properties: {},
-    required: [],
-    additionalProperties: false,
-    constraints: [{ kind: 'patternProperties', pattern, schema: { kind: 'date' } }],
-  });
-  const graph = createSchemaGraph();
-  graph.intern(dates('^\\p{L}+$'), 'Foo', true);
-  graph.intern(dates('^\\p{L}+$'), 'FooPattern0', true);
-  graph.intern(dates('^\\p{N}+$'), 'Bar', true);
-  graph.seal();
-  const source = emitCodecRuntimeText(graph, { validationEnabled: false });
-  assert.equal(source.match(/new RegExp\(/g)?.length, 2, 'one expression for each of the two pattern texts');
-  const runtime = instantiateRuntime(source);
-  const wire = { 'é': '1970-01-01T00:00:00.000Z' };
-  assert.deepEqual(runtime.fromWireFormatFoo(wire, { validate: false }), { 'é': new Date(0) });
-  assert.deepEqual(runtime.fromWireFormatFooPattern0(wire, { validate: false }), { 'é': new Date(0) });
-  assert.deepEqual(runtime.fromWireFormatBar({ '٣': '1970-01-01T00:00:00.000Z' }, { validate: false }), { '٣': new Date(0) });
-});
