@@ -30,7 +30,7 @@ Golem skips a generator whose inputs did not change. It learns an input when the
 
 ## Check what it writes
 
-The generator writes `payment-events.model.ts` into the `output` directory. The models job then writes `payment-events.model.generated.ts` beside it. Both are generated files. Ignore them with the others ([ignore generated files](/reference/generated-files#gitignore)). The `.gitignore` of the example lists the first file by path.
+The generator writes `payment-events.model.ts` into the `output` directory. The models job then writes `payment-events.model.generated.ts` beside it. Both are generated files. Ignore or commit them with the others ([ignore or commit generated files](/reference/generated-files#gitignore)). The `.gitignore` of the example lists the first file by path.
 
 ## Use the generated models
 

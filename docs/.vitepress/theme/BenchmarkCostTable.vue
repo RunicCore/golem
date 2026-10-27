@@ -55,7 +55,6 @@ const tables = computed(() => props.blocks.map(block => ({ ...block, rows: block
       <li><strong>IObject:</strong> on/off divides the same way, for the plain-object codec.</li>
       <li><strong>Other pairs:</strong> IModel/IObject divides the IModel speed by the IObject speed. Serde many/none divides serde-many by serde-none for the same operation. Invalid/valid divides the speed on one broken value by the speed on a valid value, for parse, decode and validate.</li>
       <li>A dash (—) means the pair does not apply. A run that did not time a pair shows "not run".</li>
-      <li>This table has no release column. To compare this checkout with an earlier one, run <code>npm run bench:release -- --base &lt;git ref&gt;</code>.</li>
     </ul>
   </div>
 </template>
