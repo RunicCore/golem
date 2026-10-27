@@ -25,7 +25,7 @@ Find every `@exprtlabs/golem` subpath that your application, NestJS app or build
 | [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
 | [`eslint`](#eslint) | ESLint config with a rule that reports code no build tool can rewrite | `eslint` |
 
-A path that starts with `internal/` is for the generators and may change in any release. Do not import it ([Compatibility](/compatibility#public-api)).
+A path that starts with `internal/` is for the generators and may change in any release. These subpaths are internal: `internal/emitter`, `internal/generated-paths`, `internal/schema`, `internal/schema-graph`, `internal/static-value`, `internal/ts`, `internal/type-analysis`, `internal/validation-plan` and `internal/validator-compiler`. Do not import them ([Compatibility](/compatibility#public-api)).
 
 With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). Generated files also import the names in [Exports for generated code](#generated-code).
 
