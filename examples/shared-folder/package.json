@@ -3,14 +3,13 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "link": "node link-shared.js",
-    "generate": "npm run link && golem generate --config apps/web/golem.yaml && golem generate --config apps/worker/golem.yaml",
-    "check": "npm run generate && tsc -p apps/web/tsconfig.json --noEmit && tsc -p apps/worker/tsconfig.json --noEmit",
-    "test": "npm run link && golem build --config apps/web/golem.yaml && golem build --config apps/worker/golem.yaml && node --test shared-folder.test.js \"apps/*/.build/**/*.test.js\""
+    "link-shared": "node link-shared.js",
+    "generate": "npm run link-shared && golem generate --config apps/web/golem.yaml && golem generate --config apps/worker/golem.yaml",
+    "check": "npm run generate && golem check --config apps/web/golem.yaml && golem check --config apps/worker/golem.yaml && tsc -p apps/web/tsconfig.json --noEmit && tsc -p apps/worker/tsconfig.json --noEmit",
+    "test": "npm run link-shared && golem build --config apps/web/golem.yaml && golem build --config apps/worker/golem.yaml && node --test shared-folder.test.js \"apps/*/.build/**/*.test.js\""
   },
   "dependencies": {
-    "@exprtlabs/golem": "1.1.0-rc.0",
-    "mobx": "6.16.1"
+    "@exprtlabs/golem": "1.1.0-rc.0"
   },
   "devDependencies": {
     "@exprtlabs/golem-model": "1.1.0-rc.0",

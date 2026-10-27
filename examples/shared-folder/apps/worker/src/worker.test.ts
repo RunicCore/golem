@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { readCustomer, readCustomerChecked, writeCustomer } from './customers.js';
+import { parse } from '@exprtlabs/golem/serde';
+import type { TCustomer } from '../shared/customer.model.js';
+import { readCustomer, writeCustomer } from './customers.js';
 
 const customer = '{"name":"Ada","address":{"street":"1 Main St","city":"Leeds"},"balance":{"amount":"12.50","currency":"GBP"}}';
 const emptyCity = customer.replace('"city":"Leeds"', '"city":""');
@@ -18,7 +20,7 @@ test('the worker accepts an empty city because its profile has validation off', 
 
 test('the worker cannot ask for validation that its profile does not generate', () => {
   assert.throws(
-    () => readCustomerChecked(emptyCity),
+    () => parse<TCustomer>(emptyCity, { validate: true }),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
   );
 });
