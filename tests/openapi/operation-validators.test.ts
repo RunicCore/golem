@@ -325,7 +325,7 @@ test('an OpenAPI format golem does not check stops generation by default, and un
   );
   assert.match((stopped.diagnostics ?? [])[0]?.message ?? '', /the format "money" is not implemented, so golem cannot check it\./);
   const warned = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
-  assert.ok(warned.artifacts.length > 0);
+  assert.ok(warned.artifacts.some(artifact => artifact.path === path.join(output, 'validators.generated.ts')), 'the warned run writes the SDK validators');
   assert.ok((warned.diagnostics ?? []).some(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT' && entry.severity === GolemDiagnosticSeverity.Warning));
 });
 
@@ -346,7 +346,7 @@ test('an unknown format in an inline operation schema is reported with the opera
   assert.deepEqual(errors.map(entry => entry.severity), [GolemDiagnosticSeverity.Error]);
   assert.match(errors[0].message, /^operation "credit" at \/input\/properties\/body\/format: /);
   const warned = writeSdk(document, { output, name: 'Ledger', profile: { mobx: false, validation: true, unknownFormats: 'warn' } });
-  assert.ok(warned.artifacts.length > 0);
+  assert.ok(warned.artifacts.some(artifact => artifact.path === path.join(output, 'validators.generated.ts')), 'the warned run writes the SDK validators');
   assert.ok((warned.diagnostics ?? []).some(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT' && entry.severity === GolemDiagnosticSeverity.Warning));
 });
 

@@ -655,6 +655,7 @@ test('recursive $ref validates a three-level tree and reports the deepest path',
 });
 
 test('own-property checks hold for __proto__ and constructor keys', async () => {
+  // protects: a schema key named like an Object.prototype member (__proto__, constructor) is checked as an own property, never read from the prototype
   const schema = JSON.parse('{"properties":{"__proto__":{"type":"integer"},"constructor":{"type":"integer"},"toString":{}},"required":["__proto__","constructor","toString"],"additionalProperties":false}') as unknown;
   const validate = await compileSchema(schema);
   assert.deepEqual(validate({}, true), [
@@ -674,6 +675,7 @@ test('own-property checks hold for __proto__ and constructor keys', async () => 
 });
 
 test('root names with # and - become valid function names and verbatim keys', async () => {
+  // protects: a root name with # or - gives a valid exported function name and keeps its verbatim key
   const names = ['TPayment_1234abcd#wire', 'list-items', '#', '__proto__'];
   const validators = await compileValidators({ roots: Object.fromEntries(names.map(name => [name, { type: 'integer' }])) });
   assert.deepEqual(Object.keys(validators).sort(), [...names].sort());
@@ -684,6 +686,7 @@ test('root names with # and - become valid function names and verbatim keys', as
 });
 
 test('$dynamicRef is an unsupported keyword error at its JSON pointer and leaves no source', () => {
+  // protects: an unsupported keyword stops generation with its JSON pointer, never a validator that skips it
   const result = compile(
     { roots: new Map([['root', { properties: { a: { $dynamicRef: '#node' } } }]]) },
     { unknownFormats: 'warn', documentName: 'orders.yaml' },

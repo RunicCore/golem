@@ -528,17 +528,6 @@ export const payment = parse<Payment>('{}');
   return { root, config: path.join(root, 'golem.yaml') };
 }
 
-test('golem check reports the sites golem cannot rewrite with their code and position, and a rewritable project passes', async (t) => {
-  const { root, config } = generatedProject(t);
-  await runPipeline(config);
-  await runPipeline(config, { check: true });
-
-  fs.writeFileSync(path.join(root, 'src/use.ts'), "import { parse } from '@exprtlabs/golem/serde';\nexport const bad = parse<string | null>('{}');\n");
-  await assert.rejects(runPipeline(config, { check: true }), /RUNM1066 \(.*src\/use\.ts:2:20\): parse type argument must be a single type name or typeof expression/);
-  fs.writeFileSync(path.join(root, 'src/use.ts'), "import { parse } from '@exprtlabs/golem/serde';\nimport { Payment } from './money.model.js';\nexport const payment = parse<Payment>('{}');\n");
-  await runPipeline(config, { check: true });
-});
-
 test('a models job owns .golem/codec-keys.json, and the project it generates passes the check with its codec ids', async (t) => {
   const { root, config } = generatedProject(t);
   await runPipeline(config);

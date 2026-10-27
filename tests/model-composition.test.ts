@@ -112,6 +112,7 @@ export type TItem = IModel<Box & TSerde<typeof boxToJson, typeof boxFromJson>>;
 });
 
 test('an IModel over an SDK model generates a class with the fields of that model', async t => {
+  // protects: an IModel over an SDK model types the generated class with that model's fields (a wrong field type fails the build)
   const { root, sourceRoot } = fixture(t);
   fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
   writeGeneratedArtifacts((await generateOpenApi({
@@ -125,10 +126,15 @@ test('an IModel over an SDK model generates a class with the fields of that mode
 import type { Money } from './sdk/index.js';
 export type TItem = IModel<Money>;
 `,
+    'consumer.ts': `import { TItemBaseModel } from './item.model.generated.js';
+declare const item: TItemBaseModel;
+export const amount: number = item.amount;
+export const currency: string = item.currency;
+// @ts-expect-error the amount field is a number
+export const wrong: string = item.amount;
+`,
   });
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'));
-  assert.ok(generated);
-  assert.match(generated.content, /declare amount: TItemFields\["amount"\];\s+declare currency: TItemFields\["currency"\];/);
+  await buildModelProject(root);
 });
 
 test('an IModel over an SDK model keeps a field spelled like a brand key and drops the real brand keys', async t => {
@@ -156,13 +162,27 @@ components:
   writeModelSources(sourceRoot, {
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { Odd } from './sdk/index.js';
+import { TItemBaseModel, TPlainBaseModel } from './item.model.generated.js';
 export type TItem = IModel<Odd>;
+export type TPlain = IModel<{ amount: number; '__@generatedModelWireBrand@1': string }>;
+export class Item extends TItemBaseModel {}
+export class Plain extends TPlainBaseModel {}
+`,
+    'consumer.ts': `import { Item, type Plain } from './item.model.js';
+export const item = new Item({ amount: 1, '__@generatedModelWireBrand@1': 'plain' });
+export const amount: number = item.amount;
+export const odd: string = item['__@generatedModelWireBrand@1'];
+// @ts-expect-error the string key spelled like a brand key is a string field
+export const wrong: number = item['__@generatedModelWireBrand@1'];
+type SymbolKeys<T> = Extract<keyof T, symbol>;
+// the real brand keys of the SDK model add no symbol key beyond the ones every model class has
+export const brandKeysDropped: [SymbolKeys<Item>] extends [SymbolKeys<Plain>] ? ([SymbolKeys<Plain>] extends [SymbolKeys<Item>] ? true : false) : false = true;
 `,
   });
-  const generated = generate({ root, profile: { mobx: false, validation: true } }).artifacts.find(artifact => artifact.path.endsWith('item.model.generated.ts'));
-  assert.ok(generated);
-  const declared = [...generated.content.matchAll(/^\s*declare (\S+?): TItemFields\[/gm)].map(match => match[1]);
-  assert.deepEqual(declared, ['amount', '"__@generatedModelWireBrand@1"']);
+  await buildModelProject(root);
+  const authored = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`);
+  const item = new authored.Item({ amount: 1, '__@generatedModelWireBrand@1': 'plain' });
+  assert.deepEqual(encodeGeneratedModel(item), { amount: 1, '__@generatedModelWireBrand@1': 'plain' });
 });
 
 for (const [place, fields] of [['a field of the model', 'name: string; [sym]: string'], ['a field of a nested object', 'inner: { name: string; [sym]: string }']] as const) {

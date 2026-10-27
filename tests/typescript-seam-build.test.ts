@@ -143,11 +143,10 @@ test('a list argument with spaces reaches a program as the configuration parsed 
   const { root, config } = project(t, { 'src/a.ts': 'export const a = 1;\n' });
   using session = new ts.ProgramSession({ cwd: root });
   const picked = (options: ts.CompilerOptions) => ({ lib: options.lib, types: options.types, maxNodeModuleJsDepth: options.maxNodeModuleJsDepth });
-  for (const flags of [['--lib', 'es2020, dom']]) {
-    const parsed = session.parseConfigFileWithFlags(config, flags);
-    using program = session.openProgram({ root, sources: parsed.fileNames, configFile: config, flags });
-    assert.deepEqual(picked(program.getCompilerOptions()), picked(parsed.options), flags.join(' '));
-  }
+  const flags = ['--lib', 'es2020, dom'];
+  const parsed = session.parseConfigFileWithFlags(config, flags);
+  using program = session.openProgram({ root, sources: parsed.fileNames, configFile: config, flags });
+  assert.deepEqual(picked(program.getCompilerOptions()), picked(parsed.options), flags.join(' '));
   assert.throws(() => session.parseConfigFileWithFlags(config, ['src/a.ts']), /name source files \(.*src\/a\.ts\).*TS5042/);
 });
 

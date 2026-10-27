@@ -140,16 +140,16 @@ test('a syntax error in a decorated file stops the load with the file, the line 
   assert.match(result.stderr, new RegExp(`golem cannot compile .*broken\\.ts:\n.*broken\\.ts:${lineOf(source, 'const broken')} TS\\d+: `), result.stderr);
 });
 
-test('a .tsx file whose tsconfig leaves JSX in the output fails the run with the file and the option to set', async (t) => {
-  // protects: T-380 a .tsx file that no jsx option compiles stops with a golem error, not a Node syntax error
-  for (const compilerOptions of [{}, { jsx: 'preserve' }]) {
+for (const [label, compilerOptions] of [['sets no jsx option', {}], ['sets jsx to preserve', { jsx: 'preserve' }]] as const) {
+  test(`a .tsx file whose tsconfig ${label} fails the run with the file and the option to set`, async (t) => {
+    // protects: T-380 a .tsx file that no jsx option compiles stops with a golem error, not a Node syntax error
     const root = await project(t, 'loader-tsx-no-jsx', { include: JSX_PROJECT.include, compilerOptions });
     write(root, 'src/view.tsx', VIEW);
     const result = await run(root, 'src/view.tsx');
     assert.notEqual(result.code, 0);
     assert.match(result.stderr, /golem cannot compile .*view\.tsx: set compilerOptions\.jsx in .*tsconfig\.json/, result.stderr);
-  }
-});
+  });
+}
 
 test('a file with import x = require() stops the load with its line and what to write instead', async (t) => {
   // protects: T-485 CommonJS-only forms get a golem message before Node's ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX
