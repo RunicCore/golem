@@ -92,11 +92,6 @@ hero:
 <code class="home-card-proof">npx golem check</code>
 </article>
 <article class="home-card">
-<h3>Nothing to commit</h3>
-<p><code>golem build</code> generates first. A fresh clone with every generated file ignored builds with one command.</p>
-<code class="home-card-proof">*.generated.ts   # in .gitignore</code>
-</article>
-<article class="home-card">
 <h3>Any build host</h3>
 <p>A host rewrites <code>parse&lt;T&gt;()</code> and the other serde calls to generated code. Use golem build with tsc, the Vite plugin, the esbuild plugin or the Node loader.</p>
 <code class="home-card-proof">npx golem build</code>

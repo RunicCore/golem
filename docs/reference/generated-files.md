@@ -15,9 +15,14 @@ Know which generated paths and names you can import, and which files to ignore.
 
 The SDK folder is the `sdk` output that you configure. Import only from the paths above.
 
-## Ignore generated files {#gitignore}
+## Ignore or commit generated files {#gitignore}
 
-Never commit generated files. Put them and `.golem/` in `.gitignore`, so a clone has neither. `golem build` generates first, so a fresh clone builds with one command. Run `golem generate` or `golem build` in CI. Your editor needs one `golem generate`, or a running `golem watch`, to see the generated files.
+Golem needs no generated file in git. `golem build` generates first, so a fresh clone builds with one command. You choose whether to commit the generated files:
+
+- **Ignore them.** Put them in `.gitignore`. Run `golem generate` or `golem build` in CI. Your editor needs one `golem generate`, or a running `golem watch`, to see the generated files.
+- **Commit them.** A review then shows the generated changes. Run `golem check` in CI, so that a stale generated file fails the run.
+
+Put `.golem/` in `.gitignore` in both cases. To ignore the generated files, add their paths:
 
 ```text
 .golem/
@@ -30,7 +35,7 @@ sdk/
 
 Add every other generated path by name: the OpenAPI document that a `controllers` job writes, and the files of a `generators` job. A tool that imports such a file needs it generated first, so run `golem generate` before it.
 
-The OpenAPI document of a `controllers` job is a generated file, so git does not hold it. It reaches the projects that read it through a run of the project that owns it:
+The OpenAPI document of a `controllers` job is a generated file. When you ignore it, it reaches the projects that read it through a run of the project that owns it:
 
 - `golem generate` or `golem build` in the owning project writes the document again.
 - A project that reads the document sets it as the `input` of an `openapi` job. Run `golem generate` in the owning project first ([SDK types in your models](/guide/models-and-client#configure-both-generators)). In one `golem.yaml`, an `openapi` job after the controllers job needs no first run.
