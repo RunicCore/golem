@@ -7,7 +7,7 @@ import { SplitEditor } from './split-editor.model.js';
 
 export type SaveState = 'idle' | 'saving' | 'success' | 'error';
 
-// The demo signs in one merchant; the editor edits the money and the note.
+// The merchant is fixed for the demo; the editor edits the money and the note.
 const merchant = { id: 'merchant-1', name: 'Book shop' };
 const billing = { name: 'Accounts' };
 
