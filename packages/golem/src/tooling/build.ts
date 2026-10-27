@@ -119,7 +119,6 @@ function assertSupported(configFile: string, parsed: { readonly options: ts.Comp
   }
   if (stringOption(options, 'outDir') === undefined) throw new Error(`golem build requires compilerOptions.outDir in ${displayPath(configFile)}: it emits the rewritten sources there.`);
   if (stringOption(options, 'outFile') !== undefined) throw unsupported('outFile');
-  if (Array.isArray(options.rootDirs)) throw unsupported('rootDirs');
   for (const name of TSC_COMMANDS) {
     if (options[name] === true) throw new Error(`golem build does not support --${name} (${displayPath(configFile)}): it is a command of tsc, not an option of a build. Run tsc --${name} instead.`);
   }

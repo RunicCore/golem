@@ -143,7 +143,6 @@ test('golem build rejects a tsconfig it cannot emit', async (t) => {
   fs.writeFileSync(path.join(root, 'no-outdir.json'), JSON.stringify({ compilerOptions: base, include: ['src/**/*.ts'] }));
   write(root, 'src/main.ts', 'export const value = 1;\n');
   await assert.rejects(build(root, 'no-outdir.json'), /requires compilerOptions\.outDir/);
-  await assert.rejects(build(root, config({ rootDirs: ['src', 'other'] }, 'root-dirs.json')), /rootDirs/);
   await assert.rejects(build(root, config({ outFile: 'build/all.js' }, 'out-file.json')), /outFile/);
   fs.writeFileSync(path.join(root, 'solution.json'), JSON.stringify({ files: [], references: [{ path: './tsconfig.json' }] }));
   await assert.rejects(build(root, 'solution.json'), /project references/);
