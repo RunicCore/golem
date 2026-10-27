@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
 import * as ts from '@exprtlabs/golem/internal/ts';
-import { observeTooling, type ToolingObserver } from '#golem/observe';
 import { createFixtureProject, readFixture } from './fixture-project.js';
 import { generate as generateController } from '#controllers/generator';
 import { generate as generateModel } from '#model/generator';
@@ -17,6 +17,7 @@ import {
 import { workspace } from './support/process.js';
 import { pathMappedProject } from './support/path-mapped-project.js';
 import { compilerChildren } from './support/generation-watch.js';
+import { subscribe } from './support/golem-channels.js';
 
 interface Fixture {
   readonly root: string;
@@ -44,8 +45,7 @@ function trackApiChildren(t: TestContext): ApiChildTracker {
   const before = new Set(compilerChildren(process.pid));
   // golem reports each compiler it starts; the process list is the evidence of what is alive.
   const started: (ChildProcess | undefined)[] = [];
-  const observing = observeTooling({ compilerStarted: compiler => { started.push(compiler); } });
-  t.after(() => observing[Symbol.dispose]());
+  subscribe(t, 'golem:compiler-started', (message: { readonly compiler: ChildProcess | undefined }) => { started.push(message.compiler); });
   const live = (): number[] => compilerChildren(process.pid).filter(pid => !before.has(pid));
   const waitUntilGone = async (pids: readonly number[]): Promise<void> => {
     const deadline = Date.now() + 2_000;
@@ -132,21 +132,32 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
 }
 
 /**
- * Watch each snapshot request a program session sends. TypeScript 7.1 sends the first request with `createSnapshot` and later
- * ones through the newest snapshot; golem reports both. The disposal ends the watch before the test does.
+ * Subscribe to the snapshot requests a program session sends. TypeScript 7.1 sends the first request with `createSnapshot` and later
+ * ones through the newest snapshot; golem publishes both before it sends. A subscriber runs inside the publish, so it acts at the
+ * moment the request is about to go. `settled` runs when the request has ended. The returned function unsubscribes both.
  */
-function observeSnapshots(t: TestContext, snapshotRequested: NonNullable<ToolingObserver['snapshotRequested']>): Disposable {
-  const observing = observeTooling({ snapshotRequested });
-  t.after(() => observing[Symbol.dispose]());
-  return observing;
+function observeSnapshots(t: TestContext, requested: (request: unknown) => void, settled?: () => void): () => void {
+  const stopRequested = subscribe(t, 'golem:snapshot-requested', (message: { readonly request: unknown }) => { requested(message.request); });
+  const stopSettled = subscribe(t, 'golem:snapshot-settled', () => { settled?.(); });
+  return () => { stopRequested(); stopSettled(); };
 }
 
-function throwAfterRealClose(t: TestContext, failure: Error): () => number {
-  let calls = 0;
-  // golem reports a compiler it has closed; the failure thrown there is the close's own, as if the API had thrown after the real close.
-  const observing = observeTooling({ compilerClosed: () => { calls += 1; throw failure; } });
-  t.after(() => observing[Symbol.dispose]());
-  return () => calls;
+/**
+ * Makes the closing of the next compilers fail for real: after golem kills the compiler, the TypeScript API writes its timing
+ * record to the folder `TS_API_TIMING_DIR` names, and that name is a file. Returns how many compilers golem reported closed.
+ */
+function failTimingRecordOnClose(t: TestContext): { readonly closed: () => number; readonly failure: (error: unknown) => boolean } {
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-timing-dir-')), 'not-a-folder');
+  fs.writeFileSync(file, '');
+  const previous = process.env.TS_API_TIMING_DIR;
+  process.env.TS_API_TIMING_DIR = file;
+  t.after(() => {
+    if (previous === undefined) delete process.env.TS_API_TIMING_DIR; else process.env.TS_API_TIMING_DIR = previous;
+    fs.rmSync(path.dirname(file), { recursive: true, force: true });
+  });
+  let closed = 0;
+  subscribe(t, 'golem:compiler-closed', () => { closed += 1; });
+  return { closed: () => closed, failure: error => error instanceof Error && /^(EEXIST|ENOTDIR)$/.test(String((error as NodeJS.ErrnoException).code)) };
 }
 
 function errorRecord(error: unknown): { readonly name?: unknown; readonly error?: unknown; readonly suppressed?: unknown; readonly cause?: unknown; readonly errors?: readonly unknown[] } {
@@ -252,8 +263,7 @@ test('compiler setup preserves the primary error and reports cleanup failure aft
   const tracker = trackApiChildren(t);
   const fixture = projectFixture(t, 'compiler-lifecycle-setup-failure');
   const primary = new Error('injected compiler setup failure');
-  const cleanup = new Error('injected compiler cleanup failure');
-  const closeCalls = throwAfterRealClose(t, cleanup);
+  const closing = failTimingRecordOnClose(t);
 
   assert.throws(
     () => ts.createProgramFromSources({
@@ -267,11 +277,13 @@ test('compiler setup preserves the primary error and reports cleanup failure aft
       // The native RPC boundary wraps callback failures before returning them.
       assert.ok(record.cause instanceof Error);
       assert.match(record.cause.message, /injected compiler setup failure/);
-      assert.deepEqual(record.errors, [record.cause, cleanup]);
+      assert.equal(record.errors?.length, 2);
+      assert.equal(record.errors?.[0], record.cause);
+      assert.equal(closing.failure(record.errors?.[1]), true, 'the second error is the failed close');
       return true;
     },
   );
-  assert.equal(closeCalls(), 1);
+  assert.equal(closing.closed(), 1);
   assert.ok(tracker.seen() >= 1, 'setup failure did not reach the real TypeScript API child boundary');
   await tracker.assertClosed('compiler setup failure');
 });
@@ -331,21 +343,20 @@ test('owned generator scope preserves its primary error when API cleanup also fa
   const fixture = projectFixture(t, 'compiler-lifecycle-scope-failure');
   const source = path.join(fixture.sourceRoot, 'not-a-model.model.ts');
   fs.writeFileSync(source, 'export const notAModel = 1;\n');
-  const cleanup = new Error('injected scope cleanup failure');
-  const closeCalls = throwAfterRealClose(t, cleanup);
+  const closing = failTimingRecordOnClose(t);
 
   assert.throws(
     () => generateModel({ root: fixture.root, sources: [source], profile: { mobx: false, validation: false } }),
     (error: unknown) => {
       const record = errorRecord(error);
       assert.equal(record.name, 'SuppressedError');
-      assert.equal(record.error, cleanup);
+      assert.equal(closing.failure(record.error), true, 'the error is the failed close');
       assert.equal(record.suppressed instanceof Error, true);
       assert.match((record.suppressed as Error).message, /No exported IModel/);
       return true;
     },
   );
-  assert.equal(closeCalls(), 1);
+  assert.equal(closing.closed(), 1);
   assert.ok(tracker.seen() >= 1, 'scope failure did not reach the real TypeScript API child boundary');
   await tracker.assertClosed('owned generator scope failure');
 });
@@ -425,10 +436,7 @@ function captureSnapshotRequests(t: TestContext): unknown[] {
 /** Whether a snapshot update is running: the compiler's file system callbacks of a snapshot arrive while it is. */
 function snapshotRunning(t: TestContext): () => boolean {
   let running = false;
-  observeSnapshots(t, () => {
-    running = true;
-    return () => { running = false; };
-  });
+  observeSnapshots(t, () => { running = true; }, () => { running = false; });
   return () => running;
 }
 
@@ -451,7 +459,7 @@ test('a compiler that exits during a snapshot update is replaced and the program
 
   // Kill the warm compiler as the next snapshot update is sent, so the request itself fails.
   let updates = 0;
-  const watching = observeSnapshots(t, () => {
+  const unwatch = observeSnapshots(t, () => {
     updates++;
     if (updates === 1) process.kill(compiler, 'SIGKILL');
   });
@@ -465,7 +473,7 @@ test('a compiler that exits during a snapshot update is replaced and the program
   const [replacement, ...others] = tracker.live();
   assert.ok(replacement);
   assert.deepEqual(others, [], 'one replacement compiler');
-  watching[Symbol.dispose]();
+  unwatch();
   assert.equal(diagnostics().length > 0, true, 'the replacement stays warm for the next program');
   assert.deepEqual(tracker.live(), [replacement]);
   session[Symbol.dispose]();

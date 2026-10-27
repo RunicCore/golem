@@ -7,10 +7,10 @@ import test, { type TestContext } from 'node:test';
 import { build as vite } from 'vite';
 
 import { runPipeline } from '#golem/cli';
-import { observeTooling } from '#golem/observe';
 import { golem as vitePlugin } from '#golem/vite';
 import { copyFixtureFile, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
+import { subscribe } from './support/golem-channels.js';
 import { workspace } from './support/process.js';
 import { until } from './support/watch-wait.js';
 
@@ -42,11 +42,8 @@ async function generatedProject(t: TestContext, name: string): Promise<string> {
 function countSessions(t: TestContext): { readonly opened: () => number; readonly disposed: () => number } {
   const sessions = new Set<object>();
   let disposed = 0;
-  const observing = observeTooling({
-    programOpened: (session) => { sessions.add(session); },
-    sessionDisposed: () => { disposed += 1; },
-  });
-  t.after(() => observing[Symbol.dispose]());
+  subscribe(t, 'golem:program-opened', (message: { readonly session: object }) => { sessions.add(message.session); });
+  subscribe(t, 'golem:session-disposed', () => { disposed += 1; });
   return { opened: () => sessions.size, disposed: () => disposed };
 }
 

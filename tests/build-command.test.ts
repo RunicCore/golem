@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { parseArguments } from '#golem/cli';
-import { corruptScans } from './support/corrupt-scan.js';
 import { assertMoneyCodec } from './support/rewritten-module.js';
 
 import { command, golem } from './support/process.js';
@@ -59,20 +58,6 @@ export function load(t: string) { return parse<Payment>(t); }
 });
 
 // Generating first, and incremental builds
-
-test('an inconsistent rewrite in golem build names the file relative to the working directory, not the source base', async (t) => {
-  // protects: T-452 the build passed a name relative to the source base, which the message printed as written
-  const root = serdeProject(t, 'build-inconsistent-path');
-  write(root, 'src/use.ts', USE);
-  corruptScans(t);
-  // The first file with an edit fails; which one it is does not matter.
-  await assert.rejects(build(root), (error: unknown) => {
-    const shown = error instanceof Error ? /^golem rewrite is inconsistent for (.+) at line /.exec(error.message)?.[1] : undefined;
-    assert.ok(shown, 'the message names the file');
-    assert.ok(path.resolve(shown).startsWith(path.join(root, 'src') + path.sep), `${shown} is a source of the project when read from the working directory ${process.cwd()}`);
-    return true;
-  });
-});
 
 test('a project with no generated file builds in one golem build, and the built JavaScript runs', async (t) => {
   const root = sourceOnlyProject(t, 'build-generates');

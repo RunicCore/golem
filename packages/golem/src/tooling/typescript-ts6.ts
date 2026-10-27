@@ -6,11 +6,11 @@
  * module adds only what the classic objects lack: the `ProgramSession` overlay and input-observation contract, and
  * wrappers that give types, symbols and signatures the members golem reads.
  */
+import { channel } from 'node:diagnostics_channel';
 import { createRequire } from 'node:module';
 import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath, sep } from 'node:path';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { observed } from './observe.js';
 import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
@@ -836,6 +836,11 @@ interface CachedSourceFile {
   readonly sourceFile: Golem.SourceFile;
 }
 
+// Notices for tests and tools that watch the sessions of this process (`node:diagnostics_channel`); nothing is built unless a subscriber exists.
+const programOpenedChannel = channel('golem:program-opened');
+const inputsChangedChannel = channel('golem:inputs-changed');
+const sessionDisposedChannel = channel('golem:session-disposed');
+
 /**
  * The programs of a generation run or watch session, sharing one cache of parsed files.
  *
@@ -863,7 +868,7 @@ export class ProgramSession implements Disposable {
   /** Report inputs a host observed changing; their parsed files are parsed again. */
   inputsChanged(filenames: Iterable<string>): void {
     const names = [...filenames];
-    observed.inputsChanged(this, names);
+    if (inputsChangedChannel.hasSubscribers) inputsChangedChannel.publish({ session: this, filenames: names });
     for (const filename of names) {
       const path = canonical(filename);
       this.hinted.add(path);
@@ -891,7 +896,7 @@ export class ProgramSession implements Disposable {
 
   /** Open a program that reflects every file change since the previous one. */
   openProgram(options: Golem.OpenProgramOptions): Golem.Program {
-    observed.programOpened(this, options);
+    if (programOpenedChannel.hasSubscribers) programOpenedChannel.publish({ session: this, configFile: options.configFile });
     this.assertOpen();
     const request = programRequest(this.withFlags(options), (configPath, overlays) => this.configReferencesOf(configPath, overlays));
     this.observe(options.onInput, request.hidden);
@@ -962,7 +967,7 @@ export class ProgramSession implements Disposable {
   }
 
   [Symbol.dispose](): void {
-    observed.sessionDisposed(this);
+    if (sessionDisposedChannel.hasSubscribers) sessionDisposedChannel.publish({ session: this });
     this.disposed = true;
     this.close();
   }

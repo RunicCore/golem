@@ -3,10 +3,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { runPipeline } from '#golem/cli';
-import { observeTooling } from '#golem/observe';
 import { GeneratorSessionResources } from '#golem/pipeline';
 import { operationCodecRegistryPath } from '#golem/generated-paths';
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
+import { subscribe } from './support/golem-channels.js';
 
 const model = (name: string, fields: string, imports = ''): string => [
   "import type { IModel } from '@exprtlabs/golem/model';",
@@ -55,8 +55,7 @@ test('the controllers and models jobs each open one stub program when every mode
   const root = twoFolderProject(t);
   const yaml = path.join(root, 'golem.yaml');
   const opened: (string | undefined)[] = [];
-  const observing = observeTooling({ programOpened: (_session, options) => { opened.push(options.configFile); } });
-  t.after(() => observing[Symbol.dispose]());
+  subscribe(t, 'golem:program-opened', (message: { readonly configFile?: string }) => { opened.push(message.configFile); });
   using session = new GeneratorSessionResources();
 
   const first = await runPipeline(yaml, { session });

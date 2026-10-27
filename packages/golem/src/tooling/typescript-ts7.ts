@@ -10,6 +10,7 @@
 export * from 'typescript/ast';
 
 import { ChildProcess } from 'node:child_process';
+import { channel } from 'node:diagnostics_channel';
 import {
   lstatSync,
   readdirSync,
@@ -28,7 +29,6 @@ import {
 } from 'node:path';
 import * as ast from 'typescript/ast';
 import { displayPath } from './generator-api.js';
-import { observed } from './observe.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, referenceClosure, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
@@ -1004,6 +1004,15 @@ function programRequest(options: OpenProgramOptions, referencesOf: (configPath: 
   return { configPath, files: [...new Set(options.sources.map(canonical))], overlays, hidden };
 }
 
+// Notices for tests and tools that watch the sessions of this process (`node:diagnostics_channel`); nothing is built unless a subscriber exists.
+const programOpenedChannel = channel('golem:program-opened');
+const inputsChangedChannel = channel('golem:inputs-changed');
+const sessionDisposedChannel = channel('golem:session-disposed');
+const compilerStartedChannel = channel('golem:compiler-started');
+const compilerClosedChannel = channel('golem:compiler-closed');
+const snapshotRequestedChannel = channel('golem:snapshot-requested');
+const snapshotSettledChannel = channel('golem:snapshot-settled');
+
 /** The compiler process of an API, or undefined when this TypeScript build keeps it somewhere else. */
 function compilerProcess(api: API): ChildProcess | undefined {
   const child: unknown = (api as unknown as { readonly client?: { readonly channel?: { readonly child?: unknown } } }).client?.channel?.child;
@@ -1020,8 +1029,11 @@ function compilerProcess(api: API): ChildProcess | undefined {
 function closeCompiler(api: API): void {
   const compiler = compilerProcess(api);
   compiler?.kill('SIGKILL');
-  api.close();
-  observed.compilerClosed(compiler);
+  try {
+    api.close();
+  } finally {
+    if (compilerClosedChannel.hasSubscribers) compilerClosedChannel.publish({ compiler });
+  }
 }
 
 /** Release a module resolver; one on an exited compiler is already gone. */
@@ -1117,7 +1129,7 @@ export class ProgramSession implements Disposable {
    */
   inputsChanged(filenames: Iterable<string>): void {
     const names = [...filenames];
-    observed.inputsChanged(this, names);
+    if (inputsChangedChannel.hasSubscribers) inputsChangedChannel.publish({ session: this, filenames: names });
     for (const filename of names) this.hinted.add(canonical(filename));
   }
 
@@ -1265,7 +1277,7 @@ export class ProgramSession implements Disposable {
 
   /** Open a program in a new snapshot that reflects every file change since the previous one. */
   openProgram(options: OpenProgramOptions): Program {
-    observed.programOpened(this, options);
+    if (programOpenedChannel.hasSubscribers) programOpenedChannel.publish({ session: this, configFile: options.configFile });
     const base = programRequest(this.withFlags(options), (configPath, overlays) => this.configReferencesOf(configPath, overlays));
     return this.withCompiler('snapshot', (api, reused) => {
       const request = this.withRequestedRoots(api, base, options.onInput);
@@ -1336,7 +1348,13 @@ export class ProgramSession implements Disposable {
     // TypeScript 7.1 rebuilds a program that a change made dirty only when the request asks for it; without this the
     // snapshot serves the previous program. The session keeps one project open, so every project is the requested one.
     const params: CreateSnapshotParams = { ...changes, ensurePrograms: true };
-    const snapshot = observed.snapshotRequest(changes, () => previous === undefined ? api.createSnapshot(params) : previous.update(params));
+    if (snapshotRequestedChannel.hasSubscribers) snapshotRequestedChannel.publish({ request: changes });
+    let snapshot: Snapshot;
+    try {
+      snapshot = previous === undefined ? api.createSnapshot(params) : previous.update(params);
+    } finally {
+      if (snapshotSettledChannel.hasSubscribers) snapshotSettledChannel.publish({ request: changes });
+    }
     this.latest = snapshot;
     if (previous && previous !== snapshot && !this.heldBy(previous)) disposeSnapshot(previous);
     return snapshot;
@@ -1402,7 +1420,7 @@ export class ProgramSession implements Disposable {
   }
 
   [Symbol.dispose](): void {
-    observed.sessionDisposed(this);
+    if (sessionDisposedChannel.hasSubscribers) sessionDisposedChannel.publish({ session: this });
     this.disposed = true;
     this.close();
   }
@@ -1436,7 +1454,7 @@ export class ProgramSession implements Disposable {
   private compiler(): API {
     if (this.api === undefined) {
       this.api = new API({ cwd: this.options.cwd, fs: this.fileSystem() });
-      observed.compilerStarted(compilerProcess(this.api));
+      if (compilerStartedChannel.hasSubscribers) compilerStartedChannel.publish({ compiler: compilerProcess(this.api) });
     }
     return this.api;
   }
