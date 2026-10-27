@@ -40,12 +40,13 @@ function profileCases(): readonly [{ mobx: boolean; validation: boolean }, { mob
 
 const isValidationUnavailable = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable;
 
-test('exports API 1 and emits profile-specific model companions without writes', async (t: TestContext) => {
-  const { root, sourceRoot } = project(t);
-  const source = copyFixtureFile(root, 'models/model-generator/api-profiles/src/payment.model.ts', 'src/payment.model.ts');
-  const { isComputedProp } = await import('mobx');
-  assert.equal(apiVersion, 1);
-  for (const [profile, expected] of profileCases()) {
+for (const [profile, expected] of profileCases()) {
+  test(`exports API 1 and emits the model companions of mobx ${profile.mobx} validation ${profile.validation} without writes`, async (t: TestContext) => {
+    // protects: a profile writes exactly the files it needs, and the built companions run with that profile's validators and MobX hooks
+    const { root, sourceRoot } = project(t);
+    const source = copyFixtureFile(root, 'models/model-generator/api-profiles/src/payment.model.ts', 'src/payment.model.ts');
+    const { isComputedProp } = await import('mobx');
+    assert.equal(apiVersion, 1);
     const result = generate({ root, sources: [source], profile });
     assert.deepEqual(result.manifestPaths, []);
     // Every job writes the companion and the codec keys. A validating job also writes the generated validators.
@@ -106,8 +107,8 @@ export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount:
       assert.throws(() => getValidator(payment), isValidationUnavailable);
       assert.throws(() => codec.validate(payment), isValidationUnavailable);
     }
-  }
-});
+  });
+}
 
 test('getValidator infers generated fields and rejects handwritten subclass fields', async (t: TestContext) => {
   const { root } = project(t);
@@ -590,7 +591,7 @@ test('one package installed at two paths and used by models of one job is one bi
 });
 
 test('with validation off, a model that opts in generates and validates, and the default model it nests stays open', async (t: TestContext) => {
-  // protects: fbc92c3 a validating model compiles the undecided codecs it references: the nested Date child validates, though its model and wire schemas differ
+  // protects: a validating model compiles the undecided codecs it references: the nested Date child validates, though its model and wire schemas differ
   const { root, sourceRoot } = project(t);
   writeModelSources(sourceRoot, {
     'rules.ts': rulesSource,

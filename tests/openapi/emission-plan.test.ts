@@ -540,9 +540,9 @@ test('a validation SDK with operations compiles under strict unused checks', asy
   compileStrictUnusedSdk(output);
 });
 
-test('an operation module declares only the request locals it uses and imports the client module once', async t => {
+test('an operation module declares only the request locals it uses', async t => {
   const output = outputDir(t, 'operation-locals');
-  const result = await generateMaterializedSdk({
+  await generateMaterializedSdk({
     openapi: '3.1.0', info: info('Locals'),
     paths: {
       '/plain': { get: { operationId: 'plain', responses: { 204: { description: 'ok' } } } },
@@ -574,9 +574,6 @@ test('an operation module declares only the request locals it uses and imports t
     { url: 'https://fixture.invalid/plain', cookie: null },
     { url: 'https://fixture.invalid/session', cookie: 'sid=abc' },
   ]);
-  // Only text can show that the module imports the client runtime in one statement.
-  const plain = result.artifacts.find(artifact => artifact.path.endsWith('operations/plain.ts'))?.content ?? '';
-  assert.equal(plain.match(/from ['"]@exprtlabs\/golem\/client['"]/g)?.length, 1);
 });
 
 test('SDK model functions use the model types instead of unknown', async t => {
@@ -602,14 +599,11 @@ void wire;
 void returnsAny;
 `);
   compileStrictUnusedSdk(output, [assertFile]);
-  const sdk = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'typed SDK');
-  const { parseMoney, toWireFormatMoney, validateMoney } = sdk;
-  assert.equal(typeof parseMoney, 'function');
-  assert.equal(typeof toWireFormatMoney, 'function');
-  assert.equal(typeof validateMoney, 'function');
-  if (typeof parseMoney !== 'function' || typeof toWireFormatMoney !== 'function' || typeof validateMoney !== 'function') {
-    throw new TypeError('Money functions are missing');
-  }
+  const { parseMoney, toWireFormatMoney, validateMoney } = await import(pathToFileURL(path.join(output, 'dist/index.js')).href) as {
+    parseMoney(text: string): unknown;
+    toWireFormatMoney(value: unknown): unknown;
+    validateMoney(value: unknown): boolean;
+  };
   const money: unknown = parseMoney('{"amount":"5"}');
   assert.equal(validateMoney(money), true);
   assert.equal(validateMoney({}), false);

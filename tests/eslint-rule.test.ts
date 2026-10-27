@@ -73,8 +73,13 @@ test('the golem ESLint rule follows golem generate in a session that lints the s
 test('the golem ESLint config sets a parser only when asked, so a typescript-eslint parser stays in use', async (t) => {
   // protects: T-396 the text parser is opt-in and never replaces the parser of the user's config
   const root = await project(t, 'eslint-rule-parser-option');
+  write(root, 'src/use.ts', IMPORTS);
+  const sample = `${IMPORTS}${DECODE}\n`;
+  const file = path.join(root, 'src/use.ts');
   assert.equal((await golemEslint({ cwd: root })).languageOptions, undefined);
-  assert.ok((await golemEslint({ cwd: root, parser: 'text' })).languageOptions?.parser);
+  // Without the option the user's parser decides: the default one cannot read this TypeScript, so the rule never sees it.
+  assert.deepEqual(new Linter({ cwd: root }).verify(sample, [await golemEslint({ cwd: root })], file).map((message) => [message.ruleId, message.fatal]), [[null, true]]);
+  assert.deepEqual((await lint(root, 'src/use.ts', sample)).map((message) => message.ruleId), ['golem/no-unrewritable-code']);
 });
 
 test('the golem ESLint config refuses to start without a golem.yaml', async (t) => {

@@ -188,6 +188,7 @@ function controllerFixture(t: TestContext, name: string, example: string): { rea
 
 // Each path below ends with no TypeScript --api child alive while the test process runs.
 test('a model generation that succeeds closes its API child, also when repeated', async t => {
+  // protects: a successful model generation, also a repeated one, leaves no TypeScript API process running
   const tracker = trackApiChildren(t);
   const { fixture, source } = modelSourceFixture(t, 'compiler-lifecycle-model');
   assert.equal(generateModel({ root: fixture.root, sources: [source], profile: lifecycleProfile }).artifacts.length > 0, true);
@@ -198,6 +199,7 @@ test('a model generation that succeeds closes its API child, also when repeated'
 });
 
 test('a model generation that fails closes its API child', async t => {
+  // protects: a model generation that throws leaves no TypeScript API process running
   const tracker = trackApiChildren(t);
   const fixture = projectFixture(t, 'compiler-lifecycle-model-failure');
   const source = path.join(fixture.sourceRoot, 'item.model.ts');
@@ -208,6 +210,7 @@ test('a model generation that fails closes its API child', async t => {
 });
 
 test('a model generation with no sources closes its API child', async t => {
+  // protects: a model generation with no sources leaves no TypeScript API process running
   const tracker = trackApiChildren(t);
   const fixture = projectFixture(t, 'compiler-lifecycle-model-empty');
   assert.deepEqual(generateModel({ root: fixture.root, profile: lifecycleProfile }).artifacts, []);
@@ -215,6 +218,7 @@ test('a model generation with no sources closes its API child', async t => {
 });
 
 test('a manifest validation failure closes the API child', async t => {
+  // protects: a manifest validation failure leaves no TypeScript API process running
   const tracker = trackApiChildren(t);
   const fixture = projectFixture(t, 'compiler-lifecycle-manifest');
   const manifest = writeManifestFixture(fixture);
@@ -227,6 +231,7 @@ test('a manifest validation failure closes the API child', async t => {
 });
 
 test('a controller generation that succeeds closes its API child', async t => {
+  // protects: a successful controller generation leaves no TypeScript API process running
   const tracker = trackApiChildren(t);
   const valid = controllerFixture(t, 'compiler-lifecycle-controller', 'controller-success');
   const result = await generateController(controllerContext(valid.fixture.root, valid.source, valid.output));
@@ -236,6 +241,7 @@ test('a controller generation that succeeds closes its API child', async t => {
 });
 
 test('a controller generation that fails closes its API child', async t => {
+  // protects: a controller generation that rejects leaves no TypeScript API process running
   const tracker = trackApiChildren(t);
   const invalid = controllerFixture(t, 'compiler-lifecycle-controller-failure', 'controller-duplicate');
   await assert.rejects(
@@ -247,6 +253,7 @@ test('a controller generation that fails closes its API child', async t => {
 });
 
 test('two concurrent controller generations close their API children', async t => {
+  // protects: two controller generations at once each leave no TypeScript API process running
   const tracker = trackApiChildren(t);
   const a = controllerFixture(t, 'compiler-lifecycle-concurrent-a', 'controller-success');
   const b = controllerFixture(t, 'compiler-lifecycle-concurrent-b', 'controller-success');
@@ -260,6 +267,7 @@ test('two concurrent controller generations close their API children', async t =
 });
 
 test('compiler setup preserves the primary error and reports cleanup failure after closing the API child', async t => {
+  // protects: a failing close of the compiler never hides the error that stopped the setup, and the process still ends
   const tracker = trackApiChildren(t);
   const fixture = projectFixture(t, 'compiler-lifecycle-setup-failure');
   const primary = new Error('injected compiler setup failure');
