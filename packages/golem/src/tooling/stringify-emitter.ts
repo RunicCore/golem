@@ -1624,6 +1624,7 @@ function emitFillFunction(
     };
   }
   const required = new Set(descriptor.required);
+  const patternDeclarations: Code[] = [];
   const wireRoot = inputSlot('wire', 'name', true);
   // A recursive node registers the wire it decodes, so a cycle in the input stops at the repeated object.
   const recursive = reachesNode(descriptor, node.id, ctx);
@@ -1716,18 +1717,21 @@ function emitFillFunction(
         indented(code`${rt.conversion.defineModelProperty}(out, key, ${value.value});`, indent),
       ];
     };
-    for (const pattern of patternConstraints) {
-      if (pattern.kind !== 'patternProperties') continue;
+    patternConstraints.forEach((pattern, index) => {
+      if (pattern.kind !== 'patternProperties') return;
       const schema = typeof pattern.schema === 'object' && pattern.schema !== null && 'kind' in pattern.schema
         ? pattern.schema as ModelTypeDescriptor
         : undefined;
+      // The validator reads a pattern with the `u` flag; one module constant per pattern is built once for every call.
+      const expression = identifier(`${fillFunctionName(node.id)}Pattern${index}`);
+      patternDeclarations.push(code`const ${expression} = /*#__PURE__*/ new RegExp(${literal(pattern.pattern)}, 'u');`);
       rows.push(
-        code`    if (new RegExp(${literal(pattern.pattern)}).test(key)) {`,
+        code`    if (${expression}.test(key)) {`,
         ...emitExtra(schema, 6),
         code`      continue;`,
         code`    }`,
       );
-    }
+    });
     if (additionalSchema && typeof additionalSchema === 'object' && additionalSchema !== null && 'kind' in additionalSchema) {
       rows.push(...emitExtra(additionalSchema as ModelTypeDescriptor, 4));
     }
@@ -1738,7 +1742,8 @@ function emitFillFunction(
   const body = recursive
     ? [code`  ${rt.conversion.beginDecode}(wire);`, code`  try {`, ...rows.map((row) => indented(row, 2)), code`  } finally {`, code`    ${rt.conversion.endDecode}(wire);`, code`  }`]
     : rows;
-  return { source: functionCode(declaration, body), copyIdentity, needsFill, fallible };
+  const source = functionCode(declaration, body);
+  return { source: patternDeclarations.length > 0 ? join([...patternDeclarations, code``, source], code`\n`) : source, copyIdentity, needsFill, fallible };
 }
 
 function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx: EmitCtx): Code {
