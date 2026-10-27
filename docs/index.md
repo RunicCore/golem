@@ -98,7 +98,7 @@ hero:
 </article>
 </div>
 
-[Define models](/guide/models) · [Validation tags](/guide/tags) · [JSON conversion](/guide/serialization) · [Build your app](/guide/build)
+[Define models](/guide/models) · [Validation tags](/guide/tags) · [Serialization](/guide/serialization) · [Build your app](/guide/build)
 
 ## Bring the libraries you already use
 
