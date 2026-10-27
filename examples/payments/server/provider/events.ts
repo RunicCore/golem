@@ -1,6 +1,5 @@
 import { parse } from '@exprtlabs/golem/serde';
-import type { ProviderClient } from './sdk/index.js';
-import { ProviderClient as Client } from './sdk/index.js';
+import { ProviderClient } from './sdk/index.js';
 import { PaymentCaptured } from '../src/events/payment-events.model.js';
 
 // #region read-events
@@ -39,6 +38,12 @@ export async function readUntilClosed(client: ProviderClient, controller: AbortC
 
 // #region custom-events
 // This provider sends one integer per line: "7\n8\n" → { id: 7 }, { id: 8 }.
+function eventOf(line: string) {
+  const id = Number(line);
+  if (!Number.isInteger(id)) throw new TypeError(`Expected an integer event id, got "${line}"`);
+  return { id };
+}
+
 async function* decodeEventIds(response: Response) {
   if (!response.body) return;
   const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -50,16 +55,16 @@ async function* decodeEventIds(response: Response) {
       pending += chunk.value; // A line may span several network chunks.
       const lines = pending.split('\n');
       pending = lines.pop() ?? '';
-      for (const line of lines) yield { id: Number(line) };
+      for (const line of lines) if (line !== '') yield eventOf(line);
     }
-    if (pending) yield { id: Number(pending) };
+    if (pending !== '') yield eventOf(pending);
   } finally {
     try { await reader.cancel(); } finally { reader.releaseLock(); }
   }
 }
 
 export function createEventLinesClient(baseUrl: string, token: string) {
-  return new Client({
+  return new ProviderClient({
     baseUrl,
     auth: { bearerAuth: token },
     streamDecoders: { 'application/vnd.provider.events': decodeEventIds },

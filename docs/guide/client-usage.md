@@ -166,7 +166,17 @@ Set `mobx: true` in `golem.yaml`, install `mobx`, and generate again.
 
 <<< ../../examples/payments/server/provider/client.ts#shared-headers
 
-For a header parameter in the API document, use the `header` argument of the operation. For credentials, use [Authentication](/guide/auth).
+Set `headers` for a header that belongs on every request. For credentials, use [Authentication](/guide/auth).
+
+## Send a header parameter
+
+`createCharge` declares an optional `Idempotency-Key` header parameter in the document:
+
+<<< ../../examples/payments/server/provider/provider.yaml#create-charge-operation
+
+Pass the value in the `header` argument of the operation. It applies to that call only, so one client serves every call:
+
+<<< ../../examples/payments/server/provider/charges.ts#per-call-header
 
 ## Cancel a request
 

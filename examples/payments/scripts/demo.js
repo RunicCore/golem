@@ -6,7 +6,7 @@ import { submitPayment } from '../.build/web/src/submit-payment.js';
 
 const provider = createStandIn();
 await new Promise((resolve) => provider.listen(0, '127.0.0.1', resolve));
-const application = await createApplication(undefined, { baseUrl: `http://127.0.0.1:${provider.address().port}` });
+const application = await createApplication({ baseUrl: `http://127.0.0.1:${provider.address().port}` });
 await application.listen(0, '127.0.0.1');
 try {
   const client = new PaymentsClient({ baseUrl: await application.getUrl() });

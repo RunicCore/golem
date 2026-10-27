@@ -66,6 +66,7 @@ export class PaymentsController {
   }
 
   // #region query-method
+  // The handler reads limit only; status shows how the interceptor decodes a union query field.
   @Get()
   @ApiOperation({ operationId: 'listPayments' })
   @ApiBadRequestResponse({ description: 'Invalid query.' })
