@@ -368,3 +368,25 @@ test('writeSdk reports each standard keyword with a wrong shape that a document 
     ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/code/pattern: the value of pattern is not valid: expected a string'],
   ]);
 });
+
+test('writeSdk reports each schema keyword that holds a value that is no schema, and writes no files', () => {
+  // protects: T-509 a schema keyword with a non-schema value is an error, not a looser or a rejecting validator
+  const schema = { type: 'object', properties: {
+    list: { items: 5 }, wanted: { contains: 'x' }, other: { not: 5 }, extra: { additionalProperties: 'x' }, cond: { if: 3 }, branch: { allOf: [true, 7] },
+  } };
+  const document = {
+    openapi: '3.1.0', info: { title: 'Schemas', version: '1' },
+    paths: { '/a': { post: { operationId: 'send', requestBody: { content: { 'application/json': { schema } } }, responses: { 200: { description: 'ok' } } } } },
+  };
+  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-non-schema-values'), profile: { mobx: false, validation: true } });
+  assert.deepEqual(result.artifacts, []);
+  const expected = 'expected a boolean or a schema object';
+  assert.deepEqual((result.diagnostics ?? []).map(entry => [entry.code, entry.severity, entry.message]), [
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/list/items: the value of items is not valid: ${expected}`],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/wanted/contains: the value of contains is not valid: ${expected}`],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/other/not: the value of not is not valid: ${expected}`],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/extra/additionalProperties: the value of additionalProperties is not valid: ${expected}`],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/cond/if: the value of if is not valid: ${expected}`],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, `operation "send" at /input/properties/body/properties/branch/allOf/1: the value of allOf is not valid: ${expected}`],
+  ]);
+});

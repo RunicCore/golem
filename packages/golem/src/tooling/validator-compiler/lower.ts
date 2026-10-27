@@ -59,7 +59,7 @@ interface RecordContext {
   readonly otherValueFunction: (keyword: string, value: unknown, ...more: readonly (string | number)[]) => number;
   readonly sameValueFunction: (keyword: string, value: unknown, ...more: readonly (string | number)[]) => number;
   readonly inPlaceBranch: (keyword: string, branch: unknown, position: number) => IrSchema;
-  readonly malformed: (keyword: string, expected: string) => void;
+  readonly malformed: (keyword: string, expected: string, ...inside: readonly string[]) => void;
 }
 
 /** `not` passes the value on, but what its schema evaluates does not count for the schema that holds it. */
@@ -432,11 +432,15 @@ class Lowering {
 
   /** The context of one schema object: its child locations, and the ways to lower a child that applies to the same value or to another. */
   private recordContext(node: Readonly<Record<string, unknown>>, here: SchemaLocation, sameValue: SameValueEdge[]): RecordContext {
-    const child = (keyword: string, value: unknown, ...more: readonly (string | number)[]): SchemaLocation => ({
-      ...here,
-      node: value,
-      pointer: more.reduce<string>((path, token) => path + pointerSegment(token), here.pointer + pointerSegment(keyword)),
-    });
+    // Every schema position of a keyword comes through here, so a value that is no schema is one error in one place.
+    const child = (keyword: string, value: unknown, ...more: readonly (string | number)[]): SchemaLocation => {
+      if (typeof value !== 'boolean' && !isRecord(value)) malformed(keyword, 'expected a boolean or a schema object', ...more.map(String));
+      return {
+        ...here,
+        node: value,
+        pointer: more.reduce<string>((path, token) => path + pointerSegment(token), here.pointer + pointerSegment(keyword)),
+      };
+    };
     // A child that reads part of the value (a property, an item) starts a new chain of same-value steps. A child
     // that holds `unevaluatedProperties` or `unevaluatedItems` is its own function, because its record belongs to the
     // child value, not to this one.
@@ -458,7 +462,7 @@ class Lowering {
       return this.lowerSchema(child(keyword, branch, position), sameValue);
     };
     // A golem keyword with a malformed value is an error: dropping it would accept data its rule rejects.
-    const malformed = (keyword: string, expected: string): void => this.report(VALIDATE_UNSUPPORTED_KEYWORD, GolemDiagnosticSeverity.Error, here, keyword, `the value of ${keyword} is not valid: ${expected}`);
+    const malformed = (keyword: string, expected: string, ...inside: readonly string[]): void => this.report(VALIDATE_UNSUPPORTED_KEYWORD, GolemDiagnosticSeverity.Error, here, keyword, `the value of ${keyword} is not valid: ${expected}`, ...inside);
     return { node, here, sameValue, checks: [], child, lowerChild, otherValueFunction, sameValueFunction, inPlaceBranch, malformed };
   }
 
@@ -497,10 +501,12 @@ class Lowering {
     }
   }
 
-  private lowerReference({ node, here, sameValue, checks }: RecordContext): void {
+  private lowerReference({ node, here, sameValue, checks, malformed }: RecordContext): void {
     if (typeof node.$ref !== 'string') return;
     const target = this.resolver.resolve(node.$ref, here.base);
-    if (target) {
+    if (target && typeof target.node !== 'boolean' && !isRecord(target.node)) {
+      malformed('$ref', `expected a reference to a schema; ${JSON.stringify(node.$ref)} names ${target.pointer === '' ? 'the whole document' : target.pointer}, which is no schema`);
+    } else if (target) {
       const to = this.functionFor(target, referenceName(target));
       sameValue.push({ to, location: here, keyword: '$ref' });
       checks.push({ kind: 'call', fn: to });
@@ -624,7 +630,9 @@ class Lowering {
   }
 
   /** `if` with `then` and `else`, and `dependentSchemas`. */
-  private lowerConditional({ node, checks, sameValueFunction }: RecordContext): void {
+  private lowerConditional({ node, checks, child, sameValueFunction }: RecordContext): void {
+    // An `if` with no `then` or `else`, and a `then` or `else` with no `if`, are not lowered, but their values are still schemas.
+    for (const keyword of ['if', 'then', 'else'] as const) if (node[keyword] !== undefined) child(keyword, node[keyword]);
     // `then` and `else` apply only next to an `if`; an `if` with neither changes nothing unless it marks what it evaluates.
     if (node.if !== undefined && (node.then !== undefined || node.else !== undefined || this.tracksEvaluation)) {
       checks.push({
