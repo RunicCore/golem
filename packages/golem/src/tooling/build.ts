@@ -1,12 +1,11 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { inspect } from 'node:util';
 
 import { canonicalFile, modelsRootOf, resolveConfig } from './config.js';
 import type { GolemConfig } from './config.js';
 import { codecKeysPath } from './generated-paths.js';
-import { displayPath, errorMessage, GolemDiagnosticSeverity, hasErrorCode, isInsideDirectory } from './generator-api.js';
+import { displayPath, errorMessage, failureText, GolemDiagnosticSeverity, hasErrorCode, isInsideDirectory } from './generator-api.js';
 import type { GolemDiagnostic } from './generator-api.js';
 import { nodeSpecifierEdits } from './node-specifiers.js';
 import { atomicWrite } from './outputs.js';
@@ -190,18 +189,6 @@ function readProject(configFile: string, parsed: { readonly options: ts.Compiler
     noEmit,
     noEmitOnError: options.noEmitOnError === true,
   };
-}
-
-/**
- * What a watching build prints for a failure. Golem's own errors, a plain `Error` with a message that says what failed and what to do, print
- * as their message. A failure that is not one (a runtime error such as a `TypeError`, a system error, anything thrown that is no `Error`) is
- * a fault in golem or in a tool it runs: it prints with its stack and its cause, which the message alone would lose.
- */
-function failureText(error: unknown): string {
-  const internal = !(error instanceof Error)
-    || [TypeError, RangeError, ReferenceError, SyntaxError, EvalError, URIError, AggregateError].some((type) => error instanceof type)
-    || 'syscall' in error;
-  return internal ? inspect(error) : error.message;
 }
 
 function scanFailure(root: string, errors: readonly GolemDiagnostic[]): Error {

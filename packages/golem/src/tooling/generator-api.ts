@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { inspect } from 'node:util';
 import YAML from 'yaml';
 /** Shared API-1 contracts. Providers return contents; the CLI owns all writes. */
 export {
@@ -302,6 +303,20 @@ export function parseYamlFile(text: string, filename: string, options?: YAML.Doc
 
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+const RUNTIME_ERRORS = [TypeError, RangeError, ReferenceError, SyntaxError, EvalError, URIError, AggregateError];
+
+/**
+ * What the golem command prints for a failure. Golem's own errors, a plain `Error` with a message that says what failed and what to do, print
+ * as their message. A failure that is not one (a system error, anything thrown that is no `Error`, a runtime error such as a `TypeError`, also
+ * as the `cause` of a golem error that wraps it) is a fault in golem or in a tool it runs: it prints with its stack and its cause chain,
+ * which the message alone would lose.
+ */
+export function failureText(error: unknown): string {
+  const internal = !(error instanceof Error) || 'syscall' in error;
+  const runtime = (candidate: unknown): boolean => candidate instanceof Error && (RUNTIME_ERRORS.some((type) => candidate instanceof type) || runtime(candidate.cause));
+  return internal || runtime(error) ? inspect(error) : (error as Error).message;
 }
 
 export function hasErrorCode(error: unknown, code: string): boolean {

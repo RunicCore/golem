@@ -208,3 +208,23 @@ test('-b and --build are rejected', async (t) => {
   assert.deepEqual(parseArguments(['build', '--config', 'app/golem.yaml']), { action: 'build', watch: false, config: 'app/golem.yaml' });
   assert.throws(() => parseArguments(['build', '--config']), { message: '--config requires a filename.' });
 });
+
+test('golem build prints the stack and cause of an internal failure, and only the message of one that golem names', async (t) => {
+  // protects: T-490 the CLI entry printed errorMessage only, so a TypeError in a generator lost its stack and cause
+  const root = sourceOnlyProject(t, 'build-failure-text');
+  write(root, 'node_modules/@fixture/throwing/package.json', JSON.stringify({ name: '@fixture/throwing', version: '1.0.0', type: 'module', exports: { './generator': './index.js' } }));
+  write(root, 'node_modules/@fixture/throwing/index.js', `export const apiVersion = 1;
+export function generate() { throw new TypeError('generator state is broken', { cause: new RangeError('index out of range') }); }
+`);
+  write(root, 'golem.yaml', `${fs.readFileSync(path.join(root, 'golem.yaml'), 'utf8')}generators:\n  - package: '@fixture/throwing'\n    output: out\n`);
+  const internal = await golemBuild(root, []);
+  assert.equal(internal.code, 1);
+  assert.match(internal.stderr, /TypeError: generator state is broken\n\s+at /);
+  assert.match(internal.stderr, /\[cause\]: RangeError: index out of range/);
+
+  write(root, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: true\nmodels:\n  root: .\nunknownKey: true\n');
+  const named = await golemBuild(root, []);
+  assert.equal(named.code, 1);
+  assert.doesNotMatch(named.stderr, /\n\s+at /);
+  assert.match(named.stderr, /unknownKey/);
+});
