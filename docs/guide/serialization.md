@@ -95,7 +95,7 @@ Write `typeof` each function in `TSerde`, and import the functions as types:
 
 <<< ../../examples/models/src/order.model.ts#order-declaration
 
-- `Integer` and `Minimum<0>` check the model value.
+- `Integer`, `Minimum` and `Maximum` check the model values: `amount` is a whole number of cents, `priority` is 1 to 3.
 - `remindAt` is a `Date` and needs no `TSerde`. [Use Date fields](/guide/field-types#use-date-fields) shows how golem writes it and how to keep its exact text.
 
 Run `npx golem generate`, then convert the JSON:
