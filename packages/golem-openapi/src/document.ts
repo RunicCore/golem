@@ -4,7 +4,7 @@ import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { assertSupportedModelFieldName } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError, type OriginLocator } from './origin.js';
 import { normalizeDocument, resolveLocalPointer, type NormalizedDocument, type NormalizedOperation } from './normalize.js';
-import { GolemDiagnosticSeverity, parseYamlFile, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { displayPath, GolemDiagnosticSeverity, parseYamlFile, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import {
   collectCanonicalResources,
   lookupCanonicalResource,
@@ -119,9 +119,13 @@ export function findRemoteRefs(
 
 export function parseSourceDocument(filename: string): unknown {
   const source = readFileSync(filename, 'utf8');
-  return path.extname(filename).toLowerCase() === '.json'
-    ? JSON.parse(source)
-    : parseYamlFile(source, filename);
+  if (path.extname(filename).toLowerCase() !== '.json') return parseYamlFile(source, filename);
+  try {
+    return JSON.parse(source);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`failed to parse ${displayPath(filename)}: ${detail}`, { cause: error });
+  }
 }
 
 export function expandOas32MediaTypes(document: unknown): unknown {

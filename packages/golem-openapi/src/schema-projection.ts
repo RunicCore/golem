@@ -65,6 +65,8 @@ interface ProjectionContext {
   readonly resources?: ResourceIndex;
   readonly exclusionCache?: Map<string, boolean>;
   readonly evaluating?: Set<string>;
+  /** The base URI of the schema being projected, from its enclosing `$id`; the document base when absent. */
+  readonly currentBase?: string;
 }
 
 interface RewriteContext {
@@ -482,8 +484,6 @@ const OPENAPI_OPERATIONS = [
   'get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace', 'query',
 ] as const;
 
-const OPENAPI_LITERAL_KEYS = new Set(['example', 'examples']);
-
 export type OpenApiComponentKind =
   | 'schemas'
   | 'parameters'
@@ -819,7 +819,7 @@ function visitPathMap(
 ): void {
   if (!isJsonObject(map)) return;
   for (const [name, item] of objectEntries(map)) {
-    if (OPENAPI_LITERAL_KEYS.has(name) || name.startsWith('x-')) continue;
+    if (name.startsWith('x-')) continue;
     visitPathItem(item, currentBase, jsonPointerJoin(pointer, name), seen, handlers);
   }
 }
@@ -899,41 +899,51 @@ function directionalUri(resource: CanonicalResource, direction: SchemaDirection,
   return `${packId}`;
 }
 
+/** The schema a reference points to, and the base URI that its own references resolve against. */
+interface UnconditionalTarget {
+  readonly schema: unknown;
+  readonly base: string;
+}
+
 function resolveUnconditionalTarget(
   schema: unknown,
   document: unknown,
   resources: ResourceIndex | undefined,
   currentBase: string,
-): unknown {
-  if (!isJsonObject(schema)) return schema;
+): UnconditionalTarget | undefined {
+  if (!isJsonObject(schema)) return { schema, base: currentBase };
   const reference = typeof schema.$ref === 'string'
     ? schema.$ref
     : typeof schema.$dynamicRef === 'string'
       ? schema.$dynamicRef
       : undefined;
-  if (typeof reference !== 'string') return schema;
-  if (reference.startsWith('#/')) return resolveLocalPointer(document, reference);
+  if (typeof reference !== 'string') return { schema, base: currentBase };
+  const rootBase = documentBase(document);
+  if (reference.startsWith('#/')) return { schema: resolveLocalPointer(document, reference), base: rootBase };
   if (reference.startsWith('#') && reference.length > 1) {
     const anchor = reference.slice(1);
     const schemas = asRecord(asRecord(asRecord(document).components).schemas);
     for (const [, candidate] of objectEntries(schemas)) {
       if (!isJsonObject(candidate)) continue;
-      if (candidate.$anchor === anchor || candidate.$dynamicAnchor === anchor) return candidate;
+      if (candidate.$anchor === anchor || candidate.$dynamicAnchor === anchor) return { schema: candidate, base: rootBase };
     }
   }
   if (!resources) return undefined;
-  return lookupCanonicalResource(reference, currentBase, resources)?.schema;
+  const resource = lookupCanonicalResource(reference, currentBase, resources);
+  return resource ? { schema: resource.schema, base: resource.hasId ? resource.canonical : rootBase } : undefined;
 }
 
 function propertyHasExclusion(schema: unknown, context: ProjectionContext): boolean {
   const cache = context.exclusionCache ?? new Map<string, boolean>();
   const evaluating = context.evaluating ?? new Set<string>();
   const resources = context.resources ?? collectCanonicalResources(context.document);
-  const base = documentBase(context.document);
-  const walk = (current: unknown): boolean => {
+  const walk = (current: unknown, enclosingBase: string): boolean => {
     if (instanceHasExclusion(current, context.direction)) return true;
     if (typeof current === 'boolean' || !isJsonObject(current)) return false;
-    const identity = schemaIdentity(current);
+    const base = nextSchemaBase(current, enclosingBase, resources);
+    // A relative reference means a different schema under each base.
+    const rawIdentity = schemaIdentity(current);
+    const identity = rawIdentity && `${base}\u0000${rawIdentity}`;
     if (identity) {
       const cached = cache.get(identity);
       if (cached !== undefined) return cached;
@@ -944,16 +954,16 @@ function propertyHasExclusion(schema: unknown, context: ProjectionContext): bool
     try {
       if (typeof current.$ref === 'string' || typeof current.$dynamicRef === 'string') {
         const target = resolveUnconditionalTarget(current, context.document, resources, base);
-        if (target !== undefined && target !== current) result = walk(target);
+        if (target !== undefined && target.schema !== current) result = walk(target.schema, target.base);
       }
-      if (!result && Array.isArray(current.allOf)) result = current.allOf.some((item) => walk(item));
+      if (!result && Array.isArray(current.allOf)) result = current.allOf.some((item) => walk(item, base));
     } finally {
       if (identity) evaluating.delete(identity);
     }
     if (identity) cache.set(identity, result);
     return result;
   };
-  return walk(schema);
+  return walk(schema, context.currentBase ?? documentBase(context.document));
 }
 
 function collectExcludedPropertyNames(
@@ -969,27 +979,29 @@ function collectExcludedPropertyNames(
     resources,
     exclusionCache: cache,
   };
-  const visit = (current: unknown): void => {
+  const visit = (current: unknown, enclosingBase: string): void => {
     if (typeof current === 'boolean' || !isJsonObject(current)) return;
-    const identity = schemaIdentity(current);
+    const base = nextSchemaBase(current, enclosingBase, resources);
+    const rawIdentity = schemaIdentity(current);
+    const identity = rawIdentity && `${base}\u0000${rawIdentity}`;
     if (identity) {
       if (evaluating.has(identity)) return;
       evaluating.add(identity);
     }
     try {
       if (typeof current.$ref === 'string' || typeof current.$dynamicRef === 'string') {
-        const target = resolveUnconditionalTarget(current, context.document, resources, documentBase(context.document));
-        if (target !== undefined) visit(current === target ? current : target);
+        const target = resolveUnconditionalTarget(current, context.document, resources, base);
+        if (target !== undefined) visit(current === target.schema ? current : target.schema, target.base);
       }
-      for (const item of Array.isArray(current.allOf) ? current.allOf : []) visit(item);
+      for (const item of Array.isArray(current.allOf) ? current.allOf : []) visit(item, base);
       for (const [name, property] of objectEntries(current.properties)) {
-        if (propertyHasExclusion(property, nested)) excluded.add(name);
+        if (propertyHasExclusion(property, { ...nested, currentBase: base })) excluded.add(name);
       }
     } finally {
       if (identity) evaluating.delete(identity);
     }
   };
-  visit(schema);
+  visit(schema, context.currentBase ?? documentBase(context.document));
   return excluded;
 }
 
@@ -1029,8 +1041,9 @@ function withProjectionState(context: ProjectionContext): ProjectionContext {
 export function projectSchema(schema: unknown, context: ProjectionContext): unknown {
   if (typeof schema === 'boolean') return schema;
   if (!isJsonObject(schema)) return schema;
-  const ctx = withProjectionState(context);
-  const excluded = collectExcludedPropertyNames(schema, ctx);
+  const state = withProjectionState(context);
+  const ctx = { ...state, currentBase: nextSchemaBase(schema, state.currentBase ?? documentBase(state.document), state.resources) };
+  const excluded = collectExcludedPropertyNames(schema, state);
   const next: Record<string, unknown> = {};
   for (const [key, value] of objectEntries(schema)) {
     if (DATA_KEYWORDS.has(key)) {
@@ -1225,7 +1238,7 @@ function projectDirectionalResource(
 ): Record<string, unknown> {
   const defs: Record<string, unknown> = {};
   for (const resource of idBearingResources(resources)) {
-    const projected = projectSchema(resource.schema, { document, direction, resources });
+    const projected = projectSchema(resource.schema, { document, direction, resources, currentBase: resource.canonical });
     defs[resource.canonical] = rewriteProjectedSchema(projected, {
       document,
       direction,

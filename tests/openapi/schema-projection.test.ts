@@ -134,6 +134,31 @@ function isRecordWithId(value: unknown): value is { $id: string } {
   return typeof value === 'object' && value !== null && typeof Reflect.get(value, '$id') === 'string';
 }
 
+test('a readOnly schema reached by a relative $ref resolves against the enclosing $id base', () => {
+  // protects: T-491 readOnly exclusion resolves a relative $ref against the schema's $id
+  const document = {
+    openapi: '3.1.0', info: { title: 'IdBase', version: '1' },
+    paths: {},
+    components: {
+      schemas: {
+        Account: {
+          $id: 'https://example.test/account/',
+          type: 'object',
+          properties: { name: { type: 'string' }, token: { $ref: 'defs/token' } },
+        },
+        Token: { $id: 'https://example.test/account/defs/token', type: 'string', readOnly: true },
+      },
+    },
+  };
+  const schemas = requireRecord(requireRecord(document.components, 'components').schemas, 'schemas');
+  const account = requireRecord(schemas.Account, 'Account');
+  assert.deepEqual(projectSchema(account, { document, direction: 'input' }), {
+    $id: 'https://example.test/account/',
+    type: 'object',
+    properties: { name: { type: 'string' } },
+  });
+});
+
 test('repeated readOnly aliases drop every matching property and required entry', () => {
   const document = {
     components: {

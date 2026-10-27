@@ -5,6 +5,7 @@ import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 import { loadReferenceGraph, type ReferenceGraph } from '#openapi/reference-loader';
+import { loadValidatedDocument } from '#openapi/resolver';
 import { createFixtureProject } from '../fixture-project.js';
 
 function write(directory: string, name: string, value: unknown): string {
@@ -107,6 +108,18 @@ test('a referenced file that fails to parse is observed and named in the error',
     (error: unknown) => error instanceof Error && error.message.startsWith(`${path.relative(process.cwd(), path.join(directory, 'broken.yaml'))}:1:`) && error.cause instanceof YAML.YAMLParseError,
   );
   assert.ok(observed.includes(path.join(directory, 'broken.yaml')));
+});
+
+test('a root openapi.json that fails to parse is named in the error', async (t) => {
+  // protects: T-491 a root JSON syntax error names the file
+  const directory = createFixtureProject(t, 'golem-loader-root-parse-');
+  const filename = write(directory, 'openapi.json', '{"openapi": "3.1.0", "info": }');
+  await assert.rejects(
+    () => loadValidatedDocument(filename),
+    (error: unknown) => error instanceof Error
+      && error.message.startsWith(`failed to parse ${path.relative(process.cwd(), filename)}: `)
+      && error.cause instanceof SyntaxError,
+  );
 });
 
 test('refs to an absolute $id are preserved and never fetched', async (t) => {
