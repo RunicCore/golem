@@ -224,7 +224,7 @@ One `golem.yaml` serves one tsconfig. `generate`, `check` and `build` stop in th
 | The `output` of the `models` job lies outside that directory | `Job <id>: output <path> is outside the tsconfig directory <directory>. Move it inside.` | Move the output inside. |
 | The tsconfig that `golem.yaml` names has no files and only `references` | The message names each referenced project. | Name one referenced project in `tsconfig`, such as `tsconfig.app.json`. |
 
-Every job reads the tsconfig that `golem.yaml` names. The `output` of any other job, such as an `openapi` SDK, may lie anywhere.
+Every job reads the tsconfig that `golem.yaml` names. A tsconfig nearer to a job root is not read. The `output` of any other job, such as an `openapi` SDK, may lie anywhere.
 
 ## Exit status
 
