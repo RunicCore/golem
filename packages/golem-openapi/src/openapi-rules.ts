@@ -170,6 +170,11 @@ function checkOperationIds(operations: readonly OperationEntry[]): OpenApiProble
   return problems;
 }
 
+/** The identity of a parameter: its name and location. A header name is case-insensitive (RFC 9110). */
+function parameterKey(parameter: ResolvedParameter): string {
+  return `${parameter.location}\u0000${parameter.location === 'header' ? parameter.name.toLowerCase() : parameter.name}`;
+}
+
 function checkParameterLists(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const checked = new Set<string>();
@@ -178,7 +183,7 @@ function checkParameterLists(document: unknown, operations: readonly OperationEn
     checked.add(listPointer);
     const seen = new Set<string>();
     for (const parameter of resolvedParameters(document, list, listPointer)) {
-      const key = `${parameter.location}\u0000${parameter.name}`;
+      const key = parameterKey(parameter);
       if (seen.has(key)) {
         problems.push({
           ruleId: 'operation-parameters-unique',
@@ -209,10 +214,10 @@ function templateNames(route: string): string[] {
  */
 function effectiveParameters(document: unknown, entry: OperationEntry): ResolvedParameter[] {
   const own = resolvedParameters(document, entry.operation.parameters, `${entry.pointer}/parameters`);
-  const overridden = new Set(own.map((parameter) => `${parameter.location}\u0000${parameter.name}`));
+  const overridden = new Set(own.map(parameterKey));
   return [
     ...resolvedParameters(document, entry.pathItem.parameters, `${entry.pathItemPointer}/parameters`)
-      .filter((parameter) => !overridden.has(`${parameter.location}\u0000${parameter.name}`)),
+      .filter((parameter) => !overridden.has(parameterKey(parameter))),
     ...own,
   ];
 }
@@ -295,13 +300,24 @@ function checkTags(document: unknown, line: '3.1' | '3.2'): OpenApiProblem[] {
   return problems;
 }
 
-function checkServers(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
+function checkServers(document: unknown, operations: readonly OperationEntry[], line: '3.1' | '3.2'): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   const checked = new Set<string>();
   const check = (servers: unknown, pointer: string): void => {
     if (!Array.isArray(servers) || checked.has(pointer)) return;
     checked.add(pointer);
+    const names = new Set<string>();
     servers.forEach((server, index) => {
+      if (line === '3.2' && isJsonObject(server) && typeof server.name === 'string') {
+        if (names.has(server.name)) {
+          problems.push({
+            ruleId: 'no-duplicated-server-names',
+            message: `server name ${JSON.stringify(server.name)} is used more than once in this list`,
+            pointer: `${pointer}/${index}/name`,
+          });
+        }
+        names.add(server.name);
+      }
       if (!isJsonObject(server) || typeof server.url !== 'string') return;
       const variables = asRecord(server.variables);
       for (const name of templateNames(server.url)) {
@@ -372,14 +388,19 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
   const requires = (schema: unknown, property: string, base: string, visiting: Set<unknown>): boolean => {
     const resolved = resolveSchema(schema, base);
     if (!isJsonObject(resolved) || visiting.has(resolved)) return true;
-    visiting.add(resolved);
     if (Array.isArray(resolved.required) && resolved.required.includes(property)) return true;
-    if (Array.isArray(resolved.allOf) && resolved.allOf.some((item) => requires(item, property, base, visiting))) return true;
-    for (const keyword of ['oneOf', 'anyOf'] as const) {
-      const list = resolved[keyword];
-      if (Array.isArray(list) && list.length > 0 && list.every((item) => requires(item, property, base, visiting))) return true;
+    // `visiting` holds the schemas on the current path only, so a schema shared by two branches is judged in each.
+    visiting.add(resolved);
+    try {
+      if (Array.isArray(resolved.allOf) && resolved.allOf.some((item) => requires(item, property, base, visiting))) return true;
+      for (const keyword of ['oneOf', 'anyOf'] as const) {
+        const list = resolved[keyword];
+        if (Array.isArray(list) && list.length > 0 && list.every((item) => requires(item, property, base, visiting))) return true;
+      }
+      return false;
+    } finally {
+      visiting.delete(resolved);
     }
-    return false;
   };
   visitOpenApiSchemaTree(document, {
     onSchema(schema, currentBase, walkerPointer) {
@@ -429,7 +450,7 @@ export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
     ...checkParameterLists(document, operations),
     ...checkPathTemplates(document, operations),
     ...checkTags(document, line),
-    ...checkServers(document, operations),
+    ...checkServers(document, operations, line),
     ...(line === '3.2' ? [...checkQuerystring(document, operations), ...checkDiscriminatorDefaults(document)] : []),
   ];
 }
