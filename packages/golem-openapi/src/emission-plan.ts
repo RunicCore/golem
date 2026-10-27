@@ -2,6 +2,7 @@ import { isBinaryMediaType, isJsonSeqMediaType, isNdjsonMediaType, isServerSentE
 import type { ServerObject } from '@exprtlabs/golem/client';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { asRecord, isJsonObject, objectEntries } from './json.js';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import { collectOpenApiModelDefinitions } from './models.js';
 import {
   resolveLocal,
@@ -206,13 +207,13 @@ function usesComponentRef(
     }
     uris.delete(identity);
   }
-  for (const keyword of ['properties', 'patternProperties', '$defs', 'definitions', 'dependentSchemas']) {
+  for (const keyword of SCHEMA_MAP_KEYWORDS) {
     if (objectEntries(schema[keyword]).some(([, child]) => usesComponentRef(child, nested, visiting, uris))) return true;
   }
-  for (const keyword of ['items', 'additionalProperties', 'additionalItems', 'contains', 'not', 'if', 'then', 'else', 'propertyNames', 'unevaluatedProperties', 'unevaluatedItems', 'contentSchema']) {
+  for (const keyword of SCHEMA_SINGLE_KEYWORDS) {
     if (usesComponentRef(schema[keyword], nested, visiting, uris)) return true;
   }
-  for (const keyword of ['allOf', 'anyOf', 'oneOf', 'prefixItems']) {
+  for (const keyword of SCHEMA_ARRAY_KEYWORDS) {
     const children = schema[keyword];
     if (Array.isArray(children) && children.some(child => usesComponentRef(child, nested, visiting, uris))) return true;
   }

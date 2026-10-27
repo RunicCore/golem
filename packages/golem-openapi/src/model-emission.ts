@@ -55,10 +55,10 @@ import {
 import { type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecValidationPlan, PlanValidators, SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
-import { buildCodecValidationPlan, uniqueDiagnostics } from '@exprtlabs/golem/internal/validation-plan';
+import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { isJsonObject } from './json.js';
-import { compareText, NameScope, RESERVED_MODEL_MEMBERS, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { compareText, NameScope, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/generator-api';
 import { componentOrigin, componentPlace, ComponentNameScope, LocatedError, type OriginLocator } from './origin.js';
 import { COMPOSITION_CONVERSION_CONFLICT, conflictMessage } from './composition.js';
 import { generatedBannerComment } from './package-info.js';
@@ -93,7 +93,6 @@ import {
 } from './model-resolution.js';
 import { openApiValidationSchemaClosure } from './model-manifest.js';
 import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView } from './model-schema-graph.js';
-
 
 /**
  * Calls the `@exprtlabs/golem/temporal` codec a `temporal:` serde id names; other ids never reach OpenAPI models.
@@ -447,7 +446,7 @@ export function generateOpenApiModelArtifacts(
      */
     readonly compileValidators?: (input: { readonly plan: CodecValidationPlan; readonly groupPlans: ReadonlyMap<string, CodecValidationPlan>; readonly locateModel: (name: string) => SchemaPlace }) => Pick<PlanValidators, 'exports' | 'fastExports' | 'passExports'>;
   } = {},
-): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: Code; readonly diagnostics: readonly GolemDiagnostic[] } {
+): { readonly files: ReadonlyMap<string, string>; readonly entryReexports: Code } {
   const { schemaGraph, definitions, ordered, grouping } = analysis;
   const { groups, owner, runtimeEdges } = grouping;
   const digest = sourceDigest(document);
@@ -460,7 +459,6 @@ export function generateOpenApiModelArtifacts(
   const validationClosure = profile.validation
     ? openApiValidationSchemaClosure(schemaGraph, ordered, stableId)
     : [];
-  const groupById = new Map(groups.map((group) => [group.id, group]));
   const groupForModel = new Map<string, string>();
   const definitionsByGroup = new Map<string, ModelDefinition[]>();
   for (const group of groups) for (const name of group.models) groupForModel.set(name, group.id);
@@ -506,7 +504,6 @@ export function generateOpenApiModelArtifacts(
     const ownerId = groupForModel.get(reference);
     return ownerId !== undefined && ownerId !== own ? groupModules.get(ownerId) : undefined;
   };
-  const calledInitializers = new Map<string, readonly (readonly [groupId: string, reference: string])[]>();
   for (const group of groups) {
     const groupDefinitions = definitionsByGroup.get(group.id) ?? [];
     const external = initializerOwner(group.id);
@@ -519,16 +516,13 @@ export function generateOpenApiModelArtifacts(
       const used = new Set(importedNames(initializerCalls, source));
       return (definitionsByGroup.get(groupId) ?? []).filter((definition) => definition.isUnion && used.has(`initialize${definition.name}`)).map((definition) => [groupId, definition.name] as const);
     });
-    calledInitializers.set(group.id, called);
     for (const [groupId, reference] of called) {
       const exports = exportedInitializersByGroup.get(groupId) ?? new Set<string>();
       exports.add(reference);
       exportedInitializersByGroup.set(groupId, exports);
     }
   }
-  const aliasByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
   const files = new Map<string, string>();
-  const diagnostics: GolemDiagnostic[] = [];
   const codecExports = (name: string): readonly (readonly [local: string, exported: string])[] => {
     const node = analysis.nodesByName.get(name);
     if (!node) return [];
@@ -644,7 +638,7 @@ export function generateOpenApiModelArtifacts(
     exportFrom([`${definition.name}Model`, ...codecExports(definition.name).map(([, exported]) => exported)], `./models/${definition.name}.js`),
     exportFrom([`${definition.name}Fields`, `${definition.name}JSON`, `${definition.name}Init`], `./models/${definition.name}.js`, true),
   ]);
-  return { files, entryReexports: join(reexports, lineBreak), diagnostics: uniqueDiagnostics(diagnostics) };
+  return { files, entryReexports: join(reexports, lineBreak) };
 }
 
 /**

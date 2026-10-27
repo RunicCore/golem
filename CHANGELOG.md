@@ -67,6 +67,7 @@ Details for each package are in the sections below.
 - A controller method with a computed name, such as `[NAME]()`, and a route decorator stops generation with [`NEST1201`](docs/reference/diagnostics.md#nest1201). Before, `golem-ts-openapi` left its route out of the document without a message. Rename the method to an identifier, or add `@ApiExcludeEndpoint()`. A method with a quoted name, such as `'list-items'()`, is now part of the document.
 - Stacked `@ApiTags`, `@ApiBearerAuth`, `@ApiBasicAuth`, `@ApiCookieAuth`, `@ApiOAuth2` and `@ApiSecurity` decorators list their entries in the order `@nestjs/swagger` applies them, the bottom decorator first. Before, `golem-ts-openapi` used the top-down source order, so the `tags` and `security` of an operation can change order.
 - A second whole `@Body()` in one controller method stops generation with [`NEST1103`](docs/reference/diagnostics.md#nest1103). Before, the second replaced the first without a message.
+- The `model-manifest.json` of a generated SDK no longer lists `modelReferences` for each field. No tool read it, and it was wrong for nullable, `allOf` and map fields.
 
 ### Generation
 

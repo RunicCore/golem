@@ -7,33 +7,9 @@ import {
   type NormalizedDocument,
   type NormalizedOperation,
 } from './normalize.js';
+import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 
 export type SchemaDirection = 'input' | 'output';
-
-const SCHEMA_MAP_KEYWORDS = [
-  'properties',
-  'patternProperties',
-  '$defs',
-  'definitions',
-  'dependentSchemas',
-] as const;
-
-const SCHEMA_SINGLE_KEYWORDS = [
-  'items',
-  'additionalProperties',
-  'additionalItems',
-  'contains',
-  'not',
-  'if',
-  'then',
-  'else',
-  'propertyNames',
-  'unevaluatedProperties',
-  'unevaluatedItems',
-  'contentSchema',
-] as const;
-
-const SCHEMA_ARRAY_KEYWORDS = ['allOf', 'anyOf', 'oneOf', 'prefixItems'] as const;
 
 /** Schema keywords whose values are literal data, never schemas or references. */
 export const DATA_KEYWORDS: ReadonlySet<string> = new Set(['examples', 'example', 'default', 'enum', 'const']);
@@ -113,7 +89,7 @@ function resolveHref(reference: string, base: string): string {
   }
 }
 
-function documentBase(document: unknown): string {
+export function schemaDocumentBase(document: unknown): string {
   const id = asRecord(document).$id;
   return typeof id === 'string' && id ? stripFragment(resolveHref(id, DOCUMENT_BASE)) : DOCUMENT_BASE;
 }
@@ -155,7 +131,7 @@ export function collectCanonicalResources(
   const byCanonical = new Map<string, CanonicalResource>();
   const byPointer = new Map<string, CanonicalResource>();
   const seen = new WeakSet<object>();
-  const base = documentBase(document);
+  const base = schemaDocumentBase(document);
 
   const register = (schema: unknown, canonical: string, hasId: boolean, pointer: string | null, schemaPointer: string): CanonicalResource => {
     const existing = byCanonical.get(canonical);
@@ -190,15 +166,15 @@ export function collectCanonicalResources(
     }
     for (const [key, value] of objectEntries(schema)) {
       if (DATA_KEYWORDS.has(key) || key === '$ref' || key === '$dynamicRef' || key === '$id') continue;
-      if ((SCHEMA_MAP_KEYWORDS as readonly string[]).includes(key) && isJsonObject(value)) {
+      if (SCHEMA_MAP_KEYWORDS.includes(key) && isJsonObject(value)) {
         for (const [childKey, child] of objectEntries(value)) walk(child, nextBase, jsonPointerJoin(jsonPointerJoin(schemaPointer, key), childKey));
         continue;
       }
-      if ((SCHEMA_SINGLE_KEYWORDS as readonly string[]).includes(key) && typeof value !== 'boolean') {
+      if (SCHEMA_SINGLE_KEYWORDS.includes(key) && typeof value !== 'boolean') {
         walk(value, nextBase, jsonPointerJoin(schemaPointer, key));
         continue;
       }
-      if ((SCHEMA_ARRAY_KEYWORDS as readonly string[]).includes(key) && Array.isArray(value)) {
+      if (SCHEMA_ARRAY_KEYWORDS.includes(key) && Array.isArray(value)) {
         value.forEach((child, index) => walk(child, nextBase, jsonPointerJoin(jsonPointerJoin(schemaPointer, key), String(index))));
       }
     }
@@ -334,19 +310,19 @@ function findAnchor(
   }
   for (const [key, value] of objectEntries(schema)) {
     if (DATA_KEYWORDS.has(key) || key === '$ref' || key === '$dynamicRef' || key === '$id') continue;
-    if ((SCHEMA_MAP_KEYWORDS as readonly string[]).includes(key) && isJsonObject(value)) {
+    if (SCHEMA_MAP_KEYWORDS.includes(key) && isJsonObject(value)) {
       for (const child of Object.values(value)) {
         const found = findAnchor(child, name, base, resources, seen);
         if (found) return found;
       }
       continue;
     }
-    if ((SCHEMA_SINGLE_KEYWORDS as readonly string[]).includes(key) && typeof value !== 'boolean') {
+    if (SCHEMA_SINGLE_KEYWORDS.includes(key) && typeof value !== 'boolean') {
       const found = findAnchor(value, name, base, resources, seen);
       if (found) return found;
       continue;
     }
-    if ((SCHEMA_ARRAY_KEYWORDS as readonly string[]).includes(key) && Array.isArray(value)) {
+    if (SCHEMA_ARRAY_KEYWORDS.includes(key) && Array.isArray(value)) {
       for (const child of value) {
         const found = findAnchor(child, name, base, resources, seen);
         if (found) return found;
@@ -568,17 +544,17 @@ function visitSchemaNode(
   reportDiscriminatorMappings(owner.discriminator, nextBase, jsonPointerJoin(pointer, 'discriminator'), handlers);
   for (const [key, value] of objectEntries(schema)) {
     if (DATA_KEYWORDS.has(key) || key === '$ref' || key === '$dynamicRef' || key === '$id') continue;
-    if ((SCHEMA_MAP_KEYWORDS as readonly string[]).includes(key) && isJsonObject(value)) {
+    if (SCHEMA_MAP_KEYWORDS.includes(key) && isJsonObject(value)) {
       for (const [name, child] of objectEntries(value)) {
         visitSchemaNode(child, nextBase, jsonPointerJoin(jsonPointerJoin(pointer, key), name), seen, handlers);
       }
       continue;
     }
-    if ((SCHEMA_SINGLE_KEYWORDS as readonly string[]).includes(key) && typeof value !== 'boolean') {
+    if (SCHEMA_SINGLE_KEYWORDS.includes(key) && typeof value !== 'boolean') {
       visitSchemaNode(value, nextBase, jsonPointerJoin(pointer, key), seen, handlers);
       continue;
     }
-    if ((SCHEMA_ARRAY_KEYWORDS as readonly string[]).includes(key) && Array.isArray(value)) {
+    if (SCHEMA_ARRAY_KEYWORDS.includes(key) && Array.isArray(value)) {
       value.forEach((child, index) => {
         visitSchemaNode(child, nextBase, jsonPointerJoin(jsonPointerJoin(pointer, key), String(index)), seen, handlers);
       });
@@ -875,7 +851,7 @@ export function visitOpenApiComponent(
 }
 
 export function visitOpenApiSchemaTree(document: unknown, handlers: OpenApiSchemaTreeHandlers): void {
-  const base = documentBase(document);
+  const base = schemaDocumentBase(document);
   const seen = new WeakSet<object>();
   const components = asRecord(asRecord(document).components);
   for (const kind of OPENAPI_COMPONENT_KINDS) {
@@ -887,10 +863,6 @@ export function visitOpenApiSchemaTree(document: unknown, handlers: OpenApiSchem
   }
   visitPathMap(asRecord(document).paths, base, '#/paths', seen, handlers);
   visitPathMap(asRecord(document).webhooks, base, '#/webhooks', seen, handlers);
-}
-
-export function schemaDocumentBase(document: unknown): string {
-  return documentBase(document);
 }
 
 function directionalUri(resource: CanonicalResource, direction: SchemaDirection, packId: string): string {
@@ -918,7 +890,7 @@ function resolveUnconditionalTarget(
       ? schema.$dynamicRef
       : undefined;
   if (typeof reference !== 'string') return { schema, base: currentBase };
-  const rootBase = documentBase(document);
+  const rootBase = schemaDocumentBase(document);
   if (reference.startsWith('#/')) return { schema: resolveLocalPointer(document, reference), base: rootBase };
   if (reference.startsWith('#') && reference.length > 1) {
     const anchor = reference.slice(1);
@@ -963,7 +935,7 @@ function propertyHasExclusion(schema: unknown, context: ProjectionContext): bool
     if (identity) cache.set(identity, result);
     return result;
   };
-  return walk(schema, context.currentBase ?? documentBase(context.document));
+  return walk(schema, context.currentBase ?? schemaDocumentBase(context.document));
 }
 
 function collectExcludedPropertyNames(
@@ -1001,7 +973,7 @@ function collectExcludedPropertyNames(
       if (identity) evaluating.delete(identity);
     }
   };
-  visit(schema, context.currentBase ?? documentBase(context.document));
+  visit(schema, context.currentBase ?? schemaDocumentBase(context.document));
   return excluded;
 }
 
@@ -1042,7 +1014,7 @@ export function projectSchema(schema: unknown, context: ProjectionContext): unkn
   if (typeof schema === 'boolean') return schema;
   if (!isJsonObject(schema)) return schema;
   const state = withProjectionState(context);
-  const ctx = { ...state, currentBase: nextSchemaBase(schema, state.currentBase ?? documentBase(state.document), state.resources) };
+  const ctx = { ...state, currentBase: nextSchemaBase(schema, state.currentBase ?? schemaDocumentBase(state.document), state.resources) };
   const excluded = collectExcludedPropertyNames(schema, state);
   const next: Record<string, unknown> = {};
   for (const [key, value] of objectEntries(schema)) {
@@ -1074,15 +1046,15 @@ export function projectSchema(schema: unknown, context: ProjectionContext): unkn
       next.allOf = value.map((item) => projectSchema(item, { ...ctx, extraExcluded: siblingExcluded }));
       continue;
     }
-    if ((SCHEMA_MAP_KEYWORDS as readonly string[]).includes(key) && isJsonObject(value)) {
+    if (SCHEMA_MAP_KEYWORDS.includes(key) && isJsonObject(value)) {
       next[key] = mapSchemaKeyword(value, ctx, projectSchema);
       continue;
     }
-    if ((SCHEMA_SINGLE_KEYWORDS as readonly string[]).includes(key)) {
+    if (SCHEMA_SINGLE_KEYWORDS.includes(key)) {
       next[key] = typeof value === 'boolean' ? value : projectSchema(value, ctx);
       continue;
     }
-    if ((SCHEMA_ARRAY_KEYWORDS as readonly string[]).includes(key) && Array.isArray(value)) {
+    if (SCHEMA_ARRAY_KEYWORDS.includes(key) && Array.isArray(value)) {
       next[key] = value.map((item) => projectSchema(item, ctx));
       continue;
     }
@@ -1185,7 +1157,7 @@ function rewriteProjectedSchema(schema: unknown, context: RewriteContext): unkno
         : `${originalBase}:${context.direction}`;
       continue;
     }
-    if ((SCHEMA_MAP_KEYWORDS as readonly string[]).includes(key) && isJsonObject(value)) {
+    if (SCHEMA_MAP_KEYWORDS.includes(key) && isJsonObject(value)) {
       next[key] = Object.fromEntries(
         objectEntries(value).map(([name, child]) => [
           name,
@@ -1194,11 +1166,11 @@ function rewriteProjectedSchema(schema: unknown, context: RewriteContext): unkno
       );
       continue;
     }
-    if ((SCHEMA_SINGLE_KEYWORDS as readonly string[]).includes(key)) {
+    if (SCHEMA_SINGLE_KEYWORDS.includes(key)) {
       next[key] = typeof value === 'boolean' ? value : rewriteProjectedSchema(value, childContext);
       continue;
     }
-    if ((SCHEMA_ARRAY_KEYWORDS as readonly string[]).includes(key) && Array.isArray(value)) {
+    if (SCHEMA_ARRAY_KEYWORDS.includes(key) && Array.isArray(value)) {
       next[key] = value.map((item) => rewriteProjectedSchema(item, childContext));
       continue;
     }
@@ -1262,7 +1234,7 @@ function projectDirectionalResource(
         direction,
         packId,
         resources,
-        currentBase: documentBase(document),
+        currentBase: schemaDocumentBase(document),
         emittingCanonical: null,
         qualifyComponentPointers: false,
       })];
@@ -1314,7 +1286,7 @@ export function projectOperationSchema(
       direction,
       packId: resourceId,
       resources,
-      currentBase: documentBase(document),
+      currentBase: schemaDocumentBase(document),
       emittingCanonical: null,
       qualifyComponentPointers: true,
     },
