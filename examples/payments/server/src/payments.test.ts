@@ -58,6 +58,10 @@ test('a failing provider is a 502 with a clear message and no payment', () => wi
   assert.equal((await created.json()).message, 'The payment provider declined or is unavailable.');
 }, { ...provider, fetchImpl: (async () => new Response('down', { status: 500 })) as typeof fetch }));
 
+test('a provider connection failure is not reported as a provider answer', () => withApi(async api => {
+  assert.equal((await post(`${api}/payments/transactions`, input)).status, 500);
+}, { ...provider, fetchImpl: (async () => { throw new TypeError('fetch failed'); }) as typeof fetch }));
+
 test('a float amount and a bad currency are rejected before the handler', () => withApi(async api => {
   const float = await post(`${api}/payments/transactions`, { ...input, money: { amount: 12.5, currency: 'USD' } });
   assert.equal(float.status, 400);

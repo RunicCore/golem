@@ -4,15 +4,9 @@ Pass credentials once, and each operation applies what its security requirement 
 
 This page uses the `ProviderClient` of the example's payment provider. Its document, `provider.yaml`, declares a bearer security scheme and requires it:
 
-```yaml
-components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-security:
-  - bearerAuth: []
-```
+<<< ../../examples/payments/server/provider/provider.yaml#bearer-security-scheme
+
+<<< ../../examples/payments/server/provider/provider.yaml#bearer-security-requirement
 
 Run `npx golem generate`. The client then has an `auth` option, keyed by security-scheme name. A client whose operations reference no security scheme has no `auth` option. If you cannot edit your document, follow the steps in [Use a document you do not own](#use-a-document-you-do-not-own).
 

@@ -1,5 +1,6 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
-import { createClientWithIdempotencyKey } from '../provider/client.js';
+import { createChargeOnce } from '../provider/charges.js';
+import { isProviderUndeclaredResponseError, ProviderClient } from '../provider/sdk/index.js';
 
 export interface ProviderOptions {
   baseUrl?: string;
@@ -10,17 +11,22 @@ export interface ProviderOptions {
 /** Charges each saved payment through the client generated from provider.yaml. */
 @Injectable()
 export class ProviderCharges {
-  public constructor(private readonly options: ProviderOptions = {}) {}
+  private readonly client: ProviderClient;
+
+  public constructor({ baseUrl = process.env.PROVIDER_URL ?? 'http://127.0.0.1:3001', token = process.env.PROVIDER_TOKEN ?? 'dev-token', fetchImpl }: ProviderOptions = {}) {
+    this.client = new ProviderClient({ baseUrl, auth: { bearerAuth: token }, ...(fetchImpl && { fetchImpl }) });
+  }
 
   public async charge(money: { amount: string; currency: string }, idempotencyKey: string) {
-    const { baseUrl = process.env.PROVIDER_URL ?? 'http://127.0.0.1:3001', token = process.env.PROVIDER_TOKEN ?? 'dev-token', fetchImpl } = this.options;
-    // One key per payment: retrying the same payment never charges twice.
-    const client = createClientWithIdempotencyKey(baseUrl, token, idempotencyKey, fetchImpl ? { fetchImpl } : {});
     try {
-      const response = await client.createCharge().execute({ body: money });
+      // The key is the Idempotency-Key header parameter of createCharge, set per call.
+      const response = await createChargeOnce(this.client, money, idempotencyKey);
       return { id: response.body.id, status: response.body.status, settlesOn: response.body.settlesOn.toString() };
-    } catch {
-      throw new BadGatewayException('The payment provider declined or is unavailable.');
+    } catch (error) {
+      if (isProviderUndeclaredResponseError(error)) {
+        throw new BadGatewayException('The payment provider declined or is unavailable.');
+      }
+      throw error;
     }
   }
 }
