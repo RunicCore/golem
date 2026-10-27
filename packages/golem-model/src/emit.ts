@@ -4,7 +4,6 @@ import { PACKAGE_VERSION } from './package-info.js';
 import {
   emitModelFromJSON,
   blockComment,
-  FIELD_INPUT,
   isCode,
   runtimeLinesOf,
   SERDE_IMPORT_ORDER,

@@ -30,6 +30,11 @@ import {
   type ResourceIndex,
 } from './schema-projection.js';
 
+/** The id of an OpenAPI schema's model: the manifest and the validation closure name a model by it. */
+export function modelStableId(digest: string, definition: ModelDefinition): string {
+  return `openapi:${digest.slice(0, 16)}#/components/schemas/${definition.schemaName}`;
+}
+
 export interface ModelDefinition {
   readonly name: string;
   readonly schemaName: string;

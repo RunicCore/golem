@@ -1,4 +1,4 @@
-import { modelStableId, reachesRecursiveNode, render } from '@exprtlabs/golem/internal/emitter';
+import { reachesRecursiveNode, render } from '@exprtlabs/golem/internal/emitter';
 import { codecPublicId, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
@@ -13,6 +13,7 @@ import {
   type ModelDefinition,
   type OpenApiModelAnalysis,
   modelEnv,
+  modelStableId,
   withSchemaBase,
   modelSchemaReference,
   modelFieldType,

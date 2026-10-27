@@ -17,7 +17,7 @@ export {
   type NestedImportedSerde,
   type StringifySerdeResolver,
 } from './stringify-emitter.js';
-export { calleeOf, FIELD_CONVERSION_INPUT, type TupleConversionDescriptor } from './sequence-conversion.js';
+export { type TupleConversionDescriptor } from './sequence-conversion.js';
 export { presentKeysCode } from './union-conversion.js';
 /** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
@@ -271,7 +271,7 @@ function unionGeneratedToJson(
 }
 
 /** The input of a field conversion that is emitted once to find its shape, and the parameter of a field conversion function. No nested conversion binds this name. */
-export const FIELD_INPUT = identifier(FIELD_CONVERSION_INPUT);
+const FIELD_INPUT = identifier(FIELD_CONVERSION_INPUT);
 
 /**
  * A converted value at a nested field. `emit(FIELD_INPUT)` shows the conversion's shape: a single call
@@ -629,11 +629,6 @@ export function emitModelFromInit(
 /** The marker comment of a file that names its model manifest, as Code. */
 export function manifestMarkerComment(relative = `./${MODEL_MANIFEST_FILENAME}`): Code {
   return blockComment(`${MODEL_MANIFEST_MARKER} ${relative}`);
-}
-
-/** The id of an OpenAPI schema's model: the manifest and the validation closure name a model by it. */
-export function modelStableId(digest: string, definition: { readonly schemaName: string }): string {
-  return `openapi:${digest.slice(0, 16)}#/components/schemas/${definition.schemaName}`;
 }
 
 /** A line of a generated file, or a helper that stands where its definition goes if the code calls the helper. */
