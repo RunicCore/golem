@@ -51,9 +51,13 @@ test('global profile changes remove obsolete validation and keep manifest identi
     models: { id: string }[];
     profile: { mobx: boolean; validation: boolean };
   };
-  // Kept as text: the SDK model is TypeScript source in the fixture, with no runner here; its validators are the only thing the profile changes.
-  const validators = /\bvalidate_\w+_[0-9a-f]{8}\b/;
-  assert.match(readGeneratedModelSource(path.join(root, 'sdk')), validators);
+  // A fresh process reads the built SDK, so no module of an earlier build stays cached.
+  const validateBreakingMoney = async (): Promise<string> => {
+    await command(root, process.execPath, [TSC, '-p', 'tsconfig.json']);
+    const probe = "import { validateMoney } from './build/sdk/index.js'; let out; try { out = String(validateMoney({ amount: -1, currency: 'usd' })); } catch (error) { out = error.kind; } process.stdout.write(out);";
+    return (await command(root, process.execPath, ['--input-type=module', '-e', probe])).stdout;
+  };
+  assert.equal(await validateBreakingMoney(), 'false', 'validation on: the SDK model checks minimum and pattern');
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('validation: true', 'validation: false'));
   await assert.rejects(runPipeline(config, { check: true }), /stale/);
   await runPipeline(config);
@@ -63,7 +67,7 @@ test('global profile changes remove obsolete validation and keep manifest identi
   };
   assert.deepEqual(after.models.map((model) => model.id), before.models.map((model) => model.id));
   assert.deepEqual(after.profile, { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' });
-  assert.doesNotMatch(readGeneratedModelSource(path.join(root, 'sdk')), validators);
+  assert.equal(await validateBreakingMoney(), 'validation_unavailable', 'validation off: the SDK model has no validator left');
   await runPipeline(config, { check: true });
 });
 
@@ -183,7 +187,7 @@ test('deleting a discovered model cleans its generated companion, and deleting t
 });
 
 test('the companion of a shared alias is a recorded output of the app in models.output, and deleting the alias removes it', async (t: TestContext) => {
-  // protects: P-12 done check 1: a shared companion is in outputs.json and a stale one is removed
+  // protects: a shared model's companion is a recorded output of the app, and deleting the alias removes it
   const outer = createFixtureProject(t, 'golem-pipeline-shared-');
   linkProjectPackages(outer, Object.fromEntries(['golem', 'golem-model'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)])));
   const write = (file: string, text: string): void => {
