@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { sourcePath } from './test-file-timings.js';
-import { describeResume, finishRun, readRecord, runStateFromEnv, type PlannedStep, type RunRecord } from './test-runner/run-state.js';
+import { describeResume, finishRun, isTierResult, readRecord, runStateFromEnv, stepResultFile, type PlannedStep, type RunRecord } from './test-runner/run-state.js';
 import type { OrderedRun } from './test-run-ordered.js';
 
 export type Tier = 'prepare' | 'focused' | 'full' | 'acceptance' | 'docs';
@@ -195,8 +195,8 @@ function expandFiles(patterns: readonly string[]): string[] {
  * No file or test limit is set here: on Node 22 `--test-timeout` also cancels a whole file, which a loaded host turns into a
  * false failure. The tier ceiling in `scripts/test-runner/entrypoint.sh` is the one hang catcher.
  */
-function nodeTest(label: string, patterns: readonly string[], concurrency: number, extra: readonly string[] = [], env: NodeJS.ProcessEnv = {}): Step {
-  const fileTimings = resultsDir ? path.join(resultsDir, `${label}.files.jsonl`) : undefined;
+function nodeTest(tier: Tier, label: string, patterns: readonly string[], concurrency: number, extra: readonly string[] = [], env: NodeJS.ProcessEnv = {}): Step {
+  const fileTimings = resultsDir ? stepResultFile(resultsDir, tier, label, 'files.jsonl') : undefined;
   return {
     label,
     fileTimings,
@@ -221,7 +221,7 @@ function nodeTest(label: string, patterns: readonly string[], concurrency: numbe
       const earlier = files.length - remaining.length;
       if (earlier) resumedSteps.add(label);
       process.stdout.write(`${label}: ${ordered.length} files, ${recordedCount} ordered by record, ${ordered.length - recordedCount} new first${earlier ? `; ${earlier} passed in the earlier run` : ''}\n`);
-      const request: OrderedRun = { label, concurrency, execArgv: extra, files: ordered };
+      const request: OrderedRun = { tier, label, concurrency, execArgv: extra, files: ordered };
       return run(process.execPath, [fileURLToPath(new URL('./test-run-ordered.js', import.meta.url)), JSON.stringify(request)], root, env);
     },
   };
@@ -268,20 +268,20 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
     const { lane6, rest } = splitTypescriptLane(args);
     // `--typescript 6` alone runs the lane's whole list; with files it runs those files on TypeScript 6.
     const selection = selectFocused(rest, lane6);
-    const focused = nodeTest('focused', selection.files, CONCURRENCY.unit, selection.passThrough, lane6 ? typescript6Env() : {});
+    const focused = nodeTest(tier, 'focused', selection.files, CONCURRENCY.unit, selection.passThrough, lane6 ? typescript6Env() : {});
     return selection.needsPack ? inOrder(pack, focused) : inOrder(focused);
   }
   if (tier === 'docs') {
     return inOrder(
-      nodeTest('docs prose and structure', DOCS_FILES, 1),
+      nodeTest(tier, 'docs prose and structure', DOCS_FILES, 1),
       npmRun('docs build', 'docs:build'),
-      nodeTest('docs site', ['.build/tests/docs-site.site-test.js'], 1),
+      nodeTest(tier, 'docs site', ['.build/tests/docs-site.site-test.js'], 1),
       { label: 'docs public content', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'scan', 'docs/.vitepress/dist']) },
     );
   }
-  const unit = nodeTest('unit', UNIT_FILES, CONCURRENCY.unit);
-  const typescript6 = (concurrency: number): Step => nodeTest('typescript 6', typescript6Files(), concurrency, [], typescript6Env());
-  const smoke = nodeTest('packed smoke', [SMOKE_FILE], 1);
+  const unit = nodeTest(tier, 'unit', UNIT_FILES, CONCURRENCY.unit);
+  const typescript6 = (concurrency: number): Step => nodeTest(tier, 'typescript 6', typescript6Files(), concurrency, [], typescript6Env());
+  const smoke = nodeTest(tier, 'packed smoke', [SMOKE_FILE], 1);
   if (tier === 'full') {
     if (native) return inOrder(unit);
     // Pack and the smoke test read the workspace and /cache/packed, never a file that the lane writes. The lane's last files
@@ -301,10 +301,10 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
     [[typescript6(CONCURRENCY.beside)], [
       pack,
       smoke,
-      nodeTest('packed', PACKED_FILES, CONCURRENCY.packed),
-      nodeTest('browser', BROWSER_FILES, CONCURRENCY.packed),
+      nodeTest(tier, 'packed', PACKED_FILES, CONCURRENCY.packed),
+      nodeTest(tier, 'browser', BROWSER_FILES, CONCURRENCY.packed),
     ]],
-    ...inOrder(nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.unit)),
+    ...inOrder(nodeTest(tier, 'acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.unit)),
   ];
 }
 
@@ -395,8 +395,8 @@ async function main(argv: readonly string[]): Promise<void> {
   process.stdout.write(`golem ${tier} tier (${budget}): ${purpose}\n`);
   if (resultsDir) {
     fs.mkdirSync(resultsDir, { recursive: true });
-    // A run's results never mix with an earlier run's.
-    for (const name of fs.readdirSync(resultsDir)) if (name.endsWith('.tap') || name.endsWith('-timings.json') || name.endsWith('.files.jsonl') || name.endsWith('-complete.json')) fs.rmSync(path.join(resultsDir, name));
+    // A run's results never mix with an earlier run of its tier; the results of other tiers stay.
+    for (const name of fs.readdirSync(resultsDir)) if (isTierResult(name, tier)) fs.rmSync(path.join(resultsDir, name));
   }
   const plan = steps(tier, args, native);
   const state = runStateFromEnv();
