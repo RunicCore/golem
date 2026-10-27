@@ -1,0 +1,13 @@
+{
+  "schema": 2,
+  "measuredAt": "2026-10-22T07:55:27.827Z",
+  "git": { "sha": "abcdef0123", "dirty": false },
+  "environment": { "node": "v24.0.0", "os": "linux", "arch": "arm64", "cpu": "Test CPU", "cpus": 1 },
+  "packages": {},
+  "settings": { "warmupMs": 1, "batchMs": 1, "batches": 4, "rounds": 2 },
+  "groups": [{ "id": "classes", "label": "Class instances", "description": "Class instances." }],
+  "payloads": [{ "id": "simple", "label": "Simple object", "bytes": null, "description": "Four 3D points.", "sourceUrl": "https://example.test/shared.ts" }],
+  "operations": [{ "id": "parse", "label": "Parse", "description": "Parse." }],
+  "adapters": [{ "id": "golem", "group": "classes", "label": "Golem (IModel)", "library": "@exprtlabs/golem", "checked": true, "sourceUrl": "https://example.test/golem.ts" }],
+  "cases": [{ "payload": "simple", "operation": "parse", "adapter": "golem", "support": "full", "opsPerSec": { "median": 200, "min": 200, "max": 200 } }]
+}
