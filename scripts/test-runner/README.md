@@ -6,7 +6,7 @@ Run tests in the golem test-runner image. Tier runs are offline.
 | --- | --- | --- |
 | `npm run test -- <files or --test-name-pattern>` | 1 min | The tests you select. A packed or browser file packs first. |
 | `npm run test:full` | 5 min | Unit tests (not the identity corpus), the TypeScript 6 lane and the packed model-only smoke test. Run before a commit. Pack and the smoke test run beside the TypeScript 6 lane. |
-| `npm run test:acceptance` | 10 min | Full, the public-source and OpenAPI compliance checks, the acceptance unit tests (the TypeScript identity corpus included), and the packed and browser tests. Run before a release. |
+| `npm run test:acceptance` | 10 min | Full, the public-source and OpenAPI compliance checks, the acceptance unit tests (the TypeScript identity corpus included), and the packed and browser tests. After the unit step, the TypeScript 6 lane runs beside a second chain: pack, the packed smoke test, packed, browser, then the acceptance unit tests. Run before a release. |
 | `npm run test:prepare` | 5 min (plus a first-time image build), online | Builds the image and fills the npm, packed and typia plugin caches. Runs no tests. Run it first, and again after a lockfile or image change. |
 | `npm run docs:check` | 2 min | Checks the docs prose rules and page inventory, then builds the documentation site and checks it. |
 

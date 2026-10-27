@@ -57,8 +57,12 @@ export const ACCEPTANCE_UNIT_FILES = ['.build/tests/*.acceptance.js', '.build/te
 // files, so two at once is the most that helps.
 const UNIT_CAP = 8;
 const PACKED_CAP = 2;
+// Beside: the TypeScript 6 lane and the acceptance unit tests run beside the packed chain in Acceptance. The lane alone peaks at
+// 5.4 GiB of a 7.7 GiB VM (measured), and with eight files at once the packed chain's esbuild was OOM-killed, so these two run
+// two files fewer and leave those cores and that memory to the chain.
 export const CONCURRENCY = {
   unit: Math.min(UNIT_CAP, os.availableParallelism()),
+  beside: Math.max(1, Math.min(UNIT_CAP, os.availableParallelism()) - 2),
   packed: Math.max(1, Math.min(PACKED_CAP, Math.floor(os.availableParallelism() / 2))),
 } as const;
 
@@ -276,23 +280,32 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
     );
   }
   const unit = nodeTest('unit', UNIT_FILES, CONCURRENCY.unit);
+  const typescript6 = (concurrency: number): Step => nodeTest('typescript 6', typescript6Files(), concurrency, [], typescript6Env());
+  const smoke = nodeTest('packed smoke', [SMOKE_FILE], 1);
   if (tier === 'full') {
     if (native) return inOrder(unit);
     // Pack and the smoke test read the workspace and /cache/packed, never a file that the lane writes. The lane's last files
     // leave cores idle, so they run beside it and add no time of their own.
-    return [...inOrder(unit), [[nodeTest('typescript 6', typescript6Files(), CONCURRENCY.unit, [], typescript6Env())], [pack, nodeTest('packed smoke', [SMOKE_FILE], 1)]]];
+    return [...inOrder(unit), [[typescript6(CONCURRENCY.unit)], [pack, smoke]]];
   }
+  // Acceptance: after unit, the side chain adds the steps that need nothing from the TypeScript 6 lane. Packed and browser read
+  // /cache/packed after pack (this chain's own step); the lane reads /cache/typescript6 and the workspace. Each test file makes
+  // its own temp folders and registry and server ports, so no step reads a file that another step writes. Acceptance unit
+  // runs last in the side chain, in the lane's idle tail, so the identity corpus does not compete with the lane's first files.
+  // Both beside steps run CONCURRENCY.beside files at once, which keeps the lane and the chain inside the VM's memory.
   return [
     ...inOrder(
       { label: 'public source', run: () => run(process.execPath, ['.build/scripts/public-source.js', 'check']) },
       { label: 'OpenAPI compliance', run: () => run(process.execPath, ['.build/packages/golem-openapi/compliance/generate-matrix.js', '--check']) },
+      unit,
     ),
-    ...steps('full', args, false),
-    ...inOrder(
-      nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.unit),
+    [[typescript6(CONCURRENCY.beside)], [
+      pack,
+      smoke,
       nodeTest('packed', PACKED_FILES, CONCURRENCY.packed),
       nodeTest('browser', BROWSER_FILES, CONCURRENCY.packed),
-    ),
+      nodeTest('acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.beside),
+    ]],
   ];
 }
 
