@@ -48,19 +48,24 @@ async function loadSdk(t: TestContext, document: unknown, name: string, assertSo
   return { Client, load };
 }
 
-/** The URL of the request that `ping` sends when the client gets `options`. */
-async function pingUrl(Client: GeneratedClientClass, options: Record<string, unknown>): Promise<string> {
+/** The URL of the one request that `send` makes when it gets options whose fetch records it. */
+async function requestUrl(send: (fetchOptions: Record<string, unknown>) => Promise<unknown>): Promise<string> {
   const seen: CapturedRequest[] = [];
-  const client = new Client({
-    ...options,
+  await send({
     fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
       seen.push(captureRequest(url, init));
       return new Response(null, { status: 204 });
     },
   });
-  await client['ping']!().execute();
   return seen[0]?.url ?? '';
 }
+
+/** The URL of the request that `operation` sends when the client gets `options`. */
+function callUrl(Client: GeneratedClientClass, options: Record<string, unknown>, operation: string): Promise<string> {
+  return requestUrl((fetchOptions) => new Client({ ...options, ...fetchOptions })[operation]!().execute());
+}
+
+type OperationFactory = (options: Record<string, unknown>) => { execute: () => Promise<unknown> };
 
 const TWO_SERVER_TYPES = `import type { ServersClientOptions } from './client.js';
 const byIndex: ServersClientOptions = { server: 1 };
@@ -72,14 +77,14 @@ void [byIndex, byName, byBaseUrl];
 test('a client takes a document server by index, name or description, with variables filled', async (t) => {
   // protects: T-388 a generated client picks the servers URL of the document
   const { Client } = await loadSdk(t, twoServerDocument(), 'Servers', TWO_SERVER_TYPES);
-  assert.equal(await pingUrl(Client, {}), 'https://eu.api.example/v1/ping');
-  assert.equal(await pingUrl(Client, { server: 1 }), 'https://staging.example/v2/ping');
-  assert.equal(await pingUrl(Client, { server: 'Production' }), 'https://eu.api.example/v1/ping');
-  assert.equal(await pingUrl(Client, { server: 'Staging' }), 'https://named.example/ping', 'a name wins over a description');
-  assert.equal(await pingUrl(Client, { server: 'prod' }), 'https://eu.api.example/v1/ping');
-  assert.equal(await pingUrl(Client, { server: 2 }), 'https://decoy.example/ping');
-  assert.equal(await pingUrl(Client, { server: 'prod', serverVariables: { region: 'us', base: 'v9' } }), 'https://us.api.example/v9/ping');
-  assert.equal(await pingUrl(Client, { server: 1, baseUrl: 'https://own.example/' }), 'https://own.example/ping');
+  assert.equal(await callUrl(Client, {}, 'ping'), 'https://eu.api.example/v1/ping');
+  assert.equal(await callUrl(Client, { server: 1 }, 'ping'), 'https://staging.example/v2/ping');
+  assert.equal(await callUrl(Client, { server: 'Production' }, 'ping'), 'https://eu.api.example/v1/ping');
+  assert.equal(await callUrl(Client, { server: 'Staging' }, 'ping'), 'https://named.example/ping', 'a name wins over a description');
+  assert.equal(await callUrl(Client, { server: 'prod' }, 'ping'), 'https://eu.api.example/v1/ping');
+  assert.equal(await callUrl(Client, { server: 2 }, 'ping'), 'https://decoy.example/ping');
+  assert.equal(await callUrl(Client, { server: 'prod', serverVariables: { region: 'us', base: 'v9' } }, 'ping'), 'https://us.api.example/v9/ping');
+  assert.equal(await callUrl(Client, { server: 1, baseUrl: 'https://own.example/' }, 'ping'), 'https://own.example/ping');
 });
 
 test('a client refuses a server variable outside its enum and a server the document lacks', async (t) => {
@@ -105,16 +110,7 @@ test('an operation module takes the same server options as the client', async (t
   const { load } = await loadSdk(t, twoServerDocument(), 'Servers', TWO_SERVER_TYPES);
   const { ping: pingOperation } = await load('operations/ping.js');
   assert.equal(typeof pingOperation, 'function');
-  const seen: CapturedRequest[] = [];
-  const operation = (pingOperation as (options: Record<string, unknown>) => { execute: () => Promise<unknown> })({
-    server: 1,
-    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      seen.push(captureRequest(url, init));
-      return new Response(null, { status: 204 });
-    },
-  });
-  await operation.execute();
-  assert.equal(seen[0]?.url, 'https://staging.example/v2/ping');
+  assert.equal(await requestUrl((fetchOptions) => (pingOperation as OperationFactory)({ server: 1, ...fetchOptions }).execute()), 'https://staging.example/v2/ping');
 });
 
 test('a document with no servers keeps baseUrl required and offers no server option', async (t) => {
@@ -128,7 +124,7 @@ const chosen: PlainClientOptions = { baseUrl: 'https://own.example', server: 0 }
 void [options, missing, chosen];
 `;
   const { Client } = await loadSdk(t, { openapi: '3.1.0', info: { title: 'Plain', version: '1' }, paths: { '/ping': ping } }, 'Plain', types);
-  assert.equal(await pingUrl(Client, { baseUrl: 'https://own.example' }), 'https://own.example/ping');
+  assert.equal(await callUrl(Client, { baseUrl: 'https://own.example' }, 'ping'), 'https://own.example/ping');
   assert.throws(() => new Client({}), /PlainClient requires a non-empty baseUrl/);
 });
 
@@ -160,19 +156,6 @@ const OVERRIDE_TYPES = `import type { OverridesClientOptions } from './client.js
 const options: OverridesClientOptions = { server: 'staging', baseUrl: 'https://own.example' };
 void options;
 `;
-
-async function callUrl(Client: GeneratedClientClass, options: Record<string, unknown>, operation: string): Promise<string> {
-  const seen: CapturedRequest[] = [];
-  const client = new Client({
-    ...options,
-    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      seen.push(captureRequest(url, init));
-      return new Response(null, { status: 204 });
-    },
-  });
-  await client[operation]!().execute();
-  return seen[0]?.url ?? '';
-}
 
 test('an operation goes to the servers its operation, path item or document assigns it', async (t) => {
   // protects: T-458 operation and path servers override the document servers
@@ -206,15 +189,7 @@ test('an operation module uses its override server too', async (t) => {
   // protects: T-458 the standalone operation factory honors operation servers
   const { load } = await loadSdk(t, overrideDocument(), 'Overrides', OVERRIDE_TYPES);
   const { uploadFile } = await load('operations/uploadFile.js');
-  const seen: CapturedRequest[] = [];
-  await (uploadFile as (options: Record<string, unknown>) => { execute: () => Promise<unknown> })({
-    server: 1,
-    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      seen.push(captureRequest(url, init));
-      return new Response(null, { status: 204 });
-    },
-  }).execute();
-  assert.equal(seen[0]?.url, 'https://b1.upload.example/v1/files');
+  assert.equal(await requestUrl((fetchOptions) => (uploadFile as OperationFactory)({ server: 1, ...fetchOptions }).execute()), 'https://b1.upload.example/v1/files');
 });
 
 test('a document with no root servers keeps baseUrl for every operation, whatever path servers it lists', async (t) => {

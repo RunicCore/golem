@@ -268,7 +268,6 @@ export class ClientRuntime {
   public readonly operationValidatorOverrides: ReadonlyMap<string, OperationRuntimeValidators> | undefined;
   /** @internal Read by `operationValidators` in `validation.ts`. */
   public readonly operationValidatorCache = new Map<string, OperationRuntimeValidators>();
-  private readonly overrideBaseUrls = new Map<ServerObject, string>();
 
   /** `options` stays readable so request-side helpers can read the settings they own. */
   constructor(
@@ -293,16 +292,8 @@ export class ClientRuntime {
   /** `server` is the first server of an operation whose own `servers` replace the document's; `baseUrl` still wins over it. */
   public url(route: string, query: readonly string[], server?: ServerObject): string {
     const suffix = query.length ? `?${query.join('&')}` : '';
-    return `${this.options.baseUrl === undefined && server ? this.overrideBaseUrl(server) : this.baseUrl}${route}${suffix}`;
-  }
-
-  private overrideBaseUrl(server: ServerObject): string {
-    let baseUrl = this.overrideBaseUrls.get(server);
-    if (baseUrl === undefined) {
-      baseUrl = fillServerUrl(this.client, server, 0, {}).replace(/\/$/, '');
-      this.overrideBaseUrls.set(server, baseUrl);
-    }
-    return baseUrl;
+    const baseUrl = this.options.baseUrl === undefined && server ? fillServerUrl(this.client, server, 0, {}).replace(/\/$/, '') : this.baseUrl;
+    return `${baseUrl}${route}${suffix}`;
   }
 
   private matchesStatus(status: number, expected: string): boolean {
