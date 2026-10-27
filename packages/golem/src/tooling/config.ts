@@ -389,9 +389,3 @@ export function validateConfigInputs(config: GolemConfig): void {
     }
   }
 }
-
-export function loadConfig(filename = 'golem.yaml', onInput?: InputObserver): GolemConfig {
-  const config = resolveConfig(filename, onInput);
-  validateConfigInputs(config);
-  return config;
-}

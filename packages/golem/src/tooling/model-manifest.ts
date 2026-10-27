@@ -164,7 +164,3 @@ export function discoverModelManifests(root = process.cwd(), onInput?: InputObse
     onInput: filename => { if (path.basename(filename) === MODEL_MANIFEST_FILENAME) onInput?.(filename); },
   });
 }
-
-export function manifestMarker(relative = `./${MODEL_MANIFEST_FILENAME}`) {
-  return `/* ${MODEL_MANIFEST_MARKER} ${relative} */`;
-}

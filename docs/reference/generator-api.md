@@ -132,7 +132,7 @@ An OpenAPI job writes `model-manifest.json` beside its SDK. A model job reads it
 | `ModelManifest` | `{ profile, models, validationSchemaClosure? }` | The generation profile, one `ModelManifestEntry` per model, and the schemas a project needs to validate those models. |
 | `MODEL_MANIFEST_FILENAME` | `'model-manifest.json'` | The file name. |
 
-Names the generators import: `ModelManifestEntry`, `ModelManifestProvenance`, `MODEL_MANIFEST_MARKER`, `manifestMarker`, `modelManifestProfile`, `validateModelProfile`, `stableJson`, `stableIdentity`, `sourceDigest`.
+Names the generators import: `ModelManifestEntry`, `ModelManifestProvenance`, `MODEL_MANIFEST_MARKER`, `modelManifestProfile`, `validateModelProfile`, `stableJson`, `stableIdentity`, `sourceDigest`.
 
 ## `@exprtlabs/golem/rewrite` {#rewrite}
 

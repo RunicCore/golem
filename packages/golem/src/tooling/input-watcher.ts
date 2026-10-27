@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { errorMessage, hasErrorCode, isInsideDirectory } from './generator-api.js';
+import { inNodeModules } from './type-analysis/path-identity.js';
 
 /**
  * The stat, listing and folder-watch calls a watch makes between two runs. A watch uses the real ones; a test passes its own to fault a
@@ -137,11 +138,6 @@ export class OwnedOutputIndex {
   covers(input: string): boolean {
     return this.covered.has(pathKey(input));
   }
-}
-
-/** Whether a path lies in an installed package's folder. */
-function inNodeModules(filename: string): boolean {
-  return filename.split(path.sep).includes(NODE_MODULES);
 }
 
 /**

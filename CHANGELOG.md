@@ -110,6 +110,8 @@ Details for each package are in the sections below.
 - Every job reads the tsconfig that `golem.yaml` names, so the `models` and `controllers` jobs, `golem check`, `golem build` and the build tools read one file. A `golem.yaml` can name `tsconfig.build.json` or `tsconfig.app.json`, with its own `paths`. A tsconfig nearer to a job root is not read. The first run after the upgrade runs every `models` and `controllers` job once.
 - **Breaking:** a `golem.yaml` whose tsconfig is a solution file, one with no files and only `references`, such as the default `tsconfig.json` of a create-vite project, stops `golem generate` and `golem check` with a message that names each referenced project. Name the app's tsconfig, for example `tsconfig.app.json`, in the `tsconfig` key of `golem.yaml`.
 - Generated model files call the runtime directly: a model file no longer holds a `modelObject` function, an OpenAPI model module no longer holds an `objectFromJSON` function, a `TSerde` function is imported once and cast, not wrapped in a second function, the plan schemas of both generators are one `JSON.parse` constant, and the runtime imports of both generators come in one order (alphabetical by export name). A model class with a typed map no longer holds the comment line "Dynamic map values are preserved during conversion."
+- **Breaking:** `@exprtlabs/golem/model` no longer exports the type `GeneratedModelFields`. Use the derived `T<Name>Fields` type that generation writes for the model.
+- **Breaking:** `@exprtlabs/golem/manifest` no longer exports `manifestMarker`. Nothing in golem called it.
 
 ## 1.0.0
 

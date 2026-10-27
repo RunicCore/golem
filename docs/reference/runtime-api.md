@@ -61,7 +61,6 @@ Types of generated models:
 
 | Type | Describes |
 | --- | --- |
-| `GeneratedModelFields<Model>` | The field types of a generated model. |
 | `GeneratedModelResult<Constructor>` | The instance type of a generated class. |
 
 ## `@exprtlabs/golem/validation` {#validation}

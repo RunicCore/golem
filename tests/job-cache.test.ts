@@ -2,7 +2,7 @@ import { test, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { loadConfig } from '#golem/config';
+import { loadConfig } from './support/load-config.js';
 import { golemCode, inputDigest, insideAny, jobIsCurrent, loadJobRecords, saveJobRecords, type JobRecord, type JobSetup } from '#golem/job-cache';
 import { digest, type Inventory } from '#golem/outputs';
 import { createFixtureProject } from './fixture-project.js';

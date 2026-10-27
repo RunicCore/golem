@@ -4,7 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
-import { loadConfig, resolveConfig } from '#golem/config';
+import { resolveConfig } from '#golem/config';
+import { loadConfig } from './support/load-config.js';
 import { YamlFileError } from '#golem/generator-api';
 import { parseArguments, providersFor } from '#golem/cli';
 
