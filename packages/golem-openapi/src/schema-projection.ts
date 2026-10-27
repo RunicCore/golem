@@ -1,6 +1,6 @@
 import { asRecord, isJsonObject, jsonPointerJoin, objectEntries, type JsonObject } from './json.js';
 import { compareText, identifier } from '@exprtlabs/golem/generator-api';
-import { canonicalSchemaKey, escapePointerToken } from '@exprtlabs/golem/internal/schema';
+import { canonicalSchemaKey, escapePointerToken, unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import {
   decodePointerToken,
   resolveLocalPointer,
@@ -104,11 +104,7 @@ function pointerSchemaName(ref: string): string | null {
   const rest = ref.slice(prefix.length);
   const slash = rest.search(/[/]/);
   const token = slash < 0 ? rest : rest.slice(0, slash);
-  try {
-    return decodePointerToken(decodeURIComponent(token));
-  } catch {
-    return decodePointerToken(token);
-  }
+  return unescapePointerToken(token);
 }
 
 /** Every repeat of a schema `$id`, once per repeating `$id` keyword. */

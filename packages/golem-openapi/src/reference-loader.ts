@@ -2,6 +2,7 @@ import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { displayPath, isInsideDirectory, parseYamlFile, type InputObserver } from '@exprtlabs/golem/generator-api';
+import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
 import { displayLocation } from './origin.js';
 import { asRecord, escapeJsonPointerToken, isJsonObject, jsonPointerJoin, objectEntries, resolveJsonPointer } from './json.js';
 import {
@@ -174,14 +175,6 @@ function stripFragment(uri: string): string {
   return hash < 0 ? uri : uri.slice(0, hash);
 }
 
-function decodeFragment(fragment: string): string {
-  try {
-    return decodeURIComponent(fragment);
-  } catch {
-    return fragment;
-  }
-}
-
 /** A document as a message prints it: a `file:` document as its path relative to the working directory, any other as its URL. */
 function displayDocument(uri: string): string {
   const url = new URL(uri);
@@ -337,7 +330,7 @@ export async function loadReferenceGraph(
    */
   const resolveFileTarget = (documentUri: string, reference: string): SiteResolution => {
     const resolved = new URL(reference, documentUri);
-    const fragment = decodeFragment(resolved.hash.replace(/^#/, ''));
+    const fragment = decodeUriFragment(resolved.hash.replace(/^#/, ''));
     resolved.hash = '';
     const uri = resolved.href;
     const file = fileURLToPath(resolved);
@@ -375,7 +368,7 @@ export async function loadReferenceGraph(
     if (reference.startsWith('#')) {
       const fragment = reference.slice(1);
       if (fragment === '' || fragment.startsWith('/')) {
-        return { target: { uri: documentUri, pointer: decodeFragment(fragment) }, preserve: false };
+        return { target: { uri: documentUri, pointer: decodeUriFragment(fragment) }, preserve: false };
       }
       if (keyword === '$dynamicRef' || inRoot) return { target: null, preserve: true };
       throw anchorFragmentError(reference, documentUri);
@@ -389,7 +382,7 @@ export async function loadReferenceGraph(
     } catch {
       throw new Error(`invalid reference ${JSON.stringify(reference)} at ${walkerPointer}`);
     }
-    const fragment = decodeFragment(resolved.hash.replace(/^#/, ''));
+    const fragment = decodeUriFragment(resolved.hash.replace(/^#/, ''));
     if (fragment !== '' && !fragment.startsWith('/')) {
       throw anchorFragmentError(reference, documentUri);
     }
@@ -428,7 +421,7 @@ export async function loadReferenceGraph(
     if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') {
       throw new Error(`unsupported reference scheme ${resolved.protocol} in ${item.reference}`);
     }
-    const fragment = decodeFragment(resolved.hash.replace(/^#/, ''));
+    const fragment = decodeUriFragment(resolved.hash.replace(/^#/, ''));
     resolved.hash = '';
     const uri = resolved.href;
     if (options.skipRemote) return { target: null, preserve: false };

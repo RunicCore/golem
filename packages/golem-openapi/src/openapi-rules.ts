@@ -7,6 +7,7 @@ import {
   resolveJsonPointer,
   type JsonObject,
 } from './json.js';
+import { decodeUriFragment } from '@exprtlabs/golem/internal/schema';
 import { HTTP_METHODS_32 } from './normalize.js';
 import type { OpenApiProblem } from './openapi-validator.js';
 import { isMappingComponentName } from './reference-loader.js';
@@ -14,20 +15,8 @@ import { collectCanonicalResources, findDuplicateSchemaIds, lookupCanonicalResou
 
 const TEMPLATE = /\{([^{}]*)\}/g;
 
-/**
- * A `$ref` fragment (the part after `#`) is a URI fragment and may be
- * percent-encoded (e.g. `#/components/schemas/A%20B`); `resolveJsonPointer`
- * itself only understands plain RFC 6901 tokens (no percent-decoding), so
- * every fragment is decoded once, here, before it reaches the resolver. A
- * fragment without percent-encoding decodes to itself.
- */
-function decodeRefFragment(pointer: string): string {
-  try {
-    return decodeURIComponent(pointer);
-  } catch {
-    return pointer;
-  }
-}
+// A `$ref` fragment (the part after `#`) is a URI fragment and may be percent-encoded (e.g. `#/components/schemas/A%20B`);
+// `resolveJsonPointer` only understands plain RFC 6901 tokens, so every fragment goes through decodeUriFragment once before it.
 
 /** Follow in-document Reference Objects; the pointer is where the value actually lives. */
 function resolveWithPointer(document: unknown, value: unknown, pointer: string): { readonly value: unknown; readonly pointer: string } {
@@ -35,7 +24,7 @@ function resolveWithPointer(document: unknown, value: unknown, pointer: string):
   let currentPointer = pointer;
   for (let depth = 0; depth < 32; depth += 1) {
     if (!isJsonObject(current) || typeof current.$ref !== 'string' || !current.$ref.startsWith('#/')) break;
-    const targetPointer = decodeRefFragment(current.$ref.slice(1));
+    const targetPointer = decodeUriFragment(current.$ref.slice(1));
     const next = resolveJsonPointer(document, targetPointer);
     if (next === undefined) break;
     current = next;
@@ -122,7 +111,7 @@ function resolvedParameters(document: unknown, list: unknown, listPointer: strin
 function checkUnresolvedRefs(document: unknown): OpenApiProblem[] {
   const resources = collectCanonicalResources(document);
   const problems: OpenApiProblem[] = [];
-  const resolvesPointer = (pointer: string): boolean => resolveJsonPointer(document, decodeRefFragment(pointer)) !== undefined;
+  const resolvesPointer = (pointer: string): boolean => resolveJsonPointer(document, decodeUriFragment(pointer)) !== undefined;
   const rootSchemaNames = new Set(Object.keys(asRecord(asRecord(asRecord(document).components).schemas)));
   const check = (reference: string, currentBase: string | null, walkerPointer: string, label = '$ref'): void => {
     if (reference === '#') return;
@@ -363,7 +352,7 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
   /** Resolve one `$ref` hop, or return `schema` unchanged when it isn't a Reference Object. */
   const resolveOnce = (schema: unknown, base: string): unknown => {
     if (!isJsonObject(schema) || typeof schema.$ref !== 'string') return schema;
-    if (schema.$ref.startsWith('#/')) return resolveJsonPointer(document, decodeRefFragment(schema.$ref.slice(1)));
+    if (schema.$ref.startsWith('#/')) return resolveJsonPointer(document, decodeUriFragment(schema.$ref.slice(1)));
     return lookupCanonicalResource(schema.$ref, base, resources)?.schema;
   };
   /**
