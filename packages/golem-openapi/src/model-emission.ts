@@ -6,7 +6,8 @@ import {
   code,
   isCode,
   runtimeLinesOf,
-  SERDE_IMPORT_ORDER,
+  emitPlanSchemas,
+  MODEL_IMPORT_ORDER,
   wrapRootConversion,
   type Piece,
   emitCodecRuntimeCode,
@@ -14,7 +15,6 @@ import {
   fileImports,
   helper,
   bindInput,
-  docComment,
   helperName,
   indentation,
   inputCount,
@@ -608,7 +608,6 @@ export function generateOpenApiModelArtifacts(
     const modelModule = generateModels(document, profile, {
       ...helpers,
       copyAdditionalProperties: groupDefinitions.some((definition) => Boolean(definition.additionalProperties)),
-      objectFromJSON: group.models.size > 0,
       analysis,
       onlyNames: group.models,
       graphNodeIds: localIds,
@@ -722,15 +721,7 @@ function emitSchemaCodecRuntime(
 const IMPORT_OPTIONS: ImportOptions = {
   typeNames: 'ordered',
   modules: ['mobx-validation', 'model', 'conversion', 'temporal', 'serde', 'mobx'],
-  order: {
-    model: ['registerGeneratedModel', 'ModelInit', 'GeneratedModelConstructor', 'generatedModelWireBrand', 'generatedModelFieldsBrand', 'generatedModelResultBrand', 'findGeneratedModelDefinition', 'findGeneratedModelDefinitionForConstructor'],
-    conversion: [
-      'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'decodeCheckedInput', 'decodeDetachedInput', 'endDecode', 'endEncode',
-      'convertModelField', 'convertModelItems', 'convertModelTupleItems', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'encodeGeneratedModel', 'deserializeDate', 'serializeDate',
-      'unknownDiscriminatorValue', 'withDiscriminatorValue', 'jsonWithDiscriminator', 'requireModelObject',
-    ],
-    serde: SERDE_IMPORT_ORDER,
-  },
+  order: MODEL_IMPORT_ORDER,
 };
 
 export function generateModels(
@@ -738,7 +729,6 @@ export function generateModels(
   profile: OpenApiGenerationProfile,
   helpers: {
     readonly copyAdditionalProperties?: boolean;
-    readonly objectFromJSON?: boolean;
     readonly analysis?: OpenApiModelAnalysis;
     readonly onlyNames?: ReadonlySet<string>;
     readonly graphNodeIds?: ReadonlySet<string>;
@@ -775,11 +765,9 @@ export function generateModels(
     ? analysis.ordered.filter((definition) => helpers.onlyNames?.has(definition.name))
     : analysis.ordered;
   const moduleScope = new ComponentNameScope('models.ts');
-  const emitObjectFromJSON = helpers.objectFromJSON !== false;
   const emitCopy = helpers.copyAdditionalProperties === true
     || (helpers.copyAdditionalProperties === undefined
       && ordered.some((definition) => definition.additionalProperties));
-  if (emitObjectFromJSON) moduleScope.claim('objectFromJSON', 'internal helper objectFromJSON');
   if (emitCopy) moduleScope.claim('copyAdditionalProperties', 'internal helper copyAdditionalProperties');
   moduleScope.claim('Types', 'import binding Types');
   moduleScope.claim('ModelInit', 'import binding ModelInit');
@@ -831,7 +819,7 @@ export function generateModels(
     let defined: Code | undefined;
     unionInitializers.set(typeName, helper(`initialize${typeName}`, () => defined ??= join([
       code`${helpers.moduleFile ? code`export ` : code``}function ${identifier(`initialize${typeName}`)}(json: unknown): ${variantUnion} {`,
-      code`  const value = ${identifier('objectFromJSON')}<Record<string, unknown>>(json, ${literal(className)});`,
+      code`  const value = ${rt.conversion.requireModelObject}(json, ${literal(className)});`,
       code`  const initialized: unknown = ${unionConversion(definition, 'fromInit', definitions, envOf(definition), context)};`,
       code`  return initialized as ${variantUnion};`,
       code`}`,
@@ -840,12 +828,6 @@ export function generateModels(
   }
   const BLANK = code``;
   const body: Piece[] = [
-    ...(emitObjectFromJSON ? [
-      code`function objectFromJSON<T extends object>(json: unknown, modelName: string): Partial<T> {`,
-      code`  return ${rt.conversion.requireModelObject}(json, modelName) as Partial<T>;`,
-      code`}`,
-      BLANK,
-    ] : []),
     COPY_ADDITIONAL_PROPERTIES,
   ];
 
@@ -980,7 +962,7 @@ export function generateModels(
       ...fieldHelpers.flatMap(each => [each, BLANK]),
       ...(!definition.isUnion ? [
         code`function ${identifier(`deserialize${typeName}Fields`)}(json: unknown): ${identifier(`${typeName}Init`)} {`,
-        code`  const value = objectFromJSON<Record<string, unknown>>(json, ${literal(className)});`,
+        code`  const value = ${rt.conversion.requireModelObject}(json, ${literal(className)});`,
         ...(identityDeserialize
           ? [code`  return value as ${identifier(`${typeName}Init`)};`]
           : [
@@ -993,9 +975,7 @@ export function generateModels(
         BLANK,
       ] : initializer ? [initializer] : []),
       code`export ${definition.isUnion ? code`abstract ` : code``}class ${identifier(className)}${baseClass ? code` extends ${baseClass}` : code``}${implementsType} {`,
-      ...(additionalPropertyType && !additionalIsUnknown
-        ? [code`  ${docComment('Dynamic map values are preserved during conversion.')}`]
-        : additionalPropertyType ? [code`  [key: string]: unknown;`] : []),
+      ...(additionalPropertyType && additionalIsUnknown ? [code`  [key: string]: unknown;`] : []),
       ...declarations,
       code`  declare readonly [${rtType.model.generatedModelWireBrand}]: ${typesNamespace}.${identifier(typeName)};`,
       code`  declare readonly [${rtType.model.generatedModelFieldsBrand}]: ${identifier(`${typeName}Fields`)};`,
@@ -1012,7 +992,7 @@ export function generateModels(
       BLANK,
       ...(definition.isUnion ? [
         code`function ${identifier(`decode${typeName}`)}(json: unknown): ${variantUnion} {`,
-        code`  const value = objectFromJSON<${typesNamespace}.${identifier(typeName)}>(json, ${literal(className)});`,
+        code`  const value = ${rt.conversion.requireModelObject}(json, ${literal(className)}) as Partial<${typesNamespace}.${identifier(typeName)}>;`,
         code`  const decoded: unknown = ${unionConversion(definition, 'fromJSON', definitions, env, context)};`,
         code`  return decoded as ${variantUnion};`,
         code`}`,
@@ -1056,7 +1036,7 @@ export function generateModels(
     }
   }
   if (helpers.resolvedSchemas) {
-    body.push(code`const modelSchemas = JSON.parse(${literal(JSON.stringify(helpers.resolvedSchemas))}) as Readonly<Record<string, object>>;`, BLANK);
+    body.push(emitPlanSchemas(helpers.resolvedSchemas), BLANK);
   }
   const validatorsSource = helpers.validatorsSource;
   const aliasesByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));

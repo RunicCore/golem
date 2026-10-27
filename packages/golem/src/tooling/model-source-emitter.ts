@@ -661,12 +661,34 @@ export function wrapRootConversion(
   return code`${rt.conversion.convertModelField}(${literal(direction)}, ${field}, ${convert}, ${input})`;
 }
 
-/** The order of the names in each serde import of a generated model file. */
-export const SERDE_IMPORT_ORDER: readonly string[] = [
+const SERDE_IMPORT_ORDER: readonly string[] = [
   'assertModelValue', 'createObjectCodec', 'isValidModelValue', 'parseJson', 'registerIModelClass', 'requireIModelClass', 'requireObjectCodec',
   'serdeValidates', 'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString',
   'validationUnavailable', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
 ];
+
+/** The order of the names in the model, conversion and serde imports of a generated model file: golem-model and golem-openapi write the same. */
+export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
+  model: [
+    'findGeneratedModelDefinition', 'findGeneratedModelDefinitionForConstructor', 'GeneratedModel', 'GeneratedModelConstructor',
+    'generatedModelFieldsBrand', 'generatedModelResultBrand', 'GeneratedModelWire', 'generatedModelWireBrand', 'ModelInit', 'registerGeneratedModel',
+  ],
+  conversion: [
+    'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'convertModelField', 'convertModelItems',
+    'convertModelTupleItems', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
+    'encodeGeneratedModel', 'endDecode', 'endEncode', 'jsonWithDiscriminator', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
+    'withDiscriminatorValue',
+  ],
+  serde: SERDE_IMPORT_ORDER,
+};
+
+/**
+ * The constant of the plan schemas that the codec runtime of a model file reads. It holds one JSON text, parsed when the
+ * module loads: that keeps own `__proto__` keys, which an object literal would turn into a prototype assignment.
+ */
+export function emitPlanSchemas(schemas: Readonly<Record<string, unknown>>): Code {
+  return code`const modelSchemas = JSON.parse(${literal(JSON.stringify(schemas))}) as Readonly<Record<string, object>>;`;
+}
 
 /** The runtime import lines of what `root` calls: each call lists the modules to write, and a module that the code does not use writes none. */
 export function runtimeLinesOf(root: Code, options: ImportOptions): (...modules: readonly RuntimeModule[]) => readonly Code[] {

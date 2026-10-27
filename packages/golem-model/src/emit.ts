@@ -6,7 +6,8 @@ import {
   blockComment,
   isCode,
   runtimeLinesOf,
-  SERDE_IMPORT_ORDER,
+  emitPlanSchemas,
+  MODEL_IMPORT_ORDER,
   wrapRootConversion,
   type Piece,
   code,
@@ -91,17 +92,6 @@ function richDescriptor(descriptor: ModelConversionDescriptor): RichDescriptor {
 
 function bindingImportPath(binding: { readonly module: string; readonly specifier?: string }, output: string): string {
   return binding.specifier ?? sourceImportPath(binding.module, output);
-}
-
-/**
- * Keep descriptor payloads as JSON data in generated modules.  Embedding a
- * JSON string and parsing it at module load preserves own `__proto__` keys;
- * an object literal would invoke the legacy prototype setter instead.
- */
-function jsonDataExpression(value: unknown): Code {
-  const json = JSON.stringify(value);
-  if (json === undefined) throw new TypeError('Generated descriptor data is not JSON serializable.');
-  return code`JSON.parse(${literal(json)}) as object`;
 }
 
 function isModelDescriptor(value: unknown): value is ModelConversionDescriptor {
@@ -1419,12 +1409,6 @@ interface Projections {
   readonly helpers: ReadonlyMap<string, ProjectionHelper>;
 }
 
-/** The input check that every projection and model decoder calls. */
-const MODEL_OBJECT = helper('modelObject', () => code`function modelObject(json: unknown, name: string): Record<string, unknown> {
-  return ${rt.conversion.requireModelObject}(json, name);
-}
-`);
-
 /** Projections of the same shape (types and expressions) share the functions of the first of them. */
 function buildProjections(context: EmitContext): Projections {
   const { projectionNames } = context;
@@ -1438,7 +1422,7 @@ function buildProjections(context: EmitContext): Projections {
     const fields = identifier(`${name}Fields`);
     const input = (): Code => definitions[name]?.kind === 'object'
       // A body that is not an object takes the value itself; only an object checks that the input is one.
-      ? code`const data = ${helperName(MODEL_OBJECT)}(value, ${literal(name)});`
+      ? code`const data = ${rt.conversion.requireModelObject}(value, ${literal(name)});`
       : code`const data = value as Record<string, unknown>;`;
     const expressions = (): ProjectionExpressions => {
       const found = final.get(name);
@@ -1612,16 +1596,16 @@ function observesValidator(context: EmitContext, specification: ModelSpecificati
 
 const BLANK = code``;
 
-/** The serde functions the file calls, each typed `unknown` to `unknown`. */
-function emitSerdeWrappers(context: EmitContext): Piece[] {
+/** The serde functions the file calls: each import, typed `unknown` to `unknown`. */
+function emitSerdeFunctions(context: EmitContext): Piece[] {
   if (context.serdeBindings.length === 0) return [];
   return [
     ...context.serdeBindings.flatMap((binding) => {
       const names = context.serdeNames.get(binding.id);
       const imported = context.imports.serde.get(binding.id);
       return names && imported ? [
-        code`const ${identifier(names.serialize)} = (value: unknown): unknown => ((${imported.serialize}) as (value: unknown) => unknown)(value);`,
-        code`const ${identifier(names.deserialize)} = (value: unknown): unknown => ((${imported.deserialize}) as (value: unknown) => unknown)(value);`,
+        code`const ${identifier(names.serialize)} = ${imported.serialize} as (value: unknown) => unknown;`,
+        code`const ${identifier(names.deserialize)} = ${imported.deserialize} as (value: unknown) => unknown;`,
       ] : [];
     }),
     BLANK,
@@ -1702,7 +1686,7 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     BLANK,
     ...helpers.flatMap((each) => [each, BLANK]),
     code`function ${decodeModel}(constructor: ${rtType.model.GeneratedModelConstructor}, json: unknown): ${baseName} {`,
-    code`  const values = ${helperName(MODEL_OBJECT)}(json, ${literal(`${specification.name}BaseModel`)});`,
+    code`  const values = ${rt.conversion.requireModelObject}(json, ${literal(`${specification.name}BaseModel`)});`,
     ...(decodeFields.length
       ? [
         code`  const result: Record<string, unknown> = { ...values };`,
@@ -1857,7 +1841,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
   return {
     sources: [...(validatorsSource ? [validatorsSource] : []), ...siblingWireSources],
     lines: [
-      ...(hasPlanSchemas ? [code`const modelSchemas = ${jsonDataExpression(ownPlanSchemas)} as Readonly<Record<string, object>>;`, BLANK] : []),
+      ...(hasPlanSchemas ? [emitPlanSchemas(ownPlanSchemas), BLANK] : []),
       codecRuntime,
     ],
   };
@@ -1867,16 +1851,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
 const IMPORT_OPTIONS: ImportOptions = {
   typeNames: 'inline',
   modules: ['model', 'conversion', 'serde', 'mobx-validation'],
-  order: {
-    model: ['GeneratedModel', 'GeneratedModelConstructor', 'generatedModelWireBrand', 'generatedModelFieldsBrand', 'GeneratedModelWire'],
-    conversion: [
-      'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'decodeCheckedInput',
-      'decodeDetachedInput', 'endDecode', 'endEncode', 'decodeGeneratedModelTrusted', 'encodeGeneratedModel', 'convertModelField',
-      'convertModelItems', 'convertModelTupleItems', 'defineModelProperty', 'unknownDiscriminatorValue', 'withDiscriminatorValue',
-      'jsonWithDiscriminator', 'requireModelObject', 'deserializeDate', 'serializeDate',
-    ],
-    serde: SERDE_IMPORT_ORDER,
-  },
+  order: MODEL_IMPORT_ORDER,
 };
 
 /** Writes the model file of one source: one section after another, in the order of the file. */
@@ -1897,8 +1872,7 @@ export function emitSource(
   const emissions = buildFieldEmissions(context, modelResolvers(context, projections.helpers));
   const codecs = emitCodecSection(context);
   const pieces: Piece[] = [
-    ...emitSerdeWrappers(context),
-    MODEL_OBJECT,
+    ...emitSerdeFunctions(context),
     ...emitProjectionTypes(context, projections),
     ...emitObjectHelperExports(context, projections.helpers),
     ...emitClassModels(context, emissions),
