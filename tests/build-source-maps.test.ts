@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { decodeMappings, pointInlineSourceMap } from '#golem/source-map';
+import { decodeMappings, inlineEmittedSourceMap } from '#golem/source-map';
 import { build, editTsconfig, golemBuild, serdeProject, USE, write } from './support/build-project.js';
 
 interface EmittedMap { readonly sourceRoot?: string; readonly sources: readonly string[]; readonly sourcesContent?: readonly string[]; readonly mappings: string }
@@ -74,12 +74,13 @@ test('a rewritten call maps back with an inlineSources that comes from the comma
   assert.deepEqual(used.map.sourcesContent, [USE]);
 });
 
-test('pointInlineSourceMap names the file of an inline source map that is missing or cannot be read', () => {
-  // protects: T-475 a map that cannot be composed is never written as one that points at the rewritten text
-  const inner = { version: 3, sources: [''], names: [], mappings: 'AAAA' } as const;
-  const code = `export {};\n//# sourceMappingURL=data:application/json;base64,${Buffer.from('not json').toString('base64')}\n`;
-  assert.throws(() => pointInlineSourceMap('build/use.js', code, inner), (error: Error) => error.message.startsWith('golem build could not read the inline source map of build/use.js: '));
-  assert.throws(() => pointInlineSourceMap('build/use.js', 'export {};\n', inner), { message: 'golem build could not find the inline source map at the end of build/use.js.' });
+test('an inline source map replaces the map file comment of the compiler and the file names itself when it has none', () => {
+  // protects: T-488 golem build swapped the data of an inline map by regex; the JavaScript now ends in one comment, built from the composed map
+  const map = '{"version":3,"sources":["use.ts"],"names":[],"mappings":"AAAA"}';
+  const inline = `//# sourceMappingURL=data:application/json;base64,${Buffer.from(map).toString('base64')}`;
+  assert.equal(inlineEmittedSourceMap('build/use.js', 'export {};\n//# sourceMappingURL=use.js.map', map), `export {};\n${inline}`);
+  assert.equal(inlineEmittedSourceMap('build/use.js', 'export {};\r\n//# sourceMappingURL=use.js.map\r\n', map), `export {};\r\n${inline}\r\n`);
+  assert.throws(() => inlineEmittedSourceMap('build/use.js', 'export {};\n', map), { message: 'golem build could not find the source map comment at the end of build/use.js.' });
 });
 
 // The declaration of `f` keeps the import type as written, so the build edits `./a/b` to `./a/b.js` in front of the name `c`.
