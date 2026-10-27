@@ -14,7 +14,7 @@ import type { PipelineState } from './pipeline.js';
 import { applyRewrites } from './rewrite.js';
 import type { FileRewrite } from './rewrite.js';
 import { emitsJavaScript, projectSources, RewriteScanner } from './rewrite-scan.js';
-import { pointDeclarationMap, pointInlineSourceMap, pointSourceMap } from './source-map.js';
+import { inlineEmittedSourceMap, pointDeclarationMap, pointSourceMap } from './source-map.js';
 import type { SourceMapV3 } from './source-map.js';
 import { assertNotSolutionTsconfig, referenceClosure, referencedCommand, referencesRefusal } from './typescript-config.js';
 import * as ts from './typescript-ns.js';
@@ -511,7 +511,9 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
       rewriteMaps.set(path.resolve(source.fileName), rewritten.map);
     }
   }
-  using emitProgram = session.openProgram({ root, sources: parsed.fileNames, configFile, flags: run.tscArguments, overlays, compilerOptionOverrides: EMIT_OPTIONS, onInput: observe });
+  // An inline map is asked of the compiler as a map file, composed like any other, and written into the JavaScript from the composed map.
+  const inline = program.getCompilerOptions().inlineSourceMap === true;
+  using emitProgram = session.openProgram({ root, sources: parsed.fileNames, configFile, flags: run.tscArguments, overlays, compilerOptionOverrides: inline ? { ...EMIT_OPTIONS, sourceMap: true, inlineSourceMap: false } : EMIT_OPTIONS, onInput: observe });
   const emitted = emitProgram.emitToMemory('javascript');
   // A failed emit writes no file: the outputs of the builds before stay as they were. After a failed check the check program already reported what the emit would report.
   if (emitted.emitSkipped || emitted.diagnostics.length > 0) {
@@ -524,19 +526,24 @@ async function buildOnce(session: ts.ProgramSession, run: BuildRun, changed?: re
   }
   // The compiler names the source of each output; the rewrite map is found from that, never from the `sources` text of the map, which sourceRoot and mapRoot change.
   // A map that is composed keeps every field the compiler wrote, and the mappings name the original. A file with no rewrite keeps the map as the compiler wrote it.
-  const inline = emitProgram.getCompilerOptions().inlineSourceMap === true;
+  // With an inline map, the map file is not written: its text is the data URL of the JavaScript file.
   const files = new Map<string, string>();
   for (const [file, text] of emitted.files) {
     if (BUILD_INFO.test(file)) continue;
     const source = emitted.sources.get(file);
     const rewriteMap = source === undefined ? undefined : rewriteMaps.get(path.resolve(source));
-    if (rewriteMap !== undefined && JS_SOURCE_MAP.test(file)) files.set(file, pointSourceMap(text, rewriteMap));
-    else if (rewriteMap !== undefined && inline && JS_OUTPUT.test(file)) files.set(file, pointInlineSourceMap(displayPath(file), text, rewriteMap));
-    else files.set(file, text);
+    const pointed = (mapText: string): string => (rewriteMap === undefined ? mapText : pointSourceMap(mapText, rewriteMap));
+    if (JS_SOURCE_MAP.test(file)) {
+      if (!inline) files.set(file, pointed(text));
+    } else if (inline && JS_OUTPUT.test(file)) {
+      const mapText = emitted.files.get(`${file}.map`);
+      if (mapText === undefined) throw new Error(`golem build: the compiler wrote no source map for ${displayPath(file)}.`);
+      files.set(file, inlineEmittedSourceMap(displayPath(file), text, pointed(mapText)));
+    } else files.set(file, text);
   }
   assertContained(project, configFile, files, written);
   for (const [file, text] of [...written, ...files]) writeOutput(file, text);
-  settleOutputs(run, project, sources, new Map([...declarations?.sources ?? [], ...emitted.sources]));
+  settleOutputs(run, project, sources, new Map([...declarations?.sources ?? [], ...[...emitted.sources].filter(([file]) => files.has(file))]));
   return checkFailed ? checkCode : 0;
 }
 
