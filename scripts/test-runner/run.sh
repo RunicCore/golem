@@ -35,5 +35,5 @@ exec docker run --rm --init ${tty[@]+"${tty[@]}"} ${network[@]+"${network[@]}"} 
   -e TINI_KILL_PROCESS_GROUP=1 \
   -v "$root:/src:ro" -v "$volume:/cache" -v "$root/.cache/test-results:/results" \
   -e PUBLIC_CONTENT_DENIED_TEXT -e PUBLIC_CONTENT_REQUIRE_DENIED_TEXT \
-  -e GOLEM_TYPESCRIPT_ROOT \
+  -e GOLEM_TYPESCRIPT_ROOT -e GOLEM_IMAGE_TAG="$tag" \
   "$tag" "$tier" "$@"
