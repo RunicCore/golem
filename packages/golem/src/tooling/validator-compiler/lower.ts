@@ -24,6 +24,22 @@ const EVALUATION_KEYWORDS: readonly string[] = ['unevaluatedProperties', 'uneval
 
 const TYPE_NAMES: readonly IrTypeName[] = ['string', 'number', 'integer', 'boolean', 'null', 'object', 'array'];
 
+const isStringList = (value: unknown): boolean => Array.isArray(value) && value.every(item => typeof item === 'string');
+
+/** The shape each standard keyword with a plain value must have. A wrong one is an error: lowering would drop it, and the validator would accept more than the schema says. */
+const KEYWORD_SHAPES: readonly { readonly keywords: readonly string[]; readonly accepts: (value: unknown) => boolean; readonly expected: string }[] = [
+  { keywords: ['type'], accepts: value => isTypeName(value) || (Array.isArray(value) && value.length > 0 && value.every(isTypeName)), expected: `a type name or a non-empty list of type names (${TYPE_NAMES.join(', ')})` },
+  { keywords: ['enum'], accepts: Array.isArray, expected: 'a list' },
+  { keywords: ['minLength', 'maxLength', 'minItems', 'maxItems', 'minProperties', 'maxProperties', 'minContains', 'maxContains'], accepts: value => typeof value === 'number' && Number.isInteger(value) && value >= 0, expected: 'a non-negative integer' },
+  { keywords: ['minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum'], accepts: value => finiteNumber(value) !== undefined, expected: 'a finite number' },
+  { keywords: ['multipleOf'], accepts: value => typeof value === 'number' && Number.isFinite(value) && value > 0, expected: 'a finite number above 0' },
+  { keywords: ['pattern', 'format'], accepts: value => typeof value === 'string', expected: 'a string' },
+  { keywords: ['required'], accepts: isStringList, expected: 'a list of strings' },
+  { keywords: ['uniqueItems'], accepts: value => typeof value === 'boolean', expected: 'true or false' },
+  { keywords: ['properties', 'patternProperties', 'dependentSchemas', 'dependentRequired'], accepts: isRecord, expected: 'an object' },
+  { keywords: ['allOf', 'anyOf', 'oneOf', 'prefixItems'], accepts: Array.isArray, expected: 'a list' },
+];
+
 /** A step that hands the same value to another function, so no part of the value is consumed. */
 interface SameValueEdge {
   readonly to: number;
@@ -132,6 +148,13 @@ function isTypeName(value: unknown): value is IrTypeName {
   return TYPE_NAMES.some(name => name === value);
 }
 
+/** True when the value is, or holds at any depth, a number that is not finite. */
+function holdsNonFiniteNumber(value: unknown): boolean {
+  if (typeof value === 'number') return !Number.isFinite(value);
+  if (Array.isArray(value)) return value.some(holdsNonFiniteNumber);
+  return isRecord(value) && Object.values(value).some(holdsNonFiniteNumber);
+}
+
 function finiteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
@@ -162,8 +185,10 @@ interface LoweringResult {
 }
 
 /**
- * Lowers every root, and every schema a root reaches through `$ref`, to validation IR. Schemas are
- * assumed valid against the 2020-12 meta-schema; a keyword whose value has the wrong shape is ignored.
+ * Lowers every root, and every schema a root reaches through `$ref`, to validation IR. A standard keyword
+ * whose value has the wrong shape (see `KEYWORD_SHAPES`), and an `enum` or `const` that holds a number JSON
+ * cannot write, is an error: the callers that read a document check it against the 2020-12 meta-schema, which
+ * leaves non-finite numbers to this step, and `writeSdk` takes a document unchecked.
  */
 export function lower(input: CompileInput, options: Pick<CompileOptions, 'unknownFormats' | 'documentName' | 'locate'>): LoweringResult {
   return new Lowering(input, options).run();
@@ -387,6 +412,7 @@ class Lowering {
       if (UNSUPPORTED_KEYWORDS.has(keyword)) this.report(VALIDATE_UNSUPPORTED_KEYWORD, GolemDiagnosticSeverity.Error, here, keyword, `the keyword ${keyword} is not supported`);
     }
     const cx = this.recordContext(node, here, sameValue);
+    this.checkShapes(cx);
     this.lowerTypeAndValues(cx);
     this.lowerReference(cx);
     this.lowerString(cx);
@@ -433,6 +459,15 @@ class Lowering {
     return { node, here, sameValue, checks: [], child, lowerChild, otherValueFunction, sameValueFunction, inPlaceBranch, malformed };
   }
 
+  /** One error for each standard keyword of the schema whose value has the wrong shape. */
+  private checkShapes({ node, malformed }: RecordContext): void {
+    for (const { keywords, accepts, expected } of KEYWORD_SHAPES) {
+      for (const keyword of keywords) {
+        if (Object.hasOwn(node, keyword) && !accepts(node[keyword])) malformed(keyword, `expected ${expected}`);
+      }
+    }
+  }
+
   private lowerTypeAndValues({ node, checks, malformed }: RecordContext): void {
     const typeList = typeof node.type === 'string' ? [node.type] : Array.isArray(node.type) ? node.type as readonly unknown[] : [];
     const names = typeList.filter(isTypeName);
@@ -448,8 +483,15 @@ class Lowering {
       else checks.push(instance);
     }
 
-    if (Object.hasOwn(node, 'const')) checks.push({ kind: 'literal', values: [node.const] });
-    if (Array.isArray(node.enum)) checks.push({ kind: 'literal', values: node.enum as readonly unknown[] });
+    // The validators write these values as JSON, which turns Infinity and NaN into null: a null would pass.
+    if (Object.hasOwn(node, 'const')) {
+      if (holdsNonFiniteNumber(node.const)) malformed('const', 'expected a JSON value; a number that is not finite has no JSON form');
+      else checks.push({ kind: 'literal', values: [node.const] });
+    }
+    if (Array.isArray(node.enum)) {
+      if (holdsNonFiniteNumber(node.enum)) malformed('enum', 'expected JSON values; a number that is not finite has no JSON form');
+      else checks.push({ kind: 'literal', values: node.enum as readonly unknown[] });
+    }
   }
 
   private lowerReference({ node, here, sameValue, checks }: RecordContext): void {

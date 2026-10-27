@@ -349,3 +349,22 @@ test('an unknown format in an inline operation schema is reported with the opera
   assert.ok(warned.artifacts.length > 0);
   assert.ok((warned.diagnostics ?? []).some(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT' && entry.severity === GolemDiagnosticSeverity.Warning));
 });
+
+test('writeSdk reports each standard keyword with a wrong shape that a document never checked holds, and writes no files', () => {
+  // protects: T-486 a wrong-shape standard keyword is an error, not a looser validator
+  const schema = { type: 'object', properties: {
+    kind: { type: 'integr' }, tag: { enum: 'a' }, name: { type: 'string', minLength: '3' }, code: { type: 'string', pattern: 5 },
+  } };
+  const document = {
+    openapi: '3.1.0', info: { title: 'Shapes', version: '1' },
+    paths: { '/a': { post: { operationId: 'send', requestBody: { content: { 'application/json': { schema } } }, responses: { 200: { description: 'ok' } } } } },
+  };
+  const result = writeSdk(document, { output: path.join(tmpdir(), 'golem-wrong-shapes'), profile: { mobx: false, validation: true } });
+  assert.deepEqual(result.artifacts, []);
+  assert.deepEqual((result.diagnostics ?? []).map(entry => [entry.code, entry.severity, entry.message]), [
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/kind/type: the value of type is not valid: expected a type name or a non-empty list of type names (string, number, integer, boolean, null, object, array)'],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/tag/enum: the value of enum is not valid: expected a list'],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/name/minLength: the value of minLength is not valid: expected a non-negative integer'],
+    ['VALIDATE_UNSUPPORTED_KEYWORD', GolemDiagnosticSeverity.Error, 'operation "send" at /input/properties/body/properties/code/pattern: the value of pattern is not valid: expected a string'],
+  ]);
+});
