@@ -19,17 +19,13 @@ async function generated(t: test.TestContext, schemas: Record<string, unknown>) 
 test('a composition error names the allOf member by its place in the schema, also after a union is spread', async (t) => {
   // protects: T-492 messages keep the original allOf member index
   // The union member holds keywords beside its oneOf, so the spread allOf has one more member before the closed one.
-  await assert.rejects(generated(t, {
-    Visit: {
-      type: 'object',
-      properties: {
-        m: {
-          allOf: [
-            { type: 'object', properties: { b: text }, oneOf: [tagged('k'), tagged('l')] },
-            { type: 'object', additionalProperties: false, properties: { a: text } },
-          ],
-        },
-      },
-    },
-  }), /because allOf member 1 sets additionalProperties: false/);
+  // The nested row spreads a union inside the variants of the first, so the shift happens twice.
+  const closed = { type: 'object', additionalProperties: false, properties: { a: text } };
+  const rows = [
+    { union: { type: 'object', properties: { b: text }, oneOf: [tagged('k'), tagged('l')] } },
+    { union: { type: 'object', properties: { b: text }, oneOf: [{ type: 'object', properties: { c: text }, oneOf: [tagged('k'), tagged('l')] }, tagged('m')] } },
+  ];
+  for (const { union } of rows) {
+    await assert.rejects(generated(t, { Visit: { type: 'object', properties: { m: { allOf: [union, closed] } } } }), /because allOf member 1 sets additionalProperties: false/);
+  }
 });

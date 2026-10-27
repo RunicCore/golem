@@ -263,9 +263,10 @@ function codedConflict(thrown: unknown): unknown {
   return thrown;
 }
 
-/** The three errors that golem's emitters throw for a schema the user wrote; any other throw is a golem fault and passes through. */
+/** The errors that golem's emitters and resolvers throw for a schema the user wrote; any other throw is a golem fault and passes through. */
 function isConversionConflict(thrown: unknown): boolean {
-  return thrown instanceof CompositionConflictError
+  return thrown instanceof CompositionError
+    || thrown instanceof CompositionConflictError
     || thrown instanceof ObjectUnionDiscriminatorError
     || thrown instanceof AmbiguousUnionConversionError;
 }

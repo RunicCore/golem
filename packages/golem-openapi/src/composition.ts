@@ -144,7 +144,7 @@ function resolveObjects<S>(
   if (deciding.length === 0) return { kind: 'members' };
   const constraints = members.flatMap(({ descriptor }) => isConstraintOnlyPart(descriptor) ? descriptor.constraints ?? [] : []);
   if (position === 'field') {
-    const distributed = distributeUnion(schema, scope, nested, reader);
+    const distributed = distributeUnion(schema, scope, nested, reader, originalMembers);
     if (distributed) return distributed;
   }
   const rule = slotRule(reader);
@@ -214,6 +214,7 @@ function distributeUnion<S>(
   scope: S,
   nested: S,
   reader: CompositionReader<S>,
+  originalMembers?: readonly number[],
 ): Composition<S> | undefined {
   const members = Array.isArray(schema.allOf) ? schema.allOf : [];
   const unions = members.flatMap((member, index) =>
@@ -233,8 +234,9 @@ function distributeUnion<S>(
   const rest = Object.keys(beside).length ? [beside] : [];
   const objects: ObjectComposition<S>[] = [];
   for (const variant of variants) {
-    // The rebuilt allOf has shifted positions; its messages name each member by the position in the schema's own allOf.
-    const rebuilt = members.flatMap((member, at) => at === index ? [...rest, variant].map((replacement) => ({ member: replacement, at })) : [{ member, at }]);
+    // The rebuilt allOf has shifted positions; its messages name each member by the position in the schema's own allOf,
+    // also when this allOf is itself a rebuilt one.
+    const rebuilt = members.flatMap((member, at) => at === index ? [...rest, variant].map((replacement) => ({ member: replacement, at: originalMembers?.[at] ?? at })) : [{ member, at: originalMembers?.[at] ?? at }]);
     const composed = resolveObjects({ ...schema, allOf: rebuilt.map(({ member }) => member) }, scope, reader, 'field', rebuilt.map(({ at }) => at));
     if (composed.kind === 'rejected') return composed;
     if (composed.kind !== 'object') return unspread;
