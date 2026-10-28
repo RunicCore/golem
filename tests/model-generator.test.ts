@@ -744,7 +744,7 @@ export type TMoney = IObject<{ currency: string }>;
   );
 });
 
-test('a TValidation function of a folder outside the root gets an id relative to the root', (t: TestContext) => {
+test('a TValidation function of a folder outside the root is imported by a path that does not depend on the location', (t: TestContext) => {
   // The ids are written into files that a repository keeps, so the same sources give the same files at any location.
   const generateAtNewLocation = (): ReadonlyMap<string, string> => {
     const outer = sharedWorkspace(t);
@@ -764,7 +764,7 @@ export type TOrder = IModel<{ count: number & TValidation<typeof isEven> }>;
     return new Map(artifacts.map(artifact => [path.relative(root, artifact.path), artifact.content]));
   };
   const first = generateAtNewLocation();
-  assert.match(first.get('src/order.model.generated.ts') ?? '', /\[\\"\.\.\/shared\/rules\.ts#isEven\\"\]/, 'the id is the path from the root of the app to the function');
+  assert.match(first.get('src/generated/models/models.validators.generated.ts') ?? '', /import \{ isEven as \w+ \} from "\.\.\/\.\.\/\.\.\/\.\.\/shared\/rules\.js"/, 'the validators file imports the function by its path from the generated file to the shared folder');
   assert.deepEqual(generateAtNewLocation(), first);
 });
 

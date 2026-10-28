@@ -141,7 +141,8 @@ test('a parent module names and defines the validators of its own model, not tho
     nestedGenerated: (id) => identifier(`${id}Model`),
     validatorName: (id) => { asked.push(id.replace(/_[0-9a-f]{8}$/, '')); return identifier(`validate_${id.replace(/[^\w$]/g, '_')}`); },
   });
-  assert.deepEqual(asked, ['Owner', 'Owner'], 'validate and assert each name the validator of the parent, none of the nested model');
+  // The parse guard of a codec with one schema names the validator of the parent too, so the count is not fixed.
+  assert.ok(asked.length > 0 && asked.every((id) => id === 'Owner'), 'every validator named is the parent\'s, none is the nested model\'s');
   const checks = [...source.matchAll(/^export (?:function|const) ((?:validate|assert)\w+)/gm)].map((match) => match[1]);
   assert.deepEqual(checks, ['validateOwner', 'assertOwner'], 'the module defines no check of the nested model');
 });
