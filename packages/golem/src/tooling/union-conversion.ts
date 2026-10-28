@@ -5,7 +5,8 @@
 
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
 import { MODEL_FIELDS_KEY } from '../schema-keywords.js';
-import { code, join, literal, sameCode, type Code } from './code.js';
+import { createHash } from 'node:crypto';
+import { code, helperName, identifier, join, literal, render, sameCode, selfPlacedHelper, type Code, type Helper } from './code.js';
 import { rt } from './rt.js';
 import {
   emitArrayItems,
@@ -231,6 +232,91 @@ export interface DispatchOptions {
  *   with none, decoding leaves it, and encoding writes null or undefined unchanged and rejects every other value.
  */
 export function emitDispatch(options: DispatchOptions): Code {
+  const selected = options.tagLocal === undefined ? selectedDispatch(options) : undefined;
+  return selected ?? inlineDispatch(options);
+}
+
+/**
+ * The variable that a selected dispatch assigns the branch index to. Its tests read it at once, before any branch runs, so
+ * a branch that holds another selected dispatch may assign it again.
+ */
+const SELECTED_INDEX = selfPlacedHelper('__golemVariant', () => code`let __golemVariant = 0;`);
+
+/** A class Code the selector can repeat in its own definition: a name that no slot decides. */
+function isPlainName(name: Code): boolean {
+  return name.parts.every((part) => part.kind === 'text' || part.kind === 'runtime' || part.kind === 'imported');
+}
+
+/**
+ * The selector of a dispatch: a function of the file that returns the index of the branch a value takes, `-1` for a value
+ * that is no object, and the index after the last branch for the declared default. It throws for a tag that selects no
+ * branch (or no default) or contradicts the class of an instance. One selector stands for every writer of the union, so the
+ * class guards and the tag tests exist once. Its id comes from its text, so the files of two TypeScript versions agree.
+ */
+function variantSelector(options: DispatchOptions): Helper {
+  const { property, branches, rest, fallback, fallbackClass, restIsDate } = options;
+  const encode = options.direction !== 'decode';
+  const input = identifier('__golemValue');
+  const tag = identifier('__golemTag');
+  const key = literal(property);
+  const propertyRead = code`(${input} as unknown as Record<string, unknown>)[${key}]`;
+  const rejecting = (shown: Code): Code => code`${rt.conversion.unknownDiscriminatorValue}(${key}, ${shown}, ${encode ? code`'serialize'` : code`'deserialize'`})`;
+  const classes = [...branches.flatMap((branch) => branch.className ? [branch.className] : []), ...(fallback && fallbackClass ? [fallbackClass] : [])];
+  const statements: Code[] = [
+    encode && rest === undefined
+      ? code`if (!(${objectValueExpression(input)})) return ${input} == null ? -1 : ${rejecting(propertyRead)};`
+      : code`if (!(${objectValueExpression(input, restIsDate)})) return -1;`,
+    // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag selects no branch.
+    code`const ${tag} = ${encode ? propertyRead : presentValueCode(input, key, propertyRead)};`,
+  ];
+  branches.forEach((branch, index) => {
+    const self = branch.className;
+    if (!self) return;
+    const subclasses = classes.filter((other) => !sameCode(other, self))
+      .map((other) => code` && !((${input} as object) instanceof ${other} && ${other}.prototype instanceof ${self})`);
+    statements.push(code`if ((${input} as object) instanceof ${self}${join(subclasses)}) return ${tag} === undefined || ${discriminatorMatch(tag, branch.values)} ? ${literal(index)} : ${rejecting(tag)};`);
+  });
+  branches.forEach((branch, index) => statements.push(code`if (${discriminatorMatch(tag, branch.values)}) return ${literal(index)};`));
+  statements.push(fallback === undefined ? code`return ${rejecting(tag)};` : code`return ${literal(branches.length)};`);
+  const body = join(statements, code` `);
+  const id = `__golemVariant_${createHash('sha256').update(render(body)).digest('hex').slice(0, 10)}`;
+  return selfPlacedHelper(id, () => code`function ${identifier(id)}(${input}: unknown): number { ${body} }`);
+}
+
+/**
+ * `emitDispatch` through a selector, when a branch is a model class: the guard of each class would otherwise stand in every
+ * writer. Each writer then tests the index the selector returns and converts the branch it names.
+ */
+function selectedDispatch(options: DispatchOptions): Code | undefined {
+  const { expression: value, branches, fallback, fallbackClass } = options;
+  const classes = [...branches.flatMap((branch) => branch.className ? [branch.className] : []), ...(fallback && fallbackClass ? [fallbackClass] : [])];
+  if (!branches.some((branch) => branch.className) || !classes.every(isPlainName)) return undefined;
+  const encode = options.direction !== 'decode';
+  const key = literal(options.property);
+  const tag = code`(${value} as unknown as Record<string, unknown>)[${key}]`;
+  const json = (convert: Code, tagValue: Code): Code => code`${rt.conversion.jsonWithDiscriminator}(${convert}, ${literal(JSON.stringify(options.property))}, ${tagValue})`;
+  // Encoding always writes the selected tag, so the wire value decodes to the same variant. An instance may hold no tag, and
+  // then it takes the first value of its branch; a plain object the selector took by its tag holds one.
+  const arm = (branch: DispatchBranch): Code => {
+    const { convert } = branch;
+    if (!encode) return convert;
+    const tagValue = branch.className ? code`(${tag} ?? ${literal(branch.values[0])})` : tag;
+    if (options.direction === 'encode-value') return code`${rt.conversion.withDiscriminatorValue}(${convert}, ${key}, ${tagValue})`;
+    if (branch.writesTag === 'always') return convert;
+    if (branch.writesTag === false) return json(convert, tagValue);
+    return branch.className ? code`(${tag} === undefined ? ${json(convert, literal(branch.values[0]))} : ${convert})` : convert;
+  };
+  const outside = options.rest ?? (encode ? (options.nullish === undefined ? value : options.nullish) : value);
+  const selector = helperName(variantSelector(options));
+  const index = helperName(SELECTED_INDEX);
+  // The last arm needs no test: the selector returns no other index.
+  const last = branches.length - (fallback === undefined ? 1 : 0);
+  let chain = fallback ?? arm(branches[last]);
+  for (let at = last - 1; at >= 0; at--) chain = code`${index} === ${literal(at)} ? (${arm(branches[at])}) : (${chain})`;
+  return code`((${index} = ${selector}(${value})) < 0 ? (${outside}) : (${chain}))`;
+}
+
+function inlineDispatch(options: DispatchOptions): Code {
   const { expression, property, branches, direction, tagLocal } = options;
   const value = expression;
   const encode = direction !== 'decode';
