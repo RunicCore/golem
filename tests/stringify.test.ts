@@ -226,6 +226,27 @@ test('tagged generated-model unions stringify the selected interned branch', () 
   assert.equal(stringifyContactBook(withPhone as never), JSON.stringify(withPhone));
 });
 
+test('a root union of plain objects decodes by its tag with validation off, and an unknown tag throws', () => {
+  // protects: T-643 a decoder that holds a tag local in its function body (decodeLocals) is emitted and runs
+  const variant = (kind: string): ModelTypeDescriptor => ({
+    kind: 'object',
+    properties: { kind: { kind: 'literal', value: kind }, added: { kind: 'date' } },
+    required: ['kind', 'added'],
+    additionalProperties: false,
+  });
+  const contact: ModelTypeDescriptor = {
+    kind: 'union',
+    variants: [variant('email'), variant('phone')],
+    discriminator: { propertyName: 'kind', variants: [{ values: ['email'] }, { values: ['phone'] }] },
+  };
+  const graph = createSchemaGraph();
+  graph.intern(contact, 'Contact');
+  graph.seal();
+  const { fromWireFormatContact } = instantiateRuntime(emitCodecRuntimeText(graph, { validationEnabled: false }));
+  assert.deepEqual(fromWireFormatContact({ kind: 'phone', added: '2024-05-06T07:08:09.000Z' }), { kind: 'phone', added: new Date('2024-05-06T07:08:09.000Z') });
+  assert.throws(() => fromWireFormatContact({ kind: 'fax', added: '2024-05-06T07:08:09.000Z' }), LibError);
+});
+
 test('an explicit union tag table must list every variant', () => {
   const graph = createSchemaGraph();
   graph.intern({ kind: 'object', properties: { kind: { kind: 'string' } }, required: ['kind'], additionalProperties: false }, 'Cat');

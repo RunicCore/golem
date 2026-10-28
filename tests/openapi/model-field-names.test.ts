@@ -1,5 +1,6 @@
 import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
@@ -151,5 +152,27 @@ for (const validation of [false, true]) {
     const wire = { parseJson: 'a', beginDecode: 'b', registerIModelClass: 'c' };
     const decoded = decodeGeneratedModel(EchoModel, wire);
     assert.deepEqual(encodeGeneratedModel(decoded), wire);
+  });
+}
+
+for (const validation of [false, true]) {
+  test(`an operation and fields named like the locals of generated code generate, compile and decode (validation ${validation})`, async t => {
+    // protects: T-643 R-59 a document name never takes the form of a local ($v, $k): the name allocator adds a suffix
+    const output = path.join(createFixtureProject(t, 'golem-openapi-local-names-'), 'sdk');
+    const item = { type: 'object', required: ['$k', '$v0'], properties: { $k: { type: 'string' }, $v0: { type: 'string' }, when: { type: 'string', format: 'date-time' } } };
+    await generateMaterializedSdk(documentBase('3.1.0', {
+      paths: { '/ping': { get: { operationId: '$v', responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Holder' } } } } } } } },
+      components: { schemas: { Holder: { type: 'object', required: ['item', 'items'], properties: { item: item, items: { type: 'array', items: item } } } } },
+    }), { output, name: 'LocalNames', profile: { mobx: false, validation } });
+    compileStrictUnusedSdk(output);
+    const sdk = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'local names SDK');
+    const HolderModel = sdk.HolderModel;
+    assert.ok(isGeneratedModelClass(HolderModel));
+    const wire = { item: { $k: 'a', $v0: 'b', when: '2024-05-06T07:08:09.000Z' }, items: [{ $k: 'c', $v0: 'd', when: '2024-05-06T07:08:09.000Z' }] };
+    const decoded = requireRecord(decodeGeneratedModel(HolderModel, wire), 'holder');
+    assert.ok(requireRecord(decoded.item, 'item').when instanceof Date);
+    assert.deepEqual(encodeGeneratedModel(decoded), wire);
+    const written = fs.readdirSync(output, { recursive: true, encoding: 'utf8' }).filter(file => file.endsWith('.ts') && !file.endsWith('.d.ts') && !file.startsWith('dist') && !file.startsWith('node_modules'));
+    assert.match(written.map(file => fs.readFileSync(path.join(output, file), 'utf8')).join('\n'), /\$v_/);
   });
 }

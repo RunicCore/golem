@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { displayPath } from '../generator-api.js';
+import { hasLocalForm, localFormMessage } from '../names.js';
 import * as ts from '../typescript-ns.js';
 import { canonicalFilename, portableRelativeFilename } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
@@ -313,6 +314,8 @@ function valueBindingForSymbol(
       `${kind} function must be exported so generated code can call it.`,
     );
   }
+  // Only a validation function is imported under its own name; the serde functions are imported under an alias.
+  if (kind === 'validation' && hasLocalForm(exportName)) throw context.diagnostic(node, '1088', localFormMessage(exportName, `The ${kind} function`));
   const resolved = packageSpecifier(canonicalFilename(sourceFile.fileName), context.importer ?? context.sourceFile.fileName, context.identityRoot);
   if (resolved.kind !== 'package' && context.isModelSource?.(canonicalFilename(sourceFile.fileName))) {
     // The shared generated module imports this function; from a model file that would close a cycle with the

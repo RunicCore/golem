@@ -29,7 +29,6 @@ import {
   lineBreak,
   literal,
   localCode,
-  localName,
   nameOf,
   NameTable,
   nameSlot,
@@ -382,7 +381,7 @@ function modelPropertyAccess(name: string): Code {
 
 /** The local that holds one field's value, read once. */
 function modelPresentLocal(index: number): Code {
-  return localCode(localName('value', index));
+  return localCode('value', index);
 }
 
 /**

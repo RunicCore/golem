@@ -6,7 +6,7 @@
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
 import { MODEL_FIELDS_KEY } from '../schema-keywords.js';
 import { createHash } from 'node:crypto';
-import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, localName, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
+import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
 import { rt } from './rt.js';
 import {
   emitArrayItems,
@@ -57,7 +57,7 @@ export function presentValueCode(object: Code, key: Code, read: Code): Code {
 }
 
 /** The key that `presentKeysCode` reads in each turn of its pass. */
-export const PRESENT_KEY = localCode(localName('key'));
+export const PRESENT_KEY = localCode('key');
 
 /**
  * One `Object.keys` pass that gives each `[key, local]` pair its value in a `let` local, or `undefined` when the key is
@@ -245,8 +245,8 @@ export function emitDispatch(options: DispatchOptions): Code {
 }
 
 /** The local of a union function that holds the branch index, and its parameter. */
-const BRANCH_INDEX = localCode(localName('index'));
-const UNION_PARAMETER = localCode(localName('union'));
+const BRANCH_INDEX = localCode('index');
+const UNION_PARAMETER = localCode('union');
 
 /**
  * The variable that a dispatch kept in its writer assigns the branch index to. Its tests read it at once, before any branch
@@ -287,8 +287,8 @@ function isPlainName(name: Code): boolean {
 function variantSelector(options: DispatchOptions): Helper {
   const { property, branches, rest, fallback, fallbackClass, restIsDate } = options;
   const encode = options.direction !== 'decode';
-  const input = localCode(localName('value'));
-  const tag = localCode(localName('tag'));
+  const input = localCode('value');
+  const tag = localCode('tag');
   const key = literal(property);
   const propertyRead = code`(${input} as unknown as Record<string, unknown>)[${key}]`;
   const rejecting = (shown: Code): Code => code`${rt.conversion.unknownDiscriminatorValue}(${key}, ${shown}, ${encode ? code`'serialize'` : code`'deserialize'`})`;

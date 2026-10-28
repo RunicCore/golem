@@ -938,3 +938,40 @@ export type TMoney = IObject<{ currency: string }>;
   );
 });
 
+
+test('a validation function exported under the form of a generated local stops generation with RUNM1088 at its use', (t: TestContext) => {
+  // protects: T-643 R-59 a user name with the form of a local ($v0) is a diagnostic with file and line, never a raw TypeError
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-local-form-', name: 'local-form', linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, {
+    'rules.ts': tsSource`export function $v0(value: number): boolean | string { return value % 2 === 0 || 'must be even'; }
+`,
+    'a.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
+import { $v0 } from './rules.js';
+export type TA = IModel<{ n: number & TValidation<typeof $v0> }>;
+`,
+  });
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    (error: unknown) => error instanceof Error && error.message.endsWith(
+      'a.model.ts:4:51 RUNM1088: The validation function is named "$v0", which has the form of a local of generated code (a $, one lowercase letter and digits). Generated code cannot import it under that name. Rename it.',
+    ),
+  );
+});
+
+test('serde functions exported under the form of a generated local are imported under an alias and generate', (t: TestContext) => {
+  // protects: T-643 R-59 only a name that generated code binds is refused; an aliased import binds the alias
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-local-form-', name: 'local-form', linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, {
+    'codecs.ts': tsSource`export function $e(value: bigint): string { return value.toString(); }
+export function $d(wire: string): bigint { return BigInt(wire); }
+`,
+    'a.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import type { TSerde } from '@exprtlabs/golem/tags';
+import { $d, $e } from './codecs.js';
+export type TA = IModel<{ big: bigint & TSerde<typeof $e, typeof $d> }>;
+`,
+  });
+  const source = generate({ root, profile: { mobx: false, validation: false } }).artifacts.find(artifact => artifact.path.endsWith('a.model.generated.ts'))?.content ?? '';
+  assert.match(source, /import \{ \$e as __golemSerialize0Source \} from "\.\/codecs\.js";\nimport \{ \$d as __golemDeserialize0Source \} from "\.\/codecs\.js";/);
+});

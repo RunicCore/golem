@@ -27,6 +27,18 @@ export const RESERVED_MODEL_MEMBERS: readonly string[] = Object.freeze([
 
 const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
 
+/** The form of the locals of generated functions (`$v0`, `$k`): a `$`, one lowercase letter and digits. No name of a file may have it. */
+const LOCAL_FORM = /^\$[a-z]\d*$/;
+
+export function hasLocalForm(name: string): boolean {
+  return LOCAL_FORM.test(name);
+}
+
+/** The RUNM1088 message for a name a user wrote that has the form of a local. */
+export function localFormMessage(name: string, what: string): string {
+  return `${what} is named "${name}", which has the form of a local of generated code (a $, one lowercase letter and digits). Generated code cannot import it under that name. Rename it.`;
+}
+
 /** PascalCase identifier derived from arbitrary source text. */
 export function identifier(value: unknown, fallback = 'Value'): string {
   const words = String(value ?? '')
@@ -37,7 +49,8 @@ export function identifier(value: unknown, fallback = 'Value'): string {
     .filter(Boolean);
   let result = words.map((word) => word[0].toUpperCase() + word.slice(1)).join('') || fallback;
   if (!/^[A-Za-z_$]/.test(result)) result = `_${result}`;
-  return result;
+  // A name of the file must not have the form of a local of generated code.
+  return hasLocalForm(result) ? `${result}_` : result;
 }
 
 /** camelCase identifier derived from arbitrary source text. */
@@ -58,7 +71,7 @@ export function propertyName(value: string): string {
  */
 export function bindingName(requested: string, reserved: ReadonlySet<string> = RESERVED_BINDING_NAMES): string {
   let name = requested;
-  while (reserved.has(name)) name = `${name}_`;
+  while (reserved.has(name) || hasLocalForm(name)) name = `${name}_`;
   return name;
 }
 

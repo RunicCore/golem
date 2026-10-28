@@ -25,7 +25,6 @@ import {
   join,
   literal,
   localCode,
-  localName,
   propertyKey,
   rt,
   rtType,
@@ -1510,7 +1509,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const name = literal(field.getName());
       // The JSON view, read once into a local by one Object.keys pass. Decode reads the own copy in `result`, so a
       // getter of the input runs once.
-      const input = localCode(localName('value', index));
+      const input = localCode('value', index);
       const descriptor = descriptors.get(field.getName());
       if (!descriptor) throw new Error(`Missing descriptor for field ${field.getName()}.`);
       const emitDecode = (value: Code): Code => emitModelFromJSON(

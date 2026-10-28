@@ -20,7 +20,7 @@ export { type TupleConversionDescriptor } from './sequence-conversion.js';
 export { presentKeysCode } from './union-conversion.js';
 /** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
-  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importLines, importSet, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, localName, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
+  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importLines, importSet, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
   type Code, type Helper, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
 export { rt, rtType, type RuntimeModule } from './rt.js';
@@ -38,7 +38,7 @@ export {
   type Rejected,
   type SlotRule,
 } from './composition.js';
-import { blockComment, bindInput, code, codeKey, identifier, importLines, importSet, inputOf, inputSlot, isEmpty, join, literal, localCode, localName, sameCode, type Code, type Helper, type ImportOptions } from './code.js';
+import { blockComment, bindInput, code, codeKey, identifier, importLines, importSet, inputOf, inputSlot, isEmpty, join, literal, localCode, sameCode, type Code, type Helper, type ImportOptions } from './code.js';
 import { rt, type RuntimeModule } from './rt.js';
 import { MODEL_MANIFEST_FILENAME, MODEL_MANIFEST_MARKER } from './model-manifest.js';
 export { assertUniqueExportNames, type PublicModule } from './names.js';
@@ -64,9 +64,9 @@ export { AmbiguousUnionConversionError, descriptorNeedsConversion, ObjectUnionDi
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
 /** The local that a projection decoder reads the field at `index` into. */
-const projectionLocal = (index: number): Code => localCode(localName('projected', index));
+const projectionLocal = (index: number): Code => localCode('projected', index);
 /** The array that a projection decoder collects the keys it does not declare in. */
-const EXTRA_KEYS = localCode(localName('extra'));
+const EXTRA_KEYS = localCode('extra');
 
 /**
  * Each answer of a resolver is Code that holds the callee as a part, so the file imports it. A resolver reads the value it

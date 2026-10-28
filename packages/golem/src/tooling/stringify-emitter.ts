@@ -11,7 +11,7 @@ import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import {
-  aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, localName, readShape, sameCode,
+  aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
 import { nodeQueryFields } from './query-fields.js';
@@ -131,7 +131,7 @@ interface EmitCtx
   readonly wireStringifyIds?: ReadonlySet<string>;
   /** Nodes being inlined into the current wire stringify, to reject unbounded expansion. */
   readonly wireInlining?: ReadonlySet<string>;
-  readonly inlineLocals?: Set<string>;
+  readonly inlineLocals?: Set<Code>;
   /**
    * Nodes whose `stringify<Id>Core` and `toWireFormat<Id>Core` this module emits.
    * A nested trusted call to one skips its validating wrapper.
@@ -152,7 +152,7 @@ interface EmitCtx
   /** The name of the module constant of each patternProperties pattern, by pattern text; the module declares them all once. */
   readonly patternConstants?: Map<string, Code>;
   /** Locals a decoder assigns; the function that holds the decoder declares them. Without it the decoder re-reads. */
-  readonly decodeLocals?: string[];
+  readonly decodeLocals?: Code[];
   /**
    * Reads a union above holds in a local; a decoder below reads the input of the read where it would read the property.
    * A read is known by the text of its expression, so a scope that binds a new parameter (an item, a field source, a
@@ -344,20 +344,19 @@ function emitInlineObjectField(
   const { read, shape } = accessRead(expression, name);
   const input = inputSlot(name, shape);
   const piece = emitValue(property, inputOf(input), ctx);
-  const inlineName = localName('inlineField', ctx.inlineLocals?.size ?? index);
-  const local = localCode(inlineName);
+  const local = localCode('inlineField', ctx.inlineLocals?.size ?? index);
   // An optional field reads its input once more, in the `!== undefined` test.
   const bound = bindRead(piece, input, read, local, required ? 0 : 1);
   const member = code`${memberPrefix(name, leadingComma)} + ${bound.code}`;
   if (!bound.local) return required ? member : code`(${read} !== undefined ? ${member} : '')`;
-  ctx.inlineLocals?.add(inlineName);
+  ctx.inlineLocals?.add(local);
   return required
     ? code`(${local} = ${read}, ${member})`
     : code`(${local} = ${read}, (${local} !== undefined ? ${member} : ''))`;
 }
 
 function inlineLocalLines(ctx: EmitCtx): Code[] {
-  return [...(ctx.inlineLocals ?? [])].map((name) => code`  let ${localCode(name)}: unknown;`);
+  return [...(ctx.inlineLocals ?? [])].map((local) => code`  let ${local}: unknown;`);
 }
 
 /**
@@ -594,8 +593,8 @@ function emitLenientObjectStringify(
   const lines: Code[] = [];
   const fields = properties.map(([name, property], index) => {
     const { read } = accessRead(inputOf(value), name);
-    const field = localCode(localName('field', index));
-    const piece = localCode(localName('piece', index));
+    const field = localCode('field', index);
+    const piece = localCode('piece', index);
     lines.push(
       code`  const ${field} = ${read};`,
       code`  const ${piece} = ${field} !== undefined ? ${emitValue(property, field, ctx)} : undefined;`,
@@ -672,7 +671,7 @@ function emitObjectStringify(
     const { read, shape } = accessRead(value, property);
     const input = inputSlot(property, shape);
     const piece = emitValue(schema, inputOf(input), ctx);
-    const local = localCode(localName('value', index));
+    const local = localCode('value', index);
     // An optional field reads its input once more, in the `!== undefined` test.
     const bound = bindRead(piece, input, read, local, required.has(property) ? 0 : 1);
     const key = memberPrefix(property, false);
@@ -879,12 +878,12 @@ function emittedFallible(before: number, decoded: Code, ctx: EmitCtx): boolean {
  * A decoder of the identifier `input` as a module-level function, so converting a value allocates no closure. `named` says the converter
  * is a function name, which a caller can call on the value instead of writing the decoder in place.
  */
-function hoistConverter(input: Code, decoded: Code, locals: readonly string[], ctx: EmitCtx): { readonly converter: Code; readonly named: boolean } {
+function hoistConverter(input: Code, decoded: Code, locals: readonly Code[], ctx: EmitCtx): { readonly converter: Code; readonly named: boolean } {
   if (sameCode(decoded, code`(${input} instanceof Date ? ${input} : ${rt.conversion.deserializeDate}(${input}))`)) {
     return { converter: rt.conversion.deserializeDate, named: true };
   }
   if (!ctx.hoisted) return { converter: code`(${input}) => (${decoded})`, named: false };
-  const declarations = locals.length > 0 ? code`  let ${join(locals.map((name) => code`${localCode(name)}: unknown`), code`, `)};\n` : code``;
+  const declarations = locals.length > 0 ? code`  let ${join(locals.map((local) => code`${local}: unknown`), code`, `)};\n` : code``;
   const body = code`(${input}: unknown): unknown {\n${declarations}  return (${decoded});\n}\n`;
   const known = ctx.hoisted.bodies.find((candidate) => sameCode(candidate.body, body));
   if (known) return { converter: identifier(known.name), named: true };
@@ -1142,7 +1141,7 @@ function emitTaggedVariantUnion(
   // are decoded with that read known, so they use the local where they would read the tag.
   const tagLocal = dispatch && direction === 'decode' && ctx.decodeLocals && readShape(value) === 'name'
     && variants.every((variant) => variantClassName(variant, ctx) === undefined)
-    ? localName('tag', ctx.decodeLocals.length)
+    ? localCode('tag', ctx.decodeLocals.length)
     : undefined;
   if (tagLocal) ctx.decodeLocals?.push(tagLocal);
   const tag = inputSlot('tag', 'name');
@@ -1151,7 +1150,7 @@ function emitTaggedVariantUnion(
     : ctx;
   const conversions = variants.map((variant) => {
     const converted = convert(variant, scope);
-    return tagLocal ? bindInput(converted, tag, localCode(tagLocal)) : converted;
+    return tagLocal ? bindInput(converted, tag, tagLocal) : converted;
   });
   if (!dispatch) {
     if (direction !== 'encode-json' && conversions.every((converted) => sameCode(converted, value))) return value;
@@ -1165,7 +1164,7 @@ function emitTaggedVariantUnion(
     direction,
     // A branch that assigned a local of the writer's function (see `writerLocals`) cannot stand in a function of its own.
     ...(writerLocals(ctx) === options.localsBefore ? { standalone: true as const } : {}),
-    ...(tagLocal === undefined ? {} : { tagLocal: localCode(tagLocal) }),
+    ...(tagLocal === undefined ? {} : { tagLocal }),
     ...(direction === 'encode-json' ? { nullish: code`'null'` } : {}),
     ...(rest === undefined ? {} : { rest, restIsDate }),
     ...(fallback === undefined ? {} : { fallback }),
@@ -1482,9 +1481,9 @@ function emitDecodedRecord(
 }
 
 /** Parameter of an inline decoder that reads a nested property once; inner decoders shadow it. */
-const NESTED_SOURCE = localCode(localName('source'));
+const NESTED_SOURCE = localCode('source');
 /** The value of an undeclared key in a loop over the keys of an object. */
-const EXTRA_VALUE = localCode(localName('extra'));
+const EXTRA_VALUE = localCode('extra');
 
 function emitFillPropertyWrite(name: string, decoded: Code, indent: number): Code {
   if (name === '__proto__') {
@@ -1612,8 +1611,8 @@ function emitFillFunction(
     // The JSON view: a wire field is present when it is own, enumerable and not undefined. Where a write depends on
     // presence, the field is read into a local by the one Object.keys pass; a carried required field reads the wire.
     const optional = !required.has(name);
-    const presentName = localCode(localName('present', index));
-    const fill = emitFillValue(property, presentName, 'name', field, localCode(localName('wire', index)), ctx);
+    const presentName = localCode('present', index);
+    const fill = emitFillValue(property, presentName, 'name', field, localCode('wire', index), ctx);
     const proto = name === '__proto__';
     if (fill.converted || fill.checked || proto) needsFill = true;
     if (fill.fallible || fill.checked) fallible = true;
@@ -1635,7 +1634,7 @@ function emitFillFunction(
       if (!optional) {
         // A required field that is carried reads the wire itself, so it is written against that read.
         const direct = accessRead(inputOf(wireRoot), name);
-        const carried = emitFillValue(property, direct.read, direct.shape, field, localCode(localName('wire', index)), ctx);
+        const carried = emitFillValue(property, direct.read, direct.shape, field, localCode('wire', index), ctx);
         const onWire = (piece: Code): Code => bindInput(piece, wireRoot, code`wire`);
         propertyWrites.push(...carried.statements.map((row) => indented(onWire(row), 2)), ...write(onWire(carried.value)));
       } else {
@@ -1678,7 +1677,7 @@ function emitFillFunction(
       // A pattern without a field schema carries the value by reference.
       const value: FillValue = schema === undefined
         ? { statements: [], value: code`${rt.conversion.assertPropertyAcyclic}(wire, key, ${EXTRA_VALUE})`, converted: false, checked: true, fallible: true }
-        : emitFillValue(schema, EXTRA_VALUE, 'name', identifier('key'), localCode(localName('value')), ctx);
+        : emitFillValue(schema, EXTRA_VALUE, 'name', identifier('key'), localCode('value'), ctx);
       if (value.converted || value.checked) needsFill = true;
       if (value.fallible || value.checked) fallible = true;
       return [
@@ -1780,18 +1779,17 @@ function emitEncodedRecord(
     const encoded = emitEncodeValue(property, inputOf(input), ctx);
     // A field whose value is undefined is omitted, as stringify and JSON.stringify do; a required field is omitted only when its type admits undefined.
     if (!required.has(name) || admitsUndefined(property)) {
-      const local = localCode(allocateInlineLocal(ctx, 'field') ?? localName('field', index));
+      const local = allocateInlineLocal(ctx, 'field') ?? localCode('field', index);
       const entry = code`(${local} !== undefined ? { [${literal(name)}]: ${bindInput(encoded, input, local)} } : undefined)`;
       return { name, code: ctx.inlineLocals ? code`...(${local} = ${read}, ${entry})` : code`...((${local}) => ${entry})(${read})`, spread: true };
     }
     if (inputCount(encoded, input) <= 1) return { name, code: bindInput(encoded, input, read), spread: false };
     const allocated = allocateInlineLocal(ctx, 'field');
     if (!allocated) {
-      const fallbackLocal = localCode(localName('field', index));
+      const fallbackLocal = localCode('field', index);
       return { name, code: code`((${fallbackLocal}) => ${bindInput(encoded, input, fallbackLocal)})(${read})`, spread: false };
     }
-    const local = localCode(allocated);
-    return { name, code: code`(${local} = ${read}, ${bindInput(encoded, input, local)})`, spread: false };
+    return { name, code: code`(${allocated} = ${read}, ${bindInput(encoded, input, allocated)})`, spread: false };
   });
   // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
   // keeps them as they are. Any other object writes its listed names only.
@@ -1810,20 +1808,19 @@ function emitEncodedRecord(
   if (readShape(value) === 'name' || inputCount(record, self) <= 1) return asObjectLiteral(bindInput(record, self, value));
   const allocated = allocateInlineLocal(ctx, 'record');
   if (!allocated) {
-    const fallbackLocal = localCode(localName('record'));
+    const fallbackLocal = localCode('record');
     return code`((${fallbackLocal}) => (${bindInput(record, self, fallbackLocal)}))(${value})`;
   }
-  const local = localCode(allocated);
-  return code`(${local} = ${value}, ${bindInput(record, self, local)})`;
+  return code`(${allocated} = ${value}, ${bindInput(record, self, allocated)})`;
 }
 
 function allocateInlineLocal(
   ctx: EmitCtx,
   kind: 'field' | 'record',
-): string | undefined {
+): Code | undefined {
   const inlineLocals = ctx.inlineLocals;
   if (!inlineLocals) return undefined;
-  const local = localName(kind, inlineLocals.size);
+  const local = localCode(kind, inlineLocals.size);
   inlineLocals.add(local);
   return local;
 }
@@ -2130,7 +2127,7 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
   } else {
     // Values the result shares with the input are checked here; a model's fill checks its own fields.
     if (sharesInput(node.descriptor, ctx)) convertLines.push(code`  ${rt.conversion.assertWireAcyclic}(wire);`);
-    if (rootScope.decodeLocals?.length) convertLines.push(code`  let ${join(rootScope.decodeLocals.map((name) => code`${identifier(name)}: unknown`), code`, `)};`);
+    if (rootScope.decodeLocals?.length) convertLines.push(code`  let ${join(rootScope.decodeLocals.map((local) => code`${local}: unknown`), code`, `)};`);
     convertLines.push(code`  const result = ${decodedExpr ?? code`wire`};`);
   }
   if (validationEnabled && node.modelOnlyJsonSchema !== undefined) {
