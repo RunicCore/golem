@@ -6,10 +6,11 @@ import { createControllerFixture } from '../fixture-templates/controllers/projec
 
 const CONTROLLER = `import { Body, Controller, Post } from '@nestjs/common';
 import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 
 export type TCircle = IModel<{ kind: 'circle'; radius: number }>;
 export type TRect = IModel<{ kind: 'rect'; width: number }>;
-export type TDrawing = IModel<{ shape: TCircle | TRect; mixed: TCircle | { kind: 'label'; text: string } }>;
+export type TDrawing = IModel<{ shape: (TCircle | TRect) & Discriminator<'kind'>; mixed: (TCircle | { kind: 'label'; text: string }) & Discriminator<'kind'> }>;
 
 @Controller('drawings')
 export class DrawingsController {

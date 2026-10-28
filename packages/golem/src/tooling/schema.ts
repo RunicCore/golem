@@ -45,6 +45,11 @@ export interface SchemaDescriptorOptions {
    * one, a tag names a component.
    */
   readonly discriminatorMapping?: boolean;
+  /**
+   * Write the declared default variant of a union as `discriminator.defaultMapping` (OpenAPI 3.2). OpenAPI 3.1 has no such
+   * keyword and requires the tag, which the default lacks, so without this option a union with a default stays `anyOf`.
+   */
+  readonly discriminatorDefaultMapping?: boolean;
   readonly portable?: boolean;
   readonly onNonportable?: (message: string) => void;
   /** Resolve a descriptor reference without executing application code. */
@@ -285,49 +290,12 @@ function keepExecutablePredicates(options: AssemblyOptions): boolean {
   return options.keepPredicates ?? options.representation !== 'wire';
 }
 
-function objectUnionDiscriminator(variants: readonly unknown[]): string | undefined {
-  if (variants.length < 2 || !variants.every((variant) => isRecord(variant) && variant.kind === 'object')) {
-    return undefined;
-  }
-  const objects = variants as ReadonlyArray<Record<string, unknown>>;
-  const requiredLiteralNames = objects.map((object) => {
-    const properties = isRecord(object.properties) ? object.properties : {};
-    const required = new Set(Array.isArray(object.required) ? object.required : []);
-    return Object.entries(properties)
-      .filter(([name, descriptor]) => required.has(name) && isRecord(descriptor) && descriptor.kind === 'literal')
-      .map(([name]) => name);
-  });
-  for (const name of requiredLiteralNames[0] ?? []) {
-    if (!requiredLiteralNames.every((names) => names.includes(name))) continue;
-    const values = objects.map((object) => {
-      const properties = isRecord(object.properties) ? object.properties : {};
-      const descriptor = properties[name];
-      return isRecord(descriptor) ? descriptor.value : undefined;
-    });
-    if (values.every((value) => value !== undefined) && new Set(values).size === values.length) return name;
-  }
-  return undefined;
-}
-
 function hasDiscriminatorTag(branch: JsonSchema, propertyName: string): boolean {
   if (!isRecord(branch) || !isRecord(branch.properties)) return false;
   const tag = branch.properties[propertyName];
   if (!Array.isArray(branch.required) || !branch.required.includes(propertyName) || !isRecord(tag)) return false;
   const values = 'const' in tag ? [tag.const] : Array.isArray(tag.enum) ? tag.enum : [];
   return values.length > 0 && values.every((item) => typeof item === 'string' && item !== '');
-}
-
-/** The tag of a model descriptor: the value of its required literal `propertyName`, or undefined. */
-function literalTag(object: unknown, propertyName: string): unknown {
-  if (!isRecord(object) || !isRecord(object.properties) || !Array.isArray(object.required) || !object.required.includes(propertyName)) return undefined;
-  const tag = object.properties[propertyName];
-  return isRecord(tag) && tag.kind === 'literal' ? tag.value : undefined;
-}
-
-/** `hasDiscriminatorTag` for the descriptor of a referenced model: a required, non-empty string literal. */
-function hasLiteralTag(object: unknown, propertyName: string): boolean {
-  const tag = literalTag(object, propertyName);
-  return typeof tag === 'string' && tag !== '';
 }
 
 /** The registered codec id of a model class variant, as its schema references it. */
@@ -348,7 +316,7 @@ export function generatedModelShortName(id: string): string {
 function discriminatorTable(
   value: unknown,
   count: number,
-): { readonly propertyName: string; readonly values: readonly (readonly unknown[])[] } | undefined {
+): { readonly propertyName: string; readonly values: readonly (readonly unknown[])[]; readonly defaultVariant?: number } | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value) || typeof value.propertyName !== 'string' || !Array.isArray(value.variants)
     || value.variants.length !== count) {
@@ -357,6 +325,7 @@ function discriminatorTable(
   return {
     propertyName: value.propertyName,
     values: value.variants.map((variant) => isRecord(variant) && Array.isArray(variant.values) ? variant.values : []),
+    ...(typeof value.defaultVariant === 'number' ? { defaultVariant: value.defaultVariant } : {}),
   };
 }
 
@@ -604,7 +573,7 @@ function descriptorSchema(
         const branches = present.map(({ variant, index }) => {
           const branch = descriptorSchema(variant, state, options);
           const values = table?.values[index];
-          if (!table || !values?.length) return branch;
+          if (!table || !values?.length || options.discriminatorMapping === true) return branch;
           // An explicit tag table narrows the tag here; the variant keeps its declared type.
           const tagged = {
             properties: { [table.propertyName]: values.length === 1 ? { const: values[0] } : { enum: [...values] } },
@@ -623,34 +592,26 @@ function descriptorSchema(
             ],
           };
         });
-        // Without a tag table, a reference to a model of this job counts as its
-        // target object when it lowers to a $ref, resolved as withDefinitions
-        // resolves it. A generated model of another job keeps anyOf, and so
-        // does a target with its own serde: its $ref schema can be the serde's
-        // wire form, which need not hold the tag.
-        const objects = present.map(({ variant }, position) => {
-          const branch = branches[position];
-          if (table || !isRecord(variant) || variant.kind !== 'reference' || typeof variant.name !== 'string' || !isRecord(branch) || typeof branch.$ref !== 'string') return variant;
-          const target = options.resolveReference?.(variant.name) ?? options.definitions?.[variant.name];
-          return isRecord(target) && target.serde === undefined ? target : variant;
-        });
-        const propertyName = table?.propertyName ?? objectUnionDiscriminator(objects);
-        // A discriminator requires a required tag with non-empty string
-        // const or enum values directly under each branch, or under the model a
-        // branch refers to. Other tags keep anyOf.
-        // A union that mixes inline objects with references keeps anyOf: the
-        // mapping of an OpenAPI document could name only its $ref branches.
-        const referenced = objects.map((object, position) => object !== present[position].variant);
-        const mixed = referenced.some(Boolean) && !referenced.every(Boolean);
-        const tagged = propertyName !== undefined && !mixed
-          && branches.every((branch, position) => (referenced[position] ? hasLiteralTag(objects[position], propertyName) : hasDiscriminatorTag(branch, propertyName)));
-        const mapping = tagged && options.discriminatorMapping === true && referenced.every(Boolean)
-          ? Object.fromEntries(objects.map((object, position) => {
-            const branch = branches[position];
-            return [literalTag(object, propertyName), isRecord(branch) ? branch.$ref : undefined];
-          }))
+        // A document states each branch as the variant itself: the variant declares its tag, and the discriminator maps it.
+        // A union without a tag table, or with a branch the discriminator cannot name, stays anyOf.
+        const documented = options.discriminatorMapping === true;
+        const refs = branches.map((branch) => isRecord(branch) && typeof branch.$ref === 'string' ? branch.$ref : undefined);
+        // A mapping could name only the $ref branches, so a union that mixes them with inline objects keeps anyOf.
+        const mixed = documented && refs.some((ref) => ref !== undefined) && refs.some((ref) => ref === undefined);
+        const defaultAt = table?.defaultVariant === undefined ? -1 : present.findIndex(({ index }) => index === table.defaultVariant);
+        const defaultWritable = defaultAt < 0 || (options.discriminatorDefaultMapping === true && refs[defaultAt] !== undefined);
+        // A discriminator requires a required tag with non-empty string const or enum values for each branch it selects. Other tags keep anyOf.
+        const tagged = table !== undefined && !mixed && defaultWritable && present.every(({ index }, position) => position === defaultAt
+          || (documented
+            ? table.values[index]!.length > 0 && table.values[index]!.every((item) => typeof item === 'string' && item !== '')
+            : hasDiscriminatorTag(branches[position], table.propertyName)));
+        const mapping = tagged && documented && refs.every((ref) => ref !== undefined)
+          ? Object.fromEntries(present.flatMap(({ index }, position) => position === defaultAt ? [] : table.values[index]!.map((item) => [item, refs[position]])))
           : undefined;
-        schema = tagged ? { discriminator: { propertyName, ...(mapping ? { mapping } : {}) }, oneOf: branches } : { anyOf: branches };
+        const defaultMapping = tagged && defaultAt >= 0 ? refs[defaultAt] : undefined;
+        schema = tagged
+          ? { discriminator: { propertyName: table.propertyName, ...(mapping ? { mapping } : {}), ...(defaultMapping ? { defaultMapping } : {}) }, oneOf: branches }
+          : { anyOf: branches };
         break;
       }
       case 'intersection': {
