@@ -135,18 +135,6 @@ export function literalValues(descriptor: ModelTypeDescriptor | undefined): read
   return values;
 }
 
-/** Required properties whose type is a literal or a union of literals. */
-export function literalDiscriminator(
-  descriptor: ObjectTypeDescriptor,
-): ReadonlyMap<string, readonly DiscriminatorValue[]> {
-  const values = new Map<string, readonly DiscriminatorValue[]>();
-  for (const name of descriptor.required) {
-    const literals = literalValues(descriptor.properties[name]);
-    if (literals) values.set(name, literals);
-  }
-  return values;
-}
-
 /** One tag property, and each alternative's tag values in alternative order. */
 export interface VariantDispatch {
   readonly property: string;
@@ -168,7 +156,7 @@ function disjoint(sets: readonly (readonly DiscriminatorValue[])[], byText = fal
 
 /**
  * The first property of the first alternative that every alternative requires with literal values, when no value is shared. `tags` holds
- * each alternative's required literal properties and their values; the model generator reads them from descriptors, the rewrite scan from types.
+ * each alternative's required literal properties and their values, read from types by the rewrite scan.
  * With `byText`, values that print the same (`1` and `'1'`) are one value: a query string carries a tag as text.
  */
 export function sharedTag(tags: readonly ReadonlyMap<string, readonly DiscriminatorValue[]>[], options: { readonly byText?: boolean } = {}): VariantDispatch | undefined {
@@ -178,11 +166,6 @@ export function sharedTag(tags: readonly ReadonlyMap<string, readonly Discrimina
     if (disjoint(values, options.byText === true)) return { property, values };
   }
   return undefined;
-}
-
-/** A required literal tag whose values are disjoint across the alternatives. */
-export function objectDiscriminator(alternatives: readonly ObjectTypeDescriptor[]): VariantDispatch | undefined {
-  return sharedTag(alternatives.map(literalDiscriminator));
 }
 
 /** Indices of the union variants that hold a value (not null or undefined). */
@@ -201,37 +184,23 @@ export function declaredTable(union: UnionTypeDescriptor, indices: readonly numb
 }
 
 /**
- * Dispatch among the union variants at `indices`. An explicit discriminator
- * table is authoritative and must tag each of them; otherwise tags are
- * inferred from each variant's object shape, which `objectFor` resolves.
+ * Dispatch among the union variants at `indices` by the declared tag table, which must tag each of them. A union with no
+ * table has no dispatch: golem never finds a tag in the variants.
  */
 export function unionDispatch(
   union: UnionTypeDescriptor,
   indices: readonly number[],
-  objectFor: (variant: ModelTypeDescriptor) => ObjectTypeDescriptor | undefined,
 ): VariantDispatch | undefined {
   const table = declaredTable(union, indices);
-  if (table) {
-    if (table.variants.length !== union.variants.length) {
-      throw new Error(`The ${table.propertyName} discriminator table must list tag values for every union variant.`);
-    }
-    const values = indices.map((index) => table.variants[index]?.values ?? []);
-    if (indices.length === 0 || !disjoint(values)) {
-      throw new Error(`The ${table.propertyName} discriminator table must give each variant distinct, non-empty tag values.`);
-    }
-    return { property: table.propertyName, values };
+  if (!table) return undefined;
+  if (table.variants.length !== union.variants.length) {
+    throw new Error(`The ${table.propertyName} discriminator table must list tag values for every union variant.`);
   }
-  const objects: ObjectTypeDescriptor[] = [];
-  for (const index of indices) {
-    const object = objectFor(union.variants[index]);
-    if (!object) return undefined;
-    objects.push(object);
+  const values = indices.map((index) => table.variants[index]?.values ?? []);
+  if (indices.length === 0 || !disjoint(values)) {
+    throw new Error(`The ${table.propertyName} discriminator table must give each variant distinct, non-empty tag values.`);
   }
-  return objectDiscriminator(objects);
-}
-
-export function objectVariant(variant: ModelTypeDescriptor): ObjectTypeDescriptor | undefined {
-  return variant.kind === 'object' ? variant : undefined;
+  return { property: table.propertyName, values };
 }
 
 /** `access` equals one of `values`. */
@@ -258,11 +227,6 @@ export interface DispatchOptions {
   /** Encode result for null or undefined. */
   readonly nullish?: Code;
   /**
-   * An explicit tag table lets an instance omit its tag: encoding writes the
-   * variant's first value. Inferred tags are declared literals and required.
-   */
-  readonly canonicalTag: boolean;
-  /**
    * decode of branches without a class: a local the first tag test assigns, so the tag is read once
    * and the later tests and the rejection use it. The caller declares it.
    */
@@ -274,8 +238,8 @@ export interface DispatchOptions {
  *
  * - An instance of a branch class selects that branch first; a subclass wins
  *   over its base regardless of variant order. Its own tag must be one of the
- *   branch's values; encoding writes that tag, or with `canonicalTag` the
- *   branch's first value when the instance has none.
+ *   branch's values; encoding writes that tag, or the branch's first value
+ *   when the instance has none (the declared table lets an instance omit its tag).
  * - Any other object selects the branch whose values contain its tag.
  * - An object whose tag selects no branch is rejected. Encoding writes null
  *   or undefined unchanged and rejects every other value.
@@ -321,11 +285,9 @@ export function emitDispatch(options: DispatchOptions): Code {
     const subclasses = classes.filter((other) => !sameCode(other, self))
       .map((other) => code` && !((${value} as object) instanceof ${other} && ${other}.prototype instanceof ${self})`);
     const guard = code`(${value} as object) instanceof ${self}${join(subclasses)}`;
-    const ownTag = options.canonicalTag ? code`(${tag} === undefined ? ${literal(branch.values[0])} : ${tag})` : tag;
-    const accepted = options.canonicalTag
-      ? code`${tag} === undefined || ${discriminatorMatch(tag, branch.values)}`
-      : discriminatorMatch(tag, branch.values);
-    const body = code`${accepted} ? (${encodeBranch(branch, ownTag, options.canonicalTag)}) : ${reject}`;
+    const ownTag = code`(${tag} === undefined ? ${literal(branch.values[0])} : ${tag})`;
+    const accepted = code`${tag} === undefined || ${discriminatorMatch(tag, branch.values)}`;
+    const body = code`${accepted} ? (${encodeBranch(branch, ownTag, true)}) : ${reject}`;
     converted = code`${guard} ? (${body}) : (${converted})`;
   }
   return code`(${converted})`;
@@ -418,8 +380,8 @@ type GeneratedModelTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind
 interface GeneratedWithObjects {
   /** The conversion of the model; undefined when this walker emits no class for it. */
   readonly text: (generated: GeneratedModelTypeDescriptor) => Code | undefined;
-  /** The tag tests of the object variants. */
-  readonly tagMatch: (objects: readonly ObjectTypeDescriptor[]) => Code[];
+  /** The test that a value carries the declared tag of one of the object variants. */
+  readonly tagMatch: (dispatch: VariantDispatch) => Code;
   /** The conversion of the object variants whose tag matches. */
   readonly objects: (objects: readonly ObjectTypeDescriptor[]) => Code;
   /** With no tagged object, the model takes every object whatever the other variants are. */
@@ -512,7 +474,7 @@ export function emitUnionConversion(
   if (tagged !== undefined) return tagged;
   const before = conversion.beforeGenerated?.(present);
   if (before !== undefined) return before;
-  const withObjects = conversion.generated && generatedWithObjects(present, expression, plain, conversion.generated);
+  const withObjects = conversion.generated && generatedWithObjects(descriptor, present, expression, plain, conversion.generated);
   if (withObjects) return withObjects;
   const after = conversion.afterGenerated?.(present);
   if (after !== undefined) return after;
@@ -549,6 +511,7 @@ export function emitUnionConversion(
 }
 
 function generatedWithObjects(
+  descriptor: UnionTypeDescriptor,
   present: readonly ModelTypeDescriptor[],
   expression: Code,
   plain: Code,
@@ -559,10 +522,10 @@ function generatedWithObjects(
   const generatedCode = options.text(generated[0]);
   if (generatedCode === undefined) return undefined;
   const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-  if (objects.length > 0 && !objectDiscriminator(objects)) throw new ObjectUnionDiscriminatorError(objects);
-  const tagged = options.tagMatch(objects);
-  if (tagged.length) {
-    return code`(${objectValueExpression(expression)} && !(${join(tagged, code` || `)}) ? ${generatedCode} : ${options.objects(objects)})`;
+  if (objects.length > 0) {
+    const dispatch = unionDispatch(descriptor, presentUnionIndices(descriptor).filter((index) => descriptor.variants[index].kind === 'object'));
+    if (!dispatch) throw new ObjectUnionDiscriminatorError(objects);
+    return code`(${objectValueExpression(expression)} && !${options.tagMatch(dispatch)} ? ${generatedCode} : ${options.objects(objects)})`;
   }
   if (options.takesEveryObject || present.every((variant) => variant === generated[0] || isScalarishDescriptor(variant))) {
     return code`(${objectValueExpression(expression)} ? ${generatedCode} : ${plain})`;

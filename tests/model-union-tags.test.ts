@@ -55,32 +55,94 @@ test('union members are emitted in canonical order whichever order the checker c
 });
 
 for (const validation of [false, true]) {
-  test(`an object union with no literal tag stops generation with RUNM1080, the model file and the fix, with validation ${validation ? 'on' : 'off'}`, t => {
-    // protects: T-232 coded diagnostic for an untagged object union (golem-model path)
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-untagged-union-', name: 'untagged-union' });
-    writeFileSync(path.join(sourceRoot, 'pets.model.ts'), readFixture('models/untagged-union/pets.model.ts'));
-    assert.throws(
-      () => generate({ root, profile: { mobx: false, validation } }),
-      /pets\.model\.ts RUNM1080: Object union conversions require a unique, required literal discriminator\. The variants are \{ bark, born \} \| \{ name, born \}\. Give each variant a required literal tag, such as `kind: 'cat'`/,
-    );
-  });
-}
-
-for (const validation of [false, true]) {
-  for (const [fixture, variants] of [
-    ['named-objects', /The variants are TCat \| TDog\./],
-    ['models', /The variants are Item0 \| Item1\./],
+  for (const [fixture, message] of [
+    ['pets', /Union in TOwner has 2 object variants \(\{ bark: boolean; born: Date; \} \| \{ name: string; born: Date; \}\) and does not declare its tag key\./],
+    ['named-objects', /Union in TPets has 2 object variants \(TCat \| TDog\) and does not declare its tag key\./],
+    ['models', /Union in TPets has 2 object variants \(Item0 \| Item1\) and does not declare its tag key\./],
   ] as const) {
-    test(`two ${fixture} with no literal tag stop generation with RUNM1080, the model file and the variants, with validation ${validation ? 'on' : 'off'}`, t => {
-      // protects: T-309 coded diagnostic for a union of named objects or models with no tag
+    test(`an untagged union of ${fixture} stops generation with RUNM1080, its place and the tag to add, with validation ${validation ? 'on' : 'off'}`, t => {
+      // protects: T-598 rule (a) the untagged object union names the Discriminator to add, whatever the variants are
       const { root, sourceRoot } = createModelProject(t, { prefix: `golem-untagged-${fixture}-`, name: `untagged-${fixture}` });
       writeFileSync(path.join(sourceRoot, 'pets.model.ts'), readFixture(`models/untagged-union/${fixture}.model.ts`));
       assert.throws(
         () => generate({ root, profile: { mobx: false, validation } }),
         error => error instanceof Error
-          && /pets\.model\.ts RUNM1080: Object union conversions require a unique, required literal discriminator\. The variants are /.test(error.message)
-          && variants.test(error.message),
+          && /pets\.model\.ts:\d+:\d+ RUNM1080: /.test(error.message)
+          && message.test(error.message)
+          && error.message.includes("add `& Discriminator<'kind'>` to the union"),
       );
+    });
+  }
+}
+
+// Every position a union can stand in. `union` is the union as written there, with or without the tag.
+const POSITIONS: readonly (readonly [place: string, field: (union: string) => string])[] = [
+  ['a field', union => `value: ${union}`],
+  ['an optional field', union => `value?: ${union}`],
+  ['an array item', union => `value: (${union})[]`],
+  ['a record value', union => `value: Record<string, ${union}>`],
+  ['a tuple item', union => `value: [string, ${union}]`],
+  ['a nested field', union => `value: { inner: ${union} }`],
+  ['a nullable field', union => `value: ${union} | null`],
+];
+
+/** A model file with `field` in the model `TBox`; `variants` are the declarations of the union's members. */
+function boxModel(variants: string, field: string): string {
+  return `import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+
+${variants}
+export type TBox = IModel<{ ${field} }>;
+`;
+}
+
+const PLAIN_VARIANTS = `export type TA = IObject<{ kind: 'a'; x: string }>;
+export type TB = IObject<{ kind: 'b'; y: number }>;
+`;
+
+/** Generation of `source` as `pets.model.ts`: the error it throws, or undefined when it generates. */
+function generationError(t: Parameters<typeof createModelProject>[0], source: string, validation: boolean): Error | undefined {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-union-place-', name: 'union-place' });
+  writeFileSync(path.join(sourceRoot, 'pets.model.ts'), source);
+  try {
+    generate({ root, profile: { mobx: false, validation } });
+    return undefined;
+  } catch (thrown) {
+    return thrown as Error;
+  }
+}
+
+for (const validation of [false, true]) {
+  for (const [place, field] of POSITIONS) {
+    const suffix = `${place}, with validation ${validation ? 'on' : 'off'}`;
+    test(`an untagged union of plain-data objects in ${suffix} stops with RUNM1080`, t => {
+      // protects: T-598 rule (a) and (e) RUNM1080 at every position, also when no variant needs a conversion
+      const error = generationError(t, boxModel(PLAIN_VARIANTS, field('TA | TB')), validation);
+      assert.match(error?.message ?? '', /pets\.model\.ts:\d+:\d+ RUNM1080: Union in TBox has 2 object variants \(TA \| TB\) and does not declare its tag key\. .*add `& Discriminator<'kind'>` to the union\./);
+    });
+
+    test(`a tagged union of plain-data objects in ${suffix} generates`, t => {
+      // protects: T-598 rule (d) and (e) the declared tag at every position needs no other tag
+      assert.equal(generationError(t, boxModel(PLAIN_VARIANTS, field("(TA | TB) & Discriminator<'kind'>")), validation), undefined);
+    });
+
+    test(`a tagged union whose variant lacks the key in ${suffix} stops with RUNM1087`, t => {
+      // protects: T-598 rule (b) a variant without the declared key stops at every position
+      const variants = `export type TA = IObject<{ kind: 'a'; x: string }>;\nexport type TB = IObject<{ y: number }>;\n`;
+      const error = generationError(t, boxModel(variants, field("(TA | TB) & Discriminator<'kind'>")), validation);
+      assert.match(error?.message ?? '', /RUNM1087: Union variant TB in TBox has no required literal property "kind"/);
+    });
+
+    test(`a tagged union whose variants share a key value in ${suffix} stops with RUNM1087`, t => {
+      // protects: T-598 rule (b) a shared tag value stops at every position
+      const variants = `export type TA = IObject<{ kind: 'a'; x: string }>;\nexport type TB = IObject<{ kind: 'a'; y: number }>;\n`;
+      const error = generationError(t, boxModel(variants, field("(TA | TB) & Discriminator<'kind'>")), validation);
+      assert.match(error?.message ?? '', /RUNM1087: Union variants TA and TB in TBox share the "kind" value "a"/);
+    });
+
+    test(`one object beside a scalar and null in ${suffix} needs no tag`, t => {
+      // protects: T-598 rule (c) a single object variant is no object union
+      assert.equal(generationError(t, boxModel(PLAIN_VARIANTS, field('TA | string | null')), validation), undefined);
     });
   }
 }

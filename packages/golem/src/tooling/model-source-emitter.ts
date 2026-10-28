@@ -46,11 +46,8 @@ import { CompositionConflictError, requireComposedObject, type ModelBases } from
 import { FIELD_CONVERSION_INPUT, calleeOf, emitArrayConversion, emitTupleConversion, type SequenceItems } from './sequence-conversion.js';
 import {
   discriminatorMatch,
-  literalDiscriminator,
-  objectDiscriminator,
   ObjectUnionDiscriminatorError,
   objectValueExpression,
-  objectVariant,
   presentUnionVariants,
   emitDispatch,
   emitUnionConversion,
@@ -58,10 +55,8 @@ import {
   presentKeysCode,
   presentUnionIndices,
   presentValueCode,
-  declaredTable,
   unionDispatch,
   type ObjectTypeDescriptor,
-  type VariantDispatch,
 } from './union-conversion.js';
 import { isRecordExpression } from './stringify-emitter.js';
 
@@ -70,11 +65,11 @@ export { AmbiguousUnionConversionError, descriptorNeedsConversion, literalValues
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
+/** A model's required tag properties and their literal value or values. No conversion reads them any more: only the declared tag table dispatches. */
+export type ModelDiscriminators = Readonly<Record<string, DiscriminatorValue | readonly DiscriminatorValue[]>>;
+
 /** The local that a projection decoder reads the field at `index` into. */
 const projectionLocal = (index: number): string => `__golemProjected${index}`;
-
-/** A model's required tag properties and their literal value or values. */
-export type ModelDiscriminators = Readonly<Record<string, DiscriminatorValue | readonly DiscriminatorValue[]>>;
 
 /**
  * Each answer of a resolver is Code that holds the callee as a part, so the file imports it. A resolver reads the value it
@@ -157,24 +152,8 @@ function generatedModel(
       || variant.kind === 'array'
       || variant.kind === 'intersection'
   )) return undefined;
-  if (objectAlternatives.length > 0 && !objectDiscriminator(objectAlternatives)) {
-    return undefined;
-  }
+  if (objectAlternatives.length > 0 && descriptor.discriminator === undefined) return undefined;
   return generated[0];
-}
-
-/** A tag property present on every branch with disjoint values, from per-branch tag records. */
-function inferredBranchDispatch(branches: readonly ModelDiscriminators[]): VariantDispatch | undefined {
-  const valueSets = (tags: ModelDiscriminators, property: string): readonly DiscriminatorValue[] => {
-    const value = tags[property];
-    return value === undefined ? [] : typeof value === 'object' ? value : [value];
-  };
-  for (const property of Object.keys(branches[0] ?? {})) {
-    const values = branches.map(tags => Object.hasOwn(tags, property) ? valueSets(tags, property) : []);
-    const flat = values.flat();
-    if (values.every(set => set.length > 0) && new Set(flat).size === flat.length) return { property, values };
-  }
-  return undefined;
 }
 
 /** The record view of an expression: a record input as it is, any other expression cast once. */
@@ -192,11 +171,12 @@ function presentTag(expression: Code, property: string): Code {
   return code`(${presentValueCode(expression, key, recordIndex(expression, key))})`;
 }
 
+/** The object variants of the union whose declared tag values select them. */
 function taggedObjectExpression(
   expression: Code,
-  alternatives: readonly ObjectDescriptor[],
+  descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }>,
 ): Code {
-  const discriminator = objectDiscriminator(alternatives);
+  const discriminator = unionDispatch(descriptor, presentUnionIndices(descriptor).filter((index) => descriptor.variants[index].kind === 'object'));
   if (!discriminator) return objectValueExpression(expression);
   const access = presentTag(expression, discriminator.property);
   return code`${objectValueExpression(expression)} && ${discriminatorMatch(access, discriminator.values.flat())}`;
@@ -234,7 +214,7 @@ function unionGeneratedFrom(
   if (objects.length === 0) {
     return code`${objectValueExpression(expression)} ? ${converted} : ${value}`;
   }
-  const tagged = taggedObjectExpression(expression, objects);
+  const tagged = taggedObjectExpression(expression, descriptor);
   return code`${objectValueExpression(expression)} && !(${tagged}) ? ${converted} : ${value}`;
 }
 
@@ -304,19 +284,12 @@ function emitNestedUnion(
       const modelBranches = present.filter(variant => variant.kind === 'reference' || variant.kind === 'generated-model');
       if (modelBranches.length === 0 || !present.every(variant =>
         variant.kind === 'reference' || variant.kind === 'generated-model' || variant.kind === 'object')) return undefined;
-      const dispatch = declaredTable(descriptor, indices)
-        ? unionDispatch(descriptor, indices, objectVariant)
-        : inferredBranchDispatch(present.map(variant => variant.kind === 'reference'
-          ? resolveModel(variant.name).discriminators ?? {}
-          : variant.kind === 'generated-model'
-            ? resolveModel(variant.id).discriminators ?? {}
-            : variant.kind === 'object' ? Object.fromEntries(literalDiscriminator(variant)) : {}));
+      const dispatch = unionDispatch(descriptor, indices);
       if (!dispatch) return undefined;
       return emitDispatch({
         expression,
         property: dispatch.property,
         direction: dispatchDirection,
-        canonicalTag: descriptor.discriminator !== undefined,
         branches: present.map((variant, position) => ({
           values: dispatch.values[position],
           className: variant.kind === 'generated-model' ? resolveModel(variant.id).className
@@ -340,7 +313,7 @@ function emitNestedUnion(
         (variant): variant is ObjectDescriptor => variant.kind === 'object');
       const convertedObjects = objects.map(object => ({ object, converted: convert(object) }));
       if (convertedObjects.some(({ converted }) => !sameCode(converted, value))) {
-        const discriminator = unionDispatch(descriptor, objectIndices, objectVariant);
+        const discriminator = unionDispatch(descriptor, objectIndices);
         if (!discriminator && (objects.length > 1 || descriptor.variants.some(variant => ['reference', 'generated-model', 'any', 'unknown', 'intersection'].includes(variant.kind)))) {
           throw new ObjectUnionDiscriminatorError(descriptor.variants);
         }
@@ -349,8 +322,7 @@ function emitNestedUnion(
             expression,
             property: discriminator.property,
             direction: dispatchDirection,
-            canonicalTag: descriptor.discriminator !== undefined,
-            branches: convertedObjects.map(({ converted }, position) => ({ values: discriminator.values[position], convert: converted })),
+                branches: convertedObjects.map(({ converted }, position) => ({ values: discriminator.values[position], convert: converted })),
           });
         }
         let chain = result ?? value;
