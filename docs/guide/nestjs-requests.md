@@ -116,13 +116,14 @@ The `exact` option decides whether a model rejects keys that it does not declare
 
 ## Union of models
 
-A whole `@Body()` or `@Query()` parameter can be a union of models, such as `TCircle | TRect` or an alias of one. Each model needs a required literal field with a value of its own, such as `kind: 'circle'` ([unions](/guide/field-types#unions)).
+A whole `@Body()` or `@Query()` parameter can be a union of models, such as `(TCircle | TRect) & Discriminator<'kind'>` or an alias of one. Declare the tag as for a [model field](/guide/field-types#declare-the-tag-of-an-object-union): `Discriminator<'kind'>` on the union, and a required literal `kind` with a value of its own in each model.
 
-- The interceptor reads the tag and converts the input with the model that the tag picks. A missing or unknown tag returns HTTP 400.
+- The interceptor reads the declared key and converts the input with the model that its value picks. A missing or unknown value returns HTTP 400.
 - A query string holds the tag as text. The interceptor decodes it to the type that the picked model declares.
-- The `controllers` job documents a body as `oneOf` with a `discriminator`. A query union needs OpenAPI 3.2; OpenAPI 3.1.2 stops with [`NEST1108`](/reference/diagnostics#nest1108).
+- The `controllers` job documents a body as `oneOf` with a `discriminator` that names the declared key. A query union needs OpenAPI 3.2; OpenAPI 3.1.2 stops with [`NEST1108`](/reference/diagnostics#nest1108).
 - A union converts only as a whole parameter. An array of a union and a union in `@Body('field')` stop with [`RUNM1081`](/reference/diagnostics#runm1081).
-- A union of models with no shared tag stops with [`RUNM1081`](/reference/diagnostics#runm1081).
+- A union without the tag stops with [`RUNM1081`](/reference/diagnostics#runm1081). The message names the tag to add.
+- A [default variant](/guide/tags#add-a-default-variant) on a parameter union stops with [`RUNM1081`](/reference/diagnostics#runm1081), because the interceptor picks no default. Remove the default, or bind one model.
 - A union return stays Nest JSON.
 
 Your own interceptor or pipe converts a union parameter with [`nestUnionFromMetatype`](/reference/runtime-api#nest), as it uses [`objectCodecFromMetatype`](/reference/runtime-api#nest) for one model. Pass it the `design:paramtypes` entry of the parameter, which `Reflect.getMetadata('design:paramtypes', Controller.prototype, 'method')` returns, such as `nestUnionFromMetatype(type)?.fromWireFormat(request.body, { failFast: true })`. For a query, call `decodeQuery(request.query)` first.
