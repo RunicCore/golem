@@ -33,6 +33,7 @@ import {
   type Helper,
   type ImportOptions,
   type JsonValue,
+  type ModelBases,
   emitModelFromInit,
   emitModelToJSON,
   stringifyFunctionName,
@@ -1753,6 +1754,20 @@ interface CodecSection {
   readonly lines: readonly Code[];
 }
 
+/**
+ * The bases of each model in the graph: the node of a model that extends others is an intersection that holds the base
+ * models, so a derived model narrows each base when two parts declare one name (a covariant override).
+ */
+function intersectionModelBases(schemaGraph: SchemaGraph): ModelBases {
+  return {
+    basesOf(name) {
+      const descriptor = schemaGraph.nodeFor({ kind: 'reference', name })?.descriptor;
+      if (descriptor?.kind !== 'intersection') return [];
+      return descriptor.variants.flatMap((variant) => variant.kind === 'generated-model' ? [variant.id] : variant.kind === 'reference' ? [variant.name] : []);
+    },
+  };
+}
+
 function emitCodecSection(context: EmitContext): CodecSection {
   const { output, schemaGraph, appOutputs, profile, graph, imports } = context;
   const { definitions } = graph;
@@ -1825,6 +1840,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
         },
       } : {}),
       ...(hasPlanSchemas ? { resolvedSchemasExpr: identifier('modelSchemas') } : {}),
+      modelBases: intersectionModelBases(schemaGraph),
       serde: serdeResolver(context),
       generatedModelCodecId: (name) => {
         const manifestId = externalManifestId(name);

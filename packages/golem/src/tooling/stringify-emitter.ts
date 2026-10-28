@@ -10,7 +10,7 @@ import { GENERATED_MODEL_SCHEMA_REF_PREFIX } from '../schema-keywords.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
-import { modelName, requireComposedObject, type ModelBases } from './composition.js';
+import { requireComposedObject, type ModelBases } from './composition.js';
 import {
   aliased, asObjectLiteral, bindInput, bindRead, code, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
@@ -97,10 +97,7 @@ export interface CodecRuntimeOptions {
   readonly exportAnonymousCodecs?: boolean;
   /** Codecs whose functions stay module-private, such as a model job's derived projections. */
   readonly privateCodec?: (node: SchemaNode) => boolean;
-  /**
-   * The bases the generator declares for each model, by model name; without it, the bases come from the intersection that the
-   * model's node holds.
-   */
+  /** The bases the generator declares for each model, by model name. The caller states them; `emitCodecRuntimeCode` throws without them. */
   readonly modelBases?: ModelBases;
 }
 
@@ -126,9 +123,9 @@ interface EmitCtx
     | 'exportWireStringify'
     | 'exportAnonymousCodecs'
     | 'privateCodec'
-    | 'modelBases'
   > {
   readonly graph: SchemaGraph;
+  readonly modelBases: ModelBases;
   /** The node is a recursive union: each inline array, tuple and object branch of its encoders checks its value for a cycle. */
   readonly guardInline?: boolean;
   readonly issueSource: 'TypeScript' | 'OpenAPI';
@@ -725,32 +722,32 @@ function emitObjectStringify(
 export function emitStringifyFunction(
   node: SchemaNode,
   graph: SchemaGraph,
-  serde?: StringifySerdeResolver,
-  extra?: Partial<EmitCtx>,
+  serde: StringifySerdeResolver | undefined,
+  extra: Partial<EmitCtx> & Pick<EmitCtx, 'modelBases'>,
 ): Code {
   const ctx: EmitCtx = {
     graph,
     serde,
-    nestedConstruct: extra?.nestedConstruct,
-    siblingWireName: extra?.siblingWireName,
-    nestedGenerated: extra?.nestedGenerated,
-    nestedImportedSerde: extra?.nestedImportedSerde,
-    issueSource: extra?.issueSource ?? 'TypeScript',
-    wireIdentity: extra?.wireIdentity,
-    lenientRoot: extra?.lenientRoot,
-    wireStringifyIds: extra?.wireStringifyIds,
-    siblingWireCodecIds: extra?.siblingWireCodecIds,
-    siblingRecursion: extra?.siblingRecursion,
-    localCoreIds: extra?.localCoreIds,
-    strictCoreIds: extra?.strictCoreIds,
-    trustedOptions: extra?.trustedOptions,
-    withoutOptions: extra?.withoutOptions,
-    modelBases: extra?.modelBases,
-    wireInlining: extra?.wireIdentity ? new Set([node.id]) : undefined,
+    nestedConstruct: extra.nestedConstruct,
+    siblingWireName: extra.siblingWireName,
+    nestedGenerated: extra.nestedGenerated,
+    nestedImportedSerde: extra.nestedImportedSerde,
+    issueSource: extra.issueSource ?? 'TypeScript',
+    wireIdentity: extra.wireIdentity,
+    lenientRoot: extra.lenientRoot,
+    wireStringifyIds: extra.wireStringifyIds,
+    siblingWireCodecIds: extra.siblingWireCodecIds,
+    siblingRecursion: extra.siblingRecursion,
+    localCoreIds: extra.localCoreIds,
+    strictCoreIds: extra.strictCoreIds,
+    trustedOptions: extra.trustedOptions,
+    withoutOptions: extra.withoutOptions,
+    modelBases: extra.modelBases,
+    wireInlining: extra.wireIdentity ? new Set([node.id]) : undefined,
     inlineLocals: new Set(),
-    guardInline: !extra?.wireIdentity && node.descriptor.kind === 'union' && reachesNode(node.descriptor, node.id, { graph }),
+    guardInline: !extra.wireIdentity && node.descriptor.kind === 'union' && reachesNode(node.descriptor, node.id, { graph }),
   };
-  const fn = extra?.functionName ?? stringifyFunctionName(node.id);
+  const fn = extra.functionName ?? stringifyFunctionName(node.id);
   const valueSlot = inputSlot('value', 'name', true);
   // An intersection (allOf) is one merged object: the root writes its declared fields, as decode and encode do. With
   // validation off a required field can be missing, so a lenient root writes each field that is present. A checked
@@ -1077,25 +1074,10 @@ function emitInternedObjectDecode(
 }
 
 /**
- * The bases of each model in the graph: the node of a model that extends others is an intersection that holds the base
- * models, so a derived model narrows each base when two parts declare one name (a covariant override).
- */
-function graphModelBases(graph: SchemaGraph): ModelBases {
-  return {
-    basesOf(name) {
-      const descriptor = graph.nodeFor({ kind: 'reference', name })?.descriptor;
-      if (descriptor?.kind !== 'intersection') return [];
-      return descriptor.variants.map(modelName).filter((base): base is string => base !== undefined);
-    },
-  };
-}
-
-/**
  * The bases the generator declares, read in the names a descriptor uses: a descriptor names a model by its name or by the
  * codec id of its node, so a model's name comes from its node and a base answers under its name and each codec id of that name.
  */
 function modelBasesOf({ graph, modelBases }: EmitCtx): ModelBases {
-  if (modelBases === undefined) return graphModelBases(graph);
   return {
     basesOf(id) {
       const declared = modelBases.basesOf(graph.nodeFor({ kind: 'reference', name: id })?.name ?? id);
@@ -2409,8 +2391,10 @@ function isExternalCodecNode(node: SchemaNode): boolean {
 /** Specialized stringify/parse/validate and codec registration for every graph node. */
 export function emitCodecRuntimeCode(
   graph: SchemaGraph,
-  options: CodecRuntimeOptions = {},
+  options: CodecRuntimeOptions,
 ): Code {
+  const { modelBases } = options;
+  if (modelBases === undefined) throw new Error('emitCodecRuntimeCode needs the model bases of the generator that calls it.');
   const defaultEnabled = options.validationEnabled !== false;
   const validates = (node: SchemaNode): boolean => nodeValidates(node, defaultEnabled);
   const nodes = [...graph.topo()];
@@ -2442,7 +2426,7 @@ export function emitCodecRuntimeCode(
     fieldsType: options.fieldsType,
     exportAnonymousCodecs: options.exportAnonymousCodecs,
     privateCodec: options.privateCodec,
-    modelBases: options.modelBases,
+    modelBases,
     fillThrows: new Map(),
     patternConstants,
   };
