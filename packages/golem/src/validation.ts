@@ -29,6 +29,7 @@ export type { Issue, IssuePath } from './errors.js';
 import {
   findCodecIdForConstructor,
   requireObjectCodec,
+  validationUnfinished,
   untransformedCallError,
   type AllowGetterOptions,
   type ObjectCodec,
@@ -183,11 +184,6 @@ function issuePointer(path: IssuePath): string {
 /** An issue from a model rule, which carries its own message when it has one. */
 function customIssue(path: IssuePath, reason?: string): Issue {
   return toIssue({ path, code: 'custom', ...(reason === undefined ? {} : { reason }) }, IssueSource.Custom, IssueRepresentation.Model);
-}
-
-function validationFailure(error: unknown): never {
-  if (error instanceof LibError) throw error;
-  throw new LibError(LibErrorKind.Validation, 'Model validation could not finish.', [], { cause: error, causedByInput: false });
 }
 
 function messageOverrideKey(path: IssuePath | null | undefined, code: string): string {
@@ -477,7 +473,7 @@ export async function validateInstance<Model extends object>(
     const issues = await collectCodecIssues(model, mode, options?.validationContext);
     return snapshotIssues(issues);
   } catch (error) {
-    return validationFailure(error);
+    return validationUnfinished(error);
   }
 }
 
@@ -566,7 +562,7 @@ export class ModelValidator<Fields extends object, Owner extends object = Fields
       const issues = await collectCodecIssues(this.model, mode, options?.validationContext);
       if (id === this.validationId) this.setIssues(issues);
       return issues.length === 0;
-    } catch (error) { return validationFailure(error); }
+    } catch (error) { return validationUnfinished(error); }
     finally { if (id === this.validationId) this.setPending(false); }
   }
 

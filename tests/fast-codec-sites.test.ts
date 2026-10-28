@@ -390,7 +390,7 @@ function thrownBy(run: () => unknown): unknown {
   return undefined;
 }
 
-for (const [site, run] of SITES.filter(([name]) => name !== 'stringify' && name !== 'toWireFormat')) {
+for (const [site, run] of SITES) {
   test(`${site} wraps a TValidation function that throws in a LibError of its own`, async () => {
     // protects: T-550 a throwing predicate gives LibError Validation with causedByInput false and the original as cause
     const original = new Error('rule broke');
