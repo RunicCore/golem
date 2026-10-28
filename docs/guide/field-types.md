@@ -110,7 +110,7 @@ A derived type is exact by default, like any model. Put a whole-object [`TValida
 
 Golem converts the unions below.
 
-Supported:
+Supported without a tag:
 
 - scalar types only, such as `string | number`, and literal unions, such as `'paid' | 'pending'`
 - optional and nullish values: `T | undefined`, `T | null`
@@ -118,13 +118,34 @@ Supported:
 - strings, numbers, booleans or literals beside one array or one tuple, as in query objects (`status?: Status | Status[]`). The items can convert: `string | Date[]`. A Date can be the only scalar beside the array: `Date | Date[]`, `Date | string[]`
 - a model beside an array of that model: `TPlace | TPlace[]`
 - strings, numbers, booleans or literals beside one array and one object or model: `string | string[] | TPlace`. The `JsonValue` alias under [Recursive type aliases](#recursive-type-aliases) has this shape
-- object unions with one unique, required literal discriminator
-- scalars, one array or tuple, and `null` beside two or more tagged objects: `(string | TEmail | TPhone) & Discriminator<'kind'>`. The value's JSON type picks a scalar, array or `null`; only an object value is picked by its `kind`
-- an SDK model class (generated from an OpenAPI document) plus a primitive or a uniquely tagged object
+- an SDK model class (generated from an OpenAPI document) beside a primitive
 
-A discriminated union of two models:
+A union of two or more objects needs a declared tag, as the next section shows.
+
+### Declare the tag of an object union
+
+An object union names its tag key in the type with [`Discriminator`](/guide/tags#name-the-tag-of-a-union). Golem reads that key and no other. The variants can be object types, models, `IObject` types, SDK models or records.
 
 <<< ../../examples/models/src/contact.model.ts#discriminated-union
+
+- Put `Discriminator<'kind'>` on the union. Import it from `@exprtlabs/golem/tags`.
+- Declare `kind` in each variant as a required literal type, or as a union of literals.
+- Give each variant values of its own. Two variants cannot share a value.
+- The tag does not change the TypeScript type. Your code sees the same union.
+- A union without the tag stops generation with [`RUNM1080`](/reference/diagnostics#runm1080). A variant without the key, or a shared value, stops it with [`RUNM1087`](/reference/diagnostics#runm1087).
+
+The tag works at every position: a field, an optional field, an array item, a record value and a tuple item. Write it on the union itself or on an alias of the union. Write `null` outside the tag, and put an array of tagged unions in parentheses:
+
+<<< ../../examples/models/src/contact.model.ts#union-tag-forms
+
+- TypeScript reduces `null & Discriminator<'kind'>` to `never`. `(TEmail | TPhone | null) & Discriminator<'kind'>` therefore loses `null`.
+- `others` above is an array of the tagged union: the parentheses wrap the union and its tag, and the brackets follow.
+
+Scalars, literals, one array or tuple, and `null` can sit beside the tagged objects, as in `(string | TEmail | TPhone) & Discriminator<'kind'>`. Golem picks a variant in this order:
+
+1. The JSON type of the value picks a scalar, an array or `null`.
+2. For an object, the value of `kind` picks the variant.
+3. An object whose `kind` is missing or matches no variant is an error, unless the tag names a [default variant](/guide/tags#name-the-tag-of-a-union).
 
 ## Recursive type aliases
 

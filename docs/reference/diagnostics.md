@@ -299,14 +299,13 @@ An error prints its code, location when known, and message, then stops generatio
 **Ambiguous generated-model union.** A union that mixes a generated OpenAPI model with other alternatives can't be told apart reliably. Cases:
 
 - It has more than one generated-model alternative.
-- An alternative is `any`, `unknown`, an array, or an intersection.
-- Its object alternatives share no unique required literal discriminator.
+- An alternative is `any`, `unknown`, an intersection, or an array. A union with a declared `Discriminator` tag can hold an array.
 
 **Fix:**
 
 - Keep one generated-model alternative.
-- Use a primitive or a uniquely tagged object branch alongside it.
-- Give shared-shape object alternatives a required literal discriminator.
+- Use a primitive alongside it, or tag the union and name the generated model as the default: `Discriminator<'kind', Money>`.
+- Remove the `any`, `unknown` or intersection alternative.
 
 ### RUNM1040
 
@@ -370,7 +369,19 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1051
 
-**Incompatible constraint.** `MinContains`/`MaxContains` appears without a `Contains` constraint on the same value, or a constraint's family (number, string, array, or object) doesn't match the type it tags. **Fix:** Add a `Contains` constraint alongside `MinContains`/`MaxContains`, or apply the constraint to a value of the matching type. A `Discriminator` tag on a value that is no union of two or more object types stops with this code too: put the tag on the union, or remove it. The same code stops a `Discriminator<'kind', Default>` whose `Default` is not a variant of the union, or is a variant that has the `kind` property itself.
+**Incompatible constraint.** A constraint does not fit the value that it tags. Cases:
+
+- `MinContains`/`MaxContains` appears without a `Contains` constraint on the same value.
+- A constraint's family (number, string, array, or object) doesn't match the type it tags.
+- A `Discriminator` tag is on a value that is no union of two or more object types.
+- A `Discriminator<'kind', Default>` names a `Default` that is not a variant of the union.
+- The `Default` variant has the `kind` property itself.
+
+**Fix:**
+
+- Add a `Contains` constraint alongside `MinContains`/`MaxContains`, or apply the constraint to a value of the matching type.
+- Put `Discriminator` on a union of two or more object types, or remove it.
+- Name a variant of the union as the `Default`, and take the key out of that variant.
 
 ### RUNM1052
 
@@ -634,14 +645,13 @@ The code also covers a `parse` or `fromWireFormat` call of a model class with a 
 
 ### RUNM1080
 
-**Object union with no literal tag.** A model field is a union of objects, named object types or models that golem must convert (a variant holds a `Date`, a `TSerde` value or a model). The variants have no required literal tag that picks one variant from the JSON.
-
-Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants.
+**Object union with no declared tag.** A model has a union of two or more object variants (object types, models, `IObject` types, SDK models or records) and the union has no `Discriminator` tag. Golem never looks for a tag in the variants, and it does not try the variants in turn, so generation stops. This holds at every position (a field, an optional field, an array item, a record value, a tuple item) and also when no variant needs a conversion. The message names the model file, the union and its variants.
 
 **Fix:**
 
-- Give each variant a required field with a literal type that differs between variants, such as `kind: 'cat'` and `kind: 'dog'`.
-- A tag may be a union of literals when the values do not overlap.
+- Add the tag to the union: `(TCat | TDog) & Discriminator<'kind'>`. Import `Discriminator` from `@exprtlabs/golem/tags`.
+- Give each variant a required property with that key and a literal type that differs between variants, such as `kind: 'cat'` and `kind: 'dog'`. A tag may be a union of literals when the values do not overlap.
+- For an SDK model that has no such property, name it as the default: `Discriminator<'kind', Money>`.
 
 ### RUNM1081
 
@@ -652,7 +662,10 @@ The type can be:
 - A plain interface or a plain class.
 - An inline object type.
 - A primitive, or an array of arrays.
-- A union with a member that is no model, or a union of models that share no required literal field with a value of its own.
+- A union with a member that is no model.
+- A union of models with no `Discriminator` tag. The message names the tag to add.
+- A union of models in which a member has no required literal property with the declared key, or two members share a value of it.
+- A union of models with a default variant, such as `Discriminator<'kind', TDefault>`. `NestModelInterceptor` picks no default.
 - An array of a union of models, or a union in a one-field parameter such as `@Body('shape')`. Golem converts a union of models as a whole parameter only.
 
 [`NestModelInterceptor`](/guide/nestjs-requests#what-happens-to-a-request) throws on such a parameter and Nest answers HTTP 500. The message shows the type and the decorator, such as `NoteInput is not a golem model, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type`, and the position of the type.
@@ -664,7 +677,7 @@ What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `g
 
 **Fix:**
 
-- Declare the input as an `IModel` or `IObject`, or bind one field whose type is a model, such as `@Body('address') address: Address`. For a union, give each model a required literal field such as `kind: 'circle'`, and use the union as a whole parameter.
+- Declare the input as an `IModel` or `IObject`, or bind one field whose type is a model, such as `@Body('address') address: Address`. For a union, add `& Discriminator<'kind'>` to it, give each model a required literal field such as `kind: 'circle'`, and use the union as a whole parameter. Take the default variant out of the tag, or bind one model.
 - An app that handles these parameters with its own interceptor sets `nonModelInputs: warn`.
 
 ### RUNM1082
@@ -674,12 +687,12 @@ What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `g
 - Two scalar variants where one converts.
 - A model reference that is no object.
 
-Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no literal tag has its own code, [RUNM1080](#runm1080).
+Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no declared tag has its own code, [RUNM1080](#runm1080).
 
 **Fix:**
 
 - Give the field one variant that needs a conversion.
-- Or make the variants objects with a required literal tag.
+- Or make the variants objects that declare a required literal tag with `Discriminator<'kind'>`.
 - Or declare the whole value with one `TSerde` pair.
 
 ### RUNM1083
@@ -726,7 +739,7 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 ### RUNM1087
 
-**Union variant without the declared tag.** A model union carries `Discriminator<'kind'>`, and a variant has no required property `kind` with a literal type (or a union of literals), or two variants share a `kind` value. The message names the variant and the key, and for a shared value both variants and the value.
+**Union variant without the declared tag.** A model union carries `Discriminator<'kind'>`, and an object variant has no required property `kind` with a literal type (or a union of literals), or two variants share a `kind` value. A scalar, an array, a tuple or `null` beside the objects needs no key. The message names the variant and the key, and for a shared value both variants and the value.
 
 **Fix:**
 
