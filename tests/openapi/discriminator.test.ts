@@ -557,6 +557,63 @@ for (const [form, defaultMapping] of [['a component name', 'Other'], ['a $ref', 
   });
 }
 
+// The Discriminator Object (OpenAPI 3.1 and 3.2): a value names its component "unless a mapping is present for that value".
+// A mapping key equal to a component name therefore removes that component's implicit value, whatever the key targets.
+for (const [name, version, defaultMapping, suffix] of [
+  ['a mapping key that names one variant and targets another', '3.1.0', undefined, 'KeyElsewhere'],
+  ['a mapping key that names one variant and targets the default', '3.2.0', 'Other', 'KeyToDefault'],
+] as const) {
+  test(`${name} removes the implicit value of the variant it names`, async t => {
+    // protects: discriminator value rule, a mapping for a value replaces the component-name value (3.1.1, 3.2.0)
+    const ref = (component: string) => ({ $ref: `#/components/schemas/${component}${suffix}` });
+    const tagged = (own: Record<string, unknown>) => ({
+      type: 'object',
+      required: ['kind', ...Object.keys(own)],
+      properties: { kind: { type: 'string' }, ...own },
+    });
+    const document = {
+      openapi: version,
+      info: { title: 'Pets', version: '1' },
+      paths: {},
+      components: {
+        schemas: {
+          [`Cat${suffix}`]: tagged({ name: { type: 'string' } }),
+          [`Dog${suffix}`]: tagged({ bark: { type: 'boolean' } }),
+          [`Other${suffix}`]: { type: 'object', required: ['note'], properties: { note: { type: 'string' } } },
+          [`Pet${suffix}`]: {
+            oneOf: [ref('Cat'), defaultMapping ? ref('Other') : ref('Dog')],
+            discriminator: {
+              propertyName: 'kind',
+              mapping: { [`Cat${suffix}`]: `${defaultMapping ?? 'Dog'}${suffix}` },
+              ...(defaultMapping ? { defaultMapping: `${defaultMapping}${suffix}` } : {}),
+            },
+          },
+          [`Owner${suffix}`]: { type: 'object', required: ['pet'], properties: { pet: ref('Pet') } },
+        },
+      },
+    };
+    const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-key-'), 'sdk');
+    await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: true } });
+    compileGeneratedSdk(output, [], { strict: true });
+    const models = await importGeneratedModule(output, 'pet models');
+    const OwnerModel = modelClass(models, `Owner${suffix}Model`);
+    const decodePet = (pet: object) => (decodeGeneratedModel(OwnerModel, { pet }) as { pet: object }).pet;
+    const CatModel = modelClass(models, `Cat${suffix}Model`);
+    const target = modelClass(models, `${defaultMapping ?? 'Dog'}${suffix}Model`);
+    // Expected table: the key "Cat…" selects the mapped target and Cat has no value of its own, so nothing selects Cat.
+    const both = { kind: `Cat${suffix}`, name: 'Miso', bark: true, note: 'n' };
+    const pet = decodePet(both);
+    assert.ok(pet instanceof target, 'the mapped key selects its target');
+    assert.ok(!(pet instanceof CatModel), 'the variant the key names is not selected by its own name');
+    // The default variant declares no tag, so it writes none.
+    assert.deepEqual(encodeGeneratedModel(pet), defaultMapping ? { note: 'n' } : { kind: `Cat${suffix}`, bark: true });
+    if (!defaultMapping) {
+      // The target keeps its own implicit value because no mapping key names it.
+      assert.ok(decodePet({ kind: `Dog${suffix}`, bark: true }) instanceof target);
+    }
+  });
+}
+
 for (const validation of [false, true]) {
   test(`a oneOf with no discriminator keyword takes a model with no tag as the default of its tagged objects, with validation ${validation ? 'on' : 'off'}`, async t => {
     // protects: T-602 golem-openapi keeps a no-discriminator oneOf of one untagged model beside tagged objects: the model takes every other object
