@@ -28,8 +28,6 @@ interface Scope {
 interface FieldShape {
   readonly types: Set<string>;
   readonly literals: unknown[];
-  /** The `$ref` targets already read into this shape, so a reference cycle ends. */
-  readonly references: Set<unknown>;
   item?: FieldShape;
 }
 
@@ -40,7 +38,7 @@ function schemaRecord(value: unknown): SchemaRecord | undefined {
 }
 
 function newShape(): FieldShape {
-  return { types: new Set(), literals: [], references: new Set() };
+  return { types: new Set(), literals: [] };
 }
 
 /**
@@ -88,9 +86,8 @@ function collectShape(schema: unknown, shape: FieldShape, scope: Scope): void {
   }
   collectShape(schemaRecord(record[VALIDATION_KEYWORD])?.schema, shape, scope);
   const target = typeof record.$ref === 'string' ? resolveReference(record.$ref, scope) : undefined;
-  // A target met twice, or a reference cycle, adds nothing more.
-  if (target !== undefined && !shape.references.has(target.schema) && !scope.reading.has(target.schema)) {
-    shape.references.add(target.schema);
+  // A reference cycle adds nothing more.
+  if (target !== undefined && !scope.reading.has(target.schema)) {
     scope.reading.add(target.schema);
     collectShape(target.schema, shape, target.scope);
     scope.reading.delete(target.schema);
@@ -139,7 +136,7 @@ function tableShape(shape: FieldShape): QueryFieldShape {
   // A field that admits a string returns its text first, so its literals decide nothing.
   const literals = types.includes('string')
     ? []
-    : shape.literals.filter((value): value is string | number | boolean => ['string', 'number', 'boolean'].includes(typeof value));
+    : [...new Set(shape.literals)].filter((value): value is string | number | boolean => ['string', 'number', 'boolean'].includes(typeof value));
   return {
     types,
     ...(literals.length > 0 ? { literals } : {}),
@@ -149,7 +146,7 @@ function tableShape(shape: FieldShape): QueryFieldShape {
 
 /**
  * The fields of a model's wire schema that a query string decodes, or undefined when it has none. `resolve` names the
- * schema of a model that lives outside the wire schema, such as the base of a model in another file or an SDK model.
+ * schema of a model that lives outside the wire schema, such as the base of a model in another file.
  * A reference into the wire schema itself (`#/$defs/Name`) resolves against it.
  */
 export function queryFieldTable(wireSchema: JsonSchema, resolve: QueryReferenceResolver): QueryFieldTable | undefined {
@@ -177,10 +174,10 @@ function wireSchemasOf(graph: SchemaGraph): ReadonlyMap<string, JsonSchema> {
 }
 
 /**
- * The query fields of a node: its wire schema read with the other nodes of the graph, and then `external` (an SDK model
- * that the graph does not hold), as the models a `$ref` names.
+ * The query fields of a node: its wire schema read with the other nodes of the graph as the models a `$ref` names. An SDK
+ * model is an object there, and an object adds no field a query string decodes.
  */
-export function nodeQueryFields(graph: SchemaGraph, node: SchemaNode, external?: QueryReferenceResolver): QueryFieldTable | undefined {
+export function nodeQueryFields(graph: SchemaGraph, node: SchemaNode): QueryFieldTable | undefined {
   const schemas = wireSchemasOf(graph);
-  return queryFieldTable(node.jsonSchema, (name) => schemas.get(name) ?? external?.(name));
+  return queryFieldTable(node.jsonSchema, (name) => schemas.get(name));
 }
