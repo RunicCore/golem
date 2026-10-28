@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import test, { type TestContext } from 'node:test';
-import { configure, reaction } from 'mobx';
+import test from 'node:test';
+import { reaction } from 'mobx';
 import {
   createApiOperation,
   type ApiOperation,
@@ -11,31 +11,9 @@ import {
   createObservableApiOperation,
   type ObservableApiOperation,
 } from '@exprtlabs/golem/mobx';
+import { captureWarnings, delay, deferred, enforceActions, rejectOnAbort } from './support/client-test-utils.js';
 
 type Warn = typeof console.warn;
-
-function captureWarnings(t: TestContext): string[] {
-  const warnings: string[] = [];
-  const original = console.warn;
-  console.warn = ((...args: unknown[]) => {
-    warnings.push(args.map(String).join(' '));
-  }) as Warn;
-  t.after(() => {
-    console.warn = original;
-  });
-  return warnings;
-}
-
-function enforceActions(t: TestContext): void {
-  configure({ enforceActions: 'always' });
-  t.after(() => configure({ enforceActions: 'observed' }));
-}
-
-function delay(ms = 0): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
-  });
-}
 
 type AssertPlainHasNoLoading = 'loading' extends keyof ApiOperation<unknown, unknown> ? never : true;
 type AssertObservableHasLoading = 'loading' extends keyof ObservableApiOperation<unknown, unknown> ? true : never;
@@ -87,10 +65,7 @@ test('auth values are read when execute runs, not when the factory returns', asy
 
 test('overlapping execute calls warn once per additional invocation on that object', async (t) => {
   const warnings = captureWarnings(t);
-  let release: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const { promise: gate, resolve: release } = deferred();
   const operation = createApiOperation('listItems', async (input: { password: string }) => {
     await gate;
     return input.password;
@@ -104,16 +79,13 @@ test('overlapping execute calls warn once per additional invocation on that obje
     assert.doesNotMatch(warning, /super-secret/);
     assert.doesNotMatch(warning, /password/);
   }
-  release?.();
+  release();
   assert.deepEqual(await Promise.all([first, second, third]), ['super-secret', 'super-secret', 'super-secret']);
 });
 
 test('overlap warnings start again for a later episode on the same object', async (t) => {
   const warnings = captureWarnings(t);
-  let release: (() => void) | undefined;
-  const firstGate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const { promise: firstGate, resolve: release } = deferred();
   const operation = createApiOperation('listItems', async (input: number) => {
     await firstGate;
     return input;
@@ -122,26 +94,20 @@ test('overlap warnings start again for a later episode on the same object', asyn
   const first = operation.execute(1);
   const second = operation.execute(2);
   assert.equal(warnings.length, 1);
-  release?.();
+  release();
   assert.deepEqual(await Promise.all([first, second]), [1, 2]);
 
-  let releaseNext: (() => void) | undefined;
-  const nextGate = new Promise<void>((resolve) => {
-    releaseNext = resolve;
-  });
+  const { promise: nextGate, resolve: releaseNext } = deferred();
   const laterFirst = operation.execute(3);
   const laterSecond = operation.execute(4);
   assert.equal(warnings.length, 2);
-  releaseNext?.();
+  releaseNext();
   assert.deepEqual(await Promise.all([laterFirst, laterSecond]), [3, 4]);
 });
 
 test('independent operations do not share pending state or warnings', async (t) => {
   const warnings = captureWarnings(t);
-  let release: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const { promise: gate, resolve: release } = deferred();
   const left = createApiOperation('left', async () => {
     await gate;
     return 'left';
@@ -153,17 +119,14 @@ test('independent operations do not share pending state or warnings', async (t) 
   const first = left.execute(undefined);
   const second = right.execute(undefined);
   assert.equal(warnings.length, 0);
-  release?.();
+  release();
   assert.deepEqual(await Promise.all([first, second]), ['left', 'right']);
 });
 
 test('same-named factory objects keep independent pending counters', async (t) => {
   const warnings = captureWarnings(t);
   enforceActions(t);
-  let release: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const { promise: gate, resolve: release } = deferred();
   const run = async (): Promise<string> => {
     await gate;
     return 'ok';
@@ -180,7 +143,7 @@ test('same-named factory objects keep independent pending counters', async (t) =
   assert.match(warnings[0] ?? '', /listItems/);
   assert.equal(left.loading, true);
   assert.equal(right.loading, true);
-  release?.();
+  release();
   await Promise.all([first, second, extra]);
   assert.equal(left.loading, false);
   assert.equal(right.loading, false);
@@ -189,10 +152,7 @@ test('same-named factory objects keep independent pending counters', async (t) =
 test('overlapping invocations can finish out of order', async (t) => {
   const warnings = captureWarnings(t);
   enforceActions(t);
-  let releaseSlow: (() => void) | undefined;
-  const slow = new Promise<void>((resolve) => {
-    releaseSlow = resolve;
-  });
+  const { promise: slow, resolve: releaseSlow } = deferred();
   const operation = createObservableApiOperation('items', async (input: 'slow' | 'fast') => {
     if (input === 'slow') await slow;
     await delay();
@@ -205,7 +165,7 @@ test('overlapping invocations can finish out of order', async (t) => {
   assert.match(warnings[0] ?? '', /items/);
   assert.equal(await fastResult, 'fast');
   assert.equal(operation.loading, true);
-  releaseSlow?.();
+  releaseSlow();
   assert.equal(await slowResult, 'slow');
   assert.equal(operation.loading, false);
 });
@@ -218,26 +178,20 @@ test('console.warn failures do not prevent execute', async (t) => {
   t.after(() => {
     console.warn = original;
   });
-  let release: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const { promise: gate, resolve: release } = deferred();
   const operation = createApiOperation('listItems', async () => {
     await gate;
     return 1;
   });
   const first = operation.execute(undefined);
   const second = operation.execute(undefined);
-  release?.();
+  release();
   assert.deepEqual(await Promise.all([first, second]), [1, 1]);
 });
 
 test('failed execute leaves loading true while another call is still pending', async (t) => {
   enforceActions(t);
-  let release: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const { promise: gate, resolve: release } = deferred();
   const operation = createObservableApiOperation('items', async (input: 'ok' | 'fail') => {
     if (input === 'fail') throw new Error('boom');
     await gate;
@@ -247,7 +201,7 @@ test('failed execute leaves loading true while another call is still pending', a
   assert.equal(operation.loading, true);
   await assert.rejects(operation.execute('fail'), /boom/);
   assert.equal(operation.loading, true);
-  release?.();
+  release();
   assert.equal(await success, 'ok');
   assert.equal(operation.loading, false);
 });
@@ -271,16 +225,7 @@ test('pending decrements after validation, network, and abort failures', async (
   const aborted = createObservableApiOperation(
     'abort',
     async (_input: undefined, options?: { signal?: AbortSignal }) => {
-      const signal = options?.signal;
-      if (!signal) throw new Error('missing signal');
-      await new Promise<never>((_, reject) => {
-        const fail = (): void => reject(new Error('aborted'));
-        if (signal.aborted) {
-          fail();
-          return;
-        }
-        signal.addEventListener('abort', fail, { once: true });
-      });
+      await rejectOnAbort(options?.signal);
     },
   );
   const pending = aborted.execute(undefined, { signal: controller.signal });
@@ -294,10 +239,7 @@ test('MobX loading tracks pending with action-safe reactions', async (t) => {
   const warnings = captureWarnings(t);
   enforceActions(t);
   const loadings: boolean[] = [];
-  let release: (() => void) | undefined;
-  const gate = new Promise<void>((resolve) => {
-    release = resolve;
-  });
+  const { promise: gate, resolve: release } = deferred();
   const observableOperation = createObservableApiOperation('listItems', async () => {
     await gate;
     return 'ok';
@@ -316,7 +258,7 @@ test('MobX loading tracks pending with action-safe reactions', async (t) => {
   const third = observableOperation.execute(undefined);
   assert.equal(warnings.length, 2);
   assert.equal(observableOperation.loading, true);
-  release?.();
+  release();
   await Promise.all([first, second, third]);
   assert.equal(observableOperation.loading, false);
   assert.deepEqual(loadings, [false, true, false]);

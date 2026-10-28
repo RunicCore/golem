@@ -4,7 +4,6 @@ import { clientConsumerSource } from '../fixture-templates/openapi/client-consum
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { after } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate } from '#openapi/generator';
@@ -12,8 +11,7 @@ import {
   captureRequest,
   compileGeneratedSdk,
   generateMaterializedSdk,
-  isGeneratedClientClass,
-  requireRecord,
+  loadGeneratedClient,
   documentBase,
   writeOpenApiDocument,
   type GeneratedClientClass,
@@ -494,14 +492,7 @@ async function generateContractClient(profile: OpenApiGenerationProfile): Promis
   const consumer = path.join(output, 'consumer.ts');
   writeFileSync(consumer, clientConsumerSource({ name }).text);
   compileGeneratedSdk(output, [consumer]);
-  const module = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    `${name} client`,
-  );
-  const Client = module[`${name}Client`];
-  assert.equal(isGeneratedClientClass(Client), true);
-  if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client`);
-  return Client;
+  return loadGeneratedClient(output, name);
 }
 
 function jsonResponse(body: unknown, contentType: string): Response {
@@ -509,6 +500,20 @@ function jsonResponse(body: unknown, contentType: string): Response {
     status: 200,
     headers: { 'content-type': contentType },
   });
+}
+
+/** Answers every request with a JSON body that carries the content type of the request, or `application/json`. */
+async function echoContentTypeFetch(url: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const request = captureRequest(url, init);
+  return jsonResponse({ ignored: true }, request.init.headers.get('content-type') || 'application/json');
+}
+
+/** A fetch that asserts the authorization header of every request and answers 204. */
+function fetchExpectingAuthorization(expected: string): (url: string | URL | Request, init?: RequestInit) => Promise<Response> {
+  return async (url, init) => {
+    assert.equal(captureRequest(url, init).init.headers.get('authorization'), expected);
+    return new Response(null, { status: 204 });
+  };
 }
 
 test('own configured auth keys are required before providers run, including special names', async () => {
@@ -578,10 +583,7 @@ test('own configured auth keys are required before providers run, including spec
   const fallback = new Client({
     baseUrl: 'https://api.example',
     auth: { bearer: 'or-token' },
-    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      assert.equal(captureRequest(url, init).init.headers.get('authorization'), 'Bearer or-token');
-      return new Response(null, { status: 204 });
-    },
+    fetchImpl: fetchExpectingAuthorization('Bearer or-token'),
   });
   await fallback.useOr().execute({});
   await assert.rejects(() => fallback.useAnd().execute({}), /No configured credentials satisfy/);
@@ -590,10 +592,7 @@ test('own configured auth keys are required before providers run, including spec
   const undefinedOwn = new Client({
     baseUrl: 'https://api.example',
     auth: { toString: undefined, bearer: 'or-token' },
-    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      assert.equal(captureRequest(url, init).init.headers.get('authorization'), 'Bearer or-token');
-      return new Response(null, { status: 204 });
-    },
+    fetchImpl: fetchExpectingAuthorization('Bearer or-token'),
   });
   await undefinedOwn.useOr().execute({});
   await assert.rejects(() => undefinedOwn.useToString().execute({}), /No configured credentials satisfy/);
@@ -674,10 +673,7 @@ test('media essence selects builtins and custom codecs without depending on inse
         return { source: 'raw' };
       },
     },
-    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      const request = captureRequest(url, init);
-      return jsonResponse({ ignored: true }, request.init.headers.get('content-type') || 'application/json');
-    },
+    fetchImpl: echoContentTypeFetch,
   });
   const raw = await custom.sendJsonUpper().execute({ body: { ok: true } });
   const essence = await custom.sendJsonParam().execute({ body: { ok: true } });
@@ -716,10 +712,7 @@ test('media essence selects builtins and custom codecs without depending on inse
         return { source: 'wild' };
       },
     },
-    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      const request = captureRequest(url, init);
-      return jsonResponse({ ignored: true }, request.init.headers.get('content-type') || 'application/json');
-    },
+    fetchImpl: echoContentTypeFetch,
   });
   const reversedRaw = await reversed.sendJsonUpper().execute({ body: { ok: true } });
   const reversedEssence = await reversed.sendJsonParam().execute({ body: { ok: true } });
