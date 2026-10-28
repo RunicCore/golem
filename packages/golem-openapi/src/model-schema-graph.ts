@@ -122,7 +122,7 @@ export function analyzeOpenApiModels(
   dates: OpenApiDates = 'date',
 ): OpenApiModelAnalysis {
   const resources = collectCanonicalResources(document);
-  const { definitions, ordered, diagnostics, selections } = collectOpenApiModelDefinitions(document, resources);
+  const { definitions, ordered, diagnostics, selections } = collectOpenApiModelDefinitions(document, resources, dates);
   const { schemaGraph, nodeIdByDefinition } = internOpenApiSchemaGraph(document, ordered, definitions, validationEnabled, resources, selections, dates);
   for (const alias of definitions.aliases.values()) {
     const nodeId = nodeIdByDefinition.get(alias.name);

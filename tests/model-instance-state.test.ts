@@ -411,4 +411,32 @@ export class Stamp extends TStampBaseModel { constructor(values: Partial<TStampF
   assert.deepEqual(stamp.toWireFormat(date, options), { id: 'a' }, 'toWireFormat of a Date | undefined field');
   assert.equal(stamp.stringify(date, options), '{"id":"a"}', 'stringify of a Date | undefined field');
   assert.deepEqual(encodeGeneratedModel(date as never), { id: 'a' }, 'the class-level encode of a Date | undefined field');
+  // protects: T-587 the class-level encode passed a nested object through, so its undefined required key stayed an own key
+  assert.deepEqual(encodeGeneratedModel(instance as never), { id: 'a', inner: {} }, 'the class-level encode of a nested undefined key');
 });
+
+for (const validation of [false, true]) {
+  test(`an optional key of a nested object whose value is undefined is absent from toWireFormat and the class-level encode (validation ${validation ? 'on' : 'off'})`, async (t) => {
+    // protects: T-587 a nested object kept an own undefined key, plain or beside a converted field, which F-172 and stringify drop
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-nested-optional-', name: 'model-nested-optional', linkWorkspaceNodeModules: true });
+    fs.writeFileSync(path.join(sourceRoot, 'nested-optional.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TPlainBaseModel, TDatedBaseModel, type TPlainFields, type TDatedFields } from './nested-optional.model.generated.js';
+export type TPlain = IModel<{ inner: { tag?: string; n?: number } }>;
+export type TDated = IModel<{ inner: { tag?: string; at: Date } }>;
+export class Plain extends TPlainBaseModel { constructor(values: Partial<TPlainFields> = {}) { super(values); } }
+export class Dated extends TDatedBaseModel { constructor(values: Partial<TDatedFields> = {}) { super(values); } }
+`);
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const models = await import(pathToFileURL(path.join(root, 'build/nested-optional.model.js')).href) as { Plain: new (values?: object) => object; Dated: new (values?: object) => object };
+    const options = { validate: false };
+    const plain = new models.Plain({ inner: { tag: undefined } });
+    const dated = new models.Dated({ inner: { tag: undefined, at: new Date(0) } });
+    const plainCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TPlain'));
+    const datedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TDated'));
+    assert.deepEqual(encodeGeneratedModel(plain as never), { inner: {} }, 'encode, no converted field');
+    assert.deepEqual(plainCodec.toWireFormat(plain, options), { inner: {} }, 'toWireFormat, no converted field');
+    assert.deepEqual(encodeGeneratedModel(dated as never), { inner: { at: '1970-01-01T00:00:00.000Z' } }, 'encode, beside a Date');
+    assert.deepEqual(datedCodec.toWireFormat(dated, options), { inner: { at: '1970-01-01T00:00:00.000Z' } }, 'toWireFormat, beside a Date');
+  });
+}
