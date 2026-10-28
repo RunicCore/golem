@@ -370,7 +370,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1051
 
-**Incompatible constraint.** `MinContains`/`MaxContains` appears without a `Contains` constraint on the same value, or a constraint's family (number, string, array, or object) doesn't match the type it tags. **Fix:** Add a `Contains` constraint alongside `MinContains`/`MaxContains`, or apply the constraint to a value of the matching type.
+**Incompatible constraint.** `MinContains`/`MaxContains` appears without a `Contains` constraint on the same value, or a constraint's family (number, string, array, or object) doesn't match the type it tags. **Fix:** Add a `Contains` constraint alongside `MinContains`/`MaxContains`, or apply the constraint to a value of the matching type. A `Discriminator` tag on a value that is no union of two or more object types stops with this code too: put the tag on the union, or remove it.
 
 ### RUNM1052
 
@@ -723,6 +723,16 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 - Use a `Record<string, V>` for a `Map` and an array for a `Set`.
 - Or state the schema on the field with `@ApiProperty({ type: 'object', additionalProperties: { type: 'string' } })`. A `type`, a `schema` or `additionalProperties` in the options counts. Golem then writes that schema and no property of the `Map`. A `Map` nested in an inline object or an array has no decorator to carry a schema, so it always stops.
+
+### RUNM1087
+
+**Union variant without the declared tag.** A model union carries `Discriminator<'kind'>`, and a variant has no required property `kind` with a literal type (or a union of literals), or two variants share a `kind` value. The message names the variant and the key, and for a shared value both variants and the value.
+
+**Fix:**
+
+- Give each variant a required property with the declared key and a literal type, such as `kind: 'email'` and `kind: 'phone'`.
+- Keep the values different between variants. A tag may be a union of literals when the values do not overlap.
+- Or change the key in `Discriminator<'kind'>` to a property that every variant has.
 
 ## Validators (VALIDATE)
 

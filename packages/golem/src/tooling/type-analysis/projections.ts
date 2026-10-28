@@ -1,6 +1,7 @@
 import * as ts from '../typescript-ns.js';
 import type { ModelSpecification } from './models.js';
 import { resolveSymbol, isModelDeclarationReference } from './symbols.js';
+import { isDiscriminatorTag } from './tags.js';
 import { manifestModelOfSymbol, type ResolvedModelManifestEntry } from './provenance.js';
 
 interface Provenance {
@@ -37,7 +38,10 @@ export function fieldProvenance(
       return { ...source, projection: true, externals: [] };
     }
     if (ts.isUnionTypeNode(current) || ts.isIntersectionTypeNode(current)) {
-      const members = current.types.map(member => walk(member, substitutions, next));
+      // A Discriminator tag names the tag key of the union it is written on and composes nothing, so `(A | B) & Discriminator<'k'>` is the union.
+      const parts = ts.isIntersectionTypeNode(current) ? current.types.filter(member => !isDiscriminatorTag(checker, member)) : current.types;
+      if (parts.length === 1) return walk(parts[0], substitutions, next);
+      const members = parts.map(member => walk(member, substitutions, next));
       return {
         models: [...new Set(members.flatMap(member => member.models))],
         projection: ts.isIntersectionTypeNode(current) && members.some(member => member.models.length > 0)
