@@ -12,10 +12,14 @@ function fixture(t: TestContext) {
   return createModelProject(t, { prefix: 'golem-tag-alias-generics-', name: 'tag-alias-generics', linkWorkspaceNodeModules: true });
 }
 
+function writeModelA(sourceRoot: string, imports: SourceFragment, fields: SourceFragment): void {
+  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports, fields }).text);
+}
+
 async function validity(t: TestContext, prelude: SourceFragment, field: SourceFragment, values: readonly unknown[]): Promise<boolean[]> {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), `export function notBlank(value: string): boolean | string { return value.trim() !== '' || 'blank'; }\n`);
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: prelude, fields: field }).text);
+  writeModelA(sourceRoot, prelude, field);
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
@@ -84,7 +88,7 @@ for (const item of [
   test(`generic alias diagnostic: ${item.name}`, t => {
     const { root, sourceRoot } = fixture(t);
     fs.writeFileSync(path.join(sourceRoot, 'rules.ts'), `export function notBlank(value: string): boolean { return value.trim() !== ''; }\n`);
-    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`${tags}\n${item.prelude}`, fields: item.field }).text);
+    writeModelA(sourceRoot, tsSource`${tags}\n${item.prelude}`, item.field);
     assert.throws(() => generate({ root, profile: { mobx: false, validation: true } }), error => { assert.match(String(error), item.expected); return true; });
   });
 }
