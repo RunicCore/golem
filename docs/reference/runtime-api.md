@@ -179,7 +179,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 
 - `ModelValidator.validate()` returns `false` for an invalid value. Checked serde calls and generated client checks throw `LibError` instead.
 - A `TSerde` function that throws is wrapped once with its `cause`.
-- A [`TValidation`](#tvalidation) predicate that throws is wrapped only by `validateInstance` and `ModelValidator.validate`. In `parse`, `fromWireFormat` and `validate<T>` its error reaches you unchanged.
+- A [`TValidation`](#tvalidation) predicate that throws, or returns neither a boolean nor a string, makes every checked call throw `LibError` of kind `Validation` with the message `Model validation could not finish.`, `causedByInput` set to `false` and the original error as `cause`. This covers `parse`, `fromWireFormat`, `validate<T>`, `assertValue<T>`, `validateInstance` and `ModelValidator.validate`.
 - A thrown `LibError` passes through unchanged.
 
 [Errors and issues](/guide/validation#errors-and-issues) shows how to read them.
@@ -453,7 +453,7 @@ type TValidation<Predicate extends (...args: never[]) => boolean | string>;
 - On a model type, it checks the model value. On the parameter type of a `TSerde` decoder, it checks the JSON value.
 - `Money & TValidation<typeof extra>` adds a rule to an SDK type. The rule runs with the checks of that type.
 - A predicate does not become part of an OpenAPI document. The document carries the JSON schema only.
-- `validateInstance` and `ModelValidator.validate` wrap an exception from a predicate in a `LibError` of kind `Validation`. `cause` holds the exception and `causedByInput` is `false`.
+- Every checked call wraps an exception from a predicate, or a result that is not a boolean or a string, in a `LibError` of kind `Validation`. `cause` holds the exception and `causedByInput` is `false`.
 
 | Failure | Where | Result |
 | --- | --- | --- |
