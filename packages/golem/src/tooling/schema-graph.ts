@@ -235,7 +235,13 @@ function codecShapeDescriptor(
       ...descriptor,
       variants: order.map((index) => variants[index].shape) as ModelTypeDescriptor[],
       ...(discriminator
-        ? { discriminator: { ...discriminator, variants: order.map((index) => discriminator.variants[index]) } }
+        ? {
+          discriminator: {
+            ...discriminator,
+            variants: order.map((index) => discriminator.variants[index]),
+            ...(discriminator.defaultVariant === undefined ? {} : { defaultVariant: order.indexOf(discriminator.defaultVariant) }),
+          },
+        }
         : {}),
     };
   }

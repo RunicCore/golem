@@ -40,6 +40,10 @@ export interface TagMetadata {
   readonly serde?: SerdeBinding;
   readonly constraints: readonly ModelConstraint[];
   readonly date?: true;
+  /** The property a `Discriminator<Key>` tag names as the tag of a model object union. */
+  readonly discriminator?: string;
+  /** The `Default` type argument of that tag, when it names a variant. */
+  readonly discriminatorDefault?: ts.Type;
 }
 
 export interface TagReadResult {
@@ -100,7 +104,8 @@ const EMPTY: TagMetadata = Object.freeze({
   constraints: [],
 });
 
-function mergeMetadata(first: TagMetadata, second: TagMetadata): TagMetadata {
+/** Merges the tags of two parts; two different Discriminator keys are a RUNM1051 at `at`. */
+function mergeMetadata(context: TagAnalysisContext, at: ts.Node, first: TagMetadata, second: TagMetadata): TagMetadata {
   const validations = new Map<string, ValidationBinding>();
   for (const binding of [...first.validations, ...second.validations]) validations.set(binding.id, binding);
   const constraints = new Map<string, ModelConstraint>();
@@ -115,11 +120,18 @@ function mergeMetadata(first: TagMetadata, second: TagMetadata): TagMetadata {
       );
     }
   }
+  if (first.discriminator !== undefined && second.discriminator !== undefined && first.discriminator !== second.discriminator) {
+    throw context.diagnostic(at, '1051', `Conflicting Discriminator tags: '${first.discriminator}' and '${second.discriminator}'. A union has one tag key.`);
+  }
+  const discriminator = first.discriminator ?? second.discriminator;
+  const discriminatorDefault = first.discriminatorDefault ?? second.discriminatorDefault;
   return {
     validations: [...validations.values()],
     constraints: [...constraints.values()],
     ...(first.serde ?? second.serde ? { serde: first.serde ?? second.serde } : {}),
     ...(first.date || second.date ? { date: true } : {}),
+    ...(discriminator === undefined ? {} : { discriminator }),
+    ...(discriminatorDefault === undefined ? {} : { discriminatorDefault }),
   };
 }
 
@@ -679,6 +691,14 @@ function readIfThenElse(context: TagAnalysisContext, name: string, args: readonl
   return constraintOnly({ kind: 'ifThenElse', if: condition, then: thenSchema, ...(elseSchema === undefined ? {} : { else: elseSchema }) });
 }
 
+function readDiscriminator(context: TagAnalysisContext, name: string, args: readonly TagArgument[], at: ts.Node): TagMetadata {
+  const key = literalValue(context.checker, args[0], 'string');
+  if (typeof key !== 'string') throw context.diagnostic(at, '1044', `${name} requires a string literal argument.`);
+  const declared = argumentType(context.checker, args[1]);
+  const discriminatorDefault = declared && (declared.flags & ts.TypeFlags.Never) === 0 ? declared : undefined;
+  return { validations: [], constraints: [], discriminator: key, ...(discriminatorDefault ? { discriminatorDefault } : {}) };
+}
+
 /** Every tag golem reads, by the name its declaration in tags.ts carries. One reader serves a tag written in source and a tag the checker instantiated. */
 const TAG_READERS: ReadonlyMap<string, TagReader> = new Map<string, TagReader>([
   ['TValidation', readValidation],
@@ -725,6 +745,7 @@ const TAG_READERS: ReadonlyMap<string, TagReader> = new Map<string, TagReader>([
     schemas: schemaList(context, argumentType(context.checker, args[0]), args[0]?.node, at, name),
   })],
   ['IfThenElse', readIfThenElse],
+  ['Discriminator', readDiscriminator],
 ]);
 
 /**
@@ -805,11 +826,40 @@ function metadataFromType(
   if (direct) return direct;
   if (type.isIntersection()) {
     return type.types.reduce(
-      (metadata, member) => mergeMetadata(metadata, metadataFromType(context, member, seen)),
+      (metadata, member) => mergeMetadata(context, context.sourceFile, metadata, metadataFromType(context, member, seen)),
       EMPTY,
     );
   }
   return EMPTY;
+}
+
+/** Whether a type node is a reference to the `Discriminator` tag, by the tag the symbol resolves to (the importer's name for it does not matter). */
+export function isDiscriminatorTag(checker: ts.TypeChecker, node: ts.TypeNode): boolean {
+  return ts.isTypeReferenceNode(node) && golemTagName(checker, checker.getSymbolAtLocation(node.typeName)) === 'Discriminator';
+}
+
+/** The type without its `Discriminator` tag members: `A & Discriminator<'k'>` is `A`. A type with no such member is returned as it is. */
+export function withoutDiscriminator(checker: ts.TypeChecker, type: ts.Type): ts.Type {
+  if (!type.isIntersection()) return type;
+  const rest = type.types.filter((member) => golemTagName(checker, member.aliasSymbol) !== 'Discriminator');
+  return rest.length === 1 && rest.length < type.types.length ? rest[0] : type;
+}
+
+/**
+ * The constituents of a type without its `Discriminator` tag members. The checker distributes `(A | B) & Discriminator<'k'>` over the union,
+ * so a variant is `A & Discriminator<'k'>` with the constituents of `A` flattened beside the tag.
+ */
+export function untaggedMembers(checker: ts.TypeChecker, type: ts.Type): readonly ts.Type[] {
+  const members = type.isIntersection() ? type.types : [type];
+  return members.filter((member) => golemTagName(checker, member.aliasSymbol) !== 'Discriminator');
+}
+
+/** The tag key a `Discriminator` tag in the checker's type names, or undefined when the type carries none. It runs no other tag reader. */
+export function checkerDiscriminator(context: TagAnalysisContext, type: ts.Type): { readonly key: string; readonly defaultType?: ts.Type } | undefined {
+  const members = type.isIntersection() ? type.types : [type];
+  const tag = members.find((member) => golemTagName(context.checker, member.aliasSymbol) === 'Discriminator');
+  const read = tag ? parseCheckerTag(context, tag) : undefined;
+  return read?.discriminator === undefined ? undefined : { key: read.discriminator, ...(read.discriminatorDefault ? { defaultType: read.discriminatorDefault } : {}) };
 }
 
 /** Whether a type carries a TSerde tag: the tag type itself or a member of an intersection. It reads aliases only, so it runs no tag reader. */
@@ -856,12 +906,12 @@ export function readTags(
     for (const part of node.types) {
       const tag = ts.isTypeReferenceNode(part) ? parseTag(context, part) : undefined;
       if (tag) {
-        metadata = mergeMetadata(metadata, tag);
+        metadata = mergeMetadata(context, part, metadata, tag);
         continue;
       }
       const nested = readTags(context, part, seenAliases);
       baseNode ??= nested.baseNode;
-      metadata = mergeMetadata(metadata, nested.metadata);
+      metadata = mergeMetadata(context, part, metadata, nested.metadata);
     }
     return baseNode ? { baseNode, metadata } : emptyBase(node);
   }
@@ -889,7 +939,7 @@ export function readTags(
         },
       };
       const nested = readTags(nestedContext, declaration.type, next);
-      if (nested.metadata.validations.length || nested.metadata.serde || nested.metadata.constraints.length || nested.metadata.date) {
+      if (nested.metadata.validations.length || nested.metadata.serde || nested.metadata.constraints.length || nested.metadata.date || nested.metadata.discriminator !== undefined) {
         return nested;
       }
     }
@@ -904,7 +954,7 @@ export function analyzeNode(
 ): TagReadResult {
   const nodeContext: TagAnalysisContext = { ...context, writtenFunctions: newWrittenFunctions() };
   const result = node ? readTags(nodeContext, node) : { baseNode: undefined, metadata: EMPTY };
-  const metadata = mergeMetadata(result.metadata, metadataFromType(nodeContext, type));
+  const metadata = mergeMetadata(nodeContext, node ?? context.sourceFile, result.metadata, metadataFromType(nodeContext, type));
   if (isDateType(context.checker, type)) {
     return { baseNode: result.baseNode ?? node, metadata: { ...metadata, date: true } };
   }
@@ -912,6 +962,7 @@ export function analyzeNode(
   // mapped property inherits is not the type its template computes), so the node is no untagged base.
   const nodeCarriesTags = result.metadata.validations.length > 0
     || result.metadata.serde !== undefined
-    || result.metadata.constraints.length > 0;
+    || result.metadata.constraints.length > 0
+    || result.metadata.discriminator !== undefined;
   return { baseNode: nodeCarriesTags ? result.baseNode : undefined, metadata };
 }

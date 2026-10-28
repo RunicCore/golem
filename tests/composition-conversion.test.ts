@@ -242,6 +242,7 @@ test('discriminated plain object unions convert only the selected branch', () =>
         child: { kind: 'generated-model', id: 'child' },
       }),
     ],
+    discriminator: { propertyName: 'kind', variants: [{ values: ['token'] }, { values: ['child'] }] },
   };
   const { fromJSON, toJSON } = compileDirections(descriptor);
 

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import { buildRecursiveNames } from './support/recursive-names.js';
 
-const HEAD = "import type { IModel } from '@exprtlabs/golem/model';\n";
+const HEAD = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { Discriminator } from '@exprtlabs/golem/tags';\n";
 
 /** The names that the generated files give a `<name>Fields` type, for one project. */
 async function projectionNames(t: TestContext, sources: Record<string, string>): Promise<string[]> {
@@ -25,7 +25,7 @@ test('a generic instance named by a literal union argument gets one name whichev
 test('variants of a union that no authored member names are numbered the same whichever way TypeScript orders a union inside them', async (t: TestContext) => {
   // protects: T-512 F-37 the number of an unmatched union variant follows its text, which holds a literal union: it must not follow the order in which the checker met the literals
   const sources = (first: string): Record<string, string> => ({
-    'v.model.ts': `${HEAD}type U = { tag: ${first}; ok: true; next?: U } | { tag: 'a' | 'c'; ok: false; next?: U };\ninterface Shapes { v: U }\nexport type TV = IModel<{ v: Shapes['v'] }>;\n`,
+    'v.model.ts': `${HEAD}type U = ({ tag: ${first}; ok: true; next?: U } | { tag: 'a' | 'c'; ok: false; next?: U }) & Discriminator<'ok'>;\ninterface Shapes { v: U }\nexport type TV = IModel<{ v: Shapes['v'] }>;\n`,
   });
   const forward = await projectionNames(t, sources("'a' | 'b'"));
   const reversed = await projectionNames(t, sources("'b' | 'a'"));

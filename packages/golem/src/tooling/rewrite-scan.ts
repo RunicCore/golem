@@ -4,7 +4,6 @@ import * as ts from './typescript-ns.js';
 import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
 import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
 import { OPERATION_METHOD_KEYS_EXPORT, operationCodecRegistryPath, operationCodecSlot, operationSlotCodecs, type OperationMethodCodecs } from './generated-paths.js';
-import { sharedTag } from './union-conversion.js';
 import type { DiscriminatorValue } from '../model.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import { evaluateStaticValue } from './static-value.js';
@@ -16,6 +15,7 @@ import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { advertisedModelManifests } from './type-analysis/provenance.js';
 import { fieldProvenance } from './type-analysis/projections.js';
 import { authoredUnionMembers } from './type-analysis/projection-names.js';
+import { readTags } from './type-analysis/tags.js';
 import { declaredModelAlias, foreignModelReason, modelDeclarationKind, propertyType, resolveSymbol } from './type-analysis/symbols.js';
 
 interface ScanInput {
@@ -551,9 +551,9 @@ interface NestBinding {
   readonly name?: ts.EntityName;
   /** The model is a class that is the default export of its file, which golem cannot key. */
   readonly defaultExport?: boolean;
-  /** The type is a union of golem models with no tag: every member has a codec, and no required literal property tells them apart. */
-  readonly untaggedUnion?: boolean;
-  /** The type is a union of golem models that a required literal property tells apart; its `id` joins the ids of the members. */
+  /** The type is a union of golem models that no declared tag tells apart: it names why, and the fix. */
+  readonly unionFault?: readonly [reason: string, advice: string];
+  /** The type is a union of golem models that its declared `Discriminator` tag tells apart; its `id` joins the ids of the members. */
   readonly union?: NestUnion;
 }
 
@@ -576,18 +576,60 @@ function literalTagValues(checker: ts.TypeChecker, type: ts.Type): Discriminator
   return values.length === 0 ? undefined : values;
 }
 
-/** The tag that tells the members of a union apart, by the rule of model generation (`sharedTag`), read from the members' types. A query tag is text, so `text` makes `1` and `'1'` one value. */
-function unionTag(checker: ts.TypeChecker, members: readonly ts.TypeNode[], text: boolean): { readonly property: string; readonly values: readonly (readonly DiscriminatorValue[])[] } | undefined {
-  return sharedTag(members.map((member) => new Map(checker.getPropertiesOfType(checker.getTypeFromTypeNode(member)).flatMap((property) => {
-    const values = (property.flags & ts.SymbolFlags.Optional) === 0 ? literalTagValues(checker, propertyType(checker, property, member)) : undefined;
-    return values === undefined ? [] : [[property.getName(), values] as const];
-  }))), { byText: text });
+/** A `Discriminator` tag golem cannot read, such as a key that is no string literal. */
+class TagReadFault extends Error {}
+
+/**
+ * The tag that tells the members of a union apart: the key of the `Discriminator` tag written on the union type (written out or through an alias),
+ * and the literal values that each member requires for that key. Golem never looks for a key in the members. A query tag is text, so `text` makes
+ * `1` and `'1'` one value.
+ */
+function unionTag(
+  input: { readonly root: string; readonly checker: ts.TypeChecker; readonly file: ts.SourceFile },
+  model: ts.TypeNode,
+  members: readonly ts.TypeNode[],
+  text: boolean,
+): { readonly property: string; readonly values: readonly (readonly DiscriminatorValue[])[] } | { readonly fault: readonly [reason: string, advice: string] } {
+  const { root, checker, file } = input;
+  let declared;
+  try {
+    declared = readTags({ checker, sourceFile: file, identityRoot: root, diagnostic: (_node, _code, message) => new TagReadFault(message) }, model).metadata;
+  } catch (error) {
+    if (!(error instanceof TagReadFault)) throw error;
+    return { fault: ['has a Discriminator tag that golem cannot read', error.message] };
+  }
+  const property = declared.discriminator;
+  if (property === undefined) {
+    return { fault: ['is a union of golem models with no declared tag', "Declare the tag key on the union: (A | B) & Discriminator<'kind'>, and give each model a required literal field kind with a value of its own, such as kind: 'circle'. Or bind one field of a model type."] };
+  }
+  if (declared.discriminatorDefault !== undefined) {
+    return { fault: [`declares a default variant with Discriminator<'${property}', ...>, which NestModelInterceptor does not pick`, `Remove the default type from the tag, or bind one model.`] };
+  }
+  const owners = new Map<DiscriminatorValue | string, string>();
+  const values: DiscriminatorValue[][] = [];
+  for (const member of members) {
+    const name = member.getText(file);
+    const symbol = checker.getPropertyOfType(checker.getTypeFromTypeNode(member), property);
+    const own = symbol && (symbol.flags & ts.SymbolFlags.Optional) === 0 ? literalTagValues(checker, propertyType(checker, symbol, member)) : undefined;
+    if (own === undefined) {
+      return { fault: [`has the member ${name} with no required literal property "${property}", the tag key that Discriminator<'${property}'> declares`, `Give ${name} a required "${property}" property with a literal type, such as ${property}: 'a'.`] };
+    }
+    for (const value of own) {
+      const key = text ? String(value) : value;
+      const owner = owners.get(key);
+      if (owner !== undefined) return { fault: [`has the members ${owner} and ${name} that share the "${property}" value ${JSON.stringify(value)}`, `Give each model its own "${property}" value.`] };
+      owners.set(key, name);
+    }
+    values.push(own);
+  }
+  return { property, values };
 }
 
 /** A parameter type that is a union of golem models (written out, or through an alias of a union): the models, and the tag that picks one when there is one. */
 function nestUnionBinding(
   input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile; readonly dependencies: Set<string>; readonly unions?: { readonly text: boolean } },
   unbound: NestBinding,
+  model: ts.TypeNode,
   members: readonly ts.TypeNode[],
 ): NestBinding {
   const { root, checker, keys, file, dependencies } = input;
@@ -602,8 +644,8 @@ function nestUnionBinding(
   });
   const golemModel = variants.every((variant) => variant.golemModel);
   if (!golemModel || variants.some((variant) => variant.id === '')) return { ...unbound, golemModel };
-  const tag = unionTag(checker, members, input.unions?.text === true);
-  if (tag === undefined) return { ...unbound, golemModel: true, id: '', untaggedUnion: true };
+  const tag = unionTag({ root, checker, file }, model, members, input.unions?.text === true);
+  if ('fault' in tag) return { ...unbound, golemModel: true, id: '', unionFault: tag.fault };
   return {
     ...unbound,
     golemModel: true,
@@ -623,7 +665,7 @@ function nestBinding(
   if (!model) return unbound;
   // Only an input parameter can be a union: a union return is left as Nest JSON.
   const members = input.unions !== undefined ? authoredUnionMembers(checker, model) : undefined;
-  if (members) return nestUnionBinding(input, unbound, members);
+  if (members) return nestUnionBinding(input, unbound, model, members);
   const { label } = unbound;
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
@@ -876,16 +918,16 @@ function scanFile(
     const decorator = names.find((name) => NEST_PARAMETER_DECORATORS.includes(name));
     if (!parameter.type || decorator === undefined || hasDecorator(names, NEST_CODEC_DECORATOR) || hasDecorator(names, NEST_UNION_DECORATOR)) return;
     const typeNode = parameter.type;
-    const { id, golemModel, label, array, name, defaultExport, union, untaggedUnion } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies, unions: { text: decorator === 'Query' } }, typeNode);
+    const { id, golemModel, label, array, name, defaultExport, union, unionFault } = nestBinding({ root, checker, keys, file, dependencies: scan.dependencies, unions: { text: decorator === 'Query' } }, typeNode);
     // A union converts as a whole input only; golem describes no array of a union and no one-field union.
     const unionUnsupported = union !== undefined && (array || !['input', 'query'].includes(nestSlot(checker, parameter, decorator)));
     if ((id === '' && union === undefined) || unionUnsupported) {
-      const [reason, advice] = untaggedUnion
-        ? ['is a union of golem models with no tag', "Give each model a required literal field with a value of its own, such as kind: 'circle', or bind one field of a model type."]
+      const [reason, advice] = unionFault
+        ? unionFault
         : unionUnsupported
           ? ['is a union of golem models, which NestModelInterceptor converts only as a whole input', `Declare the parameter as the union itself in a whole @${decorator}(), or as one model.`]
           : ['is not a golem model', 'Declare the input as a golem model (IModel or IObject), or bind one field of a model type.'];
-      if (golemModel && !untaggedUnion && !unionUnsupported) scan.diagnostics.push(locate(root, file, typeNode, CODE_NEST_NO_CODEC, defaultExport
+      if (golemModel && !unionFault && !unionUnsupported) scan.diagnostics.push(locate(root, file, typeNode, CODE_NEST_NO_CODEC, defaultExport
         ? `@${decorator}() type ${label} is the default export of its file, which has no codec id; golem generate cannot add one. Export the class by name (export class ${label}) and import it by name.`
         : `@${decorator}() type ${label} has no unique codec id; run golem generate`));
       else scan.diagnostics.push(locate(root, file, typeNode, CODE_NEST_NOT_A_MODEL,

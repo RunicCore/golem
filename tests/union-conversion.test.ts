@@ -219,29 +219,6 @@ test('model conversion writes a variant instance by class and rejects unknown or
   }
 });
 
-test('inferred literal tags require the tag on an instance too', () => {
-  class LiteralCat {}
-  const union: ModelTypeDescriptor = {
-    kind: 'union',
-    variants: [{ kind: 'reference', name: 'Cat' }, { kind: 'reference', name: 'Dog' }],
-  };
-  const resolveModel = (id: string) => ({
-    className: identifier(id === 'Cat' ? 'LiteralCat' : 'LiteralDog'),
-    discriminators: { kind: id === 'Cat' ? 'cat' : 'dog' },
-    decode: (value: Code) => value,
-    encode: (value: Code) => code`({ ...${value} })`,
-  });
-  const { run } = runModule(
-    `const run = (value: unknown) => ${render(emitModelToJSON(union, identifier('value'), resolveModel))};`,
-    { LiteralCat, LiteralDog: class LiteralDog {}, unknownDiscriminatorValue: conversion.unknownDiscriminatorValue,
-      withDiscriminatorValue: conversion.withDiscriminatorValue },
-    { exports: ['run'] },
-  ) as { run: RuntimeFunction };
-  assert.deepEqual(run(Object.assign(new LiteralCat(), { kind: 'cat', name: 'Miso' })), { kind: 'cat', name: 'Miso' });
-  assert.throws(() => run(Object.assign(new LiteralCat(), { name: 'Miso' })), failsWith(LibErrorKind.Serialization, /undefined/),
-    'the variant schema requires its literal tag, so encoding must not invent it');
-});
-
 test('a short model name shared with an external codec keeps its generated-model schema reference', () => {
   const graph = createSchemaGraph();
   graph.intern(variant({ name: { kind: 'string' } }), 'Shadow');

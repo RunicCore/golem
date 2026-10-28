@@ -218,6 +218,7 @@ class ComponentSchemas {
   constructor(
     private readonly checker: ts.TypeChecker,
     private readonly contractAnalysis: ContractAnalysis,
+    private readonly openapiVersion: NormalizedContext['openapiVersion'],
   ) {}
 
   get reported(): readonly TsToOpenApiDiagnostic[] {
@@ -238,6 +239,8 @@ class ComponentSchemas {
       portable: true,
       referencePrefix: '#/components/schemas/',
       discriminatorMapping: true,
+      // OpenAPI 3.1 has no `defaultMapping`; a union with a declared default stays anyOf there.
+      discriminatorDefaultMapping: this.openapiVersion === '3.2.0',
       onNonportable: (message: string): void => this.report(diagnostic(
         sourceNode?.getSourceFile(),
         sourceNode,
@@ -504,7 +507,7 @@ export async function generate(context: TsToOpenApiContext): Promise<TsToOpenApi
   using program = programInfo.program;
   const checker = program.getTypeChecker();
   const contractAnalysis = analyzeContracts(programInfo, sources, normalized, observe);
-  const schemas = new ComponentSchemas(checker, contractAnalysis);
+  const schemas = new ComponentSchemas(checker, contractAnalysis, normalized.openapiVersion);
   const analysis = await analyzeControllers({
     root: normalized.root,
     sources,

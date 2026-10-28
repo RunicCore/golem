@@ -85,6 +85,8 @@ export class ModelDefinitions extends Map<string, ModelDefinition> {
 interface DiscriminatorSelection {
   readonly propertyName: string;
   readonly variants: ReadonlyMap<string, string>;
+  /** The variant that `defaultMapping` names: it takes every value whose tag selects no other variant, and may lack the tag. */
+  readonly defaultVariant?: string;
 }
 
 /** Selections resolved (and diagnosed) once per discriminated union schema object, per analysis. */
@@ -582,8 +584,11 @@ export function modelConversionDescriptor(
     if (composition.kind === 'object') return objectCompositionDescriptor(composition);
     if (composition.kind === 'inherits') return composition.descriptor;
     if (composition.kind === 'variants') {
-      const discriminator = unionDiscriminatorTable(composition.union, composition.items, definitions, composition.scope);
-      return { kind: 'union', variants: composition.variants.map(objectCompositionDescriptor), ...(discriminator ? { discriminator } : {}) };
+      const variants = composition.variants.map(objectCompositionDescriptor);
+      const declaredKey = asRecord(composition.union.discriminator).propertyName;
+      const discriminator = unionDiscriminatorTable(composition.union, composition.items, definitions, composition.scope)
+        ?? untaggedUnionTable(variants, definitions, typeof declaredKey === 'string' ? declaredKey : undefined);
+      return { kind: 'union', variants, ...(discriminator ? { discriminator } : {}) };
     }
     const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
     // Deciding members win. Members that only constrain, or restate an array without converting it, leave the schema's own
@@ -646,7 +651,10 @@ export function modelConversionDescriptor(
       } : { kind: 'generated-model', id };
     }
     // A discriminator keeps even a one-variant union a tagged union.
-    const discriminator = unionDiscriminatorTable(schema, variants, definitions, nested);
+    // A discriminator the document does not resolve to model variants (inline objects, a scalar beside the models) tags like a union without one.
+    const declaredKey = asRecord(schema.discriminator).propertyName;
+    const discriminator = unionDiscriminatorTable(schema, variants, definitions, nested)
+      ?? untaggedUnionTable(convertedVariants, definitions, typeof declaredKey === 'string' ? declaredKey : undefined);
     if (convertedVariants.length === 1 && !discriminator) {
       const [only] = convertedVariants;
       if (only) return only;
@@ -788,7 +796,8 @@ export function componentSite(name: string): CompositionSite {
 /**
  * Resolve an OAS discriminator into the value → variant model table. Mapping
  * values are component names or references; a variant without a mapping key
- * is selected by its raw component name (the implicit mapping).
+ * is selected by its raw component name (the implicit mapping). A `defaultMapping`
+ * names the one variant that has no values and may lack the tag property.
  */
 export function discriminatorSelection(
   schemaName: string,
@@ -798,7 +807,7 @@ export function discriminatorSelection(
   warn: (code: string, message: string) => void,
 ): DiscriminatorSelection | undefined {
   if (!isJsonObject(schema) || !isJsonObject(schema.discriminator)) return undefined;
-  const { propertyName: property, mapping } = schema.discriminator;
+  const { propertyName: property, mapping, defaultMapping } = schema.discriminator;
   if (typeof property !== 'string') return undefined;
   const items = unionVariants(schema) ?? [];
   const nested = withSchemaBase(env, schema);
@@ -812,10 +821,29 @@ export function discriminatorSelection(
     variants.set(target.typeName, { schemaName: target.schemaName, values: [] });
   }
   if (variants.size === 0) return undefined;
+  const componentNames = new Set(Object.keys(asRecord(asRecord(asRecord(env.document).components).schemas)));
+  const variantOf = (target: unknown): { readonly typeName: string; readonly variant: { readonly values: string[] } } | undefined => {
+    const reference = typeof target === 'string' && componentNames.has(target)
+      ? `#/components/schemas/${encodeURIComponent(target)}`
+      : target;
+    const resolved = typeof reference === 'string'
+      ? resolveExactComponent(reference, nested.currentBase, nested.resources, nested.document)
+      : null;
+    const variant = resolved ? variants.get(resolved.typeName) : undefined;
+    return resolved && variant ? { typeName: resolved.typeName, variant } : undefined;
+  };
+  const defaultVariant = defaultMapping === undefined ? undefined : variantOf(defaultMapping)?.typeName;
+  if (defaultMapping !== undefined && defaultVariant === undefined) {
+    const named = `schema ${JSON.stringify(schemaName)}`;
+    throw new LocatedError(
+      `discriminator defaultMapping of ${named} targets ${JSON.stringify(defaultMapping)}, which is not one of its variants`,
+      [componentOrigin('schemas', schemaName, named)],
+    );
+  }
   for (const typeName of variants.keys()) {
     const variant = definitions.get(typeName);
-    // OAS: the discriminator property must be declared by every schema it selects.
-    if (variant && !modelSchemaProperties(nested, variant.rawSchema).has(property)) {
+    // OAS: the discriminator property must be declared by every schema it selects, except the default (3.2 defaultMapping).
+    if (variant && typeName !== defaultVariant && !modelSchemaProperties(nested, variant.rawSchema).has(property)) {
       const named = `schema ${JSON.stringify(schemaName)}`;
       const variantNamed = `variant ${JSON.stringify(variant.schemaName)}`;
       throw new LocatedError(
@@ -824,27 +852,22 @@ export function discriminatorSelection(
       );
     }
   }
-  const componentNames = new Set(Object.keys(asRecord(asRecord(asRecord(env.document).components).schemas)));
   for (const [value, target] of objectEntries(mapping)) {
-    const reference = typeof target === 'string' && componentNames.has(target)
-      ? `#/components/schemas/${encodeURIComponent(target)}`
-      : target;
-    const resolved = typeof reference === 'string'
-      ? resolveExactComponent(reference, nested.currentBase, nested.resources, nested.document)
-      : null;
-    const variant = resolved ? variants.get(resolved.typeName) : undefined;
-    if (!variant) {
+    const resolved = variantOf(target);
+    if (!resolved) {
       const named = `schema ${JSON.stringify(schemaName)}`;
       throw new LocatedError(
         `discriminator mapping ${JSON.stringify(value)} of ${named} targets ${JSON.stringify(target)}, which is not one of its variants`,
         [componentOrigin('schemas', schemaName, named)],
       );
     }
-    variant.values.push(value);
+    // The default takes every unmatched value, a mapped one included, so it keeps no value of its own.
+    if (resolved.typeName !== defaultVariant) resolved.variant.values.push(value);
   }
   const selected = new Map<string, string>();
   const mapped = new Set(objectEntries(mapping).map(([value]) => value));
   for (const [typeName, variant] of variants) {
+    if (typeName === defaultVariant) continue;
     // A value names its component "unless a mapping is present for that value" (OpenAPI 3.1 and 3.2, Discriminator Object):
     // the rule is per value, so a variant that a mapping also selects keeps its component name as a value. A variant whose name
     // a mapping gives to another variant still claims it, so the conflict below reports that it has no value of its own.
@@ -867,7 +890,7 @@ export function discriminatorSelection(
       selected.set(value, typeName);
     }
   }
-  return { propertyName: property, variants: selected };
+  return { propertyName: property, variants: selected, ...(defaultVariant === undefined ? {} : { defaultVariant }) };
 }
 
 function isNullBranch(schema: unknown): boolean {
@@ -959,9 +982,89 @@ function unionDiscriminatorTable(
     const typeName = exactComponentTarget(item, env)?.typeName;
     return { values: [...byVariant].filter(([, variant]) => variant === typeName).map(([value]) => value) };
   });
-  return variants.every((variant, index) => variant.values.length > 0 || isNullBranch(items[index]))
-    ? { propertyName: selection.propertyName, variants }
+  const defaultAt = selection.defaultVariant === undefined
+    ? -1
+    : items.findIndex((item) => exactComponentTarget(item, env)?.typeName === selection.defaultVariant);
+  return variants.every((variant, index) => variant.values.length > 0 || isNullBranch(items[index]) || index === defaultAt)
+    ? { propertyName: selection.propertyName, variants, ...(defaultAt < 0 ? {} : { defaultVariant: defaultAt }) }
     : undefined;
+}
+
+type TagValues = ReadonlyMap<string, readonly (string | number | boolean)[]>;
+
+/** The values of a `const`, or of a union of `const`s. */
+function literalTagValues(descriptor: ModelTypeDescriptor | undefined): readonly (string | number | boolean)[] | undefined {
+  if (descriptor?.kind === 'literal') return [descriptor.value];
+  if (descriptor?.kind !== 'union' || descriptor.variants.length === 0) return undefined;
+  const values: (string | number | boolean)[] = [];
+  for (const variant of descriptor.variants) {
+    if (variant.kind !== 'literal') return undefined;
+    values.push(variant.value);
+  }
+  return values;
+}
+
+/** The required properties of an inline object variant that hold only literals, in the order the object requires them. */
+function objectTagValues(object: Extract<ModelTypeDescriptor, { readonly kind: 'object' }>): TagValues {
+  const tags = new Map<string, readonly (string | number | boolean)[]>();
+  for (const name of object.required) {
+    const values = literalTagValues(object.properties[name]);
+    if (values) tags.set(name, values);
+  }
+  return tags;
+}
+
+/**
+ * The same, for a component model, read from its schema: a `const`, or a oneOf or anyOf of `const`s. A model's own descriptor is not
+ * converted here, because a model whose property is this union would convert itself again.
+ */
+function modelTagValues(definition: ModelDefinition | undefined): TagValues | undefined {
+  if (!definition || definition.isUnion) return undefined;
+  const tags = new Map<string, readonly (string | number | boolean)[]>();
+  for (const name of definition.required) {
+    const property = definition.properties.get(name);
+    const members = isJsonObject(property) && !('const' in property) ? unionVariants(property) : undefined;
+    const values = (members ?? [property]).map((member) => isJsonObject(member) ? member.const : undefined);
+    if (values.length > 0 && values.every((value) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) {
+      tags.set(name, values as readonly (string | number | boolean)[]);
+    }
+  }
+  return tags;
+}
+
+/**
+ * The tag table of a oneOf or anyOf that has no `discriminator` keyword: the first property of the first object variant that every
+ * variant requires as a literal, when no value belongs to two variants. When a variant is neither an inline object nor a model, the
+ * object variants alone are tagged and the others get no values. Without such a property the union keeps no table, except for one
+ * model beside tagged objects: that model is the default variant and takes every object whose tag selects no object. `declared` is
+ * the `propertyName` of a discriminator keyword the document wrote: then only that key tags the variants.
+ */
+function untaggedUnionTable(variants: readonly ModelTypeDescriptor[], definitions: ModelDefinitions, declared?: string): UnionDiscriminator | undefined {
+  if (variants.length < 2) return undefined;
+  const tagsOf = (variant: ModelTypeDescriptor): TagValues | undefined =>
+    variant.kind === 'object' ? objectTagValues(variant) : variant.kind === 'generated-model' ? modelTagValues(definitions.get(variant.id)) : undefined;
+  const present = variants.flatMap((variant, index) => variant.kind === 'null' ? [] : [{ index, tags: tagsOf(variant), variant }]);
+  type Member = (typeof present)[number];
+  // The first key that every member requires as a literal, with no value in two members, and the table it gives.
+  const tableOf = (members: readonly Member[]): UnionDiscriminator | undefined => {
+    for (const propertyName of declared === undefined ? members[0]?.tags?.keys() ?? [] : [declared]) {
+      const values = members.map(({ tags }) => tags?.get(propertyName) ?? []);
+      const flat = values.flat();
+      if (values.some((set) => set.length === 0) || new Set(flat).size !== flat.length) continue;
+      return { propertyName, variants: variants.map((_, index) => ({ values: values[members.findIndex((item) => item.index === index)] ?? [] })) };
+    }
+    return undefined;
+  };
+  const tagged = present.every(({ tags }) => tags) ? present : present.filter(({ variant }) => variant.kind === 'object');
+  if (tagged.length === 0) return undefined;
+  const table = tableOf(tagged);
+  if (table) return table;
+  // One model with no tag beside objects that share a tag is the default variant: it takes every object the tag does not select.
+  const objects = present.filter(({ variant }) => variant.kind === 'object');
+  const models = present.filter(({ variant }) => variant.kind === 'generated-model');
+  if (models.length !== 1 || objects.length === 0 || objects.length + models.length !== present.length) return undefined;
+  const objectTable = tableOf(objects);
+  return objectTable && { ...objectTable, defaultVariant: models[0]!.index };
 }
 
 interface SchemaGraphGroup {

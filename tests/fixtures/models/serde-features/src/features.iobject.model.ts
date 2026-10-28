@@ -1,5 +1,5 @@
 import type { IObject } from '@exprtlabs/golem/model';
-import type { Integer, MinLength, Minimum, Pattern, TSerde, TValidation } from '@exprtlabs/golem/tags';
+import type { Integer, MinLength, Minimum, Pattern, TSerde, TValidation, Discriminator } from '@exprtlabs/golem/tags';
 import type { PermissionBits, ProjectName } from './access-rules.js';
 import type { Email, HexCode, Money, Phone, PlainHexCode, PlainMoney, PlainPermissions, PlainYesNo, Stamp, YesNo } from './feature-tags.js';
 import { decodeHex, encodeHex, extraMoney, notBlank, positive } from './feature-tags.js';
@@ -37,7 +37,7 @@ export type TJsonNestedOrder = IObject<{
 
 export type TJsonContactEmail = IObject<{ kind: 'email'; address: Email }>;
 export type TJsonContactPhone = IObject<{ kind: 'phone'; number: Phone }>;
-export type TJsonContact = IObject<{ value: TJsonContactEmail | TJsonContactPhone }>;
+export type TJsonContact = IObject<{ value: (TJsonContactEmail | TJsonContactPhone) & Discriminator<'kind'> }>;
 
 export type TJsonComposeCustomer = IObject<{
   home: TJsonAddress;
@@ -88,7 +88,7 @@ export type TJsonCheckout = IObject<{
   items: Array<{ sku: string & MinLength<3> }>;
   primary: TJsonLineItem;
   flags: Record<string, string>;
-  channel: { kind: 'open' } | { kind: 'hold'; until: Date };
+  channel: ({ kind: 'open' } | { kind: 'hold'; until: Date }) & Discriminator<'kind'>;
   span: [Date, Date];
   hold: Date | null;
   bag?: { lane: string };
@@ -106,7 +106,7 @@ export type TJsonCheckoutPlain = IObject<{
   items: Array<{ sku: string & MinLength<3> }>;
   primary: TJsonLineItem;
   flags: Record<string, string>;
-  channel: { kind: 'open' } | { kind: 'hold'; until: Stamp };
+  channel: ({ kind: 'open' } | { kind: 'hold'; until: Stamp }) & Discriminator<'kind'>;
   span: [Stamp, Stamp];
   hold: Stamp | null;
   bag?: { lane: string };

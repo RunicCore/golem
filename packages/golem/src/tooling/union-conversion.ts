@@ -109,7 +109,7 @@ export function objectValueExpression(expression: Code): Code {
   return code`typeof ${expression} === 'object' && ${expression} !== null && !Array.isArray(${expression})`;
 }
 
-export function presentUnionVariants(
+function presentUnionVariants(
   descriptor: UnionTypeDescriptor,
 ): readonly ModelTypeDescriptor[] {
   return descriptor.variants.filter((variant) => variant.kind !== 'null' && variant.kind !== 'undefined');
@@ -123,110 +123,61 @@ export function isScalarishDescriptor(descriptor: ModelTypeDescriptor): boolean 
   return descriptor.kind === 'union' && descriptor.variants.every(isScalarishDescriptor);
 }
 
-/** Values of a literal or a union of literals; otherwise undefined. */
-export function literalValues(descriptor: ModelTypeDescriptor | undefined): readonly DiscriminatorValue[] | undefined {
-  if (descriptor?.kind === 'literal') return [descriptor.value];
-  if (descriptor?.kind !== 'union' || descriptor.variants.length === 0) return undefined;
-  const values: DiscriminatorValue[] = [];
-  for (const variant of descriptor.variants) {
-    if (variant.kind !== 'literal') return undefined;
-    values.push(variant.value);
-  }
-  return values;
-}
-
-/** Required properties whose type is a literal or a union of literals. */
-export function literalDiscriminator(
-  descriptor: ObjectTypeDescriptor,
-): ReadonlyMap<string, readonly DiscriminatorValue[]> {
-  const values = new Map<string, readonly DiscriminatorValue[]>();
-  for (const name of descriptor.required) {
-    const literals = literalValues(descriptor.properties[name]);
-    if (literals) values.set(name, literals);
-  }
-  return values;
-}
-
 /** One tag property, and each alternative's tag values in alternative order. */
 export interface VariantDispatch {
   readonly property: string;
   readonly values: readonly (readonly DiscriminatorValue[])[];
 }
 
-function disjoint(sets: readonly (readonly DiscriminatorValue[])[], byText = false): boolean {
-  const seen = new Set<DiscriminatorValue | string>();
+function disjoint(sets: readonly (readonly DiscriminatorValue[])[]): boolean {
+  const seen = new Set<DiscriminatorValue>();
   for (const values of sets) {
     if (values.length === 0) return false;
     for (const value of values) {
-      const key = byText ? String(value) : value;
-      if (seen.has(key)) return false;
-      seen.add(key);
+      if (seen.has(value)) return false;
+      seen.add(value);
     }
   }
   return true;
 }
 
-/**
- * The first property of the first alternative that every alternative requires with literal values, when no value is shared. `tags` holds
- * each alternative's required literal properties and their values; the model generator reads them from descriptors, the rewrite scan from types.
- * With `byText`, values that print the same (`1` and `'1'`) are one value: a query string carries a tag as text.
- */
-export function sharedTag(tags: readonly ReadonlyMap<string, readonly DiscriminatorValue[]>[], options: { readonly byText?: boolean } = {}): VariantDispatch | undefined {
-  if (tags.length === 0) return undefined;
-  for (const property of tags[0].keys()) {
-    const values = tags.map((tag) => tag.get(property) ?? []);
-    if (disjoint(values, options.byText === true)) return { property, values };
-  }
-  return undefined;
-}
-
-/** A required literal tag whose values are disjoint across the alternatives. */
-export function objectDiscriminator(alternatives: readonly ObjectTypeDescriptor[]): VariantDispatch | undefined {
-  return sharedTag(alternatives.map(literalDiscriminator));
-}
-
 /** Indices of the union variants that hold a value (not null or undefined). */
-export function presentUnionIndices(descriptor: UnionTypeDescriptor): number[] {
+function presentUnionIndices(descriptor: UnionTypeDescriptor): number[] {
   return descriptor.variants.flatMap((variant, index) =>
     variant.kind === 'null' || variant.kind === 'undefined' ? [] : [index]);
 }
 
 /**
- * Dispatch among the union variants at `indices`. An explicit discriminator
- * table is authoritative and must tag each of them; otherwise tags are
- * inferred from each variant's object shape, which `objectFor` resolves.
+ * The explicit tag table that dispatches the variants at `indices`. The default variant has no tag value to dispatch on, so a
+ * union that includes it has no table here: `emitUnionConversion` dispatches the variants that have tag values, and the default converts what the table does not reach.
+ */
+export function declaredTable(union: UnionTypeDescriptor, indices: readonly number[]): UnionTypeDescriptor['discriminator'] {
+  const table = union.discriminator;
+  return table && (table.defaultVariant === undefined || !indices.includes(table.defaultVariant)) ? table : undefined;
+}
+
+/**
+ * Dispatch among the union variants at `indices` by the declared tag table, which must tag each of them. A union with no
+ * table has no dispatch: golem never finds a tag in the variants.
  */
 export function unionDispatch(
   union: UnionTypeDescriptor,
   indices: readonly number[],
-  objectFor: (variant: ModelTypeDescriptor) => ObjectTypeDescriptor | undefined,
 ): VariantDispatch | undefined {
-  const table = union.discriminator;
-  if (table) {
-    if (table.variants.length !== union.variants.length) {
-      throw new Error(`The ${table.propertyName} discriminator table must list tag values for every union variant.`);
-    }
-    const values = indices.map((index) => table.variants[index]?.values ?? []);
-    if (indices.length === 0 || !disjoint(values)) {
-      throw new Error(`The ${table.propertyName} discriminator table must give each variant distinct, non-empty tag values.`);
-    }
-    return { property: table.propertyName, values };
+  const table = declaredTable(union, indices);
+  if (!table) return undefined;
+  if (table.variants.length !== union.variants.length) {
+    throw new Error(`The ${table.propertyName} discriminator table must list tag values for every union variant.`);
   }
-  const objects: ObjectTypeDescriptor[] = [];
-  for (const index of indices) {
-    const object = objectFor(union.variants[index]);
-    if (!object) return undefined;
-    objects.push(object);
+  const values = indices.map((index) => table.variants[index]?.values ?? []);
+  if (indices.length === 0 || !disjoint(values)) {
+    throw new Error(`The ${table.propertyName} discriminator table must give each variant distinct, non-empty tag values.`);
   }
-  return objectDiscriminator(objects);
-}
-
-export function objectVariant(variant: ModelTypeDescriptor): ObjectTypeDescriptor | undefined {
-  return variant.kind === 'object' ? variant : undefined;
+  return { property: table.propertyName, values };
 }
 
 /** `access` equals one of `values`. */
-export function discriminatorMatch(read: Code, values: readonly DiscriminatorValue[]): Code {
+function discriminatorMatch(read: Code, values: readonly DiscriminatorValue[]): Code {
   return code`(${join(values.map((value) => code`${read} === ${literal(value)}`), code` || `)})`;
 }
 
@@ -249,15 +200,14 @@ export interface DispatchOptions {
   /** Encode result for null or undefined. */
   readonly nullish?: Code;
   /**
-   * An explicit tag table lets an instance omit its tag: encoding writes the
-   * variant's first value. Inferred tags are declared literals and required.
-   */
-  readonly canonicalTag: boolean;
-  /**
    * decode of branches without a class: a local the first tag test assigns, so the tag is read once
    * and the later tests and the rejection use it. The caller declares it.
    */
   readonly tagLocal?: Code;
+  /** The conversion of a value that is no object (a scalar, null or the like), when the union has variants outside the tag table. */
+  readonly rest?: Code;
+  /** The conversion of an object whose tag selects no branch: the declared default. With none, such an object is rejected. */
+  readonly fallback?: Code;
 }
 
 /**
@@ -265,11 +215,11 @@ export interface DispatchOptions {
  *
  * - An instance of a branch class selects that branch first; a subclass wins
  *   over its base regardless of variant order. Its own tag must be one of the
- *   branch's values; encoding writes that tag, or with `canonicalTag` the
- *   branch's first value when the instance has none.
+ *   branch's values; encoding writes that tag, or the branch's first value
+ *   when the instance has none (the declared table lets an instance omit its tag).
  * - Any other object selects the branch whose values contain its tag.
- * - An object whose tag selects no branch is rejected. Encoding writes null
- *   or undefined unchanged and rejects every other value.
+ * - An object whose tag selects no branch takes `fallback`, or is rejected. A value that is no object takes `rest`;
+ *   with none, decoding leaves it, and encoding writes null or undefined unchanged and rejects every other value.
  */
 export function emitDispatch(options: DispatchOptions): Code {
   const { expression, property, branches, direction, tagLocal } = options;
@@ -293,17 +243,19 @@ export function emitDispatch(options: DispatchOptions): Code {
     if (branch.writesTag === false) return injectJson(convert, tagValue);
     return tagMayBeMissing ? code`(${tag} === undefined ? ${injectJson(convert, tagValue)} : ${convert})` : convert;
   };
-  let converted = encode
-    ? code`(${value} == null ? ${options.nullish === undefined ? value : options.nullish} : ${reject})`
-    : code`(${objectValueExpression(expression)} ? ${reject} : ${value})`;
+  const { rest, fallback } = options;
+  // The object test runs once: an object picks its branch by tag, and any other value is `rest`.
+  let chain = fallback ?? reject;
   for (let index = branches.length - 1; index >= 0; index--) {
     const branch = branches[index];
     // The first test that runs reads the tag; every path through the chain starts there.
     const guard = tagLocal && index === 0
-      ? code`${objectValueExpression(expression)} && (${tag} = ${tagRead}, ${discriminatorMatch(tag, branch.values)})`
-      : code`${objectValueExpression(expression)} && ${discriminatorMatch(tag, branch.values)}`;
-    converted = code`${guard} ? (${encodeBranch(branch, tag, false)}) : (${converted})`;
+      ? code`(${tag} = ${tagRead}, ${discriminatorMatch(tag, branch.values)})`
+      : discriminatorMatch(tag, branch.values);
+    chain = code`${guard} ? (${encodeBranch(branch, tag, false)}) : (${chain})`;
   }
+  const outside = rest ?? (encode ? code`${value} == null ? ${options.nullish === undefined ? value : options.nullish} : ${reject}` : value);
+  let converted = code`(${objectValueExpression(expression)} ? ${chain} : ${outside})`;
   const classes = branches.flatMap((branch) => branch.className ? [branch.className] : []);
   for (let index = branches.length - 1; index >= 0; index--) {
     const branch = branches[index];
@@ -312,11 +264,9 @@ export function emitDispatch(options: DispatchOptions): Code {
     const subclasses = classes.filter((other) => !sameCode(other, self))
       .map((other) => code` && !((${value} as object) instanceof ${other} && ${other}.prototype instanceof ${self})`);
     const guard = code`(${value} as object) instanceof ${self}${join(subclasses)}`;
-    const ownTag = options.canonicalTag ? code`(${tag} === undefined ? ${literal(branch.values[0])} : ${tag})` : tag;
-    const accepted = options.canonicalTag
-      ? code`${tag} === undefined || ${discriminatorMatch(tag, branch.values)}`
-      : discriminatorMatch(tag, branch.values);
-    const body = code`${accepted} ? (${encodeBranch(branch, ownTag, options.canonicalTag)}) : ${reject}`;
+    const ownTag = code`(${tag} === undefined ? ${literal(branch.values[0])} : ${tag})`;
+    const accepted = code`${tag} === undefined || ${discriminatorMatch(tag, branch.values)}`;
+    const body = code`${accepted} ? (${encodeBranch(branch, ownTag, true)}) : ${reject}`;
     converted = code`${guard} ? (${body}) : (${converted})`;
   }
   return code`(${converted})`;
@@ -329,20 +279,28 @@ interface ScalarOrArray {
 }
 
 /**
- * A union of one array or tuple and scalar variants (a JSON scalar or a literal union), the query-style shape, or one
- * Date: the wire value tells a string from an array. Generated models and untagged objects are not scalarish.
+ * The variants a value's JSON type tells apart without a tag: scalar variants (a JSON scalar or a literal union, or one Date)
+ * and at most one array or tuple. Generated models and untagged objects are not scalarish.
  */
-function scalarOrArray(
-  present: readonly ModelTypeDescriptor[],
-): ScalarOrArray | undefined {
-  const sequences = present.filter(
+function jsonTypeVariants(
+  variants: readonly ModelTypeDescriptor[],
+): { readonly sequence?: ScalarOrArray['sequence']; readonly scalars: readonly ModelTypeDescriptor[] } | undefined {
+  const sequences = variants.filter(
     (variant): variant is ArrayTypeDescriptor | TupleConversionDescriptor =>
       variant.kind === 'array' || variant.kind === 'tuple',
   );
-  if (sequences.length !== 1) return undefined;
-  const scalars = present.filter((variant) => variant !== sequences[0]);
+  if (sequences.length > 1) return undefined;
+  const scalars = variants.filter((variant) => variant !== sequences[0]);
   if (!scalars.every(isScalarishDescriptor) && !(scalars.length === 1 && scalars[0].kind === 'date')) return undefined;
   return { sequence: sequences[0], scalars };
+}
+
+/** A union of one array or tuple and scalar variants, the query-style shape: the wire value tells a string from an array. */
+function scalarOrArray(
+  present: readonly ModelTypeDescriptor[],
+): ScalarOrArray | undefined {
+  const types = jsonTypeVariants(present);
+  return types?.sequence ? { sequence: types.sequence, scalars: types.scalars } : undefined;
 }
 
 /** The variants of a `scalar | T[] | object` union: its one sequence, its one object or model, and the scalar variants beside them. */
@@ -405,16 +363,19 @@ export type UnionDirection = 'decode' | 'encode' | 'stringify' | 'nested';
 
 type GeneratedModelTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'generated-model' }>;
 
-/** A union of one generated model and tagged objects, or scalars: the model takes the objects whose tag does not match. */
+/** A union of one generated model beside scalars or null: the model takes every object value. */
 interface GeneratedWithObjects {
   /** The conversion of the model; undefined when this walker emits no class for it. */
   readonly text: (generated: GeneratedModelTypeDescriptor) => Code | undefined;
-  /** The tag tests of the object variants. */
-  readonly tagMatch: (objects: readonly ObjectTypeDescriptor[]) => Code[];
-  /** The conversion of the object variants whose tag matches. */
-  readonly objects: (objects: readonly ObjectTypeDescriptor[]) => Code;
-  /** With no tagged object, the model takes every object whatever the other variants are. */
+  /** The model takes every object value whatever the other variants are, not only beside scalars. */
   readonly takesEveryObject?: boolean;
+}
+
+/** The variants a tag dispatch covers, and what it does with the values the tag does not reach. */
+export interface TaggedUnion {
+  readonly indices: readonly number[];
+  readonly rest?: Code;
+  readonly fallback?: Code;
 }
 
 /**
@@ -428,8 +389,14 @@ export interface UnionConversion {
   readonly items: SequenceItems;
   /** Joins the converted sequence and scalar; defaults to the value form. */
   readonly joinSequence?: (mapped: Code, scalar: Code) => Code;
-  /** Dispatch by tag (and class); undefined when the variants carry no tag to dispatch on. */
-  readonly tagged: () => Code | undefined;
+  /**
+   * Dispatch the variants at `indices` by tag (and class); undefined when they carry no tag to dispatch on. With a declared
+   * table, `indices` are the variants that carry tag values; `rest` converts a value that is no object and `fallback` an object
+   * whose tag selects none of them (see `DispatchOptions`).
+   */
+  readonly tagged: (spec: TaggedUnion) => Code | undefined;
+  /** The conversion of the declared default variant, when it differs from `convert`. */
+  readonly declaredDefault?: (variant: ModelTypeDescriptor) => Code | undefined;
   /**
    * Wraps the conversion of an inline array, tuple or object branch, so a value that holds itself is found at its first
    * repeat. A branch that is a named node guards itself, and the union guards nothing at its entry: it hands the same value on.
@@ -447,8 +414,8 @@ const PLAIN_VARIANT_KINDS = ['string', 'number', 'boolean', 'bigint', 'literal']
 
 /**
  * The one conversion of a union, shared by the stringify, decode and encode walkers and the model walker. The order is
- * fixed: a nullable single variant, a scalar-or-array pair, tagged dispatch, a generated model beside tagged objects,
- * one object or model beside plain variants, and the ambiguity error. Each walker gives its conversions and its own
+ * fixed: a nullable single variant, a scalar-or-array pair, tagged dispatch (with the JSON-type variants and the declared
+ * default of its table), a generated model beside plain variants, one object or model beside plain variants, and the ambiguity error. Each walker gives its conversions and its own
  * steps through `UnionConversion`. A stringify walker needs no work for a valid value beyond the tests it emits here.
  */
 export function emitUnionConversion(
@@ -471,13 +438,40 @@ export function emitUnionConversion(
     return sameCode(converted, value) ? value : code`${value} == null ? ${value} : (${converted})`;
   }
   const nullable = present.length !== descriptor.variants.length;
-  // A Date converts no null or undefined, so the nullish variants of the union stop at a guard before its conversion.
+  // A Date, and in stringify any scalar writer other than the plain one, converts no null or undefined, so the nullish
+  // variants of the union stop at a guard before its conversion.
   const scalarBranch = (scalars: readonly ModelTypeDescriptor[]): Code => {
     const variant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
     if (!variant) return plain;
     const converted = convert(variant);
-    if (!nullable || variant.kind !== 'date') return converted;
-    return json ? code`(${value} == null ? 'null' : (${converted}))` : code`(${value} == null ? ${value} : (${converted}))`;
+    if (!nullable) return converted;
+    if (json) return sameCode(converted, plain) ? converted : code`(${value} == null ? 'null' : (${converted}))`;
+    return variant.kind === 'date' ? code`(${value} == null ? ${value} : (${converted}))` : converted;
+  };
+  /**
+   * Tagged dispatch. Under a declared table the JSON type goes first: an array or tuple, a scalar or null take their own
+   * variants, and only an object value reaches the tag, whose unmatched values take the declared default.
+   */
+  const taggedConversion = (): Code | undefined => {
+    const indices = presentUnionIndices(descriptor);
+    const table = descriptor.discriminator;
+    const taggedIndices = table ? indices.filter((index) => table.variants[index].values.length > 0) : indices;
+    if (!table || taggedIndices.length === indices.length) return conversion.tagged({ indices: taggedIndices });
+    const rest = indices.filter((index) => !taggedIndices.includes(index) && index !== table.defaultVariant)
+      .map((index) => descriptor.variants[index]);
+    const types = jsonTypeVariants(rest);
+    if (!types) throw new AmbiguousUnionConversionError(rest);
+    const declared = table.defaultVariant === undefined ? undefined : descriptor.variants[table.defaultVariant];
+    const fallback = declared && (conversion.declaredDefault?.(declared) ?? convert(declared));
+    const scalar = rest.length > 0 ? scalarBranch(types.scalars) : undefined;
+    const objects = conversion.tagged({
+      indices: taggedIndices,
+      ...(scalar === undefined ? {} : { rest: scalar }),
+      ...(fallback === undefined ? {} : { fallback }),
+    });
+    if (objects === undefined || !types.sequence) return objects;
+    const mapped = guarded(types.sequence, emitSequenceBranch(types.sequence, expression, conversion.items));
+    return conversion.joinSequence?.(mapped, objects) ?? emitScalarOrArrayConversion(expression, mapped, objects);
   };
   const pair = scalarOrArray(present);
   if (pair) {
@@ -499,7 +493,7 @@ export function emitUnionConversion(
         : code`${objectValueExpression(expression)} ? (${converted}) : ${scalar}`;
     return conversion.joinSequence?.(mapped, rest) ?? emitScalarOrArrayConversion(expression, mapped, rest);
   }
-  const tagged = conversion.tagged();
+  const tagged = taggedConversion();
   if (tagged !== undefined) return tagged;
   const before = conversion.beforeGenerated?.(present);
   if (before !== undefined) return before;
@@ -549,12 +543,6 @@ function generatedWithObjects(
   if (generated.length !== 1) return undefined;
   const generatedCode = options.text(generated[0]);
   if (generatedCode === undefined) return undefined;
-  const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-  if (objects.length > 0 && !objectDiscriminator(objects)) throw new ObjectUnionDiscriminatorError(objects);
-  const tagged = options.tagMatch(objects);
-  if (tagged.length) {
-    return code`(${objectValueExpression(expression)} && !(${join(tagged, code` || `)}) ? ${generatedCode} : ${options.objects(objects)})`;
-  }
   if (options.takesEveryObject || present.every((variant) => variant === generated[0] || isScalarishDescriptor(variant))) {
     return code`(${objectValueExpression(expression)} ? ${generatedCode} : ${plain})`;
   }

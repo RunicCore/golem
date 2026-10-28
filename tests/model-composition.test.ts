@@ -148,8 +148,9 @@ test('an SDK model beside objects tagged by a literal union generates and decode
   await writeMoneySdk(sourceRoot);
   writeModelSources(sourceRoot, {
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 import type { Money } from './sdk/index.js';
-export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' } }>;
+export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money> }>;
 `,
   });
   await buildModelProjectWith(root, { mobx: false, validation: true });
@@ -159,19 +160,20 @@ export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { k
   }
 });
 
-test('an SDK model beside objects whose literal tags overlap stops generation with RUNM1030', async t => {
-  // protects: bug-sweep RUNM1030 still rejects a tag value that two objects beside an SDK model share
+test('an SDK model beside objects whose literal tags overlap stops generation with RUNM1087', async t => {
+  // protects: T-593 a tag value that two objects beside a declared default share stops with RUNM1087 (it was RUNM1030 before the tag was declared)
   const { root, sourceRoot } = fixture(t);
   await writeMoneySdk(sourceRoot);
   writeModelSources(sourceRoot, {
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 import type { Money } from './sdk/index.js';
-export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { kind: 'b' } }>;
+export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { kind: 'b' }) & Discriminator<'kind', Money> }>;
 `,
   });
   assert.throws(
     () => generate({ root, profile: { mobx: false, validation: true } }),
-    /item\.model\.ts:\d+:\d+ RUNM1030: Generated model union in TItem has an ambiguous object alternative\. Add a required literal discriminator\./,
+    /item\.model\.ts:\d+:\d+ RUNM1087: Union variants .* share the "kind" value "b"\./,
   );
   assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
 });
@@ -472,6 +474,33 @@ export type TItem = IModel<{ seen: { [key: \`a_\${string}\`]: Date; [key: \`n_\$
       /item\.model\.ts:\d+:\d+ RUNM1004: Field "seen" of TItem has index signatures of different value types, which golem cannot state as one value type\. Give them one value type, or use one index signature\./,
     );
   }
+});
+
+// protects: T-592 a template-literal key beside a string index converted by the string index's value type, so `at_1` stayed a string
+for (const [stringValue, options] of [['string', ''], ['unknown', ', { allowAny: true }']] as const) {
+  test(`a template-literal index signature beside a string index of ${stringValue} stops generation with RUNM1004 naming the field`, t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: { [key: string]: ${stringValue}; [key: \`at_\${string}\`]: Date } }${options}>;
+`);
+    for (const validation of [true, false]) {
+      assert.throws(
+        () => generate({ root, profile: { mobx: false, validation } }),
+        /item\.model\.ts:\d+:\d+ RUNM1004: Field "seen" of TItem has index signatures of different value types, which golem cannot state as one value type\. Give them one value type, or use one index signature\./,
+      );
+    }
+  });
+}
+
+// protects: T-592 a string index and a template index of one value type still decode that type
+test('a template-literal index signature beside a string index of the same value type decodes that type', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: { [key: string]: Date; [key: \`at_\${string}\`]: Date } }>;
+`);
+  const codec = await builtItemCodec(root);
+  const day = '2024-01-01T00:00:00.000Z';
+  assert.deepEqual(codec.parse(`{"seen":{"at_1":"${day}","other":"${day}"}}`), { seen: { at_1: new Date(day), other: new Date(day) } });
 });
 
 // protects: T-590 signatures that share one value type, also one written twice as an object literal, still generate

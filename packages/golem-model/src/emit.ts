@@ -39,11 +39,9 @@ import {
   wireStringifyExportName,
   fromWireFunctionName,
   toWireFunctionName,
-  literalValues,
   descriptorNeedsConversion,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
-  type ModelDiscriminators,
   type SerdeResolver,
   type ToJsonModelResolver,
   presentKeysCode,
@@ -1229,17 +1227,6 @@ function typeOf(context: EmitContext, descriptor: ModelConversionDescriptor, mod
   return descriptorType(descriptor, mode, typeNamesOf(context));
 }
 
-/** The key/value of the discriminating literal fields of a model, for a union dispatch. */
-function discriminatorsOf(context: EmitContext, name: string): ModelDiscriminators {
-  const definition = context.graph.definitions[name];
-  if (definition?.kind !== 'object') return {};
-  return Object.fromEntries(definition.required.flatMap(key => {
-    const values = literalValues(definition.properties[key]);
-    if (!values) return [];
-    return [[key, values.length === 1 ? values[0] : values]];
-  }));
-}
-
 function serdeExpression(context: EmitContext, id: string, direction: 'serialize' | 'deserialize', value: Code): Code {
   const names = context.serdeNames.get(id);
   if (names === undefined) throw new Error(`The generated model file of ${displayPath(context.source)} has no ${direction} function for the serde id ${JSON.stringify(id)}.`);
@@ -1330,7 +1317,6 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
   const resolveProjection = (name: string): FromJsonModelResolver & ToJsonModelResolver => ({
     className: identifier('Object'),
     ...(context.identityProjections.has(name) ? { identity: true as const } : {}),
-    discriminators: discriminatorsOf(context, name),
     decode: value => code`${helperName(projectionHelper(name).decode)}(${value})`,
     fromInit: value => code`${helperName(projectionHelper(name).init)}(${value})`,
     encode: value => code`${helperName(projectionHelper(name).encode)}(${value})`,
@@ -1351,7 +1337,6 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     const instance = registered ? modelType(context, id, 'BaseModel') : cls;
     return {
       className: cls,
-      discriminators: discriminatorsOf(context, id),
       decode: (value) => code`${rt.conversion.decodeGeneratedModelTrusted}(${cls}, ${value})`,
       fromInit: (value) => code`new (${cls} as unknown as new (values?: unknown) => ${instance})(${value})`,
     };
@@ -1361,7 +1346,6 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     if (!functions) throw new Error(`Generated sibling codec is missing: ${name}`);
     return {
       className: identifier('Object'),
-      discriminators: discriminatorsOf(context, name),
       decode: (value) => code`${functions.decode}(${value})`,
       fromInit: (value) => code`${functions.init}(${value})`,
       encode: (value) => code`${functions.encode}(${value})`,
@@ -1372,7 +1356,7 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     if (context.siblingObjectNames.has(id)) return resolveSiblingObject(id);
     if (context.fileLocalNames.has(id)) {
       const codecId = context.schemaGraph.nodeFor(descriptorOf(context.graph.definitions, id), id)?.codecId;
-      return { ...resolveLocalModel(context, id, codecId), discriminators: discriminatorsOf(context, id) };
+      return resolveLocalModel(context, id, codecId);
     }
     if (context.localImports.some((item) => item.name === id) && context.classModelNames.has(id)) return resolveImportedModel(id);
     return resolveFromJsonModel(context, id);
@@ -1380,7 +1364,7 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
   const toJsonAny = (id: string): ToJsonModelResolver => context.projectionNames.has(id) ? resolveProjection(id)
     : context.siblingObjectNames.has(id) ? resolveSiblingObject(id)
     : context.localNames.has(id)
-      ? { className: modelType(context, id, 'BaseModel'), discriminators: discriminatorsOf(context, id), encode: (value: Code) => code`${rt.conversion.encodeGeneratedModel}(${value})` }
+      ? { className: modelType(context, id, 'BaseModel'), encode: (value: Code) => code`${rt.conversion.encodeGeneratedModel}(${value})` }
       : resolveToJsonModel(context, id);
   return { fromAny, toJsonAny };
 }

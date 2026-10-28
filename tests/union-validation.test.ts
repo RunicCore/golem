@@ -29,6 +29,7 @@ async function discriminatedFixture() {
   const shape: ModelTypeDescriptor = {
     kind: 'union',
     variants: [branch('a', 'a'), branch('b', 'b')],
+    discriminator: { propertyName: 'kind', variants: [{ values: ['a'] }, { values: ['b'] }] },
   };
 
   class ShapeModel {
@@ -136,11 +137,16 @@ test('string-tagged unions install when a variant or its tag carries validations
   assert.equal(await validate({ tag: 'd', value: 1 }), false);
 });
 
+// A union writes a discriminator only from its declared tag table; golem finds no tag in the variants.
+const tabledUnion = (tags: readonly (string | number)[], variants: readonly ModelTypeDescriptor[]): ModelTypeDescriptor => ({
+  kind: 'union',
+  variants: [...variants],
+  discriminator: { propertyName: 'tag', variants: tags.map((value) => ({ values: [value] })) },
+});
+
 test('only unions tagged by required non-empty string consts use the discriminator', async () => {
-  const union = (...tags: (string | number)[]): ModelTypeDescriptor => ({
-    kind: 'union',
-    variants: tags.map((value) => taggedBranch({ kind: 'literal', value })),
-  });
+  // protects: T-599 schema.ts writes the discriminator from the declared tag table only
+  const union = (...tags: (string | number)[]): ModelTypeDescriptor => tabledUnion(tags, tags.map((value) => taggedBranch({ kind: 'literal', value })));
   const stringTagged = schemaForDescriptor(union('a', 'b'));
   assert.ok(typeof stringTagged === 'object');
   assert.deepEqual(stringTagged.discriminator, { propertyName: 'tag' });
@@ -149,40 +155,46 @@ test('only unions tagged by required non-empty string consts use the discriminat
   assert.ok(typeof numberTagged === 'object');
   assert.equal(numberTagged.discriminator, undefined);
   assert.ok(Array.isArray(numberTagged.anyOf));
+  const untabled = schemaForDescriptor({ kind: 'union', variants: ['a', 'b'].map((value) => taggedBranch({ kind: 'literal', value })) });
+  assert.ok(typeof untabled === 'object');
+  assert.equal(untabled.discriminator, undefined, 'a shared literal property is no tag until the table names it');
+  assert.ok(Array.isArray(untabled.anyOf));
 });
 
-test('a union of references to models of this job uses the discriminator of their string tags, and an OpenAPI document maps each tag', () => {
+test('a union of references with a tag table uses the discriminator of its string tags, and an OpenAPI document maps each tag', () => {
+  // protects: T-599 the OpenAPI mapping comes from the table values and the $ref branches
   const definitions = { A: taggedBranch({ kind: 'literal', value: 'a' }), B: taggedBranch({ kind: 'literal', value: 'b' }), N: taggedBranch({ kind: 'literal', value: 1 }) };
-  const union = (...variants: ModelTypeDescriptor[]): ModelTypeDescriptor => ({ kind: 'union', variants });
   const reference = (name: string): ModelTypeDescriptor => ({ kind: 'reference', name });
   const forms = (schema: ReturnType<typeof schemaForDescriptor>) => (typeof schema === 'object' ? { discriminator: schema.discriminator, oneOf: schema.oneOf, anyOf: schema.anyOf } : schema);
-  assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), reference('B')), { definitions })), {
-    discriminator: { propertyName: 'tag' }, oneOf: [{ $ref: '#/$defs/A' }, { $ref: '#/$defs/B' }], anyOf: undefined,
-  });
-  assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), reference('B')), { definitions, referencePrefix: '#/components/schemas/', discriminatorMapping: true })), {
+  const document = { definitions, referencePrefix: '#/components/schemas/', discriminatorMapping: true };
+  assert.deepEqual(forms(schemaForDescriptor(tabledUnion(['a', 'b'], [reference('A'), reference('B')]), document)), {
     discriminator: { propertyName: 'tag', mapping: { a: '#/components/schemas/A', b: '#/components/schemas/B' } },
     oneOf: [{ $ref: '#/components/schemas/A' }, { $ref: '#/components/schemas/B' }],
     anyOf: undefined,
   });
-  // A number tag, a target with its own serde, an inline object beside a reference, and a generated model of another job keep anyOf.
-  assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), reference('N')), { definitions })), {
-    discriminator: undefined, oneOf: undefined, anyOf: [{ $ref: '#/$defs/A' }, { $ref: '#/$defs/N' }],
+  // Outside a document each branch states its tag value beside the reference.
+  const plain = schemaForDescriptor(tabledUnion(['a', 'b'], [reference('A'), reference('B')]), { definitions, representation: 'wire' });
+  assert.ok(typeof plain === 'object');
+  assert.deepEqual(plain.discriminator, { propertyName: 'tag' });
+  assert.deepEqual(plain.oneOf, [
+    { properties: { tag: { const: 'a' } }, required: ['tag'], allOf: [{ $ref: '#/$defs/A' }] },
+    { properties: { tag: { const: 'b' } }, required: ['tag'], allOf: [{ $ref: '#/$defs/B' }] },
+  ]);
+  // A number tag, no table, and an inline object beside a reference keep anyOf.
+  assert.deepEqual(forms(schemaForDescriptor(tabledUnion(['a', 1], [reference('A'), reference('N')]), document)), {
+    discriminator: undefined, oneOf: undefined, anyOf: [{ $ref: '#/components/schemas/A' }, { $ref: '#/components/schemas/N' }],
   });
-  const withSerde = { ...definitions, S: { ...taggedBranch({ kind: 'literal', value: 's' }), serde: { id: 'shape', wire: { kind: 'string' } } } satisfies ModelTypeDescriptor };
-  assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), reference('S')), { definitions: withSerde })), {
-    discriminator: undefined, oneOf: undefined, anyOf: [{ $ref: '#/$defs/A' }, { $ref: '#/$defs/S' }],
+  assert.deepEqual(forms(schemaForDescriptor({ kind: 'union', variants: [reference('A'), reference('B')] }, document)), {
+    discriminator: undefined, oneOf: undefined, anyOf: [{ $ref: '#/components/schemas/A' }, { $ref: '#/components/schemas/B' }],
   });
-  const mixed = forms(schemaForDescriptor(union(reference('A'), taggedBranch({ kind: 'literal', value: 'b' })), { definitions }));
+  const mixed = forms(schemaForDescriptor(tabledUnion(['a', 'b'], [reference('A'), taggedBranch({ kind: 'literal', value: 'b' })]), document));
   assert.ok(typeof mixed === 'object' && mixed.discriminator === undefined && Array.isArray(mixed.anyOf) && mixed.anyOf.length === 2);
-  assert.deepEqual(forms(schemaForDescriptor(union(reference('A'), { kind: 'generated-model', id: 'other/B' }), { definitions })), {
-    discriminator: undefined, oneOf: undefined, anyOf: [{ $ref: '#/$defs/A' }, { $ref: '__exprtGeneratedModel:B' }],
-  });
 });
 
 test('the full validator of a reference union reports a wrong tag at the tag, and a bad field of a known tag at that field', async () => {
   const definitions = { A: taggedBranch({ kind: 'literal', value: 'a' }), B: taggedBranch({ kind: 'literal', value: 'b' }) };
-  const references: ModelTypeDescriptor = { kind: 'union', variants: [{ kind: 'reference', name: 'A' }, { kind: 'reference', name: 'B' }] };
-  const schema = schemaForDescriptor(references, { definitions });
+  const references = tabledUnion(['a', 'b'], [{ kind: 'reference', name: 'A' }, { kind: 'reference', name: 'B' }]);
+  const schema = schemaForDescriptor(references, { definitions, representation: 'wire' });
   assert.ok(typeof schema === 'object');
   const validate = await compileSchema({ $id: 'ReferenceUnion', ...schema });
   assert.deepEqual(validate({ tag: 'c', value: 1 }, true), [{ path: ['tag'], code: 'literal', expected: ['a', 'b'] }]);

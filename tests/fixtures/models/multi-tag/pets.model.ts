@@ -1,9 +1,10 @@
 import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 import { TCatBaseModel, TDogBaseModel, TOwnerBaseModel } from './pets.model.generated.js';
 
 export type TCat = IModel<{ kind: 'cat' | 'kitty'; name: string }>;
 export type TDog = IModel<{ kind: 'dog'; bark: boolean }>;
-export type TOwner = IModel<{ pet: TCat | TDog; pets: (TCat | TDog)[] }>;
+export type TOwner = IModel<{ pet: (TCat | TDog) & Discriminator<'kind'>; pets: ((TCat | TDog) & Discriminator<'kind'>)[] }>;
 
 export class Cat extends TCatBaseModel {}
 export class Dog extends TDogBaseModel {}

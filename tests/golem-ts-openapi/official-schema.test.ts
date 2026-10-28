@@ -126,10 +126,11 @@ export class CustomersController {
 `,
   'discriminated unions': `import { Body, Controller, Post } from '@nestjs/common';
 import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 
 export type TCircle = IModel<{ kind: 'circle'; radius: number }>;
 export type TRect = IModel<{ kind: 'rect'; width: number }>;
-export type TDrawing = IModel<{ shape: TCircle | TRect; mixed: TCircle | { kind: 'label'; text: string }; maybe: TCircle | null }>;
+export type TDrawing = IModel<{ shape: (TCircle | TRect) & Discriminator<'kind'>; mixed: (TCircle | { kind: 'label'; text: string }) & Discriminator<'kind'>; maybe: TCircle | null }>;
 
 @Controller('drawings')
 export class DrawingsController {

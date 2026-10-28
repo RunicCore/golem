@@ -437,27 +437,32 @@ test('golem check stops on a body or query parameter that is no model, and nonMo
 });
 
 const SHAPES_MODEL = `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 export type TCircle = IModel<{ kind: 'circle'; radius: number }>;
 export type TRect = IModel<{ kind: 'rect'; width: number }>;
 export type TPlain = IModel<{ width: number }>;
-export type TShape = TCircle | TRect;
+export type TShape = (TCircle | TRect) & Discriminator<'kind'>;
 export type TNumberTag = IModel<{ v: 1 }>;
 export type TTextTag = IModel<{ v: '1' }>;
 `;
 
 const SHAPES_CONTROLLER = [
   "import { Body, Controller, Post, Query } from '@nestjs/common';",
+  "import type { Discriminator } from '@exprtlabs/golem/tags';",
   "import type { TCircle, TNumberTag, TPlain, TRect, TShape, TTextTag } from './shapes.model.js';",
   "@Controller('shapes')",
   'export class ShapesController {',
-  '  @Post() written(@Body() shape: TCircle | TRect): number { return 1; }',
+  '  @Post() written(@Body() shape: (TCircle | TRect) & Discriminator<\'kind\'>): number { return 1; }',
   '  @Post() aliased(@Body() shape: TShape): number { return 1; }',
-  '  @Post() query(@Query() shape: TCircle | TRect): number { return 1; }',
+  '  @Post() query(@Query() shape: (TCircle | TRect) & Discriminator<\'kind\'>): number { return 1; }',
   '  @Post() untagged(@Body() shape: TCircle | TPlain): number { return 1; }',
+  '  @Post() undeclared(@Body() shape: TCircle | TRect): number { return 1; }',
+  "  @Post() missing(@Body() shape: (TCircle | TPlain) & Discriminator<'kind'>): number { return 1; }",
   '  @Post() list(@Body() shapes: TShape[]): number { return 1; }',
   "  @Post() field(@Body('shape') shape: TShape): number { return 1; }",
-  '  @Post() bodyMixed(@Body() tag: TNumberTag | TTextTag): number { return 1; }',
-  '  @Post() queryMixed(@Query() tag: TNumberTag | TTextTag): number { return 1; }',
+  '  @Post() bodyMixed(@Body() tag: (TNumberTag | TTextTag) & Discriminator<\'v\'>): number { return 1; }',
+  '  @Post() queryMixed(@Query() tag: (TNumberTag | TTextTag) & Discriminator<\'v\'>): number { return 1; }',
+  "  @Post() defaulted(@Body() shape: (TCircle | TPlain) & Discriminator<'kind', TPlain>): number { return 1; }",
   '}',
 ].join('\n');
 
@@ -472,20 +477,28 @@ test('a whole @Body() or @Query() union of tagged models is stamped with its tag
   const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': SHAPES_CONTROLLER });
   const result = scan(root);
   const refused = (type: string, decorator: string, reason: string, advice: string): string => `${type} ${reason}, and NestModelInterceptor answers HTTP 500 for a @${decorator}() parameter of that type. ${advice} An app with its own interceptor can set nonModelInputs: warn in golem.yaml.`;
+  const addTag = "Declare the tag key on the union: (A | B) & Discriminator<'kind'>, and give each model a required literal field kind with a value of its own, such as kind: 'circle'. Or bind one field of a model type.";
+  const whole = 'is a union of golem models, which NestModelInterceptor converts only as a whole input';
+  const wholeAdvice = 'Declare the parameter as the union itself in a whole @Body(), or as one model.';
   assert.deepEqual(result.diagnostics.map(({ code, line, message }) => ({ code, line, message })), [
-    { code: 'RUNM1081', line: 8, message: refused('TCircle | TPlain', 'Body', 'is a union of golem models with no tag', "Give each model a required literal field with a value of its own, such as kind: 'circle', or bind one field of a model type.") },
-    { code: 'RUNM1081', line: 9, message: refused('TShape', 'Body', 'is a union of golem models, which NestModelInterceptor converts only as a whole input', 'Declare the parameter as the union itself in a whole @Body(), or as one model.') },
-    { code: 'RUNM1081', line: 10, message: refused('TShape', 'Body', 'is a union of golem models, which NestModelInterceptor converts only as a whole input', 'Declare the parameter as the union itself in a whole @Body(), or as one model.') },
+    { code: 'RUNM1081', line: 9, message: refused('TCircle | TPlain', 'Body', 'is a union of golem models with no declared tag', addTag) },
+    // Two models that share a field named kind are no tagged union until the union declares the key: golem does not find it.
+    { code: 'RUNM1081', line: 10, message: refused('TCircle | TRect', 'Body', 'is a union of golem models with no declared tag', addTag) },
+    { code: 'RUNM1081', line: 11, message: refused("(TCircle | TPlain) & Discriminator<'kind'>", 'Body', `has the member TPlain with no required literal property "kind", the tag key that Discriminator<'kind'> declares`, `Give TPlain a required "kind" property with a literal type, such as kind: 'a'.`) },
+    { code: 'RUNM1081', line: 12, message: refused('TShape', 'Body', whole, wholeAdvice) },
+    { code: 'RUNM1081', line: 13, message: refused('TShape', 'Body', whole, wholeAdvice) },
     // A query string carries the tag as text, so the number 1 and the text '1' pick the same model there; a JSON body tells them apart.
-    { code: 'RUNM1081', line: 12, message: refused('TNumberTag | TTextTag', 'Query', 'is a union of golem models with no tag', "Give each model a required literal field with a value of its own, such as kind: 'circle', or bind one field of a model type.") },
+    { code: 'RUNM1081', line: 15, message: refused("(TNumberTag | TTextTag) & Discriminator<'v'>", 'Query', 'has the members TNumberTag and TTextTag that share the "v" value "1"', 'Give each model its own "v" value.') },
+    // A declared default is a variant NestModelInterceptor does not pick, so the build stops on it.
+    { code: 'RUNM1081', line: 16, message: refused("(TCircle | TPlain) & Discriminator<'kind', TPlain>", 'Body', "declares a default variant with Discriminator<'kind', ...>, which NestModelInterceptor does not pick", 'Remove the default type from the tag, or bind one model.') },
   ]);
   const [circle, rect] = [shapeId(root, 'TCircle'), shapeId(root, 'TRect')];
   const variants = `[[["circle"],"${circle}"],[["rect"],"${rect}"]]`;
   assertLines(rewritten(root, result, 'src/shapes.controller.ts'), [
-    `  @Post() written(@Body() @__golem_nestModelUnion("kind", ${variants}) shape: TCircle | TRect): number { return 1; }`,
+    `  @Post() written(@Body() @__golem_nestModelUnion("kind", ${variants}) shape: (TCircle | TRect) & Discriminator<'kind'>): number { return 1; }`,
     `  @Post() aliased(@Body() @__golem_nestModelUnion("kind", ${variants}) shape: TShape): number { return 1; }`,
-    `  @Post() query(@Query() @__golem_nestModelUnion("kind", ${variants}) shape: TCircle | TRect): number { return 1; }`,
-    `  @Post() bodyMixed(@Body() @__golem_nestModelUnion("v", [[[1],"${shapeId(root, 'TNumberTag')}"],[["1"],"${shapeId(root, 'TTextTag')}"]]) tag: TNumberTag | TTextTag): number { return 1; }`,
+    `  @Post() query(@Query() @__golem_nestModelUnion("kind", ${variants}) shape: (TCircle | TRect) & Discriminator<'kind'>): number { return 1; }`,
+    `  @Post() bodyMixed(@Body() @__golem_nestModelUnion("v", [[[1],"${shapeId(root, 'TNumberTag')}"],[["1"],"${shapeId(root, 'TTextTag')}"]]) tag: (TNumberTag | TTextTag) & Discriminator<'v'>): number { return 1; }`,
   ]);
   assert.deepEqual(result.nestCodecSites.map(({ method, slot, ids }) => ({ method, slot, ids })), [
     { method: 'written', slot: 'input', ids: [circle, rect] },

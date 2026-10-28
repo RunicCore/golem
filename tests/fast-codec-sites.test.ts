@@ -284,6 +284,7 @@ const FAST_ROOTS: readonly (readonly [feature: string, descriptor: ModelTypeDesc
           order({ kind: { kind: 'literal', value: 'cat' }, lives: { kind: 'number' } }, ['kind', 'lives']),
           order({ kind: { kind: 'literal', value: 'dog' }, barks: { kind: 'boolean' } }, ['kind', 'barks']),
         ],
+        discriminator: { propertyName: 'kind', variants: [{ values: ['cat'] }, { values: ['dog'] }] },
       },
     }, ['pet']),
     { pet: { kind: 'dog', barks: true } },

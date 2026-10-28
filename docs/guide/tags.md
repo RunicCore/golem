@@ -48,6 +48,40 @@ Schema-valued tags describe another TypeScript contract:
 - `AdditionalProperties<V>` makes each other key of the object a value of type `V`. `parse`, `stringify` and `toWireFormat` convert and write those keys by `V`, as they do for an index signature. `AdditionalProperties<unknown>` keeps the values as they are. `AdditionalProperties<never>` allows no other key.
 - `OneOf<[A, B]>`, `Not<T>` and `IfThenElse` choose or reject schema branches. None changes assignability or selects a converter.
 
+## Name the tag of a union
+
+`Discriminator<Key>` names the property that tells the variants of a model union apart. Write it on a union of two or more objects. Golem reads that key and no other. [Unions](/guide/field-types#declare-the-tag-of-an-object-union) shows the placements.
+
+<<< ../../examples/models/src/contact.model.ts#discriminated-union
+
+| Parameter | Meaning |
+| --- | --- |
+| `Key` | The property that each variant declares as a required literal. |
+| `Default` (optional) | The one variant that may lack `Key`. |
+
+- Each variant declares `Key` as a required literal type, or a union of literals. No two variants share a value. A variant that breaks this rule stops generation ([RUNM1087](/reference/diagnostics#runm1087)).
+- A union of two or more objects without the tag stops generation ([RUNM1080](/reference/diagnostics#runm1080)).
+- A tag on a value that is not such a union stops generation ([RUNM1051](/reference/diagnostics#runm1051)).
+- The tag does not change the TypeScript type. The generated model files carry no tag.
+
+### Add a default variant
+
+Give `Discriminator` a second type argument to name the default variant. The default is the variant that has no tag, such as an SDK model from an OpenAPI document.
+
+<<< ../../examples/models/src/contact.model.ts#union-tag-default
+
+- An object whose `kind` is missing, or matches no other variant, becomes the default.
+- The default must be a variant of the union, and it must not declare `Key` itself. Otherwise generation stops ([RUNM1051](/reference/diagnostics#runm1051)).
+- Only the default may lack `Key`.
+
+### Document a tagged union
+
+A `controllers` job writes a tagged union as `oneOf` with `discriminator.propertyName` set to `Key`, and a `mapping` from each value to its schema.
+
+- OpenAPI 3.2 states a default variant as `defaultMapping`.
+- OpenAPI 3.1 has no `defaultMapping`, so the `controllers` job writes a union with a default as `anyOf` with no `discriminator`. A `golem-openapi` job that reads that 3.1 document stops with [`OPENAPI_UNION_DISCRIMINATOR_MISSING`](/reference/diagnostics#openapi-union-discriminator-missing) when the variants are models. For a union with a default, use OpenAPI 3.2. It is the default `openapiVersion`.
+- An SDK that `golem-openapi` generates follows the `discriminator` of its document. On OpenAPI 3.2 it follows `defaultMapping` too.
+
 ## Formats
 
 On a model field, `Format<'name'>` applies to a `string`, or to a `number` for a number format such as `number & Format<'int32'>`. A number format also applies to schemas from an OpenAPI document, where a number schema has `format: int32`. A format on the wrong type, such as `email` on a `number` or `int32` on a `string`, stops generation ([RUNM1051](/reference/diagnostics#runm1051)). Golem checks these names:

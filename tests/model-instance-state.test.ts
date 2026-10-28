@@ -412,3 +412,39 @@ export class Stamp extends TStampBaseModel { constructor(values: Partial<TStampF
   assert.equal(stamp.stringify(date, options), '{"id":"a"}', 'stringify of a Date | undefined field');
   assert.deepEqual(encodeGeneratedModel(date as never), { id: 'a' }, 'the class-level encode of a Date | undefined field');
 });
+
+test('a nested object leaves out an own key whose value is undefined and is copied only when it holds one', async (t) => {
+  // protects: T-587 toWireFormat and the class-level encode kept an own undefined key of a nested object that stringify drops; no copy when no key is undefined
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-nested-undefined-', name: 'model-nested-undefined', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'nested-undefined.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TOptionalBaseModel, TRequiredBaseModel, TDatedBaseModel, type TOptionalFields, type TRequiredFields, type TDatedFields } from './nested-undefined.model.generated.js';
+export type TOptional = IModel<{ id: string; inner: { tag?: string; n?: number } }>;
+export type TRequired = IModel<{ id: string; inner: { tag: string | undefined } }>;
+export type TDated = IModel<{ id: string; inner: { at: Date; note?: string } }>;
+export class Optional extends TOptionalBaseModel { constructor(values: Partial<TOptionalFields> = {}) { super(values); } }
+export class Required extends TRequiredBaseModel { constructor(values: Partial<TRequiredFields> = {}) { super(values); } }
+export class Dated extends TDatedBaseModel { constructor(values: Partial<TDatedFields> = {}) { super(values); } }
+`);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const models = await import(pathToFileURL(path.join(root, 'build/nested-undefined.model.js')).href) as Record<'Optional' | 'Required' | 'Dated', new (values?: object) => object>;
+  const optional = requireObjectCodec(generatedCodecIdFromRoot(root, 'TOptional'));
+  const required = requireObjectCodec(generatedCodecIdFromRoot(root, 'TRequired'));
+  const dated = requireObjectCodec(generatedCodecIdFromRoot(root, 'TDated'));
+  const at = new Date('2026-01-02T03:04:05.000Z');
+  for (const validate of [false, true]) {
+    const options = { validate };
+    const label = validate ? 'validation on' : 'validation off';
+    const holes = { id: 'a', inner: { tag: undefined, n: undefined } };
+    assert.deepEqual(optional.toWireFormat(holes, options), { id: 'a', inner: {} }, `an optional key, ${label}`);
+    assert.deepEqual(optional.toWireFormat({ id: 'a', inner: { tag: undefined, n: 1 } }, options), { id: 'a', inner: { n: 1 } }, `one of two optional keys, ${label}`);
+    assert.deepEqual(dated.toWireFormat({ id: 'a', inner: { at, note: undefined } }, options), { id: 'a', inner: { at: at.toISOString() } }, `a Date beside an optional key, ${label}`);
+  }
+  assert.deepEqual(required.toWireFormat({ id: 'a', inner: { tag: undefined } }, { validate: false }), { id: 'a', inner: {} }, 'a required key that admits undefined');
+  const classLevel = (Model: new (values?: object) => object, inner: object): unknown => (encodeGeneratedModel(Object.assign(new Model({ id: 'a' }), { inner }) as never) as { inner: unknown }).inner;
+  assert.deepEqual(classLevel(models.Optional, { tag: undefined, n: undefined }), {}, 'the class-level encode of an optional key');
+  assert.deepEqual(classLevel(models.Required, { tag: undefined }), {}, 'the class-level encode of a required key that admits undefined');
+  assert.deepEqual(classLevel(models.Dated, { at, note: undefined }), { at: at.toISOString() }, 'the class-level encode of a Date beside an optional key');
+  const kept = { tag: 'x' };
+  assert.equal(classLevel(models.Optional, kept), kept, 'the class-level encode does not copy an object with no undefined key');
+});
