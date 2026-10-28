@@ -9,7 +9,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { compositionProject as fixture } from './support/model-composition-project.js';
-import { buildModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, buildModelProjectWith, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { discardedProjectionCodecsSource, discardedProjectionMetadataSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
 
@@ -318,6 +318,23 @@ export type TItem = IModel<{ at: Timestamp; later?: Optional }>;
     assert.equal(decoded.at instanceof Date, true);
     assert.equal(decoded.later instanceof Date, true);
     assert.deepEqual(encodeGeneratedModel(decoded), { at: '2024-05-06T07:08:09.000Z', later: '2025-01-02T03:04:05.000Z' });
+  });
+}
+
+// protects: bug-sweep a string with a required literal brand (`string & { readonly __brand: 'Email' }`) rejected every string ("Expected object"): the brand test accepted only undefined or never members
+for (const exact of [true, false]) {
+  test(`a string with a required literal brand accepts a string and rejects a number with exact ${exact}`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type Email = string & { readonly __brand: 'Email' };
+export type TItem = IModel<{ email: Email }>;
+`);
+    await buildModelProjectWith(root, { mobx: false, validation: true, exact });
+    await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+    assert.deepEqual(codec.parse('{"email":"a@b.c"}'), { email: 'a@b.c' });
+    assert.equal(codec.validate({ email: 'a@b.c' }), true);
+    assert.equal(codec.validate({ email: 1 }), false);
   });
 }
 
