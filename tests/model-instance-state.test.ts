@@ -411,4 +411,6 @@ export class Stamp extends TStampBaseModel { constructor(values: Partial<TStampF
   assert.deepEqual(stamp.toWireFormat(date, options), { id: 'a' }, 'toWireFormat of a Date | undefined field');
   assert.equal(stamp.stringify(date, options), '{"id":"a"}', 'stringify of a Date | undefined field');
   assert.deepEqual(encodeGeneratedModel(date as never), { id: 'a' }, 'the class-level encode of a Date | undefined field');
+  // protects: T-587 the class-level encode passed a nested object through, so its undefined required key stayed an own key
+  assert.deepEqual(encodeGeneratedModel(instance as never), { id: 'a', inner: {} }, 'the class-level encode of a nested undefined key');
 });

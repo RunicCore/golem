@@ -62,7 +62,7 @@ import {
   type ObjectTypeDescriptor,
   type VariantDispatch,
 } from './union-conversion.js';
-import { isRecordExpression } from './stringify-emitter.js';
+import { admitsUndefined, isRecordExpression } from './stringify-emitter.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
 export { AmbiguousUnionConversionError, descriptorNeedsConversion, literalValues, ObjectUnionDiscriminatorError } from './union-conversion.js';
@@ -472,8 +472,9 @@ function emitNestedUncached(
     const additional = typeof additionalItem === 'object'
       ? atField(nested => emitNested(additionalItem, nested, direction, resolveModel, resolveSerde, memo), plainValue, identifier('key'), direction)
       : plainValue;
-    // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do.
-    const omitsUndefined = (name: string): boolean => direction === 'toJSON' && !descriptor.required.includes(name);
+    // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do; a required field whose type admits undefined too.
+    const omitsUndefined = (name: string): boolean => direction === 'toJSON' && (!descriptor.required.includes(name) || admitsUndefined(descriptor.properties[name]!));
+    const dropsRequiredUndefined = direction === 'toJSON' && descriptor.required.some((name) => descriptor.properties[name] !== undefined && admitsUndefined(descriptor.properties[name]));
     const additionalChanged = !sameCode(additional, plainValue);
     const knownChanged = assignments.some(({ unchanged }) => !unchanged);
     const knownNames = Object.keys(descriptor.properties);
@@ -481,7 +482,7 @@ function emitNestedUncached(
     const defineProperty = rt.conversion.defineModelProperty;
     // A decoder reads the declared fields of any object by the JSON view, so it builds the copy from one Object.keys pass.
     // A projection does so in both directions, and also drops the keys it does not declare.
-    if (descriptor.projection || (direction !== 'toJSON' && (knownChanged || additionalChanged))) {
+    if (descriptor.projection || dropsRequiredUndefined || (direction !== 'toJSON' && (knownChanged || additionalChanged))) {
       // An additionalProperties tag declares the other keys of a projection as data: they are copied as they are or by
       // the tag's type. Another object keeps its other keys the same way.
       const hasExtras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
