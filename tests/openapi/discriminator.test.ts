@@ -556,3 +556,44 @@ for (const [form, defaultMapping] of [['a component name', 'Other'], ['a $ref', 
     }
   });
 }
+
+for (const validation of [false, true]) {
+  test(`a oneOf with no discriminator keyword takes a model with no tag as the default of its tagged objects, with validation ${validation ? 'on' : 'off'}`, async t => {
+    // protects: T-602 golem-openapi keeps a no-discriminator oneOf of one untagged model beside tagged objects: the model takes every other object
+    const output = path.join(createFixtureProject(t, 'golem-openapi-untagged-default-'), 'sdk');
+    const stamp = { type: 'string', format: 'date-time' };
+    const document = {
+      openapi: '3.1.0',
+      info: { title: 'Payments', version: '1' },
+      paths: {},
+      components: {
+        schemas: {
+          MoneyUntagged: { type: 'object', required: ['amount', 'issued'], properties: { amount: { type: 'number' }, issued: stamp } },
+          PayoutUntagged: {
+            oneOf: [
+              { $ref: '#/components/schemas/MoneyUntagged' },
+              { type: 'object', required: ['kind', 'issued'], properties: { kind: { const: 'other' }, issued: stamp } },
+            ],
+          },
+          OwnerUntagged: { type: 'object', required: ['payout'], properties: { payout: { $ref: '#/components/schemas/PayoutUntagged' } } },
+        },
+      },
+    };
+    await generateMaterializedSdk(document, { output, name: 'Payments', profile: { mobx: false, validation } });
+    compileGeneratedSdk(output, [], { strict: true });
+    const models = await importGeneratedModule(output, 'untagged default models');
+    const OwnerModel = modelClass(models, 'OwnerUntaggedModel');
+    const MoneyModel = modelClass(models, 'MoneyUntaggedModel');
+    const owner = (payout: object) => decodeGeneratedModel(OwnerModel, { payout }) as { payout: { issued: unknown } };
+    const issued = '2026-01-02T03:04:05.000Z';
+    const money = owner({ amount: 3, issued }).payout;
+    assert.ok(money instanceof MoneyModel);
+    assert.ok(money.issued instanceof Date);
+    const other = owner({ kind: 'other', issued }).payout;
+    assert.ok(!(other instanceof MoneyModel));
+    assert.ok(other.issued instanceof Date);
+    for (const payout of [{ amount: 3, issued }, { kind: 'other', issued }]) {
+      assert.deepEqual(encodeGeneratedModel(owner(payout)), { payout });
+    }
+  });
+}
