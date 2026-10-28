@@ -305,6 +305,29 @@ test('keeps an aliased Promise return and does not unwrap a project class named 
   assert.equal(property(document, property(document, latest, 'current'), 'id').description, 'Item id');
 });
 
+test('keeps a $ref into a property of a named component and finds the component by its name', async t => {
+  // protects: a $ref pointing inside a component was read as a component named 'Foo/properties/name' and rejected as missing
+  const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiProperty, ApiResponse, getSchemaPath } from '@nestjs/swagger';
+
+class Foo {
+  @ApiProperty({ description: 'Foo name' }) name!: string;
+}
+
+@Controller('foo')
+export class FooController {
+  @Get()
+  @ApiResponse({ schema: { allOf: [{ $ref: getSchemaPath(Foo) }, { $ref: '#/components/schemas/Foo/properties/name' }] } })
+  get(): void {}
+}
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  assert.deepEqual(objectSchema(document, jsonSchema(document.paths['/foo']?.get, '200')).allOf, [
+    { $ref: '#/components/schemas/Foo' },
+    { $ref: '#/components/schemas/Foo/properties/name' },
+  ]);
+});
+
 test('emits routes inherited from plain and mixin base controllers', async t => {
   const document = documentOf<OpenApiDocument>(await generated(t, 'inherited-and-mixin-controllers'));
   const reply = (route: string): unknown => property(document, objectSchema(document, jsonSchema(document.paths[route]?.get, '200')), 'reply').description;
