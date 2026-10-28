@@ -753,7 +753,7 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 ### RUNM1088
 
-**Imported name has the form of a generated local.** A function that a model tag calls (`TValidation`, or the serialize and deserialize functions of `TSerde`), or a class of a `TSerde` field, is exported under a name made of a `$`, one lowercase letter and digits, such as `$v0` or `$k`. golem uses that form for the locals of the functions it generates, so it cannot import a name of that form. The message names the function or the class and the name.
+**Imported name has the form of a generated local.** A `TValidation` function is exported under a name made of a `$`, one lowercase letter and digits, such as `$v0` or `$k`. golem uses that form for the locals of the functions it generates, so it cannot import a name of that form. The message names the function and the name.
 
 **Fix:** Rename the export, or export it under another name as well.
 
