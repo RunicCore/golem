@@ -257,7 +257,7 @@ function narrowsModel(derived: ModelTypeDescriptor, base: ModelTypeDescriptor, m
 }
 
 /** The name of a model descriptor: a generated model's id or a reference's name. */
-export function modelName(descriptor: ModelTypeDescriptor): string | undefined {
+function modelName(descriptor: ModelTypeDescriptor): string | undefined {
   return descriptor.kind === 'generated-model' ? descriptor.id : descriptor.kind === 'reference' ? descriptor.name : undefined;
 }
 
