@@ -18,7 +18,6 @@ import {
 import { rt, rtType } from './rt.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
-  AmbiguousUnionConversionError,
   descriptorNeedsConversion,
   isScalarishDescriptor,
   emitDispatch,
@@ -28,7 +27,6 @@ import {
   ObjectUnionDiscriminatorError,
   objectValueExpression,
   presentKeysCode,
-  presentValueCode,
   declaredTable,
   unionDispatch,
   type DispatchOptions,
@@ -1211,7 +1209,7 @@ interface UnionWalker extends Pick<UnionConversion, 'items' | 'joinSequence' | '
   readonly walk: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code;
   /** The conversion of a variant under tagged dispatch, when it differs from `walk`. */
   readonly walkTagged?: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code;
-  /** The conversion of the generated model beside tagged objects, when it differs from `walk`. */
+  /** The conversion of the generated model beside scalars, when it differs from `walk`. */
   readonly generatedText?: (generated: Extract<ModelTypeDescriptor, { readonly kind: 'generated-model' }>) => Code | undefined;
 }
 
@@ -1220,7 +1218,7 @@ const UNION_DISPATCH = { stringify: 'encode-json', decode: 'decode', encode: 'en
 
 /**
  * The one option set of the stringify, decode and encode union conversions: the variant conversion, tagged dispatch, and
- * the generated model beside tagged objects, built from the direction and the walker. The walker's own items and steps join it.
+ * the generated model beside scalars, built from the direction and the walker. The walker's own items and steps join it.
  */
 function emitUnion(
   direction: keyof typeof UNION_DISPATCH,
@@ -1284,7 +1282,7 @@ function emitUnionValue(
       : code`(Array.isArray(${value}) ? ${items} : (${scalar}))`,
     beforeGenerated: (present) => {
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-      // A generated model beside the objects is dispatched by their literal tags, which the generated step requires.
+      // Several structured objects need a declared tag table to be told apart; without one they are rejected.
       if (objects.length > 1 && !present.some((variant) => variant.kind === 'generated-model')) {
         const structured = objects.some((object) => {
           const node = ctx.graph.nodeFor(object);
