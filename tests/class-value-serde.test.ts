@@ -64,11 +64,16 @@ async function assertFieldClasses(root: string, sourceRoot: string, imports: rea
   await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
 }
 
-async function build(t: TestContext, fields: SourceFragment) {
-  const { root, sourceRoot } = fixture(t);
+/** The codec, class and Temporal declaration files that every class-value project holds. */
+function writeClassSupport(sourceRoot: string): void {
   fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), CODECS);
   fs.writeFileSync(path.join(sourceRoot, 'money.ts'), MONEY);
   fs.writeFileSync(path.join(sourceRoot, 'temporal.d.ts'), TEMPORAL_D_TS);
+}
+
+async function build(t: TestContext, fields: SourceFragment) {
+  const { root, sourceRoot } = fixture(t);
+  writeClassSupport(sourceRoot);
   fs.writeFileSync(path.join(sourceRoot, 'temporal-runtime.js'), TEMPORAL_RUNTIME);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
 import type { Money } from './money.js';
@@ -163,9 +168,7 @@ test('generated model type names the class', async t => {
 
 test('class-value field under the MobX profile', async t => {
   const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), CODECS);
-  fs.writeFileSync(path.join(sourceRoot, 'money.ts'), MONEY);
-  fs.writeFileSync(path.join(sourceRoot, 'temporal.d.ts'), TEMPORAL_D_TS);
+  writeClassSupport(sourceRoot);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
 import { encodeBytes, decodeBytes } from './codecs.js';
 type Bytes = Uint8Array & TSerde<typeof encodeBytes, typeof decodeBytes>;`, fields: tsSource`bytes: Bytes` }).text);
@@ -205,9 +208,7 @@ test('class field without TSerde is still rejected', t => {
 test('class-value output does not depend on the checkout directory', t => {
   const outputs = [0, 1].map(() => {
     const { root, sourceRoot } = fixture(t);
-    fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), CODECS);
-    fs.writeFileSync(path.join(sourceRoot, 'money.ts'), MONEY);
-    fs.writeFileSync(path.join(sourceRoot, 'temporal.d.ts'), TEMPORAL_D_TS);
+    writeClassSupport(sourceRoot);
     fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';
 import type { Money } from './money.js';
 import { encodeMoney, decodeMoney } from './codecs.js';

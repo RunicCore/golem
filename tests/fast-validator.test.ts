@@ -2,25 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { registerGeneratedModel } from '@exprtlabs/golem/model';
-import { MODEL_CODEC_IDS_KEY } from '@exprtlabs/golem/internal/schema';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 
-import { compileValidatorModule, type FastCheck } from './support/compiled-validators.js';
+import { compileValidatorModule, modelClass, type FastCheck } from './support/compiled-validators.js';
 
 // The fast check `is_X` of the validator compiler (`fastPath`) gives the full validator's verdict whenever the full
 // validator gives one, and throws only where it throws. When `is_X` returns true it has read every own value the full
 // validator reads; when it returns false, no other (spec 7.3). Each row compiles one schema with `fastPath` on and
 // compares both functions of that module.
-
-const MODEL_CODEC_IDS = Symbol.for(MODEL_CODEC_IDS_KEY);
-
-/** A class whose prototype lists `ids` the way a registered model does. */
-function modelClass(...ids: string[]): new () => object {
-  const model = class {};
-  Object.defineProperty(model.prototype, MODEL_CODEC_IDS, { value: ids });
-  return model;
-}
 
 /** A model that declares every key the generated schemas name; any other own key of its instances is program state. */
 class Stateful {}

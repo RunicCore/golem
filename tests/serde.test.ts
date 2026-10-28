@@ -23,6 +23,7 @@ import {
 import { validate as publicValidate } from '@exprtlabs/golem/validation';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generatedCodecId } from './support/consumer.js';
+import { validationFailure } from './support/validation-failure.js';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
 
 function fixture(
@@ -100,30 +101,18 @@ test('IObject stringify/parse compose nested Money by call; invalid JSON fails b
       && error.issues[0]?.source === IssueSource.JSON
       && error.issues[0]?.representation === IssueRepresentation.Wire,
   );
-  try {
-    codecs.parseTPayment(JSON.stringify({
-      id: 1,
-      amount: { currency: 1, value: 2 },
-      note: false,
-    }));
-    assert.fail('expected fail-fast validation');
-  } catch (error) {
-    assert.ok(error instanceof LibError);
-    assert.equal(error.kind, LibErrorKind.Validation);
-    assert.equal(error.issues.length, 1);
-  }
-  try {
-    codecs.parseTPayment(JSON.stringify({
-      id: 1,
-      amount: { currency: 1, value: 2 },
-      note: false,
-    }), { failFast: false });
-    assert.fail('expected exhaustive validation');
-  } catch (error) {
-    assert.ok(error instanceof LibError);
-    assert.equal(error.kind, LibErrorKind.Validation);
-    assert.ok(error.issues.length > 1);
-  }
+  const failFast = validationFailure(() => codecs.parseTPayment(JSON.stringify({
+    id: 1,
+    amount: { currency: 1, value: 2 },
+    note: false,
+  })), 'fail-fast validation');
+  assert.equal(failFast.issues.length, 1);
+  const exhaustive = validationFailure(() => codecs.parseTPayment(JSON.stringify({
+    id: 1,
+    amount: { currency: 1, value: 2 },
+    note: false,
+  }), { failFast: false }), 'exhaustive validation');
+  assert.ok(exhaustive.issues.length > 1);
 });
 
 test('untransformed public serde APIs and validate<T> throw with the message that names the rewrite', () => {

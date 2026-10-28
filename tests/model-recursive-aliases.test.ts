@@ -4,10 +4,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
-import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildRecursiveProject, importCodecs, json } from './support/recursive-fixtures.js';
 
-type Codecs = Record<string, (value: unknown, options?: object) => unknown>;
-const json = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
 
 const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { mobx: false, validation: false }],
@@ -32,12 +30,9 @@ const iso = (day: number): string => `2024-01-0${day}T00:00:00.000Z`;
 for (const [label, profile] of profiles) {
   test(`a JsonValue field converts nothing, and a recursive alias that holds a date decodes it at every depth (${label})`, async (t: TestContext) => {
     // protects: T-221 an alias that reaches no date, serde value or model has no conversion call; one that holds a date converts
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-alias-conversion-', linkTypescript: true });
-    writeModelSources(sourceRoot, sources);
-    writeModelGolemYaml(root, profile);
-    await buildModelProject(root);
+    const { root } = await buildRecursiveProject(t, 'golem-recursive-alias-conversion-', sources, profile);
     const generated = fs.readFileSync(path.join(root, 'src/alias.model.generated.ts'), 'utf8');
-    const codecs = await import(pathToFileURL(path.join(root, 'build/alias.model.generated.js')).href) as Codecs;
+    const codecs = await importCodecs(root, 'alias');
     const models = await import(pathToFileURL(path.join(root, 'build/alias.model.js')).href) as { JsonHolder: new (init: object) => { value: unknown }; Stamps: new (init: object) => { list: { at: unknown }[] } };
 
     assert.equal(/(decode|init|encode)JsonValue\b/.test(generated), false, 'a JsonValue field has no conversion call');

@@ -8,14 +8,13 @@ import vm from 'node:vm';
 import { build } from 'esbuild';
 
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
-import { MODEL_CODEC_IDS_KEY } from '@exprtlabs/golem/internal/schema';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 
-import { compileSchema, compileValidationPlan, compileValidatorModule, compileValidators } from './support/compiled-validators.js';
+import { compileSchema, compileValidationPlan, compileValidatorModule, compileValidators, MODEL_CODEC_IDS, modelClass } from './support/compiled-validators.js';
 import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { TSC } from './support/build-project.js';
 import { command, workspace } from './support/process.js';
@@ -809,15 +808,6 @@ test('diagnostics from every root are collected before the source is withheld', 
 });
 
 // golem's own keywords
-
-const MODEL_CODEC_IDS = Symbol.for(MODEL_CODEC_IDS_KEY);
-
-/** A class whose prototype lists `ids` the way a registered model does. */
-function modelClass(...ids: string[]): new () => object {
-  const model = class {};
-  Object.defineProperty(model.prototype, MODEL_CODEC_IDS, { value: ids });
-  return model;
-}
 
 test('golemModelInstance accepts an instance of the selected class and reports another or none', async () => {
   const Cat = modelClass('Cat');

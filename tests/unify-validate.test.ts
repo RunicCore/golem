@@ -1,4 +1,4 @@
-import { createFixtureProject, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,42 +8,13 @@ import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
-import { buildModelProject, writeModelGolemYaml } from './model-project.js';
-import { command, workspace } from './support/process.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, type ModelProject } from './model-project.js';
+import { command } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { pathToFileURL } from 'node:url';
 
-interface Fixture {
-  readonly root: string;
-  readonly sourceRoot: string;
-}
-
-function fixture(t: TestContext): Fixture {
-  const root = createFixtureProject(t, 'golem-unify-validate-');
-  const sourceRoot = path.join(root, 'src');
-  fs.symlinkSync(path.join(workspace, 'node_modules'), path.join(root, 'node_modules'), 'dir');
-  writeGeneratedArtifacts([
-    {
-      path: path.join(root, 'package.json'),
-      content: JSON.stringify({ name: 'unify-validate', private: true, type: 'module' }),
-    },
-    {
-      path: path.join(root, 'tsconfig.json'),
-      content: JSON.stringify({
-        compilerOptions: {
-          strict: true,
-          target: 'ES2022',
-          module: 'NodeNext',
-          moduleResolution: 'NodeNext',
-          skipLibCheck: true,
-          outDir: 'build',
-          rootDir: 'src',
-        },
-        include: ['src/**/*.ts'],
-      }),
-    },
-  ]);
-  return { root, sourceRoot };
+function fixture(t: TestContext): ModelProject {
+  return createModelProject(t, { prefix: 'golem-unify-validate-', name: 'unify-validate', linkWorkspaceNodeModules: true });
 }
 
 function writeArtifacts(result: { readonly artifacts: readonly { readonly path: string; readonly content: string }[] }): void {

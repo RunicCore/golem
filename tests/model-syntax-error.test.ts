@@ -28,6 +28,18 @@ async function brokenProject(t: TestContext): Promise<{ root: string; config: st
   return project;
 }
 
+/** The errors that `golem watch` reports on the project once it has reported the syntax error. */
+async function watchErrors(config: string): Promise<readonly string[]> {
+  const errors: string[] = [];
+  const stop = watchPipeline(config, error => { errors.push(String(error)); });
+  try {
+    await until(() => errors.some(error => SYNTAX_ERROR.test(error)), () => `the syntax error is reported (errors=${errors.join('; ')})`);
+  } finally {
+    stop();
+  }
+  return errors;
+}
+
 // protects: T-310 a syntax error in a model source is reported as itself, not as RUNM1011
 test('golem check reports the syntax error of a model source and not RUNM1011', async (t: TestContext) => {
   const { root } = await brokenProject(t);
@@ -40,14 +52,8 @@ test('golem check reports the syntax error of a model source and not RUNM1011', 
 // protects: T-310 golem watch reports the syntax error of a model source, not RUNM1011
 test('golem watch reports the syntax error of a model source and not RUNM1011', async (t: TestContext) => {
   const { config } = await brokenProject(t);
-  const errors: string[] = [];
-  const stop = watchPipeline(config, error => { errors.push(String(error)); });
-  try {
-    await until(() => errors.some(error => SYNTAX_ERROR.test(error)), () => `the syntax error is reported (errors=${errors.join('; ')})`);
-    assert.deepEqual(errors.filter(error => error.includes('RUNM1011')), []);
-  } finally {
-    stop();
-  }
+  const errors = await watchErrors(config);
+  assert.deepEqual(errors.filter(error => error.includes('RUNM1011')), []);
 });
 
 /** A project whose controllers job runs before its models job: the half-typed model is a model the controllers job analyses first. */
@@ -84,12 +90,6 @@ for (const verb of ['generate', 'check']) {
 // protects: T-310 golem watch reports the syntax error of a model source, not RUNM1011, with a controllers job
 test('golem watch reports the syntax error of a model source and not RUNM1011 in a project with a controllers job', async (t: TestContext) => {
   const { config } = controllersProject(t);
-  const errors: string[] = [];
-  const stop = watchPipeline(config, error => { errors.push(String(error)); });
-  try {
-    await until(() => errors.some(error => SYNTAX_ERROR.test(error)), () => `the syntax error is reported (errors=${errors.join('; ')})`);
-    assert.deepEqual(errors.filter(error => error.includes('RUNM1011')), []);
-  } finally {
-    stop();
-  }
+  const errors = await watchErrors(config);
+  assert.deepEqual(errors.filter(error => error.includes('RUNM1011')), []);
 });
