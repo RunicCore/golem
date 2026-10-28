@@ -13,7 +13,7 @@ import {
   type GeneratedClientClass,
 } from './helpers.js';
 
-// Scheme names that Object.prototype also has, and one that a document never declares.
+// Scheme names that Object.prototype also has.
 const reserved = ['constructor', 'toString', 'hasOwnProperty', '__proto__'];
 const operationOf = (scheme: string): string => `use_${scheme}`;
 // The first operation links to the second, with a request body that holds an own '__proto__' key and a link named '__proto__'.
@@ -29,7 +29,7 @@ function reservedDocument(): Record<string, unknown> {
     ['bearer', { type: 'http', scheme: 'bearer' }],
     ...reserved.map((scheme) => [scheme, { type: 'apiKey', in: 'header', name: `X-${scheme}` }]),
   ]);
-  const paths = Object.fromEntries([...reserved, 'valueOf'].map((scheme) => [
+  const paths = Object.fromEntries(reserved.map((scheme) => [
     `/auth/${scheme}`,
     { get: { operationId: operationOf(scheme), security: [{ [scheme]: [] }], responses: scheme === 'constructor' ? linked : noContent } },
   ]));
@@ -75,10 +75,15 @@ for (const scheme of reserved) {
   });
 }
 
-test('a requirement that names an undeclared reserved word finds no scheme', async () => {
+test('a requirement that names an undeclared reserved word is rejected at generation', async () => {
   // protects: T-510 an undeclared scheme named like an Object.prototype member is not a declared scheme
-  await assert.rejects(() => call('valueOf', {}), /No configured credentials satisfy/);
-  await assert.rejects(() => call('valueOf', { valueOf: 'x' }), /Unknown OpenAPI security scheme: valueOf/);
+  const document = reservedDocument();
+  const paths = document.paths as Record<string, unknown>;
+  paths['/auth/valueOf'] = { get: { operationId: 'use_valueOf', security: [{ valueOf: [] }], responses: noContent } };
+  await assert.rejects(
+    () => generateMaterializedSdk(document, { output: path.join(os.tmpdir(), 'golem-openapi-undeclared-reserved'), name: 'Undeclared', profile: { mobx: false, validation: false } }),
+    /operation-security-defined: security requirement names "valueOf", which is not declared in components\.securitySchemes \(openapi\.json#\/paths\/~1auth~1valueOf\/get\/security\/0\/valueOf\)/,
+  );
 });
 
 test('a document constant or link with a __proto__ key keeps it as an own key in the generated module', async () => {

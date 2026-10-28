@@ -212,3 +212,58 @@ test('style cookie is accepted for a cookie parameter and rejected for a header 
     /^Error: OpenAPI validation failed with 1 error\(s\):\nstruct: Must be "simple" \(header\.json#\/paths\/~1bad\/get\/parameters\/0\/style\)$/,
   );
 });
+
+const numericHeaderDocument = {
+  openapi: '3.1.0',
+  info: { title: 'NumericHeaders', version: '1' },
+  components: { schemas: { Count: { type: 'integer' } } },
+  paths: {
+    '/count': {
+      get: {
+        operationId: 'count',
+        responses: {
+          200: {
+            description: 'ok',
+            headers: {
+              'X-Plain': { schema: { type: 'integer' } },
+              'X-Float': { schema: { type: 'number' } },
+              'X-AnyOf': { schema: { anyOf: [{ type: 'integer' }, { type: 'null' }] } },
+              'X-OneOf': { schema: { oneOf: [{ type: 'integer' }, { type: 'null' }] } },
+              'X-AllOf': { schema: { allOf: [{ $ref: '#/components/schemas/Count' }] } },
+            },
+          },
+        },
+      },
+    },
+  },
+};
+
+function clientReturning(Client: Awaited<ReturnType<typeof loadClient>>, headers: Record<string, string>) {
+  return new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async () => new Response(null, { status: 200, headers }),
+  });
+}
+
+test('an integer response header declared through anyOf, oneOf or a $ref decodes to a number', async (t) => {
+  // protects: header typed number | null returned the raw string because the kind was read only from a direct type
+  const Client = await loadClient(t, numericHeaderDocument, 'NumericHeaders');
+  const result = await clientReturning(Client, {
+    'X-Plain': '7', 'X-Float': '2.5', 'X-AnyOf': '8', 'X-OneOf': '9', 'X-AllOf': '10',
+  }).count().execute({});
+  assert.deepEqual(result.headers, { 'X-Plain': 7, 'X-Float': 2.5, 'X-AnyOf': 8, 'X-OneOf': 9, 'X-AllOf': 10 });
+});
+
+test('a numeric response header that is not a number of its declared kind is rejected', async (t) => {
+  // protects: integer header '' decoded to 0 and '0x10', '1e3', '1.5' were accepted through Number()
+  const Client = await loadClient(t, numericHeaderDocument, 'NumericHeaders');
+  for (const [name, value] of [['X-Plain', ''], ['X-Plain', '0x10'], ['X-Plain', '1e3'], ['X-Plain', '1.5'], ['X-AnyOf', '1.5'], ['X-Float', ''], ['X-Float', '0x10']]) {
+    await assert.rejects(
+      () => clientReturning(Client, { [name]: value }).count().execute({}),
+      new TypeError(`Invalid numeric response header: ${value}`),
+      `${name}: ${JSON.stringify(value)}`,
+    );
+  }
+  const accepted = await clientReturning(Client, { 'X-Float': '1e3', 'X-Plain': '-5' }).count().execute({});
+  assert.deepEqual(accepted.headers, { 'X-Plain': -5, 'X-Float': 1000 });
+});

@@ -412,8 +412,9 @@ export class ClientRuntime {
 
   private decodeHeaderScalar(value: string, kind: string | null): unknown {
     if (kind === 'integer' || kind === 'number') {
+      const jsonNumber = kind === 'integer' ? /^-?(?:0|[1-9]\d*)$/ : /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
       const number = Number(value);
-      if (!Number.isFinite(number)) throw new TypeError(`Invalid numeric response header: ${value}`);
+      if (!jsonNumber.test(value) || !Number.isFinite(number)) throw new TypeError(`Invalid numeric response header: ${value}`);
       return number;
     }
     if (kind === 'boolean') {

@@ -57,10 +57,12 @@ function parameterOptionsOf(
 /**
  * The key of a parameter override: OpenAPI identifies a parameter by name and
  * location together. `@ApiQuery` documents the query string, so it also names
- * an OAS 3.2 `querystring` parameter (a whole `@Query()` object).
+ * an OAS 3.2 `querystring` parameter (a whole `@Query()` object). A header name
+ * is case-insensitive (RFC 9110), so its key is lower case; the parameter keeps
+ * the spelling of the `@Headers()` decorator that declared it.
  */
 export function parameterOverrideKey(location: string, name: string): string {
-  return `${location === 'querystring' ? 'query' : location}:${name}`;
+  return `${location === 'querystring' ? 'query' : location}:${location === 'header' ? name.toLowerCase() : name}`;
 }
 
 /**
@@ -461,8 +463,8 @@ export function parseParameters(
     for (const entry of [...parameterOptionsOf(context, inApplicationOrder(methodDecorators), decoratorNames), ...inherited]) {
       const { options } = entry;
       const name = options.string('name');
-      if (!name || [...parameters, ...classHeaders].some(parameter => parameter.name === name
-        && parameterOverrideKey(String(parameter.location), name) === parameterOverrideKey(location, name))) continue;
+      if (!name || [...parameters, ...classHeaders].some(parameter => parameter.name !== undefined
+        && parameterOverrideKey(String(parameter.location), parameter.name) === parameterOverrideKey(location, name))) continue;
       // In OpenAPI 3.2 a query DTO field is documented inside the querystring schema, as 3.1 documents its flattened parameter.
       if (location === 'query' && parameters.some(parameter => querystringHasProperty(context, parameter, name))) continue;
       const typed = typeExpressionFromApiOption(context.checker, options.expression('type'));

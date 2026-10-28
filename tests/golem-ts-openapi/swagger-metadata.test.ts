@@ -305,6 +305,49 @@ test('keeps an aliased Promise return and does not unwrap a project class named 
   assert.equal(property(document, property(document, latest, 'current'), 'id').description, 'Item id');
 });
 
+test('keeps a $ref into a property of a named component and finds the component by its name', async t => {
+  // protects: a $ref pointing inside a component was read as a component named 'Foo/properties/name' and rejected as missing
+  const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiProperty, ApiResponse, getSchemaPath } from '@nestjs/swagger';
+
+class Foo {
+  @ApiProperty({ description: 'Foo name' }) name!: string;
+}
+
+@Controller('foo')
+export class FooController {
+  @Get()
+  @ApiResponse({ schema: { allOf: [{ $ref: getSchemaPath(Foo) }, { $ref: '#/components/schemas/Foo/properties/name' }] } })
+  get(): void {}
+}
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  assert.deepEqual(objectSchema(document, jsonSchema(document.paths['/foo']?.get, '200')).allOf, [
+    { $ref: '#/components/schemas/Foo' },
+    { $ref: '#/components/schemas/Foo/properties/name' },
+  ]);
+});
+
+test('accepts a Swagger required list written in another order than the TypeScript fields', async t => {
+  // protects: a Swagger required list in another order raised ConflictingSchemaMetadata against the same set of fields
+  const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiProperty } from '@nestjs/swagger';
+
+class PairDto {
+  @ApiProperty({ schema: { type: 'object', properties: { a: { type: 'string' }, b: { type: 'string' } }, required: ['b', 'a'] } }) pair!: { a: string; b: string };
+}
+
+@Controller('pair')
+export class PairController {
+  @Get()
+  get(): PairDto { return { pair: { a: 'x', b: 'y' } }; }
+}
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  const pair = property(document, objectSchema(document, jsonSchema(document.paths['/pair']?.get, '200')), 'pair');
+  assert.deepEqual([...(pair.required ?? [])].sort(), ['a', 'b']);
+});
+
 test('emits routes inherited from plain and mixin base controllers', async t => {
   const document = documentOf<OpenApiDocument>(await generated(t, 'inherited-and-mixin-controllers'));
   const reply = (route: string): unknown => property(document, objectSchema(document, jsonSchema(document.paths[route]?.get, '200')), 'reply').description;
@@ -376,6 +419,27 @@ export class ThingsController extends BaseController {
     ['header', 'X-Tenant', undefined, true],
     ['query', 'lang', 'class lang', true],
     ['path', 'id', 'class id', true],
+  ]);
+});
+
+test('documents a @Headers parameter with an @ApiHeader whose name differs only in letter case', async t => {
+  // protects: a header matched case-sensitively gave two header parameters and lost the @ApiHeader description
+  const root = inlineFixture(t, `import { Controller, Get, Headers } from '@nestjs/common';
+import { ApiHeader } from '@nestjs/swagger';
+
+@ApiHeader({ name: 'x-tenant', description: 'Tenant from the class' })
+@Controller('traced')
+export class TracedController {
+  @Get()
+  @ApiHeader({ name: 'x-request-id', required: true, description: 'Request id' })
+  list(@Headers('X-Request-Id') id: string, @Headers('X-Tenant') tenant: string): void {}
+}
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  const parameters = document.paths['/traced']?.get?.parameters?.map(item => [item.in, item.name, item.description, item.required]);
+  assert.deepEqual(parameters, [
+    ['header', 'X-Request-Id', 'Request id', true],
+    ['header', 'X-Tenant', 'Tenant from the class', true],
   ]);
 });
 
