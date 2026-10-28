@@ -1,9 +1,9 @@
 import type { ClientRuntime, ParameterSerializerContext } from './core.js';
 
-/** `value` when it is a primitive; an array or object nested in an array or object has no wire text. `parameter` names the parameter in the error. */
-function member(parameter: string, value: unknown): unknown {
+/** `value` when it is a primitive; an object has no wire text, and an array or object nested in an array or object has none either. `parameter` names the parameter in the error. */
+function primitive(parameter: string, value: unknown): unknown {
   if (typeof value === 'object' && value !== null) {
-    throw new TypeError(`Parameter "${parameter}" holds a nested array or object; its items and members must be primitives`);
+    throw new TypeError(`Parameter "${parameter}" must be a primitive, or an array or object with primitive items and members`);
   }
   return value;
 }
@@ -11,10 +11,10 @@ function member(parameter: string, value: unknown): unknown {
 function formValue(form: URLSearchParams, parameter: string, name: string, value: unknown): void {
   if (value === undefined || value === null) return;
   if (Array.isArray(value)) {
-    for (const item of value) form.append(name, String(member(parameter, item)));
+    for (const item of value) form.append(name, String(primitive(parameter, item)));
     return;
   }
-  form.set(name, String(member(parameter, value)));
+  form.set(name, String(primitive(parameter, value)));
 }
 
 export function encode(value: unknown, allowReserved = false): string {
@@ -36,22 +36,15 @@ function entries(value: unknown): Array<[string, unknown]> {
 
 /** The text of a parameter that is not an array or an object with entries; any other object has no wire text. */
 function scalarText(name: string, value: unknown): string {
-  return encode(scalarValue(name, value));
-}
-
-function scalarValue(name: string, value: unknown): unknown {
-  if (typeof value === 'object' && value !== null) {
-    throw new TypeError(`Parameter "${name}" must be a primitive, an array or an object with entries`);
-  }
-  return value;
+  return encode(primitive(name, value));
 }
 
 function serializeSimple(name: string, value: unknown, explode: boolean): string {
-  if (Array.isArray(value)) return value.map((item) => encode(member(name, item))).join(',');
+  if (Array.isArray(value)) return value.map((item) => encode(primitive(name, item))).join(',');
   const pairs = entries(value);
   if (pairs.length) {
     return pairs.map(([key, item]) =>
-      explode ? `${encode(key)}=${encode(member(name, item))}` : `${encode(key)},${encode(member(name, item))}`
+      explode ? `${encode(key)}=${encode(primitive(name, item))}` : `${encode(key)},${encode(primitive(name, item))}`
     ).join(',');
   }
   return scalarText(name, value);
@@ -59,14 +52,14 @@ function serializeSimple(name: string, value: unknown, explode: boolean): string
 
 /** `name` is the header parameter, for the error of a value that has no wire text. */
 export function serializeHeaderSimple(_runtime: ClientRuntime, value: unknown, explode: boolean, name = 'header'): string {
-  if (Array.isArray(value)) return value.map((item) => String(member(name, item))).join(',');
+  if (Array.isArray(value)) return value.map((item) => String(primitive(name, item))).join(',');
   const pairs = entries(value);
   if (pairs.length) {
     return pairs.map(([key, item]) =>
-      explode ? `${key}=${member(name, item)}` : `${key},${member(name, item)}`
+      explode ? `${key}=${primitive(name, item)}` : `${key},${primitive(name, item)}`
     ).join(',');
   }
-  return String(scalarValue(name, value));
+  return String(primitive(name, value));
 }
 
 export function serializeContentParameter(
@@ -98,11 +91,11 @@ function pathText(
 ): string {
   if (style === 'simple') return serializeSimple(name, value, explode);
   if (style === 'label') {
-    if (Array.isArray(value)) return `.${value.map((item) => encode(member(name, item))).join(explode ? '.' : ',')}`;
+    if (Array.isArray(value)) return `.${value.map((item) => encode(primitive(name, item))).join(explode ? '.' : ',')}`;
     const pairs = entries(value);
     if (pairs.length) {
       return `.${pairs.map(([key, item]) =>
-        explode ? `${encode(key)}=${encode(member(name, item))}` : `${encode(key)},${encode(member(name, item))}`
+        explode ? `${encode(key)}=${encode(primitive(name, item))}` : `${encode(key)},${encode(primitive(name, item))}`
       ).join(explode ? '.' : ',')}`;
     }
     return `.${scalarText(name, value)}`;
@@ -110,14 +103,14 @@ function pathText(
   if (style === 'matrix') {
     if (Array.isArray(value)) {
       return explode
-        ? value.map((item) => `;${encode(name)}=${encode(member(name, item))}`).join('')
-        : `;${encode(name)}=${value.map((item) => encode(member(name, item))).join(',')}`;
+        ? value.map((item) => `;${encode(name)}=${encode(primitive(name, item))}`).join('')
+        : `;${encode(name)}=${value.map((item) => encode(primitive(name, item))).join(',')}`;
     }
     const pairs = entries(value);
     if (pairs.length) {
       return explode
-        ? pairs.map(([key, item]) => `;${encode(key)}=${encode(member(name, item))}`).join('')
-        : `;${encode(name)}=${pairs.flatMap(([key, item]) => [encode(key), encode(member(name, item))]).join(',')}`;
+        ? pairs.map(([key, item]) => `;${encode(key)}=${encode(primitive(name, item))}`).join('')
+        : `;${encode(name)}=${pairs.flatMap(([key, item]) => [encode(key), encode(primitive(name, item))]).join(',')}`;
     }
     return `;${encode(name)}=${scalarText(name, value)}`;
   }
@@ -169,7 +162,7 @@ export function addQueryParameter(
         for (const [key, child] of entries(item)) append(`${prefix}[${encode(key)}]`, child);
         return;
       }
-      query.push(`${prefix}=${encode(member(name, item), allowReserved)}`);
+      query.push(`${prefix}=${encode(primitive(name, item), allowReserved)}`);
     };
     for (const [key, item] of entries(value)) append(`${encode(name)}[${encode(key)}]`, item);
     return;
@@ -177,19 +170,19 @@ export function addQueryParameter(
   const delimiter = style === 'spaceDelimited' ? '%20' : style === 'pipeDelimited' ? '|' : ',';
   if (Array.isArray(value)) {
     if (style === 'form' && explode) {
-      for (const item of value) appendQuery(runtime, query, name, member(name, item), allowReserved);
+      for (const item of value) appendQuery(runtime, query, name, primitive(name, item), allowReserved);
     } else {
-      query.push(`${encode(name)}=${value.map((item) => encode(member(name, item), allowReserved)).join(delimiter)}`);
+      query.push(`${encode(name)}=${value.map((item) => encode(primitive(name, item), allowReserved)).join(delimiter)}`);
     }
     return;
   }
   const pairs = entries(value);
   if (pairs.length) {
     if (style === 'form' && explode) {
-      for (const [key, item] of pairs) appendQuery(runtime, query, key, member(name, item), allowReserved);
+      for (const [key, item] of pairs) appendQuery(runtime, query, key, primitive(name, item), allowReserved);
     } else {
       const flattened = pairs
-        .flatMap(([key, item]) => [encode(key), encode(member(name, item), allowReserved)])
+        .flatMap(([key, item]) => [encode(key), encode(primitive(name, item), allowReserved)])
         .join(delimiter);
       query.push(`${encode(name)}=${flattened}`);
     }
@@ -213,7 +206,7 @@ export function setQueryString(
     if (typeof value === 'object' && !Array.isArray(value)) {
       for (const [key, item] of Object.entries(value)) formValue(form, context.name, key, item);
     } else {
-      form.set('', String(member(context.name, value)));
+      form.set('', String(primitive(context.name, value)));
     }
     const serialized = form.toString();
     if (serialized) query.push(serialized.replace(/^=/, ''));
@@ -231,7 +224,7 @@ function pushCookie(
   write: (part: string) => string,
 ): void {
   if (value === undefined || value === null) return;
-  const text = (part: unknown): string => write(String(member(name, part)));
+  const text = (part: unknown): string => write(String(primitive(name, part)));
   if (Array.isArray(value)) {
     if (explode) {
       for (const item of value) cookies.push(`${write(name)}=${text(item)}`);
@@ -247,7 +240,7 @@ function pushCookie(
   }
   const serialized = pairs.length
     ? pairs.flatMap(([key, item]) => [write(key), text(item)]).join(',')
-    : write(String(scalarValue(name, value)));
+    : write(String(primitive(name, value)));
   cookies.push(`${write(name)}=${serialized}`);
 }
 
