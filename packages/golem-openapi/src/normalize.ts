@@ -86,10 +86,6 @@ export interface NormalizedDocument {
   readonly diagnostics: readonly GolemDiagnostic[];
 }
 
-export function decodePointerToken(token: string): string {
-  return token.replace(/~1/g, '/').replace(/~0/g, '~');
-}
-
 export function resolveLocalPointer(document: unknown, ref: string): unknown {
   if (!ref.startsWith('#/')) return undefined;
   // `$ref` is a URI fragment: each token is percent-decoded, then `~1`/`~0`-unescaped; a numeric token indexes an array.

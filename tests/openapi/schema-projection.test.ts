@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generate, findRemoteRefs, loadValidatedDocument } from '#openapi/generator';
-import { collectCanonicalResources, projectSchema } from '#openapi/schema-projection';
+import { collectCanonicalResources, projectSchema, resolveSchemaTarget } from '#openapi/schema-projection';
 import { buildSchemaData } from '#openapi/schemas';
 import {
   compileGeneratedSdk,
@@ -173,6 +173,21 @@ test('a readOnly schema reached by a relative $ref resolves against the enclosin
     type: 'object',
     properties: { name: { type: 'string' } },
   });
+});
+
+test('a $ref into a component by percent-encoded tokens resolves to the schema it names', () => {
+  // protects: T-589 applySchemaPointer did not percent-decode a $ref token, so a property with a space was not found
+  const document = {
+    components: {
+      schemas: {
+        Account: { type: 'object', properties: { 'api key': { type: 'string', readOnly: true }, 'a/b': { type: 'integer' } } },
+      },
+    },
+  };
+  const resources = collectCanonicalResources(document);
+  const resolve = (reference: string) => resolveSchemaTarget(reference, 'urn:golem:base', resources, document)?.schema;
+  assert.deepEqual(resolve('#/components/schemas/Account/properties/api%20key'), { type: 'string', readOnly: true });
+  assert.deepEqual(resolve('#/components/schemas/Account/properties/a~1b'), { type: 'integer' });
 });
 
 test('repeated readOnly aliases drop every matching property and required entry', () => {
