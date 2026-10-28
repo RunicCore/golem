@@ -257,17 +257,19 @@ function emitNestedUnion(
   return emitUnionConversion(descriptor, expression, 'nested', {
     convert,
     items: sequenceItems(direction, resolveModel, resolveSerde, memo),
-    tagged: ({ indices, rest, fallback }) => {
+    tagged: ({ indices, rest, fallback, fallbackVariant }) => {
       const variants = indices.map((index) => descriptor.variants[index]);
       const dispatch = unionDispatch(descriptor, indices);
       if (!dispatch) return undefined;
+      const classOf = (variant: ModelConversionDescriptor): Code | undefined => variant.kind === 'generated-model' ? resolveModel(variant.id).className
+        : variant.kind === 'reference' && !variant.projection ? resolveModel(variant.name).className
+          : undefined;
       const branches = variants.map((variant, position) => ({
         values: dispatch.values[position],
-        className: variant.kind === 'generated-model' ? resolveModel(variant.id).className
-          : variant.kind === 'reference' && !variant.projection ? resolveModel(variant.name).className
-            : undefined,
+        className: classOf(variant),
         convert: convert(variant),
       }));
+      const fallbackClass = fallbackVariant && classOf(fallbackVariant);
       // Objects that convert to themselves, with nothing outside the tag to convert, need no dispatch.
       const converts = fallback !== undefined || variants.some((variant) => variant.kind === 'reference' || variant.kind === 'generated-model')
         || branches.some((branch) => !sameCode(branch.convert, value));
@@ -279,6 +281,7 @@ function emitNestedUnion(
         branches,
         ...(rest === undefined ? {} : { rest }),
         ...(fallback === undefined ? {} : { fallback }),
+        ...(fallbackClass ? { fallbackClass } : {}),
       });
     },
     declaredDefault: (variant) => {

@@ -443,6 +443,22 @@ export class TracedController {
   ]);
 });
 
+test('stops when two @ApiHeader entries name one header in different letter case', async t => {
+  // protects: header names are case-insensitive (RFC 9110); two spellings were one parameter that overwrote the other without a word
+  const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiHeader } from '@nestjs/swagger';
+
+@Controller('traced')
+export class TracedController {
+  @Get()
+  @ApiHeader({ name: 'X-Trace', description: 'first' })
+  @ApiHeader({ name: 'x-trace', description: 'second' })
+  list(): void {}
+}
+`);
+  await rejectsWith(root, 'NEST1312', /Parameter x-trace in header is declared more than once for this operation \(also as X-Trace\)/);
+});
+
 test('writes one header parameter for each @ApiHeaders entry at class and method level, as @ApiHeader does', async t => {
   // protects: T-198 @ApiHeaders is a list of @ApiHeader options; T-216 parameter order is Nest Swagger's
   const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';

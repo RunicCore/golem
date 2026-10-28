@@ -838,11 +838,17 @@ export function isDiscriminatorTag(checker: ts.TypeChecker, node: ts.TypeNode): 
   return ts.isTypeReferenceNode(node) && golemTagName(checker, checker.getSymbolAtLocation(node.typeName)) === 'Discriminator';
 }
 
-/** The type without its `Discriminator` tag members: `A & Discriminator<'k'>` is `A`. A type with no such member is returned as it is. */
+/** The type without its `Discriminator` tag members when one member remains: `A & Discriminator<'k'>` is `A`. Any other type is returned as it is (`untaggedTypeText` prints the rest). */
 export function withoutDiscriminator(checker: ts.TypeChecker, type: ts.Type): ts.Type {
   if (!type.isIntersection()) return type;
   const rest = type.types.filter((member) => golemTagName(checker, member.aliasSymbol) !== 'Discriminator');
   return rest.length === 1 && rest.length < type.types.length ? rest[0] : type;
+}
+
+/** The text of a type without its `Discriminator` tag members: a variant `Base & { name: string } & Discriminator<'k'>` reads `Base & { name: string; }`. */
+export function untaggedTypeText(checker: ts.TypeChecker, type: ts.Type): string {
+  const rest = untaggedMembers(checker, type);
+  return rest.length === (type.isIntersection() ? type.types.length : 1) ? checker.typeToString(type) : rest.map((member) => checker.typeToString(member)).join(' & ');
 }
 
 /**

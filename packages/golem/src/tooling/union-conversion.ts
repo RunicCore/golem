@@ -187,8 +187,11 @@ interface DispatchBranch {
   /** Instances of this class select the branch before any tag test. */
   readonly className?: Code;
   readonly convert: Code;
-  /** JSON output only: whether `convert` writes the tag property; undefined when unknown. */
-  readonly writesTag?: boolean;
+  /**
+   * JSON output only: whether `convert` writes the tag property from the value (`true`) or not at all (`false`); undefined when unknown.
+   * `'always'`: it writes the tag as a constant, so an instance that holds no tag is written with it and nothing is injected.
+   */
+  readonly writesTag?: boolean | 'always';
 }
 
 export interface DispatchOptions {
@@ -208,6 +211,8 @@ export interface DispatchOptions {
   readonly rest?: Code;
   /** The conversion of an object whose tag selects no branch: the declared default. With none, such an object is rejected. */
   readonly fallback?: Code;
+  /** The class of the instances `fallback` converts. An instance of it is no instance of a branch class it extends. */
+  readonly fallbackClass?: Code;
 }
 
 /**
@@ -240,10 +245,11 @@ export function emitDispatch(options: DispatchOptions): Code {
     const { convert } = branch;
     if (!encode) return convert;
     if (direction === 'encode-value') return code`${rt.conversion.withDiscriminatorValue}(${convert}, ${key}, ${tagValue})`;
+    if (branch.writesTag === 'always') return convert;
     if (branch.writesTag === false) return injectJson(convert, tagValue);
     return tagMayBeMissing ? code`(${tag} === undefined ? ${injectJson(convert, tagValue)} : ${convert})` : convert;
   };
-  const { rest, fallback } = options;
+  const { rest, fallback, fallbackClass } = options;
   // The object test runs once: an object picks its branch by tag, and any other value is `rest`.
   let chain = fallback ?? reject;
   for (let index = branches.length - 1; index >= 0; index--) {
@@ -256,7 +262,8 @@ export function emitDispatch(options: DispatchOptions): Code {
   }
   const outside = rest ?? (encode ? code`${value} == null ? ${options.nullish === undefined ? value : options.nullish} : ${reject}` : value);
   let converted = code`(${objectValueExpression(expression)} ? ${chain} : ${outside})`;
-  const classes = branches.flatMap((branch) => branch.className ? [branch.className] : []);
+  // The default's class counts as a subclass candidate too: an instance of it is the default, not the branch it extends.
+  const classes = [...branches.flatMap((branch) => branch.className ? [branch.className] : []), ...(fallback && fallbackClass ? [fallbackClass] : [])];
   for (let index = branches.length - 1; index >= 0; index--) {
     const branch = branches[index];
     if (!branch.className) continue;
@@ -376,6 +383,8 @@ export interface TaggedUnion {
   readonly indices: readonly number[];
   readonly rest?: Code;
   readonly fallback?: Code;
+  /** The declared default variant that `fallback` converts: its class is not a tagged variant's, though it may extend one. */
+  readonly fallbackVariant?: ModelTypeDescriptor;
 }
 
 /**
@@ -438,15 +447,15 @@ export function emitUnionConversion(
     return sameCode(converted, value) ? value : code`${value} == null ? ${value} : (${converted})`;
   }
   const nullable = present.length !== descriptor.variants.length;
-  // A Date, and in stringify any scalar writer other than the plain one, converts no null or undefined, so the nullish
-  // variants of the union stop at a guard before its conversion.
+  // A scalar that converts (a Date or a serde scalar), and in stringify any scalar writer other than the plain one, converts no
+  // null or undefined, so the nullish variants of the union stop at a guard before its conversion.
   const scalarBranch = (scalars: readonly ModelTypeDescriptor[]): Code => {
     const variant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
     if (!variant) return plain;
     const converted = convert(variant);
     if (!nullable) return converted;
     if (json) return sameCode(converted, plain) ? converted : code`(${value} == null ? 'null' : (${converted}))`;
-    return variant.kind === 'date' ? code`(${value} == null ? ${value} : (${converted}))` : converted;
+    return sameCode(converted, plain) ? converted : code`(${value} == null ? ${value} : (${converted}))`;
   };
   /**
    * Tagged dispatch. Under a declared table the JSON type goes first: an array or tuple, a scalar or null take their own
@@ -467,7 +476,7 @@ export function emitUnionConversion(
     const objects = conversion.tagged({
       indices: taggedIndices,
       ...(scalar === undefined ? {} : { rest: scalar }),
-      ...(fallback === undefined ? {} : { fallback }),
+      ...(fallback === undefined ? {} : { fallback, fallbackVariant: declared }),
     });
     if (objects === undefined || !types.sequence) return objects;
     const mapped = guarded(types.sequence, emitSequenceBranch(types.sequence, expression, conversion.items));

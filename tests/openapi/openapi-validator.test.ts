@@ -182,3 +182,15 @@ test('a JSON Schema $id declared twice is a problem with both locations, not a t
     relatedPointer: '/components/schemas/One/$id',
   }]);
 });
+
+test('defaultMapping on a Discriminator Object is a 3.2 keyword only', () => {
+  // protects: OpenAPI 3.2 adds discriminator.defaultMapping; a 3.1 document that uses it is invalid
+  const schemas = {
+    Cat: { type: 'object', required: ['kind'], properties: { kind: { type: 'string' } } },
+    Pet: { oneOf: [{ $ref: '#/components/schemas/Cat' }], discriminator: { propertyName: 'kind', defaultMapping: 'Cat' } },
+  };
+  assert.deepEqual(validateOpenApiDocument(documentBase('3.2.0', { components: { schemas } })), []);
+  assert.deepEqual(pointers(validateOpenApiDocument(documentBase('3.1.1', { components: { schemas } }))), [
+    ['spec-discriminator-defaultMapping', '/components/schemas/Pet/discriminator/defaultMapping'],
+  ]);
+});

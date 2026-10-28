@@ -72,6 +72,8 @@ export interface CodecRuntimeOptions {
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Code;
   readonly nestedGenerated?: (id: string) => Code | undefined;
+  /** The class an instance of the model `name` is tested against in a union, when the module binds it. */
+  readonly nestedBase?: (name: string) => Code | undefined;
   /** The codec id of the model that a schema placeholder names, so the runtime resolves it by an exact lookup. */
   readonly generatedModelCodecId?: (name: string) => string | undefined;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
@@ -110,6 +112,7 @@ interface EmitCtx
     | 'nestedConstruct'
     | 'generatedModelCodecId'
     | 'nestedGenerated'
+    | 'nestedBase'
     | 'nestedImportedSerde'
     | 'siblingWireName'
     | 'exportedFillFunctionIds'
@@ -728,6 +731,7 @@ export function emitStringifyFunction(
     nestedConstruct: extra.nestedConstruct,
     siblingWireName: extra.siblingWireName,
     nestedGenerated: extra.nestedGenerated,
+    nestedBase: extra.nestedBase,
     nestedImportedSerde: extra.nestedImportedSerde,
     issueSource: extra.issueSource ?? 'TypeScript',
     wireIdentity: extra.wireIdentity,
@@ -1127,7 +1131,7 @@ function resolveObjectDescriptor(
  */
 function emitTaggedVariantUnion(
   union: UnionTypeDescriptor,
-  { indices, rest, fallback }: TaggedUnion,
+  { indices, rest, fallback, fallbackVariant }: TaggedUnion,
   expression: Code,
   ctx: EmitCtx,
   convert: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code,
@@ -1159,6 +1163,7 @@ function emitTaggedVariantUnion(
     if (options?.unresolved === 'skip') return undefined;
     throw new ObjectUnionDiscriminatorError(variants);
   }
+  const fallbackClass = fallbackVariant && variantClassName(fallbackVariant, ctx, direction !== 'decode' && !ctx.wireIdentity);
   return emitDispatch({
     expression: value,
     property: dispatch.property,
@@ -1167,13 +1172,20 @@ function emitTaggedVariantUnion(
     ...(direction === 'encode-json' ? { nullish: code`'null'` } : {}),
     ...(rest === undefined ? {} : { rest }),
     ...(fallback === undefined ? {} : { fallback }),
+    ...(fallbackClass === undefined ? {} : { fallbackClass }),
     branches: variants.map((variant, position) => ({
       values: dispatch.values[position],
-      className: variantClassName(variant, ctx),
+      className: variantClassName(variant, ctx, direction !== 'decode' && !ctx.wireIdentity),
       convert: conversions[position],
       writesTag: (() => {
         const object = objectFor(variant);
-        return object ? object.properties[dispatch.property] !== undefined : undefined;
+        if (!object) return undefined;
+        // The all-required Core of a closed object writes a required literal tag as a constant, also for an instance that holds none.
+        const node = ctx.graph.nodeFor(variant);
+        const constant = direction === 'encode-json' && node !== undefined && ctx.strictCoreIds?.has(node.id) === true && !ctx.lenientRoot
+          && object.required.includes(dispatch.property) && object.properties[dispatch.property]?.kind === 'literal'
+          && typeof object.additionalProperties !== 'object' && !object.additionalPropertiesDeclared;
+        return constant ? 'always' : object.properties[dispatch.property] !== undefined;
       })(),
     })),
   });
@@ -1184,11 +1196,12 @@ function emitTaggedVariantUnion(
  * generated model, or a reference the codec constructs. Only a class the
  * emitting module binds is used, so a guard never looks up a registry.
  */
-function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx): Code | undefined {
+function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx, byBase = false): Code | undefined {
   if (variant.kind === 'generated-model') return ctx.nestedGenerated?.(variant.id);
-  return variant.kind === 'reference' && shouldConstructNested(variant, ctx)
-    ? ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.className)
-    : undefined;
+  if (variant.kind !== 'reference') return undefined;
+  if (shouldConstructNested(variant, ctx)) return ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.className);
+  // A model of this module that a writer receives as an instance is told by its generated base class; a decoder and a wire write see plain data and have none.
+  return byBase && !variant.projection ? ctx.nestedBase?.(ctx.graph.nodeFor(variant)?.name ?? variant.name) : undefined;
 }
 
 /**
@@ -2373,6 +2386,7 @@ export function emitCodecRuntimeCode(
     nestedConstruct: options.nestedConstruct,
     siblingWireName: options.siblingWireName,
     nestedGenerated: options.nestedGenerated,
+    nestedBase: options.nestedBase,
     generatedModelCodecId: options.generatedModelCodecId,
     nestedImportedSerde: options.nestedImportedSerde,
     exportedFillFunctionIds: options.exportedFillFunctionIds,

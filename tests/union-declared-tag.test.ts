@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { generate } from '#model/generator';
 import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
@@ -319,5 +320,90 @@ for (const validation of [false, true]) {
     }
     const unknownTag = requireRecord(decodeGeneratedModel(Item, { value: { kind: 'zzz', ...money } }), 'item').value;
     assert.equal(plain(unknownTag), false, `validation=${validation}: an unknown tag takes the default model`);
+  });
+}
+
+// Every Money field is optional and Money states no additionalProperties: false, so an instance of another variant's class fits the default's document.
+const LOOSE_MONEY_DOCUMENT = OPEN_MONEY_DOCUMENT.replace(/ {6}required: \[amount, currency\]\n/, '');
+
+/** A project whose TItem model holds `value` of `valueType` beside the model classes Email and Item, built; Money from `document` is imported when given. */
+async function buildEmailItem(t: TestContext, prefix: string, validation: boolean, valueType: string, document?: string) {
+  const { root, sourceRoot } = createModelProject(t, { prefix: `golem-${prefix}-`, name: prefix, linkWorkspaceNodeModules: true });
+  if (document !== undefined) await writeMoneySdk(sourceRoot, validation, document);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+${document === undefined ? '' : "import type { Money } from './sdk/index.js';\n"}import { TItemBaseModel, TEmailBaseModel } from './item.model.generated.js';
+export type TEmail = IModel<{ kind: 'email'; address: string }>;
+export type TPhone = IModel<{ kind: 'phone'; number: string }>;
+export type TItem = IModel<{ value: ${valueType} }>;
+export class Email extends TEmailBaseModel {}
+export class Item extends TItemBaseModel {}
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation });
+  await buildModelProject(root);
+  const { Item, Email } = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.js')).href), 'item') as Record<string, new () => Record<string, unknown>>;
+  const itemOf = (fields: Record<string, unknown>): Record<string, unknown> => Object.assign(new Item(), { value: Object.assign(new Email(), fields) });
+  return { codec: requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem')), Item, itemOf };
+}
+
+test('an open declared default does not take an instance of another variant\'s class that carries no tag', async (t) => {
+  // protects: T-605 a tag-less TEmail instance is judged as a TEmail and rejected for its missing tag (F-39), not passed by the open default Money
+  const { codec, Item, itemOf } = await buildEmailItem(t, 'declared-instance', true, "(TEmail | TPhone | Money) & Discriminator<'kind', Money>", LOOSE_MONEY_DOCUMENT);
+  const problems = async (item: Record<string, unknown>): Promise<number> => (await validateInstance(item)).length;
+  assert.equal(await problems(itemOf({ address: 5 })), 1, 'a tag-less TEmail with a wrong address');
+  assert.equal(await problems(itemOf({})), 1, 'a tag-less TEmail without its address');
+  assert.equal(await problems(itemOf({ address: 'a@b.c' })), 1, 'a TEmail needs its tag, as in a union with no default');
+  assert.equal(await problems(itemOf({ kind: 'email', address: 'a@b.c' })), 0, 'a valid tagged TEmail');
+  assert.equal(await problems(Object.assign(new Item(), { value: { amount: 5 } })), 0, 'a plain default value');
+  const badItem = itemOf({ address: 5 });
+  assert.equal(await getValidator(badItem).validate(badItem), false);
+  assert.throws(() => codec.stringify(badItem, { validate: true }), /Model validation failed/);
+});
+
+test('a writer tells a model instance by its class before its tag, with validation off', async (t) => {
+  // protects: T-605 stringify and toWireFormat wrote a tag-less TEmail instance as the default and an instance tagged as TPhone as a TPhone; encode wrote the first as TEmail and rejected the second
+  const { codec, itemOf } = await buildEmailItem(t, 'declared-writer', false, "(TEmail | TPhone | Money) & Discriminator<'kind', Money>", LOOSE_MONEY_DOCUMENT);
+  const tagless = itemOf({ address: 'a@b.c' });
+  assert.equal(codec.stringify(tagless), '{"value":{"kind":"email","address":"a@b.c"}}');
+  assert.deepEqual(codec.toWireFormat(tagless), { value: { kind: 'email', address: 'a@b.c' } });
+  assert.deepEqual(encodeGeneratedModel(tagless), { value: { kind: 'email', address: 'a@b.c' } });
+  assert.equal(codec.stringify(itemOf({ kind: 'email', address: 'a@b.c' })), '{"value":{"kind":"email","address":"a@b.c"}}');
+  const other = itemOf({ kind: 'phone', address: 'a@b.c' });
+  assert.throws(() => encodeGeneratedModel(other), /Unknown kind discriminator value: "phone"/);
+  assert.throws(() => codec.stringify(other), /Unknown kind discriminator value: "phone"/);
+  assert.throws(() => codec.toWireFormat(other), /Unknown kind discriminator value: "phone"/);
+});
+
+test('a validating companion writes the tag of a tag-less instance once when validation is turned off for the call', async (t) => {
+  // protects: T-605 the strict Core writes its literal tag itself, so the class branch must not inject it a second time
+  const { codec, itemOf } = await buildEmailItem(t, 'declared-strict', true, `(TEmail | TPhone) & ${TAG}`);
+  assert.equal(codec.stringify(itemOf({ address: 'a@b.c' }), { validate: false }), '{"value":{"kind":"email","address":"a@b.c"}}');
+});
+
+for (const validation of [false, true]) {
+  test(`a tagged union of IObject models builds and writes, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: T-605 an IObject variant has no generated class, so the writers of a tagged union must not test an instance against one
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-object-', name: 'declared-object', linkWorkspaceNodeModules: true });
+    writeModelSources(sourceRoot, {
+      'variants.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+export type TPhone = IObject<{ kind: 'phone'; number: string }>;
+`,
+      'contact.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+import type { TPhone } from './variants.model.js';
+export type TEmail = IObject<{ kind: 'email'; address: string }>;
+export type TContact = IObject<{ value: (TEmail | TPhone) & Discriminator<'kind'> }>;
+`,
+    });
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const codecs = requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as Record<string, (value: unknown, options?: object) => unknown>;
+    const options = { validate: validation };
+    for (const value of [{ kind: 'email', address: 'a@b.c' }, { kind: 'phone', number: '5' }]) {
+      assert.equal(codecs.stringifyTContact({ value }, options), JSON.stringify({ value }));
+      assert.deepEqual(codecs.toWireFormatTContact({ value }, options), { value });
+    }
   });
 }

@@ -162,7 +162,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1312
 
-**Duplicate parameter.** The same parameter (name and location) is declared more than once for one operation, or a whole `@Query()` object is declared alongside another whole-object or named query parameter. **Fix:** Remove the duplicate, or combine the fields into one contract.
+**Duplicate parameter.** The same parameter (name and location) is declared more than once for one operation, or a whole `@Query()` object is declared alongside another whole-object or named query parameter. Header names compare without letter case, so `X-Trace` and `x-trace` are one header. **Fix:** Remove the duplicate, or combine the fields into one contract.
 
 ### NEST1313
 
@@ -376,13 +376,14 @@ An error prints its code, location when known, and message, then stops generatio
 - A `Discriminator` tag is on a value that is no union of two or more object types.
 - A `Discriminator<'kind', Default>` names a `Default` that is not a variant of the union.
 - The `Default` variant has the `kind` property itself.
+- The `Default` is no object. A scalar, array or `null` variant is chosen by its JSON type and needs no default.
 - A union carries two different `Discriminator` keys. A union has one tag key.
 
 **Fix:**
 
 - Add a `Contains` constraint alongside `MinContains`/`MaxContains`, or apply the constraint to a value of the matching type.
 - Put `Discriminator` on a union of two or more object types, or remove it.
-- Name a variant of the union as the `Default`, and take the key out of that variant.
+- Name an object variant of the union as the `Default`, and take the key out of that variant.
 
 ### RUNM1052
 
@@ -666,6 +667,7 @@ The type can be:
 - A union with a member that is no model.
 - A union of models with no `Discriminator` tag. The message names the tag to add.
 - A union of models in which a member has no required literal property with the declared key, or two members share a value of it.
+- A union whose tag is written through an alias of the tag or a generic wrapper, such as `(TCat | TDog) & Kind` or `Tagged<TCat | TDog>`. Golem reads the tag where it is written on the union, or on an alias of the whole tagged union.
 - A union of models with a default variant, such as `Discriminator<'kind', TDefault>`. `NestModelInterceptor` picks no default.
 - An array of a union of models, or a union in a one-field parameter such as `@Body('shape')`. Golem converts a union of models as a whole parameter only.
 
@@ -883,6 +885,15 @@ An `integer` member and a `number` member share the integers. A member that decl
 ### OPENAPI_DISCRIMINATOR_NOT_LOWERED
 
 **Discriminator unusable for conversion.** A schema has a `discriminator` with `oneOf`/`anyOf`, but not every variant resolves to an exact component-schema reference — for example, an inline variant. This is a warning: generation continues, but the discriminator isn't used to pick a variant when decoding. **Fix:** Make every `oneOf`/`anyOf` variant an exact `$ref` to a component schema.
+
+### OPENAPI_DISCRIMINATOR_VARIANT_UNSELECTED
+
+**Variant that no discriminator value selects.** A `oneOf`/`anyOf` with a `discriminator` has a variant, other than the `defaultMapping` schema, that no tag value selects. A value names its component unless a `mapping` has that value, so a `mapping` key equal to the variant's component name, such as `mapping: { Cat: Dog }`, sends that value to another schema and leaves the variant with none. Generation stops. The message names the variant, the key and the schema the key targets.
+
+**Fix:**
+
+- Give the variant a mapping value of its own, for example `feline: '#/components/schemas/Cat'`.
+- Or remove the variant from the union.
 
 ### OPENAPI_OPERATION_RENAMED
 

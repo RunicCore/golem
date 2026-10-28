@@ -93,9 +93,21 @@ export function parseParameterOverride(
   const declared = SWAGGER_PARAMETER_LOCATIONS.flatMap(([names, location]) => (
     parameterOptionsOf(reader, decorators, names).map(entry => [entry, location] as const)
   ));
+  const spellings = new Map<string, string>();
   for (const [{ decorator, options }, location] of declared) {
     const name = options.string('name');
     if (!name) continue;
+    // A header name is case-insensitive: two spellings of one name are one parameter written twice, not an override.
+    const spelling = spellings.get(parameterOverrideKey(location, name));
+    if (spelling !== undefined && spelling !== name) {
+      throw new TsToOpenApiError(diagnostic(
+        decorator.decorator.getSourceFile(),
+        options.node('name'),
+        TsToOpenApiDiagnosticCode.DuplicateParameter,
+        `Parameter ${name} in ${location} is declared more than once for this operation (also as ${spelling}).`,
+      ));
+    }
+    spellings.set(parameterOverrideKey(location, name), name);
     const typed = typeExpressionFromApiOption(reader.checker, options.expression('type'));
     const enumValues = options.value('enum');
     if (enumValues !== undefined && !isStaticArray(enumValues)) {

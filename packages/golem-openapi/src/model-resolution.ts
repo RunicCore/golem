@@ -793,6 +793,8 @@ export function componentSite(name: string): CompositionSite {
   };
 }
 
+const UNSELECTED_VARIANT = 'OPENAPI_DISCRIMINATOR_VARIANT_UNSELECTED';
+
 /**
  * Resolve an OAS discriminator into the value → variant model table. Mapping
  * values are component names or references; a variant without a mapping key
@@ -869,9 +871,9 @@ export function discriminatorSelection(
   for (const [typeName, variant] of variants) {
     if (typeName === defaultVariant) continue;
     // A value names its component "unless a mapping is present for that value" (OpenAPI 3.1 and 3.2, Discriminator Object):
-    // the rule is per value, so a variant that a mapping also selects keeps its component name as a value. A variant whose name
-    // a mapping gives to another variant still claims it, so the conflict below reports that it has no value of its own.
-    if (mapped.has(variant.schemaName) && variant.values.length > 0) continue;
+    // the rule is per value, so any mapping key equal to the component name replaces it, whichever variant the key targets
+    // (the default included). A variant left with no value is selected by no tag value.
+    if (mapped.has(variant.schemaName)) continue;
     if (variant.values.length === 0 && variant.schemaName !== typeName) {
       warn('OPENAPI_DISCRIMINATOR_IMPLICIT_VALUE', `schema ${JSON.stringify(schemaName)} selects ${typeName} by the implicit discriminator value ${JSON.stringify(variant.schemaName)} (the raw component name, not the generated name ${JSON.stringify(typeName)})`);
     }
@@ -889,6 +891,17 @@ export function discriminatorSelection(
       }
       selected.set(value, typeName);
     }
+  }
+  for (const [typeName, variant] of variants) {
+    if (typeName === defaultVariant || variant.values.length > 0) continue;
+    // Its component name went to the mapping key of the same text, and no other key selects it.
+    const key = variant.schemaName;
+    const named = `schema ${JSON.stringify(schemaName)}`;
+    throw new LocatedError(
+      `${UNSELECTED_VARIANT}: no discriminator value of ${named} selects ${typeName}: the mapping key ${JSON.stringify(key)} sends that value to ${JSON.stringify(asRecord(mapping)[key])}. `
+      + 'Give the variant a mapping value of its own, or remove it from the union',
+      [componentOrigin('schemas', schemaName, named)],
+    );
   }
   return { propertyName: property, variants: selected, ...(defaultVariant === undefined ? {} : { defaultVariant }) };
 }
@@ -985,9 +998,7 @@ function unionDiscriminatorTable(
   const defaultAt = selection.defaultVariant === undefined
     ? -1
     : items.findIndex((item) => exactComponentTarget(item, env)?.typeName === selection.defaultVariant);
-  return variants.every((variant, index) => variant.values.length > 0 || isNullBranch(items[index]) || index === defaultAt)
-    ? { propertyName: selection.propertyName, variants, ...(defaultAt < 0 ? {} : { defaultVariant: defaultAt }) }
-    : undefined;
+  return { propertyName: selection.propertyName, variants, ...(defaultAt < 0 ? {} : { defaultVariant: defaultAt }) };
 }
 
 type TagValues = ReadonlyMap<string, readonly (string | number | boolean)[]>;
