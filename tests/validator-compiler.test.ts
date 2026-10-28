@@ -328,6 +328,30 @@ test('format reports a known format that does not match', async () => {
   await assertIssues({ format: 'ipv4' }, 7, []);
 });
 
+test('multipleOf with a whole-number divisor rejects every non-whole value, also at large magnitudes', async () => {
+  // protects: QA number & MultipleOf<1> accepted 1000000000000000.5 and 3.000000000000001
+  const miss = [{ path: [], code: 'multipleOf', divisor: 1 }];
+  await assertIssues({ multipleOf: 1 }, 1000000000000000.5, miss);
+  await assertIssues({ multipleOf: 1 }, 3.000000000000001, miss);
+  await assertIssues({ multipleOf: 1 }, 0.5, miss);
+  await assertIssues({ multipleOf: 1 }, 3, []);
+  await assertIssues({ multipleOf: 1 }, -1000000000000000, []);
+  await assertIssues({ multipleOf: 3 }, 9007199254740990, []);
+});
+
+test('multipleOf with a decimal divisor compares decimal digits: 1.1 and 0.3 are multiples of 0.1, a near miss is not', async () => {
+  // protects: QA multipleOf keeps decimal-rounding cases (0.3, 1.1 for 0.1) while whole-number misses fail
+  const miss = (divisor: number) => [{ path: [], code: 'multipleOf', divisor }];
+  await assertIssues({ multipleOf: 0.1 }, 1.1, []);
+  await assertIssues({ multipleOf: 0.1 }, 0.3, []);
+  await assertIssues({ multipleOf: 0.1 }, 0.7, []);
+  await assertIssues({ multipleOf: 0.01 }, 19.99, []);
+  await assertIssues({ multipleOf: 1.5 }, 4.5, []);
+  await assertIssues({ multipleOf: 0.1 }, 0.30000000000000004, miss(0.1));
+  await assertIssues({ multipleOf: 0.1 }, 3.000000000000001, miss(0.1));
+  await assertIssues({ multipleOf: 0.5 }, 1e-7, miss(0.5));
+});
+
 test('multipleOf tolerates binary rounding: 0.3 is a multiple of 0.1', async () => {
   await assertIssues({ multipleOf: 0.1 }, 0.3, []);
   await assertIssues({ multipleOf: 0.0001 }, 0.0075, []);
