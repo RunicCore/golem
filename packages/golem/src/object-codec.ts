@@ -379,17 +379,6 @@ export function validationUnavailableStub(): never {
   return validationUnavailable();
 }
 
-/**
- * The public `stringify<Id>` and `toWireFormat<Id>` of a model generated with validation off: it refuses `validate: true`,
- * then runs `core`. The file keeps the `core` of the model, so the selectors and field loops stay generated.
- */
-export function serdeWithoutValidation<Value, Result>(core: (value: never) => Result): (value: Value, options?: SerdeOptions) => Result {
-  return (value, options) => {
-    serdeValidates(options, false);
-    return core(value as never);
-  };
-}
-
 export function serdeFailFast(options: SerdeOptions | ValidateOptions | undefined): boolean {
   return options?.failFast !== false;
 }

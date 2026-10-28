@@ -278,11 +278,6 @@ export function convertModelTupleItems<Value>(
   return convertEachItem(direction, convert, items, true);
 }
 
-/** A copy of an array input; any other value as it is. The conversion of an array whose items need none. */
-export function copyModelArray<Value>(value: Value): Value {
-  return Array.isArray(value) ? value.slice() as Value : value;
-}
-
 /**
  * The one loop under `convertModelRecord` and `copyModelRecord`: a new record with each own entry of `source` whose value
  * is not undefined, in key order, the value converted by `convert` when there is one. With `direction`, a throwing entry

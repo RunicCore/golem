@@ -88,7 +88,7 @@ interface Converted {
 export function emitArrayConversion(item: ModelTypeDescriptor, value: Code, items: SequenceItems): Code {
   const { code: converted, unchanged } = arrayItems(item, value, items);
   if (items.output === 'json') return converted;
-  return unchanged ? code`${rt.conversion.copyModelArray}(${value})` : code`Array.isArray(${value}) ? ${converted} : ${value}`;
+  return code`Array.isArray(${value}) ? ${unchanged ? code`(${value} as readonly unknown[]).slice()` : converted} : ${value}`;
 }
 
 /**
@@ -122,7 +122,7 @@ function arrayItems(item: ModelTypeDescriptor, value: Code, items: SequenceItems
 export function emitTupleConversion(descriptor: TupleConversionDescriptor, value: Code, items: SequenceItems): Code {
   const { code: converted, unchanged } = tupleItems(descriptor, value, items);
   if (items.output === 'json') return code`(Array.isArray(${value}) ? ${converted} : ${rt.serde.stringifyJsonScalar}(${value} as never))`;
-  return unchanged ? code`${rt.conversion.copyModelArray}(${value})` : code`Array.isArray(${value}) ? ${converted} : ${value}`;
+  return code`Array.isArray(${value}) ? ${unchanged ? code`(${value} as readonly unknown[]).slice()` : converted} : ${value}`;
 }
 
 /**

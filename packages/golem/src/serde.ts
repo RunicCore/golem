@@ -28,7 +28,6 @@ export {
   resolveModelValidationContextValidator,
   serdeFailFast,
   serdeValidates,
-  serdeWithoutValidation,
   stringifyJsonArray,
   stringifyJsonBoolean,
   stringifyJsonNumber,

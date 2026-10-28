@@ -745,7 +745,8 @@ export type TMoney = IObject<{ currency: string }>;
 });
 
 test('a TValidation function of a folder outside the root is imported by a path that does not depend on the location', (t: TestContext) => {
-  // The ids are written into files that a repository keeps, so the same sources give the same files at any location.
+  // protects: T-640 the same sources give the same generated files at any location
+  // The files are kept in a repository, so the import of the function and every other path in them follow the layout, never the machine path.
   const generateAtNewLocation = (): ReadonlyMap<string, string> => {
     const outer = sharedWorkspace(t);
     writeModelSources(path.join(outer, 'shared'), {

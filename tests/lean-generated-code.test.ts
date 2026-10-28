@@ -96,7 +96,7 @@ test('model initializers, fromJSON and toJSON copy an unchanged array with one s
   // protects: F-129 lean generated code: an unchanged array is copied with slice, not a map callback
   const strings: ModelTypeDescriptor = { kind: 'array', item: { kind: 'string' } };
   const unusedModel = (id: string): never => { throw new Error(`No model expected: ${id}`); };
-  const run = (expression: string, input: unknown): unknown => runModule(`const result = (${expression});`, { ...conversion, values: input }, { exports: ['result'] }).result;
+  const run = (expression: string, input: unknown): unknown => runModule(`const result = (${expression});`, { values: input }, { exports: ['result'] }).result;
   for (const emit of [emitModelFromInit, emitModelFromJSON, emitModelToJSON]) {
     const expression = render(emit(strings, identifier('values'), unusedModel));
     const input = spyArray(['a', 'b']);

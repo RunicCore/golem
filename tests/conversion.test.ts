@@ -6,7 +6,6 @@ import {
   convertModelItems,
   convertModelRecord,
   convertModelTupleItems,
-  copyModelArray,
   copyModelRecord,
   deserializeDate,
   serializeDate,
@@ -50,18 +49,20 @@ test('convertModelTupleItems gives the item, its index and the array', () => {
   LibErrorKind.Deserialization, IssueRepresentation.Wire, [1]);
 });
 
-test('the record loops drop undefined values, run each value under its key and copy the arrays they are given', () => {
-  // protects: R-58 generic record and array copies come from the runtime (T-641)
+test('the record loops drop undefined values, run each value under its key and keep a __proto__ key as data', () => {
+  // protects: R-58 generic record copies come from the runtime (T-641)
   assert.deepEqual(convertModelRecord('deserialize', deserializeDate, { a: '1970-01-01T00:00:00.000Z', b: undefined }), { a: new Date(0) });
   assertConversionError(() => convertModelField('deserialize', 'dates', (value: unknown) =>
     convertModelRecord('deserialize', deserializeDate, value as Record<string, unknown>), { ok: '1970-01-01T00:00:00.000Z', bad: 'x' }),
   LibErrorKind.Deserialization, IssueRepresentation.Wire, ['dates', 'bad']);
   assert.deepEqual(copyModelRecord({ a: 1, b: undefined, c: 3 }), { a: 1, c: 3 });
   assert.deepEqual(copyModelRecord({ a: 1 }, (value) => Number(value) + 1), { a: 2 });
-  const source = ['x'];
-  assert.notEqual(copyModelArray(source), source);
-  assert.deepEqual(copyModelArray(source), ['x']);
-  assert.equal(copyModelArray('text'), 'text');
+  const hostile = JSON.parse('{"__proto__":1}') as Record<string, unknown>;
+  for (const copy of [copyModelRecord(hostile), convertModelRecord('deserialize', (value) => value, hostile)]) {
+    assert.deepEqual(Object.keys(copy), ['__proto__'], 'the key stays an own key');
+    assert.equal(Object.getOwnPropertyDescriptor(copy, '__proto__')?.value, 1);
+    assert.equal(Object.getPrototypeOf(copy), Object.prototype, 'the prototype is unchanged');
+  }
 });
 
 test('the item loops send a LibError out as it is and keep holes', () => {

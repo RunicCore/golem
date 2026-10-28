@@ -2044,29 +2044,23 @@ function emitStringifySection(runtime: NodeRuntime): Code {
       : code``}`
     : code``;
 
-  // Without validation the public function only refuses `validate: true` and runs the core, which the runtime wraps.
-  if (!validationEnabled) {
-    return rowsToText([
-      blocksToText([stringifySrc]),
-      code`${exported}const ${stringifyId} = ${rt.serde.serdeWithoutValidation}<${modelType}, string>(${coreId});`,
-      code``,
-    ]);
-  }
   return rowsToText([
     blocksToText([stringifySrc, lenientStringify ?? code``, wireStringifySrc]),
     code`${exported}function ${stringifyId}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
-    emitSerdeValidates(true),
+    emitSerdeValidates(validationEnabled),
     ...(emitsValidatedWire ? inlineLocalLines(encoded) : []),
-    code`  if (validates) {`,
-    ...(runtime.reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
-    code`    ${assertId}(value, options);`,
-    ...(encodedExpr ? [
-      code`    const wire = ${encodedExpr};`,
-      // The full model check already ran; check only the JSON encoding produced.
-      ...(node.wireOnlyJsonSchema !== undefined ? [code`    ${wireOnlyAssertId}(wire, options);`] : []),
-      code`    return ${wireId}(wire as never);`,
-    ] : lenientStringify ? [code`    return ${coreId}(value as never);`] : []),
-    code`  }`,
+    ...(validationEnabled ? [
+      code`  if (validates) {`,
+      ...(runtime.reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
+      code`    ${assertId}(value, options);`,
+      ...(encodedExpr ? [
+        code`    const wire = ${encodedExpr};`,
+        // The full model check already ran; check only the JSON encoding produced.
+        ...(node.wireOnlyJsonSchema !== undefined ? [code`    ${wireOnlyAssertId}(wire, options);`] : []),
+        code`    return ${wireId}(wire as never);`,
+      ] : lenientStringify ? [code`    return ${coreId}(value as never);`] : []),
+      code`  }`,
+    ] : []),
     lenientStringify
       ? code`  return (options as Record<symbol, unknown> | undefined)?.[${helperName(CHECKED_KEY_HELPER)}] === true ? ${coreId}(value as never) : ${lenientId}(value as never);`
       : code`  return ${coreId}(value as never);`,
@@ -2193,22 +2187,17 @@ function emitToWireSection(runtime: NodeRuntime): Code {
     recursiveNode,
     toWireValue,
   );
-  if (!validationEnabled) {
-    return rowsToText([
-      toWireCoreSource,
-      code`${exported}const ${names.toWire} = ${rt.serde.serdeWithoutValidation}<${fieldsOrUnknown}, ${wireOrUnknown}>(${toWireCoreId});`,
-      code``,
-    ]);
-  }
   return rowsToText([
     toWireCoreSource,
     code`${exported}function ${names.toWire}(value: ${fieldsOrUnknown}, options?: ${SERDE_OPTIONS}): ${wireOrUnknown} {`,
-    emitSerdeValidates(true),
-    code`  if (validates) {`,
-    ...(reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
-    code`    ${assertId}(value, options);`,
-    code`  }`,
-    ...(node.wireOnlyJsonSchema !== undefined ? [
+    emitSerdeValidates(validationEnabled),
+    ...(validationEnabled ? [
+      code`  if (validates) {`,
+      ...(reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
+      code`    ${assertId}(value, options);`,
+      code`  }`,
+    ] : []),
+    ...(validationEnabled && node.wireOnlyJsonSchema !== undefined ? [
       code`  const wire = ${toWireCoreId}(value);`,
       code`  if (validates) {`,
       code`    ${wireOnlyAssertId}(wire, options);`,
