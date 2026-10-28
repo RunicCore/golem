@@ -197,6 +197,11 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   onInput?.(tsconfig);
   const jobs: GolemJob[] = [];
   const outputs: string[] = [];
+  const assertDisjointOutput = (output: string, kind = 'generated'): void => {
+    for (const previous of outputs) {
+      if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping ${kind} outputs: ${displayPath(previous)} and ${displayPath(output)}`);
+    }
+  };
   const inputPath = (value: unknown, label: string): string => {
     const requested = path.resolve(directory, nonempty(value, label));
     onInput?.(requested);
@@ -216,9 +221,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       if (packageName === '@exprtlabs/golem') throw new Error(`${label}.package must be a third-party generator, but @exprtlabs/golem is the CLI, not a generator.`);
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
-      for (const previous of outputs) {
-        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${displayPath(previous)} and ${displayPath(output)}`);
-      }
+      assertDisjointOutput(output);
       outputs.push(output);
       jobs.push({ id: `generator:${path.relative(directory, output) || '.'}`, kind: 'generator', package: packageName, options: { directory, output, options: entry.options ?? {}, profile } });
     }
@@ -236,9 +239,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (!/\.(?:json|ya?ml)$/i.test(output)) throw new Error(`${label}.output must be a JSON or YAML file.`);
       if (fs.existsSync(output) && !fs.statSync(output).isFile()) throw new Error(`${label}.output must be a file.`);
-      for (const previous of outputs) {
-        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${displayPath(previous)} and ${displayPath(output)}`);
-      }
+      assertDisjointOutput(output);
       outputs.push(output);
       const sourceValues = entry.sources === undefined
         ? undefined
@@ -287,9 +288,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       const input = inputPath(entry.input, `${label}.input`);
       const output = canonicalPath(path.resolve(directory, nonempty(entry.output, `${label}.output`)));
       if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error(`${label}.output must be a directory.`);
-      for (const previous of outputs) {
-        if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping OpenAPI outputs: ${displayPath(previous)} and ${displayPath(output)}`);
-      }
+      assertDisjointOutput(output, 'OpenAPI');
       outputs.push(output);
       const allowRemoteRefs = boolean(entry.allowRemoteRefs, false, `${label}.allowRemoteRefs`);
       if (entry.remoteHosts !== undefined && !Array.isArray(entry.remoteHosts)) throw new Error(`${label}.remoteHosts must be an array of nonempty hostnames.`);
@@ -313,9 +312,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
       ? defaultModelOutput(root)
       : path.resolve(directory, nonempty(value.models.output, 'models.output')));
     if (fs.existsSync(output) && !fs.statSync(output).isDirectory()) throw new Error('models.output must be a directory.');
-    for (const previous of outputs) {
-      if (isInsideDirectory(previous, output) || isInsideDirectory(output, previous)) throw new Error(`Overlapping generated outputs: ${displayPath(previous)} and ${displayPath(output)}`);
-    }
+    assertDisjointOutput(output);
     let sources: string[] | undefined;
     if (value.models.sources !== undefined) {
       if (!Array.isArray(value.models.sources) || !value.models.sources.length) throw new Error('models.sources must be a nonempty array.');
