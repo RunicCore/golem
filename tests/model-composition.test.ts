@@ -384,6 +384,38 @@ export type TItem = IModel<{ email: Email }>;
   });
 }
 
+// protects: bug-sweep a Record keyed by a template literal (`id_${string}`) accepted a key that does not match the template
+test('a Record with a template-literal key rejects a key outside the template and decodes the Dates of the others', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: Record<\`id_\${string}\`, Date>; both: Record<\`a_\${string}_z\` | \`b.\${string}\`, number> }>;
+`);
+  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+  const day = '2024-01-01T00:00:00.000Z';
+  assert.equal(codec.validate({ seen: { id_1: new Date(day) }, both: {} }), true);
+  assert.equal(codec.validate({ seen: { other: new Date(day) }, both: {} }), false);
+  assert.equal(codec.validate({ seen: {}, both: { a_1_z: 1, 'b.x': 2 } }), true);
+  for (const both of [{ a_1: 1 }, { 'bx': 2 }, { a_1_zz: 3 }]) assert.equal(codec.validate({ seen: {}, both }), false, JSON.stringify(both));
+  assert.deepEqual(codec.parse(`{"seen":{"id_1":"${day}"},"both":{}}`), { seen: { id_1: new Date(day) }, both: {} });
+  assert.throws(() => codec.parse(`{"seen":{"other":"${day}"},"both":{}}`), /Model validation failed/);
+});
+
+for (const key of ['${number}', '${string}_${number}', 'Uppercase<string>']) {
+  test(`a Record keyed by ${key} that golem cannot state as one key pattern stops generation with RUNM1004`, t => {
+    const { root, sourceRoot } = fixture(t);
+    const keyType = key.startsWith('Upper') ? key : `\`${key}\``;
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: Record<${keyType}, Date> }>;
+`);
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation: true } }),
+      /item\.model\.ts:\d+:\d+ RUNM1004: Field "seen" of TItem is keyed by a template literal type that golem cannot state as a key pattern\. Use string-only holes, such as `id_\$\{string\}`, or a plain string key\./,
+    );
+  });
+}
+
 test('a bigint with a phantom brand keeps the TSerde message, not RUNM1085', t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';

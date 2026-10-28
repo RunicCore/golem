@@ -548,6 +548,48 @@ function indexValueNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined 
  * when they are values of type V (converted like the values of an index signature), `true` when V is `unknown` or `any`
  * (the values are copied as they are), and `undefined` when the object has no such tag.
  */
+/** The text of a name as a regular expression that matches that text only. */
+function escapedKeyText(text: string): string {
+  return text.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
+}
+
+/** The expression for one template literal key type (`id_${string}`), or undefined for a shape it cannot state exactly: only `string` holes can. */
+function templateKeyExpression(printed: string): string | undefined {
+  if (printed.length < 2 || !printed.startsWith('`') || !printed.endsWith('`')) return undefined;
+  const body = printed.slice(1, -1);
+  if (body.includes('\\') || body.includes('`')) return undefined;
+  let expression = '';
+  for (let at = 0; at < body.length;) {
+    if (body.startsWith('${', at)) {
+      const end = body.indexOf('}', at);
+      if (end < 0 || body.slice(at + 2, end) !== 'string') return undefined;
+      expression += '[\\s\\S]*';
+      at = end + 1;
+    } else {
+      expression += escapedKeyText(body[at]!);
+      at += 1;
+    }
+  }
+  return expression;
+}
+
+/**
+ * The pattern every key of `type` must match, from its index signatures that are keyed by template literal types: undefined when
+ * the keys are unrestricted (a `string` key, or no signature), null when a key type cannot be stated as one exact pattern. Declared
+ * property names are keys too, so a pattern lets them through.
+ */
+function indexKeyPattern(checker: ts.TypeChecker, type: ts.Type, declaredNames: readonly string[]): string | null | undefined {
+  const expressions: string[] = [];
+  for (const { keyType } of checker.getIndexInfosOfType(type)) {
+    if ((keyType.flags & ts.TypeFlags.String) !== 0) return undefined;
+    if ((keyType.flags & ts.TypeFlags.StringLike) === 0) continue;
+    const expression = (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0 ? templateKeyExpression(checker.typeToString(keyType)) : undefined;
+    if (expression === undefined) return null;
+    expressions.push(expression);
+  }
+  return expressions.length === 0 ? undefined : `^(?:${[...expressions, ...declaredNames.map(escapedKeyText)].join('|')})$`;
+}
+
 function additionalPropertiesFromTags(
   constraints: readonly ModelConstraint[],
 ): boolean | ModelConversionDescriptor | undefined {
@@ -1299,6 +1341,16 @@ export function descriptorBuilder(
         const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => memberNames.has(name));
         const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
         const taggedAdditional = indexType ? undefined : additionalPropertiesFromTags(metadata.constraints);
+        const keyPattern = indexType ? indexKeyPattern(checker, type, [...memberNames]) : undefined;
+        if (keyPattern === null) {
+          const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
+          throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
+            `${where} is keyed by a template literal type that golem cannot state as a key pattern. Use string-only holes, such as \`id_\${string}\`, or a plain string key.`);
+        }
+        const keyConstraint: ModelConstraint[] = keyPattern === undefined ? [] : [{
+          kind: 'propertyNames',
+          schema: { kind: 'string', constraints: [{ kind: 'pattern', value: keyPattern }] },
+        }];
         const descriptor = withMetadata({
           kind: 'object',
           ...(projection ? { projection: true as const } : {}),
@@ -1312,7 +1364,7 @@ export function descriptorBuilder(
               : !context.exact,
           // Only an explicit tag that admits extra keys declares them as data; `exact: false` leaves an object open by default.
           ...(taggedAdditional !== undefined && taggedAdditional !== false ? { additionalPropertiesDeclared: true as const } : {}),
-        }, metadata);
+        }, keyConstraint.length ? { ...metadata, constraints: [...metadata.constraints, ...keyConstraint] } : metadata);
         return descriptor;
       }
       if (!validationEnabled) return withMetadata({ kind: 'unknown' }, metadata);
