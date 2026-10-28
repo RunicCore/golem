@@ -199,6 +199,25 @@ test('an install marker starts a tick that says so, and another write in node_mo
   assert.deepEqual(ticks, [true]);
 });
 
+test('an event with no file name in the node_modules folder starts a tick that says an install happened', async (t) => {
+  // protects: fixed bug, a null name in a marker folder (reported by some platforms for an install) lost the rerun
+  const { root } = projectFolders(t);
+  const modules = path.join(root, 'node_modules');
+  fs.mkdirSync(modules);
+  const listeners = new Map<string, (event: string, name: string | null) => void>();
+  const files: Pick<InputFiles, 'watch'> = {
+    watch: (folder, listener) => {
+      listeners.set(folder, listener);
+      return realInputFiles.watch(folder, listener);
+    },
+  };
+  const { ticks } = ticking(t, root, [], files);
+  await quietly();
+  listeners.get(modules)?.('rename', null);
+  await until(() => ticks.length > 0, 'the nameless event');
+  assert.deepEqual(ticks, [true]);
+});
+
 test('an event during a tick starts exactly one more tick after it, and events in one burst start one', async (t) => {
   // protects: R-31 ticks never overlap and an edit made during a run is seen after it
   const { root } = projectFolders(t);

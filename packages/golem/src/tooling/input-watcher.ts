@@ -444,7 +444,8 @@ export class InputWatcher {
   /** An event in a watched folder. A hidden file or an editor's temporary file is no input, and the markers are the only names that count in a `node_modules` folder. */
   private seen(folder: string, markers: boolean, event: string, name: string | undefined): void {
     if (markers) {
-      if (name !== undefined && INSTALL_MARKERS.has(name)) this.request(true);
+      // A platform that reports no name for a change cannot say which file an install wrote, so it counts as the marker.
+      if (name === undefined || INSTALL_MARKERS.has(name)) this.request(true);
       return;
     }
     if (name === undefined) {
