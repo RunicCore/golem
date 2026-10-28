@@ -45,16 +45,12 @@ export { assertUniqueExportNames, type PublicModule } from './names.js';
 import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
 import { FIELD_CONVERSION_INPUT, calleeOf, emitArrayConversion, emitTupleConversion, type SequenceItems } from './sequence-conversion.js';
 import {
-  discriminatorMatch,
   ObjectUnionDiscriminatorError,
   objectValueExpression,
-  presentUnionVariants,
   emitDispatch,
   emitUnionConversion,
   keyIsNotListed,
   presentKeysCode,
-  presentUnionIndices,
-  presentValueCode,
   unionDispatch,
   type ObjectTypeDescriptor,
 } from './union-conversion.js';
@@ -133,11 +129,9 @@ function generatedModel(
   const alternatives = descriptor.variants.filter(
     (variant) => variant.kind !== 'generated-model',
   );
-  // `unknown`, `any`, arrays, intersections, and a second object branch can
-  // all accept the same runtime value as a generated model.  The model
-  // compiler rejects these ambiguous unions before emission.  A tagged
-  // object alternative is safe because the generated branch is selected only
-  // when its tag does not match.
+  // `unknown`, `any`, arrays, intersections, and an object branch can all
+  // accept the same runtime value as a generated model. A union with a
+  // declared tag table never comes here: its default is the table's.
   const objectAlternatives = alternatives.filter(
     (variant): variant is ObjectDescriptor => variant.kind === 'object',
   );
@@ -147,7 +141,7 @@ function generatedModel(
       || variant.kind === 'array'
       || variant.kind === 'intersection'
   )) return undefined;
-  if (objectAlternatives.length > 0 && descriptor.discriminator === undefined) return undefined;
+  if (objectAlternatives.length > 0) return undefined;
   return generated[0];
 }
 
@@ -158,23 +152,6 @@ function recordExpression(expression: Code): Code {
 
 function recordIndex(expression: Code, property: Code): Code {
   return code`${recordExpression(expression)}[${property}]`;
-}
-
-/** A decoder's tag read by the JSON view, so an inherited or non-enumerable tag selects no branch. */
-function presentTag(expression: Code, property: string): Code {
-  const key = literal(property);
-  return code`(${presentValueCode(expression, key, recordIndex(expression, key))})`;
-}
-
-/** The object variants of the union whose declared tag values select them. */
-function taggedObjectExpression(
-  expression: Code,
-  descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }>,
-): Code {
-  const discriminator = unionDispatch(descriptor, presentUnionIndices(descriptor).filter((index) => descriptor.variants[index].kind === 'object'));
-  if (!discriminator) return objectValueExpression(expression);
-  const access = presentTag(expression, discriminator.property);
-  return code`${objectValueExpression(expression)} && ${discriminatorMatch(access, discriminator.values.flat())}`;
 }
 
 /** The construction of a model from its initializer: the resolver's own, or `new <class>(<value>)`. */
@@ -191,7 +168,21 @@ function encodeCall(model: { readonly encode?: (value: Code) => Code }, expressi
     : code`${rt.conversion.encodeGeneratedModel}(${expression})`;
 }
 
-/** The union with a generated model, converted to the model by `convertToModel`; a plain object that its tags select stays as it is. */
+/** A model instance as it is, or the model built from the value by `convertToModel`. */
+function modelFromConversion(
+  model: FromJsonModelResolver,
+  expression: Code,
+  convertToModel: (model: FromJsonModelResolver, expression: Code) => Code,
+): Code {
+  return code`${expression} instanceof ${model.className} ? ${expression} : ${convertToModel(model, expression)}`;
+}
+
+/** A model instance in its wire form, or the value as it is. */
+function modelToJsonConversion(model: ToJsonModelResolver, expression: Code): Code {
+  return code`${expression} instanceof ${model.className} ? ${encodeCall(model, expression)} : ${expression}`;
+}
+
+/** The union with a generated model beside plain variants: an object becomes the model. */
 function unionGeneratedFrom(
   descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }>,
   expression: Code,
@@ -200,17 +191,7 @@ function unionGeneratedFrom(
 ): Code | undefined {
   const generated = generatedModel(descriptor);
   if (!generated) return undefined;
-  const objects = descriptor.variants.filter(
-    (variant): variant is ObjectDescriptor => variant.kind === 'object',
-  );
-  const model = resolveModel(generated.id);
-  const value = expression;
-  const converted = code`${value} instanceof ${model.className} ? ${value} : ${convertToModel(model, expression)}`;
-  if (objects.length === 0) {
-    return code`${objectValueExpression(expression)} ? ${converted} : ${value}`;
-  }
-  const tagged = taggedObjectExpression(expression, descriptor);
-  return code`${objectValueExpression(expression)} && !(${tagged}) ? ${converted} : ${value}`;
+  return code`${objectValueExpression(expression)} ? ${modelFromConversion(resolveModel(generated.id), expression, convertToModel)} : ${expression}`;
 }
 
 function unionGeneratedToJson(
@@ -220,9 +201,7 @@ function unionGeneratedToJson(
 ): Code | undefined {
   const generated = generatedModel(descriptor);
   if (!generated) return undefined;
-  const model = resolveModel(generated.id);
-  const value = expression;
-  return code`${value} instanceof ${model.className} ? ${encodeCall(model, expression)} : ${value}`;
+  return modelToJsonConversion(resolveModel(generated.id), expression);
 }
 
 /** The input of a field conversion that is emitted once to find its shape, and the parameter of a field conversion function. No nested conversion binds this name. */
@@ -266,66 +245,61 @@ function emitNestedUnion(
   resolveSerde: SerdeResolver | undefined,
   memo: EmitMemo,
 ): Code {
-  const indices = presentUnionIndices(descriptor);
   const dispatchDirection = direction === 'toJSON' ? 'encode-value' : 'decode';
   const value = expression;
   const convert = (variant: ModelConversionDescriptor): Code =>
     emitNested(variant, expression, direction, resolveModel, resolveSerde, memo);
+  const fromJsonResolver = (id: string): FromJsonModelResolver => {
+    const model = resolveModel(id);
+    if (!('decode' in model)) throw new Error(`Missing decode resolver for generated model ${id}.`);
+    return model;
+  };
   return emitUnionConversion(descriptor, expression, 'nested', {
     convert,
     items: sequenceItems(direction, resolveModel, resolveSerde, memo),
-    tagged: () => {
-      const present = presentUnionVariants(descriptor);
-      const modelBranches = present.filter(variant => variant.kind === 'reference' || variant.kind === 'generated-model');
-      if (modelBranches.length === 0 || !present.every(variant =>
-        variant.kind === 'reference' || variant.kind === 'generated-model' || variant.kind === 'object')) return undefined;
+    tagged: ({ indices, rest, fallback }) => {
+      const variants = indices.map((index) => descriptor.variants[index]);
       const dispatch = unionDispatch(descriptor, indices);
       if (!dispatch) return undefined;
+      const branches = variants.map((variant, position) => ({
+        values: dispatch.values[position],
+        className: variant.kind === 'generated-model' ? resolveModel(variant.id).className
+          : variant.kind === 'reference' && !variant.projection ? resolveModel(variant.name).className
+            : undefined,
+        convert: convert(variant),
+      }));
+      // Objects that convert to themselves, with nothing outside the tag to convert, need no dispatch.
+      const converts = fallback !== undefined || variants.some((variant) => variant.kind === 'reference' || variant.kind === 'generated-model')
+        || branches.some((branch) => !sameCode(branch.convert, value));
+      if (!converts) return rest === undefined ? undefined : sameCode(rest, value) ? value : code`(${objectValueExpression(expression)} ? ${value} : ${rest})`;
       return emitDispatch({
         expression,
         property: dispatch.property,
         direction: dispatchDirection,
-        branches: present.map((variant, position) => ({
-          values: dispatch.values[position],
-          className: variant.kind === 'generated-model' ? resolveModel(variant.id).className
-            : variant.kind === 'reference' && !variant.projection ? resolveModel(variant.name).className
-              : undefined,
-          convert: convert(variant),
-        })),
+        branches,
+        ...(rest === undefined ? {} : { rest }),
+        ...(fallback === undefined ? {} : { fallback }),
       });
     },
+    declaredDefault: (variant) => {
+      if (variant.kind !== 'generated-model') return undefined;
+      return direction === 'toJSON'
+        ? modelToJsonConversion(resolveModel(variant.id), expression)
+        : modelFromConversion(fromJsonResolver(variant.id), expression, direction === 'fromInit' ? fromInitCall : (model, input) => model.decode(input));
+    },
     afterGenerated: (present) => {
-      const fromJsonResolver = (id: string): FromJsonModelResolver => {
-        const model = resolveModel(id);
-        if (!('decode' in model)) throw new Error(`Missing decode resolver for generated model ${id}.`);
-        return model;
-      };
       const result = direction === 'toJSON'
         ? unionGeneratedToJson(descriptor, expression, resolveModel)
         : unionGeneratedFrom(descriptor, expression, fromJsonResolver, direction === 'fromInit' ? fromInitCall : (model, input) => model.decode(input));
-      const objectIndices = indices.filter(index => descriptor.variants[index].kind === 'object');
-      const objects = objectIndices.map(index => descriptor.variants[index]).filter(
-        (variant): variant is ObjectDescriptor => variant.kind === 'object');
-      const convertedObjects = objects.map(object => ({ object, converted: convert(object) }));
+      const objects = present.filter((variant): variant is ObjectDescriptor => variant.kind === 'object');
+      const convertedObjects = objects.map((object) => ({ object, converted: convert(object) }));
       if (convertedObjects.some(({ converted }) => !sameCode(converted, value))) {
-        const discriminator = unionDispatch(descriptor, objectIndices);
-        if (!discriminator && (objects.length > 1 || descriptor.variants.some(variant => ['reference', 'generated-model', 'any', 'unknown', 'intersection'].includes(variant.kind)))) {
+        if (objects.length > 1 || descriptor.variants.some((variant) => ['reference', 'generated-model', 'any', 'unknown', 'intersection'].includes(variant.kind))) {
           throw new ObjectUnionDiscriminatorError(descriptor.variants);
         }
-        if (discriminator && result === undefined && objects.length === present.length) {
-          return emitDispatch({
-            expression,
-            property: discriminator.property,
-            direction: dispatchDirection,
-                branches: convertedObjects.map(({ converted }, position) => ({ values: discriminator.values[position], convert: converted })),
-          });
-        }
         let chain = result ?? value;
-        for (let index = convertedObjects.length - 1; index >= 0; index--) {
-          const guard = discriminator
-            ? code`${objectValueExpression(expression)} && ${discriminatorMatch(presentTag(expression, discriminator.property), discriminator.values[index])}`
-            : objectValueExpression(expression);
-          chain = code`${guard} ? (${convertedObjects[index].converted}) : (${chain})`;
+        for (const { converted } of convertedObjects.reverse()) {
+          chain = code`${objectValueExpression(expression)} ? (${converted}) : (${chain})`;
         }
         return chain;
       }

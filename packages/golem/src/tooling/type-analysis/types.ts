@@ -223,10 +223,11 @@ function rejectAmbiguousGeneratedModelUnion(
   }
   if (generated.length !== 1) return;
   const alternatives = descriptor.variants.filter((item) => item.kind !== 'generated-model');
+  // A declared tag table leaves the array to its JSON type: only an object value reaches the model.
   if (alternatives.some((item) =>
     item.kind === 'any'
       || item.kind === 'unknown'
-      || item.kind === 'array'
+      || (item.kind === 'array' && descriptor.discriminator === undefined)
       || item.kind === 'intersection'
   )) {
     throw diagnostic(
@@ -642,8 +643,8 @@ function requiredLiteralValues(checker: ts.TypeChecker, variant: ts.Type, key: s
 
 /**
  * The tag table of a union that declares its key: each variant's required literal values at `key`, in the variant order of the
- * descriptor. `null` and `undefined` variants carry no values. Anything else without a required literal, or a value two variants
- * share, stops with RUNM1087.
+ * descriptor. A variant that is no object (`null`, a scalar, an array or a tuple) carries no values: the JSON type selects it. An
+ * object-like variant without a required literal, or a value two variants share, stops with RUNM1087.
  */
 function declaredTagTable(
   checker: ts.TypeChecker,
@@ -668,9 +669,8 @@ function declaredTagTable(
   const owners = new Map<DiscriminatorValue, string>();
   const variants = entries.map((entry, position) => {
     const { type, descriptor } = entry;
-    // A scalar beside a declared default converts by its JSON type, as the default does; with no default every non-null variant needs the key.
-    if (descriptor.kind === 'null' || descriptor.kind === 'undefined' || position === defaultIndex
-      || (defaultIndex !== undefined && !isObjectLikeVariant(descriptor))) return { values: [] };
+    // A scalar, array or tuple beside the objects converts by its JSON type, as the default does; only an object-like variant needs the key.
+    if (descriptor.kind === 'null' || descriptor.kind === 'undefined' || position === defaultIndex || !isObjectLikeVariant(descriptor)) return { values: [] };
     const name = nameOf(entry);
     const values = requiredLiteralValues(checker, type, key, at);
     if (!values) {

@@ -137,11 +137,6 @@ for (const validation of [false, true]) {
       /bad\.model\.ts:\d+:\d+ RUNM1087: Union variants \w+ and \w+ in TBox share the "kind" value "email"\. Give each variant its own "kind" value\./,
     ],
     [
-      'a scalar variant beside the tagged objects',
-      `${VARIANTS}export type TPhone = IModel<{ kind: 'phone'; added: Date }>;\nexport type TBox = IModel<{ value: (string | TEmail | TPhone) & ${TAG} }>;\n`,
-      /bad\.model\.ts:\d+:\d+ RUNM1087: Union variant string in TBox has no required literal property "kind"/,
-    ],
-    [
       'a default that is not a variant of the union',
       `${VARIANTS}export type TPhone = IModel<{ kind: 'phone'; added: Date }>;\nexport type TOther = IModel<{ other: string }>;\nexport type TBox = IModel<{ value: (TEmail | TPhone) & Discriminator<'kind', TOther> }>;\n`,
       /bad\.model\.ts:\d+:\d+ RUNM1051: Discriminator<'kind', .*> in TBox names a default that is not a variant of the union\. Name one of its variants: /,
@@ -200,5 +195,89 @@ export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { 
     for (const wire of [{ amount: 5, currency: 'EUR' }, { kind: 'zzz', amount: 5, currency: 'EUR' }]) {
       assert.equal(plain(valueOf(wire)), false, `validation=${validation}: ${JSON.stringify(wire)} is the default SDK model`);
     }
+  });
+}
+
+const BOX_MODEL = `
+import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+import { TBoxBaseModel, TEmailBaseModel, TPhoneBaseModel } from './box.model.generated.js';
+
+export type TEmail = IModel<{ kind: 'email'; address: string; added: Date }>;
+export type TPhone = IModel<{ kind: 'phone'; number: string; added: Date }>;
+export type TBox = IModel<{
+  text: (string | TEmail | TPhone) & ${TAG};
+  amount: ((number | TEmail | TPhone) & ${TAG}) | null;
+  list: (TEmail | TPhone | string[]) & ${TAG};
+  flag: (boolean | 'none' | TEmail | TPhone) & ${TAG};
+}>;
+
+export class Email extends TEmailBaseModel {}
+export class Phone extends TPhoneBaseModel {}
+export class Box extends TBoxBaseModel {}
+`;
+
+for (const validation of [false, true]) {
+  test(`a declared tag picks the object variants beside scalars, an array and null, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: T-603 a tagged object union can sit beside scalars, arrays and null (R-55): JSON type first, then the declared tag
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-json-', name: 'declared-json', linkWorkspaceNodeModules: true });
+    writeModelSources(sourceRoot, { 'box.model.ts': BOX_MODEL });
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const models = requireRecord(await import(pathToFileURL(path.join(root, 'build/box.model.js')).href), 'box');
+    const { Box, Email, Phone } = models as Record<'Box' | 'Email' | 'Phone', GeneratedModelClass>;
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TBox'));
+    const options = { validate: validation };
+    const scalars = { text: 'hi', amount: null, list: ['a', 'b'], flag: true };
+    const mixed = { text: email, amount: 5, list: phone, flag: 'none' };
+    const objects = { text: phone, amount: email, list: email, flag: phone };
+    for (const wire of [scalars, mixed, objects]) {
+      const decoded = requireRecord(decodeGeneratedModel(Box, wire), 'box');
+      assert.deepEqual(encodeGeneratedModel(decoded), wire, `validation=${validation}: encode of ${JSON.stringify(wire)}`);
+      assert.deepEqual(JSON.parse(codec.stringify(decoded, options)), wire, `validation=${validation}: stringify of ${JSON.stringify(wire)}`);
+      assert.deepEqual(JSON.parse(JSON.stringify(requireRecord(codec.parse(JSON.stringify(wire), options), 'parsed'))), wire);
+    }
+    const first = requireRecord(decodeGeneratedModel(Box, scalars), 'box');
+    assert.deepEqual([first.text, first.amount, first.list, first.flag], ['hi', null, ['a', 'b'], true]);
+    const second = requireRecord(decodeGeneratedModel(Box, mixed), 'box');
+    assert.ok(second.text instanceof Email && second.list instanceof Phone, `validation=${validation}: tagged objects become their models`);
+    assert.ok(requireRecord(second.text, 'text').added instanceof Date);
+    assert.deepEqual([second.amount, second.flag], [5, 'none']);
+    const third = requireRecord(decodeGeneratedModel(Box, objects), 'box');
+    assert.ok(third.text instanceof Phone && third.amount instanceof Email && third.list instanceof Email && third.flag instanceof Phone);
+    assert.throws(() => decodeGeneratedModel(Box, { ...scalars, text: { ...email, kind: 'fax' } }), /Unknown kind discriminator value/);
+  });
+
+  test(`a declared default model sits beside scalars, an array and null, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: T-603 the declared default is the fallback of the object branch beside JSON-type variants (the wallet shape)
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-json-default-', name: 'declared-json-default', linkWorkspaceNodeModules: true });
+    await writeMoneySdk(sourceRoot, validation);
+    writeModelSources(sourceRoot, {
+      'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+import type { Money } from './sdk/index.js';
+export type TItem = IModel<{ value: ((Money | string | number[] | { kind: 'a'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money>) | null }>;
+`,
+    });
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const generated = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item companion');
+    const Item = generated.TItemBaseModel as GeneratedModelClass;
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+    const options = { validate: validation };
+    const plain = (value: unknown): boolean => Object.getPrototypeOf(value) === Object.prototype;
+    const money = { amount: 5, currency: 'EUR' };
+    for (const [wire, isModel] of [
+      ['hi', false], [[1, 2], false], [null, false], [{ kind: 'a', x: 1 }, false], [{ kind: 'c' }, false],
+      [money, true],
+    ] as const) {
+      const item = requireRecord(decodeGeneratedModel(Item, { value: wire }), 'item');
+      const label = `validation=${validation}: ${JSON.stringify(wire)}`;
+      assert.equal(typeof item.value === 'object' && item.value !== null && !Array.isArray(item.value) && !plain(item.value), isModel, label);
+      assert.deepEqual(encodeGeneratedModel(item), { value: wire }, label);
+      assert.deepEqual(JSON.parse(codec.stringify(item, options)), { value: wire }, label);
+    }
+    const unknownTag = requireRecord(decodeGeneratedModel(Item, { value: { kind: 'zzz', ...money } }), 'item').value;
+    assert.equal(plain(unknownTag), false, `validation=${validation}: an unknown tag takes the default model`);
   });
 }
