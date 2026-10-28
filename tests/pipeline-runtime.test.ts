@@ -78,7 +78,7 @@ function modelWatchFixture(t: TestContext): ModelWatchFixture {
 
 function writeExternalManifest(fixture: ModelWatchFixture): void {
   copyFixtureFile(fixture.root, 'pipeline/model-watch/models.ts', 'src/external/models.ts');
-  writeMoneyManifest(fixture.manifest);
+  writeMoneyManifest(fixture.manifest, 'MoneyModel');
 }
 
 function writeExternalTypes(fixture: ModelWatchFixture): void {

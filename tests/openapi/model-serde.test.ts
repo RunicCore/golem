@@ -343,7 +343,7 @@ function sequenceSerdeDocument(
 }
 
 /** Generates the SDK of a document into a fresh project and returns its output folder. */
-async function generateSerdeSdk(t: FixtureScope, prefix: string, document: Record<string, unknown>, validation: boolean): Promise<string> {
+async function generateSerdeSdk(t: FixtureScope, prefix: string, document: Record<string, unknown>, { validation }: { readonly validation: boolean }): Promise<string> {
   const output = path.join(createFixtureProject(t, prefix), 'sdk');
   await generateMaterializedSdk(document, {
     output,
@@ -661,7 +661,7 @@ test('an array field with an allOf sibling converts its items to Dates and is ty
       items: { type: 'string', format: 'date-time' },
       allOf: [{ minItems: 1 }],
     },
-  }), false);
+  }), { validation: false });
   compileSerdeTypes(output, 'array-types');
 
   const { VisitModel } = await loadVisitModels(output, 'generated array models');
@@ -726,7 +726,7 @@ test('an array or tuple field with no type or a nullable type converts like type
       prefixItems: [{ type: 'string' }, { type: 'string', format: 'date-time' }],
       items: false,
     },
-  }), false);
+  }), { validation: false });
   compileSerdeTypes(output, 'sequence-shape-types');
 
   const { VisitModel } = await loadVisitModels(output, 'generated sequence models');
@@ -786,7 +786,7 @@ test('allOf members decide an array field: constraint-only and restating members
       items: { type: 'string' },
       allOf: [{ type: 'array', items: { type: 'string', format: 'date-time' } }],
     },
-  }), false);
+  }), { validation: false });
   compileSerdeTypes(output, 'allof-sequence-types');
 
   const { VisitModel } = await loadVisitModels(output, 'generated allOf array models');
@@ -818,7 +818,7 @@ test('a oneOf of a scalar and a nullable array or tuple converts the sequence, k
         { type: ['array', 'null'], prefixItems: [{ type: 'string', format: 'date-time' }], items: false },
       ],
     },
-  }), false);
+  }), { validation: false });
   compileSerdeTypes(output, 'scalar-or-sequence-types');
 
   const { VisitModel } = await loadVisitModels(output, 'generated scalar-or-sequence models');
@@ -844,7 +844,7 @@ test('a nullable array field with an allOf minItems keeps null, rejects an empty
       items: { type: 'string', format: 'date-time' },
       allOf: [{ minItems: 1 }],
     },
-  }), true);
+  }), { validation: true });
   compileSerdeTypes(output, 'nullable-array-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable array models');
@@ -870,7 +870,7 @@ test('an object field whose allOf members only add constraints converts by its o
       properties: { at: { type: 'string', format: 'date-time' } },
       allOf: [{ minProperties: 1 }],
     },
-  }), true);
+  }), { validation: true });
   compileSerdeTypes(output, 'allof-object-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated constraint-only allOf object models');
@@ -892,7 +892,7 @@ test('a oneOf field whose allOf members only add constraints converts by its own
       oneOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
       allOf: [{ description: 'when the visit happened' }],
     },
-  }), false);
+  }), { validation: false });
   compileSerdeTypes(output, 'allof-oneof-types');
 
   const { VisitModel } = await loadVisitModels(output, 'generated constraint-only allOf oneOf models');
@@ -910,7 +910,7 @@ test('a nullable object field admits null and converts its properties', async t 
       type: ['object', 'null'],
       properties: { at: { type: 'string', format: 'date-time' } },
     },
-  }), true);
+  }), { validation: true });
   compileSerdeTypes(output, 'nullable-object-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable object models');
@@ -931,7 +931,7 @@ test('a nullable object field with a constraint-only allOf admits null and still
       properties: { at: { type: 'string', format: 'date-time' } },
       allOf: [{ minProperties: 1 }],
     },
-  }), true);
+  }), { validation: true });
   compileSerdeTypes(output, 'nullable-object-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable object allOf models');
@@ -952,7 +952,7 @@ test('a field that references a nullable component object is typed with | null a
       properties: { name: { type: 'string' } },
       additionalProperties: false,
     },
-  }), true);
+  }), { validation: true });
   compileSerdeTypes(output, 'nullable-reference-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable reference models');
@@ -971,7 +971,7 @@ test('a field that references a nullable component with a date-time property dec
       required: ['name'],
       properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } },
     },
-  }), true);
+  }), { validation: true });
   compileStandaloneModelSerdeSdk(output);
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable component date models');
@@ -994,7 +994,7 @@ for (const validation of [true, false]) test(`an object field with its own prope
       properties: { at: { type: 'string', format: 'date-time' } },
       allOf: [{ properties: { b: { type: 'string', format: 'date-time' } } }],
     },
-  }), validation);
+  }), { validation });
   compileSerdeTypes(output, 'allof-members-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf member properties models');
@@ -1023,7 +1023,7 @@ test('a name in the required list of an allOf member is required in the field ty
       properties: { at: { type: 'string', format: 'date-time' } },
       allOf: [{ required: ['at'] }],
     },
-  }), true);
+  }), { validation: true });
   compileSerdeTypes(output, 'allof-required-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf required models');
@@ -1047,7 +1047,7 @@ for (const validation of [true, false]) test(`an allOf of object members is type
         { type: 'object', properties: { b: { type: 'string', format: 'date-time' } } },
       ],
     },
-  }), validation);
+  }), { validation });
   compileSerdeTypes(output, 'allof-object-members-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf object member models');
@@ -1078,7 +1078,7 @@ test('an object field with own properties and an allOf reference to a model stil
     },
   }, {
     Base: { type: 'object', properties: { name: { type: 'string' } } },
-  }), true);
+  }), { validation: true });
   compileSerdeTypes(output, 'allof-own-reference-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated own properties and allOf reference models');
@@ -1094,7 +1094,7 @@ test('a nullable object field whose allOf member adds properties still generates
       properties: { at: { type: 'string', format: 'date-time' } },
       allOf: [{ properties: { b: { type: 'string', format: 'date-time' } } }],
     },
-  }), true);
+  }), { validation: true });
   compileSerdeTypes(output, 'nullable-allof-members-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable allOf member models');
@@ -1123,7 +1123,7 @@ test('a discriminated oneOf with a nullable component variant still generates an
       required: ['kind', 'name'],
       properties: { kind: { const: 'cat' }, name: { type: 'string' } },
     },
-  }), true);
+  }), { validation: true });
   compileSerdeTypes(output, 'oneof-discriminated-nullable-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated discriminated nullable variant models');
@@ -1138,7 +1138,7 @@ test('a oneOf variant that references a nullable component admits null and is ty
     either: { oneOf: [{ $ref: '#/components/schemas/Pet' }, { type: 'string' }] },
   }, {
     Pet: { type: ['object', 'null'], properties: { name: { type: 'string' } } },
-  }), true);
+  }), { validation: true });
   compileSerdeTypes(output, 'oneof-nullable-reference-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated oneOf nullable reference models');
@@ -1156,7 +1156,7 @@ for (const validation of [true, false]) for (const petType of ['object', ['objec
       either: { oneOf: [{ $ref: '#/components/schemas/Pet' }, { type: 'string' }] },
     }, {
       Pet: { type: petType, required: ['name'], properties: { name: { type: 'string' } } },
-    }), validation);
+    }), { validation });
     compileStandaloneModelSerdeSdk(output);
 
     const { models, VisitModel, construct } = await loadVisitModels(output, 'generated oneOf reference and string models');
@@ -1181,7 +1181,7 @@ for (const validation of [true, false]) test(`a oneOf of a nullable component wi
       required: ['name'],
       properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } },
     },
-  }), validation);
+  }), { validation });
   compileStandaloneModelSerdeSdk(output);
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated oneOf nullable date models');
@@ -1202,7 +1202,7 @@ test(`an allOf of an additionalProperties member and a properties member convert
         { type: 'object', properties: { b: { type: 'string', format: 'date-time' } } },
       ],
     },
-  }), false);
+  }), { validation: false });
   compileSerdeTypes(output, 'allof-additional-members-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf additionalProperties member models');
@@ -1221,7 +1221,7 @@ test(`an allOf of object members that share a property name converts it once (va
         { type: 'object', properties: { at: { type: 'string', format: 'date-time' } } },
       ],
     },
-  }), false);
+  }), { validation: false });
   compileSerdeTypes(output, 'allof-same-name-members-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf additionalProperties member models');
@@ -1243,7 +1243,7 @@ for (const validation of [true, false]) test(`an array whose items are an allOf 
         ],
       },
     },
-  }), validation);
+  }), { validation });
   compileSerdeTypes(output, 'allof-object-items-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf object items models');
@@ -1264,7 +1264,7 @@ test('an object field with own additionalProperties and an allOf member that add
       additionalProperties: { type: 'string', format: 'date-time' },
       allOf: [{ type: 'object', properties: { b: { type: 'string', format: 'date-time' } } }],
     },
-  }), true);
+  }), { validation: true });
   compileSerdeTypes(output, 'allof-own-additional-types');
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated own additionalProperties and allOf member models');

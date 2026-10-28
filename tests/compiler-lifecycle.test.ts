@@ -113,7 +113,8 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
   const source = path.join(fixture.sourceRoot, 'aggregate.model.ts');
   fs.writeFileSync(types, '/* @golem-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
   fs.writeFileSync(generated, 'export const Other = 1;\n');
-  writeMoneyManifest(manifest);
+  // The manifest names MoneyModel, which models.ts does not export.
+  writeMoneyManifest(manifest, 'MoneyModel');
   fs.writeFileSync(source, [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Money } from './sdk/types.js';",
