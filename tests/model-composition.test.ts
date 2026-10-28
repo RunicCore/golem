@@ -111,9 +111,8 @@ export type TItem = IModel<Box & TSerde<typeof boxToJson, typeof boxFromJson>>;
   );
 });
 
-test('an IModel over an SDK model generates a class with the fields of that model', async t => {
-  // protects: an IModel over an SDK model types the generated class with that model's fields (a wrong field type fails the build)
-  const { root, sourceRoot } = fixture(t);
+/** Generate the `Payments` SDK with its `Money` model into `src/sdk`. */
+async function writeMoneySdk(sourceRoot: string): Promise<void> {
   fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
   writeGeneratedArtifacts((await generateOpenApi({
     input: path.join(sourceRoot, 'money.yaml'),
@@ -121,6 +120,12 @@ test('an IModel over an SDK model generates a class with the fields of that mode
     name: 'Payments',
     profile: { mobx: false, validation: true },
   })).artifacts);
+}
+
+test('an IModel over an SDK model generates a class with the fields of that model', async t => {
+  // protects: an IModel over an SDK model types the generated class with that model's fields (a wrong field type fails the build)
+  const { root, sourceRoot } = fixture(t);
+  await writeMoneySdk(sourceRoot);
   writeModelSources(sourceRoot, {
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { Money } from './sdk/index.js';
@@ -140,13 +145,7 @@ export const wrong: string = item.amount;
 test('an SDK model beside objects tagged by a literal union generates and decodes each branch', async t => {
   // protects: bug-sweep RUNM1030 once rejected an SDK model beside objects whose tag is a union of literals (`kind: 'a' | 'b'`), which union conversion accepts
   const { root, sourceRoot } = fixture(t);
-  fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
-  writeGeneratedArtifacts((await generateOpenApi({
-    input: path.join(sourceRoot, 'money.yaml'),
-    output: path.join(sourceRoot, 'sdk'),
-    name: 'Payments',
-    profile: { mobx: false, validation: true },
-  })).artifacts);
+  await writeMoneySdk(sourceRoot);
   writeModelSources(sourceRoot, {
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { Money } from './sdk/index.js';
@@ -163,13 +162,7 @@ export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { k
 test('an SDK model beside objects whose literal tags overlap stops generation with RUNM1030', async t => {
   // protects: bug-sweep RUNM1030 still rejects a tag value that two objects beside an SDK model share
   const { root, sourceRoot } = fixture(t);
-  fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
-  writeGeneratedArtifacts((await generateOpenApi({
-    input: path.join(sourceRoot, 'money.yaml'),
-    output: path.join(sourceRoot, 'sdk'),
-    name: 'Payments',
-    profile: { mobx: false, validation: true },
-  })).artifacts);
+  await writeMoneySdk(sourceRoot);
   writeModelSources(sourceRoot, {
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { Money } from './sdk/index.js';
