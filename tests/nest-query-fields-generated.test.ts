@@ -7,12 +7,14 @@ import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fi
 import { command, golem, workspace } from './support/process.js';
 
 const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
+/** A GET path for each named schema; the response of each is the schema. */
+const pathsOf = (names: readonly string[]) => Object.fromEntries(names.map((name) => [`/${name}`, {
+  get: { operationId: `get${name}`, responses: { '200': { description: name, content: { 'application/json': { schema: ref(name) } } } } },
+}]));
 const openApiDocument = {
   openapi: '3.1.0',
   info: { title: 'QueryFields', version: '1' },
-  paths: Object.fromEntries(['Page', 'Page2'].map((name) => [`/${name}`, {
-    get: { operationId: `get${name}`, responses: { '200': { description: name, content: { 'application/json': { schema: ref(name) } } } } },
-  }])),
+  paths: pathsOf(['Page', 'Page2']),
   components: {
     schemas: {
       Level: { type: 'integer', enum: [1, 2, 3] },
@@ -37,6 +39,12 @@ async function queryFieldsOf(root: string, modules: readonly string[], ids: read
     const ids = JSON.parse(process.argv[1]);
     console.log(JSON.stringify(Object.fromEntries(ids.map((id) => [id.replace(/_[0-9a-f]{8}$/, ''), getObjectCodec(id)?.queryFields ?? null]))));`;
   return JSON.parse((await command(root, process.execPath, ['--input-type=module', '-e', script, JSON.stringify(ids)])).stdout.trim()) as Record<string, unknown>;
+}
+
+/** The `queryFields` of the `TFilter` model that `src/filter.model.ts` declares, after the pipeline ran. */
+async function filterQueryFields(root: string): Promise<unknown> {
+  const id = (JSON.parse(fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8')) as { keys: Record<string, string> }).keys['src/filter.model.ts#TFilter'];
+  return (await queryFieldsOf(root, ['./build/src/filter.model.generated.js'], [id])).TFilter;
 }
 
 function project(t: test.TestContext, prefix: string, yaml: readonly string[], document: object = openApiDocument): string {
@@ -80,9 +88,7 @@ test('a model that golem-model generates lists the query fields of its named and
     '',
   ].join('\n'));
   await runPipeline(path.join(root, 'golem.yaml'));
-  const id = (JSON.parse(fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8')) as { keys: Record<string, string> }).keys['src/filter.model.ts#TFilter'];
-  const tables = await queryFieldsOf(root, ['./build/src/filter.model.generated.js'], [id]);
-  const table = tables.TFilter as Record<string, { literals?: unknown; item?: { literals?: unknown } }>;
+  const table = await filterQueryFields(root) as Record<string, { literals?: unknown; item?: { literals?: unknown } }>;
   assert.deepEqual(table.level, { types: [], literals: [1, 2] });
   assert.deepEqual(table.limit, { types: ['number'] });
   // The recursion through the array ends at a second visit of Loop; the levels that decode hold the literals.
@@ -95,9 +101,7 @@ test('a model that golem-model generates lists the query fields of an SDK alias 
   const sdkDocument = {
     openapi: '3.1.0',
     info: { title: 'QuerySdkFields', version: '1' },
-    paths: Object.fromEntries(['Level', 'Range'].map((name) => [`/${name}`, {
-      get: { operationId: `get${name}`, responses: { '200': { description: name, content: { 'application/json': { schema: ref(name) } } } } },
-    }])),
+    paths: pathsOf(['Level', 'Range']),
     components: {
       schemas: {
         Level: { type: 'integer', enum: [1, 2, 3] },
@@ -114,7 +118,29 @@ test('a model that golem-model generates lists the query fields of an SDK alias 
     '',
   ].join('\n'));
   await runPipeline(path.join(root, 'golem.yaml'));
-  const id = (JSON.parse(fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8')) as { keys: Record<string, string> }).keys['src/filter.model.ts#TFilter'];
-  const tables = await queryFieldsOf(root, ['./build/src/filter.model.generated.js'], [id]);
-  assert.deepEqual(tables.TFilter, { lv: { types: [], literals: [1, 2, 3] } });
+  assert.deepEqual(await filterQueryFields(root), { lv: { types: [], literals: [1, 2, 3] } });
+});
+
+// protects: T-640 a field that only the SDK base declares as a number arrived at the handler as a string
+test('a @Query() model built on an SDK model has the query fields of that SDK model', async (t) => {
+  const sdkDocument = {
+    openapi: '3.1.0',
+    info: { title: 'QuerySdk', version: '1' },
+    paths: pathsOf(['Page']),
+    components: {
+      schemas: {
+        Page: { type: 'object', required: ['limit'], additionalProperties: false, properties: { limit: { type: 'number' }, label: { type: 'string' } } },
+      },
+    },
+  };
+  const root = project(t, 'golem-query-sdk-base-', ['openapi:', '  - input: api.json', '    output: sdk', '    name: QuerySdk', 'models:', '  root: .'], sdkDocument);
+  fs.writeFileSync(path.join(root, 'src/filter.model.ts'), [
+    "import type { IModel } from '@exprtlabs/golem/model';",
+    "import type { Page } from '../sdk/index.js';",
+    '',
+    'export type TFilter = IModel<Page & { name: string; active: boolean }>;',
+    '',
+  ].join('\n'));
+  await runPipeline(path.join(root, 'golem.yaml'));
+  assert.deepEqual(await filterQueryFields(root), { active: { types: ['boolean'] }, limit: { types: ['number'] } });
 });
