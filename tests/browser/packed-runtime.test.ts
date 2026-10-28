@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { test, before, after } from 'node:test';
+import { test, before, after, type TestContext } from 'node:test';
 import { chromium, expect, type Browser, type Page } from '@playwright/test';
 import { build } from 'esbuild';
 import { cli, command, npm } from '../support/process.js';
@@ -24,6 +24,29 @@ async function trackBlockedEval(page: Page): Promise<void> {
       }
     });
   });
+}
+// Listens on a free loopback port for the test and returns the server's origin.
+async function listen(t: TestContext, server: http.Server): Promise<string> {
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Browser fixture did not bind');
+  return `http://127.0.0.1:${address.port}`;
+}
+function serveHtml(response: http.ServerResponse, html: string, csp: string): void {
+  response.setHeader('content-type', 'text/html');
+  response.setHeader('content-security-policy', csp);
+  response.end(html);
+}
+async function openPage(t: TestContext, options?: Parameters<Browser['newPage']>[0]): Promise<{ page: Page; errors: string[] }> {
+  const page = await browser.newPage(options);
+  t.after(() => page.close());
+  page.setDefaultTimeout(15_000);
+  page.setDefaultNavigationTimeout(15_000);
+  await trackBlockedEval(page);
+  const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  return { page, errors };
 }
 before(async () => {
   browser = await chromium.launch({ timeout: 30_000 });
@@ -89,23 +112,12 @@ test('packed browser executes reusable APIs, nested MobX models and custom codec
       response.setHeader('content-type', 'text/javascript');
       response.end(code);
     } else {
-      response.setHeader('content-type', 'text/html');
-      response.setHeader('content-security-policy', csp);
-      response.end(html);
+      serveHtml(response, html, csp);
     }
   });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => { server.closeAllConnections(); server.close(); });
-  const address = server.address();
-  if (!address || typeof address === 'string') throw new Error('Browser fixture did not bind');
-  const page = await browser.newPage();
-  t.after(() => page.close());
-  page.setDefaultTimeout(15_000);
-  page.setDefaultNavigationTimeout(15_000);
-  await trackBlockedEval(page);
-  const errors: string[] = [];
-  page.on('pageerror', error => errors.push(error.message));
-  const pageResponse = await page.goto(`http://127.0.0.1:${address.port}`);
+  const origin = await listen(t, server);
+  const { page, errors } = await openPage(t);
+  const pageResponse = await page.goto(origin);
   assert.equal(pageResponse?.headers()['content-security-policy'], csp);
   assert.equal(requests, 0, 'loading the application does not send an API request');
   await page.getByRole('button', { name: 'Run' }).click();
@@ -190,23 +202,12 @@ test('packed React form survives StrictMode, validation, retry and disposal', as
         response.statusCode = 201; response.end(body);
       }
     } else {
-      response.setHeader('content-type', 'text/html');
-      response.setHeader('content-security-policy', csp);
-      response.end(html);
+      serveHtml(response, html, csp);
     }
   });
-  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => { server.closeAllConnections(); server.close(); });
-  const address = server.address();
-  assert.ok(address && typeof address !== 'string');
-  const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
-  t.after(() => page.close());
-  page.setDefaultTimeout(15_000);
-  page.setDefaultNavigationTimeout(15_000);
-  await trackBlockedEval(page);
-  const errors: string[] = [];
-  page.on('pageerror', error => errors.push(error.message));
-  const loaded = await page.goto(`http://127.0.0.1:${address.port}`);
+  const origin = await listen(t, server);
+  const { page, errors } = await openPage(t, { viewport: { width: 390, height: 844 } });
+  const loaded = await page.goto(origin);
   assert.equal(loaded?.headers()['content-security-policy'], csp);
   await expect(page.getByRole('heading', { name: 'Payment editor' })).toBeVisible();
   await expect.poll(() => page.evaluate(() => Reflect.get(globalThis, 'storeDisposals'))).toBe(1);

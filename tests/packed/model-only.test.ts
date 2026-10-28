@@ -1,21 +1,20 @@
-import { test, before, after } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { build } from 'esbuild';
 import { command, npm, cli } from '../support/process.js';
-import { startRegistry, packageSpec, type PackedRegistry } from '../../scripts/packed-registry.js';
+import { packageSpec } from '../../scripts/packed-registry.js';
 import { distTagForVersion } from '../../packages/golem/src/tooling/dist-tag.js';
 import { copyFixture, copyFixtureFile } from '../fixture-project.js';
+import { usePackedRegistry } from '../support/packed-registry.js';
 
-let registry: PackedRegistry;
-before(async () => { registry = await startRegistry(); });
-after(async () => { if (registry) await registry.close(); });
+const registry = usePackedRegistry();
 
 test('model-only packed installation validates structure with no OpenAPI or MobX runtime', async t => {
-  const root = registry.create(t, 'model-only');
-  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model')]);
-  await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem')]);
+  const root = registry().create(t, 'model-only');
+  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-model')]);
+  await npm(root, ['install', '--save-prod', packageSpec(registry(), '@exprtlabs/golem')]);
   copyFixture(root, 'packed/model-only');
   await cli(root, ['generate']);
   copyFixtureFile(root, 'packed/model-only-after-generation/item.model.ts', 'src/item.model.ts');
@@ -29,13 +28,13 @@ test('model-only packed installation validates structure with no OpenAPI or MobX
 });
 
 test('packed manifests and tarballs carry the release contract', () => {
-  for (const [name, entry] of registry.packages) {
-    assert.equal(entry.manifest.version, registry.workspaceVersion);
+  for (const [name, entry] of registry().packages) {
+    assert.equal(entry.manifest.version, registry().workspaceVersion);
     if (name === '@exprtlabs/golem') assert.deepEqual(Object.keys(entry.manifest.bin ?? {}), ['golem']);
     else assert.equal(entry.manifest.bin, undefined);
     assert.equal(entry.manifest.license, 'MIT');
     assert.ok(entry.pack.files.some(file => file.path === 'LICENSE'));
     assert.ok(entry.pack.files.every(file => !/(?:^|\/)(?:docs?|assets?|\.vitepress|vitepress|vue|node_modules)(?:\/|$)/i.test(file.path)), name);
   }
-  assert.deepEqual(registry.distTags, { [distTagForVersion(registry.workspaceVersion)]: registry.workspaceVersion });
+  assert.deepEqual(registry().distTags, { [distTagForVersion(registry().workspaceVersion)]: registry().workspaceVersion });
 });

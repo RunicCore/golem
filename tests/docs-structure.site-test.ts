@@ -5,6 +5,7 @@ import test from 'node:test';
 import { BENCH_SERIES_COUNT } from '../scripts/benchmark/cases.js';
 import { buildBenchmarkSiteProjection } from '../scripts/benchmark/site-projection.js';
 import { PAGE_LINKS } from '../docs/.vitepress/sidebar.js';
+import { markdownFiles } from './support/markdown-files.js';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const docs = path.join(root, 'docs');
@@ -12,14 +13,6 @@ const docs = path.join(root, 'docs');
 function fileFor(link: string): string {
   const clean = link.split('#')[0];
   return path.join(docs, clean.endsWith('/') ? `${clean}index.md` : `${clean}.md`);
-}
-
-function markdownFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap(e => {
-    const f = path.join(dir, e.name);
-    if (e.isDirectory()) return ['public', '.vitepress'].includes(e.name) ? [] : markdownFiles(f);
-    return f.endsWith('.md') ? [f] : [];
-  });
 }
 
 test('every page in the inventory exists', () => {

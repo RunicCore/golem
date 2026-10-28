@@ -1,4 +1,4 @@
-import { test, before, after, type TestContext } from 'node:test';
+import { test, after, type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -6,14 +6,13 @@ import path from 'node:path';
 import { build } from 'esbuild';
 import { workspace, command, npm, cli } from '../support/process.js';
 import { writeFixture, filesUnder } from '../support/consumer.js';
-import { startRegistry, packageSpec, registryNpmrc, type PackedRegistry } from '../../scripts/packed-registry.js';
+import { packageSpec, registryNpmrc } from '../../scripts/packed-registry.js';
 import { MOBX, NEST_COMMON, NEST_SWAGGER, TYPESCRIPT } from '../../scripts/third-party-installs.js';
 import { copyFixture, copyFixtureFile } from '../fixture-project.js';
+import { usePackedRegistry } from '../support/packed-registry.js';
 
-let registry: PackedRegistry;
-before(async () => { registry = await startRegistry(); });
-after(async () => {
-  if (registry) await registry.close();
+const registry = usePackedRegistry();
+after(() => {
   for (const folder of setFolders) fs.rmSync(folder, { recursive: true, force: true });
 });
 
@@ -29,10 +28,10 @@ function installPackageSet(mobx: boolean): Promise<string> {
     const folder = fs.mkdtempSync(path.join(os.tmpdir(), `golem-consumer-set-${key}-`));
     setFolders.push(folder);
     fs.writeFileSync(path.join(folder, 'package.json'), JSON.stringify({ name: 'packed-consumer', version: '1.0.0', private: true, type: 'module' }));
-    fs.writeFileSync(path.join(folder, '.npmrc'), registryNpmrc(registry.url));
+    fs.writeFileSync(path.join(folder, '.npmrc'), registryNpmrc(registry().url));
     installed = (async () => {
-      await npm(folder, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')]);
-      await npm(folder, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem'), ...(mobx ? [MOBX] : [])]);
+      await npm(folder, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-model'), packageSpec(registry(), '@exprtlabs/golem-openapi')]);
+      await npm(folder, ['install', '--save-prod', packageSpec(registry(), '@exprtlabs/golem'), ...(mobx ? [MOBX] : [])]);
       return folder;
     })();
     installedSets.set(key, installed);
@@ -42,7 +41,7 @@ function installPackageSet(mobx: boolean): Promise<string> {
 
 async function consumerWithGenerators(t: TestContext, label: string, mobx: boolean): Promise<string> {
   const folder = await installPackageSet(mobx);
-  const root = registry.create(t, label);
+  const root = registry().create(t, label);
   for (const name of ['package.json', 'package-lock.json']) fs.copyFileSync(path.join(folder, name), path.join(root, name));
   // Symlinks stay relative (node_modules/.bin) and timestamps stay, so npm still trusts the hidden lockfile.
   fs.cpSync(path.join(folder, 'node_modules'), path.join(root, 'node_modules'), { recursive: true, verbatimSymlinks: true, preserveTimestamps: true });
@@ -54,9 +53,9 @@ test('packed binary ownership survives either generator installation order and u
     ['golem-model', 'golem-openapi'], ['golem-openapi', 'golem-model'],
     ['golem-ts-openapi', 'golem-model', 'golem-openapi'],
   ]) {
-    const root = registry.create(t, order[0]);
+    const root = registry().create(t, order[0]);
     for (const name of order) {
-      await npm(root, ['install', '--save-dev', packageSpec(registry, `@exprtlabs/${name}`)]);
+      await npm(root, ['install', '--save-dev', packageSpec(registry(), `@exprtlabs/${name}`)]);
       const help = await cli(root, ['--help']);
       assert.match(help.stdout, /Usage: golem /);
       assert.equal(fs.lstatSync(path.join(root, 'node_modules/@exprtlabs/golem')).isSymbolicLink(), false);
@@ -68,8 +67,8 @@ test('packed binary ownership survives either generator installation order and u
 });
 
 test('packed controller generator installs independently and resolves real Nest and Swagger packages', async t => {
-  const root = registry.create(t, 'controller-only');
-  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-ts-openapi'), NEST_COMMON, NEST_SWAGGER]);
+  const root = registry().create(t, 'controller-only');
+  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-ts-openapi'), NEST_COMMON, NEST_SWAGGER]);
   copyFixture(root, 'packed/controller-only');
   await cli(root, ['generate']);
   await cli(root, ['check']);
@@ -135,8 +134,8 @@ for (const profile of [
 }
 
 test('packed OpenAPI-only install generates without loading the model generator', async t => {
-  const root = registry.create(t, 'openapi-only');
-  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-openapi')]);
+  const root = registry().create(t, 'openapi-only');
+  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-openapi')]);
   writeFixture(root, { mobx: false, validation: false }, false);
   assert.equal(fs.existsSync(path.join(root, 'node_modules/@exprtlabs/golem-model')), false);
   await cli(root, ['generate']);
@@ -146,19 +145,19 @@ test('packed OpenAPI-only install generates without loading the model generator'
 });
 
 test('CLI resolves configured providers from a project with spaces outside cwd and never downloads missing providers', async t => {
-  const root = registry.create(t, 'resolver with spaces');
-  await npm(root, ['install', '--save-prod', packageSpec(registry, '@exprtlabs/golem')]);
+  const root = registry().create(t, 'resolver with spaces');
+  await npm(root, ['install', '--save-prod', packageSpec(registry(), '@exprtlabs/golem')]);
   writeFixture(root, { mobx: false, validation: false }, false);
   const config = path.join(root, 'golem.yaml');
   const binary = path.join(root, 'node_modules/.bin/golem');
-  const before = registry.requests.length;
+  const before = registry().requests.length;
   const missing = await command(workspace, binary, ['generate', '--config', config], { allowFailure: true });
   assert.notEqual(missing.code, 0);
   assert.match(missing.stderr, /openapi is configured.*not installed/);
-  assert.equal(registry.requests.length, before);
+  assert.equal(registry().requests.length, before);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
 
-  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-openapi')]);
+  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-openapi')]);
   await command(workspace, binary, ['generate', '--config', config]);
   await command(workspace, process.execPath, [binary, 'check', '--config', config]);
 
@@ -175,15 +174,15 @@ test('CLI resolves configured providers from a project with spaces outside cwd a
   const packedRelease: { version: string } = JSON.parse(fs.readFileSync(path.join(root, 'node_modules/@exprtlabs/golem/package.json'), 'utf8'));
   fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...providerManifest, version: packedRelease.version }));
   copyFixtureFile(provider, 'packed/incompatible-provider/incompatible.js', 'incompatible.js');
-  const beforeIncompatible = registry.requests.length;
+  const beforeIncompatible = registry().requests.length;
   const incompatible = await command(workspace, binary, ['check', '--config', config], { allowFailure: true });
   assert.match(incompatible.stderr, /Incompatible generator.*API 1.*99/);
-  assert.equal(registry.requests.length, beforeIncompatible);
+  assert.equal(registry().requests.length, beforeIncompatible);
 });
 
 test('packed public generator declarations retain synchronous models and asynchronous OpenAPI API-1 fields', async t => {
-  const root = registry.create(t, 'declarations');
-  await npm(root, ['install', '--save-dev', packageSpec(registry, '@exprtlabs/golem-model'), packageSpec(registry, '@exprtlabs/golem-openapi')]);
+  const root = registry().create(t, 'declarations');
+  await npm(root, ['install', '--save-dev', packageSpec(registry(), '@exprtlabs/golem-model'), packageSpec(registry(), '@exprtlabs/golem-openapi')]);
   copyFixture(root, 'packed/declarations');
   await command(root, process.execPath, [path.join(root, 'node_modules/typescript/bin/tsc'), '-p', 'tsconfig.contracts.json']);
 });

@@ -34,6 +34,15 @@ async function assertNestedProjections(root: string, buildFile: string, validati
   if (validation) assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TCustomer')).assert( { ...input, address: { city: 'x' } }));
 }
 
+/** Build the shared project with the Place model, whose Office model projects it without the id. */
+async function buildPlaceProject(t: TestContext): Promise<string> {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'place.model.ts'), readFixture("models/model-composition/projection-decoders-copy-fields-with-assignments/place.model.ts"));
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  return root;
+}
+
 test('nested projections strip omitted fields and retain intact child models with validation=false', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'address.model.ts'), readFixture("models/model-composition/model-composition-address-model/address.model.ts"));
@@ -43,10 +52,7 @@ test('nested projections strip omitted fields and retain intact child models wit
 });
 
 test('projection decoders and encoders copy fields with assignments and keep the prototype untouched', async t => {
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'place.model.ts'), readFixture("models/model-composition/projection-decoders-copy-fields-with-assignments/place.model.ts"));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
-  await buildModelProject(root);
+  const root = await buildPlaceProject(t);
   const companion = generatedModelFiles(root).find(artifact => artifact.path.endsWith('place.model.generated.ts'))!.content;
   for (const direction of ['decode', 'encode']) {
     const helper = companion.split('\n').find(line => line.startsWith(`function ${direction}TPlaceOmitId(`));
@@ -62,11 +68,7 @@ test('projection decoders and encoders copy fields with assignments and keep the
 });
 
 test('a projection decoder leaves out a field that is undefined or not enumerable in the input', async t => {
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'place.model.ts'), readFixture("models/model-composition/projection-decoders-copy-fields-with-assignments/place.model.ts"));
-  writeModelGolemYaml(root, { mobx: false, validation: false });
-  await buildModelProject(root);
-  const { Office } = await import(path.join(root, 'build/place.model.js'));
+  const { Office } = await import(path.join(await buildPlaceProject(t), 'build/place.model.js'));
   const hidden = Object.defineProperty({ city: 'Hue' }, 'country', { value: 'VN', enumerable: false });
   assert.deepEqual(Object.keys(decodeGeneratedModel(Office, { place: { city: 'Hue', country: undefined } }).place), ['city']);
   assert.deepEqual(Object.keys(decodeGeneratedModel(Office, { place: hidden }).place), ['city']);
