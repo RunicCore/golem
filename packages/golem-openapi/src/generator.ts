@@ -73,9 +73,9 @@ export type { ReferenceResolutionOptions };
 // A schema that holds both `oneOf` and `anyOf` is rewritten into an allOf of the two, once, at each public entry that reads a
 // document or a schema. Everything behind these entries sees one union keyword at a time.
 
-export function writeSdk(...[document, options]: Parameters<typeof emitSdk>): ReturnType<typeof emitSdk> {
+export function writeSdk(document: unknown, options: Parameters<typeof emitSdk>[1]): ReturnType<typeof emitSdk> {
   const split = normalizeSchemaUnions(document, options.locate);
-  return emitSdk(split.document, split.locate ? { ...options, locate: split.locate } : options);
+  return emitSdk(split.document, split.locate ? { ...options, locate: split.locate } : options, split.moved);
 }
 
 export function generateModels(...[document, ...rest]: Parameters<typeof emitModels>): ReturnType<typeof emitModels> {

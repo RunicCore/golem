@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { asRecord, isJsonObject, objectEntries } from './json.js';
+import { asRecord, isJsonObject, objectEntries, unescapeJsonPointerToken } from './json.js';
 import { assertSupportedModelFieldName } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError, type OriginLocator } from './origin.js';
 import { normalizeDocument, resolveLocalPointer, type NormalizedDocument, type NormalizedOperation } from './normalize.js';
@@ -209,8 +209,9 @@ function originalPointer(rewritten: readonly RewrittenSchema[], pointer: string)
  * The rewrite moves the branches, so a message that names a place inside one names the moved place. `locate` maps such a place to
  * the user's: the returned `locate` answers for the pointers of the rewritten document, and is the given one when nothing moved.
  */
-export function normalizeSchemaUnions(document: unknown, locate?: OriginLocator): { readonly document: unknown; readonly locate?: OriginLocator } {
+export function normalizeSchemaUnions(document: unknown, locate?: OriginLocator): { readonly document: unknown; readonly locate?: OriginLocator; readonly moved: MovedUnions } {
   const rewritten: RewrittenSchema[] = [];
+  const moved = new Map<object, number>();
   visitOpenApiSchemaTree(document, {
     onSchema(schema, _currentBase, pointer) {
       if (holdsBothUnions(schema) && pointer.startsWith('#')) {
@@ -218,7 +219,7 @@ export function normalizeSchemaUnions(document: unknown, locate?: OriginLocator)
       }
     },
   });
-  if (rewritten.length === 0) return { document, ...(locate ? { locate } : {}) };
+  if (rewritten.length === 0) return { document, ...(locate ? { locate } : {}), moved };
   const normalized = structuredClone(document);
   visitOpenApiSchemaTree(normalized, {
     onSchema(schema) {
@@ -227,6 +228,7 @@ export function normalizeSchemaUnions(document: unknown, locate?: OriginLocator)
       delete schema.oneOf;
       delete schema.anyOf;
       delete schema.discriminator;
+      moved.set(schema, Array.isArray(allOf) ? allOf.length : 0);
       schema.allOf = [
         ...(Array.isArray(allOf) ? allOf : []),
         { oneOf, ...(discriminator === undefined ? {} : { discriminator }) },
@@ -234,7 +236,33 @@ export function normalizeSchemaUnions(document: unknown, locate?: OriginLocator)
       ];
     },
   });
-  return { document: normalized, ...(locate ? { locate: (pointer: string) => locate(originalPointer(rewritten, pointer)) } : {}) };
+  return { document: normalized, ...(locate ? { locate: (pointer: string) => locate(originalPointer(rewritten, pointer)) } : {}), moved };
+}
+
+/** The schemas of a rewritten document that hold both unions in their `allOf`, each with the length of its `allOf` before the rewrite. */
+export type MovedUnions = ReadonlyMap<object, number>;
+
+/**
+ * The pointer of a place inside `schema` as the user wrote it: a step through `allOf` into a union that the rewrite moved
+ * returns to the union's keyword. It serves schemas that no document pointer names, such as an inline operation schema.
+ */
+export function authoredPointer(schema: unknown, pointer: string, moved: MovedUnions): string {
+  const tokens = pointer.split('/').slice(1);
+  const kept: string[] = [];
+  let current = schema;
+  for (let index = 0; index < tokens.length; index += 1) {
+    const token = unescapeJsonPointerToken(tokens[index]!);
+    const members = isJsonObject(current) ? moved.get(current) : undefined;
+    const position = Number(tokens[index + 1]);
+    if (members !== undefined && token === 'allOf' && (position === members || position === members + 1)) {
+      current = (asRecord(current).allOf as readonly unknown[])[position];
+      index += 1;
+      continue;
+    }
+    kept.push(tokens[index]!);
+    current = Array.isArray(current) ? current[Number(token)] : isJsonObject(current) ? current[token] : undefined;
+  }
+  return kept.length === 0 ? '' : `/${kept.join('/')}`;
 }
 
 /** The same rewrite for one schema that is not part of a document. */

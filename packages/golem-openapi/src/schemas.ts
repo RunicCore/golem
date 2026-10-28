@@ -66,6 +66,20 @@ function operationInputSchema(operation: NormalizedOperation): unknown {
   };
 }
 
+/** The schemas of an operation's validation root before projection, at the places its pointers name: `input` and `responses/<status>/<media type>`. */
+export function operationSourceSchemas(operation: NormalizedOperation): { readonly input: unknown; readonly responses: Readonly<Record<string, Readonly<Record<string, unknown>>>> } {
+  return {
+    input: operationInputSchema(operation),
+    responses: Object.fromEntries(operation.responses.map((response) => [
+      response.status,
+      Object.fromEntries(response.content.map((media) => [
+        media.contentType,
+        media.itemSchemaPresent ? (media.itemSchema ?? false) : (media.schema ?? true),
+      ])),
+    ])),
+  };
+}
+
 function operationRuntimeSchemas(
   document: unknown,
   operations: readonly NormalizedOperation[],
@@ -73,25 +87,22 @@ function operationRuntimeSchemas(
   outputResourceId: string,
   resources: ResourceIndex,
 ): Record<string, unknown> {
-  return Object.fromEntries(operations.map((operation) => [
-    operation.name,
-    {
-      input: projectOperationSchema(operationInputSchema(operation), document, 'input', inputResourceId, resources),
-      responses: Object.fromEntries(operation.responses.map((response) => [
-        response.status,
-        Object.fromEntries(response.content.map((media) => [
-          media.contentType,
-          projectOperationSchema(
-            media.itemSchemaPresent ? (media.itemSchema ?? false) : (media.schema ?? true),
-            document,
-            'output',
-            outputResourceId,
-            resources,
-          ),
+  return Object.fromEntries(operations.map((operation) => {
+    const source = operationSourceSchemas(operation);
+    return [
+      operation.name,
+      {
+        input: projectOperationSchema(source.input, document, 'input', inputResourceId, resources),
+        responses: Object.fromEntries(Object.entries(source.responses).map(([status, content]) => [
+          status,
+          Object.fromEntries(Object.entries(content).map(([mediaType, schema]) => [
+            mediaType,
+            projectOperationSchema(schema, document, 'output', outputResourceId, resources),
+          ])),
         ])),
-      ])),
-    },
-  ]));
+      },
+    ];
+  }));
 }
 
 function normalizeRuntimeSchema(schema: unknown): unknown {
