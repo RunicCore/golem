@@ -179,7 +179,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 
 - `ModelValidator.validate()` returns `false` for an invalid value. Checked serde calls and generated client checks throw `LibError` instead.
 - A `TSerde` function that throws is wrapped once with its `cause`.
-- A [`TValidation`](#tvalidation) predicate that throws, or returns neither a boolean nor a string, makes every checked call throw `LibError` of kind `Validation` with the message `Model validation could not finish.`, `causedByInput` set to `false` and the original error as `cause`. This covers `parse`, `fromWireFormat`, `validate<T>`, `assertValue<T>`, `validateInstance` and `ModelValidator.validate`.
+- A [`TValidation`](#tvalidation) predicate that throws, or returns neither a boolean nor a string, makes every checked call throw `LibError` of kind `Validation` with the message `Model validation could not finish.`, `causedByInput` set to `false` and the original error as `cause`. This covers `parse`, `stringify`, `toWireFormat`, `fromWireFormat`, `validate<T>`, `assertValue<T>`, `validateInstance` and `ModelValidator.validate`.
 - A thrown `LibError` passes through unchanged.
 
 [Errors and issues](/guide/validation#errors-and-issues) shows how to read them.

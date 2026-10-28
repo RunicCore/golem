@@ -268,6 +268,15 @@ export function stringifyJsonArray<T>(
   return `${out}]`;
 }
 
+/**
+ * Rethrows a LibError as it is; wraps anything else in the Validation error of a check that could not finish.
+ * A TValidation function that throws, or returns neither boolean nor string, is the application's fault, not the input's.
+ */
+export function validationUnfinished(error: unknown): never {
+  if (error instanceof LibError) throw error;
+  throw new LibError(LibErrorKind.Validation, 'Model validation could not finish.', [], { cause: error, causedByInput: false });
+}
+
 /** What a validator reports for `value`: the context's validator when the options name one, else the generated one. */
 function runModelValidator(
   value: unknown,
@@ -283,9 +292,7 @@ function runModelValidator(
   try {
     issues = run(value, all);
   } catch (error) {
-    // A TValidation function that throws, or returns neither boolean nor string, is the application's fault, not the input's.
-    if (error instanceof LibError) throw error;
-    throw new LibError(LibErrorKind.Validation, 'Model validation could not finish.', [], { cause: error, causedByInput: false });
+    validationUnfinished(error);
   }
   if (Array.isArray(issues)) return issues as readonly SchemaIssue[];
   if (issues !== null && typeof issues === 'object' && typeof Reflect.get(issues, 'then') === 'function') {
