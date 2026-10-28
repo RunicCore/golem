@@ -245,6 +245,12 @@ export function emitDispatch(options: DispatchOptions): Code {
 const BRANCH_INDEX = identifier('__golemIndex');
 const UNION_PARAMETER = identifier('__golemUnionValue');
 
+/**
+ * The variable that a dispatch kept in its writer assigns the branch index to. Its tests read it at once, before any branch
+ * runs, so a branch that holds another selected dispatch may assign it again.
+ */
+const SELECTED_INDEX = selfPlacedHelper('__golemVariant', () => code`let __golemVariant = 0;`);
+
 /** The slot of a Code that is one input part. */
 function onlyInputSlot(expression: Code): InputSlot | undefined {
   const [only, ...more] = expression.parts;
@@ -306,16 +312,18 @@ function variantSelector(options: DispatchOptions): Helper {
 }
 
 /**
- * `emitDispatch` as one function of the file, when a branch is a model class and the caller allows it (`standalone`): the
- * function picks the branch with the selector and converts the value by it, and each writer calls it with the value. Its id
- * comes from its text, so identical unions of one direction share one function. Without a standalone dispatch over one input
- * part, or when the branches name a part that only the writer's function knows, the writer holds the dispatch itself.
+ * `emitDispatch` through a selector, when a branch is a model class: the guard of each class would otherwise stand in every
+ * writer. The selector picks the index of the branch; the branch it names converts the value.
+ *
+ * The caller can promise that the branches read nothing of the writer's function but `expression` (`standalone`). The picking
+ * and converting is then one function of the file, and each writer calls it with the value; its id comes from its text, so
+ * identical unions of one direction share one function. Otherwise, or when a branch names a part that only the writer's
+ * function knows, the writer holds the index in a module variable and tests it itself.
  */
 function selectedDispatch(options: DispatchOptions): Code | undefined {
   const { expression: value, branches, fallback, fallbackClass } = options;
-  const slot = onlyInputSlot(value);
   const classes = [...branches.flatMap((branch) => branch.className ? [branch.className] : []), ...(fallback && fallbackClass ? [fallbackClass] : [])];
-  if (!options.standalone || !slot || !branches.some((branch) => branch.className) || !classes.every(isPlainName)) return undefined;
+  if (!branches.some((branch) => branch.className) || !classes.every(isPlainName)) return undefined;
   const encode = options.direction !== 'decode';
   const key = literal(options.property);
   const tag = code`(${value} as unknown as Record<string, unknown>)[${key}]`;
@@ -334,18 +342,31 @@ function selectedDispatch(options: DispatchOptions): Code | undefined {
   const outside = options.rest ?? (encode ? (options.nullish === undefined ? value : options.nullish) : value);
   // The last arm needs no test: the selector returns no other index.
   const last = branches.length - (fallback === undefined ? 1 : 0);
-  let chain = fallback ?? arm(branches[last]);
-  for (let at = last - 1; at >= 0; at--) chain = code`${BRANCH_INDEX} === ${literal(at)} ? (${arm(branches[at])}) : (${chain})`;
-  const body = bindInput(
-    code`const ${BRANCH_INDEX} = ${helperName(variantSelector(options))}(${value}); return ${BRANCH_INDEX} < 0 ? (${outside}) : (${chain});`,
-    slot,
-    UNION_PARAMETER,
-  );
-  // An input or a name left in the body belongs to the writer's function, which the union function cannot see.
-  if (body.parts.some((part) => part.kind === 'input' || part.kind === 'name' || part.kind === 'export')) return undefined;
-  const id = `__golemUnion_${createHash('sha256').update(render(body)).digest('hex').slice(0, 10)}`;
-  const union = selfPlacedHelper(id, () => code`function ${identifier(id)}(${UNION_PARAMETER}: unknown) { ${body} }`);
-  return code`${helperName(union)}(${value})`;
+  const chainOf = (index: Code): Code => {
+    let chain = fallback ?? arm(branches[last]);
+    for (let at = last - 1; at >= 0; at--) chain = code`${index} === ${literal(at)} ? (${arm(branches[at])}) : (${chain})`;
+    return chain;
+  };
+  const selector = helperName(variantSelector(options));
+  const slot = options.standalone ? onlyInputSlot(value) : undefined;
+  if (slot) {
+    const body = bindInput(
+      code`const ${BRANCH_INDEX} = ${selector}(${value}); return ${BRANCH_INDEX} < 0 ? (${outside}) : (${chainOf(BRANCH_INDEX)});`,
+      slot,
+      UNION_PARAMETER,
+    );
+    // An input or a name left in the body belongs to the writer's function, which the union function cannot see.
+    if (!body.parts.some((part) => part.kind === 'input' || part.kind === 'name' || part.kind === 'export')) {
+      const id = `__golemUnion_${createHash('sha256').update(render(body)).digest('hex').slice(0, 10)}`;
+      // The return type is written, so no function in a cycle of codecs has an inferred one. The arms of JSON text are strings
+      // when no scalar or default conversion of the caller stands among them; those have a type of their own, so it is left.
+      const returns = options.direction !== 'encode-json' ? code` : unknown` : options.rest === undefined && fallback === undefined ? code` : string` : code``;
+      const union = selfPlacedHelper(id, () => code`function ${identifier(id)}(${UNION_PARAMETER}: unknown)${returns} { ${body} }`);
+      return code`${helperName(union)}(${value})`;
+    }
+  }
+  const index = helperName(SELECTED_INDEX);
+  return code`((${index} = ${selector}(${value})) < 0 ? (${outside}) : (${chainOf(index)}))`;
 }
 
 function inlineDispatch(options: DispatchOptions): Code {

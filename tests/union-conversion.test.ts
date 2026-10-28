@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as conversion from '@exprtlabs/golem/conversion';
-import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render, code, identifier, literal, type Code } from '@exprtlabs/golem/internal/emitter';
+import { bindInput, emitModelFromInit, emitModelFromJSON, emitModelToJSON, inputOf, inputSlot, render, code, identifier, literal, type Code } from '@exprtlabs/golem/internal/emitter';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
@@ -217,6 +217,43 @@ test('model conversion writes a variant instance by class and rejects unknown or
       emit.name,
     );
   }
+});
+
+test('a union whose branch reads an input of its writer still selects by class and rejects an unknown tag', () => {
+  // protects: T-639 a dispatch that cannot become a function of the file keeps the shared selector in its writer
+  class ModelCat {}
+  class ModelDog extends ModelCat {}
+  const union: ModelTypeDescriptor = {
+    kind: 'union',
+    variants: [{ kind: 'generated-model', id: 'Cat' }, { kind: 'generated-model', id: 'Dog' }],
+    discriminator: { propertyName: 'kind', variants: [{ values: ['cat'] }, { values: ['dog'] }] },
+  };
+  const owner = inputSlot('owner', 'name');
+  const classNames: Record<string, string> = { Cat: 'ModelCat', Dog: 'ModelDog' };
+  const resolveModel = (id: string) => ({
+    className: identifier(classNames[id]),
+    // Each decoded model carries what the writer's function holds in `owner`, which a function of the file could not read.
+    decode: (value: Code) => code`Object.assign(new ${identifier(classNames[id])}(), ${value}, { owner: ${inputOf(owner)} })`,
+    fromInit: (value: Code) => code`${value}`,
+    encode: (value: Code) => code`({ ...${value} })`,
+  });
+  const converted = bindInput(emitModelFromJSON(union, identifier('value'), resolveModel), owner, identifier('writerOwner'));
+  const { convert } = runModule(
+    renderWithHelpers(code`const writerOwner = 'writer'; const convert = (value: unknown) => convertModelField('deserialize', 'pet', (value: unknown) => ${converted}, value);`),
+    { ModelCat, ModelDog, unknownDiscriminatorValue: conversion.unknownDiscriminatorValue, convertModelField: conversion.convertModelField },
+    { exports: ['convert'] },
+  ) as { convert: RuntimeFunction };
+  const dog = convert({ kind: 'dog' });
+  assert.ok(dog instanceof ModelDog);
+  assert.equal((dog as { owner: string }).owner, 'writer');
+  const untaggedCat = new ModelCat();
+  assert.ok(convert(untaggedCat) instanceof ModelCat, 'an instance selects its class without a tag');
+  assert.throws(
+    () => convert({ kind: 'bird' }),
+    (error: unknown) => error instanceof LibError
+      && error.kind === LibErrorKind.Deserialization
+      && JSON.stringify(error.issues[0]?.path) === JSON.stringify(['pet', 'kind']),
+  );
 });
 
 test('a short model name shared with an external codec keeps its generated-model schema reference', () => {
