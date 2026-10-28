@@ -115,7 +115,10 @@ export function encodeBody(
       for (const [name, item] of Object.entries(value)) {
         const values = Array.isArray(item) ? item : [item];
         for (const entry of values) {
+          if (entry === undefined) continue;
           const partType = ownEncoding(encoding, name)?.contentType;
+          // A null is written only in a JSON part, as `null`; a text part has no form for it, as a form-urlencoded body has none.
+          if (entry === null && !partType?.toLowerCase().includes('json')) continue;
           if (entry instanceof Blob) form.append(name, entry);
           else if (partType) {
             const serialized = typeof entry === 'object' && entry !== null ? JSON.stringify(entry) : String(entry);

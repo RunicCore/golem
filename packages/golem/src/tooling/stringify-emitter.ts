@@ -1316,7 +1316,8 @@ function emitUnionValue(
       : code`(Array.isArray(${value}) ? ${items} : (${scalar}))`,
     beforeGenerated: (present) => {
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-      if (objects.length > 1) {
+      // A generated model beside the objects is dispatched by their literal tags, which the generated step requires.
+      if (objects.length > 1 && !present.some((variant) => variant.kind === 'generated-model')) {
         const structured = objects.some((object) => {
           const node = ctx.graph.nodeFor(object);
           return Boolean(node) || Object.keys(object.properties).length > 0 || object.additionalProperties === false;
@@ -1410,10 +1411,10 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
       return code`(typeof ${value} === 'string' ? ${deserialized} : ${value})`;
     }
     if (wire?.kind === 'number') {
-      return code`(typeof ${value} === 'number' ? ${value} : ${deserialized})`;
+      return code`(typeof ${value} === 'number' ? ${deserialized} : ${value})`;
     }
     if (wire?.kind === 'boolean') {
-      return code`(typeof ${value} === 'boolean' ? ${value} : ${deserialized})`;
+      return code`(typeof ${value} === 'boolean' ? ${deserialized} : ${value})`;
     }
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
       return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;
@@ -1789,6 +1790,10 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
   return value;
 }
 
+function admitsUndefined(descriptor: ModelTypeDescriptor): boolean {
+  return descriptor.kind === 'undefined' || (descriptor.kind === 'union' && descriptor.variants.some(admitsUndefined));
+}
+
 function emitEncodedRecord(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   expression: Code,
@@ -1804,8 +1809,8 @@ function emitEncodedRecord(
     const { read, shape } = accessRead(inputOf(self), name, bare);
     const input = inputSlot(name, shape);
     const encoded = emitEncodeValue(property, inputOf(input), ctx);
-    // An optional field whose value is undefined is omitted, as stringify and JSON.stringify do.
-    if (!required.has(name)) {
+    // A field whose value is undefined is omitted, as stringify and JSON.stringify do; a required field is omitted only when its type admits undefined.
+    if (!required.has(name) || admitsUndefined(property)) {
       const local = identifier(allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`);
       const entry = code`(${local} !== undefined ? { [${literal(name)}]: ${bindInput(encoded, input, local)} } : undefined)`;
       return { name, code: ctx.inlineLocals ? code`...(${local} = ${read}, ${entry})` : code`...((${local}) => ${entry})(${read})`, spread: true };

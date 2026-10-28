@@ -304,7 +304,8 @@ function controllerOwnerName(node: ts.Node): string {
  * component. Models that share a name but not a schema are qualified: `<directory>.<Name>`, where
  * `<directory>` is the shortest trailing run of the declaring file's directory segments, relative
  * to `root`, that tells the different directories apart, joined with `.`. Models of one directory
- * that clash add the file name without `.model.ts` or `.ts`: `<directory>.<file>.<Name>`. Characters
+ * that clash add the file name without `.model.ts` or `.ts`: `<directory>.<file>.<Name>`; files whose names
+ * then read alike (`a.ts` and `a.model.ts`) add the whole file name. Characters
  * other than letters, digits and underscores in a segment become `_`.
  */
 function qualifiedComponentNames(
@@ -320,10 +321,10 @@ function qualifiedComponentNames(
     groups.set(name, [...(groups.get(name) ?? []), specification]);
   }
   const clean = (segment: string): string => segment.replace(/[^A-Za-z0-9_]/g, '_');
-  const place = (specification: ModelSpecification): { readonly directory: readonly string[]; readonly stem: string } => {
+  const place = (specification: ModelSpecification): { readonly directory: readonly string[]; readonly stem: string; readonly file: string } => {
     const relative = path.relative(root, specification.sourceFile.fileName).split(path.sep);
     const file = relative.pop() ?? '';
-    return { directory: relative.filter((segment) => segment !== '' && segment !== '..').map(clean), stem: clean(file.replace(/\.model\.ts$|\.ts$/, '')) };
+    return { directory: relative.filter((segment) => segment !== '' && segment !== '..').map(clean), stem: clean(file.replace(/\.model\.ts$|\.ts$/, '')), file: clean(file) };
   };
   for (const [name, members] of groups) {
     const representatives = new Map<string, ModelSpecification>();
@@ -341,8 +342,10 @@ function qualifiedComponentNames(
     while (run < longest && new Set(places.map(tail)).size < directories.size) run += 1;
     reps.forEach((rep, index) => {
       const item = places[index]!;
-      const shared = places.some((other, otherIndex) => otherIndex !== index && other.directory.join('/') === item.directory.join('/'));
-      const qualified = [...item.directory.slice(-run), ...(shared ? [item.stem] : []), name].join('.');
+      const neighbours = places.filter((other, otherIndex) => otherIndex !== index && other.directory.join('/') === item.directory.join('/'));
+      // `a.ts` and `a.model.ts` share the stem `a`: the whole file name then tells them apart.
+      const stem = neighbours.some((other) => other.stem === item.stem) ? item.file : item.stem;
+      const qualified = [...item.directory.slice(-run), ...(neighbours.length > 0 ? [stem] : []), name].join('.');
       for (const member of members) {
         if (canonicalDescriptorKey(described.get(member)) === canonicalDescriptorKey(described.get(rep))) names.set(member, qualified);
       }

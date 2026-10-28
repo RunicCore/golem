@@ -384,3 +384,31 @@ export class Nest extends TNestBaseModel { constructor(values: Partial<TNestFiel
   assert.deepEqual(decode({ id: 'a', when: undefined }), { id: 'a' }, 'an undefined field');
   assert.deepEqual(decode({ id: 'a', when: text, extra: 1 }), { id: 'a', when: new Date(text), extra: 1 }, 'an own field is converted and another key is kept');
 });
+
+test('a required field whose type admits undefined is absent from the wire when its value is undefined and validation is off', async (t) => {
+  // protects: round-2 finding 3: toWireFormat wrote an own key set to undefined for a required field, which stringify drops
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-undefined-field-', name: 'model-undefined-field', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'undefined-field.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TProfileBaseModel, TStampBaseModel, type TProfileFields, type TStampFields } from './undefined-field.model.generated.js';
+export type TProfile = IModel<{ id: string; nickname: string | undefined; inner: { tag: string | undefined } }>;
+export type TStamp = IModel<{ id: string; at: Date | undefined }>;
+export class Profile extends TProfileBaseModel { constructor(values: Partial<TProfileFields> = {}) { super(values); } }
+export class Stamp extends TStampBaseModel { constructor(values: Partial<TStampFields> = {}) { super(values); } }
+`);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const models = await import(pathToFileURL(path.join(root, 'build/undefined-field.model.js')).href) as { Profile: new (values?: object) => object; Stamp: new (values?: object) => object };
+  const profile = requireObjectCodec(generatedCodecIdFromRoot(root, 'TProfile'));
+  const stamp = requireObjectCodec(generatedCodecIdFromRoot(root, 'TStamp'));
+  const options = { validate: false };
+  const instance = Object.assign(new models.Profile({ id: 'a', inner: { tag: undefined } }), { nickname: undefined });
+  const plain = { id: 'a', nickname: undefined, inner: { tag: undefined } };
+  const date = Object.assign(new models.Stamp({ id: 'a' }), { at: undefined });
+  assert.deepEqual(profile.toWireFormat(instance, options), { id: 'a', inner: {} }, 'toWireFormat of an instance');
+  assert.equal(profile.stringify(instance, options), '{"id":"a","inner":{}}', 'stringify of an instance');
+  assert.deepEqual(profile.toWireFormat(plain, options), { id: 'a', inner: {} }, 'toWireFormat of a plain object');
+  assert.equal(profile.stringify(plain, options), '{"id":"a","inner":{}}', 'stringify of a plain object');
+  assert.deepEqual(stamp.toWireFormat(date, options), { id: 'a' }, 'toWireFormat of a Date | undefined field');
+  assert.equal(stamp.stringify(date, options), '{"id":"a"}', 'stringify of a Date | undefined field');
+  assert.deepEqual(encodeGeneratedModel(date as never), { id: 'a' }, 'the class-level encode of a Date | undefined field');
+});

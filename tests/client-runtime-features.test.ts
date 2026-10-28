@@ -64,6 +64,44 @@ test('a form body encodes to urlencoded fields', async () => {
   assert.deepEqual(encoded, { body: 'a=1&b=2', contentType: 'application/x-www-form-urlencoded' });
 });
 
+test('a multipart body sends no part for an undefined or null field', async () => {
+  // protects: bug a multipart field with undefined or null was sent as the text "undefined" or "null"
+  const file = new Blob(['x'], { type: 'text/plain' });
+  const encoded = encodeBody(runtime, 'upload', { file, note: undefined, tag: null, kept: 'a' }, 'multipart/form-data', {});
+  const form = encoded.body as FormData;
+  assert.deepEqual([...form.keys()], ['file', 'kept']);
+  assert.equal(form.get('kept'), 'a');
+});
+
+test('a multipart JSON part that is null sends the JSON text null', async () => {
+  // protects: review finding: the fix above also dropped a null JSON part, which a server reads as absent
+  const encoded = encodeBody(runtime, 'upload', { meta: null }, 'multipart/form-data', { 'multipart/form-data': { encoding: { meta: { contentType: 'application/json' } }, prefixEncoding: [], itemEncoding: null } });
+  const part = (encoded.body as FormData).get('meta') as Blob;
+  assert.equal(part.type, 'application/json');
+  assert.equal(await part.text(), 'null');
+});
+
+test('an empty-object query parameter adds no entry and a non-primitive one is a TypeError naming the parameter', () => {
+  // protects: bug a query or path parameter that was an empty object or a Date became "[object Object]" or a locale string
+  const query: string[] = [];
+  addQueryParameter(runtime, query, 'filter', {}, 'form', true, false);
+  addQueryParameter(runtime, query, 'filter', {}, 'form', false, false);
+  assert.deepEqual(query, []);
+  assert.throws(
+    () => addQueryParameter(runtime, query, 'since', new Date(0), 'form', true, false),
+    (error: unknown) => error instanceof TypeError && /"since"/.test(error.message),
+  );
+  assert.throws(
+    () => serializePath(runtime, 'id', new Date(0), 'simple', false),
+    (error: unknown) => error instanceof TypeError && /"id"/.test(error.message),
+  );
+  assert.throws(
+    () => serializePath(runtime, 'id', {}, 'simple', false),
+    (error: unknown) => error instanceof TypeError && /"id"/.test(error.message),
+  );
+  assert.deepEqual(query, []);
+});
+
 test('a custom body encoder replaces the built-in JSON encoding', () => {
   const custom = new ClientRuntime('Tasks', {
     baseUrl: 'https://api.test',

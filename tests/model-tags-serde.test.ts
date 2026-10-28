@@ -236,3 +236,27 @@ export type TB = IObject<{ back?: TA; copy: Pick<TA, 'token'> }>;
   assert.deepEqual(b.parseTB('{"back":{"token":"6"},"copy":{"token":"7"}}'), { back: { token: 6 }, copy: { token: 7 } });
   assert.deepEqual(JSON.parse(b.stringifyTB({ back: { token: 6 }, copy: { token: 7 } })), { back: { token: '6' }, copy: { token: '7' } });
 });
+
+// protects: a TSerde whose wire is a number or a boolean returned the wire value on decode and never ran its deserializer
+for (const validation of [true, false]) {
+  test(`a TSerde with a number or boolean wire runs its deserializer on decode with validation ${validation ? 'on' : 'off'}`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), `export function toCents(value: number): number { return Math.round(value * 100); }
+export function fromCents(wire: number): number { return wire / 100; }
+export function toFlag(value: 'yes' | 'no'): boolean { return value === 'yes'; }
+export function fromFlag(wire: boolean): 'yes' | 'no' { return wire ? 'yes' : 'no'; }
+`);
+    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
+      name: 'A',
+      imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { toCents, fromCents, toFlag, fromFlag } from './codecs.js';`,
+      fields: tsSource`amount: number & TSerde<typeof toCents, typeof fromCents>; answer: ('yes' | 'no') & TSerde<typeof toFlag, typeof fromFlag>`,
+    }).text);
+    await buildModelProjectWith(root, { mobx: false, validation });
+    const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
+    const parsed = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse('{"amount":500,"answer":true}') as { amount: number; answer: string };
+    assert.deepEqual({ amount: parsed.amount, answer: parsed.answer }, { amount: 5, answer: 'yes' });
+    const decoded = decodeGeneratedModel(A, { amount: 250, answer: false });
+    assert.deepEqual({ amount: decoded.amount, answer: decoded.answer }, { amount: 2.5, answer: 'no' });
+    assert.deepEqual(encodeGeneratedModel(decoded), { amount: 250, answer: false });
+  });
+}

@@ -133,7 +133,10 @@ function objectRecord(value: unknown): Record<string, unknown> | undefined {
 function componentReferenceName(value: string): string | undefined {
   const prefix = '#/components/schemas/';
   if (!value.startsWith(prefix)) return undefined;
-  return value.slice(prefix.length).replaceAll('~1', '/').replaceAll('~0', '~');
+  // The component is the first pointer token; later tokens (`/properties/name`) point inside it.
+  const rest = value.slice(prefix.length);
+  const slash = rest.indexOf('/');
+  return (slash < 0 ? rest : rest.slice(0, slash)).replaceAll('~1', '/').replaceAll('~0', '~');
 }
 
 /** Maps whose keys are names the document author picks, so a key such as `example` or `$ref` there is a name, not a keyword. */

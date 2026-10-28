@@ -111,6 +111,18 @@ test('deserializes timestamps with ECMAScript Date parse', () => {
   assert.equal(deserializeDate(existing), existing);
 });
 
+test('deserializeDate rejects an existing Invalid Date like an unparsable string', () => {
+  // protects: bug an existing Invalid Date passed through deserializeDate and a later serializeDate threw
+  const error = assertConversionError(
+    () => convertModelField('deserialize', 'at', deserializeDate, new Date(Number.NaN)),
+    LibErrorKind.Deserialization,
+    IssueRepresentation.Wire,
+    ['at'],
+  );
+  assert.equal(error.causedByInput, true);
+  assert.equal(error.message, 'Expected a date-time string.');
+});
+
 test('serializes only finite Date instances as canonical UTC timestamps', () => {
   assert.equal(serializeDate(new Date('0001-01-01T00:00:00.000Z')), '0001-01-01T00:00:00.000Z');
   assert.equal(serializeDate(new Date('2024-02-29T23:59:59.123Z')), '2024-02-29T23:59:59.123Z');

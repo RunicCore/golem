@@ -491,6 +491,8 @@ export type ObjectType = Type;
 export type InterfaceType = Type;
 export type StringLiteralType = Type & { readonly value: string };
 export type NumberLiteralType = Type & { readonly value: number };
+/** A template literal type: `texts` has one more entry than the hole types in `types`. */
+export type TemplateLiteralType = Type & { readonly texts: readonly string[] };
 
 export interface Symbol {
   readonly flags: SymbolFlags;

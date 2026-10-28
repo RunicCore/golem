@@ -182,6 +182,29 @@ test('no-undefined-server-variable checks root, path and operation servers', () 
   ]);
 });
 
+test('operation-security-defined reports security requirement names that no security scheme declares', () => {
+  // protects: security requirement naming an undeclared scheme generated a client that sent no credentials
+  const document = documentBase('3.1.0', {
+    security: [{ apiKey: [] }, { rootTypo: [] }],
+    paths: {
+      '/a': { get: { security: [{ typo: [] }, { apiKey: [], other: [] }], responses: ok } },
+      '/b': { get: { security: [], responses: ok } },
+      '/c': { get: { responses: ok } },
+    },
+    components: { securitySchemes: { apiKey: { type: 'apiKey', in: 'header', name: 'X-Key' } } },
+  });
+  assert.deepEqual(
+    checkOpenApiRules(document)
+      .filter((problem) => problem.ruleId === 'operation-security-defined')
+      .map((problem) => [problem.pointer, problem.message]),
+    [
+      ['/security/1/rootTypo', 'security requirement names "rootTypo", which is not declared in components.securitySchemes'],
+      ['/paths/~1a/get/security/0/typo', 'security requirement names "typo", which is not declared in components.securitySchemes'],
+      ['/paths/~1a/get/security/1/other', 'security requirement names "other", which is not declared in components.securitySchemes'],
+    ],
+  );
+});
+
 test('spec-querystring-parameters checks the effective path and operation set in 3.2', () => {
   const form = { 'application/x-www-form-urlencoded': { schema: { type: 'object' } } };
   const paths = {

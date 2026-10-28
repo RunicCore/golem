@@ -255,7 +255,17 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1004
 
-**Callable or constructible type.** A model, or one of its fields, resolves to a type with call or construct signatures — a function or a class-instance shape rather than plain data. A model field typed `Map`, `Set`, `ReadonlyMap` or `ReadonlySet` stops here too, and the message names the type. This holds with validation off too. **Fix:** Replace it with a plain object, array, or primitive. Replace a `Map` with a `Record<string, V>` and a `Set` with an array.
+**Type that golem cannot represent.** One of these:
+
+- A model, or one of its fields, resolves to a type with call or construct signatures: a function or a class-instance shape rather than plain data.
+- A model field is typed `Map`, `Set`, `ReadonlyMap` or `ReadonlySet`. The message names the type. This holds with validation off too.
+- With validation on, an object is keyed by a template literal type whose keys golem cannot state as one pattern, such as `` `${number}` ``, `` `${string}_${number}` `` or `Uppercase<string>`. Only holes of type `string`, such as `` `id_${string}` ``, are stated.
+
+**Fix:**
+
+- Replace a function or class shape with a plain object, array, or primitive.
+- Replace a `Map` with a `Record<string, V>` and a `Set` with an array.
+- Key the object by `string` holes only, such as `` Record<`id_${string}`, V> ``, or by `string`.
 
 ### RUNM1005
 
@@ -609,6 +619,8 @@ Golem rewrites a call only, so this code stays as you wrote it and throws when i
 
 - Call the function directly with its type arguments, such as `parse<TPayment>(text)`.
 - To pass it as a value, write an arrow function: `texts.map((text) => parse<TPayment>(text))`.
+
+The code also covers a `parse` or `fromWireFormat` call of a model class with a spread argument in the first or second place, such as `parse<Payment>(...args)`. Golem cannot place the `construct` option there. Pass the text and the options as separate arguments: `parse<Payment>(text, options)`.
 
 ### RUNM1080
 

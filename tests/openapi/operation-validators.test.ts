@@ -351,6 +351,23 @@ test('an unknown format in an inline operation schema is reported with the opera
   assert.ok((warned.diagnostics ?? []).some(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT' && entry.severity === GolemDiagnosticSeverity.Warning));
 });
 
+test('an unknown format inside a oneOf branch of an inline schema that also holds anyOf names the place in the document', () => {
+  // protects: T-560 the rewrite of a schema with both oneOf and anyOf moved its branches under allOf, and the message named the moved place
+  const schema = { oneOf: [{ type: 'string', format: 'money' }, { type: 'number' }], anyOf: [{ type: 'string' }, { type: 'number' }] };
+  const document = {
+    openapi: '3.1.0', info: { title: 'Ledger', version: '1' },
+    paths: { '/credit': { post: {
+      operationId: 'credit',
+      requestBody: { required: true, content: { 'application/json': { schema } } },
+      responses: { 200: { description: 'ok' } },
+    } } },
+  };
+  const stopped = writeSdk(document, { output: path.join(tmpdir(), 'golem-unknown-format-both-unions'), name: 'Ledger', profile: { mobx: false, validation: true } });
+  assert.deepEqual(stopped.artifacts, []);
+  assert.deepEqual((stopped.diagnostics ?? []).filter(entry => entry.code === 'VALIDATE_UNKNOWN_FORMAT').map(entry => entry.message.split(': ')[0]),
+    ['operation "credit" at /input/properties/body/oneOf/0/format']);
+});
+
 test('writeSdk reports each standard keyword with a wrong shape that a document never checked holds, and writes no files', () => {
   // protects: T-486 a wrong-shape standard keyword is an error, not a looser validator
   const schema = { type: 'object', properties: {

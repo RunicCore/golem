@@ -456,11 +456,10 @@ export function encodeGeneratedModel(model: unknown): unknown {
 
 /**
  * Restore a model Date from wire text with ECMAScript `Date` parse; an existing
- * Date is kept. Format and calendar rules belong on tags or validation.
+ * valid Date is kept. Format and calendar rules belong on tags or validation.
  */
 export function deserializeDate(value: unknown, path: IssuePath = activeConversionPath): Date {
-  if (value instanceof Date) return value;
-  const date = typeof value === 'string' ? new Date(value) : undefined;
+  const date = value instanceof Date ? value : typeof value === 'string' ? new Date(value) : undefined;
   if (!date || !Number.isFinite(date.getTime())) {
     throw conversionError(LibErrorKind.Deserialization, 'Expected a date-time string.', path, undefined, true);
   }

@@ -9,7 +9,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { compositionProject as fixture } from './support/model-composition-project.js';
-import { buildModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, buildModelProjectWith, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { discardedProjectionCodecsSource, discardedProjectionMetadataSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
 
@@ -111,9 +111,8 @@ export type TItem = IModel<Box & TSerde<typeof boxToJson, typeof boxFromJson>>;
   );
 });
 
-test('an IModel over an SDK model generates a class with the fields of that model', async t => {
-  // protects: an IModel over an SDK model types the generated class with that model's fields (a wrong field type fails the build)
-  const { root, sourceRoot } = fixture(t);
+/** Generate the `Payments` SDK with its `Money` model into `src/sdk`. */
+async function writeMoneySdk(sourceRoot: string): Promise<void> {
   fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
   writeGeneratedArtifacts((await generateOpenApi({
     input: path.join(sourceRoot, 'money.yaml'),
@@ -121,6 +120,12 @@ test('an IModel over an SDK model generates a class with the fields of that mode
     name: 'Payments',
     profile: { mobx: false, validation: true },
   })).artifacts);
+}
+
+test('an IModel over an SDK model generates a class with the fields of that model', async t => {
+  // protects: an IModel over an SDK model types the generated class with that model's fields (a wrong field type fails the build)
+  const { root, sourceRoot } = fixture(t);
+  await writeMoneySdk(sourceRoot);
   writeModelSources(sourceRoot, {
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
 import type { Money } from './sdk/index.js';
@@ -135,6 +140,40 @@ export const wrong: string = item.amount;
 `,
   });
   await buildModelProject(root);
+});
+
+test('an SDK model beside objects tagged by a literal union generates and decodes each branch', async t => {
+  // protects: bug-sweep RUNM1030 once rejected an SDK model beside objects whose tag is a union of literals (`kind: 'a' | 'b'`), which union conversion accepts
+  const { root, sourceRoot } = fixture(t);
+  await writeMoneySdk(sourceRoot);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Money } from './sdk/index.js';
+export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' } }>;
+`,
+  });
+  await buildModelProjectWith(root, { mobx: false, validation: true });
+  const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  for (const value of [{ kind: 'a', x: 1 }, { kind: 'b', x: 2 }, { kind: 'c' }, { amount: 5, currency: 'EUR' }]) {
+    assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(generated.TItemBaseModel, { value })), { value });
+  }
+});
+
+test('an SDK model beside objects whose literal tags overlap stops generation with RUNM1030', async t => {
+  // protects: bug-sweep RUNM1030 still rejects a tag value that two objects beside an SDK model share
+  const { root, sourceRoot } = fixture(t);
+  await writeMoneySdk(sourceRoot);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Money } from './sdk/index.js';
+export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { kind: 'b' } }>;
+`,
+  });
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    /item\.model\.ts:\d+:\d+ RUNM1030: Generated model union in TItem has an ambiguous object alternative\. Add a required literal discriminator\./,
+  );
+  assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
 });
 
 test('an IModel over an SDK model keeps a field spelled like a brand key and drops the real brand keys', async t => {
@@ -321,10 +360,105 @@ export type TItem = IModel<{ at: Timestamp; later?: Optional }>;
   });
 }
 
+// protects: bug-sweep a string with a required literal brand (`string & { readonly __brand: 'Email' }`) rejected every string ("Expected object"): the brand test accepted only undefined or never members
+for (const exact of [true, false]) {
+  test(`a string with a required literal brand accepts a string and rejects a number with exact ${exact}`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type Email = string & { readonly __brand: 'Email' };
+export type TItem = IModel<{ email: Email }>;
+`);
+    await buildModelProjectWith(root, { mobx: false, validation: true, exact });
+    await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+    assert.deepEqual(codec.parse('{"email":"a@b.c"}'), { email: 'a@b.c' });
+    assert.equal(codec.validate({ email: 'a@b.c' }), true);
+    assert.equal(codec.validate({ email: 1 }), false);
+  });
+}
+
+// protects: bug-sweep a Record keyed by a template literal (`id_${string}`) accepted a key that does not match the template
+test('a Record with a template-literal key rejects a key outside the template and decodes the Dates of the others', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: Record<\`id_\${string}\`, Date>; both: Record<\`a_\${string}_z\` | \`b.\${string}\`, number>; accent?: Record<\`café_\${string}\`, number>; mixed?: { [key: number]: number; [key: \`id_\${string}\`]: number } }>;
+`);
+  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+  const day = '2024-01-01T00:00:00.000Z';
+  assert.equal(codec.validate({ seen: { id_1: new Date(day) }, both: {} }), true);
+  assert.equal(codec.validate({ seen: { other: new Date(day) }, both: {} }), false);
+  assert.equal(codec.validate({ seen: {}, both: { a_1_z: 1, 'b.x': 2 } }), true);
+  for (const both of [{ a_1: 1 }, { 'bx': 2 }, { a_1_zz: 3 }]) assert.equal(codec.validate({ seen: {}, both }), false, JSON.stringify(both));
+  assert.deepEqual(codec.parse(`{"seen":{"id_1":"${day}"},"both":{}}`), { seen: { id_1: new Date(day) }, both: {} });
+  assert.throws(() => codec.parse(`{"seen":{"other":"${day}"},"both":{}}`), /Model validation failed/);
+  // A key text outside ASCII, and a number index beside a template one.
+  assert.equal(codec.validate({ seen: {}, both: {}, accent: { 'café_1': 1 } }), true);
+  assert.equal(codec.validate({ seen: {}, both: {}, accent: { cafe_1: 1 } }), false);
+  assert.equal(codec.validate({ seen: {}, both: {}, mixed: { '1': 1, '-2.5': 2, id_x: 3 } }), true);
+  assert.equal(codec.validate({ seen: {}, both: {}, mixed: { x: 1 } }), false);
+});
+
+for (const key of ['${number}', '${string}_${number}', 'Uppercase<string>']) {
+  test(`a Record keyed by ${key} that golem cannot state as one key pattern stops generation with RUNM1004`, t => {
+    const { root, sourceRoot } = fixture(t);
+    const keyType = key.startsWith('Upper') ? key : `\`${key}\``;
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: Record<${keyType}, Date> }>;
+`);
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation: true } }),
+      /item\.model\.ts:\d+:\d+ RUNM1004: Field "seen" of TItem is keyed by a template literal type that golem cannot state as a key pattern\. Use string-only holes, such as `id_\$\{string\}`, or a plain string key\./,
+    );
+    // With validation off golem states no key rule, so the key type does not stop generation.
+    assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: false } }));
+  });
+}
+
 test('a bigint with a phantom brand keeps the TSerde message, not RUNM1085', t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 export type TItem = IModel<{ x: bigint & { readonly __brand: 'Id' } }>;
 `);
   assert.throws(() => generate({ root, profile: { mobx: false, validation: false } }), /bigint has no JSON representation; declare a TSerde wire codec/);
+});
+
+// protects: T-559 a derived model that narrowed an array-of-models field decoded its items as plain objects
+for (const validation of [true, false]) {
+  test(`a derived model that narrows an array-of-models field decodes model instances with validation ${validation ? 'on' : 'off'}`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'pets.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TPet = IModel<{ name: string }>;
+export type TCat = IModel<{ name: string; lives: number }>;
+export type TOwner = IModel<{ pet: TPet; pets: TPet[] }>;
+export type TCatOwner = IModel<TOwner & { pet: TCat; pets: TCat[] }>;
+`);
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const generated = await import(`${path.join(root, 'build/pets.model.generated.js')}?${Date.now()}`);
+    const wire = { pet: { name: 'Tom', lives: 9 }, pets: [{ name: 'Kit', lives: 3 }] };
+    const decoded = decodeGeneratedModel(generated.TCatOwnerBaseModel, wire);
+    assert.equal(decoded.pet instanceof generated.TCatBaseModel, true);
+    assert.equal(decoded.pets[0] instanceof generated.TCatBaseModel, true);
+    assert.deepEqual(encodeGeneratedModel(decoded), wire);
+  });
+}
+
+test('a projection inside a type alias keeps its model when an unrelated generic parameter shares the model name', async t => {
+  // protects: bug sweep 3 fieldProvenance read the model TAddress in Pair as the argument of Wrap<TAddress> by name, so the projection check never saw the model
+  const { root, sourceRoot } = fixture(t);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinProperties } from '@exprtlabs/golem/tags';
+export type TAddress = IModel<{ id: string; city: string } & MinProperties<1>>;
+type Pair = Omit<TAddress, 'id'> | string;
+type Wrap<TAddress> = Pair | null;
+export type TContainer = IModel<{ projected: Wrap<string> }>;
+`,
+  });
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    /RUNM1055.*Projection of TAddress would discard whole-object constraints/,
+  );
 });

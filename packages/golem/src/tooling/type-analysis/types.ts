@@ -3,10 +3,11 @@ import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPro
 import * as ts from '../typescript-ns.js';
 import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
-import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
+import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { compareText, displayPath } from '../generator-api.js';
+import { objectDiscriminator } from '../union-conversion.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
 import type {
   ModelConversionDescriptor,
@@ -102,10 +103,15 @@ function carriesExplicitSwaggerSchema(property: ts.Symbol): boolean {
   }));
 }
 
-function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol): ts.TypeNode | undefined {
+function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol, valueType: ts.Type): ts.TypeNode | undefined {
   const roots = checker.getRootSymbols(property);
   const root = roots.length === 1 ? roots[0] : undefined;
-  const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? root?.valueDeclaration ?? root?.declarations?.[0];
+  // A property merged from an intersection has a declaration in each member; the one whose type the merged type equals names it,
+  // as `pets: TCat[]` in `TOwner & { pets: TCat[] }` where TOwner declares `pets: TPet[]`.
+  const merged = property.valueDeclaration ? undefined : property.declarations?.find((candidate) =>
+    (ts.isPropertySignature(candidate) || ts.isPropertyDeclaration(candidate)) && candidate.type
+    && checker.isTypeAssignableTo(checker.getTypeFromTypeNode(candidate.type), valueType));
+  const declaration = property.valueDeclaration ?? merged ?? property.declarations?.[0] ?? root?.valueDeclaration ?? root?.declarations?.[0];
   return declaration && (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration))
     ? declaration.type
     : undefined;
@@ -113,38 +119,6 @@ function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol): ts.Type
 
 function tupleTarget(type: ts.Type): ts.TypeReference {
   return type as ts.TypeReference;
-}
-
-function descriptorDiscriminator(
-  descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'object' }>,
-): ReadonlyMap<string, string | number | boolean> {
-  const values = new Map<string, string | number | boolean>();
-  for (const name of descriptor.required) {
-    const property = descriptor.properties[name];
-    if (property?.kind === 'literal') values.set(name, property.value);
-  }
-  return values;
-}
-
-function hasUniqueDiscriminator(
-  alternatives: readonly Extract<ModelConversionDescriptor, { readonly kind: 'object' }>[],
-): boolean {
-  if (alternatives.length === 0) return false;
-  const candidates = descriptorDiscriminator(alternatives[0]);
-  for (const [property] of candidates) {
-    const values: (string | number | boolean)[] = [];
-    let valid = true;
-    for (const alternative of alternatives) {
-      const value = descriptorDiscriminator(alternative).get(property);
-      if (value === undefined || values.includes(value)) {
-        valid = false;
-        break;
-      }
-      values.push(value);
-    }
-    if (valid) return true;
-  }
-  return false;
 }
 
 /** `bigint` itself, not a bigint literal or a union containing one. */
@@ -263,7 +237,7 @@ function rejectAmbiguousGeneratedModelUnion(
   const objects = alternatives.filter(
     (item): item is Extract<ModelConversionDescriptor, { readonly kind: 'object' }> => item.kind === 'object',
   );
-  if (objects.length > 0 && !hasUniqueDiscriminator(objects)) {
+  if (objects.length > 0 && objectDiscriminator(objects) === undefined) {
     throw diagnostic(
       context.sourceFile,
       context.declaration,
@@ -567,6 +541,40 @@ function indexValueNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined 
   if (node && ts.isMappedTypeNode(node)) return node.type;
   if (node && ts.isTypeLiteralNode(node)) return node.members.find(ts.isIndexSignatureDeclaration)?.type;
   return undefined;
+}
+
+/** The text of a name as a regular expression that matches that text only. */
+function escapedKeyText(text: string): string {
+  return text.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
+}
+
+/** The expression for one template literal key type (`id_${string}`), or undefined for a shape it cannot state exactly: only `string` holes can. */
+function templateKeyExpression(type: ts.TemplateLiteralType): string | undefined {
+  if (!type.types.every((hole) => (hole.flags & ts.TypeFlags.String) !== 0)) return undefined;
+  return type.texts.map(escapedKeyText).join('[\\s\\S]*');
+}
+
+/** The text of a key that a `number` index signature admits: a JSON number written as a property name. */
+const NUMBER_KEY_EXPRESSION = '-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?';
+
+/**
+ * The pattern every key of `type` must match, from its index signatures that are keyed by template literal types: undefined when
+ * the keys are unrestricted (a `string` key, or no signature), null when a key type cannot be stated as one exact pattern. Declared
+ * property names are keys too, so a pattern lets them through.
+ */
+function indexKeyPattern(checker: ts.TypeChecker, type: ts.Type, declaredNames: readonly string[]): string | null | undefined {
+  const expressions: string[] = [];
+  let numbered = false;
+  for (const { keyType } of checker.getIndexInfosOfType(type)) {
+    if ((keyType.flags & ts.TypeFlags.String) !== 0) return undefined;
+    if ((keyType.flags & ts.TypeFlags.Number) !== 0) numbered = true;
+    if ((keyType.flags & ts.TypeFlags.StringLike) === 0) continue;
+    const expression = (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0 ? templateKeyExpression(keyType as ts.TemplateLiteralType) : undefined;
+    if (expression === undefined) return null;
+    expressions.push(expression);
+  }
+  if (expressions.length === 0) return undefined;
+  return `^(?:${[...expressions, ...(numbered ? [NUMBER_KEY_EXPRESSION] : []), ...declaredNames.map(escapedKeyText)].join('|')})$`;
 }
 
 /**
@@ -1087,7 +1095,17 @@ export function descriptorBuilder(
         if (recursive) cycleStems.set(type, stem);
       }
       const suffix = policySuffix({ exact: context.exact, allowAny: context.allowAny ?? allowAny, representation });
-      const candidate = recursive ? claimHeadName(type, stem, suffix) : `${stem}${suffix}`;
+      // A projection whose keys read like the keys of the plain name's holder (`first-name` and `firstName`) takes the first free number.
+      const readsAlike = (name: string): boolean => {
+        const holder = projectionOwners.get(name);
+        return holder !== undefined && holder !== type && keysReadAlike(checker, holder, type, context.declaration);
+      };
+      let candidate = recursive ? claimHeadName(type, stem, suffix) : `${stem}${suffix}`;
+      if (!recursive && readsAlike(candidate)) {
+        let number = 2;
+        while (readsAlike(`${stem}${number}${suffix}`)) number += 1;
+        candidate = `${stem}${number}${suffix}`;
+      }
       if (!isProjectionName(candidate)) throw new Error(`Internal error: projection name "${candidate}" is not a plain identifier.`);
       const here = sourceLocation(nameAt ?? context.declaration);
       const modelLocation = modelLocations.get(candidate);
@@ -1119,6 +1137,15 @@ export function descriptorBuilder(
         return withMetadata(descriptor, metadata);
       }
       if (type.isIntersection() && !objectLikeIntersection) {
+        // A member that the whole intersection equals is the type, as `TCat[]` in `TPet[] & TCat[]` when a derived model narrows a base field;
+        // it is described with the authored node that names it, so its items keep their model.
+        const authored = node ? checker.getTypeFromTypeNode(node) : undefined;
+        const whole = type.types.find(member => member === authored && checker.isTypeAssignableTo(member, type))
+          ?? type.types.find(member => checker.isTypeAssignableTo(member, type));
+        if (whole) {
+          const named = whole === authored;
+          return withMetadata(describe(whole, context, seen, named ? node : undefined, representation, named ? provenanceNode : undefined, substitutions, nameHint, nameNode), metadata);
+        }
         return withMetadata({
           kind: 'intersection',
           variants: type.types.map((variant) => describe(variant, context, seen, undefined, representation, undefined, undefined, nameHint)),
@@ -1290,7 +1317,7 @@ export function descriptorBuilder(
             if (!optional) required.push(name);
             continue;
           }
-          const propertyNode = authoredPropertyTypeNode(childNode, name) ?? propertyTypeNode(checker, property);
+          const propertyNode = authoredPropertyTypeNode(childNode, name) ?? propertyTypeNode(checker, property, valueType);
           if (context.dto && present.length === 1 && isClassProperty(property)) {
             const collection = mapOrSetName(present[0]!);
             if (collection) {
@@ -1316,6 +1343,17 @@ export function descriptorBuilder(
         const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => memberNames.has(name));
         const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
         const taggedAdditional = indexType ? undefined : additionalPropertiesFromTags(metadata.constraints);
+        // The key pattern is a validation rule: with validation off nothing states it, so no key type stops generation for it.
+        const keyPattern = indexType && validationEnabled ? indexKeyPattern(checker, type, [...memberNames]) : undefined;
+        if (keyPattern === null) {
+          const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
+          throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
+            `${where} is keyed by a template literal type that golem cannot state as a key pattern. Use string-only holes, such as \`id_\${string}\`, or a plain string key.`);
+        }
+        const keyConstraint: ModelConstraint[] = keyPattern === undefined ? [] : [{
+          kind: 'propertyNames',
+          schema: { kind: 'string', constraints: [{ kind: 'pattern', value: keyPattern }] },
+        }];
         const descriptor = withMetadata({
           kind: 'object',
           ...(projection ? { projection: true as const } : {}),
@@ -1329,7 +1367,7 @@ export function descriptorBuilder(
               : !context.exact,
           // Only an explicit tag that admits extra keys declares them as data; `exact: false` leaves an object open by default.
           ...(taggedAdditional !== undefined && taggedAdditional !== false ? { additionalPropertiesDeclared: true as const } : {}),
-        }, metadata);
+        }, keyConstraint.length ? { ...metadata, constraints: [...metadata.constraints, ...keyConstraint] } : metadata);
         return descriptor;
       }
       if (!validationEnabled) return withMetadata({ kind: 'unknown' }, metadata);

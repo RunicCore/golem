@@ -185,3 +185,17 @@ export { default as data } from './config.json' with { type: 'json' };
 export { config, wasmSource, x };
 `);
 });
+
+test('a paths pattern whose prefix and suffix overlap in the specifier does not match it', t => {
+  // protects: bug matchStarPattern('ab*ba', 'aba') matched with an empty star because the prefix and suffix overlap
+  const root = createNodeSpecifierProject(t, {
+    prefix: 'golem-node-specifiers-overlap-',
+    compilerOptions: { paths: { 'ab*ba': ['./src/lib/pre*post'] } },
+  });
+  writeModelSources(path.join(root, 'src'), {
+    'lib/preXpost.ts': 'var matched = 1;\n',
+    'lib/prepost.ts': 'var overlapped = 1;\n',
+    'main.ts': "import 'abXba';\nimport 'aba';\n",
+  });
+  assert.equal(editProjectSources(root).get('src/main.ts')?.code, "import './lib/preXpost.js';\nimport 'aba';\n");
+});

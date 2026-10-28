@@ -29,6 +29,7 @@ import {
   type ImportOptions,
 } from '@exprtlabs/golem/internal/emitter';
 import {
+  effectiveSchemaTypes,
   parameterSchema,
   resolveLocal,
   type NormalizedOperation,
@@ -37,7 +38,8 @@ import { operationNameType } from '../names.js';
 import { generatedBannerComment } from '../package-info.js';
 import type { OpenApiGenerationProfile } from '../profile.js';
 import { requireProfile } from '../profile.js';
-import { buildOperationValidationSchemaBundle, buildOperationValidationSchemaBundles, buildSchemaData } from '../schemas.js';
+import { buildOperationValidationSchemaBundle, buildOperationValidationSchemaBundles, buildSchemaData, operationSourceSchemas } from '../schemas.js';
+import { authoredPointer, type MovedUnions } from '../document.js';
 import { textCodecRequirement } from '../types.js';
 
 /** A client runtime function: the name is a key of the client module, so a misspelled name is a type error. */
@@ -88,6 +90,27 @@ function routeExpression(operation: NormalizedOperation, use: (name: ClientFunct
   return { declarations: join(declarations, code`\n`), expression: join(parts, code` + `) };
 }
 
+/**
+ * The scalar kind a response header value decodes to: the first non-null `type` of the schema itself, else the one
+ * non-null kind that all its `anyOf`/`oneOf`/`allOf` members (and the schemas they `$ref`) agree on, else null.
+ */
+function headerSchemaKind(document: unknown, rawSchema: unknown, depth = 0): string | null {
+  const schema = asRecord(resolveLocal(document, rawSchema));
+  const own = effectiveSchemaTypes(schema).find((type) => type !== 'null');
+  if (own !== undefined) return own;
+  if (depth >= 32) return null;
+  const kinds = new Set<string | null>();
+  for (const keyword of ['anyOf', 'oneOf', 'allOf'] as const) {
+    const members = schema[keyword];
+    if (!Array.isArray(members)) continue;
+    for (const member of members) {
+      const kind = headerSchemaKind(document, member, depth + 1);
+      if (kind !== null) kinds.add(kind);
+    }
+  }
+  return kinds.size === 1 ? [...kinds][0] ?? null : null;
+}
+
 function responseContractsForOperation(
   document: unknown,
   operation: NormalizedOperation,
@@ -108,25 +131,16 @@ function responseContractsForOperation(
       const header = asRecord(resolveLocal(document, rawHeader));
       const contentType = Object.keys(asRecord(header.content))[0] || null;
       const schema = asRecord(resolveLocal(document, parameterSchema(header)));
-      const types = Array.isArray(schema.type) ? schema.type.map(String) : [String(schema.type ?? '')];
-      const kind = types.find((type) => type && type !== 'null') || null;
       const itemSchema = asRecord(resolveLocal(document, schema.items));
-      const itemTypes = Array.isArray(itemSchema.type) ? itemSchema.type.map(String) : [String(itemSchema.type ?? '')];
       return {
         name,
         style: header.style || 'simple',
         explode: header.explode === true,
         contentType,
-        kind,
-        itemKind: itemTypes.find((type) => type && type !== 'null') || null,
+        kind: headerSchemaKind(document, schema),
+        itemKind: headerSchemaKind(document, itemSchema),
         propertyKinds: Object.fromEntries(
-          objectEntries(schema.properties).map(([propertyKey, propertySchema]) => {
-            const resolvedProperty = asRecord(resolveLocal(document, propertySchema));
-            const propertyTypes = Array.isArray(resolvedProperty.type)
-              ? resolvedProperty.type.map(String)
-              : [String(resolvedProperty.type ?? '')];
-            return [propertyKey, propertyTypes.find((type) => type && type !== 'null') || null];
-          }),
+          objectEntries(schema.properties).map(([propertyKey, propertySchema]) => [propertyKey, headerSchemaKind(document, propertySchema)]),
         ),
       };
     }),
@@ -660,6 +674,7 @@ export function buildOperationValidationSchemas(
   profile: OpenApiGenerationProfile,
   schemaData?: ReturnType<typeof buildSchemaData>,
   locate?: OriginLocator,
+  moved: MovedUnions = new Map(),
 ): OperationValidationSchemas | undefined {
   if (!profile.validation) return undefined;
   const bundles = buildOperationValidationSchemaBundles(document, operations, schemaData);
@@ -670,6 +685,7 @@ export function buildOperationValidationSchemas(
   });
   const componentNames = new Map(list.flatMap((bundle) => Object.entries(bundle.componentNames)));
   const operationRoots = new Map(list.map((bundle) => [bundle.operationRootId, bundle.operationName] as const));
+  const sources = new Map(operations.map((operation) => [operation.name, operationSourceSchemas(operation)] as const));
   return {
     bundles,
     operations: list.map((bundle) => ({ roots: bundle.roots, resources: bundle.schemas })),
@@ -679,7 +695,9 @@ export function buildOperationValidationSchemas(
       const operationName = operationRoots.get(resource);
       if (operationName === undefined) return undefined;
       const prefix = `/operations/${escapeJsonPointerToken(operationName)}`;
-      return pointer.startsWith(prefix) ? { where: `operation ${JSON.stringify(operationName)} at ${pointer.slice(prefix.length) || '/'}` } : undefined;
+      if (!pointer.startsWith(prefix)) return undefined;
+      const place = authoredPointer(sources.get(operationName), pointer.slice(prefix.length), moved);
+      return { where: `operation ${JSON.stringify(operationName)} at ${place || '/'}` };
     },
   };
 }

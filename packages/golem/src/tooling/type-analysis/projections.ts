@@ -30,7 +30,8 @@ export function fieldProvenance(
     const next = new Set(seen).add(current);
     if (ts.isParenthesizedTypeNode(current)) return walk(current.type, substitutions, next);
     if (ts.isTypeOperatorNode(current)) return { ...walk(current.type, substitutions, next), externals: [] };
-    if (ts.isIndexedAccessTypeNode(current)) return { ...walk(current.objectType, substitutions, next), externals: [] };
+    // A member of a model is a type of its own: the model it was read from is no candidate for it.
+    if (ts.isIndexedAccessTypeNode(current)) return { ...walk(current.objectType, substitutions, next), projection: false, models: [], externals: [] };
     if (ts.isMappedTypeNode(current)) {
       const source = walk(current.typeParameter.constraint, substitutions, next);
       return { ...source, projection: true, externals: [] };
@@ -151,7 +152,8 @@ function substitutionFor(symbol: ts.Symbol | undefined, substitutions: TypeSubst
       if (sameTypeParameter(symbol, candidate)) return replacement;
     }
   }
-  if (!name) return undefined;
+  // A name stands for a type parameter only when its symbol is one: an alias or class of the same name, read inside another declaration, is no parameter.
+  if (!name || (symbol && !typeParameterDeclaration(symbol))) return undefined;
   const matches = [...substitutions].filter(([candidate]) => candidate.getName() === name);
   return matches.length === 1 ? matches[0][1] : undefined;
 }

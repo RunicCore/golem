@@ -230,7 +230,12 @@ function formatIssues(model: object, issues: readonly Issue[]): readonly Issue[]
 interface LocalRuleIssue { readonly issue: Issue; readonly explicit: boolean }
 const noLocalRuleIssues: readonly LocalRuleIssue[] = [];
 
-function evaluateInstanceRules(root: object, mode: ValidationMode): ValidationStep<readonly Issue[]> {
+/** True when a generated issue sits at the path or below it. */
+function hasIssueAtOrBelow(issues: readonly Issue[], path: IssuePath): boolean {
+  return issues.some(issue => path.every((segment, index) => String(issue.path[index]) === String(segment)) && issue.path.length >= path.length);
+}
+
+function evaluateInstanceRules(root: object, mode: ValidationMode, generated: readonly Issue[]): ValidationStep<readonly Issue[]> {
   const memo = new WeakMap<object, readonly LocalRuleIssue[]>();
   const active = new Set<object>();
   const issues: Issue[] = [];
@@ -263,6 +268,8 @@ function evaluateInstanceRules(root: object, mode: ValidationMode): ValidationSt
     const evaluateRules = (fieldIndex: number, ruleIndex: number): ValidationStep<readonly LocalRuleIssue[]> => {
       for (let currentFieldIndex = fieldIndex; currentFieldIndex < entries.length; currentFieldIndex++) {
         const [field, rules] = entries[currentFieldIndex];
+        // A rule that throws on a value the generated checks already rejected adds nothing: their issue reports that value.
+        const rejected = hasIssueAtOrBelow(generated, [...path, field]);
         for (let currentRuleIndex = currentFieldIndex === fieldIndex ? ruleIndex : 0; currentRuleIndex < rules.length; currentRuleIndex++) {
           const rule = rules[currentRuleIndex];
           let rawResult: ValidationRuleResult | Promise<ValidationRuleResult>;
@@ -270,14 +277,16 @@ function evaluateInstanceRules(root: object, mode: ValidationMode): ValidationSt
             rawResult = rule(Reflect.get(model, field), model);
           } catch (cause) {
             if (cause instanceof LibError) throw cause;
+            if (rejected) continue;
             throw new LibError(LibErrorKind.Validation, 'A custom validation rule could not finish.', [customIssue([...path, field], 'A custom validation rule could not finish.')], { cause, causedByInput: false });
           }
           const applyResult = (result: ValidationRuleResult): ValidationStep<readonly LocalRuleIssue[]> => {
             if (appendRuleResult(field, result) && mode === 'first') return finish();
             return evaluateRules(currentFieldIndex, currentRuleIndex + 1);
           };
-          const onRejected = (cause: unknown): never => {
+          const onRejected = (cause: unknown): ValidationStep<readonly LocalRuleIssue[]> => {
             if (cause instanceof LibError) throw cause;
+            if (rejected) return evaluateRules(currentFieldIndex, currentRuleIndex + 1);
             throw new LibError(LibErrorKind.Validation, 'A custom validation rule could not finish.', [customIssue([...path, field], 'A custom validation rule could not finish.')], { cause, causedByInput: false });
           };
           if (rawResult instanceof Promise) return rawResult.then(applyResult, onRejected);
@@ -412,7 +421,7 @@ async function collectCodecIssues(
       { failFast, ...(validationContext === undefined ? {} : { validationContext }) },
     );
   }
-  const overlay = await evaluateInstanceRules(model, mode);
+  const overlay = mode === 'first' && generated.length ? [] : await evaluateInstanceRules(model, mode, generated);
   const issues = formatIssues(model, [...generated, ...overlay]);
   return mode === 'first' ? issues.slice(0, 1) : issues;
 }

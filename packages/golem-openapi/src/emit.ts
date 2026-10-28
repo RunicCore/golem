@@ -2,7 +2,7 @@ import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
 import { isRecord, stableJson } from '@exprtlabs/golem/generator-api';
 import { buildOperationValidationSchemas, generateClientModules } from './client/emit.js';
-import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes } from './document.js';
+import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes, type MovedUnions } from './document.js';
 import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
 import { assertPortableFilenames, identifier } from '@exprtlabs/golem/generator-api';
@@ -156,8 +156,8 @@ ${methods}
 `);
 }
 
-function generatedFiles(document: unknown, options: WriteSdkOptions): GeneratedFiles {
-  return withOrigins(options.locate, () => buildGeneratedFiles(document, options));
+function generatedFiles(document: unknown, options: WriteSdkOptions, moved: MovedUnions): GeneratedFiles {
+  return withOrigins(options.locate, () => buildGeneratedFiles(document, options, moved));
 }
 
 interface GeneratedFiles {
@@ -169,7 +169,7 @@ interface GeneratedFiles {
   diagnostics: readonly GolemDiagnostic[];
 }
 
-function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): GeneratedFiles {
+function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved: MovedUnions): GeneratedFiles {
   const profile = requireProfile(options.profile);
   const ir = normalizeAndValidate(document, options.locate);
   unsupportedHttpAuthSchemes(document);
@@ -198,7 +198,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
   // One validators module serves the models and the operations: it compiles the roots of every model group and
   // every operation together, so a check the two share is written once.
   const operationValidation = plan.artifacts.has('client.ts')
-    ? buildOperationValidationSchemas(operations, document, profile, schemaData, options.locate)
+    ? buildOperationValidationSchemas(operations, document, profile, schemaData, options.locate, moved)
     : undefined;
   const validators: { compiled?: PlanValidators } = {};
   const validatorOptions = {
@@ -273,8 +273,9 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): Gener
  * Compatibility helper for callers that already hold a validated document.
  * Generation is intentionally pure: the caller owns filesystem writes.
  */
-export function writeSdk(document: unknown, options: WriteSdkOptions): WriteSdkResult {
-  const generated = generatedFiles(document, options);
+/** `moved` names the schemas whose unions the caller moved under `allOf` (`normalizeSchemaUnions`), so a message names the user's place. */
+export function writeSdk(document: unknown, options: WriteSdkOptions, moved: MovedUnions = new Map()): WriteSdkResult {
+  const generated = generatedFiles(document, options, moved);
   // A validator that could not be compiled leaves the files incomplete: report the diagnostics and write nothing.
   if (generated.diagnostics.some((diagnostic) => diagnostic.severity === GolemDiagnosticSeverity.Error)) {
     return { artifacts: [], manifestPaths: [], watchInputs: [], diagnostics: generated.diagnostics };

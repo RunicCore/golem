@@ -89,6 +89,11 @@ export function throwSchemaDiagnostic(
   ));
 }
 
+/** A `required` list is a set: its order and repeats do not change the contract. */
+function requiredSet(list: readonly unknown[]): unknown[] {
+  return [...new Set(list)].sort();
+}
+
 export function sameValue(left: unknown, right: unknown): boolean {
   return stableJson(left) === stableJson(right);
 }
@@ -368,7 +373,7 @@ function compareSchema(
       continue;
     }
     if (key === 'required') {
-      if (!Array.isArray(value) || (expected !== undefined && !Array.isArray(expected)) || (expected !== undefined && !sameValue(value, expected))) {
+      if (!Array.isArray(value) || (expected !== undefined && !Array.isArray(expected)) || (expected !== undefined && !sameValue(requiredSet(value), requiredSet(expected)))) {
         conflict(options, `Swagger schema at ${location}.required conflicts with the authoritative TypeScript required fields.`);
       }
       continue;
