@@ -1881,15 +1881,17 @@ function emitModelGuard(
   value: Code,
   plane: ValidationPlane,
   ctx: EmitCtx,
+  contextReference?: string,
 ): Code {
   const wire = plane === 'wire' && !node.sameSchema;
   const representation = plane === 'wire' || plane === 'wire-only' ? 'Wire' : 'Model';
   const reference = plane === 'model-only' || plane === 'wire-only'
     ? `${node.codecId}#${plane}`
     : wire ? `${node.codecId}#wire` : node.codecId;
-  // A valid value passes the fast check first, unless a validation context decides.
+  // A valid value passes the fast check first, unless a validation context decides. `contextReference` is the key a validation
+  // context is asked, when it differs from the key of the generated validator.
   const fast = ctx.fastCheckName?.(reference);
-  const slow = code`${rt.serde.assertModelValue}(${value}, options, ${validatorFor(ctx, reference, value)}, ${literal(reference)}, ${rt.serde.IssueRepresentation}.${identifier(representation)}, ${rt.serde.IssueSource}.${identifier(ctx.issueSource)});`;
+  const slow = code`${rt.serde.assertModelValue}(${value}, options, ${validatorFor(ctx, reference, value)}, ${literal(contextReference ?? reference)}, ${rt.serde.IssueRepresentation}.${identifier(representation)}, ${rt.serde.IssueSource}.${identifier(ctx.issueSource)});`;
   return fast === undefined ? slow : code`if (!(${fastPasses(fast, value)})) ${slow}`;
 }
 
@@ -2073,7 +2075,7 @@ function emitStringifySection(runtime: NodeRuntime): Code {
 /** The decode section: the fill function of an object model, the conversion from the wire, and the exported fromWireFormat. */
 function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonly convert: Code; readonly fromWire: Code } {
   const {
-    node, ctx, validationEnabled, names, assertId, wireAssertId, modelOnlyAssertId, convertId, exported,
+    node, ctx, validationEnabled, names, wireAssertId, modelOnlyAssertId, convertId, exported,
     objectDescriptor, reachesCycle,
   } = runtime;
   const fillId = identifier(fillFunctionName(node.id));
@@ -2090,7 +2092,10 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
     emitSerdeValidates(validationEnabled),
   ];
   if (validationEnabled) {
-    const wireAssertCall = code`${node.sameSchema ? assertId : wireAssertId}(wire, options);`;
+    // The wire and model schemas are one validator, which a validation context is asked for as the wire plane.
+    const wireAssertCall = node.sameSchema
+      ? emitModelGuard(node, code`wire`, 'model', ctx, `${node.codecId}#wire`)
+      : code`${wireAssertId}(wire, options);`;
     convertLines.push(
       code`  if (validates) {`,
       // A validator walks a cyclic value under a recursive model until the stack ends. A valid value pays nothing: the

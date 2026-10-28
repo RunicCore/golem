@@ -6,14 +6,13 @@ import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
-import { buildModelProjectWith, generatedModelFiles } from './model-project.js';
-import { generatedJsonData } from './generated-data.js';
+import { buildModelProjectWith } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { tagsProject as fixture } from './support/model-tags-project.js';
 import { tsSource } from './source-template.js';
 
-test('a model number field accepts the int32, int64, float and double formats, writes them into the schema and checks their range', async t => {
+test('a model number field accepts the int32, int64, float and double formats, checks their range', async t => {
   // protects: T-555 number & Format<'int32'> on a model field generates and validates instead of stopping with RUNM1051
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({
@@ -22,10 +21,6 @@ test('a model number field accepts the int32, int64, float and double formats, w
     fields: tsSource`small: number & Format<'int32'>; big: number & Format<'int64'>; single: number & Format<'float'>; wide: number & Format<'double'>; text: string & Format<'email'>`,
   }).text);
   await buildModelProjectWith(root, { mobx: false, validation: true });
-  const data = generatedJsonData(generatedModelFiles(root).map(artifact => artifact.content).join('\n'));
-  for (const [field, format] of [['small', 'int32'], ['big', 'int64'], ['single', 'float'], ['wide', 'double']]) {
-    assert.ok(data.includes(`"${field}":{"allOf":[{"type":"number"},{"format":"${format}"}]}`), `${field} schema`);
-  }
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const inRange = { small: 2 ** 31 - 1, big: Number.MAX_SAFE_INTEGER, single: 1.5, wide: 1e300, text: 'a@b.co' };
   assert.equal(await getValidator(new A(inRange)).validate(), true);

@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ModelValidationContext } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor, ModelValidationContext } from '@exprtlabs/golem/model';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import { identifier } from '@exprtlabs/golem/internal/emitter';
+import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
+import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';
+import { compileValidationPlanBinding } from './support/compiled-validators.js';
 import { createObjectCodec, objectCodecValidationReference, resolveModelValidationContextValidator } from '@exprtlabs/golem/serde';
 
 const impl = {
@@ -42,4 +47,29 @@ test('context resolution caches each reference and mode independently', () => {
   resolveModelValidationContextValidator(context, 'shared-ref', 'all');
   resolveModelValidationContextValidator(context, 'shared-ref', 'first');
   assert.deepEqual(lookups, ['shared-ref|first', 'shared-ref#wire|first', 'shared-ref|all'], 'context resolution is reused separately for each reference and mode');
+});
+
+test('a model whose wire schema equals its model schema is asked for as the wire plane on parse', async () => {
+  // protects: T-640 one rule: every non-model plane is Id#plane, also when the wire schema equals the model schema
+  const plain: ModelTypeDescriptor = { kind: 'object', properties: { name: { kind: 'string' } }, required: ['name'], additionalProperties: false };
+  const graph = createSchemaGraph();
+  const node = graph.intern(plain, 'Plain');
+  graph.seal();
+  assert.equal(node.sameSchema, true);
+  const validators = await compileValidationPlanBinding(buildCodecValidationPlan([graph], [], {}, true));
+  const runtime = instantiateRuntime(
+    emitCodecRuntimeText(graph, { validatorName: (id) => identifier(validators.validatorName(id)) }),
+    validators.scope,
+  );
+  const asked: string[] = [];
+  // The context answers the wire key only; a context is authoritative, so any other key would throw.
+  const context: ModelValidationContext = {
+    resolve(reference) {
+      asked.push(reference);
+      return reference === `${node.codecId}#wire` ? (value) => (typeof (value as { name?: unknown }).name === 'string' ? [] : [{ code: 'type', expected: ['string'], message: 'Expected string', path: ['name'], source: 'serde', representation: 'wire' } as never]) : undefined;
+    },
+  };
+  assert.deepEqual(runtime.fromWireFormatPlain({ name: 'a' }, { validationContext: context }), { name: 'a' });
+  assert.deepEqual(asked, [`${node.codecId}#wire`]);
+  assert.throws(() => runtime.fromWireFormatPlain({ name: 7 }, { validationContext: context }), /validation/i);
 });
