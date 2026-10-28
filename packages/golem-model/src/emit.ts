@@ -1825,6 +1825,8 @@ function emitCodecSection(context: EmitContext): CodecSection {
         },
       } : {}),
       ...(hasPlanSchemas ? { resolvedSchemasExpr: identifier('modelSchemas') } : {}),
+      // Type analysis flattens object intersections, so golem-model has no declared bases.
+      modelBases: { basesOf: () => [] },
       serde: serdeResolver(context),
       generatedModelCodecId: (name) => {
         const manifestId = externalManifestId(name);

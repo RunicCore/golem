@@ -678,12 +678,12 @@ function unionConversion(
  */
 function emitSchemaCodecRuntime(
   graph: SchemaGraph,
-  options: CodecRuntimeOptions,
+  codecOptions: Omit<CodecRuntimeOptions, 'modelBases'>,
   definitions: ModelDefinitions,
 ): Code {
   // Group modules import each other's codec functions, anonymous ones included.
   // A variant that a union selects extends the union: the declared bases say so, as the composition check reads them.
-  options = { ...options, exportAnonymousCodecs: true, modelBases: declaredModelBases(definitions) };
+  const options: CodecRuntimeOptions = { ...codecOptions, exportAnonymousCodecs: true, modelBases: declaredModelBases(definitions) };
   try {
     return emitCodecRuntimeCode(graph, options);
   } catch (thrown) {
@@ -1034,7 +1034,7 @@ export function generateModels(
   }
   const validatorsSource = helpers.validatorsSource;
   const aliasesByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
-  const codecRuntimeOptions: CodecRuntimeOptions = {
+  const codecRuntimeOptions: Omit<CodecRuntimeOptions, 'modelBases'> = {
     validationEnabled: profile.validation,
     serde: TEMPORAL_SERDE,
     ...(helpers.validatorExports ? {
