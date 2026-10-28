@@ -7,7 +7,6 @@ import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, 
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { compareText, displayPath } from '../generator-api.js';
-import { objectDiscriminator } from '../union-conversion.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
 import type {
   ModelConversionDescriptor,
@@ -235,17 +234,6 @@ function rejectAmbiguousGeneratedModelUnion(
       context.declaration,
       '1030',
       `Generated model union in ${context.name} has an ambiguous object alternative. Use a primitive or a uniquely tagged object branch.`,
-    );
-  }
-  const objects = alternatives.filter(
-    (item): item is Extract<ModelConversionDescriptor, { readonly kind: 'object' }> => item.kind === 'object',
-  );
-  if (objects.length > 0 && objectDiscriminator(objects) === undefined) {
-    throw diagnostic(
-      context.sourceFile,
-      context.declaration,
-      '1030',
-      `Generated model union in ${context.name} has an ambiguous object alternative. Add a required literal discriminator.`,
     );
   }
 }
@@ -698,6 +686,33 @@ function declaredTagTable(
     return { values };
   });
   return { propertyName: key, variants, ...(defaultIndex === undefined ? {} : { defaultVariant: defaultIndex }) };
+}
+
+/**
+ * Rule: a union of two or more object-like variants declares its tag key. Golem never finds the key in the variants, so an
+ * untagged union stops here with RUNM1080, at every position, whatever the variants convert. A variant with its own serde pair is no object,
+ * a union of types that only default library files declare (`ArrayBuffer | SharedArrayBuffer`) is not the user's union, and a union in
+ * a controller DTO class field (`context.dto`) is Nest's own to document: no model converts it.
+ */
+function rejectUntaggedObjectUnion(
+  checker: ts.TypeChecker,
+  entries: readonly { readonly type: ts.Type; readonly descriptor: ModelConversionDescriptor }[],
+  context: TypeAnalysisContext,
+  at: ts.Node,
+  isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
+): void {
+  const declaredByLibrary = (type: ts.Type): boolean => {
+    const declarations = type.getSymbol()?.declarations ?? [];
+    return declarations.length > 0 && declarations.every((declaration) => isDefaultLibraryFile(declaration.getSourceFile()));
+  };
+  if (context.dto || entries.every(({ type }) => declaredByLibrary(type))) return;
+  const objects = entries.filter(({ descriptor }) => isObjectLikeVariant(descriptor) && (descriptor as { readonly serde?: unknown }).serde === undefined);
+  if (objects.length < 2) return;
+  const names = objects.map(({ type, descriptor }) => descriptor.kind === 'reference' ? descriptor.name
+    : descriptor.kind === 'generated-model' ? descriptor.id : checker.typeToString(type));
+  const sdkModels = objects.flatMap(({ descriptor }) => descriptor.kind === 'generated-model' ? [descriptor.id] : []);
+  const defaultHint = sdkModels.length > 0 ? ` For an SDK model that has no such property, name it as the default: \`Discriminator<'kind', ${sdkModels[0]}>\`.` : '';
+  throw diagnostic(context.sourceFile, at, '1080', `Union in ${context.name} has ${objects.length} object variants (${names.join(' | ')}) and does not declare its tag key. Give each variant a required literal property such as \`kind: 'a'\`, and add \`& Discriminator<'kind'>\` to the union.${defaultHint}`);
 }
 
 /** The type a mapped projection reads its members from: `Customer` in `Pick<Customer, 'name'>` or in `{ [K in 'name']: Customer[K] }`. */
@@ -1231,18 +1246,19 @@ export function descriptorBuilder(
     }
     const shape = (seen: ReadonlySet<ts.Type>): ModelConversionDescriptor => {
       if (type.isUnion()) {
-        const variantNaming = unionVariantNaming(checker, node, type.types, context.declaration);
         const declaredTag = unionTag(
           metadata.discriminator === undefined ? undefined : { key: metadata.discriminator, ...(metadata.discriminatorDefault ? { defaultType: metadata.discriminatorDefault } : {}) },
           type.types.map((variant) => checkerDiscriminator(tagContext, variant)),
         );
         if (declaredTag !== undefined) for (const variant of type.types) declaredVariants.add(variant);
+        const variantNaming = unionVariantNaming(checker, node, type.types, context.declaration, declaredTag?.key);
         const entries = type.types.map((variant) => ({
           type: variant,
           descriptor: describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions, `${nameHint}${variantNaming.get(variant)?.part ?? ''}`, variantNaming.get(variant)?.node),
         }));
         // Checker member order differs between TypeScript backends and runs; output must not.
         entries.sort((left, right) => compareText(canonicalDescriptorKey(left.descriptor), canonicalDescriptorKey(right.descriptor)));
+        if (declaredTag === undefined) rejectUntaggedObjectUnion(checker, entries, context, node ?? context.declaration, isDefaultLibraryFile);
         const variants = entries.map((entry) => entry.descriptor);
         const descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }> = {
           kind: 'union',

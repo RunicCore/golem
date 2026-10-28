@@ -846,6 +846,15 @@ export function withoutDiscriminator(checker: ts.TypeChecker, type: ts.Type): ts
   return rest.length === 1 && rest.length < type.types.length ? rest[0] : type;
 }
 
+/**
+ * The constituents of a type without its `Discriminator` tag members. The checker distributes `(A | B) & Discriminator<'k'>` over the union,
+ * so a variant is `A & Discriminator<'k'>` with the constituents of `A` flattened beside the tag.
+ */
+export function untaggedMembers(checker: ts.TypeChecker, type: ts.Type): readonly ts.Type[] {
+  const members = type.isIntersection() ? type.types : [type];
+  return members.filter((member) => golemTagName(checker, member.aliasSymbol) !== 'Discriminator');
+}
+
 /** The tag key a `Discriminator` tag in the checker's type names, or undefined when the type carries none. It runs no other tag reader. */
 export function checkerDiscriminator(context: TagAnalysisContext, type: ts.Type): { readonly key: string; readonly defaultType?: ts.Type } | undefined {
   const members = type.isIntersection() ? type.types : [type];

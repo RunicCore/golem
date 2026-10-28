@@ -366,7 +366,7 @@ function withUnionDiscriminatorCode(source: string, emit: () => string | undefin
     return emit();
   } catch (thrown) {
     if (thrown instanceof ObjectUnionDiscriminatorError) {
-      throw new Error(`${displayPath(source)} ${CODE_UNION_DISCRIMINATOR_MISSING}: ${thrown.message} Give each variant a required literal tag, such as \`kind: 'cat'\`, so that golem can pick the variant from the JSON.`, { cause: thrown });
+      throw new Error(`${displayPath(source)} ${CODE_UNION_DISCRIMINATOR_MISSING}: ${thrown.message} Give each variant a required literal property such as \`kind: 'cat'\`, and add \`& Discriminator<'kind'>\` to the union, so that golem can pick the variant from the JSON.`, { cause: thrown });
     }
     if (thrown instanceof AmbiguousUnionConversionError) {
       throw new Error(`${displayPath(source)} ${CODE_UNION_CONVERSION_AMBIGUOUS}: ${thrown.message}`, { cause: thrown });

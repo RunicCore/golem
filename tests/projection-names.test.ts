@@ -29,6 +29,7 @@ export type TBilling = Omit<TMerchant, 'city'>;
 
 function controller(fields: string, extraRoute = ''): string {
   return `import { Body, Controller, Post } from '@nestjs/common';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 ${MODELS}
 export type TOrder = IModel<{ ${fields} }>;
 @Controller('orders')
@@ -85,9 +86,9 @@ test('projections without a name of their own become the owner and the field', a
 
 test('an optional field and the members of a union are named from their own expressions', async t => {
   const names = await componentNames(t, controller(
-    "optional?: Omit<TMerchant, 'id'>; either: Pick<TMoney, 'amount'> | Pick<TMerchant, 'id'>",
+    "optional?: Omit<TMerchant, 'id'>; either: ((Pick<TMoney, 'amount'> & { kind: 'money' }) | (Pick<TMerchant, 'id'> & { kind: 'merchant' })) & Discriminator<'kind'>",
   ));
-  for (const expected of ['TMerchantOmitId', 'TMoneyPickAmount', 'TMerchantPickId']) {
+  for (const expected of ['TMerchantOmitId', 'TOrderEitherMoney', 'TOrderEitherMerchant']) {
     assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
   }
 });
@@ -261,18 +262,9 @@ export class PaymentController {
 
 test('union members that fall back to owner and property are told apart by a literal discriminant', async t => {
   const names = await componentNames(t, controller(
-    "either: (TMerchant & { kind: 'card'; a: string }) | (TMoney & { kind: 'bank-transfer'; b: string })",
+    "either: ((TMerchant & { kind: 'card'; a: string }) | (TMoney & { kind: 'bank-transfer'; b: string })) & Discriminator<'kind'>",
   ));
   for (const expected of ['TOrderEitherCard', 'TOrderEitherBankTransfer']) {
-    assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
-  }
-});
-
-test('union members without a discriminant are told apart by position', async t => {
-  const names = await componentNames(t, controller(
-    'either: (TMerchant & { a: string }) | (TMoney & { b: string })',
-  ));
-  for (const expected of ['TOrderEither1', 'TOrderEither2']) {
     assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
   }
 });
@@ -291,6 +283,7 @@ const SPLIT_MODELS = {
 
 function eitherController(union: string): string {
   return `import { Body, Controller, Post } from '@nestjs/common';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 import type { IModel } from '@exprtlabs/golem/model';
 import type { TMerchant } from './b-merchant.js';
 import type { TMoney } from './a-money.js';
@@ -300,7 +293,7 @@ export type TOrder = IModel<{ either: ${union} }>;
 }
 
 test('union member positions do not change when an unrelated controller file is added', async t => {
-  const source = eitherController('(TMerchant & { a: string }) | (TMoney & { b: string })');
+  const source = eitherController("((TMerchant & { kind: 'x-y'; a: string }) | (TMoney & { kind: 'x_y'; b: string })) & Discriminator<'kind'>");
   const before = await documentOf(t, source, SPLIT_MODELS);
   const unrelated = `import { Body, Controller, Post } from '@nestjs/common';
 import type { TMerchant } from './b-merchant.js';
@@ -315,28 +308,30 @@ import type { TMerchant } from './b-merchant.js';
 });
 
 test('union member positions follow the authored order', async t => {
-  const document = await documentOf(t, eitherController('(TMoney & { b: string }) | (TMerchant & { a: string })'), SPLIT_MODELS);
+  // protects: T-598 a tagged union `(A | B) & Discriminator<K>` keeps the authored-order positions of its members, written out or through an alias
+  const document = await documentOf(t, eitherController("((TMoney & { kind: 'x-y'; b: string }) | (TMerchant & { kind: 'x_y'; a: string })) & Discriminator<'kind'>"), SPLIT_MODELS);
   const shapes = variantShapes(document.components.schemas, 'TOrderEither');
   assert.ok(shapes.TOrderEither1?.includes('b'));
   assert.ok(shapes.TOrderEither2?.includes('a'));
 
   const aliasedSource = eitherController('TEither | null')
-    .replace('export type TOrder', 'type TEither = (TMerchant & { a: string }) | (TMoney & { b: string });\nexport type TOrder');
+    .replace('export type TOrder', "type TEither = ((TMerchant & { kind: 'x-y'; a: string }) | (TMoney & { kind: 'x_y'; b: string })) & Discriminator<'kind'>;\nexport type TOrder");
   const aliased = variantShapes((await documentOf(t, aliasedSource, SPLIT_MODELS)).components.schemas, 'TOrderEither');
   assert.ok(aliased.TOrderEither1?.includes('a'), 'a union written as an alias plus null: member 1 is the first authored member');
   assert.ok(aliased.TOrderEither2?.includes('b'), 'a union written as an alias plus null: member 2 is the second authored member');
 });
 
-test('the discriminant is chosen by sorted property name, not by declaration order', async t => {
+test('the declared tag key names the members, not another literal property they share', async t => {
+  // protects: T-598 R-54 golem reads the declared key, never detects one (kind comes first in sorted order, the declared key is type)
   const names = await componentNames(t, controller(
-    "either: (TMerchant & { type: 'x'; kind: 'card' }) | (TMoney & { kind: 'bank'; type: 'y' })",
+    "either: ((TMerchant & { type: 'x'; kind: 'card' }) | (TMoney & { kind: 'bank'; type: 'y' })) & Discriminator<'type'>",
   ));
-  for (const expected of ['TOrderEitherCard', 'TOrderEitherBank']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+  for (const expected of ['TOrderEitherX', 'TOrderEitherY']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
 });
 
 test('discriminant values that collide after PascalCase fall back to positions', async t => {
   const names = await componentNames(t, controller(
-    "either: (TMerchant & { kind: 'bank-transfer' }) | (TMoney & { kind: 'bank_transfer' })",
+    "either: ((TMerchant & { kind: 'bank-transfer' }) | (TMoney & { kind: 'bank_transfer' })) & Discriminator<'kind'>",
   ));
   for (const expected of ['TOrderEither1', 'TOrderEither2']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
 });

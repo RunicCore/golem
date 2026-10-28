@@ -26,7 +26,6 @@ import {
   emitUnionConversion,
   keyIsListed,
   keyIsNotListed,
-  literalDiscriminator,
   ObjectUnionDiscriminatorError,
   objectValueExpression,
   presentKeysCode,
@@ -38,6 +37,7 @@ import {
   type ObjectTypeDescriptor,
   type UnionConversion,
   type UnionTypeDescriptor,
+  type VariantDispatch,
 } from './union-conversion.js';
 
 export interface StringifySerdeResolver {
@@ -1130,8 +1130,8 @@ function tagAccess(expression: Code, property: string): Code {
 
 /**
  * Dispatch the union variants at `indices` by tag (and by class for a
- * generated model instance). Returns undefined when the variants carry no
- * inferable tag and `unresolved` is 'skip'.
+ * generated model instance) by the declared tag table. Returns undefined when the union has no table
+ * and `unresolved` is 'skip'.
  */
 function emitTaggedVariantUnion(
   union: UnionTypeDescriptor,
@@ -1146,7 +1146,7 @@ function emitTaggedVariantUnion(
   const variants = indices.map((index) => union.variants[index]);
   const objectFor = (variant: ModelTypeDescriptor) => resolveObjectDescriptor(variant, ctx);
   if (variants.length === 0 || (!declaredTable(union, indices) && variants.some((variant) => !objectFor(variant)))) return undefined;
-  const dispatch = unionDispatch(union, indices, objectFor);
+  const dispatch = unionDispatch(union, indices);
   // A decoder in a function that declares its locals reads the tag once and reuses it in the variant's copy: the variants
   // are decoded with that read known, so they use the local where they would read the tag.
   const tagLocal = dispatch && direction === 'decode' && ctx.decodeLocals && readShape(value) === 'name'
@@ -1173,7 +1173,6 @@ function emitTaggedVariantUnion(
     direction,
     ...(tagLocal === undefined ? {} : { tagLocal: identifier(tagLocal) }),
     ...(direction === 'encode-json' ? { nullish: code`'null'` } : {}),
-    canonicalTag: union.discriminator !== undefined,
     branches: variants.map((variant, position) => ({
       values: dispatch.values[position],
       className: variantClassName(variant, ctx),
@@ -1212,13 +1211,13 @@ function emitTaggedObjects(
   return converted;
 }
 
-/** Match any required literal tag of `objects`, for mixing them with one generated model. */
-function objectTagMatch(objects: readonly ObjectTypeDescriptor[], expression: Code, decode: boolean): Code[] {
+/** The test that the declared tag of `dispatch` selects an object variant, for mixing the objects with one generated model. */
+function objectTagMatch(dispatch: VariantDispatch, expression: Code, decode: boolean): Code {
   // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag matches no object.
-  const read = (name: string): Code => decode
-    ? code`(${presentValueCode(expression, literal(name), tagAccess(expression, name))})`
-    : tagAccess(expression, name);
-  return objects.flatMap((object) => [...literalDiscriminator(object)].map(([name, values]) => discriminatorMatch(read(name), values)));
+  const read = decode
+    ? code`(${presentValueCode(expression, literal(dispatch.property), tagAccess(expression, dispatch.property))})`
+    : tagAccess(expression, dispatch.property);
+  return discriminatorMatch(read, dispatch.values.flat());
 }
 
 /**
@@ -1273,7 +1272,7 @@ function emitUnion(
     ),
     generated: {
       text: generatedText ?? ((generated) => walk(generated, ctx)),
-      tagMatch: (objects) => objectTagMatch(objects, value, decoding),
+      tagMatch: (dispatch) => objectTagMatch(dispatch, value, decoding),
       objects: (objects) => decoding
         ? value
         : objects.length === 1
@@ -1358,21 +1357,6 @@ function emitUnionDecode(
         : undefined;
     },
     items: { output: 'value', paths: 'deserialize', item: decodeItem(ctx) },
-    afterGenerated: (present) => {
-      const refs = present.filter((variant): variant is Extract<ModelTypeDescriptor, { kind: 'reference' }> =>
-        variant.kind === 'reference' && variant.construct === true);
-      if (refs.length === 0 || refs.length !== present.length) return undefined;
-      const branches: Code[] = [];
-      for (const ref of refs) {
-        const node = ctx.graph.nodeFor(ref);
-        const object = node?.descriptor.kind === 'object' ? node.descriptor : undefined;
-        if (!object) throw new AmbiguousUnionConversionError(present);
-        const tags = objectTagMatch([object], value, true);
-        if (tags.length === 0) throw new ObjectUnionDiscriminatorError(present);
-        branches.push(code`${join(tags, code` && `)} ? ${emitDecodeValue(ref, value, ctx)}`);
-      }
-      return code`(${objectValueExpression(value)} ? ${join([...branches, value], code` : `)} : ${value})`;
-    },
   });
 }
 
