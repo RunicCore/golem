@@ -4,7 +4,7 @@ import { TSnapshotBaseModel } from './snapshot.model.generated.js';
 export type TSnapshot = IModel<{
   names: string[];
   pair: [head: string, count?: number];
-  trailing: [head: string, ...middle: number[], tail: boolean];
+  trailing: [head: string, tail: boolean, ...middle: number[]];
   required: string | { kind: 'required'; value: number };
   optional?: string | { kind: 'optional'; value: number };
   nested: { choice?: string | { kind: 'nested'; value: number }; label: string };

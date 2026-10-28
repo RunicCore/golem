@@ -1191,6 +1191,12 @@ export function descriptorBuilder(
           if ((restType.flags & ts.TypeFlags.TypeParameter) !== 0) {
             throw diagnostic(context.sourceFile, context.declaration, '1021', `Tuple rest element in ${context.name} cannot be an unresolved generic variadic.`);
           }
+          // The schema of a tuple states a fixed element after its rest element as one `anyOf` of the rest and the fixed types, which accepts them out of order.
+          if ((specifications.find(specification => specification.declaration === context.declaration)?.validation ?? validationEnabled) && restIndex < arguments_.length - 1) {
+            const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
+            throw diagnostic(context.sourceFile, node ?? context.declaration, '1021',
+              `${where} has fixed elements after its rest element, which a JSON Schema cannot validate in order. Move the fixed elements before the rest element, or set \`{ validation: false }\` on the model.`);
+          }
           const items = arguments_.flatMap((item, index) => index === restIndex
             ? []
             : [describeItem(item, index)]);

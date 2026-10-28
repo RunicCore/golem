@@ -416,6 +416,51 @@ export type TItem = IModel<{ seen: Record<${keyType}, Date> }>;
   });
 }
 
+// protects: T-585 [A, ...B[], C] validated its items out of order (JSON Schema cannot state a fixed element after a rest element); it stops with RUNM1021 instead
+for (const shape of ['[string, ...number[], boolean]', '[...number[], boolean]']) {
+  test(`a tuple ${shape} stops with RUNM1021 when validation is on and generates when it is off`, t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ row: ${shape} }>;
+`);
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation: true } }),
+      /item\.model\.ts:\d+:\d+ RUNM1021: Field "row" of TItem has fixed elements after its rest element, which a JSON Schema cannot validate in order\. Move the fixed elements before the rest element, or set `\{ validation: false \}` on the model\./,
+    );
+    assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: false } }));
+  });
+}
+
+test('a tuple with a fixed element after its rest element generates when the model sets validation off', t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ row: [string, ...number[], boolean] }, { validation: false }>;
+`);
+  assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
+});
+
+test('a tuple with its rest element last generates with validation on', t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ row: [string, boolean, ...number[]] }>;
+`);
+  assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
+});
+
+test('a tuple with a rest element in the middle round-trips its items in order with validation off', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ row: [string, ...Date[], number] }>;
+`);
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  const wire = { row: ['a', '2024-01-01T00:00:00.000Z', '2024-01-02T00:00:00.000Z', 3] };
+  const decoded = decodeGeneratedModel(generated.TItemBaseModel, wire);
+  assert.deepEqual(decoded.row, ['a', new Date('2024-01-01T00:00:00.000Z'), new Date('2024-01-02T00:00:00.000Z'), 3]);
+  assert.deepEqual(encodeGeneratedModel(decoded), wire);
+});
+
 test('a bigint with a phantom brand keeps the TSerde message, not RUNM1085', t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';

@@ -282,7 +282,15 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1021
 
-**Unsupported tuple rest element.** A tuple's rest element isn't a concrete array type, or is an unresolved generic variadic. **Fix:** Give the rest element a concrete array type.
+**Unsupported tuple rest element.** One of these:
+
+- A tuple's rest element isn't a concrete array type, or is an unresolved generic variadic.
+- With validation on, a tuple has fixed elements after its rest element, such as `[string, ...number[], boolean]` or `[...number[], boolean]`. A JSON Schema cannot state a fixed element after a rest element, so the check would accept the items out of order. With validation off, such a tuple generates and converts its items by position.
+
+**Fix:**
+
+- Give the rest element a concrete array type.
+- Move the fixed elements before the rest element, as in `[string, boolean, ...number[]]`, or set `{ validation: false }` on the model.
 
 ### RUNM1030
 
