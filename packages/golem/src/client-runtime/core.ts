@@ -261,8 +261,8 @@ function fillServerUrl(client: string, server: ServerObject, choice: number | st
   });
 }
 
-// Reads a byte stream as records: `split` cuts the buffered text into records
-// and leaves the unfinished one last; `parse` turns a record into an item or
+// Reads a byte stream as records: `split` cuts text into records, the
+// unfinished one last, and sees each character once (plus one held back); `parse` turns a record into an item or
 // `undefined`, and sees the unfinished tail once more with `atEnd` set. The
 // reader is cancelled when the consumer stops early or a record fails.
 async function* readRecords<T>(
@@ -273,7 +273,10 @@ async function* readRecords<T>(
 ): AsyncIterable<T> {
   const reader = stream.getReader();
   const decoder = new TextDecoder(undefined, { fatal: true, ignoreBOM });
-  let buffered = '';
+  // The unfinished record is kept as pieces, so a chunk is cut once: `last` is its final character
+  // (a delimiter of two characters, such as CRLF, may start there) and `pieces` hold the rest.
+  let pieces: string[] = [];
+  let last = '';
   let completed = false;
   try {
     while (true) {
@@ -282,16 +285,21 @@ async function* readRecords<T>(
         completed = true;
         break;
       }
-      buffered += decoder.decode(result.value, { stream: true });
-      const records = split(buffered);
-      buffered = records.pop() || '';
+      const records = split(last + decoder.decode(result.value, { stream: true }));
+      const rest = records.pop() || '';
+      if (records.length) {
+        records[0] = pieces.join('') + records[0];
+        pieces = [rest.slice(0, -1)];
+      } else {
+        pieces.push(rest.slice(0, -1));
+      }
+      last = rest.slice(-1);
       for (const record of records) {
         const parsed = parse(record, false);
         if (parsed !== undefined) yield parsed;
       }
     }
-    buffered += decoder.decode();
-    const parsed = parse(buffered, true);
+    const parsed = parse(pieces.join('') + last + decoder.decode(), true);
     if (parsed !== undefined) yield parsed;
   } catch (error) {
     completed = false;
@@ -450,6 +458,8 @@ export class ClientRuntime {
     }
     const trimOws = (token: string): string => token.replace(/^[ \t]+|[ \t]+$/g, '');
     if (metadata.kind === 'array') {
+      // An empty value is the empty array; split would give one empty item.
+      if (trimOws(value) === '') return [];
       return value.split(',').map((item) => this.decodeHeaderScalar(trimOws(item), metadata.itemKind));
     }
     if (metadata.kind === 'object') {

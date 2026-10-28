@@ -214,3 +214,22 @@ test('SSE: each event is a new plain object with its fields in dispatch order, a
   assert.equal(Object.getPrototypeOf(events[0]), Object.prototype);
   assert.notEqual(events[0], events[1]);
 });
+
+test('NDJSON and SSE records split into single-byte chunks decode whole, with CRLF line ends and a multi-byte character', async () => {
+  // protects: bug the framing re-split the whole buffer on every chunk, quadratic for one long record
+  const bytewise = (text: string): Uint8Array[] => [...encode(text)].map((byte) => Uint8Array.of(byte));
+  const long = 'x'.repeat(3000);
+  const ndjson = new Response(new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of bytewise(`{"v":"${long}€"}\r\n\r\n{"v":2}\r\n{"v":3}`)) controller.enqueue(chunk);
+      controller.close();
+    },
+  }), { status: 200, headers: { 'content-type': 'application/x-ndjson' } });
+  assert.deepEqual(await collect(await readBody(ndjson, 'application/x-ndjson', 'ndjson')), [{ v: `${long}€` }, { v: 2 }, { v: 3 }]);
+  assert.deepEqual(
+    await readEvents(bytewise(`data: ${long}€\r\ndata: tail\r\n\r\nevent: e\r\ndata: 2\r\n\r\n`)),
+    [{ data: `${long}€\ntail` }, { event: 'e', data: '2' }],
+  );
+  assert.deepEqual(await collect(await readBody(
+    observed('application/json-seq', bytewise(`${RS}{"a":"${long}"}\n${RS}[1]\n`), 'closed').response, 'application/json-seq', 'json-seq')), [{ a: long }, [1]]);
+});
