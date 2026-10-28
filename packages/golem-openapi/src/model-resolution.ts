@@ -1044,32 +1044,27 @@ function untaggedUnionTable(variants: readonly ModelTypeDescriptor[], definition
   const tagsOf = (variant: ModelTypeDescriptor): TagValues | undefined =>
     variant.kind === 'object' ? objectTagValues(variant) : variant.kind === 'generated-model' ? modelTagValues(definitions.get(variant.id)) : undefined;
   const present = variants.flatMap((variant, index) => variant.kind === 'null' ? [] : [{ index, tags: tagsOf(variant), variant }]);
+  type Member = (typeof present)[number];
+  // The first key that every member requires as a literal, with no value in two members, and the table it gives.
+  const tableOf = (members: readonly Member[]): UnionDiscriminator | undefined => {
+    for (const propertyName of declared === undefined ? members[0]?.tags?.keys() ?? [] : [declared]) {
+      const values = members.map(({ tags }) => tags?.get(propertyName) ?? []);
+      const flat = values.flat();
+      if (values.some((set) => set.length === 0) || new Set(flat).size !== flat.length) continue;
+      return { propertyName, variants: variants.map((_, index) => ({ values: values[members.findIndex((item) => item.index === index)] ?? [] })) };
+    }
+    return undefined;
+  };
   const tagged = present.every(({ tags }) => tags) ? present : present.filter(({ variant }) => variant.kind === 'object');
   if (tagged.length === 0) return undefined;
-  for (const propertyName of declared === undefined ? tagged[0].tags?.keys() ?? [] : [declared]) {
-    const values = tagged.map(({ tags }) => tags?.get(propertyName) ?? []);
-    const flat = values.flat();
-    if (values.some((set) => set.length === 0) || new Set(flat).size !== flat.length) continue;
-    return {
-      propertyName,
-      variants: variants.map((_, index) => ({ values: values[tagged.findIndex((item) => item.index === index)] ?? [] })),
-    };
-  }
+  const table = tableOf(tagged);
+  if (table) return table;
   // One model with no tag beside objects that share a tag is the default variant: it takes every object the tag does not select.
   const objects = present.filter(({ variant }) => variant.kind === 'object');
   const models = present.filter(({ variant }) => variant.kind === 'generated-model');
   if (models.length !== 1 || objects.length === 0 || objects.length + models.length !== present.length) return undefined;
-  for (const propertyName of declared === undefined ? objects[0].tags?.keys() ?? [] : [declared]) {
-    const values = objects.map(({ tags }) => tags?.get(propertyName) ?? []);
-    const flat = values.flat();
-    if (values.some((set) => set.length === 0) || new Set(flat).size !== flat.length) continue;
-    return {
-      propertyName,
-      variants: variants.map((_, index) => ({ values: values[objects.findIndex((item) => item.index === index)] ?? [] })),
-      defaultVariant: models[0].index,
-    };
-  }
-  return undefined;
+  const objectTable = tableOf(objects);
+  return objectTable && { ...objectTable, defaultVariant: models[0]!.index };
 }
 
 interface SchemaGraphGroup {
