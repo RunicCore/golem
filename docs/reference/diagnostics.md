@@ -376,13 +376,14 @@ An error prints its code, location when known, and message, then stops generatio
 - A `Discriminator` tag is on a value that is no union of two or more object types.
 - A `Discriminator<'kind', Default>` names a `Default` that is not a variant of the union.
 - The `Default` variant has the `kind` property itself.
+- The `Default` is no object. A scalar, array or `null` variant is chosen by its JSON type and needs no default.
 - A union carries two different `Discriminator` keys. A union has one tag key.
 
 **Fix:**
 
 - Add a `Contains` constraint alongside `MinContains`/`MaxContains`, or apply the constraint to a value of the matching type.
 - Put `Discriminator` on a union of two or more object types, or remove it.
-- Name a variant of the union as the `Default`, and take the key out of that variant.
+- Name an object variant of the union as the `Default`, and take the key out of that variant.
 
 ### RUNM1052
 
