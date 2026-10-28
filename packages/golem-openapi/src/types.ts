@@ -2,6 +2,7 @@ import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, NameScope } from '@exprtlabs/golem/generator-api';
 import { code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
+import { unionVariants } from './composition.js';
 import { refName } from './names.js';
 import {
   effectiveSchemaTypes,
@@ -177,11 +178,7 @@ function classifyTextSchemaNode(
     const allOf = Array.isArray(schema.allOf)
       ? schema.allOf.map((item) => classifyTextSchemaNode(item, nested))
       : [];
-    const alternatives = Array.isArray(schema.oneOf)
-      ? schema.oneOf
-      : Array.isArray(schema.anyOf)
-        ? schema.anyOf
-        : undefined;
+    const alternatives = unionVariants(schema);
     const fromAlternatives = alternatives
       ? anyOfTextSchemas(alternatives.map((item) => classifyTextSchemaNode(item, nested)))
       : undefined;
@@ -676,7 +673,7 @@ function schemaTypeNode(rawSchema: unknown, context: SchemaTypeContext = {}): Ty
         : [];
   let result = unionType(baseParts);
   if (schema.oneOf || schema.anyOf) {
-    const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
+    const variants = unionVariants(schema) ?? [];
     const union = unionType(variants.map((item) => schemaTypeNode(item, inner)));
     if (union) result = result ? intersectionType([result, union]) : union;
   }

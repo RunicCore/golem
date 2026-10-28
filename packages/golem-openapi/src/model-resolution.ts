@@ -17,6 +17,7 @@ import {
   type Composition,
   type CompositionReader,
   type SlotChild,
+  unionVariants,
 } from './composition.js';
 import { effectiveSchemaTypes } from './normalize.js';
 import { code, identifier as identifierPart, join, propertyKey, type Code } from '@exprtlabs/golem/internal/emitter';
@@ -393,7 +394,7 @@ function modelFieldTypeNode(
     if (schema.items) return nullableType(typeCode(code`Array<${modelFieldTypeNode(schema.items, definitions, nested, seen).code}>`), nullable);
   }
   if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
-    const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
+    const variants = unionVariants(schema) ?? [];
     return parenthesizedUnion(variants
       .map((item) => modelFieldTypeNode(item, definitions, nested, seen, !isJsonObject(schema.discriminator))));
   }
@@ -475,17 +476,16 @@ export function hasAllOfMembers(schema: Readonly<Record<string, unknown>>): sche
 }
 
 /**
- * A schema's own `oneOf` and `anyOf` beside its `allOf` are two more allOf members: the value satisfies the allOf members and
- * the union (JSON Schema AND), so the one resolver reads them as it reads a union member.
+ * A schema's own union beside its `allOf` is one more allOf member: the value satisfies the allOf members and the union
+ * (JSON Schema AND), so the one resolver reads it as it reads a union member. A schema with both `oneOf` and `anyOf` is already
+ * an allOf of the two here (`normalizeSchemaUnions`).
  */
 function withOwnUnionsAsMembers(schema: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
-  if (!hasAllOfMembers(schema) || (schema.oneOf === undefined && schema.anyOf === undefined)) return schema;
+  if (!hasAllOfMembers(schema)) return schema;
   const { oneOf, anyOf, discriminator, ...rest } = schema;
-  const unions = [
-    ...(oneOf === undefined ? [] : [{ oneOf, ...(discriminator === undefined ? {} : { discriminator }) }]),
-    ...(anyOf === undefined ? [] : [{ anyOf, ...(discriminator === undefined || oneOf !== undefined ? {} : { discriminator }) }]),
-  ];
-  return { ...rest, allOf: [...schema.allOf, ...unions] };
+  const key = oneOf === undefined ? 'anyOf' : 'oneOf';
+  if (schema[key] === undefined) return schema;
+  return { ...rest, allOf: [...schema.allOf, { [key]: schema[key], ...(discriminator === undefined ? {} : { discriminator }) }] };
 }
 
 /**
@@ -603,7 +603,7 @@ export function modelConversionDescriptor(
   const sequence = isJsonObject(schema) ? sequenceConversionDescriptor(schema, definitions, nested, direction, seen) : undefined;
   if (sequence) return sequence;
   if (isJsonObject(schema) && (schema.oneOf || schema.anyOf)) {
-    const variants = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
+    const variants = unionVariants(schema) ?? [];
     // A nullable array variant is a plain union of its own; its branches join the outer union.
     const convertedVariants = variants.flatMap((item): readonly ModelTypeDescriptor[] => {
       if (isNullBranch(item)) return [{ kind: 'null' }];
@@ -800,7 +800,7 @@ export function discriminatorSelection(
   if (!isJsonObject(schema) || !isJsonObject(schema.discriminator)) return undefined;
   const { propertyName: property, mapping } = schema.discriminator;
   if (typeof property !== 'string') return undefined;
-  const items = Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : [];
+  const items = unionVariants(schema) ?? [];
   const nested = withSchemaBase(env, schema);
   const variants = new Map<string, { readonly schemaName: string; readonly values: string[] }>();
   for (const item of items) {

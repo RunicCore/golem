@@ -1,12 +1,15 @@
 import * as conversion from '@exprtlabs/golem/conversion';
 import * as serde from '@exprtlabs/golem/serde';
-import { emitCodecRuntimeCode, render } from '@exprtlabs/golem/internal/emitter';
+import { emitCodecRuntimeCode, render, type ModelBases } from '@exprtlabs/golem/internal/emitter';
 
 import { runModule } from './support/run-module.js';
 
-/** The codec runtime of a schema graph as text. */
-export function emitCodecRuntimeText(...args: Parameters<typeof emitCodecRuntimeCode>): string {
-  return render(emitCodecRuntimeCode(...args));
+/** The bases of a generator that declares none: a model narrows nothing. */
+export const NO_MODEL_BASES: ModelBases = { basesOf: () => [] };
+
+/** The codec runtime of a schema graph as text; a test that declares no bases gets none. */
+export function emitCodecRuntimeText(graph: Parameters<typeof emitCodecRuntimeCode>[0], options: Omit<Parameters<typeof emitCodecRuntimeCode>[1], 'modelBases'> = {}): string {
+  return render(emitCodecRuntimeCode(graph, { ...options, modelBases: NO_MODEL_BASES }));
 }
 
 /** Evaluate emitted `stringify*` functions with the public serde exports in scope. */

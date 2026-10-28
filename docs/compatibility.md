@@ -22,7 +22,7 @@ Windows support is best effort. Golem makes no promise for Windows. When you rep
 
 ## Stability and public API {#public-api}
 
-The configuration format (`version: 1`) and the public subpaths of `@exprtlabs/golem` follow semver from 1.0.0. The [runtime API](/reference/runtime-api) page lists the public subpaths.
+The configuration format (`version: 1`) and the public subpaths of `@exprtlabs/golem` follow semver from 1.0.0, with one exception: 1.1 is a breaking release that keeps the 1.x number. The [runtime API](/reference/runtime-api) page lists the public subpaths.
 
 A path that starts with `internal/` may change in any release. Do not import it.
 

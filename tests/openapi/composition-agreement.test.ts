@@ -1,5 +1,6 @@
 import { copyFixtureFile, createFixtureProject, fileFixtureScope, onceShared } from '../fixture-project.js';
 import assert from 'node:assert/strict';
+import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
@@ -9,6 +10,7 @@ import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { getValidator } from '@exprtlabs/golem/validation';
+import { generate, generateModels } from '#openapi/generator';
 import { generatedCodecIdFromRoot } from '../support/consumer.js';
 import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
 
@@ -657,6 +659,62 @@ const rows: readonly Row[] = [
     ],
     rejected: [{ m: { id: '1' } }, { m: { kind: 'a', a: 'x' } }],
   },
+  // A schema's oneOf and anyOf together, with no allOf: the value satisfies one variant of each (JSON Schema AND), as the validator reads them.
+  // protects: T-554 a schema with both oneOf and anyOf keeps the anyOf in the type and the conversion
+  {
+    shape: 'a field that holds both a oneOf and an anyOf of inline objects, with no allOf',
+    fixture: 'one-of-and-any-of',
+    root: 'Visit',
+    document: visitDocument({
+      m: {
+        oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] })],
+        anyOf: [object({ at: dateTime }, { required: ['at'] })],
+      },
+    }),
+    accepted: [
+      { wire: { m: { kind: 'a', a: 'p', at: AT } }, model: { m: { kind: 'a', a: 'p', at: new Date(AT) } } },
+      { wire: { m: { kind: 'b', b: 'p', at: B } }, model: { m: { kind: 'b', b: 'p', at: new Date(B) } } },
+    ],
+    rejected: [{ m: { kind: 'a', a: 'p' } }, { m: { at: AT } }],
+  },
+  // A tagged oneOf beside an "at least one of" anyOf whose branches only require names (T-554): the required-only branches add no variant.
+  {
+    shape: 'a field that holds a tagged oneOf beside an anyOf of required-only branches',
+    fixture: 'one-of-and-required-any-of',
+    root: 'Visit',
+    document: visitDocument({
+      m: {
+        properties: { email: text, phone: text },
+        oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] })],
+        anyOf: [{ required: ['email'] }, { required: ['phone'] }],
+      },
+    }),
+    accepted: [
+      { wire: { m: { kind: 'a', a: 'p', email: 'e' } }, model: { m: { kind: 'a', a: 'p', email: 'e' } } },
+      { wire: { m: { kind: 'b', b: 'p', phone: 'n' } }, model: { m: { kind: 'b', b: 'p', phone: 'n' } } },
+      { wire: { m: { kind: 'a', a: 'p', email: 'e', phone: 'n' } }, model: { m: { kind: 'a', a: 'p', email: 'e', phone: 'n' } } },
+    ],
+    rejected: [{ m: { kind: 'a', a: 'p' } }, { m: { email: 'e' } }],
+  },
+  // Two oneOf unions in one allOf with no model, whose variants convert nothing: the value satisfies one variant of each (T-554).
+  {
+    shape: 'a field that is allOf of two oneOf unions of inline objects that convert nothing, with no model',
+    fixture: 'two-one-of',
+    root: 'Visit',
+    document: visitDocument({
+      m: {
+        allOf: [
+          { oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] })] },
+          { oneOf: [object({ mode: { const: 'x' }, x: text }, { required: ['mode', 'x'] }), object({ mode: { const: 'y' }, y: text }, { required: ['mode', 'y'] })] },
+        ],
+      },
+    }),
+    accepted: [
+      { wire: { m: { kind: 'a', a: 'p', mode: 'x', x: 'q' } }, model: { m: { kind: 'a', a: 'p', mode: 'x', x: 'q' } } },
+      { wire: { m: { kind: 'b', b: 'p', mode: 'y', y: 'q' } }, model: { m: { kind: 'b', b: 'p', mode: 'y', y: 'q' } } },
+    ],
+    rejected: [{ m: { kind: 'a', a: 'p' } }, { m: { mode: 'y', y: 'q' } }],
+  },
   {
     shape: 'a field that is allOf [$ref Base] beside its own oneOf of two $ref models',
     root: 'Visit',
@@ -1047,6 +1105,30 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     error: /schema "Visit" at #\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: .*model beside a union.*plain object schemas/,
     document: visitDocument({ m: { allOf: [ref('Base'), { oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), text] }] } }, { Base: object({ id: text }, { required: ['id'] }) }),
   },
+  // protects: T-554 a oneOf and an anyOf that each have several object variants stop with a coded error, not code that fails validation
+  {
+    shape: 'a oneOf and an anyOf that each have two object variants',
+    error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: .*two unions with several object variants each/,
+    document: visitDocument({
+      m: {
+        oneOf: [object({ kind: { const: 'a' }, at: dateTime }), object({ kind: { const: 'b' } })],
+        anyOf: [object({ mode: { const: 'x' } }), object({ mode: { const: 'y' } })],
+      },
+    }),
+  },
+  // protects: T-554 two oneOf unions in one allOf with no model stop when a variant holds a Date, as one oneOf and one anyOf do
+  {
+    shape: 'an allOf of two oneOf unions with two object variants each, one of them holding a Date',
+    error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: .*two unions with several object variants each/,
+    document: visitDocument({
+      m: {
+        allOf: [
+          { oneOf: [object({ kind: { const: 'a' }, at: dateTime }), object({ kind: { const: 'b' } })] },
+          { oneOf: [object({ mode: { const: 'x' } }), object({ mode: { const: 'y' } })] },
+        ],
+      },
+    }),
+  },
   {
     shape: 'a model base beside two unions',
     error: /schema "Visit" at #\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: .*model beside a union.*plain object schemas/,
@@ -1165,4 +1247,26 @@ test('a component narrows an inherited union property to one of its variants', a
   const decoded = decodeGeneratedModel(Derived, { pet: { kind: 'cat', lives: 9 } });
   assert.ok(decoded.pet instanceof Cat, 'pet decodes to Cat');
   assert.deepEqual(withoutUndefined(encodeGeneratedModel(asGenerated(decoded))), { pet: { kind: 'cat', lives: 9 } });
+});
+
+const bothKeywords = {
+  oneOf: [object({ kind: { const: 'a' }, code: { type: 'string', format: 'no-such-format' } }, { required: ['kind', 'code'] }), object({ kind: { const: 'b' } }, { required: ['kind'] })],
+  anyOf: [object({ at: dateTime }, { required: ['at'] })],
+};
+
+// protects: T-554 the public generateModels reads both keywords of a schema, not only the oneOf
+test('generateModels keeps the anyOf of a schema that holds both oneOf and anyOf', () => {
+  const source = generateModels(visitDocument({ m: { ...bothKeywords, oneOf: [object({ kind: { const: 'a' } }, { required: ['kind'] }), object({ kind: { const: 'b' } }, { required: ['kind'] })] } }), { mobx: false, validation: false, allowAny: false });
+  assert.match(source, /\bat\b[^\n]*Date/);
+});
+
+// protects: T-554 a diagnostic inside a branch of a schema with both keywords names the place in the user's document
+test('a diagnostic inside a oneOf branch of a schema with both keywords names the user path', async t => {
+  const root = createFixtureProject(t, 'golem-composition-path-');
+  const input = path.join(root, 'openapi.json');
+  writeFileSync(input, JSON.stringify(visitDocument({ m: bothKeywords })));
+  const result = await generate({ input, output: path.join(root, 'sdk'), name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
+  const messages = (result.diagnostics ?? []).map(diagnostic => diagnostic.message);
+  assert.deepEqual(messages.filter(message => message.includes('/allOf/')), []);
+  assert.equal(messages.filter(message => message.includes('#/components/schemas/Visit/properties/m/oneOf/0/properties/code/format: the format "no-such-format"')).length, 1, JSON.stringify(messages));
 });

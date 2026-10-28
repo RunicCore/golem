@@ -255,7 +255,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1004
 
-**Callable or constructible type.** A model, or one of its fields, resolves to a type with call or construct signatures — a function or a class-instance shape rather than plain data. **Fix:** Replace it with a plain object, array, or primitive.
+**Callable or constructible type.** A model, or one of its fields, resolves to a type with call or construct signatures — a function or a class-instance shape rather than plain data. A model field typed `Map`, `Set`, `ReadonlyMap` or `ReadonlySet` stops here too, and the message names the type. This holds with validation off too. **Fix:** Replace it with a plain object, array, or primitive. Replace a `Map` with a `Record<string, V>` and a `Set` with an array.
 
 ### RUNM1005
 
@@ -692,6 +692,15 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 - Keep one of the two types.
 - Or move the object into its own field.
 - For a `bigint`, declare it with a `TSerde` pair and no object.
+
+### RUNM1086
+
+**Map or Set in a controller type.** A DTO field, a body, a parameter or a response is typed `Map`, `Set`, `ReadonlyMap` or `ReadonlySet`, and no `@ApiProperty` states its schema. JSON writes a `Map` or a `Set` as `{}`, so the type says nothing about the value a client receives. The message names the type and the field.
+
+**Fix:**
+
+- Use a `Record<string, V>` for a `Map` and an array for a `Set`.
+- Or state the schema on the field with `@ApiProperty({ type: 'object', additionalProperties: { type: 'string' } })`. A `type`, a `schema` or `additionalProperties` in the options counts. Golem then writes that schema and no property of the `Map`. A `Map` nested in an inline object or an array has no decorator to carry a schema, so it always stops.
 
 ## Validators (VALIDATE)
 

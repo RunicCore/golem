@@ -50,12 +50,12 @@ Schema-valued tags describe another TypeScript contract:
 
 ## Formats
 
-On a model field, `Format<'name'>` applies to a `string`. The number formats apply to schemas from an OpenAPI document, where a number schema has `format: int32`. Golem checks these names:
+On a model field, `Format<'name'>` applies to a `string`, or to a `number` for a number format such as `number & Format<'int32'>`. A number format also applies to schemas from an OpenAPI document, where a number schema has `format: int32`. A format on the wrong type, such as `email` on a `number` or `int32` on a `string`, stops generation ([RUNM1051](/reference/diagnostics#runm1051)). Golem checks these names:
 
 | Value | Format names | Applies to |
 | --- | --- | --- |
 | Strings | `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `byte`, `json-pointer`, `relative-json-pointer` | Model fields and OpenAPI schemas |
-| Numbers | `int32`, `int64`, `float`, `double` | OpenAPI schemas |
+| Numbers | `int32`, `int64`, `float`, `double` | Model fields and OpenAPI schemas |
 | Any string | `password`, `binary`, `media-range` | Model fields and OpenAPI schemas |
 
 A format name that golem does not check stops generation. Set `unknownFormats: warn` in [`golem.yaml`](/reference/config#root-keys) to report it and continue.

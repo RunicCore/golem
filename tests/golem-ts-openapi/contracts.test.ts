@@ -503,6 +503,69 @@ export class BlobsController {
   assert.deepEqual(Object.keys(schema.properties ?? {}).sort(), ['at', 'file', 'tags']);
   assert.deepEqual(schema.properties?.file, { format: 'binary', type: 'string' });
   assert.deepEqual(expectSchema(schema.properties?.tags, 'tags').additionalProperties, { type: 'string' });
+  // T-553: a Map has no field of its own; JSON.stringify(new Map()) is {}, so no `size` property is written
+  assert.equal(expectSchema(schema.properties?.tags, 'tags').properties?.size, undefined);
+});
+
+// protects: T-553 a Map or Set DTO field with no explicit @ApiProperty schema once got a required `size` property the server never sends; it now stops with RUNM1086
+const mapOrSetFields = [
+  { name: 'a Map field', declaration: 'tags!: Map<string, number>;', kind: 'Map', field: 'tags', advice: true },
+  { name: 'a Set field', declaration: 'tags!: Set<string>;', kind: 'Set', field: 'tags', advice: true },
+  { name: 'a ReadonlyMap field', declaration: 'tags!: ReadonlyMap<string, number>;', kind: 'ReadonlyMap', field: 'tags', advice: true },
+  { name: 'a ReadonlySet field', declaration: 'tags!: ReadonlySet<string>;', kind: 'ReadonlySet', field: 'tags', advice: true },
+  { name: 'an optional Map field', declaration: 'tags?: Map<string, number>;', kind: 'Map', field: 'tags', advice: true },
+  { name: 'a Map field with a bare @ApiProperty()', declaration: '@ApiProperty()\n  tags!: Map<string, number>;', kind: 'Map', field: 'tags', advice: true },
+  { name: 'a Map field with only a description', declaration: "@ApiProperty({ description: 'labels' })\n  tags!: Map<string, number>;", kind: 'Map', field: 'tags', advice: true },
+  { name: 'a Map field in an inline object', declaration: 'inner!: { tags: Map<string, number> };', kind: 'Map', field: 'tags', advice: false },
+  { name: 'a Map in an array', declaration: 'tags!: Map<string, number>[];', kind: 'Map', field: 'tags', advice: false },
+] as const;
+for (const { name, declaration, kind, field, advice } of mapOrSetFields) {
+  test(`${name} with no explicit schema stops generation with RUNM1086`, async t => {
+    const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse, ApiProperty } from '@nestjs/swagger';
+
+class LabelsDto {
+  ${declaration}
+}
+
+@Controller('labels')
+export class LabelsController {
+  @Get()
+  @ApiOkResponse({ type: LabelsDto })
+  get(): LabelsDto { throw new Error('not implemented'); }
+}
+`);
+    await assert.rejects(
+      generateFixture(root),
+      new RegExp(`RUNM1086: Field "${field}" is a ${kind}\\. JSON writes a ${kind} as \\{\\}, so no schema describes it\\. ${advice ? 'Give the field an @ApiProperty with type, schema or additionalProperties, or use a Record or an array\\.' : 'Use a Record or an array\\.'}`),
+    );
+  });
+}
+
+test('a Map DTO field with an explicit @ApiProperty schema is an object with that schema and no size property', async t => {
+  // protects: T-553 a Map field documented with @ApiProperty had a required `size` property beside the written schema
+  const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiOkResponse, ApiProperty } from '@nestjs/swagger';
+
+class LabelsDto {
+  @ApiProperty({ type: 'object', additionalProperties: { type: 'number' } })
+  counts!: Map<string, number>;
+
+  @ApiProperty({ type: 'object' })
+  names!: Set<string>;
+}
+
+@Controller('labels')
+export class LabelsController {
+  @Get()
+  @ApiOkResponse({ type: LabelsDto })
+  get(): LabelsDto { throw new Error('not implemented'); }
+}
+`);
+  const document = documentOf(await generateFixture(root));
+  const schema = expectSchema(responseOf(document, '/labels', 'get', '200').content?.['application/json']?.schema, 'LabelsDto');
+  assert.deepEqual(schema.properties?.counts, { type: 'object', properties: {}, additionalProperties: { type: 'number' } });
+  assert.equal(expectSchema(schema.properties?.names, 'names').properties?.size, undefined);
 });
 
 test('isModel is false for a model class with a whole-value TSerde and true for the model class itself', async t => {

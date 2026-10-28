@@ -282,6 +282,26 @@ export type TItem = IModel<${fields}>;
   });
 }
 
+// protects: T-553 RUNM1004 for a Map or Set field blamed a method name (clear, add); it now names the Map or Set, and with validation off the field once generated with a required `size`
+const mapOrSetModelFields = [
+  { fields: '{ x: Map<string, number> }', kind: 'Map' },
+  { fields: '{ x: Set<string> }', kind: 'Set' },
+  { fields: '{ x: ReadonlyMap<string, number> }', kind: 'ReadonlyMap' },
+  { fields: '{ x?: ReadonlySet<string> }', kind: 'ReadonlySet' },
+] as const;
+for (const { fields, kind } of mapOrSetModelFields) for (const validation of [true, false]) {
+  test(`a model field typed ${kind} stops with RUNM1004 naming ${kind} with validation ${validation ? 'on' : 'off'}`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<${fields}>;
+`);
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation } }),
+      new RegExp(`RUNM1004: Field "x" of TItem is a ${kind}, which golem cannot represent\\. Use a Record or an array\\.`),
+    );
+  });
+}
+
 // protects: T-471 a Date with a phantom brand is a Date (RUNM1085 once said no value is both); a bigint with a brand keeps the old TSerde message
 for (const validation of [true, false]) {
   test(`a Date with a phantom brand generates a Date field and round-trips a Date with validation ${validation ? 'on' : 'off'}`, async t => {

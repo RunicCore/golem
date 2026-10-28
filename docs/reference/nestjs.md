@@ -154,6 +154,7 @@ Merge rules for response decorators follow `@nestjs/swagger`:
 - A method-level decorator for the same status replaces the class one.
 - Repeated decorators on the same class or method apply from bottom to top. Two decorators for one status join their descriptions.
 - A range or `default` response keeps the inferred `200` or `201` response.
+- A route that decorates only other statuses, such as `@ApiNotFoundResponse()`, keeps the inferred `200` or `201` response, as the Nest Swagger CLI plugin does.
 
 ## Query compatibility
 

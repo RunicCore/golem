@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { LibError } from '@exprtlabs/golem/errors';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { registerIModelClass } from '@exprtlabs/golem/serde';
@@ -15,7 +15,11 @@ import { compileValidationPlanBinding, type FastCheck } from './support/compiled
 // The generated codec of one model `Order`, run on its compiled validators. The scope the codec runs in is the test's:
 // each validator and fast check in it records the plane it checks, which shows the route a value took (spec 7.1).
 
-const RULES_MODULE = 'export const positive = value => { globalThis.positiveCalls = (globalThis.positiveCalls ?? 0) + 1; return typeof value === "number" && value > 0; };';
+const RULES_MODULE = [
+  'export const positive = value => { globalThis.positiveCalls = (globalThis.positiveCalls ?? 0) + 1; return typeof value === "number" && value > 0; };',
+  'export const explode = () => { throw globalThis.ruleError; };',
+  'export const count = () => 3;',
+].join('\n');
 
 /** What a check judges: the model, its wire form, or what is left to check after the other form's check (`#model-only`, `#wire-only`). */
 type Plane = 'model' | 'wire' | 'model-only' | 'wire-only' | 'item';
@@ -68,7 +72,7 @@ async function orderCodec(descriptor: ModelTypeDescriptor, fastPath: boolean, ne
   const plan = buildCodecValidationPlan([graph], [], {}, true);
   const binding = await compileValidationPlanBinding(plan, {
     fastPath,
-    validations: { positive: { importPath: './rules.mjs', exportName: 'positive' } },
+    validations: Object.fromEntries(['positive', 'explode', 'count'].map(name => [name, { importPath: './rules.mjs', exportName: name }])),
     modules: { 'rules.mjs': RULES_MODULE },
   });
   const planes: [string, Plane][] = [[root.codecId, 'model'], [`${root.codecId}#wire`, 'wire'], [`${root.codecId}#model-only`, 'model-only'], [`${root.codecId}#wire-only`, 'wire-only']];
@@ -375,6 +379,50 @@ for (const [site, run, form] of SITES) {
     );
   });
 }
+
+/** What a site throws for a value whose predicate cannot finish. */
+function thrownBy(run: () => unknown): unknown {
+  try {
+    run();
+  } catch (error) {
+    return error;
+  }
+  return undefined;
+}
+
+for (const [site, run] of SITES) {
+  test(`${site} wraps a TValidation function that throws in a LibError of its own`, async () => {
+    // protects: T-550 a throwing predicate gives LibError Validation with causedByInput false and the original as cause
+    const original = new Error('rule broke');
+    Reflect.set(globalThis, 'ruleError', original);
+    const { functions } = await orderCodec(order({ amount: { kind: 'number', validations: ['explode'] } }, ['amount']), true);
+    const error = thrownBy(() => run(functions, { amount: 5 }));
+    assert.ok(error instanceof LibError);
+    assert.deepEqual({ kind: error.kind, message: error.message, causedByInput: error.causedByInput, issues: error.issues }, {
+      kind: 'validation', message: 'Model validation could not finish.', causedByInput: false, issues: [],
+    });
+    assert.equal(error.cause, original);
+  });
+}
+
+test('a TValidation function that returns a number makes parse throw a LibError that holds the TypeError', async () => {
+  // protects: T-550 a predicate result that is neither boolean nor string is wrapped too
+  const { functions } = await orderCodec(order({ amount: { kind: 'number', validations: ['count'] } }, ['amount']), true);
+  const error = thrownBy(() => functions.parseOrder('{"amount":5}'));
+  assert.ok(error instanceof LibError);
+  assert.deepEqual({ kind: error.kind, message: error.message, causedByInput: error.causedByInput }, {
+    kind: 'validation', message: 'Model validation could not finish.', causedByInput: false,
+  });
+  assert.deepEqual({ name: (error.cause as Error).name, message: (error.cause as Error).message }, { name: 'TypeError', message: 'Validation function count must return boolean or string.' });
+});
+
+test('a LibError that a TValidation function throws passes through validate unchanged', async () => {
+  // protects: T-550 the wrap keeps a LibError the application threw
+  const original = new LibError(LibErrorKind.Validation, 'stop here');
+  Reflect.set(globalThis, 'ruleError', original);
+  const { functions } = await orderCodec(order({ amount: { kind: 'number', validations: ['explode'] } }, ['amount']), true);
+  assert.equal(thrownBy(() => functions.assertOrder({ amount: 5 })), original);
+});
 
 test('a validation context decides: neither the structure check nor the predicates-only pass runs, and no predicate', async () => {
   // protects: T-469 a validation context keeps its own validator
