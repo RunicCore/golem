@@ -3,19 +3,17 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import type { GolemConfig, GolemJob } from '#golem/config';
+import type { GolemJob } from '#golem/config';
 import { runPipeline } from '#golem/cli';
 import { applyJob, loadInventory } from '#golem/outputs';
+import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
+import { configFor } from './support/output-config.js';
 import { workspace } from './support/process.js';
 import { writeFixture } from './support/consumer.js';
 
 function pipelineFixture(t: TestContext): { root: string; config: string; external: string; source: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-output-paths-')));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  fs.mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
-  for (const name of ['golem', 'golem-model', 'golem-openapi']) {
-    fs.symlinkSync(path.join(workspace, 'packages', name), path.join(root, 'node_modules/@exprtlabs', name), 'dir');
-  }
+  const root = createFixtureProject(t, 'golem-output-paths-');
+  linkProjectPackages(root, Object.fromEntries(['golem', 'golem-model', 'golem-openapi'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)])));
   fs.writeFileSync(path.join(root, 'package.json'), '{"name":"output-paths-fixture","type":"module"}');
   writeFixture(root, { mobx: false, validation: true }, false);
 
@@ -64,17 +62,6 @@ function modelJob(root: string, source: string): GolemJob {
       output: path.join(root, 'src/generated/models'),
       profile: { mobx: false, validation: true },
     },
-  };
-}
-
-function modelConfig(root: string, job: GolemJob): GolemConfig {
-  return {
-    directory: root,
-    configFile: path.join(root, 'golem.yaml'),
-    inventoryFile: path.join(root, '.golem/outputs.json'),
-    tsconfig: path.join(root, 'tsconfig.json'),
-    profile: { mobx: false, validation: true },
-    jobs: [job],
   };
 }
 
@@ -144,7 +131,7 @@ test('external model companions canonicalize through a symlink and retire safely
 
   const sourceFileLink = path.join(sourceLink, 'cart.model.ts');
   const job = modelJob(root, sourceFileLink);
-  const config = modelConfig(root, job);
+  const config = configFor(root, job);
   const companion = path.join(sourceLink, 'cart.model.generated.ts');
   applyJob(config, loadInventory(config), job, [{ path: companion, content: modelContent(1) }]);
   const firstCompanion = path.join(firstSourceDirectory, 'cart.model.generated.ts');

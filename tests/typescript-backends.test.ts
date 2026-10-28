@@ -195,15 +195,22 @@ for (const [place, specifier, manifest] of [
   });
 }
 
-/** A project whose one source imports `dependency.ts` from disk. */
-function sessionOnDiskDependency(t: TestContext): { readonly root: string; readonly main: string; readonly dependency: string } {
-  const root = createFixtureProject(t, 'golem-session-disk-');
+/** A project named `name` with an empty `src` folder and a strict NodeNext tsconfig that includes it; `config` adds fields to the tsconfig. */
+function sessionProject(t: TestContext, name: string, config: Readonly<Record<string, unknown>> = {}): string {
+  const root = createFixtureProject(t, `golem-${name}-`);
   fs.mkdirSync(path.join(root, 'src'));
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'session-disk', private: true, type: 'module' }));
+  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name, private: true, type: 'module' }));
   fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
     compilerOptions: { strict: true, skipLibCheck: true, noEmit: true, module: 'NodeNext', moduleResolution: 'NodeNext' },
+    ...config,
     include: ['src/**/*.ts'],
   }));
+  return root;
+}
+
+/** A project whose one source imports `dependency.ts` from disk. */
+function sessionOnDiskDependency(t: TestContext): { readonly root: string; readonly main: string; readonly dependency: string } {
+  const root = sessionProject(t, 'session-disk');
   const main = path.join(root, 'src/main.ts');
   const dependency = path.join(root, 'src/dependency.ts');
   fs.writeFileSync(main, "import { value } from './dependency.js';\nexport const doubled = value * 2;\n");
@@ -263,13 +270,7 @@ test('a path whose state cannot be read fails the program with the file-system e
 });
 
 test('a source that exists only as an overlay is part of the program and its errors are reported', t => {
-  const root = createFixtureProject(t, 'golem-overlay-only-');
-  fs.mkdirSync(path.join(root, 'src'));
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'overlay-only', private: true, type: 'module' }));
-  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
-    compilerOptions: { strict: true, skipLibCheck: true, noEmit: true, module: 'NodeNext', moduleResolution: 'NodeNext' },
-    include: ['src/**/*.ts'],
-  }));
+  const root = sessionProject(t, 'overlay-only');
   const onDisk = path.join(root, 'src/on-disk.ts');
   fs.writeFileSync(onDisk, 'export const onDisk: number = 1;\n');
   // One overlay-only source matches the configuration's include and one lies outside it.
@@ -290,13 +291,7 @@ test('a source that exists only as an overlay is part of the program and its err
 
 test('a diagnostic names the line and column of the compiler line map, also for a source that is not on disk', t => {
   // protects: F-37 both TypeScript lanes print the same line for a lone CR or a U+2028 line break
-  const root = createFixtureProject(t, 'golem-diagnostic-line-');
-  fs.mkdirSync(path.join(root, 'src'));
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'diagnostic-line', private: true, type: 'module' }));
-  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
-    compilerOptions: { strict: true, skipLibCheck: true, noEmit: true, module: 'NodeNext', moduleResolution: 'NodeNext' },
-    include: ['src/**/*.ts'],
-  }));
+  const root = sessionProject(t, 'diagnostic-line');
   // TypeScript ends a line at \n, \r\n, a lone \r, U+2028 and U+2029; the error sits on line 3 or 4, never on line 1.
   const onDisk = path.join(root, 'src/breaks.ts');
   const unwritten = path.join(root, 'src/unwritten.generated.ts');
@@ -316,15 +311,8 @@ test('a diagnostic names the line and column of the compiler line map, also for 
 });
 
 test('an overlay-only source keeps the ambient declarations that the configuration lists in files', t => {
-  const root = createFixtureProject(t, 'golem-overlay-ambient-');
-  fs.mkdirSync(path.join(root, 'src'));
+  const root = sessionProject(t, 'overlay-ambient', { files: ['types/ambient.d.ts'] });
   fs.mkdirSync(path.join(root, 'types'));
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'overlay-ambient', private: true, type: 'module' }));
-  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
-    compilerOptions: { strict: true, skipLibCheck: true, noEmit: true, module: 'NodeNext', moduleResolution: 'NodeNext' },
-    files: ['types/ambient.d.ts'],
-    include: ['src/**/*.ts'],
-  }));
   const ambient = path.join(root, 'types/ambient.d.ts');
   const onDisk = path.join(root, 'src/on-disk.ts');
   const overlayOnly = path.join(root, 'src/uses-ambient.generated.ts');
@@ -341,13 +329,7 @@ test('an overlay-only source keeps the ambient declarations that the configurati
 });
 
 test('a program sees only its own overlays while another program is open', t => {
-  const root = createFixtureProject(t, 'golem-overlay-scope-');
-  fs.mkdirSync(path.join(root, 'src'));
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'overlay-scope', private: true, type: 'module' }));
-  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
-    compilerOptions: { strict: true, skipLibCheck: true, noEmit: true, module: 'NodeNext', moduleResolution: 'NodeNext' },
-    include: ['src/**/*.ts'],
-  }));
+  const root = sessionProject(t, 'overlay-scope');
   const x = path.join(root, 'src/x.ts');
   fs.writeFileSync(x, 'export const x: string = "on disk";\n');
   using session = new ts.ProgramSession({ cwd: root });

@@ -51,12 +51,18 @@ function temporaryEntries(filename: string): string[] {
   return fs.readdirSync(directory).filter((entry) => entry.startsWith(prefix) && entry.endsWith('.tmp')).sort();
 }
 
-test('check reports edited obsolete artifacts without mutation and generate removes them', (t: TestContext) => {
-  const { directory, config, job } = fixture(t);
-  const safe = path.join(directory, 'src/safe.model.generated.ts');
-  const modified = path.join(directory, 'src/modified.model.generated.ts');
-  applyJob(config, loadInventory(config), job, [artifact(safe, 1), artifact(modified, 2)]);
+/** A fixture whose job wrote `safe` and `modified`, after which `modified` got a local edit. */
+function editedArtifacts(t: TestContext): OutputFixture & { readonly safe: string; readonly modified: string } {
+  const output = fixture(t);
+  const safe = path.join(output.directory, 'src/safe.model.generated.ts');
+  const modified = path.join(output.directory, 'src/modified.model.generated.ts');
+  applyJob(output.config, loadInventory(output.config), output.job, [artifact(safe, 1), artifact(modified, 2)]);
   fs.writeFileSync(modified, `${content(2)}// local edit\n`);
+  return { ...output, safe, modified };
+}
+
+test('check reports edited obsolete artifacts without mutation and generate removes them', (t: TestContext) => {
+  const { directory, config, job, safe, modified } = editedArtifacts(t);
   const userFile = path.join(directory, 'src/notes.ts');
   fs.writeFileSync(userFile, 'handwritten');
 
@@ -70,11 +76,7 @@ test('check reports edited obsolete artifacts without mutation and generate remo
 });
 
 test('retired-job checks stay read-only and generation removes modified artifacts', (t: TestContext) => {
-  const { directory, config, job } = fixture(t);
-  const safe = path.join(directory, 'src/safe.model.generated.ts');
-  const modified = path.join(directory, 'src/modified.model.generated.ts');
-  applyJob(config, loadInventory(config), job, [artifact(safe, 1), artifact(modified, 2)]);
-  fs.writeFileSync(modified, `${content(2)}// local edit\n`);
+  const { directory, config, job, safe, modified } = editedArtifacts(t);
   const retiredConfig: GolemConfig = { ...config, jobs: [] };
   const before = snapshotFilesystem(directory);
   assert.throws(

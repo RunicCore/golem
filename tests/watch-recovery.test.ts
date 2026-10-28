@@ -559,13 +559,19 @@ test('a pipeline session closes the compiler of a removed job', { skip: process.
   await until(() => compilerChildren(process.pid).length === 0, 'the removed job closes its compiler');
 });
 
-test('edits that land between two ticks produce one run with the final content', async (t: TestContext) => {
-  const { root, config } = generationWatchFixture(t);
+/** The cart model of `root` and its companion: `edit(field)` gives the source an optional boolean `field`, and `generated()` reads the companion ('' while it does not exist). */
+function cartModel(root: string): { companion: string; edit: (field: string) => void; generated: () => string } {
   const source = path.join(root, 'src/cart.model.ts');
   const companion = path.join(root, 'src/cart.model.generated.ts');
   const original = fs.readFileSync(source, 'utf8');
   const edit = (field: string): void => fs.writeFileSync(source, original.replace('note: string', `note: string; ${field}?: boolean`));
   const generated = (): string => fs.existsSync(companion) ? fs.readFileSync(companion, 'utf8') : '';
+  return { companion, edit, generated };
+}
+
+test('edits that land between two ticks produce one run with the final content', async (t: TestContext) => {
+  const { root, config } = generationWatchFixture(t);
+  const { edit, generated } = cartModel(root);
   const { runs, errors, stop } = startGenerationWatch(config);
   try {
     await until(() => runs() === 1, 'initial generation');
@@ -587,11 +593,7 @@ test('edits that land between two ticks produce one run with the final content',
 
 test('an edit during a running generation triggers exactly one follow-up run with the latest content', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
-  const source = path.join(root, 'src/cart.model.ts');
-  const companion = path.join(root, 'src/cart.model.generated.ts');
-  const original = fs.readFileSync(source, 'utf8');
-  const edit = (field: string): void => fs.writeFileSync(source, original.replace('note: string', `note: string; ${field}?: boolean`));
-  const generated = (): string => fs.existsSync(companion) ? fs.readFileSync(companion, 'utf8') : '';
+  const { companion, edit, generated } = cartModel(root);
   let editWhileRunning = false;
   // The companion is published by rename while the run is still in progress: edit the source at that moment.
   const rename = (from: string, to: string): void => {

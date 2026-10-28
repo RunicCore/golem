@@ -327,43 +327,52 @@ test('a shared model file of the program is a watch input, and a model file of n
   assert.deepEqual(inputs(installed).filter((file) => file.includes('node_modules')), []);
 });
 
-test('a model file of a workspace package linked into node_modules is a watch input when preserveSymlinks names it by the link', (t: TestContext) => {
-  // protects: T-208 the watch filter reads the real path: a link under node_modules to a workspace folder is no installed package
+/** An app whose `node_modules/@acme/shared` is a link to the `shared` folder, which holds only the declaration `customer.model.<form>`; `files` add to the app's files. */
+function linkedSharedApp(t: TestContext, form: 'd.ts' | 'ts', files: Readonly<Record<string, string>> = {}): string {
   const outer = createFixtureProject(t, 'golem-shared-linked-');
   linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
   writeModelSources(path.join(outer, 'shared'), {
-    'package.json': JSON.stringify({ name: '@acme/shared', private: true, type: 'module', exports: { './customer.model': { types: './customer.model.d.ts' } } }),
-    'customer.model.d.ts': "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCustomer = IModel<{ name: string }>;\n",
+    'package.json': JSON.stringify({ name: '@acme/shared', private: true, type: 'module', exports: { './customer.model': { types: `./customer.model.${form}` } } }),
+    [`customer.model.${form}`]: "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCustomer = IModel<{ name: string }>;\n",
   });
-  const tsconfig = JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true, preserveSymlinks: true }, include: ['src/**/*.ts'] });
-  const app = appWithShared(outer, 'lib', false, { 'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model'), 'tsconfig.json': tsconfig }, ['src/**/*.ts']);
+  const app = appWithShared(outer, 'lib', false, { 'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model'), ...files }, ['src/**/*.ts']);
   fs.mkdirSync(path.join(app, 'node_modules/@acme'), { recursive: true });
   fs.symlinkSync('../../../shared', path.join(app, 'node_modules/@acme/shared'), 'dir');
+  return app;
+}
+
+test('a model file of a workspace package linked into node_modules is a watch input when preserveSymlinks names it by the link', (t: TestContext) => {
+  // protects: T-208 the watch filter reads the real path: a link under node_modules to a workspace folder is no installed package
+  const tsconfig = JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true, noEmit: true, preserveSymlinks: true }, include: ['src/**/*.ts'] });
+  const app = linkedSharedApp(t, 'd.ts', { 'tsconfig.json': tsconfig });
 
   const inputs = generate({ root: app, profile: PROFILE }).watchInputs ?? [];
 
   assert.ok(inputs.includes(path.join(app, 'node_modules/@acme/shared/customer.model.d.ts')), inputs.join('\n'));
 });
 
+/** Generates the models of `app`, writes the files to disk and returns them. */
+function generateToDisk(app: string): readonly { readonly path: string; readonly content: string }[] {
+  const { artifacts } = generate({ root: app, profile: PROFILE });
+  writeGeneratedArtifacts(artifacts);
+  return artifacts;
+}
+
+/** Type-checks `app` with the compiler. */
+async function compileApp(app: string): Promise<void> {
+  await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
+}
+
 for (const form of ['d.ts', 'ts'] as const) {
   test(`a model of a workspace package linked into node_modules generates and type-checks with preserveSymlinks off (customer.model.${form})`, async (t: TestContext) => {
     // protects: T-214 both TypeScript lanes resolve a linked package to the real path, so the order companion imports the shared companion
-    const outer = createFixtureProject(t, 'golem-shared-linked-');
-    linkProjectPackages(outer, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
-    writeModelSources(path.join(outer, 'shared'), {
-      'package.json': JSON.stringify({ name: '@acme/shared', private: true, type: 'module', exports: { './customer.model': { types: `./customer.model.${form}` } } }),
-      [`customer.model.${form}`]: "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCustomer = IModel<{ name: string }>;\n",
-    });
-    const app = appWithShared(outer, 'lib', false, { 'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model') }, ['src/**/*.ts']);
-    fs.mkdirSync(path.join(app, 'node_modules/@acme'), { recursive: true });
-    fs.symlinkSync('../../../shared', path.join(app, 'node_modules/@acme/shared'), 'dir');
+    const app = linkedSharedApp(t, form);
 
-    const { artifacts } = generate({ root: app, profile: PROFILE });
-    writeGeneratedArtifacts(artifacts);
+    const artifacts = generateToDisk(app);
 
     // The compile below resolves the order companion's import of the shared companion at this path.
     assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/customer.model.generated.ts')));
-    await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
+    await compileApp(app);
   });
 }
 
@@ -382,12 +391,11 @@ for (const [variant, entry] of [
     });
     const app = appWithShared(outer, 'lib', false, { 'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model') }, ['src/**/*.ts']);
 
-    const { artifacts } = generate({ root: app, profile: PROFILE });
-    writeGeneratedArtifacts(artifacts);
+    const artifacts = generateToDisk(app);
 
     // The compile below resolves the order companion's import of the shared companion at this path.
     assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/dist/customer.model.generated.ts')));
-    await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
+    await compileApp(app);
   });
 }
 
@@ -408,12 +416,11 @@ for (const [importer, appType, resolved] of [['a CommonJS app', undefined, 'cjs'
       'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model'),
     }, ['src/**/*.ts']);
 
-    const { artifacts } = generate({ root: app, profile: PROFILE });
-    writeGeneratedArtifacts(artifacts);
+    const artifacts = generateToDisk(app);
 
     // The compile below resolves the order companion's import of the shared companion at this path.
     assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, `src/generated/models/@acme/shared/dist/${resolved}/customer.model.generated.ts`)));
-    await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
+    await compileApp(app);
   });
 }
 
@@ -431,11 +438,10 @@ for (const [importer, appType, form] of [['a CommonJS app', undefined, 'd.cts'],
       'src/order.model.ts': SHARED_ORDER('@acme/shared/customer.model'),
     }, ['src/**/*.ts']);
 
-    const { artifacts } = generate({ root: app, profile: PROFILE });
-    writeGeneratedArtifacts(artifacts);
+    const artifacts = generateToDisk(app);
 
     assert.ok(artifacts.some((artifact) => artifact.path === path.join(app, 'src/generated/models/@acme/shared/dist/customer.model.generated.ts')));
-    await command(app, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
+    await compileApp(app);
   });
 }
 

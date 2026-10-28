@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { loadInventory, applyJob, removeRetiredJobs, digest } from '#golem/outputs';
 import type { GolemConfig, GolemJob } from '#golem/config';
+import { configFor } from './support/output-config.js';
 
 interface OutputFixture {
   config: GolemConfig;
@@ -24,14 +25,7 @@ function fixture(t: TestContext): OutputFixture {
       profile: { mobx: false, validation: true },
     },
   };
-  const config: GolemConfig = {
-    directory,
-    configFile: path.join(directory, 'golem.yaml'),
-    inventoryFile: path.join(directory, '.golem/outputs.json'),
-    tsconfig: path.join(directory, 'tsconfig.json'),
-    profile: { mobx: false, validation: true },
-    jobs: [job],
-  };
+  const config = configFor(directory, job);
   return { config, job, filename: path.join(directory, 'src/item.model.generated.ts') };
 }
 
