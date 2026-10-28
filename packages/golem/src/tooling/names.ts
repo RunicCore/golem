@@ -114,10 +114,14 @@ export interface PublicModule {
 }
 
 /**
- * Check the public namespace of generated modules from the export names the generator holds for each module, with no text
- * read. A name that two modules reachable from `entry` export is a collision.
+ * Walk the modules reachable from `entry` once each, and let `claimExports` claim the names of each module in one scope of
+ * the public exports. A module that the walk reaches and `modules` lacks is an error.
  */
-export function assertUniqueExportNames(modules: ReadonlyMap<string, PublicModule>, entry = 'index.ts'): void {
+function walkPublicModules<Module>(
+  modules: ReadonlyMap<string, Module>,
+  entry: string,
+  claimExports: (module: Module, filename: string, scope: NameScope, visit: (filename: string) => void) => void,
+): void {
   const scope = new NameScope(`public exports of ${entry}`);
   const seen = new Set<string>();
   const visit = (filename: string): void => {
@@ -125,10 +129,20 @@ export function assertUniqueExportNames(modules: ReadonlyMap<string, PublicModul
     seen.add(filename);
     const module = modules.get(filename);
     if (module === undefined) throw new Error(`Generated public module is missing: ${filename}`);
-    for (const name of module.exports) scope.claim(name, `${filename} export ${name}`);
-    module.stars.forEach(visit);
+    claimExports(module, filename, scope, visit);
   };
   visit(entry);
+}
+
+/**
+ * Check the public namespace of generated modules from the export names the generator holds for each module, with no text
+ * read. A name that two modules reachable from `entry` export is a collision.
+ */
+export function assertUniqueExportNames(modules: ReadonlyMap<string, PublicModule>, entry = 'index.ts'): void {
+  walkPublicModules(modules, entry, (module, filename, scope, visit) => {
+    for (const name of module.exports) scope.claim(name, `${filename} export ${name}`);
+    module.stars.forEach(visit);
+  });
 }
 
 /**
@@ -137,13 +151,7 @@ export function assertUniqueExportNames(modules: ReadonlyMap<string, PublicModul
  * Named re-exports (`export { X as Y } from '…'`) count as exports of the re-exporting module.
  */
 export function assertUniquePublicExports(modules: ReadonlyMap<string, string>, entry = 'index.ts'): void {
-  const scope = new NameScope(`public exports of ${entry}`);
-  const seen = new Set<string>();
-  const visit = (filename: string): void => {
-    if (seen.has(filename)) return;
-    seen.add(filename);
-    const source = modules.get(filename);
-    if (source === undefined) throw new Error(`Generated public module is missing: ${filename}`);
+  walkPublicModules(modules, entry, (source, filename, scope, visit) => {
     for (const match of source.matchAll(/^export\s+(?:(?:declare|abstract)\s+)?(?:type|interface|class|const|let|var|enum|function)\s+([A-Za-z_$][\w$]*)/gm)) {
       scope.claim(match[1], `${filename} export ${match[1]}`);
     }
@@ -157,6 +165,5 @@ export function assertUniquePublicExports(modules: ReadonlyMap<string, string>, 
       if (match[1]) scope.claim(match[1], `${filename} namespace ${match[1]}`);
       else visit(match[2].replace(/\.js$/, '.ts'));
     }
-  };
-  visit(entry);
+  });
 }

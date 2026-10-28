@@ -104,37 +104,39 @@ export interface CodecRuntimeOptions {
   readonly modelBases?: ModelBases;
 }
 
-interface EmitCtx {
+/** The options of the module that every function of it reads, plus the state of the function being emitted. */
+interface EmitCtx
+  extends Pick<
+    CodecRuntimeOptions,
+    | 'validatorName'
+    | 'fastCheckName'
+    | 'passCheckNames'
+    | 'resolvedSchemasExpr'
+    | 'serde'
+    | 'nestedConstruct'
+    | 'generatedModelCodecId'
+    | 'nestedGenerated'
+    | 'nestedImportedSerde'
+    | 'siblingWireName'
+    | 'exportedFillFunctionIds'
+    | 'wireType'
+    | 'fieldsType'
+    | 'siblingWireCodecIds'
+    | 'siblingRecursion'
+    | 'exportWireStringify'
+    | 'exportAnonymousCodecs'
+    | 'privateCodec'
+    | 'modelBases'
+  > {
   readonly graph: SchemaGraph;
   /** The node is a recursive union: each inline array, tuple and object branch of its encoders checks its value for a cycle. */
   readonly guardInline?: boolean;
-  readonly validatorName?: (id: string) => Code;
-  readonly fastCheckName?: (id: string) => Code | undefined;
-  readonly passCheckNames?: CodecRuntimeOptions['passCheckNames'];
-  readonly resolvedSchemasExpr?: Code;
-  readonly serde?: StringifySerdeResolver;
-  readonly nestedConstruct?: (name: string, className?: string) => Code;
-  readonly generatedModelCodecId?: (name: string) => string | undefined;
-  readonly nestedGenerated?: (id: string) => Code | undefined;
-  readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
-  readonly siblingWireName?: (codecId: string) => Code;
-  readonly exportedFillFunctionIds?: ReadonlySet<string>;
   readonly issueSource: 'TypeScript' | 'OpenAPI';
-  readonly wireType?: (node: SchemaNode) => Code | undefined;
-  readonly fieldsType?: (node: SchemaNode) => Code | undefined;
   readonly wireIdentity?: boolean;
   /** An object root writes each field it holds, and a missing required field is no error: validation did not run. */
   readonly lenientRoot?: boolean;
   /** Nodes whose `stringify<Id>Wire` function this module emits; wire stringify calls them instead of inlining. */
   readonly wireStringifyIds?: ReadonlySet<string>;
-  /** Sibling codecs whose companion exports a wire stringify (`wireStringifyExportName`). */
-  readonly siblingWireCodecIds?: ReadonlySet<string>;
-  /** Whether a sibling codec's model is recursive, by codec id. A sibling the job does not know is treated as recursive. */
-  readonly siblingRecursion?: ReadonlyMap<string, boolean>;
-  readonly exportWireStringify?: boolean | ((node: SchemaNode) => boolean);
-  readonly exportAnonymousCodecs?: boolean;
-  readonly privateCodec?: (node: SchemaNode) => boolean;
-  readonly modelBases?: ModelBases;
   /** Nodes being inlined into the current wire stringify, to reject unbounded expansion. */
   readonly wireInlining?: ReadonlySet<string>;
   readonly inlineLocals?: Set<string>;

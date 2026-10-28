@@ -134,7 +134,7 @@ export function resolveModelValidationContextValidator(
  * its prototype. Validation reads it without a registry import, so generated
  * validators need no import of this module. The compiler emits the same key.
  */
-export const MODEL_CODEC_IDS = Symbol.for(MODEL_CODEC_IDS_KEY);
+const MODEL_CODEC_IDS = Symbol.for(MODEL_CODEC_IDS_KEY);
 
 function markModelCodecId(ctor: abstract new (values?: never) => object, name: string): void {
   const prototype: object = ctor.prototype;
