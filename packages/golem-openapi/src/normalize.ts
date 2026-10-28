@@ -354,6 +354,23 @@ function assertParameterStyles(
   }
 }
 
+/** The operations of a path item, named by their lowercase method; the standard methods first, then the OpenAPI 3.2 additional ones. */
+function* pathItemOperations(
+  document: unknown,
+  pathItem: JsonObject,
+  adapter: (typeof VERSION_ADAPTERS)[OpenApiFeatureLine],
+): Generator<{ method: string; wireMethod: string; operation: JsonObject }> {
+  for (const method of adapter.methods) {
+    if (pathItem[method] === undefined) continue;
+    yield { method, wireMethod: method.toUpperCase(), operation: asRecord(resolveLocal(document, pathItem[method])) };
+  }
+  if (adapter.additionalOperations) {
+    for (const [wireMethod, rawOperation] of objectEntries(pathItem.additionalOperations)) {
+      yield { method: wireMethod, wireMethod, operation: asRecord(resolveLocal(document, rawOperation)) };
+    }
+  }
+}
+
 export function normalizeDocument(document: unknown): NormalizedDocument {
   const root = asRecord(document);
   const featureLine = featureLineOf(root.openapi);
@@ -363,60 +380,24 @@ export function normalizeDocument(document: unknown): NormalizedDocument {
   const operations: NormalizedOperation[] = [];
   for (const [route, rawPathItem] of objectEntries(root.paths)) {
     const pathItem = asRecord(resolveLocal(document, rawPathItem));
-    for (const method of adapter.methods) {
-      if (pathItem[method] === undefined) continue;
-      const operation = asRecord(resolveLocal(document, pathItem[method]));
-      const name = reserveOperationName(names, operationName(operation, method, route), diagnostics, `${method.toUpperCase()} ${route}`);
-      operations.push(normalizeOperation(document, pathItem, operation, method, route, name));
-    }
-    if (adapter.additionalOperations) {
-      for (const [wireMethod, rawOperation] of objectEntries(pathItem.additionalOperations)) {
-        const operation = asRecord(resolveLocal(document, rawOperation));
-        const name = reserveOperationName(names, operationName(operation, wireMethod, route), diagnostics, `${wireMethod} ${route}`);
-        operations.push(
-          normalizeOperation(document, pathItem, operation, wireMethod, route, name, 'path', route, wireMethod),
-        );
-      }
+    for (const { method, wireMethod, operation } of pathItemOperations(document, pathItem, adapter)) {
+      const name = reserveOperationName(names, operationName(operation, method, route), diagnostics, `${wireMethod} ${route}`);
+      operations.push(normalizeOperation(document, pathItem, operation, method, route, name, 'path', route, wireMethod));
     }
   }
 
   const inboundOperations: NormalizedOperation[] = [];
   for (const [webhookName, rawPathItem] of objectEntries(root.webhooks)) {
     const pathItem = asRecord(resolveLocal(document, rawPathItem));
-    for (const method of adapter.methods) {
-      if (pathItem[method] === undefined) continue;
-      const operation = asRecord(resolveLocal(document, pathItem[method]));
+    for (const { method, wireMethod, operation } of pathItemOperations(document, pathItem, adapter)) {
       const name = reserveName(
         names,
         inboundOperationName('webhook', webhookName, operation, method, webhookName),
-        `webhook ${webhookName} ${method.toUpperCase()}`,
+        `webhook ${webhookName} ${wireMethod}`,
       );
       inboundOperations.push(
-        normalizeOperation(document, pathItem, operation, method, webhookName, name, 'webhook', webhookName),
+        normalizeOperation(document, pathItem, operation, method, webhookName, name, 'webhook', webhookName, wireMethod),
       );
-    }
-    if (adapter.additionalOperations) {
-      for (const [wireMethod, rawOperation] of objectEntries(pathItem.additionalOperations)) {
-        const operation = asRecord(resolveLocal(document, rawOperation));
-        const name = reserveName(
-          names,
-          inboundOperationName('webhook', webhookName, operation, wireMethod, webhookName),
-          `webhook ${webhookName} ${wireMethod}`,
-        );
-        inboundOperations.push(
-          normalizeOperation(
-            document,
-            pathItem,
-            operation,
-            wireMethod,
-            webhookName,
-            name,
-            'webhook',
-            webhookName,
-            wireMethod,
-          ),
-        );
-      }
     }
   }
 
@@ -425,42 +406,16 @@ export function normalizeDocument(document: unknown): NormalizedDocument {
       const callback = asRecord(resolveLocal(document, rawCallback));
       for (const [expression, rawPathItem] of objectEntries(callback)) {
         const pathItem = asRecord(resolveLocal(document, rawPathItem));
-        for (const method of adapter.methods) {
-          if (pathItem[method] === undefined) continue;
-          const operation = asRecord(resolveLocal(document, pathItem[method]));
+        for (const { method, wireMethod, operation } of pathItemOperations(document, pathItem, adapter)) {
           const sourceName = `${parentOperation.name} ${callbackName}`;
           const name = reserveName(
             names,
             inboundOperationName('callback', sourceName, operation, method, expression),
-            `callback ${sourceName} ${method.toUpperCase()} ${expression}`,
+            `callback ${sourceName} ${wireMethod} ${expression}`,
           );
           inboundOperations.push(
-            normalizeOperation(document, pathItem, operation, method, expression, name, 'callback', sourceName),
+            normalizeOperation(document, pathItem, operation, method, expression, name, 'callback', sourceName, wireMethod),
           );
-        }
-        if (adapter.additionalOperations) {
-          for (const [wireMethod, rawOperation] of objectEntries(pathItem.additionalOperations)) {
-            const operation = asRecord(resolveLocal(document, rawOperation));
-            const sourceName = `${parentOperation.name} ${callbackName}`;
-            const name = reserveName(
-              names,
-              inboundOperationName('callback', sourceName, operation, wireMethod, expression),
-              `callback ${sourceName} ${wireMethod} ${expression}`,
-            );
-            inboundOperations.push(
-              normalizeOperation(
-                document,
-                pathItem,
-                operation,
-                wireMethod,
-                expression,
-                name,
-                'callback',
-                sourceName,
-                wireMethod,
-              ),
-            );
-          }
         }
       }
     }

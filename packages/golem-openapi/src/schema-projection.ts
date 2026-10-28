@@ -5,7 +5,6 @@ import {
   decodePointerToken,
   resolveLocalPointer,
   type NormalizedDocument,
-  type NormalizedOperation,
 } from './normalize.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 
@@ -25,6 +24,28 @@ interface CanonicalResource {
 export interface ResourceIndex {
   readonly byCanonical: ReadonlyMap<string, CanonicalResource>;
   readonly byPointer: ReadonlyMap<string, CanonicalResource>;
+}
+
+/** The subschemas of a schema object, each with its pointer tokens from the schema. Data keywords, `$ref`, `$dynamicRef` and `$id` hold none. */
+function* subschemasOf(schema: JsonObject): Generator<{ readonly child: unknown; readonly tokens: readonly string[] }> {
+  for (const [key, value] of objectEntries(schema)) {
+    if (DATA_KEYWORDS.has(key) || key === '$ref' || key === '$dynamicRef' || key === '$id') continue;
+    if (SCHEMA_MAP_KEYWORDS.includes(key) && isJsonObject(value)) {
+      for (const [name, child] of objectEntries(value)) yield { child, tokens: [key, name] };
+      continue;
+    }
+    if (SCHEMA_SINGLE_KEYWORDS.includes(key) && typeof value !== 'boolean') {
+      yield { child: value, tokens: [key] };
+      continue;
+    }
+    if (SCHEMA_ARRAY_KEYWORDS.includes(key) && Array.isArray(value)) {
+      for (const [index, child] of value.entries()) yield { child, tokens: [key, String(index)] };
+    }
+  }
+}
+
+function pointerAt(parent: string, tokens: readonly string[]): string {
+  return tokens.reduce((pointer, token) => jsonPointerJoin(pointer, token), parent);
 }
 
 /** A JSON Schema `$id` declared by two different schemas; pointers are plain JSON Pointers to the `$id` keywords. */
@@ -160,20 +181,7 @@ export function collectCanonicalResources(
       register(schema, canonical, true, null, schemaPointer);
       nextBase = canonical;
     }
-    for (const [key, value] of objectEntries(schema)) {
-      if (DATA_KEYWORDS.has(key) || key === '$ref' || key === '$dynamicRef' || key === '$id') continue;
-      if (SCHEMA_MAP_KEYWORDS.includes(key) && isJsonObject(value)) {
-        for (const [childKey, child] of objectEntries(value)) walk(child, nextBase, jsonPointerJoin(jsonPointerJoin(schemaPointer, key), childKey));
-        continue;
-      }
-      if (SCHEMA_SINGLE_KEYWORDS.includes(key) && typeof value !== 'boolean') {
-        walk(value, nextBase, jsonPointerJoin(schemaPointer, key));
-        continue;
-      }
-      if (SCHEMA_ARRAY_KEYWORDS.includes(key) && Array.isArray(value)) {
-        value.forEach((child, index) => walk(child, nextBase, jsonPointerJoin(jsonPointerJoin(schemaPointer, key), String(index))));
-      }
-    }
+    for (const { child, tokens } of subschemasOf(schema)) walk(child, nextBase, pointerAt(schemaPointer, tokens));
   };
 
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
@@ -304,26 +312,9 @@ function findAnchor(
   if (schema.$anchor === name || schema.$dynamicAnchor === name) {
     return { schema, currentBase: parentBase };
   }
-  for (const [key, value] of objectEntries(schema)) {
-    if (DATA_KEYWORDS.has(key) || key === '$ref' || key === '$dynamicRef' || key === '$id') continue;
-    if (SCHEMA_MAP_KEYWORDS.includes(key) && isJsonObject(value)) {
-      for (const child of Object.values(value)) {
-        const found = findAnchor(child, name, base, resources, seen);
-        if (found) return found;
-      }
-      continue;
-    }
-    if (SCHEMA_SINGLE_KEYWORDS.includes(key) && typeof value !== 'boolean') {
-      const found = findAnchor(value, name, base, resources, seen);
-      if (found) return found;
-      continue;
-    }
-    if (SCHEMA_ARRAY_KEYWORDS.includes(key) && Array.isArray(value)) {
-      for (const child of value) {
-        const found = findAnchor(child, name, base, resources, seen);
-        if (found) return found;
-      }
-    }
+  for (const { child } of subschemasOf(schema)) {
+    const found = findAnchor(child, name, base, resources, seen);
+    if (found) return found;
   }
   return undefined;
 }
@@ -538,23 +529,8 @@ function visitSchemaNode(
     handlers.onSchemaRef?.('$dynamicRef', owner.$dynamicRef, nextBase, `${pointer}/$dynamicRef`, owner);
   }
   reportDiscriminatorMappings(owner.discriminator, nextBase, jsonPointerJoin(pointer, 'discriminator'), handlers);
-  for (const [key, value] of objectEntries(schema)) {
-    if (DATA_KEYWORDS.has(key) || key === '$ref' || key === '$dynamicRef' || key === '$id') continue;
-    if (SCHEMA_MAP_KEYWORDS.includes(key) && isJsonObject(value)) {
-      for (const [name, child] of objectEntries(value)) {
-        visitSchemaNode(child, nextBase, jsonPointerJoin(jsonPointerJoin(pointer, key), name), seen, handlers);
-      }
-      continue;
-    }
-    if (SCHEMA_SINGLE_KEYWORDS.includes(key) && typeof value !== 'boolean') {
-      visitSchemaNode(value, nextBase, jsonPointerJoin(pointer, key), seen, handlers);
-      continue;
-    }
-    if (SCHEMA_ARRAY_KEYWORDS.includes(key) && Array.isArray(value)) {
-      value.forEach((child, index) => {
-        visitSchemaNode(child, nextBase, jsonPointerJoin(jsonPointerJoin(pointer, key), String(index)), seen, handlers);
-      });
-    }
+  for (const { child, tokens } of subschemasOf(schema)) {
+    visitSchemaNode(child, nextBase, pointerAt(pointer, tokens), seen, handlers);
   }
 }
 
@@ -1288,5 +1264,3 @@ export function projectOperationSchema(
     },
   );
 }
-
-export type { NormalizedOperation };
