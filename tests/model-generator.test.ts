@@ -959,6 +959,28 @@ export type TA = IModel<{ n: number & TValidation<typeof $v0> }>;
   );
 });
 
+test('a model class named in the form of a generated local stops generation with RUNM1088 where another model uses it', (t: TestContext) => {
+  // protects: T-643 R-59 an imported class named $b is a diagnostic with file and line, never a raw TypeError
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-local-form-', name: 'local-form', linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, {
+    'b.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import { TBBaseModel } from './b.model.generated.js';
+export type TB = IModel<{ id: string }>;
+export class $b extends TBBaseModel {}
+`,
+    'a.model.ts': tsSource`import type { IModel } from '@exprtlabs/golem/model';
+import { $b } from './b.model.js';
+export type TA = IModel<{ b: $b }>;
+`,
+  });
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    (error: unknown) => error instanceof Error && error.message.endsWith(
+      'b.model.ts:4:14 RUNM1088: The class is named "$b", which has the form of a local of generated code (a $, one lowercase letter and digits). Generated code cannot import it under that name. Rename it.',
+    ),
+  );
+});
+
 test('serde functions exported under the form of a generated local are imported under an alias and generate', (t: TestContext) => {
   // protects: T-643 R-59 only a name that generated code binds is refused; an aliased import binds the alias
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-local-form-', name: 'local-form', linkWorkspaceNodeModules: true });

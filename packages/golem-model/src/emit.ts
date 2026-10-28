@@ -1,4 +1,4 @@
-import { deduplicateProjections, exportedConcreteClass, isGeneratedBrandKey, isGolemTagKey, linkedClassNames } from '@exprtlabs/golem/internal/type-analysis';
+import { assertImportableClassName, deduplicateProjections, exportedConcreteClass, isGeneratedBrandKey, isGolemTagKey, linkedClassNames } from '@exprtlabs/golem/internal/type-analysis';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { PACKAGE_VERSION } from './package-info.js';
 import {
@@ -1058,6 +1058,7 @@ function buildFileImports(
   for (const item of localImports) {
     const name = concreteNames.get(item.name);
     if (cyclicSiblings?.has(item.name) || name === undefined || !(classModelNames.has(item.name) || referenceNames.has(item.name))) continue;
+    assertImportableClassName(item, name);
     const source = new ImportSource(sourceImportPath(item.sourceFile.fileName, output));
     concrete.set(item.name, source.name(name));
     sources.push(source);
