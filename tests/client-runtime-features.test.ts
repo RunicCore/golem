@@ -73,6 +73,27 @@ test('a multipart body sends no part for an undefined or null field', async () =
   assert.equal(form.get('kept'), 'a');
 });
 
+test('an empty-object query parameter adds no entry and a non-primitive one is a TypeError naming the parameter', () => {
+  // protects: bug a query or path parameter that was an empty object or a Date became "[object Object]" or a locale string
+  const query: string[] = [];
+  addQueryParameter(runtime, query, 'filter', {}, 'form', true, false);
+  addQueryParameter(runtime, query, 'filter', {}, 'form', false, false);
+  assert.deepEqual(query, []);
+  assert.throws(
+    () => addQueryParameter(runtime, query, 'since', new Date(0), 'form', true, false),
+    (error: unknown) => error instanceof TypeError && /"since"/.test(error.message),
+  );
+  assert.throws(
+    () => serializePath(runtime, 'id', new Date(0), 'simple', false),
+    (error: unknown) => error instanceof TypeError && /"id"/.test(error.message),
+  );
+  assert.throws(
+    () => serializePath(runtime, 'id', {}, 'simple', false),
+    (error: unknown) => error instanceof TypeError && /"id"/.test(error.message),
+  );
+  assert.deepEqual(query, []);
+});
+
 test('a custom body encoder replaces the built-in JSON encoding', () => {
   const custom = new ClientRuntime('Tasks', {
     baseUrl: 'https://api.test',

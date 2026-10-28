@@ -26,7 +26,15 @@ function entries(value: unknown): Array<[string, unknown]> {
     : [];
 }
 
-function serializeSimple(value: unknown, explode: boolean): string {
+/** The text of a parameter that is not an array or an object with entries; any other object has no wire text. */
+function scalarText(name: string, value: unknown): string {
+  if (typeof value === 'object' && value !== null) {
+    throw new TypeError(`Parameter "${name}" must be a primitive, an array or an object with entries`);
+  }
+  return encode(value);
+}
+
+function serializeSimple(name: string, value: unknown, explode: boolean): string {
   if (Array.isArray(value)) return value.map((item) => encode(item)).join(',');
   const pairs = entries(value);
   if (pairs.length) {
@@ -34,7 +42,7 @@ function serializeSimple(value: unknown, explode: boolean): string {
       explode ? `${encode(key)}=${encode(item)}` : `${encode(key)},${encode(item)}`
     ).join(',');
   }
-  return encode(value);
+  return scalarText(name, value);
 }
 
 export function serializeHeaderSimple(_runtime: ClientRuntime, value: unknown, explode: boolean): string {
@@ -76,7 +84,7 @@ export function serializePath(
   style: string,
   explode: boolean,
 ): string {
-  if (style === 'simple') return serializeSimple(value, explode);
+  if (style === 'simple') return serializeSimple(name, value, explode);
   if (style === 'label') {
     if (Array.isArray(value)) return `.${value.map((item) => encode(item)).join(explode ? '.' : ',')}`;
     const pairs = entries(value);
@@ -85,7 +93,7 @@ export function serializePath(
         explode ? `${encode(key)}=${encode(item)}` : `${encode(key)},${encode(item)}`
       ).join(explode ? '.' : ',')}`;
     }
-    return `.${encode(value)}`;
+    return `.${scalarText(name, value)}`;
   }
   if (style === 'matrix') {
     if (Array.isArray(value)) {
@@ -99,7 +107,7 @@ export function serializePath(
         ? pairs.map(([key, item]) => `;${encode(key)}=${encode(item)}`).join('')
         : `;${encode(name)}=${pairs.flatMap(([key, item]) => [encode(key), encode(item)]).join(',')}`;
     }
-    return `;${encode(name)}=${encode(value)}`;
+    return `;${encode(name)}=${scalarText(name, value)}`;
   }
   throw new Error(`Unsupported path parameter style: ${style}`);
 }
@@ -157,6 +165,9 @@ export function addQueryParameter(
     }
     return;
   }
+  // An empty object has no entries to send, as an undefined value has none (RFC 6570).
+  if (typeof value === 'object' && Object.getPrototypeOf(value) === Object.prototype && !Object.keys(value).length) return;
+  scalarText(name, value);
   appendQuery(runtime, query, name, value, allowReserved);
 }
 
