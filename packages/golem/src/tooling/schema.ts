@@ -573,6 +573,11 @@ function descriptorSchema(
         const branches = present.map(({ variant, index }) => {
           const branch = descriptorSchema(variant, state, options);
           const values = table?.values[index];
+          if (table && index === table.defaultVariant && options.discriminatorMapping !== true && options.discriminatorDefaultMapping !== true) {
+            // The default takes only the values whose tag selects no variant, so an open default does not also accept a tagged variant's value.
+            const taken = table.values.flat();
+            return taken.length === 0 ? branch : { allOf: [branch], not: { required: [table.propertyName], properties: { [table.propertyName]: { enum: taken } } } };
+          }
           if (!table || !values?.length || options.discriminatorMapping === true) return branch;
           // An explicit tag table narrows the tag here; the variant keeps its declared type.
           const tagged = {
