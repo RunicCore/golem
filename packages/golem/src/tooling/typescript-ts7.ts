@@ -28,10 +28,8 @@ import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
-import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, referenceClosure, referencedConfigFile } from './typescript-config.js';
-import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
-import { canonical, programConfig } from './typescript-program-config.js';
-import type { ProgramConfig } from './typescript-program-config.js';
+import { assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, programConfig, referenceClosure, referencedConfigFile } from './typescript-config.js';
+import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder } from './typescript-config.js';
 import { inNodeModules } from './type-analysis/path-identity.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
