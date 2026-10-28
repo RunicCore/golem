@@ -3,8 +3,8 @@ import type {
   OpenApiVersion,
 } from '../../packages/golem-openapi/compliance/capabilities.js';
 
-export type NativeRequestCodec = 'none' | 'json' | 'form';
-export type NativeResponseCodec = 'empty' | 'json' | 'binary';
+type NativeRequestCodec = 'none' | 'json' | 'form';
+type NativeResponseCodec = 'empty' | 'json' | 'binary';
 
 export interface UpstreamResponseCase {
   readonly status: string;

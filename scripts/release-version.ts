@@ -3,7 +3,7 @@ import path from 'node:path';
 import { distTagForVersion } from '../packages/golem/src/tooling/dist-tag.js';
 import { EXAMPLE_NAMES, assertExampleInventory } from './maintained-examples.js';
 
-export const PUBLIC_PACKAGE_NAMES = [
+const PUBLIC_PACKAGE_NAMES = [
   '@exprtlabs/golem',
   '@exprtlabs/golem-model',
   '@exprtlabs/golem-openapi',

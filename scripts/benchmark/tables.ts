@@ -5,7 +5,7 @@ import type { BenchmarkResults } from './results-schema.js';
  * A cell of the cost table. `ops` is a median in ops/s, `ratio` a quotient of two medians. `not-applicable` is a pair
  * that does not exist (validate has no "off" mode). `not-run` is a number the run did not time.
  */
-export type CostCell =
+type CostCell =
   | { readonly kind: 'ops'; readonly value: number }
   | { readonly kind: 'ratio'; readonly value: number }
   | { readonly kind: 'not-applicable' }
@@ -116,7 +116,7 @@ export function formatCostTable(rows: readonly CostRow[]): string {
  *
  * A file with no noise band (measured before the control) ranks with no ties.
  */
-export function rankSpeeds(speeds: readonly number[], band: number | undefined): readonly number[] {
+function rankSpeeds(speeds: readonly number[], band: number | undefined): readonly number[] {
   const order = speeds.map((_, index) => index).sort((a, b) => speeds[b] - speeds[a]);
   const ranks: number[] = [];
   let leader = -1;
@@ -128,18 +128,18 @@ export function rankSpeeds(speeds: readonly number[], band: number | undefined):
   return ranks;
 }
 
-export type CompareCell =
+type CompareCell =
   | { readonly kind: 'ops'; readonly value: number; readonly rank: number; readonly mark?: string }
   | { readonly kind: 'not-supported'; readonly note: string };
 
 /** The libraries that do the operation in this group, in group order. */
-export interface CompareRow { readonly payload: string; readonly operation: string; readonly cells: readonly { readonly adapter: AdapterId; readonly cell: CompareCell }[] }
+interface CompareRow { readonly payload: string; readonly operation: string; readonly cells: readonly { readonly adapter: AdapterId; readonly cell: CompareCell }[] }
 
 /**
  * `score` is the geometric mean of the library's speed over the row leader's speed, over the `rows` that every library of the group
  * supports, out of `of` rows that the run timed or marked unsupported. It is at most 1; the leader of every row scores 1. It is absent when `rows` is 0.
  */
-export interface GroupSummary { readonly adapter: AdapterId; readonly label: string; readonly score?: number; readonly rows: number; readonly of: number }
+interface GroupSummary { readonly adapter: AdapterId; readonly label: string; readonly score?: number; readonly rows: number; readonly of: number }
 export interface CompareGroup { readonly id: GroupId; readonly label: string; readonly rows: readonly CompareRow[]; readonly summary: readonly GroupSummary[] }
 
 /** Table 1 of the results: ranks and summaries, derived from the cases (PO2). `band` is the noise band the ties used, or undefined for no ties. */
@@ -232,7 +232,7 @@ export interface ReleaseTiming extends ReleasePair { readonly key: string; reado
 /** `ratio` is this checkout over the base, `halfRatios` the same in each half. `slower` is a ratio below `1 - band` in every half. */
 export interface ReleaseRow extends ReleaseTiming { readonly ratio: number; readonly halfRatios: readonly number[]; readonly slower: boolean }
 /** The geometric mean of the ratios of one adapter, over the whole session and in each half. */
-export interface ReleaseMean { readonly adapter: string; readonly ratio: number; readonly halfRatios: readonly number[] }
+interface ReleaseMean { readonly adapter: string; readonly ratio: number; readonly halfRatios: readonly number[] }
 export interface ReleaseVerdict { readonly band: number; readonly rows: readonly ReleaseRow[]; readonly failing: readonly ReleaseRow[]; readonly means: readonly ReleaseMean[]; readonly verdict: 'pass' | 'stop' }
 
 function checkPair(pair: ReleasePair, what: string): void {

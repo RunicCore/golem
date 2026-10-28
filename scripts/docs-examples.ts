@@ -37,7 +37,7 @@ function hasRegion(text: string, name: string): boolean {
 }
 
 /** Complete source for the maintained files embedded in documentation snippets. */
-export function docExampleSources(root: string): readonly { source: string }[] {
+function docExampleSources(root: string): readonly { source: string }[] {
   const allowed = new Set(listPublicSourceFiles(root));
   const sources = new Set<string>();
   const visit = (directory: string): void => {
