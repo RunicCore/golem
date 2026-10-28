@@ -9,7 +9,7 @@ import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { tagsProject as fixture } from './support/model-tags-project.js';
-import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
+import { buildModelProjectWith, generatedModelFiles } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
@@ -22,8 +22,7 @@ test('validation false retains Date and serde conversions without a validator re
     imports: tsSource`import type { TSerde } from '@exprtlabs/golem/tags';\nimport { encode, decode } from './codecs.js';`,
     fields: tsSource`when?: Date; token: number & TSerde<typeof encode, typeof decode>`,
   }).text);
-  writeModelGolemYaml(root, { mobx: false, validation: false });
-  await buildModelProject(root);
+  await buildModelProjectWith(root, { mobx: false, validation: false });
   const generated = generatedModelFiles(root).find((artifact) => artifact.path.endsWith('/a.model.generated.ts'))?.content ?? '';
   assert.match(generated, /__golemSerialize0Source/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
@@ -60,8 +59,7 @@ test('serde wire descriptors validate nested constraints before decode and after
     imports: tsSource`import type { TSerde, MinLength } from '@exprtlabs/golem/tags';\nimport { encode, decode } from './codecs.js';`,
     fields: tsSource`value: number & TSerde<typeof encode, typeof decode>`,
   }).text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
+  await buildModelProjectWith(root, { mobx: false, validation: true });
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
   assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: { code: 'x' } })));
@@ -78,8 +76,7 @@ test('serde wire predicates run on the wire plane', async t => {
     imports: tsSource`import type { TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { encode, decode, positive } from './codecs.js';`,
     fields: tsSource`value: number & TValidation<typeof positive> & TSerde<typeof encode, typeof decode>`,
   }).text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
+  await buildModelProjectWith(root, { mobx: false, validation: true });
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
 
@@ -196,8 +193,7 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
     imports: tsSource`import type { MinLength, TSerde, TValidation } from '@exprtlabs/golem/tags';\nimport { encodeDate, decodeDate, valid } from './bindings.js';\ntype Tagged<T extends string> = T & MinLength<3> & TValidation<typeof valid>;\ntype Box<T> = { value: T };\ntype Payload = Partial<Pick<Box<Tagged<string>>, 'value'>> & { when: Date & TSerde<typeof encodeDate, typeof decodeDate> };`,
     fields: tsSource`payload: Payload`,
   }).text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
+  await buildModelProjectWith(root, { mobx: false, validation: true });
   const shared = generatedModelFiles(root).map((artifact) => artifact.content).join('\n');
   assert.match(shared, /minLength/);
   assert.match(shared, /exprtValidation/);
@@ -231,8 +227,7 @@ export type TA = IObject<{ token: number & TSerde<typeof encode, typeof decode>;
 import type { TA } from './a.model.js';
 export type TB = IObject<{ back?: TA; copy: Pick<TA, 'token'> }>;
 `.text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
+  await buildModelProjectWith(root, { mobx: false, validation: true });
   const a = await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
   const b = await import(path.toNamespacedPath(path.join(root, 'build/b.model.generated.js')));
 

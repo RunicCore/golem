@@ -8,7 +8,7 @@ import { generatedJsonData } from './generated-data.js';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { tagsProject as fixture } from './support/model-tags-project.js';
-import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
+import { buildModelProjectWith, generatedModelFiles } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { joinSource, tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
@@ -31,8 +31,7 @@ import { validate } from './validators.js';`,
   };
   const first = fixture(t);
   build(first.sourceRoot);
-  writeModelGolemYaml(first.root, { mobx: false, validation: true });
-  await buildModelProject(first.root);
+  await buildModelProjectWith(first.root, { mobx: false, validation: true });
   const firstArtifacts = generatedModelFiles(first.root);
   const firstShared = firstArtifacts.filter((artifact) => artifact.path.endsWith('.model.generated.ts')).map((artifact) => artifact.content).join('\n');
   assert.ok(firstShared);
@@ -60,8 +59,7 @@ type ValueObject = { foo?: string; bar?: string; x_value?: number };
 type ValueArray = Array<string>;`,
     fields: tsSource`values: ValueArray & Contains<string & Pattern<'^ok$'>> & MinItems<1> & MinContains<1> & MaxContains<2>; objectValue: ValueObject & MinProperties<1> & MaxProperties<3> & PropertyNames<string & Pattern<'^[a-z_]+$'>> & PatternProperties<{ '^x_': number; '^z_': boolean }> & AdditionalProperties<never> & UnevaluatedProperties<never> & DependentRequired<{ foo: ['bar'] }> & DependentSchemas<{ foo: { bar: string } }> & OneOf<[{ foo: string }, { bar: string }]> & Not<{ forbidden: string }> & IfThenElse<{ bar: string }, { bar: string }, { foo: string }>;`,
   }).text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
+  await buildModelProjectWith(root, { mobx: false, validation: true });
   const shared = generatedModelFiles(root).map((artifact) => artifact.content).join('\n');
   for (const keyword of [
     'contains', 'minContains', 'maxContains', 'minProperties', 'maxProperties',
@@ -158,8 +156,7 @@ import { first, second } from './predicates.js';`,
   write('recursive-alias', {
     'node.model.ts': taggedModelSource({ name: 'Node', fields: tsSource`name: string; children?: TNode[]` }).text,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
+  await buildModelProjectWith(root, { mobx: false, validation: true });
   const load = (directory: string, file: string) => import(path.toNamespacedPath(path.join(root, 'build', directory, file)));
 
   await t.test('builtin constraints run before custom predicates and distinct predicates compose once', async () => {
@@ -409,8 +406,7 @@ test('a MobX model generated with validation false has no validator', async t =>
     name: 'A',
     fields: tsSource`title: string; done: boolean`,
   }).text);
-  writeModelGolemYaml(root, { mobx: true, validation: false });
-  await buildModelProject(root);
+  await buildModelProjectWith(root, { mobx: true, validation: false });
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const model = decodeGeneratedModel(A, { title: 'Write', done: false });
   assert.equal('$validator' in model, false);
@@ -429,8 +425,7 @@ test('model validators are a generated TypeScript artifact that the built output
     imports: tsSource`import type { TValidation } from '@exprtlabs/golem/tags';\nimport { valid } from './predicates.js';`,
     fields: tsSource`value: string & TValidation<typeof valid>`,
   }).text);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
+  await buildModelProjectWith(root, { mobx: false, validation: true });
   const artifacts = generatedModelFiles(root);
   const validators = artifacts.find((artifact) => artifact.path.endsWith('/models.validators.generated.ts'));
   assert.ok(validators);
@@ -473,8 +468,7 @@ for (const item of [
     // protects: F-31 only the global Date is read as a date; a user type named Date keeps its shape
     const { root, sourceRoot } = fixture(t);
     fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: item.declaration, fields: tsSource`when: Date` }).text);
-    writeModelGolemYaml(root, { mobx: false, validation: true });
-    await buildModelProject(root);
+    await buildModelProjectWith(root, { mobx: false, validation: true });
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
     const model = decodeGeneratedModel(A, item.wire);
     assert.equal(model.when instanceof Date, item.isDate);

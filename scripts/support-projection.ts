@@ -18,15 +18,15 @@ import {
  * Keep the exclusion here so every consumer-facing renderer applies the same
  * boundary without changing the authoritative registry.
  */
-export const CONSUMER_EXCLUDED_CAPABILITIES = ['vendored-upstream-corpus'] as const;
+const CONSUMER_EXCLUDED_CAPABILITIES = ['vendored-upstream-corpus'] as const;
 
-export type SupportProjectionSurface =
+type SupportProjectionSurface =
   | 'Runtime behavior'
   | 'TypeScript types'
   | 'Generated metadata';
 
 /** Opaque browser key; raw registry profile IDs stay build-time only. */
-export type SupportProjectionProfileId = `profile-${number}`;
+type SupportProjectionProfileId = `profile-${number}`;
 
 /**
  * The browser-facing support contract. Keep this deliberately smaller than
@@ -40,7 +40,7 @@ export interface SupportProjectionProfile {
   readonly label: string;
 }
 
-export interface SupportProjectionStatus {
+interface SupportProjectionStatus {
   readonly id: CapabilityStatus;
   readonly label: string;
   readonly meaning: string;
@@ -84,7 +84,7 @@ function profileProjectionId(index: number): SupportProjectionProfileId {
   return `profile-${index + 1}`;
 }
 
-export function consumerCapabilityRecords(
+function consumerCapabilityRecords(
   metadata: ComplianceMetadata,
 ): readonly CapabilityRecord[] {
   return metadata.capabilities.filter((record) =>

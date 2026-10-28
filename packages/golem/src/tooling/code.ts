@@ -593,7 +593,7 @@ interface RuntimeNames {
 }
 
 /** A name a file imports from a runtime module, and the local name it binds when that differs. */
-export interface ImportedName { readonly name: string; readonly alias?: string; readonly typeOnly?: true }
+interface ImportedName { readonly name: string; readonly alias?: string; readonly typeOnly?: true }
 
 interface Collected {
   readonly runtime: Map<RuntimeModule, RuntimeNames>;

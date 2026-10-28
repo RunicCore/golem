@@ -9,12 +9,12 @@
  */
 
 /** How unknown keys are found. F1 and F2 are exact under the JSON-view rule; `count` and `none` are not. */
-export type KeyTest =
+type KeyTest =
   | 'F1'     // loop over Object.keys, a switch captures declared values, an undefined unknown key is allowed
   | 'F2'     // present declared keys counted by own-enumerable test; F1 only when Object.keys(v).length differs
   | 'count'  // straight reads, Object.keys(v).length equals the declared count (unsound: skips optional and undefined keys)
   | 'none';  // straight reads, no unknown-key test (typia `is`)
-export type FiniteTest = 'sub' | 'isFinite' | 'off';
+type FiniteTest = 'sub' | 'isFinite' | 'off';
 
 export interface Toggles {
   readonly keyTest: KeyTest;

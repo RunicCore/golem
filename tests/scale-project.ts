@@ -7,6 +7,13 @@ import type { TestContext } from 'node:test';
 /** The generation profile of every scale project. */
 export const SCALE_PROFILE = { mobx: false, validation: true } as const;
 
+/** Write `count` scale models into the source folder of a model project. */
+export function writeScaleModels(sourceRoot: string, count: number): void {
+  const sources: Record<string, ReturnType<typeof scaleModelSource>> = {};
+  for (let index = 0; index < count; index++) sources[`item-${index}.model.ts`] = scaleModelSource({ index });
+  writeModelSources(sourceRoot, sources);
+}
+
 /** Write `count` scale models into a validating project whose golem.yaml names the scale profile. */
 export function createScaleProject(t: TestContext, count: number): { readonly root: string } {
   const { root, sourceRoot } = createModelProject(t, {
@@ -15,9 +22,7 @@ export function createScaleProject(t: TestContext, count: number): { readonly ro
     allowJs: true,
     linkWorkspaceNodeModules: true,
   });
-  const sources: Record<string, ReturnType<typeof scaleModelSource>> = {};
-  for (let index = 0; index < count; index++) sources[`item-${index}.model.ts`] = scaleModelSource({ index });
-  writeModelSources(sourceRoot, sources);
+  writeScaleModels(sourceRoot, count);
   writeModelGolemYaml(root, SCALE_PROFILE);
   return { root };
 }

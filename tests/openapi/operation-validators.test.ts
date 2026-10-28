@@ -13,6 +13,15 @@ import { writeSdk } from '#openapi/generator';
 import { createFixtureProject } from '../fixture-project.js';
 import { compileGeneratedSdk, isGeneratedClientClass, writeGeneratedSdk, type GeneratedClientClass } from './helpers.js';
 
+/** The one POST /payload operation that takes and returns the Payload component. */
+function payloadPaths(): Record<string, unknown> {
+  return { '/payload': { post: {
+    operationId: 'sendPayload',
+    requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Payload' } } } },
+    responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Payload' } } } } },
+  } } };
+}
+
 function sdkDocument(marker: string): Record<string, unknown> {
   return {
     openapi: '3.1.0', info: { title: 'Engine', version: '1' },
@@ -20,11 +29,7 @@ function sdkDocument(marker: string): Record<string, unknown> {
       $id: 'urn:sdk-engine-test:payload',
       type: 'object', required: ['marker'], properties: { marker: { const: marker, type: 'string' } }, additionalProperties: false,
     } } },
-    paths: { '/payload': { post: {
-      operationId: 'sendPayload',
-      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Payload' } } } },
-      responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Payload' } } } } },
-    } } },
+    paths: payloadPaths(),
   };
 }
 
@@ -236,11 +241,7 @@ function sharedTitleDocument(marker: string): Record<string, unknown> {
     components: { schemas: { Payload: {
       type: 'object', required: ['marker'], properties: { marker: { const: marker, type: 'string' } }, additionalProperties: false,
     } } },
-    paths: { '/payload': { post: {
-      operationId: 'sendPayload',
-      requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Payload' } } } },
-      responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Payload' } } } } },
-    } } },
+    paths: payloadPaths(),
   };
 }
 

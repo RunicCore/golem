@@ -47,7 +47,7 @@ interface BuildOptions {
   readonly onBuilt?: (run: { readonly label: string; readonly exitCode: number }) => void;
 }
 
-export const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
+const NO_GOLEM_YAML = 'golem build needs a golem.yaml; run it next to one or pass --config';
 
 /** What a build needs from the project's configuration, read once per build from the compiler's own parse. */
 interface Project {

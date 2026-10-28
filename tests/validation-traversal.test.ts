@@ -37,6 +37,32 @@ async function registerModel<Model extends object>(
   });
 }
 
+/** Registers `Child` (one numeric `value`) and `Root` (one `child` model) with their codecs, and returns both classes. */
+async function registerNestedPair() {
+  class Child {
+    public value = 1;
+  }
+  class Root {
+    public child = new Child();
+  }
+  await registerModel(Child, 'Child', { Child: childDescriptor }, ['value']);
+  await registerModel(
+    Root,
+    'Root',
+    {
+      Root: {
+        kind: 'object',
+        properties: { child: { kind: 'generated-model', id: 'Child' } },
+        required: ['child'],
+        additionalProperties: false,
+      },
+    },
+    ['child'],
+    ['Child'],
+  );
+  return { Child, Root };
+}
+
 test('unconstrained structural validation stays synchronous through nested models and arrays', async () => {
   class Child {
     public value = 1;
@@ -68,27 +94,7 @@ test('unconstrained structural validation stays synchronous through nested model
 });
 
 test('nested instance rules run when the root has no local rules', async () => {
-  class Child {
-    public value = 1;
-  }
-  class Root {
-    public child = new Child();
-  }
-  await registerModel(Child, 'Child', { Child: childDescriptor }, ['value']);
-  await registerModel(
-    Root,
-    'Root',
-    {
-      Root: {
-        kind: 'object',
-        properties: { child: { kind: 'generated-model', id: 'Child' } },
-        required: ['child'],
-        additionalProperties: false,
-      },
-    },
-    ['child'],
-    ['Child'],
-  );
+  const { Child, Root } = await registerNestedPair();
 
   const child = new Child();
   let calls = 0;
@@ -103,27 +109,7 @@ test('nested instance rules run when the root has no local rules', async () => {
 });
 
 test('custom thenables suspend rule traversal once and preserve the original result', async () => {
-  class Child {
-    public value = 1;
-  }
-  class Root {
-    public child = new Child();
-  }
-  await registerModel(Child, 'Child', { Child: childDescriptor }, ['value']);
-  await registerModel(
-    Root,
-    'Root',
-    {
-      Root: {
-        kind: 'object',
-        properties: { child: { kind: 'generated-model', id: 'Child' } },
-        required: ['child'],
-        additionalProperties: false,
-      },
-    },
-    ['child'],
-    ['Child'],
-  );
+  const { Child, Root } = await registerNestedPair();
 
   let thenCalls = 0;
   const child = new Child();

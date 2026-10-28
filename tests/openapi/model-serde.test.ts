@@ -1,11 +1,11 @@
-import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
+import { copyFixtureFile, createFixtureProject, type FixtureScope } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec, type ObjectCodec } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind, IssueRepresentation, IssueSource } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { getValidator } from '@exprtlabs/golem/validation';
@@ -15,6 +15,7 @@ import {
   compileStrictUnusedSdk,
   documentBase,
   generateMaterializedSdk,
+  importGeneratedModule,
   requireRecord,
 } from './helpers.js';
 
@@ -306,7 +307,11 @@ function tupleSerdeDocument(): Record<string, unknown> {
   };
 }
 
-function sequenceSerdeDocument(properties: Record<string, unknown>): Record<string, unknown> {
+/** The Visit document whose fields are `properties`; `schemas` adds the components that those fields reference. */
+function sequenceSerdeDocument(
+  properties: Record<string, unknown>,
+  schemas: Record<string, Record<string, unknown>> = {},
+): Record<string, unknown> {
   return {
     openapi: '3.1.0',
     info: { title: 'SequenceSerde', version: '1' },
@@ -331,9 +336,48 @@ function sequenceSerdeDocument(properties: Record<string, unknown>): Record<stri
           required: Object.keys(properties),
           properties,
         },
+        ...schemas,
       },
     },
   };
+}
+
+/** Generates the SDK of a document into a fresh project and returns its output folder. */
+async function generateSerdeSdk(t: FixtureScope, prefix: string, document: Record<string, unknown>, { validation }: { readonly validation: boolean }): Promise<string> {
+  const output = path.join(createFixtureProject(t, prefix), 'sdk');
+  await generateMaterializedSdk(document, {
+    output,
+    name: 'SequenceSerde',
+    profile: { mobx: false, validation, allowAny: false },
+  });
+  return output;
+}
+
+/** Compiles the SDK with the fixture file `openapi/model-serde/<name>.ts`, which checks the generated types. */
+function compileSerdeTypes(output: string, name: string): void {
+  copyFixtureFile(output, `openapi/model-serde/${name}.ts`, `${name}.ts`);
+  compileGeneratedSdk(output, [path.join(output, `${name}.ts`)], { strict: true, skipLibCheck: true });
+}
+
+async function loadVisitModels(output: string, label: string): Promise<{
+  models: Record<string, unknown>;
+  VisitModel: new (values?: Record<string, unknown>) => Record<string, unknown>;
+  construct: abstract new (values?: never) => object;
+}> {
+  const models = await importGeneratedModule(output, label);
+  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  return { models, VisitModel, construct: VisitModel as unknown as abstract new (values?: never) => object };
+}
+
+function visitCodec<Wire = unknown>(output: string): ObjectCodec<Wire> {
+  return requireObjectCodec<Wire>(generatedCodecIdFromRoot(output, 'Visit'));
+}
+
+/** The predicate of `assert.throws` for a failed validation. */
+function assertValidationError(error: unknown): true {
+  assert.ok(error instanceof LibError);
+  assert.equal(error.kind, LibErrorKind.Validation);
+  return true;
 }
 
 async function assertNestedDateInheritedAndDictionaryConversions(
@@ -578,8 +622,7 @@ test('a tuple field converts each item by its own schema: the prefix stays a str
     name: 'TupleSerde',
     profile: { mobx: false, validation: false, allowAny: false },
   });
-  copyFixtureFile(output, 'openapi/model-serde/tuple-types.ts', 'tuple-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'tuple-types.ts')], { strict: true, skipLibCheck: true });
+  compileSerdeTypes(output, 'tuple-types');
 
   const models = requireRecord(
     await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
@@ -612,26 +655,16 @@ test('a tuple field converts each item by its own schema: the prefix stays a str
 });
 
 test('an array field with an allOf sibling converts its items to Dates and is typed Date[]', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-array-allof-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-array-allof-', sequenceSerdeDocument({
     visits: {
       type: 'array',
       items: { type: 'string', format: 'date-time' },
       allOf: [{ minItems: 1 }],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: false, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/array-types.ts', 'array-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'array-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: false });
+  compileSerdeTypes(output, 'array-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated array models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const { VisitModel } = await loadVisitModels(output, 'generated array models');
 
   const visit = decodeGeneratedModel(VisitModel, { visits: ['2024-05-06T07:08:09.000Z'] });
   assert.deepEqual(visit.visits, [new Date('2024-05-06T07:08:09.000Z')]);
@@ -681,8 +714,7 @@ test('an SDK model with a property that has no type generates under the default 
 });
 
 test('an array or tuple field with no type or a nullable type converts like type array, and null stays null', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-sequence-shapes-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-sequence-shapes-', sequenceSerdeDocument({
     maybeVisits: { type: ['array', 'null'], items: { type: 'string', format: 'date-time' } },
     untypedVisits: { items: { type: 'string', format: 'date-time' } },
     maybeLeg: {
@@ -694,19 +726,10 @@ test('an array or tuple field with no type or a nullable type converts like type
       prefixItems: [{ type: 'string' }, { type: 'string', format: 'date-time' }],
       items: false,
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: false, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/sequence-shape-types.ts', 'sequence-shape-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'sequence-shape-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: false });
+  compileSerdeTypes(output, 'sequence-shape-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated sequence models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const { VisitModel } = await loadVisitModels(output, 'generated sequence models');
 
   const visit = decodeGeneratedModel(VisitModel, {
     maybeVisits: ['2024-05-06T07:08:09.000Z'],
@@ -736,8 +759,7 @@ test('an array or tuple field with no type or a nullable type converts like type
 });
 
 test('allOf members decide an array field: constraint-only and restating members change nothing, a converting member wins', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-array-allof-members-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-array-allof-members-', sequenceSerdeDocument({
     restatingMember: {
       type: 'array',
       items: { type: 'string', format: 'date-time' },
@@ -764,19 +786,10 @@ test('allOf members decide an array field: constraint-only and restating members
       items: { type: 'string' },
       allOf: [{ type: 'array', items: { type: 'string', format: 'date-time' } }],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: false, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/allof-sequence-types.ts', 'allof-sequence-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-sequence-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: false });
+  compileSerdeTypes(output, 'allof-sequence-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated allOf array models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const { VisitModel } = await loadVisitModels(output, 'generated allOf array models');
 
   const visit = decodeGeneratedModel(VisitModel, {
     restatingMember: ['2024-05-06T07:08:09.000Z'],
@@ -795,8 +808,7 @@ test('allOf members decide an array field: constraint-only and restating members
 });
 
 test('a oneOf of a scalar and a nullable array or tuple converts the sequence, keeps the scalar and keeps null', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-scalar-or-nullable-sequence-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-scalar-or-nullable-sequence-', sequenceSerdeDocument({
     plainOrDates: {
       oneOf: [{ type: 'string' }, { type: ['array', 'null'], items: { type: 'string', format: 'date-time' } }],
     },
@@ -806,19 +818,10 @@ test('a oneOf of a scalar and a nullable array or tuple converts the sequence, k
         { type: ['array', 'null'], prefixItems: [{ type: 'string', format: 'date-time' }], items: false },
       ],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: false, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/scalar-or-sequence-types.ts', 'scalar-or-sequence-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'scalar-or-sequence-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: false });
+  compileSerdeTypes(output, 'scalar-or-sequence-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated scalar-or-sequence models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const { VisitModel } = await loadVisitModels(output, 'generated scalar-or-sequence models');
 
   const scalars = decodeGeneratedModel(VisitModel, { plainOrDates: 'plain', plainOrLeg: 'plain' });
   assert.equal(scalars.plainOrDates, 'plain');
@@ -835,26 +838,16 @@ test('a oneOf of a scalar and a nullable array or tuple converts the sequence, k
 });
 
 test('a nullable array field with an allOf minItems keeps null, rejects an empty array and accepts dates', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-array-allof-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-nullable-array-allof-', sequenceSerdeDocument({
     visits: {
       type: ['array', 'null'],
       items: { type: 'string', format: 'date-time' },
       allOf: [{ minItems: 1 }],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/nullable-array-types.ts', 'nullable-array-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'nullable-array-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: true });
+  compileSerdeTypes(output, 'nullable-array-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated nullable array models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable array models');
 
   assert.equal(decodeGeneratedModel(VisitModel, { visits: null }).visits, null);
   assert.deepEqual(
@@ -862,75 +855,47 @@ test('a nullable array field with an allOf minItems keeps null, rejects an empty
     [new Date('2024-05-06T07:08:09.000Z')],
   );
   assert.throws(
-    () => requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit')).fromWireFormat(
+    () => visitCodec(output).fromWireFormat(
       { visits: [] },
-      { construct: VisitModel as unknown as abstract new (values?: never) => object },
+      { construct },
     ),
-    (error: unknown): true => {
-      assert.ok(error instanceof LibError);
-      assert.equal(error.kind, LibErrorKind.Validation);
-      return true;
-    },
+    assertValidationError,
   );
 });
 
 test('an object field whose allOf members only add constraints converts by its own properties and keeps the constraints', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-constraint-allof-object-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-constraint-allof-object-', sequenceSerdeDocument({
     window: {
       type: 'object',
       properties: { at: { type: 'string', format: 'date-time' } },
       allOf: [{ minProperties: 1 }],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/allof-object-types.ts', 'allof-object-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-object-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: true });
+  compileSerdeTypes(output, 'allof-object-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated constraint-only allOf object models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated constraint-only allOf object models');
 
   const visit = decodeGeneratedModel(VisitModel, { window: { at: '2024-05-06T07:08:09.000Z' } });
   assert.deepEqual(visit.window, { at: new Date('2024-05-06T07:08:09.000Z') });
   assert.throws(
-    () => requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit')).fromWireFormat(
+    () => visitCodec(output).fromWireFormat(
       { window: {} },
-      { construct: VisitModel as unknown as abstract new (values?: never) => object },
+      { construct },
     ),
-    (error: unknown): true => {
-      assert.ok(error instanceof LibError);
-      assert.equal(error.kind, LibErrorKind.Validation);
-      return true;
-    },
+    assertValidationError,
   );
 });
 
 test('a oneOf field whose allOf members only add constraints converts by its own oneOf', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-constraint-allof-oneof-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-constraint-allof-oneof-', sequenceSerdeDocument({
     either: {
       oneOf: [{ type: 'string', format: 'date-time' }, { type: 'null' }],
       allOf: [{ description: 'when the visit happened' }],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: false, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/allof-oneof-types.ts', 'allof-oneof-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-oneof-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: false });
+  compileSerdeTypes(output, 'allof-oneof-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated constraint-only allOf oneOf models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const { VisitModel } = await loadVisitModels(output, 'generated constraint-only allOf oneOf models');
 
   assert.deepEqual(
     decodeGeneratedModel(VisitModel, { either: '2024-05-07T08:09:10.000Z' }).either,
@@ -940,27 +905,16 @@ test('a oneOf field whose allOf members only add constraints converts by its own
 });
 
 test('a nullable object field admits null and converts its properties', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-object-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-nullable-object-', sequenceSerdeDocument({
     window: {
       type: ['object', 'null'],
       properties: { at: { type: 'string', format: 'date-time' } },
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/nullable-object-types.ts', 'nullable-object-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'nullable-object-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: true });
+  compileSerdeTypes(output, 'nullable-object-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated nullable object models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
-  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable object models');
+  const codec = visitCodec(output);
 
   assert.equal(decodeGeneratedModel(VisitModel, { window: null }).window, null);
   assert.deepEqual(
@@ -971,66 +925,38 @@ test('a nullable object field admits null and converts its properties', async t 
 });
 
 test('a nullable object field with a constraint-only allOf admits null and still rejects an empty object', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-object-allof-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-nullable-object-allof-', sequenceSerdeDocument({
     window: {
       type: ['object', 'null'],
       properties: { at: { type: 'string', format: 'date-time' } },
       allOf: [{ minProperties: 1 }],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/nullable-object-types.ts', 'nullable-object-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'nullable-object-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: true });
+  compileSerdeTypes(output, 'nullable-object-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated nullable object allOf models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
-  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable object allOf models');
+  const codec = visitCodec(output);
 
   assert.equal(decodeGeneratedModel(VisitModel, { window: null }).window, null);
   assert.doesNotThrow(() => codec.fromWireFormat({ window: null }, { construct }));
   assert.throws(
     () => codec.fromWireFormat({ window: {} }, { construct }),
-    (error: unknown): true => {
-      assert.ok(error instanceof LibError);
-      assert.equal(error.kind, LibErrorKind.Validation);
-      return true;
-    },
+    assertValidationError,
   );
 });
 
 test('a field that references a nullable component object is typed with | null and admits null', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-reference-'), 'sdk');
-  const document = sequenceSerdeDocument({ pet: { $ref: '#/components/schemas/Pet' } }) as {
-    components: { schemas: Record<string, Record<string, unknown>> };
-  };
-  document.components.schemas.Pet = {
-    type: ['object', 'null'],
-    properties: { name: { type: 'string' } },
-    additionalProperties: false,
-  };
-  await generateMaterializedSdk(document, {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/nullable-reference-types.ts', 'nullable-reference-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'nullable-reference-types.ts')], { strict: true, skipLibCheck: true });
+  const output = await generateSerdeSdk(t, 'golem-openapi-nullable-reference-', sequenceSerdeDocument({ pet: { $ref: '#/components/schemas/Pet' } }, {
+    Pet: {
+      type: ['object', 'null'],
+      properties: { name: { type: 'string' } },
+      additionalProperties: false,
+    },
+  }), { validation: true });
+  compileSerdeTypes(output, 'nullable-reference-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated nullable reference models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
-  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable reference models');
+  const codec = visitCodec(output);
 
   assert.equal(decodeGeneratedModel(VisitModel, { pet: null }).pet, null);
   assert.doesNotThrow(() => codec.fromWireFormat({ pet: null }, { construct }));
@@ -1039,29 +965,17 @@ test('a field that references a nullable component object is typed with | null a
 
 test('a field that references a nullable component with a date-time property decodes, validates and encodes it', async t => {
   // protects: T-95 nullable component with a date-time property validates its wire form
-  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-date-reference-'), 'sdk');
-  const document = sequenceSerdeDocument({ pet: { $ref: '#/components/schemas/Pet' } }) as {
-    components: { schemas: Record<string, Record<string, unknown>> };
-  };
-  document.components.schemas.Pet = {
-    type: ['object', 'null'],
-    required: ['name'],
-    properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } },
-  };
-  await generateMaterializedSdk(document, {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
+  const output = await generateSerdeSdk(t, 'golem-openapi-nullable-date-reference-', sequenceSerdeDocument({ pet: { $ref: '#/components/schemas/Pet' } }, {
+    Pet: {
+      type: ['object', 'null'],
+      required: ['name'],
+      properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } },
+    },
+  }), { validation: true });
   compileStandaloneModelSerdeSdk(output);
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated nullable component date models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec<Record<string, unknown>>(generatedCodecIdFromRoot(output, 'Visit'));
-  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable component date models');
+  const codec = visitCodec<Record<string, unknown>>(output);
 
   const decoded = codec.fromWireFormat({ pet: { name: 'Miso', at: '2024-05-06T07:08:09.000Z' } }, { construct });
   assert.deepEqual({ ...(decoded.pet as object) }, { name: 'Miso', at: new Date('2024-05-06T07:08:09.000Z') });
@@ -1069,76 +983,51 @@ test('a field that references a nullable component with a date-time property dec
   assert.equal(codec.fromWireFormat({ pet: null }, { construct }).pet, null);
   assert.throws(
     () => codec.fromWireFormat({ pet: { name: 'Miso', at: 'yesterday' } }, { construct }),
-    (error: unknown): true => {
-      assert.ok(error instanceof LibError);
-      assert.equal(error.kind, LibErrorKind.Validation);
-      return true;
-    },
+    assertValidationError,
   );
 });
 
 for (const validation of [true, false]) test(`an object field with its own properties and an allOf member that adds properties types and converts both alike (validation ${validation})`, async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-member-properties-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-allof-member-properties-', sequenceSerdeDocument({
     merged: {
       type: 'object',
       properties: { at: { type: 'string', format: 'date-time' } },
       allOf: [{ properties: { b: { type: 'string', format: 'date-time' } } }],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/allof-members-types.ts', 'allof-members-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-members-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation });
+  compileSerdeTypes(output, 'allof-members-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated allOf member properties models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf member properties models');
 
   assert.deepEqual(
     decodeGeneratedModel(VisitModel, { merged: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }).merged,
     { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
   );
 
-  const codec = requireObjectCodec<{ merged: unknown }>(generatedCodecIdFromRoot(output, 'Visit'));
+  const codec = visitCodec<{ merged: unknown }>(output);
   const wire = { merged: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } };
-  const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+  const model = codec.fromWireFormat(wire, { construct });
   assert.deepEqual(model.merged, { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') });
   assert.deepEqual(codec.toWireFormat(model), wire);
   const partial = [{}, { at: '2024-05-06T07:08:09.000Z' }, { b: '2024-05-07T08:09:10.000Z' }];
   for (const part of partial) {
-    const partialModel = codec.fromWireFormat({ merged: part }, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+    const partialModel = codec.fromWireFormat({ merged: part }, { construct });
     assert.deepEqual(codec.toWireFormat(partialModel), { merged: part });
   }
 });
 
 test('a name in the required list of an allOf member is required in the field type and by the validator', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-required-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-allof-required-', sequenceSerdeDocument({
     window: {
       type: 'object',
       properties: { at: { type: 'string', format: 'date-time' } },
       allOf: [{ required: ['at'] }],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/allof-required-types.ts', 'allof-required-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-required-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: true });
+  compileSerdeTypes(output, 'allof-required-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated allOf required models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
-  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf required models');
+  const codec = visitCodec(output);
 
   assert.deepEqual(
     decodeGeneratedModel(VisitModel, { window: { at: '2024-05-06T07:08:09.000Z' } }).window,
@@ -1146,113 +1035,76 @@ test('a name in the required list of an allOf member is required in the field ty
   );
   assert.throws(
     () => codec.fromWireFormat({ window: {} }, { construct }),
-    (error: unknown): true => {
-      assert.ok(error instanceof LibError);
-      assert.equal(error.kind, LibErrorKind.Validation);
-      return true;
-    },
+    assertValidationError,
   );
 });
 
 for (const validation of [true, false]) test(`an allOf of object members is typed by the same members that convert it (validation ${validation})`, async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-object-members-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-allof-object-members-', sequenceSerdeDocument({
     members: {
       allOf: [
         { type: 'object', properties: { at: { type: 'string', format: 'date-time' } } },
         { type: 'object', properties: { b: { type: 'string', format: 'date-time' } } },
       ],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/allof-object-members-types.ts', 'allof-object-members-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-object-members-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation });
+  compileSerdeTypes(output, 'allof-object-members-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated allOf object member models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf object member models');
 
   assert.deepEqual(
     decodeGeneratedModel(VisitModel, { members: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }).members,
     { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
   );
 
-  const codec = requireObjectCodec<{ members: unknown }>(generatedCodecIdFromRoot(output, 'Visit'));
+  const codec = visitCodec<{ members: unknown }>(output);
   const wire = { members: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } };
-  const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+  const model = codec.fromWireFormat(wire, { construct });
   assert.deepEqual(model.members, { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') });
   assert.deepEqual(codec.toWireFormat(model), wire);
   const partial = [{}, { at: '2024-05-06T07:08:09.000Z' }, { b: '2024-05-07T08:09:10.000Z' }];
   for (const part of partial) {
-    const partialModel = codec.fromWireFormat({ members: part }, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+    const partialModel = codec.fromWireFormat({ members: part }, { construct });
     assert.deepEqual(codec.toWireFormat(partialModel), { members: part });
   }
 });
 
 test('an object field with own properties and an allOf reference to a model still generates and is typed by its own properties', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-own-reference-'), 'sdk');
-  const document = sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-allof-own-reference-', sequenceSerdeDocument({
     based: {
       type: 'object',
       properties: { at: { type: 'string', format: 'date-time' } },
       allOf: [{ $ref: '#/components/schemas/Base' }],
     },
-  }) as { components: { schemas: Record<string, Record<string, unknown>> } };
-  document.components.schemas.Base = { type: 'object', properties: { name: { type: 'string' } } };
-  await generateMaterializedSdk(document, {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/allof-own-reference-types.ts', 'allof-own-reference-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-own-reference-types.ts')], { strict: true, skipLibCheck: true });
+  }, {
+    Base: { type: 'object', properties: { name: { type: 'string' } } },
+  }), { validation: true });
+  compileSerdeTypes(output, 'allof-own-reference-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated own properties and allOf reference models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
-  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated own properties and allOf reference models');
+  const codec = visitCodec(output);
 
   assert.doesNotThrow(() => codec.fromWireFormat({ based: { name: 'Miso' } }, { construct }));
 });
 
 test('a nullable object field whose allOf member adds properties still generates', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-nullable-allof-members-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-nullable-allof-members-', sequenceSerdeDocument({
     window: {
       type: ['object', 'null'],
       properties: { at: { type: 'string', format: 'date-time' } },
       allOf: [{ properties: { b: { type: 'string', format: 'date-time' } } }],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/nullable-allof-members-types.ts', 'nullable-allof-members-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'nullable-allof-members-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: true });
+  compileSerdeTypes(output, 'nullable-allof-members-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated nullable allOf member models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
-  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable allOf member models');
+  const codec = visitCodec(output);
 
   assert.doesNotThrow(() => codec.fromWireFormat({ window: { b: '2024-05-07T08:09:10.000Z' } }, { construct }));
 });
 
 test('a discriminated oneOf with a nullable component variant still generates and converts its variants', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-oneof-nullable-variant-'), 'sdk');
-  const document = sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-oneof-nullable-variant-', sequenceSerdeDocument({
     pet: {
       oneOf: [{ $ref: '#/components/schemas/Dog' }, { $ref: '#/components/schemas/Cat' }],
       discriminator: {
@@ -1260,58 +1112,37 @@ test('a discriminated oneOf with a nullable component variant still generates an
         mapping: { dog: '#/components/schemas/Dog', cat: '#/components/schemas/Cat' },
       },
     },
-  }) as { components: { schemas: Record<string, Record<string, unknown>> } };
-  document.components.schemas.Dog = {
-    type: ['object', 'null'],
-    required: ['kind', 'name'],
-    properties: { kind: { const: 'dog' }, name: { type: 'string' } },
-  };
-  document.components.schemas.Cat = {
-    type: 'object',
-    required: ['kind', 'name'],
-    properties: { kind: { const: 'cat' }, name: { type: 'string' } },
-  };
-  await generateMaterializedSdk(document, {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/oneof-discriminated-nullable-types.ts', 'oneof-discriminated-nullable-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'oneof-discriminated-nullable-types.ts')], { strict: true, skipLibCheck: true });
+  }, {
+    Dog: {
+      type: ['object', 'null'],
+      required: ['kind', 'name'],
+      properties: { kind: { const: 'dog' }, name: { type: 'string' } },
+    },
+    Cat: {
+      type: 'object',
+      required: ['kind', 'name'],
+      properties: { kind: { const: 'cat' }, name: { type: 'string' } },
+    },
+  }), { validation: true });
+  compileSerdeTypes(output, 'oneof-discriminated-nullable-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated discriminated nullable variant models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
-  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated discriminated nullable variant models');
+  const codec = visitCodec(output);
 
   assert.equal(JSON.stringify(decodeGeneratedModel(VisitModel, { pet: { kind: 'cat', name: 'Miso' } }).pet), '{"kind":"cat","name":"Miso"}');
   assert.doesNotThrow(() => codec.fromWireFormat({ pet: { kind: 'dog', name: 'Rex' } }, { construct }));
 });
 
 test('a oneOf variant that references a nullable component admits null and is typed with | null', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-oneof-nullable-reference-'), 'sdk');
-  const document = sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-oneof-nullable-reference-', sequenceSerdeDocument({
     either: { oneOf: [{ $ref: '#/components/schemas/Pet' }, { type: 'string' }] },
-  }) as { components: { schemas: Record<string, Record<string, unknown>> } };
-  document.components.schemas.Pet = { type: ['object', 'null'], properties: { name: { type: 'string' } } };
-  await generateMaterializedSdk(document, {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/oneof-nullable-reference-types.ts', 'oneof-nullable-reference-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'oneof-nullable-reference-types.ts')], { strict: true, skipLibCheck: true });
+  }, {
+    Pet: { type: ['object', 'null'], properties: { name: { type: 'string' } } },
+  }), { validation: true });
+  compileSerdeTypes(output, 'oneof-nullable-reference-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated oneOf nullable reference models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
-  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated oneOf nullable reference models');
+  const codec = visitCodec(output);
 
   assert.doesNotThrow(() => codec.fromWireFormat({ either: { name: 'Miso' } }, { construct }));
   assert.equal(decodeGeneratedModel(VisitModel, { either: null }).either, null);
@@ -1321,25 +1152,15 @@ test('a oneOf variant that references a nullable component admits null and is ty
 for (const validation of [true, false]) for (const petType of ['object', ['object', 'null']]) {
   test(`a oneOf of a ${Array.isArray(petType) ? 'nullable ' : ''}component and a string decodes and encodes each branch by its type (validation ${validation})`, async t => {
     // protects: T-97 oneOf of a model reference and a string keeps both branches
-    const output = path.join(createFixtureProject(t, 'golem-openapi-oneof-reference-string-'), 'sdk');
-    const document = sequenceSerdeDocument({
+    const output = await generateSerdeSdk(t, 'golem-openapi-oneof-reference-string-', sequenceSerdeDocument({
       either: { oneOf: [{ $ref: '#/components/schemas/Pet' }, { type: 'string' }] },
-    }) as { components: { schemas: Record<string, Record<string, unknown>> } };
-    document.components.schemas.Pet = { type: petType, required: ['name'], properties: { name: { type: 'string' } } };
-    await generateMaterializedSdk(document, {
-      output,
-      name: 'SequenceSerde',
-      profile: { mobx: false, validation, allowAny: false },
-    });
+    }, {
+      Pet: { type: petType, required: ['name'], properties: { name: { type: 'string' } } },
+    }), { validation });
     compileStandaloneModelSerdeSdk(output);
 
-    const models = requireRecord(
-      await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-      'generated oneOf reference and string models',
-    );
-    const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-    const codec = requireObjectCodec<Record<string, unknown>>(generatedCodecIdFromRoot(output, 'Visit'));
-    const construct = VisitModel as unknown as abstract new (values?: never) => object;
+    const { models, VisitModel, construct } = await loadVisitModels(output, 'generated oneOf reference and string models');
+    const codec = visitCodec<Record<string, unknown>>(output);
 
     const text = codec.fromWireFormat({ either: 'abc' }, { construct });
     assert.equal(text.either, 'abc');
@@ -1352,29 +1173,19 @@ for (const validation of [true, false]) for (const petType of ['object', ['objec
 
 for (const validation of [true, false]) test(`a oneOf of a nullable component with a date-time property and a string decodes the date and admits null (validation ${validation})`, async t => {
   // protects: T-97 oneOf variant of a nullable component keeps the component's date-time conversion
-  const output = path.join(createFixtureProject(t, 'golem-openapi-oneof-nullable-date-'), 'sdk');
-  const document = sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-oneof-nullable-date-', sequenceSerdeDocument({
     either: { oneOf: [{ $ref: '#/components/schemas/Pet' }, { type: 'string' }] },
-  }) as { components: { schemas: Record<string, Record<string, unknown>> } };
-  document.components.schemas.Pet = {
-    type: ['object', 'null'],
-    required: ['name'],
-    properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } },
-  };
-  await generateMaterializedSdk(document, {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation, allowAny: false },
-  });
+  }, {
+    Pet: {
+      type: ['object', 'null'],
+      required: ['name'],
+      properties: { name: { type: 'string' }, at: { type: 'string', format: 'date-time' } },
+    },
+  }), { validation });
   compileStandaloneModelSerdeSdk(output);
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated oneOf nullable date models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec<Record<string, unknown>>(generatedCodecIdFromRoot(output, 'Visit'));
-  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated oneOf nullable date models');
+  const codec = visitCodec<Record<string, unknown>>(output);
 
   const pet = codec.fromWireFormat({ either: { name: 'Miso', at: '2024-05-06T07:08:09.000Z' } }, { construct });
   assert.deepEqual({ ...(pet.either as object) }, { name: 'Miso', at: new Date('2024-05-06T07:08:09.000Z') });
@@ -1384,66 +1195,45 @@ for (const validation of [true, false]) test(`a oneOf of a nullable component wi
 });
 
 test(`an allOf of an additionalProperties member and a properties member converts every name by the merged object (validation false)`, async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-additional-members-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-allof-additional-members-', sequenceSerdeDocument({
     members: {
       allOf: [
         { type: 'object', additionalProperties: { type: 'string', format: 'date-time' } },
         { type: 'object', properties: { b: { type: 'string', format: 'date-time' } } },
       ],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: false, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/allof-additional-members-types.ts', 'allof-additional-members-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-additional-members-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: false });
+  compileSerdeTypes(output, 'allof-additional-members-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated allOf additionalProperties member models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec<Record<string, unknown>>(generatedCodecIdFromRoot(output, 'Visit'));
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf additionalProperties member models');
+  const codec = visitCodec<Record<string, unknown>>(output);
   const wire = { members: { x: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } };
-  const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+  const model = codec.fromWireFormat(wire, { construct });
   assert.deepEqual(model.members, { x: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') });
   assert.deepEqual(codec.toWireFormat(model), wire);
 });
 
 test(`an allOf of object members that share a property name converts it once (validation false)`, async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-same-name-members-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-allof-same-name-members-', sequenceSerdeDocument({
     members: {
       allOf: [
         { type: 'object', properties: { at: { type: 'string', format: 'date-time' } } },
         { type: 'object', properties: { at: { type: 'string', format: 'date-time' } } },
       ],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: false, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/allof-same-name-members-types.ts', 'allof-same-name-members-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-same-name-members-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: false });
+  compileSerdeTypes(output, 'allof-same-name-members-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated allOf additionalProperties member models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec<Record<string, unknown>>(generatedCodecIdFromRoot(output, 'Visit'));
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf additionalProperties member models');
+  const codec = visitCodec<Record<string, unknown>>(output);
   const wire = { members: { at: '2024-05-06T07:08:09.000Z' } };
-  const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+  const model = codec.fromWireFormat(wire, { construct });
   assert.deepEqual(model.members, { at: new Date('2024-05-06T07:08:09.000Z') });
   assert.deepEqual(codec.toWireFormat(model), wire);
 });
 
 for (const validation of [true, false]) test(`an array whose items are an allOf of object members converts every item (validation ${validation})`, async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-allof-object-items-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-allof-object-items-', sequenceSerdeDocument({
     entries: {
       type: 'array',
       items: {
@@ -1453,22 +1243,13 @@ for (const validation of [true, false]) test(`an array whose items are an allOf 
         ],
       },
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/allof-object-items-types.ts', 'allof-object-items-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-object-items-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation });
+  compileSerdeTypes(output, 'allof-object-items-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated allOf object items models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec<{ entries: unknown }>(generatedCodecIdFromRoot(output, 'Visit'));
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf object items models');
+  const codec = visitCodec<{ entries: unknown }>(output);
   const wire = { entries: [{ a: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' }, { a: '2024-05-08T09:10:11.000Z' }] };
-  const model = codec.fromWireFormat(wire, { construct: VisitModel as unknown as abstract new (values?: never) => object });
+  const model = codec.fromWireFormat(wire, { construct });
   assert.deepEqual(model.entries, [
     { a: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
     { a: new Date('2024-05-08T09:10:11.000Z') },
@@ -1477,28 +1258,17 @@ for (const validation of [true, false]) test(`an array whose items are an allOf 
 });
 
 test('an object field with own additionalProperties and an allOf member that adds properties accepts its input with validation on', async t => {
-  const output = path.join(createFixtureProject(t, 'golem-openapi-own-additional-members-'), 'sdk');
-  await generateMaterializedSdk(sequenceSerdeDocument({
+  const output = await generateSerdeSdk(t, 'golem-openapi-own-additional-members-', sequenceSerdeDocument({
     members: {
       type: 'object',
       additionalProperties: { type: 'string', format: 'date-time' },
       allOf: [{ type: 'object', properties: { b: { type: 'string', format: 'date-time' } } }],
     },
-  }), {
-    output,
-    name: 'SequenceSerde',
-    profile: { mobx: false, validation: true, allowAny: false },
-  });
-  copyFixtureFile(output, 'openapi/model-serde/allof-own-additional-types.ts', 'allof-own-additional-types.ts');
-  compileGeneratedSdk(output, [path.join(output, 'allof-own-additional-types.ts')], { strict: true, skipLibCheck: true });
+  }), { validation: true });
+  compileSerdeTypes(output, 'allof-own-additional-types');
 
-  const models = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/index.js')).href),
-    'generated own additionalProperties and allOf member models',
-  );
-  const VisitModel = models.VisitModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(output, 'Visit'));
-  const construct = VisitModel as unknown as abstract new (values?: never) => object;
+  const { VisitModel, construct } = await loadVisitModels(output, 'generated own additionalProperties and allOf member models');
+  const codec = visitCodec(output);
 
   assert.doesNotThrow(() => codec.fromWireFormat({ members: { b: '2024-05-07T08:09:10.000Z' } }, { construct }));
   assert.doesNotThrow(() => codec.fromWireFormat({ members: { x: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }, { construct }));

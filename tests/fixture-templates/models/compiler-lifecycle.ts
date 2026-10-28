@@ -19,7 +19,7 @@ export function manifestScaleNames({ index }: { readonly index: number }): Manif
   return checkedIndex(index);
 }
 
-export function manifestScaleTypeSource({ index }: { readonly index: number }): SourceFragment {
+function manifestScaleTypeSource({ index }: { readonly index: number }): SourceFragment {
   const { item } = checkedIndex(index);
   return tsSource`export interface ${identifier(item)} { value: string }`;
 }

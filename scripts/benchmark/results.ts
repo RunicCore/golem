@@ -25,9 +25,9 @@ export interface BuildInput {
   readonly loadAverage?: { readonly start: readonly number[]; readonly end: readonly number[] };
 }
 
-export const PACKAGE_NAMES = ['@exprtlabs/golem', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', 'typescript', 'typia', 'class-transformer', 'class-validator', 'zod', 'ajv'] as const;
+const PACKAGE_NAMES = ['@exprtlabs/golem', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi', 'typescript', 'typia', 'class-transformer', 'class-validator', 'zod', 'ajv'] as const;
 
-export function opsPerSecond(sample: BatchSample): number {
+function opsPerSecond(sample: BatchSample): number {
   return sample.iterations * 1000 / sample.elapsedMs;
 }
 
@@ -47,7 +47,7 @@ export function summarize(samples: readonly BatchSample[]): OpsPerSec {
  * The spread of one case: the range of its batch speeds (max - min) over their median.
  * The control's spread is the median of this over its cases, so one odd case does not set the noise band.
  */
-export function controlSpread(control: readonly Pick<MeasuredCase, 'samples'>[]): number {
+function controlSpread(control: readonly Pick<MeasuredCase, 'samples'>[]): number {
   if (control.length === 0) throw new Error('Cannot take the control spread: no control case');
   const spreads = control.map(c => { const { median, min, max } = summarize(c.samples); return (max - min) / median; }).sort((a, b) => a - b);
   const middle = spreads.length >> 1;

@@ -36,7 +36,7 @@ export const STATUS_LABELS: Readonly<Record<CapabilityStatus, string>> = {
   'not-applicable': 'N/A',
 };
 
-export const STATUS_MEANINGS: Readonly<Record<string, string>> = {
+const STATUS_MEANINGS: Readonly<Record<string, string>> = {
   Supported: 'available for this OpenAPI version and configuration',
   Partial: 'available with the limitations described below',
   'Validation only': 'the document is checked and preserved, without a generated runtime implementation',
@@ -45,16 +45,16 @@ export const STATUS_MEANINGS: Readonly<Record<string, string>> = {
   'N/A': 'the capability does not apply to this OpenAPI version or generation profile',
 };
 
-export type VerificationLayer = 'generation' | 'type-check' | 'schema-compilation' | 'adapter-validation' | 'generated-client' | 'http-integration' | 'model-runtime' | 'metadata';
+type VerificationLayer = 'generation' | 'type-check' | 'schema-compilation' | 'adapter-validation' | 'generated-client' | 'http-integration' | 'model-runtime' | 'metadata';
 
-export interface EvidenceDeclaration {
+interface EvidenceDeclaration {
   readonly id: string;
   readonly kind: 'compile' | 'wire' | 'metadata' | 'negative' | 'contract';
   readonly layers: readonly VerificationLayer[];
   readonly description: string;
 }
 
-export const EVIDENCE_DECLARATIONS = [
+const EVIDENCE_DECLARATIONS = [
   {
     id: 'upstream-public-generation',
     kind: 'compile',
@@ -275,7 +275,7 @@ export interface CapabilityRecord {
   readonly evidenceIds: readonly EvidenceId[];
 }
 
-export const CAPABILITY_TITLES: Readonly<Record<string, string>> = {
+const CAPABILITY_TITLES: Readonly<Record<string, string>> = {
   'document-input-and-structural-validation': 'OpenAPI document validation',
   'standard-http-operations': 'HTTP client methods',
   'component-and-operation-types': 'Schema and operation types',
@@ -326,7 +326,7 @@ const ALL_PROFILES = PROFILE_IDS;
 const VALIDATION_PROFILES = PROFILE_IDS.filter((profile) => GENERATION_PROFILES[profile].validation);
 const NO_VALIDATION_PROFILES = PROFILE_IDS.filter((profile) => !GENERATION_PROFILES[profile].validation);
 
-export const CAPABILITY_RECORDS: readonly CapabilityRecord[] = [
+const CAPABILITY_RECORDS: readonly CapabilityRecord[] = [
   ...recordsFor({
     capability: 'document-input-and-structural-validation',
     surface: 'runtime',
@@ -510,7 +510,7 @@ export interface ComplianceMetadata {
   readonly capabilities: readonly CapabilityRecord[];
 }
 
-export function validateCapabilitySource(): void {
+function validateCapabilitySource(): void {
   const evidenceIds = new Set<string>();
   for (const evidence of EVIDENCE_DECLARATIONS) {
     if (evidenceIds.has(evidence.id)) throw new Error(`duplicate compliance evidence id: ${evidence.id}`);

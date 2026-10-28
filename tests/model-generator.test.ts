@@ -38,6 +38,11 @@ function profileCases(): readonly [{ mobx: boolean; validation: boolean }, { mob
   ];
 }
 
+/** The paths of the model companions among the generated artifacts. */
+function generatedModelPaths(artifacts: ReturnType<typeof generate>['artifacts']): string[] {
+  return artifacts.map(artifact => artifact.path).filter(file => file.endsWith('.model.generated.ts'));
+}
+
 const isValidationUnavailable = (error: unknown): boolean => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable;
 
 for (const [profile, expected] of profileCases()) {
@@ -373,7 +378,7 @@ test('a solution tsconfig generates with the options of the referenced project t
     'item.model.ts': taggedModelSource({ name: 'Item', imports: tsSource`import type { Id } from '@lib/ids';`, fields: tsSource`id: Id` }),
   });
   const result = generate({ root, profile: { mobx: false, validation: true } });
-  assert.ok(result.artifacts.some(artifact => artifact.path === path.join(sourceRoot, 'item.model.generated.ts')));
+  assert.ok(generatedModelPaths(result.artifacts).includes(path.join(sourceRoot, 'item.model.generated.ts')));
 });
 
 test('a solution tsconfig that starts with a byte-order mark generates with the options of the referenced project', (t: TestContext) => {
@@ -385,7 +390,7 @@ test('a solution tsconfig that starts with a byte-order mark generates with the 
     'item.model.ts': taggedModelSource({ name: 'Item', imports: tsSource`import type { Id } from '@lib/ids';`, fields: tsSource`id: Id` }),
   });
   const result = generate({ root, profile: { mobx: false, validation: true } });
-  assert.ok(result.artifacts.some(artifact => artifact.path === path.join(sourceRoot, 'item.model.generated.ts')));
+  assert.ok(generatedModelPaths(result.artifacts).includes(path.join(sourceRoot, 'item.model.generated.ts')));
 });
 
 test('a solution tsconfig checks a generated SDK module with the options of the referenced project', (t: TestContext) => {
@@ -650,7 +655,7 @@ test('a discovered model file without an IModel or IObject alias is skipped, and
   });
 
   const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
-  const companions = artifacts.map(artifact => artifact.path).filter(file => file.endsWith('.model.generated.ts'));
+  const companions = generatedModelPaths(artifacts);
   assert.deepEqual(companions, [path.join(sourceRoot, 'order.model.generated.ts')]);
 });
 
@@ -700,13 +705,13 @@ test('a model file of a folder outside the root with its own golem.yaml is gener
 
   const app = generate({ root, profile });
   assert.deepEqual(
-    app.artifacts.map(artifact => artifact.path).filter(file => file.endsWith('.model.generated.ts')),
+    generatedModelPaths(app.artifacts),
     [path.join(root, 'src/order.model.generated.ts'), path.join(root, 'src/generated/models/@acme/shared/src/money.model.generated.ts')],
   );
 
   const own = generate({ root: sharedFolder, profile });
   assert.deepEqual(
-    own.artifacts.map(artifact => artifact.path).filter(file => file.endsWith('.model.generated.ts')),
+    generatedModelPaths(own.artifacts),
     [path.join(sharedFolder, 'src/money.model.generated.ts')],
   );
 });
@@ -777,7 +782,7 @@ test('a golem.yaml above the golem.yaml of the job is not another job: the sourc
 
   const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
   assert.deepEqual(
-    artifacts.map(artifact => artifact.path).filter(file => file.endsWith('.model.generated.ts')),
+    generatedModelPaths(artifacts),
     [path.join(root, 'src/order.model.generated.ts')],
   );
 });
@@ -844,7 +849,7 @@ export type TOrder = IObject<{ total: TPlain; shared: TShared }>;
   });
 
   const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
-  assert.deepEqual(artifacts.map(artifact => artifact.path).filter(file => file.endsWith('.model.generated.ts')), [path.join(root, 'src/order.model.generated.ts')]);
+  assert.deepEqual(generatedModelPaths(artifacts), [path.join(root, 'src/order.model.generated.ts')]);
 });
 
 /** The shared folder `outer/shared` with a model file whose `TMoney` is an IObject alias; returns the real path of the file. */
@@ -867,7 +872,7 @@ test('models.root reached through a folder link still owns its model files', (t:
 
   const { artifacts } = generate({ root, profile: { mobx: false, validation: true } });
   assert.deepEqual(
-    artifacts.map(artifact => artifact.path).filter(file => file.endsWith('.model.generated.ts')),
+    generatedModelPaths(artifacts),
     [path.join(root, 'src/order.model.generated.ts')],
   );
 });

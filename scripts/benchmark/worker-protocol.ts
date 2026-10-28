@@ -1,14 +1,14 @@
 import { OPERATIONS, type Operation } from './fixture-contract.js';
 import type { BatchSample, Settings } from './results.js';
 
-export interface WorkerCase { readonly fixture: string; readonly operation: Operation }
+interface WorkerCase { readonly fixture: string; readonly operation: Operation }
 /**
  * `verify` runs each fixture's own checks, invalid inputs included, and times nothing. `measure` checks only valid
  * results, then times: a validator that has rejected input runs slower afterwards, so every library is timed
  * in a process whose timed functions have seen valid input only. `invalid` times the fixtures' invalid operations (rejected input)
  * in a process of its own, for the same reason.
  */
-export type WorkerMode = 'verify' | 'measure' | 'invalid';
+type WorkerMode = 'verify' | 'measure' | 'invalid';
 export interface WorkerJob { readonly mode: WorkerMode; readonly settings: Settings; readonly cases: readonly WorkerCase[] }
 export interface WorkerCaseResult extends WorkerCase { readonly payloadBytes: number; readonly samples: readonly BatchSample[] }
 export interface WorkerOutput { readonly fixtureAdapter: string; readonly checksum: number; readonly cases: readonly WorkerCaseResult[] }

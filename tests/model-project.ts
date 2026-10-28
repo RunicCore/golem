@@ -95,6 +95,12 @@ export function writeModelGolemYaml(root: string, profile: Readonly<{ mobx?: boo
   fs.writeFileSync(path.join(root, 'golem.yaml'), `version: 1\n${keys}models:\n  root: .\n`);
 }
 
+/** Write the project's golem.yaml for `profile` and run `golem build` on it. */
+export async function buildModelProjectWith(root: string, profile: Parameters<typeof writeModelGolemYaml>[1]): Promise<CommandResult> {
+  writeModelGolemYaml(root, profile);
+  return buildModelProject(root);
+}
+
 /**
  * The files the project's models job wrote, as the golem.yaml's inventory records them: what a test would read from the result of its
  * own `generate` call if it generated in process. A test that builds generates once, in the build, and reads its output here.

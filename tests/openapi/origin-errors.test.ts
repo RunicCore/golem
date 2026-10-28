@@ -1,16 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { generate, loadValidatedDocument, validate, writeSdk } from '#openapi/generator';
 import { createFixtureProject } from '../fixture-project.js';
-
-function write(directory: string, name: string, value: unknown): string {
-  const filename = path.join(directory, name);
-  mkdirSync(path.dirname(filename), { recursive: true });
-  writeFileSync(filename, JSON.stringify(value));
-  return filename;
-}
+import { writeOpenApiDocument } from './helpers.js';
 
 const profile = { mobx: false, validation: false };
 
@@ -39,25 +32,25 @@ const petsFile = {
 
 test('a discriminator error names the file and pointer the schema came from', async (t) => {
   const directory = createFixtureProject(t, 'golem-origin-discriminator-');
-  write(directory, 'pets.json', petsFile);
-  const input = write(directory, 'api.json', rootDocument({ Pet: { $ref: './pets.json#/Pet' } }));
+  writeOpenApiDocument(directory, petsFile, 'pets.json');
+  const input = writeOpenApiDocument(directory, rootDocument({ Pet: { $ref: './pets.json#/Pet' } }), 'api.json');
   assert.match(await generationError(input, directory), /^discriminator mapping "cat" of schema "[^"]+" \(pets\.json#\/Pet\) targets /);
 });
 
 test('a generated name collision names where each component is declared', async (t) => {
   const directory = createFixtureProject(t, 'golem-origin-collision-');
-  const input = write(directory, 'api.json', rootDocument({
+  const input = writeOpenApiDocument(directory, rootDocument({
     'Foo-Bar': { type: 'object', properties: { value: { type: 'string' } } },
     'Foo.Bar': { type: 'object', properties: { other: { type: 'string' } } },
-  }));
+  }), 'api.json');
   const message = await generationError(input, directory);
   assert.match(message, /component schema "Foo-Bar" \(api\.json#\/components\/schemas\/Foo-Bar\) and component schema "Foo\.Bar" \(api\.json#\/components\/schemas\/Foo\.Bar\)$/);
 });
 
 test('a field-name error names the file the schema came from', async (t) => {
   const directory = createFixtureProject(t, 'golem-origin-field-name-');
-  write(directory, 'schemas/user.json', { type: 'object', properties: { toString: { type: 'string' } } });
-  const input = write(directory, 'api.json', rootDocument({ User: { $ref: './schemas/user.json' } }));
+  writeOpenApiDocument(directory, { type: 'object', properties: { toString: { type: 'string' } } }, 'schemas/user.json');
+  const input = writeOpenApiDocument(directory, rootDocument({ User: { $ref: './schemas/user.json' } }), 'api.json');
   assert.match(await generationError(input, directory), /\(at schemas\/user\.json#\)$/);
 });
 
@@ -68,7 +61,7 @@ test('a single-file input names the root file, and calls without a locator keep 
     Dog: { type: 'object', required: ['kind'], properties: { kind: { type: 'string' } } },
     Cat: { type: 'object', required: ['kind'], properties: { kind: { type: 'string' } } },
   });
-  const input = write(directory, 'api.json', document);
+  const input = writeOpenApiDocument(directory, document, 'api.json');
   assert.equal(
     await generationError(input, directory),
     'discriminator mapping "cat" of schema "Pet" (api.json#/components/schemas/Pet) targets "#/components/schemas/Cat", which is not one of its variants',

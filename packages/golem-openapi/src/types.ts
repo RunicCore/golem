@@ -317,7 +317,7 @@ function responseUnion(variants: readonly TypeCode[]): Code {
 }
 
 /** `T[]` never names the global `Array`, which a component may shadow. */
-export function arrayType(item: TypeCode): TypeCode {
+function arrayType(item: TypeCode): TypeCode {
   return typeCode(item.binds === 'primary' ? code`${item.code}[]` : code`(${item.code})[]`);
 }
 
@@ -813,6 +813,19 @@ function dropTrailingBlankLines(lines: Code[]): void {
   while (lines.length > 0 && isEmpty(lines.at(-1)!)) lines.pop();
 }
 
+/** The component schemas of a document, resolved, each with its type name claimed in `scope` as it is read. */
+function* claimedComponentSchemas(
+  document: unknown,
+  scope: ComponentNameScope,
+): Generator<{ readonly name: string; readonly schema: unknown; readonly typeName: string }> {
+  for (const [name, rawSchema] of objectEntries(asRecord(asRecord(asRecord(document).components).schemas))) {
+    const schema = resolveLocal(document, rawSchema);
+    const typeName = identifier(name);
+    scope.claim(typeName, `component schema ${JSON.stringify(name)}`, name);
+    yield { name, schema, typeName };
+  }
+}
+
 export function generateTypes(
   document: unknown,
   operations: readonly NormalizedOperation[],
@@ -834,10 +847,7 @@ export function generateTypes(
   const BLANK = code``;
   const body: Code[] = [];
   const blobTypeIndex = 0;
-  for (const [name, rawSchema] of objectEntries(schemas)) {
-    const schema = resolveLocal(document, rawSchema);
-    const typeName = identifier(name);
-    scope.claim(typeName, `component schema ${JSON.stringify(name)}`, name);
+  for (const { name, schema, typeName } of claimedComponentSchemas(document, scope)) {
     const type = schemaTypeCode(
       schema,
       schemaContext(document, baseContext, name, schema),
@@ -891,10 +901,7 @@ export function generateDirectionalSchemas(document: unknown, direction: 'input'
   const baseContext = schemaContext(document, { direction, blobType: blobTypeName });
   const BLANK = code``;
   const body: Code[] = [];
-  for (const [name, rawSchema] of objectEntries(schemas)) {
-    const schema = resolveLocal(document, rawSchema);
-    const typeName = identifier(name);
-    scope.claim(typeName, `component schema ${JSON.stringify(name)}`, name);
+  for (const { name, schema, typeName } of claimedComponentSchemas(document, scope)) {
     const context = schemaContext(document, baseContext, name, schema);
     body.push(code`export type ${identifierPart(typeName)} = ${schemaTypeCode(schema, context).code};`, BLANK);
   }

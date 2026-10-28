@@ -9,6 +9,7 @@ import { applyJob, digest, loadInventory, removeRetiredJobs } from '#golem/outpu
 import { strongestInputKind } from '#golem/pipeline';
 import type { GolemConfig, GolemJob } from '#golem/config';
 import { sourceInvalidationModule } from './fixture-templates/controllers/source-invalidation.js';
+import { configFor } from './support/output-config.js';
 import { workspace } from './support/process.js';
 
 // Fake providers carry the workspace release version so the runtime version check accepts them.
@@ -217,14 +218,7 @@ test('controller OpenAPI files stay standards-valid while ownership and retireme
       profile: { mobx: false, validation: true },
     },
   };
-  const config: GolemConfig = {
-    directory: root,
-    configFile: path.join(root, 'golem.yaml'),
-    inventoryFile: path.join(root, '.golem/outputs.json'),
-    tsconfig: path.join(root, 'tsconfig.json'),
-    profile: { mobx: false, validation: true },
-    jobs: [job],
-  };
+  const config = configFor(root, job);
   const content = '{"x-generator":"@exprtlabs/golem-ts-openapi","openapi":"3.2.0","info":{"title":"Test API","version":"1"},"paths":{}}\n';
   applyJob(config, loadInventory(config), job, [{ path: output, content }]);
   assert.deepEqual(JSON.parse(fs.readFileSync(output, 'utf8')), {

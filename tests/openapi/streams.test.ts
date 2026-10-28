@@ -4,15 +4,13 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test, { after } from 'node:test';
 import { normalizeDocument } from '#openapi/generator';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
   isAsyncIterable,
-  isGeneratedClientClass,
-  requireRecord,
+  loadGeneratedClient,
   type GeneratedClientClass,
 } from './helpers.js';
 
@@ -36,14 +34,7 @@ async function loadClientAt(
 ): Promise<GeneratedClientClass> {
   await generateMaterializedSdk(document, { output, name, profile });
   compileGeneratedSdk(output);
-  const module = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    `${name} client`,
-  );
-  const Client = module[`${name}Client`];
-  assert.equal(isGeneratedClientClass(Client), true);
-  if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client`);
-  return Client;
+  return loadGeneratedClient(output, name);
 }
 
 function loadClient(

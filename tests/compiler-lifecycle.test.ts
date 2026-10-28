@@ -15,6 +15,7 @@ import {
   manifestScaleTypesSource,
 } from './fixture-templates/models/compiler-lifecycle.js';
 import { workspace } from './support/process.js';
+import { writeMoneyManifest } from './support/model-manifest.js';
 import { pathMappedProject } from './support/path-mapped-project.js';
 import { compilerChildren } from './support/generation-watch.js';
 import { subscribe } from './support/golem-channels.js';
@@ -112,16 +113,8 @@ function writeManifestFixture(fixture: Fixture): { readonly source: string; read
   const source = path.join(fixture.sourceRoot, 'aggregate.model.ts');
   fs.writeFileSync(types, '/* @golem-model-manifest ./model-manifest.json */\nexport interface Money { currency: string }\n');
   fs.writeFileSync(generated, 'export const Other = 1;\n');
-  fs.writeFileSync(manifest, JSON.stringify({
-    profile: { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' },
-    models: [{
-      id: 'fixture:money',
-      codecId: 'Money_0a1b2c3d',
-      allowAny: false,
-      type: { module: './types.ts', export: 'Money' },
-      generated: { module: './models.ts', export: 'MoneyModel' },
-    }],
-  }));
+  // The manifest names MoneyModel, which models.ts does not export.
+  writeMoneyManifest(manifest, 'MoneyModel');
   fs.writeFileSync(source, [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Money } from './sdk/types.js';",
@@ -407,16 +400,22 @@ test('a reused program session replays recorded inputs, sees file changes and re
   await tracker.assertClosed('disposed program session');
 });
 
+/** A project named `name` whose one source is `value.ts`, and a program session over it that the test disposes. */
+function valueSession(t: TestContext, name: string): { fixture: Fixture; source: string; session: ts.ProgramSession } {
+  const fixture = projectFixture(t, name);
+  const source = path.join(fixture.sourceRoot, 'value.ts');
+  fs.writeFileSync(source, 'export const value = 1;\n');
+  const session = new ts.ProgramSession({ cwd: fixture.root });
+  t.after(() => session[Symbol.dispose]());
+  return { fixture, source, session };
+}
+
 // The compiler server prints `context canceled` to the inherited stderr when SIGTERM reaches it between its last
 // response and its next read. Whether it does depends on scheduling, so the test pins the cause instead: the session
 // ends the compiler with SIGKILL, which the server cannot report on.
 test('closing a program session ends the compiler with a signal it cannot report on', async t => {
   const tracker = trackApiChildren(t);
-  const fixture = projectFixture(t, 'compiler-lifecycle-close');
-  const source = path.join(fixture.sourceRoot, 'value.ts');
-  fs.writeFileSync(source, 'export const value = 1;\n');
-  const session = new ts.ProgramSession({ cwd: fixture.root });
-  t.after(() => session[Symbol.dispose]());
+  const { fixture, source, session } = valueSession(t, 'compiler-lifecycle-close');
   {
     using program = session.openProgram({ root: fixture.root, sources: [source] });
     assert.deepEqual(ts.getPreEmitDiagnostics(program), []);
@@ -545,6 +544,14 @@ test('host-reported and module-resolution changes invalidate the warm compiler, 
   assert.equal(open().has(imported), false);
 });
 
+/** A program session over the path-mapped `project`, disposed with the test, and a function that opens its program; `onInput` goes to each open. */
+function openSession(t: TestContext, project: { readonly root: string; readonly app: string }, onInput?: () => void): { session: ts.ProgramSession; open: () => ts.Program } {
+  const session = new ts.ProgramSession({ cwd: project.root });
+  t.after(() => session[Symbol.dispose]());
+  const open = (): ts.Program => session.openProgram({ root: project.root, sources: [project.app], ...(onInput === undefined ? {} : { onInput }) });
+  return { session, open };
+}
+
 // A tsconfig edit must reach the compiler's project however the edit and the compiler's reads interleave. On TypeScript 7.1
 // the reachable interleaving is an edit that lands inside a full snapshot: a snapshot that opens no new project reads no
 // tsconfig, and golem opens no file on its own; see ProgramSession in typescript-ts7.ts.
@@ -556,17 +563,11 @@ for (const hinted of [false, true]) {
     const running = snapshotRunning(t);
     let edits = 0;
     let armed = false;
-    const session = new ts.ProgramSession({ cwd: project.root });
-    t.after(() => session[Symbol.dispose]());
-    const open = (): ts.Program => session.openProgram({
-      root: project.root,
-      sources: [project.app],
-      onInput: () => {
-        if (!armed || !running()) return;
-        armed = false;
-        edits++;
-        project.writeMapping('second');
-      },
+    const { session, open } = openSession(t, project, () => {
+      if (!armed || !running()) return;
+      armed = false;
+      edits++;
+      project.writeMapping('second');
     });
 
     open().close();
@@ -586,9 +587,7 @@ for (const hinted of [false, true]) {
   test(`a tsconfig edit made with a manifest edit is applied by the full snapshot the manifest needs, ${how}`, t => {
     const project = pathMappedProject(t, 'compiler-lifecycle-full-snapshot-edit');
     const requests = captureSnapshotRequests(t);
-    const session = new ts.ProgramSession({ cwd: project.root });
-    t.after(() => session[Symbol.dispose]());
-    const open = (): ts.Program => session.openProgram({ root: project.root, sources: [project.app] });
+    const { session, open } = openSession(t, project);
 
     using first = open();
     assert.equal(project.mappingOf(first), 'first');
@@ -605,11 +604,7 @@ for (const hinted of [false, true]) {
 
 test('a configuration error keeps the warm compiler running', async t => {
   const tracker = trackApiChildren(t);
-  const fixture = projectFixture(t, 'compiler-lifecycle-deterministic');
-  const source = path.join(fixture.sourceRoot, 'value.ts');
-  fs.writeFileSync(source, 'export const value = 1;\n');
-  const session = new ts.ProgramSession({ cwd: fixture.root });
-  t.after(() => session[Symbol.dispose]());
+  const { fixture, source, session } = valueSession(t, 'compiler-lifecycle-deterministic');
   session.openProgram({ root: fixture.root, sources: [source] }).close();
   const warm = tracker.live();
   assert.equal(warm.length, 1);

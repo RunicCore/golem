@@ -4,10 +4,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createProgramFromSources } from '#golem/typescript-ts7';
 
-import { scaleModelSource } from './fixture-templates/models/scale.js';
 import { generate } from '#model/generator';
 import { createModelProject, writeModelSources } from './model-project.js';
-import { compileAndVerifyScaleProject, createScaleProject, SCALE_PROFILE } from './scale-project.js';
+import { compileAndVerifyScaleProject, createScaleProject, SCALE_PROFILE, writeScaleModels } from './scale-project.js';
 
 test('many model companions share standalone validation and grow with the model count', async t => {
   const sizes: number[] = [];
@@ -52,9 +51,7 @@ test('model identity checks grow linearly with the model count', t => {
       name: null,
       linkWorkspaceNodeModules: true,
     });
-    const sources: Record<string, ReturnType<typeof scaleModelSource>> = {};
-    for (let index = 0; index < count; index++) sources[`item-${index}.model.ts`] = scaleModelSource({ index });
-    writeModelSources(sourceRoot, sources);
+    writeScaleModels(sourceRoot, count);
     const before = calls;
     const result = generate({ root, profile: { mobx: false, validation: true } });
     assert.equal(result.artifacts.filter(artifact => artifact.path.endsWith('.model.generated.ts')).length, count);

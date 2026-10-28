@@ -6,15 +6,14 @@ import { parse } from 'yaml';
 import * as ts from '#golem/typescript-ns';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { declaredExportNames, statementsOf } from './support/public-exports.js';
 
 type Layout = Record<string, Record<string, string[]>>;
 
 /** The names a module exports, following `export *` into the module it names. */
 function exportedNames(program: ts.Program, file: string): string[] {
-  const source = program.getSourceFile(file);
-  assert.ok(source, `${file} is not in the program`);
   const names: string[] = [];
-  for (const statement of source.statements) {
+  for (const statement of statementsOf(program, file)) {
     if (ts.isExportDeclaration(statement)) {
       const clause = statement.exportClause;
       if (clause && ts.isNamedExports(clause)) names.push(...clause.elements.map(e => e.name.text));
@@ -24,10 +23,7 @@ function exportedNames(program: ts.Program, file: string): string[] {
       }
       continue;
     }
-    const exported = ts.canHaveModifiers(statement) && ts.getModifiers(statement)?.some(m => m.kind === ts.SyntaxKind.ExportKeyword);
-    if (!exported) continue;
-    if (ts.isVariableStatement(statement)) names.push(...statement.declarationList.declarations.flatMap(d => ts.isIdentifier(d.name) ? [d.name.text] : []));
-    else if ('name' in statement && statement.name && ts.isIdentifier(statement.name as ts.Node)) names.push((statement.name as ts.Identifier).text);
+    names.push(...declaredExportNames(statement));
   }
   return [...new Set(names)].sort();
 }

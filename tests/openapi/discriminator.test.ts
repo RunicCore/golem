@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -10,6 +9,7 @@ import { createFixtureProject } from '../fixture-project.js';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,
+  importGeneratedModule,
   isGeneratedModelClass,
   requireRecord,
   type GeneratedModelClass,
@@ -192,6 +192,11 @@ function codec(exports: Record<string, unknown>, name: string): (value: unknown)
   return (input: unknown) => Reflect.apply(value, undefined, [input]);
 }
 
+async function compileStrictAndLoadModels(output: string, extraFiles: string[] = []): Promise<Record<string, unknown>> {
+  compileGeneratedSdk(output, extraFiles, { strict: true });
+  return importGeneratedModule(output, 'models');
+}
+
 test('OAS discriminator mappings select allOf variants in model decode, encode, and the shared codec', async suite => {
   for (const [caseIndex, example] of cases.entries()) {
     // Each case exercises a distinct lowering path; the second profile only re-runs the first case.
@@ -209,7 +214,7 @@ test('OAS discriminator mappings select allOf variants in model decode, encode, 
         assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), example.warnings ?? []);
         compileGeneratedSdk(output, [], { strict: true });
 
-        const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'pet models');
+        const models = await importGeneratedModule(output, 'pet models');
         // A union that admits null is not lowered to a model class of its own.
         const PetModel = example.shape?.nullBranch ? undefined : modelClass(models, `Pet${suffix}Model`);
         const CatModel = modelClass(models, `Cat${suffix}Model`);
@@ -290,8 +295,7 @@ test('a union variant used on its own keeps its declared tag type and any tag va
       `export function kindOf(cat: Cat${suffix}Model): string { const kind: string = cat.kind; return kind; }`,
       '',
     ].join('\n'));
-    compileGeneratedSdk(output, [consumer], { strict: true });
-    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'models');
+    const models = await compileStrictAndLoadModels(output, [consumer]);
     const CatModel = modelClass(models, `Cat${suffix}Model`);
     const parse = codec(models, `parseCat${suffix}`);
     const stringify = codec(models, `stringifyCat${suffix}`);
@@ -347,8 +351,7 @@ test('a variant shared by two discriminated unions gets both union classes, in e
       `export const owner = new Owner${suffix}Model({ pet: new Cat${suffix}Model({ kind: 'feline', name: 'Miso' }) });`,
       '',
     ].join('\n'));
-    compileGeneratedSdk(output, [consumer], { strict: true });
-    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'models');
+    const models = await compileStrictAndLoadModels(output, [consumer]);
     const CatModel = modelClass(models, `Cat${suffix}Model`);
     const DogModel = modelClass(models, `Dog${suffix}Model`);
     const PetModel = modelClass(models, `Pet${suffix}Model`);
@@ -389,8 +392,7 @@ test('a union with no shared variant is extended by its variants and keeps the p
   const suffix = 'Ordinary';
   const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-ordinary-'), 'sdk');
   await generateMaterializedSdk(petDocument(suffix, explicitMapping(suffix)), { output, name: 'Pets', profile: profiles[1] });
-  compileGeneratedSdk(output, [], { strict: true });
-  const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'models');
+  const models = await compileStrictAndLoadModels(output);
   const PetModel = modelClass(models, `Pet${suffix}Model`);
   const cat = decodeGeneratedModel(PetModel, { kind: 'feline', name: 'Miso' });
   assert.deepEqual(

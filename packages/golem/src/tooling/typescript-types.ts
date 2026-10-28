@@ -654,7 +654,9 @@ export interface ParsedProject {
 }
 
 export interface ProgramSessionOptions {
+  /** Working directory of the compiler process. */
   readonly cwd: string;
+  /** Close the compiler process when the last open program closes. */
   readonly closeWhenIdle?: boolean;
 }
 

@@ -29,7 +29,7 @@ export interface BenchmarkSiteProjection {
   }[];
 }
 
-export function benchmarkSiteProjection(results: BenchmarkResults): BenchmarkSiteProjection {
+function benchmarkSiteProjection(results: BenchmarkResults): BenchmarkSiteProjection {
   const columns = GOLEM_ADAPTERS.filter(id => results.adapters.some(a => a.id === id)).map((id, index) => {
     const spec = adapterSpec(id);
     return { id, label: spec.label, sourceUrl: `${REPOSITORY_BLOB_URL}/${spec.sourceFile}`, series: `s${(index % BENCH_SERIES_COUNT) + 1}` };

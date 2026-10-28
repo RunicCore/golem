@@ -9,7 +9,8 @@ import { generate } from '#model/generator';
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
-import { isGeneratedModelClass, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
+import { requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
+import { loadPets } from './support/pets-project.js';
 
 test('an IModel union variant tagged by several literal values is selected by each of them', async (t) => {
   for (const validation of [false, true]) {
@@ -17,16 +18,7 @@ test('an IModel union variant tagged by several literal values is selected by ea
     copyFixtureFile(root, 'models/multi-tag/pets.model.ts', 'src/pets.model.ts');
     writeModelGolemYaml(root, { mobx: false, validation });
     await buildModelProject(root);
-    const pets = {
-      ...requireRecord(await import(pathToFileURL(path.join(root, 'build/pets.model.js')).href), 'pets module'),
-      ...requireRecord(await import(pathToFileURL(path.join(root, 'build/pets.model.generated.js')).href), 'pets companion'),
-    };
-    const model = (name: string): GeneratedModelClass => {
-      const value = pets[name];
-      if (!isGeneratedModelClass(value)) throw new TypeError(`${name} must be a generated model class`);
-      return value;
-    };
-    const [Owner, Cat, Dog] = [model('Owner'), model('TCatBaseModel'), model('TDogBaseModel')];
+    const { Owner, Cat, Dog } = await loadPets(root);
     const json = {
       pet: { kind: 'kitty', name: 'Miso' },
       pets: [{ kind: 'cat', name: 'Tama' }, { kind: 'kitty', name: 'Miso' }, { kind: 'dog', bark: false }],

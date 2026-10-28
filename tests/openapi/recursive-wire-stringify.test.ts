@@ -1,5 +1,6 @@
 import { createFixtureProject } from '../fixture-project.js';
 import { compileGeneratedSdk, generateMaterializedSdk, readGeneratedModelSource, requireRecord } from './helpers.js';
+import { dateTime, object, operation, ref } from './schema-builders.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -7,25 +8,13 @@ import test from 'node:test';
 
 import { LibError } from '@exprtlabs/golem/errors';
 
-const dateTime = { type: 'string', format: 'date-time' };
-const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
-const object = (properties: Record<string, unknown>, required: string[]) => ({ type: 'object', required, properties });
-
 // Report is a model with a date, so its stringify writes the encoded wire value. It holds a recursive model that lives
 // in another module: Tree has no date (its wire form equals its model form), Dated has one (its wire form differs), and
 // Node is a oneOf of plain objects, one of which holds the oneOf again.
 const document = {
   openapi: '3.1.0',
   info: { title: 'RecursiveWire', version: '1' },
-  paths: {
-    '/reports': {
-      post: {
-        operationId: 'createReport',
-        requestBody: { required: true, content: { 'application/json': { schema: ref('Report') } } },
-        responses: { 200: { description: 'ok', content: { 'application/json': { schema: ref('Report') } } } },
-      },
-    },
-  },
+  paths: { '/reports': operation('createReport', 'Report') },
   components: {
     schemas: {
       Report: object({ at: dateTime, tree: ref('Tree'), dated: ref('Dated'), node: ref('Node') }, ['at', 'tree', 'dated', 'node']),

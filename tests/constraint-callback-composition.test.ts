@@ -1,47 +1,14 @@
-import { createFixtureProject, linkProjectPackages, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { workspace } from './support/process.js';
-import { buildModelProject, writeModelGolemYaml } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, type ModelProject } from './model-project.js';
 import { getValidator } from '@exprtlabs/golem/validation';
 
-interface Fixture {
-  readonly root: string;
-  readonly sourceRoot: string;
-}
-
-function fixture(t: TestContext): Fixture {
-  const root = createFixtureProject(t, 'golem-constraint-callback-');
-  const sourceRoot = path.join(root, 'src');
-  linkProjectPackages(root, {
-    '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
-    typescript: path.join(workspace, 'node_modules/typescript'),
-  });
-  writeGeneratedArtifacts([
-    {
-      path: path.join(root, 'package.json'),
-      content: JSON.stringify({ name: 'constraint-callback-composition', private: true, type: 'module' }),
-    },
-    {
-      path: path.join(root, 'tsconfig.json'),
-      content: JSON.stringify({
-        compilerOptions: {
-          strict: true,
-          target: 'ES2022',
-          module: 'NodeNext',
-          moduleResolution: 'NodeNext',
-          skipLibCheck: true,
-          outDir: 'build',
-          rootDir: 'src',
-        },
-        include: ['src/**/*.ts'],
-      }),
-    },
-  ]);
-  return { root, sourceRoot };
+function fixture(t: TestContext): ModelProject {
+  return createModelProject(t, { prefix: 'golem-constraint-callback-', name: 'constraint-callback-composition', linkTypescript: true });
 }
 
 async function compile(root: string): Promise<void> {

@@ -1,5 +1,5 @@
 export type JsonObject = { readonly [key: string]: JsonValue | undefined };
-export type JsonValue =
+type JsonValue =
   | null
   | boolean
   | number

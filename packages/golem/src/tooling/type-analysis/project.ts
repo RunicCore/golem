@@ -425,6 +425,18 @@ function parsedProject(
   };
 }
 
+/** The session that a program opens on (the retained one, else a compiler that closes with its last program) and the project it parses. */
+function openProject(
+  root: string,
+  sources: readonly string[],
+  retained: ts.ProgramSession | undefined,
+  onInput: InputObserver | undefined,
+  configFile: string | undefined,
+): { readonly session: ts.ProgramSession; readonly parsed: ReturnType<typeof parsedProject> } {
+  const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
+  return { session, parsed: parsedProject(root, sources, session, onInput, configFile) };
+}
+
 /**
  * The compiler session a provider keeps for one project root across the
  * generation runs of a CLI pipeline or watch session.
@@ -475,8 +487,7 @@ export function createProgram(
   /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
   configFile?: string,
 ): ProgramInfo {
-  const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
-  const parsed = parsedProject(root, sources, session, onInput, configFile);
+  const { session, parsed } = openProject(root, sources, retained, onInput, configFile);
   return openParsedProgram(session, root, parsed, uniqueFilenames([...sources, ...parsed.ambientFiles]), onInput);
 }
 
@@ -491,8 +502,7 @@ export function createProjectProgram(
   /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
   configFile?: string,
 ): ProgramInfo {
-  const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
-  const parsed = parsedProject(root, [], session, onInput, configFile);
+  const { session, parsed } = openProject(root, [], retained, onInput, configFile);
   return openParsedProgram(session, root, parsed, parsed.projectFiles, onInput);
 }
 
@@ -554,8 +564,7 @@ export function createModelStubProgram(
   /** The tsconfig to open, from the golem.yaml; without it the one that `tsc` would find from `root` upward. */
   configFile?: string,
 ): ProgramInfo {
-  const session = retained ?? new ts.ProgramSession({ cwd: root, closeWhenIdle: true });
-  const parsed = parsedProject(root, sources, session, onInput, configFile);
+  const { session, parsed } = openProject(root, sources, retained, onInput, configFile);
   const stubbed = new Set<string>();
   const stubsOf = (files: readonly string[]): Map<string, string> => {
     const stubs = new Map<string, string>();

@@ -7,6 +7,14 @@ import test from 'node:test';
 import { runPipeline } from '#golem/cli';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 
+/** Generates the project, checks it against its sources, and returns the operation registry it wrote. */
+async function generateAndReadRegistry(root: string): Promise<string> {
+  const config = path.join(root, 'golem.yaml');
+  await runPipeline(config);
+  await runPipeline(config, { check: true });
+  return fs.readFileSync(path.join(root, 'src/generated/operation-codecs.ts'), 'utf8');
+}
+
 for (const openapiVersion of ['3.2.0', '3.1.2']) {
   test(`on OpenAPI ${openapiVersion} the operation codecs hold the model of a whole @Query() model, and golem check fails for a model they do not hold`, async (t) => {
     // protects: T-443 golem check verifies a whole @Query() model on OpenAPI 3.1, where the query flattens to primitive parameters
@@ -20,10 +28,7 @@ for (const openapiVersion of ['3.2.0', '3.1.2']) {
       },
     });
     const config = path.join(root, 'golem.yaml');
-    await runPipeline(config);
-    await runPipeline(config, { check: true });
-
-    const registry = fs.readFileSync(path.join(root, 'src/generated/operation-codecs.ts'), 'utf8');
+    const registry = await generateAndReadRegistry(root);
     assert.match(registry, /OPERATION_QUERY_CODECS = \{\s*"GET \/a": "TSearch_[0-9a-f]{8}"\s*\}/);
     assert.match(registry, /"AController\.list": \{\s*"query": "TSearch_[0-9a-f]{8}"\s*\}/);
 
@@ -46,10 +51,7 @@ test('on OpenAPI 3.1.2 a header model beside a whole @Query() model is no query 
       'golem.yaml': 'version: 1\nmobx: false\nvalidation: true\ncontrollers:\n  - root: .\n    sources:\n      - src/a.controller.ts\n    output: generated/api.json\n    openapiVersion: "3.1.2"\n    info: { title: T, version: "1" }\nmodels:\n  root: .\n',
     },
   });
-  const config = path.join(root, 'golem.yaml');
-  await runPipeline(config);
-  await runPipeline(config, { check: true });
-  const registry = fs.readFileSync(path.join(root, 'src/generated/operation-codecs.ts'), 'utf8');
+  const registry = await generateAndReadRegistry(root);
   assert.match(registry, /OPERATION_QUERY_CODECS = \{\s*"GET \/a": "TSearch_[0-9a-f]{8}"\s*\}/);
   assert.match(registry, /"AController\.alone": \{\s*\}/);
 });
@@ -70,9 +72,7 @@ test('golem check fails a @Query() model that only another operation holds, and 
     },
   });
   const config = path.join(root, 'golem.yaml');
-  await runPipeline(config);
-  await runPipeline(config, { check: true });
-  const registry = fs.readFileSync(path.join(root, 'src/generated/operation-codecs.ts'), 'utf8');
+  const registry = await generateAndReadRegistry(root);
   assert.match(registry, /"AController\.found": \{\s*"query": "TSearch_[0-9a-f]{8}"\s*\}/);
 
   // The model is the body of `create`, but no route holds it as the query of `helper`.
@@ -105,8 +105,6 @@ test('two controllers with one class name and one method name stop generation wi
   });
 
   fs.writeFileSync(path.join(root, 'src/two/a.controller.ts'), controller('TTwo', 'createTwo', 'BController', ''));
-  await runPipeline(config);
-  await runPipeline(config, { check: true });
-  const registry = fs.readFileSync(path.join(root, 'src/generated/operation-codecs.ts'), 'utf8');
+  const registry = await generateAndReadRegistry(root);
   assert.match(registry, /"AController\.create": \{\s*"input": "TOne_[0-9a-f]{8}"\s*\},\s*"BController\.create": \{\s*"input": "TTwo_[0-9a-f]{8}"\s*\}/);
 });

@@ -1,21 +1,13 @@
 // lane: typescript6 TypeChecker.typeToString and createScanner of the classic API: it prints a union in the order in which the checker met its members, and golem names from the sorted text
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildRecursiveNames } from './support/recursive-names.js';
 
 const HEAD = "import type { IModel } from '@exprtlabs/golem/model';\n";
 
 /** The names that the generated files give a `<name>Fields` type, for one project. */
 async function projectionNames(t: TestContext, sources: Record<string, string>): Promise<string[]> {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-names-', name: 'recursive-names' });
-  writeModelSources(sourceRoot, sources);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  const built = await buildModelProject(root);
-  assert.equal(built.code, 0, `${built.stdout}${built.stderr}`);
-  const generated = Object.keys(sources).map(file => fs.readFileSync(path.join(sourceRoot, file.replace(/\.ts$/, '.generated.ts')), 'utf8')).join('\n');
-  return [...new Set([...generated.matchAll(/\b(\w+)Fields\b/g)].map(match => match[1]!))].sort();
+  return (await buildRecursiveNames(t, sources)).names;
 }
 
 test('a generic instance named by a literal union argument gets one name whichever way TypeScript orders the union', async (t: TestContext) => {

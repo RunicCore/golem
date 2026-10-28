@@ -36,6 +36,21 @@ async function buildTuple(scope: FixtureScope, name: string, validation: boolean
   return { Tuple: loaded.Tuple, codec: requireObjectCodec(generatedCodecIdFromRoot(root, 'TTuple')) };
 }
 
+/** The value of `name` on a decoded or encoded model. */
+function field(value: unknown, name: string): unknown {
+  assert.ok(typeof value === 'object' && value !== null && name in value);
+  return Reflect.get(value, name);
+}
+
+/** An `assert.throws` validator: the error is a LibError whose first issue sits at `path`. */
+function failsAt(path: readonly (string | number)[]) {
+  return (error: unknown): true => {
+    assert.ok(error instanceof LibError);
+    assert.deepEqual(error.issues[0]?.path, path);
+    return true;
+  };
+}
+
 // The tests that only read the tuple model with validation off share one build of it.
 const fileScope = fileFixtureScope();
 const trustedTuple = onceShared(() => buildTuple(fileScope, 'tuple-trusted', false));
@@ -130,10 +145,6 @@ test('validation-enabled codec emission compiles and preserves array and tuple g
 
 test('a model keeps a short rest tuple at its own length and a hole in it a hole, with validation off', async () => {
   const { Tuple } = await trustedTuple();
-  const field = (value: unknown, name: string): unknown => {
-    assert.ok(typeof value === 'object' && value !== null && name in value);
-    return Reflect.get(value, name);
-  };
   const init = { required: ['required', 9], maybe: ['x'], rest: ['only'] };
   assert.deepEqual(field(new Tuple(init), 'rest'), ['only']);
   assert.deepEqual(field(decodeGeneratedModel(Tuple, init), 'rest'), ['only']);
@@ -163,11 +174,6 @@ test('a codec decode error names the index of a bad tuple item and of a bad item
 
   const decode = (override: object) => () =>
     codec.fromWireFormat({ required: ['required', 9], maybe: ['x'], rest: ['prefix', true], ...override }, { validate: false });
-  const failsAt = (path: readonly (string | number)[]) => (error: unknown): true => {
-    assert.ok(error instanceof LibError);
-    assert.deepEqual(error.issues[0]?.path, path);
-    return true;
-  };
 
   assert.throws(decode({ dated: ['first', '2024-05-06T07:08:09.000Z', 'not a date', '2024-05-06T07:08:09.000Z'] }), failsAt(['dated', 2]));
   assert.throws(decode({ dated: ['first', '2024-05-06T07:08:09.000Z', 'not a date'] }), failsAt(['dated', 2]));
@@ -177,10 +183,6 @@ test('a codec decode error names the index of a bad tuple item and of a bad item
 test('a scalar value of a scalar-or-array union stays as it is, and the array items still convert', async () => {
   const { Tuple, codec } = await trustedTuple();
   const options = { validate: false };
-  const field = (value: unknown, name: string): unknown => {
-    assert.ok(typeof value === 'object' && value !== null && name in value);
-    return Reflect.get(value, name);
-  };
   const base = { required: ['required', 9], maybe: ['x'], rest: ['prefix', true] };
   const day = '2024-05-06T07:08:09.000Z';
 
@@ -207,15 +209,6 @@ test('a scalar value of a scalar-or-array union stays as it is, and the array it
 test('a scalar-or-tuple union keeps its scalar and converts the items of its tuple', async () => {
   const { Tuple, codec } = await trustedTuple();
   const options = { validate: false };
-  const field = (value: unknown, name: string): unknown => {
-    assert.ok(typeof value === 'object' && value !== null && name in value);
-    return Reflect.get(value, name);
-  };
-  const failsAt = (path: readonly (string | number)[]) => (error: unknown): true => {
-    assert.ok(error instanceof LibError);
-    assert.deepEqual(error.issues[0]?.path, path);
-    return true;
-  };
   const base = { required: ['required', 9], maybe: ['x'], rest: ['prefix', true] };
   const day = '2024-05-06T07:08:09.000Z';
 
