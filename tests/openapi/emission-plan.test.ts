@@ -116,25 +116,9 @@ test('generated clients bind the default fetch to globalThis and call an explici
 
   const originalFetch = globalThis.fetch;
   const defaultReceivers: unknown[] = [];
-  const defaultFetch = function (this: unknown, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    defaultReceivers.push(this);
-    const request = new Request(input, init);
-    assert.equal(request.url, 'https://example.test/value');
-    return Promise.resolve(new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    }));
-  };
+  const defaultFetch = echoFetch(defaultReceivers);
   const explicitReceivers: unknown[] = [];
-  const explicitFetch = function (this: unknown, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
-    explicitReceivers.push(this);
-    const request = new Request(input, init);
-    assert.equal(request.url, 'https://example.test/value');
-    return Promise.resolve(new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    }));
-  };
+  const explicitFetch = echoFetch(explicitReceivers);
 
   try {
     globalThis.fetch = defaultFetch as typeof fetch;
@@ -153,6 +137,19 @@ test('generated clients bind the default fetch to globalThis and call an explici
     globalThis.fetch = originalFetch;
   }
 });
+
+/** A fetch for `https://example.test/value` that records its receiver and answers `{ ok: true }`. */
+function echoFetch(receivers: unknown[]): (this: unknown, input: RequestInfo | URL, init?: RequestInit) => Promise<Response> {
+  return function (this: unknown, input, init) {
+    receivers.push(this);
+    const request = new Request(input, init);
+    assert.equal(request.url, 'https://example.test/value');
+    return Promise.resolve(new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    }));
+  };
+}
 
 function info(title: string): { title: string; version: string } {
   return { title, version: '1' };

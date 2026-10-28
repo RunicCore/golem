@@ -1,22 +1,12 @@
 import { createFixtureProject } from '../fixture-project.js';
 import { compileGeneratedSdk, generateMaterializedSdk, readGeneratedModelSource, requireRecord, writeOpenApiDocument } from './helpers.js';
+import { dateTime, object, operation, ref } from './schema-builders.js';
 import { generate } from '#openapi/generator';
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-
-const dateTime = { type: 'string', format: 'date-time' };
-const ref = (name: string) => ({ $ref: `#/components/schemas/${name}` });
-const object = (properties: Record<string, unknown>, required: string[]) => ({ type: 'object', required, properties });
-const operation = (id: string, schema: string) => ({
-  post: {
-    operationId: id,
-    requestBody: { required: true, content: { 'application/json': { schema: ref(schema) } } },
-    responses: { 200: { description: 'ok', content: { 'application/json': { schema: ref(schema) } } } },
-  },
-});
 
 // JsonValue reaches itself through an array and an object and holds no date or model: its wire type is its model type.
 // Tag is a non-model component that reaches nothing, so it stays inline.
