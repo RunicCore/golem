@@ -3,11 +3,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { queryFieldTable } from '#golem/query-fields';
 import type { JsonSchema } from '#golem/schema';
-import type { ObjectCodecImpl } from '@exprtlabs/golem/serde';
+import type { QueryFieldTable } from '@exprtlabs/golem/serde';
 import { decorateQueryModel, startNestApp } from './support/nest-app.js';
 import { registerPassThroughCodec } from './support/pass-through-codec.js';
 
-type QueryFieldTable = NonNullable<ObjectCodecImpl['queryFields']>;
 const REF = '__exprtGeneratedModel:';
 const BASE_SCHEMA = {
   type: 'object',
@@ -112,10 +111,12 @@ for (const { name, schema, expected } of refFields) {
 }
 
 test('a model with only string fields has no query fields', () => {
+  // protects: T-377 a string-only model, even one with a string-or-array field, registers no query field table
   assert.equal(table({ type: 'object', properties: { name: { type: 'string' }, either: { type: ['string', 'array'], items: { type: 'string' } } } }), undefined);
 });
 
 test('NestModelInterceptor decodes a whole @Query() model with the fields of its codec', async () => {
+  // protects: T-640 the interceptor decodes a query string by the queryFields of the registered codec, not by a schema
   registerPassThroughCodec('QueryRoot_0', { queryFields: BASE_FIELDS });
   assert.deepEqual(await queryReceived('QueryRoot_0', 'limit=10&active=true&name=7&page=2'), { limit: 10, active: true, name: '7', page: '2' });
 });

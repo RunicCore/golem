@@ -37,7 +37,7 @@ import {
   isValidModelValue,
   IssueRepresentation,
   IssueSource,
-  type ObjectCodecImpl,
+  type QueryFieldTable,
 } from '@exprtlabs/golem/serde';
 
 import { readFixture } from './fixture-project.js';
@@ -46,8 +46,6 @@ import { compileSchema } from './support/compiled-validators.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { decorateQueryModel, startNestApp } from './support/nest-app.js';
 import { registerPassThroughCodec } from './support/pass-through-codec.js';
-
-type QueryFieldTable = NonNullable<ObjectCodecImpl['queryFields']>;
 
 function markerCodec(id: string) {
   return registerPassThroughCodec(id, { fromWireFormat: () => ({ converted: true }) });
