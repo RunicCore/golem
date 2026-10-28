@@ -543,11 +543,6 @@ function indexValueNode(node: ts.TypeNode | undefined): ts.TypeNode | undefined 
   return undefined;
 }
 
-/**
- * What an `AdditionalProperties<V>` tag says about the other keys: `false` when none is allowed, the descriptor of V
- * when they are values of type V (converted like the values of an index signature), `true` when V is `unknown` or `any`
- * (the values are copied as they are), and `undefined` when the object has no such tag.
- */
 /** The text of a name as a regular expression that matches that text only. */
 function escapedKeyText(text: string): string {
   return text.replace(/[\\^$.*+?()[\]{}|/]/g, '\\$&');
@@ -590,6 +585,11 @@ function indexKeyPattern(checker: ts.TypeChecker, type: ts.Type, declaredNames: 
   return expressions.length === 0 ? undefined : `^(?:${[...expressions, ...declaredNames.map(escapedKeyText)].join('|')})$`;
 }
 
+/**
+ * What an `AdditionalProperties<V>` tag says about the other keys: `false` when none is allowed, the descriptor of V
+ * when they are values of type V (converted like the values of an index signature), `true` when V is `unknown` or `any`
+ * (the values are copied as they are), and `undefined` when the object has no such tag.
+ */
 function additionalPropertiesFromTags(
   constraints: readonly ModelConstraint[],
 ): boolean | ModelConversionDescriptor | undefined {
