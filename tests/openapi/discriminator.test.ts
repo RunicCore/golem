@@ -593,26 +593,42 @@ for (const [name, version, defaultMapping, suffix] of [
       },
     };
     const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-key-'), 'sdk');
-    await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: true } });
-    compileGeneratedSdk(output, [], { strict: true });
-    const models = await importGeneratedModule(output, 'pet models');
-    const OwnerModel = modelClass(models, `Owner${suffix}Model`);
-    const decodePet = (pet: object) => (decodeGeneratedModel(OwnerModel, { pet }) as { pet: object }).pet;
-    const CatModel = modelClass(models, `Cat${suffix}Model`);
-    const target = modelClass(models, `${defaultMapping ?? 'Dog'}${suffix}Model`);
-    // Expected table: the key "Cat…" selects the mapped target and Cat has no value of its own, so nothing selects Cat.
-    const both = { kind: `Cat${suffix}`, name: 'Miso', bark: true, note: 'n' };
-    const pet = decodePet(both);
-    assert.ok(pet instanceof target, 'the mapped key selects its target');
-    assert.ok(!(pet instanceof CatModel), 'the variant the key names is not selected by its own name');
-    // The default variant declares no tag, so it writes none.
-    assert.deepEqual(encodeGeneratedModel(pet), defaultMapping ? { note: 'n' } : { kind: `Cat${suffix}`, bark: true });
-    if (!defaultMapping) {
-      // The target keeps its own implicit value because no mapping key names it.
-      assert.ok(decodePet({ kind: `Dog${suffix}`, bark: true }) instanceof target);
-    }
+    // Cat has no value of its own, so nothing selects it: generation stops and names the key, its target and the fix.
+    await assert.rejects(
+      generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: true } }),
+      new RegExp(`OPENAPI_DISCRIMINATOR_VARIANT_UNSELECTED: .*Cat${suffix}.*the mapping key "Cat${suffix}" sends that value to .*${defaultMapping ?? 'Dog'}${suffix}.*mapping value of its own, or remove`),
+    );
   });
 }
+
+test('a variant given a mapping value of its own is selected by it while the key that names it goes elsewhere', async t => {
+  // protects: discriminator value rule (3.1.1, 3.2.0) a mapping for a value replaces the component-name value; the variant keeps the value it is given
+  const tagged = (own: Record<string, unknown>) => ({ type: 'object', required: ['kind', ...Object.keys(own)], properties: { kind: { type: 'string' }, ...own } });
+  const document = {
+    openapi: '3.1.0',
+    info: { title: 'Pets', version: '1' },
+    paths: {},
+    components: {
+      schemas: {
+        CatOwn: tagged({ name: { type: 'string' } }),
+        DogOwn: tagged({ bark: { type: 'boolean' } }),
+        PetOwn: {
+          oneOf: [{ $ref: '#/components/schemas/CatOwn' }, { $ref: '#/components/schemas/DogOwn' }],
+          discriminator: { propertyName: 'kind', mapping: { CatOwn: '#/components/schemas/DogOwn', feline: '#/components/schemas/CatOwn' } },
+        },
+        OwnerOwn: { type: 'object', required: ['pet'], properties: { pet: { $ref: '#/components/schemas/PetOwn' } } },
+      },
+    },
+  };
+  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-own-'), 'sdk');
+  await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  const models = await importGeneratedModule(output, 'pet models');
+  const OwnerModel = modelClass(models, 'OwnerOwnModel');
+  const decodePet = (pet: object) => (decodeGeneratedModel(OwnerModel, { pet }) as { pet: object }).pet;
+  assert.ok(decodePet({ kind: 'feline', name: 'Miso' }) instanceof modelClass(models, 'CatOwnModel'));
+  assert.ok(decodePet({ kind: 'CatOwn', bark: true }) instanceof modelClass(models, 'DogOwnModel'));
+});
 
 for (const validation of [false, true]) {
   test(`a oneOf with no discriminator keyword takes a model with no tag as the default of its tagged objects, with validation ${validation ? 'on' : 'off'}`, async t => {

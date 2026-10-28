@@ -586,9 +586,8 @@ export function modelConversionDescriptor(
     if (composition.kind === 'variants') {
       const variants = composition.variants.map(objectCompositionDescriptor);
       const declaredKey = asRecord(composition.union.discriminator).propertyName;
-      const table = unionDiscriminatorTable(composition.union, composition.items, definitions, composition.scope);
-      if (table) return selectableUnion(variants, table);
-      const discriminator = untaggedUnionTable(variants, definitions, typeof declaredKey === 'string' ? declaredKey : undefined);
+      const discriminator = unionDiscriminatorTable(composition.union, composition.items, definitions, composition.scope)
+        ?? untaggedUnionTable(variants, definitions, typeof declaredKey === 'string' ? declaredKey : undefined);
       return { kind: 'union', variants, ...(discriminator ? { discriminator } : {}) };
     }
     const members = schema.allOf.map((item) => modelConversionDescriptor(item, definitions, nested, direction, seen));
@@ -654,9 +653,8 @@ export function modelConversionDescriptor(
     // A discriminator keeps even a one-variant union a tagged union.
     // A discriminator the document does not resolve to model variants (inline objects, a scalar beside the models) tags like a union without one.
     const declaredKey = asRecord(schema.discriminator).propertyName;
-    const table = unionDiscriminatorTable(schema, variants, definitions, nested);
-    if (table) return selectableUnion(convertedVariants, table);
-    const discriminator = untaggedUnionTable(convertedVariants, definitions, typeof declaredKey === 'string' ? declaredKey : undefined);
+    const discriminator = unionDiscriminatorTable(schema, variants, definitions, nested)
+      ?? untaggedUnionTable(convertedVariants, definitions, typeof declaredKey === 'string' ? declaredKey : undefined);
     if (convertedVariants.length === 1 && !discriminator) {
       const [only] = convertedVariants;
       if (only) return only;
@@ -795,6 +793,8 @@ export function componentSite(name: string): CompositionSite {
   };
 }
 
+const UNSELECTED_VARIANT = 'OPENAPI_DISCRIMINATOR_VARIANT_UNSELECTED';
+
 /**
  * Resolve an OAS discriminator into the value → variant model table. Mapping
  * values are component names or references; a variant without a mapping key
@@ -892,6 +892,17 @@ export function discriminatorSelection(
       selected.set(value, typeName);
     }
   }
+  for (const [typeName, variant] of variants) {
+    if (typeName === defaultVariant || variant.values.length > 0) continue;
+    // Its component name went to the mapping key of the same text, and no other key selects it.
+    const key = variant.schemaName;
+    const named = `schema ${JSON.stringify(schemaName)}`;
+    throw new LocatedError(
+      `${UNSELECTED_VARIANT}: no discriminator value of ${named} selects ${typeName}: the mapping key ${JSON.stringify(key)} sends that value to ${JSON.stringify(asRecord(mapping)[key])}. `
+      + 'Give the variant a mapping value of its own, or remove it from the union',
+      [componentOrigin('schemas', schemaName, named)],
+    );
+  }
   return { propertyName: property, variants: selected, ...(defaultVariant === undefined ? {} : { defaultVariant }) };
 }
 
@@ -987,33 +998,7 @@ function unionDiscriminatorTable(
   const defaultAt = selection.defaultVariant === undefined
     ? -1
     : items.findIndex((item) => exactComponentTarget(item, env)?.typeName === selection.defaultVariant);
-  // A variant that a mapping key left without a value keeps an empty entry: no tag value selects it.
   return { propertyName: selection.propertyName, variants, ...(defaultAt < 0 ? {} : { defaultVariant: defaultAt }) };
-}
-
-/**
- * The conversion of a discriminated union, without the variants that no tag value selects. A mapping key equal to a component
- * name removes that component's implicit value (OpenAPI 3.1 and 3.2, Discriminator Object), so a variant can be left with no
- * value: no document selects it by the tag, and the conversion does not dispatch to it. The default variant and a null branch
- * keep their place. When the default is the only variant left, every tag value selects it and the tag table has nothing to say.
- */
-function selectableUnion(variants: readonly ModelTypeDescriptor[], table: UnionDiscriminator): ModelTypeDescriptor {
-  const selected = (index: number): boolean => (table.variants[index]?.values.length ?? 0) > 0;
-  const kept = variants.map((variant, index) => variant.kind === 'null' || index === table.defaultVariant || selected(index));
-  const remaining = variants.filter((_, index) => kept[index]);
-  if (!variants.some((_, index) => kept[index] && selected(index))) {
-    return remaining.length === 1 && remaining[0] ? remaining[0] : { kind: 'union', variants: remaining };
-  }
-  const positions = kept.reduce<number[]>((found, keep, index) => [...found, keep ? (found.filter((position) => position >= 0).length) : -1], []);
-  return {
-    kind: 'union',
-    variants: remaining,
-    discriminator: {
-      ...table,
-      variants: table.variants.filter((_, index) => kept[index]),
-      ...(table.defaultVariant === undefined ? {} : { defaultVariant: positions[table.defaultVariant] }),
-    },
-  };
 }
 
 type TagValues = ReadonlyMap<string, readonly (string | number | boolean)[]>;

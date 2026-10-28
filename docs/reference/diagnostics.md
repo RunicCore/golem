@@ -886,6 +886,15 @@ An `integer` member and a `number` member share the integers. A member that decl
 
 **Discriminator unusable for conversion.** A schema has a `discriminator` with `oneOf`/`anyOf`, but not every variant resolves to an exact component-schema reference — for example, an inline variant. This is a warning: generation continues, but the discriminator isn't used to pick a variant when decoding. **Fix:** Make every `oneOf`/`anyOf` variant an exact `$ref` to a component schema.
 
+### OPENAPI_DISCRIMINATOR_VARIANT_UNSELECTED
+
+**Variant that no discriminator value selects.** A `oneOf`/`anyOf` with a `discriminator` has a variant, other than the `defaultMapping` schema, that no tag value selects. A value names its component unless a `mapping` has that value, so a `mapping` key equal to the variant's component name, such as `mapping: { Cat: Dog }`, sends that value to another schema and leaves the variant with none. Generation stops. The message names the variant, the key and the schema the key targets.
+
+**Fix:**
+
+- Give the variant a mapping value of its own, for example `feline: '#/components/schemas/Cat'`.
+- Or remove the variant from the union.
+
 ### OPENAPI_OPERATION_RENAMED
 
 **Operation renamed.** The generated operation name is a JavaScript reserved word or an existing client member name (such as `constructor`), so the generator appends its allocator's suffix to make it distinct. This is a warning: generation continues, but the operation's exported name no longer matches its `operationId` or inferred name.
