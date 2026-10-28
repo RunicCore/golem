@@ -66,7 +66,9 @@ export function schemaIssueMessage(detail: SchemaIssueDetail): string {
     case 'tooSmall':
     case 'tooBig': return limitMessage(detail);
     case 'pattern': return `Must match the pattern ${detail.pattern}`;
-    case 'format': return `Must be a valid ${detail.format}`;
+    case 'format': return detail.format === 'int64'
+      ? 'Must be a valid int64 within ±9007199254740991, because JSON numbers in JavaScript cannot carry a larger integer exactly'
+      : `Must be a valid ${detail.format}`;
     case 'multipleOf': return `Must be a multiple of ${detail.divisor}`;
     case 'unique': return `Items at index ${detail.indexes[0]} and ${detail.indexes[1]} are equal; items must be unique`;
     case 'not': return 'Must not match the excluded shape';
