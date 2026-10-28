@@ -1,10 +1,10 @@
-import { createFixtureProject, linkProjectPackages, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 import { generate as generateControllers } from '#controllers/generator';
 import { command, workspace } from './support/process.js';
-import { buildModelProject, writeModelGolemYaml } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { compileSchema } from './support/compiled-validators.js';
 
@@ -26,35 +26,17 @@ const rejected = [
 ];
 
 test('model predicates never strengthen wire or OpenAPI contracts', async t => {
-  const root = createFixtureProject(t, 'golem-portability-');
-  linkProjectPackages(root, {
-    '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
-    '@nestjs/common': path.join(workspace, 'node_modules/@nestjs/common'),
-    '@types': path.join(workspace, 'node_modules/@types'),
-    typescript: path.join(workspace, 'node_modules/typescript'),
+  const { root } = createModelProject(t, {
+    prefix: 'golem-portability-',
+    name: null,
+    linkTypescript: true,
+    packages: {
+      '@nestjs/common': path.join(workspace, 'node_modules/@nestjs/common'),
+      '@types': path.join(workspace, 'node_modules/@types'),
+    },
+    compilerOptions: { experimentalDecorators: true, types: ['node'] },
   });
   writeGeneratedArtifacts([
-    {
-      path: path.join(root, 'package.json'),
-      content: JSON.stringify({ private: true, type: 'module' }),
-    },
-    {
-      path: path.join(root, 'tsconfig.json'),
-      content: JSON.stringify({
-        compilerOptions: {
-          strict: true,
-          target: 'ES2022',
-          module: 'NodeNext',
-          moduleResolution: 'NodeNext',
-          experimentalDecorators: true,
-          skipLibCheck: true,
-          outDir: 'build',
-          rootDir: 'src',
-          types: ['node'],
-        },
-        include: ['src/**/*.ts'],
-      }),
-    },
     {
       path: path.join(root, 'src/rules.ts'),
       content: readFixture('models/constraint-portability/constraint-portability-rules/rules.ts'),

@@ -3,13 +3,9 @@ import assert from 'node:assert/strict';
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
-  rmSync,
-  symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
@@ -18,7 +14,7 @@ import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosur
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { workspace } from './support/process.js';
-import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, type ModelProject } from './model-project.js';
 import type { ModelValidationContext } from '@exprtlabs/golem/model';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -26,38 +22,25 @@ import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compileSchema, compileValidationPlan } from './support/compiled-validators.js';
 import { runPipeline } from '#golem/pipeline';
 
-interface Fixture {
-  readonly root: string;
-  readonly sourceRoot: string;
+function fixture(t: TestContext): ModelProject {
+  return createModelProject(t, {
+    prefix: 'golem-generated-validators-',
+    name: 'generated-validators',
+    linkTypescript: true,
+    packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
+  });
 }
 
-function fixture(t: TestContext): Fixture {
-  const root = mkdtempSync(path.join(os.tmpdir(), 'golem-generated-validators-'));
-  const sourceRoot = path.join(root, 'src');
-  mkdirSync(sourceRoot, { recursive: true });
-  mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
-  symlinkSync(path.join(workspace, 'packages/golem'), path.join(root, 'node_modules/@exprtlabs/golem'), 'dir');
-  symlinkSync(path.join(workspace, 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
-  symlinkSync(path.join(workspace, 'packages/golem-model'), path.join(root, 'node_modules/@exprtlabs/golem-model'), 'dir');
-  writeFileSync(path.join(root, 'package.json'), JSON.stringify({ name: 'generated-validators', private: true, type: 'module' }));
-  writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
-    compilerOptions: {
-      strict: true,
-      target: 'ES2022',
-      module: 'NodeNext',
-      moduleResolution: 'NodeNext',
-      skipLibCheck: true,
-      outDir: 'build',
-      rootDir: 'src',
-    },
-    include: ['src/**/*.ts'],
-  }));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
-  return { root, sourceRoot };
+/** A fixture holding the one model file `filename` of `lines` and a golem.yaml that generates validation. */
+function validationProject(t: TestContext, filename: string, lines: readonly string[]): ModelProject {
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, filename), lines.join('\n'));
+  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  return value;
 }
 
 /** The validators module as `golem build` wrote it into outDir. */
-function builtValidators(value: Fixture): string {
+function builtValidators(value: ModelProject): string {
   const artifact = generatedModelFiles(value.root).find(item => item.path.endsWith('/models.validators.generated.ts'));
   assert.ok(artifact, 'generated validators artifact');
   return path.join(value.root, 'build', path.relative(value.sourceRoot, artifact.path).replace(/\.ts$/, '.js'));
@@ -388,14 +371,12 @@ test('generated validators permit equal model names in independent source graphs
 
 test('a model format golem does not check stops generation by default, and unknownFormats: warn warns and writes the files', async t => {
   // protects: T-33 unknownFormats defaults to error; warn is the opt-out
-  const value = fixture(t);
-  writeFileSync(path.join(value.sourceRoot, 'contact.model.ts'), [
+  const value = validationProject(t, 'contact.model.ts', [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Format } from '@exprtlabs/golem/tags';",
     "export type TContact = IModel<{ phone: string & Format<'phone-number'> }>;",
     '',
-  ].join('\n'));
-  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  ]);
   const config = path.join(value.root, 'golem.yaml');
   // The error names the model, and no error is dropped: the field type's own schema reports it too.
   await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT: model TContact: the format "phone-number" is not implemented, so golem cannot check it\./);
@@ -409,15 +390,13 @@ test('a model format golem does not check stops generation by default, and unkno
 });
 
 test('a field type that only a model without validation holds still fails generation when its format is unknown', async t => {
-  const value = fixture(t);
-  writeFileSync(path.join(value.sourceRoot, 'contact.model.ts'), [
+  const value = validationProject(t, 'contact.model.ts', [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Format } from '@exprtlabs/golem/tags';",
     "export type TChecked = IModel<{ count: number }>;",
     "export type TUnchecked = IModel<{ phone: string & Format<'phone-number'> }, { validation: false }>;",
     '',
-  ].join('\n'));
-  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  ]);
   const config = path.join(value.root, 'golem.yaml');
   await assert.rejects(runPipeline(config), /VALIDATE_UNKNOWN_FORMAT: a model field type: the format "phone-number" is not implemented/);
 });
@@ -438,24 +417,20 @@ test('a model class registered at run time satisfies a generated model-instance 
 
 test('a model literal type that is not a finite number stops generation with an error that names the model', async t => {
   // protects: T-486 a non-finite enum or const is rejected where the schema is lowered, with a clear error
-  const value = fixture(t);
-  writeFileSync(path.join(value.sourceRoot, 'huge.model.ts'), [
+  const value = validationProject(t, 'huge.model.ts', [
     "import type { IModel } from '@exprtlabs/golem/model';",
     'export type THuge = IModel<{ amount: 1e999 }>;',
     '',
-  ].join('\n'));
-  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  ]);
   await assert.rejects(runPipeline(path.join(value.root, 'golem.yaml')), /VALIDATE_UNSUPPORTED_KEYWORD: .*the value of const is not valid: expected a JSON value; a number that is not finite has no JSON form/);
 });
 
 test('a model union of a literal that is not a finite number and another literal stops generation too', async t => {
   // protects: T-486 a union of literals does not write a non-finite value as null
-  const value = fixture(t);
-  writeFileSync(path.join(value.sourceRoot, 'either.model.ts'), [
+  const value = validationProject(t, 'either.model.ts', [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "export type TEither = IModel<{ amount: 1e999 | 'a' }>;",
     '',
-  ].join('\n'));
-  writeModelGolemYaml(value.root, { mobx: false, validation: true });
+  ]);
   await assert.rejects(runPipeline(path.join(value.root, 'golem.yaml')), /VALIDATE_UNSUPPORTED_KEYWORD: .*the value of const is not valid: expected a JSON value; a number that is not finite has no JSON form/);
 });

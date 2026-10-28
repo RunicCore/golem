@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 
@@ -10,7 +9,7 @@ import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type Issue } 
 import { getValidator } from '@exprtlabs/golem/validation';
 import type { GolemProfile } from '#golem/generator-api';
 import { generate } from '#model/generator';
-import { buildModelProject, writeModelGolemYaml } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { readFixture } from './fixture-project.js';
 import { modelAliasSource, referencedPolicyModelSource, taggedProfilePayloadSource } from './fixture-templates/models/profile-options.js';
@@ -27,31 +26,18 @@ function profile(overrides: Partial<GolemProfile> = {}): GolemProfile {
 }
 
 function modelProject(t: TestContext): { root: string; sourceRoot: string; source: string } {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-profile-model-')));
-  const sourceRoot = path.join(root, 'src');
-  fs.mkdirSync(sourceRoot, { recursive: true });
-  fs.mkdirSync(path.join(root, 'node_modules/@exprtlabs'), { recursive: true });
-  fs.symlinkSync(
-    path.join(process.cwd(), 'packages/golem'),
-    path.join(root, 'node_modules/@exprtlabs/golem'),
-    'dir',
-  );
-  fs.symlinkSync(path.join(process.cwd(), 'node_modules/typescript'), path.join(root, 'node_modules/typescript'), 'dir');
-  fs.writeFileSync(path.join(root, 'tsconfig.json'), JSON.stringify({
-    compilerOptions: {
-      strict: true,
-      target: 'ES2022',
-      module: 'NodeNext',
-      moduleResolution: 'NodeNext',
-      skipLibCheck: true,
-      outDir: 'build',
-      rootDir: 'src',
-    },
-    include: ['src/**/*.ts'],
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-profile-model-', linkTypescript: true });
+  return { root, sourceRoot, source: path.join(sourceRoot, 'payload.model.ts') };
+}
+
+/** The identity of each issue: the part of an issue that these tests compare. */
+function issueSummary(issues: readonly Issue[]): readonly Pick<Issue, 'code' | 'path' | 'source' | 'representation'>[] {
+  return issues.map(issue => ({
+    code: issue.code,
+    path: issue.path,
+    source: issue.source,
+    representation: issue.representation,
   }));
-  const source = path.join(sourceRoot, 'payload.model.ts');
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  return { root, sourceRoot, source };
 }
 
 function writeModel(source: string, declaration: SourceFragment): void {
@@ -262,12 +248,7 @@ for (const item of [
 
     const model = new Payload({ nested: { text: 'bad', payload: 'x', opaque: 1 } });
     assert.equal(await getValidator(model).validate({ failFast: false }), false);
-    assert.deepEqual(getValidator(model).issues.map((issue: Issue) => ({
-      code: issue.code,
-      path: issue.path,
-      source: issue.source,
-      representation: issue.representation,
-    })), [
+    assert.deepEqual(issueSummary(getValidator(model).issues), [
       { code: 'tooSmall', path: ['nested', 'payload'], source: IssueSource.TypeScript, representation: IssueRepresentation.Model },
       { code: 'custom', path: ['nested', 'text'], source: IssueSource.Custom, representation: IssueRepresentation.Model },
     ]);
@@ -282,12 +263,7 @@ for (const item of [
       (error: unknown) => {
         assert.ok(error instanceof LibError);
         assert.equal(error.kind, LibErrorKind.Validation);
-        assert.deepEqual(error.issues.map((issue: Issue) => ({
-          code: issue.code,
-          path: issue.path,
-          source: issue.source,
-          representation: issue.representation,
-        })), [
+        assert.deepEqual(issueSummary(error.issues), [
           { code: 'tooSmall', path: ['nested', 'payload'], source: IssueSource.TypeScript, representation: IssueRepresentation.Model },
         ]);
         return true;

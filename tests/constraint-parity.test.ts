@@ -1,4 +1,4 @@
-import { createFixtureProject, linkProjectPackages, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
+import { linkProjectPackages, readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,46 +15,18 @@ import { loadModelManifests } from '@exprtlabs/golem/internal/type-analysis';
 import { createProgram, generatedFilename } from '@exprtlabs/golem/internal/type-analysis';
 import { generate as generateControllers } from '#controllers/generator';
 import { workspace } from './support/process.js';
-import { buildModelProject, generatedModelFiles, writeModelGolemYaml } from './model-project.js';
+import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, type ModelProject } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { compileSchema } from './support/compiled-validators.js';
 import { containsSiblingConstraintSource } from './fixture-templates/models/constraint-parity.js';
 
-interface Fixture {
-  readonly root: string;
-  readonly sourceRoot: string;
-}
-
-function fixture(t: TestContext): Fixture {
-  const root = createFixtureProject(t, 'golem-constraint-parity-');
-  const sourceRoot = path.join(root, 'src');
-  linkProjectPackages(root, {
-    '@exprtlabs/golem': path.join(workspace, 'packages/golem'),
-    typescript: path.join(workspace, 'node_modules/typescript'),
+function fixture(t: TestContext): ModelProject {
+  return createModelProject(t, {
+    prefix: 'golem-constraint-parity-',
+    name: 'constraint-parity',
+    linkTypescript: true,
+    compilerOptions: { experimentalDecorators: true },
   });
-  writeGeneratedArtifacts([
-    {
-      path: path.join(root, 'package.json'),
-      content: JSON.stringify({ name: 'constraint-parity', private: true, type: 'module' }),
-    },
-    {
-      path: path.join(root, 'tsconfig.json'),
-      content: JSON.stringify({
-        compilerOptions: {
-          strict: true,
-          target: 'ES2022',
-          module: 'NodeNext',
-          moduleResolution: 'NodeNext',
-          skipLibCheck: true,
-          experimentalDecorators: true,
-          outDir: 'build',
-          rootDir: 'src',
-        },
-        include: ['src/**/*.ts'],
-      }),
-    },
-  ]);
-  return { root, sourceRoot };
 }
 
 async function compile(root: string): Promise<void> {
