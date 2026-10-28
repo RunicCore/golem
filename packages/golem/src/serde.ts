@@ -28,6 +28,7 @@ export {
   resolveModelValidationContextValidator,
   serdeFailFast,
   serdeValidates,
+  serdeWithoutValidation,
   stringifyJsonArray,
   stringifyJsonBoolean,
   stringifyJsonNumber,
@@ -35,6 +36,7 @@ export {
   stringifyJsonString,
   validationFailure,
   validationUnavailable,
+  validationUnavailableStub,
 } from './object-codec.js';
 export { withoutInstanceState } from './presence.js';
 export type { AllowGetterOptions, ObjectCodec, ObjectCodecImpl, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';

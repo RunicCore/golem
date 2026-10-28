@@ -334,13 +334,13 @@ The module also exports the metadata types that the generators and the runtime u
 
 ### From `conversion`
 
-`encodeGeneratedModel`, `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelTupleItems`, `defineModelProperty`, `omitUndefinedKeys`, `requireModelObject`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
+`encodeGeneratedModel`, `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelRecord`, `convertModelTupleItems`, `copyModelArray`, `copyModelRecord`, `defineModelProperty`, `omitUndefinedKeys`, `requireModelObject`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
 
 ### From `serde`
 
 `createObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `requireIModelClass`, `assertModelValue`, `isValidModelValue`, `modelValueIssues`, `parseJson`, `serdeValidates`, `validationUnavailable`, `withoutInstanceState` and the `stringifyJson*` writers.
 
-The module exports more helpers for the runtime itself. Application code does not call them: `registerObjectCodec`, `findCodecIdForConstructor`, `resolveModelValidationContextValidator`, `validationFailure`, `serdeFailFast` and the type `ObjectCodecImpl`.
+The module exports more helpers for the runtime itself. Application code does not call them: `registerObjectCodec`, `findCodecIdForConstructor`, `resolveModelValidationContextValidator`, `validationFailure`, `serdeFailFast`, `serdeWithoutValidation`, `validationUnavailableStub` and the type `ObjectCodecImpl`.
 
 ### From `nest`
 

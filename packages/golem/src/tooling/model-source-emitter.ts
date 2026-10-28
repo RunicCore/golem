@@ -432,6 +432,17 @@ function emitNestedUncached(
       // An additionalProperties tag declares the other keys of a projection as data: they are copied as they are or by
       // the tag's type. Another object keeps its other keys the same way.
       const hasExtras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
+      // A record with no declared field walks its entries in the runtime, which takes the conversion of one value.
+      if (knownNames.length === 0 && hasExtras) {
+        const converted = typeof additionalItem === 'object'
+          ? emitNested(additionalItem, FIELD_INPUT, direction, resolveModel, resolveSerde, memo)
+          : FIELD_INPUT;
+        const convert = sameCode(converted, FIELD_INPUT) ? undefined : calleeOf(converted) ?? code`(${FIELD_INPUT}: unknown) => (${converted})`;
+        const walk = direction !== 'fromInit' && convert
+          ? code`${rt.conversion.convertModelRecord}(${literal(direction === 'toJSON' ? 'serialize' : 'deserialize')}, ${convert}, ${recordExpression(expression)})`
+          : code`${rt.conversion.copyModelRecord}(${recordExpression(expression)}${convert ? code`, ${convert}` : code``})`;
+        return code`${objectValueExpression(expression)} ? ${walk} : ${value}`;
+      }
       // A decoder reads its input by the JSON view: one Object.keys pass reads each field once into a local.
       const captured = direction !== 'toJSON' && assignments.length > 0;
       // The same pass collects the other keys, and the copy writes them after the fields, in key order.
@@ -569,8 +580,8 @@ export function wrapRootConversion(
 
 const SERDE_IMPORT_ORDER: readonly string[] = [
   'assertModelValue', 'createObjectCodec', 'isValidModelValue', 'parseJson', 'registerIModelClass', 'requireIModelClass', 'requireObjectCodec',
-  'serdeValidates', 'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString',
-  'validationUnavailable', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
+  'serdeValidates', 'serdeWithoutValidation', 'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString',
+  'validationUnavailableStub', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
 ];
 
 /** The order of the names in the model, conversion and serde imports of a generated model file: golem-model and golem-openapi write the same. */
@@ -581,7 +592,7 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
   ],
   conversion: [
     'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'convertModelField', 'convertModelItems',
-    'convertModelTupleItems', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
+    'convertModelRecord', 'convertModelTupleItems', 'copyModelArray', 'copyModelRecord', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
     'encodeGeneratedModel', 'endDecode', 'endEncode', 'jsonWithDiscriminator', 'omitUndefinedKeys', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
     'withDiscriminatorValue',
   ],

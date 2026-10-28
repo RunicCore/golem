@@ -2044,23 +2044,29 @@ function emitStringifySection(runtime: NodeRuntime): Code {
       : code``}`
     : code``;
 
+  // Without validation the public function only refuses `validate: true` and runs the core, which the runtime wraps.
+  if (!validationEnabled) {
+    return rowsToText([
+      blocksToText([stringifySrc]),
+      code`${exported}const ${stringifyId} = ${rt.serde.serdeWithoutValidation}<${modelType}, string>(${coreId});`,
+      code``,
+    ]);
+  }
   return rowsToText([
     blocksToText([stringifySrc, lenientStringify ?? code``, wireStringifySrc]),
     code`${exported}function ${stringifyId}(value: ${modelType}, options?: ${SERDE_OPTIONS}): string {`,
-    emitSerdeValidates(validationEnabled),
+    emitSerdeValidates(true),
     ...(emitsValidatedWire ? inlineLocalLines(encoded) : []),
-    ...(validationEnabled ? [
-      code`  if (validates) {`,
-      ...(runtime.reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
-      code`    ${assertId}(value, options);`,
-      ...(encodedExpr ? [
-        code`    const wire = ${encodedExpr};`,
-        // The full model check already ran; check only the JSON encoding produced.
-        ...(node.wireOnlyJsonSchema !== undefined ? [code`    ${wireOnlyAssertId}(wire, options);`] : []),
-        code`    return ${wireId}(wire as never);`,
-      ] : lenientStringify ? [code`    return ${coreId}(value as never);`] : []),
-      code`  }`,
-    ] : []),
+    code`  if (validates) {`,
+    ...(runtime.reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
+    code`    ${assertId}(value, options);`,
+    ...(encodedExpr ? [
+      code`    const wire = ${encodedExpr};`,
+      // The full model check already ran; check only the JSON encoding produced.
+      ...(node.wireOnlyJsonSchema !== undefined ? [code`    ${wireOnlyAssertId}(wire, options);`] : []),
+      code`    return ${wireId}(wire as never);`,
+    ] : lenientStringify ? [code`    return ${coreId}(value as never);`] : []),
+    code`  }`,
     lenientStringify
       ? code`  return (options as Record<symbol, unknown> | undefined)?.[${helperName(CHECKED_KEY_HELPER)}] === true ? ${coreId}(value as never) : ${lenientId}(value as never);`
       : code`  return ${coreId}(value as never);`,
@@ -2187,17 +2193,22 @@ function emitToWireSection(runtime: NodeRuntime): Code {
     recursiveNode,
     toWireValue,
   );
+  if (!validationEnabled) {
+    return rowsToText([
+      toWireCoreSource,
+      code`${exported}const ${names.toWire} = ${rt.serde.serdeWithoutValidation}<${fieldsOrUnknown}, ${wireOrUnknown}>(${toWireCoreId});`,
+      code``,
+    ]);
+  }
   return rowsToText([
     toWireCoreSource,
     code`${exported}function ${names.toWire}(value: ${fieldsOrUnknown}, options?: ${SERDE_OPTIONS}): ${wireOrUnknown} {`,
-    emitSerdeValidates(validationEnabled),
-    ...(validationEnabled ? [
-      code`  if (validates) {`,
-      ...(reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
-      code`    ${assertId}(value, options);`,
-      code`  }`,
-    ] : []),
-    ...(validationEnabled && node.wireOnlyJsonSchema !== undefined ? [
+    emitSerdeValidates(true),
+    code`  if (validates) {`,
+    ...(reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
+    code`    ${assertId}(value, options);`,
+    code`  }`,
+    ...(node.wireOnlyJsonSchema !== undefined ? [
       code`  const wire = ${toWireCoreId}(value);`,
       code`  if (validates) {`,
       code`    ${wireOnlyAssertId}(wire, options);`,
@@ -2220,7 +2231,7 @@ function emitParseSection(runtime: NodeRuntime): Code {
   ]);
 }
 
-/** The exported validate and assert functions, which fail with `validationUnavailable` when validation is off. */
+/** The exported validate and assert functions, which are the runtime stub that fails with `validationUnavailable` when validation is off. */
 function emitValidateSection(runtime: NodeRuntime): Code {
   const { node, ctx, validationEnabled, validateId, assertId, exported } = runtime;
   const { modelType } = runtime.fields();
@@ -2237,13 +2248,8 @@ function emitValidateSection(runtime: NodeRuntime): Code {
       code``,
     ]
     : [
-      code`${exported}function ${validateId}(_value: unknown, _options?: ${VALIDATE_OPTIONS}): _value is ${modelType} {`,
-      code`  ${rt.serde.validationUnavailable}();`,
-      code`}`,
-      code``,
-      code`${exported}function ${assertId}(_value: unknown): ${modelType} {`,
-      code`  ${rt.serde.validationUnavailable}();`,
-      code`}`,
+      code`${exported}const ${validateId}: (value: unknown, options?: ${VALIDATE_OPTIONS}) => value is ${modelType} = ${rt.serde.validationUnavailableStub};`,
+      code`${exported}const ${assertId}: (value: unknown) => ${modelType} = ${rt.serde.validationUnavailableStub};`,
       code``,
     ]);
 }

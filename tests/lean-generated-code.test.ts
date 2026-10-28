@@ -96,7 +96,7 @@ test('model initializers, fromJSON and toJSON copy an unchanged array with one s
   // protects: F-129 lean generated code: an unchanged array is copied with slice, not a map callback
   const strings: ModelTypeDescriptor = { kind: 'array', item: { kind: 'string' } };
   const unusedModel = (id: string): never => { throw new Error(`No model expected: ${id}`); };
-  const run = (expression: string, input: unknown): unknown => runModule(`const result = (${expression});`, { values: input }, { exports: ['result'] }).result;
+  const run = (expression: string, input: unknown): unknown => runModule(`const result = (${expression});`, { ...conversion, values: input }, { exports: ['result'] }).result;
   for (const emit of [emitModelFromInit, emitModelFromJSON, emitModelToJSON]) {
     const expression = render(emit(strings, identifier('values'), unusedModel));
     const input = spyArray(['a', 'b']);
@@ -142,7 +142,7 @@ test('a parent module names and defines the validators of its own model, not tho
     validatorName: (id) => { asked.push(id.replace(/_[0-9a-f]{8}$/, '')); return identifier(`validate_${id.replace(/[^\w$]/g, '_')}`); },
   });
   assert.deepEqual(asked, ['Owner', 'Owner'], 'validate and assert each name the validator of the parent, none of the nested model');
-  const checks = [...source.matchAll(/^export function ((?:validate|assert)\w+)/gm)].map((match) => match[1]);
+  const checks = [...source.matchAll(/^export (?:function|const) ((?:validate|assert)\w+)/gm)].map((match) => match[1]);
   assert.deepEqual(checks, ['validateOwner', 'assertOwner'], 'the module defines no check of the nested model');
 });
 

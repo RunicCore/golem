@@ -4,7 +4,10 @@ import { test } from 'node:test';
 import {
   convertModelField,
   convertModelItems,
+  convertModelRecord,
   convertModelTupleItems,
+  copyModelArray,
+  copyModelRecord,
   deserializeDate,
   serializeDate,
 } from '@exprtlabs/golem/conversion';
@@ -45,6 +48,20 @@ test('convertModelTupleItems gives the item, its index and the array', () => {
   assertConversionError(() => convertModelTupleItems('deserialize', (item, index) =>
     index === 0 ? item : deserializeDate(item), ['x', 'bad']),
   LibErrorKind.Deserialization, IssueRepresentation.Wire, [1]);
+});
+
+test('the record loops drop undefined values, run each value under its key and copy the arrays they are given', () => {
+  // protects: R-58 generic record and array copies come from the runtime (T-641)
+  assert.deepEqual(convertModelRecord('deserialize', deserializeDate, { a: '1970-01-01T00:00:00.000Z', b: undefined }), { a: new Date(0) });
+  assertConversionError(() => convertModelField('deserialize', 'dates', (value: unknown) =>
+    convertModelRecord('deserialize', deserializeDate, value as Record<string, unknown>), { ok: '1970-01-01T00:00:00.000Z', bad: 'x' }),
+  LibErrorKind.Deserialization, IssueRepresentation.Wire, ['dates', 'bad']);
+  assert.deepEqual(copyModelRecord({ a: 1, b: undefined, c: 3 }), { a: 1, c: 3 });
+  assert.deepEqual(copyModelRecord({ a: 1 }, (value) => Number(value) + 1), { a: 2 });
+  const source = ['x'];
+  assert.notEqual(copyModelArray(source), source);
+  assert.deepEqual(copyModelArray(source), ['x']);
+  assert.equal(copyModelArray('text'), 'text');
 });
 
 test('the item loops send a LibError out as it is and keep holes', () => {

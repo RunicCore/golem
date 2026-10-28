@@ -36,6 +36,6 @@ export function instantiateRuntime(
   source: string,
   scope: Readonly<Record<string, unknown>> = {},
 ): Record<string, RuntimeFunction> {
-  const exported = [...source.matchAll(/^export function (\w+)/gm)].map((match) => match[1]);
+  const exported = [...source.matchAll(/^export (?:function|const) (\w+)/gm)].map((match) => match[1]);
   return runModule(source.replace(/^export /gm, ''), { ...serde, ...conversion, ...scope }, { exports: exported }) as Record<string, RuntimeFunction>;
 }

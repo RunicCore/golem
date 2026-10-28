@@ -278,6 +278,54 @@ export function convertModelTupleItems<Value>(
   return convertEachItem(direction, convert, items, true);
 }
 
+/** A copy of an array input; any other value as it is. The conversion of an array whose items need none. */
+export function copyModelArray<Value>(value: Value): Value {
+  return Array.isArray(value) ? value.slice() as Value : value;
+}
+
+/**
+ * The one loop under `convertModelRecord` and `copyModelRecord`: a new record with each own entry of `source` whose value
+ * is not undefined, in key order, the value converted by `convert` when there is one. With `direction`, a throwing entry
+ * runs under its key in the error path, as `convertModelField` does; without it, an error passes as it is.
+ */
+function convertEachEntry(
+  direction: 'serialize' | 'deserialize' | undefined,
+  convert: ((value: unknown) => unknown) | undefined,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const depth = direction === undefined ? -1 : activeConversionPath.push('') - 1;
+  try {
+    for (const [key, value] of Object.entries(source)) {
+      if (value === undefined) continue;
+      if (depth >= 0) activeConversionPath[depth] = key;
+      defineModelProperty(out, key, convert === undefined ? value : convert(value));
+    }
+  } catch (error) {
+    throw direction === undefined ? error : itemFailure(direction, error);
+  } finally {
+    if (depth >= 0) activeConversionPath.length = depth;
+  }
+  return out;
+}
+
+/** Generated synchronous conversion of each value of a record under its key in the error path. `convert` gets the value only. */
+export function convertModelRecord(
+  direction: 'serialize' | 'deserialize',
+  convert: (value: unknown) => unknown,
+  source: Record<string, unknown>,
+): Record<string, unknown> {
+  return convertEachEntry(direction, convert, source);
+}
+
+/** A copy of a record without its undefined values, each other value converted by `convert` (as it is when absent), with no error path. */
+export function copyModelRecord(
+  source: Record<string, unknown>,
+  convert?: (value: unknown) => unknown,
+): Record<string, unknown> {
+  return convertEachEntry(undefined, convert, source);
+}
+
 let activeDecodeValues: WeakMap<object, Function | Set<Function>> | undefined;
 let activeEncodeModels: Set<object> | undefined;
 /** Wire objects a generated recursive `fill` is decoding; a wire already in it is a cycle. */
