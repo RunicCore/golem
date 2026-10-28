@@ -383,6 +383,31 @@ ${ROUTE('TOrder', 'TOrder')}`;
   assert.deepEqual(Object.keys(schemas[second!.split('/').pop()!]!.properties!), ['total']);
 });
 
+// protects: T-588 two files whose names clean alike (a-b.ts, a_b.ts; folders x-y, x_y) once shared one component name for two different schemas
+const cleanAlike: readonly [place: string, first: string, second: string][] = [
+  ['files', 'src/dir/a-b.ts', 'src/dir/a_b.ts'],
+  ['folders', 'src/x-y/a.ts', 'src/x_y/a.ts'],
+];
+for (const [place, first, second] of cleanAlike) {
+  test(`models named alike in ${place} whose names clean alike stop with RUNM1005 naming both files`, async t => {
+    const importPath = (file: string): string => `./${file.slice('src/'.length).replace(/\.ts$/, '.js')}`;
+    const source = `${PRELUDE}
+import type { TName as TFirst } from '${importPath(first)}';
+import type { TName as TSecond } from '${importPath(second)}';
+export type TOrder = IModel<{ first: TFirst; second: TSecond }>;
+${ROUTE('TOrder', 'TOrder')}`;
+    const files = {
+      [first]: "import type { IModel } from '@exprtlabs/golem/model';\nexport type TName = IModel<{ id: string }>;\n",
+      [second]: "import type { IModel } from '@exprtlabs/golem/model';\nexport type TName = IModel<{ total: number }>;\n",
+    };
+    await assert.rejects(generateSource(t, source, files), (error: Error) => {
+      assert.match(error.message, /RUNM1005: Component name "[\w.]+" is already taken by the models of /);
+      for (const file of [first, second]) assert.ok(error.message.includes(file), `${file} in ${error.message}`);
+      return true;
+    });
+  });
+}
+
 test('projections whose keys read alike after PascalCase get two names, in source order', async t => {
   // protects: bug sweep 3 Pick<TUser, 'first-name'> and Pick<TUser, 'firstName'> both named TUserPickFirstName and stopped with RUNM1059
   const source = `${PRELUDE}
