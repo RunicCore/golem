@@ -328,6 +328,26 @@ export class FooController {
   ]);
 });
 
+test('accepts a Swagger required list written in another order than the TypeScript fields', async t => {
+  // protects: a Swagger required list in another order raised ConflictingSchemaMetadata against the same set of fields
+  const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
+import { ApiProperty } from '@nestjs/swagger';
+
+class PairDto {
+  @ApiProperty({ schema: { type: 'object', properties: { a: { type: 'string' }, b: { type: 'string' } }, required: ['b', 'a'] } }) pair!: { a: string; b: string };
+}
+
+@Controller('pair')
+export class PairController {
+  @Get()
+  get(): PairDto { return { pair: { a: 'x', b: 'y' } }; }
+}
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  const pair = property(document, objectSchema(document, jsonSchema(document.paths['/pair']?.get, '200')), 'pair');
+  assert.deepEqual([...(pair.required ?? [])].sort(), ['a', 'b']);
+});
+
 test('emits routes inherited from plain and mixin base controllers', async t => {
   const document = documentOf<OpenApiDocument>(await generated(t, 'inherited-and-mixin-controllers'));
   const reply = (route: string): unknown => property(document, objectSchema(document, jsonSchema(document.paths[route]?.get, '200')), 'reply').description;
