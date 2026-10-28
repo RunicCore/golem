@@ -134,14 +134,15 @@ function itemFailure(direction: 'serialize' | 'deserialize', error: unknown): Li
 }
 
 /**
- * Generated synchronous conversion of each array item, under its index in the error path. The result is a new array
- * of the same length that skips holes, as `map` does. `convert` gets the item only, so a converter with an optional
- * second parameter, such as `deserializeDate`, keeps its default path.
+ * The one loop under `convertModelItems` and `convertModelTupleItems`: it converts each item under its index in the
+ * error path. The result is a new array of the same length that skips holes, as `map` does. `withPosition` is the same
+ * for every item, so the call shape is fixed before the loop and no closure is made per item.
  */
-export function convertModelItems<Value>(
+function convertEachItem<Value>(
   direction: 'serialize' | 'deserialize',
-  convert: (item: unknown) => Value,
+  convert: (item: unknown, index: number, items: readonly unknown[]) => Value,
   items: readonly unknown[],
+  withPosition: boolean,
 ): Value[] {
   const length = items.length;
   const converted = new Array<Value>(length);
@@ -150,7 +151,7 @@ export function convertModelItems<Value>(
     for (let index = 0; index < length; index++) {
       if (!(index in items)) continue;
       activeConversionPath[depth] = index;
-      converted[index] = convert(items[index]);
+      converted[index] = withPosition ? convert(items[index], index, items) : (convert as (item: unknown) => Value)(items[index]);
     }
   } catch (error) {
     throw itemFailure(direction, error);
@@ -160,27 +161,25 @@ export function convertModelItems<Value>(
   return converted;
 }
 
+/**
+ * Generated synchronous conversion of each array item, under its index in the error path. `convert` gets the item only,
+ * so a converter with an optional second parameter, such as `deserializeDate`, keeps its default path.
+ */
+export function convertModelItems<Value>(
+  direction: 'serialize' | 'deserialize',
+  convert: (item: unknown) => Value,
+  items: readonly unknown[],
+): Value[] {
+  return convertEachItem(direction, convert, items, false);
+}
+
 /** Generated synchronous conversion of each tuple item, under its index in the error path. `convert` gets the item, its index and the array. */
 export function convertModelTupleItems<Value>(
   direction: 'serialize' | 'deserialize',
   convert: (item: unknown, index: number, items: readonly unknown[]) => Value,
   items: readonly unknown[],
 ): Value[] {
-  const length = items.length;
-  const converted = new Array<Value>(length);
-  const depth = activeConversionPath.push(0) - 1;
-  try {
-    for (let index = 0; index < length; index++) {
-      if (!(index in items)) continue;
-      activeConversionPath[depth] = index;
-      converted[index] = convert(items[index], index, items);
-    }
-  } catch (error) {
-    throw itemFailure(direction, error);
-  } finally {
-    activeConversionPath.length = depth;
-  }
-  return converted;
+  return convertEachItem(direction, convert, items, true);
 }
 
 let activeDecodeValues: WeakMap<object, Function | Set<Function>> | undefined;
