@@ -8,8 +8,8 @@ import { runModule } from './support/run-module.js';
 export const NO_MODEL_BASES: ModelBases = { basesOf: () => [] };
 
 /** The codec runtime of a schema graph as text; a test that declares no bases gets none. */
-export function emitCodecRuntimeText(graph: Parameters<typeof emitCodecRuntimeCode>[0], options: Parameters<typeof emitCodecRuntimeCode>[1] = {}): string {
-  return render(emitCodecRuntimeCode(graph, { modelBases: NO_MODEL_BASES, ...options }));
+export function emitCodecRuntimeText(graph: Parameters<typeof emitCodecRuntimeCode>[0], options: Omit<Parameters<typeof emitCodecRuntimeCode>[1], 'modelBases'> = {}): string {
+  return render(emitCodecRuntimeCode(graph, { ...options, modelBases: NO_MODEL_BASES }));
 }
 
 /** Evaluate emitted `stringify*` functions with the public serde exports in scope. */

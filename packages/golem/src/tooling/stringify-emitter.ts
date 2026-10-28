@@ -97,8 +97,8 @@ export interface CodecRuntimeOptions {
   readonly exportAnonymousCodecs?: boolean;
   /** Codecs whose functions stay module-private, such as a model job's derived projections. */
   readonly privateCodec?: (node: SchemaNode) => boolean;
-  /** The bases the generator declares for each model, by model name. The caller states them; `emitCodecRuntimeCode` throws without them. */
-  readonly modelBases?: ModelBases;
+  /** The bases the generator declares for each model, by model name. */
+  readonly modelBases: ModelBases;
 }
 
 /** The options of the module that every function of it reads, plus the state of the function being emitted. */
@@ -2393,8 +2393,6 @@ export function emitCodecRuntimeCode(
   graph: SchemaGraph,
   options: CodecRuntimeOptions,
 ): Code {
-  const { modelBases } = options;
-  if (modelBases === undefined) throw new Error('emitCodecRuntimeCode needs the model bases of the generator that calls it.');
   const defaultEnabled = options.validationEnabled !== false;
   const validates = (node: SchemaNode): boolean => nodeValidates(node, defaultEnabled);
   const nodes = [...graph.topo()];
@@ -2426,7 +2424,7 @@ export function emitCodecRuntimeCode(
     fieldsType: options.fieldsType,
     exportAnonymousCodecs: options.exportAnonymousCodecs,
     privateCodec: options.privateCodec,
-    modelBases,
+    modelBases: options.modelBases,
     fillThrows: new Map(),
     patternConstants,
   };
