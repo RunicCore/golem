@@ -294,3 +294,28 @@ test('an operation header replaces a path-level header whose name differs only i
     [['header', 'x-tenant', false], ['query', 'Tag', undefined], ['query', 'tag', undefined]],
   );
 });
+
+test('a parameter $ref with percent-encoded characters in its fragment resolves to its target', () => {
+  // protects: resolveLocal did not percent-decode a $ref fragment although the bundler writes %7B and %20
+  const [operation] = collectOperations(documentBase('3.1.0', {
+    paths: {
+      '/v1/{id}': {
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
+        get: { operationId: 'getOne', responses: { 200: { description: 'ok' } } },
+      },
+      '/v1/{id}/children': {
+        parameters: [{ $ref: '#/paths/~1v1~1%7Bid%7D/parameters/0' }],
+        get: {
+          operationId: 'getChildren',
+          parameters: [{ $ref: '#/components/parameters/Page%20Size' }],
+          responses: { 200: { description: 'ok' } },
+        },
+      },
+    },
+    components: { parameters: { 'Page Size': { name: 'size', in: 'query', schema: { type: 'integer' } } } },
+  })).filter((candidate) => candidate.name === 'getChildren');
+  assert.deepEqual(
+    operation?.parameters.map((parameter) => [parameter.in, parameter.name]),
+    [['path', 'id'], ['query', 'size']],
+  );
+});

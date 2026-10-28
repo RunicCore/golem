@@ -1,5 +1,6 @@
-import { asRecord, isJsonObject, objectEntries, readBoolean, readString, type JsonObject } from './json.js';
+import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, readBoolean, readString, resolveJsonPointer, type JsonObject } from './json.js';
 import { GolemDiagnosticSeverity, identifier, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import { unescapePointerToken } from '@exprtlabs/golem/internal/schema';
 import { inboundOperationName, operationName } from './names.js';
 
 const HTTP_METHODS_31 = ['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace'] as const;
@@ -91,8 +92,9 @@ export function decodePointerToken(token: string): string {
 
 export function resolveLocalPointer(document: unknown, ref: string): unknown {
   if (!ref.startsWith('#/')) return undefined;
-  return ref.slice(2).split('/').map(decodePointerToken)
-    .reduce<unknown>((value, key) => (isJsonObject(value) ? value[key] : undefined), document);
+  // `$ref` is a URI fragment: each token is percent-decoded, then `~1`/`~0`-unescaped; a numeric token indexes an array.
+  const pointer = ref.slice(1).split('/').map((token) => escapeJsonPointerToken(unescapePointerToken(token))).join('/');
+  return resolveJsonPointer(document, pointer);
 }
 
 export function resolveLocal(document: unknown, value: unknown): unknown {
