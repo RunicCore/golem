@@ -610,6 +610,8 @@ Golem rewrites a call only, so this code stays as you wrote it and throws when i
 - Call the function directly with its type arguments, such as `parse<TPayment>(text)`.
 - To pass it as a value, write an arrow function: `texts.map((text) => parse<TPayment>(text))`.
 
+The code also covers a `parse` or `fromWireFormat` call of a model class with a spread argument in the first or second place, such as `parse<Payment>(...args)`. Golem cannot place the `construct` option there. Pass the text and the options as separate arguments: `parse<Payment>(text, options)`.
+
 ### RUNM1080
 
 **Object union with no literal tag.** A model field is a union of objects, named object types or models that golem must convert (a variant holds a `Date`, a `TSerde` value or a model). The variants have no required literal tag that picks one variant from the JSON.
