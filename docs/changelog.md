@@ -33,6 +33,9 @@ Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+
 - **Breaking:** with validation on, a tuple with fixed elements after its rest element stops generation with `RUNM1021` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - **Breaking:** template index signatures of different value types in one object stop generation with `RUNM1004` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - **Breaking:** models of one name and different schemas in files or folders whose names read alike stop generation with `RUNM1005` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- **Breaking:** a model union of two or more objects declares its tag key with `Discriminator<'kind'>`; golem never looks for it. An untagged union stops with `RUNM1080` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
+- **Breaking:** the controllers document writes a union's `discriminator` from the tag only, and a Nest union parameter needs the tag ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- **Breaking:** a template index signature beside a `string` index signature of another value type stops generation with `RUNM1004` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - The `model-manifest.json` of a generated SDK no longer lists `modelReferences` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - An untagged `anyOf` whose branches state different JSON types checks a value only with the branches of its type.
 
