@@ -29,6 +29,7 @@ async function discriminatedFixture() {
   const shape: ModelTypeDescriptor = {
     kind: 'union',
     variants: [branch('a', 'a'), branch('b', 'b')],
+    discriminator: { propertyName: 'kind', variants: [{ values: ['a'] }, { values: ['b'] }] },
   };
 
   class ShapeModel {

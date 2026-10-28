@@ -38,7 +38,7 @@ test('residual objects carry no required list and no exactness; arrays recurse',
 });
 
 test('a union containing a converted field falls back to the full plane schema; a plain union is true', () => {
-  const union = { kind: 'union', variants: [obj({ kind: { kind: 'literal', value: 'open' } }), obj({ kind: { kind: 'literal', value: 'hold' }, until: date })] };
+  const union = { kind: 'union', variants: [obj({ kind: { kind: 'literal', value: 'open' } }), obj({ kind: { kind: 'literal', value: 'hold' }, until: date })], discriminator: { propertyName: 'kind', variants: [{ values: ['open'] }, { values: ['hold'] }] } };
   const modelOnly = schemaForDescriptor(obj({ channel: union }), opts('model-only')) as { properties: { channel: object } };
   assert.deepEqual(modelOnly.properties.channel, schemaForDescriptor(union, { representation: 'model', executableBindings: true }));
   const plain = { kind: 'union', variants: [{ kind: 'literal', value: 'a' }, { kind: 'literal', value: 'b' }] };
