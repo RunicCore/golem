@@ -379,6 +379,27 @@ export class ThingsController extends BaseController {
   ]);
 });
 
+test('documents a @Headers parameter with an @ApiHeader whose name differs only in letter case', async t => {
+  // protects: a header matched case-sensitively gave two header parameters and lost the @ApiHeader description
+  const root = inlineFixture(t, `import { Controller, Get, Headers } from '@nestjs/common';
+import { ApiHeader } from '@nestjs/swagger';
+
+@ApiHeader({ name: 'x-tenant', description: 'Tenant from the class' })
+@Controller('traced')
+export class TracedController {
+  @Get()
+  @ApiHeader({ name: 'x-request-id', required: true, description: 'Request id' })
+  list(@Headers('X-Request-Id') id: string, @Headers('X-Tenant') tenant: string): void {}
+}
+`);
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
+  const parameters = document.paths['/traced']?.get?.parameters?.map(item => [item.in, item.name, item.description, item.required]);
+  assert.deepEqual(parameters, [
+    ['header', 'X-Request-Id', 'Request id', true],
+    ['header', 'X-Tenant', 'Tenant from the class', true],
+  ]);
+});
+
 test('writes one header parameter for each @ApiHeaders entry at class and method level, as @ApiHeader does', async t => {
   // protects: T-198 @ApiHeaders is a list of @ApiHeader options; T-216 parameter order is Nest Swagger's
   const root = inlineFixture(t, `import { Controller, Get } from '@nestjs/common';
