@@ -38,6 +38,8 @@ Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+
 - **Breaking:** a template index signature beside a `string` index signature of another value type stops generation with `RUNM1004` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - **Breaking:** an OpenAPI 3.1 document with `discriminator.defaultMapping` stops generation; the keyword is OpenAPI 3.2 only ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - **Breaking:** two `@ApiHeader()` names of one operation that differ only in case stop generation with `NEST1312` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- **Breaking:** `int64` and `Integer` values beyond `Number.MAX_SAFE_INTEGER` are rejected, and `MultipleOf` compares exact decimal values ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
+- A recursive model bounds input nesting with `maxDepth` (512 by default); the Nest interceptor answers 400 beyond it ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - The `model-manifest.json` of a generated SDK no longer lists `modelReferences` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - An untagged `anyOf` whose branches state different JSON types checks a value only with the branches of its type.
 

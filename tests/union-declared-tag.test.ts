@@ -118,6 +118,19 @@ test('the generated model types carry no Discriminator tag', t => {
   assert.equal(/\bDiscriminator\b/.test(generated.content), false);
 });
 
+for (const validation of [false, true]) {
+  test(`the class dispatch of a declared union is written once for each direction, with validation ${validation ? 'on' : 'off'}`, t => {
+    // protects: T-617 (F-129) one selector per union and direction serves every writer and position, not a copy in each
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-selector-', name: 'declared-selector' });
+    writeModelSources(sourceRoot, { 'contact.model.ts': CONTACT_MODEL });
+    const generated = generate({ root, profile: { mobx: false, validation } }).artifacts.find(artifact => artifact.path.endsWith('contact.model.generated.ts'));
+    assert.ok(generated, 'contact.model.generated.ts must be generated');
+    // The kind union and the mode union each get a decode and an encode selector, whatever number of positions use them.
+    assert.equal(generated.content.match(/^function __golemVariant_\w+\(/gm)?.length, 4);
+    assert.equal(generated.content.match(/TPhoneBaseModel\.prototype instanceof TEmailBaseModel/g)?.length, 2);
+  });
+}
+
 const TAG_SHAPE = "Discriminator<'shape'>";
 
 test('a variant made of several object parts gets no field from the Discriminator tag', t => {
@@ -374,6 +387,101 @@ test('a writer tells a model instance by its class before its tag, with validati
   assert.throws(() => encodeGeneratedModel(other), /Unknown kind discriminator value: "phone"/);
   assert.throws(() => codec.stringify(other), /Unknown kind discriminator value: "phone"/);
   assert.throws(() => codec.toWireFormat(other), /Unknown kind discriminator value: "phone"/);
+});
+
+// The second shape makes the variants file and the item file one import cycle.
+for (const [shape, back, owner] of [
+  ['a file that imports nothing back', '', ''],
+  ['a file in an import cycle', "import type { TItem } from './item.model.js';\n", '; owner?: TItem'],
+] as const) {
+  test(`a writer tells an instance of a variant model from ${shape} by its class, with validation off`, async (t) => {
+    // protects: T-618 (F-39) the writers test the class of a variant model from another file, as for a local one: a tag-less instance of it is written as that variant, not rejected
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-imported-', name: 'declared-imported', linkWorkspaceNodeModules: true });
+    writeModelSources(sourceRoot, {
+      'variants.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+${back}export type TEmail = IModel<{ kind: 'email'; address: string${owner} }>;
+export type TPhone = IModel<{ kind: 'phone'; number: string }>;
+`,
+      'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+import type { TEmail, TPhone } from './variants.model.js';
+export type TItem = IModel<{ value: (TEmail | TPhone) & ${TAG} }>;
+`,
+    });
+    writeModelGolemYaml(root, { mobx: false, validation: false });
+    await buildModelProject(root);
+    const load = async (name: string) => requireRecord(await import(pathToFileURL(path.join(root, name)).href), name);
+    const Email = (await load('build/variants.model.generated.js')).TEmailBaseModel as new () => Record<string, unknown>;
+    const Item = (await load('build/item.model.generated.js')).TItemBaseModel as new () => Record<string, unknown>;
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+    const tagless = Object.assign(new Item(), { value: Object.assign(new Email(), { address: 'a@b.c' }) });
+    assert.deepEqual(encodeGeneratedModel(tagless), { value: { kind: 'email', address: 'a@b.c' } });
+    assert.equal(codec.stringify(tagless), '{"value":{"kind":"email","address":"a@b.c"}}');
+    assert.deepEqual(codec.toWireFormat(tagless), { value: { kind: 'email', address: 'a@b.c' } });
+  });
+}
+
+for (const validation of [false, true]) {
+  test(`a Date beside tagged models is written as a date, not sent to the tag test, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: a Date value (QA trace on the tagged-union writers): a Date value of a union beside tagged models threw "Unknown kind discriminator value: undefined" in encode and stringify (a Date is an object, so it reached the tag chain)
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-date-', name: 'declared-date', linkWorkspaceNodeModules: true });
+    writeModelSources(sourceRoot, {
+      'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+export type TEmail = IModel<{ kind: 'email'; address: string }>;
+export type TPhone = IModel<{ kind: 'phone'; number: string }>;
+export type TItem = IModel<{ tagged: (TEmail | TPhone | Date) & ${TAG}; untagged: TEmail | Date | string[] }>;
+`,
+    });
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const Item = (requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item')).TItemBaseModel as new () => Record<string, unknown>;
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+    const item = Object.assign(new Item(), { tagged: new Date(DAY), untagged: new Date(DAY) });
+    const wire = { tagged: DAY, untagged: DAY };
+    assert.deepEqual(encodeGeneratedModel(item), wire);
+    assert.equal(codec.stringify(item), JSON.stringify(wire));
+    assert.deepEqual(codec.toWireFormat(item), wire);
+  });
+}
+
+test('the shared selector variable survives a tagged union nested in a branch and a serde that encodes the same union during dispatch', async (t) => {
+  // protects: T-617 re-entrancy - the writers of a file share one index variable, so a union that runs inside a branch arm must not change the choice of the outer one
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-reentry-', name: 'declared-reentry', linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, {
+    'wrap.ts': `import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+export class Wrap {
+  constructor(readonly inner: object) {}
+  show(): string { return 'wrap'; }
+}
+export function encodeWrap(value: Wrap): string { return JSON.stringify(encodeGeneratedModel(value.inner)); }
+export function decodeWrap(value: string): Wrap { return new Wrap(JSON.parse(value) as object); }
+`,
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import { Wrap, encodeWrap, decodeWrap } from './wrap.js';
+type Wrapped = Wrap & TSerde<typeof encodeWrap, typeof decodeWrap>;
+export type TLeaf = IModel<{ kind: 'leaf' }>;
+export type TTwig = IModel<{ kind: 'twig' }>;
+export type TAlpha = IModel<{ kind: 'a'; parts: ((TLeaf | TTwig) & ${TAG})[]; wrapped: Wrapped }>;
+export type TBeta = IModel<{ kind: 'b' }>;
+export type TRoot = IModel<{ value: (TAlpha | TBeta) & ${TAG} }>;
+export type TInner = IModel<{ value: (TAlpha | TBeta) & ${TAG} }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const bases = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item companion');
+  const make = (name: string, values: object): object => Object.assign(new (bases[name] as new () => object)(), values);
+  const Wrap = requireRecord(await import(pathToFileURL(path.join(root, 'build/wrap.js')).href), 'wrap').Wrap as new (inner: object) => object;
+  const inner = make('TInnerBaseModel', { value: make('TBetaBaseModel', {}) });
+  const alpha = make('TAlphaBaseModel', { parts: [make('TLeafBaseModel', {}), make('TTwigBaseModel', {})], wrapped: new Wrap(inner) });
+  const item = make('TRootBaseModel', { value: alpha });
+  const wire = { value: { kind: 'a', parts: [{ kind: 'leaf' }, { kind: 'twig' }], wrapped: '{"value":{"kind":"b"}}' } };
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TRoot'));
+  assert.deepEqual(encodeGeneratedModel(item), wire);
+  assert.equal(codec.stringify(item), JSON.stringify(wire));
+  assert.deepEqual(codec.toWireFormat(item), wire);
 });
 
 test('a validating companion writes the tag of a tag-less instance once when validation is turned off for the call', async (t) => {

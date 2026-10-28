@@ -299,11 +299,36 @@ class Lowering {
     return undefined;
   }
 
-  /** The discriminator of a `oneOf` list, when every branch states its tag values and no value repeats; otherwise it is an annotation. */
+  /**
+   * True when the schema at `location` requires `property`: its own `required`, a `$ref` target, a validation wrapper's
+   * schema, or any `allOf` entry (an `allOf` holds all of its entries). Follows the same routes as `tagValues`.
+   */
+  private requiresProperty(location: SchemaLocation, property: string, active: Set<object> = new Set()): boolean {
+    const { node } = location;
+    if (!isRecord(node) || active.has(node)) return false;
+    active.add(node);
+    if (Array.isArray(node.required) && node.required.includes(property)) return true;
+    const base = baseInside(node, location.base);
+    const target = typeof node.$ref === 'string' ? this.resolver.resolve(node.$ref, base) : undefined;
+    if (target && this.requiresProperty(target, property, active)) return true;
+    const wrapper = node[VALIDATION_KEYWORD];
+    if (isRecord(wrapper) && wrapper.schema !== undefined
+      && this.requiresProperty({ node: wrapper.schema, base, resource: location.resource, pointer: `${location.pointer}${pointerSegment(VALIDATION_KEYWORD)}${pointerSegment('schema')}` }, property, active)) return true;
+    if (!Array.isArray(node.allOf)) return false;
+    return (node.allOf as readonly unknown[]).some((entry, position) =>
+      this.requiresProperty({ node: entry, base, resource: location.resource, pointer: `${location.pointer}${pointerSegment('allOf')}${pointerSegment(position)}` }, property, active));
+  }
+
+  /**
+   * The discriminator of a `oneOf` list, when every branch requires its tag, states its tag values and no value repeats;
+   * otherwise it is an annotation. A branch that leaves the tag optional can match a value without it, which a tag lookup
+   * would reject (the rule of OpenAPI 3.1, where the discriminating property is required).
+   */
   private discriminatorOf(node: Readonly<Record<string, unknown>>, branches: readonly SchemaLocation[]): IrDiscriminator | undefined {
     const { discriminator } = node;
     if (!isRecord(discriminator) || typeof discriminator.propertyName !== 'string') return undefined;
     const property = discriminator.propertyName;
+    if (!branches.every(branch => this.requiresProperty(branch, property))) return undefined;
     const tags = branches.map(branch => this.tagValues(branch, property));
     if (!tags.every((list): list is readonly unknown[] => list !== undefined)) return undefined;
     const seen = new Set(tags.flat().map(tag => JSON.stringify(tag)));

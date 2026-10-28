@@ -1,15 +1,20 @@
 import * as conversion from '@exprtlabs/golem/conversion';
 import * as serde from '@exprtlabs/golem/serde';
-import { emitCodecRuntimeCode, render, type ModelBases } from '@exprtlabs/golem/internal/emitter';
+import { code, emitCodecRuntimeCode, join, MODULE_CONSTANT_HELPERS, placeHelpers, render, type Code, type ModelBases } from '@exprtlabs/golem/internal/emitter';
 
 import { runModule } from './support/run-module.js';
 
 /** The bases of a generator that declares none: a model narrows nothing. */
 export const NO_MODEL_BASES: ModelBases = { basesOf: () => [] };
 
+/** A Code as text, with the definitions of the helpers that a file defines for the code it holds (union selectors). */
+export function renderWithHelpers(root: Code): string {
+  return render(join([...placeHelpers(root, [], MODULE_CONSTANT_HELPERS), root], code``));
+}
+
 /** The codec runtime of a schema graph as text; a test that declares no bases gets none. */
 export function emitCodecRuntimeText(graph: Parameters<typeof emitCodecRuntimeCode>[0], options: Omit<Parameters<typeof emitCodecRuntimeCode>[1], 'modelBases'> = {}): string {
-  return render(emitCodecRuntimeCode(graph, { ...options, modelBases: NO_MODEL_BASES }));
+  return renderWithHelpers(emitCodecRuntimeCode(graph, { ...options, modelBases: NO_MODEL_BASES }));
 }
 
 /** Evaluate emitted `stringify*` functions with the public serde exports in scope. */

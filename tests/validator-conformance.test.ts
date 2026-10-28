@@ -40,6 +40,7 @@ interface Exclusion {
   readonly diagnostic?: { readonly code: string; readonly unknownFormats?: 'error' };
 }
 
+const INTEGER_NOT_SAFE = 'an integer beyond Number.MAX_SAFE_INTEGER is rejected: a JSON number in JavaScript has already been rounded when it is read';
 const NOT_SUPPORTED = { code: 'VALIDATE_UNSUPPORTED_KEYWORD' } as const;
 const NOT_RESOLVED = { code: 'VALIDATE_UNRESOLVED_REF' } as const;
 const UNKNOWN_FORMAT = { code: 'VALIDATE_UNKNOWN_FORMAT', unknownFormats: 'error' } as const;
@@ -79,6 +80,9 @@ const EXCLUSIONS: readonly Exclusion[] = [
   { file: 'optional/format/iri-reference.json', reason: FORMAT_NOT_IMPLEMENTED, diagnostic: UNKNOWN_FORMAT },
   { file: 'optional/format/uri-template.json', reason: FORMAT_NOT_IMPLEMENTED, diagnostic: UNKNOWN_FORMAT },
   { file: 'optional/format/hostname.json', group: 'validation of A-label (punycode) host names', reason: 'every case needs IDNA (punycode) validation; golem checks the ASCII rules of RFC 1123 only' },
+  { file: 'optional/bignum.json', group: 'integer', test: 'a bignum is an integer', reason: INTEGER_NOT_SAFE },
+  { file: 'optional/bignum.json', group: 'integer', test: 'a negative bignum is an integer', reason: INTEGER_NOT_SAFE },
+  { file: 'optional/float-overflow.json', group: 'all integers are multiples of 0.5, if overflow is handled', reason: INTEGER_NOT_SAFE },
 ];
 
 function jsonFiles(directory: string): string[] {

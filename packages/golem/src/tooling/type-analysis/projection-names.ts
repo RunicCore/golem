@@ -259,10 +259,27 @@ function flattenUnion(checker: ts.TypeChecker, node: ts.TypeNode, seen: Readonly
   return [current];
 }
 
-/** The members of the union as authored, also through a concrete type alias of a union. */
+/**
+ * The type argument of a generic tag wrapper such as `type Tagged<U> = U & Discriminator<'kind'>`: `Tagged<A | B>` is the tagged union `A | B`.
+ * Only an alias that is its own type parameter plus a `Discriminator` tag is a wrapper. The tag itself is read by `readTags`, not here.
+ */
+function tagWrapperArgument(checker: ts.TypeChecker, node: ts.TypeNode): ts.TypeNode | undefined {
+  if (!ts.isTypeReferenceNode(node) || node.typeArguments?.length !== 1) return undefined;
+  const declaration = aliasDeclaration(checker, node);
+  const parameter = declaration?.typeParameters?.length === 1 ? declaration.typeParameters[0] : undefined;
+  if (!declaration || !parameter || !ts.isIntersectionTypeNode(unwrap(declaration.type))) return undefined;
+  const parts = (unwrap(declaration.type) as ts.IntersectionTypeNode).types;
+  const bare = parts.filter(part => !isDiscriminatorTag(checker, part));
+  const isParameter = bare.length === 1 && ts.isTypeReferenceNode(bare[0]!) && !bare[0].typeArguments && checker.getSymbolAtLocation(bare[0].typeName) === checker.getSymbolAtLocation(parameter.name);
+  return isParameter && bare.length < parts.length ? node.typeArguments[0] : undefined;
+}
+
+/** The members of the union as authored, also through a concrete type alias of a union and through a generic tag wrapper of a union. */
 export function authoredUnionMembers(checker: ts.TypeChecker, node: ts.TypeNode | undefined): ts.TypeNode[] | undefined {
   if (!node) return undefined;
   const current = untagged(checker, node);
+  const wrapped = tagWrapperArgument(checker, current);
+  if (wrapped) return authoredUnionMembers(checker, wrapped);
   return ts.isUnionTypeNode(current) || unionAlias(checker, current) ? flattenUnion(checker, current) : undefined;
 }
 

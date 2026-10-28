@@ -2,12 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as conversion from '@exprtlabs/golem/conversion';
-import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render, code, identifier, type Code } from '@exprtlabs/golem/internal/emitter';
+import { emitModelFromInit, emitModelFromJSON, emitModelToJSON, render, code, identifier, literal, type Code } from '@exprtlabs/golem/internal/emitter';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import * as serde from '@exprtlabs/golem/serde';
-import { instantiateRuntime, type RuntimeFunction, emitCodecRuntimeText } from './emitted-runtime.js';
+import { instantiateRuntime, type RuntimeFunction, emitCodecRuntimeText, renderWithHelpers } from './emitted-runtime.js';
 import { runModule } from './support/run-module.js';
 
 function failsWith(kind: LibErrorKind, message: RegExp): (error: unknown) => boolean {
@@ -177,17 +177,17 @@ test('model conversion writes a variant instance by class and rejects unknown or
     fromInit: (value: Code) => code`Object.assign(new ${identifier(classNames[id])}(), ${value})`,
     encode: (value: Code) => code`({ ...${value} })`,
   });
-  const compile = (code: string, direction: 'serialize' | 'deserialize'): RuntimeFunction => {
+  const compile = (converted: Code, direction: 'serialize' | 'deserialize'): RuntimeFunction => {
     const { convert } = runModule(
-      `const convert = (value: unknown) => convertModelField(${JSON.stringify(direction)}, 'pet', (value: unknown) => ${code}, value);`,
+      renderWithHelpers(code`const convert = (value: unknown) => convertModelField(${literal(direction)}, 'pet', (value: unknown) => ${converted}, value);`),
       { ModelCat, ModelDog, unknownDiscriminatorValue: conversion.unknownDiscriminatorValue, withDiscriminatorValue: conversion.withDiscriminatorValue,
         convertModelField: conversion.convertModelField },
       { exports: ['convert'] },
     );
     return convert as RuntimeFunction;
   };
-  const toJson = compile(render(emitModelToJSON(union, identifier('value'), resolveModel)), 'serialize');
-  const fromJson = compile(render(emitModelFromJSON(union, identifier('value'), resolveModel)), 'deserialize');
+  const toJson = compile(emitModelToJSON(union, identifier('value'), resolveModel), 'serialize');
+  const fromJson = compile(emitModelFromJSON(union, identifier('value'), resolveModel), 'deserialize');
   const cat = Object.assign(new ModelCat(), { name: 'Miso' });
   const wire = toJson(cat);
   assert.deepEqual(wire, { kind: 'cat', name: 'Miso' }, 'an untagged instance writes the canonical tag');
@@ -199,7 +199,7 @@ test('model conversion writes a variant instance by class and rejects unknown or
   assert.throws(() => toJson({ name: 'Miso' }), failsWith(LibErrorKind.Serialization, /discriminator value/));
 
   for (const emit of [emitModelFromJSON, emitModelFromInit]) {
-    const decode = compile(render(emit(union, identifier('value'), resolveModel)), 'deserialize');
+    const decode = compile(emit(union, identifier('value'), resolveModel), 'deserialize');
     const decodedKitty = decode({ kind: 'kitty' });
     assert.ok(decodedKitty instanceof ModelCat, emit.name);
     assert.ok(!(decodedKitty instanceof ModelDog), emit.name);

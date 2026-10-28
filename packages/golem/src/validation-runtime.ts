@@ -79,7 +79,6 @@ const URI_PARTS = /^(?:([^:/?#]+):)?(?:\/\/([^/?#]*))?([^?#]*)(?:\?([^#]*))?(?:#
 const URI_PORT = /^[0-9]*$/;
 
 const INT32_LIMIT = 2 ** 31;
-const INT64_LIMIT = 2 ** 63;
 const FLOAT_MAX = 3.4028234663852886e38;
 
 function isLeapYear(year: number): boolean {
@@ -277,8 +276,8 @@ const stringFormats: Readonly<Record<string, (text: string) => boolean>> = {
 
 const numberFormats: Readonly<Record<string, (value: number) => boolean>> = {
   int32: value => Number.isInteger(value) && value >= -INT32_LIMIT && value < INT32_LIMIT,
-  // JSON numbers are doubles, so 9223372036854775807 reads as 2 ** 63; that value is accepted.
-  int64: value => Number.isInteger(value) && value >= -INT64_LIMIT && value <= INT64_LIMIT,
+  // A JSON number is a double, so an integer beyond Number.MAX_SAFE_INTEGER has already been rounded when it is read.
+  int64: Number.isSafeInteger,
   float: value => Number.isFinite(value) && Math.abs(value) <= FLOAT_MAX,
   double: value => Number.isFinite(value),
 };

@@ -3,6 +3,8 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import test from 'node:test';
 
+import { LibError } from '@exprtlabs/golem/errors';
+
 import { copyFixtureFile, createFixtureProject } from '../fixture-project.js';
 import { command } from '../support/process.js';
 import { writeSdk } from '#openapi/generator';
@@ -292,3 +294,27 @@ test('component names that collide once escaped keep separate validators, not ea
     'postEscaped must validate against its own schema (requires "escaped"), not "a~b"\'s',
   );
 });
+
+for (const validation of [false, true]) {
+  test(`a discriminated oneOf whose branch leaves its tag optional rejects {} as input, not as a TypeError, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: R-57 review finding 10 - the validator treats such a discriminator as a plain oneOf, and the decoder must not answer with a TypeError for the untagged object
+    const output = path.join(createFixtureProject(t, 'golem-openapi-optional-tag-'), 'sdk');
+    await generateMaterializedSdk({
+      openapi: '3.1.0',
+      info: { title: 'Optional', version: '1' },
+      paths: {},
+      components: {
+        schemas: {
+          Cat: { type: 'object', properties: { kind: { type: 'string', enum: ['cat'] }, name: { type: 'string' } } },
+          Dog: { type: 'object', required: ['kind'], properties: { kind: { type: 'string', enum: ['dog'] }, bark: { type: 'boolean' } } },
+          Pet: { oneOf: [{ $ref: '#/components/schemas/Cat' }, { $ref: '#/components/schemas/Dog' }], discriminator: { propertyName: 'kind' } },
+          Owner: { type: 'object', required: ['pet'], properties: { pet: { $ref: '#/components/schemas/Pet' } } },
+        },
+      },
+    }, { output, name: 'Optional', profile: { mobx: false, validation } });
+    compileGeneratedSdk(output, [], { strict: true });
+    const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'optional sdk');
+    const parseOwner = models.parseOwner as (text: string) => unknown;
+    assert.throws(() => parseOwner('{"pet":{}}'), (error: unknown) => error instanceof LibError && error.causedByInput === true);
+  });
+}

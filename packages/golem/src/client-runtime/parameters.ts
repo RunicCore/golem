@@ -1,12 +1,20 @@
 import type { ClientRuntime, ParameterSerializerContext } from './core.js';
 
-function formValue(form: URLSearchParams, name: string, value: unknown): void {
+/** `value` when it is a primitive; an object has no wire text, and an array or object nested in an array or object has none either. `parameter` names the parameter in the error. */
+function primitive(parameter: string, value: unknown): unknown {
+  if (typeof value === 'object' && value !== null) {
+    throw new TypeError(`Parameter "${parameter}" must be a primitive, or an array or object with primitive items and members`);
+  }
+  return value;
+}
+
+function formValue(form: URLSearchParams, parameter: string, name: string, value: unknown): void {
   if (value === undefined || value === null) return;
   if (Array.isArray(value)) {
-    for (const item of value) form.append(name, String(item));
+    for (const item of value) form.append(name, String(primitive(parameter, item)));
     return;
   }
-  form.set(name, String(value));
+  form.set(name, String(primitive(parameter, value)));
 }
 
 export function encode(value: unknown, allowReserved = false): string {
@@ -28,32 +36,30 @@ function entries(value: unknown): Array<[string, unknown]> {
 
 /** The text of a parameter that is not an array or an object with entries; any other object has no wire text. */
 function scalarText(name: string, value: unknown): string {
-  if (typeof value === 'object' && value !== null) {
-    throw new TypeError(`Parameter "${name}" must be a primitive, an array or an object with entries`);
-  }
-  return encode(value);
+  return encode(primitive(name, value));
 }
 
 function serializeSimple(name: string, value: unknown, explode: boolean): string {
-  if (Array.isArray(value)) return value.map((item) => encode(item)).join(',');
+  if (Array.isArray(value)) return value.map((item) => encode(primitive(name, item))).join(',');
   const pairs = entries(value);
   if (pairs.length) {
     return pairs.map(([key, item]) =>
-      explode ? `${encode(key)}=${encode(item)}` : `${encode(key)},${encode(item)}`
+      explode ? `${encode(key)}=${encode(primitive(name, item))}` : `${encode(key)},${encode(primitive(name, item))}`
     ).join(',');
   }
   return scalarText(name, value);
 }
 
-export function serializeHeaderSimple(_runtime: ClientRuntime, value: unknown, explode: boolean): string {
-  if (Array.isArray(value)) return value.map((item) => String(item)).join(',');
+/** `name` is the header parameter, for the error of a value that has no wire text. */
+export function serializeHeaderSimple(_runtime: ClientRuntime, value: unknown, explode: boolean, name = 'header'): string {
+  if (Array.isArray(value)) return value.map((item) => String(primitive(name, item))).join(',');
   const pairs = entries(value);
   if (pairs.length) {
     return pairs.map(([key, item]) =>
-      explode ? `${key}=${item}` : `${key},${item}`
+      explode ? `${key}=${primitive(name, item)}` : `${key},${primitive(name, item)}`
     ).join(',');
   }
-  return String(value);
+  return String(primitive(name, value));
 }
 
 export function serializeContentParameter(
@@ -68,7 +74,7 @@ export function serializeContentParameter(
   if (normalized.includes('json')) return JSON.stringify(value);
   if (normalized === 'application/x-www-form-urlencoded') {
     const form = new URLSearchParams();
-    for (const [key, item] of entries(value)) formValue(form, key, item);
+    for (const [key, item] of entries(value)) formValue(form, context.name, key, item);
     return form.toString();
   }
   if (normalized.startsWith('text/')) return String(value);
@@ -77,8 +83,7 @@ export function serializeContentParameter(
   );
 }
 
-export function serializePath(
-  _runtime: ClientRuntime,
+function pathText(
   name: string,
   value: unknown,
   style: string,
@@ -86,11 +91,11 @@ export function serializePath(
 ): string {
   if (style === 'simple') return serializeSimple(name, value, explode);
   if (style === 'label') {
-    if (Array.isArray(value)) return `.${value.map((item) => encode(item)).join(explode ? '.' : ',')}`;
+    if (Array.isArray(value)) return `.${value.map((item) => encode(primitive(name, item))).join(explode ? '.' : ',')}`;
     const pairs = entries(value);
     if (pairs.length) {
       return `.${pairs.map(([key, item]) =>
-        explode ? `${encode(key)}=${encode(item)}` : `${encode(key)},${encode(item)}`
+        explode ? `${encode(key)}=${encode(primitive(name, item))}` : `${encode(key)},${encode(primitive(name, item))}`
       ).join(explode ? '.' : ',')}`;
     }
     return `.${scalarText(name, value)}`;
@@ -98,18 +103,36 @@ export function serializePath(
   if (style === 'matrix') {
     if (Array.isArray(value)) {
       return explode
-        ? value.map((item) => `;${encode(name)}=${encode(item)}`).join('')
-        : `;${encode(name)}=${value.map((item) => encode(item)).join(',')}`;
+        ? value.map((item) => `;${encode(name)}=${encode(primitive(name, item))}`).join('')
+        : `;${encode(name)}=${value.map((item) => encode(primitive(name, item))).join(',')}`;
     }
     const pairs = entries(value);
     if (pairs.length) {
       return explode
-        ? pairs.map(([key, item]) => `;${encode(key)}=${encode(item)}`).join('')
-        : `;${encode(name)}=${pairs.flatMap(([key, item]) => [encode(key), encode(item)]).join(',')}`;
+        ? pairs.map(([key, item]) => `;${encode(key)}=${encode(primitive(name, item))}`).join('')
+        : `;${encode(name)}=${pairs.flatMap(([key, item]) => [encode(key), encode(primitive(name, item))]).join(',')}`;
     }
     return `;${encode(name)}=${scalarText(name, value)}`;
   }
   throw new Error(`Unsupported path parameter style: ${style}`);
+}
+
+export function serializePath(
+  _runtime: ClientRuntime,
+  name: string,
+  value: unknown,
+  style: string,
+  explode: boolean,
+  /** The route writes the parameter as a whole path segment (`/{id}`); inside a longer segment (`/{id}.json`) no text is a dot-segment. */
+  wholeSegment = true,
+): string {
+  const text = pathText(name, value, style, explode);
+  // A client or server that resolves dot-segments (RFC 3986 section 5.2.4) turns ".." into the parent
+  // and "." or an empty segment into the list route.
+  if (wholeSegment && (text === '' || text === '.' || text === '..')) {
+    throw new TypeError(`Parameter "${name}" is written as "${text}", which is a dot-segment or an empty path segment`);
+  }
+  return text;
 }
 
 export function appendQuery(
@@ -139,7 +162,7 @@ export function addQueryParameter(
         for (const [key, child] of entries(item)) append(`${prefix}[${encode(key)}]`, child);
         return;
       }
-      query.push(`${prefix}=${encode(item, allowReserved)}`);
+      query.push(`${prefix}=${encode(primitive(name, item), allowReserved)}`);
     };
     for (const [key, item] of entries(value)) append(`${encode(name)}[${encode(key)}]`, item);
     return;
@@ -147,19 +170,19 @@ export function addQueryParameter(
   const delimiter = style === 'spaceDelimited' ? '%20' : style === 'pipeDelimited' ? '|' : ',';
   if (Array.isArray(value)) {
     if (style === 'form' && explode) {
-      for (const item of value) appendQuery(runtime, query, name, item, allowReserved);
+      for (const item of value) appendQuery(runtime, query, name, primitive(name, item), allowReserved);
     } else {
-      query.push(`${encode(name)}=${value.map((item) => encode(item, allowReserved)).join(delimiter)}`);
+      query.push(`${encode(name)}=${value.map((item) => encode(primitive(name, item), allowReserved)).join(delimiter)}`);
     }
     return;
   }
   const pairs = entries(value);
   if (pairs.length) {
     if (style === 'form' && explode) {
-      for (const [key, item] of pairs) appendQuery(runtime, query, key, item, allowReserved);
+      for (const [key, item] of pairs) appendQuery(runtime, query, key, primitive(name, item), allowReserved);
     } else {
       const flattened = pairs
-        .flatMap(([key, item]) => [encode(key), encode(item, allowReserved)])
+        .flatMap(([key, item]) => [encode(key), encode(primitive(name, item), allowReserved)])
         .join(delimiter);
       query.push(`${encode(name)}=${flattened}`);
     }
@@ -181,9 +204,9 @@ export function setQueryString(
   if (context.contentType === 'application/x-www-form-urlencoded') {
     const form = new URLSearchParams();
     if (typeof value === 'object' && !Array.isArray(value)) {
-      for (const [name, item] of Object.entries(value)) formValue(form, name, item);
+      for (const [key, item] of Object.entries(value)) formValue(form, context.name, key, item);
     } else {
-      form.set('', String(value));
+      form.set('', String(primitive(context.name, value)));
     }
     const serialized = form.toString();
     if (serialized) query.push(serialized.replace(/^=/, ''));
@@ -198,26 +221,27 @@ function pushCookie(
   name: string,
   value: unknown,
   explode: boolean,
-  text: (part: unknown) => string,
+  write: (part: string) => string,
 ): void {
   if (value === undefined || value === null) return;
+  const text = (part: unknown): string => write(String(primitive(name, part)));
   if (Array.isArray(value)) {
     if (explode) {
-      for (const item of value) cookies.push(`${text(name)}=${text(item)}`);
+      for (const item of value) cookies.push(`${write(name)}=${text(item)}`);
     } else {
-      cookies.push(`${text(name)}=${value.map((item) => text(item)).join(',')}`);
+      cookies.push(`${write(name)}=${value.map((item) => text(item)).join(',')}`);
     }
     return;
   }
   const pairs = entries(value);
   if (pairs.length && explode) {
-    for (const [key, item] of pairs) cookies.push(`${text(key)}=${text(item)}`);
+    for (const [key, item] of pairs) cookies.push(`${write(key)}=${text(item)}`);
     return;
   }
   const serialized = pairs.length
-    ? pairs.flatMap(([key, item]) => [text(key), text(item)]).join(',')
-    : text(value);
-  cookies.push(`${text(name)}=${serialized}`);
+    ? pairs.flatMap(([key, item]) => [write(key), text(item)]).join(',')
+    : write(String(primitive(name, value)));
+  cookies.push(`${write(name)}=${serialized}`);
 }
 
 export function addCookieParameter(
@@ -230,6 +254,10 @@ export function addCookieParameter(
   pushCookie(cookies, name, value, explode, (part) => encode(part));
 }
 
+/**
+ * A `style: cookie` parameter is written without percent-encoding (OpenAPI 3.2). A value that holds
+ * `;` or a control character, which would end the cookie or the header line, is a TypeError.
+ */
 export function addCookieStyleParameter(
   _runtime: ClientRuntime,
   cookies: string[],
@@ -237,5 +265,10 @@ export function addCookieStyleParameter(
   value: unknown,
   explode: boolean,
 ): void {
-  pushCookie(cookies, name, value, explode, String);
+  pushCookie(cookies, name, value, explode, (part) => {
+    if (/[;\u0000-\u001f\u007f]/.test(part)) {
+      throw new TypeError(`Parameter "${name}" holds a ";" or a control character, which a cookie cannot carry unencoded`);
+    }
+    return part;
+  });
 }

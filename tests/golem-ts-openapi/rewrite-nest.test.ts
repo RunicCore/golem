@@ -472,18 +472,16 @@ const shapeId = (root: string, name: string): string => {
   return id;
 };
 
-test('a union whose tag is written through an alias of the tag or a generic wrapper gets RUNM1081 with the cause and the forms that work', (t) => {
+test('a union whose tag is written through an alias of the tag gets RUNM1081 with the cause and the forms that work', (t) => {
   // protects: fixed message, RUNM1081 for (A | B) & Kind named no cause ("is not a golem model") and gave a misleading fix
   const controller = [
     "import { Body, Controller, Post } from '@nestjs/common';",
     "import type { Discriminator } from '@exprtlabs/golem/tags';",
     "import type { TCircle, TRect } from './shapes.model.js';",
     "type Kind = Discriminator<'kind'>;",
-    "type Tagged<U> = U & Discriminator<'kind'>;",
     "@Controller('shapes')",
     'export class ShapesController {',
     '  @Post() aliased(@Body() shape: (TCircle | TRect) & Kind): number { return 1; }',
-    '  @Post() wrapped(@Body() shape: Tagged<TCircle | TRect>): number { return 1; }',
     '}',
   ].join('\n');
   const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': controller });
@@ -491,8 +489,62 @@ test('a union whose tag is written through an alias of the tag or a generic wrap
   const fix = "Write the tag on the union itself, (A | B) & Discriminator<'kind'>, or give the whole tagged union a type alias: type TShape = (A | B) & Discriminator<'kind'>.";
   const refused = (type: string, reason: string): string => `${type} ${reason}, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type. ${fix} An app with its own interceptor can set nonModelInputs: warn in golem.yaml.`;
   assert.deepEqual(result.diagnostics.map(({ code, line, message }) => ({ code, line, message })), [
-    { code: 'RUNM1081', line: 8, message: refused('(TCircle | TRect) & Kind', 'is a union whose Discriminator tag is written through the alias Kind, which golem does not read') },
-    { code: 'RUNM1081', line: 9, message: refused('Tagged<TCircle | TRect>', 'is a union whose Discriminator tag is written through the generic type Tagged, which golem does not read') },
+    { code: 'RUNM1081', line: 7, message: refused('(TCircle | TRect) & Kind', 'is a union whose Discriminator tag is written through the alias Kind, which golem does not read') },
+  ]);
+});
+
+test('a generic wrapper that adds more than the tag to a @Body() union gets RUNM1081 with the cause, not the bare "not a golem model"', (t) => {
+  // protects: R-57 review finding 7 - a wrapper U & Discriminator<'kind'> & { x: string } is not a pure tag wrapper and stops with a message that names what is wrong
+  const controller = [
+    "import { Body, Controller, Post } from '@nestjs/common';",
+    "import type { Discriminator } from '@exprtlabs/golem/tags';",
+    "import type { TCircle, TRect } from './shapes.model.js';",
+    "type Wrapped<U> = U & Discriminator<'kind'> & { x: string };",
+    "@Controller('shapes')",
+    'export class ShapesController {',
+    '  @Post() wrapped(@Body() shape: Wrapped<TCircle | TRect>): number { return 1; }',
+    '}',
+  ].join('\n');
+  const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': controller });
+  assert.deepEqual(scan(root).diagnostics.map(({ code, line, message }) => ({ code, line, message })), [
+    { code: 'RUNM1081', line: 7, message: "Wrapped<TCircle | TRect> is a generic wrapper of a union that holds more than the type parameter and its Discriminator tag, which golem does not read, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type. Use a wrapper that is only U & Discriminator<'kind'>, or write the tag on the union itself, (A | B) & Discriminator<'kind'>. An app with its own interceptor can set nonModelInputs: warn in golem.yaml." },
+  ]);
+});
+
+test('a generic tag wrapper Tagged<A | B> on a @Body() or @Query() union is stamped like the written form, and the existing refusals still apply through it', (t) => {
+  // protects: T-619 the wrapper binds like the written tag; a member without the key, shared values and a default stay RUNM1081
+  const controller = [
+    "import { Body, Controller, Post, Query } from '@nestjs/common';",
+    "import type { Discriminator } from '@exprtlabs/golem/tags';",
+    "import type { TCircle, TNumberTag, TPlain, TRect, TTextTag } from './shapes.model.js';",
+    "type Tagged<U> = U & Discriminator<'kind'>;",
+    "type TaggedV<U> = U & Discriminator<'v'>;",
+    "type Defaulted<U> = U & Discriminator<'kind', TPlain>;",
+    "@Controller('shapes')",
+    'export class ShapesController {',
+    '  @Post() body(@Body() shape: Tagged<TCircle | TRect>): number { return 1; }',
+    '  @Post() query(@Query() shape: Tagged<TCircle | TRect>): number { return 1; }',
+    '  @Post() missing(@Body() shape: Tagged<TCircle | TPlain>): number { return 1; }',
+    '  @Post() shared(@Query() tag: TaggedV<TNumberTag | TTextTag>): number { return 1; }',
+    '  @Post() defaulted(@Body() shape: Defaulted<TCircle | TPlain>): number { return 1; }',
+    '}',
+  ].join('\n');
+  const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': controller });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics.map(({ code, line, message }) => ({ code, line, reason: / (has the member TPlain with no required literal property "kind"|has the members TNumberTag and TTextTag that share the "v" value "1"|declares a default variant)/.exec(message)?.[1] })), [
+    { code: 'RUNM1081', line: 11, reason: 'has the member TPlain with no required literal property "kind"' },
+    { code: 'RUNM1081', line: 12, reason: 'has the members TNumberTag and TTextTag that share the "v" value "1"' },
+    { code: 'RUNM1081', line: 13, reason: 'declares a default variant' },
+  ]);
+  const [circle, rect] = [shapeId(root, 'TCircle'), shapeId(root, 'TRect')];
+  const variants = `[[["circle"],"${circle}"],[["rect"],"${rect}"]]`;
+  assertLines(rewritten(root, result, 'src/shapes.controller.ts'), [
+    `  @Post() body(@Body() @__golem_nestModelUnion("kind", ${variants}) shape: Tagged<TCircle | TRect>): number { return 1; }`,
+    `  @Post() query(@Query() @__golem_nestModelUnion("kind", ${variants}) shape: Tagged<TCircle | TRect>): number { return 1; }`,
+  ]);
+  assert.deepEqual(result.nestCodecSites.map(({ method, slot, ids }) => ({ method, slot, ids })), [
+    { method: 'body', slot: 'input', ids: [circle, rect] },
+    { method: 'query', slot: 'query', ids: [circle, rect] },
   ]);
 });
 
