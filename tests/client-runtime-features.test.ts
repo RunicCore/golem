@@ -4,8 +4,11 @@ import {
   ClientRuntime,
   addQueryParameter,
   applySecurity,
+  addCookieParameter,
+  addCookieStyleParameter,
   encodeBody,
   serializeContentParameter,
+  serializeHeaderSimple,
   serializePath,
 } from '@exprtlabs/golem/client';
 
@@ -157,4 +160,56 @@ test('basic credentials are UTF-8 encoded before base64 and the user-id cannot c
     applySecurity(basic('a:b', 'p'), [{ basic: [] }], [], new Headers(), [], schemes),
     /must not contain ":"/,
   );
+});
+
+const rejectsNaming = (name: string) => (error: unknown) => error instanceof TypeError && error.message.includes(`"${name}"`);
+
+test('a path value that resolves as a dot-segment or empty segment is a TypeError naming the parameter', () => {
+  // protects: bug id ".." or "." was sent as a dot-segment that fetch resolves to the parent or the list route, and "" hit the list route
+  for (const [value, style] of [['..', 'simple'], ['.', 'simple'], ['', 'simple'], ['', 'label'], ['.', 'label'], [[], 'simple']] as const) {
+    assert.throws(() => serializePath(runtime, 'id', value, style, false), rejectsNaming('id'), `${JSON.stringify(value)} ${style}`);
+  }
+  assert.equal(serializePath(runtime, 'id', '..', 'matrix', false), ';id=..');
+  assert.equal(serializePath(runtime, 'id', '...', 'simple', false), '...');
+  assert.equal(serializePath(runtime, 'id', ['a', '..'], 'simple', false), 'a,..');
+});
+
+test('an object or array nested in an array or object parameter is a TypeError naming the parameter', () => {
+  // protects: bug a nested object was sent as "[object Object]" (filter=%5Bobject%20Object%5D)
+  const nested = [{ field: 'a' }];
+  const query: string[] = [];
+  for (const [style, explode] of [['form', false], ['form', true], ['spaceDelimited', false], ['pipeDelimited', false]] as const) {
+    assert.throws(() => addQueryParameter(runtime, query, 'filter', nested, style, explode, false), rejectsNaming('filter'), `${style} ${explode}`);
+    assert.throws(() => addQueryParameter(runtime, query, 'filter', { a: nested }, style, explode, false), rejectsNaming('filter'), `object ${style} ${explode}`);
+  }
+  assert.throws(() => addQueryParameter(runtime, query, 'filter', { a: [1, 2] }, 'deepObject', true, false), rejectsNaming('filter'));
+  assert.deepEqual(query, []);
+  addQueryParameter(runtime, query, 'filter', { a: { b: 1, c: 'x y' } }, 'deepObject', true, false);
+  assert.deepEqual(query, ['filter[a][b]=1', 'filter[a][c]=x%20y']);
+  for (const style of ['simple', 'label', 'matrix']) {
+    assert.throws(() => serializePath(runtime, 'id', nested, style, false), rejectsNaming('id'), `array ${style}`);
+    assert.throws(() => serializePath(runtime, 'id', { a: nested }, style, true), rejectsNaming('id'), `object ${style}`);
+  }
+  assert.throws(() => serializeHeaderSimple(runtime, nested, false, 'X-Filter'), rejectsNaming('X-Filter'));
+  assert.throws(() => serializeHeaderSimple(runtime, { a: nested }, true, 'X-Filter'), rejectsNaming('X-Filter'));
+  assert.throws(() => serializeHeaderSimple(runtime, new Date(0), false, 'X-Since'), rejectsNaming('X-Since'));
+  assert.equal(serializeHeaderSimple(runtime, ['a', 1], false, 'X-Ids'), 'a,1');
+  for (const add of [addCookieParameter, addCookieStyleParameter]) {
+    assert.throws(() => add(runtime, [], 'tags', nested, false), rejectsNaming('tags'));
+    assert.throws(() => add(runtime, [], 'tags', { a: nested }, true), rejectsNaming('tags'));
+  }
+  const form = { operation: 'listTasks', name: 'filter', in: 'querystring', contentType: 'application/x-www-form-urlencoded' } as const;
+  assert.throws(() => serializeContentParameter(runtime, { a: nested }, form), rejectsNaming('filter'));
+});
+
+test('a cookie-style parameter holding ";" or a control character is a TypeError, not a second cookie', () => {
+  // protects: bug session "a; admin=1" was sent as "session=a; admin=1", which sets a second cookie
+  for (const value of ['a; admin=1', 'a\r\nX-Evil: 1', 'a\tb', 'a\u007f']) {
+    assert.throws(() => addCookieStyleParameter(runtime, [], 'session', value, false), rejectsNaming('session'), JSON.stringify(value));
+  }
+  assert.throws(() => addCookieStyleParameter(runtime, [], 'ids', ['ok', 'a;b'], true), rejectsNaming('ids'));
+  assert.throws(() => addCookieStyleParameter(runtime, [], 'ids', { 'k;': 'v' }, true), rejectsNaming('ids'));
+  const cookies: string[] = [];
+  addCookieStyleParameter(runtime, cookies, 'session', 'a b=c', false);
+  assert.deepEqual(cookies, ['session=a b=c']);
 });
