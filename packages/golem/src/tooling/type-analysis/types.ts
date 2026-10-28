@@ -430,8 +430,11 @@ function assertValidationCompatibility(
 
 type ConstraintFamily = 'number' | 'string' | 'array' | 'object';
 
-function constraintFamily(kind: ModelConstraint['kind']): ConstraintFamily | undefined {
-  switch (kind) {
+/** The `Format` names that validate a number. `validation-runtime.ts` checks them; every other name checks a string. */
+const NUMBER_FORMATS: ReadonlySet<string> = new Set(['int32', 'int64', 'float', 'double']);
+
+function constraintFamily(constraint: ModelConstraint): ConstraintFamily | undefined {
+  switch (constraint.kind) {
     case 'integer':
     case 'minimum':
     case 'maximum':
@@ -439,10 +442,11 @@ function constraintFamily(kind: ModelConstraint['kind']): ConstraintFamily | und
     case 'exclusiveMaximum':
     case 'multipleOf':
       return 'number';
+    case 'format':
+      return NUMBER_FORMATS.has(constraint.value) ? 'number' : 'string';
     case 'minLength':
     case 'maxLength':
     case 'pattern':
-    case 'format':
       return 'string';
     case 'minItems':
     case 'maxItems':
@@ -513,7 +517,7 @@ function assertConstraintCompatibility(
   }
   const families = new Set<ConstraintFamily>();
   for (const constraint of constraints) {
-    const family = constraintFamily(constraint.kind);
+    const family = constraintFamily(constraint);
     if (family) families.add(family);
   }
   for (const family of families) {

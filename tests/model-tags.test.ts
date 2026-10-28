@@ -272,6 +272,20 @@ export function decode(value: number & MinLength<3>): number { return value; }`,
         expected: /RUNM1051: Constraint on the wire value requires a string type/,
       },
       {
+        // protects: T-555 a string format on a number still stops generation; only int32, int64, float and double apply to numbers
+        name: 'string format on a number',
+        imports: tsSource`import type { Format } from '@exprtlabs/golem/tags';`,
+        field: tsSource`value: number & Format<'email'>`,
+        expected: /RUNM1051: Constraint on the model value requires a string type/,
+      },
+      {
+        // protects: T-555 a number format checks a number, so a string field cannot carry it unchecked
+        name: 'number format on a string',
+        imports: tsSource`import type { Format } from '@exprtlabs/golem/tags';`,
+        field: tsSource`value: string & Format<'int32'>`,
+        expected: /RUNM1051: Constraint on the model value requires a number type/,
+      },
+      {
         name: 'invalid minimum',
         imports: tsSource`import type { Minimum } from '@exprtlabs/golem/tags';`,
         field: tsSource`value: string & Minimum<10>`,
