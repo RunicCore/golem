@@ -1790,8 +1790,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
   return value;
 }
 
-/** Whether a value of `descriptor` can be `undefined`, so a required key of that type can hold an own undefined value. */
-export function admitsUndefined(descriptor: ModelTypeDescriptor): boolean {
+function admitsUndefined(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind === 'undefined' || (descriptor.kind === 'union' && descriptor.variants.some(admitsUndefined));
 }
 
