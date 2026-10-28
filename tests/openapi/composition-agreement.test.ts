@@ -657,6 +657,24 @@ const rows: readonly Row[] = [
     ],
     rejected: [{ m: { id: '1' } }, { m: { kind: 'a', a: 'x' } }],
   },
+  // A schema's oneOf and anyOf together, with no allOf: the value satisfies one variant of each (JSON Schema AND), as the validator reads them.
+  // protects: T-554 a schema with both oneOf and anyOf keeps the anyOf in the type and the conversion
+  {
+    shape: 'a field that holds both a oneOf and an anyOf of inline objects, with no allOf',
+    fixture: 'one-of-and-any-of',
+    root: 'Visit',
+    document: visitDocument({
+      m: {
+        oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] })],
+        anyOf: [object({ mode: { const: 'x' }, x: text }, { required: ['mode', 'x'] }), object({ mode: { const: 'y' }, y: text }, { required: ['mode', 'y'] })],
+      },
+    }),
+    accepted: [
+      { wire: { m: { kind: 'a', a: 'p', mode: 'x', x: 'q' } }, model: { m: { kind: 'a', a: 'p', mode: 'x', x: 'q' } } },
+      { wire: { m: { kind: 'b', b: 'p', mode: 'y', y: 'q' } }, model: { m: { kind: 'b', b: 'p', mode: 'y', y: 'q' } } },
+    ],
+    rejected: [{ m: { kind: 'a', a: 'p' } }, { m: { mode: 'x', x: 'q' } }],
+  },
   {
     shape: 'a field that is allOf [$ref Base] beside its own oneOf of two $ref models',
     root: 'Visit',

@@ -228,7 +228,7 @@ function distributeUnion<S>(
     ? conflict('a model beside a union that is not one union of objects; give the base and each variant plain object schemas')
     : undefined;
   if (another !== undefined) return unspread;
-  const variants = Array.isArray(union.oneOf) ? union.oneOf : Array.isArray(union.anyOf) ? union.anyOf : [];
+  const variants = unionVariants(union) ?? [];
   // The member's other keywords (properties, required, constraints) stay a part of every variant.
   const { oneOf: _oneOf, anyOf: _anyOf, discriminator: _discriminator, ...beside } = union;
   const rest = Object.keys(beside).length ? [beside] : [];
@@ -338,7 +338,7 @@ function slotRule<S>(reader: CompositionReader<S>): SlotRule<SlotChild<S>> {
 function narrowedVariant<S>(child: SlotChild<S>, merged: ModelTypeDescriptor, reader: CompositionReader<S>): SlotChild<S> {
   const [source, other] = child.sources;
   if (child.descriptor.kind !== 'union' || source === undefined || other !== undefined || !isJsonObject(source.schema)) return child;
-  const items = Array.isArray(source.schema.oneOf) ? source.schema.oneOf : Array.isArray(source.schema.anyOf) ? source.schema.anyOf : [];
+  const items = unionVariants(source.schema) ?? [];
   const key = conversionKey(merged);
   const scope = reader.nested(source.schema, source.scope);
   const matches = items.flatMap((item) => {
@@ -595,6 +595,14 @@ function requiredNames(schema: unknown): string[] {
   return isJsonObject(schema) && Array.isArray(schema.required)
     ? schema.required.filter((item): item is string => typeof item === 'string')
     : [];
+}
+
+/**
+ * The variants of a schema's union keyword. A schema never holds both `oneOf` and `anyOf` here: generation rewrites such a schema
+ * into an allOf of the two before any reader sees it (`normalizeSchemaUnions`).
+ */
+export function unionVariants(schema: Readonly<Record<string, unknown>>): readonly unknown[] | undefined {
+  return Array.isArray(schema.oneOf) ? schema.oneOf : Array.isArray(schema.anyOf) ? schema.anyOf : undefined;
 }
 
 /** An array or tuple schema: `type: array` (null beside it allowed), or `items` or `prefixItems` with no object keywords. */
