@@ -29,6 +29,7 @@ Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+
 - **Breaking:** a `security` requirement that names an undeclared scheme stops generation ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - **Breaking:** the generated client rejects a numeric response header that is not a plain number ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - **Breaking:** `parse<T>(...args)` of a model class with a spread before the options stops the build with `RUNM1079` ([Generation](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#generation)).
+- **Breaking:** with validation on, an object keyed by a template literal type rejects a key outside the template, and a key type that golem cannot state as one pattern stops generation with `RUNM1004` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - The `model-manifest.json` of a generated SDK no longer lists `modelReferences` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - An untagged `anyOf` whose branches state different JSON types checks a value only with the branches of its type.
 

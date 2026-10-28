@@ -388,7 +388,7 @@ export type TItem = IModel<{ email: Email }>;
 test('a Record with a template-literal key rejects a key outside the template and decodes the Dates of the others', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-export type TItem = IModel<{ seen: Record<\`id_\${string}\`, Date>; both: Record<\`a_\${string}_z\` | \`b.\${string}\`, number> }>;
+export type TItem = IModel<{ seen: Record<\`id_\${string}\`, Date>; both: Record<\`a_\${string}_z\` | \`b.\${string}\`, number>; accent?: Record<\`café_\${string}\`, number>; mixed?: { [key: number]: number; [key: \`id_\${string}\`]: number } }>;
 `);
   await buildModelProjectWith(root, { mobx: false, validation: true });
   await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
@@ -400,6 +400,11 @@ export type TItem = IModel<{ seen: Record<\`id_\${string}\`, Date>; both: Record
   for (const both of [{ a_1: 1 }, { 'bx': 2 }, { a_1_zz: 3 }]) assert.equal(codec.validate({ seen: {}, both }), false, JSON.stringify(both));
   assert.deepEqual(codec.parse(`{"seen":{"id_1":"${day}"},"both":{}}`), { seen: { id_1: new Date(day) }, both: {} });
   assert.throws(() => codec.parse(`{"seen":{"other":"${day}"},"both":{}}`), /Model validation failed/);
+  // A key text outside ASCII, and a number index beside a template one.
+  assert.equal(codec.validate({ seen: {}, both: {}, accent: { 'café_1': 1 } }), true);
+  assert.equal(codec.validate({ seen: {}, both: {}, accent: { cafe_1: 1 } }), false);
+  assert.equal(codec.validate({ seen: {}, both: {}, mixed: { '1': 1, '-2.5': 2, id_x: 3 } }), true);
+  assert.equal(codec.validate({ seen: {}, both: {}, mixed: { x: 1 } }), false);
 });
 
 for (const key of ['${number}', '${string}_${number}', 'Uppercase<string>']) {
@@ -413,6 +418,8 @@ export type TItem = IModel<{ seen: Record<${keyType}, Date> }>;
       () => generate({ root, profile: { mobx: false, validation: true } }),
       /item\.model\.ts:\d+:\d+ RUNM1004: Field "seen" of TItem is keyed by a template literal type that golem cannot state as a key pattern\. Use string-only holes, such as `id_\$\{string\}`, or a plain string key\./,
     );
+    // With validation off golem states no key rule, so the key type does not stop generation.
+    assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: false } }));
   });
 }
 

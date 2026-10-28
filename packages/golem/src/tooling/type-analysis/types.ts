@@ -549,24 +549,13 @@ function escapedKeyText(text: string): string {
 }
 
 /** The expression for one template literal key type (`id_${string}`), or undefined for a shape it cannot state exactly: only `string` holes can. */
-function templateKeyExpression(printed: string): string | undefined {
-  if (printed.length < 2 || !printed.startsWith('`') || !printed.endsWith('`')) return undefined;
-  const body = printed.slice(1, -1);
-  if (body.includes('\\') || body.includes('`')) return undefined;
-  let expression = '';
-  for (let at = 0; at < body.length;) {
-    if (body.startsWith('${', at)) {
-      const end = body.indexOf('}', at);
-      if (end < 0 || body.slice(at + 2, end) !== 'string') return undefined;
-      expression += '[\\s\\S]*';
-      at = end + 1;
-    } else {
-      expression += escapedKeyText(body[at]!);
-      at += 1;
-    }
-  }
-  return expression;
+function templateKeyExpression(type: ts.TemplateLiteralType): string | undefined {
+  if (!type.types.every((hole) => (hole.flags & ts.TypeFlags.String) !== 0)) return undefined;
+  return type.texts.map(escapedKeyText).join('[\\s\\S]*');
 }
+
+/** The text of a key that a `number` index signature admits: a JSON number written as a property name. */
+const NUMBER_KEY_EXPRESSION = '-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?';
 
 /**
  * The pattern every key of `type` must match, from its index signatures that are keyed by template literal types: undefined when
@@ -575,14 +564,17 @@ function templateKeyExpression(printed: string): string | undefined {
  */
 function indexKeyPattern(checker: ts.TypeChecker, type: ts.Type, declaredNames: readonly string[]): string | null | undefined {
   const expressions: string[] = [];
+  let numbered = false;
   for (const { keyType } of checker.getIndexInfosOfType(type)) {
     if ((keyType.flags & ts.TypeFlags.String) !== 0) return undefined;
+    if ((keyType.flags & ts.TypeFlags.Number) !== 0) numbered = true;
     if ((keyType.flags & ts.TypeFlags.StringLike) === 0) continue;
-    const expression = (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0 ? templateKeyExpression(checker.typeToString(keyType)) : undefined;
+    const expression = (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0 ? templateKeyExpression(keyType as ts.TemplateLiteralType) : undefined;
     if (expression === undefined) return null;
     expressions.push(expression);
   }
-  return expressions.length === 0 ? undefined : `^(?:${[...expressions, ...declaredNames.map(escapedKeyText)].join('|')})$`;
+  if (expressions.length === 0) return undefined;
+  return `^(?:${[...expressions, ...(numbered ? [NUMBER_KEY_EXPRESSION] : []), ...declaredNames.map(escapedKeyText)].join('|')})$`;
 }
 
 /**
@@ -1351,7 +1343,8 @@ export function descriptorBuilder(
         const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => memberNames.has(name));
         const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
         const taggedAdditional = indexType ? undefined : additionalPropertiesFromTags(metadata.constraints);
-        const keyPattern = indexType ? indexKeyPattern(checker, type, [...memberNames]) : undefined;
+        // The key pattern is a validation rule: with validation off nothing states it, so no key type stops generation for it.
+        const keyPattern = indexType && validationEnabled ? indexKeyPattern(checker, type, [...memberNames]) : undefined;
         if (keyPattern === null) {
           const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
           throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',

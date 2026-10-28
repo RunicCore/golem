@@ -31,7 +31,7 @@ export function fieldProvenance(
     if (ts.isParenthesizedTypeNode(current)) return walk(current.type, substitutions, next);
     if (ts.isTypeOperatorNode(current)) return { ...walk(current.type, substitutions, next), externals: [] };
     // A member of a model is a type of its own: the model it was read from is no candidate for it.
-    if (ts.isIndexedAccessTypeNode(current)) return { ...walk(current.objectType, substitutions, next), models: [], externals: [] };
+    if (ts.isIndexedAccessTypeNode(current)) return { ...walk(current.objectType, substitutions, next), projection: false, models: [], externals: [] };
     if (ts.isMappedTypeNode(current)) {
       const source = walk(current.typeParameter.constraint, substitutions, next);
       return { ...source, projection: true, externals: [] };

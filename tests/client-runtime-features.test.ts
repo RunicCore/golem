@@ -73,6 +73,14 @@ test('a multipart body sends no part for an undefined or null field', async () =
   assert.equal(form.get('kept'), 'a');
 });
 
+test('a multipart JSON part that is null sends the JSON text null', async () => {
+  // protects: review finding: the fix above also dropped a null JSON part, which a server reads as absent
+  const encoded = encodeBody(runtime, 'upload', { meta: null }, 'multipart/form-data', { 'multipart/form-data': { encoding: { meta: { contentType: 'application/json' } }, prefixEncoding: [], itemEncoding: null } });
+  const part = (encoded.body as FormData).get('meta') as Blob;
+  assert.equal(part.type, 'application/json');
+  assert.equal(await part.text(), 'null');
+});
+
 test('an empty-object query parameter adds no entry and a non-primitive one is a TypeError naming the parameter', () => {
   // protects: bug a query or path parameter that was an empty object or a Date became "[object Object]" or a locale string
   const query: string[] = [];

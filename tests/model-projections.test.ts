@@ -337,7 +337,7 @@ test('an indexed access to an anonymous field of a model stays a plain object, n
 import { TAddressBaseModel, TInvoiceBaseModel, TOrderBaseModel } from './invoice.model.generated.js';
 export type TOrder = IModel<{ shipping: { street: string; city: string } }>;
 export type TAddress = IModel<{ street: string; city: string }>;
-export type TInvoice = IModel<{ billing: TOrder['shipping']; inline: { street: string; city: string } }>;
+export type TInvoice = IModel<{ billing: TOrder['shipping']; picked: Pick<TOrder, 'shipping'>['shipping']; inline: { street: string; city: string } }>;
 export class Order extends TOrderBaseModel {}
 export class Address extends TAddressBaseModel {}
 export class Invoice extends TInvoiceBaseModel {}
@@ -345,10 +345,11 @@ export class Invoice extends TInvoiceBaseModel {}
   });
   await buildModelProject(root);
   const { Invoice, Address } = await import(path.join(root, 'build/invoice.model.js'));
-  const wire = { billing: { street: 's', city: 'c' }, inline: { street: 's', city: 'c' } };
+  const wire = { billing: { street: 's', city: 'c' }, picked: { street: 's', city: 'c' }, inline: { street: 's', city: 'c' } };
   const invoice = decodeGeneratedModel(Invoice, wire);
   assert.equal(invoice.inline instanceof Address, false, 'the inline spelling');
   assert.equal(invoice.billing instanceof Address, false, 'the indexed access');
+  assert.equal(invoice.picked instanceof Address, false, 'the indexed access of a projection');
   assert.equal(Object.getPrototypeOf(invoice.billing), Object.prototype);
   assert.deepEqual(encodeGeneratedModel(invoice), wire);
 });
