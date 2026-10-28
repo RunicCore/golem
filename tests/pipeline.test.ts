@@ -9,8 +9,8 @@ import { runPipeline, type PipelineState } from '#golem/cli';
 import { loadConfig } from './support/load-config.js';
 import { applyJob, loadInventory } from '#golem/outputs';
 import { runBuild } from '#golem/build';
-import { command, workspace } from './support/process.js';
-import { TSC } from './support/build-project.js';
+import { command, stopChild, workspace } from './support/process.js';
+import { TSC, write as writeFile } from './support/build-project.js';
 import { writeFixture } from './support/consumer.js';
 import { until } from './support/watch-wait.js';
 import { runLines } from './support/watch-runs.js';
@@ -135,11 +135,7 @@ test('watch regenerates model edits without rewriting SDKs or looping on outputs
     await until(() => fs.readFileSync(generated, 'utf8').includes('attempt') && runs() >= 4, 'watch recovers after upstream input is repaired');
     assert.equal(runs(), 4, 'failed upstream runs publish nothing and recovery runs once');
   } finally {
-    if (child.exitCode === null && child.signalCode === null) {
-      const closed = new Promise<void>(resolve => child.once('close', () => resolve()));
-      child.kill('SIGTERM');
-      await closed;
-    }
+    await stopChild(child);
   }
 });
 
@@ -190,10 +186,7 @@ test('the companion of a shared alias is a recorded output of the app in models.
   // protects: a shared model's companion is a recorded output of the app, and deleting the alias removes it
   const outer = createFixtureProject(t, 'golem-pipeline-shared-');
   linkProjectPackages(outer, Object.fromEntries(['golem', 'golem-model'].map(name => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)])));
-  const write = (file: string, text: string): void => {
-    fs.mkdirSync(path.dirname(path.join(outer, file)), { recursive: true });
-    fs.writeFileSync(path.join(outer, file), text);
-  };
+  const write = (file: string, text: string): void => writeFile(outer, file, text);
   write('shared/package.json', '{"name":"@acme/shared","type":"module"}');
   write('shared/customer.model.ts', "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCustomer = IModel<{ name: string }>;\n");
   write('app/package.json', '{"name":"shared-app","type":"module"}');
@@ -454,6 +447,15 @@ export function generate(context) {
   return { root, config: path.join(root, 'golem.yaml'), install };
 }
 
+/** `generatorProject` whose job does not announce `input`, with `input` dated `past`: the case that digests it when the job returns. */
+function unannouncedInputProject(t: TestContext): { root: string; config: string; input: string; past: Date } {
+  const { root, config } = generatorProject(t, false);
+  const input = path.join(root, 'input.txt');
+  const past = new Date('2020-01-01T00:00:00Z');
+  fs.utimesSync(input, past, past);
+  return { root, config, input, past };
+}
+
 test('a new version of a generator package with the same code does not rerun its job', async (t: TestContext) => {
   const { config, install } = generatorProject(t, true);
   assert.equal((await runPipeline(config)).ran.size, 1);
@@ -463,10 +465,7 @@ test('a new version of a generator package with the same code does not rerun its
 
 test('a watch input the job did not announce is digested when the job returns, so the next run skips the job until the input changes', async (t: TestContext) => {
   // protects: T-383 an unannounced watch input no longer reruns its job every time
-  const { root, config } = generatorProject(t, false);
-  const input = path.join(root, 'input.txt');
-  const past = new Date('2020-01-01T00:00:00Z');
-  fs.utimesSync(input, past, past);
+  const { root, config, input } = unannouncedInputProject(t);
   assert.equal((await runPipeline(config)).ran.size, 1);
   assert.equal((await runPipeline(config)).ran.size, 0);
   fs.writeFileSync(input, 'y');
@@ -476,10 +475,7 @@ test('a watch input the job did not announce is digested when the job returns, s
 
 test('a watch input the job did not announce and that changed while the job ran makes the next run run the job again', async (t: TestContext) => {
   // protects: T-383 an unannounced watch input touched during the run never leaves stale output skipped
-  const { root, config } = generatorProject(t, false);
-  const input = path.join(root, 'input.txt');
-  const past = new Date('2020-01-01T00:00:00Z');
-  fs.utimesSync(input, past, past);
+  const { root, config, input, past } = unannouncedInputProject(t);
   fs.writeFileSync(path.join(root, 'touch.flag'), '');
   assert.equal((await runPipeline(config)).ran.size, 1, 'the job touches its input while it runs');
   fs.rmSync(path.join(root, 'touch.flag'));
@@ -490,10 +486,7 @@ test('a watch input the job did not announce and that changed while the job ran 
 
 test('a directory the job did not announce as an input makes its job run every time, so an edit of a file inside it is not missed', async (t: TestContext) => {
   // protects: T-383 an unannounced directory watch input never leaves stale output skipped
-  const { root, config } = generatorProject(t, false);
-  const input = path.join(root, 'input.txt');
-  const past = new Date('2020-01-01T00:00:00Z');
-  fs.utimesSync(input, past, past);
+  const { root, config } = unannouncedInputProject(t);
   fs.mkdirSync(path.join(root, 'notes'));
   fs.writeFileSync(path.join(root, 'notes/a.txt'), 'a');
   assert.equal((await runPipeline(config)).ran.size, 1);

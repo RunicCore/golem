@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 export interface CommandOptions { readonly env?: NodeJS.ProcessEnv; readonly allowFailure?: boolean }
@@ -84,3 +84,20 @@ export async function npm(root: string, args: readonly string[], options: NpmOpt
 }
 
 export const cli = (root: string, args: readonly string[], options?: CommandOptions): Promise<CommandResult> => command(root, path.join(root, 'node_modules/.bin/golem'), args, options);
+
+/** `golem exec --watch --config <config> -- <node> <child...>` in `root`, with piped output. `nodeArguments` go to the node that runs golem. */
+export function spawnWatchExec(root: string, config: string, child: readonly string[], nodeArguments: readonly string[] = []): ChildProcess {
+  return spawn(process.execPath, [...nodeArguments, golem, 'exec', '--watch', '--config', config, '--', process.execPath, ...child], {
+    cwd: root,
+    env: { ...process.env, NODE_PATH: '' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+}
+
+/** Ends a child that is still running with SIGTERM and waits until it has closed. */
+export async function stopChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  const closed = new Promise<void>(resolve => child.once('close', () => resolve()));
+  child.kill('SIGTERM');
+  await closed;
+}

@@ -230,6 +230,14 @@ test('a package without a tsconfig of its own, under a parent tsconfig, builds w
 });
 
 
+/** An app folder with its package.json, the `tsconfig` text the case needs, a golem.yaml with a models job, and the base money model. */
+function writeApp(app: string, name: string, tsconfig: string): void {
+  write(app, 'package.json', JSON.stringify({ name, type: 'module' }));
+  write(app, 'tsconfig.json', tsconfig);
+  write(app, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
+  copyFixtureFile(app, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
+}
+
 test('a symlinked workspace package outside the tsconfig directory passes golem check and builds: both scan only the sources the build emits', async (t) => {
   // The package's `types` is its source, so the compiler reads it as an external library: the app's build does not emit it, and its check does not scan it.
   const { root: outer } = createModelProject(t, {
@@ -245,13 +253,10 @@ export function read(text: string): unknown { return parse<{ note: string }>(tex
 `);
   fs.mkdirSync(path.join(app, 'node_modules/@fixture'), { recursive: true });
   fs.symlinkSync(path.join(outer, 'packages/lib'), path.join(app, 'node_modules/@fixture/lib'), 'dir');
-  write(app, 'package.json', '{"name":"linked-app","type":"module"}');
-  write(app, 'tsconfig.json', JSON.stringify({
+  writeApp(app, 'linked-app', JSON.stringify({
     compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, outDir: 'build', rootDir: 'src' },
     include: ['src/**/*.ts'],
   }));
-  write(app, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
-  copyFixtureFile(app, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   write(app, 'src/use.ts', USE.replace("import './money.model.js';", "import './money.model.js';\nimport { read } from '@fixture/lib';\nexport const fromLibrary = read('{}');"));
   await runPipeline(path.join(app, 'golem.yaml'));
 
@@ -268,13 +273,10 @@ test('a source without a rewrite site that the tsconfig includes outside its dir
     packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
   });
   const app = path.join(outer, 'app');
-  write(app, 'package.json', '{"name":"outside-app","type":"module"}');
-  write(app, 'tsconfig.json', JSON.stringify({
+  writeApp(app, 'outside-app', JSON.stringify({
     compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, outDir: 'build', rootDir: 'src' },
     include: ['src/**/*.ts'],
   }));
-  write(app, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
-  copyFixtureFile(app, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   write(app, 'src/use.ts', USE);
   const config = path.join(app, 'golem.yaml');
   await runPipeline(config);
@@ -317,13 +319,10 @@ test('a rewrite site in a source outside the tsconfig directory passes golem che
     packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
   });
   const app = path.join(outer, 'app');
-  write(app, 'package.json', '{"name":"outside-app","type":"module"}');
-  write(app, 'tsconfig.json', JSON.stringify({
+  writeApp(app, 'outside-app', JSON.stringify({
     compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true, noEmit: true },
     include: ['src/**/*.ts', '../shared/site.ts'],
   }));
-  write(app, 'golem.yaml', 'version: 1\nmobx: false\nvalidation: false\nmodels:\n  root: .\n');
-  copyFixtureFile(app, 'models/serde/base-payment-model/money.model.ts', 'src/money.model.ts');
   const config = path.join(app, 'golem.yaml');
   await runPipeline(config);
   write(outer, 'shared/site.ts', `import { parse } from '@exprtlabs/golem/serde';

@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { type TestContext } from 'node:test';
+import { watchPipeline } from '#golem/cli';
+import type { WatchOptions } from '#golem/watch';
 import { resolveTypeScript } from '#golem/typescript-version';
 import { workspace } from './process.js';
 import { writeFixture } from './consumer.js';
@@ -27,6 +29,25 @@ export function generationWatchFixture(t: TestContext): { root: string; config: 
     'validation: true\nallowAny: false\n',
   ));
   return { root, config };
+}
+
+/** Counts the good runs of a watch: pass `onRun` to `watchPipeline`; `lines` holds the line of each run, in order. */
+export function countRuns(): (() => number) & { readonly lines: string[]; readonly onRun: (line: string) => void } {
+  const lines: string[] = [];
+  return Object.assign(() => lines.length, { lines, onRun: (line: string): void => { lines.push(line); } });
+}
+
+/** Starts `watchPipeline` on `config`. `runs` counts its good runs, `errors` holds what it reported and `context()` prints them for a timeout message; `stop()` ends the watch. */
+export function startGenerationWatch(config: string, options: Omit<WatchOptions, 'onRun'> = {}): {
+  readonly runs: ReturnType<typeof countRuns>;
+  readonly errors: unknown[];
+  readonly context: () => string;
+  readonly stop: () => void;
+} {
+  const runs = countRuns();
+  const errors: unknown[] = [];
+  const stop = watchPipeline(config, error => { errors.push(error); }, { ...options, onRun: runs.onRun });
+  return { runs, errors, context: () => `(errors=${errors.map(String).join('; ')})`, stop };
 }
 
 export function compilerChildren(parent: number): number[] {

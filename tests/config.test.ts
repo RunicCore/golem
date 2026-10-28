@@ -289,24 +289,26 @@ test('a suffix that is empty, malformed, repeated or names a generated file is a
   }
 });
 
+/** `fixture` with an empty tsconfig, an `app/src` folder for the models root, and `shared/money.model.ts` outside that root. */
+function outsideRootFixture(t: TestContext, yaml: string): { root: string; filename: string } {
+  const project = fixture(t, yaml);
+  fs.writeFileSync(path.join(project.root, 'tsconfig.json'), '{}');
+  fs.mkdirSync(path.join(project.root, 'app/src'), { recursive: true });
+  fs.mkdirSync(path.join(project.root, 'shared'));
+  fs.writeFileSync(path.join(project.root, 'shared/money.model.ts'), 'export {};\n');
+  return project;
+}
+
 test('a models.sources entry outside models.root stops with RUNM1075 naming the entry and the root', (t: TestContext) => {
   // protects: T-375 a config error names its local files relative to the working directory
-  const { root, filename } = fixture(t, 'version: 1\nmodels:\n  root: app\n  sources: [shared/money.model.ts]\n');
-  fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
-  fs.mkdirSync(path.join(root, 'app/src'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'shared'));
-  fs.writeFileSync(path.join(root, 'shared/money.model.ts'), 'export {};\n');
+  const { root, filename } = outsideRootFixture(t, 'version: 1\nmodels:\n  root: app\n  sources: [shared/money.model.ts]\n');
 
   assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error
     && error.message === `RUNM1075: models.sources entry ${path.relative(process.cwd(), path.join(root, 'shared/money.model.ts'))} is outside the models root ${path.relative(process.cwd(), path.join(root, 'app'))}. A models job generates only files inside its root.`);
 });
 
 test('a models.sources entry that links to a file outside the root stops with RUNM1075', (t: TestContext) => {
-  const { root, filename } = fixture(t, 'version: 1\nmodels:\n  root: app\n  sources: [app/src/money.model.ts]\n');
-  fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}');
-  fs.mkdirSync(path.join(root, 'app/src'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'shared'));
-  fs.writeFileSync(path.join(root, 'shared/money.model.ts'), 'export {};\n');
+  const { root, filename } = outsideRootFixture(t, 'version: 1\nmodels:\n  root: app\n  sources: [app/src/money.model.ts]\n');
   fs.symlinkSync('../../shared/money.model.ts', path.join(root, 'app/src/money.model.ts'));
 
   assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error

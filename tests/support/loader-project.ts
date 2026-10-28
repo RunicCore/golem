@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { TestContext } from 'node:test';
 
 import { runPipeline } from '#golem/cli';
-import { copyFixtureFile, snapshotFilesystem, writeGeneratedArtifacts } from '../fixture-project.js';
+import { copyFixtureFile, createFixtureProject, linkProjectPackages, snapshotFilesystem, writeGeneratedArtifacts } from '../fixture-project.js';
 import { createModelProject } from '../model-project.js';
 import { command, workspace, type CommandResult } from './process.js';
 
@@ -67,6 +67,19 @@ export async function project(t: TestContext, name: string, options: ProjectOpti
   write(root, 'src/util.ts', UTIL);
   if (options.generate !== false) await runPipeline(path.join(root, 'golem.yaml'));
   return root;
+}
+
+/**
+ * A workspace package `workspace-lib` linked into the node_modules of `root`; its `lib.ts` makes one parse call of the TMoney model of `root`.
+ * Without `preserveSymlinks` the package links the golem runtime itself; with it the package finds the runtime through the node_modules of `root`, as a workspace install gives it.
+ */
+export function workspacePackage(t: TestContext, root: string, preserveSymlinks = false): string {
+  const directory = createFixtureProject(t, 'golem-workspace-package-');
+  if (!preserveSymlinks) linkProjectPackages(directory, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
+  write(directory, 'package.json', JSON.stringify({ name: 'workspace-lib', type: 'module', exports: './lib.ts' }));
+  write(directory, 'lib.ts', `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`);
+  linkProjectPackages(root, { 'workspace-lib': directory });
+  return directory;
 }
 
 /** Runs the loader in a child Node, then asserts that the loader changed no file of the project: bytes and mtimes. */

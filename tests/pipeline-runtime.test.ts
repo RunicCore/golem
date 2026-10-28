@@ -1,5 +1,6 @@
 // lane: typescript6 ProgramSession resolution updates in the pipeline runtime
 import { copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
+import { createModelProject } from './model-project.js';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,15 +9,12 @@ import { test, type TestContext } from 'node:test';
 
 import { runPipeline, watchPipeline } from '#golem/cli';
 import { generate as generateOpenApi } from '#openapi/generator';
-import { workspace } from './support/process.js';
+import { spawnWatchExec, stopChild, workspace } from './support/process.js';
+import { generationWatchFixture } from './support/generation-watch.js';
+import { writeMoneyManifest } from './support/model-manifest.js';
 import { until } from './support/watch-wait.js';
 import { runLines } from './support/watch-runs.js';
 import { writeFixture } from './support/consumer.js';
-
-interface CombinedFixture {
-  readonly root: string;
-  readonly config: string;
-}
 
 interface ModelWatchFixture {
   readonly root: string;
@@ -55,47 +53,13 @@ function installFakeOpenApiProvider(root: string, manifest: unknown): void {
   fs.writeFileSync(path.join(packageRoot, 'fixture-manifest.json'), JSON.stringify(manifest));
 }
 
-function combinedFixture(t: TestContext): CombinedFixture {
-  const root = createFixtureProject(t, 'golem-pipeline-runtime-');
-
-  linkPackages(root, ['golem', 'golem-model', 'golem-openapi']);
-  fs.writeFileSync(
-    path.join(root, 'package.json'),
-    JSON.stringify({ name: 'pipeline-runtime-fixture', private: true, type: 'module' }),
-  );
-  writeFixture(root, { mobx: false, validation: true });
-  const config = path.join(root, 'golem.yaml');
-  fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace(
-    'validation: true\n',
-    'validation: true\nallowAny: false\n',
-  ));
-  return { root, config };
-}
-
 function modelWatchFixture(t: TestContext): ModelWatchFixture {
-  const root = createFixtureProject(t, 'golem-model-watch-');
-
-  linkPackages(root, ['golem', 'golem-model']);
-  fs.writeFileSync(
-    path.join(root, 'package.json'),
-    JSON.stringify({ name: 'model-watch-fixture', private: true, type: 'module' }),
-  );
+  const { root } = createModelProject(t, {
+    prefix: 'golem-model-watch-',
+    name: 'model-watch-fixture',
+    packages: { '@exprtlabs/golem-model': path.join(workspace, 'packages/golem-model') },
+  });
   fs.mkdirSync(path.join(root, 'src/external'), { recursive: true });
-  fs.writeFileSync(
-    path.join(root, 'tsconfig.json'),
-    JSON.stringify({
-      compilerOptions: {
-        strict: true,
-        target: 'ES2022',
-        module: 'NodeNext',
-        moduleResolution: 'NodeNext',
-        skipLibCheck: true,
-        outDir: 'build',
-        rootDir: 'src',
-      },
-      include: ['src/**/*.ts'],
-    }),
-  );
   fs.writeFileSync(
     path.join(root, 'golem.yaml'),
     'version: 1\nmobx: false\nvalidation: false\nallowAny: false\nmodels:\n  root: .\n',
@@ -114,16 +78,7 @@ function modelWatchFixture(t: TestContext): ModelWatchFixture {
 
 function writeExternalManifest(fixture: ModelWatchFixture): void {
   copyFixtureFile(fixture.root, 'pipeline/model-watch/models.ts', 'src/external/models.ts');
-  fs.writeFileSync(fixture.manifest, JSON.stringify({
-    profile: { mobx: false, validation: false, allowAny: false, unknownFormats: 'error' },
-    models: [{
-      id: 'fixture:money',
-      codecId: 'Money_0a1b2c3d',
-      allowAny: false,
-      type: { module: './types.ts', export: 'Money' },
-      generated: { module: './models.ts', export: 'MoneyModel' },
-    }],
-  }));
+  writeMoneyManifest(fixture.manifest);
 }
 
 function writeExternalTypes(fixture: ModelWatchFixture): void {
@@ -226,14 +181,8 @@ async function waitForCloseWithin(child: ChildProcess, message: string, timeout 
   }
 }
 
-async function stopChild(child: ChildProcess): Promise<void> {
-  if (child.exitCode !== null || child.signalCode !== null) return;
-  child.kill('SIGTERM');
-  await waitForClose(child);
-}
-
 test('initial watch failure records a missing configured input and recovers on creation, and a config edit to another missing input recovers the same way', async (t: TestContext) => {
-  const { root, config } = combinedFixture(t);
+  const { root, config } = generationWatchFixture(t);
   const originalInput = path.join(root, 'api.json');
   const missingInput = path.join(root, 'missing-api.json');
   const originalDocument = fs.readFileSync(originalInput, 'utf8');
@@ -330,7 +279,7 @@ test('initial model watch failures retain missing manifests and declarations in 
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {
   test(`exec forwards ${signal} to its child and preserves the signal result`, async (t: TestContext) => {
-    const { root, config } = combinedFixture(t);
+    const { root, config } = generationWatchFixture(t);
     const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
     const ready = path.join(root, `${signal.toLowerCase()}.ready`);
     const received = path.join(root, `${signal.toLowerCase()}.received`);
@@ -357,33 +306,18 @@ for (const signal of ['SIGTERM', 'SIGINT'] as const) {
       assert.equal(result.code, null, `${signal}: signal exit must not become a normal code`);
       assert.equal(fs.readFileSync(received, 'utf8'), signal, `${signal}: child must receive the signal`);
     } finally {
-      if (parent.exitCode === null && parent.signalCode === null) await stopChild(parent);
+      await stopChild(parent);
     }
   });
 }
 
 test('exec --watch keeps its child alive through generation failure, recovers, and cleans up on signal', async (t: TestContext) => {
-  const { root, config } = combinedFixture(t);
-  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
+  const { root, config } = generationWatchFixture(t);
   const ready = path.join(root, 'watch-child.ready');
   const received = path.join(root, 'watch-child.received');
   const heartbeat = path.join(root, 'watch-child.heartbeat');
   const childScript = copyFixtureFile(root, 'pipeline/watch-child/run.cjs', 'watch-child.cjs');
-  const parent = spawn(process.execPath, [
-    binary,
-    'exec',
-    '--watch',
-    '--config',
-    config,
-    '--',
-    process.execPath,
-    childScript,
-    ready, received, heartbeat,
-  ], {
-    cwd: root,
-    env: { ...process.env, NODE_PATH: '' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const parent = spawnWatchExec(root, config, [childScript, ready, received, heartbeat]);
   let stdout = '';
   let stderr = '';
   parent.stdout?.on('data', (value: Buffer) => { stdout += value.toString(); });
@@ -415,31 +349,16 @@ test('exec --watch keeps its child alive through generation failure, recovers, a
     assert.equal(result.code, null);
     assert.equal(fs.readFileSync(received, 'utf8'), 'SIGTERM');
   } finally {
-    if (parent.exitCode === null && parent.signalCode === null) await stopChild(parent);
+    await stopChild(parent);
   }
 });
 
 test('exec --watch does not start its child or watcher when initial generation fails', async (t: TestContext) => {
-  const { root, config } = combinedFixture(t);
-  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
+  const { root, config } = generationWatchFixture(t);
   const ready = path.join(root, 'never-started.ready');
   const childScript = copyFixtureFile(root, 'pipeline/never-started-child/run.cjs', 'never-started-child.cjs');
   fs.writeFileSync(path.join(root, 'api.json'), JSON.stringify({ openapi: '2.0', info: {}, paths: {} }));
-  const parent = spawn(process.execPath, [
-    binary,
-    'exec',
-    '--watch',
-    '--config',
-    config,
-    '--',
-    process.execPath,
-    childScript,
-    ready,
-  ], {
-    cwd: root,
-    env: { ...process.env, NODE_PATH: '' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const parent = spawnWatchExec(root, config, [childScript, ready]);
   let stderr = '';
   parent.stderr?.on('data', (value: Buffer) => { stderr += value.toString(); });
   try {
@@ -449,14 +368,13 @@ test('exec --watch does not start its child or watcher when initial generation f
     assert.equal(fs.existsSync(ready), false, 'the exec child must not start before initial generation succeeds');
     assert.match(stderr, /OpenAPI|validation failed|unsupported/i);
   } finally {
-    if (parent.exitCode === null && parent.signalCode === null) await stopChild(parent);
+    await stopChild(parent);
   }
 });
 
 test('exec --watch generates a model file that was created during its first run', async (t: TestContext) => {
   // protects: T-316 the watch started by exec compares with the disk as it was before the first run
-  const { root, config } = combinedFixture(t);
-  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
+  const { root, config } = generationWatchFixture(t);
   const created = path.join(root, 'src/pet.model.ts');
   // In the exec process: the first run publishes the cart companion, after it read the sources; create a model file at that moment.
   const hook = path.join(root, 'create-during-first-run.cjs');
@@ -472,11 +390,7 @@ test('exec --watch generates a model file that was created during its first run'
     '  return rename(from, to);',
     '};',
   ].join('\n'));
-  const parent = spawn(process.execPath, ['--require', hook, binary, 'exec', '--watch', '--config', config, '--', process.execPath, '-e', 'setInterval(() => {}, 1000)'], {
-    cwd: root,
-    env: { ...process.env, NODE_PATH: '' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const parent = spawnWatchExec(root, config, ['-e', 'setInterval(() => {}, 1000)'], ['--require', hook]);
   let stderr = '';
   parent.stderr?.on('data', (value: Buffer) => { stderr += value.toString(); });
   try {
@@ -488,32 +402,17 @@ test('exec --watch generates a model file that was created during its first run'
 });
 
 test('exec --watch exits with its child and releases the watcher', async (t: TestContext) => {
-  const { root, config } = combinedFixture(t);
-  const binary = path.join(workspace, 'packages/golem/dist/bin/golem.js');
+  const { root, config } = generationWatchFixture(t);
   const ready = path.join(root, 'watch-child-exit.ready');
   const childScript = copyFixtureFile(root, 'pipeline/exiting-child/run.cjs', 'exiting-child.cjs');
-  const parent = spawn(process.execPath, [
-    binary,
-    'exec',
-    '--watch',
-    '--config',
-    config,
-    '--',
-    process.execPath,
-    childScript,
-    ready,
-  ], {
-    cwd: root,
-    env: { ...process.env, NODE_PATH: '' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  const parent = spawnWatchExec(root, config, [childScript, ready]);
   try {
     await until(() => fs.existsSync(ready), 'exec --watch child starts before exiting');
     const result = await waitForCloseWithin(parent, 'exec --watch child exit cleanup');
     assert.equal(result.signal, null);
     assert.equal(result.code, 17);
   } finally {
-    if (parent.exitCode === null && parent.signalCode === null) await stopChild(parent);
+    await stopChild(parent);
   }
 });
 

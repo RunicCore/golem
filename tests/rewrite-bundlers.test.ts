@@ -16,6 +16,7 @@ import { golem as vitePlugin } from '#golem/vite';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages, snapshotFilesystem, writeGeneratedArtifacts } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
+import { workspacePackage } from './support/loader-project.js';
 import { runRewritten } from './support/rewritten-module.js';
 import { quietly, until } from './support/watch-wait.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
@@ -155,6 +156,12 @@ async function build(bundler: Bundler, t: TestContext, root: string, entry: stri
   return path.join(outDir, 'main.mjs');
 }
 
+/** Bundles `entry`, runs the bundle in Node and returns what it printed. */
+async function runBundle(bundler: Bundler, t: TestContext, root: string, entry: string, options?: GolemHostOptions, preserveSymlinks?: boolean): Promise<string> {
+  const bundle = await build(bundler, t, root, entry, options, preserveSymlinks);
+  return (await command(root, process.execPath, [bundle])).stdout;
+}
+
 /** A rejected build's message, which both bundlers carry the plugin's own error text in. */
 async function failure(promise: Promise<unknown>): Promise<string> {
   try {
@@ -196,9 +203,8 @@ function frameLines(output: string, file: string): number[] {
 for (const bundler of BUNDLERS) {
   test(`${bundler.name}: the bundle runs the parse and stringify calls the host rewrites.`, async (t) => {
     const root = await generatedProject(t, `${bundler.name}-run`);
-    const bundle = await build(bundler, t, root, 'src/main.ts');
-    const result = await command(root, process.execPath, [bundle]);
-    assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+    const stdout = await runBundle(bundler, t, root, 'src/main.ts');
+    assert.deepEqual(JSON.parse(stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
   });
 
   test(`${bundler.name}: the bundle's source map resolves a rewritten line to its original file and line`, async (t) => {
@@ -242,17 +248,15 @@ for (const bundler of BUNDLERS) {
     fs.mkdirSync(path.join(root, 'app'));
     write(root, 'app/entry.ts', `import '../src/main.js';\n`);
     fs.renameSync(path.join(root, 'golem.yaml'), path.join(root, 'config.yaml'));
-    const bundle = await build(bundler, t, root, 'app/entry.ts', { config: 'config.yaml' });
-    const result = await command(root, process.execPath, [bundle]);
-    assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+    const stdout = await runBundle(bundler, t, root, 'app/entry.ts', { config: 'config.yaml' });
+    assert.deepEqual(JSON.parse(stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
   });
 
   test(`${bundler.name}: an empty config option is no setting, so the golem.yaml of the working directory is used`, async (t) => {
     // protects: T-27 config '' resolved to the working directory and failed on a directory
     const root = await generatedProject(t, `${bundler.name}-empty-config`);
-    const bundle = await build(bundler, t, root, 'src/main.ts', { config: '' });
-    const result = await command(root, process.execPath, [bundle]);
-    assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+    const stdout = await runBundle(bundler, t, root, 'src/main.ts', { config: '' });
+    assert.deepEqual(JSON.parse(stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
   });
 
   test(`${bundler.name}: a file with a parse call is rewritten for every TypeScript extension the bundler strips`, async (t) => {
@@ -260,9 +264,8 @@ for (const bundler of BUNDLERS) {
     const names = bundler.extensions.map((extension) => `call${extension}`);
     for (const name of names) write(root, `src/${name}`, CALL);
     write(root, 'src/entry.ts', `${names.map((name, index) => `import { value as v${index} } from './${name}';`).join('\n')}\nconsole.log(JSON.stringify([${names.map((_, index) => `v${index}`).join(', ')}]));\n`);
-    const bundle = await build(bundler, t, root, 'src/entry.ts');
-    const result = await command(root, process.execPath, [bundle]);
-    assert.deepEqual(JSON.parse(result.stdout), names.map(() => '{"currency":"EUR","value":"2"}'));
+    const stdout = await runBundle(bundler, t, root, 'src/entry.ts');
+    assert.deepEqual(JSON.parse(stdout), names.map(() => '{"currency":"EUR","value":"2"}'));
   });
 }
 
@@ -271,11 +274,7 @@ for (const bundler of BUNDLERS) {
  * With `preserveSymlinks` the package finds the runtime through the project's node_modules, as a workspace install gives it: a runtime of its own would be a second instance.
  */
 function symlinkedPackage(t: TestContext, root: string, preserveSymlinks = false): void {
-  const workspacePackage = createFixtureProject(t, 'golem-bundler-workspace-package-');
-  if (!preserveSymlinks) linkProjectPackages(workspacePackage, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
-  write(workspacePackage, 'package.json', JSON.stringify({ name: 'workspace-lib', type: 'module', exports: './lib.ts' }));
-  write(workspacePackage, 'lib.ts', `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`);
-  linkProjectPackages(root, { 'workspace-lib': workspacePackage });
+  workspacePackage(t, root, preserveSymlinks);
   write(root, 'src/linked.ts', "import './money.model.js';\nimport { value } from 'workspace-lib';\nconsole.log(JSON.stringify(value));\n");
 }
 
@@ -286,26 +285,23 @@ for (const bundler of BUNDLERS) {
     linkProjectPackages(outside, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
     write(outside, 'lib.ts', `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`);
     write(root, 'src/outside.ts', `import './money.model.js';\nimport { value } from '${path.join(outside, 'lib.js')}';\nconsole.log(JSON.stringify(value));\n`);
-    const bundle = await build(bundler, t, root, 'src/outside.ts');
-    const result = await command(root, process.execPath, [bundle]);
-    assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
+    const stdout = await runBundle(bundler, t, root, 'src/outside.ts');
+    assert.deepEqual(JSON.parse(stdout), { currency: 'USD', value: '1' });
   });
 
   test(`${bundler.name}: a parse call in a workspace package symlinked into node_modules is rewritten and the bundle runs`, async (t) => {
     const root = await generatedProject(t, `${bundler.name}-symlinked-package`);
     symlinkedPackage(t, root);
-    const bundle = await build(bundler, t, root, 'src/linked.ts');
-    const result = await command(root, process.execPath, [bundle]);
-    assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
+    const stdout = await runBundle(bundler, t, root, 'src/linked.ts');
+    assert.deepEqual(JSON.parse(stdout), { currency: 'USD', value: '1' });
   });
 
   test(`${bundler.name}: with preserveSymlinks, a parse call in a workspace package symlinked into node_modules is rewritten and the bundle runs`, async (t) => {
     // protects: T-382 a linked package keeps its node_modules path under preserveSymlinks and was skipped
     const root = await generatedProject(t, `${bundler.name}-preserved-symlink`, { preserveSymlinks: true });
     symlinkedPackage(t, root, true);
-    const bundle = await build(bundler, t, root, 'src/linked.ts', undefined, true);
-    const result = await command(root, process.execPath, [bundle]);
-    assert.deepEqual(JSON.parse(result.stdout), { currency: 'USD', value: '1' });
+    const stdout = await runBundle(bundler, t, root, 'src/linked.ts', undefined, true);
+    assert.deepEqual(JSON.parse(stdout), { currency: 'USD', value: '1' });
   });
 
   test(`${bundler.name}: a bundle of app A runs over the plain types of the shared folder`, async (t) => {
