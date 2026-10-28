@@ -116,7 +116,7 @@ The `exact` option decides whether a model rejects keys that it does not declare
 
 ## Union of models
 
-A whole `@Body()` or `@Query()` parameter can be a union of models, such as `(TCircle | TRect) & Discriminator<'kind'>` or an alias of one. Declare the tag as for a [model field](/guide/field-types#declare-the-tag-of-an-object-union): `Discriminator<'kind'>` on the union, and a required literal `kind` with a value of its own in each model.
+A whole `@Body()` or `@Query()` parameter can be a union of models, such as `(TCircle | TRect) & Discriminator<'kind'>` or an alias of one. A generic tag wrapper such as `type Tagged<U> = U & Discriminator<'kind'>` also works: `Tagged<TCircle | TRect>`. Declare the tag as for a [model field](/guide/field-types#declare-the-tag-of-an-object-union): `Discriminator<'kind'>` on the union, and a required literal `kind` with a value of its own in each model.
 
 - The interceptor reads the declared key and converts the input with the model that its value picks. A missing or unknown value returns HTTP 400.
 - A query string holds the tag as text. The interceptor decodes it to the type that the picked model declares.
