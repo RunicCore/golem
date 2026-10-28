@@ -8,7 +8,8 @@ export type TTuple = IModel<{
   dated?: [string, ...Date[], Date];
   when?: string | Date[];
   pair?: string | [Date];
-}>;
+// A JSON Schema cannot validate `rest` and `dated` in order (RUNM1021), so this model keeps its shape with validation off.
+}, { validation: false }>;
 export class Tuple extends TTupleBaseModel {
   constructor(values: Partial<TTupleFields> = {}) { super(values); }
 }

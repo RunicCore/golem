@@ -377,15 +377,20 @@ export type TItem = IModel<{ email: Email }>;
   });
 }
 
+/** Build the project with validation on and return the codec of its `TItem`. */
+async function builtItemCodec(root: string): Promise<ReturnType<typeof requireObjectCodec>> {
+  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  return requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+}
+
 // protects: bug-sweep a Record keyed by a template literal (`id_${string}`) accepted a key that does not match the template
 test('a Record with a template-literal key rejects a key outside the template and decodes the Dates of the others', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 export type TItem = IModel<{ seen: Record<\`id_\${string}\`, Date>; both: Record<\`a_\${string}_z\` | \`b.\${string}\`, number>; accent?: Record<\`café_\${string}\`, number>; mixed?: { [key: number]: number; [key: \`id_\${string}\`]: number } }>;
 `);
-  await buildModelProjectWith(root, { mobx: false, validation: true });
-  await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+  const codec = await builtItemCodec(root);
   const day = '2024-01-01T00:00:00.000Z';
   assert.equal(codec.validate({ seen: { id_1: new Date(day) }, both: {} }), true);
   assert.equal(codec.validate({ seen: { other: new Date(day) }, both: {} }), false);
@@ -431,6 +436,7 @@ export type TItem = IModel<{ row: ${shape} }>;
   });
 }
 
+// protects: T-585 the stop honours the model's own validation setting, so the advice in its message works
 test('a tuple with a fixed element after its rest element generates when the model sets validation off', t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
@@ -439,14 +445,7 @@ export type TItem = IModel<{ row: [string, ...number[], boolean] }, { validation
   assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
 });
 
-test('a tuple with its rest element last generates with validation on', t => {
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-export type TItem = IModel<{ row: [string, boolean, ...number[]] }>;
-`);
-  assert.doesNotThrow(() => generate({ root, profile: { mobx: false, validation: true } }));
-});
-
+// protects: T-585 validation off keeps the positional conversion of a rest element in the middle
 test('a tuple with a rest element in the middle round-trips its items in order with validation off', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
@@ -475,17 +474,17 @@ export type TItem = IModel<{ seen: { [key: \`a_\${string}\`]: Date; [key: \`n_\$
   }
 });
 
+// protects: T-590 signatures that share one value type, also one written twice as an object literal, still generate
 test('template-literal index signatures that share one value type decode that type and reject a key outside the templates', async t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-export type TItem = IModel<{ seen: { [key: \`a_\${string}\`]: Date; [key: \`b_\${string}\`]: Date } }>;
+export type TItem = IModel<{ seen: { [key: \`a_\${string}\`]: Date; [key: \`b_\${string}\`]: Date }; points?: { [key: \`a_\${string}\`]: { x: number }; [key: \`b_\${string}\`]: { x: number } } }>;
 `);
-  await buildModelProjectWith(root, { mobx: false, validation: true });
-  await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
-  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+  const codec = await builtItemCodec(root);
   const day = '2024-01-01T00:00:00.000Z';
   assert.deepEqual(codec.parse(`{"seen":{"a_1":"${day}","b_1":"${day}"}}`), { seen: { a_1: new Date(day), b_1: new Date(day) } });
   assert.throws(() => codec.parse(`{"seen":{"c_1":"${day}"}}`), /Model validation failed/);
+  assert.deepEqual(codec.parse('{"seen":{},"points":{"a_1":{"x":1},"b_1":{"x":2}}}'), { seen: {}, points: { a_1: { x: 1 }, b_1: { x: 2 } } });
 });
 
 test('a bigint with a phantom brand keeps the TSerde message, not RUNM1085', t => {

@@ -1353,9 +1353,10 @@ export function descriptorBuilder(
         const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => memberNames.has(name));
         const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
         // One `additionalProperties` value describes every extra key, so signatures keyed by templates need one value type.
-        const templateValueTypes = new Set(checker.getIndexInfosOfType(type)
-          .filter(({ keyType }) => (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0).map(({ valueType }) => valueType));
-        if (templateValueTypes.size > 1) {
+        // Two value types are one when each is assignable to the other: `{ x: number }` written twice is two type objects.
+        const templateValueTypes = checker.getIndexInfosOfType(type)
+          .filter(({ keyType }) => (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0).map(({ valueType }) => valueType);
+        if (templateValueTypes.some((valueType) => !checker.isTypeAssignableTo(valueType, templateValueTypes[0]!) || !checker.isTypeAssignableTo(templateValueTypes[0]!, valueType))) {
           const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
           throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
             `${where} has index signatures of different value types, which golem cannot state as one value type. Give them one value type, or use one index signature.`);

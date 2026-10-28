@@ -13,7 +13,8 @@ export type TSnapshot = IModel<{
   required: string | { kind: 'required'; value: number };
   optional?: string | { kind: 'optional'; value: number };
   nested: { choice?: string | { kind: 'nested'; value: number } };
-}>;
+// A JSON Schema cannot validate `trailing` in order (RUNM1021), so this model keeps its shape with validation off.
+}, { validation: false }>;
 
 export class Snapshot extends TSnapshotBaseModel {}
 
