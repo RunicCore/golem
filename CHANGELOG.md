@@ -31,7 +31,12 @@ This file is the complete list of changes. The documentation site's
 - A property with a symbol key, such as `[sym]: string`, in a model, in a nested object of a model or in the type of a controller parameter stops generation with [`RUNM1070`](docs/reference/diagnostics.md#runm1070). Before, a model wrote a field named `__@sym@4`, and a parameter became a query or header parameter with that name.
 - Validation of an object type with no named properties is faster, and `stringify` of a map of numbers, such as `{ [key: string]: number }`, is faster. The results are the same.
 
+- A model `number` field can carry `Format<'int32'>`, `Format<'int64'>`, `Format<'float'>` or `Format<'double'>`. Its schema gets the `format`, and the generated validator rejects a value out of range, such as `2**31` for `int32` or `Infinity` for `double`.
+- Model output built with validation off no longer carries validation bindings in its generated wire schema.
+- [`RUNM1004`](docs/reference/diagnostics.md#runm1004) for a model `Map` or `Set` field names `Map` or `Set`. Before, it named one of their methods.
 - **Breaking:** `getObjectCodec`, `getIModelClass`, `requireObjectCodec`, `requireIModelClass` and `registerIModelClass` from `@exprtlabs/golem/serde` match the full codec id exactly. Before, a short model name such as `TOrder` also found the codec `TOrder_<8 hex digits>`, and a model named like `Order_0badc0de` was linked wrongly or missed. Pass the id from `findCodecIdForConstructor`, `.golem/codec-keys.json` or the `codecId` of `model-manifest.json`. The error of `requireObjectCodec` names the id only.
+- **Breaking:** a number format on a `string` field, such as `string & Format<'int64'>`, stops generation with [`RUNM1051`](docs/reference/diagnostics.md#runm1051). Before, golem accepted it and never checked it.
+- **Breaking:** when a `TValidation` function throws, or returns neither a boolean nor a string, `parse`, `fromWireFormat`, `validate<T>`, `assertValue<T>`, `validateInstance` and `ModelValidator.validate` throw a `LibError` of kind `Validation` with the message `Model validation could not finish.`, `causedByInput` set to `false` and the original error as `cause`. Before, `parse`, `fromWireFormat` and `validate<T>` let the raw error through.
 
 ### OpenAPI
 
@@ -62,6 +67,9 @@ This file is the complete list of changes. The documentation site's
 - The `model-manifest.json` of a generated SDK no longer lists `modelReferences` for each field. No tool read it, and it was wrong for nullable, `allOf` and map fields.
 - **Breaking:** a route with no response decorator gets an empty description (`""`) on its default response, as `@nestjs/swagger` writes. Before, it got `Success`, or `Created`, `Accepted` or `No Content` for status 201, 202 or 204. `@ApiNoContentResponse()` with no description also gets `""`; before, it got `No Content`. Regenerate, and update a test or tool that compares the generated document or reads that description.
 - **Breaking:** a property that one `allOf` member types as `format: date-time` and another as a `$ref` to an object schema has no value that every member accepts, as members with other disjoint types have. A required property now stops generation with `OPENAPI_COMPOSITION_UNSATISFIABLE`, naming the property; an optional one warns with `OPENAPI_COMPOSITION_PROPERTY_NEVER` and the model types it `?: never`. Before, both stopped with `OPENAPI_COMPOSITION_CONVERSION_CONFLICT`. Give the property one type in every member.
+- A `@Query()` model field whose schema is a `$ref` to a named literal-union alias, such as `level: Level` with `type Level = 1 | 2`, decodes from the query string like the same type written inline: `level=2` gives the number `2`.
+- **Breaking:** a `Map` or `Set` field of a Nest DTO, as a field, an array item, or a body or response root, stops generation with [`RUNM1086`](docs/reference/diagnostics.md#runm1086) unless its `@ApiProperty()` states `type`, `schema` or `additionalProperties`. With one, golem uses that schema. Before, golem wrote an object with a required `size` property.
+- **Breaking:** `golem-openapi` reads a schema with both `oneOf` and `anyOf` as both: a value matches one `oneOf` branch and one `anyOf` branch, as the generated validator already checked. Before, the generated types and models read only one of the two keywords. When each keyword gives a union of several object variants, generation stops with [`OPENAPI_COMPOSITION_CONVERSION_CONFLICT`](docs/reference/diagnostics.md#openapi-composition-conversion-conflict).
 
 ### Generation
 
