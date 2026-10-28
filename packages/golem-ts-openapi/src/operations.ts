@@ -5,7 +5,7 @@ import { mergeSchemaMetadata } from './nest/json-schema-merge.js';
 import type { ControllerParameter, ControllerRoute, ResponseDescription, TypeReference } from './nest/types.js';
 import { parameterOverrideKey } from './nest/parameters.js';
 
-export type OpenApiSchema = Record<string, unknown> | boolean;
+type OpenApiSchema = Record<string, unknown> | boolean;
 
 export interface SchemaResolutionContext {
   readonly checker: ts.TypeChecker;

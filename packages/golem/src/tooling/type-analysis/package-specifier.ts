@@ -13,7 +13,7 @@ interface PackageManifest { readonly root: string; readonly name: string; readon
 const manifests = new Map<string, { readonly mtimeMs: number; readonly name?: string; readonly exports?: unknown }>();
 
 /** The JSON object in the text of the package.json `filename`. Text that is not a JSON object throws an error that names the file and keeps the parse error as its cause. */
-export function parseManifest(filename: string, text: string): Record<string, unknown> {
+function parseManifest(filename: string, text: string): Record<string, unknown> {
   try {
     const parsed: unknown = JSON.parse(text.replace(/^\uFEFF/, ''));
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('the JSON is not an object');

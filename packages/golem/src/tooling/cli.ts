@@ -7,7 +7,7 @@ import { requestTypeScriptRoot } from './typescript-selection.js';
 import { baselineBeforeRun, summarizeRun, watchPipeline } from './watch.js';
 export { providersFor, runPipeline } from './pipeline.js';
 export { watchPipeline } from './watch.js';
-export type { PipelineOptions, PipelineState } from './pipeline.js';
+export type { PipelineState } from './pipeline.js';
 
 export type Arguments =
   | { action: 'help' }

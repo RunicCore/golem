@@ -8,7 +8,6 @@ import {
   parameterSchema,
   type NormalizedDocument,
   type NormalizedOperation,
-  type OpenApiSchema,
 } from './normalize.js';
 import {
   buildRuntimeProjections,
@@ -746,5 +745,3 @@ export function buildOperationValidationSchemaBundle(
   if (!bundle) throw new Error(`Missing OpenAPI operation ${JSON.stringify(operation.name)}.`);
   return bundle;
 }
-
-export type { OpenApiSchema };
