@@ -12,5 +12,5 @@ export async function buildRecursiveNames(t: TestContext, sources: Record<string
   const built = await buildModelProject(root);
   assert.equal(built.code, 0, `${built.stdout}${built.stderr}`);
   const generated = Object.keys(sources).map(file => fs.readFileSync(path.join(sourceRoot, file.replace(/\.ts$/, '.generated.ts')), 'utf8')).join('\n');
-  return { root, names: [...new Set([...generated.matchAll(/\b(\w+)Fields\b/g)].map(match => match[1]!))].sort() };
+  return { root, names: [...new Set([...generated.matchAll(/\btype (\w+)Fields\b/g)].map(match => match[1]!))].sort() };
 }
