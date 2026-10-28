@@ -7,6 +7,7 @@ import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, 
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { compareText, displayPath } from '../generator-api.js';
+import { objectDiscriminator } from '../union-conversion.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
 import type {
   ModelConversionDescriptor,
@@ -118,38 +119,6 @@ function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol, valueTyp
 
 function tupleTarget(type: ts.Type): ts.TypeReference {
   return type as ts.TypeReference;
-}
-
-function descriptorDiscriminator(
-  descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'object' }>,
-): ReadonlyMap<string, string | number | boolean> {
-  const values = new Map<string, string | number | boolean>();
-  for (const name of descriptor.required) {
-    const property = descriptor.properties[name];
-    if (property?.kind === 'literal') values.set(name, property.value);
-  }
-  return values;
-}
-
-function hasUniqueDiscriminator(
-  alternatives: readonly Extract<ModelConversionDescriptor, { readonly kind: 'object' }>[],
-): boolean {
-  if (alternatives.length === 0) return false;
-  const candidates = descriptorDiscriminator(alternatives[0]);
-  for (const [property] of candidates) {
-    const values: (string | number | boolean)[] = [];
-    let valid = true;
-    for (const alternative of alternatives) {
-      const value = descriptorDiscriminator(alternative).get(property);
-      if (value === undefined || values.includes(value)) {
-        valid = false;
-        break;
-      }
-      values.push(value);
-    }
-    if (valid) return true;
-  }
-  return false;
 }
 
 /** `bigint` itself, not a bigint literal or a union containing one. */
@@ -268,7 +237,7 @@ function rejectAmbiguousGeneratedModelUnion(
   const objects = alternatives.filter(
     (item): item is Extract<ModelConversionDescriptor, { readonly kind: 'object' }> => item.kind === 'object',
   );
-  if (objects.length > 0 && !hasUniqueDiscriminator(objects)) {
+  if (objects.length > 0 && objectDiscriminator(objects) === undefined) {
     throw diagnostic(
       context.sourceFile,
       context.declaration,

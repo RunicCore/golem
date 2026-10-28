@@ -137,6 +137,29 @@ export const wrong: string = item.amount;
   await buildModelProject(root);
 });
 
+test('an SDK model beside objects tagged by a literal union generates and decodes each branch', async t => {
+  // protects: bug-sweep RUNM1030 once rejected an SDK model beside objects whose tag is a union of literals (`kind: 'a' | 'b'`), which union conversion accepts
+  const { root, sourceRoot } = fixture(t);
+  fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
+  writeGeneratedArtifacts((await generateOpenApi({
+    input: path.join(sourceRoot, 'money.yaml'),
+    output: path.join(sourceRoot, 'sdk'),
+    name: 'Payments',
+    profile: { mobx: false, validation: true },
+  })).artifacts);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Money } from './sdk/index.js';
+export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' } }>;
+`,
+  });
+  await buildModelProjectWith(root, { mobx: false, validation: true });
+  const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  for (const value of [{ kind: 'a', x: 1 }, { kind: 'b', x: 2 }, { kind: 'c' }, { amount: 5, currency: 'EUR' }]) {
+    assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(generated.TItemBaseModel, { value })), { value });
+  }
+});
+
 test('an IModel over an SDK model keeps a field spelled like a brand key and drops the real brand keys', async t => {
   // protects: F-213 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
   const { root, sourceRoot } = fixture(t);

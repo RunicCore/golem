@@ -1316,7 +1316,8 @@ function emitUnionValue(
       : code`(Array.isArray(${value}) ? ${items} : (${scalar}))`,
     beforeGenerated: (present) => {
       const objects = present.filter((variant): variant is ObjectTypeDescriptor => variant.kind === 'object');
-      if (objects.length > 1) {
+      // A generated model beside the objects is dispatched by their literal tags, which the generated step requires.
+      if (objects.length > 1 && !present.some((variant) => variant.kind === 'generated-model')) {
         const structured = objects.some((object) => {
           const node = ctx.graph.nodeFor(object);
           return Boolean(node) || Object.keys(object.properties).length > 0 || object.additionalProperties === false;
