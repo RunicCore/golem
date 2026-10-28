@@ -16,7 +16,7 @@ import type * as validationRuntime from '../validation-runtime.js';
 import { runtimeCode, type Code } from './code.js';
 
 /** The runtime subpaths (`@exprtlabs/golem/<key>`) and the values each one exports. */
-export interface RuntimeExports {
+interface RuntimeExports {
   readonly client: typeof client;
   readonly conversion: typeof conversion;
   readonly errors: typeof errors;
@@ -35,7 +35,7 @@ export type RuntimeModule = keyof RuntimeExports;
  * The type names that generated code may import, by runtime module. A type cannot be listed from a module's types, so
  * each name is written once here, and a name the module does not export is a type error.
  */
-export interface RuntimeTypeExports {
+interface RuntimeTypeExports {
   readonly model: {
     readonly GeneratedModel: model.GeneratedModel;
     readonly GeneratedModelConstructor: model.GeneratedModelConstructor;

@@ -156,7 +156,7 @@ ${methods}
 `);
 }
 
-export function generatedFiles(document: unknown, options: WriteSdkOptions): GeneratedFiles {
+function generatedFiles(document: unknown, options: WriteSdkOptions): GeneratedFiles {
   return withOrigins(options.locate, () => buildGeneratedFiles(document, options));
 }
 

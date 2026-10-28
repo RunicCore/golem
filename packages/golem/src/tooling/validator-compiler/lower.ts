@@ -7,12 +7,12 @@ import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrFunction, Ir
 import { JSON_TYPES } from './json-types.js';
 import { baseInside, pointerSegment, SchemaResolver, type SchemaLocation } from './resolve.js';
 
-export const VALIDATE_UNSUPPORTED_KEYWORD = 'VALIDATE_UNSUPPORTED_KEYWORD';
-export const VALIDATE_UNRESOLVED_REF = 'VALIDATE_UNRESOLVED_REF';
-export const VALIDATE_INVALID_PATTERN = 'VALIDATE_INVALID_PATTERN';
-export const VALIDATE_UNKNOWN_FORMAT = 'VALIDATE_UNKNOWN_FORMAT';
-export const VALIDATE_REF_CYCLE = 'VALIDATE_REF_CYCLE';
-export const VALIDATE_UNKNOWN_VALIDATION = 'VALIDATE_UNKNOWN_VALIDATION';
+const VALIDATE_UNSUPPORTED_KEYWORD = 'VALIDATE_UNSUPPORTED_KEYWORD';
+const VALIDATE_UNRESOLVED_REF = 'VALIDATE_UNRESOLVED_REF';
+const VALIDATE_INVALID_PATTERN = 'VALIDATE_INVALID_PATTERN';
+const VALIDATE_UNKNOWN_FORMAT = 'VALIDATE_UNKNOWN_FORMAT';
+const VALIDATE_REF_CYCLE = 'VALIDATE_REF_CYCLE';
+const VALIDATE_UNKNOWN_VALIDATION = 'VALIDATE_UNKNOWN_VALIDATION';
 
 /**
  * Validation keywords of JSON Schema 2020-12 that the compiler reports instead of ignoring, because

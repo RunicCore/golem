@@ -332,7 +332,7 @@ interface ScalarOrArray {
  * A union of one array or tuple and scalar variants (a JSON scalar or a literal union), the query-style shape, or one
  * Date: the wire value tells a string from an array. Generated models and untagged objects are not scalarish.
  */
-export function scalarOrArray(
+function scalarOrArray(
   present: readonly ModelTypeDescriptor[],
 ): ScalarOrArray | undefined {
   const sequences = present.filter(
@@ -354,7 +354,7 @@ interface ScalarArrayObject extends ScalarOrArray {
  * A union of scalar variants, one array or tuple, and one object or model: the shape of a JSON value. The value tells
  * the three apart without a tag: `Array.isArray`, then a non-null object, then a scalar.
  */
-export function scalarArrayObject(
+function scalarArrayObject(
   present: readonly ModelTypeDescriptor[],
 ): ScalarArrayObject | undefined {
   const objects = present.filter((variant) =>
@@ -368,7 +368,7 @@ export function scalarArrayObject(
  * The sequence branch of a scalar-or-array union, converted by item and with no guard: the union tests
  * `Array.isArray` once. A tuple converts each position as it does outside the union.
  */
-export function emitSequenceBranch(
+function emitSequenceBranch(
   sequence: ScalarOrArray['sequence'],
   expression: Code,
   items: SequenceItems,
@@ -384,14 +384,14 @@ export function emitSequenceBranch(
  * conversion must be the only scalar variant, as in a plain union: the wire
  * value cannot tell it from its siblings, so the union is rejected.
  */
-export function scalarBranchVariant(scalars: readonly ModelTypeDescriptor[]): ModelTypeDescriptor | undefined {
+function scalarBranchVariant(scalars: readonly ModelTypeDescriptor[]): ModelTypeDescriptor | undefined {
   const converting = scalars.filter((scalar) => descriptorNeedsConversion(scalar));
   if (converting.length === 0) return undefined;
   if (scalars.length > 1) throw new AmbiguousUnionConversionError(scalars);
   return converting[0];
 }
 
-export function emitScalarOrArrayConversion(
+function emitScalarOrArrayConversion(
   value: Code,
   mappedArray: Code,
   scalar: Code,
@@ -406,7 +406,7 @@ export type UnionDirection = 'decode' | 'encode' | 'stringify' | 'nested';
 type GeneratedModelTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'generated-model' }>;
 
 /** A union of one generated model and tagged objects, or scalars: the model takes the objects whose tag does not match. */
-export interface GeneratedWithObjects {
+interface GeneratedWithObjects {
   /** The conversion of the model; undefined when this walker emits no class for it. */
   readonly text: (generated: GeneratedModelTypeDescriptor) => Code | undefined;
   /** The tag tests of the object variants. */

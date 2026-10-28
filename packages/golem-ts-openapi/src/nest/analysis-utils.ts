@@ -9,7 +9,7 @@ import {
 import { evaluateRouteExpression } from '../evaluation/evaluate.js';
 import type { DecoratorInfo, NestAnalysisContext, TypeReference } from './types.js';
 
-export function isDecorator(info: DecoratorInfo, name: string, packageName?: string): boolean {
+function isDecorator(info: DecoratorInfo, name: string, packageName?: string): boolean {
   return info.name === name && (packageName === undefined || info.packageName === packageName);
 }
 
@@ -291,7 +291,7 @@ export function containsUndefined(type: ts.Type): boolean {
   return type.isUnion() && type.types.some(item => (item.flags & ts.TypeFlags.Undefined) !== 0);
 }
 
-export function isPrimitive(type: ts.Type): boolean {
+function isPrimitive(type: ts.Type): boolean {
   return (type.flags & (
     ts.TypeFlags.StringLike
     | ts.TypeFlags.NumberLike

@@ -1,6 +1,6 @@
 import { objectEntries } from './json.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
-import { parameterSchema, resolveLocal, type NormalizedOperation, type OpenApiSchema } from './normalize.js';
+import { parameterSchema, resolveLocal, type NormalizedOperation } from './normalize.js';
 import { type OpenApiModelAnalysis, modelEnv, type CompositionSite, checkComposition } from './model-resolution.js';
 import { checkModelFromJSON, checkModelToJSON } from './model-emission.js';
 
@@ -61,4 +61,3 @@ export { analyzeOpenApiModels } from './model-schema-graph.js';
 export { generateModels, generateOpenApiModelArtifacts } from './model-emission.js';
 export { generateModelManifest } from './model-manifest.js';
 export type { OpenApiDates } from './model-resolution.js';
-export type { OpenApiSchema };

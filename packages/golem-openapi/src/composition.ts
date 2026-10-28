@@ -103,7 +103,7 @@ export type Composition<S> =
   | { readonly kind: 'members' }
   | { readonly kind: 'rejected'; readonly code: string; readonly message: string };
 
-export type ObjectComposition<S> = Extract<Composition<S>, { readonly kind: 'object' }>;
+type ObjectComposition<S> = Extract<Composition<S>, { readonly kind: 'object' }>;
 
 /** An allOf member that converts nothing: it adds constraints, or nothing at all (`{ description }`, `{}`). */
 export function isConstraintOnlyPart(part: ModelTypeDescriptor): boolean {
