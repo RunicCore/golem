@@ -438,15 +438,15 @@ export function emitUnionConversion(
     return sameCode(converted, value) ? value : code`${value} == null ? ${value} : (${converted})`;
   }
   const nullable = present.length !== descriptor.variants.length;
-  // A Date, and in stringify any scalar writer other than the plain one, converts no null or undefined, so the nullish
-  // variants of the union stop at a guard before its conversion.
+  // A scalar that converts (a Date or a serde scalar), and in stringify any scalar writer other than the plain one, converts no
+  // null or undefined, so the nullish variants of the union stop at a guard before its conversion.
   const scalarBranch = (scalars: readonly ModelTypeDescriptor[]): Code => {
     const variant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
     if (!variant) return plain;
     const converted = convert(variant);
     if (!nullable) return converted;
     if (json) return sameCode(converted, plain) ? converted : code`(${value} == null ? 'null' : (${converted}))`;
-    return variant.kind === 'date' ? code`(${value} == null ? ${value} : (${converted}))` : converted;
+    return sameCode(converted, plain) ? converted : code`(${value} == null ? ${value} : (${converted}))`;
   };
   /**
    * Tagged dispatch. Under a declared table the JSON type goes first: an array or tuple, a scalar or null take their own
