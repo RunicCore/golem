@@ -11,15 +11,19 @@ import { createFixtureProject, linkProjectPackages, readFixture, snapshotFilesys
 import { createControllerFixture } from './fixture-templates/controllers/project.js';
 import { createModelProject } from './model-project.js';
 import { command, workspace } from './support/process.js';
-import { MAIN, MODELS_YAML, NODE_FLAGS, SERDE, frameLine, lineOf, project, run, write } from './support/loader-project.js';
+import { MAIN, MODELS_YAML, NODE_FLAGS, SERDE, frameLine, lineOf, project, run, workspacePackage, write } from './support/loader-project.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
+
+/** Runs `file` through the loader and returns the JSON on the first line it printed; a run that fails fails the test with its stderr. */
+async function runJson(root: string, file: string, options?: Parameters<typeof run>[2]): Promise<unknown> {
+  const result = await run(root, file, options);
+  assert.equal(result.code, 0, result.stderr);
+  return JSON.parse(result.stdout.split('\n')[0]!);
+}
 
 test('node runs a TypeScript file whose parse and stringify calls the host rewrites', async (t) => {
   const root = await project(t, 'loader-run');
-  const result = await run(root, 'src/main.ts');
-  assert.equal(result.code, 0, result.stderr);
-  const [json] = result.stdout.split('\n');
-  assert.deepEqual(JSON.parse(json!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+  assert.deepEqual(await runJson(root, 'src/main.ts'), { money: { currency: 'USD', value: '1' }, twice: 42 });
 });
 
 test('a validating model project runs when its sources and its companions are imported with .js specifiers', async (t) => {
@@ -41,9 +45,7 @@ test('a validating model project runs when its sources and its companions are im
     '',
   ].join('\n'));
   await runPipeline(path.join(root, 'golem.yaml'));
-  const result = await run(root, 'src/main.ts');
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { good: true, bad: false });
+  assert.deepEqual(await runJson(root, 'src/main.ts'), { good: true, bad: false });
 });
 
 test('a construct option the call passes wins over the rewrite default, given as shorthand or inside a variable', async (t) => {
@@ -65,9 +67,7 @@ test('a construct option the call passes wins over the rewrite default, given as
     '}));',
     '',
   ].join('\n'));
-  const result = await run(root, 'src/main.ts');
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { plain: true, shorthand: true, variable: true, other: true });
+  assert.deepEqual(await runJson(root, 'src/main.ts'), { plain: true, shorthand: true, variable: true, other: true });
 });
 
 test('a parse call whose class comes through a type-only namespace import runs', async (t) => {
@@ -82,9 +82,7 @@ test('a parse call whose class comes through a type-only namespace import runs',
     "console.log(JSON.stringify({ id: payment.id, built: payment.constructor.name }));",
     '',
   ].join('\n'));
-  const result = await run(root, 'src/main.ts');
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { id: '1', built: 'Payment' });
+  assert.deepEqual(await runJson(root, 'src/main.ts'), { id: '1', built: 'Payment' });
 });
 
 test('a model named only as a type in a parse call has its codec registered with no import of its module', async (t) => {
@@ -97,9 +95,7 @@ test('a model named only as a type in a parse call has its codec registered with
     'console.log(JSON.stringify(money));',
     '',
   ].join('\n'));
-  const result = await run(root, 'src/main.ts');
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { currency: 'USD', value: '1' });
+  assert.deepEqual(await runJson(root, 'src/main.ts'), { currency: 'USD', value: '1' });
 });
 
 test('a stack trace through a rewritten file names its original line', async (t) => {
@@ -130,9 +126,7 @@ test('a project with no golem.yaml fails the run with the config error', async (
 
 test('GOLEM_CONFIG names the golem.yaml when the working directory has none', async (t) => {
   const root = await project(t, 'loader-env-config');
-  const result = await run(root, 'main.ts', { cwd: path.join(root, 'src'), env: { GOLEM_CONFIG: '../golem.yaml' } });
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+  assert.deepEqual(await runJson(root, 'main.ts', { cwd: path.join(root, 'src'), env: { GOLEM_CONFIG: '../golem.yaml' } }), { money: { currency: 'USD', value: '1' }, twice: 42 });
 });
 
 test('an empty GOLEM_CONFIG is no setting: the golem.yaml of the working directory is used', async (t) => {
@@ -166,9 +160,7 @@ test('a file with a byte order mark, CRLF line ends and Vietnamese text runs rew
 test('a .mts file whose tsconfig include misses it runs rewritten', async (t) => {
   const root = await project(t, 'loader-mts');
   write(root, 'src/listed.mts', MAIN);
-  const result = await run(root, 'src/listed.mts');
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { money: { currency: 'USD', value: '1' }, twice: 42 });
+  assert.deepEqual(await runJson(root, 'src/listed.mts'), { money: { currency: 'USD', value: '1' }, twice: 42 });
 });
 
 /** A directory next to the project, as a workspace package that the project imports from its real path: outside the golem.yaml's tsconfig directory. */
@@ -192,11 +184,7 @@ test('a parse call in a file outside the project runs rewritten', async (t) => {
 
 /** A workspace package of `root` linked into its node_modules, with one parse call; `src/linked.ts` imports it. */
 function linkedPackage(t: TestContext, root: string, preserveSymlinks = false): void {
-  const workspacePackage = createFixtureProject(t, 'golem-loader-workspace-package-');
-  if (!preserveSymlinks) linkProjectPackages(workspacePackage, { '@exprtlabs/golem': path.join(workspace, 'packages/golem') });
-  write(workspacePackage, 'package.json', JSON.stringify({ name: 'workspace-lib', type: 'module', exports: './lib.ts' }));
-  write(workspacePackage, 'lib.ts', `import { parse } from '${SERDE}';\nimport type { TMoney } from '${path.join(root, 'src/money.model.ts')}';\nexport const value = parse<TMoney>('{"currency":"USD","value":"1"}');\n`);
-  linkProjectPackages(root, { 'workspace-lib': workspacePackage });
+  workspacePackage(t, root, preserveSymlinks);
   write(root, 'src/linked.ts', "import './money.model.ts';\nimport { value } from 'workspace-lib';\nconsole.log(JSON.stringify(value));\n");
 }
 
@@ -310,28 +298,11 @@ console.log(JSON.stringify({ stamped: codec !== undefined, parsed: codec?.parse(
 `;
 
 test('a Nest controller with a @Body() model parameter carries nestModelCodec metadata when the loader runs it, in a project whose yaml has a controllers job', async (t) => {
-  const root = createControllerFixture(t, {
-    prefix: 'golem-loader-nest-',
-    links: 'workspace',
-    tsconfig: {
-      compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, experimentalDecorators: true, skipLibCheck: true, noEmit: true, allowImportingTsExtensions: true },
-      include: ['src/**/*.ts'],
-    },
-    files: {
-      'golem.yaml': MODELS_YAML,
-      'src/payment.model.ts': readFixture('controllers/nest-plugin/project/payment.model.ts').replace('.generated.js', '.generated.ts'),
-      'src/payments.controller.ts': NEST_CONTROLLER,
-      'src/main.ts': NEST_MAIN,
-    },
-  });
-  await runPipeline(path.join(root, 'golem.yaml'));
-  write(root, 'golem.yaml', `${MODELS_YAML}controllers:\n  - root: .\n    output: generated/api.json\n    info: { title: Payments, version: "1" }\n`);
-  const result = await run(root, 'src/main.ts');
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { stamped: true, parsed: { id: '1', note: 'hello' } });
+  const root = await nestCodecProject(t, NEST_CONTROLLER, NEST_MAIN);
+  assert.deepEqual(await runJson(root, 'src/main.ts'), { stamped: true, parsed: { id: '1', note: 'hello' } });
 });
 
-/** A Nest project whose controller names the model only as a type; `main` runs with no import of the model module. */
+/** A Nest project with a controllers job; `controller` and `main` are its source files. */
 async function nestCodecProject(t: TestContext, controller: string, main: string): Promise<string> {
   const root = createControllerFixture(t, {
     prefix: 'golem-loader-nest-codec-',
@@ -372,9 +343,7 @@ test('a @Body() IObject alias named only as a type has its codec registered with
     "console.log(JSON.stringify({ stamped: codec !== undefined, parsed: codec?.parse('{\"note\":\"hello\"}') }));",
     '',
   ].join('\n'));
-  const result = await run(root, 'src/main.ts');
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { stamped: true, parsed: { note: 'hello' } });
+  assert.deepEqual(await runJson(root, 'src/main.ts'), { stamped: true, parsed: { note: 'hello' } });
 });
 
 test('a model named only in an async Promise return has its codec registered with no import of its module', async (t) => {
@@ -398,9 +367,7 @@ test('a model named only in an async Promise return has its codec registered wit
     "console.log(JSON.stringify({ registered: getObjectCodec(id) !== undefined }));",
     '',
   ].join('\n'));
-  const result = await run(root, 'src/main.ts');
-  assert.equal(result.code, 0, result.stderr);
-  assert.deepEqual(JSON.parse(result.stdout.split('\n')[0]!), { registered: true });
+  assert.deepEqual(await runJson(root, 'src/main.ts'), { registered: true });
 });
 
 test('files under node_modules, other schemes and non-TypeScript files pass through without opening a project', async (t) => {

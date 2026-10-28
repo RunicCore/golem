@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { workspace } from './support/process.js';
+import { stopChild, workspace } from './support/process.js';
 import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
 import { until } from './support/watch-wait.js';
 import { runLines } from './support/watch-runs.js';
@@ -75,10 +75,6 @@ test('watch reuses one compiler across edits and tsconfig path-mapping changes',
     await until(() => generated().includes('ambientShape'), () => `an include edit is applied ${context()}`);
     if (!skipOnTypeScript6) assert.deepEqual(compilerChildren(child.pid!), [compiler], 'edits reuse the running compiler');
   } finally {
-    if (child.exitCode === null && child.signalCode === null) {
-      const closed = new Promise<void>(resolve => child.once('close', () => resolve()));
-      child.kill('SIGTERM');
-      await closed;
-    }
+    await stopChild(child);
   }
 });

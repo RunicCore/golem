@@ -12,7 +12,7 @@ import { OwnedOutputIndex, realInputFiles } from '#golem/input-watcher';
 import type { InputFiles } from '#golem/input-watcher';
 import { write } from './support/build-project.js';
 import { workspace } from './support/process.js';
-import { compilerChildren, generationWatchFixture, skipOnTypeScript6 } from './support/generation-watch.js';
+import { compilerChildren, generationWatchFixture, skipOnTypeScript6, startGenerationWatch } from './support/generation-watch.js';
 import { countingInputFiles, quietly, until } from './support/watch-wait.js';
 
 test('owned output index excludes exactly the outputs and the directories containing them', () => {
@@ -42,9 +42,7 @@ test('owned output index excludes exactly the outputs and the directories contai
 
 test('watch recovers when a referenced local schema file is introduced after the document that references it', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns();
-  const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
+  const { runs, errors, stop } = startGenerationWatch(config);
 
   try {
     await until(() => runs() === 1, 'initial generation');
@@ -95,9 +93,7 @@ test('watch started on a golem.yaml that is not YAML reports its file, line and 
   const { config } = generationWatchFixture(t);
   const valid = fs.readFileSync(config, 'utf8');
   fs.writeFileSync(config, `${valid}version: 1\n`);
-  const runs = countRuns();
-  const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
+  const { runs, errors, stop } = startGenerationWatch(config);
   try {
     await until(() => errors.length > 0, 'the broken golem.yaml is reported');
     assert.ok(errors[0] instanceof Error);
@@ -116,12 +112,10 @@ test('each watch run prints the result of every job and its time; the run after 
   // protects: T-312 each watch run says what it did; only a job that failed before writing says its last good output stays
   const { root, config } = generationWatchFixture(t);
   const valid = fs.readFileSync(config, 'utf8');
-  const runs = countRuns();
-  const lines = runs.lines;
-  const errors: unknown[] = [];
   const reported = (): string => errors.map(String).join('; ');
   const results = (line: string): string[] => line.replace(/^Recovered: /, '').split(' · ').slice(0, -1);
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
+  const { runs, errors, stop } = startGenerationWatch(config);
+  const lines = runs.lines;
   try {
     await until(() => lines.length === 1, 'the first run is summarized');
     assert.match(lines[0], / · \d+ ms$/);
@@ -164,8 +158,6 @@ test('a scan that fails after a good run is reported, and the run keeps its line
   const model = path.join(root, 'src/cart.model.ts');
   const companion = path.join(root, 'src/cart.model.generated.ts');
   const goodModel = fs.readFileSync(model, 'utf8');
-  const runs = countRuns();
-  const errors: unknown[] = [];
   // The scan after the run is the first stat that finds the run's output: the scans before it do not.
   let armed = false;
   const files: Partial<InputFiles> = {
@@ -177,7 +169,7 @@ test('a scan that fails after a good run is reported, and the run keeps its line
       return realInputFiles.stat(filename);
     },
   };
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files });
+  const { runs, errors, stop } = startGenerationWatch(config, { files });
   try {
     await until(() => runs() === 1, 'initial generation');
     fs.writeFileSync(model, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCart = IModel<{ half: string & }>;\n");
@@ -198,8 +190,6 @@ test('a job record that cannot be saved after the job wrote its files is reporte
   const { root, config } = generationWatchFixture(t);
   const model = path.join(root, 'src/cart.model.ts');
   const companion = path.join(root, 'src/cart.model.generated.ts');
-  const runs = countRuns();
-  const errors: unknown[] = [];
   let armed = false;
   const rename = (from: string, to: string): void => {
     if (armed && path.basename(to) === 'jobs.json') {
@@ -208,7 +198,7 @@ test('a job record that cannot be saved after the job wrote its files is reporte
     }
     fs.renameSync(from, to);
   };
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files: { rename } });
+  const { runs, errors, stop } = startGenerationWatch(config, { files: { rename } });
   try {
     await until(() => runs() === 1, 'initial generation');
     armed = true;
@@ -223,7 +213,11 @@ test('a job record that cannot be saved after the job wrote its files is reporte
   }
 });
 
-test('watch keeps model dependencies outside the models root after a run that reuses the models job', async (t: TestContext) => {
+/**
+ * The generation fixture with its models job moved into `app`, whose `cart.model.ts` imports `Note` from `shared/note.ts`, which the caller writes or leaves missing.
+ * The tsconfig of `app` lists only its `src`, so the shared type is reached only through the import, not the project file list.
+ */
+function appImportingShared(t: TestContext): { root: string; config: string; app: string } {
   const { root, config } = generationWatchFixture(t);
   const app = path.join(root, 'app');
   fs.mkdirSync(path.join(app, 'src'), { recursive: true });
@@ -231,11 +225,8 @@ test('watch keeps model dependencies outside the models root after a run that re
   fs.rmSync(path.join(root, 'src'), { recursive: true, force: true });
   fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({
     compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true },
-    // The shared type is reached only through the import, not the project file list.
     include: ['src/**/*.ts'],
   }));
-  const shared = path.join(root, 'shared/note.ts');
-  fs.writeFileSync(shared, 'export type Note = { text: string };\n');
   fs.writeFileSync(path.join(app, 'src/cart.model.ts'), [
     "import type { IModel } from '@exprtlabs/golem/model';",
     "import type { Note } from '../../shared/note.js';",
@@ -245,6 +236,13 @@ test('watch keeps model dependencies outside the models root after a run that re
   ].join('\n'));
   // The models job lies in `app`, so the yaml names the tsconfig of `app`.
   fs.writeFileSync(config, `tsconfig: app/tsconfig.json\n${fs.readFileSync(config, 'utf8').replace('root: .', 'root: app')}`);
+  return { root, config, app };
+}
+
+test('watch keeps model dependencies outside the models root after a run that reuses the models job', async (t: TestContext) => {
+  const { root, config, app } = appImportingShared(t);
+  const shared = path.join(root, 'shared/note.ts');
+  fs.writeFileSync(shared, 'export type Note = { text: string };\n');
   const state = await runPipeline(config);
   const modelInputs = state.results.get('models:app')?.watchInputs ?? [];
   assert.ok(modelInputs.includes(shared), 'the out-of-root import is a models dependency');
@@ -255,10 +253,7 @@ test('watch keeps model dependencies outside the models root after a run that re
     [],
     'installed, linked and TypeScript library files are not models dependencies',
   );
-  const runs = countRuns();
-  const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
-  const context = (): string => `(errors=${errors.map(String).join('; ')})`;
+  const { runs, errors, context, stop } = startGenerationWatch(config);
 
   try {
     const companion = path.join(app, 'src/cart.model.generated.ts');
@@ -290,9 +285,7 @@ test('watch generates a new file that ends in a configured model suffix', async 
   fs.writeFileSync(config, fs.readFileSync(config, 'utf8').replace('models:\n  root: .\n', 'models:\n  root: .\n  suffixes: [.entity.ts]\n'));
   const entity = (name: string): string => `import type { IModel } from '@exprtlabs/golem/model';\n\nexport type T${name} = IModel<{ id: string }>;\n`;
   fs.writeFileSync(path.join(root, 'src/cart.entity.ts'), entity('Cart'));
-  const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); });
-  const context = (): string => `(errors=${errors.map(String).join('; ')})`;
+  const { errors, stop, context } = startGenerationWatch(config);
   try {
     await until(() => fs.existsSync(path.join(root, 'src/cart.entity.generated.ts')), () => `initial generation ${context()}`);
     fs.writeFileSync(path.join(root, 'src/pet.entity.ts'), entity('Pet'));
@@ -307,9 +300,7 @@ test('watch generates a new model file in a folder of the models root outside sr
   const { root, config } = generationWatchFixture(t);
   const tsconfig = path.join(root, 'tsconfig.json');
   fs.writeFileSync(tsconfig, fs.readFileSync(tsconfig, 'utf8').replace('"src/**/*.ts"', '"src/**/*.ts", "lib/**/*.ts"'));
-  const runs = countRuns();
-  const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
+  const { runs, errors, stop } = startGenerationWatch(config);
   try {
     await until(() => runs() === 1, 'initial generation');
     fs.mkdirSync(path.join(root, 'lib'));
@@ -325,8 +316,6 @@ test('watch generates a new model file in a folder of the models root outside sr
 test('watch generates a new file that a run in flight did not read', async (t: TestContext) => {
   // protects: T-307 a model file created during a run is generated without another edit
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns();
-  const errors: unknown[] = [];
   const companion = path.join(root, 'src/cart.model.generated.ts');
   let createWhileRunning = false;
   // The companion is published by rename after the run read its sources: create a model file at that moment.
@@ -337,7 +326,7 @@ test('watch generates a new file that a run in flight did not read', async (t: T
     }
     fs.renameSync(from, to);
   };
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files: { rename } });
+  const { runs, errors, stop } = startGenerationWatch(config, { files: { rename } });
   try {
     await until(() => runs() === 1, 'initial generation');
     createWhileRunning = true;
@@ -353,10 +342,8 @@ test('watch generates a new file that a run in flight did not read', async (t: T
 test('a file that is no source, added to a watched folder, starts no run', async (t: TestContext) => {
   // protects: T-307 only a source name added to a folder starts a run
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns();
-  const errors: unknown[] = [];
   const source = path.join(root, 'src/cart.model.ts');
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
+  const { runs, errors, stop } = startGenerationWatch(config);
   try {
     await until(() => runs() === 1, 'initial generation');
     fs.writeFileSync(path.join(root, 'src/style.css'), 'a { color: red }\n');
@@ -374,16 +361,13 @@ test('a file that is no source, added to a watched folder, starts no run', async
 test('an editor save by renaming over the file, a save through a backup file and a delete each start one run', async (t: TestContext) => {
   // protects: R-31 the events of an editor's save and of a delete reach the watch as one run each
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns();
-  const errors: unknown[] = [];
   const source = path.join(root, 'src/cart.model.ts');
   const companion = path.join(root, 'src/cart.model.generated.ts');
   const pet = path.join(root, 'src/pet.model.ts');
   const original = fs.readFileSync(source, 'utf8');
   const edited = (field: string): string => original.replace('note: string', `note: string; ${field}?: boolean`);
   const generated = (): string => fs.existsSync(companion) ? fs.readFileSync(companion, 'utf8') : '';
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
-  const context = (): string => `(errors=${errors.map(String).join('; ')})`;
+  const { runs, errors, context, stop } = startGenerationWatch(config);
   try {
     await until(() => runs() === 1, `initial generation ${context()}`);
     fs.writeFileSync(`${source}.new`, edited('renamedOver'));
@@ -420,10 +404,7 @@ test('a package manager marker starts one full run, and a change inside node_mod
   const document = JSON.parse(fs.readFileSync(api, 'utf8')) as { paths: Record<string, unknown> };
   document.paths['/user'] = { get: { operationId: 'getUser', responses: { 200: { description: 'User', content: { 'application/json': { schema: { $ref: './node_modules/shared-schemas/user.json' } } } } } } };
   fs.writeFileSync(api, JSON.stringify(document));
-  const runs = countRuns();
-  const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
-  const context = (): string => `(errors=${errors.map(String).join('; ')})`;
+  const { runs, errors, context, stop } = startGenerationWatch(config);
   try {
     await until(() => runs() === 1, () => `initial generation runs=${runs()} ${context()}`);
     assert.match(text(), /firstName/);
@@ -448,10 +429,8 @@ test('an idle watch makes no stat or folder listing, and stopping it closes its 
   // protects: R-31 an idle watch costs nothing; the stop closes every watcher
   // The count is of the calls the InputFiles seam carries (stat, list). Real paths are read only when a run ends, and files only by a run.
   const { config } = generationWatchFixture(t);
-  const runs = countRuns();
-  const errors: unknown[] = [];
   const counted = countingInputFiles();
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files: counted.files });
+  const { runs, errors, stop } = startGenerationWatch(config, { files: counted.files });
   try {
     await until(() => runs() === 1, 'initial generation');
     assert.ok(counted.openWatches() > 0, 'the folders are watched');
@@ -470,26 +449,9 @@ test('an idle watch makes no stat or folder listing, and stopping it closes its 
 
 test('watch generates once a missing file outside the models root, imported by a model, is created', async (t: TestContext) => {
   // protects: R-31 a failed run's missing import outside the root is an input; its folder is watched
-  const { root, config } = generationWatchFixture(t);
-  const app = path.join(root, 'app');
-  fs.mkdirSync(path.join(app, 'src'), { recursive: true });
-  fs.mkdirSync(path.join(root, 'shared'), { recursive: true });
-  fs.rmSync(path.join(root, 'src'), { recursive: true, force: true });
-  fs.writeFileSync(path.join(app, 'tsconfig.json'), JSON.stringify({
-    compilerOptions: { target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', strict: true, skipLibCheck: true },
-    include: ['src/**/*.ts'],
-  }));
+  const { root, config, app } = appImportingShared(t);
   fs.writeFileSync(path.join(root, 'shared/other.ts'), 'export type Other = number;\n');
-  fs.writeFileSync(path.join(app, 'src/cart.model.ts'), [
-    "import type { IModel } from '@exprtlabs/golem/model';",
-    "import type { Note } from '../../shared/note.js';",
-    '',
-    'export type TCart = IModel<{ note: Note }>;',
-    '',
-  ].join('\n'));
-  fs.writeFileSync(config, `tsconfig: app/tsconfig.json\n${fs.readFileSync(config, 'utf8').replace('root: .', 'root: app')}`);
-  const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const { errors, stop } = startGenerationWatch(config);
   try {
     await until(() => errors.length > 0, 'the missing import is reported');
     fs.writeFileSync(path.join(root, 'shared/note.ts'), 'export type Note = { text: string };\n');
@@ -502,10 +464,8 @@ test('watch generates once a missing file outside the models root, imported by a
 test('a watch that can watch no folder reports it with its fix, runs nothing and tells its caller', async (t: TestContext) => {
   // protects: R-31 no working watcher ends the watch with a failure instead of an idle process
   const { config } = generationWatchFixture(t);
-  const runs = countRuns();
-  const errors: Error[] = [];
   let unwatchable = 0;
-  const stop = watchPipeline(config, error => { errors.push(error as Error); }, { onUnwatchable: () => { unwatchable += 1; }, onRun: runs.onRun, files: { watch: () => { throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' }); } } });
+  const { runs, errors, stop } = startGenerationWatch(config, { onUnwatchable: () => { unwatchable += 1; }, files: { watch: () => { throw Object.assign(new Error('ENOSPC: System limit for number of file watchers reached'), { code: 'ENOSPC' }); } } });
   try {
     await until(() => unwatchable === 1, 'the caller is told');
     assert.match(errors.map(String).join('\n'), /fs\.inotify\.max_user_watches/);
@@ -544,9 +504,7 @@ for (const [way, include] of [['outside the root', '../shared/**/*.ts'], ['behin
   test(`watch generates a new model file in a shared folder ${way}`, async (t: TestContext) => {
     // protects: T-308 a model file added to a shared folder is generated by golem watch
     const { root, config } = sharedModelFixture(t, include);
-    const errors: unknown[] = [];
-    const stop = watchPipeline(config, error => { errors.push(error); });
-    const context = (): string => `(errors=${errors.map(String).join('; ')})`;
+    const { errors, stop, context } = startGenerationWatch(config);
     try {
       // The app writes the companion of a shared model into its own output, in the folder of the shared package.
       const companion = (name: string): string => path.join(root, 'app/src/generated/models/shared', `${name}.model.generated.ts`);
@@ -565,9 +523,7 @@ test('watch generates a new model file in a shared folder that holds only a help
   fs.rmSync(path.join(root, 'shared/money.model.ts'));
   fs.mkdirSync(path.join(root, 'shared/billing'));
   fs.writeFileSync(path.join(root, 'shared/billing/rules.ts'), 'export type Rate = number;\n');
-  const runs = countRuns();
-  const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
+  const { runs, errors, stop } = startGenerationWatch(config);
   try {
     await until(() => runs() === 1, () => `initial generation (errors=${errors.map(String).join('; ')})`);
     fs.writeFileSync(path.join(root, 'shared/billing/invoice.model.ts'), newModel('Invoice'));
@@ -581,8 +537,7 @@ test('watch generates a new model file in a shared folder that holds only a help
 
 test('stopping an in-process watch closes its compiler', { skip: process.platform === 'win32' || skipOnTypeScript6 }, async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
-  const errors: unknown[] = [];
-  const stop = watchPipeline(config, error => { errors.push(error); });
+  const { errors, stop } = startGenerationWatch(config);
   const companion = path.join(root, 'src/cart.model.generated.ts');
   try {
     await until(() => fs.existsSync(companion) && compilerChildren(process.pid).length > 0, 'initial generation starts the compiler');
@@ -604,22 +559,14 @@ test('a pipeline session closes the compiler of a removed job', { skip: process.
   await until(() => compilerChildren(process.pid).length === 0, 'the removed job closes its compiler');
 });
 
-/** Counts the good runs of a watch: pass `onRun` to `watchPipeline`; `lines` holds the line of each run, in order. */
-function countRuns(): (() => number) & { readonly lines: string[]; readonly onRun: (line: string) => void } {
-  const lines: string[] = [];
-  return Object.assign(() => lines.length, { lines, onRun: (line: string): void => { lines.push(line); } });
-}
-
 test('edits that land between two ticks produce one run with the final content', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns();
-  const errors: unknown[] = [];
   const source = path.join(root, 'src/cart.model.ts');
   const companion = path.join(root, 'src/cart.model.generated.ts');
   const original = fs.readFileSync(source, 'utf8');
   const edit = (field: string): void => fs.writeFileSync(source, original.replace('note: string', `note: string; ${field}?: boolean`));
   const generated = (): string => fs.existsSync(companion) ? fs.readFileSync(companion, 'utf8') : '';
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun });
+  const { runs, errors, stop } = startGenerationWatch(config);
   try {
     await until(() => runs() === 1, 'initial generation');
     // Both writes run in one turn of the event loop, so no tick can observe the first alone.
@@ -640,8 +587,6 @@ test('edits that land between two ticks produce one run with the final content',
 
 test('an edit during a running generation triggers exactly one follow-up run with the latest content', async (t: TestContext) => {
   const { root, config } = generationWatchFixture(t);
-  const runs = countRuns();
-  const errors: unknown[] = [];
   const source = path.join(root, 'src/cart.model.ts');
   const companion = path.join(root, 'src/cart.model.generated.ts');
   const original = fs.readFileSync(source, 'utf8');
@@ -657,7 +602,7 @@ test('an edit during a running generation triggers exactly one follow-up run wit
     }
     fs.renameSync(from, to);
   };
-  const stop = watchPipeline(config, error => { errors.push(error); }, { onRun: runs.onRun, files: { rename } });
+  const { runs, errors, stop } = startGenerationWatch(config, { files: { rename } });
   try {
     await until(() => runs() === 1, 'initial generation');
     editWhileRunning = true;
