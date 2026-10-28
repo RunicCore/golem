@@ -1,5 +1,5 @@
 import type { IModel } from '@exprtlabs/golem/model';
-import type { Maximum, MinLength, Minimum, Pattern } from '@exprtlabs/golem/tags';
+import type { Discriminator, Maximum, MinLength, Minimum, Pattern } from '@exprtlabs/golem/tags';
 import { TAllBaseModel, TPlaceBaseModel } from './parts.model.generated.js';
 
 export type TIdentified = IModel<{ id: string & MinLength<1> & Pattern<'^[a-z]+$'>; kind: 'person' | 'robot' }>;
@@ -12,7 +12,7 @@ type Scale = { scale: 1 | 2 | 4 };
 
 export type TPlace = IModel<{
   where: Geo & Label;
-  spot: (Geo & Scale & { shape: 'point' }) | (Label & Scale & { shape: 'name' });
+  spot: ((Geo & Scale & { shape: 'point' }) | (Label & Scale & { shape: 'name' })) & Discriminator<'shape'>;
   size: number & Minimum<0> & Maximum<100> & Minimum<1>;
   tagged: ('a' | 'b') & { note: string };
 }>;

@@ -1,5 +1,5 @@
 import type { IModel, IObject } from '@exprtlabs/golem/model';
-import type { MinLength } from '@exprtlabs/golem/tags';
+import type { MinLength, Discriminator } from '@exprtlabs/golem/tags';
 import { TAddressBaseModel, TCustomerBaseModel, TNodeBaseModel } from './customer.model.generated.js';
 
 export type TAddress = IModel<{ id: string; city: string & MinLength<2>; country?: string }>;
@@ -14,7 +14,7 @@ export type TCustomer = IModel<{
   readonlyAddress: Readonly<TAddress>;
   inline: { street: string; since: Date };
   previous: TAddress[];
-  contact: Contact;
+  contact: Contact & Discriminator<'kind'>;
   selected: Extract<Contact, { kind: 'email' }>;
 }>;
 export type TNode = IModel<{ label: string; children: TNode[] }>;

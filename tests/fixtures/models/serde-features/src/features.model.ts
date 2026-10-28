@@ -1,5 +1,5 @@
 import type { IModel } from '@exprtlabs/golem/model';
-import type { Integer, MinLength, Minimum, Pattern, TSerde, TValidation } from '@exprtlabs/golem/tags';
+import type { Integer, MinLength, Minimum, Pattern, TSerde, TValidation, Discriminator } from '@exprtlabs/golem/tags';
 import type { PermissionBits, ProjectName } from './access-rules.js';
 import type { Email, Money, Phone } from './feature-tags.js';
 import type { HexCode, PlainHexCode, PlainMoney, PlainPermissions, PlainYesNo, Stamp, YesNo } from './feature-tags.js';
@@ -65,7 +65,7 @@ export type TContactEmail = IModel<{ kind: 'email'; address: Email }>;
 export class ContactEmail extends TContactEmailBaseModel {}
 export type TContactPhone = IModel<{ kind: 'phone'; number: Phone }>;
 export class ContactPhone extends TContactPhoneBaseModel {}
-export type TContact = IModel<{ value: ContactEmail | ContactPhone }>;
+export type TContact = IModel<{ value: (ContactEmail | ContactPhone) & Discriminator<'kind'> }>;
 export class Contact extends TContactBaseModel {}
 
 export type TComposeCustomer = IModel<{
@@ -123,7 +123,7 @@ export type TCheckout = IModel<{
   items: Array<{ sku: string & MinLength<3> }>;
   primary: LineItem;
   flags: Record<string, string>;
-  channel: { kind: 'open' } | { kind: 'hold'; until: Date };
+  channel: ({ kind: 'open' } | { kind: 'hold'; until: Date }) & Discriminator<'kind'>;
   span: [Date, Date];
   hold: Date | null;
   bag?: { lane: string };
@@ -142,7 +142,7 @@ export type TCheckoutPlain = IModel<{
   items: Array<{ sku: string & MinLength<3> }>;
   primary: LineItem;
   flags: Record<string, string>;
-  channel: { kind: 'open' } | { kind: 'hold'; until: Stamp };
+  channel: ({ kind: 'open' } | { kind: 'hold'; until: Stamp }) & Discriminator<'kind'>;
   span: [Stamp, Stamp];
   hold: Stamp | null;
   bag?: { lane: string };
