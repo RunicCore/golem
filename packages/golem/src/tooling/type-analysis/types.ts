@@ -102,10 +102,15 @@ function carriesExplicitSwaggerSchema(property: ts.Symbol): boolean {
   }));
 }
 
-function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol): ts.TypeNode | undefined {
+function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol, valueType: ts.Type): ts.TypeNode | undefined {
   const roots = checker.getRootSymbols(property);
   const root = roots.length === 1 ? roots[0] : undefined;
-  const declaration = property.valueDeclaration ?? property.declarations?.[0] ?? root?.valueDeclaration ?? root?.declarations?.[0];
+  // A property merged from an intersection has a declaration in each member; the one whose type the merged type equals names it,
+  // as `pets: TCat[]` in `TOwner & { pets: TCat[] }` where TOwner declares `pets: TPet[]`.
+  const merged = property.valueDeclaration ? undefined : property.declarations?.find((candidate) =>
+    (ts.isPropertySignature(candidate) || ts.isPropertyDeclaration(candidate)) && candidate.type
+    && checker.isTypeAssignableTo(checker.getTypeFromTypeNode(candidate.type), valueType));
+  const declaration = property.valueDeclaration ?? merged ?? property.declarations?.[0] ?? root?.valueDeclaration ?? root?.declarations?.[0];
   return declaration && (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration))
     ? declaration.type
     : undefined;
@@ -1119,6 +1124,15 @@ export function descriptorBuilder(
         return withMetadata(descriptor, metadata);
       }
       if (type.isIntersection() && !objectLikeIntersection) {
+        // A member that the whole intersection equals is the type, as `TCat[]` in `TPet[] & TCat[]` when a derived model narrows a base field;
+        // it is described with the authored node that names it, so its items keep their model.
+        const authored = node ? checker.getTypeFromTypeNode(node) : undefined;
+        const whole = type.types.find(member => member === authored && checker.isTypeAssignableTo(member, type))
+          ?? type.types.find(member => checker.isTypeAssignableTo(member, type));
+        if (whole) {
+          const named = whole === authored;
+          return withMetadata(describe(whole, context, seen, named ? node : undefined, representation, named ? provenanceNode : undefined, substitutions, nameHint, nameNode), metadata);
+        }
         return withMetadata({
           kind: 'intersection',
           variants: type.types.map((variant) => describe(variant, context, seen, undefined, representation, undefined, undefined, nameHint)),
@@ -1290,7 +1304,7 @@ export function descriptorBuilder(
             if (!optional) required.push(name);
             continue;
           }
-          const propertyNode = authoredPropertyTypeNode(childNode, name) ?? propertyTypeNode(checker, property);
+          const propertyNode = authoredPropertyTypeNode(childNode, name) ?? propertyTypeNode(checker, property, valueType);
           if (context.dto && present.length === 1 && isClassProperty(property)) {
             const collection = mapOrSetName(present[0]!);
             if (collection) {

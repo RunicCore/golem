@@ -328,3 +328,24 @@ export type TItem = IModel<{ x: bigint & { readonly __brand: 'Id' } }>;
 `);
   assert.throws(() => generate({ root, profile: { mobx: false, validation: false } }), /bigint has no JSON representation; declare a TSerde wire codec/);
 });
+
+// protects: T-559 a derived model that narrowed an array-of-models field decoded its items as plain objects
+for (const validation of [true, false]) {
+  test(`a derived model that narrows an array-of-models field decodes model instances with validation ${validation ? 'on' : 'off'}`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'pets.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TPet = IModel<{ name: string }>;
+export type TCat = IModel<{ name: string; lives: number }>;
+export type TOwner = IModel<{ pet: TPet; pets: TPet[] }>;
+export type TCatOwner = IModel<TOwner & { pet: TCat; pets: TCat[] }>;
+`);
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const generated = await import(`${path.join(root, 'build/pets.model.generated.js')}?${Date.now()}`);
+    const wire = { pet: { name: 'Tom', lives: 9 }, pets: [{ name: 'Kit', lives: 3 }] };
+    const decoded = decodeGeneratedModel(generated.TCatOwnerBaseModel, wire);
+    assert.equal(decoded.pet instanceof generated.TCatBaseModel, true);
+    assert.equal(decoded.pets[0] instanceof generated.TCatBaseModel, true);
+    assert.deepEqual(encodeGeneratedModel(decoded), wire);
+  });
+}
