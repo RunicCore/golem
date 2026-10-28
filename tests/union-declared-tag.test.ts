@@ -358,3 +358,36 @@ export class Item extends TItemBaseModel {}
   assert.equal(await getValidator(badItem).validate(badItem), false);
   assert.throws(() => codec.stringify(badItem, { validate: true }), /Model validation failed/);
 });
+
+test('a writer tells a model instance by its class before its tag, with validation off', async (t) => {
+  // protects: T-605 stringify and toWireFormat wrote a tag-less TEmail instance as the default and an instance tagged as TPhone as a TPhone; encode wrote the first as TEmail and rejected the second
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-writer-', name: 'declared-writer', linkWorkspaceNodeModules: true });
+  await writeMoneySdk(sourceRoot, false, LOOSE_MONEY_DOCUMENT);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+import type { Money } from './sdk/index.js';
+import { TItemBaseModel, TEmailBaseModel } from './item.model.generated.js';
+export type TEmail = IModel<{ kind: 'email'; address: string }>;
+export type TPhone = IModel<{ kind: 'phone'; number: string }>;
+export type TItem = IModel<{ value: (TEmail | TPhone | Money) & Discriminator<'kind', Money> }>;
+export class Email extends TEmailBaseModel {}
+export class Item extends TItemBaseModel {}
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const { Item, Email } = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.js')).href), 'item') as Record<string, new () => Record<string, unknown>>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+  const itemOf = (fields: Record<string, unknown>): Record<string, unknown> => Object.assign(new Item(), { value: Object.assign(new Email(), fields) });
+  const tagless = itemOf({ address: 'a@b.c' });
+  assert.equal(codec.stringify(tagless), '{"value":{"kind":"email","address":"a@b.c"}}');
+  assert.deepEqual(codec.toWireFormat(tagless), { value: { kind: 'email', address: 'a@b.c' } });
+  assert.deepEqual(encodeGeneratedModel(tagless), { value: { kind: 'email', address: 'a@b.c' } });
+  const tagged = itemOf({ kind: 'email', address: 'a@b.c' });
+  assert.equal(codec.stringify(tagged), '{"value":{"kind":"email","address":"a@b.c"}}');
+  const other = itemOf({ kind: 'phone', address: 'a@b.c' });
+  assert.throws(() => encodeGeneratedModel(other), /Unknown kind discriminator value: "phone"/);
+  assert.throws(() => codec.stringify(other), /Unknown kind discriminator value: "phone"/);
+  assert.throws(() => codec.toWireFormat(other), /Unknown kind discriminator value: "phone"/);
+});

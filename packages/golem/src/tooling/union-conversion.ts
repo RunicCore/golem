@@ -187,8 +187,11 @@ interface DispatchBranch {
   /** Instances of this class select the branch before any tag test. */
   readonly className?: Code;
   readonly convert: Code;
-  /** JSON output only: whether `convert` writes the tag property; undefined when unknown. */
-  readonly writesTag?: boolean;
+  /**
+   * JSON output only: whether `convert` writes the tag property from the value (`true`) or not at all (`false`); undefined when unknown.
+   * `'always'`: it writes the tag as a constant, so an instance that holds no tag is written with it and nothing is injected.
+   */
+  readonly writesTag?: boolean | 'always';
 }
 
 export interface DispatchOptions {
@@ -240,6 +243,7 @@ export function emitDispatch(options: DispatchOptions): Code {
     const { convert } = branch;
     if (!encode) return convert;
     if (direction === 'encode-value') return code`${rt.conversion.withDiscriminatorValue}(${convert}, ${key}, ${tagValue})`;
+    if (branch.writesTag === 'always') return convert;
     if (branch.writesTag === false) return injectJson(convert, tagValue);
     return tagMayBeMissing ? code`(${tag} === undefined ? ${injectJson(convert, tagValue)} : ${convert})` : convert;
   };
