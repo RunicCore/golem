@@ -199,6 +199,7 @@ test('tagged generated-model unions stringify the selected interned branch', () 
           { kind: 'generated-model', id: 'Email' },
           { kind: 'generated-model', id: 'Phone' },
         ],
+        discriminator: { propertyName: 'kind', variants: [{ values: ['email'] }, { values: ['phone'] }] },
       },
     },
     required: ['contact'],
