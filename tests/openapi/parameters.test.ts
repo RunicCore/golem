@@ -5,6 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
+import { collectOperations } from '#openapi/normalize';
 import {
   assertGenerationRejected,
   captureRequest,
@@ -266,4 +267,30 @@ test('a parameter $ref into a separate file resolves to its declared type after 
   const result = await generate({ input, output, name: 'External', profile: { mobx: false, validation: false } });
   const types = result.artifacts.find(artifact => artifact.path.endsWith('/types.ts'))?.content ?? '';
   assert.match(types, /limit: number/, types);
+});
+
+test('an operation header replaces a path-level header whose name differs only in case', () => {
+  // protects: a path-level and an operation-level header that differ only in case both survived the merge
+  const [operation] = collectOperations(documentBase('3.1.0', {
+    paths: {
+      '/tenants': {
+        parameters: [
+          { name: 'X-Tenant', in: 'header', required: true, schema: { type: 'string' } },
+          { name: 'Tag', in: 'query', schema: { type: 'string' } },
+        ],
+        get: {
+          operationId: 'listTenants',
+          parameters: [
+            { name: 'x-tenant', in: 'header', required: false, schema: { type: 'string' } },
+            { name: 'tag', in: 'query', schema: { type: 'string' } },
+          ],
+          responses: { 200: { description: 'ok' } },
+        },
+      },
+    },
+  }));
+  assert.deepEqual(
+    operation?.parameters.map((parameter) => [parameter.in, parameter.name, parameter.required]),
+    [['header', 'x-tenant', false], ['query', 'Tag', undefined], ['query', 'tag', undefined]],
+  );
 });

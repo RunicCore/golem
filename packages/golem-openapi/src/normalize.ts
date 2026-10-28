@@ -143,7 +143,8 @@ export function parameterSchema(parameter: unknown): OpenApiSchema | null {
 }
 
 function parameterKey(parameter: NormalizedParameter): string {
-  return `${parameter.in}\0${parameter.name}`;
+  // A header name is case-insensitive (RFC 9110); every other location is case-sensitive.
+  return `${parameter.in}\0${parameter.in === 'header' ? parameter.name.toLowerCase() : parameter.name}`;
 }
 
 function asParameter(value: unknown, origin: string): NormalizedParameter {
