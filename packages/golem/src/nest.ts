@@ -371,6 +371,8 @@ function replaceQuery(request: HttpRequest, value: unknown): void {
 type QueryFieldShape = {
   readonly types: Set<string>;
   readonly literals: unknown[];
+  /** The `$ref` targets already read into this shape, so a reference cycle ends. */
+  readonly references: Set<unknown>;
   item?: QueryFieldShape;
 };
 type QueryWireDecoder = (query: unknown) => unknown;
@@ -385,7 +387,12 @@ function schemaRecord(value: unknown): Readonly<Record<string, unknown>> | undef
     : undefined;
 }
 
-function collectQueryShape(schema: unknown, shape: QueryFieldShape): void {
+function newQueryShape(): QueryFieldShape {
+  return { types: new Set(), literals: [], references: new Set() };
+}
+
+/** `root` is the schema that a local `$ref` in `schema` resolves against. */
+function collectQueryShape(schema: unknown, shape: QueryFieldShape, root: unknown): void {
   if (schema === true) {
     shape.types.add('string');
     return;
@@ -397,14 +404,22 @@ function collectQueryShape(schema: unknown, shape: QueryFieldShape): void {
   if ('const' in record) shape.literals.push(record.const);
   if (Array.isArray(record.enum)) shape.literals.push(...record.enum);
   if (types.includes('array')) {
-    shape.item ??= { types: new Set(), literals: [] };
-    collectQueryShape(record.items, shape.item);
+    shape.item ??= newQueryShape();
+    collectQueryShape(record.items, shape.item, root);
   }
   for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
     const branches = record[keyword];
-    if (Array.isArray(branches)) for (const branch of branches) collectQueryShape(branch, shape);
+    if (Array.isArray(branches)) for (const branch of branches) collectQueryShape(branch, shape, root);
   }
-  collectQueryShape(schemaRecord(record[VALIDATION_KEYWORD])?.schema, shape);
+  collectQueryShape(schemaRecord(record[VALIDATION_KEYWORD])?.schema, shape, root);
+  if (typeof record.$ref === 'string') {
+    const target = resolveQueryReference(record.$ref, root);
+    // A target met twice, or a reference cycle, adds nothing more.
+    if (target && !shape.references.has(target.schema)) {
+      shape.references.add(target.schema);
+      collectQueryShape(target.schema, shape, target.root);
+    }
+  }
 }
 
 /**
@@ -446,10 +461,10 @@ function collectQueryProperties(schema: unknown, fields: Map<string, QueryFieldS
     for (const [name, property] of Object.entries(properties)) {
       let shape = fields.get(name);
       if (!shape) {
-        shape = { types: new Set(), literals: [] };
+        shape = newQueryShape();
         fields.set(name, shape);
       }
-      collectQueryShape(property, shape);
+      collectQueryShape(property, shape, root);
     }
   }
   if (typeof record.$ref === 'string') {
