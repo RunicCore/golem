@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { EXAMPLE_NAMES } from './maintained-examples.js';
+import { listPublicSourceFiles } from './public-source.js';
 import { sourcePath } from './test-file-timings.js';
 import { describeResume, finishRun, isTierResult, readRecord, runStateFromEnv, stepResultFile, type PlannedStep, type RunRecord } from './test-runner/run-state.js';
 import type { OrderedRun } from './test-run-ordered.js';
@@ -262,6 +264,45 @@ const prepareSteps: Group[] = inOrder(
   { label: 'warm', run: () => run(process.execPath, ['.build/scripts/test-warm.js']) },
 );
 
+/**
+ * Proves that each maintained example passes its own `npm run check` and `npm test` from a clean generated state. The copy holds
+ * the files that the `.gitignore` files of the example leave in, so no generated file and no `.golem/` state comes along. The
+ * copies live under the workspace's `.build/`, so the examples resolve the workspace's `node_modules` as they do in the checkout.
+ * A command that exits non-zero fails its example: the failures are listed at the end with the example and the command. A
+ * fault of the runner itself (a copy that cannot be made, a command that cannot start) throws.
+ */
+async function checkExamples(): Promise<number> {
+  const sources = listPublicSourceFiles(root);
+  fs.mkdirSync(path.join(root, '.build'), { recursive: true });
+  const copies = fs.mkdtempSync(path.join(root, '.build', 'example-copies-'));
+  const failures: string[] = [];
+  try {
+    for (const example of EXAMPLE_NAMES) {
+      const prefix = `examples/${example}/`;
+      const files = sources.filter(file => file.startsWith(prefix));
+      if (!files.length) throw new Error(`No source file under ${prefix}.`);
+      const copy = path.join(copies, example);
+      for (const file of files) {
+        const target = path.join(copy, file.slice(prefix.length));
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        fs.copyFileSync(path.join(root, file), target);
+      }
+      for (const args of [['run', 'check'], ['test']]) {
+        process.stdout.write(`examples ${example}: npm ${args.join(' ')}\n`);
+        const status = await run('npm', args, copy);
+        if (status !== 0) {
+          failures.push(`${example}: \`npm ${args.join(' ')}\` failed with exit ${status}`);
+          break;
+        }
+      }
+    }
+  } finally {
+    fs.rmSync(copies, { recursive: true, force: true });
+  }
+  if (failures.length) process.stderr.write(`Examples failed from a clean copy:\n${failures.map(line => `  ${line}`).join('\n')}\n`);
+  return failures.length ? 1 : 0;
+}
+
 function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
   if (tier === 'prepare') return prepareSteps;
   if (tier === 'focused') {
@@ -303,6 +344,7 @@ function steps(tier: Tier, args: readonly string[], native: boolean): Group[] {
       smoke,
       nodeTest(tier, 'packed', PACKED_FILES, CONCURRENCY.packed),
       nodeTest(tier, 'browser', BROWSER_FILES, CONCURRENCY.packed),
+      { label: 'examples', run: checkExamples },
     ]],
     ...inOrder(nodeTest(tier, 'acceptance unit', ACCEPTANCE_UNIT_FILES, CONCURRENCY.unit)),
   ];
