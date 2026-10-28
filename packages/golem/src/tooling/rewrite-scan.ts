@@ -15,7 +15,7 @@ import { packageSpecifier } from './type-analysis/package-specifier.js';
 import { advertisedModelManifests } from './type-analysis/provenance.js';
 import { fieldProvenance } from './type-analysis/projections.js';
 import { authoredUnionMembers } from './type-analysis/projection-names.js';
-import { readTags } from './type-analysis/tags.js';
+import { isDiscriminatorTag, readTags } from './type-analysis/tags.js';
 import { declaredModelAlias, foreignModelReason, modelDeclarationKind, propertyType, resolveSymbol } from './type-analysis/symbols.js';
 
 interface ScanInput {
@@ -654,6 +654,30 @@ function nestUnionBinding(
   };
 }
 
+/**
+ * The fault of a union whose `Discriminator` tag is written through a type of its own: an alias of the tag (`(A | B) & Kind`) or a
+ * generic wrapper (`Tagged<A | B>`). The binding reads the tag only where it is written on the union or on an alias of the whole union.
+ */
+function tagThroughAliasFault(checker: ts.TypeChecker, model: ts.TypeNode): readonly [reason: string, advice: string] | undefined {
+  let node = model;
+  while (ts.isParenthesizedTypeNode(node)) node = node.type;
+  const aliasOf = (reference: ts.TypeNode): ts.TypeAliasDeclaration | undefined => ts.isTypeReferenceNode(reference)
+    ? resolvedSymbolAt(checker, reference.typeName)?.declarations?.find(ts.isTypeAliasDeclaration)
+    : undefined;
+  const fix = "Write the tag on the union itself, (A | B) & Discriminator<'kind'>, or give the whole tagged union a type alias: type TShape = (A | B) & Discriminator<'kind'>.";
+  if (ts.isIntersectionTypeNode(node) && node.types.some((part) => authoredUnionMembers(checker, part))) {
+    const through = node.types.find((part) => !isDiscriminatorTag(checker, part) && aliasOf(part)?.type !== undefined && isDiscriminatorTag(checker, aliasOf(part)!.type));
+    if (through) return [`is a union whose Discriminator tag is written through the alias ${through.getText()}, which golem does not read`, fix];
+  }
+  if (ts.isTypeReferenceNode(node) && node.typeArguments?.some((argument) => authoredUnionMembers(checker, argument))) {
+    const declared = aliasOf(node)?.type;
+    if (declared && ts.isIntersectionTypeNode(declared) && declared.types.some((part) => isDiscriminatorTag(checker, part))) {
+      return [`is a union whose Discriminator tag is written through the generic type ${node.typeName.getText()}, which golem does not read`, fix];
+    }
+  }
+  return undefined;
+}
+
 function nestBinding(
   input: { readonly root: string; readonly checker: ts.TypeChecker; readonly keys: CodecKeys; readonly file: ts.SourceFile; readonly dependencies: Set<string>; readonly unions?: { readonly text: boolean } },
   typeNode: ts.TypeNode,
@@ -666,6 +690,8 @@ function nestBinding(
   // Only an input parameter can be a union: a union return is left as Nest JSON.
   const members = input.unions !== undefined ? authoredUnionMembers(checker, model) : undefined;
   if (members) return nestUnionBinding(input, unbound, model, members);
+  const throughAlias = input.unions !== undefined ? tagThroughAliasFault(checker, model) : undefined;
+  if (throughAlias) return { ...unbound, golemModel: true, unionFault: throughAlias };
   const { label } = unbound;
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);

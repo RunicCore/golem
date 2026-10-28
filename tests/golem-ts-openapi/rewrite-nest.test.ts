@@ -472,6 +472,30 @@ const shapeId = (root: string, name: string): string => {
   return id;
 };
 
+test('a union whose tag is written through an alias of the tag or a generic wrapper gets RUNM1081 with the cause and the forms that work', (t) => {
+  // protects: fixed message, RUNM1081 for (A | B) & Kind named no cause ("is not a golem model") and gave a misleading fix
+  const controller = [
+    "import { Body, Controller, Post } from '@nestjs/common';",
+    "import type { Discriminator } from '@exprtlabs/golem/tags';",
+    "import type { TCircle, TRect } from './shapes.model.js';",
+    "type Kind = Discriminator<'kind'>;",
+    "type Tagged<U> = U & Discriminator<'kind'>;",
+    "@Controller('shapes')",
+    'export class ShapesController {',
+    '  @Post() aliased(@Body() shape: (TCircle | TRect) & Kind): number { return 1; }',
+    '  @Post() wrapped(@Body() shape: Tagged<TCircle | TRect>): number { return 1; }',
+    '}',
+  ].join('\n');
+  const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': controller });
+  const result = scan(root);
+  const fix = "Write the tag on the union itself, (A | B) & Discriminator<'kind'>, or give the whole tagged union a type alias: type TShape = (A | B) & Discriminator<'kind'>.";
+  const refused = (type: string, reason: string): string => `${type} ${reason}, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type. ${fix} An app with its own interceptor can set nonModelInputs: warn in golem.yaml.`;
+  assert.deepEqual(result.diagnostics.map(({ code, line, message }) => ({ code, line, message })), [
+    { code: 'RUNM1081', line: 8, message: refused('(TCircle | TRect) & Kind', 'is a union whose Discriminator tag is written through the alias Kind, which golem does not read') },
+    { code: 'RUNM1081', line: 9, message: refused('Tagged<TCircle | TRect>', 'is a union whose Discriminator tag is written through the generic type Tagged, which golem does not read') },
+  ]);
+});
+
 test('a whole @Body() or @Query() union of tagged models is stamped with its tag and variants, and an untagged, array or one-field union gets RUNM1081', (t) => {
   // protects: T-390 E-50 a tagged union binds a union codec; an untagged union (T-258, T-377) and the forms golem does not describe still stop the build
   const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': SHAPES_CONTROLLER });
