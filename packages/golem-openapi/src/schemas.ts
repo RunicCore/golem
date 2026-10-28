@@ -1,4 +1,5 @@
 import { asRecord, isJsonObject, objectEntries } from './json.js';
+import { unionVariants } from './composition.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import { identifier } from '@exprtlabs/golem/generator-api';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
@@ -531,7 +532,7 @@ function rewriteOperationSchemaRefs(
     // branch $ref uses: a component and its own `$id` resource denote one schema.
     const discriminator = result.discriminator;
     if (isJsonObject(discriminator) && isJsonObject(discriminator.mapping)) {
-      const branches = Array.isArray(result.oneOf) ? result.oneOf : Array.isArray(result.anyOf) ? result.anyOf : [];
+      const branches = unionVariants(result) ?? [];
       const branchRefs = new Set(branches.flatMap(branch => isJsonObject(branch) && typeof branch.$ref === 'string' ? [branch.$ref] : []));
       const components = index.directionalComponents[direction];
       // A component with its own `$id` is projected as a `$ref` to that resource.

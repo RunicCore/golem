@@ -177,6 +177,38 @@ export function expandOas32MediaTypes(document: unknown): unknown {
   return projected;
 }
 
+/** A schema that holds both `oneOf` and `anyOf` (the value satisfies one variant of each). */
+function holdsBothUnions(schema: unknown): schema is Record<string, unknown> {
+  return isJsonObject(schema) && schema.oneOf !== undefined && schema.anyOf !== undefined;
+}
+
+/**
+ * A schema that holds both `oneOf` and `anyOf` becomes an `allOf` of its own `allOf` members and the two unions, so every reader
+ * of the generated types and conversion sees one union keyword at a time, as the validator reads both. The discriminator stays
+ * with the `oneOf`. The caller's document is never changed; a document with no such schema is returned as it is.
+ */
+export function normalizeSchemaUnions(document: unknown): unknown {
+  let found = false;
+  visitOpenApiSchemaTree(document, { onSchema(schema) { found ||= holdsBothUnions(schema); } });
+  if (!found) return document;
+  const normalized = structuredClone(document);
+  visitOpenApiSchemaTree(normalized, {
+    onSchema(schema) {
+      if (!holdsBothUnions(schema)) return;
+      const { oneOf, anyOf, discriminator, allOf } = schema;
+      delete schema.oneOf;
+      delete schema.anyOf;
+      delete schema.discriminator;
+      schema.allOf = [
+        ...(Array.isArray(allOf) ? allOf : []),
+        { oneOf, ...(discriminator === undefined ? {} : { discriminator }) },
+        { anyOf },
+      ];
+    },
+  });
+  return normalized;
+}
+
 export function unsupportedHttpAuthSchemes(document: unknown): void {
   const schemes = asRecord(asRecord(asRecord(document).components).securitySchemes);
   for (const [name, rawScheme] of objectEntries(schemes)) {
