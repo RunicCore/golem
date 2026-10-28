@@ -391,3 +391,25 @@ export class Item extends TItemBaseModel {}
   assert.throws(() => codec.stringify(other), /Unknown kind discriminator value: "phone"/);
   assert.throws(() => codec.toWireFormat(other), /Unknown kind discriminator value: "phone"/);
 });
+
+test('a validating companion writes the tag of a tag-less instance once when validation is turned off for the call', async (t) => {
+  // protects: T-605 the strict Core writes its literal tag itself, so the class branch must not inject it a second time
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-strict-', name: 'declared-strict', linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+import { TItemBaseModel, TEmailBaseModel } from './item.model.generated.js';
+export type TEmail = IModel<{ kind: 'email'; address: string }>;
+export type TPhone = IModel<{ kind: 'phone'; number: string }>;
+export type TItem = IModel<{ value: (TEmail | TPhone) & ${TAG} }>;
+export class Email extends TEmailBaseModel {}
+export class Item extends TItemBaseModel {}
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const { Item, Email } = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.js')).href), 'item') as Record<string, new () => Record<string, unknown>>;
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+  const tagless = Object.assign(new Item(), { value: Object.assign(new Email(), { address: 'a@b.c' }) });
+  assert.equal(codec.stringify(tagless, { validate: false }), '{"value":{"kind":"email","address":"a@b.c"}}');
+});
