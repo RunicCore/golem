@@ -34,6 +34,8 @@ export interface Helper {
   readonly define: () => Code;
   /** Where the helper stands among helpers that no definition orders: lower first, then by id. A file with a fixed order of helpers sets it. */
   readonly rank?: number;
+  /** A file that names it defines it before its pieces (`placeHelpers`), so no piece lists it. */
+  readonly selfPlaced?: true;
 }
 
 export type Part =
@@ -444,6 +446,14 @@ export function helper(id: string, define: () => Code, rank?: number): Helper {
   return { id: checkedIdentifier(id, 'helper id'), define, ...(rank === undefined ? {} : { rank }) };
 }
 
+/**
+ * A helper that a file defines wherever its code names it, before the file's pieces: a generated function, or a variable
+ * that the functions read. Two helpers of one id must have one definition.
+ */
+export function selfPlacedHelper(id: string, define: () => Code): Helper {
+  return { ...helper(id, define), selfPlaced: true };
+}
+
 /** A call site of a helper: the name of the helper, and a request that the file holds its definition. */
 export function helperName(target: Helper): Code {
   return fromParts([{ kind: 'helper', helper: target }]);
@@ -666,7 +676,7 @@ function collectFrom(root: Code): Collected {
   for (let next = pending.pop(); next; next = pending.pop()) {
     const known = found.get(next.id);
     if (known) {
-      if (known.helper !== next) throw new Error(`two helpers are named "${next.id}"`);
+      if (known.helper !== next && !(known.helper.selfPlaced && next.selfPlaced)) throw new Error(`two helpers are named "${next.id}"`);
       continue;
     }
     let defined = definitions.get(next);
@@ -871,7 +881,7 @@ function identityOf(target: object): number {
 /**
  * A key that two Codes share exactly when they write the same code: their parts match one by one, and each part matches by
  * kind. A runtime part is the same runtime export, an imported part the same name of the same source, a helper part the same
- * helper, a name part the same slot and an input part the same slot; none equals the text of its name. Adjacent text is one
+ * helper (a self-placed helper: the same id), a name part the same slot and an input part the same slot; none equals the text of its name. Adjacent text is one
  * text, so where the text was split into parts names nothing.
  */
 export function codeKey(root: Code): string {
@@ -886,7 +896,7 @@ export function codeKey(root: Code): string {
     switch (part.kind) {
       case 'runtime': key += `r${JSON.stringify([part.module, part.name, part.alias ?? null, part.typeOnly === true])},`; break;
       case 'imported': key += `i${JSON.stringify([identityOf(part.source), part.name, part.alias ?? null, part.typeOnly === true])},`; break;
-      case 'helper': key += `h${identityOf(part.helper)},`; break;
+      case 'helper': key += part.helper.selfPlaced ? `s${JSON.stringify(part.helper.id)},` : `h${identityOf(part.helper)},`; break;
       case 'name': key += `n${identityOf(part.slot)},`; break;
       case 'export': key += `e${JSON.stringify(part.name)},`; break;
       case 'input': key += `p${identityOf(part.slot)},`; break;
@@ -958,8 +968,13 @@ export function renderModule(root: Code, names: NameTable = new NameTable()): Re
  */
 export function placeHelpers(root: Code, pieces: readonly (Code | Helper)[], writtenInCode: readonly Helper[] = []): readonly Code[] {
   const placed = new Set([...pieces.filter((piece): piece is Helper => 'define' in piece), ...writtenInCode]);
-  const missing = helperSet(root).find((needed) => !placed.has(needed));
+  const needed = helperSet(root);
+  const missing = needed.find((each) => !each.selfPlaced && !placed.has(each));
   if (missing) throw new Error(`Internal error: the code names the helper "${missing.id}", which the file does not place.`);
-  const defined = new Set(helperSet(root));
-  return pieces.flatMap((piece): readonly Code[] => 'define' in piece ? (defined.has(piece) ? [piece.define()] : []) : [piece]);
+  const defined = new Set(needed);
+  const own = needed.filter((each) => each.selfPlaced && !placed.has(each)).flatMap((each) => [each.define(), code``]);
+  return [
+    ...own,
+    ...pieces.flatMap((piece): readonly Code[] => 'define' in piece ? (defined.has(piece) ? [piece.define()] : []) : [piece]),
+  ];
 }

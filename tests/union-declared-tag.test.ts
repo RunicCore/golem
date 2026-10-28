@@ -118,6 +118,19 @@ test('the generated model types carry no Discriminator tag', t => {
   assert.equal(/\bDiscriminator\b/.test(generated.content), false);
 });
 
+for (const validation of [false, true]) {
+  test(`the class dispatch of a declared union is written once for each direction, with validation ${validation ? 'on' : 'off'}`, t => {
+    // protects: T-617 (F-129) one selector per union and direction serves every writer and position, not a copy in each
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-selector-', name: 'declared-selector' });
+    writeModelSources(sourceRoot, { 'contact.model.ts': CONTACT_MODEL });
+    const generated = generate({ root, profile: { mobx: false, validation } }).artifacts.find(artifact => artifact.path.endsWith('contact.model.generated.ts'));
+    assert.ok(generated, 'contact.model.generated.ts must be generated');
+    // The kind union and the mode union each get a decode and an encode selector, whatever number of positions use them.
+    assert.equal(generated.content.match(/^function __golemVariant_\w+\(/gm)?.length, 4);
+    assert.equal(generated.content.match(/TPhoneBaseModel\.prototype instanceof TEmailBaseModel/g)?.length, 2);
+  });
+}
+
 const TAG_SHAPE = "Discriminator<'shape'>";
 
 test('a variant made of several object parts gets no field from the Discriminator tag', t => {
