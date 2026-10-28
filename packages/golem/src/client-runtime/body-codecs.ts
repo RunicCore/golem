@@ -115,6 +115,7 @@ export function encodeBody(
       for (const [name, item] of Object.entries(value)) {
         const values = Array.isArray(item) ? item : [item];
         for (const entry of values) {
+          if (entry === undefined || entry === null) continue;
           const partType = ownEncoding(encoding, name)?.contentType;
           if (entry instanceof Blob) form.append(name, entry);
           else if (partType) {

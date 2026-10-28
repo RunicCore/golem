@@ -64,6 +64,15 @@ test('a form body encodes to urlencoded fields', async () => {
   assert.deepEqual(encoded, { body: 'a=1&b=2', contentType: 'application/x-www-form-urlencoded' });
 });
 
+test('a multipart body sends no part for an undefined or null field', async () => {
+  // protects: bug a multipart field with undefined or null was sent as the text "undefined" or "null"
+  const file = new Blob(['x'], { type: 'text/plain' });
+  const encoded = encodeBody(runtime, 'upload', { file, note: undefined, tag: null, kept: 'a' }, 'multipart/form-data', {});
+  const form = encoded.body as FormData;
+  assert.deepEqual([...form.keys()], ['file', 'kept']);
+  assert.equal(form.get('kept'), 'a');
+});
+
 test('a custom body encoder replaces the built-in JSON encoding', () => {
   const custom = new ClientRuntime('Tasks', {
     baseUrl: 'https://api.test',
