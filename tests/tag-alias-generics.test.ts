@@ -46,25 +46,18 @@ test('template-literal pattern argument', async t => {
   assert.deepEqual(await validity(t, tsSource`${tags}\ntype Digits<N extends number> = string & Pattern<\`^\\\\d{1,\${N}}$\`>;`, tsSource`value: Digits<2>`, ['12', '123']), [true, false]);
 });
 
-test('computed numeric argument', async t => {
-  const prelude = tsSource`${tags}
-type Tuple<N extends number, R extends unknown[] = []> = R['length'] extends N ? R : [...R, unknown]['length'] extends N ? [...R, unknown] : Tuple<N, [...R, unknown, unknown]>;
+const whole = tsSource`type Tuple<N extends number, R extends unknown[] = []> = R['length'] extends N ? R : [...R, unknown]['length'] extends N ? [...R, unknown] : Tuple<N, [...R, unknown, unknown]>;
 type Minus<A extends number, B extends number> = Tuple<A> extends [...Tuple<B>, ...infer Rest] ? Rest['length'] : never;
 type Whole<P extends number, S extends number> = string & MaxLength<Minus<P, S>>;`;
-  assert.deepEqual(await validity(t, prelude, tsSource`value: Whole<5, 2>`, ['123', '1234']), [true, false]);
+
+test('computed numeric argument', async t => {
+  assert.deepEqual(await validity(t, tsSource`${tags}\n${whole}`, tsSource`value: Whole<5, 2>`, ['123', '1234']), [true, false]);
 });
 
-test('computed argument at Postgres maximum precision', t => {
+test('computed argument at Postgres maximum precision', async t => {
   // Settles the instantiation-depth risk (spec §3). TypeScript stops tail-recursive conditional types at 1000 steps,
   // so a one-element-per-step Tuple reduces only up to 999; this helper adds two per step and reaches 1000.
-  const { root, sourceRoot } = fixture(t);
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: tsSource`import type { MaxLength } from '@exprtlabs/golem/tags';
-type Tuple<N extends number, R extends unknown[] = []> = R['length'] extends N ? R : [...R, unknown]['length'] extends N ? [...R, unknown] : Tuple<N, [...R, unknown, unknown]>;
-type Minus<A extends number, B extends number> = Tuple<A> extends [...Tuple<B>, ...infer Rest] ? Rest['length'] : never;
-type Whole<P extends number, S extends number> = string & MaxLength<Minus<P, S>>;`, fields: tsSource`value: Whole<1000, 0>` }).text);
-  const shared = generate({ root, profile: { mobx: false, validation: true } }).artifacts.map(a => a.content).join('\n');
-  // The schema is embedded as a JSON string, so its quotes are escaped in the generated source.
-  assert.match(shared, /\\"maxLength\\":1000\b/);
+  assert.deepEqual(await validity(t, tsSource`${tags}\n${whole}`, tsSource`value: Whole<1000, 0>`, ['a'.repeat(1000), 'a'.repeat(1001)]), [true, false]);
 });
 
 test('array of generic alias', async t => {

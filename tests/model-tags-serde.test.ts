@@ -195,8 +195,6 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
   }).text);
   await buildModelProjectWith(root, { mobx: false, validation: true });
   const shared = generatedModelFiles(root).map((artifact) => artifact.content).join('\n');
-  assert.match(shared, /minLength/);
-  assert.match(shared, /exprtValidation/);
   assert.match(shared, /__golemSerialize0Source/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const bindings = await import(path.toNamespacedPath(path.join(root, 'build/bindings.js')));
@@ -210,6 +208,9 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
   assert.equal(bindings.serialized, 0, 'model-plane validate does not encode TSerde values');
   assert.deepEqual(encodeGeneratedModel(valid), { payload: { value: 'good', when: '2025-01-02T03:04:05.000Z' } });
   assert.equal(bindings.serialized, 1, 'an explicit serialize call serializes once for that call');
+  const boundary = (value: string) => decodeGeneratedModel(A, { payload: { value, when: '2025-01-02T03:04:05.000Z' } });
+  assert.equal(await getValidator(boundary('abc')).validate(), true, 'a value of the minimum length passes');
+  assert.equal(await getValidator(boundary('ab')).validate(), false, 'a value under the minimum length fails');
 });
 
 test('two model files that import each other round-trip a TSerde field, also when the other file picks it with Pick', async t => {
