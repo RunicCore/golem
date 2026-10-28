@@ -52,11 +52,18 @@ export function jsonWithDiscriminator(text: string, encodedProperty: string, val
   return text === '{}' ? `${head}}` : `${head},${text.slice(1)}`;
 }
 
+/**
+ * Rejects, as input, a value that is no object where a generated model decoder reads wire fields. `segment` is the field or
+ * index that the active path does not hold yet; it joins the path here, so a decoder that passes it builds no path for a valid value.
+ */
+export function rejectModelObject(name: string, segment?: string | number): never {
+  const path = segment === undefined ? activeConversionPath : [...activeConversionPath, segment];
+  throw conversionError(LibErrorKind.Deserialization, `${name} expected an object.`, path, undefined, true);
+}
+
 /** Generated model decoders read wire fields from an object; any other input is rejected as input. */
 export function requireModelObject(value: unknown, name: string): Record<string, unknown> {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw conversionError(LibErrorKind.Deserialization, `${name} expected an object.`, activeConversionPath, undefined, true);
-  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) rejectModelObject(name);
   return value as Record<string, unknown>;
 }
 

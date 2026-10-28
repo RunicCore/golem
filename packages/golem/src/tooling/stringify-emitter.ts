@@ -146,8 +146,13 @@ interface EmitCtx
   readonly trustedOptions?: Code;
   /** Emit stringify functions that take no options; they only run trusted. */
   readonly withoutOptions?: boolean;
-  /** Counts the conversions emitted for the current node that can throw; see `fallibleConversion`. */
-  readonly effects?: { fallible: number };
+  /**
+   * The field or key of the property whose decode is a class model alone or beside null: a rejected non-object joins the path
+   * with it, so the property runs without a path of its own. Unset elsewhere, where the surrounding conversion holds the path.
+   */
+  readonly rejectKey?: Code;
+  /** Counts the conversions emitted for the current node that can throw (`fallible`) and the rejections that carry their own path (`keyed`); see `fallibleConversion`. */
+  readonly effects?: { fallible: number; keyed: number };
   /** Module-level converter functions of the current node; without it a converter is emitted inline. */
   readonly hoisted?: HoistedConverters;
   /** Whether the fill of a local node can throw, by node id. */
@@ -910,7 +915,7 @@ function fillCanThrow(node: SchemaNode, ctx: EmitCtx): boolean {
   if (known !== undefined || !ctx.fillThrows) return known ?? true;
   // A node reached again while it is emitted is recursive, and a recursive fill throws on a cycle.
   ctx.fillThrows.set(node.id, true);
-  const fill = emitFillFunction(node, { ...ctx, effects: { fallible: 0 }, hoisted: undefined, decodeLocals: undefined });
+  const fill = emitFillFunction(node, { ...ctx, effects: { fallible: 0, keyed: 0 }, hoisted: undefined, decodeLocals: undefined });
   ctx.fillThrows.set(node.id, fill.fallible);
   return fill.fallible;
 }
@@ -1051,25 +1056,34 @@ function emitInternedObjectDecode(
       ? code`${identifier(`convertFromWire${node.id}`)}(${value}, ${options})`
       : code`${imported ? imported.fromWire : identifier(fromWireFunctionName(node.id))}(${value}, ${options})`);
   }
-  // A class model rejects a value that is no object, as its class-level decode does; the guard names the class.
+  // A class model rejects a value that is no object, as its class-level decode does; the test is one inline check and the
+  // rejection names the class. The rejection joins the path itself where the property has no path of its own.
   const className = node.emitClass ? ctx.modelClassName?.(node) : undefined;
+  const guarded = (decoded: Code, ownPath: boolean): Code => {
+    if (className === undefined) return decoded;
+    const key = ownPath ? undefined : ctx.rejectKey;
+    if (key !== undefined && ctx.effects) ctx.effects.keyed++;
+    const reject = key === undefined
+      ? code`${rt.conversion.rejectModelObject}(${literal(className)})`
+      : code`${rt.conversion.rejectModelObject}(${literal(className)}, ${key})`;
+    return code`(${objectValueExpression(value)} ? ${ownPath || key !== undefined ? decoded : fallibleConversion(ctx, decoded)} : ${reject})`;
+  };
   if (
     node.kind === 'object'
-    && className === undefined
     && node.descriptor.kind === 'object'
     && !descriptorNeedsConversion(node.descriptor)
   ) {
     // An open object or a map is copied by its `fill*`; only a closed object of scalars is one literal.
     const closed = extrasAllowed(node.descriptor) ? undefined : emitClosedIdentityObject(node.descriptor, value, ctx);
-    if (closed) return closed;
+    if (closed) return guarded(closed, false);
   }
   if (node.kind === 'object') {
     const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
     const fill = imported?.fill === undefined ? identifier(fillFunctionName(node.id)) : imported.fill;
-    const record = className === undefined ? asRecordCode(value) : code`${rt.conversion.requireModelObject}(${value}, ${literal(className)})`;
-    const call = code`${fill}({} as Record<string, unknown>, ${record})`;
+    const call = code`${fill}({} as Record<string, unknown>, ${asRecordCode(value)})`;
     // A local fill that cannot throw runs without its field's path.
-    return imported || className !== undefined || fillCanThrow(node, ctx) ? fallibleConversion(ctx, call) : call;
+    const throws = imported !== undefined || fillCanThrow(node, ctx);
+    return guarded(throws ? fallibleConversion(ctx, call) : call, throws);
   }
   const importedWire = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
   return fallibleConversion(ctx, code`${importedWire ? importedWire.fromWire : identifier(fromWireFunctionName(node.id))}(${value}, ${trustedOptions(ctx)})`);
@@ -1513,7 +1527,7 @@ interface FillValue {
   readonly converted: boolean;
   /** The value is carried by reference, so it was checked for cycles. */
   readonly checked: boolean;
-  /** The conversion can throw. */
+  /** The conversion can throw, so the fill that holds it can throw too. */
   readonly fallible: boolean;
 }
 
@@ -1530,19 +1544,31 @@ function emitFillValue(
   ctx: EmitCtx,
 ): FillValue {
   const before = fallibleCount(ctx);
+  const keyedBefore = ctx.effects?.keyed ?? 0;
   const readInput = inputSlot('read', shape);
-  const decoded = emitDecodeValue(property, inputOf(readInput), { ...ctx, decodeLocals: undefined });
+  // A class model alone, or beside null, rejects a non-object with the field in its path, so it runs without a path of its own.
+  const scope: EmitCtx = { ...ctx, rejectKey: isNullableClassModel(property, ctx) ? field : undefined };
+  const decoded = emitDecodeValue(property, inputOf(readInput), { ...scope, decodeLocals: undefined });
   const fallible = emittedFallible(before, decoded, ctx);
+  // The fill can throw, so a caller runs it under its own field's path.
+  const rejects = fallible || (ctx.effects?.keyed ?? 0) !== keyedBefore;
   const checked = sharesInput(property, ctx);
   const converted = !sameCode(decoded, inputOf(readInput));
   if (!checked && !fallible && inputCount(decoded, readInput) <= 1) {
-    return { statements: [], value: bindInput(decoded, readInput, read), converted, checked, fallible };
+    return { statements: [], value: bindInput(decoded, readInput, read), converted, checked, fallible: rejects };
   }
   const input = checked ? code`${rt.conversion.assertPropertyAcyclic}(wire, ${field}, ${read})` : read;
   if (fallible) {
-    return { statements: [], value: emitFieldConversion(field, local, property, input, ctx), converted, checked, fallible };
+    return { statements: [], value: emitFieldConversion(field, local, property, input, ctx), converted, checked, fallible: rejects };
   }
-  return { statements: [code`const ${local} = ${input};`], value: emitDecodeValue(property, local, ctx), converted, checked, fallible };
+  return { statements: [code`const ${local} = ${input};`], value: emitDecodeValue(property, local, scope), converted, checked, fallible: rejects };
+}
+
+/** Whether `property` is a class model, or a class model beside null or undefined. */
+function isNullableClassModel(property: ModelTypeDescriptor, ctx: EmitCtx): boolean {
+  if (property.kind !== 'union') return ctx.graph.nodeFor(property)?.emitClass === true;
+  const present = property.variants.filter((variant) => variant.kind !== 'null' && variant.kind !== 'undefined');
+  return present.length === 1 && isNullableClassModel(present[0], ctx);
 }
 
 /**
@@ -1980,7 +2006,7 @@ function encodedContext({ ctx, guardInline }: NodeRuntime): EmitCtx {
 function nodeRuntime(node: SchemaNode, moduleCtx: EmitCtx, validationEnabled: boolean): NodeRuntime {
   const ctx: EmitCtx = {
     ...moduleCtx,
-    effects: { fallible: 0 },
+    effects: { fallible: 0, keyed: 0 },
     hoisted: { prefix: node.id, bodies: [], sources: [] },
     fillThrows: moduleCtx.fillThrows ?? new Map(),
   };
