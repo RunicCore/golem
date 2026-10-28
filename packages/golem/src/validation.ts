@@ -268,8 +268,8 @@ function evaluateInstanceRules(root: object, mode: ValidationMode, generated: re
     const evaluateRules = (fieldIndex: number, ruleIndex: number): ValidationStep<readonly LocalRuleIssue[]> => {
       for (let currentFieldIndex = fieldIndex; currentFieldIndex < entries.length; currentFieldIndex++) {
         const [field, rules] = entries[currentFieldIndex];
-        // A rule meets only a field the generated checks passed: they own the failure, and the rule may not expect the bad value.
-        if (hasIssueAtOrBelow(generated, [...path, field])) continue;
+        // A rule that throws on a value the generated checks already rejected adds nothing: their issue reports that value.
+        const rejected = hasIssueAtOrBelow(generated, [...path, field]);
         for (let currentRuleIndex = currentFieldIndex === fieldIndex ? ruleIndex : 0; currentRuleIndex < rules.length; currentRuleIndex++) {
           const rule = rules[currentRuleIndex];
           let rawResult: ValidationRuleResult | Promise<ValidationRuleResult>;
@@ -277,14 +277,16 @@ function evaluateInstanceRules(root: object, mode: ValidationMode, generated: re
             rawResult = rule(Reflect.get(model, field), model);
           } catch (cause) {
             if (cause instanceof LibError) throw cause;
+            if (rejected) continue;
             throw new LibError(LibErrorKind.Validation, 'A custom validation rule could not finish.', [customIssue([...path, field], 'A custom validation rule could not finish.')], { cause, causedByInput: false });
           }
           const applyResult = (result: ValidationRuleResult): ValidationStep<readonly LocalRuleIssue[]> => {
             if (appendRuleResult(field, result) && mode === 'first') return finish();
             return evaluateRules(currentFieldIndex, currentRuleIndex + 1);
           };
-          const onRejected = (cause: unknown): never => {
+          const onRejected = (cause: unknown): ValidationStep<readonly LocalRuleIssue[]> => {
             if (cause instanceof LibError) throw cause;
+            if (rejected) return evaluateRules(currentFieldIndex, currentRuleIndex + 1);
             throw new LibError(LibErrorKind.Validation, 'A custom validation rule could not finish.', [customIssue([...path, field], 'A custom validation rule could not finish.')], { cause, causedByInput: false });
           };
           if (rawResult instanceof Promise) return rawResult.then(applyResult, onRejected);

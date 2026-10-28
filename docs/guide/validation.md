@@ -74,7 +74,7 @@ Use `extend()` for a rule added to a particular model, including asynchronous ch
 
 <<< ../../examples/models/src/title-rule.ts#instance-rules
 
-- Generated checks run before instance rules. A rule for a field runs only when the generated checks found no issue for that field. With the default first-issue mode, no rule runs once a generated check has found an issue.
+- Generated checks run before instance rules. A rule that throws on a field the generated checks already rejected is skipped, and the generated issue stands.
 - Register the rule in your class constructor when every instance needs it, including instances created by `fromWireFormat<TaskInput>()`.
 - Use [`TValidation`](/guide/tags#add-a-custom-field-rule) for a reusable synchronous predicate attached to a field type.
 
