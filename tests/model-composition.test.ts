@@ -474,6 +474,33 @@ export type TItem = IModel<{ seen: { [key: \`a_\${string}\`]: Date; [key: \`n_\$
   }
 });
 
+// protects: T-592 a template-literal key beside a string index converted by the string index's value type, so `at_1` stayed a string
+for (const [stringValue, options] of [['string', ''], ['unknown', ', { allowAny: true }']] as const) {
+  test(`a template-literal index signature beside a string index of ${stringValue} stops generation with RUNM1004 naming the field`, t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: { [key: string]: ${stringValue}; [key: \`at_\${string}\`]: Date } }${options}>;
+`);
+    for (const validation of [true, false]) {
+      assert.throws(
+        () => generate({ root, profile: { mobx: false, validation } }),
+        /item\.model\.ts:\d+:\d+ RUNM1004: Field "seen" of TItem has index signatures of different value types, which golem cannot state as one value type\. Give them one value type, or use one index signature\./,
+      );
+    }
+  });
+}
+
+// protects: T-592 a string index and a template index of one value type still decode that type
+test('a template-literal index signature beside a string index of the same value type decodes that type', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: { [key: string]: Date; [key: \`at_\${string}\`]: Date } }>;
+`);
+  const codec = await builtItemCodec(root);
+  const day = '2024-01-01T00:00:00.000Z';
+  assert.deepEqual(codec.parse(`{"seen":{"at_1":"${day}","other":"${day}"}}`), { seen: { at_1: new Date(day), other: new Date(day) } });
+});
+
 // protects: T-590 signatures that share one value type, also one written twice as an object literal, still generate
 test('template-literal index signatures that share one value type decode that type and reject a key outside the templates', async t => {
   const { root, sourceRoot } = fixture(t);
