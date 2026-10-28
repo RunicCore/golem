@@ -162,7 +162,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### NEST1312
 
-**Duplicate parameter.** The same parameter (name and location) is declared more than once for one operation, or a whole `@Query()` object is declared alongside another whole-object or named query parameter. **Fix:** Remove the duplicate, or combine the fields into one contract.
+**Duplicate parameter.** The same parameter (name and location) is declared more than once for one operation, or a whole `@Query()` object is declared alongside another whole-object or named query parameter. Header names compare without letter case, so `X-Trace` and `x-trace` are one header. **Fix:** Remove the duplicate, or combine the fields into one contract.
 
 ### NEST1313
 
