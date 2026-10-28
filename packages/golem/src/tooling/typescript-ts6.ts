@@ -8,12 +8,14 @@
  */
 import { channel } from 'node:diagnostics_channel';
 import { createRequire } from 'node:module';
-import { basename, dirname, isAbsolute, join, normalize, resolve as resolvePath } from 'node:path';
+import { basename, dirname } from 'node:path';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
 import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
+import { canonical, programConfig } from './typescript-program-config.js';
+import type { ProgramConfig } from './typescript-program-config.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { inNodeModules } from './type-analysis/path-identity.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
@@ -703,10 +705,6 @@ class CompatProgram implements Golem.Program {
 /** A declaration file or its map, such as `a.d.ts`, `a.d.mts.map` or `a.d.css.ts`. */
 const DECLARATION_OUTPUT = /\.d\.(?:[^./\\]+\.)?[cm]?ts(?:\.map)?$/;
 
-function canonical(filename: string): string {
-  return normalize(resolvePath(filename));
-}
-
 function parseFlags(flags: readonly string[]) {
   const { options: parsed, fileNames, errors } = classic.parseCommandLine(flags);
   return { options: parsed, fileNames, errors: errors.map((diagnostic) => ({ code: diagnostic.code, text: classic.flattenDiagnosticMessageText(diagnostic.messageText, '\n') })) };
@@ -790,44 +788,12 @@ function projectOf(parsed: ParsedConfig): Golem.ParsedProject {
   return { options: parsed.options, fileNames: parsed.fileNames, projectReferences: parsed.projectReferences.map((reference) => ({ path: referencedConfigFile(reference.path) })) };
 }
 
-interface ProgramRequest {
-  readonly configPath: string;
-  readonly overlays: ReadonlyMap<string, string>;
-  /** Configuration paths the observer is not told about: virtual configurations are derived input. */
-  readonly hidden: ReadonlySet<string>;
+interface ProgramRequest extends ProgramConfig {
   readonly rootNames: readonly string[];
 }
 
 function programRequest(options: Golem.OpenProgramOptions, referencesOf: (configPath: string, overlays: ReadonlyMap<string, string>) => readonly ConfigReference[]): ProgramRequest {
-  const overlays = new Map([...options.overlays ?? []].map(([filename, content]) => [canonical(filename), content]));
-  const baseConfigPath = canonical(options.configFile === undefined
-    ? join(options.root, 'tsconfig.json')
-    : isAbsolute(options.configFile) ? options.configFile : join(options.root, options.configFile));
-  const hidden = new Set<string>();
-  if (options.configFile !== undefined && overlays.has(baseConfigPath)) hidden.add(baseConfigPath);
-  if (!overlays.has(baseConfigPath) && !sys.fileExists(baseConfigPath)) {
-    overlays.set(baseConfigPath, JSON.stringify({
-      compilerOptions: {
-        strict: true,
-        target: 'ES2022',
-        module: 'NodeNext',
-        moduleResolution: 'NodeNext',
-        skipLibCheck: true,
-        noEmit: true,
-      },
-      include: ['**/*.ts'],
-    }));
-  }
-  let configPath = baseConfigPath;
-  if (options.compilerOptionOverrides !== undefined) {
-    // A virtual configuration that extends the original replaces the options for this program only. It sits beside the original, so the
-    // references, which an extending configuration does not inherit, keep their meaning when copied.
-    configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.options.json`);
-    const references = referencesOf(baseConfigPath, overlays);
-    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides, ...(references.length === 0 ? {} : { references }) }));
-    hidden.add(configPath);
-  }
-  return { configPath, overlays, hidden, rootNames: [...new Set(options.sources.map(canonical))] };
+  return { ...programConfig(options, (filename) => sys.fileExists(filename), referencesOf), rootNames: [...new Set(options.sources.map(canonical))] };
 }
 
 interface CachedSourceFile {

@@ -21,9 +21,7 @@ import {
 import {
   basename,
   dirname,
-  isAbsolute,
   join,
-  normalize,
   resolve as resolvePath,
 } from 'node:path';
 import * as ast from 'typescript/ast';
@@ -32,6 +30,8 @@ import { displayPath } from './generator-api.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { assertConfigParsed, assertNoSourceFiles, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, referenceClosure, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ResolveAtCurrentFolder } from './typescript-config.js';
+import { canonical, programConfig } from './typescript-program-config.js';
+import type { ProgramConfig } from './typescript-program-config.js';
 import { inNodeModules } from './type-analysis/path-identity.js';
 import { assertPackageManifestsParse } from './type-analysis/package-specifier.js';
 import {
@@ -63,7 +63,7 @@ import {
 } from 'typescript/sync';
 import { serverFS, type FileSystemCallbacks } from 'typescript/fs';
 import type { Node, SourceFile, TypeNode } from 'typescript/ast';
-import type { EmitKind, MemoryEmit, ParsedProject } from './typescript-types.js';
+import type { EmitKind, MemoryEmit, OpenProgramOptions, ParsedProject, ProgramSessionOptions } from './typescript-types.js';
 
 export {
   API,
@@ -274,6 +274,12 @@ function unwrapSignature(signature: CompatSignature | SyncSignature): SyncSignat
   return originalSignatures.get(signature) ?? (signature as SyncSignature);
 }
 
+/** A member the proxy does not rewrite: read from the compiler's object, a function bound to it. */
+function passThrough(target: object, property: string | symbol, receiver: unknown): unknown {
+  const value = Reflect.get(target, property, receiver);
+  return typeof value === 'function' ? (value as (...args: never[]) => unknown).bind(target) : value;
+}
+
 function wrapType(type: SyncType | undefined, checker: CompatChecker): CompatType {
   if (!type) {
     throw new Error('TypeScript checker returned no type.');
@@ -335,8 +341,7 @@ function wrapType(type: SyncType | undefined, checker: CompatChecker): CompatTyp
           return symbol ? wrapSymbol(symbol, checker) : undefined;
         };
       }
-      const value = Reflect.get(target, property, receiver);
-      return typeof value === 'function' ? (value as (...args: never[]) => unknown).bind(target) : value;
+      return passThrough(target, property, receiver);
     },
   }) as unknown as CompatType;
   typeCache.set(type, proxy);
@@ -358,8 +363,7 @@ function wrapSymbol(symbol: SyncSymbol, checker: CompatChecker): CompatSymbol {
           .map((handle) => handle.resolve(checker.project))
           .filter((node) => node !== undefined);
       }
-      const value = Reflect.get(target, property, receiver);
-      return typeof value === 'function' ? (value as (...args: never[]) => unknown).bind(target) : value;
+      return passThrough(target, property, receiver);
     },
   }) as unknown as CompatSymbol;
   symbolCache.set(symbol, proxy);
@@ -381,8 +385,7 @@ function wrapSignature(signature: SyncSignature, checker: CompatChecker): Compat
       if (property === 'getReturnType') {
         return () => checker.getReturnTypeOfSignature(proxy);
       }
-      const value = Reflect.get(target, property, receiver);
-      return typeof value === 'function' ? (value as (...args: never[]) => unknown).bind(target) : value;
+      return passThrough(target, property, receiver);
     },
   }) as unknown as CompatSignature;
   signatureCache.set(signature, proxy);
@@ -727,10 +730,6 @@ class CompatProgram implements Program {
   }
 }
 
-function canonical(filename: string): string {
-  return normalize(resolvePath(filename));
-}
-
 const parseFlags = (api: API) => (flags: readonly string[]) => {
   const { options, fileNames, errors } = api.parseCommandLine(flags);
   return { options, fileNames, errors };
@@ -877,36 +876,8 @@ export function forEachChild<T>(node: Node, callback: (node: Node) => T | undefi
   return node.forEachChild(callback);
 }
 
-export interface OpenProgramOptions {
-  readonly root: string;
-  readonly sources: readonly string[];
-  /**
-   * Optional virtual project configuration path, relative to root when not
-   * absolute. A configuration supplied through overlays is derived input and
-   * is not reported to onInput.
-   */
-  readonly configFile?: string;
-  readonly overlays?: ReadonlyMap<string, string>;
-  /** Compiler options that replace the configuration's own for this program only, as tsconfig JSON values (an enum is its name). */
-  readonly compilerOptionOverrides?: Readonly<Record<string, string | number | boolean | null | readonly string[]>>;
-  /** Command-line arguments that replace the configuration's options for this program only; `compilerOptionOverrides` win over them. */
-  readonly flags?: readonly string[];
-  readonly onInput?: (filename: string) => void;
-}
-
-export interface ProgramSessionOptions {
-  /** Working directory of the compiler process. */
-  readonly cwd: string;
-  /** Close the compiler process when the last open program closes. */
-  readonly closeWhenIdle?: boolean;
-}
-
-interface ProgramRequest {
-  readonly configPath: string;
+interface ProgramRequest extends ProgramConfig {
   readonly files: readonly string[];
-  readonly overlays: ReadonlyMap<string, string>;
-  /** Configuration paths the observer is not told about: virtual configurations are derived input. */
-  readonly hidden: ReadonlySet<string>;
   /** Set for a project that has references: the compiler is given a synthetic program, not the project. */
   readonly synthetic?: SyntheticProgram;
 }
@@ -952,35 +923,7 @@ function compilerExited(error: unknown): boolean {
 }
 
 function programRequest(options: OpenProgramOptions, referencesOf: (configPath: string, overlays: ReadonlyMap<string, string>) => readonly ConfigReference[]): ProgramRequest {
-  const overlays = new Map([...options.overlays ?? []].map(([filename, content]) => [canonical(filename), content]));
-  const baseConfigPath = canonical(options.configFile === undefined
-    ? join(options.root, 'tsconfig.json')
-    : isAbsolute(options.configFile) ? options.configFile : join(options.root, options.configFile));
-  const hidden = new Set<string>();
-  if (options.configFile !== undefined && overlays.has(baseConfigPath)) hidden.add(baseConfigPath);
-  if (!overlays.has(baseConfigPath) && !sys.fileExists(baseConfigPath)) {
-    overlays.set(baseConfigPath, JSON.stringify({
-      compilerOptions: {
-        strict: true,
-        target: 'ES2022',
-        module: 'NodeNext',
-        moduleResolution: 'NodeNext',
-        skipLibCheck: true,
-        noEmit: true,
-      },
-      include: ['**/*.ts'],
-    }));
-  }
-  let configPath = baseConfigPath;
-  if (options.compilerOptionOverrides !== undefined) {
-    // A virtual configuration that extends the original replaces the options for this program only: the API has no override. It sits beside
-    // the original, so the references, which an extending configuration does not inherit, keep their meaning when copied.
-    configPath = join(dirname(baseConfigPath), `${basename(baseConfigPath, '.json')}.options.json`);
-    const references = referencesOf(baseConfigPath, overlays);
-    overlays.set(configPath, JSON.stringify({ extends: `./${basename(baseConfigPath)}`, compilerOptions: options.compilerOptionOverrides, ...(references.length === 0 ? {} : { references }) }));
-    hidden.add(configPath);
-  }
-  return { configPath, files: [...new Set(options.sources.map(canonical))], overlays, hidden };
+  return { ...programConfig(options, (filename) => sys.fileExists(filename), referencesOf), files: [...new Set(options.sources.map(canonical))] };
 }
 
 // Internal notices for golem's own tests (`node:diagnostics_channel`, names in diagnostics-channels.ts), with no promise of stability; nothing is built unless a subscriber exists.
