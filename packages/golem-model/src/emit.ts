@@ -1749,8 +1749,10 @@ function emitCodecSection(context: EmitContext): CodecSection {
     return code`${rt.serde.requireIModelClass}(${literal(id)})`;
   };
   const nestedGenerated = (id: string): Code => externalModel(context, id).cls;
-  // The generated base class of a model this file declares: a union tests an instance's class with it, so no guard looks up a registry.
-  const nestedBase = (name: string): Code | undefined => context.localNames.has(name) ? modelType(context, name, 'BaseModel') : undefined;
+  // The generated base class of a class model this file declares or imports: a union tests an instance's class with it, so no guard looks up a registry. An IObject model has no class.
+  const nestedBase = (name: string): Code | undefined => context.classModelNames.has(name) && (context.fileLocalNames.has(name) || imports.localModels.has(name))
+    ? modelType(context, name, 'BaseModel')
+    : undefined;
   /** The manifest id of the SDK model that a generated-model descriptor names by its short name, class name or manifest id. */
   const externalManifestId = (name: string): string | undefined => [...graph.externalNames.entries()].find(([manifestId, className]) => (
     manifestId === name

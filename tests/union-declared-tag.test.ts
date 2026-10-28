@@ -413,3 +413,29 @@ export class Item extends TItemBaseModel {}
   const tagless = Object.assign(new Item(), { value: Object.assign(new Email(), { address: 'a@b.c' }) });
   assert.equal(codec.stringify(tagless, { validate: false }), '{"value":{"kind":"email","address":"a@b.c"}}');
 });
+
+for (const validation of [false, true]) {
+  test(`a tagged union of IObject models builds and writes, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: T-605 an IObject variant has no generated class, so the writers of a tagged union must not test an instance against one
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-object-', name: 'declared-object', linkWorkspaceNodeModules: true });
+    writeModelSources(sourceRoot, {
+      'variants.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+export type TPhone = IObject<{ kind: 'phone'; number: string }>;
+`,
+      'contact.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+import type { TPhone } from './variants.model.js';
+export type TEmail = IObject<{ kind: 'email'; address: string }>;
+export type TContact = IObject<{ value: (TEmail | TPhone) & Discriminator<'kind'> }>;
+`,
+    });
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const codecs = requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as Record<string, (value: unknown, options?: object) => unknown>;
+    const options = { validate: validation };
+    for (const value of [{ kind: 'email', address: 'a@b.c' }, { kind: 'phone', number: '5' }]) {
+      assert.equal(codecs.stringifyTContact({ value }, options), JSON.stringify({ value }));
+      assert.deepEqual(codecs.toWireFormatTContact({ value }, options), { value });
+    }
+  });
+}
