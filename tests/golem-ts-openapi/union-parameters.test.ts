@@ -11,20 +11,22 @@ import { startNestApp } from '../support/nest-app.js';
 import { command, golem } from '../support/process.js';
 
 const MODELS = `import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 export type TCircle = IModel<{ kind: 'circle'; radius: number }>;
 export type TRect = IModel<{ kind: 'rect'; width: number; height: number }>;
 export type TByName = IObject<{ by: 'name'; name: string; limit?: number }>;
 export type TById = IObject<{ by: 'id'; id: number }>;
-export type TShape = TCircle | TRect;
+export type TShape = (TCircle | TRect) & Discriminator<'kind'>;
 `;
 
 const CONTROLLER = `import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 import type { TById, TByName, TCircle, TRect, TShape } from './shapes.model.js';
 @Controller('shapes')
 export class ShapesController {
-  @Post() draw(@Body() shape: TCircle | TRect) { return { received: shape }; }
+  @Post() draw(@Body() shape: (TCircle | TRect) & Discriminator<'kind'>) { return { received: shape }; }
   @Post('named') drawNamed(@Body() shape: TShape) { return { received: shape }; }
-  @Get() find(@Query() search: TByName | TById) { return { received: search }; }
+  @Get() find(@Query() search: (TByName | TById) & Discriminator<'by'>) { return { received: search }; }
 }
 `;
 
