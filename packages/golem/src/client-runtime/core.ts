@@ -261,6 +261,47 @@ function fillServerUrl(client: string, server: ServerObject, choice: number | st
   });
 }
 
+// Reads a byte stream as records: `split` cuts the buffered text into records
+// and leaves the unfinished one last; `parse` turns a record into an item or
+// `undefined`, and sees the unfinished tail once more with `atEnd` set. The
+// reader is cancelled when the consumer stops early or a record fails.
+async function* readRecords<T>(
+  stream: ReadableStream<Uint8Array>,
+  ignoreBOM: boolean,
+  split: (buffered: string) => string[],
+  parse: (record: string, atEnd: boolean) => T | undefined,
+): AsyncIterable<T> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder(undefined, { fatal: true, ignoreBOM });
+  let buffered = '';
+  let completed = false;
+  try {
+    while (true) {
+      const result = await reader.read();
+      if (result.done) {
+        completed = true;
+        break;
+      }
+      buffered += decoder.decode(result.value, { stream: true });
+      const records = split(buffered);
+      buffered = records.pop() || '';
+      for (const record of records) {
+        const parsed = parse(record, false);
+        if (parsed !== undefined) yield parsed;
+      }
+    }
+    buffered += decoder.decode();
+    const parsed = parse(buffered, true);
+    if (parsed !== undefined) yield parsed;
+  } catch (error) {
+    completed = false;
+    throw error;
+  } finally {
+    if (!completed) await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+}
+
 export class ClientRuntime {
   public readonly baseUrl: string;
   public readonly fetchImpl: typeof fetch;
@@ -536,12 +577,8 @@ export class ClientRuntime {
     }
   }
 
-  private async *readNdjson<T>(stream: ReadableStream<Uint8Array>): AsyncIterable<T> {
-    const reader = stream.getReader();
-    const decoder = new TextDecoder(undefined, { fatal: true });
-    let buffered = '';
-    let completed = false;
-    const parseLine = (line: string): T | undefined => {
+  private readNdjson<T>(stream: ReadableStream<Uint8Array>): AsyncIterable<T> {
+    return readRecords<T>(stream, false, (buffered) => buffered.split(/\r?\n/), (line) => {
       const value = line.trim();
       if (!value) return undefined;
       try {
@@ -549,42 +586,16 @@ export class ClientRuntime {
       } catch (error) {
         throw new Error(`Malformed NDJSON record: ${error instanceof Error ? error.message : String(error)}`);
       }
-    };
-    try {
-      while (true) {
-        const result = await reader.read();
-        if (result.done) {
-          completed = true;
-          break;
-        }
-        buffered += decoder.decode(result.value, { stream: true });
-        const lines = buffered.split(/\r?\n/);
-        buffered = lines.pop() || '';
-        for (const line of lines) {
-          const parsed = parseLine(line);
-          if (parsed !== undefined) yield parsed;
-        }
-      }
-      buffered += decoder.decode();
-      if (buffered.trim()) {
-        const parsed = parseLine(buffered);
-        if (parsed !== undefined) yield parsed;
-      }
-    } catch (error) {
-      completed = false;
-      throw error;
-    } finally {
-      if (!completed) await reader.cancel().catch(() => undefined);
-      reader.releaseLock();
-    }
+    });
   }
-  private async *readJsonSeq<T>(stream: ReadableStream<Uint8Array>): AsyncIterable<T> {
-    const reader = stream.getReader();
-    const decoder = new TextDecoder(undefined, { fatal: true, ignoreBOM: true });
-    let buffered = '';
+  private readJsonSeq<T>(stream: ReadableStream<Uint8Array>): AsyncIterable<T> {
     let sawRecordSeparator = false;
-    let completed = false;
-    const parseRecord = (record: string): T | undefined => {
+    return readRecords<T>(stream, true, (buffered) => buffered.split('\u001e'), (record, atEnd) => {
+      if (!sawRecordSeparator) {
+        if (record.length > 0) throw new Error('JSON text sequence requires an RS before the first record');
+        sawRecordSeparator = !atEnd;
+        return undefined;
+      }
       if (!record.trim()) return undefined;
       try {
         const parsed = JSON.parse(record) as T;
@@ -595,51 +606,13 @@ export class ClientRuntime {
       } catch (error) {
         throw new Error(`Malformed JSON text sequence record: ${error instanceof Error ? error.message : String(error)}`);
       }
-    };
-    try {
-      while (true) {
-        const result = await reader.read();
-        if (result.done) {
-          completed = true;
-          break;
-        }
-        buffered += decoder.decode(result.value, { stream: true });
-        const records = buffered.split('\u001e');
-        buffered = records.pop() || '';
-        for (const record of records) {
-          if (!sawRecordSeparator) {
-            if (record.length > 0) throw new Error('JSON text sequence requires an RS before the first record');
-            sawRecordSeparator = true;
-            continue;
-          }
-          const parsed = parseRecord(record);
-          if (parsed !== undefined) yield parsed;
-        }
-      }
-      buffered += decoder.decode();
-      if (!sawRecordSeparator) {
-        if (buffered.length > 0) throw new Error('JSON text sequence requires an RS before the first record');
-      } else if (buffered.trim()) {
-        const parsed = parseRecord(buffered);
-        if (parsed !== undefined) yield parsed;
-      }
-    } catch (error) {
-      completed = false;
-      throw error;
-    } finally {
-      if (!completed) await reader.cancel().catch(() => undefined);
-      reader.releaseLock();
-    }
+    });
   }
-  private async *readServerSentEvents<T>(stream: ReadableStream<Uint8Array>): AsyncIterable<T> {
-    const reader = stream.getReader();
-    const decoder = new TextDecoder(undefined, { fatal: true });
-    let buffered = '';
+  private readServerSentEvents<T>(stream: ReadableStream<Uint8Array>): AsyncIterable<T> {
     let event = '';
     let id = '';
     let retry: number | undefined;
     let data: string[] = [];
-    let completed = false;
     const emit = (): T | undefined => {
       // WHATWG: a blank line without data discards the event type; the last
       // event id and a pending retry are stream state and carry over.
@@ -670,36 +643,17 @@ export class ClientRuntime {
       else if (field === 'retry' && /^\d+$/.test(value)) retry = Number(value);
       return undefined;
     };
-    try {
-      while (true) {
-        const result = await reader.read();
-        if (result.done) {
-          completed = true;
-          break;
-        }
-        buffered += decoder.decode(result.value, { stream: true });
-        // A trailing CR may be the first half of a CRLF split across chunks.
-        const heldCarriageReturn = buffered.endsWith('\r');
-        const lines = (heldCarriageReturn ? buffered.slice(0, -1) : buffered).split(/\r\n|\r|\n/);
-        buffered = (lines.pop() || '') + (heldCarriageReturn ? '\r' : '');
-        for (const line of lines) {
-          const value = consume(line);
-          if (value !== undefined) yield value;
-        }
-      }
-      buffered += decoder.decode();
+    return readRecords<T>(stream, false, (buffered) => {
+      // A trailing CR may be the first half of a CRLF split across chunks.
+      if (!buffered.endsWith('\r')) return buffered.split(/\r\n|\r|\n/);
+      const lines = buffered.slice(0, -1).split(/\r\n|\r|\n/);
+      lines.push(lines.pop() + '\r');
+      return lines;
+    }, (line, atEnd) => {
       // At EOF a CR still ends its line; an unterminated line and an event
       // without its blank line are incomplete and are discarded.
-      if (buffered.endsWith('\r')) {
-        const value = consume(buffered.slice(0, -1));
-        if (value !== undefined) yield value;
-      }
-    } catch (error) {
-      completed = false;
-      throw error;
-    } finally {
-      if (!completed) await reader.cancel().catch(() => undefined);
-      reader.releaseLock();
-    }
+      if (!atEnd) return consume(line);
+      return line.endsWith('\r') ? consume(line.slice(0, -1)) : undefined;
+    });
   }
 }

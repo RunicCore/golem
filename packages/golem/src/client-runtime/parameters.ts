@@ -182,6 +182,33 @@ export function setQueryString(
   query.push(encode(serialized));
 }
 
+function pushCookie(
+  cookies: string[],
+  name: string,
+  value: unknown,
+  explode: boolean,
+  text: (part: unknown) => string,
+): void {
+  if (value === undefined || value === null) return;
+  if (Array.isArray(value)) {
+    if (explode) {
+      for (const item of value) cookies.push(`${text(name)}=${text(item)}`);
+    } else {
+      cookies.push(`${text(name)}=${value.map((item) => text(item)).join(',')}`);
+    }
+    return;
+  }
+  const pairs = entries(value);
+  if (pairs.length && explode) {
+    for (const [key, item] of pairs) cookies.push(`${text(key)}=${text(item)}`);
+    return;
+  }
+  const serialized = pairs.length
+    ? pairs.flatMap(([key, item]) => [text(key), text(item)]).join(',')
+    : text(value);
+  cookies.push(`${text(name)}=${serialized}`);
+}
+
 export function addCookieParameter(
   _runtime: ClientRuntime,
   cookies: string[],
@@ -189,24 +216,7 @@ export function addCookieParameter(
   value: unknown,
   explode: boolean,
 ): void {
-  if (value === undefined || value === null) return;
-  if (Array.isArray(value)) {
-    if (explode) {
-      for (const item of value) cookies.push(`${encode(name)}=${encode(item)}`);
-    } else {
-      cookies.push(`${encode(name)}=${value.map((item) => encode(item)).join(',')}`);
-    }
-    return;
-  }
-  const pairs = entries(value);
-  if (pairs.length && explode) {
-    for (const [key, item] of pairs) cookies.push(`${encode(key)}=${encode(item)}`);
-    return;
-  }
-  const serialized = pairs.length
-    ? pairs.flatMap(([key, item]) => [encode(key), encode(item)]).join(',')
-    : encode(value);
-  cookies.push(`${encode(name)}=${serialized}`);
+  pushCookie(cookies, name, value, explode, (part) => encode(part));
 }
 
 export function addCookieStyleParameter(
@@ -216,22 +226,5 @@ export function addCookieStyleParameter(
   value: unknown,
   explode: boolean,
 ): void {
-  if (value === undefined || value === null) return;
-  if (Array.isArray(value)) {
-    if (explode) {
-      for (const item of value) cookies.push(`${name}=${String(item)}`);
-    } else {
-      cookies.push(`${name}=${value.map((item) => String(item)).join(',')}`);
-    }
-    return;
-  }
-  const pairs = entries(value);
-  if (pairs.length && explode) {
-    for (const [key, item] of pairs) cookies.push(`${key}=${String(item)}`);
-    return;
-  }
-  const serialized = pairs.length
-    ? pairs.flatMap(([key, item]) => [String(key), String(item)]).join(',')
-    : String(value);
-  cookies.push(`${name}=${serialized}`);
+  pushCookie(cookies, name, value, explode, String);
 }
