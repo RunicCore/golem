@@ -120,7 +120,7 @@ This file is the complete list of changes. The documentation site's
 
 ### Generation
 
-- `golem generate --watch` starts a run when a package install reports a change in `node_modules` without a file name. Before, the run waited for the next source change.
+- `golem watch` starts a run when a package install reports a change in `node_modules` without a file name. Before, the run waited for the next source change.
 - A Nest `@Body()` parameter or return type that is a golem model named like a library type, such as `Record` or `Map`, binds to its model. Before, the `@Body()` stopped the build with [`RUNM1081`](docs/reference/diagnostics.md#runm1081), and the return was written without the model's encode.
 - **Breaking:** a `parse<T>` or `fromWireFormat<T>` call of a model class with a spread argument in the first or second place, such as `parse<Payment>(...args)`, stops the build with [`RUNM1079`](docs/reference/diagnostics.md#runm1079). Before, golem wrote the `construct` option after the spread, where the call could ignore it and return a plain object.
 - A `paths` or `imports` pattern with a `*` no longer matches a name shorter than its text around the star, such as `aba` for `ab*ba`, as TypeScript resolves it.
