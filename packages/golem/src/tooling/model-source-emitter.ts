@@ -1,4 +1,4 @@
-import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 export {
   emitCodecRuntimeCode,
   emitStringifyFunction,
@@ -65,9 +65,6 @@ export { AmbiguousUnionConversionError, descriptorNeedsConversion, literalValues
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
-/** A model's required tag properties and their literal value or values. No conversion reads them any more: only the declared tag table dispatches. */
-export type ModelDiscriminators = Readonly<Record<string, DiscriminatorValue | readonly DiscriminatorValue[]>>;
-
 /** The local that a projection decoder reads the field at `index` into. */
 const projectionLocal = (index: number): string => `__golemProjected${index}`;
 
@@ -77,7 +74,6 @@ const projectionLocal = (index: number): string => `__golemProjected${index}`;
  */
 export interface FromJsonModelResolver {
   readonly className: Code;
-  readonly discriminators?: ModelDiscriminators;
   /** The models that this model extends, so a derived model narrows its bases where they judge one property. */
   readonly bases?: readonly string[];
   /** Internal generated-model wire decoder expression. */
@@ -90,7 +86,6 @@ export interface FromJsonModelResolver {
 
 export interface ToJsonModelResolver {
   readonly className: Code;
-  readonly discriminators?: ModelDiscriminators;
   /** The models that this model extends, so a derived model narrows its bases where they judge one property. */
   readonly bases?: readonly string[];
   /** Internal generated-model wire encoder expression. */

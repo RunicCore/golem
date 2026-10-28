@@ -1,6 +1,7 @@
 import { compareText } from '../generator-api.js';
 import * as ts from '../typescript-ns.js';
 import { resolveSymbol } from './symbols.js';
+import { isDiscriminatorTag, untaggedMembers } from './tags.js';
 
 export interface ProjectionPolicy {
   readonly exact: boolean;
@@ -27,6 +28,14 @@ export function pascalIdentifier(key: string): string | undefined {
 
 function unwrap(node: ts.TypeNode): ts.TypeNode {
   return ts.isParenthesizedTypeNode(node) ? unwrap(node.type) : node;
+}
+
+/** The node without parentheses and without `Discriminator` tag members: `(A | B) & Discriminator<'k'>` is the union `A | B`. */
+function untagged(checker: ts.TypeChecker, node: ts.TypeNode): ts.TypeNode {
+  const current = unwrap(node);
+  if (!ts.isIntersectionTypeNode(current)) return current;
+  const rest = current.types.filter(member => !isDiscriminatorTag(checker, member));
+  return rest.length === 1 && rest.length < current.types.length ? untagged(checker, rest[0]!) : current;
 }
 
 function aliasDeclaration(checker: ts.TypeChecker, node: ts.TypeReferenceNode): ts.TypeAliasDeclaration | undefined {
@@ -238,12 +247,12 @@ export function safeNameHint(hint: string, owner: string): string {
 function unionAlias(checker: ts.TypeChecker, node: ts.TypeNode): ts.TypeAliasDeclaration | undefined {
   if (!ts.isTypeReferenceNode(node) || node.typeArguments?.length) return undefined;
   const declaration = aliasDeclaration(checker, node);
-  return declaration && !declaration.typeParameters?.length && ts.isUnionTypeNode(unwrap(declaration.type)) ? declaration : undefined;
+  return declaration && !declaration.typeParameters?.length && ts.isUnionTypeNode(untagged(checker, declaration.type)) ? declaration : undefined;
 }
 
 /** Members in authored order; an alias of a union inside a union contributes its own members. */
 function flattenUnion(checker: ts.TypeChecker, node: ts.TypeNode, seen: ReadonlySet<ts.TypeAliasDeclaration> = new Set()): ts.TypeNode[] {
-  const current = unwrap(node);
+  const current = untagged(checker, node);
   if (ts.isUnionTypeNode(current)) return current.types.flatMap(member => flattenUnion(checker, member, seen));
   const alias = unionAlias(checker, current);
   if (alias && !seen.has(alias)) return flattenUnion(checker, alias.type, new Set([...seen, alias]));
@@ -253,7 +262,7 @@ function flattenUnion(checker: ts.TypeChecker, node: ts.TypeNode, seen: Readonly
 /** The members of the union as authored, also through a concrete type alias of a union. */
 export function authoredUnionMembers(checker: ts.TypeChecker, node: ts.TypeNode | undefined): ts.TypeNode[] | undefined {
   if (!node) return undefined;
-  const current = unwrap(node);
+  const current = untagged(checker, node);
   return ts.isUnionTypeNode(current) || unionAlias(checker, current) ? flattenUnion(checker, current) : undefined;
 }
 
@@ -268,9 +277,9 @@ const NULLISH = ts.TypeFlags.Null | ts.TypeFlags.Undefined | ts.TypeFlags.Void;
 
 /**
  * Names for the variants of a union, independent of the checker's type order. The part is
- * the PascalCased value of a string-literal property every variant has (the first property
- * in sorted order whose values stay distinct), otherwise the 1-based position of the
- * variant's member in the union as written. Variants that match no authored member are
+ * the PascalCased value of the declared tag key (`tagKey`, the union's `Discriminator`) when
+ * every variant has it as a string literal and the values stay distinct, otherwise the 1-based
+ * position of the variant's member in the union as written. A union with no declared key is named by position. Variants that match no authored member are
  * numbered by their sorted type text. A union with fewer than two non-nullish variants needs
  * no part.
  */
@@ -279,12 +288,19 @@ export function unionVariantNaming(
   node: ts.TypeNode | undefined,
   variants: readonly ts.Type[],
   location: ts.Node,
+  tagKey?: string,
 ): ReadonlyMap<ts.Type, UnionVariantNaming> {
   const result = new Map<ts.Type, UnionVariantNaming>();
   const named = variants.filter(variant => (variant.flags & NULLISH) === 0);
   const members = authoredUnionMembers(checker, node);
   const memberTypes = members?.map(member => checker.getTypeFromTypeNode(member));
-  const indexOf = (variant: ts.Type): number => memberTypes?.indexOf(variant) ?? -1;
+  // A variant of a tagged union is its authored member plus the tag.
+  const sameUntagged = (variant: ts.Type, member: ts.Type): boolean => {
+    const left = untaggedMembers(checker, variant);
+    const right = untaggedMembers(checker, member);
+    return left.length === right.length && left.every(type => right.includes(type));
+  };
+  const indexOf = (variant: ts.Type): number => memberTypes?.findIndex(member => member === variant || sameUntagged(variant, member)) ?? -1;
   const nodeOf = (variant: ts.Type): ts.TypeNode | undefined => {
     const index = indexOf(variant);
     if (index >= 0) return members![index];
@@ -300,10 +316,11 @@ export function unionVariantNaming(
     const type = checker.getTypeOfSymbolAtLocation(symbol, location);
     return type.flags & ts.TypeFlags.StringLiteral ? (type as ts.StringLiteralType).value : undefined;
   };
-  const shared = checker.getPropertiesOfType(named[0]!).map(symbol => symbol.getName())
-    .filter(property => named.every(variant => literalOf(variant, property) !== undefined)).sort();
-  for (const property of shared) {
-    const pascal = named.map(variant => pascalIdentifier(literalOf(variant, property)!));
+  if (tagKey !== undefined) {
+    const pascal = named.map(variant => {
+      const value = literalOf(variant, tagKey);
+      return value === undefined ? undefined : pascalIdentifier(value);
+    });
     if (pascal.every((value): value is string => value !== undefined) && new Set(pascal).size === named.length) {
       named.forEach((variant, index) => result.set(variant, { part: pascal[index]!, node: nodeOf(variant) }));
       return result;

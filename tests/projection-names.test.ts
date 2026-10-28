@@ -302,14 +302,31 @@ import type { TMerchant } from './b-merchant.js';
   const after = await documentOf(t, source, { ...SPLIT_MODELS, 'src/0-user.controller.ts': unrelated });
   const expected = variantShapes(before.components.schemas, 'TOrderEither');
   assert.deepEqual(Object.keys(expected), ['TOrderEither1', 'TOrderEither2']);
+  assert.ok(expected.TOrderEither1?.includes('a'), 'member 1 is the first authored member');
+  assert.ok(expected.TOrderEither2?.includes('b'), 'member 2 is the second authored member');
   assert.deepEqual(variantShapes(after.components.schemas, 'TOrderEither'), expected);
 });
 
-test('the discriminant is chosen by sorted property name, not by declaration order', async t => {
+test('union member positions follow the authored order', async t => {
+  // protects: T-598 a tagged union `(A | B) & Discriminator<K>` keeps the authored-order positions of its members, written out or through an alias
+  const document = await documentOf(t, eitherController("((TMoney & { kind: 'x-y'; b: string }) | (TMerchant & { kind: 'x_y'; a: string })) & Discriminator<'kind'>"), SPLIT_MODELS);
+  const shapes = variantShapes(document.components.schemas, 'TOrderEither');
+  assert.ok(shapes.TOrderEither1?.includes('b'));
+  assert.ok(shapes.TOrderEither2?.includes('a'));
+
+  const aliasedSource = eitherController('TEither | null')
+    .replace('export type TOrder', "type TEither = ((TMerchant & { kind: 'x-y'; a: string }) | (TMoney & { kind: 'x_y'; b: string })) & Discriminator<'kind'>;\nexport type TOrder");
+  const aliased = variantShapes((await documentOf(t, aliasedSource, SPLIT_MODELS)).components.schemas, 'TOrderEither');
+  assert.ok(aliased.TOrderEither1?.includes('a'), 'a union written as an alias plus null: member 1 is the first authored member');
+  assert.ok(aliased.TOrderEither2?.includes('b'), 'a union written as an alias plus null: member 2 is the second authored member');
+});
+
+test('the declared tag key names the members, not another literal property they share', async t => {
+  // protects: T-598 R-54 golem reads the declared key, never detects one (kind comes first in sorted order, the declared key is type)
   const names = await componentNames(t, controller(
-    "either: ((TMerchant & { type: 'x'; kind: 'card' }) | (TMoney & { kind: 'bank'; type: 'y' })) & Discriminator<'kind'>",
+    "either: ((TMerchant & { type: 'x'; kind: 'card' }) | (TMoney & { kind: 'bank'; type: 'y' })) & Discriminator<'type'>",
   ));
-  for (const expected of ['TOrderEitherCard', 'TOrderEitherBank']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
+  for (const expected of ['TOrderEitherX', 'TOrderEitherY']) assert.ok(names.includes(expected), `${expected} in ${names.join(', ')}`);
 });
 
 test('discriminant values that collide after PascalCase fall back to positions', async t => {

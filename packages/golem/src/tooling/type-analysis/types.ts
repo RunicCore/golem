@@ -1246,12 +1246,12 @@ export function descriptorBuilder(
     }
     const shape = (seen: ReadonlySet<ts.Type>): ModelConversionDescriptor => {
       if (type.isUnion()) {
-        const variantNaming = unionVariantNaming(checker, node, type.types, context.declaration);
         const declaredTag = unionTag(
           metadata.discriminator === undefined ? undefined : { key: metadata.discriminator, ...(metadata.discriminatorDefault ? { defaultType: metadata.discriminatorDefault } : {}) },
           type.types.map((variant) => checkerDiscriminator(tagContext, variant)),
         );
         if (declaredTag !== undefined) for (const variant of type.types) declaredVariants.add(variant);
+        const variantNaming = unionVariantNaming(checker, node, type.types, context.declaration, declaredTag?.key);
         const entries = type.types.map((variant) => ({
           type: variant,
           descriptor: describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions, `${nameHint}${variantNaming.get(variant)?.part ?? ''}`, variantNaming.get(variant)?.node),

@@ -50,13 +50,12 @@ import {
   wireStringifyExportName,
   type CodecRuntimeOptions,
   type FromJsonModelResolver,
-  type ModelDiscriminators,
 } from '@exprtlabs/golem/internal/emitter';
 import { type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecValidationPlan, PlanValidators, SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
 import { sourceDigest } from '@exprtlabs/golem/manifest';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
-import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { isJsonObject } from './json.js';
 import { compareText, NameScope, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/generator-api';
 import { componentOrigin, componentPlace, ComponentNameScope, LocatedError, type OriginLocator } from './origin.js';
@@ -145,26 +144,6 @@ function aliasInitName(alias: RecursiveAlias): string {
 }
 
 /**
- * Tags a model declares itself: required properties whose schema is a const or
- * an enum of literals. The shared union conversion infers dispatch from these
- * when a union has no discriminator table.
- */
-function modelDiscriminators(definition: ModelDefinition | undefined): ModelDiscriminators | undefined {
-  if (!definition) return undefined;
-  const tags: Record<string, DiscriminatorValue | readonly DiscriminatorValue[]> = {};
-  const literal = (value: unknown): value is DiscriminatorValue =>
-    typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
-  for (const [name, schema] of definition.properties) {
-    if (!definition.required.has(name) || !isJsonObject(schema)) continue;
-    if (literal(schema.const)) tags[name] = schema.const;
-    else if (Array.isArray(schema.enum) && schema.enum.length > 0 && schema.enum.every(literal)) {
-      tags[name] = schema.enum.length === 1 ? schema.enum[0] : schema.enum;
-    }
-  }
-  return Object.keys(tags).length ? tags : undefined;
-}
-
-/**
  * The functions of a module that conversion code calls by name. Each is a name part, so a conversion that is one call
  * on its value gives its function to `convertModelField`, and the module decides the spelling when it renders.
  */
@@ -234,7 +213,6 @@ function modelResolver(reference: string, definitions: ModelDefinitions, env: Mo
       ...(aliasConvertsValue(alias, definitions, env) ? {} : { identity: true as const }),
     };
   }
-  const discriminators = modelDiscriminators(definitions.get(reference));
   const bases = modelBases(definitions.get(reference));
   return {
     className: context.models.model(reference),
@@ -242,7 +220,6 @@ function modelResolver(reference: string, definitions: ModelDefinitions, env: Mo
     fromInit: (value) => definitions.get(reference)?.isUnion
       ? code`${context.initializer(reference)}(${value})`
       : code`new ${context.models.model(reference)}(${value} as ${context.models.init(reference)})`,
-    ...(discriminators ? { discriminators } : {}),
     ...(bases.length ? { bases } : {}),
   };
 }
