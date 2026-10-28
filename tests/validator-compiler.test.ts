@@ -252,7 +252,7 @@ test('a discriminator follows $ref branches, in $defs or another resource, and a
       pet: {
         $defs: {
           cat: { properties: { kind: { const: 'cat' }, lives: { type: 'integer' } }, required: ['kind'] },
-          dog: { allOf: [{ $ref: 'TDogBase' }, { properties: { kind: { enum: ['dog', 'hound'] } } }] },
+          dog: { allOf: [{ $ref: 'TDogBase' }, { properties: { kind: { enum: ['dog', 'hound'] } }, required: ['kind'] }] },
         },
         oneOf: [{ $ref: '#/$defs/cat' }, { $ref: '#/$defs/dog' }, { $ref: 'TBird' }],
         discriminator: { propertyName: 'kind' },
@@ -260,7 +260,7 @@ test('a discriminator follows $ref branches, in $defs or another resource, and a
     },
     resources: {
       TDogBase: { properties: { barks: { type: 'boolean' } } },
-      TBird: { $ref: '#/$defs/bird', $defs: { bird: { properties: { kind: { const: 'bird' }, wings: { type: 'integer' } } } } },
+      TBird: { $ref: '#/$defs/bird', $defs: { bird: { properties: { kind: { const: 'bird' }, wings: { type: 'integer' } }, required: ['kind'] } } },
     },
   });
   assert.deepEqual(validators.pet({ kind: 'cat', lives: 'nine' }, true), [{ path: ['lives'], code: 'type', expected: ['integer'] }]);
@@ -273,8 +273,8 @@ test('a discriminator follows $ref branches, in $defs or another resource, and a
 test('a discriminator over two $ref branches reports only the selected branch', async () => {
   const schema = {
     $defs: {
-      a: { properties: { kind: { const: 'a' }, x: { type: 'integer' } } },
-      b: { properties: { kind: { const: 'b' }, y: { type: 'string' } } },
+      a: { properties: { kind: { const: 'a' }, x: { type: 'integer' } }, required: ['kind'] },
+      b: { properties: { kind: { const: 'b' }, y: { type: 'string' } }, required: ['kind'] },
     },
     oneOf: [{ $ref: '#/$defs/a' }, { $ref: '#/$defs/b' }],
     discriminator: { propertyName: 'kind' },
@@ -289,6 +289,21 @@ test('a discriminator is an annotation unless every branch states its own tag va
   await assertIssues(annotated, true, [{ path: [], code: 'union', matched: 0 }]);
   const shared = { oneOf: [{ properties: { kind: { const: 'a' } } }, { properties: { kind: { const: 'a' } } }], discriminator: { propertyName: 'kind' } };
   await assertIssues(shared, { kind: 'a' }, [{ path: [], code: 'union', matched: 2 }]);
+});
+
+test('a discriminator is an annotation when a branch leaves its tag optional, so {} matches the one branch that allows it', async () => {
+  // protects: QA a discriminated oneOf with an optional tag rejected {} although exactly branch A matches
+  const schema = {
+    oneOf: [
+      { properties: { kind: { const: 'a' } } },
+      { properties: { kind: { const: 'b' } }, required: ['kind'] },
+    ],
+    discriminator: { propertyName: 'kind' },
+  };
+  await assertIssues(schema, {}, []);
+  await assertIssues(schema, { kind: 'a' }, []);
+  await assertIssues(schema, { kind: 'b' }, []);
+  await assertIssues(schema, { kind: 'z' }, [{ path: [], code: 'union', matched: 0 }]);
 });
 
 test('minLength and maxLength count code points', async () => {
