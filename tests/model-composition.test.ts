@@ -444,3 +444,21 @@ export type TCatOwner = IModel<TOwner & { pet: TCat; pets: TCat[] }>;
     assert.deepEqual(encodeGeneratedModel(decoded), wire);
   });
 }
+
+test('a projection inside a type alias keeps its model when an unrelated generic parameter shares the model name', async t => {
+  // protects: bug sweep 3 fieldProvenance read the model TAddress in Pair as the argument of Wrap<TAddress> by name, so the projection check never saw the model
+  const { root, sourceRoot } = fixture(t);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { MinProperties } from '@exprtlabs/golem/tags';
+export type TAddress = IModel<{ id: string; city: string } & MinProperties<1>>;
+type Pair = Omit<TAddress, 'id'> | string;
+type Wrap<TAddress> = Pair | null;
+export type TContainer = IModel<{ projected: Wrap<string> }>;
+`,
+  });
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    /RUNM1055.*Projection of TAddress would discard whole-object constraints/,
+  );
+});
