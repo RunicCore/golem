@@ -61,10 +61,10 @@ export function command(cwd: string, executable: string, args: readonly string[]
  * With no network, npm's fetch retries only delay a cache miss (70 s instead
  * of 1 s), so they are off.
  */
-export const consumerNpmEnv = { npm_config_offline: 'false', npm_config_prefer_offline: 'true', npm_config_fetch_retries: '0' } as const;
+const consumerNpmEnv = { npm_config_offline: 'false', npm_config_prefer_offline: 'true', npm_config_fetch_retries: '0' } as const;
 
 /** Name `test:prepare` when npm could not get a package from the cache or from the unreachable public registry. */
-export function explainCacheMiss(error: unknown): unknown {
+function explainCacheMiss(error: unknown): unknown {
   if (!(error instanceof Error)) return error;
   const message = error.message;
   const cacheMiss = /ENOTCACHED/.test(message)

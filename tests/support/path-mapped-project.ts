@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { TestContext } from 'node:test';
 import { createFixtureProject } from '../fixture-project.js';
 
-export type Mapping = 'first' | 'second';
+type Mapping = 'first' | 'second';
 
 /**
  * A project whose `@mapped` path alias resolves to `first.ts` or `second.ts`, so a program shows which version of

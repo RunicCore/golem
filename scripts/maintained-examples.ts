@@ -5,7 +5,7 @@ import path from 'node:path';
 export const SOURCE_EXAMPLES = ['models', 'shared-folder'] as const;
 
 /** Framework projects with their own toolchain. */
-export const FRAMEWORK_EXAMPLES = ['payments'] as const;
+const FRAMEWORK_EXAMPLES = ['payments'] as const;
 
 /** Every maintained project under `examples/`. */
 export const EXAMPLE_NAMES = [...SOURCE_EXAMPLES, ...FRAMEWORK_EXAMPLES] as const;

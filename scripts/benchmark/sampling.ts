@@ -2,7 +2,7 @@ import { performance } from 'node:perf_hooks';
 import type { Settings } from './results.js';
 
 /** Warmup is split into this many untimed rotations over all cases. */
-export const WARMUP_ROUNDS = 3;
+const WARMUP_ROUNDS = 3;
 /** Synchronous loops read the clock once per this many calls. */
 const CLOCK_STRIDE = 8;
 const MODULUS = 2_147_483_647;

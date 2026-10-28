@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fixturePath } from '../fixture-project.js';
 
 /** A fixture file (`from`, relative to tests/fixtures) and where the case project holds it (`to`, relative to the project root). */
-export interface IdentityFile { readonly from: string; readonly to: string }
+interface IdentityFile { readonly from: string; readonly to: string }
 
 /** One project that the identity test generates and rewrites on both TypeScript versions. */
 export interface IdentityCase {

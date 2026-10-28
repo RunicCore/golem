@@ -250,7 +250,7 @@ export function isGeneratedModelClass(value: unknown): value is GeneratedModelCl
   return typeof value === 'function' && Boolean(findGeneratedModelDefinitionForConstructor(value));
 }
 
-export interface GeneratedClientInstance {
+interface GeneratedClientInstance {
   [name: string]: () => { execute: (
     input?: unknown,
     options?: unknown,

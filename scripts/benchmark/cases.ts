@@ -13,7 +13,7 @@ export type CostOperationId = 'decode' | 'encode';
 export type OperationId = CompareOperationId | CostOperationId;
 export type AdapterId = 'golem' | 'golem-validated' | 'golem-object' | 'golem-object-off' | 'control' | 'class-transformer' | 'class-validator' | 'typia' | 'zod' | 'ajv';
 export type GroupId = 'plain' | 'classes' | 'validated-classes';
-export type Support = 'full' | 'none';
+type Support = 'full' | 'none';
 export type ProjectKind = 'plain' | 'validating';
 
 export interface PayloadSpec { readonly id: PayloadId; readonly fixture: string; readonly label: string; readonly description: string; readonly sourceFile: string;
@@ -48,7 +48,7 @@ export const PAYLOADS: readonly PayloadSpec[] = [
  * none converting (serde-none). The compare table does not list them. The union pair is one wire value in two models, a union of
  * inline tagged objects and a union of model classes, timed on the IModel adapters only (E-42).
  */
-export const COST_PAYLOADS: readonly PayloadSpec[] = [
+const COST_PAYLOADS: readonly PayloadSpec[] = [
   { id: 'serde-none', fixture: 'serde-none', label: 'Serde none', description: 'Twenty-one fields on plain strings and numbers: nothing converts.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
   { id: 'serde-many', fixture: 'serde-many', label: 'Serde many', description: 'The same shape with every field converting: money, hex codes, permission bits, yes/no flags, dates and date tuples.', sourceFile: 'scripts/benchmark/fixtures/features/payloads.ts' },
   { id: 'union-tagged', fixture: 'union-tagged', label: 'Union, tagged', description: 'A hundred events, each one of four shapes picked by a kind tag. The shapes are inline objects, so the encoder dispatches on the tag. Each event holds one date.', sourceFile: 'scripts/benchmark/fixtures/features/union-dispatch.ts', adapters: ['golem', 'golem-validated'], noInvalid: true },
@@ -152,7 +152,7 @@ export const INVALID_CASES: readonly CaseSpec[] = ALL_PAYLOADS.filter(payload =>
 
 /** The control times native JSON on the compare table's payloads; the spread of these numbers is the run's noise band. */
 export const CONTROL_ID = 'control' satisfies AdapterId;
-export const CONTROL_CASES: readonly CaseSpec[] = PAYLOADS.flatMap(payload =>
+const CONTROL_CASES: readonly CaseSpec[] = PAYLOADS.flatMap(payload =>
   (['parse', 'stringify'] as const).map(operation => ({ payload: payload.id, operation, adapter: CONTROL_ID, support: 'full' }) satisfies CaseSpec));
 
 /** Every case a run can time. */
