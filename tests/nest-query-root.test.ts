@@ -1,10 +1,8 @@
 import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { Controller, Get, Module, Query } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { nestModelCodec, NestModelInterceptor } from '@exprtlabs/golem/nest';
-import { createObjectCodec } from '@exprtlabs/golem/serde';
+import { decorateQueryModel, startNestApp } from './support/nest-app.js';
+import { registerPassThroughCodec } from './support/pass-through-codec.js';
 
 const BASE_SCHEMA = {
   type: 'object',
@@ -13,15 +11,7 @@ const BASE_SCHEMA = {
 
 /** A codec that checks nothing and hands the wire value on, so the test sees what the interceptor decoded. */
 function register(id: string, schema: object): void {
-  createObjectCodec(id, {
-    stringify: (value) => JSON.stringify(value),
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
-    fromWireFormat: (wire) => wire as never,
-    schema,
-  });
+  registerPassThroughCodec(id, { schema });
 }
 
 /** Serves `GET /?<query>` through NestModelInterceptor for a whole @Query() model of codec `id`, and returns the query the handler received. */
@@ -29,17 +19,8 @@ async function queryReceived(id: string, query: string): Promise<unknown> {
   class QueryController {
     list(received: unknown) { return { received }; }
   }
-  Controller()(QueryController);
-  const descriptor = Object.getOwnPropertyDescriptor(QueryController.prototype, 'list');
-  assert.ok(descriptor);
-  Get()(QueryController.prototype, 'list', descriptor);
-  Query()(QueryController.prototype, 'list', 0);
-  nestModelCodec(id)(QueryController.prototype, 'list', 0);
-  class AppModule {}
-  Module({ controllers: [QueryController] })(AppModule);
-  const application = await NestFactory.create(AppModule, { logger: false });
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  decorateQueryModel(QueryController, 'list', id);
+  const application = await startNestApp([QueryController]);
   try {
     const response = await fetch(`${await application.getUrl()}/?${query}`);
     assert.equal(response.status, 200);

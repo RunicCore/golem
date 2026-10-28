@@ -4,91 +4,10 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { generate } from '#controllers/generator';
-import { createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { createControllerFixture, type ControllerFixtureOptions } from '../fixture-templates/controllers/project.js';
+import { documentOf, expectValue, operationOf, responseOf, responseSchema } from './openapi-document.js';
 
-interface FixtureOptions {
-  readonly files?: Readonly<Record<string, string>>;
-}
-
-interface OpenApiSchema {
-  readonly type?: string;
-  readonly properties?: Readonly<Record<string, unknown>>;
-  readonly items?: OpenApiSchema;
-  readonly [keyword: string]: unknown;
-}
-
-interface OpenApiResponse {
-  readonly description?: string;
-  readonly content?: Readonly<Record<string, { readonly schema?: OpenApiSchema }>>;
-}
-
-interface OpenApiOperation {
-  readonly summary?: string;
-  readonly responses: Readonly<Record<string, OpenApiResponse>>;
-}
-
-interface OpenApiPathItem {
-  readonly get?: OpenApiOperation;
-  readonly post?: OpenApiOperation;
-}
-
-interface OpenApiDocument {
-  readonly paths: Readonly<Record<string, OpenApiPathItem>>;
-}
-
-function expectValue<T>(value: T | undefined, label: string): T {
-  if (value === undefined) throw new Error(`Expected ${label}.`);
-  return value;
-}
-
-function operationOf(
-  document: OpenApiDocument,
-  route: string,
-  method: keyof OpenApiPathItem,
-): OpenApiOperation {
-  return expectValue(expectValue(document.paths[route], `OpenAPI path ${route}`)[method], `${String(method).toUpperCase()} ${route}`);
-}
-
-function responseOf(
-  document: OpenApiDocument,
-  route: string,
-  method: keyof OpenApiPathItem,
-  status: string,
-): OpenApiResponse {
-  return expectValue(operationOf(document, route, method).responses[status], `response ${status} for ${String(method).toUpperCase()} ${route}`);
-}
-
-function responseSchema(
-  document: OpenApiDocument,
-  route: string,
-  method: keyof OpenApiPathItem,
-  status: string,
-  mediaType = 'application/json',
-): OpenApiSchema {
-  const content = expectValue(responseOf(document, route, method, status).content, `response ${status} content`);
-  const media = expectValue(content[mediaType], `response ${status} ${mediaType}`);
-  const schema = media.schema;
-  if (schema === undefined || schema === null || typeof schema !== 'object' || Array.isArray(schema)) {
-    throw new Error(`Expected object schema for response ${status}.`);
-  }
-  return schema;
-}
-
-function documentOf(result: Awaited<ReturnType<typeof generate>>): OpenApiDocument {
-  const artifact = result.artifacts[0];
-  assert.ok(artifact);
-  const parsed: unknown = JSON.parse(artifact.content);
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('Generated OpenAPI document is not an object.');
-  }
-  const document = parsed as { readonly paths?: unknown };
-  if (document.paths === null || typeof document.paths !== 'object' || Array.isArray(document.paths)) {
-    throw new Error('Generated OpenAPI document has no object paths.');
-  }
-  return parsed as OpenApiDocument;
-}
-
-function fixture(t: TestContext, source: string, options: FixtureOptions = {}): string {
+function fixture(t: TestContext, source: string, options: Pick<ControllerFixtureOptions, 'files'> = {}): string {
   return createControllerFixture(t, {
     prefix: 'golem-ts-openapi-endpoint-decorators-',
     packageName: 'golem-ts-openapi-endpoint-decorators-fixture',

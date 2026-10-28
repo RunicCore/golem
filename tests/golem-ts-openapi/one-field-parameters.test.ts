@@ -5,11 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { Module } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 import { runPipeline } from '#golem/cli';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { startNestApp } from '../support/nest-app.js';
 import { command, golem } from '../support/process.js';
 
 const MODEL = `import type { IModel, IObject } from '@exprtlabs/golem/model';
@@ -169,13 +167,7 @@ export class AController {
     aController_createBatch(): { execute(input: unknown): Promise<{ body: unknown }> };
     aController_list(): { execute(input: unknown): Promise<{ body: unknown }> };
   } };
-  class AppModule {}
-  Module({ controllers: [AController] })(AppModule);
-  const application = await NestFactory.create(AppModule, { logger: false });
-  // Express 5 reads `filter[status]` as one flat key unless the app opts in to nested query keys.
-  application.getHttpAdapter().getInstance().set('query parser', 'extended');
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  const application = await startNestApp([AController], { nestedQuery: true });
   try {
     const client = new ApiClient({ baseUrl: await application.getUrl() });
     assert.deepEqual((await client.aController_create().execute({ body: { payment: { id: 'p1', amount: 12 } } })).body, { amount: 12 });

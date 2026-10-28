@@ -5,11 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
-import { Module } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 import { runPipeline } from '#golem/cli';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { startNestApp } from '../support/nest-app.js';
 import { command, golem } from '../support/process.js';
 
 const MODELS = `import type { IModel, IObject } from '@exprtlabs/golem/model';
@@ -48,11 +46,7 @@ test('NestModelInterceptor converts each variant of a tagged object union in a w
   assert.equal(built.code, 0, built.stdout + built.stderr);
   await runPipeline(path.join(root, 'golem.yaml'), { check: true });
   const { ShapesController } = await import(pathToFileURL(path.join(root, 'build/shapes.controller.js')).href) as { ShapesController: new () => object };
-  class AppModule {}
-  Module({ controllers: [ShapesController] })(AppModule);
-  const application = await NestFactory.create(AppModule, { logger: false });
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  const application = await startNestApp([ShapesController]);
   try {
     const url = await application.getUrl();
     const post = async (route: string, body: unknown) => {

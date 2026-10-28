@@ -1,22 +1,17 @@
 // lane: typescript6 Checker guards: the controller generator and the rewrite code it uses run the checker in this process
-import { createFixtureProject, writeGeneratedArtifacts } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { unwrapAsyncType } from '#controllers/nest/analysis-utils';
+import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 
 test('unwrapAsyncType keeps the type argument node only when the syntax spells the wrapper', t => {
-  const root = createFixtureProject(t, 'golem-async-unwrap-');
-  writeGeneratedArtifacts([
-    { path: path.join(root, 'package.json'), content: '{ "type": "module" }\n' },
-    {
-      path: path.join(root, 'tsconfig.json'),
-      content: `${JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true }, include: ['src/**/*.ts'] })}\n`,
-    },
-    {
-      path: path.join(root, 'src/returns.ts'),
-      content: [
+  const root = createControllerFixture(t, {
+    prefix: 'golem-async-unwrap-',
+    links: 'none',
+    files: {
+      'src/returns.ts': [
         'export class Item { id!: string; }',
         'type Page<T> = Promise<T[]>;',
         'export declare function direct(): Promise<Item>;',
@@ -24,7 +19,7 @@ test('unwrapAsyncType keeps the type argument node only when the syntax spells t
         '',
       ].join('\n'),
     },
-  ]);
+  });
   const program = ts.createProgramFromSources({ root, sources: [] });
   const checker = program.getTypeChecker();
   const sourceFile = program.getSourceFile(path.join(root, 'src/returns.ts'));
