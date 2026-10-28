@@ -6,7 +6,7 @@
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
 import { MODEL_FIELDS_KEY } from '../schema-keywords.js';
 import { createHash } from 'node:crypto';
-import { code, helperName, identifier, join, literal, render, sameCode, selfPlacedHelper, type Code, type Helper } from './code.js';
+import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
 import { rt } from './rt.js';
 import {
   emitArrayItems,
@@ -218,6 +218,11 @@ export interface DispatchOptions {
   readonly fallback?: Code;
   /** The class of the instances `fallback` converts. An instance of it is no instance of a branch class it extends. */
   readonly fallbackClass?: Code;
+  /**
+   * The caller's promise that the branches, `rest` and `fallback` read nothing of the function around the dispatch except
+   * `expression`, so the file can hold the dispatch as a function of its own (see `selectedDispatch`).
+   */
+  readonly standalone?: true;
 }
 
 /**
@@ -236,11 +241,28 @@ export function emitDispatch(options: DispatchOptions): Code {
   return selected ?? inlineDispatch(options);
 }
 
+/** The local of a union function that holds the branch index, and its parameter. */
+const BRANCH_INDEX = identifier('__golemIndex');
+const UNION_PARAMETER = identifier('__golemUnionValue');
+
+/** The slot of a Code that is one input part. */
+function onlyInputSlot(expression: Code): InputSlot | undefined {
+  const [only, ...more] = expression.parts;
+  return only?.kind === 'input' && more.length === 0 ? only.slot : undefined;
+}
+
 /**
- * The variable that a selected dispatch assigns the branch index to. Its tests read it at once, before any branch runs, so
- * a branch that holds another selected dispatch may assign it again.
+ * Emit a union against an input part, so a dispatch can lift the code that reads the union's value out of the function around
+ * it (`selectedDispatch`): the value is a part it can bind elsewhere. An expression that is an input part already (the cast
+ * root of a decoder, a field slot) is that part, and other code compares the union's value with it. Any other expression gets
+ * a part of its own with the same shape, so the code written against it is the code written against `expression`.
  */
-const SELECTED_INDEX = selfPlacedHelper('__golemVariant', () => code`let __golemVariant = 0;`);
+export function withUnionInput(expression: Code, emit: (value: Code) => Code): Code {
+  if (onlyInputSlot(expression)) return emit(expression);
+  const slot = inputSlot('union value', readShape(expression));
+  const emitted = emit(inputOf(slot));
+  return onlyInputSlot(emitted) === slot ? expression : bindInput(emitted, slot, expression);
+}
 
 /** A class Code the selector can repeat in its own definition: a name that no slot decides. */
 function isPlainName(name: Code): boolean {
@@ -284,13 +306,16 @@ function variantSelector(options: DispatchOptions): Helper {
 }
 
 /**
- * `emitDispatch` through a selector, when a branch is a model class: the guard of each class would otherwise stand in every
- * writer. Each writer then tests the index the selector returns and converts the branch it names.
+ * `emitDispatch` as one function of the file, when a branch is a model class and the caller allows it (`standalone`): the
+ * function picks the branch with the selector and converts the value by it, and each writer calls it with the value. Its id
+ * comes from its text, so identical unions of one direction share one function. Without a standalone dispatch over one input
+ * part, or when the branches name a part that only the writer's function knows, the writer holds the dispatch itself.
  */
 function selectedDispatch(options: DispatchOptions): Code | undefined {
   const { expression: value, branches, fallback, fallbackClass } = options;
+  const slot = onlyInputSlot(value);
   const classes = [...branches.flatMap((branch) => branch.className ? [branch.className] : []), ...(fallback && fallbackClass ? [fallbackClass] : [])];
-  if (!branches.some((branch) => branch.className) || !classes.every(isPlainName)) return undefined;
+  if (!options.standalone || !slot || !branches.some((branch) => branch.className) || !classes.every(isPlainName)) return undefined;
   const encode = options.direction !== 'decode';
   const key = literal(options.property);
   const tag = code`(${value} as unknown as Record<string, unknown>)[${key}]`;
@@ -307,13 +332,20 @@ function selectedDispatch(options: DispatchOptions): Code | undefined {
     return branch.className ? code`(${tag} === undefined ? ${json(convert, literal(branch.values[0]))} : ${convert})` : convert;
   };
   const outside = options.rest ?? (encode ? (options.nullish === undefined ? value : options.nullish) : value);
-  const selector = helperName(variantSelector(options));
-  const index = helperName(SELECTED_INDEX);
   // The last arm needs no test: the selector returns no other index.
   const last = branches.length - (fallback === undefined ? 1 : 0);
   let chain = fallback ?? arm(branches[last]);
-  for (let at = last - 1; at >= 0; at--) chain = code`${index} === ${literal(at)} ? (${arm(branches[at])}) : (${chain})`;
-  return code`((${index} = ${selector}(${value})) < 0 ? (${outside}) : (${chain}))`;
+  for (let at = last - 1; at >= 0; at--) chain = code`${BRANCH_INDEX} === ${literal(at)} ? (${arm(branches[at])}) : (${chain})`;
+  const body = bindInput(
+    code`const ${BRANCH_INDEX} = ${helperName(variantSelector(options))}(${value}); return ${BRANCH_INDEX} < 0 ? (${outside}) : (${chain});`,
+    slot,
+    UNION_PARAMETER,
+  );
+  // An input or a name left in the body belongs to the writer's function, which the union function cannot see.
+  if (body.parts.some((part) => part.kind === 'input' || part.kind === 'name' || part.kind === 'export')) return undefined;
+  const id = `__golemUnion_${createHash('sha256').update(render(body)).digest('hex').slice(0, 10)}`;
+  const union = selfPlacedHelper(id, () => code`function ${identifier(id)}(${UNION_PARAMETER}: unknown) { ${body} }`);
+  return code`${helperName(union)}(${value})`;
 }
 
 function inlineDispatch(options: DispatchOptions): Code {

@@ -49,6 +49,7 @@ import {
   objectValueExpression,
   emitDispatch,
   emitUnionConversion,
+  withUnionInput,
   keyIsNotListed,
   presentKeysCode,
   unionDispatch,
@@ -279,6 +280,7 @@ function emitNestedUnion(
         property: dispatch.property,
         direction: dispatchDirection,
         branches,
+        standalone: true,
         ...(rest === undefined ? {} : { rest, restIsDate }),
         ...(fallback === undefined ? {} : { fallback }),
         ...(fallbackClass ? { fallbackClass } : {}),
@@ -374,7 +376,7 @@ function emitNestedUncached(
     return conversions[0] ?? value;
   }
   if (descriptor.kind === 'union') {
-    return emitNestedUnion(descriptor, expression, direction, resolveModel, resolveSerde, memo);
+    return withUnionInput(expression, (union) => emitNestedUnion(descriptor, union, direction, resolveModel, resolveSerde, memo));
   }
   if (descriptor.kind === 'generated-model' || descriptor.kind === 'reference') {
     const modelName = descriptor.kind === 'reference' ? descriptor.name : descriptor.id;

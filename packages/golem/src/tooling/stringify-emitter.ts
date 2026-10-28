@@ -29,6 +29,7 @@ import {
   presentKeysCode,
   declaredTable,
   unionDispatch,
+  withUnionInput,
   type DispatchOptions,
   type ObjectTypeDescriptor,
   type TaggedUnion,
@@ -466,7 +467,7 @@ function emitValue(
       item: (item, itemValue) => ({ code: emitValue(item, itemValue, ctx), throws: false }),
     });
   }
-  if (descriptor.kind === 'union') return emitUnionValue(descriptor, value, ctx);
+  if (descriptor.kind === 'union') return withUnionInput(value, (union) => emitUnionValue(descriptor, union, ctx));
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);
     if (node) return nestedStringifyCall(node.id, value, ctx);
@@ -1136,7 +1137,7 @@ function emitTaggedVariantUnion(
   ctx: EmitCtx,
   convert: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code,
   direction: DispatchOptions['direction'],
-  options?: { readonly unresolved?: 'throw' | 'skip' },
+  options: { readonly unresolved?: 'throw' | 'skip'; readonly localsBefore: number },
 ): Code | undefined {
   const value = expression;
   const variants = indices.map((index) => union.variants[index]);
@@ -1168,6 +1169,8 @@ function emitTaggedVariantUnion(
     expression: value,
     property: dispatch.property,
     direction,
+    // A branch that assigned a local of the writer's function (see `writerLocals`) cannot stand in a function of its own.
+    ...(writerLocals(ctx) === options.localsBefore ? { standalone: true as const } : {}),
     ...(tagLocal === undefined ? {} : { tagLocal: identifier(tagLocal) }),
     ...(direction === 'encode-json' ? { nullish: code`'null'` } : {}),
     ...(rest === undefined ? {} : { rest, restIsDate }),
@@ -1189,6 +1192,11 @@ function emitTaggedVariantUnion(
       })(),
     })),
   });
+}
+
+/** How many locals the function being written declares so far: the locals a decoder assigns, and the inline field locals of a writer. */
+function writerLocals(ctx: EmitCtx): number {
+  return (ctx.decodeLocals?.length ?? 0) + (ctx.inlineLocals?.size ?? 0);
 }
 
 /**
@@ -1242,6 +1250,7 @@ function emitUnion(
 ): Code {
   const decoding = direction === 'decode';
   const dispatch = UNION_DISPATCH[direction];
+  const localsBefore = writerLocals(ctx);
   return emitUnionConversion(descriptor, value, direction, {
     ...(decoding ? {} : { guard: inlineBranchGuard(ctx, value) }),
     convert: (variant) => walk(variant, ctx),
@@ -1252,7 +1261,7 @@ function emitUnion(
       ctx,
       walkTagged ?? walk,
       dispatch,
-      decoding ? undefined : { unresolved: 'skip' },
+      { ...(decoding ? {} : { unresolved: 'skip' as const }), localsBefore },
     ),
     declaredDefault: (variant) => (variant.kind === 'generated-model' ? generatedText?.(variant) : undefined) ?? walk(variant, ctx),
     generated: {
@@ -1389,7 +1398,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
     return fallibleConversion(ctx, code`(${value} instanceof Date ? ${value} : ${rt.conversion.deserializeDate}(${value}))`);
   }
   if (descriptor.kind === 'union') {
-    return emitUnionDecode(descriptor, value, ctx);
+    return withUnionInput(value, (union) => emitUnionDecode(descriptor, union, ctx));
   }
   // An intersection of objects decodes as the one merged object, so each member's fields convert.
   const decodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, modelBasesOf(ctx)) : undefined;
@@ -1740,7 +1749,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
   const encodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, modelBasesOf(ctx)) : undefined;
   if (encodedMerge) return emitEncodeValue(encodedMerge, value, ctx);
   if (descriptor.kind === 'union') {
-    return emitUnionEncode(descriptor, value, ctx);
+    return withUnionInput(value, (union) => emitUnionEncode(descriptor, union, ctx));
   }
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);

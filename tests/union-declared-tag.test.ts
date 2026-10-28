@@ -128,6 +128,8 @@ for (const validation of [false, true]) {
     // The kind union and the mode union each get a decode and an encode selector, whatever number of positions use them.
     assert.equal(generated.content.match(/^function __golemVariant_\w+\(/gm)?.length, 4);
     assert.equal(generated.content.match(/TPhoneBaseModel\.prototype instanceof TEmailBaseModel/g)?.length, 2);
+    // protects: T-639 (F-129) one function per union and writer (stringify, wire, encode, decode, init) that every position calls
+    assert.equal(generated.content.match(/^function __golemUnion_\w+\(/gm)?.length, 10);
   });
 }
 
