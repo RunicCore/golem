@@ -36,6 +36,8 @@ Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+
 - **Breaking:** a model union of two or more objects declares its tag key with `Discriminator<'kind'>`; golem never looks for it. An untagged union stops with `RUNM1080` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - **Breaking:** the controllers document writes a union's `discriminator` from the tag only, and a Nest union parameter needs the tag ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - **Breaking:** a template index signature beside a `string` index signature of another value type stops generation with `RUNM1004` ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
+- **Breaking:** an OpenAPI 3.1 document with `discriminator.defaultMapping` stops generation; the keyword is OpenAPI 3.2 only ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- **Breaking:** two `@ApiHeader()` names of one operation that differ only in case stop generation with `NEST1312` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - The `model-manifest.json` of a generated SDK no longer lists `modelReferences` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - An untagged `anyOf` whose branches state different JSON types checks a value only with the branches of its type.
 
