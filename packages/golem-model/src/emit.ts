@@ -1519,10 +1519,8 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       // The guard below excludes an undefined value of an optional field before the conversion runs.
       const inputType = optional ? code`Exclude<${baseName}[${name}], undefined>` : code`${baseName}[${name}]`;
       const converted = wrapRootConversion(helpers, rootHelperName(specification.name, 'serialize'), 'serialize', name, input, emitEncode, inputType);
-      // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do.
-      const present = optional
-        ? code`Object.prototype.hasOwnProperty.call(model, ${name}) && ${input} !== undefined`
-        : code`Object.prototype.hasOwnProperty.call(model, ${name})`;
+      // Wire output omits a field whose value is undefined, as stringify and JSON.stringify do; a required field whose type admits undefined too.
+      const present = code`Object.prototype.hasOwnProperty.call(model, ${name}) && ${input} !== undefined`;
       return code`  if (${present}) ${rt.conversion.defineModelProperty}(result, ${name}, (${converted}));`;
     });
     const decode: Code[] = [];

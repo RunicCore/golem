@@ -18,17 +18,17 @@ function containsAllOf(value: unknown, seen = new Set<unknown>()): boolean {
  */
 export function checkOperationCompositions(
   operations: readonly NormalizedOperation[],
-  analysis: Pick<OpenApiModelAnalysis, 'definitions' | 'resources'>,
+  analysis: Pick<OpenApiModelAnalysis, 'definitions' | 'resources' | 'selections' | 'dates'>,
   document: unknown,
 ): GolemDiagnostic[] {
   const diagnostics: GolemDiagnostic[] = [];
   const warn = (code: string, message: string): void => {
     diagnostics.push({ code, severity: GolemDiagnosticSeverity.Warning, message });
   };
-  const env = modelEnv(document, undefined, undefined, analysis.resources);
+  const env = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
   const check = (schema: unknown, place: string, direction: 'from' | 'to'): void => {
     const site: CompositionSite = { where: (pointer) => `${place} at #${pointer}`, origins: () => [] };
-    checkComposition(site, schema, undefined, analysis.definitions, document, analysis.resources, warn);
+    checkComposition(site, schema, undefined, analysis.definitions, document, analysis.resources, warn, env);
     // Members that are not objects convert in the model path; no component reads an inline schema there, so convert it once.
     if (!containsAllOf(schema)) return;
     const convert = direction === 'from' ? checkModelFromJSON : checkModelToJSON;

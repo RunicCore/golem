@@ -77,7 +77,7 @@ const CODE_NEST_NO_CODEC = 'RUNM1071';
 const CODE_NEST_REGISTRY = 'RUNM1072';
 /** A model that golem does not generate for this project: its file name has no model suffix. */
 const CODE_FOREIGN_MODEL = 'RUNM1074';
-/** A serde function with type arguments that no call rewrite reaches: `parse<T>` as a value, or `parse?.<T>(...)`. */
+/** A serde function with type arguments that no call rewrite reaches: `parse<T>` as a value, `parse?.<T>(...)`, or a `parse<T>(...)` of a class whose construct option a spread argument hides. */
 const CODE_NOT_A_CALL = 'RUNM1079';
 /** A `@Body()` or `@Query()` parameter, whole or one field, whose type is no golem model, which `NestModelInterceptor` rejects on each request. An error unless `nonModelInputs: warn` is set. */
 const CODE_NEST_NOT_A_MODEL = 'RUNM1081';
@@ -625,9 +625,10 @@ function nestBinding(
   const members = input.unions !== undefined ? authoredUnionMembers(checker, model) : undefined;
   if (members) return nestUnionBinding(input, unbound, members);
   const { label } = unbound;
-  if (NEST_PRIMITIVE_TYPES.has(label.slice(label.lastIndexOf('.') + 1))) return { ...unbound, primitive: true };
   const name = serdeTypeName(model);
   const symbol = name && resolvedSymbolAt(checker, name);
+  // A golem model may be named like a library type (`Record`, `Map`): the symbol decides before the written name does.
+  if (NEST_PRIMITIVE_TYPES.has(label.slice(label.lastIndexOf('.') + 1)) && !(symbol && isGolemModel(checker, symbol))) return { ...unbound, primitive: true };
   if (name) addAliasChainFiles(checker, { root, from: file, dependencies }, name);
   if (!symbol) return { ...unbound, golemModel: modelDeclarationKind(checker, model) !== undefined };
   return { ...unbound, id: codecIdOf(checker, keys, symbol, dependencies), golemModel: isGolemModel(checker, symbol), name, defaultExport: symbol.name === 'default' };
@@ -859,7 +860,13 @@ function scanFile(
     loadCodecModule(scan, { root, checker, keys, file }, id, typeName);
     if (method === 'parse' || method === 'fromWireFormat') {
       const target = constructTarget(scan, { root, checker, file }, typeName);
-      if (target !== undefined) scan.edits.push(...constructOptionEdits(file, call, target));
+      // The construct option is the second argument; a spread in the first or second place hides how many arguments come before it.
+      if (target !== undefined && call.arguments.slice(0, 2).some(ts.isSpreadElement)) {
+        const written = typeName.getText(file);
+        scan.diagnostics.push(locate(root, file, call, CODE_NOT_A_CALL, `${method}<${written}>(...) with a spread argument before the options cannot take the construct option of ${written}. Pass the text and the options as separate arguments.`));
+      } else if (target !== undefined) {
+        scan.edits.push(...constructOptionEdits(file, call, target));
+      }
     }
   };
 

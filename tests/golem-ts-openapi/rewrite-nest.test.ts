@@ -57,6 +57,32 @@ function method(code: string, name: string): { readonly decorators: string; read
   return { decorators: match[1], signature: match[2] };
 }
 
+test('a golem model named like a library type (Record, Map) binds as a model for a @Body() and a return', (t) => {
+  // protects: round-2 finding 1: the written label Record was tested against the primitive type names before the symbol was resolved
+  const root = project(t, {
+    'src/record.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TRecordBaseModel } from './record.model.generated.js';
+export type TRecord = IModel<{ id: string }>;
+export class Record extends TRecordBaseModel {}
+`,
+    'src/record.controller.ts': `import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Record } from './record.model.js';
+@Controller('records')
+export class RecordController {
+  @Post()
+  create(@Body() r: Record): number { return 1; }
+  @Get()
+  async get(): Promise<Record> { throw new Error('unused'); }
+}
+`,
+  });
+  const result = scan(root);
+  assert.deepEqual(result.diagnostics, []);
+  const code = rewritten(root, result, 'src/record.controller.ts');
+  assert.match(method(code, 'create').signature, /@Body\(\) @__golem_nestModelCodec\("TRecord_[0-9a-f]{8}"\) r: Record/);
+  assert.match(method(code, 'async get').decorators, /@__golem_nestModelReturn\("TRecord_[0-9a-f]{8}"\) @Get\(\)/);
+});
+
 test('with nest on, a model @Body() or @Query() parameter and a model return gain codec decorators', (t) => {
   const root = paymentsProject(t);
   const result = scan(root);

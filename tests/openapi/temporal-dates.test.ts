@@ -111,6 +111,36 @@ test('dates: temporal rejects a date-time union with another string branch', asy
   );
 });
 
+test('dates: temporal rejects a date-time union with another string branch inside an inline allOf of an operation, and dates: date names Date', async t => {
+  // protects: round-2 finding 5: the inline schema check of an operation ran with dates: date whatever the option was
+  const inline = {
+    openapi: '3.1.0',
+    info: { title: 'Events', version: '1.0.0' },
+    paths: {
+      '/events': {
+        get: {
+          operationId: 'getEvent',
+          responses: {
+            200: {
+              description: 'ok',
+              content: { 'application/json': { schema: { allOf: [{ type: 'object', required: ['when'], properties: { when: { oneOf: [{ type: 'string', format: 'date-time' }, { type: 'string' }] } } }] } } },
+            },
+          },
+        },
+      },
+    },
+  };
+  const root = createFixtureProject(t, 'golem-openapi-temporal-inline-');
+  await assert.rejects(
+    generateMaterializedSdk(inline, { output: path.join(root, 'temporal', 'sdk'), name: 'Events', profile: PROFILE, dates: 'temporal' }),
+    /one Temporal branch and optional null/,
+  );
+  await assert.rejects(
+    generateMaterializedSdk(inline, { output: path.join(root, 'date', 'sdk'), name: 'Events', profile: PROFILE, dates: 'date' }),
+    /cannot be converted to Date/,
+  );
+});
+
 const TEMPORAL_LIB = { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] };
 
 async function generateTemporalModels(t: Parameters<typeof createFixtureProject>[0], prefix: string, doc: unknown): Promise<Record<string, unknown>> {

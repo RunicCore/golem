@@ -1790,6 +1790,10 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
   return value;
 }
 
+function admitsUndefined(descriptor: ModelTypeDescriptor): boolean {
+  return descriptor.kind === 'undefined' || (descriptor.kind === 'union' && descriptor.variants.some(admitsUndefined));
+}
+
 function emitEncodedRecord(
   descriptor: Extract<ModelTypeDescriptor, { kind: 'object' }>,
   expression: Code,
@@ -1805,8 +1809,8 @@ function emitEncodedRecord(
     const { read, shape } = accessRead(inputOf(self), name, bare);
     const input = inputSlot(name, shape);
     const encoded = emitEncodeValue(property, inputOf(input), ctx);
-    // An optional field whose value is undefined is omitted, as stringify and JSON.stringify do.
-    if (!required.has(name)) {
+    // A field whose value is undefined is omitted, as stringify and JSON.stringify do; a required field is omitted only when its type admits undefined.
+    if (!required.has(name) || admitsUndefined(property)) {
       const local = identifier(allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`);
       const entry = code`(${local} !== undefined ? { [${literal(name)}]: ${bindInput(encoded, input, local)} } : undefined)`;
       return { name, code: ctx.inlineLocals ? code`...(${local} = ${read}, ${entry})` : code`...((${local}) => ${entry})(${read})`, spread: true };
