@@ -133,6 +133,20 @@ function resetCounters(): void {
   encodeCalls = 0;
 }
 
+/** The wire-to-model and model-to-wire conversions that the emitter writes for `descriptor`, compiled against the shared bindings. */
+function compileDirections(descriptor: ModelConversionDescriptor): { readonly fromJSON: CompiledConversion; readonly toJSON: CompiledConversion } {
+  return {
+    fromJSON: compileConversion(
+      render(emitModelFromJSON(descriptor, identifier('value'), () => fromChild, serde)),
+      bindings,
+    ),
+    toJSON: compileConversion(
+      render(emitModelToJSON(descriptor, identifier('value'), () => toChild, serde)),
+      bindings,
+    ),
+  };
+}
+
 test('intersection conversion merges object fields and runs overlapping conversions once', () => {
   resetCounters();
   const date = { kind: 'date' } as const;
@@ -149,14 +163,7 @@ test('intersection conversion merges object fields and runs overlapping conversi
     ],
   };
 
-  const fromJSON = compileConversion(
-    render(emitModelFromJSON(descriptor, identifier('value'), () => fromChild, serde)),
-    bindings,
-  );
-  const toJSON = compileConversion(
-    render(emitModelToJSON(descriptor, identifier('value'), () => toChild, serde)),
-    bindings,
-  );
+  const { fromJSON, toJSON } = compileDirections(descriptor);
 
   const decoded = fromJSON({
     when: '2025-01-02T03:04:05.000Z',
@@ -236,14 +243,7 @@ test('discriminated plain object unions convert only the selected branch', () =>
       }),
     ],
   };
-  const fromJSON = compileConversion(
-    render(emitModelFromJSON(descriptor, identifier('value'), () => fromChild, serde)),
-    bindings,
-  );
-  const toJSON = compileConversion(
-    render(emitModelToJSON(descriptor, identifier('value'), () => toChild, serde)),
-    bindings,
-  );
+  const { fromJSON, toJSON } = compileDirections(descriptor);
 
   const tokenBranch = fromJSON({
     kind: 'token',

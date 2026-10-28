@@ -6,20 +6,17 @@ import * as ts from '#golem/typescript-ns';
 import { generate } from '#model/generator';
 import { readFixture } from './fixture-project.js';
 import { createModelProject } from './model-project.js';
+import { declaredExportNames, statementsOf } from './support/public-exports.js';
 
 /** Names a generated companion exports for application code; `__golem*` helpers are documented as internal. */
 function publicExports(program: ts.Program, file: string): string[] {
-  const source = program.getSourceFile(file);
-  assert.ok(source, `${file} is not in the program`);
   const names: string[] = [];
-  for (const statement of source.statements) {
+  for (const statement of statementsOf(program, file)) {
     if (ts.isExportDeclaration(statement) && statement.exportClause && ts.isNamedExports(statement.exportClause)) {
       names.push(...statement.exportClause.elements.map(element => element.name.text));
       continue;
     }
-    if (!(ts.canHaveModifiers(statement) && ts.getModifiers(statement)?.some(modifier => modifier.kind === ts.SyntaxKind.ExportKeyword))) continue;
-    if (ts.isVariableStatement(statement)) names.push(...statement.declarationList.declarations.flatMap(d => ts.isIdentifier(d.name) ? [d.name.text] : []));
-    else if ('name' in statement && statement.name && ts.isIdentifier(statement.name as ts.Node)) names.push((statement.name as ts.Identifier).text);
+    names.push(...declaredExportNames(statement));
   }
   return [...new Set(names)].filter(name => !name.startsWith('__golem')).sort();
 }

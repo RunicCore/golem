@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
-import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildRecursiveNames } from './support/recursive-names.js';
 
 const HEAD = "import type { IModel } from '@exprtlabs/golem/model';\n";
 
@@ -12,14 +11,8 @@ const HEAD = "import type { IModel } from '@exprtlabs/golem/model';\n";
  * `fields` is every name that the generated files give a `<name>Fields` type: the models and the projections.
  */
 async function roundTrips(t: TestContext, sources: Record<string, string>, values: readonly (readonly [file: string, model: string, value: unknown])[], fields: readonly string[]): Promise<void> {
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-names-', name: 'recursive-names' });
-  writeModelSources(sourceRoot, sources);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  const built = await buildModelProject(root);
-  assert.equal(built.code, 0, `${built.stdout}${built.stderr}`);
-  const generated = Object.keys(sources).map(file => fs.readFileSync(path.join(sourceRoot, file.replace(/\.ts$/, '.generated.ts')), 'utf8')).join('\n');
-  const named = [...new Set([...generated.matchAll(/\b(\w+)Fields\b/g)].map(match => match[1]!))].sort();
-  assert.deepEqual(named, [...fields].sort());
+  const { root, names } = await buildRecursiveNames(t, sources);
+  assert.deepEqual(names, [...fields].sort());
   for (const [file, model, value] of values) {
     const codecs = await import(pathToFileURL(path.join(root, `build/${file}.model.generated.js`)).href) as Record<string, (value: unknown) => unknown>;
     assert.deepEqual(JSON.parse(JSON.stringify(codecs[`toWireFormat${model}`]!(codecs[`fromWireFormat${model}`]!(value)))), value);

@@ -43,12 +43,17 @@ async function roundTrip(root: string): Promise<void> {
   assert.deepEqual(encodeGeneratedModel(decoded), { count: '42', name: 'abcd' });
 }
 
-test('codec declared in an installed package dist/*.d.ts imports by package specifier', async t => {
+/** A project with `@fixture/pg` installed with the given `exports` map and files, the model `A` that uses it, and the round trip of its build. */
+async function writeAndRoundTrip(t: TestContext, exports: Record<string, unknown>, files: Record<string, string> = COUNT_DIST_FILES): Promise<void> {
   const { root, sourceRoot } = project(t);
-  writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: COUNT_DIST_FILES });
+  writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports, files });
   fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await roundTrip(root);
+}
+
+test('codec declared in an installed package dist/*.d.ts imports by package specifier', async t => {
+  await writeAndRoundTrip(t, EXPORTS);
 });
 
 test('linked workspace package with source codecs imports by package specifier', async t => {
@@ -179,11 +184,7 @@ export type TA = IObject<{ viaAlias: EvenCount; direct: number & TValidation<typ
 });
 
 test('wildcard export reaches the codec', async t => {
-  const { root, sourceRoot } = project(t);
-  writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: { './*': { types: './dist/*.d.ts', import: './dist/*.js' } }, files: COUNT_DIST_FILES });
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await roundTrip(root);
+  await writeAndRoundTrip(t, { './*': { types: './dist/*.d.ts', import: './dist/*.js' } });
 });
 
 test('two codecs from one package share one specifier', t => {
@@ -219,19 +220,11 @@ test('a package with no exports field hosts a codec at its package-relative path
 });
 
 test('exports without a types condition reach the declaration file beside each target', async t => {
-  const { root, sourceRoot } = project(t);
-  writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: { './codecs': './dist/codecs.js', './tags': './dist/tags.js' }, files: COUNT_DIST_FILES });
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await roundTrip(root);
+  await writeAndRoundTrip(t, { './codecs': './dist/codecs.js', './tags': './dist/tags.js' });
 });
 
 test('a nameless nested package.json inside the codec package does not hide the package', async t => {
-  const { root, sourceRoot } = project(t);
-  writeCodecPackage(path.join(root, 'node_modules/@fixture/pg'), { name: '@fixture/pg', exports: EXPORTS, files: { ...COUNT_DIST_FILES, 'dist/package.json': '{"type":"module"}' } });
-  fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), model);
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await roundTrip(root);
+  await writeAndRoundTrip(t, EXPORTS, { ...COUNT_DIST_FILES, 'dist/package.json': '{"type":"module"}' });
 });
 
 test('a nameless package.json in the project keeps project codecs relative', t => {
