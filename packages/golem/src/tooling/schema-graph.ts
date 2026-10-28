@@ -735,7 +735,7 @@ export function createSchemaGraph(
       const rewritten = rewrittenNodes.get(id) ?? node.descriptor;
       const options = {
         definitions: definitionsMap,
-        executableBindings: true,
+        executableBindings: node.validationEnabled !== false,
         opaqueReferenceIds,
       } as const;
       const jsonSchema = schemaForDescriptor(rewritten, { ...options, representation: 'wire' });
