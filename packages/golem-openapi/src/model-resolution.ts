@@ -647,7 +647,9 @@ export function modelConversionDescriptor(
     }
     // A discriminator keeps even a one-variant union a tagged union.
     // A discriminator the document does not resolve to model variants (inline objects, a scalar beside the models) tags like a union without one.
-    const discriminator = unionDiscriminatorTable(schema, variants, definitions, nested) ?? untaggedUnionTable(convertedVariants, definitions);
+    const declaredKey = asRecord(schema.discriminator).propertyName;
+    const discriminator = unionDiscriminatorTable(schema, variants, definitions, nested)
+      ?? untaggedUnionTable(convertedVariants, definitions, typeof declaredKey === 'string' ? declaredKey : undefined);
     if (convertedVariants.length === 1 && !discriminator) {
       const [only] = convertedVariants;
       if (only) return only;
@@ -1012,14 +1014,15 @@ function modelTagValues(definition: ModelDefinition | undefined): TagValues | un
  * variant requires as a literal, when no value belongs to two variants. When a variant is neither an inline object nor a model, the
  * object variants alone are tagged and the others get no values. Without such a property the union keeps no table.
  */
-function untaggedUnionTable(variants: readonly ModelTypeDescriptor[], definitions: ModelDefinitions): UnionDiscriminator | undefined {
+/** `declared` is the `propertyName` of a discriminator keyword the document wrote: then only that key tags the variants. */
+function untaggedUnionTable(variants: readonly ModelTypeDescriptor[], definitions: ModelDefinitions, declared?: string): UnionDiscriminator | undefined {
   if (variants.length < 2) return undefined;
   const tagsOf = (variant: ModelTypeDescriptor): TagValues | undefined =>
     variant.kind === 'object' ? objectTagValues(variant) : variant.kind === 'generated-model' ? modelTagValues(definitions.get(variant.id)) : undefined;
   const present = variants.flatMap((variant, index) => variant.kind === 'null' ? [] : [{ index, tags: tagsOf(variant), variant }]);
   const tagged = present.every(({ tags }) => tags) ? present : present.filter(({ variant }) => variant.kind === 'object');
   if (tagged.length === 0) return undefined;
-  for (const propertyName of tagged[0].tags?.keys() ?? []) {
+  for (const propertyName of declared === undefined ? tagged[0].tags?.keys() ?? [] : [declared]) {
     const values = tagged.map(({ tags }) => tags?.get(propertyName) ?? []);
     const flat = values.flat();
     if (values.some((set) => set.length === 0) || new Set(flat).size !== flat.length) continue;

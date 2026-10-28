@@ -1318,3 +1318,22 @@ for (const validation of [true, false]) for (const form of ['inline', 'component
     assert.deepEqual(codec.toWireFormat(stop), { event: { kind: 'stop', at: '2024-05-07T07:08:09.000Z' } });
   });
 }
+
+test('a discriminator keyword that resolves to no model still tags the variants by the key it names', async t => {
+  // protects: T-594 the fallback table took the first shared literal (kind) instead of the propertyName the document wrote (mode)
+  const output = await generateSerdeSdk(t, 'golem-openapi-oneof-declared-key-', sequenceSerdeDocument({
+    event: {
+      oneOf: [
+        { type: 'object', required: ['kind', 'mode', 'at'], properties: { kind: { const: 'x' }, mode: { const: 'dated' }, at: { type: 'string', format: 'date-time' } } },
+        { type: 'object', required: ['kind', 'mode', 'at'], properties: { kind: { const: 'y' }, mode: { const: 'text' }, at: { type: 'string' } } },
+      ],
+      discriminator: { propertyName: 'mode' },
+    },
+  }, {}), { validation: false });
+  compileStandaloneModelSerdeSdk(output);
+  const { construct } = await loadVisitModels(output, 'generated declared-key oneOf models');
+  const codec = visitCodec<{ event: { kind: string; mode: string; at: unknown } }>(output);
+  // kind says the dated variant, mode says the text variant: the declared key decides, so `at` stays text.
+  const decoded = codec.fromWireFormat({ event: { kind: 'x', mode: 'text', at: '2024-05-06T07:08:09.000Z' } }, { construct });
+  assert.equal(decoded.event.at, '2024-05-06T07:08:09.000Z');
+});
