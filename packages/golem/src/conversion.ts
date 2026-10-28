@@ -77,6 +77,21 @@ export function defineModelProperty(target: object, name: string, value: unknown
 }
 
 /**
+ * The wire form of a plain object: `value` as it is, or a copy without the declared `names` whose own value is
+ * `undefined`, as stringify leaves them out. Only an object that holds such a key is copied.
+ */
+export function omitUndefinedKeys<Value extends object>(value: Value, names: readonly string[]): Value {
+  const record = value as Record<string, unknown>;
+  let copy: Record<string, unknown> | undefined;
+  for (const name of names) {
+    if (record[name] !== undefined || !Object.hasOwn(record, name)) continue;
+    copy ??= { ...record };
+    delete copy[name];
+  }
+  return (copy ?? value) as Value;
+}
+
+/**
  * The root of a call with `allowGetter`: a copy with the root's prototype, so a model instance keeps its model. Each
  * declared field is read once, so its getter runs once and the copy never runs a prototype getter again: a defined
  * value is an own enumerable property, and `undefined` is an own non-enumerable one, absent in the JSON view and

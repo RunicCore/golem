@@ -58,7 +58,7 @@ import {
   unionDispatch,
   type ObjectTypeDescriptor,
 } from './union-conversion.js';
-import { isRecordExpression } from './stringify-emitter.js';
+import { admitsUndefined, isRecordExpression } from './stringify-emitter.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
 export { AmbiguousUnionConversionError, descriptorNeedsConversion, literalValues, ObjectUnionDiscriminatorError } from './union-conversion.js';
@@ -440,8 +440,8 @@ function emitNestedUncached(
     const additional = typeof additionalItem === 'object'
       ? atField(nested => emitNested(additionalItem, nested, direction, resolveModel, resolveSerde, memo), plainValue, identifier('key'), direction)
       : plainValue;
-    // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do.
-    const omitsUndefined = (name: string): boolean => direction === 'toJSON' && !descriptor.required.includes(name);
+    // Wire output omits a field whose value is undefined, as stringify and JSON.stringify do: an optional field, or a required one whose type admits undefined.
+    const omitsUndefined = (name: string): boolean => direction === 'toJSON' && (!descriptor.required.includes(name) || admitsUndefined(descriptor.properties[name]!));
     const additionalChanged = !sameCode(additional, plainValue);
     const knownChanged = assignments.some(({ unchanged }) => !unchanged);
     const knownNames = Object.keys(descriptor.properties);
@@ -476,17 +476,23 @@ function emitNestedUncached(
       const body = bindInput(join([...capture, ...fields, extras].filter(piece => !isEmpty(piece)), code` `), sourceRecord, source);
       return code`${objectValueExpression(expression)} ? ((source: Record<string, unknown>) => { const out: Record<string, unknown> = {}; ${body} return out; })(${recordExpression(expression)}) : ${value}`;
     }
-    if (!knownChanged && !additionalChanged) return value;
+    // A copy that holds no declared key set to undefined; an object that holds none passes through as it is.
+    const undefinedNames = knownNames.filter(omitsUndefined);
+    const withoutUndefined = (record: Code): Code => code`${rt.conversion.omitUndefinedKeys}(${record}, [${join(undefinedNames.map(literal), code`, `)}])`;
+    if (!knownChanged && !additionalChanged) {
+      return undefinedNames.length === 0 ? value : code`${objectValueExpression(expression)} ? ${withoutUndefined(recordExpression(expression))} : ${value}`;
+    }
     const record = recordExpression(expression);
+    // The listed names of the base are left out when an additional schema converts the other keys, so only a plain base can hold an undefined one.
     const base = additionalChanged
       ? code`Object.fromEntries(Object.entries(${record}).filter(([${knownNames.length === 0 ? code`` : code`key`}, value]) => value !== undefined${unlisted}).map(([key, value]) => [key, ${additional}]))`
-      : record;
-    const fields = assignments.map(({ name, property, sourceValue, unchanged, value: converted }) => {
-      if (omitsUndefined(name)) return code`...(${sourceValue} !== undefined ? { [${property}]: ${converted} } : undefined)`;
+      : undefinedNames.length === 0 ? record : withoutUndefined(record);
+    const fields = assignments.flatMap(({ name, property, sourceValue, unchanged, value: converted }) => {
+      if (omitsUndefined(name)) return unchanged && !additionalChanged ? [] : [code`...(${sourceValue} !== undefined ? { [${property}]: ${converted} } : undefined)`];
       const guarded = unchanged
         ? sourceValue
         : code`${sourceValue} === undefined ? ${sourceValue} : (${converted})`;
-      return code`[${property}]: ${guarded}`;
+      return [code`[${property}]: ${guarded}`];
     });
     return code`${objectValueExpression(expression)} ? { ...${base}, ${join(fields, code`, `)} } : ${value}`;
   }
@@ -597,7 +603,7 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
   conversion: [
     'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'convertModelField', 'convertModelItems',
     'convertModelTupleItems', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
-    'encodeGeneratedModel', 'endDecode', 'endEncode', 'jsonWithDiscriminator', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
+    'encodeGeneratedModel', 'endDecode', 'endEncode', 'jsonWithDiscriminator', 'omitUndefinedKeys', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
     'withDiscriminatorValue',
   ],
   serde: SERDE_IMPORT_ORDER,
