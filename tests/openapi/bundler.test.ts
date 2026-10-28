@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
@@ -7,18 +6,12 @@ import YAML from 'yaml';
 import { bundleReferenceGraph, componentNameFor, type BundledDocument } from '#openapi/bundler';
 import { loadReferenceGraph } from '#openapi/reference-loader';
 import { createFixtureProject } from '../fixture-project.js';
-
-function write(directory: string, name: string, value: unknown): string {
-  const filename = path.join(directory, name);
-  mkdirSync(path.dirname(filename), { recursive: true });
-  writeFileSync(filename, typeof value === 'string' ? value : JSON.stringify(value));
-  return filename;
-}
+import { writeOpenApiDocument } from './helpers.js';
 
 async function bundle(t: TestContext, files: Record<string, unknown>, document: unknown, rootName = 'api.json'): Promise<BundledDocument> {
   const directory = createFixtureProject(t, 'golem-bundler-');
-  for (const [name, value] of Object.entries(files)) write(directory, name, value);
-  const filename = write(directory, rootName, document);
+  for (const [name, value] of Object.entries(files)) writeOpenApiDocument(directory, value, name);
+  const filename = writeOpenApiDocument(directory, document, rootName);
   return bundleReferenceGraph(await loadReferenceGraph(filename, document));
 }
 
@@ -218,8 +211,8 @@ test('a YAML alias shared by two locations is rewritten in both', async (t) => {
     '',
   ].join('\n');
   const directory = createFixtureProject(t, 'golem-bundler-alias-');
-  write(directory, 'x.json', { type: 'string' });
-  const filename = write(directory, 'api.yaml', yaml);
+  writeOpenApiDocument(directory, { type: 'string' }, 'x.json');
+  const filename = writeOpenApiDocument(directory, yaml, 'api.yaml');
   const document: unknown = YAML.parse(yaml);
   const { document: bundled } = bundleReferenceGraph(await loadReferenceGraph(filename, document));
   assert.deepEqual(bundled.components, {

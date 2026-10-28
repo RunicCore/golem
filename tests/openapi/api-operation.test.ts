@@ -4,8 +4,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import test, { after, type TestContext } from 'node:test';
-import { configure, reaction } from 'mobx';
+import test, { after } from 'node:test';
+import { reaction } from 'mobx';
 import { generate } from '#openapi/generator';
 import {
   compileGeneratedSdk,
@@ -15,8 +15,7 @@ import {
   writeOpenApiDocument,
   type OpenApiGenerationProfile,
 } from './helpers.js';
-
-type Warn = typeof console.warn;
+import { beginMobxPass, captureWarnings, deferred, enforceActions, rejectOnAbort } from '../support/client-test-utils.js';
 
 interface RuntimeApiOperation {
   execute(input: unknown, options?: { signal?: AbortSignal }): Promise<{
@@ -33,23 +32,6 @@ interface ItemsClient {
   listItems(): RuntimeApiOperation;
   createItem(): RuntimeApiOperation;
   readStream(): RuntimeApiOperation;
-}
-
-function captureWarnings(t: TestContext): string[] {
-  const warnings: string[] = [];
-  const original = console.warn;
-  console.warn = ((...args: unknown[]) => {
-    warnings.push(args.map(String).join(' '));
-  }) as Warn;
-  t.after(() => {
-    console.warn = original;
-  });
-  return warnings;
-}
-
-function enforceActions(t: TestContext): void {
-  configure({ enforceActions: 'always' });
-  t.after(() => configure({ enforceActions: 'observed' }));
 }
 
 function isRuntimeApiOperation(value: unknown): value is RuntimeApiOperation {
@@ -264,13 +246,9 @@ test('generated factory is inert, reusable, and reads auth at execute time', asy
 test('overlapping generated execute calls warn in both profiles and clean up on failure', async (t) => {
   const warnings = captureWarnings(t);
   for (const mobx of [false, true]) {
-    warnings.length = 0;
-    if (mobx) enforceActions(t);
+    beginMobxPass(t, mobx, warnings);
     const { Client } = await loadItemsClient({ mobx, validation: true });
-    let release: (() => void) | undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: gate, resolve: release } = deferred();
     const client = new Client({
       baseUrl: 'https://example.test',
       auth: { apiKey: 'secret' },
@@ -301,7 +279,7 @@ test('overlapping generated execute calls warn in both profiles and clean up on 
       assert.doesNotMatch(warning, /secret/);
     }
     if (isObservableRuntimeApiOperation(operation)) assert.equal(operation.loading, true);
-    release?.();
+    release();
     await Promise.all([first, second, third]);
     if (isObservableRuntimeApiOperation(operation)) assert.equal(operation.loading, false);
 
@@ -321,16 +299,7 @@ test('overlapping generated execute calls warn in both profiles and clean up on 
       baseUrl: 'https://example.test',
       auth: { apiKey: 'secret' },
       fetchImpl: async (_url: RequestInfo | URL, init?: RequestInit) => {
-        const signal = init?.signal;
-        if (!signal) throw new Error('missing signal');
-        await new Promise<never>((_, reject) => {
-          const fail = (): void => reject(new Error('aborted'));
-          if (signal.aborted) {
-            fail();
-            return;
-          }
-          signal.addEventListener('abort', fail, { once: true });
-        });
+        await rejectOnAbort(init?.signal);
       },
     }).listItems();
     const pending = aborting.execute({}, { signal: controller.signal });
@@ -439,17 +408,10 @@ test('generated execute recovers from pipeline failures on the same object', asy
 test('generated loading stays true when a failed execute overlaps a pending success', async (t) => {
   const warnings = captureWarnings(t);
   for (const mobx of [false, true]) {
-    warnings.length = 0;
-    if (mobx) enforceActions(t);
+    beginMobxPass(t, mobx, warnings);
     const { Client } = await loadItemsClient({ mobx, validation: true });
-    let release: (() => void) | undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    let firstEntered: (() => void) | undefined;
-    const firstInFlight = new Promise<void>((resolve) => {
-      firstEntered = resolve;
-    });
+    const { promise: gate, resolve: release } = deferred();
+    const { promise: firstInFlight, resolve: firstEntered } = deferred();
     let rejectAuth = false;
     const client = new Client({
       baseUrl: 'https://example.test',
@@ -460,7 +422,7 @@ test('generated loading stays true when a failed execute overlaps a pending succ
         },
       },
       fetchImpl: async () => {
-        firstEntered?.();
+        firstEntered();
         await gate;
         return Response.json(['ok']);
       },
@@ -474,7 +436,7 @@ test('generated loading stays true when a failed execute overlaps a pending succ
     assert.equal(warnings.length, 1);
     assert.match(warnings[0] ?? '', /listItems/);
     if (isObservableRuntimeApiOperation(operation)) assert.equal(operation.loading, true);
-    release?.();
+    release();
     assert.equal((await success).status, 200);
     if (isObservableRuntimeApiOperation(operation)) assert.equal(operation.loading, false);
   }
@@ -483,13 +445,9 @@ test('generated loading stays true when a failed execute overlaps a pending succ
 test('generated factory objects and clients isolate pending counters and overlap warnings', async (t) => {
   const warnings = captureWarnings(t);
   for (const mobx of [false, true]) {
-    warnings.length = 0;
-    if (mobx) enforceActions(t);
+    beginMobxPass(t, mobx, warnings);
     const { Client } = await loadItemsClient({ mobx, validation: true });
-    let release: (() => void) | undefined;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const { promise: gate, resolve: release } = deferred();
     const fetchImpl = async (): Promise<Response> => {
       await gate;
       return Response.json(['ok']);
@@ -519,7 +477,7 @@ test('generated factory objects and clients isolate pending counters and overlap
     if (isObservableRuntimeApiOperation(other)) assert.equal(other.loading, true);
     if (isObservableRuntimeApiOperation(left)) assert.equal(left.loading, true);
     if (isObservableRuntimeApiOperation(right)) assert.equal(right.loading, true);
-    release?.();
+    release();
     await Promise.all([first, second, extra, otherPending]);
     if (isObservableRuntimeApiOperation(left)) assert.equal(left.loading, false);
     if (isObservableRuntimeApiOperation(right)) assert.equal(right.loading, false);
@@ -533,10 +491,7 @@ test('MobX generated loading follows execute settlement, not stream consumption'
   copyFixtureFile(output, "openapi/api-operation/loading-present.ts", "loading-present.ts");
   compileGeneratedSdk(output, [path.join(output, 'loading-present.ts')], { noEmit: true, strict: true });
 
-  let releaseFetch: (() => void) | undefined;
-  const fetchGate = new Promise<void>((resolve) => {
-    releaseFetch = resolve;
-  });
+  const { promise: fetchGate, resolve: releaseFetch } = deferred();
   const client = new Client({
     baseUrl: 'https://example.test',
     fetchImpl: async () => {
@@ -561,7 +516,7 @@ test('MobX generated loading follows execute settlement, not stream consumption'
   t.after(stop);
   const pending = operation.execute({});
   assert.equal(operation.loading, true);
-  releaseFetch?.();
+  releaseFetch();
   const response = await pending;
   assert.equal(operation.loading, false);
   assert.equal(isAsyncIterable(response.body), true);

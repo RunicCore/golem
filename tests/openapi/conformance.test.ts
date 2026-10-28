@@ -27,6 +27,7 @@ import {
   isAsyncIterable,
   isGeneratedClientClass,
   isGeneratedModelClass,
+  loadGeneratedClient,
   openApiFixture,
   requireRecord,
   tscBin,
@@ -736,6 +737,20 @@ after(() => {
   for (const root of clientRoots) fs.rmSync(root, { recursive: true, force: true });
 });
 
+/** Compiles `index.ts` of a generated SDK, and the extra files, to `dist` with tsc and fails with its output. */
+function compileClientSources(output: string, extraFiles: string[] = []): void {
+  const compiled = spawnSync(process.execPath, [tscBin(),
+    '--target', 'ES2022',
+    '--module', 'NodeNext',
+    '--moduleResolution', 'NodeNext',
+    '--lib', 'ES2023,ESNext.Collection,DOM,DOM.Iterable',
+    '--outDir', path.join(output, 'dist'),
+    path.join(output, 'index.ts'),
+    ...extraFiles,
+  ], { encoding: 'utf8' });
+  assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
+}
+
 /** Generate and compile the Wire SDK against `wireAuthDocument()` once; the wire tests share its client class. */
 function compileWireClient() {
   wireClient ??= generateWireClient();
@@ -748,23 +763,8 @@ async function generateWireClient() {
   clientRoots.push(output);
   writeSdk(document, { output, name: 'Wire' });
   copyFixtureFile(output, "openapi/conformance/auth-type-test.ts", "auth-type-test.ts");
-  const compiled = spawnSync(process.execPath, [tscBin(),
-    '--target', 'ES2022',
-    '--module', 'NodeNext',
-    '--moduleResolution', 'NodeNext',
-    '--lib', 'ES2023,ESNext.Collection,DOM,DOM.Iterable',
-    '--outDir', path.join(output, 'dist'),
-    path.join(output, 'index.ts'),
-    path.join(output, 'auth-type-test.ts'),
-  ], { encoding: 'utf8' });
-  assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
-  const clientModule = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    'client',
-  );
-  assert.equal(isGeneratedClientClass(clientModule.WireClient), true);
-  if (!isGeneratedClientClass(clientModule.WireClient)) throw new TypeError('WireClient');
-  return clientModule.WireClient;
+  compileClientSources(output, [path.join(output, 'auth-type-test.ts')]);
+  return loadGeneratedClient(output, 'Wire');
 }
 
 test('generated client serializes path, repeated query, form body and API-key auth', async () => {
@@ -1339,23 +1339,8 @@ async function generateClient(name: string, document: unknown): Promise<Generate
   const output = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `golem-openapi-${name.toLowerCase()}-`)));
   clientRoots.push(output);
   writeSdk(document, { output, name });
-  const compiled = spawnSync(process.execPath, [tscBin(),
-    '--target', 'ES2022',
-    '--module', 'NodeNext',
-    '--moduleResolution', 'NodeNext',
-    '--lib', 'ES2023,ESNext.Collection,DOM,DOM.Iterable',
-    '--outDir', path.join(output, 'dist'),
-    path.join(output, 'index.ts'),
-  ], { encoding: 'utf8' });
-  assert.equal(compiled.status, 0, compiled.stderr || compiled.stdout);
-  const clientModule = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    `${name} client`,
-  );
-  const Client = clientModule[`${name}Client`];
-  assert.equal(isGeneratedClientClass(Client), true);
-  if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client`);
-  return Client;
+  compileClientSources(output);
+  return loadGeneratedClient(output, name);
 }
 
 interface ParameterContext { operation: string; name: string; in: string; contentType: string }

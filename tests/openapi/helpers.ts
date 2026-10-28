@@ -1,6 +1,7 @@
+import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, basename, relative } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
 import { isRecord } from '@exprtlabs/golem/generator-api';
@@ -145,6 +146,32 @@ export function writeOpenApiDocument(directory: string, document: unknown, name 
   return filename;
 }
 
+/**
+ * Asserts that generating the document at `input` rejects with an Error whose message is `expected`:
+ * a string must equal it, a RegExp must match it. `output` defaults to `sdk` beside the input and `profile`
+ * to no MobX and no validation. `errorClass` also asserts the exact class of the error.
+ */
+export async function assertGenerationRejected(
+  input: string,
+  expected: string | RegExp,
+  options: { profile?: OpenApiGenerationProfile; output?: string; errorClass?: ErrorConstructor } = {},
+): Promise<void> {
+  await assert.rejects(
+    () => generate({
+      input,
+      output: options.output ?? join(dirname(input), 'sdk'),
+      profile: options.profile ?? { mobx: false, validation: false },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      if (options.errorClass) assert.equal(error.constructor, options.errorClass);
+      if (typeof expected === 'string') assert.equal(error.message, expected);
+      else assert.match(error.message, expected);
+      return true;
+    },
+  );
+}
+
 export function materializeGeneratedSdk(
   artifacts: readonly { path: string; content: string }[],
   output: string,
@@ -268,6 +295,20 @@ export interface GeneratedClientClass {
 
 export function isGeneratedClientClass(value: unknown): value is GeneratedClientClass {
   return typeof value === 'function';
+}
+
+/** Imports a compiled module of a generated SDK (`dist/index.js` unless `file` names another) as a record. */
+export async function importGeneratedModule(output: string, label: string, file = 'dist/index.js'): Promise<Record<string, unknown>> {
+  return requireRecord(await import(pathToFileURL(join(output, file)).href), label);
+}
+
+/** Loads `<name>Client` from the compiled `dist/client.js` of a generated SDK. */
+export async function loadGeneratedClient(output: string, name: string): Promise<GeneratedClientClass> {
+  const module = await importGeneratedModule(output, `${name} client`, 'dist/client.js');
+  const Client = module[`${name}Client`];
+  assert.equal(isGeneratedClientClass(Client), true);
+  if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client`);
+  return Client;
 }
 
 export function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
