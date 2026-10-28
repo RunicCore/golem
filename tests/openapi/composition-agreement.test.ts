@@ -666,14 +666,14 @@ const rows: readonly Row[] = [
     document: visitDocument({
       m: {
         oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), object({ kind: { const: 'b' }, b: text }, { required: ['kind', 'b'] })],
-        anyOf: [object({ mode: { const: 'x' }, x: text }, { required: ['mode', 'x'] }), object({ mode: { const: 'y' }, y: text }, { required: ['mode', 'y'] })],
+        anyOf: [object({ at: dateTime }, { required: ['at'] })],
       },
     }),
     accepted: [
-      { wire: { m: { kind: 'a', a: 'p', mode: 'x', x: 'q' } }, model: { m: { kind: 'a', a: 'p', mode: 'x', x: 'q' } } },
-      { wire: { m: { kind: 'b', b: 'p', mode: 'y', y: 'q' } }, model: { m: { kind: 'b', b: 'p', mode: 'y', y: 'q' } } },
+      { wire: { m: { kind: 'a', a: 'p', at: AT } }, model: { m: { kind: 'a', a: 'p', at: new Date(AT) } } },
+      { wire: { m: { kind: 'b', b: 'p', at: B } }, model: { m: { kind: 'b', b: 'p', at: new Date(B) } } },
     ],
-    rejected: [{ m: { kind: 'a', a: 'p' } }, { m: { mode: 'x', x: 'q' } }],
+    rejected: [{ m: { kind: 'a', a: 'p' } }, { m: { at: AT } }],
   },
   {
     shape: 'a field that is allOf [$ref Base] beside its own oneOf of two $ref models',
@@ -1064,6 +1064,17 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     shape: 'a model base beside a union with a variant that is no object',
     error: /schema "Visit" at #\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: .*model beside a union.*plain object schemas/,
     document: visitDocument({ m: { allOf: [ref('Base'), { oneOf: [object({ kind: { const: 'a' }, a: text }, { required: ['kind', 'a'] }), text] }] } }, { Base: object({ id: text }, { required: ['id'] }) }),
+  },
+  // protects: T-554 a oneOf and an anyOf that each have several object variants stop with a coded error, not code that fails validation
+  {
+    shape: 'a oneOf and an anyOf that each have two object variants',
+    error: /#\/components\/schemas\/Visit\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_CONVERSION_CONFLICT: .*two unions with several object variants each/,
+    document: visitDocument({
+      m: {
+        oneOf: [object({ kind: { const: 'a' } }), object({ kind: { const: 'b' } })],
+        anyOf: [object({ mode: { const: 'x' } }), object({ mode: { const: 'y' } })],
+      },
+    }),
   },
   {
     shape: 'a model base beside two unions',

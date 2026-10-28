@@ -1,9 +1,9 @@
 import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { VisitModel } from './index.js';
 
-const visit = decodeGeneratedModel(VisitModel, { m: { kind: 'b', b: 'p', mode: 'y', y: 'q' } });
+const visit = decodeGeneratedModel(VisitModel, { m: { kind: 'b', b: 'p', at: '1970-01-01T00:00:00.000Z' } });
 const variant: string = visit.m.kind === 'a' ? visit.m.a : visit.m.b;
-const tagged: string = visit.m.mode === 'x' ? visit.m.x : visit.m.y;
+const at: Date = visit.m.at;
 
 void variant;
-void tagged;
+void at;

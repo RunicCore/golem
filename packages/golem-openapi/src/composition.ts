@@ -27,7 +27,7 @@ import {
 } from '@exprtlabs/golem/internal/emitter';
 import type { ModelConstraint, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 
-import { isJsonObject, objectEntries } from './json.js';
+import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { effectiveSchemaTypes } from './normalize.js';
 
 export const COMPOSITION_CONVERSION_CONFLICT = 'OPENAPI_COMPOSITION_CONVERSION_CONFLICT';
@@ -227,7 +227,9 @@ function distributeUnion<S>(
   const unspread = members.some((member) => reader.reference(member, nested)?.model)
     ? conflict('a model beside a union that is not one union of objects; give the base and each variant plain object schemas')
     : undefined;
-  if (another !== undefined) return unspread;
+  // Two unions beside a model stop generation (above); two unions with no model spread over the product of their variants.
+  if (another !== undefined && unspread !== undefined) return unspread;
+  const wide = unions.filter((at) => (unionVariants(asRecord(members[at])) ?? []).length > 1);
   const variants = unionVariants(union) ?? [];
   // The member's other keywords (properties, required, constraints) stay a part of every variant.
   const { oneOf: _oneOf, anyOf: _anyOf, discriminator: _discriminator, ...beside } = union;
@@ -239,11 +241,20 @@ function distributeUnion<S>(
     const rebuilt = members.flatMap((member, at) => at === index ? [...rest, variant].map((replacement) => ({ member: replacement, at: originalMembers?.[at] ?? at })) : [{ member, at: originalMembers?.[at] ?? at }]);
     const composed = resolveObjects({ ...schema, allOf: rebuilt.map(({ member }) => member) }, scope, reader, 'field', rebuilt.map(({ at }) => at));
     if (composed.kind === 'rejected') return composed;
-    if (composed.kind !== 'object') return unspread;
-    objects.push(composed);
+    if (composed.kind === 'variants') objects.push(...composed.variants);
+    else if (composed.kind !== 'object') return unspread;
+    else objects.push(composed);
   }
   const never = new Map(objects.flatMap((object) => object.never).map((name) => [name.name, name]));
-  return objects.length > 1 ? { kind: 'variants', variants: objects, union, items: variants, scope: reader.nested(union, nested), never: [...never.values()] } : objects[0];
+  if (objects.length <= 1) return objects[0];
+  // The merged objects of a product are told apart by the tag of the one union that has several variants. Two such unions leave
+  // no single tag, and the codec would have no way to pick a variant.
+  if (wide.length > 1) {
+    return conflict('two unions with several object variants each; give the value one union, or one of the two a single variant');
+  }
+  // The discriminator table of one union indexes that union's own variants, not the merged objects of a product, so a product has none.
+  const product = another !== undefined;
+  return { kind: 'variants', variants: objects, union: product ? {} : union, items: product ? [] : variants, scope: reader.nested(union, nested), never: [...never.values()] };
 }
 
 /**
