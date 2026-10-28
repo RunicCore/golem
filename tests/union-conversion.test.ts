@@ -162,14 +162,20 @@ test('number and boolean table tags select variants through the shared codec', (
   assert.equal(owner.stringify({ pet: { kind: true, bark: false } }), '{"pet":{"kind":true,"bark":false}}');
 });
 
-test('model conversion writes a variant instance by class and rejects unknown or mutated tags', () => {
+/** A `Dog` model class that extends the `Cat` one, and the union of their models tagged by `kind`; `catTags` are the tags of `Cat`. */
+function catOrDog(catTags: readonly string[]) {
   class ModelCat {}
   class ModelDog extends ModelCat {}
   const union: ModelTypeDescriptor = {
     kind: 'union',
     variants: [{ kind: 'generated-model', id: 'Cat' }, { kind: 'generated-model', id: 'Dog' }],
-    discriminator: { propertyName: 'kind', variants: [{ values: ['cat', 'kitty'] }, { values: ['dog'] }] },
+    discriminator: { propertyName: 'kind', variants: [{ values: [...catTags] }, { values: ['dog'] }] },
   };
+  return { ModelCat, ModelDog, union };
+}
+
+test('model conversion writes a variant instance by class and rejects unknown or mutated tags', () => {
+  const { ModelCat, ModelDog, union } = catOrDog(['cat', 'kitty']);
   const classNames: Record<string, string> = { Cat: 'ModelCat', Dog: 'ModelDog' };
   const resolveModel = (id: string) => ({
     className: identifier(classNames[id]),
@@ -221,13 +227,7 @@ test('model conversion writes a variant instance by class and rejects unknown or
 
 test('a union whose branch reads an input of its writer still selects by class and rejects an unknown tag', () => {
   // protects: T-639 a dispatch that cannot become a function of the file keeps the shared selector in its writer
-  class ModelCat {}
-  class ModelDog extends ModelCat {}
-  const union: ModelTypeDescriptor = {
-    kind: 'union',
-    variants: [{ kind: 'generated-model', id: 'Cat' }, { kind: 'generated-model', id: 'Dog' }],
-    discriminator: { propertyName: 'kind', variants: [{ values: ['cat'] }, { values: ['dog'] }] },
-  };
+  const { ModelCat, ModelDog, union } = catOrDog(['cat']);
   const owner = inputSlot('owner', 'name');
   const classNames: Record<string, string> = { Cat: 'ModelCat', Dog: 'ModelDog' };
   const resolveModel = (id: string) => ({
