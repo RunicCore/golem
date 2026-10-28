@@ -335,6 +335,17 @@ async function loadOperation(source: string, name: string): Promise<{ operation:
   return { operation, requests };
 }
 
+/** An operation factory run against a fetch that answers with the request body. */
+function echoOperation(factory: unknown, name: string): Operation {
+  if (typeof factory !== 'function') throw new TypeError(`${name} factory is missing`);
+  return factory({
+    baseUrl: 'https://fixture.invalid',
+    fetchImpl: async (_input: RequestInfo | URL, init?: RequestInit) => new Response(String(init?.body), {
+      headers: { 'content-type': 'application/json' },
+    }),
+  }) as Operation;
+}
+
 /** The one validators module of an SDK: its models and its operations share it. */
 function sdkValidatorArtifacts(artifacts: readonly { readonly path: string; readonly content: string }[]): readonly { readonly path: string; readonly content: string }[] {
   return artifacts.filter((artifact) => path.basename(artifact.path) === 'validators.generated.ts');
@@ -380,13 +391,7 @@ test('direct operation and model entrypoints load only their generated closures 
   );
   assert.equal(typeof operationModule.echoTree, 'function');
   const operationFactory = operationModule.echoTree;
-  if (typeof operationFactory !== 'function') throw new TypeError('echoTree factory is missing');
-  const operation = operationFactory({
-    baseUrl: 'https://fixture.invalid',
-    fetchImpl: async (_input: RequestInfo | URL, init?: RequestInit) => new Response(String(init?.body), {
-      headers: { 'content-type': 'application/json' },
-    }),
-  }) as { execute(input: unknown): Promise<{ readonly body: unknown }> };
+  const operation = echoOperation(operationFactory, 'echoTree');
   const payload = { tree: { name: 'root' }, record: { id: 'r1', note: 'hello' } };
   assert.deepEqual((await operation.execute({ body: payload })).body, payload);
 
@@ -442,13 +447,7 @@ test('directional resource aliases never shadow another exact resource ID in gen
   );
   const operationFactory = operationModule.submitPayload;
   assert.equal(typeof operationFactory, 'function');
-  if (typeof operationFactory !== 'function') throw new TypeError('submitPayload factory is missing');
-  const operation = operationFactory({
-    baseUrl: 'https://fixture.invalid',
-    fetchImpl: async (_input: RequestInfo | URL, init?: RequestInit) => new Response(String(init?.body), {
-      headers: { 'content-type': 'application/json' },
-    }),
-  }) as { execute(input: unknown): Promise<{ readonly body: unknown }> };
+  const operation = echoOperation(operationFactory, 'submitPayload');
   const payload = { first: { first: 'one' }, second: { second: 2 } };
   assert.deepEqual((await operation.execute({ body: payload })).body, payload);
 });

@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
 import {
+  assertGenerationRejected,
   captureRequest,
   compileGeneratedSdk,
   compileStrictUnusedSdk,
@@ -239,8 +240,8 @@ test('rejects duplicate parameters within the same level', async (t) => {
       },
     },
   }));
-  await assert.rejects(
-    () => generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } }),
+  await assertGenerationRejected(
+    input,
     /operation-parameters-unique: parameter "id" in path is listed more than once \(openapi\.json#\/paths\/~1items~1\{id\}\/get\/parameters\/1\)/,
   );
 });

@@ -6,6 +6,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
 import {
+  assertGenerationRejected,
   compileGeneratedSdk,
   documentBase,
   generateMaterializedSdk,
@@ -40,14 +41,7 @@ test('allows a single Foo-Bar component name and rejects Foo-Bar with Foo.Bar', 
       },
     },
   }));
-  await assert.rejects(
-    () => generate({
-      input: collidingInput,
-      output: path.join(colliding, 'sdk'),
-      profile: { mobx: false, validation: false },
-    }),
-    /generated name collision for "FooBar"/,
-  );
+  await assertGenerationRejected(collidingInput, /generated name collision for "FooBar"/);
 });
 
 test('operation names that were client helpers before the shared runtime generate client methods', async (t) => {
@@ -116,8 +110,8 @@ test('an allocated operation name collision names both sources and the requested
       '/b': { get: { operationId: 'delete_', responses: { 204: { description: 'ok' } } } },
     },
   }));
-  await assert.rejects(
-    () => generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } }),
+  await assertGenerationRejected(
+    input,
     /duplicate generated operation name "delete_" for GET \/b; GET \/a \(allocated from "delete"\) already uses it/,
   );
 });
@@ -169,8 +163,8 @@ test('operation module names that differ only by case are rejected', async t => 
       '/b': { get: { operationId: 'getUrl', responses: { 204: { description: 'ok' } } } },
     },
   }));
-  await assert.rejects(
-    () => generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } }),
+  await assertGenerationRejected(
+    input,
     /"operations\/getURL\.ts" and "operations\/getUrl\.ts" differ only by letter case/,
   );
 });

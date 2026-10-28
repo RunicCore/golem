@@ -2,15 +2,13 @@ import type { TestContext } from 'node:test';
 import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { generate } from '#openapi/generator';
 import {
   captureRequest,
   compileGeneratedSdk,
   generateMaterializedSdk,
-  isGeneratedClientClass,
-  requireRecord,
+  loadGeneratedClient,
   writeOpenApiDocument,
 } from './helpers.js';
 
@@ -22,14 +20,7 @@ async function loadClient(t: TestContext, document: unknown, name: string) {
     profile: { mobx: false, validation: false },
   });
   compileGeneratedSdk(output);
-  const module = requireRecord(
-    await import(pathToFileURL(path.join(output, 'dist/client.js')).href),
-    `${name} client`,
-  );
-  const Client = module[`${name}Client`];
-  assert.equal(isGeneratedClientClass(Client), true);
-  if (!isGeneratedClientClass(Client)) throw new TypeError(`${name}Client`);
-  return Client;
+  return loadGeneratedClient(output, name);
 }
 
 test('API execution resolves Basic and cookie credentials and merges constructor headers', async (t) => {

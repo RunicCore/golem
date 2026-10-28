@@ -6,6 +6,7 @@ import test from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { generate, writeSdk } from '#openapi/generator';
 import {
+  assertGenerationRejected,
   compileStrictUnusedSdk,
   documentBase,
   generateMaterializedSdk,
@@ -31,10 +32,7 @@ test('reserves generated model API members and quotes wire keys', async (t) => {
       },
     },
   }));
-  await assert.rejects(
-    () => generate({ input, output: path.join(directory, 'sdk'), profile: { mobx: false, validation: false } }),
-    /collides with generated model API member/,
-  );
+  await assertGenerationRejected(input, /collides with generated model API member/);
 
   const quoted = createFixtureProject(t, 'golem-openapi-r6-quote-');
   const quotedInput = writeOpenApiDocument(quoted, documentBase('3.1.0', {
