@@ -105,8 +105,10 @@ export function instanceFieldsCode(): Code {
   ], code`\n`);
 }
 
-export function objectValueExpression(expression: Code): Code {
-  return code`typeof ${expression} === 'object' && ${expression} !== null && !Array.isArray(${expression})`;
+/** A non-null, non-array object. `excludingDate`: a Date beside the objects is a scalar variant, so it is no object here. */
+export function objectValueExpression(expression: Code, excludingDate = false): Code {
+  const object = code`typeof ${expression} === 'object' && ${expression} !== null && !Array.isArray(${expression})`;
+  return excludingDate ? code`${object} && !(${expression} instanceof Date)` : object;
 }
 
 function presentUnionVariants(
@@ -209,6 +211,8 @@ export interface DispatchOptions {
   readonly tagLocal?: Code;
   /** The conversion of a value that is no object (a scalar, null or the like), when the union has variants outside the tag table. */
   readonly rest?: Code;
+  /** `rest` holds a Date variant: a Date instance is that variant, not an object for the tag test. */
+  readonly restIsDate?: boolean;
   /** The conversion of an object whose tag selects no branch: the declared default. With none, such an object is rejected. */
   readonly fallback?: Code;
   /** The class of the instances `fallback` converts. An instance of it is no instance of a branch class it extends. */
@@ -261,7 +265,7 @@ export function emitDispatch(options: DispatchOptions): Code {
     chain = code`${guard} ? (${encodeBranch(branch, tag, false)}) : (${chain})`;
   }
   const outside = rest ?? (encode ? code`${value} == null ? ${options.nullish === undefined ? value : options.nullish} : ${reject}` : value);
-  let converted = code`(${objectValueExpression(expression)} ? ${chain} : ${outside})`;
+  let converted = code`(${objectValueExpression(expression, options.restIsDate)} ? ${chain} : ${outside})`;
   // The default's class counts as a subclass candidate too: an instance of it is the default, not the branch it extends.
   const classes = [...branches.flatMap((branch) => branch.className ? [branch.className] : []), ...(fallback && fallbackClass ? [fallbackClass] : [])];
   for (let index = branches.length - 1; index >= 0; index--) {
@@ -382,6 +386,8 @@ interface GeneratedWithObjects {
 export interface TaggedUnion {
   readonly indices: readonly number[];
   readonly rest?: Code;
+  /** `rest` converts a Date variant (see `DispatchOptions`). */
+  readonly restIsDate?: boolean;
   readonly fallback?: Code;
   /** The declared default variant that `fallback` converts: its class is not a tagged variant's, though it may extend one. */
   readonly fallbackVariant?: ModelTypeDescriptor;
@@ -475,7 +481,7 @@ export function emitUnionConversion(
     const scalar = rest.length > 0 ? scalarBranch(types.scalars) : undefined;
     const objects = conversion.tagged({
       indices: taggedIndices,
-      ...(scalar === undefined ? {} : { rest: scalar }),
+      ...(scalar === undefined ? {} : { rest: scalar, restIsDate: types.scalars.some((variant) => variant.kind === 'date') }),
       ...(fallback === undefined ? {} : { fallback, fallbackVariant: declared }),
     });
     if (objects === undefined || !types.sequence) return objects;
@@ -493,13 +499,14 @@ export function emitUnionConversion(
   if (jsonValue) {
     const { sequence, scalars, object } = jsonValue;
     const scalar = scalarBranch(scalars);
+    const objectTest = objectValueExpression(expression, scalars.some((variant) => variant.kind === 'date'));
     const converted = guarded(object, convert(object));
     const mapped = guarded(sequence, emitSequenceBranch(sequence, expression, conversion.items));
     const rest = sameCode(converted, plain) && sameCode(scalar, plain)
       ? plain
       : json
-        ? code`(${objectValueExpression(expression)} ? ${converted} : ${scalar})`
-        : code`${objectValueExpression(expression)} ? (${converted}) : ${scalar}`;
+        ? code`(${objectTest} ? ${converted} : ${scalar})`
+        : code`${objectTest} ? (${converted}) : ${scalar}`;
     return conversion.joinSequence?.(mapped, rest) ?? emitScalarOrArrayConversion(expression, mapped, rest);
   }
   const tagged = taggedConversion();
