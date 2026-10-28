@@ -75,6 +75,17 @@ function mapOrSetName(type: ts.Type): string | undefined {
   return name === 'Map' || name === 'Set' || name === 'ReadonlyMap' || name === 'ReadonlySet' ? name : undefined;
 }
 
+/** The RUNM1086 message; only a class field can take the `@ApiProperty` advice. */
+function mapOrSetDtoMessage(where: string, collection: string, decoratable: boolean): string {
+  return `${where} is a ${collection}. JSON writes a ${collection} as {}, so no schema describes it. `
+    + (decoratable ? 'Give the field an @ApiProperty with type, schema or additionalProperties, or use a Record or an array.' : 'Use a Record or an array.');
+}
+
+/** True when the property is declared as a class field, which a decorator can reach; a type literal or interface member has none. */
+function isClassProperty(property: ts.Symbol): boolean {
+  return (property.declarations ?? []).some(declaration => ts.isPropertyDeclaration(declaration));
+}
+
 /** True when the property has `@ApiProperty` or `@ApiPropertyOptional` with a `type`, `schema` or `additionalProperties` the user wrote. */
 function carriesExplicitSwaggerSchema(property: ts.Symbol): boolean {
   return (property.declarations ?? []).some(declaration => ts.canHaveDecorators(declaration) && (ts.getDecorators(declaration) ?? []).some(decorator => {
@@ -1196,12 +1207,12 @@ export function descriptorBuilder(
         const primitiveConstructor = primitiveConstructorDescriptor(type);
         if (primitiveConstructor) return withMetadata(primitiveConstructor, metadata);
         const collection = mapOrSetName(type);
-        if (collection && (context.dto || validationEnabled)) {
+        if (collection) {
           const where = context.field ? `Field "${context.field}"${context.dto ? '' : ` of ${context.name}`}` : `Type ${context.name}`;
-          // A DTO field that states its own schema never reaches here; any other Map or Set in a DTO has no schema to write.
+          // A decorated DTO field that states its own schema never reaches here, and the property loop below stops an undecorated one
+          // with the advice to decorate it; any other Map or Set in a DTO is out of a decorator's reach and has no schema to write.
           if (context.dto) {
-            throw diagnostic(context.sourceFile, node ?? context.declaration, '1086',
-              `${where} is a ${collection}. JSON writes a ${collection} as {}, so no schema describes it. Give the field an @ApiProperty with type, schema or additionalProperties, or use a Record or an array.`);
+            throw diagnostic(context.sourceFile, node ?? context.declaration, '1086', mapOrSetDtoMessage(where, collection, false));
           }
           throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
             `${where} is a ${collection}, which golem cannot represent. Use a Record or an array.`);
@@ -1280,6 +1291,12 @@ export function descriptorBuilder(
             continue;
           }
           const propertyNode = authoredPropertyTypeNode(childNode, name) ?? propertyTypeNode(checker, property);
+          if (context.dto && present.length === 1 && isClassProperty(property)) {
+            const collection = mapOrSetName(present[0]!);
+            if (collection) {
+              throw diagnostic(context.sourceFile, propertyNode ?? context.declaration, '1086', mapOrSetDtoMessage(`Field "${name}"`, collection, true));
+            }
+          }
           const described = describe(
             valueType,
             { ...context, field: name },

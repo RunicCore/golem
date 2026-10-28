@@ -255,7 +255,7 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1004
 
-**Callable or constructible type.** A model, or one of its fields, resolves to a type with call or construct signatures — a function or a class-instance shape rather than plain data. A model field typed `Map`, `Set`, `ReadonlyMap` or `ReadonlySet` stops here too, and the message names the type. With validation off, only the callable case does not stop. **Fix:** Replace it with a plain object, array, or primitive. Replace a `Map` with a `Record<string, V>` and a `Set` with an array.
+**Callable or constructible type.** A model, or one of its fields, resolves to a type with call or construct signatures — a function or a class-instance shape rather than plain data. A model field typed `Map`, `Set`, `ReadonlyMap` or `ReadonlySet` stops here too, and the message names the type. This holds with validation off too. **Fix:** Replace it with a plain object, array, or primitive. Replace a `Map` with a `Record<string, V>` and a `Set` with an array.
 
 ### RUNM1005
 

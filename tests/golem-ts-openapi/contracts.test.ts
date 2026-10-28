@@ -509,17 +509,17 @@ export class BlobsController {
 
 // protects: T-553 a Map or Set DTO field with no explicit @ApiProperty schema once got a required `size` property the server never sends; it now stops with RUNM1086
 const mapOrSetFields = [
-  { name: 'a Map field', declaration: 'tags!: Map<string, number>;', kind: 'Map', field: 'tags' },
-  { name: 'a Set field', declaration: 'tags!: Set<string>;', kind: 'Set', field: 'tags' },
-  { name: 'a ReadonlyMap field', declaration: 'tags!: ReadonlyMap<string, number>;', kind: 'ReadonlyMap', field: 'tags' },
-  { name: 'a ReadonlySet field', declaration: 'tags!: ReadonlySet<string>;', kind: 'ReadonlySet', field: 'tags' },
-  { name: 'an optional Map field', declaration: 'tags?: Map<string, number>;', kind: 'Map', field: 'tags' },
-  { name: 'a Map field with a bare @ApiProperty()', declaration: '@ApiProperty()\n  tags!: Map<string, number>;', kind: 'Map', field: 'tags' },
-  { name: 'a Map field with only a description', declaration: "@ApiProperty({ description: 'labels' })\n  tags!: Map<string, number>;", kind: 'Map', field: 'tags' },
-  { name: 'a Map field in an inline object', declaration: 'inner!: { tags: Map<string, number> };', kind: 'Map', field: 'tags' },
-  { name: 'a Map in an array', declaration: 'tags!: Map<string, number>[];', kind: 'Map', field: 'tags' },
+  { name: 'a Map field', declaration: 'tags!: Map<string, number>;', kind: 'Map', field: 'tags', advice: true },
+  { name: 'a Set field', declaration: 'tags!: Set<string>;', kind: 'Set', field: 'tags', advice: true },
+  { name: 'a ReadonlyMap field', declaration: 'tags!: ReadonlyMap<string, number>;', kind: 'ReadonlyMap', field: 'tags', advice: true },
+  { name: 'a ReadonlySet field', declaration: 'tags!: ReadonlySet<string>;', kind: 'ReadonlySet', field: 'tags', advice: true },
+  { name: 'an optional Map field', declaration: 'tags?: Map<string, number>;', kind: 'Map', field: 'tags', advice: true },
+  { name: 'a Map field with a bare @ApiProperty()', declaration: '@ApiProperty()\n  tags!: Map<string, number>;', kind: 'Map', field: 'tags', advice: true },
+  { name: 'a Map field with only a description', declaration: "@ApiProperty({ description: 'labels' })\n  tags!: Map<string, number>;", kind: 'Map', field: 'tags', advice: true },
+  { name: 'a Map field in an inline object', declaration: 'inner!: { tags: Map<string, number> };', kind: 'Map', field: 'tags', advice: false },
+  { name: 'a Map in an array', declaration: 'tags!: Map<string, number>[];', kind: 'Map', field: 'tags', advice: false },
 ] as const;
-for (const { name, declaration, kind, field } of mapOrSetFields) {
+for (const { name, declaration, kind, field, advice } of mapOrSetFields) {
   test(`${name} with no explicit schema stops generation with RUNM1086`, async t => {
     const root = fixture(t, `import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse, ApiProperty } from '@nestjs/swagger';
@@ -537,7 +537,7 @@ export class LabelsController {
 `);
     await assert.rejects(
       generateFixture(root),
-      new RegExp(`RUNM1086: Field "${field}" is a ${kind}\\. JSON writes a ${kind} as \\{\\}, so no schema describes it\\. Give the field an @ApiProperty with type, schema or additionalProperties, or use a Record or an array\\.`),
+      new RegExp(`RUNM1086: Field "${field}" is a ${kind}\\. JSON writes a ${kind} as \\{\\}, so no schema describes it\\. ${advice ? 'Give the field an @ApiProperty with type, schema or additionalProperties, or use a Record or an array\\.' : 'Use a Record or an array\\.'}`),
     );
   });
 }
