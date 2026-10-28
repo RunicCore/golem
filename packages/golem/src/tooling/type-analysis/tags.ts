@@ -42,6 +42,8 @@ export interface TagMetadata {
   readonly date?: true;
   /** The property a `Discriminator<Key>` tag names as the tag of a model object union. */
   readonly discriminator?: string;
+  /** The `Default` type argument of that tag, when it names a variant. */
+  readonly discriminatorDefault?: ts.Type;
 }
 
 export interface TagReadResult {
@@ -123,12 +125,14 @@ function mergeMetadata(first: TagMetadata, second: TagMetadata): TagMetadata {
     );
   }
   const discriminator = first.discriminator ?? second.discriminator;
+  const discriminatorDefault = first.discriminatorDefault ?? second.discriminatorDefault;
   return {
     validations: [...validations.values()],
     constraints: [...constraints.values()],
     ...(first.serde ?? second.serde ? { serde: first.serde ?? second.serde } : {}),
     ...(first.date || second.date ? { date: true } : {}),
     ...(discriminator === undefined ? {} : { discriminator }),
+    ...(discriminatorDefault === undefined ? {} : { discriminatorDefault }),
   };
 }
 
@@ -691,7 +695,9 @@ function readIfThenElse(context: TagAnalysisContext, name: string, args: readonl
 function readDiscriminator(context: TagAnalysisContext, name: string, args: readonly TagArgument[], at: ts.Node): TagMetadata {
   const key = literalValue(context.checker, args[0], 'string');
   if (typeof key !== 'string') throw context.diagnostic(at, '1044', `${name} requires a string literal argument.`);
-  return { validations: [], constraints: [], discriminator: key };
+  const declared = argumentType(context.checker, args[1]);
+  const discriminatorDefault = declared && (declared.flags & ts.TypeFlags.Never) === 0 ? declared : undefined;
+  return { validations: [], constraints: [], discriminator: key, ...(discriminatorDefault ? { discriminatorDefault } : {}) };
 }
 
 /** Every tag golem reads, by the name its declaration in tags.ts carries. One reader serves a tag written in source and a tag the checker instantiated. */
@@ -833,11 +839,19 @@ export function isDiscriminatorTag(checker: ts.TypeChecker, node: ts.TypeNode): 
   return ts.isTypeReferenceNode(node) && golemTagName(checker, checker.getSymbolAtLocation(node.typeName)) === 'Discriminator';
 }
 
+/** The type without its `Discriminator` tag members: `A & Discriminator<'k'>` is `A`. A type with no such member is returned as it is. */
+export function withoutDiscriminator(checker: ts.TypeChecker, type: ts.Type): ts.Type {
+  if (!type.isIntersection()) return type;
+  const rest = type.types.filter((member) => golemTagName(checker, member.aliasSymbol) !== 'Discriminator');
+  return rest.length === 1 && rest.length < type.types.length ? rest[0] : type;
+}
+
 /** The tag key a `Discriminator` tag in the checker's type names, or undefined when the type carries none. It runs no other tag reader. */
-export function checkerDiscriminator(context: TagAnalysisContext, type: ts.Type): string | undefined {
+export function checkerDiscriminator(context: TagAnalysisContext, type: ts.Type): { readonly key: string; readonly defaultType?: ts.Type } | undefined {
   const members = type.isIntersection() ? type.types : [type];
   const tag = members.find((member) => golemTagName(context.checker, member.aliasSymbol) === 'Discriminator');
-  return tag ? parseCheckerTag(context, tag)?.discriminator : undefined;
+  const read = tag ? parseCheckerTag(context, tag) : undefined;
+  return read?.discriminator === undefined ? undefined : { key: read.discriminator, ...(read.discriminatorDefault ? { defaultType: read.discriminatorDefault } : {}) };
 }
 
 /** Whether a type carries a TSerde tag: the tag type itself or a member of an intersection. It reads aliases only, so it runs no tag reader. */

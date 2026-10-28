@@ -192,6 +192,15 @@ export function presentUnionIndices(descriptor: UnionTypeDescriptor): number[] {
 }
 
 /**
+ * The explicit tag table that dispatches the variants at `indices`. The default variant has no tag value to dispatch on, so a
+ * union that includes it has no table here: it converts as a model beside tagged objects.
+ */
+export function declaredTable(union: UnionTypeDescriptor, indices: readonly number[]): UnionTypeDescriptor['discriminator'] {
+  const table = union.discriminator;
+  return table && (table.defaultVariant === undefined || !indices.includes(table.defaultVariant)) ? table : undefined;
+}
+
+/**
  * Dispatch among the union variants at `indices`. An explicit discriminator
  * table is authoritative and must tag each of them; otherwise tags are
  * inferred from each variant's object shape, which `objectFor` resolves.
@@ -201,7 +210,7 @@ export function unionDispatch(
   indices: readonly number[],
   objectFor: (variant: ModelTypeDescriptor) => ObjectTypeDescriptor | undefined,
 ): VariantDispatch | undefined {
-  const table = union.discriminator;
+  const table = declaredTable(union, indices);
   if (table) {
     if (table.variants.length !== union.variants.length) {
       throw new Error(`The ${table.propertyName} discriminator table must list tag values for every union variant.`);

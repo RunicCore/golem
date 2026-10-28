@@ -148,8 +148,9 @@ test('an SDK model beside objects tagged by a literal union generates and decode
   await writeMoneySdk(sourceRoot);
   writeModelSources(sourceRoot, {
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 import type { Money } from './sdk/index.js';
-export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' } }>;
+export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money> }>;
 `,
   });
   await buildModelProjectWith(root, { mobx: false, validation: true });
@@ -159,19 +160,20 @@ export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { k
   }
 });
 
-test('an SDK model beside objects whose literal tags overlap stops generation with RUNM1030', async t => {
-  // protects: bug-sweep RUNM1030 still rejects a tag value that two objects beside an SDK model share
+test('an SDK model beside objects whose literal tags overlap stops generation with RUNM1087', async t => {
+  // protects: T-593 a tag value that two objects beside a declared default share stops with RUNM1087 (it was RUNM1030 before the tag was declared)
   const { root, sourceRoot } = fixture(t);
   await writeMoneySdk(sourceRoot);
   writeModelSources(sourceRoot, {
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 import type { Money } from './sdk/index.js';
-export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { kind: 'b' } }>;
+export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { kind: 'b' }) & Discriminator<'kind', Money> }>;
 `,
   });
   assert.throws(
     () => generate({ root, profile: { mobx: false, validation: true } }),
-    /item\.model\.ts:\d+:\d+ RUNM1030: Generated model union in TItem has an ambiguous object alternative\. Add a required literal discriminator\./,
+    /item\.model\.ts:\d+:\d+ RUNM1087: Union variants .* share the "kind" value "b"\./,
   );
   assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
 });
