@@ -54,7 +54,9 @@ function limitMessage(detail: Extract<SchemaIssueDetail, { code: 'tooSmall' | 't
 /** golem's default English text for an issue; `messages()` overrides replace it. */
 export function schemaIssueMessage(detail: SchemaIssueDetail): string {
   switch (detail.code) {
-    case 'type': return `Expected ${describeList(detail.expected, 'or')}`;
+    case 'type': return `Expected ${describeList(detail.expected, 'or')}${detail.expected.includes('integer')
+      ? ': an integer must lie within ±9007199254740991, because JSON numbers in JavaScript cannot carry a larger integer exactly'
+      : ''}`;
     case 'instance': return `Expected an instance of ${detail.model}`;
     case 'required': return `Missing required property "${detail.key}"`;
     case 'unknownKey': return `Unknown property "${detail.key}"`;

@@ -35,6 +35,16 @@ test('type accepts one name or a list and reports the expected names', async () 
   await assertIssues({ type: 'object' }, null, [{ path: [], code: 'type', expected: ['object'] }]);
 });
 
+test('type integer rejects a value beyond the safe integer range, which a JSON number has already rounded', async () => {
+  // protects: QA an integer beyond Number.MAX_SAFE_INTEGER passed as itself after rounding (decision with int64)
+  const miss = [{ path: [], code: 'type', expected: ['integer'] }];
+  await assertIssues({ type: 'integer' }, 9007199254740991, []);
+  await assertIssues({ type: 'integer' }, -9007199254740991, []);
+  await assertIssues({ type: 'integer' }, 9007199254740992, miss);
+  await assertIssues({ type: 'integer' }, -9007199254740993, miss);
+  await assertIssues({ type: 'number' }, 9007199254740993, []);
+});
+
 test('type integer rejects 1.5 and accepts 1.0', async () => {
   await assertIssues({ type: 'integer' }, 1.5, [{ path: [], code: 'type', expected: ['integer'] }]);
   await assertIssues({ type: 'integer' }, 1.0, []);

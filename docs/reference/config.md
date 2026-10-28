@@ -88,7 +88,7 @@ Custom predicates and serde bindings must be exported functions that the generat
 A `format` is checked only when golem implements it:
 
 - These formats are checked: `date-time`, `date`, `time`, `duration`, `email`, `hostname`, `ipv4`, `ipv6`, `uri`, `uri-reference`, `uuid`, `regex`, `byte`, `json-pointer`, `relative-json-pointer`, `int32`, `int64`, `float` and `double`.
-- `int64` accepts whole numbers from −9007199254740991 to 9007199254740991 (`Number.MAX_SAFE_INTEGER`). JSON numbers in JavaScript cannot carry a larger integer exactly, so golem rejects it instead of rounding it.
+- `int64` accepts whole numbers from −9007199254740991 to 9007199254740991 (`Number.MAX_SAFE_INTEGER`). JSON numbers in JavaScript cannot carry a larger integer exactly, so golem rejects it instead of rounding it. The `Integer` tag and `type: integer` follow the same range.
 - The formats `password`, `binary` and `media-range` are known and check nothing.
 - Any other format stops generation. Set `unknownFormats: warn` to report it as a warning and skip its check.
 
