@@ -551,9 +551,20 @@ The error is a `LibError` of kind `ValidationUnavailable`. Its message starts wi
 | `validate` | `SerdeOptions` | `true` when generated | `false` skips the checks. `true` throws `ValidationUnavailable` if checks were not generated. |
 | `failFast` | both | `true` | `false` reports every issue. It does not skip checks. |
 | `validationContext` | both | none | Resolves validators from your own function ([validation context](#validation-context)). |
+| `maxDepth` | both | `512` | Bounds how many levels of objects and arrays the input of a recursive model may nest ([below](#max-depth)). |
 | `allowGetter` | `AllowGetterOptions` | `false` | `true` reads declared root fields through getters and inherited values ([below](#allow-getter)). |
 
-`ValidateOptions` has `failFast` and `validationContext`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. Each call runs the checks in the table of [Checks during conversion](/guide/serialization#checks-during-conversion).
+`ValidateOptions` has `failFast`, `validationContext` and `maxDepth`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. Each call runs the checks in the table of [Checks during conversion](/guide/serialization#checks-during-conversion).
+
+### `maxDepth` {#max-depth}
+
+A model that reaches a recursive model (it refers to itself, directly or through another model) bounds its input before the generated code walks it. The codec calls `parse`, `fromWireFormat`, `validate` and `assert` count the levels of nested objects and arrays and reject input deeper than `maxDepth`, 512 by default. A model that reaches no recursive model has no bound.
+
+- `parse`, `fromWireFormat` and `assert` throw a `LibError` of kind `deserialization` with `causedByInput: true`. The message names the limit and the option. `NestModelInterceptor` answers HTTP 400.
+- `validate` returns `false`.
+- Each object and each array counts as one level, so a tree whose `children` array holds nodes adds two levels for each node.
+- Raise the bound for one call with `{ maxDepth: 2000 }`, or for the interceptor with `new NestModelInterceptor({ maxDepth: 2000 })`. `Infinity` turns it off. Very deep input can then end the call stack.
+- A value below 1 is a `TypeError`.
 
 ### `allowGetter` {#allow-getter}
 

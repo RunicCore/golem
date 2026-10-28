@@ -93,6 +93,7 @@ Register `NestModelInterceptor` once, for the whole app:
 - `controllers: [PaymentsController, …]` lists the controller in a module, as for any NestJS controller.
 - `setGlobalPrefix('api')` sets the prefix that `globalPrefix` repeats in Step 6.
 - `useGlobalInterceptors(new NestModelInterceptor())` turns on the conversion for every controller. It works with the Express and Fastify adapters.
+- `new NestModelInterceptor({ maxDepth })` sets how many levels of objects and arrays the body of a recursive model may nest. The default is 512, and deeper input gets HTTP 400 ([`maxDepth`](/reference/runtime-api#max-depth)).
 
 The steps for each request and the rules for arrays and query objects are in [NestJS requests](/guide/nestjs-requests#what-happens-to-a-request).
 

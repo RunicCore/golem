@@ -24,7 +24,7 @@ import { mergeMap, type Observable } from 'rxjs';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type IssuePath } from './errors.js';
 import { VALIDATION_KEYWORD } from './schema-keywords.js';
 import type { DiscriminatorValue } from './model.js';
-import { requireModelObject, unknownDiscriminatorValue } from './conversion.js';
+import { requireModelObject, resolveMaxDepth, unknownDiscriminatorValue } from './conversion.js';
 import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from './object-codec.js';
 import { presentValue } from './presence.js';
 
@@ -577,8 +577,9 @@ function convertInput(
   wire: unknown,
   decode: (wire: unknown) => unknown,
   field: string | undefined,
+  maxDepth: number | undefined,
 ): unknown {
-  const options = { failFast: true, construct };
+  const options = { failFast: true, construct, maxDepth };
   if (!array) {
     try {
       return codec.fromWireFormat(decode(wire), options);
@@ -605,8 +606,23 @@ function inputDecorator(paramtype: number, field: string | undefined): string {
   return `@${paramtype === NEST_BODY ? 'Body' : 'Query'}(${field === undefined ? '' : `'${field}'`})`;
 }
 
+/** The options of a `NestModelInterceptor`. */
+export interface NestModelInterceptorOptions {
+  /**
+   * How many levels of objects and arrays the body or query of a recursive model may nest; deeper input answers HTTP 400.
+   * The default is 512. `Infinity` turns the bound off. A model that reaches no recursive model has no bound.
+   */
+  readonly maxDepth?: number;
+}
+
 // #region nest-model-interceptor
 export class NestModelInterceptor implements NestInterceptor {
+  private readonly maxDepth: number;
+
+  constructor(options: NestModelInterceptorOptions = {}) {
+    this.maxDepth = resolveMaxDepth(options.maxDepth);
+  }
+
   // Nest return decorators are installed before controllers run, so an absent
   // method annotation is stable after the first lookup. Codec registration is
   // independent and remains checked for every request below.
@@ -706,13 +722,13 @@ export class NestModelInterceptor implements NestInterceptor {
           const decode = paramtype === NEST_BODY ? NO_DECODE : queryWireDecoder(codec);
           // @Body() and @Query() read these values when next.handle() runs.
           if (field === undefined) {
-            const value = convertInput(codec, construct, array, paramtype === NEST_BODY ? req.body : req.query, decode, undefined);
+            const value = convertInput(codec, construct, array, paramtype === NEST_BODY ? req.body : req.query, decode, undefined, this.maxDepth);
             if (paramtype === NEST_BODY) req.body = value;
             else replaceQuery(req, value);
             wholeSources |= source;
           } else {
             const record = schemaRecord(paramtype === NEST_BODY ? req.body : req.query);
-            const value = convertInput(codec, construct, array, record && Object.hasOwn(record, field) ? record[field] : undefined, decode, field);
+            const value = convertInput(codec, construct, array, record && Object.hasOwn(record, field) ? record[field] : undefined, decode, field, this.maxDepth);
             // Copy so the incoming object is not mutated; define so a field named __proto__ stays data.
             const copy = { ...record };
             Object.defineProperty(copy, field, { value, writable: true, enumerable: true, configurable: true });

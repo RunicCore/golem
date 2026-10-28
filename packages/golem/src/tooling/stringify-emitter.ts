@@ -2287,6 +2287,7 @@ function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
     code`  assert: ${assertId},`,
     code`  toWireFormat: ${names.toWire},`,
     ...(objectDescriptor ? [code`  fields: ${literal(Object.keys(objectDescriptor.properties))},`] : []),
+    ...(runtime.reachesCycle ? [code`  recursive: true,`] : []),
     code`  fromWireFormat: ${names.fromWire},`,
     code`  schema: ${modelSchemaExpr},`,
     ...(wireSchemaExpr ? [code`  wireSchema: ${wireSchemaExpr},`] : []),

@@ -116,6 +116,75 @@ export function readRootFields(value: unknown, fields: readonly string[]): unkno
   return copy;
 }
 
+/** The default `maxDepth`: how many levels of objects and arrays a recursive model's input may nest. */
+export const DEFAULT_MAX_DEPTH = 512;
+
+/** The `maxDepth` of a call or of an interceptor: `undefined` is the default, `Infinity` turns the bound off. */
+export function resolveMaxDepth(maxDepth: unknown): number {
+  if (maxDepth === undefined) return DEFAULT_MAX_DEPTH;
+  if (typeof maxDepth !== 'number' || !(maxDepth >= 1)) {
+    throw new TypeError(`maxDepth must be a number of at least 1, or Infinity to turn the bound off; got ${String(maxDepth)}.`);
+  }
+  return maxDepth;
+}
+
+/** The error of input that nests objects and arrays deeper than `maxDepth`: the input caused it. */
+export function nestingDepthError(maxDepth: number): LibError {
+  return conversionError(
+    LibErrorKind.Deserialization,
+    `The input nests objects and arrays deeper than ${maxDepth} levels. Raise the maxDepth option to accept deeper input.`,
+    [],
+    undefined,
+    true,
+  );
+}
+
+const LEAVE = Symbol('leave');
+
+/**
+ * True when `value` nests objects and arrays deeper than `maxDepth`. It walks with an explicit stack, so a deep value
+ * cannot end the call stack, and an object already on the current path is a cycle, which the cycle checks report.
+ */
+export function valueNestsDeeperThan(value: unknown, maxDepth: number): boolean {
+  if (maxDepth === Infinity || value === null || typeof value !== 'object') return false;
+  const onPath = new Set<object>();
+  const stack: unknown[] = [value];
+  let depth = 0;
+  while (stack.length > 0) {
+    const entry = stack.pop();
+    if (entry === LEAVE) {
+      onPath.delete(stack.pop() as object);
+      depth--;
+      continue;
+    }
+    if (entry === null || typeof entry !== 'object' || entry instanceof Date || onPath.has(entry)) continue;
+    if (++depth > maxDepth) return true;
+    onPath.add(entry);
+    stack.push(entry, LEAVE);
+    if (Array.isArray(entry)) for (let index = 0; index < entry.length; index++) stack.push(entry[index]);
+    else for (const key of Object.keys(entry)) stack.push((entry as Record<string, unknown>)[key]);
+  }
+  return false;
+}
+
+/** True when JSON `text` opens more than `maxDepth` nested objects and arrays; it reads the text once and parses nothing. */
+export function textNestsDeeperThan(text: string, maxDepth: number): boolean {
+  if (maxDepth === Infinity) return false;
+  let depth = 0;
+  let inString = false;
+  for (let index = 0; index < text.length; index++) {
+    const char = text.charCodeAt(index);
+    if (inString) {
+      if (char === 92) index++;
+      else if (char === 34) inString = false;
+    } else if (char === 34) inString = true;
+    else if (char === 123 || char === 91) {
+      if (++depth > maxDepth) return true;
+    } else if (char === 125 || char === 93) depth--;
+  }
+  return false;
+}
+
 /** Generated synchronous conversion scope; no instance or result state is retained. */
 export function convertModelField<Arg, Value>(
   direction: 'serialize' | 'deserialize',
