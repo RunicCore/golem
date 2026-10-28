@@ -136,8 +136,11 @@ export type IfThenElse<Condition, Then, Else = undefined> = {
  * Name the property that tells the variants of a model object union apart. Write it on the union:
  * `(TEmail | TPhone) & Discriminator<'kind'>`. Each variant declares that property as a required literal
  * (or a union of literals), and no two variants share a value.
+ *
+ * `Default` names the one variant that may lack the property: a value whose tag selects no other variant is that variant.
+ * `(Money | { kind: 'other' }) & Discriminator<'kind', Money>` makes the model `Money` the default.
  */
-export type Discriminator<Key extends string> = { readonly [discriminatorTag]?: Key };
+export type Discriminator<Key extends string, Default = never> = { readonly [discriminatorTag]?: readonly [Key, Default] };
 
 /* Short aliases are useful when a domain's vocabulary already says min/max. */
 export type Min<Value extends number> = Minimum<Value>;
@@ -177,4 +180,4 @@ export type BuiltinModelTag =
   | OneOf<unknown>
   | Not<unknown>
   | IfThenElse<unknown, unknown, unknown>
-  | Discriminator<string>;
+  | Discriminator<string, unknown>;

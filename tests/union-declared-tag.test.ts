@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { generate } from '#model/generator';
+import { fixturePath, writeGeneratedArtifacts } from './fixture-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
@@ -139,6 +142,16 @@ for (const validation of [false, true]) {
       /bad\.model\.ts:\d+:\d+ RUNM1087: Union variant string in TBox has no required literal property "kind"/,
     ],
     [
+      'a default that is not a variant of the union',
+      `${VARIANTS}export type TPhone = IModel<{ kind: 'phone'; added: Date }>;\nexport type TOther = IModel<{ other: string }>;\nexport type TBox = IModel<{ value: (TEmail | TPhone) & Discriminator<'kind', TOther> }>;\n`,
+      /bad\.model\.ts:\d+:\d+ RUNM1051: Discriminator<'kind', .*> in TBox names a default that is not a variant of the union\. Name one of its variants: /,
+    ],
+    [
+      'a default variant that has the key itself',
+      `${VARIANTS}export type TPhone = IModel<{ kind: 'phone'; added: Date }>;\nexport type TBox = IModel<{ value: (TEmail | TPhone) & Discriminator<'kind', TPhone> }>;\n`,
+      /bad\.model\.ts:\d+:\d+ RUNM1051: The default variant \w+ of Discriminator<'kind'> in TBox has a "kind" property itself\./,
+    ],
+    [
       'a tag on one object',
       `${VARIANTS}export type TBox = IModel<{ value: TEmail & ${TAG} }>;\n`,
       /bad\.model\.ts:\d+:\d+ RUNM1051: Discriminator on the model value requires a union of two or more object types, but TBox resolves to /,
@@ -151,4 +164,41 @@ for (const validation of [false, true]) {
       assert.throws(() => generate({ root, profile }), message);
     });
   }
+}
+
+async function writeMoneySdk(sourceRoot: string, validation: boolean): Promise<void> {
+  fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
+  writeGeneratedArtifacts((await generateOpenApi({
+    input: path.join(sourceRoot, 'money.yaml'),
+    output: path.join(sourceRoot, 'sdk'),
+    name: 'Payments',
+    profile: { mobx: false, validation },
+  })).artifacts);
+}
+
+for (const validation of [false, true]) {
+  test(`a declared default variant takes the value whose tag selects no object, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: T-593 Discriminator<'kind', Money> makes the SDK model the default beside tagged objects; each tagged object still wins by its value
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-default-', name: 'declared-default', linkWorkspaceNodeModules: true });
+    await writeMoneySdk(sourceRoot, validation);
+    writeModelSources(sourceRoot, {
+      'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+import type { Money } from './sdk/index.js';
+export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money> }>;
+`,
+    });
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const generated = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item companion');
+    const Item = generated.TItemBaseModel as GeneratedModelClass;
+    const plain = (value: unknown): boolean => Object.getPrototypeOf(value) === Object.prototype;
+    const valueOf = (wire: unknown): unknown => requireRecord(decodeGeneratedModel(Item, { value: wire }), 'item').value;
+    for (const wire of [{ kind: 'a', x: 1 }, { kind: 'b', x: 2 }, { kind: 'c' }]) {
+      assert.equal(plain(valueOf(wire)), true, `validation=${validation}: ${JSON.stringify(wire)} is the tagged object`);
+    }
+    for (const wire of [{ amount: 5, currency: 'EUR' }, { kind: 'zzz', amount: 5, currency: 'EUR' }]) {
+      assert.equal(plain(valueOf(wire)), false, `validation=${validation}: ${JSON.stringify(wire)} is the default SDK model`);
+    }
+  });
 }

@@ -106,6 +106,11 @@ export type DiscriminatorValue = string | number | boolean;
 export interface UnionDiscriminator {
   readonly propertyName: string;
   readonly variants: readonly { readonly values: readonly DiscriminatorValue[] }[];
+  /**
+   * The index in `variants` of the declared default: the variant a value takes when its tag selects no other variant
+   * (OpenAPI `discriminator.defaultMapping`). It has no tag values and may lack the tag property.
+   */
+  readonly defaultVariant?: number;
 }
 
 export type ModelTypeDescriptor = ModelTypeMetadata & (

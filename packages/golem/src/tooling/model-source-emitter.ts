@@ -58,6 +58,7 @@ import {
   presentKeysCode,
   presentUnionIndices,
   presentValueCode,
+  declaredTable,
   unionDispatch,
   type ObjectTypeDescriptor,
   type VariantDispatch,
@@ -303,7 +304,7 @@ function emitNestedUnion(
       const modelBranches = present.filter(variant => variant.kind === 'reference' || variant.kind === 'generated-model');
       if (modelBranches.length === 0 || !present.every(variant =>
         variant.kind === 'reference' || variant.kind === 'generated-model' || variant.kind === 'object')) return undefined;
-      const dispatch = descriptor.discriminator
+      const dispatch = declaredTable(descriptor, indices)
         ? unionDispatch(descriptor, indices, objectVariant)
         : inferredBranchDispatch(present.map(variant => variant.kind === 'reference'
           ? resolveModel(variant.name).discriminators ?? {}

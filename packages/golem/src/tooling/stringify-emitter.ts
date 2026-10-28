@@ -32,6 +32,7 @@ import {
   presentKeysCode,
   presentUnionIndices,
   presentValueCode,
+  declaredTable,
   unionDispatch,
   type DispatchOptions,
   type ObjectTypeDescriptor,
@@ -1144,7 +1145,7 @@ function emitTaggedVariantUnion(
   const value = expression;
   const variants = indices.map((index) => union.variants[index]);
   const objectFor = (variant: ModelTypeDescriptor) => resolveObjectDescriptor(variant, ctx);
-  if (variants.length === 0 || (!union.discriminator && variants.some((variant) => !objectFor(variant)))) return undefined;
+  if (variants.length === 0 || (!declaredTable(union, indices) && variants.some((variant) => !objectFor(variant)))) return undefined;
   const dispatch = unionDispatch(union, indices, objectFor);
   // A decoder in a function that declares its locals reads the tag once and reuses it in the variant's copy: the variants
   // are decoded with that read known, so they use the local where they would read the tag.
