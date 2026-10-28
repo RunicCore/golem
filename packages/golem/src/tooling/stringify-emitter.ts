@@ -1131,7 +1131,7 @@ function resolveObjectDescriptor(
  */
 function emitTaggedVariantUnion(
   union: UnionTypeDescriptor,
-  { indices, rest, fallback, fallbackVariant }: TaggedUnion,
+  { indices, rest, restIsDate, fallback, fallbackVariant }: TaggedUnion,
   expression: Code,
   ctx: EmitCtx,
   convert: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code,
@@ -1170,7 +1170,7 @@ function emitTaggedVariantUnion(
     direction,
     ...(tagLocal === undefined ? {} : { tagLocal: identifier(tagLocal) }),
     ...(direction === 'encode-json' ? { nullish: code`'null'` } : {}),
-    ...(rest === undefined ? {} : { rest }),
+    ...(rest === undefined ? {} : { rest, restIsDate }),
     ...(fallback === undefined ? {} : { fallback }),
     ...(fallbackClass === undefined ? {} : { fallbackClass }),
     branches: variants.map((variant, position) => ({
