@@ -31,7 +31,7 @@ export function untransformedCallError(name: string): LibError {
  * The nesting bound of a call on a recursive model: how many levels of objects and arrays its input may nest, 512
  * by default. `Infinity` turns the bound off. A model that reaches no recursive model has no bound.
  */
-export interface MaxDepthOptions {
+interface MaxDepthOptions {
   readonly maxDepth?: number;
 }
 
