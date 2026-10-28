@@ -71,6 +71,8 @@ export interface CodecRuntimeOptions {
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Code;
   readonly nestedGenerated?: (id: string) => Code | undefined;
+  /** The name a class model's rejection of a non-object input carries (`<Name> expected an object.`); a node with no name keeps its text. */
+  readonly modelClassName?: (node: SchemaNode) => string | undefined;
   /** The class an instance of the model `name` is tested against in a union, when the module binds it. */
   readonly nestedBase?: (name: string) => Code | undefined;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
@@ -107,6 +109,7 @@ interface EmitCtx
     | 'serde'
     | 'nestedConstruct'
     | 'nestedGenerated'
+    | 'modelClassName'
     | 'nestedBase'
     | 'nestedImportedSerde'
     | 'siblingWireName'
@@ -1048,8 +1051,11 @@ function emitInternedObjectDecode(
       ? code`${identifier(`convertFromWire${node.id}`)}(${value}, ${options})`
       : code`${imported ? imported.fromWire : identifier(fromWireFunctionName(node.id))}(${value}, ${options})`);
   }
+  // A class model rejects a value that is no object, as its class-level decode does; the guard names the class.
+  const className = node.emitClass ? ctx.modelClassName?.(node) : undefined;
   if (
     node.kind === 'object'
+    && className === undefined
     && node.descriptor.kind === 'object'
     && !descriptorNeedsConversion(node.descriptor)
   ) {
@@ -1060,9 +1066,10 @@ function emitInternedObjectDecode(
   if (node.kind === 'object') {
     const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
     const fill = imported?.fill === undefined ? identifier(fillFunctionName(node.id)) : imported.fill;
-    const call = code`${fill}({} as Record<string, unknown>, ${asRecordCode(value)})`;
+    const record = className === undefined ? asRecordCode(value) : code`${rt.conversion.requireModelObject}(${value}, ${literal(className)})`;
+    const call = code`${fill}({} as Record<string, unknown>, ${record})`;
     // A local fill that cannot throw runs without its field's path.
-    return imported || fillCanThrow(node, ctx) ? fallibleConversion(ctx, call) : call;
+    return imported || className !== undefined || fillCanThrow(node, ctx) ? fallibleConversion(ctx, call) : call;
   }
   const importedWire = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
   return fallibleConversion(ctx, code`${importedWire ? importedWire.fromWire : identifier(fromWireFunctionName(node.id))}(${value}, ${trustedOptions(ctx)})`);
@@ -2337,6 +2344,7 @@ export function emitCodecRuntimeCode(
     nestedConstruct: options.nestedConstruct,
     siblingWireName: options.siblingWireName,
     nestedGenerated: options.nestedGenerated,
+    modelClassName: options.modelClassName,
     nestedBase: options.nestedBase,
     nestedImportedSerde: options.nestedImportedSerde,
     exportedFillFunctionIds: options.exportedFillFunctionIds,

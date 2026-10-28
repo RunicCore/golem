@@ -1799,6 +1799,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
       serde: serdeResolver(context),
       nestedConstruct,
       nestedGenerated,
+      modelClassName: (node) => localNames.has(node.name) ? `${node.name}BaseModel` : undefined,
       nestedBase,
       nestedImportedSerde,
       siblingWireName: (codecId) => siblingWires.get(codecId) ?? identifier(wireStringifyExportName(codecId)),
