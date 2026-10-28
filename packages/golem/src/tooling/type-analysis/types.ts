@@ -13,10 +13,12 @@ import type {
   ModelConversionDescriptor,
   TupleConversionDescriptor,
 } from '../model-source-emitter.js';
+import type { DiscriminatorValue, UnionDiscriminator } from '../../model.js';
 import type { ManifestIndex } from './provenance.js';
 import type { ModelSpecification, TypeAnalysisContext } from './models.js';
 import {
   analyzeNode,
+  checkerDiscriminator,
   carriesSerdeTag,
   isAmbientOrGlobalSymbol,
   isDateType,
@@ -366,7 +368,7 @@ function stripPhantomIntersection(
   type: ts.Type,
   metadata: TagMetadata,
 ): ts.Type {
-  if (!metadata.validations.length && !metadata.serde && !metadata.constraints.length) return type;
+  if (!metadata.validations.length && !metadata.serde && !metadata.constraints.length && metadata.discriminator === undefined) return type;
   if (!type.isIntersection()) return type;
   const members = type.types.filter((member) => !isPhantomTagType(checker, member));
   return members.length === 1 ? members[0] : type;
@@ -613,6 +615,72 @@ function withMetadata(
   } as RichModelConversionDescriptor;
 }
 
+/** The one tag key a union declares: on the union itself, or on its variants when `| null` keeps the tag inside a member. */
+function unionTagKey(onUnion: string | undefined, onVariants: readonly (string | undefined)[]): string | undefined {
+  const keys = new Set([...(onUnion === undefined ? [] : [onUnion]), ...onVariants.filter((key): key is string => key !== undefined)]);
+  if (keys.size > 1) throw new Error(`Conflicting Discriminator tags: ${[...keys].map((key) => `'${key}'`).join(' and ')}. A union has one tag key.`);
+  return [...keys][0];
+}
+
+function discriminatorPlacementMessage(context: TypeAnalysisContext, resolved: string): string {
+  return `Discriminator on the model value requires a union of two or more object types, but ${context.name} resolves to ${resolved}.`;
+}
+
+function isObjectLikeVariant(descriptor: ModelConversionDescriptor): boolean {
+  return descriptor.kind === 'object' || descriptor.kind === 'reference' || descriptor.kind === 'generated-model';
+}
+
+/** The required literal values of `key` on a variant type: its tag values, or undefined when the key is missing, optional or not a literal. */
+function requiredLiteralValues(checker: ts.TypeChecker, variant: ts.Type, key: string, at: ts.Node): DiscriminatorValue[] | undefined {
+  const property = checker.getPropertyOfType(variant, key);
+  if (!property || (property.flags & ts.SymbolFlags.Optional) !== 0) return undefined;
+  const type = checker.getTypeOfSymbolAtLocation(property, at);
+  const members = type.isUnion() ? type.types : [type];
+  const values: DiscriminatorValue[] = [];
+  for (const member of members) {
+    if (member.flags & ts.TypeFlags.StringLiteral) values.push((member as ts.StringLiteralType).value);
+    else if (member.flags & ts.TypeFlags.NumberLiteral) values.push((member as ts.NumberLiteralType).value);
+    else if (member.flags & ts.TypeFlags.BooleanLiteral) values.push(checker.typeToString(member) === 'true');
+    else return undefined;
+  }
+  return values;
+}
+
+/**
+ * The tag table of a union that declares its key: each variant's required literal values at `key`, in the variant order of the
+ * descriptor. `null` and `undefined` variants carry no values. Anything else without a required literal, or a value two variants
+ * share, stops with RUNM1087.
+ */
+function declaredTagTable(
+  checker: ts.TypeChecker,
+  key: string,
+  entries: readonly { readonly type: ts.Type; readonly descriptor: ModelConversionDescriptor }[],
+  context: TypeAnalysisContext,
+  at: ts.Node,
+): UnionDiscriminator {
+  if (entries.filter((entry) => isObjectLikeVariant(entry.descriptor)).length < 2) {
+    throw diagnostic(context.sourceFile, at, '1051', discriminatorPlacementMessage(context, entries.map((entry) => checker.typeToString(entry.type)).join(' | ')));
+  }
+  const owners = new Map<DiscriminatorValue, string>();
+  const variants = entries.map(({ type, descriptor }) => {
+    if (descriptor.kind === 'null' || descriptor.kind === 'undefined') return { values: [] };
+    const name = descriptor.kind === 'reference' ? descriptor.name : checker.typeToString(type);
+    const values = requiredLiteralValues(checker, type, key, at);
+    if (!values) {
+      throw diagnostic(context.sourceFile, at, '1087', `Union variant ${name} in ${context.name} has no required literal property "${key}", the tag key that Discriminator<'${key}'> declares. Give ${name} a required "${key}" property with a literal type, such as \`${key}: 'a'\`.`);
+    }
+    for (const value of values) {
+      const owner = owners.get(value);
+      if (owner !== undefined) {
+        throw diagnostic(context.sourceFile, at, '1087', `Union variants ${owner} and ${name} in ${context.name} share the "${key}" value ${JSON.stringify(value)}. Give each variant its own "${key}" value.`);
+      }
+      owners.set(value, name);
+    }
+    return { values };
+  });
+  return { propertyName: key, variants };
+}
+
 /** The type a mapped projection reads its members from: `Customer` in `Pick<Customer, 'name'>` or in `{ [K in 'name']: Customer[K] }`. */
 function projectedSourceType(checker: ts.TypeChecker, type: ts.Type): ts.Type | undefined {
   const aliased = type.aliasTypeArguments?.[0];
@@ -819,6 +887,8 @@ export function descriptorBuilder(
   };
   // The name each cycle head was given on its first lap.
   const cycleStems = new Map<ts.Type, string>();
+  /** The variant types of unions that declare a Discriminator key: the tag in their type is the union's, not a misplaced one. */
+  const declaredVariants = new Set<ts.Type>();
   const probeCycles = (root: ts.Type, location: ts.Node): void => {
     const index = new Map<ts.Type, number>();
     const low = new Map<ts.Type, number>();
@@ -953,7 +1023,8 @@ export function descriptorBuilder(
     const hasTagMetadata = metadata.validations.length > 0
       || metadata.serde !== undefined
       || metadata.constraints.length > 0
-      || metadata.date === true;
+      || metadata.date === true
+      || metadata.discriminator !== undefined;
     const baseType = stripPhantomIntersection(
       checker,
       hasTagMetadata && analysis.baseNode
@@ -970,6 +1041,11 @@ export function descriptorBuilder(
 
     if (metadata.validations.length > 0 && (type.flags & ts.TypeFlags.TypeParameter) === 0) {
       assertValidationCompatibility(checker, metadata.validations, type, context);
+    }
+
+    // A Discriminator tag names the tag key of a union; a variant of such a union carries the tag only in its type.
+    if (metadata.discriminator !== undefined && !type.isUnion() && !declaredVariants.has(originalType)) {
+      throw diagnostic(context.sourceFile, node ?? context.declaration, '1051', discriminatorPlacementMessage(context, checker.typeToString(type)));
     }
 
     // Validate the codec against the projected model type before handling
@@ -1133,10 +1209,20 @@ export function descriptorBuilder(
     const shape = (seen: ReadonlySet<ts.Type>): ModelConversionDescriptor => {
       if (type.isUnion()) {
         const variantNaming = unionVariantNaming(checker, node, type.types, context.declaration);
-        const variants = type.types.map((variant) => describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions, `${nameHint}${variantNaming.get(variant)?.part ?? ''}`, variantNaming.get(variant)?.node));
+        const declaredKey = unionTagKey(metadata.discriminator, type.types.map((variant) => checkerDiscriminator(tagContext, variant)));
+        if (declaredKey !== undefined) for (const variant of type.types) declaredVariants.add(variant);
+        const entries = type.types.map((variant) => ({
+          type: variant,
+          descriptor: describe(variant, context, seen, undefined, representation, node ?? provenanceNode, childSubstitutions, `${nameHint}${variantNaming.get(variant)?.part ?? ''}`, variantNaming.get(variant)?.node),
+        }));
         // Checker member order differs between TypeScript backends and runs; output must not.
-        variants.sort((left, right) => compareText(canonicalDescriptorKey(left), canonicalDescriptorKey(right)));
-        const descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }> = { kind: 'union', variants };
+        entries.sort((left, right) => compareText(canonicalDescriptorKey(left.descriptor), canonicalDescriptorKey(right.descriptor)));
+        const variants = entries.map((entry) => entry.descriptor);
+        const descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }> = {
+          kind: 'union',
+          variants,
+          ...(declaredKey === undefined ? {} : { discriminator: declaredTagTable(checker, declaredKey, entries, context, node ?? context.declaration) }),
+        };
         rejectAmbiguousGeneratedModelUnion(descriptor, context);
         return withMetadata(descriptor, metadata);
       }
