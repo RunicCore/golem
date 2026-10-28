@@ -218,6 +218,18 @@ test('validation-disabled serde artifacts omit executable predicate bindings', a
   assert.throws(() => getValidator(item), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable);
 });
 
+test('validation off keeps the wire schema free of validation bindings', async t => {
+  // protects: T-547 a model built without validation carries no predicate bindings in its schemas
+  const value = fixture(t);
+  writeFileSync(path.join(value.sourceRoot, 'codecs.ts'), readFixture("models/model-artifact-efficiency/wire-only-serde-predicates-do-not-create-model-plane-tag-validators/codecs.ts"));
+  writeFileSync(path.join(value.sourceRoot, 'item.model.ts'), readFixture("models/model-artifact-efficiency/wire-only-serde-predicates-do-not-create-model-plane-tag-validators/item.model.ts"));
+  writeModelGolemYaml(value.root, { mobx: false, validation: false });
+  await buildModelProject(value.root);
+  await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(value.root, 'TItem'));
+  assert.deepEqual(JSON.parse(JSON.stringify((codec.wireSchema as { properties: object }).properties)), { value: { type: 'string' } });
+});
+
 test('array item models validate at their full path, recursive ones included', async (t) => {
   const fixtureValue = fixture(t);
   writeFileSync(path.join(fixtureValue.sourceRoot, 'company.model.ts'),
