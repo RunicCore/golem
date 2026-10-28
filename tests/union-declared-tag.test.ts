@@ -119,7 +119,7 @@ test('the generated model types carry no Discriminator tag', t => {
 });
 
 for (const validation of [false, true]) {
-  test(`the class dispatch of a declared union is written once for each direction, with validation ${validation ? 'on' : 'off'}`, t => {
+  test(`the class dispatch of a declared union is a selector and a codec function for each writer, with validation ${validation ? 'on' : 'off'}`, t => {
     // protects: T-617 (F-129) one selector per union and direction serves every writer and position, not a copy in each
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-selector-', name: 'declared-selector' });
     writeModelSources(sourceRoot, { 'contact.model.ts': CONTACT_MODEL });
@@ -128,6 +128,12 @@ for (const validation of [false, true]) {
     // The kind union and the mode union each get a decode and an encode selector, whatever number of positions use them.
     assert.equal(generated.content.match(/^function __golemVariant_\w+\(/gm)?.length, 4);
     assert.equal(generated.content.match(/TPhoneBaseModel\.prototype instanceof TEmailBaseModel/g)?.length, 2);
+    // protects: T-639 (F-129) one codec function per union and writer, which every position calls
+    const writers = { stringify: /stringify\w+Core\(/, toWireFormat: /toWireFormat\w+Core\(/, encode: /encodeGeneratedModel\(/, decode: /decodeGeneratedModelTrusted\(/, init: /new \(requireIModelClass\(/ };
+    const definitions = generated.content.match(/^function __golemUnion_\w+\(.*$/gm) ?? [];
+    const perWriter = Object.fromEntries(Object.entries(writers).map(([writer, marker]) => [writer, definitions.filter(definition => marker.test(definition)).length]));
+    // The kind union and the mode union each get one function for every writer.
+    assert.deepEqual(perWriter, { stringify: 2, toWireFormat: 2, encode: 2, decode: 2, init: 2 });
   });
 }
 

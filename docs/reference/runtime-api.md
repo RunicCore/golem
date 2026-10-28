@@ -587,7 +587,7 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 | --- | --- |
 | `resolve(reference, mode)` | Returns the `Validator` for a schema reference and `'first'` or `'all'` mode, or `undefined` when it has none. |
 
-`objectCodecValidationReference(codec, plane)` returns the reference for one `ValidationPlane`.
+`objectCodecValidationReference(codec, plane)` returns the reference for one `ValidationPlane`: `Id` (the `id` of the codec) for `model`, and `Id#plane` for every other plane, `Id#wire` included, also when the JSON value has the same schema as the model value.
 
 | `ValidationPlane` | Checks | Used by |
 | --- | --- | --- |
@@ -607,7 +607,9 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 | `getObjectCodec` | `(id): ObjectCodec \| undefined` | Returns the codec whose id is exactly `id`. A short model name finds nothing. |
 | `getIModelClass` | `(id): class \| undefined` | Returns the `IModel` class registered under the exact id `id`. |
 
-Types: `AllowGetterOptions`, `ObjectCodec`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`. `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
+`ObjectCodec.queryFields` is the table of fields that `NestModelInterceptor` decodes from a query string, by field name; it is absent when no field needs decoding. `QueryFieldTable` is its type, and `QueryFieldShape` is the scalar types, literals and array item shape of one field.
+
+Types: `AllowGetterOptions`, `ObjectCodec`, `QueryFieldShape`, `QueryFieldTable`, `SerdeOptions`, `ValidateOptions`, `ValidationPlane`, `WireFormat`. `IssueRepresentation` and `IssueSource` are re-exported from [`errors`](#errors).
 
 ## `@exprtlabs/golem/nest` {#nest}
 

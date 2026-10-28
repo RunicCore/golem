@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { generatedJsonData } from './generated-data.js';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { getValidator } from '@exprtlabs/golem/validation';
@@ -60,13 +59,6 @@ type ValueArray = Array<string>;`,
     fields: tsSource`values: ValueArray & Contains<string & Pattern<'^ok$'>> & MinItems<1> & MinContains<1> & MaxContains<2>; objectValue: ValueObject & MinProperties<1> & MaxProperties<3> & PropertyNames<string & Pattern<'^[a-z_]+$'>> & PatternProperties<{ '^x_': number; '^z_': boolean }> & AdditionalProperties<never> & UnevaluatedProperties<never> & DependentRequired<{ foo: ['bar'] }> & DependentSchemas<{ foo: { bar: string } }> & OneOf<[{ foo: string }, { bar: string }]> & Not<{ forbidden: string }> & IfThenElse<{ bar: string }, { bar: string }, { foo: string }>;`,
   }).text);
   await buildModelProjectWith(root, { mobx: false, validation: true });
-  const shared = generatedModelFiles(root).map((artifact) => artifact.content).join('\n');
-  for (const keyword of [
-    'contains', 'minContains', 'maxContains', 'minProperties', 'maxProperties',
-    'propertyNames', 'patternProperties', 'additionalProperties', 'unevaluatedProperties',
-    'dependentRequired', 'dependentSchemas', 'oneOf', 'not', 'if', 'then', 'else',
-  ]) assert.match(shared, new RegExp(`\\b${keyword}\\b`), keyword); // Kept pins (here and below): the generated JSON Schema data is an artifact tools read; the cases below prove the checks run.
-  assert.match(generatedJsonData(shared), /"contains"[\s\S]*"(?:minContains"[\s\S]*"maxContains|maxContains"[\s\S]*"minContains)/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const valid = new A({ values: ['ok'], objectValue: { bar: 'yes', x_value: 1 } });
   assert.equal(await getValidator(valid).validate(), true);
@@ -192,8 +184,6 @@ import { first, second } from './predicates.js';`,
     const { A } = await load('nested-contains', 'a.model.js');
     assert.equal(await getValidator(new A({ children: [{ name: 'ok' }] })).validate(), true);
     assert.equal(await getValidator(new A({ children: [{ name: 7 }] } as never)).validate(), false);
-    const shared = generatedModelFiles(root).map((artifact) => artifact.content).join('\n');
-    assert.match(generatedJsonData(shared), /"contains"/);
   });
 
   await t.test('union branch predicates stay attached to their checker constituent', async () => {

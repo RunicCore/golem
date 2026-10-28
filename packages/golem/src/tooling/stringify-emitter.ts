@@ -6,15 +6,15 @@
 
 import type { ModelTypeDescriptor } from '../model.js';
 import type { ValidationPlane } from '../object-codec.js';
-import { GENERATED_MODEL_SCHEMA_REF_PREFIX } from '../schema-keywords.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import {
-  aliased, asObjectLiteral, bindInput, bindRead, code, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, readShape, sameCode,
+  aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
+import { nodeQueryFields } from './query-fields.js';
 import { rt, rtType } from './rt.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
@@ -29,6 +29,7 @@ import {
   presentKeysCode,
   declaredTable,
   unionDispatch,
+  withUnionInput,
   type DispatchOptions,
   type ObjectTypeDescriptor,
   type TaggedUnion,
@@ -67,15 +68,13 @@ export interface CodecRuntimeOptions {
    * undefined for a root that has none (it has a fast check, or runs the validator). Called once for each use.
    */
   readonly passCheckNames?: (id: string) => { readonly structure: Code; readonly predicates: Code } | undefined;
-  /** Expression of a record of the validation plan's resolved schemas by the same keys. A validated codec publishes these as its schemas; without it the codec carries its own unresolved payload. */
-  readonly resolvedSchemasExpr?: Code;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Code;
   readonly nestedGenerated?: (id: string) => Code | undefined;
+  /** The name a class model's rejection of a non-object input carries (`<Name> expected an object.`); a node with no name keeps its text. */
+  readonly modelClassName?: (node: SchemaNode) => string | undefined;
   /** The class an instance of the model `name` is tested against in a union, when the module binds it. */
   readonly nestedBase?: (name: string) => Code | undefined;
-  /** The codec id of the model that a schema placeholder names, so the runtime resolves it by an exact lookup. */
-  readonly generatedModelCodecId?: (name: string) => string | undefined;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
   /** The name of the wire stringify that the companion of a sibling codec exports; without it, `wireStringifyExportName`. */
   readonly siblingWireName?: (codecId: string) => Code;
@@ -107,11 +106,10 @@ interface EmitCtx
     | 'validatorName'
     | 'fastCheckName'
     | 'passCheckNames'
-    | 'resolvedSchemasExpr'
     | 'serde'
     | 'nestedConstruct'
-    | 'generatedModelCodecId'
     | 'nestedGenerated'
+    | 'modelClassName'
     | 'nestedBase'
     | 'nestedImportedSerde'
     | 'siblingWireName'
@@ -136,7 +134,7 @@ interface EmitCtx
   readonly wireStringifyIds?: ReadonlySet<string>;
   /** Nodes being inlined into the current wire stringify, to reject unbounded expansion. */
   readonly wireInlining?: ReadonlySet<string>;
-  readonly inlineLocals?: Set<string>;
+  readonly inlineLocals?: Set<Code>;
   /**
    * Nodes whose `stringify<Id>Core` and `toWireFormat<Id>Core` this module emits.
    * A nested trusted call to one skips its validating wrapper.
@@ -148,8 +146,13 @@ interface EmitCtx
   readonly trustedOptions?: Code;
   /** Emit stringify functions that take no options; they only run trusted. */
   readonly withoutOptions?: boolean;
-  /** Counts the conversions emitted for the current node that can throw; see `fallibleConversion`. */
-  readonly effects?: { fallible: number };
+  /**
+   * The field or key of the property whose decode is a class model alone or beside null: a rejected non-object joins the path
+   * with it, so the property runs without a path of its own. Unset elsewhere, where the surrounding conversion holds the path.
+   */
+  readonly rejectKey?: Code;
+  /** Counts the conversions emitted for the current node that can throw (`fallible`) and the rejections that carry their own path (`keyed`); see `fallibleConversion`. */
+  readonly effects?: { fallible: number; keyed: number };
   /** Module-level converter functions of the current node; without it a converter is emitted inline. */
   readonly hoisted?: HoistedConverters;
   /** Whether the fill of a local node can throw, by node id. */
@@ -157,7 +160,7 @@ interface EmitCtx
   /** The name of the module constant of each patternProperties pattern, by pattern text; the module declares them all once. */
   readonly patternConstants?: Map<string, Code>;
   /** Locals a decoder assigns; the function that holds the decoder declares them. Without it the decoder re-reads. */
-  readonly decodeLocals?: string[];
+  readonly decodeLocals?: Code[];
   /**
    * Reads a union above holds in a local; a decoder below reads the input of the read where it would read the property.
    * A read is known by the text of its expression, so a scope that binds a new parameter (an item, a field source, a
@@ -349,20 +352,19 @@ function emitInlineObjectField(
   const { read, shape } = accessRead(expression, name);
   const input = inputSlot(name, shape);
   const piece = emitValue(property, inputOf(input), ctx);
-  const localName = `__golemInlineField${ctx.inlineLocals?.size ?? index}`;
-  const local = identifier(localName);
+  const local = localCode('inlineField', ctx.inlineLocals?.size ?? index);
   // An optional field reads its input once more, in the `!== undefined` test.
   const bound = bindRead(piece, input, read, local, required ? 0 : 1);
   const member = code`${memberPrefix(name, leadingComma)} + ${bound.code}`;
   if (!bound.local) return required ? member : code`(${read} !== undefined ? ${member} : '')`;
-  ctx.inlineLocals?.add(localName);
+  ctx.inlineLocals?.add(local);
   return required
     ? code`(${local} = ${read}, ${member})`
     : code`(${local} = ${read}, (${local} !== undefined ? ${member} : ''))`;
 }
 
 function inlineLocalLines(ctx: EmitCtx): Code[] {
-  return [...(ctx.inlineLocals ?? [])].map((name) => code`  let ${identifier(name)}: unknown;`);
+  return [...(ctx.inlineLocals ?? [])].map((local) => code`  let ${local}: unknown;`);
 }
 
 /**
@@ -466,7 +468,7 @@ function emitValue(
       item: (item, itemValue) => ({ code: emitValue(item, itemValue, ctx), throws: false }),
     });
   }
-  if (descriptor.kind === 'union') return emitUnionValue(descriptor, value, ctx);
+  if (descriptor.kind === 'union') return withUnionInput(value, (union) => emitUnionValue(descriptor, union, ctx));
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);
     if (node) return nestedStringifyCall(node.id, value, ctx);
@@ -599,8 +601,8 @@ function emitLenientObjectStringify(
   const lines: Code[] = [];
   const fields = properties.map(([name, property], index) => {
     const { read } = accessRead(inputOf(value), name);
-    const field = identifier(`__golemField${index}`);
-    const piece = identifier(`__golemPiece${index}`);
+    const field = localCode('field', index);
+    const piece = localCode('piece', index);
     lines.push(
       code`  const ${field} = ${read};`,
       code`  const ${piece} = ${field} !== undefined ? ${emitValue(property, field, ctx)} : undefined;`,
@@ -677,7 +679,7 @@ function emitObjectStringify(
     const { read, shape } = accessRead(value, property);
     const input = inputSlot(property, shape);
     const piece = emitValue(schema, inputOf(input), ctx);
-    const local = identifier(`__golemValue${index}`);
+    const local = localCode('value', index);
     // An optional field reads its input once more, in the `!== undefined` test.
     const bound = bindRead(piece, input, read, local, required.has(property) ? 0 : 1);
     const key = memberPrefix(property, false);
@@ -706,10 +708,10 @@ function emitObjectStringify(
     lines.push(
       code`  for (const key of Object.keys(${value})) {`,
       ...(properties.length === 0 ? [] : [code`    if (${keyIsListed(identifier('key'), properties.map(([property]) => property))}) continue;`]),
-      code`    const __golemExtra = ${value}[key];`,
-      code`    if (__golemExtra === undefined) continue;`,
+      code`    const ${EXTRA_VALUE} = ${value}[key];`,
+      code`    if (${EXTRA_VALUE} === undefined) continue;`,
       code`    if (sep) out += ",";`,
-      code`    out += ${rt.serde.stringifyJsonString}(key) + ":" + ${emitValue(additional, identifier('__golemExtra'), ctx)};`,
+      code`    out += ${rt.serde.stringifyJsonString}(key) + ":" + ${emitValue(additional, EXTRA_VALUE, ctx)};`,
       code`    sep = true;`,
       code`  }`,
     );
@@ -884,12 +886,12 @@ function emittedFallible(before: number, decoded: Code, ctx: EmitCtx): boolean {
  * A decoder of the identifier `input` as a module-level function, so converting a value allocates no closure. `named` says the converter
  * is a function name, which a caller can call on the value instead of writing the decoder in place.
  */
-function hoistConverter(input: Code, decoded: Code, locals: readonly string[], ctx: EmitCtx): { readonly converter: Code; readonly named: boolean } {
+function hoistConverter(input: Code, decoded: Code, locals: readonly Code[], ctx: EmitCtx): { readonly converter: Code; readonly named: boolean } {
   if (sameCode(decoded, code`(${input} instanceof Date ? ${input} : ${rt.conversion.deserializeDate}(${input}))`)) {
     return { converter: rt.conversion.deserializeDate, named: true };
   }
   if (!ctx.hoisted) return { converter: code`(${input}) => (${decoded})`, named: false };
-  const declarations = locals.length > 0 ? code`  let ${join(locals.map((name) => code`${identifier(name)}: unknown`), code`, `)};\n` : code``;
+  const declarations = locals.length > 0 ? code`  let ${join(locals.map((local) => code`${local}: unknown`), code`, `)};\n` : code``;
   const body = code`(${input}: unknown): unknown {\n${declarations}  return (${decoded});\n}\n`;
   const known = ctx.hoisted.bodies.find((candidate) => sameCode(candidate.body, body));
   if (known) return { converter: identifier(known.name), named: true };
@@ -900,10 +902,10 @@ function hoistConverter(input: Code, decoded: Code, locals: readonly string[], c
 }
 
 /** `convertModelField` for the decoder of `property` written against `local`, with the field value passed in as `input`. */
-function emitFieldConversion(field: Code, local: string, property: ModelTypeDescriptor, input: Code, ctx: EmitCtx): Code {
+function emitFieldConversion(field: Code, local: Code, property: ModelTypeDescriptor, input: Code, ctx: EmitCtx): Code {
   const scope: EmitCtx = { ...ctx, decodeLocals: [], knownReads: undefined };
-  const decoded = emitDecodeValue(property, identifier(local), scope);
-  const { converter } = hoistConverter(identifier(local), decoded, scope.decodeLocals ?? [], ctx);
+  const decoded = emitDecodeValue(property, local, scope);
+  const { converter } = hoistConverter(local, decoded, scope.decodeLocals ?? [], ctx);
   return code`${rt.conversion.convertModelField}("deserialize", ${field}, ${converter}, ${input})`;
 }
 
@@ -913,7 +915,7 @@ function fillCanThrow(node: SchemaNode, ctx: EmitCtx): boolean {
   if (known !== undefined || !ctx.fillThrows) return known ?? true;
   // A node reached again while it is emitted is recursive, and a recursive fill throws on a cycle.
   ctx.fillThrows.set(node.id, true);
-  const fill = emitFillFunction(node, { ...ctx, effects: { fallible: 0 }, hoisted: undefined, decodeLocals: undefined });
+  const fill = emitFillFunction(node, { ...ctx, effects: { fallible: 0, keyed: 0 }, hoisted: undefined, decodeLocals: undefined });
   ctx.fillThrows.set(node.id, fill.fallible);
   return fill.fallible;
 }
@@ -1054,6 +1056,18 @@ function emitInternedObjectDecode(
       ? code`${identifier(`convertFromWire${node.id}`)}(${value}, ${options})`
       : code`${imported ? imported.fromWire : identifier(fromWireFunctionName(node.id))}(${value}, ${options})`);
   }
+  // A class model rejects a value that is no object, as its class-level decode does; the test is one inline check and the
+  // rejection names the class. The rejection joins the path itself where the property has no path of its own.
+  const className = node.emitClass ? ctx.modelClassName?.(node) : undefined;
+  const guarded = (decoded: Code, ownPath: boolean): Code => {
+    if (className === undefined) return decoded;
+    const key = ownPath ? undefined : ctx.rejectKey;
+    if (key !== undefined && ctx.effects) ctx.effects.keyed++;
+    const reject = key === undefined
+      ? code`${rt.conversion.rejectModelObject}(${literal(className)})`
+      : code`${rt.conversion.rejectModelObject}(${literal(className)}, ${key})`;
+    return code`(${objectValueExpression(value)} ? ${ownPath || key !== undefined ? decoded : fallibleConversion(ctx, decoded)} : ${reject})`;
+  };
   if (
     node.kind === 'object'
     && node.descriptor.kind === 'object'
@@ -1061,14 +1075,15 @@ function emitInternedObjectDecode(
   ) {
     // An open object or a map is copied by its `fill*`; only a closed object of scalars is one literal.
     const closed = extrasAllowed(node.descriptor) ? undefined : emitClosedIdentityObject(node.descriptor, value, ctx);
-    if (closed) return closed;
+    if (closed) return guarded(closed, false);
   }
   if (node.kind === 'object') {
     const imported = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
     const fill = imported?.fill === undefined ? identifier(fillFunctionName(node.id)) : imported.fill;
     const call = code`${fill}({} as Record<string, unknown>, ${asRecordCode(value)})`;
     // A local fill that cannot throw runs without its field's path.
-    return imported || fillCanThrow(node, ctx) ? fallibleConversion(ctx, call) : call;
+    const throws = imported !== undefined || fillCanThrow(node, ctx);
+    return guarded(throws ? fallibleConversion(ctx, call) : call, throws);
   }
   const importedWire = ctx.nestedImportedSerde?.(node.codecId) ?? ctx.nestedImportedSerde?.(node.id);
   return fallibleConversion(ctx, code`${importedWire ? importedWire.fromWire : identifier(fromWireFunctionName(node.id))}(${value}, ${trustedOptions(ctx)})`);
@@ -1136,7 +1151,7 @@ function emitTaggedVariantUnion(
   ctx: EmitCtx,
   convert: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code,
   direction: DispatchOptions['direction'],
-  options?: { readonly unresolved?: 'throw' | 'skip' },
+  options: { readonly unresolved?: 'throw' | 'skip'; readonly localsBefore: number },
 ): Code | undefined {
   const value = expression;
   const variants = indices.map((index) => union.variants[index]);
@@ -1147,7 +1162,7 @@ function emitTaggedVariantUnion(
   // are decoded with that read known, so they use the local where they would read the tag.
   const tagLocal = dispatch && direction === 'decode' && ctx.decodeLocals && readShape(value) === 'name'
     && variants.every((variant) => variantClassName(variant, ctx) === undefined)
-    ? `__golemTag${ctx.decodeLocals.length}`
+    ? localCode('tag', ctx.decodeLocals.length)
     : undefined;
   if (tagLocal) ctx.decodeLocals?.push(tagLocal);
   const tag = inputSlot('tag', 'name');
@@ -1156,7 +1171,7 @@ function emitTaggedVariantUnion(
     : ctx;
   const conversions = variants.map((variant) => {
     const converted = convert(variant, scope);
-    return tagLocal ? bindInput(converted, tag, identifier(tagLocal)) : converted;
+    return tagLocal ? bindInput(converted, tag, tagLocal) : converted;
   });
   if (!dispatch) {
     if (direction !== 'encode-json' && conversions.every((converted) => sameCode(converted, value))) return value;
@@ -1168,7 +1183,9 @@ function emitTaggedVariantUnion(
     expression: value,
     property: dispatch.property,
     direction,
-    ...(tagLocal === undefined ? {} : { tagLocal: identifier(tagLocal) }),
+    // A branch that assigned a local of the writer's function (see `writerLocals`) cannot stand in a function of its own.
+    ...(writerLocals(ctx) === options.localsBefore ? { standalone: true as const } : {}),
+    ...(tagLocal === undefined ? {} : { tagLocal }),
     ...(direction === 'encode-json' ? { nullish: code`'null'` } : {}),
     ...(rest === undefined ? {} : { rest, restIsDate }),
     ...(fallback === undefined ? {} : { fallback }),
@@ -1189,6 +1206,11 @@ function emitTaggedVariantUnion(
       })(),
     })),
   });
+}
+
+/** How many locals the function being written declares so far: the locals a decoder assigns, and the inline field locals of a writer. */
+function writerLocals(ctx: EmitCtx): number {
+  return (ctx.decodeLocals?.length ?? 0) + (ctx.inlineLocals?.size ?? 0);
 }
 
 /**
@@ -1242,6 +1264,7 @@ function emitUnion(
 ): Code {
   const decoding = direction === 'decode';
   const dispatch = UNION_DISPATCH[direction];
+  const localsBefore = writerLocals(ctx);
   return emitUnionConversion(descriptor, value, direction, {
     ...(decoding ? {} : { guard: inlineBranchGuard(ctx, value) }),
     convert: (variant) => walk(variant, ctx),
@@ -1252,7 +1275,7 @@ function emitUnion(
       ctx,
       walkTagged ?? walk,
       dispatch,
-      decoding ? undefined : { unresolved: 'skip' },
+      { ...(decoding ? {} : { unresolved: 'skip' as const }), localsBefore },
     ),
     declaredDefault: (variant) => (variant.kind === 'generated-model' ? generatedText?.(variant) : undefined) ?? walk(variant, ctx),
     generated: {
@@ -1389,7 +1412,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
     return fallibleConversion(ctx, code`(${value} instanceof Date ? ${value} : ${rt.conversion.deserializeDate}(${value}))`);
   }
   if (descriptor.kind === 'union') {
-    return emitUnionDecode(descriptor, value, ctx);
+    return withUnionInput(value, (union) => emitUnionDecode(descriptor, union, ctx));
   }
   // An intersection of objects decodes as the one merged object, so each member's fields convert.
   const decodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, modelBasesOf(ctx)) : undefined;
@@ -1404,7 +1427,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
     const before = fallibleCount(ctx);
     const decoded = emitDecodeValue(descriptor.additionalProperties, identifier('value'), { ...ctx, decodeLocals: undefined, knownReads: undefined });
     const entry = emittedFallible(before, decoded, ctx)
-      ? emitFieldConversion(identifier('key'), 'value', descriptor.additionalProperties, identifier('value'), ctx)
+      ? emitFieldConversion(identifier('key'), identifier('value'), descriptor.additionalProperties, identifier('value'), ctx)
       : decoded;
     const entries = code`Object.entries((${value} ?? {}) as Record<string, unknown>)`;
     if (listed.length === 0) return code`Object.fromEntries(${entries}.map(([key, value]) => [key, ${entry}]))`;
@@ -1468,7 +1491,7 @@ function emitDecodedRecord(
     const converted = emittedFallible(before, decoded, ctx)
       ? emitFieldConversion(literal(name), NESTED_SOURCE, property, read, ctx)
       : inputCount(decoded, input) > 1
-        ? code`((${identifier(NESTED_SOURCE)}) => ${emitDecodeValue(property, identifier(NESTED_SOURCE), { ...ctx, knownReads: undefined })})(${read})`
+        ? code`((${NESTED_SOURCE}) => ${emitDecodeValue(property, NESTED_SOURCE, { ...ctx, knownReads: undefined })})(${read})`
         : bindInput(decoded, input, read);
     // An optional property that converts is read only when the input has it.
     if (!required.has(name) && !sameCode(decoded, inputOf(input))) {
@@ -1479,7 +1502,9 @@ function emitDecodedRecord(
 }
 
 /** Parameter of an inline decoder that reads a nested property once; inner decoders shadow it. */
-const NESTED_SOURCE = '__golemSource';
+const NESTED_SOURCE = localCode('source');
+/** The value of an undeclared key in a loop over the keys of an object. */
+const EXTRA_VALUE = localCode('extra');
 
 function emitFillPropertyWrite(name: string, decoded: Code, indent: number): Code {
   if (name === '__proto__') {
@@ -1502,7 +1527,7 @@ interface FillValue {
   readonly converted: boolean;
   /** The value is carried by reference, so it was checked for cycles. */
   readonly checked: boolean;
-  /** The conversion can throw. */
+  /** The conversion can throw, so the fill that holds it can throw too. */
   readonly fallible: boolean;
 }
 
@@ -1515,23 +1540,35 @@ function emitFillValue(
   read: Code,
   shape: ReadShape,
   field: Code,
-  local: string,
+  local: Code,
   ctx: EmitCtx,
 ): FillValue {
   const before = fallibleCount(ctx);
+  const keyedBefore = ctx.effects?.keyed ?? 0;
   const readInput = inputSlot('read', shape);
-  const decoded = emitDecodeValue(property, inputOf(readInput), { ...ctx, decodeLocals: undefined });
+  // A class model alone, or beside null, rejects a non-object with the field in its path, so it runs without a path of its own.
+  const scope: EmitCtx = { ...ctx, rejectKey: isNullableClassModel(property, ctx) ? field : undefined };
+  const decoded = emitDecodeValue(property, inputOf(readInput), { ...scope, decodeLocals: undefined });
   const fallible = emittedFallible(before, decoded, ctx);
+  // The fill can throw, so a caller runs it under its own field's path.
+  const rejects = fallible || (ctx.effects?.keyed ?? 0) !== keyedBefore;
   const checked = sharesInput(property, ctx);
   const converted = !sameCode(decoded, inputOf(readInput));
   if (!checked && !fallible && inputCount(decoded, readInput) <= 1) {
-    return { statements: [], value: bindInput(decoded, readInput, read), converted, checked, fallible };
+    return { statements: [], value: bindInput(decoded, readInput, read), converted, checked, fallible: rejects };
   }
   const input = checked ? code`${rt.conversion.assertPropertyAcyclic}(wire, ${field}, ${read})` : read;
   if (fallible) {
-    return { statements: [], value: emitFieldConversion(field, local, property, input, ctx), converted, checked, fallible };
+    return { statements: [], value: emitFieldConversion(field, local, property, input, ctx), converted, checked, fallible: rejects };
   }
-  return { statements: [code`const ${identifier(local)} = ${input};`], value: emitDecodeValue(property, identifier(local), ctx), converted, checked, fallible };
+  return { statements: [code`const ${local} = ${input};`], value: emitDecodeValue(property, local, scope), converted, checked, fallible: rejects };
+}
+
+/** Whether `property` is a class model, or a class model beside null or undefined. */
+function isNullableClassModel(property: ModelTypeDescriptor, ctx: EmitCtx): boolean {
+  if (property.kind !== 'union') return ctx.graph.nodeFor(property)?.emitClass === true;
+  const present = property.variants.filter((variant) => variant.kind !== 'null' && variant.kind !== 'undefined');
+  return present.length === 1 && isNullableClassModel(present[0], ctx);
 }
 
 /**
@@ -1607,9 +1644,8 @@ function emitFillFunction(
     // The JSON view: a wire field is present when it is own, enumerable and not undefined. Where a write depends on
     // presence, the field is read into a local by the one Object.keys pass; a carried required field reads the wire.
     const optional = !required.has(name);
-    const present = `__golemPresent${index}`;
-    const presentName = identifier(present);
-    const fill = emitFillValue(property, presentName, 'name', field, `__golemWire${index}`, ctx);
+    const presentName = localCode('present', index);
+    const fill = emitFillValue(property, presentName, 'name', field, localCode('wire', index), ctx);
     const proto = name === '__proto__';
     if (fill.converted || fill.checked || proto) needsFill = true;
     if (fill.fallible || fill.checked) fallible = true;
@@ -1631,7 +1667,7 @@ function emitFillFunction(
       if (!optional) {
         // A required field that is carried reads the wire itself, so it is written against that read.
         const direct = accessRead(inputOf(wireRoot), name);
-        const carried = emitFillValue(property, direct.read, direct.shape, field, `__golemWire${index}`, ctx);
+        const carried = emitFillValue(property, direct.read, direct.shape, field, localCode('wire', index), ctx);
         const onWire = (piece: Code): Code => bindInput(piece, wireRoot, code`wire`);
         propertyWrites.push(...carried.statements.map((row) => indented(onWire(row), 2)), ...write(onWire(carried.value)));
       } else {
@@ -1667,14 +1703,14 @@ function emitFillFunction(
       code`  for (const key of Object.keys(wire)) {`,
       ...(properties.length > 0 ? [code`    if (${keyIsListed(identifier('key'), properties.map(([name]) => name))}) continue;`] : []),
       // An undeclared key whose value is undefined is absent, as the validator and encode treat it.
-      code`    const __golemExtra = wire[key];`,
-      code`    if (__golemExtra === undefined) continue;`,
+      code`    const ${EXTRA_VALUE} = wire[key];`,
+      code`    if (${EXTRA_VALUE} === undefined) continue;`,
     );
     const emitExtra = (schema: ModelTypeDescriptor | undefined, indent: number): Code[] => {
       // A pattern without a field schema carries the value by reference.
       const value: FillValue = schema === undefined
-        ? { statements: [], value: code`${rt.conversion.assertPropertyAcyclic}(wire, key, __golemExtra)`, converted: false, checked: true, fallible: true }
-        : emitFillValue(schema, identifier('__golemExtra'), 'name', identifier('key'), '__golemValue', ctx);
+        ? { statements: [], value: code`${rt.conversion.assertPropertyAcyclic}(wire, key, ${EXTRA_VALUE})`, converted: false, checked: true, fallible: true }
+        : emitFillValue(schema, EXTRA_VALUE, 'name', identifier('key'), localCode('value'), ctx);
       if (value.converted || value.checked) needsFill = true;
       if (value.fallible || value.checked) fallible = true;
       return [
@@ -1740,7 +1776,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
   const encodedMerge = descriptor.kind === 'intersection' ? requireComposedObject(descriptor.variants, modelBasesOf(ctx)) : undefined;
   if (encodedMerge) return emitEncodeValue(encodedMerge, value, ctx);
   if (descriptor.kind === 'union') {
-    return emitUnionEncode(descriptor, value, ctx);
+    return withUnionInput(value, (union) => emitUnionEncode(descriptor, union, ctx));
   }
   if (descriptor.kind === 'object') {
     const node = ctx.graph.nodeFor(descriptor);
@@ -1776,18 +1812,17 @@ function emitEncodedRecord(
     const encoded = emitEncodeValue(property, inputOf(input), ctx);
     // A field whose value is undefined is omitted, as stringify and JSON.stringify do; a required field is omitted only when its type admits undefined.
     if (!required.has(name) || admitsUndefined(property)) {
-      const local = identifier(allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`);
+      const local = allocateInlineLocal(ctx, 'field') ?? localCode('field', index);
       const entry = code`(${local} !== undefined ? { [${literal(name)}]: ${bindInput(encoded, input, local)} } : undefined)`;
       return { name, code: ctx.inlineLocals ? code`...(${local} = ${read}, ${entry})` : code`...((${local}) => ${entry})(${read})`, spread: true };
     }
     if (inputCount(encoded, input) <= 1) return { name, code: bindInput(encoded, input, read), spread: false };
-    const allocated = allocateInlineLocal(ctx, '__golemField');
+    const allocated = allocateInlineLocal(ctx, 'field');
     if (!allocated) {
-      const fallbackLocal = identifier(`__golemField${index}`);
+      const fallbackLocal = localCode('field', index);
       return { name, code: code`((${fallbackLocal}) => ${bindInput(encoded, input, fallbackLocal)})(${read})`, spread: false };
     }
-    const local = identifier(allocated);
-    return { name, code: code`(${local} = ${read}, ${bindInput(encoded, input, local)})`, spread: false };
+    return { name, code: code`(${allocated} = ${read}, ${bindInput(encoded, input, allocated)})`, spread: false };
   });
   // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
   // keeps them as they are. Any other object writes its listed names only.
@@ -1804,22 +1839,21 @@ function emitEncodedRecord(
   // Bind that object only when its expression would otherwise be evaluated
   // more than once; ordinary top-level `value`/`record` paths stay direct.
   if (readShape(value) === 'name' || inputCount(record, self) <= 1) return asObjectLiteral(bindInput(record, self, value));
-  const allocated = allocateInlineLocal(ctx, '__golemRecord');
+  const allocated = allocateInlineLocal(ctx, 'record');
   if (!allocated) {
-    const fallbackLocal = identifier('__golemRecord');
+    const fallbackLocal = localCode('record');
     return code`((${fallbackLocal}) => (${bindInput(record, self, fallbackLocal)}))(${value})`;
   }
-  const local = identifier(allocated);
-  return code`(${local} = ${value}, ${bindInput(record, self, local)})`;
+  return code`(${allocated} = ${value}, ${bindInput(record, self, allocated)})`;
 }
 
 function allocateInlineLocal(
   ctx: EmitCtx,
-  prefix: '__golemField' | '__golemRecord',
-): string | undefined {
+  kind: 'field' | 'record',
+): Code | undefined {
   const inlineLocals = ctx.inlineLocals;
   if (!inlineLocals) return undefined;
-  const local = `${prefix}${inlineLocals.size}`;
+  const local = localCode(kind, inlineLocals.size);
   inlineLocals.add(local);
   return local;
 }
@@ -1875,15 +1909,17 @@ function emitModelGuard(
   value: Code,
   plane: ValidationPlane,
   ctx: EmitCtx,
+  contextReference?: string,
 ): Code {
   const wire = plane === 'wire' && !node.sameSchema;
   const representation = plane === 'wire' || plane === 'wire-only' ? 'Wire' : 'Model';
   const reference = plane === 'model-only' || plane === 'wire-only'
     ? `${node.codecId}#${plane}`
     : wire ? `${node.codecId}#wire` : node.codecId;
-  // A valid value passes the fast check first, unless a validation context decides.
+  // A valid value passes the fast check first, unless a validation context decides. `contextReference` is the key a validation
+  // context is asked, when it differs from the key of the generated validator.
   const fast = ctx.fastCheckName?.(reference);
-  const slow = code`${rt.serde.assertModelValue}(${value}, options, ${validatorFor(ctx, reference, value)}, ${literal(reference)}, ${rt.serde.IssueRepresentation}.${identifier(representation)}, ${rt.serde.IssueSource}.${identifier(ctx.issueSource)});`;
+  const slow = code`${rt.serde.assertModelValue}(${value}, options, ${validatorFor(ctx, reference, value)}, ${literal(contextReference ?? reference)}, ${rt.serde.IssueRepresentation}.${identifier(representation)}, ${rt.serde.IssueSource}.${identifier(ctx.issueSource)});`;
   return fast === undefined ? slow : code`if (!(${fastPasses(fast, value)})) ${slow}`;
 }
 
@@ -1970,7 +2006,7 @@ function encodedContext({ ctx, guardInline }: NodeRuntime): EmitCtx {
 function nodeRuntime(node: SchemaNode, moduleCtx: EmitCtx, validationEnabled: boolean): NodeRuntime {
   const ctx: EmitCtx = {
     ...moduleCtx,
-    effects: { fallible: 0 },
+    effects: { fallible: 0, keyed: 0 },
     hoisted: { prefix: node.id, bodies: [], sources: [] },
     fillThrows: moduleCtx.fillThrows ?? new Map(),
   };
@@ -2067,7 +2103,7 @@ function emitStringifySection(runtime: NodeRuntime): Code {
 /** The decode section: the fill function of an object model, the conversion from the wire, and the exported fromWireFormat. */
 function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonly convert: Code; readonly fromWire: Code } {
   const {
-    node, ctx, validationEnabled, names, assertId, wireAssertId, modelOnlyAssertId, convertId, exported,
+    node, ctx, validationEnabled, names, wireAssertId, modelOnlyAssertId, convertId, exported,
     objectDescriptor, reachesCycle,
   } = runtime;
   const fillId = identifier(fillFunctionName(node.id));
@@ -2084,7 +2120,10 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
     emitSerdeValidates(validationEnabled),
   ];
   if (validationEnabled) {
-    const wireAssertCall = code`${node.sameSchema ? assertId : wireAssertId}(wire, options);`;
+    // The wire and model schemas are one validator, which a validation context is asked for as the wire plane.
+    const wireAssertCall = node.sameSchema
+      ? emitModelGuard(node, code`wire`, 'model', ctx, `${node.codecId}#wire`)
+      : code`${wireAssertId}(wire, options);`;
     convertLines.push(
       code`  if (validates) {`,
       // A validator walks a cyclic value under a recursive model until the stack ends. A valid value pays nothing: the
@@ -2121,7 +2160,7 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
   } else {
     // Values the result shares with the input are checked here; a model's fill checks its own fields.
     if (sharesInput(node.descriptor, ctx)) convertLines.push(code`  ${rt.conversion.assertWireAcyclic}(wire);`);
-    if (rootScope.decodeLocals?.length) convertLines.push(code`  let ${join(rootScope.decodeLocals.map((name) => code`${identifier(name)}: unknown`), code`, `)};`);
+    if (rootScope.decodeLocals?.length) convertLines.push(code`  let ${join(rootScope.decodeLocals.map((local) => code`${local}: unknown`), code`, `)};`);
     convertLines.push(code`  const result = ${decodedExpr ?? code`wire`};`);
   }
   if (validationEnabled && node.modelOnlyJsonSchema !== undefined) {
@@ -2212,7 +2251,7 @@ function emitParseSection(runtime: NodeRuntime): Code {
   ]);
 }
 
-/** The exported validate and assert functions, which fail with `validationUnavailable` when validation is off. */
+/** The exported validate and assert functions, which are the runtime stub that fails with `validationUnavailable` when validation is off. */
 function emitValidateSection(runtime: NodeRuntime): Code {
   const { node, ctx, validationEnabled, validateId, assertId, exported } = runtime;
   const { modelType } = runtime.fields();
@@ -2229,13 +2268,8 @@ function emitValidateSection(runtime: NodeRuntime): Code {
       code``,
     ]
     : [
-      code`${exported}function ${validateId}(_value: unknown, _options?: ${VALIDATE_OPTIONS}): _value is ${modelType} {`,
-      code`  ${rt.serde.validationUnavailable}();`,
-      code`}`,
-      code``,
-      code`${exported}function ${assertId}(_value: unknown): ${modelType} {`,
-      code`  ${rt.serde.validationUnavailable}();`,
-      code`}`,
+      code`${exported}const ${validateId}: (value: unknown, options?: ${VALIDATE_OPTIONS}) => value is ${modelType} = ${rt.serde.validationUnavailableStub};`,
+      code`${exported}const ${assertId}: (value: unknown) => ${modelType} = ${rt.serde.validationUnavailableStub};`,
       code``,
     ]);
 }
@@ -2259,26 +2293,10 @@ function emitPlaneAssertSection(runtime: NodeRuntime): Code {
     : []);
 }
 
-/** The registration of the node's functions as an object codec, with its schemas. */
+/** The registration of the node's functions as an object codec, with the query fields a query string decodes. */
 function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
-  const { node, ctx, validationEnabled, names, stringifyId, validateId, assertId, objectDescriptor } = runtime;
-  const resolved = (id: string): Code | undefined => ctx.resolvedSchemasExpr !== undefined && validationEnabled
-    ? code`${ctx.resolvedSchemasExpr}[${literal(id)}] as object`
-    : undefined;
-  const payload = (schema: JsonSchema, id: string): Code => code`${jsonDataExpression(withCodecIdRefs(schemaPayload(schema, id), ctx.generatedModelCodecId))} as object`;
-  const modelSchemaExpr = resolved(node.codecId) ?? payload(node.modelJsonSchema ?? node.jsonSchema, node.codecId);
-  const wireSchemaExpr = node.sameSchema
-    ? undefined
-    : resolved(`${node.codecId}#wire`)
-      ?? payload(node.jsonSchema, `${node.codecId}#wire`);
-  const residualSchemaExpr = (plane: 'model-only' | 'wire-only'): Code | undefined => {
-    const residual = plane === 'model-only' ? node.modelOnlyJsonSchema : node.wireOnlyJsonSchema;
-    if (residual === undefined || !validationEnabled) return undefined;
-    const id = `${node.codecId}#${plane}`;
-    return resolved(id) ?? payload(residual, id);
-  };
-  const modelOnlySchemaExpr = residualSchemaExpr('model-only');
-  const wireOnlySchemaExpr = residualSchemaExpr('wire-only');
+  const { node, ctx, names, stringifyId, validateId, assertId, objectDescriptor } = runtime;
+  const queryFields = nodeQueryFields(ctx.graph, node);
   return rowsToText([
     code`${rt.serde.createObjectCodec}(${literal(node.codecId)}, {`,
     code`  stringify: ${stringifyId} as (value: never, options?: ${SERDE_OPTIONS}) => string,`,
@@ -2289,11 +2307,7 @@ function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
     ...(objectDescriptor ? [code`  fields: ${literal(Object.keys(objectDescriptor.properties))},`] : []),
     ...(runtime.reachesCycle ? [code`  recursive: true,`] : []),
     code`  fromWireFormat: ${names.fromWire},`,
-    code`  schema: ${modelSchemaExpr},`,
-    ...(wireSchemaExpr ? [code`  wireSchema: ${wireSchemaExpr},`] : []),
-    ...(modelOnlySchemaExpr ? [code`  modelOnlySchema: ${modelOnlySchemaExpr},`] : []),
-    ...(wireOnlySchemaExpr ? [code`  wireOnlySchema: ${wireOnlySchemaExpr},`] : []),
-    ...(resolved(node.codecId) !== undefined ? [code`  schemaRefsResolved: true,`] : []),
+    ...(queryFields ? [code`  queryFields: ${documentLiteral(queryFields)},`] : []),
     code`  issueSource: ${rt.serde.IssueSource}.${identifier(ctx.issueSource)},`,
     code`});`,
   ]);
@@ -2315,36 +2329,6 @@ function emitNodeRuntime(
   const codec = emitCodecRegistrationSection(runtime);
   // The hoisted converters exist only after the decode section.
   return blocksToText([rowsToText(runtime.ctx.hoisted?.sources ?? []), decode.fill, stringify, decode.convert, decode.fromWire, toWire, parse, validate, planeAsserts, codec]);
-}
-
-function schemaPayload(schema: JsonSchema, id: string): object {
-  if (typeof schema === 'boolean') {
-    return schema ? { $id: id } : { $id: id, not: true };
-  }
-  return { $id: id, ...schema };
-}
-
-/** Names the codec id in each generated-model placeholder `$ref` of a schema; a name the module cannot map stays as it is. */
-function withCodecIdRefs(value: unknown, codecIdOf: ((name: string) => string | undefined) | undefined): unknown {
-  if (codecIdOf === undefined) return value;
-  const walk = (current: unknown): unknown => {
-    if (Array.isArray(current)) return current.map(walk);
-    if (current === null || typeof current !== 'object') return current;
-    return Object.fromEntries(Object.entries(current).map(([key, item]) => {
-      if (key !== '$ref' || typeof item !== 'string' || !item.startsWith(GENERATED_MODEL_SCHEMA_REF_PREFIX)) return [key, walk(item)];
-      const reference = item.slice(GENERATED_MODEL_SCHEMA_REF_PREFIX.length);
-      const hash = reference.indexOf('#');
-      const name = hash < 0 ? reference : reference.slice(0, hash);
-      return [key, `${GENERATED_MODEL_SCHEMA_REF_PREFIX}${codecIdOf(name) ?? name}${hash < 0 ? '' : reference.slice(hash)}`];
-    }));
-  };
-  return walk(value);
-}
-
-function jsonDataExpression(value: unknown): Code {
-  const json = JSON.stringify(value);
-  if (json === undefined) throw new TypeError('Generated schema data is not JSON serializable.');
-  return code`JSON.parse(${literal(json)})`;
 }
 
 function nodeValidates(node: SchemaNode, defaultEnabled: boolean): boolean {
@@ -2382,13 +2366,12 @@ export function emitCodecRuntimeCode(
     validatorName: options.validatorName,
     fastCheckName: options.fastCheckName,
     passCheckNames: options.passCheckNames,
-    resolvedSchemasExpr: options.resolvedSchemasExpr,
     serde: options.serde,
     nestedConstruct: options.nestedConstruct,
     siblingWireName: options.siblingWireName,
     nestedGenerated: options.nestedGenerated,
+    modelClassName: options.modelClassName,
     nestedBase: options.nestedBase,
-    generatedModelCodecId: options.generatedModelCodecId,
     nestedImportedSerde: options.nestedImportedSerde,
     exportedFillFunctionIds: options.exportedFillFunctionIds,
     issueSource: options.issueSource ?? 'TypeScript',

@@ -145,12 +145,30 @@ test('a nested trusted call to a model of another module shares one frozen optio
   assert.ok(received.every((options) => options === received[0]), 'every nested call passes the same constant');
 });
 
-test('a codec that does not validate publishes its own schema, not a plan entry it has none of', () => {
-  // The profile is off and no node chose: the plan compiles none of them, so `modelSchemas` holds no entry to read.
-  const registered = new Map<string, { readonly schema?: unknown }>();
-  const createObjectCodec = (id: string, codec: { readonly schema?: unknown }): void => { registered.set(id, codec); };
-  // `modelSchemas` is not in scope: reading a plan entry would throw a ReferenceError.
-  instantiateRuntime(paymentRuntimeSource({ validationEnabled: false, resolvedSchemasExpr: identifier('modelSchemas') }), { createObjectCodec });
-  const payment = [...registered].find(([id]) => id.startsWith('Payment_'));
-  assert.deepEqual(Object.keys((payment?.[1].schema as { properties: object }).properties).sort(), ['amount', 'id', 'list', 'note']);
+test('a codec registers the query fields that a query string decodes, and no JSON Schema', () => {
+  // protects: T-640 R-58 a registered codec holds no JSON Schema; Nest query decoding reads queryFields
+  const filter: ModelTypeDescriptor = {
+    kind: 'object',
+    properties: {
+      name: { kind: 'string' },
+      limit: { kind: 'number' },
+      active: { kind: 'boolean' },
+      ids: { kind: 'array', item: { kind: 'number', constraints: [{ kind: 'integer' }] } },
+    },
+    required: [],
+    additionalProperties: false,
+  };
+  const graph = createSchemaGraph();
+  graph.intern(filter, 'Filter');
+  graph.seal();
+  const registered: Record<string, unknown>[] = [];
+  const createObjectCodec = (_id: string, codec: Record<string, unknown>): void => { registered.push(codec); };
+  instantiateRuntime(emitCodecRuntimeText(graph, { validationEnabled: false }), { createObjectCodec });
+  assert.equal(registered.length, 1);
+  assert.deepEqual(registered[0]?.queryFields, {
+    active: { types: ['boolean'] },
+    ids: { types: [], item: { types: ['number', 'integer'] } },
+    limit: { types: ['number'] },
+  });
+  assert.deepEqual(Object.keys(registered[0] ?? {}).filter((key) => /schema/i.test(key)), []);
 });

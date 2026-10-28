@@ -178,8 +178,6 @@ for (const profileValidation of [true, false]) {
       const blank = new models.Parent({ child: { secret: 'x' }, note: '  ', when: new Date(value.when) });
       assert.equal(parentCodec.validate(blank), false, 'a blank parent note is rejected');
       assert.ok((await validateInstance(blank)).some(issue => issue.path[0] === 'note'));
-      const parentModelOnly = JSON.stringify(parentCodec.modelOnlySchema ?? '');
-      assert.ok(parentModelOnly.length > 2 && !parentModelOnly.includes('Child'), 'the parent residual does not reference the opaque child');
     } else {
       // A validated child inside an unvalidated parent: the codec you call decides.
       counter.reset();

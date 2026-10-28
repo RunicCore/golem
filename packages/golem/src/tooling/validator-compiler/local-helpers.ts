@@ -56,7 +56,7 @@ const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
     code`function ${self}(value, among) {`,
     code`  if (typeof value !== 'object' || value === null) return undefined;`,
     code`  for (let prototype = Object.getPrototypeOf(value); prototype !== null; prototype = Object.getPrototypeOf(prototype)) {`,
-    code`    if (!Object.prototype.hasOwnProperty.call(prototype, modelIdsKey)) continue;`,
+    code`    if (!Object.hasOwn(prototype, modelIdsKey)) continue;`,
     code`    const registered = prototype[modelIdsKey];`,
     code`    for (let x = 0; x < among.length; x++) for (let y = 0; y < registered.length; y++) if (registered[y] === among[x]) return among[x];`,
     code`  }`,

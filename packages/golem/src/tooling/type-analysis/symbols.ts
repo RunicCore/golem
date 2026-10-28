@@ -4,6 +4,7 @@ import { DEFAULT_MODEL_SUFFIXES, canonicalPath, displayPath } from '../generator
 import { canonicalFilename, generatedFilename, isModelFileName, type ModelBoundary } from './project.js';
 import type { ModelSpecification } from './models.js';
 import { isGolemSourceFile, isGolemTagKey } from './tags.js';
+import { hasLocalForm, localFormMessage } from '../names.js';
 
 /** A located model-analysis error with its RUNM code. */
 export function diagnostic(
@@ -168,6 +169,13 @@ export function linkedClassNames(
   specifications: readonly ModelSpecification[],
 ): string[] {
   return linkedClasses(checker, specification, specifications).map((candidate) => candidate.name.text);
+}
+
+/** Stops with RUNM1088 at the exported class `name` of the model's file when its name has the form of a local of generated code: a companion that uses the class imports it under that name. */
+export function assertImportableClassName(specification: ModelSpecification, name: string): void {
+  if (!hasLocalForm(name)) return;
+  const declaration = specification.sourceFile.statements.find((statement): statement is ts.ClassDeclaration & { readonly name: ts.Identifier } => ts.isClassDeclaration(statement) && statement.name?.text === name);
+  throw diagnostic(specification.sourceFile, declaration?.name ?? specification.declaration, '1088', localFormMessage(name, 'The class'));
 }
 
 /** The model's default class: its only linked class. A model with several has none. */

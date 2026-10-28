@@ -11,12 +11,10 @@ assert.equal(parent.validate({ name: 'abc', child: { count: 2, at: new Date(0) }
 // The nested default model stays open: its odd count breaks the TValidation function, which nothing runs.
 assert.equal(parent.validate({ name: 'abc', child: { count: 3, at: new Date(0) } }), true);
 
-// The nested default model parses without checks, refuses validate (as an option too), and still publishes its schemas (Nest reads them for query shapes).
+// The nested default model parses without checks, refuses validate (as an option too).
 const child = requireObjectCodec(process.argv[3]);
 const unavailable = (error) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable;
 const wire = '{"count":3,"at":"1970-01-01T00:00:00.000Z"}';
 assert.deepEqual(child.parse(wire), { count: 3, at: new Date(0) });
 assert.throws(() => child.parse(wire, { validate: true }), unavailable);
 assert.throws(() => child.validate({ count: 3, at: new Date(0) }), unavailable);
-assert.equal(typeof child.schema, 'object');
-assert.equal(typeof child.wireSchema, 'object');

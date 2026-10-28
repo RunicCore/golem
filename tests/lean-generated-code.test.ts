@@ -141,8 +141,9 @@ test('a parent module names and defines the validators of its own model, not tho
     nestedGenerated: (id) => identifier(`${id}Model`),
     validatorName: (id) => { asked.push(id.replace(/_[0-9a-f]{8}$/, '')); return identifier(`validate_${id.replace(/[^\w$]/g, '_')}`); },
   });
-  assert.deepEqual(asked, ['Owner', 'Owner'], 'validate and assert each name the validator of the parent, none of the nested model');
-  const checks = [...source.matchAll(/^export function ((?:validate|assert)\w+)/gm)].map((match) => match[1]);
+  // Three asks, all for the parent: the validator, the assert and the guard of the parse of the wire plane. None is the nested model's.
+  assert.deepEqual(asked, ['Owner', 'Owner', 'Owner']);
+  const checks = [...source.matchAll(/^export (?:function|const) ((?:validate|assert)\w+)/gm)].map((match) => match[1]);
   assert.deepEqual(checks, ['validateOwner', 'assertOwner'], 'the module defines no check of the nested model');
 });
 

@@ -6,7 +6,7 @@
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
 import { MODEL_FIELDS_KEY } from '../schema-keywords.js';
 import { createHash } from 'node:crypto';
-import { code, helperName, identifier, join, literal, render, sameCode, selfPlacedHelper, type Code, type Helper } from './code.js';
+import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
 import { rt } from './rt.js';
 import {
   emitArrayItems,
@@ -56,11 +56,14 @@ export function presentValueCode(object: Code, key: Code, read: Code): Code {
   return code`${ownEnumerableCode(object, key)} ? ${read} : undefined`;
 }
 
+/** The key that `presentKeysCode` reads in each turn of its pass. */
+export const PRESENT_KEY = localCode('key');
+
 /**
  * One `Object.keys` pass that gives each `[key, local]` pair its value in a `let` local, or `undefined` when the key is
  * absent, so each field is read once (the presence rows of scripts/benchmark/validator-toggles.ts). `declare` writes the
  * declaration of a local, for example with a type annotation. `otherwise` is the statement for a key that is not in
- * `captures`; it reads that key as `__golemKey`, so the same pass sees the other keys.
+ * `captures`; it reads that key as `PRESENT_KEY`, so the same pass sees the other keys.
  */
 export function presentKeysCode(
   object: Code,
@@ -70,7 +73,7 @@ export function presentKeysCode(
   const { declare = (local: Code) => local, otherwise } = options;
   const cases = join(captures.map(([key, local]) => code`case ${literal(key)}: ${local} = ${object}[${literal(key)}]; break;`), code` `);
   const other = otherwise === undefined ? code`` : code` default: ${otherwise}`;
-  return code`let ${join(captures.map(([, local]) => declare(local)), code`, `)}; for (const __golemKey of Object.keys(${object})) switch (__golemKey) { ${cases}${other} }`;
+  return code`let ${join(captures.map(([, local]) => declare(local)), code`, `)}; for (const ${PRESENT_KEY} of Object.keys(${object})) switch (${PRESENT_KEY}) { ${cases}${other} }`;
 }
 
 /**
@@ -99,7 +102,7 @@ export function instanceFieldsCode(): Code {
     code`  let prototype = Object.getPrototypeOf(value);`,
     code`  if (prototype === Object.prototype) return undefined;`,
     code`  for (; prototype !== null; prototype = Object.getPrototypeOf(prototype)) {`,
-    code`    if (Object.prototype.hasOwnProperty.call(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;`,
+    code`    if (Object.hasOwn(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;`,
     code`  }`,
     code`  return undefined;`,
     code`}`,
@@ -218,6 +221,11 @@ export interface DispatchOptions {
   readonly fallback?: Code;
   /** The class of the instances `fallback` converts. An instance of it is no instance of a branch class it extends. */
   readonly fallbackClass?: Code;
+  /**
+   * The caller's promise that the branches, `rest` and `fallback` read nothing of the function around the dispatch except
+   * `expression`, so the file can hold the dispatch as a function of its own (see `selectedDispatch`).
+   */
+  readonly standalone?: true;
 }
 
 /**
@@ -236,11 +244,34 @@ export function emitDispatch(options: DispatchOptions): Code {
   return selected ?? inlineDispatch(options);
 }
 
+/** The local of a union function that holds the branch index, and its parameter. */
+const BRANCH_INDEX = localCode('index');
+const UNION_PARAMETER = localCode('union');
+
 /**
- * The variable that a selected dispatch assigns the branch index to. Its tests read it at once, before any branch runs, so
- * a branch that holds another selected dispatch may assign it again.
+ * The variable that a dispatch kept in its writer assigns the branch index to. Its tests read it at once, before any branch
+ * runs, so a branch that holds another selected dispatch may assign it again.
  */
 const SELECTED_INDEX = selfPlacedHelper('__golemVariant', () => code`let __golemVariant = 0;`);
+
+/** The slot of a Code that is one input part. */
+function onlyInputSlot(expression: Code): InputSlot | undefined {
+  const [only, ...more] = expression.parts;
+  return only?.kind === 'input' && more.length === 0 ? only.slot : undefined;
+}
+
+/**
+ * Emit a union against an input part, so a dispatch can lift the code that reads the union's value out of the function around
+ * it (`selectedDispatch`): the value is a part it can bind elsewhere. An expression that is an input part already (the cast
+ * root of a decoder, a field slot) is that part, and other code compares the union's value with it. Any other expression gets
+ * a part of its own with the same shape, so the code written against it is the code written against `expression`.
+ */
+export function withUnionInput(expression: Code, emit: (value: Code) => Code): Code {
+  if (onlyInputSlot(expression)) return emit(expression);
+  const slot = inputSlot('union value', readShape(expression));
+  const emitted = emit(inputOf(slot));
+  return onlyInputSlot(emitted) === slot ? expression : bindInput(emitted, slot, expression);
+}
 
 /** A class Code the selector can repeat in its own definition: a name that no slot decides. */
 function isPlainName(name: Code): boolean {
@@ -256,8 +287,8 @@ function isPlainName(name: Code): boolean {
 function variantSelector(options: DispatchOptions): Helper {
   const { property, branches, rest, fallback, fallbackClass, restIsDate } = options;
   const encode = options.direction !== 'decode';
-  const input = identifier('__golemValue');
-  const tag = identifier('__golemTag');
+  const input = localCode('value');
+  const tag = localCode('tag');
   const key = literal(property);
   const propertyRead = code`(${input} as unknown as Record<string, unknown>)[${key}]`;
   const rejecting = (shown: Code): Code => code`${rt.conversion.unknownDiscriminatorValue}(${key}, ${shown}, ${encode ? code`'serialize'` : code`'deserialize'`})`;
@@ -285,7 +316,12 @@ function variantSelector(options: DispatchOptions): Helper {
 
 /**
  * `emitDispatch` through a selector, when a branch is a model class: the guard of each class would otherwise stand in every
- * writer. Each writer then tests the index the selector returns and converts the branch it names.
+ * writer. The selector picks the index of the branch; the branch it names converts the value.
+ *
+ * The caller can promise that the branches read nothing of the writer's function but `expression` (`standalone`). The picking
+ * and converting is then one function of the file, and each writer calls it with the value; its id comes from its text, so
+ * identical unions of one direction share one function. Otherwise, or when a branch names a part that only the writer's
+ * function knows, the writer holds the index in a module variable and tests it itself.
  */
 function selectedDispatch(options: DispatchOptions): Code | undefined {
   const { expression: value, branches, fallback, fallbackClass } = options;
@@ -307,13 +343,33 @@ function selectedDispatch(options: DispatchOptions): Code | undefined {
     return branch.className ? code`(${tag} === undefined ? ${json(convert, literal(branch.values[0]))} : ${convert})` : convert;
   };
   const outside = options.rest ?? (encode ? (options.nullish === undefined ? value : options.nullish) : value);
-  const selector = helperName(variantSelector(options));
-  const index = helperName(SELECTED_INDEX);
   // The last arm needs no test: the selector returns no other index.
   const last = branches.length - (fallback === undefined ? 1 : 0);
-  let chain = fallback ?? arm(branches[last]);
-  for (let at = last - 1; at >= 0; at--) chain = code`${index} === ${literal(at)} ? (${arm(branches[at])}) : (${chain})`;
-  return code`((${index} = ${selector}(${value})) < 0 ? (${outside}) : (${chain}))`;
+  const chainOf = (index: Code): Code => {
+    let chain = fallback ?? arm(branches[last]);
+    for (let at = last - 1; at >= 0; at--) chain = code`${index} === ${literal(at)} ? (${arm(branches[at])}) : (${chain})`;
+    return chain;
+  };
+  const selector = helperName(variantSelector(options));
+  const slot = options.standalone ? onlyInputSlot(value) : undefined;
+  if (slot) {
+    const body = bindInput(
+      code`const ${BRANCH_INDEX} = ${selector}(${value}); return ${BRANCH_INDEX} < 0 ? (${outside}) : (${chainOf(BRANCH_INDEX)});`,
+      slot,
+      UNION_PARAMETER,
+    );
+    // An input or a name left in the body belongs to the writer's function, which the union function cannot see.
+    if (!body.parts.some((part) => part.kind === 'input' || part.kind === 'name' || part.kind === 'export')) {
+      const id = `__golemUnion_${createHash('sha256').update(render(body)).digest('hex').slice(0, 10)}`;
+      // The return type is written, so no function in a cycle of codecs has an inferred one. The arms of JSON text are strings
+      // when no scalar or default conversion of the caller stands among them; those have a type of their own, so it is left.
+      const returns = options.direction !== 'encode-json' ? code` : unknown` : options.rest === undefined && fallback === undefined ? code` : string` : code``;
+      const union = selfPlacedHelper(id, () => code`function ${identifier(id)}(${UNION_PARAMETER}: unknown)${returns} { ${body} }`);
+      return code`${helperName(union)}(${value})`;
+    }
+  }
+  const index = helperName(SELECTED_INDEX);
+  return code`((${index} = ${selector}(${value})) < 0 ? (${outside}) : (${chainOf(index)}))`;
 }
 
 function inlineDispatch(options: DispatchOptions): Code {

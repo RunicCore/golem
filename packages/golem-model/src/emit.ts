@@ -1,4 +1,4 @@
-import { deduplicateProjections, exportedConcreteClass, isGeneratedBrandKey, isGolemTagKey, linkedClassNames } from '@exprtlabs/golem/internal/type-analysis';
+import { assertImportableClassName, deduplicateProjections, exportedConcreteClass, isGeneratedBrandKey, isGolemTagKey, linkedClassNames } from '@exprtlabs/golem/internal/type-analysis';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { PACKAGE_VERSION } from './package-info.js';
 import {
@@ -6,7 +6,6 @@ import {
   blockComment,
   isCode,
   runtimeLinesOf,
-  emitPlanSchemas,
   MODEL_IMPORT_ORDER,
   wrapRootConversion,
   type Piece,
@@ -25,6 +24,8 @@ import {
   ImportSource,
   join,
   literal,
+  localCode,
+  propertyKey,
   rt,
   rtType,
   sameCode,
@@ -47,7 +48,7 @@ import {
   presentKeysCode,
 } from '@exprtlabs/golem/internal/emitter';
 import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { compareText, displayPath, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
+import { compareText, displayPath, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
 import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';
@@ -403,11 +404,6 @@ interface TypeNames {
   readonly classValue: (key: string) => Code | undefined;
   /** `<name><suffix>` of a model: imported from the file that holds the model, or this file's own. */
   readonly modelType: (name: string, suffix: 'BaseModel' | 'JSON' | 'Init' | 'Fields') => Code;
-}
-
-/** The key of a property in a type: its name, quoted when it is not an identifier. */
-function propertyKey(name: string): Code {
-  return propertyName(name) === name ? identifier(name) : literal(name);
 }
 
 function descriptorType(
@@ -914,8 +910,6 @@ interface AppOutputs {
    * `PlanValidators.exports` and `fastExports`); set when the app validates.
    */
   readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string>; readonly fastExports: ReadonlyMap<string, string>; readonly passExports: ReadonlyMap<string, { readonly structure: string; readonly predicates: string }> };
-  /** The validation plan's resolved schemas by codec id and plane. A validating model file publishes its own as its codecs' schemas. */
-  readonly planSchemas?: Readonly<Record<string, object | boolean>>;
 }
 
 /** How this companion relates to the companions of the files its source imports. */
@@ -1064,6 +1058,7 @@ function buildFileImports(
   for (const item of localImports) {
     const name = concreteNames.get(item.name);
     if (cyclicSiblings?.has(item.name) || name === undefined || !(classModelNames.has(item.name) || referenceNames.has(item.name))) continue;
+    assertImportableClassName(item, name);
     const source = new ImportSource(sourceImportPath(item.sourceFile.fileName, output));
     concrete.set(item.name, source.name(name));
     sources.push(source);
@@ -1504,7 +1499,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const inputType = optional ? code`Exclude<${baseName}[${name}], undefined>` : code`${baseName}[${name}]`;
       const converted = wrapRootConversion(helpers, rootHelperName(specification.name, 'serialize'), 'serialize', name, input, emitEncode, inputType);
       // Wire output omits a field whose value is undefined, as stringify and JSON.stringify do; a required field whose type admits undefined too.
-      const present = code`Object.prototype.hasOwnProperty.call(model, ${name}) && ${input} !== undefined`;
+      const present = code`Object.hasOwn(model, ${name}) && ${input} !== undefined`;
       return code`  if (${present}) ${rt.conversion.defineModelProperty}(result, ${name}, (${converted}));`;
     });
     const decode: Code[] = [];
@@ -1515,7 +1510,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const name = literal(field.getName());
       // The JSON view, read once into a local by one Object.keys pass. Decode reads the own copy in `result`, so a
       // getter of the input runs once.
-      const input = identifier(`__golemValue${index}`);
+      const input = localCode('value', index);
       const descriptor = descriptors.get(field.getName());
       if (!descriptor) throw new Error(`Missing descriptor for field ${field.getName()}.`);
       const emitDecode = (value: Code): Code => emitModelFromJSON(
@@ -1771,12 +1766,6 @@ function emitCodecSection(context: EmitContext): CodecSection {
   const validatorNames = validators && validatorsSource
     ? new Map([...new Set([...validators.exports.values(), ...validators.fastExports.values(), ...[...validators.passExports.values()].flatMap(({ structure, predicates }) => [structure, predicates])])].sort().map((name) => [name, validatorsSource.name(name)] as const))
     : new Map<string, Code>();
-  // The plan's resolved schemas of this file's codecs: a validating codec publishes these instead of its unresolved ones.
-  const ownSchemaKeys = new Set([...schemaGraph.nodes.values()]
-    .filter((node) => node.kind !== 'reference' && node.descriptor.kind !== 'generated-model' && node.descriptor.kind !== 'reference')
-    .flatMap((node) => [node.codecId, `${node.codecId}#wire`, `${node.codecId}#model-only`, `${node.codecId}#wire-only`]));
-  const ownPlanSchemas = Object.fromEntries(Object.entries(appOutputs.planSchemas ?? {}).filter(([key]) => ownSchemaKeys.has(key)).sort(([left], [right]) => compareText(left, right)));
-  const hasPlanSchemas = Object.keys(ownPlanSchemas).length > 0;
   // Wire stringify functions of sibling codecs this module writes, imported from the companion of each.
   const siblingWires = new Map<string, Code>();
   const siblingWireSources: ImportSource[] = [];
@@ -1806,16 +1795,12 @@ function emitCodecSection(context: EmitContext): CodecSection {
           return names === undefined ? undefined : { structure: validatorNames.get(names.structure) ?? identifier(names.structure), predicates: validatorNames.get(names.predicates) ?? identifier(names.predicates) };
         },
       } : {}),
-      ...(hasPlanSchemas ? { resolvedSchemasExpr: identifier('modelSchemas') } : {}),
       // Type analysis flattens object intersections, so golem-model has no declared bases.
       modelBases: { basesOf: () => [] },
       serde: serdeResolver(context),
-      generatedModelCodecId: (name) => {
-        const manifestId = externalManifestId(name);
-        return manifestId === undefined ? undefined : imports.external.get(manifestId)?.model.codecId;
-      },
       nestedConstruct,
       nestedGenerated,
+      modelClassName: (node) => localNames.has(node.name) ? `${node.name}BaseModel` : undefined,
       nestedBase,
       nestedImportedSerde,
       siblingWireName: (codecId) => siblingWires.get(codecId) ?? identifier(wireStringifyExportName(codecId)),
@@ -1831,7 +1816,6 @@ function emitCodecSection(context: EmitContext): CodecSection {
   return {
     sources: [...(validatorsSource ? [validatorsSource] : []), ...siblingWireSources],
     lines: [
-      ...(hasPlanSchemas ? [emitPlanSchemas(ownPlanSchemas), BLANK] : []),
       codecRuntime,
     ],
   };

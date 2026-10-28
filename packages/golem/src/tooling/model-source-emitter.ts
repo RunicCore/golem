@@ -20,7 +20,7 @@ export { type TupleConversionDescriptor } from './sequence-conversion.js';
 export { presentKeysCode } from './union-conversion.js';
 /** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
-  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importLines, importSet, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
+  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importLines, importSet, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
   type Code, type Helper, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
 export { rt, rtType, type RuntimeModule } from './rt.js';
@@ -38,7 +38,7 @@ export {
   type Rejected,
   type SlotRule,
 } from './composition.js';
-import { blockComment, bindInput, code, codeKey, identifier, importLines, importSet, inputOf, inputSlot, isEmpty, join, literal, sameCode, type Code, type Helper, type ImportOptions } from './code.js';
+import { blockComment, bindInput, code, codeKey, identifier, importLines, importSet, inputOf, inputSlot, isEmpty, join, literal, localCode, sameCode, type Code, type Helper, type ImportOptions } from './code.js';
 import { rt, type RuntimeModule } from './rt.js';
 import { MODEL_MANIFEST_FILENAME, MODEL_MANIFEST_MARKER } from './model-manifest.js';
 export { assertUniqueExportNames, type PublicModule } from './names.js';
@@ -49,7 +49,9 @@ import {
   objectValueExpression,
   emitDispatch,
   emitUnionConversion,
+  withUnionInput,
   keyIsNotListed,
+  PRESENT_KEY,
   presentKeysCode,
   unionDispatch,
   type ObjectTypeDescriptor,
@@ -62,7 +64,9 @@ export { AmbiguousUnionConversionError, descriptorNeedsConversion, ObjectUnionDi
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
 /** The local that a projection decoder reads the field at `index` into. */
-const projectionLocal = (index: number): string => `__golemProjected${index}`;
+const projectionLocal = (index: number): Code => localCode('projected', index);
+/** The array that a projection decoder collects the keys it does not declare in. */
+const EXTRA_KEYS = localCode('extra');
 
 /**
  * Each answer of a resolver is Code that holds the callee as a part, so the file imports it. A resolver reads the value it
@@ -279,6 +283,7 @@ function emitNestedUnion(
         property: dispatch.property,
         direction: dispatchDirection,
         branches,
+        standalone: true,
         ...(rest === undefined ? {} : { rest, restIsDate }),
         ...(fallback === undefined ? {} : { fallback }),
         ...(fallbackClass ? { fallbackClass } : {}),
@@ -374,7 +379,7 @@ function emitNestedUncached(
     return conversions[0] ?? value;
   }
   if (descriptor.kind === 'union') {
-    return emitNestedUnion(descriptor, expression, direction, resolveModel, resolveSerde, memo);
+    return withUnionInput(expression, (union) => emitNestedUnion(descriptor, union, direction, resolveModel, resolveSerde, memo));
   }
   if (descriptor.kind === 'generated-model' || descriptor.kind === 'reference') {
     const modelName = descriptor.kind === 'reference' ? descriptor.name : descriptor.id;
@@ -410,7 +415,7 @@ function emitNestedUncached(
       const sourceValue = recordIndex(fieldSource, property);
       const convert = (input: Code): Code => atField(nested => emitNested(item, nested, direction, resolveModel, resolveSerde, memo), input, property, direction);
       const piece = convert(inputOf(slot));
-      return { name, property, sourceValue, unchanged: sameCode(piece, inputOf(slot)), value: bindInput(piece, slot, sourceValue), presentValue: convert(identifier(projectionLocal(index))) };
+      return { name, property, sourceValue, unchanged: sameCode(piece, inputOf(slot)), value: bindInput(piece, slot, sourceValue), presentValue: convert(projectionLocal(index)) };
     });
     const additionalItem = descriptor.additionalProperties;
     const plainValue = identifier('value');
@@ -430,23 +435,34 @@ function emitNestedUncached(
       // An additionalProperties tag declares the other keys of a projection as data: they are copied as they are or by
       // the tag's type. Another object keeps its other keys the same way.
       const hasExtras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
+      // A record with no declared field walks its entries in the runtime, which takes the conversion of one value.
+      if (knownNames.length === 0 && hasExtras) {
+        const converted = typeof additionalItem === 'object'
+          ? emitNested(additionalItem, FIELD_INPUT, direction, resolveModel, resolveSerde, memo)
+          : FIELD_INPUT;
+        const convert = sameCode(converted, FIELD_INPUT) ? undefined : calleeOf(converted) ?? code`(${FIELD_INPUT}: unknown) => (${converted})`;
+        const walk = direction !== 'fromInit' && convert
+          ? code`${rt.conversion.convertModelRecord}(${literal(direction === 'toJSON' ? 'serialize' : 'deserialize')}, ${convert}, ${recordExpression(expression)})`
+          : code`${rt.conversion.copyModelRecord}(${recordExpression(expression)}${convert ? code`, ${convert}` : code``})`;
+        return code`${objectValueExpression(expression)} ? ${walk} : ${value}`;
+      }
       // A decoder reads its input by the JSON view: one Object.keys pass reads each field once into a local.
       const captured = direction !== 'toJSON' && assignments.length > 0;
       // The same pass collects the other keys, and the copy writes them after the fields, in key order.
       const collectExtras = hasExtras && captured;
       const capture = captured
-        ? [code`${collectExtras ? code`let __golemExtra: string[] | undefined; ` : code``}${presentKeysCode(source, assignments.map(({ name }, index) => [name, identifier(projectionLocal(index))] as const), {
+        ? [code`${collectExtras ? code`let ${EXTRA_KEYS}: string[] | undefined; ` : code``}${presentKeysCode(source, assignments.map(({ name }, index) => [name, projectionLocal(index)] as const), {
           declare: (local) => code`${local}: unknown`,
-          ...(collectExtras ? { otherwise: code`(__golemExtra ??= []).push(__golemKey);` } : {}),
+          ...(collectExtras ? { otherwise: code`(${EXTRA_KEYS} ??= []).push(${PRESENT_KEY});` } : {}),
         })}`]
         : [];
       const extras = !hasExtras
         ? join([])
         : collectExtras
-          ? code`if (__golemExtra !== undefined) for (const key of __golemExtra) { const value = source[key]; if (value !== undefined) ${defineProperty}(out, key, ${additional}); }`
+          ? code`if (${EXTRA_KEYS} !== undefined) for (const key of ${EXTRA_KEYS}) { const value = source[key]; if (value !== undefined) ${defineProperty}(out, key, ${additional}); }`
           : code`for (const [key, value] of Object.entries(source)) if (value !== undefined${unlisted}) ${defineProperty}(out, key, ${additional});`;
       const fields = assignments.map(({ name, property, sourceValue, value: converted, presentValue }, index) => direction !== 'toJSON'
-        ? code`if (${identifier(projectionLocal(index))} !== undefined) ${defineProperty}(out, ${property}, ${presentValue});`
+        ? code`if (${projectionLocal(index)} !== undefined) ${defineProperty}(out, ${property}, ${presentValue});`
         : omitsUndefined(name)
           ? code`if (${sourceValue} !== undefined) ${defineProperty}(out, ${property}, ${converted});`
           : code`if (Object.hasOwn(source, ${property})) ${defineProperty}(out, ${property}, ${sourceValue} === undefined ? undefined : (${converted}));`);
@@ -568,7 +584,7 @@ export function wrapRootConversion(
 const SERDE_IMPORT_ORDER: readonly string[] = [
   'assertModelValue', 'createObjectCodec', 'isValidModelValue', 'parseJson', 'registerIModelClass', 'requireIModelClass', 'requireObjectCodec',
   'serdeValidates', 'stringifyJsonArray', 'stringifyJsonBoolean', 'stringifyJsonNumber', 'stringifyJsonScalar', 'stringifyJsonString',
-  'validationUnavailable', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
+  'validationUnavailableStub', 'withoutInstanceState', 'IssueRepresentation', 'IssueSource', 'SerdeOptions', 'ValidateOptions',
 ];
 
 /** The order of the names in the model, conversion and serde imports of a generated model file: golem-model and golem-openapi write the same. */
@@ -579,20 +595,12 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
   ],
   conversion: [
     'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'convertModelField', 'convertModelItems',
-    'convertModelTupleItems', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
-    'encodeGeneratedModel', 'endDecode', 'endEncode', 'jsonWithDiscriminator', 'omitUndefinedKeys', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
+    'convertModelRecord', 'convertModelTupleItems', 'copyModelRecord', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
+    'encodeGeneratedModel', 'endDecode', 'endEncode', 'jsonWithDiscriminator', 'omitUndefinedKeys', 'rejectModelObject', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
     'withDiscriminatorValue',
   ],
   serde: SERDE_IMPORT_ORDER,
 };
-
-/**
- * The constant of the plan schemas that the codec runtime of a model file reads. It holds one JSON text, parsed when the
- * module loads: that keeps own `__proto__` keys, which an object literal would turn into a prototype assignment.
- */
-export function emitPlanSchemas(schemas: Readonly<Record<string, unknown>>): Code {
-  return code`const modelSchemas = JSON.parse(${literal(JSON.stringify(schemas))}) as Readonly<Record<string, object>>;`;
-}
 
 /** The runtime import lines of what `root` calls: each call lists the modules to write, and a module that the code does not use writes none. */
 export function runtimeLinesOf(root: Code, options: ImportOptions): (...modules: readonly RuntimeModule[]) => readonly Code[] {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   ImportSource, NameTable, aliased, bindRead, fileImports, code, helper, helperDefinitions, helperName, helperSet, selfPlacedHelper, identifier, importSet, inputOf, isEmpty, inputSlot, join, literal,
-  nameOf, nameSlot, render, runtimeImports, sameCode, nest, lineBreak, placeHelpers, runtimeCode,
+  localCode, nameOf, nameSlot, propertyKey, render, runtimeImports, sameCode, nest, lineBreak, placeHelpers, runtimeCode,
 } from '#golem/code';
 import { rt, rtType } from '#golem/rt';
 import { runModule } from './support/run-module.js';
@@ -199,4 +199,14 @@ test('two self-placed helpers of one id and one definition share it, and two tha
   assert.deepEqual(placeHelpers(same, []).map((piece) => render(piece)), ['function __golemVariant_x(v) { return v instanceof Shape ? 0 : 1; }', '']);
   const different = code`${helperName(selector(first))}(a); ${helperName(selector(second))}(b);`;
   assert.throws(() => placeHelpers(different, []), /two different self-placed helpers are named "__golemVariant_x"/);
+});
+
+test('a local of generated code has a form that no other name can take, and a property key may hold it', () => {
+  // protects: R-59 short locals cannot collide with a model, import, helper or parameter name
+  assert.equal(render(code`${localCode('value', 3)} ${localCode('key')}`), '$v3 $k');
+  assert.throws(() => identifier('$v3'), /form of a local of generated code/);
+  assert.throws(() => new ImportSource('./user').name('$k'), /form of a local of generated code/);
+  assert.throws(() => localCode('value3' as never), /needs one of the kinds/);
+  assert.equal(render(propertyKey('$v3')), '$v3');
+  assert.equal(render(identifier('$value')), '$value');
 });

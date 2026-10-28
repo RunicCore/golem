@@ -751,6 +751,12 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 - Or change the key in `Discriminator<'kind'>` to a property that every variant has.
 - Or name the one variant that has no tag as the default: `(Money | { kind: 'other' }) & Discriminator<'kind', Money>`. Only the default may lack the key.
 
+### RUNM1088
+
+**Imported name has the form of a generated local.** A `TValidation` function is exported under a name made of a `$`, one lowercase letter and digits, such as `$v0` or `$k`. golem uses that form for the locals of the functions it generates, so it cannot import a name of that form. The message names the function and the name.
+
+**Fix:** Rename the export, or export it under another name as well.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.

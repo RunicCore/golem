@@ -29,13 +29,17 @@ import { LibError } from '@exprtlabs/golem/errors';
 import { decodeGeneratedModel, deserializeDate, unknownDiscriminatorValue } from '@exprtlabs/golem/conversion';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
+import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import { nodeQueryFields } from '#golem/query-fields';
 import {
   assertModelValue,
   getObjectCodec,
   isValidModelValue,
   IssueRepresentation,
   IssueSource,
+  type QueryFieldTable,
 } from '@exprtlabs/golem/serde';
+
 import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { compileSchema } from './support/compiled-validators.js';
@@ -53,13 +57,19 @@ async function registerValidatingCodec(id: string, descriptor: ModelTypeDescript
   assert.ok(typeof assembled === 'object');
   const schema = { $id: id, ...assembled };
   const validate = await compileSchema(schema);
+  const graph = createSchemaGraph();
+  graph.intern(descriptor, id);
+  graph.seal();
+  const node = graph.nodeFor(descriptor, id);
+  assert.ok(node);
+  const queryFields = nodeQueryFields(graph, node);
   registerPassThroughCodec(id, {
+    ...(queryFields ? { queryFields } : {}),
     validate: (value) => isValidModelValue(value, undefined, validate, id),
     fromWireFormat: (wire) => {
       assertModelValue(wire, undefined, validate, id, IssueRepresentation.Wire, IssueSource.OpenAPI);
       return convert(wire) as never;
     },
-    schema,
   });
 }
 
@@ -669,22 +679,16 @@ test('NestModelInterceptor decodes whole @Query() strings to the declared scalar
 
 test('NestModelInterceptor passes @Query() through unchanged unless a present field decodes', () => {
   const received: unknown[] = [];
-  const register = (id: string, properties: Record<string, unknown>) => registerPassThroughCodec(id, {
+  const register = (id: string, queryFields?: QueryFieldTable) => registerPassThroughCodec(id, {
     fromWireFormat: (wire) => {
       received.push(wire);
       return wire as never;
     },
-    schema: { type: 'object', properties },
+    ...(queryFields ? { queryFields } : {}),
   });
-  register('QueryStrings_ffffffff', {
-    q: { type: 'string' },
-    either: { type: ['string', 'array'], items: { type: 'string' } },
-  });
-  register('QueryMixed_ffffffff', {
-    name: { type: 'string' },
-    limit: { type: 'integer' },
-    ['__proto__']: { type: 'number' },
-  });
+  // A model with only string fields has no table.
+  register('QueryStrings_ffffffff');
+  register('QueryMixed_ffffffff', Object.defineProperty({ limit: { types: ['integer'] } }, '__proto__', { value: { types: ['number'] }, enumerable: true }));
   const interceptor = new NestModelInterceptor();
   const intercept = (id: string, query: unknown) => {
     class QueryController {
@@ -904,10 +908,10 @@ test('NestModelInterceptor answers 500 for a marked return with no codec and pas
 });
 
 /** A variant codec of a union that tells which variant converted the wire value. */
-function variantCodec(id: string, schema?: object) {
+function variantCodec(id: string, queryFields?: QueryFieldTable) {
   return registerPassThroughCodec(id, {
     fromWireFormat: (wire) => ({ variant: id, wire }),
-    ...(schema ? { schema } : {}),
+    ...(queryFields ? { queryFields } : {}),
   });
 }
 
@@ -933,8 +937,8 @@ test('a union binding resolves its variant codecs on first use, so a variant tha
 
 test('a custom interceptor converts a union @Body() and @Query() with nestUnionFromMetatype; a model token and a non-model give undefined', async () => {
   // protects: T-511 a custom interceptor reads a union binding through a public function
-  variantCodec('Circle_33333333', { type: 'object', properties: { kind: { const: 'circle' }, radius: { type: 'number' } } });
-  variantCodec('Rect_44444444', { type: 'object', properties: { kind: { const: 'rect' }, width: { type: 'number' } } });
+  variantCodec('Circle_33333333', { radius: { types: ['number'] } });
+  variantCodec('Rect_44444444', { width: { types: ['number'] } });
   const union = (decorator: typeof Body | typeof Query, name: string) => {
     const klass = inputController(name, decorator, undefined, Object, (input) => ({ received: input }));
     nestModelUnion('kind', [[['circle'], 'Circle_33333333'], [['rect'], 'Rect_44444444']])(klass.prototype, 'handle', 0);

@@ -5,6 +5,7 @@
  * Internal to the tooling: no package export names this module.
  */
 import { compareText } from './generator-api.js';
+import { hasLocalForm } from './names.js';
 import { RUNTIME_MODULE_RANK, type RuntimeModule } from './rt.js';
 
 /** A name the file decides. The slot is its identity: two slots with one label are two names. */
@@ -90,7 +91,9 @@ export class ImportSource {
     const key = options.alias === undefined && options.typeOnly !== true ? name : `${name}\0${options.alias ?? ''}\0${options.typeOnly === true}`;
     let declared = this.#declared.get(key);
     if (!declared) {
-      checkedIdentifier(name, 'imported name');
+      // An aliased import binds the alias, so the exported name only has to be a name that a module can export.
+      if (options.alias === undefined) checkedIdentifier(name, 'imported name');
+      else syntaxChecked(name, 'imported name');
       if (options.alias !== undefined) checkedIdentifier(options.alias, 'alias');
       declared = fromParts([{ kind: 'imported', source: this, name, ...(options.typeOnly ? { typeOnly: true as const } : {}), ...(options.alias === undefined ? {} : { alias: options.alias }) }]);
       this.#declared.set(key, declared);
@@ -315,8 +318,48 @@ const PROPERTY_NAME = /^[A-Za-z_$][\w$]*$/;
 /** An identifier of the language: a name a user writes in a model file can hold any Unicode letter. */
 const IDENTIFIER = /^[\p{ID_Start}_$][\p{ID_Continue}$\u200c\u200d]*$/u;
 
-function checkedIdentifier(name: string, what: string): string {
+/**
+ * The locals of generated functions: `$`, one letter for the kind, and an index (`$v0`, `$p1`, `$k`). `localCode` is the
+ * one allocator and the only way to write such a name as a binding. Every other name passes `checkedIdentifier`, which
+ * refuses this form (a property key, `propertyKey`, is not a binding and may have it). So a local cannot equal a
+ * parameter, an import, a helper, a class or any other name of the file. A function keeps its locals apart by giving each
+ * kind its own letter and each local of a kind its own index.
+ */
+const LOCAL_LETTERS = {
+  value: 'v',
+  piece: 'p',
+  field: 'f',
+  present: 'e',
+  wire: 'w',
+  key: 'k',
+  extra: 'x',
+  record: 'r',
+  inlineField: 'i',
+  tag: 't',
+  projected: 'j',
+  index: 'n',
+  union: 'u',
+  source: 's',
+} as const;
+export type LocalKind = keyof typeof LOCAL_LETTERS;
+
+/** The local of `kind` with `index`; a kind that a function holds once takes no index. */
+export function localCode(kind: LocalKind, index?: number): Code {
+  const letter = Object.hasOwn(LOCAL_LETTERS, kind) ? LOCAL_LETTERS[kind] : undefined;
+  if (letter === undefined || (index !== undefined && !Number.isSafeInteger(index))) {
+    throw new TypeError(`a local needs one of the kinds ${Object.keys(LOCAL_LETTERS).join(', ')} and an integer index, got ${JSON.stringify([kind, index])}`);
+  }
+  return fromParts([{ kind: 'text', text: `$${letter}${index ?? ''}`, identifier: true }]);
+}
+
+function syntaxChecked(name: string, what: string): string {
   if (!IDENTIFIER.test(name)) throw new TypeError(`${what} must be an identifier, got ${JSON.stringify(name)}`);
+  return name;
+}
+
+function checkedIdentifier(name: string, what: string): string {
+  syntaxChecked(name, what);
+  if (hasLocalForm(name)) throw new TypeError(`${what} ${JSON.stringify(name)} has the form of a local of generated code (a $, one lowercase letter and digits); rename it`);
   return name;
 }
 
@@ -496,7 +539,7 @@ export function docComment(text: string): Code {
 
 /** An object member key: bare when it is an identifier name, otherwise a string literal. */
 export function propertyKey(name: string): Code {
-  return PROPERTY_NAME.test(name) ? identifier(name) : literal(name);
+  return PROPERTY_NAME.test(name) ? fromParts([{ kind: 'text', text: name, identifier: true }]) : literal(name);
 }
 
 /** A line end. Render writes the line break and the indentation of the `nest` that holds it. */

@@ -16,6 +16,5 @@ registerGeneratedModel(MoneyModel, {
   codecId: "Money",
 });
 registerIModelClass("Money", MoneyModel);
-const moneySchema = { $id: "Money", type: "object", required: ["currency", "amount"], additionalProperties: false, properties: { currency: { type: "string" }, amount: { type: "number" } } };
 function validateMoney(value: unknown) { const data = value as { currency?: unknown; amount?: unknown } | null; return typeof data === "object" && data !== null && typeof data.currency === "string" && typeof data.amount === "number"; }
-createObjectCodec("Money", { stringify() { throw new Error("unused"); }, parse() { throw new Error("unused"); }, validate: validateMoney, assert(value) { return value; }, toWireFormat: encodeMoney, fromWireFormat: decodeMoney, schema: moneySchema });
+createObjectCodec("Money", { stringify() { throw new Error("unused"); }, parse() { throw new Error("unused"); }, validate: validateMoney, assert(value) { return value; }, toWireFormat: encodeMoney, fromWireFormat: decodeMoney });

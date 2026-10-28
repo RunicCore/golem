@@ -17,7 +17,7 @@ import type { SchemaIssue } from './issue-messages.js';
 import type { ModelValidationContext, WireFormat } from './model.js';
 import type { Validator } from './validation-runtime.js';
 
-import { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CODEC_IDS_KEY } from './schema-keywords.js';
+import { MODEL_CODEC_IDS_KEY } from './schema-keywords.js';
 
 /** The error a generic serde call throws when no build has rewritten its type argument. */
 export function untransformedCallError(name: string): LibError {
@@ -57,16 +57,20 @@ export interface SerdeOptions extends MaxDepthOptions {
   readonly construct?: abstract new (values?: never) => object;
 }
 
+/** What a query string can carry for one field: the scalar types it admits, its literals, and the shape of an array item. */
+export interface QueryFieldShape {
+  readonly types: readonly ('string' | 'number' | 'integer' | 'boolean')[];
+  readonly literals?: readonly (string | number | boolean)[];
+  readonly item?: QueryFieldShape;
+}
+
+/** The fields of a model that a query string decodes, by name. */
+export type QueryFieldTable = Readonly<Record<string, QueryFieldShape>>;
+
 export interface ObjectCodec<T = unknown> {
   readonly id: string;
-  /** Model-plane JSON Schema payload. */
-  readonly schema?: object;
-  /** Wire-plane JSON Schema when intern ≠ model. */
-  readonly wireSchema?: object;
-  /** What parse checks after decoding (`Id#model-only`). */
-  readonly modelOnlySchema?: object;
-  /** What stringify checks after encoding (`Id#wire-only`). */
-  readonly wireOnlySchema?: object;
+  /** The query fields `NestModelInterceptor` decodes from strings; absent when no field needs it. */
+  readonly queryFields?: QueryFieldTable;
   /** Origin of generated issues; TypeScript IObject/IModel vs OpenAPI SDK. */
   readonly issueSource?: IssueSource;
   stringify(value: T, options?: SerdeOptions & AllowGetterOptions): string;
@@ -85,16 +89,11 @@ export interface ObjectCodecImpl<T = unknown> {
   assert(value: unknown, options?: ValidateOptions): T;
   toWireFormat(value: T, options?: SerdeOptions): unknown;
   fromWireFormat(wire: unknown, options?: SerdeOptions): T;
-  readonly schema?: object;
-  readonly wireSchema?: object;
-  readonly modelOnlySchema?: object;
-  readonly wireOnlySchema?: object;
+  readonly queryFields?: QueryFieldTable;
   /** The declared field names of a root object; `allowGetter` reads these. Another root has none, and the option has no effect. */
   readonly fields?: readonly string[];
   /** Set when the model reaches a recursive model: its input is bounded by `maxDepth` before it is converted or checked. */
   readonly recursive?: true;
-  /** Schemas from a generated closed validator plan already have resolved refs. */
-  readonly schemaRefsResolved?: true;
   readonly issueSource?: IssueSource;
 }
 
@@ -370,41 +369,22 @@ export function serdeValidates(options: SerdeOptions | undefined, validationEnab
   return options?.validate !== false;
 }
 
+/**
+ * The `validate<Id>` and `assert<Id>` of a model generated with validation off. Each model's file types the one stub as
+ * its own function, so the file holds no body for it.
+ */
+export function validationUnavailableStub(value: unknown, options?: ValidateOptions): value is never;
+export function validationUnavailableStub(value: unknown, options?: ValidateOptions): never;
+export function validationUnavailableStub(): never {
+  return validationUnavailable();
+}
+
 export function serdeFailFast(options: SerdeOptions | ValidateOptions | undefined): boolean {
   return options?.failFast !== false;
 }
 
-/**
- * Reads a schema plane of a codec on first use. A schema refers to other codecs by id, and the codec of a model in an
- * import cycle is not registered yet when this one is.
- */
-function lazySchemaPlane(schema: object, plane: ValidationPlane, resolved: boolean): () => object {
-  if (resolved) return () => schema;
-  let value: object | undefined;
-  let resolving = false;
-  return () => {
-    if (value !== undefined) return value;
-    // Resolving a schema reads the schema of each codec it names, which can name this one back. Only its `$id` is read then.
-    if (resolving) return schema;
-    resolving = true;
-    try {
-      value = resolveGeneratedModelSchemaRefs(schema, plane);
-    } finally {
-      resolving = false;
-    }
-    return value;
-  };
-}
-
-/** Registers the codec of `id`. Its schemas resolve on first read, unless `impl.schemaRefsResolved` says they already are. */
+/** Registers the codec of `id`. */
 export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): ObjectCodec<T> {
-  const resolved = impl.schemaRefsResolved === true;
-  const planes = {
-    schema: impl.schema && lazySchemaPlane(impl.schema, 'model', resolved),
-    wireSchema: impl.wireSchema && lazySchemaPlane(impl.wireSchema, 'wire', resolved),
-    ...(impl.modelOnlySchema ? { modelOnlySchema: lazySchemaPlane(impl.modelOnlySchema, 'model-only', resolved) } : {}),
-    ...(impl.wireOnlySchema ? { wireOnlySchema: lazySchemaPlane(impl.wireOnlySchema, 'wire-only', resolved) } : {}),
-  };
   const fields = impl.fields;
   const bounded = impl.recursive === true;
   // Input to a recursive model is walked once, without recursion, before the generated code recurses over it. The walk
@@ -421,6 +401,7 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
   const codec: ObjectCodec<T> = {
     id,
     issueSource: impl.issueSource,
+    ...(impl.queryFields ? { queryFields: impl.queryFields } : {}),
     stringify: (value, options) => impl.stringify(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) as typeof value : value, options),
     parse: (text, options) => {
       if (bounded) rejectDeepText(text, options);
@@ -449,64 +430,11 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
       return impl.fromWireFormat(wire, options);
     },
   };
-  Object.defineProperties(codec, Object.fromEntries(Object.entries(planes).map(([name, read]) => [
-    name,
-    { get: read, enumerable: true },
-  ])));
   registerObjectCodec(codec);
   return codec;
 }
 
-function codecPlaneSchema(codec: ObjectCodec, plane: ValidationPlane): object | undefined {
-  switch (plane) {
-    case 'model': return codec.schema;
-    case 'wire': return codec.wireSchema ?? codec.schema;
-    case 'model-only': return codec.modelOnlySchema;
-    case 'wire-only': return codec.wireOnlySchema;
-  }
-}
-
-/** Public schema key that addresses one plane of this codec in a validation context. */
+/** Public schema key that addresses one plane of this codec in a validation context: the codec id, then `#plane` for a residual or wire plane. */
 export function objectCodecValidationReference(codec: ObjectCodec, plane: ValidationPlane): string {
-  const schema = codecPlaneSchema(codec, plane);
-  if (schema !== null && typeof schema === 'object' && '$id' in schema && typeof schema.$id === 'string') return schema.$id;
-  if (plane === 'model' || (plane === 'wire' && codec.wireSchema === undefined)) return codec.id;
-  return `${codec.id}#${plane}`;
-}
-
-const resolvedGeneratedModelSchemas = new WeakSet<object>();
-
-/**
- * Replace generated-model `$ref` placeholders with registered schema ids. A
- * wire schema refers to a model's wire schema when the codec has one.
- */
-export function resolveGeneratedModelSchemaRefs(schema: object, plane: ValidationPlane = 'model'): object {
-  if (resolvedGeneratedModelSchemas.has(schema)) return schema;
-  // A residual reference names its plane (`Name#model-only`); others follow the schema's plane.
-  const schemaId = (reference: string): string => {
-    const hash = reference.indexOf('#');
-    const name = hash < 0 ? reference : reference.slice(0, hash);
-    const suffix = hash < 0 ? undefined : reference.slice(hash + 1);
-    const codec = requireObjectCodec(name);
-    if (suffix === 'model-only' || suffix === 'wire-only') return objectCodecValidationReference(codec, suffix);
-    return objectCodecValidationReference(codec, plane === 'wire' || plane === 'wire-only' ? 'wire' : 'model');
-  };
-  const prefix = GENERATED_MODEL_SCHEMA_REF_PREFIX;
-  const walk = (value: unknown): unknown => {
-    if (Array.isArray(value)) return value.map(walk);
-    if (value === null || typeof value !== 'object') return value;
-    const record = value as Record<string, unknown>;
-    const next: Record<string, unknown> = Object.create(null) as Record<string, unknown>;
-    for (const [key, item] of Object.entries(record)) {
-      if (key === '$ref' && typeof item === 'string' && item.startsWith(prefix)) {
-        next[key] = schemaId(item.slice(prefix.length));
-      } else {
-        next[key] = walk(item);
-      }
-    }
-    return next;
-  };
-  const resolved = walk(schema) as object;
-  resolvedGeneratedModelSchemas.add(resolved);
-  return resolved;
+  return plane === 'model' ? codec.id : `${codec.id}#${plane}`;
 }
