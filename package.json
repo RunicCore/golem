@@ -108,7 +108,8 @@
         ],
         "project": [
           "scripts/**/*.ts",
-          "tests/**/*.ts"
+          "tests/**/*.ts",
+          "docs/.vitepress/theme/**/*.{ts,vue}"
         ],
         "ignoreDependencies": [
           "ttsc",

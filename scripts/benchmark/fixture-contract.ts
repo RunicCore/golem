@@ -29,6 +29,7 @@ export interface ComparisonFixture {
 /**
  * An invalid-input call: `call` must throw an error that `isRejection` accepts, and the timed work is the throw and the catch.
  * Any other error is a program fault and propagates, so it is never timed as a rejection. It returns a positive number to consume.
+ * @public The benchmark fixtures import it after project.ts copies them beside this file.
  */
 export function rejects(call: () => unknown, isRejection: (error: unknown) => boolean): () => number {
   return () => {
@@ -40,7 +41,10 @@ export function rejects(call: () => unknown, isRejection: (error: unknown) => bo
   };
 }
 
-/** An invalid-input check: `validate` must return false. */
+/**
+ * An invalid-input check: `validate` must return false.
+ * @public The benchmark fixtures import it after project.ts copies them beside this file.
+ */
 export function rejectsValidate(validate: () => boolean): () => number {
   return () => {
     if (validate()) throw new Error('Invalid input was accepted');
