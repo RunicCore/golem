@@ -426,14 +426,19 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
       if (bounded) rejectDeepText(text, options);
       return impl.parse(text, options);
     },
+    // The bound judges the root the implementation reads, so nesting that a root getter supplies counts with `allowGetter`.
     validate: (value, options): value is T => {
-      if (bounded && valueNestsDeeperThan(value, resolveMaxDepth(options?.maxDepth))) return false;
-      return impl.validate(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) : value, options);
+      const checked = options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) : value;
+      if (bounded && valueNestsDeeperThan(checked, resolveMaxDepth(options?.maxDepth))) return false;
+      return impl.validate(checked, options);
     },
     assert: (value, options) => {
-      if (bounded) rejectDeepValue(value, options);
-      if (options?.allowGetter !== true || fields === undefined) return impl.assert(value, options);
+      if (options?.allowGetter !== true || fields === undefined) {
+        if (bounded) rejectDeepValue(value, options);
+        return impl.assert(value, options);
+      }
       const checked = readRootFields(value, fields);
+      if (bounded) rejectDeepValue(checked, options);
       const result = impl.assert(checked, options);
       return checked === value ? result : value as T;
     },

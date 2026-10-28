@@ -562,7 +562,7 @@ A model that reaches a recursive model (it refers to itself, directly or through
 
 - `parse`, `fromWireFormat` and `assert` throw a `LibError` of kind `deserialization` with `causedByInput: true`. The message names the limit and the option. `NestModelInterceptor` answers HTTP 400.
 - `validate` returns `false`.
-- Each object and each array counts as one level, so a tree whose `children` array holds nodes adds two levels for each node.
+- Each array, plain object and model instance counts as one level; a class value such as a `Uint8Array`, a `Date` or a `Map` is a leaf. With `allowGetter: true`, the fields that a root getter supplies count too. A tree whose `children` array holds nodes adds two levels for each node.
 - Raise the bound for one call with `{ maxDepth: 2000 }`, or for the interceptor with `new NestModelInterceptor({ maxDepth: 2000 })`. `Infinity` turns it off. Very deep input can then end the call stack.
 - A value below 1 is a `TypeError`.
 

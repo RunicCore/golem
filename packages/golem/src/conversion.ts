@@ -141,13 +141,23 @@ export function nestingDepthError(maxDepth: number): LibError {
 
 const LEAVE = Symbol('leave');
 
+/** A level of the depth walk: an array, a plain object or a golem model instance. Bytes, dates, maps and other class values are leaves. */
+function isNestingLevel(entry: object): boolean {
+  if (Array.isArray(entry)) return true;
+  const prototype = Object.getPrototypeOf(entry);
+  return prototype === Object.prototype || prototype === null || instanceFields(entry) !== undefined;
+}
+
 /**
- * True when `value` nests objects and arrays deeper than `maxDepth`. It walks with an explicit stack, so a deep value
- * cannot end the call stack, and an object already on the current path is a cycle, which the cycle checks report.
+ * True when `value` nests arrays, plain objects and model instances deeper than `maxDepth`. It walks with an explicit
+ * stack, so a deep value cannot end the call stack, the root is always a level, and an object already on the current path is a cycle, which the cycle
+ * checks report. An object that several paths share is walked again only when a path reaches it deeper than before,
+ * so a DAG costs one walk for each node and depth, not one for each path.
  */
 export function valueNestsDeeperThan(value: unknown, maxDepth: number): boolean {
   if (maxDepth === Infinity || value === null || typeof value !== 'object') return false;
   const onPath = new Set<object>();
+  const walkedAt = new Map<object, number>();
   const stack: unknown[] = [value];
   let depth = 0;
   while (stack.length > 0) {
@@ -157,8 +167,10 @@ export function valueNestsDeeperThan(value: unknown, maxDepth: number): boolean 
       depth--;
       continue;
     }
-    if (entry === null || typeof entry !== 'object' || entry instanceof Date || onPath.has(entry)) continue;
+    if (entry === null || typeof entry !== 'object' || onPath.has(entry) || (entry !== value && !isNestingLevel(entry))) continue;
     if (++depth > maxDepth) return true;
+    if ((walkedAt.get(entry) ?? 0) >= depth) { depth--; continue; }
+    walkedAt.set(entry, depth);
     onPath.add(entry);
     stack.push(entry, LEAVE);
     if (Array.isArray(entry)) for (let index = 0; index < entry.length; index++) stack.push(entry[index]);
