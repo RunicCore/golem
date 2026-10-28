@@ -428,8 +428,7 @@ function assertValidationCompatibility(
   }
 }
 
-/** `numberFormat` is a number, or a string kept from before number formats applied to model fields. */
-type ConstraintFamily = 'number' | 'numberFormat' | 'string' | 'array' | 'object';
+type ConstraintFamily = 'number' | 'string' | 'array' | 'object';
 
 /** The `Format` names that validate a number. `validation-runtime.ts` checks them; every other name checks a string. */
 const NUMBER_FORMATS: ReadonlySet<string> = new Set(['int32', 'int64', 'float', 'double']);
@@ -444,7 +443,7 @@ function constraintFamily(constraint: ModelConstraint): ConstraintFamily | undef
     case 'multipleOf':
       return 'number';
     case 'format':
-      return NUMBER_FORMATS.has(constraint.value) ? 'numberFormat' : 'string';
+      return NUMBER_FORMATS.has(constraint.value) ? 'number' : 'string';
     case 'minLength':
     case 'maxLength':
     case 'pattern':
@@ -488,7 +487,6 @@ function supportsConstraintFamily(
 
   switch (family) {
     case 'number': return (type.flags & ts.TypeFlags.NumberLike) !== 0;
-    case 'numberFormat': return (type.flags & (ts.TypeFlags.NumberLike | ts.TypeFlags.StringLike)) !== 0;
     case 'string': return (type.flags & ts.TypeFlags.StringLike) !== 0;
     case 'array': return checker.isArrayType(type) || checker.isTupleType(type);
     case 'object': return (type.flags & ts.TypeFlags.Object) !== 0
@@ -528,7 +526,7 @@ function assertConstraintCompatibility(
       context.sourceFile,
       context.declaration,
       '1051',
-      `Constraint on the ${representation} value requires ${family === 'array' || family === 'object' ? 'an' : 'a'} ${family === 'numberFormat' ? 'number' : family} type, but ${context.name} resolves to ${checker.typeToString(valueType)}.`,
+      `Constraint on the ${representation} value requires ${family === 'array' || family === 'object' ? 'an' : 'a'} ${family} type, but ${context.name} resolves to ${checker.typeToString(valueType)}.`,
     );
   }
 }

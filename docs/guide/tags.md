@@ -50,7 +50,7 @@ Schema-valued tags describe another TypeScript contract:
 
 ## Formats
 
-On a model field, `Format<'name'>` applies to a `string`, or to a `number` for a number format such as `number & Format<'int32'>`. A number format also applies to schemas from an OpenAPI document, where a number schema has `format: int32`. A string format such as `email` on a `number` field stops generation ([RUNM1051](/reference/diagnostics#runm1051)). Golem checks these names:
+On a model field, `Format<'name'>` applies to a `string`, or to a `number` for a number format such as `number & Format<'int32'>`. A number format also applies to schemas from an OpenAPI document, where a number schema has `format: int32`. A format on the wrong type, such as `email` on a `number` or `int32` on a `string`, stops generation ([RUNM1051](/reference/diagnostics#runm1051)). Golem checks these names:
 
 | Value | Format names | Applies to |
 | --- | --- | --- |

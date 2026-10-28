@@ -279,9 +279,10 @@ export function decode(value: number & MinLength<3>): number { return value; }`,
         expected: /RUNM1051: Constraint on the model value requires a string type/,
       },
       {
-        name: 'number format on a boolean',
+        // protects: T-555 a number format checks a number, so a string field cannot carry it unchecked
+        name: 'number format on a string',
         imports: tsSource`import type { Format } from '@exprtlabs/golem/tags';`,
-        field: tsSource`value: boolean & Format<'int32'>`,
+        field: tsSource`value: string & Format<'int32'>`,
         expected: /RUNM1051: Constraint on the model value requires a number type/,
       },
       {
