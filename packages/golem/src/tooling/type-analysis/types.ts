@@ -18,6 +18,7 @@ import type { ModelSpecification, TypeAnalysisContext } from './models.js';
 import {
   analyzeNode,
   checkerDiscriminator,
+  untaggedTypeText,
   withoutDiscriminator,
   carriesSerdeTag,
   isAmbientOrGlobalSymbol,
@@ -656,14 +657,17 @@ function declaredTagTable(
   at: ts.Node,
 ): UnionDiscriminator {
   if (entries.filter((entry) => isObjectLikeVariant(entry.descriptor)).length < 2) {
-    throw diagnostic(context.sourceFile, at, '1051', discriminatorPlacementMessage(context, entries.map((entry) => checker.typeToString(withoutDiscriminator(checker, entry.type))).join(' | ')));
+    throw diagnostic(context.sourceFile, at, '1051', discriminatorPlacementMessage(context, entries.map((entry) => untaggedTypeText(checker, entry.type)).join(' | ')));
   }
-  const nameOf = ({ type, descriptor }: (typeof entries)[number]): string => descriptor.kind === 'reference' ? descriptor.name : checker.typeToString(withoutDiscriminator(checker, type));
+  const nameOf = ({ type, descriptor }: (typeof entries)[number]): string => descriptor.kind === 'reference' ? descriptor.name : untaggedTypeText(checker, type);
   // The declared default is the variant that is the `Default` type; it alone may lack the key, and it must not carry it.
   const defaultIndex = defaultType === undefined ? undefined : entries.findIndex(({ type }) => type === defaultType
     || (checker.isTypeAssignableTo(type, defaultType) && checker.isTypeAssignableTo(defaultType, type)));
   if (defaultType !== undefined && (defaultIndex === undefined || defaultIndex < 0)) {
     throw diagnostic(context.sourceFile, at, '1051', `Discriminator<'${key}', ${checker.typeToString(defaultType)}> in ${context.name} names a default that is not a variant of the union. Name one of its variants: ${entries.map(nameOf).join(', ')}.`);
+  }
+  if (defaultIndex !== undefined && !isObjectLikeVariant(entries[defaultIndex].descriptor)) {
+    throw diagnostic(context.sourceFile, at, '1051', `Discriminator<'${key}', ${checker.typeToString(defaultType!)}> in ${context.name} names a default that is no object. The default is the object variant that has no tag; a scalar, array or null variant is chosen by its JSON type, so name an object variant or remove the default.`);
   }
   if (defaultIndex !== undefined && checker.getPropertyOfType(entries[defaultIndex].type, key)) {
     throw diagnostic(context.sourceFile, at, '1051', `The default variant ${nameOf(entries[defaultIndex])} of Discriminator<'${key}'> in ${context.name} has a "${key}" property itself. The default is the variant that has no tag, so name another variant or rename the property.`);
