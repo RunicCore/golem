@@ -99,6 +99,14 @@ test('golem build rewrites nested model serde calls and preserves class construc
   assert.ok(wired instanceof loaded.Item);
 });
 
+/** Builds the project at the default profile and imports its built `use.js`; `files` are the generated files of that build. */
+async function buildAndImport<Exports>(root: string): Promise<{ readonly loaded: Exports; readonly files: ReturnType<typeof generatedModelFiles> }> {
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const files = generatedModelFiles(root);
+  return { loaded: await import(pathToFileURL(path.join(root, 'build/use.js')).href) as Exports, files };
+}
+
 test('a field typed with an app class from its own file builds, parses and writes that class, and a second build writes the same files', async t => {
   // protects: T-205 a model field typed with a class that extends a generated base generates
   const { root, sourceRoot } = companionModelProject(t, 'model-class-field');
@@ -109,10 +117,7 @@ test('a field typed with an app class from its own file builds, parses and write
     'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; customer: Customer }>;\n`,
     'use.ts': "import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\"}}');\nexport const text = stringify<TOrder>(order);\n",
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
-  const firstFiles = generatedModelFiles(root);
-  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { Customer: new () => object; order: { customer: object }; text: string };
+  const { loaded, files: firstFiles } = await buildAndImport<{ Customer: new () => object; order: { customer: object }; text: string }>(root);
   assert.ok(loaded.order.customer instanceof loaded.Customer);
   assert.equal(loaded.text, '{"id":"o1","customer":{"name":"Ada"}}');
   await generateModels(root);
@@ -130,9 +135,7 @@ test('a class field that a projection reaches builds: a model that picks it from
     'invoice.model.ts': `${imodel}import type { TOrder } from './order.model.js';\nexport type TInvoice = IObject<{ order: Pick<TOrder, 'customer'> }>;\n`,
     'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TInvoice } from './invoice.model.js';\nexport { Customer } from './customer.js';\nexport const invoice = parse<TInvoice>('{\"order\":{\"customer\":{\"name\":\"Ada\"}}}');\n",
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
-  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { Customer: new () => object; invoice: { order: { customer: object } } };
+  const { loaded } = await buildAndImport<{ Customer: new () => object; invoice: { order: { customer: object } } }>(root);
   assert.ok(loaded.invoice.order.customer instanceof loaded.Customer);
 });
 
@@ -147,9 +150,7 @@ test('two models that name each other through their app classes build, and each 
     'order.ts': "import { TOrderBaseModel } from './order.model.generated.js';\nexport class Order extends TOrderBaseModel {}\n",
     'use.ts': "import { parse } from '@exprtlabs/golem/serde';\nimport type { TCustomer } from './customer.model.js';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport { Order } from './order.js';\nexport const customer = parse<TCustomer>('{\"name\":\"Ada\",\"orders\":[{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\",\"orders\":[]}}]}');\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"customer\":{\"name\":\"Ada\",\"orders\":[]}}');\n",
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
-  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { Customer: new () => object; Order: new () => object; customer: { orders: object[] }; order: { customer: object } };
+  const { loaded } = await buildAndImport<{ Customer: new () => object; Order: new () => object; customer: { orders: object[] }; order: { customer: object } }>(root);
   assert.ok(loaded.customer.orders[0] instanceof loaded.Order);
   assert.ok(loaded.order.customer instanceof loaded.Customer);
 });
@@ -164,10 +165,7 @@ test('a field typed with a projection of an app class builds on the first run, k
     'order.model.ts': `${imodel}import type { Customer } from './customer.js';\nexport type TOrder = IModel<{ id: string; summary: Pick<Customer, 'name' | 'age'> }>;\n`,
     'use.ts': "import { parse, stringify } from '@exprtlabs/golem/serde';\nimport type { TOrder } from './order.model.js';\nexport { Customer } from './customer.js';\nexport const order = parse<TOrder>('{\"id\":\"o1\",\"summary\":{\"name\":\"Ada\"}}');\nexport const text = stringify<TOrder>(order);\n",
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
-  const firstFiles = generatedModelFiles(root);
-  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { order: { id: string; summary: { name: string } }; text: string };
+  const { loaded, files: firstFiles } = await buildAndImport<{ order: { id: string; summary: { name: string } }; text: string }>(root);
   assert.deepEqual({ ...loaded.order.summary }, { name: 'Ada' });
   assert.equal(loaded.text, '{"id":"o1","summary":{"name":"Ada"}}');
   await generateModels(root);
@@ -348,8 +346,6 @@ export const hole = run(() => stringify<TList>({ names: ['x', , ] } as never));
 export const anyHole = run(() => stringify<TAny>({ values: ['x', , ] } as never));
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
-  const loaded = await import(pathToFileURL(path.join(root, 'build/use.js')).href) as { undefinedItem: string; hole: string; anyHole: string };
+  const { loaded } = await buildAndImport<{ undefinedItem: string; hole: string; anyHole: string }>(root);
   assert.deepEqual({ ...loaded }, { undefinedItem: '{"names":["x",null]}', hole: 'Model validation failed.', anyHole: 'Model validation failed.' });
 });

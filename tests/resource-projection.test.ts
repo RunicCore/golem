@@ -287,6 +287,21 @@ function schemaProperties(schema: unknown, label: string): Record<string, unknow
   return requireRecord(requireRecord(schema, label).properties, `${label}.properties`);
 }
 
+/** Compiles the consumer in a strict program over the materialized SDK, then runs its built `script` and expects exit 0. */
+function runStrictConsumer(output: string, consumer: string, script: string): void {
+  compileGeneratedSdk(output, [consumer], {
+    strict: true,
+    noUnusedLocals: true,
+    noUnusedParameters: true,
+    skipLibCheck: true,
+    outDir: path.join(output, 'build'),
+  });
+  const execution = spawnSync(process.execPath, [path.join(output, 'build', script)], {
+    encoding: 'utf8',
+  });
+  assert.equal(execution.status, 0, `${execution.stdout}\n${execution.stderr}`);
+}
+
 test('public directional resources preserve nested scopes and run through generated validators in strict consumers', async (t) => {
   const root = mkdtempSync(path.join(tmpdir(), 'golem-resource-projection-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
@@ -305,17 +320,7 @@ test('public directional resources preserve nested scopes and run through genera
 
   materializeGeneratedSdk(result.artifacts, output);
   const consumer = writeConsumer(output);
-  compileGeneratedSdk(output, [consumer], {
-    strict: true,
-    noUnusedLocals: true,
-    noUnusedParameters: true,
-    skipLibCheck: true,
-    outDir: path.join(output, 'build'),
-  });
-  const execution = spawnSync(process.execPath, [path.join(output, 'build', 'consumer.js')], {
-    encoding: 'utf8',
-  });
-  assert.equal(execution.status, 0, `${execution.stdout}\n${execution.stderr}`);
+  runStrictConsumer(output, consumer, 'consumer.js');
 
   const schemasModule = schemaRegistries(projectionDocument());
   const runtimeRegistry = requireRecord(schemasModule.runtimeSchemaRegistry, 'runtime schema registry');
@@ -398,17 +403,7 @@ test('public resource graph distinguishes whole, scalar, and nested targets with
 
   materializeGeneratedSdk(result.artifacts, output);
   const consumer = writeResourceGraphConsumer(output);
-  compileGeneratedSdk(output, [consumer], {
-    strict: true,
-    noUnusedLocals: true,
-    noUnusedParameters: true,
-    skipLibCheck: true,
-    outDir: path.join(output, 'build'),
-  });
-  const execution = spawnSync(process.execPath, [path.join(output, 'build', 'resource-graph-consumer.js')], {
-    encoding: 'utf8',
-  });
-  assert.equal(execution.status, 0, `${execution.stdout}\n${execution.stderr}`);
+  runStrictConsumer(output, consumer, 'resource-graph-consumer.js');
 
   const schemasModule = schemaRegistries(resourceGraphDocument());
   const neutralRegistry = requireRecord(schemasModule.schemaRegistry, 'graph neutral schema registry');

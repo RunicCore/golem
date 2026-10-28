@@ -305,7 +305,8 @@ export class Team extends TTeamBaseModel {}
   } finally { spy.stop(); }
 });
 
-test('model encoding assigns present fields in declaration order without deleting keys', async (t) => {
+/** A built project of the model `TNote` (`title`, optional `body`, `pinned`) and its class `Note`, without validation. */
+async function buildNote(t: TestContext): Promise<ReturnType<typeof fixture>> {
   const value = fixture(t);
   writeFileSync(path.join(value.sourceRoot, 'note.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 import { TNoteBaseModel } from './note.model.generated.js';
@@ -314,6 +315,11 @@ export class Note extends TNoteBaseModel {}
 `);
   writeModelGolemYaml(value.root, { mobx: false, validation: false });
   await buildModelProject(value.root);
+  return value;
+}
+
+test('model encoding assigns present fields in declaration order without deleting keys', async (t) => {
+  const value = await buildNote(t);
   const { Note } = await import(pathToFileURL(path.join(value.root, 'build/note.model.js')).href);
   const keys = (init: object) => Object.keys(encodeGeneratedModel(new Note(init) as never));
   assert.deepEqual(keys({ title: 't', pinned: true }), ['title', 'pinned']);
@@ -329,14 +335,7 @@ const noNativesReason = v8Natives.stdout?.trim() === 'true' ? false : 'this runt
 
 test('the encoded object keeps fast properties when a middle field is absent', { skip: noNativesReason }, async (t) => {
   // protects: T-60 encoding an absent field never adds it and then deletes it, which turns the result into a dictionary-mode object
-  const value = fixture(t);
-  writeFileSync(path.join(value.sourceRoot, 'note.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
-import { TNoteBaseModel } from './note.model.generated.js';
-export type TNote = IModel<{ title: string; body?: string; pinned: boolean }>;
-export class Note extends TNoteBaseModel {}
-`);
-  writeModelGolemYaml(value.root, { mobx: false, validation: false });
-  await buildModelProject(value.root);
+  const value = await buildNote(t);
   const probe = path.join(value.root, 'fast-properties.mjs');
   writeFileSync(probe, [
     "import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';",

@@ -12,6 +12,7 @@ import { createModelProject } from './model-project.js';
 import { caseFolder, DIAGNOSTICS, EXPECTED_REJECTIONS, GENERATED, IDENTITY_CASES, isCompiled, shardOf, type IdentityCase, type IdentityProject } from './support/identity-corpus.js';
 import { createNodeSpecifierProject } from './support/node-specifiers-project.js';
 import { command, workspace } from './support/process.js';
+import { mtimes } from './support/build-project.js';
 
 const typescript6Root = process.env.GOLEM_TYPESCRIPT6_ROOT;
 // The shard counts keep the peak memory of the children beside the unit step low; TypeScript 6 runs slower per case, so it has more shards.
@@ -63,17 +64,9 @@ async function createProject(t: FixtureScope, item: IdentityCase, label: string)
 }
 
 function readTree(directory: string): Map<string, string> {
-  const files = new Map<string, string>();
-  const visit = (current: string): void => {
-    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-      const filename = path.join(current, entry.name);
-      // Latin-1 maps each byte to one character, so equal strings are equal bytes.
-      if (entry.isDirectory()) visit(filename);
-      else files.set(path.relative(directory, filename), fs.readFileSync(filename, 'latin1'));
-    }
-  };
-  if (fs.existsSync(directory)) visit(directory);
-  return files;
+  if (!fs.existsSync(directory)) return new Map();
+  // Latin-1 maps each byte to one character, so equal strings are equal bytes.
+  return new Map([...mtimes(directory, '').keys()].map(file => [file, fs.readFileSync(path.join(directory, file), 'latin1')]));
 }
 
 /** Builds the projects of one shard, runs its child process on one TypeScript version and reads what the child wrote. */

@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -9,6 +9,13 @@ import { EXAMPLE_NAMES } from '../scripts/maintained-examples.js';
 function writeJson(filename: string, value: unknown): void {
   fs.mkdirSync(path.dirname(filename), { recursive: true });
   fs.writeFileSync(filename, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+/** An empty temporary root for a release fixture, removed when the test ends. */
+function fixtureRoot(t: TestContext): string {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-release-version-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return root;
 }
 
 function releaseFixture(root: string, version = '1.0.0', tag = 'latest'): void {
@@ -35,8 +42,7 @@ function releaseFixture(root: string, version = '1.0.0', tag = 'latest'): void {
 }
 
 test('release consistency rejects public version and internal pin drift', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-release-version-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const root = fixtureRoot(t);
   releaseFixture(root);
 
   writeJson(path.join(root, 'packages', 'golem-model', 'package.json'), {
@@ -57,8 +63,7 @@ test('release consistency rejects public version and internal pin drift', t => {
 });
 
 test('release consistency rejects an example project missing from the maintained inventory', t => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-release-version-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const root = fixtureRoot(t);
   releaseFixture(root);
   assert.equal(assertReleaseConsistency(root), '1.0.0');
 
@@ -72,8 +77,7 @@ test('release consistency rejects an example project missing from the maintained
 
 test('release consistency requires the dist-tag of the release version: latest for a stable version, the channel for a prerelease', t => {
   // protects: P-16 a prerelease must not publish under latest, and a stable release must
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'golem-release-version-'));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const root = fixtureRoot(t);
   const cases: readonly [string, string, RegExp | undefined][] = [
     ['1.0.0', 'latest', undefined],
     ['1.0.0', 'rc', /must publish publicly with the latest tag/],
