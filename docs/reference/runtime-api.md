@@ -89,7 +89,7 @@ function getValidator<Fields extends object, Owner extends object>(
 | Member | Signature | Behavior |
 | --- | --- | --- |
 | `constructor` | `(model, cache = true)` | Attaches a validator to a model instance. `cache: false` does not store it for `getValidator`. |
-| `validate` | `(options?: ValidateOptions): Promise<boolean>` | Runs generated checks, then instance rules, and stores the issues. A newer call wins over an older one. |
+| `validate` | `(options?: ValidateOptions): Promise<boolean>` | Runs generated checks, then instance rules for the fields they passed, and stores the issues. A newer call wins over an older one. |
 | `issues` | `readonly Issue[]` | Stored issues, frozen. |
 | `errors` | `Readonly<Record<string, readonly string[]>>` | Messages keyed by escaped JSON Pointer, such as `/items/0/sku`. |
 | `valid` | `boolean` | `true` when no issues are stored. It does not track later edits. |

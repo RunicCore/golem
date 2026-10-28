@@ -230,7 +230,12 @@ function formatIssues(model: object, issues: readonly Issue[]): readonly Issue[]
 interface LocalRuleIssue { readonly issue: Issue; readonly explicit: boolean }
 const noLocalRuleIssues: readonly LocalRuleIssue[] = [];
 
-function evaluateInstanceRules(root: object, mode: ValidationMode): ValidationStep<readonly Issue[]> {
+/** True when a generated issue sits at the path or below it. */
+function hasIssueAtOrBelow(issues: readonly Issue[], path: IssuePath): boolean {
+  return issues.some(issue => path.every((segment, index) => String(issue.path[index]) === String(segment)) && issue.path.length >= path.length);
+}
+
+function evaluateInstanceRules(root: object, mode: ValidationMode, generated: readonly Issue[]): ValidationStep<readonly Issue[]> {
   const memo = new WeakMap<object, readonly LocalRuleIssue[]>();
   const active = new Set<object>();
   const issues: Issue[] = [];
@@ -263,6 +268,8 @@ function evaluateInstanceRules(root: object, mode: ValidationMode): ValidationSt
     const evaluateRules = (fieldIndex: number, ruleIndex: number): ValidationStep<readonly LocalRuleIssue[]> => {
       for (let currentFieldIndex = fieldIndex; currentFieldIndex < entries.length; currentFieldIndex++) {
         const [field, rules] = entries[currentFieldIndex];
+        // A rule meets only a field the generated checks passed: they own the failure, and the rule may not expect the bad value.
+        if (hasIssueAtOrBelow(generated, [...path, field])) continue;
         for (let currentRuleIndex = currentFieldIndex === fieldIndex ? ruleIndex : 0; currentRuleIndex < rules.length; currentRuleIndex++) {
           const rule = rules[currentRuleIndex];
           let rawResult: ValidationRuleResult | Promise<ValidationRuleResult>;
@@ -412,7 +419,7 @@ async function collectCodecIssues(
       { failFast, ...(validationContext === undefined ? {} : { validationContext }) },
     );
   }
-  const overlay = await evaluateInstanceRules(model, mode);
+  const overlay = mode === 'first' && generated.length ? [] : await evaluateInstanceRules(model, mode, generated);
   const issues = formatIssues(model, [...generated, ...overlay]);
   return mode === 'first' ? issues.slice(0, 1) : issues;
 }

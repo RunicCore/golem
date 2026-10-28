@@ -100,3 +100,37 @@ test('a throwing custom rule is a program fault, not rejected input', async () =
   await assert.rejects(() => validateInstance(model), (error: unknown) =>
     error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput === false);
 });
+
+test('an instance rule is skipped for a field the generated checks already rejected', async () => {
+  // protects: bug an extend() rule ran on a field the generated check had failed and its throw rejected validateInstance
+  class Titled {
+    public title: unknown = 'ok';
+    public other: unknown = 'ok';
+  }
+  await installCodecModel({
+    constructor: Titled,
+    name: 'Titled',
+    fields: ['title', 'other'],
+    definitions: {
+      Titled: {
+        kind: 'object',
+        properties: { title: { kind: 'string' }, other: { kind: 'string' } },
+        required: ['title', 'other'],
+        additionalProperties: false,
+      },
+    },
+  });
+  const model = new Titled();
+  model.title = undefined;
+  getValidator(model).extend({
+    title: (value: unknown) => (value as string).trim() !== '',
+    other: () => 'other is invalid',
+  });
+
+  const first = await validateInstance(model);
+  assert.deepEqual(first.map(issue => issue.path), [['title']]);
+  assert.equal(first[0]?.code, 'required');
+
+  const all = await validateInstance(model, { failFast: false });
+  assert.deepEqual(all.map(issue => [issue.code, issue.path]), [['required', ['title']], ['custom', ['other']]]);
+});
