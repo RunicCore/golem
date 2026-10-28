@@ -450,13 +450,15 @@ export function emitUnionConversion(
     return sameCode(converted, value) ? value : code`${value} == null ? ${value} : (${converted})`;
   }
   const nullable = present.length !== descriptor.variants.length;
-  // A Date converts no null or undefined, so the nullish variants of the union stop at a guard before its conversion.
+  // A Date, and in stringify any scalar writer other than the plain one, converts no null or undefined, so the nullish
+  // variants of the union stop at a guard before its conversion.
   const scalarBranch = (scalars: readonly ModelTypeDescriptor[]): Code => {
     const variant = scalarBranchVariant(scalars) ?? (json && scalars.length === 1 ? scalars[0] : undefined);
     if (!variant) return plain;
     const converted = convert(variant);
-    if (!nullable || variant.kind !== 'date') return converted;
-    return json ? code`(${value} == null ? 'null' : (${converted}))` : code`(${value} == null ? ${value} : (${converted}))`;
+    if (!nullable) return converted;
+    if (json) return sameCode(converted, plain) ? converted : code`(${value} == null ? 'null' : (${converted}))`;
+    return variant.kind === 'date' ? code`(${value} == null ? ${value} : (${converted}))` : converted;
   };
   /**
    * Tagged dispatch. Under a declared table the JSON type goes first: an array or tuple, a scalar or null take their own
@@ -473,9 +475,7 @@ export function emitUnionConversion(
     if (!types) throw new AmbiguousUnionConversionError(rest);
     const declared = table.defaultVariant === undefined ? undefined : descriptor.variants[table.defaultVariant];
     const fallback = declared && (conversion.declaredDefault?.(declared) ?? convert(declared));
-    const converted = rest.length > 0 ? scalarBranch(types.scalars) : undefined;
-    // A JSON scalar converter writes no null, which the union's nullish variant accepts.
-    const scalar = converted !== undefined && json && nullable && !sameCode(converted, plain) ? code`(${value} == null ? 'null' : ${converted})` : converted;
+    const scalar = rest.length > 0 ? scalarBranch(types.scalars) : undefined;
     const objects = conversion.tagged({
       indices: taggedIndices,
       ...(scalar === undefined ? {} : { rest: scalar }),

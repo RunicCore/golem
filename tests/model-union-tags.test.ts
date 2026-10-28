@@ -185,3 +185,25 @@ test('a Date beside an array converts by the wire form: a string is the Date, an
     }
   }
 });
+
+test('a number beside an array and null writes null as null in stringify, with validation on and off', async (t) => {
+  // protects: T-604 a nullable scalar-or-array union stringified its single scalar with stringifyJsonNumber, which throws on null
+  const cases = [{ v: 1 }, { v: [1, 2] }, { v: null }] as const;
+  for (const validation of [false, true]) {
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-number-or-numbers-', name: 'number-or-numbers', linkWorkspaceNodeModules: true });
+    writeFileSync(path.join(sourceRoot, 'amount.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import { TAmountBaseModel } from './amount.model.generated.js';
+export type TAmount = IModel<{ v: number | number[] | null }>;
+export class Amount extends TAmountBaseModel {}
+`);
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const { Amount } = await import(pathToFileURL(path.join(root, 'build/amount.model.js')).href) as { Amount: GeneratedModelClass };
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TAmount'));
+    for (const wire of cases) {
+      const model = new Amount(wire as never);
+      assert.equal(codec.stringify(model, { validate: validation }), JSON.stringify(wire), `validation=${validation}`);
+      assert.deepEqual(encodeGeneratedModel(model), wire, `validation=${validation}`);
+    }
+  }
+});

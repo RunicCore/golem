@@ -513,3 +513,46 @@ for (const { shape, schemas, error } of untaggedUnions) {
     });
   }
 }
+
+for (const [form, defaultMapping] of [['a component name', 'Other'], ['a $ref', '#/components/schemas/Other']] as const) {
+  test(`a 3.2 discriminator defaultMapping as ${form} selects the variant that has no tag, in decode and encode`, async t => {
+    // protects: T-604 golem-openapi reads discriminator.defaultMapping; the default variant may lack the tag property
+    const suffix = form === 'a $ref' ? 'DefRef' : 'DefName';
+    const ref = (name: string) => ({ $ref: `#/components/schemas/${name}${suffix}` });
+    const document = {
+      openapi: '3.2.0',
+      info: { title: 'Payments', version: '1' },
+      paths: {},
+      components: {
+        schemas: {
+          [`Card${suffix}`]: { type: 'object', required: ['kind', 'number'], properties: { kind: { type: 'string' }, number: { type: 'string' } } },
+          [`Cash${suffix}`]: { type: 'object', required: ['kind', 'amount'], properties: { kind: { type: 'string' }, amount: { type: 'number' } } },
+          [`Other${suffix}`]: { type: 'object', required: ['note'], properties: { note: { type: 'string' } } },
+          [`Payment${suffix}`]: {
+            oneOf: [ref('Card'), ref('Cash'), ref('Other')],
+            discriminator: {
+              propertyName: 'kind',
+              mapping: { card: `#/components/schemas/Card${suffix}`, cash: `Cash${suffix}` },
+              defaultMapping: `${defaultMapping}${suffix}`,
+            },
+          },
+          [`Owner${suffix}`]: { type: 'object', required: ['payment'], properties: { payment: ref('Payment') } },
+        },
+      },
+    };
+    const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-default-'), 'sdk');
+    await generateMaterializedSdk(document, { output, name: 'Payments', profile: { mobx: false, validation: true } });
+    compileGeneratedSdk(output, [], { strict: true });
+    const models = await importGeneratedModule(output, 'payment models');
+    const OwnerModel = modelClass(models, `Owner${suffix}Model`);
+    const owner = (payment: object) => decodeGeneratedModel(OwnerModel, { payment }) as { payment: object };
+    assert.ok(owner({ kind: 'card', number: '1' }).payment instanceof modelClass(models, `Card${suffix}Model`));
+    assert.ok(owner({ kind: 'cash', amount: 2 }).payment instanceof modelClass(models, `Cash${suffix}Model`));
+    const other = modelClass(models, `Other${suffix}Model`);
+    assert.ok(owner({ note: 'n' }).payment instanceof other);
+    assert.ok(owner({ kind: 'wire', note: 'n' }).payment instanceof other);
+    for (const payment of [{ kind: 'card', number: '1' }, { kind: 'cash', amount: 2 }, { note: 'n' }]) {
+      assert.deepEqual(encodeGeneratedModel(owner(payment)), { payment });
+    }
+  });
+}
