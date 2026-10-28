@@ -326,6 +326,7 @@ function qualifiedComponentNames(
     const file = relative.pop() ?? '';
     return { directory: relative.filter((segment) => segment !== '' && segment !== '..').map(clean), stem: clean(file.replace(/\.model\.ts$|\.ts$/, '')), file: clean(file) };
   };
+  const qualifiedBy = new Map<string, ModelSpecification>();
   for (const [name, members] of groups) {
     const representatives = new Map<string, ModelSpecification>();
     for (const member of members) {
@@ -346,6 +347,13 @@ function qualifiedComponentNames(
       // `a.ts` and `a.model.ts` share the stem `a`: the whole file name then tells them apart.
       const stem = neighbours.some((other) => other.stem === item.stem) ? item.file : item.stem;
       const qualified = [...item.directory.slice(-run), ...(neighbours.length > 0 ? [stem] : []), name].join('.');
+      // Names that clean alike (`a-b.ts`, `a_b.ts`) leave two schemas on one component name.
+      const taken = qualifiedBy.get(qualified);
+      if (taken) {
+        const shown = (specification: ModelSpecification): string => path.relative(root, specification.sourceFile.fileName).split(path.sep).join('/');
+        throw diagnostic(rep.sourceFile, rep.declaration, '1005', `Component name "${qualified}" is already taken by the models of ${shown(taken)} and ${shown(rep)}. Rename one of the files or folders, or give one class another @ApiSchema name.`);
+      }
+      qualifiedBy.set(qualified, rep);
       for (const member of members) {
         if (canonicalDescriptorKey(described.get(member)) === canonicalDescriptorKey(described.get(rep))) names.set(member, qualified);
       }

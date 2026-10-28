@@ -26,14 +26,15 @@ interface BuiltTuple {
   readonly codec: ReturnType<typeof requireObjectCodec>;
 }
 
-/** Builds the tuple model with `validation` and loads it. */
+/** Builds the tuple model with `validation` and loads it. Validation on cannot state a fixed element after a rest element, so it builds the rest-last model. */
 async function buildTuple(scope: FixtureScope, name: string, validation: boolean): Promise<BuiltTuple> {
   const { root, sourceRoot } = tupleModelProject(scope, name);
-  fs.writeFileSync(path.join(sourceRoot, 'tuple.model.ts'), readFixture('models/model-tuples/tuple.model.ts'));
+  const file = validation ? 'tuple-rest-last' : 'tuple';
+  fs.writeFileSync(path.join(sourceRoot, `${file}.model.ts`), readFixture(`models/model-tuples/${file}.model.ts`));
   writeModelGolemYaml(root, { mobx: false, validation });
   await buildModelProject(root);
-  const loaded = await import(pathToFileURL(path.join(root, 'build/tuple.model.js')).href) as Pick<BuiltTuple, 'Tuple'>;
-  return { Tuple: loaded.Tuple, codec: requireObjectCodec(generatedCodecIdFromRoot(root, 'TTuple')) };
+  const loaded = await import(pathToFileURL(path.join(root, `build/${file}.model.js`)).href) as Record<string, BuiltTuple['Tuple']>;
+  return { Tuple: loaded[validation ? 'TupleRestLast' : 'Tuple']!, codec: requireObjectCodec(generatedCodecIdFromRoot(root, validation ? 'TTupleRestLast' : 'TTuple')) };
 }
 
 /** The value of `name` on a decoded or encoded model. */
@@ -59,7 +60,7 @@ test('generated optional and rest tuples retain exact lengths through every serd
   for (const validation of [false, true]) {
     const { Tuple, codec } = validation ? await buildTuple(t, 'tuple-validated', true) : await trustedTuple();
     const omitted = new Tuple({ required: ['required', 9], maybe: ['x'], rest: ['prefix', true] });
-    const full = new Tuple({ required: ['required', 9], maybe: ['x', 2], nested: ['inner'], rest: ['prefix', 1, 2, true] });
+    const full = new Tuple({ required: ['required', 9], maybe: ['x', 2], nested: ['inner'], rest: validation ? ['prefix', true, 1, 2] : ['prefix', 1, 2, true] });
     const options = { validate: validation };
 
     for (const value of [omitted, full]) {

@@ -5,13 +5,13 @@ import { TWalletBaseModel, type TWalletFields, type TWalletInit, type TWalletJSO
 export type TWallet = IModel<{
   money: Money | string;
   mixed: Money | string | { kind: 'other'; value: number };
-  values: [string, ...number[], boolean];
+  values: [string, boolean, ...number[]];
 }>;
 
 export class Wallet extends TWalletBaseModel {}
 
 export const tupleValues: [TWalletFields['values'], TWalletInit['values'], TWalletJSON['values']] = [
-  ['x', 1, 2, true],
+  ['x', true, 1, 2],
   ['x', true],
-  ['x', 1, true],
+  ['x', true, 1],
 ];

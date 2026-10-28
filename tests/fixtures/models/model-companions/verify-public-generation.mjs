@@ -7,20 +7,20 @@ import { getValidator } from '@exprtlabs/golem/validation';
 const wallet = decodeGeneratedModel(Wallet, {
   money: { currency: 'VND', amount: 3 },
   mixed: 'cash',
-  values: ['x', 1, 2, true],
+  values: ['x', true, 1, 2],
 });
 assert.ok(wallet.money instanceof MoneyModel);
 assert.deepEqual(encodeGeneratedModel(wallet), {
   money: { currency: 'VND', amount: 3 },
   mixed: 'cash',
-  values: ['x', 1, 2, true],
+  values: ['x', true, 1, 2],
 });
 assert.equal(await getValidator(wallet).validate(), true);
 
 const invalid = decodeGeneratedModel(Wallet, {
   money: 'cash',
   mixed: 'cash',
-  values: ['x', 1, 'bad', true],
+  values: ['x', true, 1, 'bad'],
 });
 assert.equal(await getValidator(invalid).validate(), false);
-assert.ok(getValidator(invalid).issues.some(issue => JSON.stringify(issue.path) === JSON.stringify(['values', 2])));
+assert.ok(getValidator(invalid).issues.some(issue => JSON.stringify(issue.path) === JSON.stringify(['values', 3])));
