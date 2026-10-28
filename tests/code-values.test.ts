@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  ImportSource, NameTable, aliased, bindRead, fileImports, code, helper, helperDefinitions, helperName, helperSet, identifier, importSet, inputOf, isEmpty, inputSlot, join, literal,
+  ImportSource, NameTable, aliased, bindRead, fileImports, code, helper, helperDefinitions, helperName, helperSet, selfPlacedHelper, identifier, importSet, inputOf, isEmpty, inputSlot, join, literal,
   nameOf, nameSlot, render, runtimeImports, sameCode, nest, lineBreak, placeHelpers, runtimeCode,
 } from '#golem/code';
 import { rt, rtType } from '#golem/rt';
@@ -188,4 +188,15 @@ test('a chain of guards nested 20000 deep renders and tests for empty without a 
   let nothing = code``;
   for (let level = 0; level < depth; level += 1) nothing = join([nothing, code``], code``);
   assert.equal(isEmpty(nothing), true);
+});
+
+test('two self-placed helpers of one id and one definition share it, and two that differ stop the file', () => {
+  // protects: R-57 review finding 2 - a selector id is a hash of rendered text, so two selectors of one text but different imported classes must not share one definition
+  const first = new ImportSource('./first.js').name('Shape');
+  const second = new ImportSource('./second.js').name('Shape');
+  const selector = (cls: typeof first) => selfPlacedHelper('__golemVariant_x', () => code`function __golemVariant_x(v) { return v instanceof ${cls} ? 0 : 1; }`);
+  const same = code`${helperName(selector(first))}(a); ${helperName(selector(first))}(b);`;
+  assert.deepEqual(placeHelpers(same, []).map((piece) => render(piece)), ['function __golemVariant_x(v) { return v instanceof Shape ? 0 : 1; }', '']);
+  const different = code`${helperName(selector(first))}(a); ${helperName(selector(second))}(b);`;
+  assert.throws(() => placeHelpers(different, []), /two different self-placed helpers are named "__golemVariant_x"/);
 });

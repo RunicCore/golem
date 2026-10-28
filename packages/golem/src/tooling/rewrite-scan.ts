@@ -669,6 +669,11 @@ function tagThroughAliasFault(checker: ts.TypeChecker, model: ts.TypeNode): read
     const through = node.types.find((part) => !isDiscriminatorTag(checker, part) && aliasOf(part)?.type !== undefined && isDiscriminatorTag(checker, aliasOf(part)!.type));
     if (through) return [`is a union whose Discriminator tag is written through the alias ${through.getText()}, which golem does not read`, fix];
   }
+  // A generic wrapper binds only when it is its type parameter plus the tag; any other part makes it a type golem does not read.
+  const wrapper = ts.isTypeReferenceNode(node) && node.typeArguments?.length === 1 && authoredUnionMembers(checker, node.typeArguments[0]) ? aliasOf(node) : undefined;
+  if (wrapper !== undefined && ts.isIntersectionTypeNode(wrapper.type) && wrapper.type.types.some((part) => isDiscriminatorTag(checker, part))) {
+    return [`is a generic wrapper of a union that holds more than the type parameter and its Discriminator tag, which golem does not read`, "Use a wrapper that is only U & Discriminator<'kind'>, or write the tag on the union itself, (A | B) & Discriminator<'kind'>."];
+  }
   return undefined;
 }
 

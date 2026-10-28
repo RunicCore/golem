@@ -645,7 +645,7 @@ interface Scanned {
 function scanParts(piece: Code): Scanned {
   const runtime = new Map<RuntimeModule, RuntimeNames>();
   const imported = new Map<ImportSource, Set<Code>>();
-  let needs: Map<string, Helper> | undefined;
+  let needs: Set<Helper> | undefined;
   for (const part of piece.parts) {
     if (part.kind === 'runtime') {
       let names = runtime.get(part.module);
@@ -658,10 +658,10 @@ function scanParts(piece: Code): Scanned {
       if (!used) { used = new Set<Code>(); imported.set(part.source, used); }
       used.add(part.source.declaredFor(part));
     } else if (part.kind === 'helper') {
-      (needs ??= new Map<string, Helper>()).set(part.helper.id, part.helper);
+      (needs ??= new Set<Helper>()).add(part.helper);
     }
   }
-  return { runtime, imported, needs: needs ? [...needs.values()].sort(compareHelpers) : [] };
+  return { runtime, imported, needs: needs ? [...needs].sort(compareHelpers) : [] };
 }
 
 /** The definition of a helper and what it names, found once: many roots name the same helper, and a Code is never changed. */
@@ -675,15 +675,19 @@ function collectFrom(root: Code): Collected {
   const pending: Helper[] = [...rootScan.needs];
   for (let next = pending.pop(); next; next = pending.pop()) {
     const known = found.get(next.id);
-    if (known) {
-      if (known.helper !== next && !(known.helper.selfPlaced && next.selfPlaced)) throw new Error(`two helpers are named "${next.id}"`);
-      continue;
-    }
+    if (known && known.helper === next) continue;
+    if (known && !(known.helper.selfPlaced && next.selfPlaced)) throw new Error(`two helpers are named "${next.id}"`);
     let defined = definitions.get(next);
     if (!defined) {
       const definition = next.define();
       defined = { definition, scanned: scanParts(definition) };
       definitions.set(next, defined);
+    }
+    // Self-placed helpers of one id share one definition: the id is a hash of text, so two selectors that write the same text
+    // (two imported classes of one name) would otherwise be merged without notice.
+    if (known) {
+      if (codeKey(known.definition) !== codeKey(defined.definition)) throw new Error(`two different self-placed helpers are named "${next.id}"`);
+      continue;
     }
     const { definition, scanned } = defined;
     for (const [module, names] of scanned.runtime) {

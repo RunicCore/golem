@@ -493,6 +493,24 @@ test('a union whose tag is written through an alias of the tag gets RUNM1081 wit
   ]);
 });
 
+test('a generic wrapper that adds more than the tag to a @Body() union gets RUNM1081 with the cause, not the bare "not a golem model"', (t) => {
+  // protects: R-57 review finding 7 - a wrapper U & Discriminator<'kind'> & { x: string } is not a pure tag wrapper and stops with a message that names what is wrong
+  const controller = [
+    "import { Body, Controller, Post } from '@nestjs/common';",
+    "import type { Discriminator } from '@exprtlabs/golem/tags';",
+    "import type { TCircle, TRect } from './shapes.model.js';",
+    "type Wrapped<U> = U & Discriminator<'kind'> & { x: string };",
+    "@Controller('shapes')",
+    'export class ShapesController {',
+    '  @Post() wrapped(@Body() shape: Wrapped<TCircle | TRect>): number { return 1; }',
+    '}',
+  ].join('\n');
+  const root = project(t, { 'src/shapes.model.ts': SHAPES_MODEL, 'src/shapes.controller.ts': controller });
+  assert.deepEqual(scan(root).diagnostics.map(({ code, line, message }) => ({ code, line, message })), [
+    { code: 'RUNM1081', line: 7, message: "Wrapped<TCircle | TRect> is a generic wrapper of a union that holds more than the type parameter and its Discriminator tag, which golem does not read, and NestModelInterceptor answers HTTP 500 for a @Body() parameter of that type. Use a wrapper that is only U & Discriminator<'kind'>, or write the tag on the union itself, (A | B) & Discriminator<'kind'>. An app with its own interceptor can set nonModelInputs: warn in golem.yaml." },
+  ]);
+});
+
 test('a generic tag wrapper Tagged<A | B> on a @Body() or @Query() union is stamped like the written form, and the existing refusals still apply through it', (t) => {
   // protects: T-619 the wrapper binds like the written tag; a member without the key, shared values and a default stay RUNM1081
   const controller = [
