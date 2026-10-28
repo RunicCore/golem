@@ -85,6 +85,8 @@ export class ModelDefinitions extends Map<string, ModelDefinition> {
 interface DiscriminatorSelection {
   readonly propertyName: string;
   readonly variants: ReadonlyMap<string, string>;
+  /** The variant that `defaultMapping` names: it takes every value whose tag selects no other variant, and may lack the tag. */
+  readonly defaultVariant?: string;
 }
 
 /** Selections resolved (and diagnosed) once per discriminated union schema object, per analysis. */
@@ -794,7 +796,8 @@ export function componentSite(name: string): CompositionSite {
 /**
  * Resolve an OAS discriminator into the value → variant model table. Mapping
  * values are component names or references; a variant without a mapping key
- * is selected by its raw component name (the implicit mapping).
+ * is selected by its raw component name (the implicit mapping). A `defaultMapping`
+ * names the one variant that has no values and may lack the tag property.
  */
 export function discriminatorSelection(
   schemaName: string,
@@ -804,7 +807,7 @@ export function discriminatorSelection(
   warn: (code: string, message: string) => void,
 ): DiscriminatorSelection | undefined {
   if (!isJsonObject(schema) || !isJsonObject(schema.discriminator)) return undefined;
-  const { propertyName: property, mapping } = schema.discriminator;
+  const { propertyName: property, mapping, defaultMapping } = schema.discriminator;
   if (typeof property !== 'string') return undefined;
   const items = unionVariants(schema) ?? [];
   const nested = withSchemaBase(env, schema);
@@ -818,10 +821,29 @@ export function discriminatorSelection(
     variants.set(target.typeName, { schemaName: target.schemaName, values: [] });
   }
   if (variants.size === 0) return undefined;
+  const componentNames = new Set(Object.keys(asRecord(asRecord(asRecord(env.document).components).schemas)));
+  const variantOf = (target: unknown): { readonly typeName: string; readonly variant: { readonly values: string[] } } | undefined => {
+    const reference = typeof target === 'string' && componentNames.has(target)
+      ? `#/components/schemas/${encodeURIComponent(target)}`
+      : target;
+    const resolved = typeof reference === 'string'
+      ? resolveExactComponent(reference, nested.currentBase, nested.resources, nested.document)
+      : null;
+    const variant = resolved ? variants.get(resolved.typeName) : undefined;
+    return resolved && variant ? { typeName: resolved.typeName, variant } : undefined;
+  };
+  const defaultVariant = defaultMapping === undefined ? undefined : variantOf(defaultMapping)?.typeName;
+  if (defaultMapping !== undefined && defaultVariant === undefined) {
+    const named = `schema ${JSON.stringify(schemaName)}`;
+    throw new LocatedError(
+      `discriminator defaultMapping of ${named} targets ${JSON.stringify(defaultMapping)}, which is not one of its variants`,
+      [componentOrigin('schemas', schemaName, named)],
+    );
+  }
   for (const typeName of variants.keys()) {
     const variant = definitions.get(typeName);
-    // OAS: the discriminator property must be declared by every schema it selects.
-    if (variant && !modelSchemaProperties(nested, variant.rawSchema).has(property)) {
+    // OAS: the discriminator property must be declared by every schema it selects, except the default (3.2 defaultMapping).
+    if (variant && typeName !== defaultVariant && !modelSchemaProperties(nested, variant.rawSchema).has(property)) {
       const named = `schema ${JSON.stringify(schemaName)}`;
       const variantNamed = `variant ${JSON.stringify(variant.schemaName)}`;
       throw new LocatedError(
@@ -830,27 +852,22 @@ export function discriminatorSelection(
       );
     }
   }
-  const componentNames = new Set(Object.keys(asRecord(asRecord(asRecord(env.document).components).schemas)));
   for (const [value, target] of objectEntries(mapping)) {
-    const reference = typeof target === 'string' && componentNames.has(target)
-      ? `#/components/schemas/${encodeURIComponent(target)}`
-      : target;
-    const resolved = typeof reference === 'string'
-      ? resolveExactComponent(reference, nested.currentBase, nested.resources, nested.document)
-      : null;
-    const variant = resolved ? variants.get(resolved.typeName) : undefined;
-    if (!variant) {
+    const resolved = variantOf(target);
+    if (!resolved) {
       const named = `schema ${JSON.stringify(schemaName)}`;
       throw new LocatedError(
         `discriminator mapping ${JSON.stringify(value)} of ${named} targets ${JSON.stringify(target)}, which is not one of its variants`,
         [componentOrigin('schemas', schemaName, named)],
       );
     }
-    variant.values.push(value);
+    // The default takes every unmatched value, a mapped one included, so it keeps no value of its own.
+    if (resolved.typeName !== defaultVariant) resolved.variant.values.push(value);
   }
   const selected = new Map<string, string>();
   const mapped = new Set(objectEntries(mapping).map(([value]) => value));
   for (const [typeName, variant] of variants) {
+    if (typeName === defaultVariant) continue;
     // A value names its component "unless a mapping is present for that value" (OpenAPI 3.1 and 3.2, Discriminator Object):
     // the rule is per value, so a variant that a mapping also selects keeps its component name as a value. A variant whose name
     // a mapping gives to another variant still claims it, so the conflict below reports that it has no value of its own.
@@ -873,7 +890,7 @@ export function discriminatorSelection(
       selected.set(value, typeName);
     }
   }
-  return { propertyName: property, variants: selected };
+  return { propertyName: property, variants: selected, ...(defaultVariant === undefined ? {} : { defaultVariant }) };
 }
 
 function isNullBranch(schema: unknown): boolean {
@@ -965,8 +982,11 @@ function unionDiscriminatorTable(
     const typeName = exactComponentTarget(item, env)?.typeName;
     return { values: [...byVariant].filter(([, variant]) => variant === typeName).map(([value]) => value) };
   });
-  return variants.every((variant, index) => variant.values.length > 0 || isNullBranch(items[index]))
-    ? { propertyName: selection.propertyName, variants }
+  const defaultAt = selection.defaultVariant === undefined
+    ? -1
+    : items.findIndex((item) => exactComponentTarget(item, env)?.typeName === selection.defaultVariant);
+  return variants.every((variant, index) => variant.values.length > 0 || isNullBranch(items[index]) || index === defaultAt)
+    ? { propertyName: selection.propertyName, variants, ...(defaultAt < 0 ? {} : { defaultVariant: defaultAt }) }
     : undefined;
 }
 

@@ -80,6 +80,26 @@ test('a declared default variant is the defaultMapping of the 3.2 document', asy
   assert.deepEqual(method.oneOf.map(branch => branch.$ref).sort(), ['#/components/schemas/TCard', '#/components/schemas/TCash', '#/components/schemas/TOther']);
 });
 
+test('the SDK generated from the 3.2 document decodes a value with an unmapped tag to the declared default and encodes it back', async t => {
+  // protects: T-604 the declared default round-trips on 3.2 (golem-openapi reads defaultMapping)
+  const document = await controllersDocument(t, controllerOf(PAYMENT, 'TPayment'), '3.2.0');
+  const models = await sdkModels(t, document);
+  const card = { method: { kind: 'card', number: '1234' } };
+  const cash = { method: { kind: 'cash', amount: 5 } };
+  const note = { method: { note: 'wire' } };
+  const decodedCard = decodeGeneratedModel(models.TPaymentModel!, card) as { method: object };
+  const decodedCash = decodeGeneratedModel(models.TPaymentModel!, cash) as { method: object };
+  const decodedNote = decodeGeneratedModel(models.TPaymentModel!, note) as { method: object };
+  assert.ok(decodedCard.method instanceof models.TCardModel!);
+  assert.ok(decodedCash.method instanceof models.TCashModel!);
+  assert.ok(decodedNote.method instanceof models.TOtherModel!);
+  assert.deepEqual(encodeGeneratedModel(decodedCard), card);
+  assert.deepEqual(encodeGeneratedModel(decodedCash), cash);
+  assert.deepEqual(encodeGeneratedModel(decodedNote), note);
+  const unmapped = decodeGeneratedModel(models.TPaymentModel!, { method: { kind: 'wire', note: 'x' } }) as { method: object };
+  assert.ok(unmapped.method instanceof models.TOtherModel!);
+});
+
 test('OpenAPI 3.1 has no defaultMapping, so a union with a declared default is anyOf with no discriminator', async t => {
   // protects: T-599 3.1 cannot state the default, and a discriminator over a variant without the tag would break its rule
   const document = await controllersDocument(t, controllerOf(PAYMENT, 'TPayment'), '3.1.2');
