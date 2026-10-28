@@ -182,15 +182,43 @@ function holdsBothUnions(schema: unknown): schema is Record<string, unknown> {
   return isJsonObject(schema) && schema.oneOf !== undefined && schema.anyOf !== undefined;
 }
 
+/** A rewritten schema: its pointer in the user's document, and the length of its own `allOf`, where the two unions were appended. */
+interface RewrittenSchema {
+  readonly at: string;
+  readonly members: number;
+}
+
+/** The pointer in the user's document of a pointer into the rewritten one: a union moved into the `allOf` returns to its keyword. */
+function originalPointer(rewritten: readonly RewrittenSchema[], pointer: string): string {
+  // A schema reached inside another rewritten schema is mapped after the outer one, so the outer pointer is already the user's.
+  return rewritten.reduce((current, { at, members }) => {
+    for (const index of [members, members + 1]) {
+      const moved = `${at}/allOf/${index}`;
+      if (current === moved) return at;
+      if (current.startsWith(`${moved}/`)) return at + current.slice(moved.length);
+    }
+    return current;
+  }, pointer);
+}
+
 /**
  * A schema that holds both `oneOf` and `anyOf` becomes an `allOf` of its own `allOf` members and the two unions, so every reader
  * of the generated types and conversion sees one union keyword at a time, as the validator reads both. The discriminator stays
  * with the `oneOf`. The caller's document is never changed; a document with no such schema is returned as it is.
+ *
+ * The rewrite moves the branches, so a message that names a place inside one names the moved place. `locate` maps such a place to
+ * the user's: the returned `locate` answers for the pointers of the rewritten document, and is the given one when nothing moved.
  */
-export function normalizeSchemaUnions(document: unknown): unknown {
-  let found = false;
-  visitOpenApiSchemaTree(document, { onSchema(schema) { found ||= holdsBothUnions(schema); } });
-  if (!found) return document;
+export function normalizeSchemaUnions(document: unknown, locate?: OriginLocator): { readonly document: unknown; readonly locate?: OriginLocator } {
+  const rewritten: RewrittenSchema[] = [];
+  visitOpenApiSchemaTree(document, {
+    onSchema(schema, _currentBase, pointer) {
+      if (holdsBothUnions(schema) && pointer.startsWith('#')) {
+        rewritten.push({ at: pointer.slice(1), members: Array.isArray(schema.allOf) ? schema.allOf.length : 0 });
+      }
+    },
+  });
+  if (rewritten.length === 0) return { document, ...(locate ? { locate } : {}) };
   const normalized = structuredClone(document);
   visitOpenApiSchemaTree(normalized, {
     onSchema(schema) {
@@ -206,7 +234,13 @@ export function normalizeSchemaUnions(document: unknown): unknown {
       ];
     },
   });
-  return normalized;
+  return { document: normalized, ...(locate ? { locate: (pointer: string) => locate(originalPointer(rewritten, pointer)) } : {}) };
+}
+
+/** The same rewrite for one schema that is not part of a document. */
+export function normalizeSchemaUnionsOf(schema: unknown): unknown {
+  const { document } = normalizeSchemaUnions({ components: { schemas: { schema } } });
+  return asRecord(asRecord(asRecord(document).components).schemas).schema;
 }
 
 export function unsupportedHttpAuthSchemes(document: unknown): void {

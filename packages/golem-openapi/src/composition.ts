@@ -18,6 +18,7 @@
 import {
   composeObjects,
   conversionKey,
+  descriptorNeedsConversion,
   descriptorSlotRule,
   isRejected,
   type ObjectExtra,
@@ -217,8 +218,18 @@ function distributeUnion<S>(
   originalMembers?: readonly number[],
 ): Composition<S> | undefined {
   const members = Array.isArray(schema.allOf) ? schema.allOf : [];
-  const unions = members.flatMap((member, index) =>
+  const inline = members.flatMap((member, index) =>
     isJsonObject(member) && !reader.reference(member, nested) && (Array.isArray(member.oneOf) || Array.isArray(member.anyOf)) ? [index] : []);
+  // Branches that only add constraints (`required`, "at least one of") are no variant: the union of such branches beside a union
+  // of objects adds no object to the product. The validator holds the rule, and the type keeps the names that every branch requires.
+  const deciding = (at: number): number => {
+    const member = asRecord(members[at]);
+    const inside = reader.nested(member, nested);
+    return (unionVariants(member) ?? []).filter((variant) => !isConstraintOnlyPart(describe(variant, inside, reader))).length;
+  };
+  const spread = inline.filter((at) => deciding(at) > 0);
+  const unions = spread.length ? spread : inline;
+  const folded = spread.length ? inline.filter((at) => deciding(at) === 0) : [];
   const [index, another] = unions;
   const union = index === undefined ? undefined : members[index];
   if (index === undefined || !isJsonObject(union)) return undefined;
@@ -229,7 +240,8 @@ function distributeUnion<S>(
     : undefined;
   // Two unions beside a model stop generation (above); two unions with no model spread over the product of their variants.
   if (another !== undefined && unspread !== undefined) return unspread;
-  const wide = unions.filter((at) => (unionVariants(asRecord(members[at])) ?? []).length > 1);
+  // A union is wide when it has several variants that convert differently.
+  const wide = unions.filter((at) => deciding(at) > 1);
   const variants = unionVariants(union) ?? [];
   // The member's other keywords (properties, required, constraints) stay a part of every variant.
   const { oneOf: _oneOf, anyOf: _anyOf, discriminator: _discriminator, ...beside } = union;
@@ -238,23 +250,58 @@ function distributeUnion<S>(
   for (const variant of variants) {
     // The rebuilt allOf has shifted positions; its messages name each member by the position in the schema's own allOf,
     // also when this allOf is itself a rebuilt one.
-    const rebuilt = members.flatMap((member, at) => at === index ? [...rest, variant].map((replacement) => ({ member: replacement, at: originalMembers?.[at] ?? at })) : [{ member, at: originalMembers?.[at] ?? at }]);
+    const rebuilt = members.flatMap((member, at) => (at === index ? [...rest, variant] : folded.includes(at) ? [constraintsOf(asRecord(member))] : [member])
+      .map((replacement) => ({ member: replacement, at: originalMembers?.[at] ?? at })));
     const composed = resolveObjects({ ...schema, allOf: rebuilt.map(({ member }) => member) }, scope, reader, 'field', rebuilt.map(({ at }) => at));
     if (composed.kind === 'rejected') return composed;
     if (composed.kind === 'variants') objects.push(...composed.variants);
     else if (composed.kind !== 'object') return unspread;
     else objects.push(composed);
   }
-  const never = new Map(objects.flatMap((object) => object.never).map((name) => [name.name, name]));
-  if (objects.length <= 1) return objects[0];
+  // The folded unions still judge the value: each one is a constraint of every object, as it is a keyword of the schema.
+  const folding = folded.flatMap((at) => unionConstraint(asRecord(members[at]), reader.nested(asRecord(members[at]), nested), reader));
+  const judged = folding.length ? objects.map((object) => ({ ...object, constraints: [...object.constraints, ...folding] })) : objects;
+  const never = new Map(judged.flatMap((object) => object.never).map((name) => [name.name, name]));
+  if (judged.length <= 1) return judged[0];
   // The merged objects of a product are told apart by the tag of the one union that has several variants. Two such unions leave
   // no single tag, and the codec would have no way to pick a variant.
-  if (wide.length > 1) {
+  if (wide.length > 1 && judged.some(convertsSomething)) {
     return conflict('two unions with several object variants each; give the value one union, or one of the two a single variant');
   }
+  // Objects that convert nothing are the wire value as it is: the members stay as they are, and the validator judges each union.
+  if (wide.length > 1) return undefined;
   // The discriminator table of one union indexes that union's own variants, not the merged objects of a product, so a product has none.
   const product = another !== undefined;
-  return { kind: 'variants', variants: objects, union: product ? {} : union, items: product ? [] : variants, scope: reader.nested(union, nested), never: [...never.values()] };
+  return { kind: 'variants', variants: judged, union: product ? {} : union, items: product ? [] : variants, scope: reader.nested(union, nested), never: [...never.values()] };
+}
+
+/** What a union of constraint-only branches adds to every value: the members' siblings, and the names that every branch requires. */
+function constraintsOf(union: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  const { oneOf: _oneOf, anyOf: _anyOf, discriminator: _discriminator, ...beside } = union;
+  const [first = [], ...others] = (unionVariants(union) ?? []).map(requiredNames);
+  const required = first.filter((name) => others.every((names) => names.includes(name)));
+  return required.length ? { ...beside, required } : beside;
+}
+
+/**
+ * A union of constraint-only branches as a constraint: `oneOf` keeps its keyword, and `anyOf` is an allOf of the one union, which
+ * accepts a value that any branch accepts. A union with one branch is its `required` names, which `constraintsOf` already adds.
+ */
+function unionConstraint<S>(union: Readonly<Record<string, unknown>>, scope: S, reader: CompositionReader<S>): ModelConstraint[] {
+  const branches = (unionVariants(union) ?? []).map((branch): ModelTypeDescriptor => {
+    const { constraints } = describe(branch, scope, reader);
+    const required = requiredNames(branch);
+    return required.length
+      ? { kind: 'object', properties: {}, required, additionalProperties: true, ...(constraints ? { constraints } : {}) }
+      : { kind: 'unknown', ...(constraints ? { constraints } : {}) };
+  });
+  if (branches.length < 2) return [];
+  return [Array.isArray(union.oneOf) ? { kind: 'oneOf', schemas: branches } : { kind: 'allOf', schemas: [{ kind: 'union', variants: branches }] }];
+}
+
+/** Whether a value of the object changes when the codec converts it. */
+function convertsSomething<S>(object: ObjectComposition<S>): boolean {
+  return Object.values(object.slots).some((child) => descriptorNeedsConversion(child.descriptor));
 }
 
 /**

@@ -2,7 +2,7 @@ import path from 'node:path';
 import { GolemDiagnosticSeverity, type GolemDiagnostic, type GolemResult } from '@exprtlabs/golem/generator-api';
 import { isRecord, stableJson } from '@exprtlabs/golem/generator-api';
 import { buildOperationValidationSchemas, generateClientModules } from './client/emit.js';
-import { browserCookieDiagnostics, normalizeAndValidate, normalizeSchemaUnions, unsupportedHttpAuthSchemes } from './document.js';
+import { browserCookieDiagnostics, normalizeAndValidate, unsupportedHttpAuthSchemes } from './document.js';
 import { buildEmissionPlan, serverOverrideDiagnostics, type ArtifactFile, type EmissionPlan } from './emission-plan.js';
 import { asRecord, readString } from './json.js';
 import { assertPortableFilenames, identifier } from '@exprtlabs/golem/generator-api';
@@ -169,9 +169,7 @@ interface GeneratedFiles {
   diagnostics: readonly GolemDiagnostic[];
 }
 
-function buildGeneratedFiles(source: unknown, options: WriteSdkOptions): GeneratedFiles {
-  // Before every reader of the document and before the operation view, which holds its schemas.
-  const document = normalizeSchemaUnions(source);
+function buildGeneratedFiles(document: unknown, options: WriteSdkOptions): GeneratedFiles {
   const profile = requireProfile(options.profile);
   const ir = normalizeAndValidate(document, options.locate);
   unsupportedHttpAuthSchemes(document);

@@ -3,9 +3,9 @@ import type {
   GolemResult,
   OpenApiContext,
 } from '@exprtlabs/golem/generator-api';
-import { findRemoteRefs, validate } from './document.js';
-import { writeSdk } from './emit.js';
-import { generateModels } from './models.js';
+import { findRemoteRefs, normalizeSchemaUnions, normalizeSchemaUnionsOf, validate } from './document.js';
+import { writeSdk as emitSdk } from './emit.js';
+import { generateModels as emitModels } from './models.js';
 import { identifier } from '@exprtlabs/golem/generator-api';
 import { collectOperations, normalizeDocument } from './normalize.js';
 import { API_VERSION } from './package-info.js';
@@ -18,7 +18,7 @@ import {
   type ReferenceResolutionOptions,
   readLimitedBody,
 } from './resolver.js';
-import { schemaType } from './types.js';
+import { schemaType as typeText, type PublicSchemaTypeContext } from './types.js';
 
 export type { InputObserver, OpenApiContext } from '@exprtlabs/golem/generator-api';
 export type { OpenApiGenerationProfile } from './profile.js';
@@ -70,16 +70,29 @@ export async function generate(context: OpenApiGenerationContext): Promise<OpenA
 
 export type { ReferenceResolutionOptions };
 
+// A schema that holds both `oneOf` and `anyOf` is rewritten into an allOf of the two, once, at each public entry that reads a
+// document or a schema. Everything behind these entries sees one union keyword at a time.
+
+export function writeSdk(...[document, options]: Parameters<typeof emitSdk>): ReturnType<typeof emitSdk> {
+  const split = normalizeSchemaUnions(document, options.locate);
+  return emitSdk(split.document, split.locate ? { ...options, locate: split.locate } : options);
+}
+
+export function generateModels(...[document, ...rest]: Parameters<typeof emitModels>): ReturnType<typeof emitModels> {
+  return emitModels(normalizeSchemaUnions(document).document, ...rest);
+}
+
+export function schemaType(schema: unknown, context: PublicSchemaTypeContext = {}): string {
+  return typeText(normalizeSchemaUnionsOf(schema), context.document === undefined ? context : { ...context, document: normalizeSchemaUnions(context.document).document });
+}
+
 export {
   collectOperations,
   collectLocalReferenceInputs,
   findRemoteRefs,
-  generateModels,
   identifier,
   loadValidatedDocument,
   normalizeDocument,
-  schemaType,
   validate,
-  writeSdk,
   readLimitedBody,
 };
