@@ -1283,3 +1283,38 @@ test('a model field that is only a map of dates compiles with noUnusedLocals and
   }), { output, name: 'DateMap', profile: { mobx: false, validation: false } });
   compileStrictUnusedSdk(output);
 });
+
+const untaggedUnionVariants = {
+  inline: [
+    { type: 'object', required: ['kind', 'at'], properties: { kind: { const: 'start' }, at: { type: 'string', format: 'date-time' } } },
+    { type: 'object', required: ['kind', 'at'], properties: { kind: { const: 'stop' }, at: { type: 'string', format: 'date-time' } } },
+  ],
+  components: [{ $ref: '#/components/schemas/Start' }, { $ref: '#/components/schemas/Stop' }],
+};
+
+for (const validation of [true, false]) for (const form of ['inline', 'components', 'inline with an unresolved discriminator keyword'] as const) {
+  test(`a oneOf of ${form} objects with a required const tag and no resolved discriminator converts each variant (validation ${validation})`, async t => {
+    // protects: T-594 golem-openapi writes the tag table of a document union itself, so golem need not infer the tag
+    const unresolved = form.startsWith('inline with');
+    const output = await generateSerdeSdk(t, 'golem-openapi-oneof-untagged-', sequenceSerdeDocument({
+      event: {
+        oneOf: untaggedUnionVariants[form === 'components' ? 'components' : 'inline'],
+        ...(unresolved ? { discriminator: { propertyName: 'kind' } } : {}),
+      },
+    }, form !== 'components' ? {} : {
+      Start: untaggedUnionVariants.inline[0],
+      Stop: untaggedUnionVariants.inline[1],
+    }), { validation });
+    compileStandaloneModelSerdeSdk(output);
+
+    const { construct } = await loadVisitModels(output, 'generated untagged oneOf models');
+    const codec = visitCodec<{ event: { kind: string; at: Date } }>(output);
+
+    const start = codec.fromWireFormat({ event: { kind: 'start', at: '2024-05-06T07:08:09.000Z' } }, { construct });
+    assert.deepEqual({ ...start.event }, { kind: 'start', at: new Date('2024-05-06T07:08:09.000Z') });
+    assert.deepEqual(codec.toWireFormat(start), { event: { kind: 'start', at: '2024-05-06T07:08:09.000Z' } });
+    const stop = codec.fromWireFormat({ event: { kind: 'stop', at: '2024-05-07T07:08:09.000Z' } }, { construct });
+    assert.deepEqual({ ...stop.event }, { kind: 'stop', at: new Date('2024-05-07T07:08:09.000Z') });
+    assert.deepEqual(codec.toWireFormat(stop), { event: { kind: 'stop', at: '2024-05-07T07:08:09.000Z' } });
+  });
+}

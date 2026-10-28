@@ -646,7 +646,8 @@ export function modelConversionDescriptor(
       } : { kind: 'generated-model', id };
     }
     // A discriminator keeps even a one-variant union a tagged union.
-    const discriminator = unionDiscriminatorTable(schema, variants, definitions, nested);
+    // A discriminator the document does not resolve to model variants (inline objects, a scalar beside the models) tags like a union without one.
+    const discriminator = unionDiscriminatorTable(schema, variants, definitions, nested) ?? untaggedUnionTable(convertedVariants, definitions);
     if (convertedVariants.length === 1 && !discriminator) {
       const [only] = convertedVariants;
       if (only) return only;
@@ -962,6 +963,72 @@ function unionDiscriminatorTable(
   return variants.every((variant, index) => variant.values.length > 0 || isNullBranch(items[index]))
     ? { propertyName: selection.propertyName, variants }
     : undefined;
+}
+
+type TagValues = ReadonlyMap<string, readonly (string | number | boolean)[]>;
+
+/** The values of a `const`, or of a union of `const`s. */
+function literalTagValues(descriptor: ModelTypeDescriptor | undefined): readonly (string | number | boolean)[] | undefined {
+  if (descriptor?.kind === 'literal') return [descriptor.value];
+  if (descriptor?.kind !== 'union' || descriptor.variants.length === 0) return undefined;
+  const values: (string | number | boolean)[] = [];
+  for (const variant of descriptor.variants) {
+    if (variant.kind !== 'literal') return undefined;
+    values.push(variant.value);
+  }
+  return values;
+}
+
+/** The required properties of an inline object variant that hold only literals, in the order the object requires them. */
+function objectTagValues(object: Extract<ModelTypeDescriptor, { readonly kind: 'object' }>): TagValues {
+  const tags = new Map<string, readonly (string | number | boolean)[]>();
+  for (const name of object.required) {
+    const values = literalTagValues(object.properties[name]);
+    if (values) tags.set(name, values);
+  }
+  return tags;
+}
+
+/**
+ * The same, for a component model, read from its schema: a `const`, or a oneOf or anyOf of `const`s. A model's own descriptor is not
+ * converted here, because a model whose property is this union would convert itself again.
+ */
+function modelTagValues(definition: ModelDefinition | undefined): TagValues | undefined {
+  if (!definition || definition.isUnion) return undefined;
+  const tags = new Map<string, readonly (string | number | boolean)[]>();
+  for (const name of definition.required) {
+    const property = definition.properties.get(name);
+    const members = isJsonObject(property) && !('const' in property) ? unionVariants(property) : undefined;
+    const values = (members ?? [property]).map((member) => isJsonObject(member) ? member.const : undefined);
+    if (values.length > 0 && values.every((value) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) {
+      tags.set(name, values as readonly (string | number | boolean)[]);
+    }
+  }
+  return tags;
+}
+
+/**
+ * The tag table of a oneOf or anyOf that has no `discriminator` keyword: the first property of the first object variant that every
+ * variant requires as a literal, when no value belongs to two variants. When a variant is neither an inline object nor a model, the
+ * object variants alone are tagged and the others get no values. Without such a property the union keeps no table.
+ */
+function untaggedUnionTable(variants: readonly ModelTypeDescriptor[], definitions: ModelDefinitions): UnionDiscriminator | undefined {
+  if (variants.length < 2) return undefined;
+  const tagsOf = (variant: ModelTypeDescriptor): TagValues | undefined =>
+    variant.kind === 'object' ? objectTagValues(variant) : variant.kind === 'generated-model' ? modelTagValues(definitions.get(variant.id)) : undefined;
+  const present = variants.flatMap((variant, index) => variant.kind === 'null' ? [] : [{ index, tags: tagsOf(variant), variant }]);
+  const tagged = present.every(({ tags }) => tags) ? present : present.filter(({ variant }) => variant.kind === 'object');
+  if (tagged.length === 0) return undefined;
+  for (const propertyName of tagged[0].tags?.keys() ?? []) {
+    const values = tagged.map(({ tags }) => tags?.get(propertyName) ?? []);
+    const flat = values.flat();
+    if (values.some((set) => set.length === 0) || new Set(flat).size !== flat.length) continue;
+    return {
+      propertyName,
+      variants: variants.map((_, index) => ({ values: values[tagged.findIndex((item) => item.index === index)] ?? [] })),
+    };
+  }
+  return undefined;
 }
 
 interface SchemaGraphGroup {
