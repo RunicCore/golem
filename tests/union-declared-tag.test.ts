@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
@@ -198,22 +198,30 @@ async function writeMoneySdk(sourceRoot: string, validation: boolean, document?:
   })).artifacts);
 }
 
+/** A project whose TItem model is `value`'s type beside Money from `document` (the closed fixture by default), built, with its companion module loaded. */
+async function buildMoneyItem(
+  t: TestContext, prefix: string, validation: boolean, valueType: string, document?: string,
+): Promise<{ readonly root: string; readonly Item: GeneratedModelClass }> {
+  const { root, sourceRoot } = createModelProject(t, { prefix: `golem-${prefix}-`, name: prefix, linkWorkspaceNodeModules: true });
+  await writeMoneySdk(sourceRoot, validation, document);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+import type { Money } from './sdk/index.js';
+export type TItem = IModel<{ value: ${valueType} }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation });
+  await buildModelProject(root);
+  const generated = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item companion');
+  return { root, Item: generated.TItemBaseModel as GeneratedModelClass };
+}
+
 for (const validation of [false, true]) {
   test(`a declared default variant takes the value whose tag selects no object, with validation ${validation ? 'on' : 'off'}`, async (t) => {
     // protects: T-593 Discriminator<'kind', Money> makes the SDK model the default beside tagged objects; each tagged object still wins by its value
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-default-', name: 'declared-default', linkWorkspaceNodeModules: true });
-    await writeMoneySdk(sourceRoot, validation);
-    writeModelSources(sourceRoot, {
-      'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import type { Discriminator } from '@exprtlabs/golem/tags';
-import type { Money } from './sdk/index.js';
-export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money> }>;
-`,
-    });
-    writeModelGolemYaml(root, { mobx: false, validation });
-    await buildModelProject(root);
-    const generated = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item companion');
-    const Item = generated.TItemBaseModel as GeneratedModelClass;
+    const { Item } = await buildMoneyItem(t, 'declared-default', validation,
+      "(Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money>");
     const plain = (value: unknown): boolean => Object.getPrototypeOf(value) === Object.prototype;
     const valueOf = (wire: unknown): unknown => requireRecord(decodeGeneratedModel(Item, { value: wire }), 'item').value;
     for (const wire of [{ kind: 'a', x: 1 }, { kind: 'b', x: 2 }, { kind: 'c' }]) {
@@ -230,18 +238,8 @@ const OPEN_MONEY_DOCUMENT = fs.readFileSync(fixturePath('wire-format/sdk-money/m
 
 test('an open declared default does not take the value of a tagged variant that the value does not fit', async (t) => {
   // protects: I-2 (P-31) the default takes only values whose tag selects no variant, also when its model is open
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-open-default-', name: 'declared-open-default', linkWorkspaceNodeModules: true });
-  await writeMoneySdk(sourceRoot, true, OPEN_MONEY_DOCUMENT);
-  writeModelSources(sourceRoot, {
-    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import type { Discriminator } from '@exprtlabs/golem/tags';
-import type { Money } from './sdk/index.js';
-export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money> }>;
-`,
-  });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
-  await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href);
+  const { root } = await buildMoneyItem(t, 'declared-open-default', true,
+    "(Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money>", OPEN_MONEY_DOCUMENT);
   const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
   const options = { validate: true };
   assert.throws(() => codec.parse(JSON.stringify({ value: { kind: 'a', amount: 5, currency: 'EUR' } }), options));
@@ -303,19 +301,8 @@ for (const validation of [false, true]) {
 
   test(`a declared default model sits beside scalars, an array and null, with validation ${validation ? 'on' : 'off'}`, async (t) => {
     // protects: T-603 the declared default is the fallback of the object branch beside JSON-type variants (the wallet shape)
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-json-default-', name: 'declared-json-default', linkWorkspaceNodeModules: true });
-    await writeMoneySdk(sourceRoot, validation);
-    writeModelSources(sourceRoot, {
-      'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import type { Discriminator } from '@exprtlabs/golem/tags';
-import type { Money } from './sdk/index.js';
-export type TItem = IModel<{ value: ((Money | string | number[] | { kind: 'a'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money>) | null }>;
-`,
-    });
-    writeModelGolemYaml(root, { mobx: false, validation });
-    await buildModelProject(root);
-    const generated = requireRecord(await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href), 'item companion');
-    const Item = generated.TItemBaseModel as GeneratedModelClass;
+    const { root, Item } = await buildMoneyItem(t, 'declared-json-default', validation,
+      "((Money | string | number[] | { kind: 'a'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money>) | null");
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
     const options = { validate: validation };
     const plain = (value: unknown): boolean => Object.getPrototypeOf(value) === Object.prototype;

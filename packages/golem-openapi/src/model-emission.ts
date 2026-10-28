@@ -202,6 +202,17 @@ function checkContext(): ConversionContext {
 }
 
 /** How generated conversion code decodes and constructs a referenced model. */
+/** `identity` for a recursive alias whose conversion changes no value. */
+function aliasIdentity(alias: RecursiveAlias, definitions: ModelDefinitions, env: ModelResolveEnv): { readonly identity?: true } {
+  return aliasConvertsValue(alias, definitions, env) ? {} : { identity: true };
+}
+
+/** The `bases` of the model that `reference` names, when it has any. */
+function referenceBases(reference: string, definitions: ModelDefinitions): { readonly bases?: ReturnType<typeof modelBases> } {
+  const bases = modelBases(definitions.get(reference));
+  return bases.length ? { bases } : {};
+}
+
 function modelResolver(reference: string, definitions: ModelDefinitions, env: ModelResolveEnv, context: ConversionContext): FromJsonModelResolver {
   const alias = definitions.aliases.get(reference);
   if (alias) {
@@ -210,17 +221,16 @@ function modelResolver(reference: string, definitions: ModelDefinitions, env: Mo
       className: identifier(alias.name),
       decode: (value) => code`${context.nodeFunction(aliasNodeId(alias), 'fromWire')}(${value})`,
       fromInit: aliasInitsModel(alias, definitions, env) ? (value) => code`${context.aliasInit(alias)}(${value})` : (value) => value,
-      ...(aliasConvertsValue(alias, definitions, env) ? {} : { identity: true as const }),
+      ...aliasIdentity(alias, definitions, env),
     };
   }
-  const bases = modelBases(definitions.get(reference));
   return {
     className: context.models.model(reference),
     decode: (value) => code`${rt.conversion.decodeGeneratedModelTrusted}(${context.models.model(reference)}, ${value})`,
     fromInit: (value) => definitions.get(reference)?.isUnion
       ? code`${context.initializer(reference)}(${value})`
       : code`new ${context.models.model(reference)}(${value} as ${context.models.init(reference)})`,
-    ...(bases.length ? { bases } : {}),
+    ...referenceBases(reference, definitions),
   };
 }
 
@@ -322,11 +332,10 @@ function modelToJSONCode(
         return {
           className: identifier(alias.name),
           encode: value => code`${context.nodeFunction(aliasNodeId(alias), 'toWire')}(${value})`,
-          ...(aliasConvertsValue(alias, definitions, env) ? {} : { identity: true as const }),
+          ...aliasIdentity(alias, definitions, env),
         };
       }
-      const bases = modelBases(definitions.get(reference));
-      return { className: context.models.model(reference), encode: value => code`${rt.conversion.encodeGeneratedModel}(${value})`, ...(bases.length ? { bases } : {}) };
+      return { className: context.models.model(reference), encode: value => code`${rt.conversion.encodeGeneratedModel}(${value})`, ...referenceBases(reference, definitions) };
     },
     TEMPORAL_SERDE,
   ));
