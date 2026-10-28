@@ -1131,7 +1131,7 @@ function resolveObjectDescriptor(
  */
 function emitTaggedVariantUnion(
   union: UnionTypeDescriptor,
-  { indices, rest, fallback }: TaggedUnion,
+  { indices, rest, fallback, fallbackVariant }: TaggedUnion,
   expression: Code,
   ctx: EmitCtx,
   convert: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code,
@@ -1163,6 +1163,7 @@ function emitTaggedVariantUnion(
     if (options?.unresolved === 'skip') return undefined;
     throw new ObjectUnionDiscriminatorError(variants);
   }
+  const fallbackClass = fallbackVariant && variantClassName(fallbackVariant, ctx, direction !== 'decode' && !ctx.wireIdentity);
   return emitDispatch({
     expression: value,
     property: dispatch.property,
@@ -1171,6 +1172,7 @@ function emitTaggedVariantUnion(
     ...(direction === 'encode-json' ? { nullish: code`'null'` } : {}),
     ...(rest === undefined ? {} : { rest }),
     ...(fallback === undefined ? {} : { fallback }),
+    ...(fallbackClass === undefined ? {} : { fallbackClass }),
     branches: variants.map((variant, position) => ({
       values: dispatch.values[position],
       className: variantClassName(variant, ctx, direction !== 'decode' && !ctx.wireIdentity),

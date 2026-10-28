@@ -630,6 +630,35 @@ test('a variant given a mapping value of its own is selected by it while the key
   assert.ok(decodePet({ kind: 'CatOwn', bark: true }) instanceof modelClass(models, 'DogOwnModel'));
 });
 
+test('a default variant that extends a tagged variant is written as the default', async t => {
+  // protects: T-605 an instance of the default's class is not an instance of the tagged variant it extends; its unmapped tag is not rejected
+  const document = {
+    openapi: '3.2.0',
+    info: { title: 'Pets', version: '1' },
+    paths: {},
+    components: {
+      schemas: {
+        CatBase: { type: 'object', required: ['kind', 'name'], properties: { kind: { type: 'string' }, name: { type: 'string' } } },
+        DogBase: { allOf: [{ $ref: '#/components/schemas/CatBase' }, { type: 'object', required: ['bark'], properties: { bark: { type: 'boolean' } } }] },
+        PetBase: {
+          oneOf: [{ $ref: '#/components/schemas/CatBase' }, { $ref: '#/components/schemas/DogBase' }],
+          discriminator: { propertyName: 'kind', mapping: { cat: '#/components/schemas/CatBase' }, defaultMapping: '#/components/schemas/DogBase' },
+        },
+        OwnerBase: { type: 'object', required: ['pet'], properties: { pet: { $ref: '#/components/schemas/PetBase' } } },
+      },
+    },
+  };
+  const output = path.join(createFixtureProject(t, 'golem-openapi-discriminator-subclass-'), 'sdk');
+  await generateMaterializedSdk(document, { output, name: 'Pets', profile: { mobx: false, validation: false } });
+  compileGeneratedSdk(output, [], { strict: true });
+  const models = await importGeneratedModule(output, 'pet models');
+  const OwnerModel = modelClass(models, 'OwnerBaseModel');
+  const wire = { pet: { kind: 'zzz', name: 'Rex', bark: true } };
+  const owner = decodeGeneratedModel(OwnerModel, wire) as { pet: object };
+  assert.ok(owner.pet instanceof modelClass(models, 'DogBaseModel'));
+  assert.deepEqual(encodeGeneratedModel(owner), wire);
+});
+
 for (const validation of [false, true]) {
   test(`a oneOf with no discriminator keyword takes a model with no tag as the default of its tagged objects, with validation ${validation ? 'on' : 'off'}`, async t => {
     // protects: T-602 golem-openapi keeps a no-discriminator oneOf of one untagged model beside tagged objects: the model takes every other object

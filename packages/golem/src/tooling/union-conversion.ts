@@ -211,6 +211,8 @@ export interface DispatchOptions {
   readonly rest?: Code;
   /** The conversion of an object whose tag selects no branch: the declared default. With none, such an object is rejected. */
   readonly fallback?: Code;
+  /** The class of the instances `fallback` converts. An instance of it is no instance of a branch class it extends. */
+  readonly fallbackClass?: Code;
 }
 
 /**
@@ -247,7 +249,7 @@ export function emitDispatch(options: DispatchOptions): Code {
     if (branch.writesTag === false) return injectJson(convert, tagValue);
     return tagMayBeMissing ? code`(${tag} === undefined ? ${injectJson(convert, tagValue)} : ${convert})` : convert;
   };
-  const { rest, fallback } = options;
+  const { rest, fallback, fallbackClass } = options;
   // The object test runs once: an object picks its branch by tag, and any other value is `rest`.
   let chain = fallback ?? reject;
   for (let index = branches.length - 1; index >= 0; index--) {
@@ -260,7 +262,8 @@ export function emitDispatch(options: DispatchOptions): Code {
   }
   const outside = rest ?? (encode ? code`${value} == null ? ${options.nullish === undefined ? value : options.nullish} : ${reject}` : value);
   let converted = code`(${objectValueExpression(expression)} ? ${chain} : ${outside})`;
-  const classes = branches.flatMap((branch) => branch.className ? [branch.className] : []);
+  // The default's class counts as a subclass candidate too: an instance of it is the default, not the branch it extends.
+  const classes = [...branches.flatMap((branch) => branch.className ? [branch.className] : []), ...(fallback && fallbackClass ? [fallbackClass] : [])];
   for (let index = branches.length - 1; index >= 0; index--) {
     const branch = branches[index];
     if (!branch.className) continue;
@@ -380,6 +383,8 @@ export interface TaggedUnion {
   readonly indices: readonly number[];
   readonly rest?: Code;
   readonly fallback?: Code;
+  /** The declared default variant that `fallback` converts: its class is not a tagged variant's, though it may extend one. */
+  readonly fallbackVariant?: ModelTypeDescriptor;
 }
 
 /**
@@ -471,7 +476,7 @@ export function emitUnionConversion(
     const objects = conversion.tagged({
       indices: taggedIndices,
       ...(scalar === undefined ? {} : { rest: scalar }),
-      ...(fallback === undefined ? {} : { fallback }),
+      ...(fallback === undefined ? {} : { fallback, fallbackVariant: declared }),
     });
     if (objects === undefined || !types.sequence) return objects;
     const mapped = guarded(types.sequence, emitSequenceBranch(types.sequence, expression, conversion.items));
