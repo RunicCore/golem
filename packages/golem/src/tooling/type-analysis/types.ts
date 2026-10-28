@@ -67,6 +67,30 @@ function primitiveConstructorDescriptor(type: ts.Type): ModelConversionDescripto
   }
 }
 
+/** The name of a global `Map`, `Set`, `ReadonlyMap` or `ReadonlySet`; JSON writes each as `{}`. Undefined for any other type. */
+function mapOrSetName(type: ts.Type): string | undefined {
+  const symbol = type.getSymbol();
+  if (!isAmbientOrGlobalSymbol(symbol)) return undefined;
+  const name = symbol?.getName();
+  return name === 'Map' || name === 'Set' || name === 'ReadonlyMap' || name === 'ReadonlySet' ? name : undefined;
+}
+
+/** True when the property has `@ApiProperty` or `@ApiPropertyOptional` with a `type`, `schema` or `additionalProperties` the user wrote. */
+function carriesExplicitSwaggerSchema(property: ts.Symbol): boolean {
+  return (property.declarations ?? []).some(declaration => ts.canHaveDecorators(declaration) && (ts.getDecorators(declaration) ?? []).some(decorator => {
+    if (!ts.isCallExpression(decorator.expression)) return false;
+    const callee = decorator.expression.expression;
+    const decoratorName = ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : undefined;
+    if (decoratorName !== 'ApiProperty' && decoratorName !== 'ApiPropertyOptional') return false;
+    const [options] = decorator.expression.arguments;
+    return options !== undefined && ts.isObjectLiteralExpression(options) && options.properties.some(item => (
+      (ts.isPropertyAssignment(item) || ts.isShorthandPropertyAssignment(item))
+      && (ts.isIdentifier(item.name) || ts.isStringLiteral(item.name))
+      && ['type', 'schema', 'additionalProperties'].includes(item.name.text)
+    ));
+  }));
+}
+
 function propertyTypeNode(checker: ts.TypeChecker, property: ts.Symbol): ts.TypeNode | undefined {
   const roots = checker.getRootSymbols(property);
   const root = roots.length === 1 ? roots[0] : undefined;
@@ -1167,6 +1191,17 @@ export function descriptorBuilder(
       if ((type.flags & ts.TypeFlags.Object) || objectLikeIntersection) {
         const primitiveConstructor = primitiveConstructorDescriptor(type);
         if (primitiveConstructor) return withMetadata(primitiveConstructor, metadata);
+        const collection = mapOrSetName(type);
+        if (collection && (context.dto || validationEnabled)) {
+          const where = context.field ? `Field "${context.field}"${context.dto ? '' : ` of ${context.name}`}` : `Type ${context.name}`;
+          // A DTO field that states its own schema never reaches here; any other Map or Set in a DTO has no schema to write.
+          if (context.dto) {
+            throw diagnostic(context.sourceFile, node ?? context.declaration, '1086',
+              `${where} is a ${collection}. JSON writes a ${collection} as {}, so no schema describes it. Give the field an @ApiProperty with type, schema or additionalProperties, or use a Record or an array.`);
+          }
+          throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
+            `${where} is a ${collection}, which golem cannot represent. Use a Record or an array.`);
+        }
         if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) {
           if (!validationEnabled) return withMetadata({ kind: 'unknown' }, metadata);
           throw diagnostic(context.sourceFile, context.declaration, '1004', `Callable or constructible types cannot be represented by ${context.name}.`);
@@ -1231,6 +1266,14 @@ export function descriptorBuilder(
               '1004',
               `Field "${name}" is callable and cannot be represented by ${context.name}.`,
             );
+          }
+          // A DTO field with a written Swagger schema is an open object: the schema is the Swagger overlay's to state, and a Map has no field of its own.
+          // An optional field has `undefined` in its type; a `null` member makes a different schema, which this shortcut does not write.
+          const present = valueType.isUnion() ? valueType.types.filter(member => (member.flags & ts.TypeFlags.Undefined) === 0) : [valueType];
+          if (context.dto && present.length === 1 && mapOrSetName(present[0]!) && carriesExplicitSwaggerSchema(property)) {
+            properties[name] = { kind: 'object', properties: {}, required: [], additionalProperties: true };
+            if (!optional) required.push(name);
+            continue;
           }
           const propertyNode = authoredPropertyTypeNode(childNode, name) ?? propertyTypeNode(checker, property);
           const described = describe(
