@@ -587,7 +587,7 @@ Pass one `ModelValidationContext` to repeated serde, `validateInstance` and `Mod
 | --- | --- |
 | `resolve(reference, mode)` | Returns the `Validator` for a schema reference and `'first'` or `'all'` mode, or `undefined` when it has none. |
 
-`objectCodecValidationReference(codec, plane)` returns the reference for one `ValidationPlane`.
+`objectCodecValidationReference(codec, plane)` returns the reference for one `ValidationPlane`: the codec id for `model`, and the id followed by `#` and the plane name for the others.
 
 | `ValidationPlane` | Checks | Used by |
 | --- | --- | --- |

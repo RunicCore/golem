@@ -6,7 +6,6 @@ import {
   code,
   isCode,
   runtimeLinesOf,
-  emitPlanSchemas,
   MODEL_IMPORT_ORDER,
   wrapRootConversion,
   type Piece,
@@ -608,7 +607,6 @@ export function generateOpenApiModelArtifacts(
       },
       exportedFillFunctionIds: exportedFillFunctionsByGroup.get(group.id),
       exportedInitializerNames: exportedInitializersByGroup.get(group.id),
-      ...(groupPlan ? { resolvedSchemas: Object.fromEntries(groupPlan.ownSchemas.map((id) => [id, groupPlan.schemas[id]])) } : {}),
     });
     files.set(group.filename, modelModule);
     for (const name of group.models) {
@@ -732,8 +730,6 @@ export function generateModels(
     readonly fastCheckExports?: ReadonlyMap<string, string>;
     /** The names of each root's structure check and predicates-only pass, by the same keys, for the roots that have them. */
     readonly passCheckExports?: ReadonlyMap<string, { readonly structure: string; readonly predicates: string }>;
-    /** The validation plan's resolved schemas of this module's models by codec id and plane. */
-    readonly resolvedSchemas?: Readonly<Record<string, object | boolean>>;
     readonly exportedFillFunctionIds?: ReadonlySet<string>;
     readonly exportedInitializerNames?: ReadonlySet<string>;
   } = {},
@@ -1015,9 +1011,6 @@ export function generateModels(
       );
     }
   }
-  if (helpers.resolvedSchemas) {
-    body.push(emitPlanSchemas(helpers.resolvedSchemas), BLANK);
-  }
   const validatorsSource = helpers.validatorsSource;
   const aliasesByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
   const codecRuntimeOptions: Omit<CodecRuntimeOptions, 'modelBases'> = {
@@ -1038,7 +1031,6 @@ export function generateModels(
       const names = helpers.passCheckExports?.get(id);
       return names === undefined || validatorsSource === undefined ? undefined : { structure: validatorsSource.name(names.structure), predicates: validatorsSource.name(names.predicates) };
     } } : {}),
-    ...(helpers.resolvedSchemas ? { resolvedSchemasExpr: identifier('modelSchemas') } : {}),
     issueSource: 'OpenAPI',
     exportWireStringify: (node) => exportsWireStringify(analysis.schemaGraph, node, profile),
     siblingWireCodecIds: new Set([...(helpers.dependencyNodeIds ?? [])].flatMap((id) => {

@@ -6,15 +6,15 @@
 
 import type { ModelTypeDescriptor } from '../model.js';
 import type { ValidationPlane } from '../object-codec.js';
-import { GENERATED_MODEL_SCHEMA_REF_PREFIX } from '../schema-keywords.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import {
-  aliased, asObjectLiteral, bindInput, bindRead, code, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, readShape, sameCode,
+  aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
+import { queryFieldTable, type QueryReferenceResolver } from './query-fields.js';
 import { rt, rtType } from './rt.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
@@ -68,15 +68,11 @@ export interface CodecRuntimeOptions {
    * undefined for a root that has none (it has a fast check, or runs the validator). Called once for each use.
    */
   readonly passCheckNames?: (id: string) => { readonly structure: Code; readonly predicates: Code } | undefined;
-  /** Expression of a record of the validation plan's resolved schemas by the same keys. A validated codec publishes these as its schemas; without it the codec carries its own unresolved payload. */
-  readonly resolvedSchemasExpr?: Code;
   readonly serde?: StringifySerdeResolver;
   readonly nestedConstruct?: (name: string, className?: string) => Code;
   readonly nestedGenerated?: (id: string) => Code | undefined;
   /** The class an instance of the model `name` is tested against in a union, when the module binds it. */
   readonly nestedBase?: (name: string) => Code | undefined;
-  /** The codec id of the model that a schema placeholder names, so the runtime resolves it by an exact lookup. */
-  readonly generatedModelCodecId?: (name: string) => string | undefined;
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
   /** The name of the wire stringify that the companion of a sibling codec exports; without it, `wireStringifyExportName`. */
   readonly siblingWireName?: (codecId: string) => Code;
@@ -108,10 +104,8 @@ interface EmitCtx
     | 'validatorName'
     | 'fastCheckName'
     | 'passCheckNames'
-    | 'resolvedSchemasExpr'
     | 'serde'
     | 'nestedConstruct'
-    | 'generatedModelCodecId'
     | 'nestedGenerated'
     | 'nestedBase'
     | 'nestedImportedSerde'
@@ -126,6 +120,8 @@ interface EmitCtx
     | 'privateCodec'
   > {
   readonly graph: SchemaGraph;
+  /** The wire schema of the model a placeholder `$ref` names, for the query fields of a model. */
+  readonly queryReference: QueryReferenceResolver;
   readonly modelBases: ModelBases;
   /** The node is a recursive union: each inline array, tuple and object branch of its encoders checks its value for a cycle. */
   readonly guardInline?: boolean;
@@ -728,6 +724,7 @@ export function emitStringifyFunction(
 ): Code {
   const ctx: EmitCtx = {
     graph,
+    queryReference: () => undefined,
     serde,
     nestedConstruct: extra.nestedConstruct,
     siblingWireName: extra.siblingWireName,
@@ -2268,26 +2265,10 @@ function emitPlaneAssertSection(runtime: NodeRuntime): Code {
     : []);
 }
 
-/** The registration of the node's functions as an object codec, with its schemas. */
+/** The registration of the node's functions as an object codec, with the query fields a query string decodes. */
 function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
-  const { node, ctx, validationEnabled, names, stringifyId, validateId, assertId, objectDescriptor } = runtime;
-  const resolved = (id: string): Code | undefined => ctx.resolvedSchemasExpr !== undefined && validationEnabled
-    ? code`${ctx.resolvedSchemasExpr}[${literal(id)}] as object`
-    : undefined;
-  const payload = (schema: JsonSchema, id: string): Code => code`${jsonDataExpression(withCodecIdRefs(schemaPayload(schema, id), ctx.generatedModelCodecId))} as object`;
-  const modelSchemaExpr = resolved(node.codecId) ?? payload(node.modelJsonSchema ?? node.jsonSchema, node.codecId);
-  const wireSchemaExpr = node.sameSchema
-    ? undefined
-    : resolved(`${node.codecId}#wire`)
-      ?? payload(node.jsonSchema, `${node.codecId}#wire`);
-  const residualSchemaExpr = (plane: 'model-only' | 'wire-only'): Code | undefined => {
-    const residual = plane === 'model-only' ? node.modelOnlyJsonSchema : node.wireOnlyJsonSchema;
-    if (residual === undefined || !validationEnabled) return undefined;
-    const id = `${node.codecId}#${plane}`;
-    return resolved(id) ?? payload(residual, id);
-  };
-  const modelOnlySchemaExpr = residualSchemaExpr('model-only');
-  const wireOnlySchemaExpr = residualSchemaExpr('wire-only');
+  const { node, ctx, names, stringifyId, validateId, assertId, objectDescriptor } = runtime;
+  const queryFields = queryFieldTable(node.jsonSchema, ctx.queryReference);
   return rowsToText([
     code`${rt.serde.createObjectCodec}(${literal(node.codecId)}, {`,
     code`  stringify: ${stringifyId} as (value: never, options?: ${SERDE_OPTIONS}) => string,`,
@@ -2298,11 +2279,7 @@ function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
     ...(objectDescriptor ? [code`  fields: ${literal(Object.keys(objectDescriptor.properties))},`] : []),
     ...(runtime.reachesCycle ? [code`  recursive: true,`] : []),
     code`  fromWireFormat: ${names.fromWire},`,
-    code`  schema: ${modelSchemaExpr},`,
-    ...(wireSchemaExpr ? [code`  wireSchema: ${wireSchemaExpr},`] : []),
-    ...(modelOnlySchemaExpr ? [code`  modelOnlySchema: ${modelOnlySchemaExpr},`] : []),
-    ...(wireOnlySchemaExpr ? [code`  wireOnlySchema: ${wireOnlySchemaExpr},`] : []),
-    ...(resolved(node.codecId) !== undefined ? [code`  schemaRefsResolved: true,`] : []),
+    ...(queryFields ? [code`  queryFields: ${documentLiteral(queryFields)},`] : []),
     code`  issueSource: ${rt.serde.IssueSource}.${identifier(ctx.issueSource)},`,
     code`});`,
   ]);
@@ -2326,36 +2303,6 @@ function emitNodeRuntime(
   return blocksToText([rowsToText(runtime.ctx.hoisted?.sources ?? []), decode.fill, stringify, decode.convert, decode.fromWire, toWire, parse, validate, planeAsserts, codec]);
 }
 
-function schemaPayload(schema: JsonSchema, id: string): object {
-  if (typeof schema === 'boolean') {
-    return schema ? { $id: id } : { $id: id, not: true };
-  }
-  return { $id: id, ...schema };
-}
-
-/** Names the codec id in each generated-model placeholder `$ref` of a schema; a name the module cannot map stays as it is. */
-function withCodecIdRefs(value: unknown, codecIdOf: ((name: string) => string | undefined) | undefined): unknown {
-  if (codecIdOf === undefined) return value;
-  const walk = (current: unknown): unknown => {
-    if (Array.isArray(current)) return current.map(walk);
-    if (current === null || typeof current !== 'object') return current;
-    return Object.fromEntries(Object.entries(current).map(([key, item]) => {
-      if (key !== '$ref' || typeof item !== 'string' || !item.startsWith(GENERATED_MODEL_SCHEMA_REF_PREFIX)) return [key, walk(item)];
-      const reference = item.slice(GENERATED_MODEL_SCHEMA_REF_PREFIX.length);
-      const hash = reference.indexOf('#');
-      const name = hash < 0 ? reference : reference.slice(0, hash);
-      return [key, `${GENERATED_MODEL_SCHEMA_REF_PREFIX}${codecIdOf(name) ?? name}${hash < 0 ? '' : reference.slice(hash)}`];
-    }));
-  };
-  return walk(value);
-}
-
-function jsonDataExpression(value: unknown): Code {
-  const json = JSON.stringify(value);
-  if (json === undefined) throw new TypeError('Generated schema data is not JSON serializable.');
-  return code`JSON.parse(${literal(json)})`;
-}
-
 function nodeValidates(node: SchemaNode, defaultEnabled: boolean): boolean {
   if (node.validationEnabled === true) return true;
   if (node.validationEnabled === false) return false;
@@ -2377,8 +2324,13 @@ export function emitCodecRuntimeCode(
   const validates = (node: SchemaNode): boolean => nodeValidates(node, defaultEnabled);
   const nodes = [...graph.topo()];
   const patternConstants = new Map<string, Code>();
+  const wireSchemas = new Map<string, JsonSchema>();
+  for (const node of nodes) {
+    for (const name of [node.name, node.codecId, codecShortName(node.codecId)]) if (!wireSchemas.has(name)) wireSchemas.set(name, node.jsonSchema);
+  }
   const ctx: EmitCtx = {
     graph,
+    queryReference: (name) => wireSchemas.get(name),
     // emitNodeRuntime emits stringify<Id>Wire exactly for these nodes.
     wireStringifyIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && !node.sameSchema).map((node) => node.id)),
     // emitNodeRuntime emits stringify<Id>Core and toWireFormat<Id>Core for every node that is not external.
@@ -2391,13 +2343,11 @@ export function emitCodecRuntimeCode(
     validatorName: options.validatorName,
     fastCheckName: options.fastCheckName,
     passCheckNames: options.passCheckNames,
-    resolvedSchemasExpr: options.resolvedSchemasExpr,
     serde: options.serde,
     nestedConstruct: options.nestedConstruct,
     siblingWireName: options.siblingWireName,
     nestedGenerated: options.nestedGenerated,
     nestedBase: options.nestedBase,
-    generatedModelCodecId: options.generatedModelCodecId,
     nestedImportedSerde: options.nestedImportedSerde,
     exportedFillFunctionIds: options.exportedFillFunctionIds,
     issueSource: options.issueSource ?? 'TypeScript',

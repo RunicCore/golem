@@ -174,18 +174,14 @@ test('TSerde intern emits a second schema only when wire and model intern keys d
   const name = [...graph.nodes.values()].find((node) => node.name === 'NameInput');
   assert.equal(permission?.sameSchema, false);
   assert.equal(name?.sameSchema, true);
-  const codecs = new Map<string, { readonly wireSchema?: { readonly properties: { readonly permissions?: { readonly type: string } } } }>();
-  const createObjectCodec = (id: string, codec: object): void => { codecs.set(id, codec); };
   const source = emitRuntime(graph);
-  const { parsePermissionInput, stringifyPermissionInput, parseNameInput, stringifyNameInput } = instantiateRuntime(source, { createObjectCodec });
+  const { parsePermissionInput, stringifyPermissionInput, parseNameInput, stringifyNameInput } = instantiateRuntime(source);
   const permissionWire = { permissions: '5' };
   const decodedPermission = parsePermissionInput(JSON.stringify(permissionWire), { validate: false }) as Record<string, unknown>;
   assert.equal(stringifyPermissionInput(decodedPermission as never, { validate: false }), JSON.stringify(permissionWire), 'PermissionInput round-trips through its own wire stringify function');
   const nameWire = { name: 'ann' };
   const decodedName = parseNameInput(JSON.stringify(nameWire), { validate: false }) as Record<string, unknown>;
   assert.equal(stringifyNameInput(decodedName as never, { validate: false }), JSON.stringify(nameWire), 'NameInput round-trips even though model and wire share one schema');
-  const wireTypes = [...codecs].map(([id, codec]) => [id.replace(/_[0-9a-f]{8}$/, ''), codec.wireSchema?.properties.permissions?.type]);
-  assert.deepEqual(wireTypes, [['PermissionInput', 'string'], ['NameInput', undefined]], 'a second schema is registered only for PermissionInput, whose wire and model intern keys differ');
 });
 
 test('IObject and IModel with the same TSerde fields intern as separate stringify nodes', () => {
@@ -559,8 +555,6 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
     assert: (value) => value as never,
     toWireFormat: (value) => ({ ...(value as object) }),
     fromWireFormat: (wire) => new MoneyModel(wire as object) as never,
-    schema: { $id: 'Money', type: 'object', properties: { amount: { type: 'number' } } },
-    schemaRefsResolved: true,
   });
   // defineModelProperty is heavier than a plain assignment: only the "__proto__" key needs it.
   const defined: string[] = [];

@@ -10,7 +10,7 @@ const impl = {
 };
 
 test('references name the plane', () => {
-  const codec = createObjectCodec('PlaneProbe', { ...impl, schema: { type: 'object' }, wireSchema: { type: 'object' }, modelOnlySchema: { properties: {} }, wireOnlySchema: { properties: {} } });
+  const codec = createObjectCodec('PlaneProbe', impl);
   assert.equal(objectCodecValidationReference(codec, 'model'), 'PlaneProbe');
   assert.equal(objectCodecValidationReference(codec, 'wire'), 'PlaneProbe#wire');
   assert.equal(objectCodecValidationReference(codec, 'model-only'), 'PlaneProbe#model-only');
@@ -42,17 +42,4 @@ test('context resolution caches each reference and mode independently', () => {
   resolveModelValidationContextValidator(context, 'shared-ref', 'all');
   resolveModelValidationContextValidator(context, 'shared-ref', 'first');
   assert.deepEqual(lookups, ['shared-ref|first', 'shared-ref#wire|first', 'shared-ref|all'], 'context resolution is reused separately for each reference and mode');
-});
-
-test('a codec resolves the schema references to a codec registered after it on first read', () => {
-  const codec = createObjectCodec('LateRefA', { ...impl, schema: { properties: { b: { $ref: '__exprtGeneratedModel:LateRefB' } } } });
-  createObjectCodec('LateRefB', { ...impl, schema: { type: 'object' } });
-  assert.equal(JSON.stringify(codec.schema), '{"properties":{"b":{"$ref":"LateRefB"}}}');
-});
-
-test('two codecs that refer to each other resolve their schemas', () => {
-  const first = createObjectCodec('CycleRefA', { ...impl, schema: { properties: { b: { $ref: '__exprtGeneratedModel:CycleRefB' } } } });
-  const second = createObjectCodec('CycleRefB', { ...impl, schema: { properties: { a: { $ref: '__exprtGeneratedModel:CycleRefA' } } } });
-  assert.equal(JSON.stringify(first.schema), '{"properties":{"b":{"$ref":"CycleRefB"}}}');
-  assert.equal(JSON.stringify(second.schema), '{"properties":{"a":{"$ref":"CycleRefA"}}}');
 });

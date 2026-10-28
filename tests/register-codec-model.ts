@@ -10,7 +10,6 @@ import {
   createObjectCodec,
   isValidModelValue,
   registerIModelClass,
-  requireObjectCodec,
   IssueRepresentation,
   IssueSource,
 } from '@exprtlabs/golem/serde';
@@ -19,6 +18,9 @@ import { compileValidators } from './support/compiled-validators.js';
 /** Where a compiled module finds the test's own validation functions: files cannot carry closures. */
 const BINDINGS = Symbol.for('golem.test.validationBindings');
 
+/** The schema each installed model validates with, which a model that nests it inlines. */
+const installedSchemas = new Map<string, Record<string, unknown>>();
+
 function inlineGeneratedModelRefs(schema: object): object {
   const prefix = GENERATED_MODEL_SCHEMA_REF_PREFIX;
   const walk = (value: unknown): unknown => {
@@ -26,15 +28,12 @@ function inlineGeneratedModelRefs(schema: object): object {
     if (value === null || typeof value !== 'object') return value;
     const record = value as Record<string, unknown>;
     if (typeof record.$ref === 'string' && record.$ref.startsWith(prefix)) {
-      const codec = requireObjectCodec(record.$ref.slice(prefix.length));
-      if (codec.schema === undefined || codec.schema === null || typeof codec.schema !== 'object') {
-        throw new Error(`Nested codec schema is missing: ${record.$ref}`);
-      }
-      const nested = { ...(codec.schema as Record<string, unknown>) };
-      delete nested.$id;
+      const nested = installedSchemas.get(record.$ref.slice(prefix.length));
+      if (nested === undefined) throw new Error(`Nested codec schema is missing: ${record.$ref}`);
+      const { $id: _id, ...inlined } = nested;
       const rest: Record<string, unknown> = { ...record };
       delete rest.$ref;
-      return walk({ ...nested, ...rest });
+      return walk({ ...inlined, ...rest });
     }
     const next: Record<string, unknown> = {};
     for (const [key, item] of Object.entries(record)) next[key] = walk(item);
@@ -66,6 +65,7 @@ export async function installCodecModel<Model extends object>(options: {
     ? (schema ? { $id: codecId } : { $id: codecId, not: true })
     : { $id: codecId, ...schema };
   const resolved = inlineGeneratedModelRefs(payload as object);
+  installedSchemas.set(codecId, resolved as Record<string, unknown>);
   if (enabled) {
     const bindings = options.bindings ?? {};
     const ids = Object.keys(bindings);
@@ -89,7 +89,6 @@ export async function installCodecModel<Model extends object>(options: {
       },
       toWireFormat: (value) => value,
       fromWireFormat: (wire) => wire as never,
-      schema: resolved,
     });
   }
   registerGeneratedModel(options.constructor, {

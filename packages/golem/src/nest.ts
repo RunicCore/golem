@@ -6,7 +6,7 @@
  * `IObject` return type, including `Promise` and an array of that type, with
  * `nestModelReturn`. `NestModelInterceptor` parses body and query parameters
  * to the declared type or class with fail-fast validation (query strings are
- * first decoded to the schema's declared scalar and array types) and writes the
+ * first decoded to the scalar and array types the codec declares) and writes the
  * result onto `req`. When the handler returns that model, the interceptor
  * stringifies it. Any other return type stays Nest JSON. Consumers may
  * register the interceptor or write their own interceptor or pipe with
@@ -22,10 +22,9 @@ import {
 } from '@nestjs/common';
 import { mergeMap, type Observable } from 'rxjs';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type IssuePath } from './errors.js';
-import { VALIDATION_KEYWORD } from './schema-keywords.js';
 import type { DiscriminatorValue } from './model.js';
 import { requireModelObject, resolveMaxDepth, unknownDiscriminatorValue } from './conversion.js';
-import { getIModelClass, getObjectCodec, type ObjectCodec, type SerdeOptions } from './object-codec.js';
+import { getIModelClass, getObjectCodec, type ObjectCodec, type QueryFieldShape, type SerdeOptions } from './object-codec.js';
 import { presentValue } from './presence.js';
 
 const NEST_MODEL_CODEC_ID = Symbol.for('@exprtlabs/golem:nestModelCodec');
@@ -367,14 +366,6 @@ function replaceQuery(request: HttpRequest, value: unknown): void {
   });
 }
 
-/** What a query field's schema admits, reduced to what a query string can carry. */
-type QueryFieldShape = {
-  readonly types: Set<string>;
-  readonly literals: unknown[];
-  /** The `$ref` targets already read into this shape, so a reference cycle ends. */
-  readonly references: Set<unknown>;
-  item?: QueryFieldShape;
-};
 type QueryWireDecoder = (query: unknown) => unknown;
 
 const NOT_DECODED = Symbol('not decoded');
@@ -387,105 +378,18 @@ function schemaRecord(value: unknown): Readonly<Record<string, unknown>> | undef
     : undefined;
 }
 
-function newQueryShape(): QueryFieldShape {
-  return { types: new Set(), literals: [], references: new Set() };
-}
-
-/** `root` is the schema that a local `$ref` in `schema` resolves against. */
-function collectQueryShape(schema: unknown, shape: QueryFieldShape, root: unknown): void {
-  if (schema === true) {
-    shape.types.add('string');
-    return;
-  }
-  const record = schemaRecord(schema);
-  if (!record) return;
-  const types = typeof record.type === 'string' ? [record.type] : Array.isArray(record.type) ? record.type : [];
-  for (const type of types) if (typeof type === 'string') shape.types.add(type);
-  if ('const' in record) shape.literals.push(record.const);
-  if (Array.isArray(record.enum)) shape.literals.push(...record.enum);
-  if (types.includes('array')) {
-    shape.item ??= newQueryShape();
-    collectQueryShape(record.items, shape.item, root);
-  }
-  for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
-    const branches = record[keyword];
-    if (Array.isArray(branches)) for (const branch of branches) collectQueryShape(branch, shape, root);
-  }
-  collectQueryShape(schemaRecord(record[VALIDATION_KEYWORD])?.schema, shape, root);
-  if (typeof record.$ref === 'string') {
-    const target = resolveQueryReference(record.$ref, root);
-    // A target met twice, or a reference cycle, adds nothing more.
-    if (target && !shape.references.has(target.schema)) {
-      shape.references.add(target.schema);
-      collectQueryShape(target.schema, shape, target.root);
-    }
-  }
-}
-
-/**
- * The schema a `$ref` names, with the root that its own local references resolve against: a JSON pointer into the root
- * schema, or a registered codec by the id the reference carries (`id`, `id#wire`, `id#model-only` or `id#wire-only`).
- * An unknown reference names nothing; the validator reports it.
- */
-function resolveQueryReference(reference: string, root: unknown): { readonly schema: unknown; readonly root: unknown } | undefined {
-  if (reference === '#' || reference.startsWith('#/')) {
-    let schema = root;
-    if (reference !== '#') {
-      for (const segment of reference.slice(2).split('/')) {
-        const key = segment.replaceAll('~1', '/').replaceAll('~0', '~');
-        schema = typeof schema === 'object' && schema !== null && Object.hasOwn(schema, key)
-          ? (schema as Record<string, unknown>)[key]
-          : undefined;
-      }
-    }
-    return schema === undefined ? undefined : { schema, root };
-  }
-  const hash = reference.indexOf('#');
-  const codec = getObjectCodec(hash < 0 ? reference : reference.slice(0, hash));
-  if (!codec) return undefined;
-  const plane = hash < 0 ? undefined : reference.slice(hash + 1);
-  const schema = plane === 'wire' ? codec.wireSchema ?? codec.schema
-    : plane === 'model-only' ? codec.modelOnlySchema
-      : plane === 'wire-only' ? codec.wireOnlySchema
-        : codec.schema;
-  return schema === undefined ? undefined : { schema, root: schema };
-}
-
-function collectQueryProperties(schema: unknown, fields: Map<string, QueryFieldShape>, root: unknown = schema, seen = new Set<unknown>()): void {
-  const record = schemaRecord(schema);
-  // A reference cycle, or a branch met twice, adds no field.
-  if (!record || seen.has(record)) return;
-  seen.add(record);
-  const properties = schemaRecord(record.properties);
-  if (properties) {
-    for (const [name, property] of Object.entries(properties)) {
-      let shape = fields.get(name);
-      if (!shape) {
-        shape = newQueryShape();
-        fields.set(name, shape);
-      }
-      collectQueryShape(property, shape, root);
-    }
-  }
-  if (typeof record.$ref === 'string') {
-    const target = resolveQueryReference(record.$ref, root);
-    if (target) collectQueryProperties(target.schema, fields, target.root, seen);
-  }
-  if (Array.isArray(record.allOf)) for (const branch of record.allOf) collectQueryProperties(branch, fields, root, seen);
-  collectQueryProperties(schemaRecord(record[VALIDATION_KEYWORD])?.schema, fields, root, seen);
-}
-
 function decodeQueryScalar(text: string, shape: QueryFieldShape): unknown {
-  if (shape.types.has('string') || shape.literals.includes(text)) return text;
-  const literal = shape.literals.find((value) =>
+  const literals = shape.literals ?? [];
+  if (shape.types.includes('string') || literals.includes(text)) return text;
+  const literal = literals.find((value) =>
     (typeof value === 'number' || typeof value === 'boolean') && String(value) === text);
   if (literal !== undefined) return literal;
-  if ((shape.types.has('number') || shape.types.has('integer')) && JSON_NUMBER.test(text)) {
+  if ((shape.types.includes('number') || shape.types.includes('integer')) && JSON_NUMBER.test(text)) {
     const value = Number(text);
     // An integer outside the safe range would decode to a different value.
-    if (!shape.types.has('integer') || Number.isSafeInteger(value)) return value;
+    if (!shape.types.includes('integer') || Number.isSafeInteger(value)) return value;
   }
-  if (shape.types.has('boolean') && (text === 'true' || text === 'false')) return text === 'true';
+  if (shape.types.includes('boolean') && (text === 'true' || text === 'false')) return text === 'true';
   return NOT_DECODED;
 }
 
@@ -508,33 +412,17 @@ function decodeQueryField(value: unknown, shape: QueryFieldShape): unknown {
 
 /**
  * Query values arrive as strings or repeated-key string arrays. Decode each
- * field to the scalar or array type its schema declares before the model's
- * wire validation runs. A value that does not fit stays a string, so the
- * validator reports it. Body JSON keeps its own types and is not decoded.
+ * field to the scalar or array type the codec's `queryFields` table declares
+ * before the model's wire validation runs. A value that does not fit stays a
+ * string, so the validator reports it. Body JSON keeps its own types and is
+ * not decoded.
  */
-/** Whether a query string (scalar) can decode to something other than itself. */
-function decodesScalar(shape: QueryFieldShape): boolean {
-  if (shape.types.has('string')) return false;
-  return shape.types.has('number') || shape.types.has('integer') || shape.types.has('boolean')
-    || shape.literals.some((value) => typeof value === 'number' || typeof value === 'boolean');
-}
-
-/** Whether decodeQueryField can return a value different from its input. */
-function decodesField(shape: QueryFieldShape): boolean {
-  if (decodesScalar(shape)) return true;
-  if (!shape.item) return false;
-  // A single string becomes a one-item array unless the field also admits a string.
-  return !shape.types.has('string') || decodesScalar(shape.item);
-}
-
 function queryWireDecoder(input: ModelInput): QueryWireDecoder {
   if ('decodeQuery' in input) return input.decodeQuery;
   const codec = input;
   const cached = queryWireDecoders.get(codec);
   if (cached) return cached;
-  const fields = new Map<string, QueryFieldShape>();
-  collectQueryProperties(codec.wireSchema ?? codec.schema, fields);
-  const decoded = [...fields].filter(([, shape]) => decodesField(shape));
+  const decoded = Object.entries(codec.queryFields ?? {});
   const decoder: QueryWireDecoder = decoded.length === 0 ? (query) => query : (query) => {
     const record = schemaRecord(query);
     if (!record) return query;

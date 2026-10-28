@@ -588,14 +588,6 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
   serde: SERDE_IMPORT_ORDER,
 };
 
-/**
- * The constant of the plan schemas that the codec runtime of a model file reads. It holds one JSON text, parsed when the
- * module loads: that keeps own `__proto__` keys, which an object literal would turn into a prototype assignment.
- */
-export function emitPlanSchemas(schemas: Readonly<Record<string, unknown>>): Code {
-  return code`const modelSchemas = JSON.parse(${literal(JSON.stringify(schemas))}) as Readonly<Record<string, object>>;`;
-}
-
 /** The runtime import lines of what `root` calls: each call lists the modules to write, and a module that the code does not use writes none. */
 export function runtimeLinesOf(root: Code, options: ImportOptions): (...modules: readonly RuntimeModule[]) => readonly Code[] {
   const runtime = new Map(importSet(root, options).map((entry) => [entry.module, entry] as const));

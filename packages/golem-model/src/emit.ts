@@ -6,7 +6,6 @@ import {
   blockComment,
   isCode,
   runtimeLinesOf,
-  emitPlanSchemas,
   MODEL_IMPORT_ORDER,
   wrapRootConversion,
   type Piece,
@@ -914,8 +913,6 @@ interface AppOutputs {
    * `PlanValidators.exports` and `fastExports`); set when the app validates.
    */
   readonly validators?: { readonly module: string; readonly exports: ReadonlyMap<string, string>; readonly fastExports: ReadonlyMap<string, string>; readonly passExports: ReadonlyMap<string, { readonly structure: string; readonly predicates: string }> };
-  /** The validation plan's resolved schemas by codec id and plane. A validating model file publishes its own as its codecs' schemas. */
-  readonly planSchemas?: Readonly<Record<string, object | boolean>>;
 }
 
 /** How this companion relates to the companions of the files its source imports. */
@@ -1771,12 +1768,6 @@ function emitCodecSection(context: EmitContext): CodecSection {
   const validatorNames = validators && validatorsSource
     ? new Map([...new Set([...validators.exports.values(), ...validators.fastExports.values(), ...[...validators.passExports.values()].flatMap(({ structure, predicates }) => [structure, predicates])])].sort().map((name) => [name, validatorsSource.name(name)] as const))
     : new Map<string, Code>();
-  // The plan's resolved schemas of this file's codecs: a validating codec publishes these instead of its unresolved ones.
-  const ownSchemaKeys = new Set([...schemaGraph.nodes.values()]
-    .filter((node) => node.kind !== 'reference' && node.descriptor.kind !== 'generated-model' && node.descriptor.kind !== 'reference')
-    .flatMap((node) => [node.codecId, `${node.codecId}#wire`, `${node.codecId}#model-only`, `${node.codecId}#wire-only`]));
-  const ownPlanSchemas = Object.fromEntries(Object.entries(appOutputs.planSchemas ?? {}).filter(([key]) => ownSchemaKeys.has(key)).sort(([left], [right]) => compareText(left, right)));
-  const hasPlanSchemas = Object.keys(ownPlanSchemas).length > 0;
   // Wire stringify functions of sibling codecs this module writes, imported from the companion of each.
   const siblingWires = new Map<string, Code>();
   const siblingWireSources: ImportSource[] = [];
@@ -1806,14 +1797,9 @@ function emitCodecSection(context: EmitContext): CodecSection {
           return names === undefined ? undefined : { structure: validatorNames.get(names.structure) ?? identifier(names.structure), predicates: validatorNames.get(names.predicates) ?? identifier(names.predicates) };
         },
       } : {}),
-      ...(hasPlanSchemas ? { resolvedSchemasExpr: identifier('modelSchemas') } : {}),
       // Type analysis flattens object intersections, so golem-model has no declared bases.
       modelBases: { basesOf: () => [] },
       serde: serdeResolver(context),
-      generatedModelCodecId: (name) => {
-        const manifestId = externalManifestId(name);
-        return manifestId === undefined ? undefined : imports.external.get(manifestId)?.model.codecId;
-      },
       nestedConstruct,
       nestedGenerated,
       nestedBase,
@@ -1831,7 +1817,6 @@ function emitCodecSection(context: EmitContext): CodecSection {
   return {
     sources: [...(validatorsSource ? [validatorsSource] : []), ...siblingWireSources],
     lines: [
-      ...(hasPlanSchemas ? [emitPlanSchemas(ownPlanSchemas), BLANK] : []),
       codecRuntime,
     ],
   };

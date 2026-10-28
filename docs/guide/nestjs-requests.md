@@ -82,7 +82,7 @@ The `controllers` job writes the one-field `@Body` parameters as the properties 
 
 ## Query objects
 
-HTTP query values are strings, and repeated keys arrive as string arrays. Declare the query as an `IObject`. Before `fromWireFormat`, `NestModelInterceptor` decodes each field to the type its schema declares:
+HTTP query values are strings, and repeated keys arrive as string arrays. Declare the query as an `IObject`. Before `fromWireFormat`, `NestModelInterceptor` decodes each field to the type the model declares:
 
 | Field type | Query text | Decoded value |
 | --- | --- | --- |

@@ -94,35 +94,3 @@ test('a hand-written and an SDK model of the same name and shape keep their own 
     assert.deepEqual(JSON.parse(run.stdout.trim()), { hand: 'typescript', sdk: 'openapi' }, order.join(' then '));
   }
 });
-
-test('a model that nests an SDK model with validation off resolves its schema reference by the codec id of the SDK model', async (t) => {
-  // protects: T-444 the schema placeholder names the codec id, so the exact-id lookup finds the SDK codec
-  const root = createFixtureProject(t, 'golem-codec-schema-ref-');
-  linkProjectPackages(root, Object.fromEntries(
-    ['golem', 'golem-model', 'golem-openapi'].map((name) => [`@exprtlabs/${name}`, path.join(workspace, 'packages', name)]),
-  ));
-  fs.writeFileSync(path.join(root, 'package.json'), '{"name":"codec-schema-ref-fixture","type":"module"}');
-  fs.writeFileSync(path.join(root, 'api.json'), JSON.stringify(openApiDocument));
-  copyFixtureFile(root, 'packed/profile/tsconfig.json', 'tsconfig.json');
-  fs.mkdirSync(path.join(root, 'src'));
-  fs.writeFileSync(path.join(root, 'src/cart.model.ts'), [
-    "import type { IModel } from '@exprtlabs/golem/model';",
-    "import type { Money } from '../sdk/index.js';",
-    '',
-    'export type TCart = IModel<{ money: Money }>;',
-    '',
-  ].join('\n'));
-  fs.writeFileSync(path.join(root, 'golem.yaml'), [
-    'version: 1', 'mobx: false', 'validation: false', 'openapi:', '  - input: api.json', '    output: sdk', '    name: Identity', 'models:', '  root: .', '',
-  ].join('\n'));
-  await runPipeline(path.join(root, 'golem.yaml'));
-  const cartId = (JSON.parse(fs.readFileSync(path.join(root, '.golem/codec-keys.json'), 'utf8')) as { keys: Record<string, string> }).keys['src/cart.model.ts#TCart'];
-  const moneyId = (JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8')) as { models: { codecId: string }[] }).models[0]!.codecId;
-  await command(root, process.execPath, [golem, 'build', '--config', path.join(root, 'golem.yaml')]);
-  const script = `
-    await import('./build/src/cart.model.generated.js');
-    const { getObjectCodec } = await import('@exprtlabs/golem/serde');
-    console.log(JSON.stringify(getObjectCodec(process.argv[1]).schema.properties.money));`;
-  const run = await command(root, process.execPath, ['--input-type=module', '-e', script, cartId]);
-  assert.deepEqual(JSON.parse(run.stdout.trim()), { $ref: moneyId });
-});

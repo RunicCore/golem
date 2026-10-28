@@ -564,9 +564,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
       diagnostics: [...ignoredWarnings, ...validatorDiagnostics],
     };
   }
-  const planSchemas = validationPlan && validators
-    ? Object.fromEntries(validationPlan.ownSchemas.map((id) => [id, validationPlan.schemas[id]]))
-    : undefined;
   const artifacts: GolemModelArtifact[] = [];
   if (validators) {
     artifacts.push({ path: validatorsOutput, content: validators.source });
@@ -584,7 +581,6 @@ export function generate(context: GolemModelContext): GolemModelResult {
       schemaGraph,
       { siblingWireCodecIds, siblingRecursion, cyclicSiblings },
       {
-        ...(planSchemas ? { planSchemas } : {}),
         ...(validators ? { validators: { module: validatorsOutput, exports: validators.exports, fastExports: validators.fastExports, passExports: validators.passExports } } : {}),
       },
     ));
