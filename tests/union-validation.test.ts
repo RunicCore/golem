@@ -1,13 +1,12 @@
 import assert from 'node:assert/strict';
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { copyFixtureFile } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
-import { isGeneratedModelClass, requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
+import { requireRecord } from './openapi/helpers.js';
+import { loadPets } from './support/pets-project.js';
 
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -283,17 +282,8 @@ test('IModel object unions with validation load, validate and reject an unknown 
   copyFixtureFile(root, 'models/union-validation/pets.model.ts', 'src/pets.model.ts');
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await buildModelProject(root);
-  const pets = {
-    ...requireRecord(await import(pathToFileURL(path.join(root, 'build/pets.model.js')).href), 'pets module'),
-    ...requireRecord(await import(pathToFileURL(path.join(root, 'build/pets.model.generated.js')).href), 'pets companion'),
-  };
-  const model = (name: string): GeneratedModelClass => {
-    const value = pets[name];
-    if (!isGeneratedModelClass(value)) throw new TypeError(`${name} must be a generated model class`);
-    return value;
-  };
   // Without the build-time rewrite, nested values construct the generated bases.
-  const [Owner, Cat, Dog] = [model('Owner'), model('TCatBaseModel'), model('TDogBaseModel')];
+  const { Owner, Cat, Dog } = await loadPets(root);
   const json = { pet: { kind: 'dog', bark: true }, pets: [{ kind: 'cat', name: 'Miso' }, { kind: 'dog', bark: false }] };
   const owner = decodeGeneratedModel(Owner, json);
   const fields = requireRecord(owner, 'owner');

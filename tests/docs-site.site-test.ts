@@ -3,18 +3,11 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { buildBenchmarkSiteProjection } from '../scripts/benchmark/site-projection.js';
+import { markdownFiles } from './support/markdown-files.js';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const docs = path.join(root, 'docs');
 const dist = path.join(docs, '.vitepress/dist');
-
-function markdownFiles(dir: string): string[] {
-  return readdirSync(dir, { withFileTypes: true }).flatMap(e => {
-    const f = path.join(dir, e.name);
-    if (e.isDirectory()) return ['public', '.vitepress'].includes(e.name) ? [] : markdownFiles(f);
-    return f.endsWith('.md') ? [f] : [];
-  });
-}
 
 const homeHtml = path.join(dist, 'index.html');
 test('the built home page server-renders the hero and the final stage state', () => {
