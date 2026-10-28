@@ -454,6 +454,22 @@ function checkDiscriminatorDefaults(document: unknown): OpenApiProblem[] {
   return problems;
 }
 
+/** `defaultMapping` is a 3.2 keyword of the Discriminator Object; a 3.1 document may not use it. */
+function checkDiscriminatorDefaultMappingLine(document: unknown): OpenApiProblem[] {
+  const problems: OpenApiProblem[] = [];
+  visitOpenApiSchemaTree(document, {
+    onSchema(schema, _currentBase, walkerPointer) {
+      if (!isJsonObject(schema) || !isJsonObject(schema.discriminator) || schema.discriminator.defaultMapping === undefined) return;
+      problems.push({
+        ruleId: 'spec-discriminator-defaultMapping',
+        message: 'defaultMapping is a keyword of OpenAPI 3.2; a 3.1 Discriminator Object has propertyName and mapping only',
+        pointer: `${walkerPointer.slice(1)}/discriminator/defaultMapping`,
+      });
+    },
+  });
+  return problems;
+}
+
 /**
  * Each number in the document that JSON cannot write (`Infinity`, `-Infinity`, `NaN`), as a YAML `.inf`, `-.inf`
  * or `.nan`, or a JSON `1e999`, parses into. The meta-schemas let one through inside a keyword that takes any
@@ -499,6 +515,8 @@ export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
     ...checkTags(document, line),
     ...checkServers(document, operations, line),
     ...checkSecurityRequirements(document, operations),
-    ...(line === '3.2' ? [...checkQuerystring(document, operations), ...checkDiscriminatorDefaults(document)] : []),
+    ...(line === '3.2'
+      ? [...checkQuerystring(document, operations), ...checkDiscriminatorDefaults(document)]
+      : checkDiscriminatorDefaultMappingLine(document)),
   ];
 }
