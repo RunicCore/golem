@@ -690,14 +690,22 @@ function declaredTagTable(
 
 /**
  * Rule: a union of two or more object-like variants declares its tag key. Golem never finds the key in the variants, so an
- * untagged union stops here with RUNM1080, at every position, whatever the variants convert. A variant with its own serde pair is no object.
+ * untagged union stops here with RUNM1080, at every position, whatever the variants convert. A variant with its own serde pair is no object,
+ * a union of types that only default library files declare (`ArrayBuffer | SharedArrayBuffer`) is not the user's union, and a union in
+ * a controller DTO class field (`context.dto`) is Nest's own to document: no model converts it.
  */
 function rejectUntaggedObjectUnion(
   checker: ts.TypeChecker,
   entries: readonly { readonly type: ts.Type; readonly descriptor: ModelConversionDescriptor }[],
   context: TypeAnalysisContext,
   at: ts.Node,
+  isDefaultLibraryFile: (file: ts.SourceFile) => boolean,
 ): void {
+  const declaredByLibrary = (type: ts.Type): boolean => {
+    const declarations = type.getSymbol()?.declarations ?? [];
+    return declarations.length > 0 && declarations.every((declaration) => isDefaultLibraryFile(declaration.getSourceFile()));
+  };
+  if (context.dto || entries.every(({ type }) => declaredByLibrary(type))) return;
   const objects = entries.filter(({ descriptor }) => isObjectLikeVariant(descriptor) && (descriptor as { readonly serde?: unknown }).serde === undefined);
   if (objects.length < 2) return;
   const names = objects.map(({ type, descriptor }) => descriptor.kind === 'reference' ? descriptor.name
@@ -1250,7 +1258,7 @@ export function descriptorBuilder(
         }));
         // Checker member order differs between TypeScript backends and runs; output must not.
         entries.sort((left, right) => compareText(canonicalDescriptorKey(left.descriptor), canonicalDescriptorKey(right.descriptor)));
-        if (declaredTag === undefined) rejectUntaggedObjectUnion(checker, entries, context, node ?? context.declaration);
+        if (declaredTag === undefined) rejectUntaggedObjectUnion(checker, entries, context, node ?? context.declaration, isDefaultLibraryFile);
         const variants = entries.map((entry) => entry.descriptor);
         const descriptor: Extract<ModelConversionDescriptor, { readonly kind: 'union' }> = {
           kind: 'union',
