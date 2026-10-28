@@ -4,6 +4,7 @@ import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import { generate } from '#controllers/generator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
+import { documentOf } from './openapi-document.js';
 
 type OpenApiSchemaValue = boolean | OpenApiSchema;
 
@@ -88,12 +89,6 @@ async function generated(
   });
 }
 
-function documentOf(result: Awaited<ReturnType<typeof generate>>): OpenApiDocument {
-  const artifact = result.artifacts[0];
-  assert.ok(artifact);
-  return JSON.parse(artifact.content) as OpenApiDocument;
-}
-
 function objectSchema(document: OpenApiDocument, value: OpenApiSchemaValue | undefined): OpenApiSchema {
   assert.ok(value !== undefined && typeof value !== 'boolean', 'expected an object schema');
   const reference = value.$ref;
@@ -156,7 +151,7 @@ function assertUserOverlays(document: OpenApiDocument, user: OpenApiSchema): voi
 }
 
 test('applies every nested DTO overlay, including arrays, Promise and optional members', async t => {
-  const document = documentOf(await generated(t, 'nested-dto-overlays'));
+  const document = documentOf<OpenApiDocument>(await generated(t, 'nested-dto-overlays'));
   const single = objectSchema(document, jsonSchema(document.paths['/users/{id}']?.get, '200'));
   assertUserOverlays(document, single);
   const list = objectSchema(document, jsonSchema(document.paths['/users']?.get, '200'));
@@ -166,7 +161,7 @@ test('applies every nested DTO overlay, including arrays, Promise and optional m
 
 test('maps Swagger integer, Date, enum member arrays and whole enums on properties and query parameters', async t => {
   const result = await generated(t, 'swagger-type-and-enum-metadata');
-  const document = documentOf(result);
+  const document = documentOf<OpenApiDocument>(result);
   const operation = document.paths['/reports']?.get;
   const report = objectSchema(document, jsonSchema(operation, '200'));
   const count = property(document, report, 'count');
@@ -206,7 +201,7 @@ test('rejects Swagger enum metadata that is not a compile-time constant', async 
 });
 
 test('resolves generic base controller methods with the derived type argument', async t => {
-  const document = documentOf(await generated(t, 'generic-base-controller'));
+  const document = documentOf<OpenApiDocument>(await generated(t, 'generic-base-controller'));
   const assertUser = (value: OpenApiSchemaValue | undefined): void => {
     const user = objectSchema(document, value);
     assert.equal(property(document, user, 'id').description, 'User identifier');
@@ -219,14 +214,14 @@ test('resolves generic base controller methods with the derived type argument', 
 });
 
 test('unwraps Observable controller returns like Promise returns', async t => {
-  const document = documentOf(await generated(t, 'observable-response'));
+  const document = documentOf<OpenApiDocument>(await generated(t, 'observable-response'));
   const event = objectSchema(document, jsonSchema(document.paths['/events']?.get, '200'));
   assert.equal(property(document, event, 'name').description, 'Event name');
 });
 
 test('evaluates getSchemaPath() and refs() and emits the named components', async t => {
   const result = await generated(t, 'schema-path-intrinsics', { 'src/docs.ts': 'docs.ts' });
-  const document = documentOf(result);
+  const document = documentOf<OpenApiDocument>(result);
   const schema = objectSchema(document, jsonSchema(document.paths['/pets']?.get, '200'));
   const [page, list] = (schema.allOf ?? []) as readonly OpenApiSchema[];
   assert.equal(page?.$ref, '#/components/schemas/PageMeta');
@@ -246,7 +241,7 @@ test('evaluates getSchemaPath() and refs() and emits the named components', asyn
 
 test('accepts compatible Swagger types: formatted strings, base classes, nullable array items and unknown', async t => {
   const result = await generated(t, 'swagger-type-compatibility', {}, true);
-  const document = documentOf(result);
+  const document = documentOf<OpenApiDocument>(result);
   const upload = objectSchema(document, jsonSchema(document.paths['/uploads']?.get, '200'));
   const file = property(document, upload, 'file');
   assert.deepEqual(file, { description: 'Uploaded file', format: 'binary', type: 'string' });
@@ -270,7 +265,7 @@ test('a controller DTO field typed unknown is rejected with RUNM1011 under the d
 });
 
 test('reads decorator options supplied by constants and spreads in source order', async t => {
-  const document = documentOf(await generated(t, 'options-from-constants-and-spreads'));
+  const document = documentOf<OpenApiDocument>(await generated(t, 'options-from-constants-and-spreads'));
   const operation = document.paths['/things/{id}']?.get;
   const thing = objectSchema(document, jsonSchema(operation, '200'));
   assert.equal(property(document, thing, 'name').description, 'Shared description');
@@ -299,7 +294,7 @@ test('rejects non-constant structural options, spread type thunks and malformed 
 });
 
 test('keeps an aliased Promise return and does not unwrap a project class named Observable', async t => {
-  const document = documentOf(await generated(t, 'async-alias-and-local-observable'));
+  const document = documentOf<OpenApiDocument>(await generated(t, 'async-alias-and-local-observable'));
   const list = objectSchema(document, jsonSchema(document.paths['/items']?.get, '200'));
   assert.equal(list.type, 'array');
   assert.equal(property(document, objectSchema(document, list.items), 'id').description, 'Item id');
@@ -311,7 +306,7 @@ test('keeps an aliased Promise return and does not unwrap a project class named 
 });
 
 test('emits routes inherited from plain and mixin base controllers', async t => {
-  const document = documentOf(await generated(t, 'inherited-and-mixin-controllers'));
+  const document = documentOf<OpenApiDocument>(await generated(t, 'inherited-and-mixin-controllers'));
   const reply = (route: string): unknown => property(document, objectSchema(document, jsonSchema(document.paths[route]?.get, '200')), 'reply').description;
   assert.equal(reply('/plain/ping'), 'Ping reply');
   assert.equal(reply('/mixed/ping'), 'Ping reply');
@@ -320,7 +315,7 @@ test('emits routes inherited from plain and mixin base controllers', async t => 
 });
 
 test('names getSchemaPath() components by @ApiSchema and rejects a clash with a different contract', async t => {
-  const document = documentOf(await generated(t, 'schema-path-component-names'));
+  const document = documentOf<OpenApiDocument>(await generated(t, 'schema-path-component-names'));
   const page = document.paths['/payments']?.get?.responses['200']?.content?.['application/json']?.schema;
   assert.deepEqual(page, { $ref: '#/components/schemas/PageMetadata' });
   const components = document.components?.schemas ?? {};
@@ -335,7 +330,7 @@ test('names getSchemaPath() components by @ApiSchema and rejects a clash with a 
 });
 
 test('emits an explicit getSchemaPath() response as references only and honors enumName', async t => {
-  const document = documentOf(await generated(t, 'schema-path-union-response'));
+  const document = documentOf<OpenApiDocument>(await generated(t, 'schema-path-union-response'));
   const schema = document.paths['/issues/any']?.get?.responses['200']?.content?.['application/json']?.schema;
   assert.deepEqual(schema, { oneOf: [{ $ref: '#/components/schemas/BugDto' }, { $ref: '#/components/schemas/FeatureDto' }] });
   const components = document.components?.schemas ?? {};
@@ -368,7 +363,7 @@ export class ThingsController extends BaseController {
   other(): void {}
 }
 `);
-  const document = documentOf(await generateAt(root));
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
   const view = (route: string): readonly unknown[] => document.paths[route]?.get?.parameters?.map(item => [item.in, item.name, item.description, item.required]) ?? [];
   assert.deepEqual(view('/things/{id}'), [
     ['header', 'X-Base', undefined, false],
@@ -437,7 +432,7 @@ export class ChainController extends ChainBase {
   list(): void {}
 }
 `);
-  const document = documentOf(await generateAt(root));
+  const document = documentOf<OpenApiDocument>(await generateAt(root));
   const listed = document.paths['/listed']?.get?.parameters;
   assert.deepEqual(listed?.map(item => [item.in, item.name, item.description, item.required]), [
     ['header', 'X-Tenant', 'Tenant', true],
@@ -480,7 +475,7 @@ export type TReceipt = IModel<{ total: number }>;
     links: 'workspace',
   });
   const result = await generateAt(root);
-  const document = documentOf(result);
+  const document = documentOf<OpenApiDocument>(result);
   const schemas = document.components?.schemas ?? {};
   assert.deepEqual(Object.keys(schemas), ['OrderLine', 'OrderReceipt', 'PlacedOrder']);
   const operation = document.paths['/orders']?.post;

@@ -1,12 +1,10 @@
 // lane: typescript6 Checker guards: the controller generator and the rewrite code it uses run the checker in this process
-import { writeGeneratedArtifacts } from '../fixture-project.js';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import { evaluateStaticValue } from '@exprtlabs/golem/internal/static-value';
+import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 
 const FILES: Readonly<Record<string, string>> = {
   'src/enums.ts': [
@@ -55,16 +53,7 @@ const FILES: Readonly<Record<string, string>> = {
 
 // One Program serves every test in this file: the fixture files are read-only inputs.
 function createEvaluator(): (name: string) => ReturnType<typeof evaluateStaticValue> {
-  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'golem-static-value-')));
-  after(() => fs.rmSync(root, { recursive: true, force: true }));
-  writeGeneratedArtifacts([
-    { path: path.join(root, 'package.json'), content: '{ "type": "module" }\n' },
-    {
-      path: path.join(root, 'tsconfig.json'),
-      content: `${JSON.stringify({ compilerOptions: { strict: true, target: 'ES2022', module: 'NodeNext', moduleResolution: 'NodeNext', skipLibCheck: true }, include: ['src/**/*.ts'] })}\n`,
-    },
-    ...Object.entries(FILES).map(([relative, content]) => ({ path: path.join(root, relative), content })),
-  ]);
+  const root = createControllerFixture({ after }, { prefix: 'golem-static-value-', links: 'none', files: FILES });
   const program = ts.createProgramFromSources({ root, sources: [] });
   const sourceFile = program.getSourceFile(path.join(root, 'src/values.ts'));
   assert.ok(sourceFile);

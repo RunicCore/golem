@@ -9,14 +9,12 @@ import {
   Body,
   Controller,
   Get,
-  Module,
   Post,
   Query,
   type CallHandler,
   type ExecutionContext,
   type NestInterceptor,
 } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
 import {
   nestModelCodec,
@@ -33,7 +31,6 @@ import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import {
   assertModelValue,
-  createObjectCodec,
   getObjectCodec,
   isValidModelValue,
   IssueRepresentation,
@@ -43,15 +40,26 @@ import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { compileSchema } from './support/compiled-validators.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
+import { decorateQueryModel, startNestApp } from './support/nest-app.js';
+import { registerPassThroughCodec } from './support/pass-through-codec.js';
 
 function markerCodec(id: string) {
-  return createObjectCodec(id, {
-    stringify: (value) => JSON.stringify(value),
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
-    fromWireFormat: () => ({ converted: true }),
+  return registerPassThroughCodec(id, { fromWireFormat: () => ({ converted: true }) });
+}
+
+/** Registers the codec of `id` with the schema of `descriptor`. Its wire values are validated and then handed to `convert`. */
+async function registerValidatingCodec(id: string, descriptor: ModelTypeDescriptor, convert: (wire: unknown) => unknown = (wire) => wire): Promise<void> {
+  const assembled = schemaForDescriptor(descriptor, { representation: 'model' });
+  assert.ok(typeof assembled === 'object');
+  const schema = { $id: id, ...assembled };
+  const validate = await compileSchema(schema);
+  registerPassThroughCodec(id, {
+    validate: (value) => isValidModelValue(value, undefined, validate, id),
+    fromWireFormat: (wire) => {
+      assertModelValue(wire, undefined, validate, id, IssueRepresentation.Wire, IssueSource.OpenAPI);
+      return convert(wire) as never;
+    },
+    schema,
   });
 }
 
@@ -87,17 +95,21 @@ function adapterResponse(
   };
 }
 
+function httpContext(klass: Function, handler: Function, request: object = {}, response: object = {}): ExecutionContext {
+  return {
+    getHandler: () => handler,
+    getClass: () => klass,
+    getType: () => 'http',
+    switchToHttp: () => ({ getRequest: () => request, getResponse: () => response }),
+  } as unknown as ExecutionContext;
+}
+
 async function runInterceptor(
   interceptor: NestInterceptor,
   response: object,
   value: unknown,
 ): Promise<unknown> {
-  const context = {
-    getHandler: () => AdapterWriterController.prototype.write,
-    getClass: () => AdapterWriterController,
-    getType: () => 'http',
-    switchToHttp: () => ({ getRequest: () => ({}), getResponse: () => response }),
-  } as unknown as ExecutionContext;
+  const context = httpContext(AdapterWriterController, AdapterWriterController.prototype.write, {}, response);
   const next: CallHandler<unknown> = { handle: () => of(value) };
   const result = await interceptor.intercept(context, next);
   return firstValueFrom(result.pipe(defaultIfEmpty(undefined)));
@@ -112,12 +124,7 @@ function interceptResponse(
     handler: AdapterWriterController.prototype.write,
   },
 ): Observable<unknown> {
-  const context = {
-    getHandler: () => target.handler,
-    getClass: () => target.klass,
-    getType: () => 'http',
-    switchToHttp: () => ({ getRequest: () => ({}), getResponse: () => response }),
-  } as unknown as ExecutionContext;
+  const context = httpContext(target.klass, target.handler, {}, response);
   const next: CallHandler<unknown> = { handle: () => of(...values) };
   const result = interceptor.intercept(context, next);
   if (result instanceof Promise) throw new Error('Nest model interceptors return their response Observable synchronously.');
@@ -126,6 +133,12 @@ function interceptResponse(
 
 class AdapterWriterController {
   write(): unknown { return undefined; }
+}
+
+function decorateReturn(klass: Function, name: string, id: string): void {
+  const descriptor = Object.getOwnPropertyDescriptor(klass.prototype, name);
+  assert.ok(descriptor);
+  nestModelReturn(id)(klass.prototype, name, descriptor);
 }
 
 test('nestModelCodec binds the registered codec instance at decorate', () => {
@@ -145,9 +158,7 @@ test('nestModelCodec binds the registered codec instance at decorate', () => {
 test('Nest JSON writers write independently to each adapter response across interceptor and adapter variants', async () => {
   const id = 'AdapterWriter_cccccccc';
   const codec = markerCodec(id);
-  const descriptor = Object.getOwnPropertyDescriptor(AdapterWriterController.prototype, 'write');
-  assert.ok(descriptor);
-  nestModelReturn(id)(AdapterWriterController.prototype, 'write', descriptor);
+  decorateReturn(AdapterWriterController, 'write', id);
 
   const exercises: readonly [string, NestInterceptor, 'express' | 'fastify'][] = [
     ['model-express', new NestModelInterceptor(), 'express'],
@@ -173,9 +184,7 @@ test('Nest JSON writers write independently to each adapter response across inte
 test('Nest model interceptors keep shared nullish forwarding scoped to each async request and cancellable', async () => {
   const id = 'NullAsyncContext_aaaaaaaa';
   const codec = markerCodec(id);
-  const descriptor = Object.getOwnPropertyDescriptor(AdapterWriterController.prototype, 'write');
-  assert.ok(descriptor);
-  nestModelReturn(id)(AdapterWriterController.prototype, 'write', descriptor);
+  decorateReturn(AdapterWriterController, 'write', id);
   const exercises: readonly [string, NestInterceptor][] = [
     ['class', new NestModelInterceptor()],
     ['factory', nestModelStringifyInterceptor(codec)],
@@ -235,9 +244,7 @@ test('Nest model interceptors keep shared nullish forwarding scoped to each asyn
 test('Nest model interceptors serialize mixed values and preserve nullish emission order', async () => {
   const id = 'MixedTiming_eeeeeeee';
   const codec = markerCodec(id);
-  const descriptor = Object.getOwnPropertyDescriptor(AdapterWriterController.prototype, 'write');
-  assert.ok(descriptor);
-  nestModelReturn(id)(AdapterWriterController.prototype, 'write', descriptor);
+  decorateReturn(AdapterWriterController, 'write', id);
 
   for (const interceptor of [new NestModelInterceptor(), nestModelStringifyInterceptor(codec)]) {
     const probe: ResponseProbe = { headers: new Map(), body: undefined };
@@ -264,17 +271,8 @@ test('Nest model interceptors serialize mixed values and preserve nullish emissi
 
 test('Nest model interceptors expose stringify and response-writer throws as observable errors', async () => {
   const id = 'Throwing_eeeeeeee';
-  const throwingCodec = createObjectCodec(id, {
-    stringify: () => { throw new Error('codec stringify failed'); },
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
-    fromWireFormat: () => ({} as never),
-  });
-  const descriptor = Object.getOwnPropertyDescriptor(AdapterWriterController.prototype, 'write');
-  assert.ok(descriptor);
-  nestModelReturn(id)(AdapterWriterController.prototype, 'write', descriptor);
+  const throwingCodec = registerPassThroughCodec(id, { stringify: () => { throw new Error('codec stringify failed'); } });
+  decorateReturn(AdapterWriterController, 'write', id);
   const stringifyCases: readonly [string, NestInterceptor][] = [
     ['model interceptor', new NestModelInterceptor()],
     ['factory interceptor', nestModelStringifyInterceptor(throwingCodec)],
@@ -290,7 +288,7 @@ test('Nest model interceptors expose stringify and response-writer throws as obs
   }
 
   const writerCodec = markerCodec('WriterThrow_ffffffff');
-  nestModelReturn('WriterThrow_ffffffff')(AdapterWriterController.prototype, 'write', descriptor);
+  decorateReturn(AdapterWriterController, 'write', 'WriterThrow_ffffffff');
   const writerCases: readonly [string, NestInterceptor][] = [
     ['model response writer', new NestModelInterceptor()],
     ['factory response writer', nestModelStringifyInterceptor(writerCodec)],
@@ -309,30 +307,9 @@ test('Nest return metadata cache is per controller and handler and codec lookup 
   const firstId = 'CachedFirst_11111111';
   const secondId = 'CachedSecond_22222222';
   const otherControllerId = 'CachedOther_33333333';
-  createObjectCodec(firstId, {
-    stringify: (value) => JSON.stringify({ first: value }),
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
-    fromWireFormat: () => ({} as never),
-  });
-  createObjectCodec(secondId, {
-    stringify: (value) => JSON.stringify({ second: value }),
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
-    fromWireFormat: () => ({} as never),
-  });
-  createObjectCodec(otherControllerId, {
-    stringify: (value) => JSON.stringify({ other: value }),
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
-    fromWireFormat: () => ({} as never),
-  });
+  registerPassThroughCodec(firstId, { stringify: (value) => JSON.stringify({ first: value }) });
+  registerPassThroughCodec(secondId, { stringify: (value) => JSON.stringify({ second: value }) });
+  registerPassThroughCodec(otherControllerId, { stringify: (value) => JSON.stringify({ other: value }) });
   const sharedWrite = function write() { return undefined; };
   const secondWrite = function writeSecond() { return undefined; };
   const plainWrite = function plainWrite() { return undefined; };
@@ -398,9 +375,7 @@ test('Nest return metadata cache is per controller and handler and codec lookup 
   class LateController {}
   const lateHandler = function write() { return undefined; };
   Object.defineProperty(LateController.prototype, 'write', { value: lateHandler });
-  const lateDescriptor = Object.getOwnPropertyDescriptor(LateController.prototype, 'write');
-  assert.ok(lateDescriptor);
-  nestModelReturn(lateId)(LateController.prototype, 'write', lateDescriptor);
+  decorateReturn(LateController, 'write', lateId);
   const lateProbe: ResponseProbe = { headers: new Map(), body: undefined };
   const lateResponse = adapterResponse('express', lateProbe);
   const lateInterceptor = new NestModelInterceptor();
@@ -429,21 +404,8 @@ test('nestModelCodec before register leaves the parameter without a codec, so th
   }
   decorateCreate(LateController, id);
   markerCodec(id);
-  class AppModule {}
-  Module({ controllers: [LateController] })(AppModule);
   const errors: string[] = [];
-  const logger = {
-    log() {},
-    warn() {},
-    debug() {},
-    verbose() {},
-    error(message: unknown, ...rest: unknown[]) {
-      errors.push([message, ...rest].map((part) => part instanceof Error ? part.message : String(part)).join(' '));
-    },
-  };
-  const application = await NestFactory.create(AppModule, { logger });
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  const application = await startNestApp([LateController], { errors });
   try {
     const response = await fetch(`${await application.getUrl()}/`, {
       method: 'POST',
@@ -506,12 +468,7 @@ const namedParameter: Record<string, string> = {
 for (const [label, decorator, field, metatype, name] of inputWithoutModel) {
   test(`NestModelInterceptor throws a TypeError naming the parameter for ${label}`, () => {
     const klass = inputController(name, decorator, field, metatype);
-    const context = {
-      getHandler: () => klass.prototype.handle,
-      getClass: () => klass,
-      getType: () => 'http',
-      switchToHttp: () => ({ getRequest: () => ({ body: { note: 'raw' }, query: {} }), getResponse: () => ({}) }),
-    } as unknown as ExecutionContext;
+    const context = httpContext(klass, klass.prototype.handle, { body: { note: 'raw' }, query: {} });
     assert.throws(
       () => new NestModelInterceptor().intercept(context, { handle: () => of(undefined) }),
       new TypeError(`NestModelInterceptor needs an IModel or IObject type for ${namedParameter[name]} parameter 0 of ${name}.handle. Declare the input as an IModel or IObject, or write your own interceptor.`),
@@ -521,12 +478,7 @@ for (const [label, decorator, field, metatype, name] of inputWithoutModel) {
 
 test('NestModelInterceptor converts a model-typed one-field @Body() and @Query() and answers 400 for an invalid field', async () => {
   const id = 'FieldModel_34343434';
-  createObjectCodec(id, {
-    stringify: (value) => JSON.stringify(value),
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
+  registerPassThroughCodec(id, {
     fromWireFormat: (wire) => ({ at: deserializeDate((wire as { at?: unknown } | undefined)?.at, ['at']) }) as never,
   });
   const received = (input: unknown) => ({ atIsDate: (input as { at?: unknown }).at instanceof Date });
@@ -534,13 +486,7 @@ test('NestModelInterceptor converts a model-typed one-field @Body() and @Query()
   nestModelCodec(id)(bodyController.prototype, 'handle', 0);
   const queryController = inputController('FieldModelQuery', Query, 'addr', Object, received);
   nestModelCodec(id)(queryController.prototype, 'handle', 0);
-  class AppModule {}
-  Module({ controllers: [bodyController, queryController] as never[] })(AppModule);
-  const application = await NestFactory.create(AppModule, { logger: false });
-  // Express 5 reads `addr[at]=x` as one flat key unless the app opts in to nested query keys.
-  application.getHttpAdapter().getInstance().set('query parser', 'extended');
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  const application = await startNestApp([bodyController, queryController], { nestedQuery: true });
   try {
     const base = await application.getUrl();
     const postBody = (body: unknown) => fetch(`${base}/FieldModelBody`, {
@@ -574,32 +520,13 @@ test('NestModelInterceptor converts an array @Body() and a one-field array item 
     required: ['name'],
     additionalProperties: false,
   };
-  const assembled = schemaForDescriptor(descriptor, { representation: 'model' });
-  assert.ok(typeof assembled === 'object');
-  const schema = { $id: id, ...assembled };
-  const validate = await compileSchema(schema);
-  createObjectCodec(id, {
-    stringify: (value) => JSON.stringify(value),
-    parse: (text) => JSON.parse(text) as never,
-    validate: (value) => isValidModelValue(value, undefined, validate, id),
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
-    fromWireFormat: (wire) => {
-      assertModelValue(wire, undefined, validate, id, IssueRepresentation.Wire, IssueSource.OpenAPI);
-      return { ...(wire as object), converted: true } as never;
-    },
-    schema,
-  });
+  await registerValidatingCodec(id, descriptor, (wire) => ({ ...(wire as object), converted: true }));
   const received = (input: unknown) => input;
   const wholeController = inputController('ArrayWhole', Body, undefined, Object, received);
   nestModelCodec(id, true)(wholeController.prototype, 'handle', 0);
   const fieldController = inputController('ArrayField', Body, 'items', Object, received);
   nestModelCodec(id, true)(fieldController.prototype, 'handle', 0);
-  class AppModule {}
-  Module({ controllers: [wholeController, fieldController] as never[] })(AppModule);
-  const application = await NestFactory.create(AppModule, { logger: false });
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  const application = await startNestApp([wholeController, fieldController]);
   try {
     const base = await application.getUrl();
     const post = (path: string, body: unknown) => fetch(`${base}/${path}`, {
@@ -657,12 +584,7 @@ test('NestModelInterceptor throws a TypeError for a whole and a one-field @Body(
   nestModelCodec(id)(MixedController.prototype, 'handle', 0);
   Body('addr')(MixedController.prototype, 'handle', 1);
   nestModelCodec(id)(MixedController.prototype, 'handle', 1);
-  const context = {
-    getHandler: () => MixedController.prototype.handle,
-    getClass: () => MixedController,
-    getType: () => 'http',
-    switchToHttp: () => ({ getRequest: () => ({ body: { addr: {} } }), getResponse: () => ({}) }),
-  } as unknown as ExecutionContext;
+  const context = httpContext(MixedController, MixedController.prototype.handle, { body: { addr: {} } });
   assert.throws(
     () => new NestModelInterceptor().intercept(context, { handle: () => of(undefined) }),
     new TypeError('NestModelInterceptor cannot convert a whole and a one-field @Body() of MixedController.handle together. Declare the whole input as one model, or use one-field parameters only.'),
@@ -671,14 +593,7 @@ test('NestModelInterceptor throws a TypeError for a whole and a one-field @Body(
 
 test('NestModelInterceptor sends a declared null return as an empty body', async () => {
   const id = 'Returned_cccccccc';
-  createObjectCodec(id, {
-    stringify: (value) => JSON.stringify({ wire: value }),
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
-    fromWireFormat: (value) => value,
-  });
+  registerPassThroughCodec(id, { stringify: (value) => JSON.stringify({ wire: value }) });
   class ReturnController {
     empty() {
       return null;
@@ -689,11 +604,7 @@ test('NestModelInterceptor sends a declared null return as an empty body', async
   assert.ok(emptyDescriptor);
   Post('empty')(ReturnController.prototype, 'empty', emptyDescriptor);
   nestModelReturn(id)(ReturnController.prototype, 'empty', emptyDescriptor);
-  class AppModule {}
-  Module({ controllers: [ReturnController] })(AppModule);
-  const application = await NestFactory.create(AppModule, { logger: false });
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  const application = await startNestApp([ReturnController]);
   try {
     const base = await application.getUrl();
     const empty = await fetch(`${base}/returns/empty`, { method: 'POST' });
@@ -722,38 +633,14 @@ test('NestModelInterceptor decodes whole @Query() strings to the declared scalar
     required: [],
     additionalProperties: false,
   };
-  const assembled = schemaForDescriptor(filter, { representation: 'model' });
-  assert.ok(typeof assembled === 'object');
-  const schema = { $id: id, ...assembled };
-  const validate = await compileSchema(schema);
-  createObjectCodec(id, {
-    stringify: (value) => JSON.stringify(value),
-    parse: (text) => JSON.parse(text) as never,
-    validate: (value) => isValidModelValue(value, undefined, validate, id),
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
-    fromWireFormat: (wire) => {
-      assertModelValue(wire, undefined, validate, id, IssueRepresentation.Wire, IssueSource.OpenAPI);
-      return wire as never;
-    },
-    schema,
-  });
+  await registerValidatingCodec(id, filter);
   class QueryController {
     list(query: unknown) {
       return { query };
     }
   }
-  Controller('query')(QueryController);
-  const descriptor = Object.getOwnPropertyDescriptor(QueryController.prototype, 'list');
-  assert.ok(descriptor);
-  Get()(QueryController.prototype, 'list', descriptor);
-  Query()(QueryController.prototype, 'list', 0);
-  nestModelCodec(id)(QueryController.prototype, 'list', 0);
-  class AppModule {}
-  Module({ controllers: [QueryController] })(AppModule);
-  const application = await NestFactory.create(AppModule, { logger: false });
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  decorateQueryModel(QueryController, 'list', id, 'query');
+  const application = await startNestApp([QueryController]);
   try {
     const base = `${await application.getUrl()}/query`;
     const accepted = await fetch(`${base}?limit=10&page=2&active=false&level=2&status=paid&name=42&ids=1&ids=2.5`);
@@ -782,12 +669,7 @@ test('NestModelInterceptor decodes whole @Query() strings to the declared scalar
 
 test('NestModelInterceptor passes @Query() through unchanged unless a present field decodes', () => {
   const received: unknown[] = [];
-  const register = (id: string, properties: Record<string, unknown>) => createObjectCodec(id, {
-    stringify: (value) => JSON.stringify(value),
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
+  const register = (id: string, properties: Record<string, unknown>) => registerPassThroughCodec(id, {
     fromWireFormat: (wire) => {
       received.push(wire);
       return wire as never;
@@ -813,12 +695,7 @@ test('NestModelInterceptor passes @Query() through unchanged unless a present fi
     Query()(QueryController.prototype, 'list', 0);
     nestModelCodec(id)(QueryController.prototype, 'list', 0);
     const request = { query };
-    const context = {
-      getHandler: () => QueryController.prototype.list,
-      getClass: () => QueryController,
-      getType: () => 'http',
-      switchToHttp: () => ({ getRequest: () => request, getResponse: () => ({}) }),
-    } as unknown as ExecutionContext;
+    const context = httpContext(QueryController, QueryController.prototype.list, request);
     received.length = 0;
     interceptor.intercept(context, { handle: () => of(undefined) });
     assert.equal(received.length, 1);
@@ -856,14 +733,7 @@ test('NestModelInterceptor answers 400 for request input the decoder rejects and
   const controllers: Function[] = [];
   for (const [name, decode] of Object.entries(decoders)) {
     const id = `InputFault${name}_eeeeeeee`;
-    createObjectCodec(id, {
-      stringify: (value) => JSON.stringify(value),
-      parse: (text) => JSON.parse(text) as never,
-      validate: () => true,
-      assert: (value) => value as never,
-      toWireFormat: (value) => value,
-      fromWireFormat: (wire) => decode(wire as Record<string, unknown>) as never,
-    });
+    registerPassThroughCodec(id, { fromWireFormat: (wire) => decode(wire as Record<string, unknown>) as never });
     class InputController {
       create(input: unknown) {
         return input;
@@ -873,11 +743,7 @@ test('NestModelInterceptor answers 400 for request input the decoder rejects and
     Controller(name)(InputController);
     controllers.push(InputController);
   }
-  class AppModule {}
-  Module({ controllers: controllers as never[] })(AppModule);
-  const application = await NestFactory.create(AppModule, { logger: false });
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  const application = await startNestApp(controllers);
   try {
     const base = await application.getUrl();
     const post = (name: string, body: unknown) => fetch(`${base}/${name}`, {
@@ -904,24 +770,12 @@ test('NestModelInterceptor model returns reach the client without an ExceptionsH
   class AccountModel {
     constructor(readonly id: string) {}
   }
-  createObjectCodec(objectId, {
-    stringify: (value) => JSON.stringify({ object: value }),
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
-    fromWireFormat: (value) => value,
-  });
-  createObjectCodec(modelId, {
+  registerPassThroughCodec(objectId, { stringify: (value) => JSON.stringify({ object: value }) });
+  registerPassThroughCodec(modelId, {
     stringify: (value) => {
       if (!(value instanceof AccountModel)) throw new Error('model codec received a non-model value');
       return JSON.stringify({ model: value.id });
     },
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
-    fromWireFormat: (value) => value,
   });
   class LoggedController {
     objectDirect() { return { id: 'o1' }; }
@@ -948,21 +802,8 @@ test('NestModelInterceptor model returns reach the client without an ExceptionsH
     Get(name)(LoggedController.prototype, name, descriptor);
     nestModelReturn(id, array)(LoggedController.prototype, name, descriptor);
   }
-  class AppModule {}
-  Module({ controllers: [LoggedController] })(AppModule);
   const errors: string[] = [];
-  const logger = {
-    log() {},
-    warn() {},
-    debug() {},
-    verbose() {},
-    error(message: unknown, ...rest: unknown[]) {
-      errors.push([message, ...rest].map((part) => part instanceof Error ? `${part.name}: ${part.message}` : String(part)).join(' '));
-    },
-  };
-  const application = await NestFactory.create(AppModule, { logger });
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  const application = await startNestApp([LoggedController], { errors });
   try {
     const base = await application.getUrl();
     const expected: readonly [string, unknown][] = [
@@ -1013,11 +854,7 @@ test('NestModelInterceptor answers 200 with the declared fields of a returned mo
     Get(name)(StateController.prototype, name, descriptor);
     nestModelReturn(id, array)(StateController.prototype, name, descriptor);
   }
-  class AppModule {}
-  Module({ controllers: [StateController] })(AppModule);
-  const application = await NestFactory.create(AppModule, { logger: false });
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  const application = await startNestApp([StateController]);
   try {
     const base = await application.getUrl();
     const one = await fetch(`${base}/state/one`);
@@ -1046,21 +883,8 @@ test('NestModelInterceptor answers 500 for a marked return with no codec and pas
     Get(name)(UnloadedController.prototype, name, descriptor);
   }
   nestModelReturn(id)(UnloadedController.prototype, 'marked', Object.getOwnPropertyDescriptor(UnloadedController.prototype, 'marked')!);
-  class AppModule {}
-  Module({ controllers: [UnloadedController] })(AppModule);
   const errors: string[] = [];
-  const logger = {
-    log() {},
-    warn() {},
-    debug() {},
-    verbose() {},
-    error(message: unknown, ...rest: unknown[]) {
-      errors.push([message, ...rest].map((part) => part instanceof Error ? `${part.name}: ${part.message}` : String(part)).join(' '));
-    },
-  };
-  const application = await NestFactory.create(AppModule, { logger });
-  application.useGlobalInterceptors(new NestModelInterceptor());
-  await application.listen(0, '127.0.0.1');
+  const application = await startNestApp([UnloadedController], { errors });
   try {
     const base = await application.getUrl();
     const plain = await fetch(`${base}/unloaded/plain`);
@@ -1081,12 +905,7 @@ test('NestModelInterceptor answers 500 for a marked return with no codec and pas
 
 /** A variant codec of a union that tells which variant converted the wire value. */
 function variantCodec(id: string, schema?: object) {
-  return createObjectCodec(id, {
-    stringify: (value) => JSON.stringify(value),
-    parse: (text) => JSON.parse(text) as never,
-    validate: () => true,
-    assert: (value) => value as never,
-    toWireFormat: (value) => value,
+  return registerPassThroughCodec(id, {
     fromWireFormat: (wire) => ({ variant: id, wire }),
     ...(schema ? { schema } : {}),
   });
@@ -1099,7 +918,7 @@ test('a union binding resolves its variant codecs on first use, so a variant tha
   variantCodec('LateUnionA_11111111');
   const type = (Reflect.getMetadata('design:paramtypes', klass.prototype, 'handle') as unknown[])[0];
   const request = { body: { kind: 'b' }, query: {} };
-  const context = { getHandler: () => klass.prototype.handle, getClass: () => klass, getType: () => 'http', switchToHttp: () => ({ getRequest: () => request }) } as unknown as ExecutionContext;
+  const context = httpContext(klass, klass.prototype.handle, request);
   assert.equal(nestUnionFromMetatype(type), undefined);
   assert.throws(() => new NestModelInterceptor().intercept(context, { handle: () => of(undefined) }), new TypeError(
     'golem fault: NestModelInterceptor found no registered codec "LateUnionB_22222222" for the union "LateUnionA_11111111 | LateUnionB_22222222" for @Body() parameter 0 of LateUnion.handle. The rewrite loads the generated module of the model, and that module did not load. Run golem generate and rewrite the file again.',
@@ -1138,11 +957,7 @@ test('a custom interceptor converts a union @Body() and @Query() with nestUnionF
       return next.handle().pipe(map(() => ({ picked })));
     },
   };
-  class AppModule {}
-  Module({ controllers: [bodyController, queryController] as never[] })(AppModule);
-  const application = await NestFactory.create(AppModule, { logger: false });
-  application.useGlobalInterceptors(custom);
-  await application.listen(0, '127.0.0.1');
+  const application = await startNestApp([bodyController, queryController], { interceptor: custom });
   try {
     const base = await application.getUrl();
     const post = await fetch(`${base}/UnionBody`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'rect', width: 3 }) });
