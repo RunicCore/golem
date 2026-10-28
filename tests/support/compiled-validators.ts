@@ -4,6 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+import { MODEL_CODEC_IDS_KEY } from '@exprtlabs/golem/internal/schema';
 import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compile, type CompileOptions } from '@exprtlabs/golem/internal/validator-compiler';
 
@@ -87,6 +88,16 @@ export async function compileValidatorModule(input: CompiledValidatorInput): Pro
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+}
+
+/** The key under which a model's prototype lists its codec ids. */
+export const MODEL_CODEC_IDS = Symbol.for(MODEL_CODEC_IDS_KEY);
+
+/** A class whose prototype lists `ids` the way a registered model does. */
+export function modelClass(...ids: string[]): new () => object {
+  const model = class {};
+  Object.defineProperty(model.prototype, MODEL_CODEC_IDS, { value: ids });
+  return model;
 }
 
 /** Compiles the roots and returns the validator exported for each root, by root name. */

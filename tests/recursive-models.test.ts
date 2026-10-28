@@ -9,6 +9,7 @@ import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildRecursiveProject, importCodecs, json, type Codec, type Codecs } from './support/recursive-fixtures.js';
 import { compileGeneratedSdk, generateMaterializedSdk, writeGeneratedSdk } from './openapi/helpers.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 
@@ -24,12 +25,6 @@ export class Right extends TRightBaseModel {}
 `,
 };
 
-type Codec = (value: unknown, options?: object) => unknown;
-type Codecs = Record<string, Codec>;
-
-/** Compare wire values as JSON data; prototype and absent-field details belong to the wire-format suite. */
-const json = (value: unknown): unknown => JSON.parse(JSON.stringify(value));
-
 const profiles: readonly (readonly [string, GolemProfile])[] = [
   ['validation off', { mobx: false, validation: false }],
   ['validation on', { mobx: false, validation: true }],
@@ -37,13 +32,8 @@ const profiles: readonly (readonly [string, GolemProfile])[] = [
 
 for (const [label, profile] of profiles) {
   test(`self- and mutually recursive models generate and round-trip (${label})`, async (t: TestContext) => {
-    const { root, sourceRoot } = createModelProject(t, {
-      prefix: 'golem-recursive-models-', linkTypescript: true,
-    });
-    writeModelSources(sourceRoot, sources);
-    writeModelGolemYaml(root, profile);
-    await buildModelProject(root);
-    const codecs = await import(pathToFileURL(path.join(root, 'build/tree.model.generated.js')).href) as Codecs;
+    const { root } = await buildRecursiveProject(t, 'golem-recursive-models-', sources, profile);
+    const codecs = await importCodecs(root, 'tree');
 
     const nodeWire = { at: '2024-01-01T00:00:00.000Z', children: [{ at: '2024-01-02T00:00:00.000Z', children: [{ at: '2024-01-03T00:00:00.000Z', children: [] }] }] };
     const node = codecs.fromWireFormatTNode(nodeWire) as { children: { children: { at: unknown }[] }[] };
@@ -361,11 +351,8 @@ const docWire = {
 for (const [label, profile] of profiles) {
   test(`a recursive alias of a union, a tuple, a record and a JSON value generates and round-trips (${label})`, async (t: TestContext) => {
     // protects: T-221 a recursive type alias of any shape generates, validates and converts
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-alias-', linkTypescript: true });
-    writeModelSources(sourceRoot, aliasSources);
-    writeModelGolemYaml(root, profile);
-    await buildModelProject(root);
-    const codecs = await import(pathToFileURL(path.join(root, 'build/alias.model.generated.js')).href) as Codecs;
+    const { root } = await buildRecursiveProject(t, 'golem-recursive-alias-', aliasSources, profile);
+    const codecs = await importCodecs(root, 'alias');
     const generated = fs.readFileSync(path.join(root, 'src/alias.model.generated.ts'), 'utf8');
 
     for (const [wire, name] of [[shelfWire, 'TShelf'], [docWire, 'TDoc']] as const) {
@@ -396,11 +383,8 @@ for (const [label, profile] of profiles) {
 
   test(`a cyclic value in a field of a recursive alias throws a Serialization LibError, and a union of a named model and an array encodes (${label})`, async (t: TestContext) => {
     // protects: T-221 a recursive alias never overflows the stack on a cyclic value, and encodes a valid named model beside an array
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-recursive-alias-cycle-', linkTypescript: true });
-    writeModelSources(sourceRoot, aliasSources);
-    writeModelGolemYaml(root, profile);
-    await buildModelProject(root);
-    const codecs = await import(pathToFileURL(path.join(root, 'build/alias.model.generated.js')).href) as Codecs;
+    const { root } = await buildRecursiveProject(t, 'golem-recursive-alias-cycle-', aliasSources, profile);
+    const codecs = await importCodecs(root, 'alias');
     const doc = (payload: unknown) => ({ tree: ['t', []], registry: {}, payload, list: [], items: [] });
 
     const cyclicList: unknown[] = [1];

@@ -57,32 +57,36 @@ function countingScope(scope: Readonly<Record<string, unknown>>): { readonly sco
   return { scope: wrapped, calls };
 }
 
+/** The payment runtime running on validators that count their calls, by name. */
+async function countedPaymentRuntime(): Promise<{ readonly runtime: ReturnType<typeof instantiateRuntime>; readonly calls: Map<string, number> }> {
+  const validators = await paymentValidators();
+  const counted = countingScope(validators.scope);
+  const runtime = instantiateRuntime(paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) }), counted.scope);
+  return { runtime, calls: counted.calls };
+}
+
 const value = { id: 'p1', amount: { currency: 'USD', at: new Date(0), tags: ['a'] }, list: [['x']] };
 const wire = { id: 'p1', amount: { currency: 'USD', at: '1970-01-01T00:00:00.000Z', tags: ['a'] }, list: [['x']] };
 
 test('validate makes one check through the generated validator of the model', async () => {
   // protects: T-363 the emitted validate runs the model's validator once per call
-  const validators = await paymentValidators();
-  const counted = countingScope(validators.scope);
-  const runtime = instantiateRuntime(paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) }), counted.scope);
+  const { runtime, calls } = await countedPaymentRuntime();
   assert.equal(runtime.validatePayment(value), true);
-  assert.deepEqual([...counted.calls.values()], [1], 'one validator ran, once');
+  assert.deepEqual([...calls.values()], [1], 'one validator ran, once');
   assert.equal(runtime.validatePayment({ ...value, id: 7 }), false);
-  assert.deepEqual([...counted.calls.values()], [2]);
+  assert.deepEqual([...calls.values()], [2]);
 });
 
 test('stringify checks the model, builds the wire, checks the wire and writes it', async () => {
   // protects: T-363 the emitted stringify runs the model check and the wire check once each, none for trusted input
-  const validators = await paymentValidators();
-  const counted = countingScope(validators.scope);
-  const runtime = instantiateRuntime(paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) }), counted.scope);
+  const { runtime, calls } = await countedPaymentRuntime();
   assert.equal(runtime.stringifyPayment(value), JSON.stringify(wire));
-  const validated = Object.fromEntries(counted.calls);
+  const validated = Object.fromEntries(calls);
   assert.equal(Object.keys(validated).length, 2, 'the model check and the wire-only check each ran');
   assert.deepEqual(Object.values(validated), [1, 1], 'each ran once, for the nested model too');
-  counted.calls.clear();
+  calls.clear();
   assert.equal(runtime.stringifyPayment(value, { validate: false }), JSON.stringify(wire));
-  assert.equal(counted.calls.size, 0, 'trusted input runs no validator');
+  assert.equal(calls.size, 0, 'trusted input runs no validator');
   assert.throws(() => runtime.stringifyPayment({ ...value, id: 7 }), /validation/i);
 });
 
@@ -100,15 +104,13 @@ test('identity arrays are copied, so the decoded and encoded values share no arr
 
 test('a nested call to a model of the same module runs unvalidated inside the one outer check', async () => {
   // protects: T-363 a nested model call inside one outer check runs no validator of its own
-  const validators = await paymentValidators();
-  const counted = countingScope(validators.scope);
-  const runtime = instantiateRuntime(paymentRuntimeSource({ validatorName: (id) => identifier(validators.validatorName(id)) }), counted.scope);
+  const { runtime, calls } = await countedPaymentRuntime();
   // The trusted path reaches the nested Money through its own core, which neither validates nor takes options.
   assert.doesNotThrow(() => runtime.stringifyPayment({ ...value, id: 7 }, { validate: false }));
   assert.deepEqual(runtime.toWireFormatPayment({ ...value, id: 7 }, { validate: false }), { ...wire, id: 7 });
-  assert.equal(counted.calls.size, 0);
+  assert.equal(calls.size, 0);
   assert.equal(runtime.stringifyPayment(value), JSON.stringify(wire));
-  assert.equal(counted.calls.size, 2, 'the validated path runs the two Payment checks, none for the nested Money');
+  assert.equal(calls.size, 2, 'the validated path runs the two Payment checks, none for the nested Money');
 });
 
 test('the public toWireFormat validates the model first, builds the wire, and skips both checks for trusted input', async () => {

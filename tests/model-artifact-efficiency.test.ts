@@ -29,6 +29,13 @@ function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } 
   });
 }
 
+/** Builds the project without validation and records the calls its built modules make to the conversion exports `spied`. */
+async function buildAndSpy(project: ModelProject, spied: readonly string[]): ReturnType<typeof spyOnBuild> {
+  writeModelGolemYaml(project.root, { mobx: false, validation: false });
+  await buildModelProject(project.root);
+  return spyOnBuild(project.root, { '@exprtlabs/golem/conversion': spied });
+}
+
 test('equivalent tag schemas share compilation while callback identities and reference definitions stay distinct', () => {
   // protects: F-164 equal tag schemas compile once, and callback and reference variants keep their own validator
   const tag = (schema: TagSchema['schema']): TagSchema => ({ key: canonicalSchemaKey(schema), schema });
@@ -291,9 +298,7 @@ test('converted model fields call their converter without a per-field closure', 
       'export class Wallet extends TWalletBaseModel {}',
     ].join('\n'),
   });
-  writeModelGolemYaml(project.root, { mobx: false, validation: false });
-  await buildModelProject(project.root);
-  const spy = await spyOnBuild(project.root, { '@exprtlabs/golem/conversion': ['convertModelField'] });
+  const spy = await buildAndSpy(project, ['convertModelField']);
   try {
     const { Wallet } = await import(pathToFileURL(path.join(project.root, 'build/wallet.model.js')).href);
     const wire = { balance: { amount: '1', currency: 'USD' }, rebate: { amount: '2', currency: 'EUR' } };
@@ -324,9 +329,7 @@ test('converted model items inside an array call their converter without a per-i
       'export class Wallet extends TWalletBaseModel {}',
     ].join('\n'),
   });
-  writeModelGolemYaml(project.root, { mobx: false, validation: false });
-  await buildModelProject(project.root);
-  const spy = await spyOnBuild(project.root, { '@exprtlabs/golem/conversion': ['convertModelField', 'convertModelItems'] });
+  const spy = await buildAndSpy(project, ['convertModelField', 'convertModelItems']);
   try {
     const { Wallet } = await import(pathToFileURL(path.join(project.root, 'build/wallet.model.js')).href);
     const wire = { history: [{ amount: '1', currency: 'USD' }, { amount: '2', currency: 'EUR' }, { amount: '3', currency: 'GBP' }] };
