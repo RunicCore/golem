@@ -607,12 +607,14 @@ function withMetadata(
 
 /** The one tag key a union declares: on the union itself, or on its variants when `| null` keeps the tag inside a member. */
 function unionTag(
+  context: TypeAnalysisContext,
+  at: ts.Node,
   onUnion: { readonly key: string; readonly defaultType?: ts.Type } | undefined,
   onVariants: readonly ({ readonly key: string; readonly defaultType?: ts.Type } | undefined)[],
 ): { readonly key: string; readonly defaultType?: ts.Type } | undefined {
   const tags = [...(onUnion === undefined ? [] : [onUnion]), ...onVariants.filter((tag): tag is NonNullable<typeof tag> => tag !== undefined)];
   const keys = new Set(tags.map((tag) => tag.key));
-  if (keys.size > 1) throw new Error(`Conflicting Discriminator tags: ${[...keys].map((key) => `'${key}'`).join(' and ')}. A union has one tag key.`);
+  if (keys.size > 1) throw diagnostic(context.sourceFile, at, '1051', `Conflicting Discriminator tags: ${[...keys].map((key) => `'${key}'`).join(' and ')}. A union has one tag key.`);
   const defaultType = tags.find((tag) => tag.defaultType !== undefined)?.defaultType;
   return tags[0] === undefined ? undefined : { key: tags[0].key, ...(defaultType ? { defaultType } : {}) };
 }
@@ -1247,6 +1249,8 @@ export function descriptorBuilder(
     const shape = (seen: ReadonlySet<ts.Type>): ModelConversionDescriptor => {
       if (type.isUnion()) {
         const declaredTag = unionTag(
+          context,
+          node ?? context.declaration,
           metadata.discriminator === undefined ? undefined : { key: metadata.discriminator, ...(metadata.discriminatorDefault ? { defaultType: metadata.discriminatorDefault } : {}) },
           type.types.map((variant) => checkerDiscriminator(tagContext, variant)),
         );
@@ -1402,6 +1406,8 @@ export function descriptorBuilder(
         for (const mapped of checker.getPropertiesOfType(type)) {
           const name = mapped.getName();
           if (sourceObject && isGeneratedBrandKey(checker, mapped)) continue;
+          // A tag is type-only: a variant `A & B & Discriminator<'k'>` has the tag key beside its fields, and the key is no field.
+          if (isGolemTagKey(checker, mapped)) continue;
           if (isSymbolKeyedProperty(checker, mapped) && isDefaultLibraryProperty(mapped, isDefaultLibraryFile)) continue;
           members.push({ name, property: mapped, absentFromSource: sourceObject !== undefined && !sourceObject.getProperty(name) });
         }
