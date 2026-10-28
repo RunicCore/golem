@@ -1035,9 +1035,10 @@ function modelTagValues(definition: ModelDefinition | undefined): TagValues | un
 /**
  * The tag table of a oneOf or anyOf that has no `discriminator` keyword: the first property of the first object variant that every
  * variant requires as a literal, when no value belongs to two variants. When a variant is neither an inline object nor a model, the
- * object variants alone are tagged and the others get no values. Without such a property the union keeps no table.
+ * object variants alone are tagged and the others get no values. Without such a property the union keeps no table, except for one
+ * model beside tagged objects: that model is the default variant and takes every object whose tag selects no object. `declared` is
+ * the `propertyName` of a discriminator keyword the document wrote: then only that key tags the variants.
  */
-/** `declared` is the `propertyName` of a discriminator keyword the document wrote: then only that key tags the variants. */
 function untaggedUnionTable(variants: readonly ModelTypeDescriptor[], definitions: ModelDefinitions, declared?: string): UnionDiscriminator | undefined {
   if (variants.length < 2) return undefined;
   const tagsOf = (variant: ModelTypeDescriptor): TagValues | undefined =>
@@ -1052,6 +1053,20 @@ function untaggedUnionTable(variants: readonly ModelTypeDescriptor[], definition
     return {
       propertyName,
       variants: variants.map((_, index) => ({ values: values[tagged.findIndex((item) => item.index === index)] ?? [] })),
+    };
+  }
+  // One model with no tag beside objects that share a tag is the default variant: it takes every object the tag does not select.
+  const objects = present.filter(({ variant }) => variant.kind === 'object');
+  const models = present.filter(({ variant }) => variant.kind === 'generated-model');
+  if (models.length !== 1 || objects.length === 0 || objects.length + models.length !== present.length) return undefined;
+  for (const propertyName of declared === undefined ? objects[0].tags?.keys() ?? [] : [declared]) {
+    const values = objects.map(({ tags }) => tags?.get(propertyName) ?? []);
+    const flat = values.flat();
+    if (values.some((set) => set.length === 0) || new Set(flat).size !== flat.length) continue;
+    return {
+      propertyName,
+      variants: variants.map((_, index) => ({ values: values[objects.findIndex((item) => item.index === index)] ?? [] })),
+      defaultVariant: models[0].index,
     };
   }
   return undefined;
