@@ -462,6 +462,7 @@ const SHAPES_CONTROLLER = [
   "  @Post() field(@Body('shape') shape: TShape): number { return 1; }",
   '  @Post() bodyMixed(@Body() tag: (TNumberTag | TTextTag) & Discriminator<\'v\'>): number { return 1; }',
   '  @Post() queryMixed(@Query() tag: (TNumberTag | TTextTag) & Discriminator<\'v\'>): number { return 1; }',
+  "  @Post() defaulted(@Body() shape: (TCircle | TPlain) & Discriminator<'kind', TPlain>): number { return 1; }",
   '}',
 ].join('\n');
 
@@ -488,6 +489,8 @@ test('a whole @Body() or @Query() union of tagged models is stamped with its tag
     { code: 'RUNM1081', line: 13, message: refused('TShape', 'Body', whole, wholeAdvice) },
     // A query string carries the tag as text, so the number 1 and the text '1' pick the same model there; a JSON body tells them apart.
     { code: 'RUNM1081', line: 15, message: refused("(TNumberTag | TTextTag) & Discriminator<'v'>", 'Query', 'has the members TNumberTag and TTextTag that share the "v" value "1"', 'Give each model its own "v" value.') },
+    // A declared default is a variant NestModelInterceptor does not pick, so the build stops on it.
+    { code: 'RUNM1081', line: 16, message: refused("(TCircle | TPlain) & Discriminator<'kind', TPlain>", 'Body', "declares a default variant with Discriminator<'kind', ...>, which NestModelInterceptor does not pick", 'Remove the default type from the tag, or bind one model.') },
   ]);
   const [circle, rect] = [shapeId(root, 'TCircle'), shapeId(root, 'TRect')];
   const variants = `[[["circle"],"${circle}"],[["rect"],"${rect}"]]`;
