@@ -14,7 +14,7 @@ import {
   aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
-import { queryFieldTable, type QueryReferenceResolver } from './query-fields.js';
+import { nodeQueryFields, type QueryReferenceResolver } from './query-fields.js';
 import { rt, rtType } from './rt.js';
 import { emitArrayConversion, emitTupleConversion, JSON_SCALAR } from './sequence-conversion.js';
 import {
@@ -76,6 +76,8 @@ export interface CodecRuntimeOptions {
   readonly nestedImportedSerde?: (id: string) => NestedImportedSerde | undefined;
   /** The name of the wire stringify that the companion of a sibling codec exports; without it, `wireStringifyExportName`. */
   readonly siblingWireName?: (codecId: string) => Code;
+  /** The wire schema of a model the graph does not hold, such as an SDK model, by the name or id a `$ref` carries. The query fields of a model read it. */
+  readonly referencedWireSchema?: QueryReferenceResolver;
   /** Internal fill helpers needed by other generated graph modules. */
   readonly exportedFillFunctionIds?: ReadonlySet<string>;
   readonly issueSource?: 'TypeScript' | 'OpenAPI';
@@ -110,6 +112,7 @@ interface EmitCtx
     | 'nestedBase'
     | 'nestedImportedSerde'
     | 'siblingWireName'
+    | 'referencedWireSchema'
     | 'exportedFillFunctionIds'
     | 'wireType'
     | 'fieldsType'
@@ -120,8 +123,6 @@ interface EmitCtx
     | 'privateCodec'
   > {
   readonly graph: SchemaGraph;
-  /** The wire schema of the model a placeholder `$ref` names, for the query fields of a model. */
-  readonly queryReference: QueryReferenceResolver;
   readonly modelBases: ModelBases;
   /** The node is a recursive union: each inline array, tuple and object branch of its encoders checks its value for a cycle. */
   readonly guardInline?: boolean;
@@ -724,7 +725,6 @@ export function emitStringifyFunction(
 ): Code {
   const ctx: EmitCtx = {
     graph,
-    queryReference: () => undefined,
     serde,
     nestedConstruct: extra.nestedConstruct,
     siblingWireName: extra.siblingWireName,
@@ -2273,7 +2273,7 @@ function emitPlaneAssertSection(runtime: NodeRuntime): Code {
 /** The registration of the node's functions as an object codec, with the query fields a query string decodes. */
 function emitCodecRegistrationSection(runtime: NodeRuntime): Code {
   const { node, ctx, names, stringifyId, validateId, assertId, objectDescriptor } = runtime;
-  const queryFields = queryFieldTable(node.jsonSchema, ctx.queryReference);
+  const queryFields = nodeQueryFields(ctx.graph, node, ctx.referencedWireSchema);
   return rowsToText([
     code`${rt.serde.createObjectCodec}(${literal(node.codecId)}, {`,
     code`  stringify: ${stringifyId} as (value: never, options?: ${SERDE_OPTIONS}) => string,`,
@@ -2329,13 +2329,9 @@ export function emitCodecRuntimeCode(
   const validates = (node: SchemaNode): boolean => nodeValidates(node, defaultEnabled);
   const nodes = [...graph.topo()];
   const patternConstants = new Map<string, Code>();
-  const wireSchemas = new Map<string, JsonSchema>();
-  for (const node of nodes) {
-    for (const name of [node.name, node.codecId, codecShortName(node.codecId)]) if (!wireSchemas.has(name)) wireSchemas.set(name, node.jsonSchema);
-  }
   const ctx: EmitCtx = {
     graph,
-    queryReference: (name) => wireSchemas.get(name),
+    referencedWireSchema: options.referencedWireSchema,
     // emitNodeRuntime emits stringify<Id>Wire exactly for these nodes.
     wireStringifyIds: new Set(nodes.filter((node) => !isExternalCodecNode(node) && validates(node) && !node.sameSchema).map((node) => node.id)),
     // emitNodeRuntime emits stringify<Id>Core and toWireFormat<Id>Core for every node that is not external.

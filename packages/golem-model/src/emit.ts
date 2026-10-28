@@ -1778,9 +1778,12 @@ function emitCodecSection(context: EmitContext): CodecSection {
     siblingWires.set(node.codecId, wireSource.name(wireStringifyExportName(node.codecId)));
     siblingWireSources.push(wireSource);
   }
+  // The wire schemas of the SDK models this job reads, which a query model can name as a base.
+  const closureSchemas = new Map((context.manifestIndex.validationSchemaClosure ?? []).flatMap((entry) => [entry.codecId, ...(entry.aliases ?? [])].map((name) => [name, entry.wireSchema ?? entry.modelSchema] as const)));
   const codecRuntime = emitCodecRuntimeCode(
     schemaGraph,
     {
+      referencedWireSchema: (name) => closureSchemas.get(name),
       validationEnabled: profile.validation,
       ...(validators ? {
         validatorName: (id: string) => {

@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { queryFieldTable } from '#golem/query-fields';
 import type { JsonSchema } from '#golem/schema';
-import type { QueryFieldTable } from '@exprtlabs/golem/serde';
+import type { ObjectCodecImpl } from '@exprtlabs/golem/serde';
 import { decorateQueryModel, startNestApp } from './support/nest-app.js';
 import { registerPassThroughCodec } from './support/pass-through-codec.js';
 
+type QueryFieldTable = NonNullable<ObjectCodecImpl['queryFields']>;
 const REF = '__exprtGeneratedModel:';
 const BASE_SCHEMA = {
   type: 'object',
@@ -41,6 +42,16 @@ async function queryReceived(id: string, query: string): Promise<unknown> {
 const refRoots = [
   { name: 'a root $ref to another model', schema: { $ref: `${REF}QueryRootBase` }, expected: BASE_FIELDS },
   {
+    name: 'a root $ref to a local definition',
+    schema: { $ref: '#/$defs/Base', $defs: { Base: BASE_SCHEMA } },
+    expected: BASE_FIELDS,
+  },
+  {
+    name: 'a root $ref that names the root itself, which ends without a loop',
+    schema: { $ref: '#', properties: { page: { type: 'integer' } } },
+    expected: { page: { types: ['integer'] } },
+  },
+  {
     name: 'a root allOf branch that is a $ref',
     schema: { allOf: [{ $ref: `${REF}QueryRootBase` }, { type: 'object', properties: { page: { type: 'integer' } } }] },
     expected: { ...BASE_FIELDS, page: { types: ['integer'] } },
@@ -63,6 +74,25 @@ const refFields = [
     name: 'an alias of numbers',
     schema: { type: 'object', properties: { level: { $ref: `${REF}QueryFieldLevel` } } },
     expected: { level: { types: [], literals: [1, 2, 3] } },
+  },
+  {
+    name: 'a local definition of numbers',
+    schema: { type: 'object', properties: { level: { $ref: '#/$defs/Level' } }, $defs: { Level: { enum: [1, 2, 3] } } },
+    expected: { level: { types: [], literals: [1, 2, 3] } },
+  },
+  {
+    name: 'a local definition that names another definition, in an array field',
+    schema: {
+      type: 'object',
+      properties: { levels: { type: 'array', items: { $ref: '#/$defs/Alias' } } },
+      $defs: { Alias: { $ref: '#/$defs/Level' }, Level: { enum: [1, 2, 3] } },
+    },
+    expected: { levels: { types: [], item: { types: [], literals: [1, 2, 3] } } },
+  },
+  {
+    name: 'a local definition that refers to itself, which ends without a loop',
+    schema: { type: 'object', properties: { level: { $ref: '#/$defs/Loop' } }, $defs: { Loop: { anyOf: [{ enum: [1, 2] }, { $ref: '#/$defs/Loop' }] } } },
+    expected: { level: { types: [], literals: [1, 2] } },
   },
   {
     name: 'an alias of booleans, in an array field',

@@ -37,7 +37,7 @@ export {
   validationUnavailable,
 } from './object-codec.js';
 export { withoutInstanceState } from './presence.js';
-export type { AllowGetterOptions, ObjectCodec, ObjectCodecImpl, QueryFieldShape, QueryFieldTable, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
+export type { AllowGetterOptions, ObjectCodec, ObjectCodecImpl, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
 export type { WireFormat } from './model.js';
 export { IssueRepresentation, IssueSource } from './errors.js';
 

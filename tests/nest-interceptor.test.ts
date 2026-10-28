@@ -29,21 +29,25 @@ import { LibError } from '@exprtlabs/golem/errors';
 import { decodeGeneratedModel, deserializeDate, unknownDiscriminatorValue } from '@exprtlabs/golem/conversion';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
-import { queryFieldTable } from '#golem/query-fields';
+import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
+import { nodeQueryFields } from '#golem/query-fields';
 import {
   assertModelValue,
   getObjectCodec,
   isValidModelValue,
   IssueRepresentation,
   IssueSource,
-  type QueryFieldTable,
+  type ObjectCodecImpl,
 } from '@exprtlabs/golem/serde';
+
 import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { compileSchema } from './support/compiled-validators.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { decorateQueryModel, startNestApp } from './support/nest-app.js';
 import { registerPassThroughCodec } from './support/pass-through-codec.js';
+
+type QueryFieldTable = NonNullable<ObjectCodecImpl['queryFields']>;
 
 function markerCodec(id: string) {
   return registerPassThroughCodec(id, { fromWireFormat: () => ({ converted: true }) });
@@ -55,7 +59,12 @@ async function registerValidatingCodec(id: string, descriptor: ModelTypeDescript
   assert.ok(typeof assembled === 'object');
   const schema = { $id: id, ...assembled };
   const validate = await compileSchema(schema);
-  const queryFields = queryFieldTable(assembled, () => undefined);
+  const graph = createSchemaGraph();
+  graph.intern(descriptor, id);
+  graph.seal();
+  const node = graph.nodeFor(descriptor, id);
+  assert.ok(node);
+  const queryFields = nodeQueryFields(graph, node);
   registerPassThroughCodec(id, {
     ...(queryFields ? { queryFields } : {}),
     validate: (value) => isValidModelValue(value, undefined, validate, id),

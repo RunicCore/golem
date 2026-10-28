@@ -7,13 +7,22 @@
 import type { QueryFieldShape, QueryFieldTable } from '../object-codec.js';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, VALIDATION_KEYWORD } from '../schema-keywords.js';
 import { compareText } from './generator-api.js';
+import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 
 type SchemaRecord = Readonly<Record<string, unknown>>;
 type QueryScalar = QueryFieldShape['types'][number];
 
-/** The schema a placeholder `$ref` names, by the model name it carries; undefined when the build holds none. */
+/** The wire schema of a model or alias that the build holds outside the schema being read, by the name a `$ref` carries. */
 export type QueryReferenceResolver = (name: string) => JsonSchema | undefined;
+
+/** A schema with the root that its own `#/…` references resolve against. */
+interface Scope {
+  readonly resolve: QueryReferenceResolver;
+  readonly root: unknown;
+  /** The `$ref` targets being read now, from the field down through its array items: a target met again ends the descent. */
+  readonly reading: Set<unknown>;
+}
 
 /** What a field's schema admits, reduced to what a query string can carry. */
 interface FieldShape {
@@ -34,15 +43,31 @@ function newShape(): FieldShape {
   return { types: new Set(), literals: [], references: new Set() };
 }
 
-/** The model name a placeholder `$ref` carries, without its plane. */
-function referencedName(reference: string): string | undefined {
-  if (!reference.startsWith(GENERATED_MODEL_SCHEMA_REF_PREFIX)) return undefined;
-  const name = reference.slice(GENERATED_MODEL_SCHEMA_REF_PREFIX.length);
-  const hash = name.indexOf('#');
-  return hash < 0 ? name : name.slice(0, hash);
+/**
+ * The schema a `$ref` names, with the root that its own local references resolve against: a JSON pointer into the root
+ * schema (`#/$defs/Name`), or a model by the name the reference carries (a placeholder, or an id with its plane). An
+ * unknown reference names nothing; the validator reports it.
+ */
+function resolveReference(reference: string, scope: Scope): { readonly schema: unknown; readonly scope: Scope } | undefined {
+  if (reference === '#' || reference.startsWith('#/')) {
+    let schema = scope.root;
+    if (reference !== '#') {
+      for (const segment of reference.slice(2).split('/')) {
+        const key = segment.replaceAll('~1', '/').replaceAll('~0', '~');
+        schema = typeof schema === 'object' && schema !== null && Object.hasOwn(schema, key)
+          ? (schema as Record<string, unknown>)[key]
+          : undefined;
+      }
+    }
+    return schema === undefined ? undefined : { schema, scope };
+  }
+  const bare = reference.startsWith(GENERATED_MODEL_SCHEMA_REF_PREFIX) ? reference.slice(GENERATED_MODEL_SCHEMA_REF_PREFIX.length) : reference;
+  const hash = bare.indexOf('#');
+  const schema = scope.resolve(hash < 0 ? bare : bare.slice(0, hash));
+  return schema === undefined ? undefined : { schema, scope: { ...scope, root: schema } };
 }
 
-function collectShape(schema: unknown, shape: FieldShape, resolve: QueryReferenceResolver): void {
+function collectShape(schema: unknown, shape: FieldShape, scope: Scope): void {
   if (schema === true) {
     shape.types.add('string');
     return;
@@ -55,23 +80,24 @@ function collectShape(schema: unknown, shape: FieldShape, resolve: QueryReferenc
   if (Array.isArray(record.enum)) shape.literals.push(...record.enum);
   if (types.includes('array')) {
     shape.item ??= newShape();
-    collectShape(record.items, shape.item, resolve);
+    collectShape(record.items, shape.item, scope);
   }
   for (const keyword of ['allOf', 'anyOf', 'oneOf'] as const) {
     const branches = record[keyword];
-    if (Array.isArray(branches)) for (const branch of branches) collectShape(branch, shape, resolve);
+    if (Array.isArray(branches)) for (const branch of branches) collectShape(branch, shape, scope);
   }
-  collectShape(schemaRecord(record[VALIDATION_KEYWORD])?.schema, shape, resolve);
-  const name = typeof record.$ref === 'string' ? referencedName(record.$ref) : undefined;
-  const target = name === undefined ? undefined : resolve(name);
+  collectShape(schemaRecord(record[VALIDATION_KEYWORD])?.schema, shape, scope);
+  const target = typeof record.$ref === 'string' ? resolveReference(record.$ref, scope) : undefined;
   // A target met twice, or a reference cycle, adds nothing more.
-  if (target !== undefined && !shape.references.has(target)) {
-    shape.references.add(target);
-    collectShape(target, shape, resolve);
+  if (target !== undefined && !shape.references.has(target.schema) && !scope.reading.has(target.schema)) {
+    shape.references.add(target.schema);
+    scope.reading.add(target.schema);
+    collectShape(target.schema, shape, target.scope);
+    scope.reading.delete(target.schema);
   }
 }
 
-function collectFields(schema: unknown, fields: Map<string, FieldShape>, resolve: QueryReferenceResolver, seen = new Set<unknown>()): void {
+function collectFields(schema: unknown, fields: Map<string, FieldShape>, scope: Scope, seen = new Set<unknown>()): void {
   const record = schemaRecord(schema);
   // A reference cycle, or a branch met twice, adds no field.
   if (!record || seen.has(record)) return;
@@ -84,13 +110,13 @@ function collectFields(schema: unknown, fields: Map<string, FieldShape>, resolve
         shape = newShape();
         fields.set(name, shape);
       }
-      collectShape(property, shape, resolve);
+      collectShape(property, shape, scope);
     }
   }
-  const name = typeof record.$ref === 'string' ? referencedName(record.$ref) : undefined;
-  if (name !== undefined) collectFields(resolve(name), fields, resolve, seen);
-  if (Array.isArray(record.allOf)) for (const branch of record.allOf) collectFields(branch, fields, resolve, seen);
-  collectFields(schemaRecord(record[VALIDATION_KEYWORD])?.schema, fields, resolve, seen);
+  const target = typeof record.$ref === 'string' ? resolveReference(record.$ref, scope) : undefined;
+  if (target) collectFields(target.schema, fields, target.scope, seen);
+  if (Array.isArray(record.allOf)) for (const branch of record.allOf) collectFields(branch, fields, scope, seen);
+  collectFields(schemaRecord(record[VALIDATION_KEYWORD])?.schema, fields, scope, seen);
 }
 
 /** Whether a query string (scalar) can decode to something other than itself. */
@@ -123,13 +149,38 @@ function tableShape(shape: FieldShape): QueryFieldShape {
 
 /**
  * The fields of a model's wire schema that a query string decodes, or undefined when it has none. `resolve` names the
- * schema of a model that the wire schema refers to, such as the base of a model or a named alias of literals.
+ * schema of a model that lives outside the wire schema, such as the base of a model in another file or an SDK model.
+ * A reference into the wire schema itself (`#/$defs/Name`) resolves against it.
  */
 export function queryFieldTable(wireSchema: JsonSchema, resolve: QueryReferenceResolver): QueryFieldTable | undefined {
   const fields = new Map<string, FieldShape>();
-  collectFields(wireSchema, fields, resolve);
+  collectFields(wireSchema, fields, { resolve, root: wireSchema, reading: new Set() });
   const decoded = [...fields].filter(([, shape]) => decodesField(shape));
   return decoded.length === 0
     ? undefined
     : Object.fromEntries(decoded.sort(([left], [right]) => compareText(left, right)).map(([name, shape]) => [name, tableShape(shape)]));
+}
+
+const graphSchemas = new WeakMap<SchemaGraph, ReadonlyMap<string, JsonSchema>>();
+
+/** The wire schema of each node of the graph, by its name, its codec id and the short name of its id. */
+function wireSchemasOf(graph: SchemaGraph): ReadonlyMap<string, JsonSchema> {
+  let schemas = graphSchemas.get(graph);
+  if (schemas === undefined) {
+    const found = new Map<string, JsonSchema>();
+    for (const node of graph.nodes.values()) {
+      for (const name of [node.name, node.codecId, codecShortName(node.codecId)]) if (!found.has(name)) found.set(name, node.jsonSchema);
+    }
+    graphSchemas.set(graph, schemas = found);
+  }
+  return schemas;
+}
+
+/**
+ * The query fields of a node: its wire schema read with the other nodes of the graph, and then `external` (an SDK model
+ * that the graph does not hold), as the models a `$ref` names.
+ */
+export function nodeQueryFields(graph: SchemaGraph, node: SchemaNode, external?: QueryReferenceResolver): QueryFieldTable | undefined {
+  const schemas = wireSchemasOf(graph);
+  return queryFieldTable(node.jsonSchema, (name) => schemas.get(name) ?? external?.(name));
 }
