@@ -327,6 +327,34 @@ function checkServers(document: unknown, operations: readonly OperationEntry[], 
   return problems;
 }
 
+/**
+ * Every name in a document-level or operation-level `security` list must be a scheme in `components.securitySchemes`;
+ * an undeclared name would leave the generated client without the credentials the operation asks for. A name written as
+ * a URI reference (OpenAPI 3.1.1) cannot be looked up in components, so it is not checked.
+ */
+function checkSecurityRequirements(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
+  const problems: OpenApiProblem[] = [];
+  const schemes = asRecord(asRecord(asRecord(document).components).securitySchemes);
+  const checked = new Set<string>();
+  const checkList = (list: unknown, listPointer: string): void => {
+    if (!Array.isArray(list) || checked.has(listPointer)) return;
+    checked.add(listPointer);
+    list.forEach((requirement, index) => {
+      for (const name of Object.keys(asRecord(requirement))) {
+        if (Object.hasOwn(schemes, name) || /[:/#]/.test(name)) continue;
+        problems.push({
+          ruleId: 'operation-security-defined',
+          message: `security requirement names ${JSON.stringify(name)}, which is not declared in components.securitySchemes`,
+          pointer: pointerJoin(`${listPointer}/${index}`, name),
+        });
+      }
+    });
+  };
+  checkList(asRecord(document).security, '/security');
+  for (const entry of operations) checkList(entry.operation.security, `${entry.pointer}/security`);
+  return problems;
+}
+
 function checkQuerystring(document: unknown, operations: readonly OperationEntry[]): OpenApiProblem[] {
   const problems: OpenApiProblem[] = [];
   for (const entry of operations) {
@@ -470,6 +498,7 @@ export function checkOpenApiRules(document: unknown): OpenApiProblem[] {
     ...checkPathTemplates(document, operations),
     ...checkTags(document, line),
     ...checkServers(document, operations, line),
+    ...checkSecurityRequirements(document, operations),
     ...(line === '3.2' ? [...checkQuerystring(document, operations), ...checkDiscriminatorDefaults(document)] : []),
   ];
 }
