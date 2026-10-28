@@ -65,6 +65,7 @@ function serializedContentParameter(
 function routeExpression(operation: NormalizedOperation, use: (name: ClientFunction) => Code): { declarations: Code; expression: Code } {
   const parameters = new Map(operation.parameters.filter((item) => item.in === 'path').map(item => [item.name, item]));
   const variables = new Map<string, Code>();
+  const wholeSegments = new Set(operation.route.split('/').flatMap((segment) => /^\{[^{}]+\}$/.test(segment) ? [segment.slice(1, -1)] : []));
   const declarations: Code[] = [];
   const parts: Code[] = [];
   let offset = 0;
@@ -84,7 +85,9 @@ function routeExpression(operation: NormalizedOperation, use: (name: ClientFunct
     }
     const style = parameter.style || 'simple';
     const explode = parameter.explode === undefined ? false : parameter.explode;
-    declarations.push(code`    const ${variable} = ${use('serializePath')}(runtime, ${literal(parameter.name)}, input.path[${literal(parameter.name)}], ${literal(style)}, ${literal(explode)});`);
+    // Only a parameter that stands alone between slashes can form a dot-segment; the call states the other case.
+    const inSegment = wholeSegments.has(parameter.name) ? BLANK : code`, false`;
+    declarations.push(code`    const ${variable} = ${use('serializePath')}(runtime, ${literal(parameter.name)}, input.path[${literal(parameter.name)}], ${literal(style)}, ${literal(explode)}${inSegment});`);
   }
   parts.push(literal(operation.route.slice(offset)));
   return { declarations: join(declarations, code`\n`), expression: join(parts, code` + `) };

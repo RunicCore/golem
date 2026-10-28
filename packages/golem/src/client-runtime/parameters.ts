@@ -130,11 +130,13 @@ export function serializePath(
   value: unknown,
   style: string,
   explode: boolean,
+  /** The route writes the parameter as a whole path segment (`/{id}`); inside a longer segment (`/{id}.json`) no text is a dot-segment. */
+  wholeSegment = true,
 ): string {
   const text = pathText(name, value, style, explode);
   // A client or server that resolves dot-segments (RFC 3986 section 5.2.4) turns ".." into the parent
   // and "." or an empty segment into the list route.
-  if (text === '' || text === '.' || text === '..') {
+  if (wholeSegment && (text === '' || text === '.' || text === '..')) {
     throw new TypeError(`Parameter "${name}" is written as "${text}", which is a dot-segment or an empty path segment`);
   }
   return text;

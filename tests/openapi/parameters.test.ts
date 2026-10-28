@@ -89,6 +89,39 @@ test('operation parameters override path parameters by (in, name) and repeated p
   );
 });
 
+test('a path value that forms a whole segment may not be a dot-segment, and one inside a segment may be', async t => {
+  // protects: R-57 review finding 4 - the dot-segment check refused the legal "." of an empty label value in "/files{ext}" and ".." inside "/{id}.json"
+  const directory = createFixtureProject(t, 'golem-openapi-dot-segment-');
+  const output = path.join(directory, 'sdk');
+  const parameter = (style?: string) => [{ name: 'id', in: 'path', required: true, ...(style ? { style } : {}), schema: { type: 'string' } }];
+  const operation = (operationId: string, style?: string) => ({ get: { operationId, parameters: parameter(style), responses: { 204: { description: 'ok' } } } });
+  await generateMaterializedSdk(documentBase('3.1.0', {
+    paths: {
+      '/whole/{id}': operation('whole'),
+      '/label{id}': operation('label', 'label'),
+      '/named/{id}.json': operation('named'),
+      '/v{id}': operation('versioned'),
+    },
+  }), { output, name: 'DotSegments', profile: { mobx: false, validation: false } });
+  compileGeneratedSdk(output);
+  const module = requireRecord(await import(pathToFileURL(path.join(output, 'dist/client.js')).href), 'dot segment client');
+  const Client = module.DotSegmentsClient;
+  if (!isGeneratedClientClass(Client)) throw new TypeError('DotSegmentsClient');
+  let url: string | undefined;
+  const client = new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async (input: string | URL | Request) => { url = captureRequest(input, undefined).url; return new Response(null, { status: 204 }); },
+  });
+  await assert.rejects(async () => client.whole().execute({ path: { id: '..' } }), TypeError);
+  await assert.rejects(async () => client.whole().execute({ path: { id: '' } }), TypeError);
+  await client.label().execute({ path: { id: '' } });
+  assert.equal(url, 'https://api.example/label.');
+  await client.named().execute({ path: { id: '..' } });
+  assert.equal(url, 'https://api.example/named/...json');
+  await client.versioned().execute({ path: { id: '' } });
+  assert.equal(url, 'https://api.example/v');
+});
+
 test('generated content parameters validate before execute', async t => {
   const directory = createFixtureProject(t, 'golem-openapi-content-parameters-');
   const output = path.join(directory, 'sdk');
