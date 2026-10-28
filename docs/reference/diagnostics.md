@@ -667,6 +667,7 @@ The type can be:
 - A union with a member that is no model.
 - A union of models with no `Discriminator` tag. The message names the tag to add.
 - A union of models in which a member has no required literal property with the declared key, or two members share a value of it.
+- A union whose tag is written through an alias of the tag or a generic wrapper, such as `(TCat | TDog) & Kind` or `Tagged<TCat | TDog>`. Golem reads the tag where it is written on the union, or on an alias of the whole tagged union.
 - A union of models with a default variant, such as `Discriminator<'kind', TDefault>`. `NestModelInterceptor` picks no default.
 - An array of a union of models, or a union in a one-field parameter such as `@Body('shape')`. Golem converts a union of models as a whole parameter only.
 
