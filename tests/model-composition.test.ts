@@ -160,6 +160,29 @@ export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { k
   }
 });
 
+test('an SDK model beside objects whose literal tags overlap stops generation with RUNM1030', async t => {
+  // protects: bug-sweep RUNM1030 still rejects a tag value that two objects beside an SDK model share
+  const { root, sourceRoot } = fixture(t);
+  fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
+  writeGeneratedArtifacts((await generateOpenApi({
+    input: path.join(sourceRoot, 'money.yaml'),
+    output: path.join(sourceRoot, 'sdk'),
+    name: 'Payments',
+    profile: { mobx: false, validation: true },
+  })).artifacts);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Money } from './sdk/index.js';
+export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { kind: 'b' } }>;
+`,
+  });
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    /item\.model\.ts:\d+:\d+ RUNM1030: Generated model union in TItem has an ambiguous object alternative\. Add a required literal discriminator\./,
+  );
+  assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
+});
+
 test('an IModel over an SDK model keeps a field spelled like a brand key and drops the real brand keys', async t => {
   // protects: F-213 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
   const { root, sourceRoot } = fixture(t);
