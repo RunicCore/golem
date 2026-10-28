@@ -445,6 +445,46 @@ export type TItem = IModel<{ tagged: (TEmail | TPhone | Date) & ${TAG}; untagged
   });
 }
 
+test('the shared selector variable survives a tagged union nested in a branch and a serde that encodes the same union during dispatch', async (t) => {
+  // protects: T-617 re-entrancy - the writers of a file share one index variable, so a union that runs inside a branch arm must not change the choice of the outer one
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-reentry-', name: 'declared-reentry', linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, {
+    'wrap.ts': `import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+export class Wrap {
+  constructor(readonly inner: object) {}
+  show(): string { return 'wrap'; }
+}
+export function encodeWrap(value: Wrap): string { return JSON.stringify(encodeGeneratedModel(value.inner)); }
+export function decodeWrap(value: string): Wrap { return new Wrap(JSON.parse(value) as object); }
+`,
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import { Wrap, encodeWrap, decodeWrap } from './wrap.js';
+type Wrapped = Wrap & TSerde<typeof encodeWrap, typeof decodeWrap>;
+export type TLeaf = IModel<{ kind: 'leaf' }>;
+export type TTwig = IModel<{ kind: 'twig' }>;
+export type TAlpha = IModel<{ kind: 'a'; parts: ((TLeaf | TTwig) & ${TAG})[]; wrapped: Wrapped }>;
+export type TBeta = IModel<{ kind: 'b' }>;
+export type TRoot = IModel<{ value: (TAlpha | TBeta) & ${TAG} }>;
+export type TInner = IModel<{ value: (TAlpha | TBeta) & ${TAG} }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const load = async (name: string) => requireRecord(await import(pathToFileURL(path.join(root, name)).href), name);
+  const bases = await load('build/item.model.generated.js');
+  const make = (name: string, values: object): object => Object.assign(new (bases[name] as new () => object)(), values);
+  const Wrap = (await load('build/wrap.js')).Wrap as new (inner: object) => object;
+  const inner = make('TInnerBaseModel', { value: make('TBetaBaseModel', {}) });
+  const alpha = make('TAlphaBaseModel', { parts: [make('TLeafBaseModel', {}), make('TTwigBaseModel', {})], wrapped: new Wrap(inner) });
+  const item = make('TRootBaseModel', { value: alpha });
+  const wire = { value: { kind: 'a', parts: [{ kind: 'leaf' }, { kind: 'twig' }], wrapped: '{"value":{"kind":"b"}}' } };
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TRoot'));
+  assert.deepEqual(encodeGeneratedModel(item), wire);
+  assert.equal(codec.stringify(item), JSON.stringify(wire));
+  assert.deepEqual(codec.toWireFormat(item), wire);
+});
+
 test('a validating companion writes the tag of a tag-less instance once when validation is turned off for the call', async (t) => {
   // protects: T-605 the strict Core writes its literal tag itself, so the class branch must not inject it a second time
   const { codec, itemOf } = await buildEmailItem(t, 'declared-strict', true, `(TEmail | TPhone) & ${TAG}`);
