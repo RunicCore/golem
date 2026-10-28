@@ -22,11 +22,15 @@ export type TShape = (TCircle | TRect) & Discriminator<'kind'>;
 const CONTROLLER = `import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import type { Discriminator } from '@exprtlabs/golem/tags';
 import type { TById, TByName, TCircle, TRect, TShape } from './shapes.model.js';
+type Tagged<U> = U & Discriminator<'kind'>;
+type TaggedBy<U> = U & Discriminator<'by'>;
 @Controller('shapes')
 export class ShapesController {
   @Post() draw(@Body() shape: (TCircle | TRect) & Discriminator<'kind'>) { return { received: shape }; }
   @Post('named') drawNamed(@Body() shape: TShape) { return { received: shape }; }
   @Get() find(@Query() search: (TByName | TById) & Discriminator<'by'>) { return { received: search }; }
+  @Post('wrapped') drawWrapped(@Body() shape: Tagged<TCircle | TRect>) { return { received: shape }; }
+  @Get('wrapped') findWrapped(@Query() search: TaggedBy<TByName | TById>) { return { received: search }; }
 }
 `;
 
@@ -43,6 +47,7 @@ function project(t: Parameters<typeof createControllerFixture>[0], openapiVersio
 
 test('NestModelInterceptor converts each variant of a tagged object union in a whole @Body() and @Query() and answers 400 for an unknown tag', async (t) => {
   // protects: T-390 E-50 a tagged object union parameter gets a codec the interceptor binds, so each variant converts
+  // protects: T-619 the generic wrapper Tagged<A | B> on @Body() and @Query() binds like the written form
   const root = project(t);
   const built = await command(root, process.execPath, [golem, 'build', '--config', path.join(root, 'golem.yaml')]);
   assert.equal(built.code, 0, built.stdout + built.stderr);
@@ -55,7 +60,7 @@ test('NestModelInterceptor converts each variant of a tagged object union in a w
       const response = await fetch(`${url}/shapes${route}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       return { status: response.status, body: await response.json() as { received?: unknown; issues?: { path: unknown[] }[] } };
     };
-    for (const route of ['', '/named']) {
+    for (const route of ['', '/named', '/wrapped']) {
       assert.deepEqual(await post(route, { kind: 'circle', radius: 2 }), { status: 201, body: { received: { kind: 'circle', radius: 2 } } }, route);
       assert.deepEqual(await post(route, { kind: 'rect', width: 3, height: 4 }), { status: 201, body: { received: { kind: 'rect', width: 3, height: 4 } } }, route);
     }
@@ -64,6 +69,7 @@ test('NestModelInterceptor converts each variant of a tagged object union in a w
     assert.deepEqual(wrongField.body.issues!.map(issue => issue.path), [['height']]);
     assert.equal((await post('', { kind: 'triangle', width: 3 })).status, 400);
     assert.equal((await post('', { radius: 2 })).status, 400);
+    assert.equal((await post('/wrapped', { kind: 'triangle', width: 3 })).status, 400);
     // Input the model cannot be picked from is a 400 with the issues of the input, never a 500: a request can send any JSON.
     const faults: readonly (readonly [string, string | undefined])[] = [
       ['no body', undefined],
@@ -80,14 +86,17 @@ test('NestModelInterceptor converts each variant of a tagged object union in a w
       if (name === 'an array body' || name.includes('tag')) assert.ok(((await response.json()) as { issues?: unknown[] }).issues?.length, `${name} reports its issues`);
     }
 
-    const get = async (query: string) => {
-      const response = await fetch(`${url}/shapes?${query}`);
+    const get = async (query: string, route = '') => {
+      const response = await fetch(`${url}/shapes${route}?${query}`);
       return { status: response.status, body: await response.json() as { received?: unknown } };
     };
     assert.deepEqual(await get('by=name&name=7&limit=3'), { status: 200, body: { received: { by: 'name', name: '7', limit: 3 } } });
     assert.deepEqual(await get('by=id&id=7'), { status: 200, body: { received: { by: 'id', id: 7 } } });
     assert.equal((await get('by=id&id=x')).status, 400);
     assert.equal((await get('by=other')).status, 400);
+    assert.deepEqual(await get('by=id&id=7', '/wrapped'), { status: 200, body: { received: { by: 'id', id: 7 } } });
+    assert.deepEqual(await get('by=name&name=7&limit=3', '/wrapped'), { status: 200, body: { received: { by: 'name', name: '7', limit: 3 } } });
+    assert.equal((await get('by=other', '/wrapped')).status, 400);
   } finally {
     await application.close();
   }
@@ -110,6 +119,11 @@ test('the controllers job documents a union of models as oneOf with a discrimina
     discriminator: { propertyName: 'by', mapping: { id: '#/components/schemas/TById', name: '#/components/schemas/TByName' } },
     oneOf: [{ $ref: '#/components/schemas/TById' }, { $ref: '#/components/schemas/TByName' }],
   });
+  // protects: T-619 the generic wrapper documents the same discriminator and variants as the written form
+  const bodyOf = (route: string) => document.paths[route]!.post!.requestBody!.content['application/json']!.schema;
+  const queryOf = (route: string) => document.paths[route]!.get!.parameters![0]!.content['application/x-www-form-urlencoded']!.schema;
+  assert.deepEqual(bodyOf('/shapes/wrapped'), bodyOf('/shapes'));
+  assert.deepEqual(queryOf('/shapes/wrapped'), queryOf('/shapes'));
   const registry = fs.readFileSync(path.join(root, 'src/generated/operation-codecs.ts'), 'utf8');
   assert.match(registry, /"ShapesController\.draw": \{\s*"input": \[\s*"TCircle_[0-9a-f]{8}",\s*"TRect_[0-9a-f]{8}"\s*\]/);
   assert.match(registry, /"ShapesController\.find": \{\s*"query": \[\s*"TByName_[0-9a-f]{8}",\s*"TById_[0-9a-f]{8}"\s*\]/);

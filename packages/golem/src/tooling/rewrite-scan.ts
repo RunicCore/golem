@@ -655,8 +655,8 @@ function nestUnionBinding(
 }
 
 /**
- * The fault of a union whose `Discriminator` tag is written through a type of its own: an alias of the tag (`(A | B) & Kind`) or a
- * generic wrapper (`Tagged<A | B>`). The binding reads the tag only where it is written on the union or on an alias of the whole union.
+ * The fault of a union whose `Discriminator` tag is written through an alias of the tag (`(A | B) & Kind`). The binding reads the tag where
+ * it is written on the union, on an alias of the whole union or on a generic wrapper of it (`Tagged<A | B>`).
  */
 function tagThroughAliasFault(checker: ts.TypeChecker, model: ts.TypeNode): readonly [reason: string, advice: string] | undefined {
   let node = model;
@@ -668,12 +668,6 @@ function tagThroughAliasFault(checker: ts.TypeChecker, model: ts.TypeNode): read
   if (ts.isIntersectionTypeNode(node) && node.types.some((part) => authoredUnionMembers(checker, part))) {
     const through = node.types.find((part) => !isDiscriminatorTag(checker, part) && aliasOf(part)?.type !== undefined && isDiscriminatorTag(checker, aliasOf(part)!.type));
     if (through) return [`is a union whose Discriminator tag is written through the alias ${through.getText()}, which golem does not read`, fix];
-  }
-  if (ts.isTypeReferenceNode(node) && node.typeArguments?.some((argument) => authoredUnionMembers(checker, argument))) {
-    const declared = aliasOf(node)?.type;
-    if (declared && ts.isIntersectionTypeNode(declared) && declared.types.some((part) => isDiscriminatorTag(checker, part))) {
-      return [`is a union whose Discriminator tag is written through the generic type ${node.typeName.getText()}, which golem does not read`, fix];
-    }
   }
   return undefined;
 }
