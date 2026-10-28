@@ -28,15 +28,23 @@ const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
   // An own key that the value's own model does not declare is program state, never an unknown key (see `instanceFieldsCode`).
   instanceFields: localHelper('instanceFields', 4, () => instanceFieldsCode()),
   isInstanceState: localHelper('isInstanceState', 5, self => code`function ${self}(value, key) { const fields = ${localName('instanceFields')}(value); return fields !== undefined && !fields.includes(key); }`),
-  // The quotient of two doubles is off by rounding (0.3 / 0.1), so a quotient within a few ulps of a non-zero
-  // whole number counts. An infinite quotient falls back to the exact remainder.
+  // A number is judged by the decimal digits JSON writes for it (its shortest text), so 0.3 is a multiple of 0.1 although
+  // 0.3 / 0.1 is off by rounding, and 3.000000000000001 is not a multiple of 1. A whole divisor needs a whole value and an
+  // exact remainder. Any other divisor compares both numbers as integers scaled by the smaller decimal exponent.
   isMultipleOf: localHelper('isMultipleOf', 6, self => join([
     code`function ${self}(value, divisor) {`,
-    code`  const quotient = value / divisor;`,
-    code`  if (!Number.isFinite(quotient)) return value % divisor === 0;`,
-    code`  if (Number.isInteger(quotient)) return true;`,
-    code`  const nearest = Math.round(quotient);`,
-    code`  return nearest !== 0 && Math.abs(quotient - nearest) <= 4 * Number.EPSILON * Math.abs(nearest);`,
+    code`  if (Number.isInteger(divisor)) return Number.isInteger(value) && value % divisor === 0;`,
+    code`  if (!Number.isFinite(value)) return false;`,
+    code`  const split = number => {`,
+    code`    const match = /^-?([0-9]+)(?:[.]([0-9]+))?(?:e([+-][0-9]+))?$/.exec(String(number));`,
+    code`    const fraction = match[2] || '';`,
+    code`    return [BigInt(match[1] + fraction), Number(match[3] || 0) - fraction.length];`,
+    code`  };`,
+    code`  const [valueDigits, valueExponent] = split(value);`,
+    code`  const [divisorDigits, divisorExponent] = split(divisor);`,
+    code`  const exponent = Math.min(valueExponent, divisorExponent);`,
+    code`  const scale = shift => BigInt(10) ** BigInt(shift - exponent);`,
+    code`  return (valueDigits * scale(valueExponent)) % (divisorDigits * scale(divisorExponent)) === BigInt(0);`,
     code`}`,
   ], NEWLINE)),
   // The registered model class a value is an instance of, as `golemModelInstance` reads it. The symbol key is

@@ -11,7 +11,7 @@ import {
   toIssue,
   type Issue,
 } from './errors.js';
-import { readRootFields } from './conversion.js';
+import { nestingDepthError, readRootFields, resolveMaxDepth, textNestsDeeperThan, valueNestsDeeperThan } from './conversion.js';
 import { withoutInstanceState } from './presence.js';
 import type { SchemaIssue } from './issue-messages.js';
 import type { ModelValidationContext, WireFormat } from './model.js';
@@ -27,7 +27,15 @@ export function untransformedCallError(name: string): LibError {
   );
 }
 
-export interface ValidateOptions {
+/**
+ * The nesting bound of a call on a recursive model: how many levels of objects and arrays its input may nest, 512
+ * by default. `Infinity` turns the bound off. A model that reaches no recursive model has no bound.
+ */
+export interface MaxDepthOptions {
+  readonly maxDepth?: number;
+}
+
+export interface ValidateOptions extends MaxDepthOptions {
   readonly failFast?: boolean;
   readonly validationContext?: ModelValidationContext;
 }
@@ -41,7 +49,7 @@ export interface AllowGetterOptions {
   readonly allowGetter?: boolean;
 }
 
-export interface SerdeOptions {
+export interface SerdeOptions extends MaxDepthOptions {
   readonly validate?: boolean;
   readonly failFast?: boolean;
   readonly validationContext?: ModelValidationContext;
@@ -83,6 +91,8 @@ export interface ObjectCodecImpl<T = unknown> {
   readonly wireOnlySchema?: object;
   /** The declared field names of a root object; `allowGetter` reads these. Another root has none, and the option has no effect. */
   readonly fields?: readonly string[];
+  /** Set when the model reaches a recursive model: its input is bounded by `maxDepth` before it is converted or checked. */
+  readonly recursive?: true;
   /** Schemas from a generated closed validator plan already have resolved refs. */
   readonly schemaRefsResolved?: true;
   readonly issueSource?: IssueSource;
@@ -396,14 +406,32 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
     ...(impl.wireOnlySchema ? { wireOnlySchema: lazySchemaPlane(impl.wireOnlySchema, 'wire-only', resolved) } : {}),
   };
   const fields = impl.fields;
+  const bounded = impl.recursive === true;
+  // Input to a recursive model is walked once, without recursion, before the generated code recurses over it. The walk
+  // reads the text of `parse` without parsing it. `validate` answers false for input it will not walk.
+  const rejectDeepText = (text: string, options: MaxDepthOptions | undefined): void => {
+    const limit = resolveMaxDepth(options?.maxDepth);
+    if (typeof text === 'string' && textNestsDeeperThan(text, limit)) throw nestingDepthError(limit);
+  };
+  const rejectDeepValue = (value: unknown, options: MaxDepthOptions | undefined): void => {
+    const limit = resolveMaxDepth(options?.maxDepth);
+    if (valueNestsDeeperThan(value, limit)) throw nestingDepthError(limit);
+  };
   // Without `allowGetter` the value is the root as it is: the check is written in each call, so no function call and no copy.
   const codec: ObjectCodec<T> = {
     id,
     issueSource: impl.issueSource,
     stringify: (value, options) => impl.stringify(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) as typeof value : value, options),
-    parse: (text, options) => impl.parse(text, options),
-    validate: (value, options): value is T => impl.validate(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) : value, options),
+    parse: (text, options) => {
+      if (bounded) rejectDeepText(text, options);
+      return impl.parse(text, options);
+    },
+    validate: (value, options): value is T => {
+      if (bounded && valueNestsDeeperThan(value, resolveMaxDepth(options?.maxDepth))) return false;
+      return impl.validate(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) : value, options);
+    },
     assert: (value, options) => {
+      if (bounded) rejectDeepValue(value, options);
       if (options?.allowGetter !== true || fields === undefined) return impl.assert(value, options);
       const checked = readRootFields(value, fields);
       const result = impl.assert(checked, options);
@@ -411,7 +439,10 @@ export function createObjectCodec<T>(id: string, impl: ObjectCodecImpl<T>): Obje
     },
     // The generated implementation returns the emitted JSON type, which WireFormat mirrors.
     toWireFormat: <Value extends T>(value: Value, options?: SerdeOptions & AllowGetterOptions) => impl.toWireFormat(options?.allowGetter === true && fields !== undefined ? readRootFields(value, fields) as Value : value, options) as WireFormat<Value>,
-    fromWireFormat: (wire, options) => impl.fromWireFormat(wire, options),
+    fromWireFormat: (wire, options) => {
+      if (bounded) rejectDeepValue(wire, options);
+      return impl.fromWireFormat(wire, options);
+    },
   };
   Object.defineProperties(codec, Object.fromEntries(Object.entries(planes).map(([name, read]) => [
     name,

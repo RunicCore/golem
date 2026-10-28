@@ -35,6 +35,16 @@ test('type accepts one name or a list and reports the expected names', async () 
   await assertIssues({ type: 'object' }, null, [{ path: [], code: 'type', expected: ['object'] }]);
 });
 
+test('type integer rejects a value beyond the safe integer range, which a JSON number has already rounded', async () => {
+  // protects: QA an integer beyond Number.MAX_SAFE_INTEGER passed as itself after rounding (decision with int64)
+  const miss = [{ path: [], code: 'type', expected: ['integer'] }];
+  await assertIssues({ type: 'integer' }, 9007199254740991, []);
+  await assertIssues({ type: 'integer' }, -9007199254740991, []);
+  await assertIssues({ type: 'integer' }, 9007199254740992, miss);
+  await assertIssues({ type: 'integer' }, -9007199254740993, miss);
+  await assertIssues({ type: 'number' }, 9007199254740993, []);
+});
+
 test('type integer rejects 1.5 and accepts 1.0', async () => {
   await assertIssues({ type: 'integer' }, 1.5, [{ path: [], code: 'type', expected: ['integer'] }]);
   await assertIssues({ type: 'integer' }, 1.0, []);
@@ -252,7 +262,7 @@ test('a discriminator follows $ref branches, in $defs or another resource, and a
       pet: {
         $defs: {
           cat: { properties: { kind: { const: 'cat' }, lives: { type: 'integer' } }, required: ['kind'] },
-          dog: { allOf: [{ $ref: 'TDogBase' }, { properties: { kind: { enum: ['dog', 'hound'] } } }] },
+          dog: { allOf: [{ $ref: 'TDogBase' }, { properties: { kind: { enum: ['dog', 'hound'] } }, required: ['kind'] }] },
         },
         oneOf: [{ $ref: '#/$defs/cat' }, { $ref: '#/$defs/dog' }, { $ref: 'TBird' }],
         discriminator: { propertyName: 'kind' },
@@ -260,7 +270,7 @@ test('a discriminator follows $ref branches, in $defs or another resource, and a
     },
     resources: {
       TDogBase: { properties: { barks: { type: 'boolean' } } },
-      TBird: { $ref: '#/$defs/bird', $defs: { bird: { properties: { kind: { const: 'bird' }, wings: { type: 'integer' } } } } },
+      TBird: { $ref: '#/$defs/bird', $defs: { bird: { properties: { kind: { const: 'bird' }, wings: { type: 'integer' } }, required: ['kind'] } } },
     },
   });
   assert.deepEqual(validators.pet({ kind: 'cat', lives: 'nine' }, true), [{ path: ['lives'], code: 'type', expected: ['integer'] }]);
@@ -273,8 +283,8 @@ test('a discriminator follows $ref branches, in $defs or another resource, and a
 test('a discriminator over two $ref branches reports only the selected branch', async () => {
   const schema = {
     $defs: {
-      a: { properties: { kind: { const: 'a' }, x: { type: 'integer' } } },
-      b: { properties: { kind: { const: 'b' }, y: { type: 'string' } } },
+      a: { properties: { kind: { const: 'a' }, x: { type: 'integer' } }, required: ['kind'] },
+      b: { properties: { kind: { const: 'b' }, y: { type: 'string' } }, required: ['kind'] },
     },
     oneOf: [{ $ref: '#/$defs/a' }, { $ref: '#/$defs/b' }],
     discriminator: { propertyName: 'kind' },
@@ -289,6 +299,21 @@ test('a discriminator is an annotation unless every branch states its own tag va
   await assertIssues(annotated, true, [{ path: [], code: 'union', matched: 0 }]);
   const shared = { oneOf: [{ properties: { kind: { const: 'a' } } }, { properties: { kind: { const: 'a' } } }], discriminator: { propertyName: 'kind' } };
   await assertIssues(shared, { kind: 'a' }, [{ path: [], code: 'union', matched: 2 }]);
+});
+
+test('a discriminator is an annotation when a branch leaves its tag optional, so {} matches the one branch that allows it', async () => {
+  // protects: QA a discriminated oneOf with an optional tag rejected {} although exactly branch A matches
+  const schema = {
+    oneOf: [
+      { properties: { kind: { const: 'a' } } },
+      { properties: { kind: { const: 'b' } }, required: ['kind'] },
+    ],
+    discriminator: { propertyName: 'kind' },
+  };
+  await assertIssues(schema, {}, []);
+  await assertIssues(schema, { kind: 'a' }, []);
+  await assertIssues(schema, { kind: 'b' }, []);
+  await assertIssues(schema, { kind: 'z' }, [{ path: [], code: 'union', matched: 0 }]);
 });
 
 test('minLength and maxLength count code points', async () => {
@@ -326,6 +351,30 @@ test('format reports a known format that does not match', async () => {
   await assertIssues({ format: 'ipv4' }, '10.0.0.1', []);
   await assertIssues({ format: 'int32' }, 2 ** 31, [{ path: [], code: 'format', format: 'int32' }]);
   await assertIssues({ format: 'ipv4' }, 7, []);
+});
+
+test('multipleOf with a whole-number divisor rejects every non-whole value, also at large magnitudes', async () => {
+  // protects: QA number & MultipleOf<1> accepted 1000000000000000.5 and 3.000000000000001
+  const miss = [{ path: [], code: 'multipleOf', divisor: 1 }];
+  await assertIssues({ multipleOf: 1 }, 1000000000000000.5, miss);
+  await assertIssues({ multipleOf: 1 }, 3.000000000000001, miss);
+  await assertIssues({ multipleOf: 1 }, 0.5, miss);
+  await assertIssues({ multipleOf: 1 }, 3, []);
+  await assertIssues({ multipleOf: 1 }, -1000000000000000, []);
+  await assertIssues({ multipleOf: 3 }, 9007199254740990, []);
+});
+
+test('multipleOf with a decimal divisor compares decimal digits: 1.1 and 0.3 are multiples of 0.1, a near miss is not', async () => {
+  // protects: QA multipleOf keeps decimal-rounding cases (0.3, 1.1 for 0.1) while whole-number misses fail
+  const miss = (divisor: number) => [{ path: [], code: 'multipleOf', divisor }];
+  await assertIssues({ multipleOf: 0.1 }, 1.1, []);
+  await assertIssues({ multipleOf: 0.1 }, 0.3, []);
+  await assertIssues({ multipleOf: 0.1 }, 0.7, []);
+  await assertIssues({ multipleOf: 0.01 }, 19.99, []);
+  await assertIssues({ multipleOf: 1.5 }, 4.5, []);
+  await assertIssues({ multipleOf: 0.1 }, 0.30000000000000004, miss(0.1));
+  await assertIssues({ multipleOf: 0.1 }, 3.000000000000001, miss(0.1));
+  await assertIssues({ multipleOf: 0.5 }, 1e-7, miss(0.5));
 });
 
 test('multipleOf tolerates binary rounding: 0.3 is a multiple of 0.1', async () => {
