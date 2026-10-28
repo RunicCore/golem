@@ -382,3 +382,15 @@ ${ROUTE('TOrder', 'TOrder')}`;
   assert.deepEqual(Object.keys(schemas[first!.split('/').pop()!]!.properties!), ['id']);
   assert.deepEqual(Object.keys(schemas[second!.split('/').pop()!]!.properties!), ['total']);
 });
+
+test('projections whose keys read alike after PascalCase get two names, in source order', async t => {
+  // protects: bug sweep 3 Pick<TUser, 'first-name'> and Pick<TUser, 'firstName'> both named TUserPickFirstName and stopped with RUNM1059
+  const source = `${PRELUDE}
+export type TUser = IModel<{ 'first-name': string; firstName: string }>;
+export type TOrder = IModel<{ a: Pick<TUser, 'first-name'>; b: Pick<TUser, 'firstName'> }>;
+${ROUTE('TOrder', 'TOrder')}`;
+  const { components: { schemas } } = await documentOf(t, source);
+  assert.deepEqual(Object.keys(schemas).filter(name => name.startsWith('TUserPick')).sort(), ['TUserPickFirstName', 'TUserPickFirstName2']);
+  assert.equal(schemas.TOrder?.properties?.a?.$ref, '#/components/schemas/TUserPickFirstName');
+  assert.equal(schemas.TOrder?.properties?.b?.$ref, '#/components/schemas/TUserPickFirstName2');
+});

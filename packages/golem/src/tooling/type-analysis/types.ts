@@ -3,7 +3,7 @@ import { fieldProvenance, isPropertyMapping, isReadonlySequenceType, readonlyPro
 import * as ts from '../typescript-ns.js';
 import { assertNoSymbolKey, declaredModelAlias, isDefaultLibraryProperty, isSymbolKeyedProperty, diagnostic, foreignModelReason, isGeneratedBrandKey, modelSpecificationForClass, propertyType, resolveSymbol } from './symbols.js';
 import { projectionIdentity } from './graph.js';
-import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, safeNameHint, unionVariantNaming } from './projection-names.js';
+import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { compareText, displayPath } from '../generator-api.js';
@@ -1103,7 +1103,17 @@ export function descriptorBuilder(
         if (recursive) cycleStems.set(type, stem);
       }
       const suffix = policySuffix({ exact: context.exact, allowAny: context.allowAny ?? allowAny, representation });
-      const candidate = recursive ? claimHeadName(type, stem, suffix) : `${stem}${suffix}`;
+      // A projection whose keys read like the keys of the plain name's holder (`first-name` and `firstName`) takes the first free number.
+      const readsAlike = (name: string): boolean => {
+        const holder = projectionOwners.get(name);
+        return holder !== undefined && holder !== type && keysReadAlike(checker, holder, type, context.declaration);
+      };
+      let candidate = recursive ? claimHeadName(type, stem, suffix) : `${stem}${suffix}`;
+      if (!recursive && readsAlike(candidate)) {
+        let number = 2;
+        while (readsAlike(`${stem}${number}${suffix}`)) number += 1;
+        candidate = `${stem}${number}${suffix}`;
+      }
       if (!isProjectionName(candidate)) throw new Error(`Internal error: projection name "${candidate}" is not a plain identifier.`);
       const here = sourceLocation(nameAt ?? context.declaration);
       const modelLocation = modelLocations.get(candidate);
