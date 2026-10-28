@@ -141,6 +141,25 @@ test('dates: temporal rejects a date-time union with another string branch insid
   );
 });
 
+test('dates: temporal rejects a date-time union with another string branch inside a component allOf, and dates: date names Date', async t => {
+  // protects: T-586 the allOf check of a component read dates: date whatever the option was
+  const component = {
+    openapi: '3.1.0',
+    info: { title: 'Events', version: '1.0.0' },
+    paths: {},
+    components: { schemas: { Event: { allOf: [{ type: 'object', required: ['when'], properties: { when: { oneOf: [{ type: 'string', format: 'date-time' }, { type: 'string' }] } } }] } } },
+  };
+  const root = createFixtureProject(t, 'golem-openapi-temporal-component-');
+  await assert.rejects(
+    generateMaterializedSdk(component, { output: path.join(root, 'temporal', 'sdk'), name: 'Events', profile: PROFILE, dates: 'temporal' }),
+    /one Temporal branch and optional null/,
+  );
+  await assert.rejects(
+    generateMaterializedSdk(component, { output: path.join(root, 'date', 'sdk'), name: 'Events', profile: PROFILE, dates: 'date' }),
+    /cannot be converted to Date/,
+  );
+});
+
 const TEMPORAL_LIB = { strict: true, lib: ['ES2023', 'DOM', 'DOM.Iterable', 'esnext.temporal'] };
 
 async function generateTemporalModels(t: Parameters<typeof createFixtureProject>[0], prefix: string, doc: unknown): Promise<Record<string, unknown>> {

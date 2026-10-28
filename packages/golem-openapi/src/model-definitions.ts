@@ -20,6 +20,7 @@ import {
   componentSite,
   discriminatorSelection,
   checkComposition,
+  type OpenApiDates,
 } from './model-resolution.js';
 
 function isModelSchema(env: ModelResolveEnv, schema: unknown, visiting = new Set<unknown>()): boolean {
@@ -110,7 +111,7 @@ function modelAdditionalProperties(
   return result;
 }
 
-export function collectOpenApiModelDefinitions(document: unknown, resources?: ResourceIndex): {
+export function collectOpenApiModelDefinitions(document: unknown, resources?: ResourceIndex, dates: OpenApiDates = 'date'): {
   definitions: ModelDefinitions;
   ordered: ModelDefinition[];
   diagnostics: GolemDiagnostic[];
@@ -122,7 +123,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
     diagnostics.push({ code, severity: GolemDiagnosticSeverity.Warning, message });
   };
   const schemas = asRecord(asRecord(asRecord(document).components).schemas);
-  const env = modelEnv(document, undefined, undefined, resources, selections);
+  const env = modelEnv(document, undefined, undefined, resources, selections, dates);
   const definitions = new ModelDefinitions(findRecursiveAliases(env));
   const schemaScope = new ComponentNameScope('models.ts schema identifiers');
   for (const [rawName, rawSchema] of objectEntries(schemas)) {
@@ -242,7 +243,7 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
   for (const [rawName, rawSchema] of objectEntries(schemas)) {
     const definition = definitions.get(identifier(rawName));
     const model = definition?.schemaName === rawName && !definition.isUnion ? definition : undefined;
-    checkComposition(componentSite(rawName), model ? model.rawSchema : rawSchema, model, definitions, document, resources, warn);
+    checkComposition(componentSite(rawName), model ? model.rawSchema : rawSchema, model, definitions, document, resources, warn, env);
   }
 
   const ordered: ModelDefinition[] = [];

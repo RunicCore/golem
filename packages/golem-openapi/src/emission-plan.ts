@@ -4,6 +4,7 @@ import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/
 import { asRecord, isJsonObject, objectEntries } from './json.js';
 import { SCHEMA_ARRAY_KEYWORDS, SCHEMA_MAP_KEYWORDS, SCHEMA_SINGLE_KEYWORDS } from './schema-keywords.js';
 import { collectOpenApiModelDefinitions } from './models.js';
+import type { OpenApiDates } from './model-resolution.js';
 import {
   resolveLocal,
   parameterSchema,
@@ -334,12 +335,13 @@ export function buildEmissionPlan(
   document: unknown,
   ir: NormalizedDocument,
   profile: OpenApiGenerationProfile,
+  dates: OpenApiDates = 'date',
 ): EmissionPlan {
   const outbound = ir.operations;
   const inbound = ir.inboundOperations;
   const allOperations = [...outbound, ...inbound];
   const hasComponentSchemas = Object.keys(ir.schemas).length > 0;
-  const { ordered } = collectOpenApiModelDefinitions(document);
+  const { ordered } = collectOpenApiModelDefinitions(document, undefined, dates);
   const hasModels = ordered.length > 0;
   const hasOutboundOperations = outbound.length > 0;
   const hasInboundOperations = inbound.length > 0;

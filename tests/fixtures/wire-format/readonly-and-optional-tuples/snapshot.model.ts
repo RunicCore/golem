@@ -10,6 +10,6 @@ export type TSnapshot = IModel<{
   generic?: OptionalTuple<number>;
   genericUndefined?: OptionalTuple<number | undefined>;
   readonly trailing: readonly [head: string, ...middle: number[], tail: boolean];
-}>;
+}, { validation: false }>;
 
 export class Snapshot extends TSnapshotBaseModel {}

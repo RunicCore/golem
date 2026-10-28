@@ -260,21 +260,23 @@ An error prints its code, location when known, and message, then stops generatio
 - A model, or one of its fields, resolves to a type with call or construct signatures: a function or a class-instance shape rather than plain data.
 - A model field is typed `Map`, `Set`, `ReadonlyMap` or `ReadonlySet`. The message names the type. This holds with validation off too.
 - With validation on, an object is keyed by a template literal type whose keys golem cannot state as one pattern, such as `` `${number}` ``, `` `${string}_${number}` `` or `Uppercase<string>`. Only holes of type `string`, such as `` `id_${string}` ``, are stated.
+- An object has two or more index signatures keyed by template literal types, such as `` `a_${string}` `` and `` `n_${string}` ``, whose value types differ. One value type describes every extra key. This holds with validation off too.
 
 **Fix:**
 
 - Replace a function or class shape with a plain object, array, or primitive.
 - Replace a `Map` with a `Record<string, V>` and a `Set` with an array.
 - Key the object by `string` holes only, such as `` Record<`id_${string}`, V> ``, or by `string`.
+- Give the index signatures one value type.
 
 ### RUNM1005
 
-**Duplicate generated model name.** Two `IModel`/`IObject` declarations in the same model source produce the same generated name, or two models of one model source get the same OpenAPI component name, from `@ApiSchema({ name })` or a class name.
+**Duplicate generated model name.** Two `IModel`/`IObject` declarations in the same model source produce the same generated name, or two models of one model source get the same OpenAPI component name, from `@ApiSchema({ name })` or a class name. Two models of one name with different schemas in files or folders whose names differ only in characters that a component name cannot hold, such as `a-b.ts` and `a_b.ts`, also stop here, and the message names both files.
 
 **Fix:**
 
 - Rename one of the declarations.
-- For a component name, give one class another `@ApiSchema({ name })`, or move it to another file.
+- For a component name, give one class another `@ApiSchema({ name })`, move it to another file, or rename a file or folder.
 
 ### RUNM1011
 
@@ -282,7 +284,15 @@ An error prints its code, location when known, and message, then stops generatio
 
 ### RUNM1021
 
-**Unsupported tuple rest element.** A tuple's rest element isn't a concrete array type, or is an unresolved generic variadic. **Fix:** Give the rest element a concrete array type.
+**Unsupported tuple rest element.** One of these:
+
+- A tuple's rest element isn't a concrete array type, or is an unresolved generic variadic.
+- With validation on, a tuple has fixed elements after its rest element, such as `[string, ...number[], boolean]` or `[...number[], boolean]`. A JSON Schema cannot state a fixed element after a rest element, so the check would accept the items out of order. With validation off, such a tuple generates and converts its items by position.
+
+**Fix:**
+
+- Give the rest element a concrete array type.
+- Move the fixed elements before the rest element, as in `[string, boolean, ...number[]]`, or set `{ validation: false }` on the model.
 
 ### RUNM1030
 

@@ -112,6 +112,14 @@ const cases: readonly {
     unknown: 'cat',
   },
   {
+    // protects: I-58 a value names its component unless a mapping entry has that value, so a mapped variant keeps its component name
+    name: 'a mapped variant also takes its component name as a value',
+    discriminator: explicitMapping,
+    cat: suffix => ['feline', `cat${suffix}`],
+    dog: () => 'canine',
+    unknown: 'bird',
+  },
+  {
     name: 'implicit mapping by raw component name',
     discriminator: () => ({ propertyName: 'kind' }),
     cat: suffix => [`cat${suffix}`],

@@ -7,6 +7,6 @@ export type TTuple = IModel<{
   rest: [string, ...number[], boolean];
   dated?: [string, ...Date[], Date];
   labeled: readonly [head: string, ...middle: number[], tail: boolean];
-}>;
+}, { validation: false }>;
 
 export class Tuple extends TTupleBaseModel {}

@@ -843,13 +843,18 @@ export function discriminatorSelection(
     variant.values.push(value);
   }
   const selected = new Map<string, string>();
+  const mapped = new Set(objectEntries(mapping).map(([value]) => value));
   for (const [typeName, variant] of variants) {
-    if (variant.values.length === 0) {
-      variant.values.push(variant.schemaName);
-      if (variant.schemaName !== typeName) {
-        warn('OPENAPI_DISCRIMINATOR_IMPLICIT_VALUE', `schema ${JSON.stringify(schemaName)} selects ${typeName} by the implicit discriminator value ${JSON.stringify(variant.schemaName)} (the raw component name, not the generated name ${JSON.stringify(typeName)})`);
-      }
+    // A value names its component "unless a mapping is present for that value" (OpenAPI 3.1 and 3.2, Discriminator Object):
+    // the rule is per value, so a variant that a mapping also selects keeps its component name as a value. A variant whose name
+    // a mapping gives to another variant still claims it, so the conflict below reports that it has no value of its own.
+    if (mapped.has(variant.schemaName) && variant.values.length > 0) continue;
+    if (variant.values.length === 0 && variant.schemaName !== typeName) {
+      warn('OPENAPI_DISCRIMINATOR_IMPLICIT_VALUE', `schema ${JSON.stringify(schemaName)} selects ${typeName} by the implicit discriminator value ${JSON.stringify(variant.schemaName)} (the raw component name, not the generated name ${JSON.stringify(typeName)})`);
     }
+    variant.values.push(variant.schemaName);
+  }
+  for (const [typeName, variant] of variants) {
     for (const value of variant.values) {
       const previous = selected.get(value);
       if (previous !== undefined && previous !== typeName) {

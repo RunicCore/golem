@@ -909,6 +909,10 @@ export function descriptorBuilder(
     return { provenance, projection, candidates, classMatch, model };
   };
 
+  /** Whether the model being described validates: its own `{ validation }` setting, else the job's. A check golem cannot state stops generation only then. */
+  const modelValidates = (context: TypeAnalysisContext): boolean =>
+    specifications.find(specification => specification.declaration === context.declaration)?.validation ?? validationEnabled;
+
   const describeType = (
     originalType: ts.Type,
     context: TypeAnalysisContext,
@@ -1191,6 +1195,12 @@ export function descriptorBuilder(
           if ((restType.flags & ts.TypeFlags.TypeParameter) !== 0) {
             throw diagnostic(context.sourceFile, context.declaration, '1021', `Tuple rest element in ${context.name} cannot be an unresolved generic variadic.`);
           }
+          // The schema of a tuple states a fixed element after its rest element as one `anyOf` of the rest and the fixed types, which accepts them out of order.
+          if (modelValidates(context) && restIndex < arguments_.length - 1) {
+            const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
+            throw diagnostic(context.sourceFile, node ?? context.declaration, '1021',
+              `${where} has fixed elements after its rest element, which a JSON Schema cannot validate in order. Move the fixed elements before the rest element, or set \`{ validation: false }\` on the model.`);
+          }
           const items = arguments_.flatMap((item, index) => index === restIndex
             ? []
             : [describeItem(item, index)]);
@@ -1342,9 +1352,18 @@ export function descriptorBuilder(
         const memberNames = new Set(members.map(member => member.name));
         const readonlyProperties = readonlyPropertyNames(checker, type).filter(name => memberNames.has(name));
         const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
+        // One `additionalProperties` value describes every extra key, so signatures keyed by templates need one value type.
+        // Two value types are one when each is assignable to the other: `{ x: number }` written twice is two type objects.
+        const templateValueTypes = checker.getIndexInfosOfType(type)
+          .filter(({ keyType }) => (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0).map(({ valueType }) => valueType);
+        if (templateValueTypes.some((valueType) => !checker.isTypeAssignableTo(valueType, templateValueTypes[0]!) || !checker.isTypeAssignableTo(templateValueTypes[0]!, valueType))) {
+          const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
+          throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
+            `${where} has index signatures of different value types, which golem cannot state as one value type. Give them one value type, or use one index signature.`);
+        }
         const taggedAdditional = indexType ? undefined : additionalPropertiesFromTags(metadata.constraints);
         // The key pattern is a validation rule: with validation off nothing states it, so no key type stops generation for it.
-        const keyPattern = indexType && validationEnabled ? indexKeyPattern(checker, type, [...memberNames]) : undefined;
+        const keyPattern = indexType && modelValidates(context) ? indexKeyPattern(checker, type, [...memberNames]) : undefined;
         if (keyPattern === null) {
           const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
           throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
