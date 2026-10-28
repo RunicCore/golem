@@ -117,6 +117,26 @@ test('the generated model types carry no Discriminator tag', t => {
   assert.equal(/\bDiscriminator\b/.test(generated.content), false);
 });
 
+const TAG_SHAPE = "Discriminator<'shape'>";
+
+test('a variant made of several object parts gets no field from the Discriminator tag', t => {
+  // protects: T-602 the tag key is type-only, so it is no field of the variants (it had a checker-specific name, so output differed between TypeScript 6 and 7)
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-parts-', name: 'declared-parts' });
+  writeModelSources(sourceRoot, {
+    'parts.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+type Geo = { lat: number };
+type Scale = { scale: 1 | 2 };
+export type TPlace = IModel<{ spot: ((Geo & Scale & { shape: 'point' }) | (Scale & { shape: 'name' })) & ${TAG_SHAPE} }>;
+`,
+  });
+  const artifacts = generate({ root, profile: { mobx: false, validation: true } }).artifacts;
+  const generated = artifacts.find(artifact => artifact.path.endsWith('parts.model.generated.ts'));
+  assert.ok(generated, 'parts.model.generated.ts must be generated');
+  assert.ok(/lat: number; scale: 1 \| 2; shape: "point"/.test(generated.content));
+  assert.equal(/discriminatorTag/.test(generated.content), false);
+});
+
 const VARIANTS = `
 import type { IModel } from '@exprtlabs/golem/model';
 import type { Discriminator } from '@exprtlabs/golem/tags';
@@ -147,6 +167,11 @@ for (const validation of [false, true]) {
       /bad\.model\.ts:\d+:\d+ RUNM1051: The default variant \w+ of Discriminator<'kind'> in TBox has a "kind" property itself\./,
     ],
     [
+      'two different tag keys on one union',
+      `${VARIANTS}export type TPhone = IModel<{ kind: 'phone'; added: Date }>;\nexport type TA = IModel<{ type: 'a' }>;\nexport type TB = IModel<{ type: 'b' }>;\nexport type TBox = IModel<{ value: ((TEmail | TPhone) & ${TAG}) | ((TA | TB) & Discriminator<'type'>) }>;\n`,
+      /bad\.model\.ts:\d+:\d+ RUNM1051: Conflicting Discriminator tags: '(kind' and 'type|type' and 'kind)'\. A union has one tag key\./,
+    ],
+    [
       'a tag on one object',
       `${VARIANTS}export type TBox = IModel<{ value: TEmail & ${TAG} }>;\n`,
       /bad\.model\.ts:\d+:\d+ RUNM1051: Discriminator on the model value requires a union of two or more object types, but TBox resolves to /,
@@ -161,8 +186,10 @@ for (const validation of [false, true]) {
   }
 }
 
-async function writeMoneySdk(sourceRoot: string, validation: boolean): Promise<void> {
-  fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
+/** The SDK of the Money document; `document` replaces the fixture's closed Money with the document it states. */
+async function writeMoneySdk(sourceRoot: string, validation: boolean, document?: string): Promise<void> {
+  if (document === undefined) fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
+  else fs.writeFileSync(path.join(sourceRoot, 'money.yaml'), document);
   writeGeneratedArtifacts((await generateOpenApi({
     input: path.join(sourceRoot, 'money.yaml'),
     output: path.join(sourceRoot, 'sdk'),
@@ -197,6 +224,32 @@ export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { 
     }
   });
 }
+
+// Money states no additionalProperties: false, so only the declared default's narrowing keeps it from taking a tagged variant's value.
+const OPEN_MONEY_DOCUMENT = fs.readFileSync(fixturePath('wire-format/sdk-money/money.yaml'), 'utf8').split('\n').filter(line => !line.includes('additionalProperties')).join('\n');
+
+test('an open declared default does not take the value of a tagged variant that the value does not fit', async (t) => {
+  // protects: I-2 (P-31) the default takes only values whose tag selects no variant, also when its model is open
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-open-default-', name: 'declared-open-default', linkWorkspaceNodeModules: true });
+  await writeMoneySdk(sourceRoot, true, OPEN_MONEY_DOCUMENT);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+import type { Money } from './sdk/index.js';
+export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' }) & Discriminator<'kind', Money> }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  await import(pathToFileURL(path.join(root, 'build/item.model.generated.js')).href);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+  const options = { validate: true };
+  assert.throws(() => codec.parse(JSON.stringify({ value: { kind: 'a', amount: 5, currency: 'EUR' } }), options));
+  assert.throws(() => codec.fromWireFormat({ value: { kind: 'a', amount: 5, currency: 'EUR' } }, options));
+  for (const wire of [{ amount: 5, currency: 'EUR' }, { kind: 'zzz', amount: 5, currency: 'EUR' }, { kind: 'a', x: 1 }]) {
+    assert.doesNotThrow(() => codec.parse(JSON.stringify({ value: wire }), options), JSON.stringify(wire));
+  }
+});
 
 const BOX_MODEL = `
 import type { IModel } from '@exprtlabs/golem/model';
