@@ -207,3 +207,17 @@ test('a stream item that fails validation raises the validation error', async ()
   assert.equal(error.kind, LibErrorKind.Validation);
   assert.equal(error.message, 'API data validation failed.');
 });
+
+test('an array response header with an empty value decodes to an empty array', async () => {
+  // protects: bug an empty array header X-Ids: threw "Invalid numeric response header" because "".split(",") has one item
+  const runtime = new ClientRuntime('Tasks', { baseUrl: 'https://api.test' });
+  const contract: RuntimeResponseContract = {
+    ...jsonContract,
+    headers: [{ name: 'x-ids', style: 'simple', explode: false, contentType: null, kind: 'array', itemKind: 'integer', propertyKinds: {} }],
+  };
+  const read = (value: string) => runtime.readResponse<DecodedResponse<unknown>>(
+    'listTasks', new Response('{}', { status: 200, headers: { 'content-type': 'application/json', 'x-ids': value } }), [contract], NO_VALIDATORS);
+  assert.deepEqual((await read('')).headers, { 'x-ids': [] });
+  assert.deepEqual((await read('1, 2')).headers, { 'x-ids': [1, 2] });
+  await assert.rejects(read('1,'), /Invalid numeric response header/);
+});

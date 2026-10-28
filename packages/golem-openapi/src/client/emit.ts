@@ -245,7 +245,7 @@ function operationSource(
     if (parameter.content) {
       return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${serializedContentParameter(operation, use, 'header', parameter.name, parameter.content, code`input.header[${literal(parameter.name)}]`)});`;
     }
-    return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, input.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}));`;
+    return code`    if (input.header?.[${literal(parameter.name)}] !== undefined) headers.set(${literal(parameter.name)}, ${use('serializeHeaderSimple')}(runtime, input.header[${literal(parameter.name)}], ${literal(parameter.explode === true)}, ${literal(parameter.name)}));`;
   });
   const cookieLines = cookieParameters.map((parameter) => {
     if (parameter.content) {
