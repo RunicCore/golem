@@ -26,6 +26,9 @@ Golem 1.1.0 is a breaking release with a 1.x number. It supports TypeScript 6.0+
 - **Breaking:** a `Map` or `Set` field of a Nest DTO needs an `@ApiProperty()` with `type`, `schema` or `additionalProperties`, or generation stops with `RUNM1086` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - **Breaking:** a `Map` or `Set` field of a model stops generation with `RUNM1004` also with validation off ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
 - **Breaking:** `golem-openapi` reads a schema with both `oneOf` and `anyOf` as both keywords, not one ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- **Breaking:** instance rules of a field run only when the generated checks passed that field ([Models](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#models)).
+- **Breaking:** a `security` requirement that names an undeclared scheme stops generation ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
+- **Breaking:** the generated client rejects a numeric response header that is not a plain number ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - The `model-manifest.json` of a generated SDK no longer lists `modelReferences` ([OpenAPI](https://github.com/RunicCore/golem/blob/master/CHANGELOG.md#openapi)).
 - An untagged `anyOf` whose branches state different JSON types checks a value only with the branches of its type.
 
