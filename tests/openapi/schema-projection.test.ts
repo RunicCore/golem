@@ -17,6 +17,22 @@ import {
 } from './helpers.js';
 import { compileValidators } from '../support/compiled-validators.js';
 
+/** Runs `body` with a fetch that records its calls and asserts that it made none; fetch is restored after. */
+async function assertNoFetch(body: () => Promise<void>): Promise<void> {
+  let fetched = false;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (...args: Parameters<typeof fetch>) => {
+    fetched = true;
+    return originalFetch(...args);
+  };
+  try {
+    await body();
+    assert.equal(fetched, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
 function directionalComponents(openapi: string): Record<string, unknown> {
   return {
     openapi,
@@ -449,23 +465,14 @@ test('absolute and relative $id refs remap onto directional resources', async (t
     'https://schemas.example.test/user',
   );
   assert.equal(findRemoteRefs(document).length, 0);
-  let fetched = false;
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (...args: Parameters<typeof fetch>) => {
-    fetched = true;
-    return originalFetch(...args);
-  };
-  try {
+  await assertNoFetch(async () => {
     await generateMaterializedSdk(document, {
       output,
       name: 'Absolute',
       profile: validatingProfile,
     });
     await assertDirectionalEnvelope(document, output, 'https://schemas.example.test/user');
-    assert.equal(fetched, false);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  });
 });
 
 test('undeclared HTTPS schema refs stay blocked without network', async (t) => {
@@ -500,21 +507,12 @@ test('undeclared HTTPS schema refs stay blocked without network', async (t) => {
   assert.equal(remotes[0]?.ref, 'https://schemas.example.test/undeclared');
   const directory = createFixtureProject(t, 'golem-openapi-blocked-https-');
   writeFileSync(path.join(directory, 'openapi.json'), `${JSON.stringify(document)}\n`);
-  let fetched = false;
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (...args: Parameters<typeof fetch>) => {
-    fetched = true;
-    return originalFetch(...args);
-  };
-  try {
+  await assertNoFetch(async () => {
     await assert.rejects(
       () => loadValidatedDocument(path.join(directory, 'openapi.json'), {}),
       /remote reference blocked at #\/components\/schemas\/Remote\/\$ref/,
     );
-    assert.equal(fetched, false);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  });
 });
 
 test('literal example and default $ref values are not treated as schema references', async (t) => {
@@ -559,13 +557,7 @@ test('literal example and default $ref values are not treated as schema referenc
     },
   };
   assert.equal(findRemoteRefs(document).length, 0);
-  let fetched = false;
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async (...args: Parameters<typeof fetch>) => {
-    fetched = true;
-    return originalFetch(...args);
-  };
-  try {
+  await assertNoFetch(async () => {
     const result = await generateMaterializedSdk(document, {
       output,
       name: 'LiteralRef',
@@ -583,10 +575,7 @@ test('literal example and default $ref values are not treated as schema referenc
     const planted = { planted: { $ref: 'https://evil.example/default-ref' } };
     assert.deepEqual((await client.putX().execute({ body: planted })).body, planted);
     await assert.rejects(() => client.putX().execute({ body: { other: 1 } }), /validation failed/i);
-    assert.equal(fetched, false);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  });
 });
 
 test('duplicate conflicting $id values are rejected', () => {
