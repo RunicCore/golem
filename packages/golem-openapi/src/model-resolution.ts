@@ -646,9 +646,8 @@ export function modelConversionDescriptor(
       } : { kind: 'generated-model', id };
     }
     // A discriminator keeps even a one-variant union a tagged union.
-    const discriminator = isJsonObject(schema.discriminator)
-      ? unionDiscriminatorTable(schema, variants, definitions, nested)
-      : untaggedUnionTable(convertedVariants, definitions);
+    // A discriminator the document does not resolve to model variants (inline objects, a scalar beside the models) tags like a union without one.
+    const discriminator = unionDiscriminatorTable(schema, variants, definitions, nested) ?? untaggedUnionTable(convertedVariants, definitions);
     if (convertedVariants.length === 1 && !discriminator) {
       const [only] = convertedVariants;
       if (only) return only;

@@ -1292,12 +1292,16 @@ const untaggedUnionVariants = {
   components: [{ $ref: '#/components/schemas/Start' }, { $ref: '#/components/schemas/Stop' }],
 };
 
-for (const validation of [true, false]) for (const form of ['inline', 'components'] as const) {
-  test(`a oneOf of ${form} objects with a required const tag and no discriminator keyword converts each variant (validation ${validation})`, async t => {
+for (const validation of [true, false]) for (const form of ['inline', 'components', 'inline with an unresolved discriminator keyword'] as const) {
+  test(`a oneOf of ${form} objects with a required const tag and no resolved discriminator converts each variant (validation ${validation})`, async t => {
     // protects: T-594 golem-openapi writes the tag table of a document union itself, so golem need not infer the tag
+    const unresolved = form.startsWith('inline with');
     const output = await generateSerdeSdk(t, 'golem-openapi-oneof-untagged-', sequenceSerdeDocument({
-      event: { oneOf: untaggedUnionVariants[form] },
-    }, form === 'inline' ? {} : {
+      event: {
+        oneOf: untaggedUnionVariants[form === 'components' ? 'components' : 'inline'],
+        ...(unresolved ? { discriminator: { propertyName: 'kind' } } : {}),
+      },
+    }, form !== 'components' ? {} : {
       Start: untaggedUnionVariants.inline[0],
       Stop: untaggedUnionVariants.inline[1],
     }), { validation });
