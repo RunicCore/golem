@@ -9,7 +9,7 @@ import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/con
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { compositionProject as fixture } from './support/model-composition-project.js';
-import { buildModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, buildModelProjectWith, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { discardedProjectionCodecsSource, discardedProjectionMetadataSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
 
@@ -135,6 +135,52 @@ export const wrong: string = item.amount;
 `,
   });
   await buildModelProject(root);
+});
+
+test('an SDK model beside objects tagged by a literal union generates and decodes each branch', async t => {
+  // protects: bug-sweep RUNM1030 once rejected an SDK model beside objects whose tag is a union of literals (`kind: 'a' | 'b'`), which union conversion accepts
+  const { root, sourceRoot } = fixture(t);
+  fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
+  writeGeneratedArtifacts((await generateOpenApi({
+    input: path.join(sourceRoot, 'money.yaml'),
+    output: path.join(sourceRoot, 'sdk'),
+    name: 'Payments',
+    profile: { mobx: false, validation: true },
+  })).artifacts);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Money } from './sdk/index.js';
+export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { kind: 'c' } }>;
+`,
+  });
+  await buildModelProjectWith(root, { mobx: false, validation: true });
+  const generated = await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  for (const value of [{ kind: 'a', x: 1 }, { kind: 'b', x: 2 }, { kind: 'c' }, { amount: 5, currency: 'EUR' }]) {
+    assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(generated.TItemBaseModel, { value })), { value });
+  }
+});
+
+test('an SDK model beside objects whose literal tags overlap stops generation with RUNM1030', async t => {
+  // protects: bug-sweep RUNM1030 still rejects a tag value that two objects beside an SDK model share
+  const { root, sourceRoot } = fixture(t);
+  fs.copyFileSync(fixturePath('wire-format/sdk-money/money.yaml'), path.join(sourceRoot, 'money.yaml'));
+  writeGeneratedArtifacts((await generateOpenApi({
+    input: path.join(sourceRoot, 'money.yaml'),
+    output: path.join(sourceRoot, 'sdk'),
+    name: 'Payments',
+    profile: { mobx: false, validation: true },
+  })).artifacts);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Money } from './sdk/index.js';
+export type TItem = IModel<{ value: Money | { kind: 'a' | 'b'; x: number } | { kind: 'b' } }>;
+`,
+  });
+  assert.throws(
+    () => generate({ root, profile: { mobx: false, validation: true } }),
+    /item\.model\.ts:\d+:\d+ RUNM1030: Generated model union in TItem has an ambiguous object alternative\. Add a required literal discriminator\./,
+  );
+  assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
 });
 
 test('an IModel over an SDK model keeps a field spelled like a brand key and drops the real brand keys', async t => {
@@ -318,6 +364,55 @@ export type TItem = IModel<{ at: Timestamp; later?: Optional }>;
     assert.equal(decoded.at instanceof Date, true);
     assert.equal(decoded.later instanceof Date, true);
     assert.deepEqual(encodeGeneratedModel(decoded), { at: '2024-05-06T07:08:09.000Z', later: '2025-01-02T03:04:05.000Z' });
+  });
+}
+
+// protects: bug-sweep a string with a required literal brand (`string & { readonly __brand: 'Email' }`) rejected every string ("Expected object"): the brand test accepted only undefined or never members
+for (const exact of [true, false]) {
+  test(`a string with a required literal brand accepts a string and rejects a number with exact ${exact}`, async t => {
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type Email = string & { readonly __brand: 'Email' };
+export type TItem = IModel<{ email: Email }>;
+`);
+    await buildModelProjectWith(root, { mobx: false, validation: true, exact });
+    await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+    const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+    assert.deepEqual(codec.parse('{"email":"a@b.c"}'), { email: 'a@b.c' });
+    assert.equal(codec.validate({ email: 'a@b.c' }), true);
+    assert.equal(codec.validate({ email: 1 }), false);
+  });
+}
+
+// protects: bug-sweep a Record keyed by a template literal (`id_${string}`) accepted a key that does not match the template
+test('a Record with a template-literal key rejects a key outside the template and decodes the Dates of the others', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: Record<\`id_\${string}\`, Date>; both: Record<\`a_\${string}_z\` | \`b.\${string}\`, number> }>;
+`);
+  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+  const day = '2024-01-01T00:00:00.000Z';
+  assert.equal(codec.validate({ seen: { id_1: new Date(day) }, both: {} }), true);
+  assert.equal(codec.validate({ seen: { other: new Date(day) }, both: {} }), false);
+  assert.equal(codec.validate({ seen: {}, both: { a_1_z: 1, 'b.x': 2 } }), true);
+  for (const both of [{ a_1: 1 }, { 'bx': 2 }, { a_1_zz: 3 }]) assert.equal(codec.validate({ seen: {}, both }), false, JSON.stringify(both));
+  assert.deepEqual(codec.parse(`{"seen":{"id_1":"${day}"},"both":{}}`), { seen: { id_1: new Date(day) }, both: {} });
+  assert.throws(() => codec.parse(`{"seen":{"other":"${day}"},"both":{}}`), /Model validation failed/);
+});
+
+for (const key of ['${number}', '${string}_${number}', 'Uppercase<string>']) {
+  test(`a Record keyed by ${key} that golem cannot state as one key pattern stops generation with RUNM1004`, t => {
+    const { root, sourceRoot } = fixture(t);
+    const keyType = key.startsWith('Upper') ? key : `\`${key}\``;
+    fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: Record<${keyType}, Date> }>;
+`);
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation: true } }),
+      /item\.model\.ts:\d+:\d+ RUNM1004: Field "seen" of TItem is keyed by a template literal type that golem cannot state as a key pattern\. Use string-only holes, such as `id_\$\{string\}`, or a plain string key\./,
+    );
   });
 }
 

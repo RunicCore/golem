@@ -365,16 +365,11 @@ export function isBrandPropertyName(name: string): boolean {
   return name.startsWith('__');
 }
 
-function isTypeOnlyBrand(value: unknown): boolean {
-  if (!isRecord(value) || value.kind !== 'object') return false;
-  const properties = isRecord(value.properties) ? value.properties : {};
-  const required = Array.isArray(value.required) ? value.required : [];
-  return required.length === 0
-    && value.additionalProperties === false
-    && Object.entries(properties).every(([name, descriptor]) =>
-      isBrandPropertyName(name)
-      && isRecord(descriptor)
-      && (descriptor.kind === 'undefined' || descriptor.kind === 'never'));
+/** An object descriptor whose every property is a brand (`{ readonly __brand: 'Email' }`, `{ __brand?: never }`): a type-only mark, no data. */
+export function isBrandDescriptor(value: unknown): boolean {
+  if (!isRecord(value) || value.kind !== 'object' || !isRecord(value.properties)) return false;
+  const names = Object.keys(value.properties);
+  return names.length > 0 && names.every(isBrandPropertyName);
 }
 
 type ResidualPlane = 'model-only' | 'wire-only';
@@ -662,7 +657,7 @@ function descriptorSchema(
         const variants = Array.isArray(value.variants) ? value.variants : [];
         const scalar = variants.find((variant) => isRecord(variant)
           && (variant.kind === 'string' || variant.kind === 'number' || variant.kind === 'boolean' || variant.kind === 'null'));
-        schema = scalar && variants.every((variant) => variant === scalar || isTypeOnlyBrand(variant))
+        schema = scalar && variants.every((variant) => variant === scalar || isBrandDescriptor(variant))
           ? descriptorSchema(scalar, state, options)
           : { allOf: variants.map((variant) => descriptorSchema(variant, state, options)) };
         break;

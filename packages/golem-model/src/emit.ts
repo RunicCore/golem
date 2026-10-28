@@ -71,6 +71,7 @@ import {
   canonicalConstraintKey,
   constraintSchemaValues,
   createExecutableValidationMemo,
+  isBrandDescriptor,
   mapConstraintSchemaValues,
   projectPortableConstraints,
   type ExecutableValidationMemo,
@@ -298,15 +299,10 @@ function tagSchemas(
  */
 function brandedScalar(descriptor: ModelConversionDescriptor): ModelConversionDescriptor | undefined {
   if (descriptor.kind !== 'intersection') return undefined;
-  const isBrand = (item: ModelConversionDescriptor): boolean => item.kind === 'object'
-    && item.required.length === 0
-    && item.additionalProperties === false
-    && Object.entries(item.properties).every(([name, property]) =>
-      name.startsWith('__') && (property.kind === 'undefined' || property.kind === 'never'));
   const scalar = descriptor.variants.find((item) =>
     item.kind === 'string' || item.kind === 'number' || item.kind === 'boolean' || item.kind === 'null',
   );
-  return scalar && descriptor.variants.every((item) => item === scalar || isBrand(item)) ? scalar : undefined;
+  return scalar && descriptor.variants.every((item) => item === scalar || isBrandDescriptor(item)) ? scalar : undefined;
 }
 
 function projectDescriptor(
