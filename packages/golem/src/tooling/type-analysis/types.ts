@@ -1354,8 +1354,10 @@ export function descriptorBuilder(
         const indexType = checker.getIndexTypeOfType(type, ts.IndexKind.String);
         // One `additionalProperties` value describes every extra key, so signatures keyed by templates need one value type.
         // Two value types are one when each is assignable to the other: `{ x: number }` written twice is two type objects.
+        // A plain `string` signature beside a template one also describes the template's keys, so its value type joins the comparison.
         const templateValueTypes = checker.getIndexInfosOfType(type)
           .filter(({ keyType }) => (keyType.flags & ts.TypeFlags.TemplateLiteral) !== 0).map(({ valueType }) => valueType);
+        if (templateValueTypes.length > 0 && indexType) templateValueTypes.push(indexType);
         if (templateValueTypes.some((valueType) => !checker.isTypeAssignableTo(valueType, templateValueTypes[0]!) || !checker.isTypeAssignableTo(templateValueTypes[0]!, valueType))) {
           const where = context.field ? `Field "${context.field}" of ${context.name}` : context.name;
           throw diagnostic(context.sourceFile, node ?? context.declaration, '1004',
