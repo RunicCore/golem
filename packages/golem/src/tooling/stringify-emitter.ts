@@ -1410,10 +1410,10 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
       return code`(typeof ${value} === 'string' ? ${deserialized} : ${value})`;
     }
     if (wire?.kind === 'number') {
-      return code`(typeof ${value} === 'number' ? ${value} : ${deserialized})`;
+      return code`(typeof ${value} === 'number' ? ${deserialized} : ${value})`;
     }
     if (wire?.kind === 'boolean') {
-      return code`(typeof ${value} === 'boolean' ? ${value} : ${deserialized})`;
+      return code`(typeof ${value} === 'boolean' ? ${deserialized} : ${value})`;
     }
     if (wire && (wire.kind === 'object' || wire.kind === 'reference' || wire.kind === 'generated-model')) {
       return code`(${objectValueExpression(value)} ? ${deserialized} : ${value})`;
