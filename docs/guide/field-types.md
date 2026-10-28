@@ -119,6 +119,7 @@ Supported:
 - a model beside an array of that model: `TPlace | TPlace[]`
 - strings, numbers, booleans or literals beside one array and one object or model: `string | string[] | TPlace`. The `JsonValue` alias under [Recursive type aliases](#recursive-type-aliases) has this shape
 - object unions with one unique, required literal discriminator
+- scalars, one array or tuple, and `null` beside two or more tagged objects: `(string | TEmail | TPhone) & Discriminator<'kind'>`. The value's JSON type picks a scalar, array or `null`; only an object value is picked by its `kind`
 - an SDK model class (generated from an OpenAPI document) plus a primitive or a uniquely tagged object
 
 A discriminated union of two models:

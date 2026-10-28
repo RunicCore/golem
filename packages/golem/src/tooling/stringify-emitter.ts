@@ -21,7 +21,6 @@ import {
   AmbiguousUnionConversionError,
   descriptorNeedsConversion,
   isScalarishDescriptor,
-  discriminatorMatch,
   emitDispatch,
   emitUnionConversion,
   keyIsListed,
@@ -29,15 +28,14 @@ import {
   ObjectUnionDiscriminatorError,
   objectValueExpression,
   presentKeysCode,
-  presentUnionIndices,
   presentValueCode,
   declaredTable,
   unionDispatch,
   type DispatchOptions,
   type ObjectTypeDescriptor,
+  type TaggedUnion,
   type UnionConversion,
   type UnionTypeDescriptor,
-  type VariantDispatch,
 } from './union-conversion.js';
 
 export interface StringifySerdeResolver {
@@ -1124,10 +1122,6 @@ function resolveObjectDescriptor(
   return undefined;
 }
 
-function tagAccess(expression: Code, property: string): Code {
-  return code`((${expression}) as Record<string, unknown>)[${literal(property)}]`;
-}
-
 /**
  * Dispatch the union variants at `indices` by tag (and by class for a
  * generated model instance) by the declared tag table. Returns undefined when the union has no table
@@ -1135,7 +1129,7 @@ function tagAccess(expression: Code, property: string): Code {
  */
 function emitTaggedVariantUnion(
   union: UnionTypeDescriptor,
-  indices: readonly number[],
+  { indices, rest, fallback }: TaggedUnion,
   expression: Code,
   ctx: EmitCtx,
   convert: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code,
@@ -1173,6 +1167,8 @@ function emitTaggedVariantUnion(
     direction,
     ...(tagLocal === undefined ? {} : { tagLocal: identifier(tagLocal) }),
     ...(direction === 'encode-json' ? { nullish: code`'null'` } : {}),
+    ...(rest === undefined ? {} : { rest }),
+    ...(fallback === undefined ? {} : { fallback }),
     branches: variants.map((variant, position) => ({
       values: dispatch.values[position],
       className: variantClassName(variant, ctx),
@@ -1195,29 +1191,6 @@ function variantClassName(variant: ModelTypeDescriptor, ctx: EmitCtx): Code | un
   return variant.kind === 'reference' && shouldConstructNested(variant, ctx)
     ? ctx.nestedConstruct?.(ctx.graph.nodeFor(variant)?.codecId ?? variant.name, variant.className)
     : undefined;
-}
-
-/** Object variants of a union mixed with one generated model; their literal tags must dispatch. */
-function emitTaggedObjects(
-  union: UnionTypeDescriptor,
-  expression: Code,
-  ctx: EmitCtx,
-  convert: (variant: ModelTypeDescriptor, scope: EmitCtx) => Code,
-  direction: DispatchOptions['direction'],
-): Code {
-  const indices = presentUnionIndices(union).filter((index) => union.variants[index].kind === 'object');
-  const converted = emitTaggedVariantUnion(union, indices, expression, ctx, convert, direction);
-  if (converted === undefined) throw new ObjectUnionDiscriminatorError(union.variants);
-  return converted;
-}
-
-/** The test that the declared tag of `dispatch` selects an object variant, for mixing the objects with one generated model. */
-function objectTagMatch(dispatch: VariantDispatch, expression: Code, decode: boolean): Code {
-  // Decoding reads the tag by the JSON view, so an inherited or non-enumerable tag matches no object.
-  const read = decode
-    ? code`(${presentValueCode(expression, literal(dispatch.property), tagAccess(expression, dispatch.property))})`
-    : tagAccess(expression, dispatch.property);
-  return discriminatorMatch(read, dispatch.values.flat());
 }
 
 /**
@@ -1261,23 +1234,18 @@ function emitUnion(
   return emitUnionConversion(descriptor, value, direction, {
     ...(decoding ? {} : { guard: inlineBranchGuard(ctx, value) }),
     convert: (variant) => walk(variant, ctx),
-    tagged: () => emitTaggedVariantUnion(
+    tagged: (spec) => emitTaggedVariantUnion(
       descriptor,
-      presentUnionIndices(descriptor),
+      spec,
       value,
       ctx,
       walkTagged ?? walk,
       dispatch,
       decoding ? undefined : { unresolved: 'skip' },
     ),
+    declaredDefault: (variant) => (variant.kind === 'generated-model' ? generatedText?.(variant) : undefined) ?? walk(variant, ctx),
     generated: {
       text: generatedText ?? ((generated) => walk(generated, ctx)),
-      tagMatch: (dispatch) => objectTagMatch(dispatch, value, decoding),
-      objects: (objects) => decoding
-        ? value
-        : objects.length === 1
-          ? walk(objects[0], ctx)
-          : emitTaggedObjects(descriptor, value, ctx, walk, dispatch),
       takesEveryObject: decoding,
     },
     ...steps,
