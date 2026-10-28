@@ -898,6 +898,7 @@ export function checkComposition(
   document: unknown,
   resources: ResourceIndex | undefined,
   warn: (code: string, message: string) => void,
+  env: ModelResolveEnv = modelEnv(document, undefined, undefined, resources),
 ): void {
   const visit = (schema: unknown, scope: ModelResolveEnv, position: 'field' | 'definition', pointer: string): void => {
     if (!isJsonObject(schema) || directComponentSchemaRef(schema, withSchemaBase(scope, schema))) return;
@@ -925,7 +926,7 @@ export function checkComposition(
       if (Array.isArray(items)) items.forEach((item, index) => visit(item, nested, 'field', `${pointer}/${keyword}/${index}`));
     }
   };
-  visit(rawSchema, modelEnv(document, undefined, undefined, resources), definition ? 'definition' : 'field', '');
+  visit(rawSchema, env, definition ? 'definition' : 'field', '');
 }
 
 /**
