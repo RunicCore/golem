@@ -1,7 +1,7 @@
 import { descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/model';
-import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from './json.js';
+import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
 import { identifier, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { componentOrigin, LocatedError } from './origin.js';
 import {
@@ -226,19 +226,23 @@ function admitsNullThroughReference(
   return admitsNull(asRecord(schema)) || admitsNull(asRecord(definitions.get(reference)?.schema));
 }
 
-export function modelSchemaProperties(
+/**
+ * Visits a schema and the schemas it composes with allOf, through component references: each base before the schema itself.
+ * A reference in progress, and the reference named `skipReference`, are not visited again.
+ */
+export function visitAllOfChain(
   env: ModelResolveEnv,
   rawSchema: unknown,
-  inheritedSchemaName: string | null = null,
-): Map<string, unknown> {
-  const properties = new Map<string, unknown>();
+  visitSchema: (schema: JsonObject) => void,
+  skipReference: string | null = null,
+): void {
   const visiting = new Set<string>();
   const visit = (schema: unknown, current: ModelResolveEnv): void => {
     if (!isJsonObject(schema)) return;
     const nested = withSchemaBase(current, schema);
     const reference = directComponentSchemaRef(schema, nested);
     if (reference) {
-      if (reference === inheritedSchemaName || visiting.has(reference)) return;
+      if (reference === skipReference || visiting.has(reference)) return;
       const target = componentSchemaTarget(schema, nested);
       if (!target) return;
       visiting.add(reference);
@@ -247,11 +251,22 @@ export function modelSchemaProperties(
       return;
     }
     for (const item of Array.isArray(schema.allOf) ? schema.allOf : []) visit(item, nested);
+    visitSchema(schema);
+  };
+  visit(rawSchema, env);
+}
+
+export function modelSchemaProperties(
+  env: ModelResolveEnv,
+  rawSchema: unknown,
+  inheritedSchemaName: string | null = null,
+): Map<string, unknown> {
+  const properties = new Map<string, unknown>();
+  visitAllOfChain(env, rawSchema, (schema) => {
     for (const [name, property] of objectEntries(schema.properties)) {
       properties.set(name, property);
     }
-  };
-  visit(rawSchema, env);
+  }, inheritedSchemaName);
   return properties;
 }
 

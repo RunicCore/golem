@@ -15,6 +15,7 @@ import {
   directComponentSchemaRef,
   componentSchemaTarget,
   modelSchemaProperties,
+  visitAllOfChain,
   hasAllOfMembers,
   componentSite,
   discriminatorSelection,
@@ -103,24 +104,9 @@ function modelAdditionalProperties(
   rawSchema: unknown,
 ): unknown {
   let result: unknown;
-  const visiting = new Set<string>();
-  const visit = (schema: unknown, current: ModelResolveEnv): void => {
-    if (!isJsonObject(schema)) return;
-    const nested = withSchemaBase(current, schema);
-    const reference = directComponentSchemaRef(schema, nested);
-    if (reference) {
-      if (visiting.has(reference)) return;
-      const target = componentSchemaTarget(schema, nested);
-      if (!target) return;
-      visiting.add(reference);
-      visit(target, nested);
-      visiting.delete(reference);
-      return;
-    }
-    for (const item of Array.isArray(schema.allOf) ? schema.allOf : []) visit(item, nested);
+  visitAllOfChain(env, rawSchema, (schema) => {
     if (schema.additionalProperties !== undefined) result = schema.additionalProperties;
-  };
-  visit(rawSchema, env);
+  });
   return result;
 }
 
@@ -171,30 +157,15 @@ export function collectOpenApiModelDefinitions(document: unknown, resources?: Re
       definition.rawSchema,
     );
     definition.required = new Set();
-    const collectRequired = (schema: unknown, visiting = new Set<string>(), current = env): void => {
-      if (!isJsonObject(schema)) return;
-      const nested = withSchemaBase(current, schema);
-      const reference = directComponentSchemaRef(schema, nested);
-      if (reference) {
-        if (visiting.has(reference)) return;
-        const target = componentSchemaTarget(schema, nested);
-        if (target) {
-          // Base `required` fields still constrain a derived allOf schema when
-          // that schema redeclares the field to narrow its type (for example,
-          // a discriminator const). Collect them so the derived declaration
-          // cannot become optional in the emitted TypeScript class.
-          visiting.add(reference);
-          collectRequired(target, visiting, nested);
-          visiting.delete(reference);
-        }
-        return;
-      }
-      for (const item of Array.isArray(schema.allOf) ? schema.allOf : []) collectRequired(item, visiting, nested);
+    // Base `required` fields still constrain a derived allOf schema when
+    // that schema redeclares the field to narrow its type (for example,
+    // a discriminator const). Collect them so the derived declaration
+    // cannot become optional in the emitted TypeScript class.
+    visitAllOfChain(env, definition.rawSchema, (schema) => {
       for (const property of Array.isArray(schema.required) ? schema.required : []) {
         definition.required.add(String(property));
       }
-    };
-    collectRequired(definition.rawSchema);
+    });
   }
 
   // A union model is decided against declared inheritance only, so the result does not depend on
