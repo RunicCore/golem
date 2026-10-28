@@ -141,31 +141,16 @@ export interface VariantDispatch {
   readonly values: readonly (readonly DiscriminatorValue[])[];
 }
 
-function disjoint(sets: readonly (readonly DiscriminatorValue[])[], byText = false): boolean {
-  const seen = new Set<DiscriminatorValue | string>();
+function disjoint(sets: readonly (readonly DiscriminatorValue[])[]): boolean {
+  const seen = new Set<DiscriminatorValue>();
   for (const values of sets) {
     if (values.length === 0) return false;
     for (const value of values) {
-      const key = byText ? String(value) : value;
-      if (seen.has(key)) return false;
-      seen.add(key);
+      if (seen.has(value)) return false;
+      seen.add(value);
     }
   }
   return true;
-}
-
-/**
- * The first property of the first alternative that every alternative requires with literal values, when no value is shared. `tags` holds
- * each alternative's required literal properties and their values, read from types by the rewrite scan.
- * With `byText`, values that print the same (`1` and `'1'`) are one value: a query string carries a tag as text.
- */
-export function sharedTag(tags: readonly ReadonlyMap<string, readonly DiscriminatorValue[]>[], options: { readonly byText?: boolean } = {}): VariantDispatch | undefined {
-  if (tags.length === 0) return undefined;
-  for (const property of tags[0].keys()) {
-    const values = tags.map((tag) => tag.get(property) ?? []);
-    if (disjoint(values, options.byText === true)) return { property, values };
-  }
-  return undefined;
 }
 
 /** Indices of the union variants that hold a value (not null or undefined). */
