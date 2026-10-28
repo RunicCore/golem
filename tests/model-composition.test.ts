@@ -461,6 +461,33 @@ export type TItem = IModel<{ row: [string, ...Date[], number] }>;
   assert.deepEqual(encodeGeneratedModel(decoded), wire);
 });
 
+// protects: T-590 two template-literal index signatures with different value types converted every value by the first one's type
+test('template-literal index signatures with different value types stop generation with RUNM1004 naming the field', t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: { [key: \`a_\${string}\`]: Date; [key: \`n_\${string}\`]: number } }>;
+`);
+  for (const validation of [true, false]) {
+    assert.throws(
+      () => generate({ root, profile: { mobx: false, validation } }),
+      /item\.model\.ts:\d+:\d+ RUNM1004: Field "seen" of TItem has index signatures of different value types, which golem cannot state as one value type\. Give them one value type, or use one index signature\./,
+    );
+  }
+});
+
+test('template-literal index signatures that share one value type decode that type and reject a key outside the templates', async t => {
+  const { root, sourceRoot } = fixture(t);
+  fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+export type TItem = IModel<{ seen: { [key: \`a_\${string}\`]: Date; [key: \`b_\${string}\`]: Date } }>;
+`);
+  await buildModelProjectWith(root, { mobx: false, validation: true });
+  await import(`${path.join(root, 'build/item.model.generated.js')}?${Date.now()}`);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TItem'));
+  const day = '2024-01-01T00:00:00.000Z';
+  assert.deepEqual(codec.parse(`{"seen":{"a_1":"${day}","b_1":"${day}"}}`), { seen: { a_1: new Date(day), b_1: new Date(day) } });
+  assert.throws(() => codec.parse(`{"seen":{"c_1":"${day}"}}`), /Model validation failed/);
+});
+
 test('a bigint with a phantom brand keeps the TSerde message, not RUNM1085', t => {
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'item.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';

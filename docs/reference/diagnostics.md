@@ -260,12 +260,14 @@ An error prints its code, location when known, and message, then stops generatio
 - A model, or one of its fields, resolves to a type with call or construct signatures: a function or a class-instance shape rather than plain data.
 - A model field is typed `Map`, `Set`, `ReadonlyMap` or `ReadonlySet`. The message names the type. This holds with validation off too.
 - With validation on, an object is keyed by a template literal type whose keys golem cannot state as one pattern, such as `` `${number}` ``, `` `${string}_${number}` `` or `Uppercase<string>`. Only holes of type `string`, such as `` `id_${string}` ``, are stated.
+- An object has two or more index signatures keyed by template literal types, such as `` `a_${string}` `` and `` `n_${string}` ``, whose value types differ. One value type describes every extra key. This holds with validation off too.
 
 **Fix:**
 
 - Replace a function or class shape with a plain object, array, or primitive.
 - Replace a `Map` with a `Record<string, V>` and a `Set` with an array.
 - Key the object by `string` holes only, such as `` Record<`id_${string}`, V> ``, or by `string`.
+- Give the index signatures one value type.
 
 ### RUNM1005
 
