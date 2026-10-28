@@ -202,6 +202,22 @@ export function headQualifiers(checker: ts.TypeChecker, type: ts.Type): readonly
     .filter((part): part is string => part !== undefined);
 }
 
+/**
+ * Whether two object types hold the same fields under keys that differ only in spelling (`first-name` and `firstName` both read
+ * `FirstName`), so a name made from their keys cannot tell them apart. Each pair of keys that read alike has the same type.
+ */
+export function keysReadAlike(checker: ts.TypeChecker, left: ts.Type, right: ts.Type, location: ts.Node): boolean {
+  const keyed = (type: ts.Type): { readonly key: string | undefined; readonly name: string; readonly type: ts.Type }[] => checker.getPropertiesOfType(type)
+    .map(symbol => ({ key: pascalIdentifier(symbol.getName()), name: symbol.getName(), type: checker.getTypeOfSymbolAtLocation(symbol, location) }))
+    .sort((a, b) => compareText(a.key ?? '', b.key ?? '') || compareText(a.name, b.name));
+  const first = keyed(left);
+  const second = keyed(right);
+  if (first.length !== second.length || first.length === 0) return false;
+  if (first.every((item, index) => item.name === second[index]!.name)) return false;
+  return first.every((item, index) => item.key !== undefined && item.key === second[index]!.key
+    && checker.isTypeAssignableTo(item.type, second[index]!.type) && checker.isTypeAssignableTo(second[index]!.type, item.type));
+}
+
 const PROJECTION_NAME = /^[A-Za-z][A-Za-z0-9]*$/;
 
 export function isProjectionName(name: string): boolean {

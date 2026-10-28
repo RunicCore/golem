@@ -327,3 +327,28 @@ export class View extends TViewBaseModel {}
   const wire = encodeGeneratedModel(decodeGeneratedModel(View, { look: { name: 'a', '__@generatedModelWireBrand@1': 'b', extra: 'c' } }));
   assert.deepEqual(wire, { look: { name: 'a', '__@generatedModelWireBrand@1': 'b' } });
 });
+
+test('an indexed access to an anonymous field of a model stays a plain object, not an instance of an unrelated model with the same fields', async t => {
+  // protects: bug sweep 3 TOrder['shipping'] kept TOrder as its model, so the structural match bound the field to TAddress
+  const { root, sourceRoot } = fixture(t);
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelSources(sourceRoot, {
+    'invoice.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TAddressBaseModel, TInvoiceBaseModel, TOrderBaseModel } from './invoice.model.generated.js';
+export type TOrder = IModel<{ shipping: { street: string; city: string } }>;
+export type TAddress = IModel<{ street: string; city: string }>;
+export type TInvoice = IModel<{ billing: TOrder['shipping']; inline: { street: string; city: string } }>;
+export class Order extends TOrderBaseModel {}
+export class Address extends TAddressBaseModel {}
+export class Invoice extends TInvoiceBaseModel {}
+`,
+  });
+  await buildModelProject(root);
+  const { Invoice, Address } = await import(path.join(root, 'build/invoice.model.js'));
+  const wire = { billing: { street: 's', city: 'c' }, inline: { street: 's', city: 'c' } };
+  const invoice = decodeGeneratedModel(Invoice, wire);
+  assert.equal(invoice.inline instanceof Address, false, 'the inline spelling');
+  assert.equal(invoice.billing instanceof Address, false, 'the indexed access');
+  assert.equal(Object.getPrototypeOf(invoice.billing), Object.prototype);
+  assert.deepEqual(encodeGeneratedModel(invoice), wire);
+});
