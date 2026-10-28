@@ -464,6 +464,24 @@ test('parse<T> used as a value or with an optional call is reported with its pos
   assertLines(rewritten(root, { diagnostics, files }, 'value-use.ts'), ['export const direct = __golem_requireObjectCodec("TMoney_11111111").parse(texts[0]!);']);
 });
 
+test('a parse or fromWireFormat of a class with a spread argument in the first or second place is reported, as the construct option cannot go in', (t) => {
+  // protects: round-2 finding 2: parse<Payment>(...pair) got its construct option as a third argument, which parse ignores
+  const root = project(t, ['construct-spread.ts']);
+  const source = readFixture('rewrite/construct-spread.ts');
+  const { diagnostics, files } = scan(root);
+  const expected = (call: string) => ({ code: 'RUNM1079', severity: 'error', file: 'src/construct-spread.ts', ...position(source, call),
+    message: `${call.slice(0, call.indexOf('('))}(...) with a spread argument before the options cannot take the construct option of Payment. Pass the text and the options as separate arguments.` });
+  assert.deepEqual(diagnostics, [
+    expected('parse<Payment>(...pair)'),
+    expected('parse<Payment>(text, ...options)'),
+    expected('fromWireFormat<Payment>(...pair)'),
+  ]);
+  assertLines(rewritten(root, { diagnostics, files }, 'construct-spread.ts'), [
+    'export const plain = __golem_requireObjectCodec("TPayment_22222222").parse(...pair);',
+    'export const third = __golem_requireObjectCodec("TPayment_22222222").parse(text, { construct: Payment, ...{ validate: false } }, ...options);',
+  ]);
+});
+
 test('a file that gets a rewrite may not use a name that starts with the added import prefix', (t) => {
   const root = project(t, ['reserved-name.ts', 'reserved-name-unrewritten.ts', 'class-clash.ts', 'other/payment.model.ts', 'other/payment.model.generated.ts']);
   // The `other` Payment has a codec id of its own; the shared fixture names only the one in src/.
