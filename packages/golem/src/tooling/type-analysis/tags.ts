@@ -104,7 +104,8 @@ const EMPTY: TagMetadata = Object.freeze({
   constraints: [],
 });
 
-function mergeMetadata(first: TagMetadata, second: TagMetadata): TagMetadata {
+/** Merges the tags of two parts; two different Discriminator keys are a RUNM1051 at `at`. */
+function mergeMetadata(context: TagAnalysisContext, at: ts.Node, first: TagMetadata, second: TagMetadata): TagMetadata {
   const validations = new Map<string, ValidationBinding>();
   for (const binding of [...first.validations, ...second.validations]) validations.set(binding.id, binding);
   const constraints = new Map<string, ModelConstraint>();
@@ -120,9 +121,7 @@ function mergeMetadata(first: TagMetadata, second: TagMetadata): TagMetadata {
     }
   }
   if (first.discriminator !== undefined && second.discriminator !== undefined && first.discriminator !== second.discriminator) {
-    throw new Error(
-      `Conflicting Discriminator tags: '${first.discriminator}' and '${second.discriminator}'. A union has one tag key.`,
-    );
+    throw context.diagnostic(at, '1051', `Conflicting Discriminator tags: '${first.discriminator}' and '${second.discriminator}'. A union has one tag key.`);
   }
   const discriminator = first.discriminator ?? second.discriminator;
   const discriminatorDefault = first.discriminatorDefault ?? second.discriminatorDefault;
@@ -827,7 +826,7 @@ function metadataFromType(
   if (direct) return direct;
   if (type.isIntersection()) {
     return type.types.reduce(
-      (metadata, member) => mergeMetadata(metadata, metadataFromType(context, member, seen)),
+      (metadata, member) => mergeMetadata(context, context.sourceFile, metadata, metadataFromType(context, member, seen)),
       EMPTY,
     );
   }
@@ -907,12 +906,12 @@ export function readTags(
     for (const part of node.types) {
       const tag = ts.isTypeReferenceNode(part) ? parseTag(context, part) : undefined;
       if (tag) {
-        metadata = mergeMetadata(metadata, tag);
+        metadata = mergeMetadata(context, part, metadata, tag);
         continue;
       }
       const nested = readTags(context, part, seenAliases);
       baseNode ??= nested.baseNode;
-      metadata = mergeMetadata(metadata, nested.metadata);
+      metadata = mergeMetadata(context, part, metadata, nested.metadata);
     }
     return baseNode ? { baseNode, metadata } : emptyBase(node);
   }
@@ -955,7 +954,7 @@ export function analyzeNode(
 ): TagReadResult {
   const nodeContext: TagAnalysisContext = { ...context, writtenFunctions: newWrittenFunctions() };
   const result = node ? readTags(nodeContext, node) : { baseNode: undefined, metadata: EMPTY };
-  const metadata = mergeMetadata(result.metadata, metadataFromType(nodeContext, type));
+  const metadata = mergeMetadata(nodeContext, node ?? context.sourceFile, result.metadata, metadataFromType(nodeContext, type));
   if (isDateType(context.checker, type)) {
     return { baseNode: result.baseNode ?? node, metadata: { ...metadata, date: true } };
   }

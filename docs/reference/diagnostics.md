@@ -376,6 +376,7 @@ An error prints its code, location when known, and message, then stops generatio
 - A `Discriminator` tag is on a value that is no union of two or more object types.
 - A `Discriminator<'kind', Default>` names a `Default` that is not a variant of the union.
 - The `Default` variant has the `kind` property itself.
+- A union carries two different `Discriminator` keys. A union has one tag key.
 
 **Fix:**
 

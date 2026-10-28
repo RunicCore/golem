@@ -109,7 +109,7 @@ export function objectValueExpression(expression: Code): Code {
   return code`typeof ${expression} === 'object' && ${expression} !== null && !Array.isArray(${expression})`;
 }
 
-export function presentUnionVariants(
+function presentUnionVariants(
   descriptor: UnionTypeDescriptor,
 ): readonly ModelTypeDescriptor[] {
   return descriptor.variants.filter((variant) => variant.kind !== 'null' && variant.kind !== 'undefined');
@@ -121,18 +121,6 @@ export function isScalarishDescriptor(descriptor: ModelTypeDescriptor): boolean 
     return true;
   }
   return descriptor.kind === 'union' && descriptor.variants.every(isScalarishDescriptor);
-}
-
-/** Values of a literal or a union of literals; otherwise undefined. */
-export function literalValues(descriptor: ModelTypeDescriptor | undefined): readonly DiscriminatorValue[] | undefined {
-  if (descriptor?.kind === 'literal') return [descriptor.value];
-  if (descriptor?.kind !== 'union' || descriptor.variants.length === 0) return undefined;
-  const values: DiscriminatorValue[] = [];
-  for (const variant of descriptor.variants) {
-    if (variant.kind !== 'literal') return undefined;
-    values.push(variant.value);
-  }
-  return values;
 }
 
 /** One tag property, and each alternative's tag values in alternative order. */
@@ -154,14 +142,14 @@ function disjoint(sets: readonly (readonly DiscriminatorValue[])[]): boolean {
 }
 
 /** Indices of the union variants that hold a value (not null or undefined). */
-export function presentUnionIndices(descriptor: UnionTypeDescriptor): number[] {
+function presentUnionIndices(descriptor: UnionTypeDescriptor): number[] {
   return descriptor.variants.flatMap((variant, index) =>
     variant.kind === 'null' || variant.kind === 'undefined' ? [] : [index]);
 }
 
 /**
  * The explicit tag table that dispatches the variants at `indices`. The default variant has no tag value to dispatch on, so a
- * union that includes it has no table here: it converts as a model beside tagged objects.
+ * union that includes it has no table here: `emitUnionConversion` dispatches the variants that have tag values, and the default converts what the table does not reach.
  */
 export function declaredTable(union: UnionTypeDescriptor, indices: readonly number[]): UnionTypeDescriptor['discriminator'] {
   const table = union.discriminator;
@@ -189,7 +177,7 @@ export function unionDispatch(
 }
 
 /** `access` equals one of `values`. */
-export function discriminatorMatch(read: Code, values: readonly DiscriminatorValue[]): Code {
+function discriminatorMatch(read: Code, values: readonly DiscriminatorValue[]): Code {
   return code`(${join(values.map((value) => code`${read} === ${literal(value)}`), code` || `)})`;
 }
 
@@ -375,11 +363,11 @@ export type UnionDirection = 'decode' | 'encode' | 'stringify' | 'nested';
 
 type GeneratedModelTypeDescriptor = Extract<ModelTypeDescriptor, { readonly kind: 'generated-model' }>;
 
-/** A union of one generated model and tagged objects, or scalars: the model takes the objects whose tag does not match. */
+/** A union of one generated model beside scalars or null: the model takes every object value. */
 interface GeneratedWithObjects {
   /** The conversion of the model; undefined when this walker emits no class for it. */
   readonly text: (generated: GeneratedModelTypeDescriptor) => Code | undefined;
-  /** With no tagged object, the model takes every object whatever the other variants are. */
+  /** The model takes every object value whatever the other variants are, not only beside scalars. */
   readonly takesEveryObject?: boolean;
 }
 

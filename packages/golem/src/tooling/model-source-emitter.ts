@@ -57,7 +57,7 @@ import {
 import { admitsUndefined, isRecordExpression } from './stringify-emitter.js';
 
 /** Generators read tag values through the same rule as the shared union conversion. */
-export { AmbiguousUnionConversionError, descriptorNeedsConversion, literalValues, ObjectUnionDiscriminatorError } from './union-conversion.js';
+export { AmbiguousUnionConversionError, descriptorNeedsConversion, ObjectUnionDiscriminatorError } from './union-conversion.js';
 
 export type ModelConversionDescriptor = ModelTypeDescriptor;
 
