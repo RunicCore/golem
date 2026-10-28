@@ -43,8 +43,8 @@ function chainSources(count: number, { kind, name, minLabel }: Chain = modelChai
     const base = kind === 'IModel' ? `import { T${name}${index}BaseModel } from './${file}-${index}.model.generated.js';\n` : '';
     const cls = kind === 'IModel' ? `export class ${name}${index} extends T${name}${index}BaseModel {}\n` : '';
     sources[`${file}-${index}.model.ts`] = `import type { ${kind} } from '@exprtlabs/golem/model';
-import type { MinLength } from '@exprtlabs/golem/tags';
-${previous}${base}export type T${name}${index} = ${kind}<{ label: string & MinLength<${minLabel}>; at: Date; kind: { k: 'a'; a: Date } | { k: 'b'; b: number }${fields} }>;
+import type { Discriminator, MinLength } from '@exprtlabs/golem/tags';
+${previous}${base}export type T${name}${index} = ${kind}<{ label: string & MinLength<${minLabel}>; at: Date; kind: ({ k: 'a'; a: Date } | { k: 'b'; b: number }) & Discriminator<'k'>${fields} }>;
 ${cls}`;
   }
   return sources;

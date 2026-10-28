@@ -303,9 +303,10 @@ test('a model that holds an SDK model walks for cycles only when that model is r
 
 const inlineUnionSources = {
   'expr.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
 import { TBranchBaseModel } from './expr.model.generated.js';
 export type TLeaf = IModel<{ kind: 'leaf'; value: string }>;
-export type TBranch = IModel<{ kind: 'branch'; children: (TLeaf | TBranch)[] }>;
+export type TBranch = IModel<{ kind: 'branch'; children: ((TLeaf | TBranch) & Discriminator<'kind'>)[] }>;
 export class Branch extends TBranchBaseModel {}
 `,
 };
