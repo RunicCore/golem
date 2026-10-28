@@ -6,7 +6,7 @@
 import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
 import { MODEL_FIELDS_KEY } from '../schema-keywords.js';
 import { createHash } from 'node:crypto';
-import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
+import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, localName, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';
 import { rt } from './rt.js';
 import {
   emitArrayItems,
@@ -56,11 +56,14 @@ export function presentValueCode(object: Code, key: Code, read: Code): Code {
   return code`${ownEnumerableCode(object, key)} ? ${read} : undefined`;
 }
 
+/** The key that `presentKeysCode` reads in each turn of its pass. */
+export const PRESENT_KEY = localCode(localName('key'));
+
 /**
  * One `Object.keys` pass that gives each `[key, local]` pair its value in a `let` local, or `undefined` when the key is
  * absent, so each field is read once (the presence rows of scripts/benchmark/validator-toggles.ts). `declare` writes the
  * declaration of a local, for example with a type annotation. `otherwise` is the statement for a key that is not in
- * `captures`; it reads that key as `__golemKey`, so the same pass sees the other keys.
+ * `captures`; it reads that key as `PRESENT_KEY`, so the same pass sees the other keys.
  */
 export function presentKeysCode(
   object: Code,
@@ -70,7 +73,7 @@ export function presentKeysCode(
   const { declare = (local: Code) => local, otherwise } = options;
   const cases = join(captures.map(([key, local]) => code`case ${literal(key)}: ${local} = ${object}[${literal(key)}]; break;`), code` `);
   const other = otherwise === undefined ? code`` : code` default: ${otherwise}`;
-  return code`let ${join(captures.map(([, local]) => declare(local)), code`, `)}; for (const __golemKey of Object.keys(${object})) switch (__golemKey) { ${cases}${other} }`;
+  return code`let ${join(captures.map(([, local]) => declare(local)), code`, `)}; for (const ${PRESENT_KEY} of Object.keys(${object})) switch (${PRESENT_KEY}) { ${cases}${other} }`;
 }
 
 /**
@@ -99,7 +102,7 @@ export function instanceFieldsCode(): Code {
     code`  let prototype = Object.getPrototypeOf(value);`,
     code`  if (prototype === Object.prototype) return undefined;`,
     code`  for (; prototype !== null; prototype = Object.getPrototypeOf(prototype)) {`,
-    code`    if (Object.prototype.hasOwnProperty.call(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;`,
+    code`    if (Object.hasOwn(prototype, fieldsKey)) return prototype[fieldsKey] ?? undefined;`,
     code`  }`,
     code`  return undefined;`,
     code`}`,
@@ -242,8 +245,8 @@ export function emitDispatch(options: DispatchOptions): Code {
 }
 
 /** The local of a union function that holds the branch index, and its parameter. */
-const BRANCH_INDEX = identifier('__golemIndex');
-const UNION_PARAMETER = identifier('__golemUnionValue');
+const BRANCH_INDEX = localCode(localName('index'));
+const UNION_PARAMETER = localCode(localName('union'));
 
 /**
  * The variable that a dispatch kept in its writer assigns the branch index to. Its tests read it at once, before any branch
@@ -284,8 +287,8 @@ function isPlainName(name: Code): boolean {
 function variantSelector(options: DispatchOptions): Helper {
   const { property, branches, rest, fallback, fallbackClass, restIsDate } = options;
   const encode = options.direction !== 'decode';
-  const input = identifier('__golemValue');
-  const tag = identifier('__golemTag');
+  const input = localCode(localName('value'));
+  const tag = localCode(localName('tag'));
   const key = literal(property);
   const propertyRead = code`(${input} as unknown as Record<string, unknown>)[${key}]`;
   const rejecting = (shown: Code): Code => code`${rt.conversion.unknownDiscriminatorValue}(${key}, ${shown}, ${encode ? code`'serialize'` : code`'deserialize'`})`;

@@ -315,8 +315,45 @@ const PROPERTY_NAME = /^[A-Za-z_$][\w$]*$/;
 /** An identifier of the language: a name a user writes in a model file can hold any Unicode letter. */
 const IDENTIFIER = /^[\p{ID_Start}_$][\p{ID_Continue}$\u200c\u200d]*$/u;
 
+/**
+ * The locals of generated functions: `$`, one letter for the kind, and an index (`$v0`, `$p1`, `$k`). `localName` is the one
+ * allocator; `localCode` is the only way to write such a name as a binding. Every other name passes `checkedIdentifier`, which
+ * refuses this form (a property key, `propertyKey`, is not a binding and may have it), so a local cannot equal a parameter, an import, a helper, a class or any other name of the file, and a function
+ * keeps its locals apart by giving each kind its own letter and each local of a kind its own index.
+ */
+const LOCAL_LETTERS = {
+  value: 'v',
+  piece: 'p',
+  field: 'f',
+  present: 'e',
+  wire: 'w',
+  key: 'k',
+  extra: 'x',
+  record: 'r',
+  inlineField: 'i',
+  tag: 't',
+  projected: 'j',
+  index: 'n',
+  union: 'u',
+  source: 's',
+} as const;
+export type LocalKind = keyof typeof LOCAL_LETTERS;
+const LOCAL_NAME = /^\$[a-z]\d*$/;
+
+/** The name of the local of `kind` with `index`; a kind that a function holds once takes no index. */
+export function localName(kind: LocalKind, index?: number): string {
+  return `$${LOCAL_LETTERS[kind]}${index ?? ''}`;
+}
+
+/** The Code of a name `localName` made. */
+export function localCode(name: string): Code {
+  if (!LOCAL_NAME.test(name)) throw new TypeError(`a local must come from localName, got ${JSON.stringify(name)}`);
+  return fromParts([{ kind: 'text', text: name, identifier: true }]);
+}
+
 function checkedIdentifier(name: string, what: string): string {
   if (!IDENTIFIER.test(name)) throw new TypeError(`${what} must be an identifier, got ${JSON.stringify(name)}`);
+  if (LOCAL_NAME.test(name)) throw new TypeError(`${what} ${JSON.stringify(name)} has the form of a local of generated code (a $, one lowercase letter and digits); rename it`);
   return name;
 }
 
@@ -496,7 +533,7 @@ export function docComment(text: string): Code {
 
 /** An object member key: bare when it is an identifier name, otherwise a string literal. */
 export function propertyKey(name: string): Code {
-  return PROPERTY_NAME.test(name) ? identifier(name) : literal(name);
+  return PROPERTY_NAME.test(name) ? fromParts([{ kind: 'text', text: name, identifier: true }]) : literal(name);
 }
 
 /** A line end. Render writes the line break and the indentation of the `nest` that holds it. */

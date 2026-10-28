@@ -11,7 +11,7 @@ import { codecShortName, serdeWireDescriptor } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { requireComposedObject, type ModelBases } from './composition.js';
 import {
-  aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, readShape, sameCode,
+  aliased, asObjectLiteral, bindInput, bindRead, code, documentLiteral, helper, helperName, helperSet, identifier, indentation, inputCount, inputOf, inputSlot, isEmpty, join, literal, localCode, localName, readShape, sameCode,
   type Code, type Helper, type InputSlot, type JsonValue, type ReadShape,
 } from './code.js';
 import { nodeQueryFields } from './query-fields.js';
@@ -344,20 +344,20 @@ function emitInlineObjectField(
   const { read, shape } = accessRead(expression, name);
   const input = inputSlot(name, shape);
   const piece = emitValue(property, inputOf(input), ctx);
-  const localName = `__golemInlineField${ctx.inlineLocals?.size ?? index}`;
-  const local = identifier(localName);
+  const inlineName = localName('inlineField', ctx.inlineLocals?.size ?? index);
+  const local = localCode(inlineName);
   // An optional field reads its input once more, in the `!== undefined` test.
   const bound = bindRead(piece, input, read, local, required ? 0 : 1);
   const member = code`${memberPrefix(name, leadingComma)} + ${bound.code}`;
   if (!bound.local) return required ? member : code`(${read} !== undefined ? ${member} : '')`;
-  ctx.inlineLocals?.add(localName);
+  ctx.inlineLocals?.add(inlineName);
   return required
     ? code`(${local} = ${read}, ${member})`
     : code`(${local} = ${read}, (${local} !== undefined ? ${member} : ''))`;
 }
 
 function inlineLocalLines(ctx: EmitCtx): Code[] {
-  return [...(ctx.inlineLocals ?? [])].map((name) => code`  let ${identifier(name)}: unknown;`);
+  return [...(ctx.inlineLocals ?? [])].map((name) => code`  let ${localCode(name)}: unknown;`);
 }
 
 /**
@@ -594,8 +594,8 @@ function emitLenientObjectStringify(
   const lines: Code[] = [];
   const fields = properties.map(([name, property], index) => {
     const { read } = accessRead(inputOf(value), name);
-    const field = identifier(`__golemField${index}`);
-    const piece = identifier(`__golemPiece${index}`);
+    const field = localCode(localName('field', index));
+    const piece = localCode(localName('piece', index));
     lines.push(
       code`  const ${field} = ${read};`,
       code`  const ${piece} = ${field} !== undefined ? ${emitValue(property, field, ctx)} : undefined;`,
@@ -672,7 +672,7 @@ function emitObjectStringify(
     const { read, shape } = accessRead(value, property);
     const input = inputSlot(property, shape);
     const piece = emitValue(schema, inputOf(input), ctx);
-    const local = identifier(`__golemValue${index}`);
+    const local = localCode(localName('value', index));
     // An optional field reads its input once more, in the `!== undefined` test.
     const bound = bindRead(piece, input, read, local, required.has(property) ? 0 : 1);
     const key = memberPrefix(property, false);
@@ -701,10 +701,10 @@ function emitObjectStringify(
     lines.push(
       code`  for (const key of Object.keys(${value})) {`,
       ...(properties.length === 0 ? [] : [code`    if (${keyIsListed(identifier('key'), properties.map(([property]) => property))}) continue;`]),
-      code`    const __golemExtra = ${value}[key];`,
-      code`    if (__golemExtra === undefined) continue;`,
+      code`    const ${EXTRA_VALUE} = ${value}[key];`,
+      code`    if (${EXTRA_VALUE} === undefined) continue;`,
       code`    if (sep) out += ",";`,
-      code`    out += ${rt.serde.stringifyJsonString}(key) + ":" + ${emitValue(additional, identifier('__golemExtra'), ctx)};`,
+      code`    out += ${rt.serde.stringifyJsonString}(key) + ":" + ${emitValue(additional, EXTRA_VALUE, ctx)};`,
       code`    sep = true;`,
       code`  }`,
     );
@@ -884,7 +884,7 @@ function hoistConverter(input: Code, decoded: Code, locals: readonly string[], c
     return { converter: rt.conversion.deserializeDate, named: true };
   }
   if (!ctx.hoisted) return { converter: code`(${input}) => (${decoded})`, named: false };
-  const declarations = locals.length > 0 ? code`  let ${join(locals.map((name) => code`${identifier(name)}: unknown`), code`, `)};\n` : code``;
+  const declarations = locals.length > 0 ? code`  let ${join(locals.map((name) => code`${localCode(name)}: unknown`), code`, `)};\n` : code``;
   const body = code`(${input}: unknown): unknown {\n${declarations}  return (${decoded});\n}\n`;
   const known = ctx.hoisted.bodies.find((candidate) => sameCode(candidate.body, body));
   if (known) return { converter: identifier(known.name), named: true };
@@ -895,10 +895,10 @@ function hoistConverter(input: Code, decoded: Code, locals: readonly string[], c
 }
 
 /** `convertModelField` for the decoder of `property` written against `local`, with the field value passed in as `input`. */
-function emitFieldConversion(field: Code, local: string, property: ModelTypeDescriptor, input: Code, ctx: EmitCtx): Code {
+function emitFieldConversion(field: Code, local: Code, property: ModelTypeDescriptor, input: Code, ctx: EmitCtx): Code {
   const scope: EmitCtx = { ...ctx, decodeLocals: [], knownReads: undefined };
-  const decoded = emitDecodeValue(property, identifier(local), scope);
-  const { converter } = hoistConverter(identifier(local), decoded, scope.decodeLocals ?? [], ctx);
+  const decoded = emitDecodeValue(property, local, scope);
+  const { converter } = hoistConverter(local, decoded, scope.decodeLocals ?? [], ctx);
   return code`${rt.conversion.convertModelField}("deserialize", ${field}, ${converter}, ${input})`;
 }
 
@@ -1142,7 +1142,7 @@ function emitTaggedVariantUnion(
   // are decoded with that read known, so they use the local where they would read the tag.
   const tagLocal = dispatch && direction === 'decode' && ctx.decodeLocals && readShape(value) === 'name'
     && variants.every((variant) => variantClassName(variant, ctx) === undefined)
-    ? `__golemTag${ctx.decodeLocals.length}`
+    ? localName('tag', ctx.decodeLocals.length)
     : undefined;
   if (tagLocal) ctx.decodeLocals?.push(tagLocal);
   const tag = inputSlot('tag', 'name');
@@ -1151,7 +1151,7 @@ function emitTaggedVariantUnion(
     : ctx;
   const conversions = variants.map((variant) => {
     const converted = convert(variant, scope);
-    return tagLocal ? bindInput(converted, tag, identifier(tagLocal)) : converted;
+    return tagLocal ? bindInput(converted, tag, localCode(tagLocal)) : converted;
   });
   if (!dispatch) {
     if (direction !== 'encode-json' && conversions.every((converted) => sameCode(converted, value))) return value;
@@ -1165,7 +1165,7 @@ function emitTaggedVariantUnion(
     direction,
     // A branch that assigned a local of the writer's function (see `writerLocals`) cannot stand in a function of its own.
     ...(writerLocals(ctx) === options.localsBefore ? { standalone: true as const } : {}),
-    ...(tagLocal === undefined ? {} : { tagLocal: identifier(tagLocal) }),
+    ...(tagLocal === undefined ? {} : { tagLocal: localCode(tagLocal) }),
     ...(direction === 'encode-json' ? { nullish: code`'null'` } : {}),
     ...(rest === undefined ? {} : { rest, restIsDate }),
     ...(fallback === undefined ? {} : { fallback }),
@@ -1407,7 +1407,7 @@ function emitDecodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
     const before = fallibleCount(ctx);
     const decoded = emitDecodeValue(descriptor.additionalProperties, identifier('value'), { ...ctx, decodeLocals: undefined, knownReads: undefined });
     const entry = emittedFallible(before, decoded, ctx)
-      ? emitFieldConversion(identifier('key'), 'value', descriptor.additionalProperties, identifier('value'), ctx)
+      ? emitFieldConversion(identifier('key'), identifier('value'), descriptor.additionalProperties, identifier('value'), ctx)
       : decoded;
     const entries = code`Object.entries((${value} ?? {}) as Record<string, unknown>)`;
     if (listed.length === 0) return code`Object.fromEntries(${entries}.map(([key, value]) => [key, ${entry}]))`;
@@ -1471,7 +1471,7 @@ function emitDecodedRecord(
     const converted = emittedFallible(before, decoded, ctx)
       ? emitFieldConversion(literal(name), NESTED_SOURCE, property, read, ctx)
       : inputCount(decoded, input) > 1
-        ? code`((${identifier(NESTED_SOURCE)}) => ${emitDecodeValue(property, identifier(NESTED_SOURCE), { ...ctx, knownReads: undefined })})(${read})`
+        ? code`((${NESTED_SOURCE}) => ${emitDecodeValue(property, NESTED_SOURCE, { ...ctx, knownReads: undefined })})(${read})`
         : bindInput(decoded, input, read);
     // An optional property that converts is read only when the input has it.
     if (!required.has(name) && !sameCode(decoded, inputOf(input))) {
@@ -1482,7 +1482,9 @@ function emitDecodedRecord(
 }
 
 /** Parameter of an inline decoder that reads a nested property once; inner decoders shadow it. */
-const NESTED_SOURCE = '__golemSource';
+const NESTED_SOURCE = localCode(localName('source'));
+/** The value of an undeclared key in a loop over the keys of an object. */
+const EXTRA_VALUE = localCode(localName('extra'));
 
 function emitFillPropertyWrite(name: string, decoded: Code, indent: number): Code {
   if (name === '__proto__') {
@@ -1518,7 +1520,7 @@ function emitFillValue(
   read: Code,
   shape: ReadShape,
   field: Code,
-  local: string,
+  local: Code,
   ctx: EmitCtx,
 ): FillValue {
   const before = fallibleCount(ctx);
@@ -1534,7 +1536,7 @@ function emitFillValue(
   if (fallible) {
     return { statements: [], value: emitFieldConversion(field, local, property, input, ctx), converted, checked, fallible };
   }
-  return { statements: [code`const ${identifier(local)} = ${input};`], value: emitDecodeValue(property, identifier(local), ctx), converted, checked, fallible };
+  return { statements: [code`const ${local} = ${input};`], value: emitDecodeValue(property, local, ctx), converted, checked, fallible };
 }
 
 /**
@@ -1610,9 +1612,8 @@ function emitFillFunction(
     // The JSON view: a wire field is present when it is own, enumerable and not undefined. Where a write depends on
     // presence, the field is read into a local by the one Object.keys pass; a carried required field reads the wire.
     const optional = !required.has(name);
-    const present = `__golemPresent${index}`;
-    const presentName = identifier(present);
-    const fill = emitFillValue(property, presentName, 'name', field, `__golemWire${index}`, ctx);
+    const presentName = localCode(localName('present', index));
+    const fill = emitFillValue(property, presentName, 'name', field, localCode(localName('wire', index)), ctx);
     const proto = name === '__proto__';
     if (fill.converted || fill.checked || proto) needsFill = true;
     if (fill.fallible || fill.checked) fallible = true;
@@ -1634,7 +1635,7 @@ function emitFillFunction(
       if (!optional) {
         // A required field that is carried reads the wire itself, so it is written against that read.
         const direct = accessRead(inputOf(wireRoot), name);
-        const carried = emitFillValue(property, direct.read, direct.shape, field, `__golemWire${index}`, ctx);
+        const carried = emitFillValue(property, direct.read, direct.shape, field, localCode(localName('wire', index)), ctx);
         const onWire = (piece: Code): Code => bindInput(piece, wireRoot, code`wire`);
         propertyWrites.push(...carried.statements.map((row) => indented(onWire(row), 2)), ...write(onWire(carried.value)));
       } else {
@@ -1670,14 +1671,14 @@ function emitFillFunction(
       code`  for (const key of Object.keys(wire)) {`,
       ...(properties.length > 0 ? [code`    if (${keyIsListed(identifier('key'), properties.map(([name]) => name))}) continue;`] : []),
       // An undeclared key whose value is undefined is absent, as the validator and encode treat it.
-      code`    const __golemExtra = wire[key];`,
-      code`    if (__golemExtra === undefined) continue;`,
+      code`    const ${EXTRA_VALUE} = wire[key];`,
+      code`    if (${EXTRA_VALUE} === undefined) continue;`,
     );
     const emitExtra = (schema: ModelTypeDescriptor | undefined, indent: number): Code[] => {
       // A pattern without a field schema carries the value by reference.
       const value: FillValue = schema === undefined
-        ? { statements: [], value: code`${rt.conversion.assertPropertyAcyclic}(wire, key, __golemExtra)`, converted: false, checked: true, fallible: true }
-        : emitFillValue(schema, identifier('__golemExtra'), 'name', identifier('key'), '__golemValue', ctx);
+        ? { statements: [], value: code`${rt.conversion.assertPropertyAcyclic}(wire, key, ${EXTRA_VALUE})`, converted: false, checked: true, fallible: true }
+        : emitFillValue(schema, EXTRA_VALUE, 'name', identifier('key'), localCode(localName('value')), ctx);
       if (value.converted || value.checked) needsFill = true;
       if (value.fallible || value.checked) fallible = true;
       return [
@@ -1779,17 +1780,17 @@ function emitEncodedRecord(
     const encoded = emitEncodeValue(property, inputOf(input), ctx);
     // A field whose value is undefined is omitted, as stringify and JSON.stringify do; a required field is omitted only when its type admits undefined.
     if (!required.has(name) || admitsUndefined(property)) {
-      const local = identifier(allocateInlineLocal(ctx, '__golemField') ?? `__golemField${index}`);
+      const local = localCode(allocateInlineLocal(ctx, 'field') ?? localName('field', index));
       const entry = code`(${local} !== undefined ? { [${literal(name)}]: ${bindInput(encoded, input, local)} } : undefined)`;
       return { name, code: ctx.inlineLocals ? code`...(${local} = ${read}, ${entry})` : code`...((${local}) => ${entry})(${read})`, spread: true };
     }
     if (inputCount(encoded, input) <= 1) return { name, code: bindInput(encoded, input, read), spread: false };
-    const allocated = allocateInlineLocal(ctx, '__golemField');
+    const allocated = allocateInlineLocal(ctx, 'field');
     if (!allocated) {
-      const fallbackLocal = identifier(`__golemField${index}`);
+      const fallbackLocal = localCode(localName('field', index));
       return { name, code: code`((${fallbackLocal}) => ${bindInput(encoded, input, fallbackLocal)})(${read})`, spread: false };
     }
-    const local = identifier(allocated);
+    const local = localCode(allocated);
     return { name, code: code`(${local} = ${read}, ${bindInput(encoded, input, local)})`, spread: false };
   });
   // A schema for the other names: they are kept and encoded by it. Without one, a declared `additionalProperties: true`
@@ -1807,22 +1808,22 @@ function emitEncodedRecord(
   // Bind that object only when its expression would otherwise be evaluated
   // more than once; ordinary top-level `value`/`record` paths stay direct.
   if (readShape(value) === 'name' || inputCount(record, self) <= 1) return asObjectLiteral(bindInput(record, self, value));
-  const allocated = allocateInlineLocal(ctx, '__golemRecord');
+  const allocated = allocateInlineLocal(ctx, 'record');
   if (!allocated) {
-    const fallbackLocal = identifier('__golemRecord');
+    const fallbackLocal = localCode(localName('record'));
     return code`((${fallbackLocal}) => (${bindInput(record, self, fallbackLocal)}))(${value})`;
   }
-  const local = identifier(allocated);
+  const local = localCode(allocated);
   return code`(${local} = ${value}, ${bindInput(record, self, local)})`;
 }
 
 function allocateInlineLocal(
   ctx: EmitCtx,
-  prefix: '__golemField' | '__golemRecord',
+  kind: 'field' | 'record',
 ): string | undefined {
   const inlineLocals = ctx.inlineLocals;
   if (!inlineLocals) return undefined;
-  const local = `${prefix}${inlineLocals.size}`;
+  const local = localName(kind, inlineLocals.size);
   inlineLocals.add(local);
   return local;
 }

@@ -24,6 +24,9 @@ import {
   ImportSource,
   join,
   literal,
+  localCode,
+  localName,
+  propertyKey,
   rt,
   rtType,
   sameCode,
@@ -46,7 +49,7 @@ import {
   presentKeysCode,
 } from '@exprtlabs/golem/internal/emitter';
 import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { compareText, displayPath, propertyName, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
+import { compareText, displayPath, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
 import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';
@@ -402,11 +405,6 @@ interface TypeNames {
   readonly classValue: (key: string) => Code | undefined;
   /** `<name><suffix>` of a model: imported from the file that holds the model, or this file's own. */
   readonly modelType: (name: string, suffix: 'BaseModel' | 'JSON' | 'Init' | 'Fields') => Code;
-}
-
-/** The key of a property in a type: its name, quoted when it is not an identifier. */
-function propertyKey(name: string): Code {
-  return propertyName(name) === name ? identifier(name) : literal(name);
 }
 
 function descriptorType(
@@ -1501,7 +1499,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const inputType = optional ? code`Exclude<${baseName}[${name}], undefined>` : code`${baseName}[${name}]`;
       const converted = wrapRootConversion(helpers, rootHelperName(specification.name, 'serialize'), 'serialize', name, input, emitEncode, inputType);
       // Wire output omits a field whose value is undefined, as stringify and JSON.stringify do; a required field whose type admits undefined too.
-      const present = code`Object.prototype.hasOwnProperty.call(model, ${name}) && ${input} !== undefined`;
+      const present = code`Object.hasOwn(model, ${name}) && ${input} !== undefined`;
       return code`  if (${present}) ${rt.conversion.defineModelProperty}(result, ${name}, (${converted}));`;
     });
     const decode: Code[] = [];
@@ -1512,7 +1510,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const name = literal(field.getName());
       // The JSON view, read once into a local by one Object.keys pass. Decode reads the own copy in `result`, so a
       // getter of the input runs once.
-      const input = identifier(`__golemValue${index}`);
+      const input = localCode(localName('value', index));
       const descriptor = descriptors.get(field.getName());
       if (!descriptor) throw new Error(`Missing descriptor for field ${field.getName()}.`);
       const emitDecode = (value: Code): Code => emitModelFromJSON(
