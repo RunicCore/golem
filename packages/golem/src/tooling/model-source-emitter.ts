@@ -474,7 +474,8 @@ function emitNestedUncached(
       : plainValue;
     // Wire output omits an optional field whose value is undefined, as stringify and JSON.stringify do; a required field whose type admits undefined too.
     const omitsUndefined = (name: string): boolean => direction === 'toJSON' && (!descriptor.required.includes(name) || admitsUndefined(descriptor.properties[name]!));
-    const dropsRequiredUndefined = direction === 'toJSON' && descriptor.required.some((name) => descriptor.properties[name] !== undefined && admitsUndefined(descriptor.properties[name]));
+    // An object that declares such a field is rebuilt, so the output holds no own undefined key; any other object passes through.
+    const dropsUndefined = Object.keys(descriptor.properties).some(omitsUndefined);
     const additionalChanged = !sameCode(additional, plainValue);
     const knownChanged = assignments.some(({ unchanged }) => !unchanged);
     const knownNames = Object.keys(descriptor.properties);
@@ -482,7 +483,7 @@ function emitNestedUncached(
     const defineProperty = rt.conversion.defineModelProperty;
     // A decoder reads the declared fields of any object by the JSON view, so it builds the copy from one Object.keys pass.
     // A projection does so in both directions, and also drops the keys it does not declare.
-    if (descriptor.projection || dropsRequiredUndefined || (direction !== 'toJSON' && (knownChanged || additionalChanged))) {
+    if (descriptor.projection || dropsUndefined || (direction !== 'toJSON' && (knownChanged || additionalChanged))) {
       // An additionalProperties tag declares the other keys of a projection as data: they are copied as they are or by
       // the tag's type. Another object keeps its other keys the same way.
       const hasExtras = !descriptor.projection || typeof descriptor.additionalProperties === 'object' || descriptor.additionalPropertiesDeclared;
@@ -515,7 +516,6 @@ function emitNestedUncached(
       ? code`Object.fromEntries(Object.entries(${record}).filter(([${knownNames.length === 0 ? code`` : code`key`}, value]) => value !== undefined${unlisted}).map(([key, value]) => [key, ${additional}]))`
       : record;
     const fields = assignments.map(({ name, property, sourceValue, unchanged, value: converted }) => {
-      if (omitsUndefined(name)) return code`...(${sourceValue} !== undefined ? { [${property}]: ${converted} } : undefined)`;
       const guarded = unchanged
         ? sourceValue
         : code`${sourceValue} === undefined ? ${sourceValue} : (${converted})`;
