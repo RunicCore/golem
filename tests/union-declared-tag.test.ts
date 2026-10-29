@@ -16,6 +16,14 @@ import { requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 
 const TAG = "Discriminator<'kind'>";
 
+type ContactCodecs = Record<string, (value: unknown, options?: object) => unknown>;
+
+async function buildContactCodecs(root: string, validation: boolean): Promise<ContactCodecs> {
+  writeModelGolemYaml(root, { mobx: false, validation });
+  await buildModelProject(root);
+  return requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as ContactCodecs;
+}
+
 // Every position a declared union can stand in: written on the union, through an alias, nullable, optional, array and record value.
 const CONTACT_MODEL = `
 import type { IModel } from '@exprtlabs/golem/model';
@@ -536,9 +544,7 @@ export type TEmail = IObject<{ kind: 'email'; address: string }>;
 export type TContact = IObject<{ value: (TEmail | TPhone) & Discriminator<'kind'> }>;
 `,
     });
-    writeModelGolemYaml(root, { mobx: false, validation });
-    await buildModelProject(root);
-    const codecs = requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as Record<string, (value: unknown, options?: object) => unknown>;
+    const codecs = await buildContactCodecs(root, validation);
     const options = { validate: validation };
     for (const value of [{ kind: 'email', address: 'a@b.c' }, { kind: 'phone', number: '5' }]) {
       assert.equal(codecs.stringifyTContact({ value }, options), JSON.stringify({ value }));
@@ -568,9 +574,7 @@ export type TContact = IObject<{
 }>;
 `,
     });
-    writeModelGolemYaml(root, { mobx: false, validation });
-    await buildModelProject(root);
-    const codecs = requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as Record<string, (value: unknown, options?: object) => unknown>;
+    const codecs = await buildContactCodecs(root, validation);
     const options = { validate: validation };
     const href = 'https://example.com/a?b=1';
     const email = { kind: 'email', address: 'a@b.c' };
@@ -607,9 +611,7 @@ export type TPhone = IObject<{ kind: 'phone'; number: string }>;
 export type TContact = IObject<{ value: (Date | TEmail | TPhone) & ${TAG} }>;
 `,
     });
-    writeModelGolemYaml(root, { mobx: false, validation });
-    await buildModelProject(root);
-    const codecs = requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as Record<string, (value: unknown, options?: object) => unknown>;
+    const codecs = await buildContactCodecs(root, validation);
     const options = { validate: validation };
     const at = '2020-01-02T03:04:05.000Z';
     for (const wire of [{ value: at }, { value: { kind: 'email', address: 'a@b.c' } }, { value: { kind: 'phone', number: '5' } }]) {
@@ -677,9 +679,7 @@ export type TPhone = IObject<{ kind: 'phone'; number: string }>;
 export type TContact = IObject<{ beside: Link | ((TEmail | TPhone) & ${TAG}) }>;
 `,
     });
-    writeModelGolemYaml(root, { mobx: false, validation });
-    await buildModelProject(root);
-    const codecs = requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as Record<string, (value: unknown, options?: object) => unknown>;
+    const codecs = await buildContactCodecs(root, validation);
     assert.throws(
       () => codecs.fromWireFormatTContact({ beside: 'not a url' }, { validate: validation }),
       (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization && !error.causedByInput && error.issues[0]?.path.join('.') === 'beside',
