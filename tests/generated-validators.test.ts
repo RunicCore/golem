@@ -11,14 +11,14 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import type { Validator } from '@exprtlabs/golem/validation';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { workspace } from './support/process.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, type ModelProject } from './model-project.js';
 import type { ModelValidationContext } from '@exprtlabs/golem/model';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
 import { compileSchema, compileValidationPlan } from './support/compiled-validators.js';
 import { runPipeline } from '#golem/pipeline';
 
@@ -258,7 +258,8 @@ test('generated object codecs close nested schemas and keep first/all and contex
     TMiddleBaseModel: abstract new (...args: never[]) => object;
     TRootBaseModel: abstract new (...args: never[]) => object;
   }, Readonly<Record<string, Validator>>];
-  const { findCodecIdForConstructor, requireObjectCodec } = await import('@exprtlabs/golem/serde');
+  const { findCodecIdForConstructor } = await import('@exprtlabs/golem/serde');
+  const { requireObjectCodec } = await import('@exprtlabs/golem/internal/model-runtime');
   const { getValidator, validateInstance } = await import('@exprtlabs/golem/validation');
   const codecId = findCodecIdForConstructor(TRootBaseModel);
   assert.ok(codecId, 'generated root model has a registered codec id');
@@ -402,7 +403,7 @@ test('a field type that only a model without validation holds still fails genera
 });
 
 test('a model class registered at run time satisfies a generated model-instance check', async () => {
-  const { registerIModelClass } = await import('@exprtlabs/golem/serde');
+  const { registerIModelClass } = await import('@exprtlabs/golem/internal/model-runtime');
   class Cat {}
   class Dog {}
   registerIModelClass('GeneratedValidatorsCat_0a1b2c3d', Cat);

@@ -3,11 +3,10 @@ import test from 'node:test';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { code, emitModelFromInit, emitModelFromJSON, identifier, render, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import type { Validator } from '@exprtlabs/golem/validation';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
-import * as conversion from '@exprtlabs/golem/conversion';
-import * as serde from '@exprtlabs/golem/serde';
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import * as modelRuntime from '@exprtlabs/golem/internal/model-runtime';
 import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
 import { runModule } from './support/run-module.js';
@@ -119,7 +118,7 @@ test('the cores and the wire stringify of a module take no options', () => {
   // protects: F-129 lean generated code: no per-call options literal; core functions take no options
   const source = emitCodecRuntimeText(paymentGraph(), validatorNames);
   const names = ['stringifyPaymentCore', 'stringifyMoneyCore', 'toWireFormatPaymentCore', 'toWireFormatMoneyCore', 'stringifyPaymentWire', 'stringifyMoneyWire'];
-  const functions = runModule(source.replace(/^export /gm, ''), { ...serde, ...conversion }, { exports: names }) as Record<string, (...args: unknown[]) => unknown>;
+  const functions = runModule(source.replace(/^export /gm, ''), { ...modelRuntime }, { exports: names }) as Record<string, (...args: unknown[]) => unknown>;
   assert.deepEqual(names.map((name) => [name, functions[name].length]), names.map((name) => [name, 1]), 'each takes its value and nothing else');
   assert.equal(instantiateRuntime(source).stringifyPayment.length, 2, 'the public function takes the value and the options');
 });

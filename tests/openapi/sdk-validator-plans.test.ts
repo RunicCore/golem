@@ -5,7 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import type { Validator } from '@exprtlabs/golem/validation';
 import { compilePlanValidators, type CodecValidationPlan, type PlanValidators } from '@exprtlabs/golem/internal/validation-plan';
 import { analyzeOpenApiModels, generateOpenApiModelArtifacts } from '#openapi/models';
 

@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { after } from 'node:test';
-import { ClientRuntime } from '@exprtlabs/golem/client';
+import { ClientRuntime } from '@exprtlabs/golem/internal/client-runtime';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import {
   captureRequest,

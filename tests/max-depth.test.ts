@@ -7,8 +7,9 @@ import test, { type TestContext } from 'node:test';
 import { Body, Controller, Post, type INestApplication } from '@nestjs/common';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { valueNestsDeeperThan } from '@exprtlabs/golem/conversion';
-import { nestModelCodec, NestModelInterceptor } from '@exprtlabs/golem/nest';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { NestModelInterceptor } from '@exprtlabs/golem/nest';
+import { nestModelCodec } from '@exprtlabs/golem/internal/nest-runtime';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { startNestApp } from './support/nest-app.js';
