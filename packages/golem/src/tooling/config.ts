@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalPath, displayPath, isInsideDirectory, isRecord, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-api.js';
+import { canonicalPath, displayPath, isInsideDirectory, isRecord, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-core.js';
 import { defaultModelOutput } from './generated-paths.js';
 import type {
   GolemProfile,
@@ -11,7 +11,7 @@ import type {
   InputObserver,
   ModelContext,
   OpenApiContext,
-} from './generator-api.js';
+} from './generator-core.js';
 
 export type GolemJob =
   | { readonly id: string; readonly kind: 'controllers'; readonly package: '@exprtlabs/golem-ts-openapi'; readonly options: ControllerContext }

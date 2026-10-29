@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { displayPath } from './generator-api.js';
+import { displayPath } from './generator-core.js';
 import { openRewriteProject, TSX_FILE, TYPESCRIPT_FILE, withInlineSourceMap } from './rewrite-host.js';
 import { isInstalledFile } from './type-analysis/path-identity.js';
 import type { RewriteProject } from './rewrite-host.js';

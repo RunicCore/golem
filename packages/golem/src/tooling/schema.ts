@@ -18,7 +18,7 @@ import {
   VALIDATION_KEYWORD,
 } from '../schema-keywords.js';
 import { canonicalSchemaKey } from './canonical-schema-key.js';
-import { compareText, isRecord } from './generator-api.js';
+import { compareText, isRecord } from './generator-core.js';
 
 export { assertSupportedModelFieldName } from '../model-field-names.js';
 export { decodeUriFragment, escapePointerToken, unescapePointerToken } from '../json-pointer.js';

@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { discoverSources, displayPath, isRecord, resolveProfile, stableValue } from './generator-api.js';
-import type { GolemProfile, InputObserver } from './generator-api.js';
+import { discoverSources, displayPath, isRecord, resolveProfile, stableValue } from './generator-core.js';
+import type { GolemProfile, InputObserver } from './generator-core.js';
 import type { CodecSchemaClosureEntry } from './validation-plan.js';
 
 interface ModelManifestProvenance {

@@ -1,6 +1,6 @@
 import type { Linter, Rule } from 'eslint';
 
-import { lineStarts } from './rewrite.js';
+import { lineStarts } from './source-map.js';
 import { openRewriteProject, type GolemHostOptions, type RewriteProject } from './rewrite-host.js';
 
 export type { GolemHostOptions };

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
-import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isRecord } from './generator-core.js';
+import type { GeneratorSession, GolemDiagnostic } from './generator-core.js';
 import { OPERATION_METHOD_KEYS_EXPORT, operationCodecRegistryPath, operationCodecSlot, operationSlotCodecs, type OperationMethodCodecs } from './generated-paths.js';
 import type { DiscriminatorValue } from '../model-registry.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';

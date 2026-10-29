@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { isRecord } from './generator-api.js';
+import { isRecord } from './generator-core.js';
 import { matchStarPattern } from './star-pattern.js';
 import { readManifest } from './type-analysis/package-specifier.js';
 import type { RewriteEdit } from './rewrite.js';

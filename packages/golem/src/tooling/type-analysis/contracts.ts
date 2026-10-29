@@ -6,7 +6,7 @@ import { byRealPath, companionFilename, filesReadingOutputs, includedModelSource
 import { inNodeModules } from './path-identity.js';
 import { pascalIdentifier } from './projection-names.js';
 import { fieldProvenance } from './projections.js';
-import { canonicalPath, displayPath } from '../generator-api.js';
+import { canonicalPath, displayPath } from '../generator-core.js';
 import { canonicalDescriptorKey } from '../schema.js';
 import { deduplicateProjections } from './graph.js';
 import { diagnostic, linkedClasses, modelSpecificationForClass, resolveSymbol } from './symbols.js';

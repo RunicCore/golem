@@ -1,6 +1,6 @@
 import { code, helperDefinitions, identifier as identifierCode, join, nameOf, NameTable, render, runtimeImports, type Code } from '../code.js';
 import type { IrFunction, IrModule } from './ir.js';
-import { compareText } from '../generator-api.js';
+import { compareText } from '../generator-core.js';
 import { rtType } from '../rt.js';
 import { VALUE, NEWLINE, functionParameters, FunctionSlots, callFunction, type CalleeSlot } from './function-names.js';
 import { FULL_VALIDATOR, fastCheckMode, type WriterMode } from './modes.js';

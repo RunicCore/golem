@@ -1,5 +1,5 @@
 import { realpathSync } from 'node:fs';
-import { displayPath } from './generator-api.js';
+import { displayPath } from './generator-core.js';
 import { resolveTypeScript } from './typescript-version.js';
 
 /** The TypeScript install a process loads, as `resolveTypeScript` describes it. */

@@ -6,7 +6,7 @@
 export {
   DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, canonicalPath, displayPath, isRecord, outsideModelsRootMessage, stripSourceSuffix,
   suffixPattern,
-} from './generator-api.js';
+} from './generator-core.js';
 export {
   NameScope, RESERVED_BINDING_NAMES, RESERVED_MODEL_MEMBERS, assertPortableFilenames, bindingName, camelIdentifier, identifier,
 } from './names.js';

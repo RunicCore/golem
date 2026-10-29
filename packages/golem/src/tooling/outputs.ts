@@ -2,8 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
-import { canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isInsideDirectory, isRecord } from './generator-api.js';
-import type { GolemArtifact } from './generator-api.js';
+import { canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isInsideDirectory, isRecord } from './generator-core.js';
+import type { GolemArtifact } from './generator-core.js';
 import { codecKeysPath, defaultModelOutput, isOperationCodecRegistry, operationCodecRegistryPath } from './generated-paths.js';
 import type { GolemConfig, GolemJob } from './config.js';
 

@@ -3,8 +3,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { GolemConfig, GolemJob } from './config.js';
-import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, isRecord } from './generator-api.js';
-import type { GolemDiagnostic } from './generator-api.js';
+import { GolemDiagnosticSeverity, compareText, hasErrorCode, isInsideDirectory, isRecord } from './generator-core.js';
+import type { GolemDiagnostic } from './generator-core.js';
 import { atomicWrite, loadInventory } from './outputs.js';
 import type { Inventory, InventoryEntry, OutputFiles } from './outputs.js';
 

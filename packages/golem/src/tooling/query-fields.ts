@@ -6,7 +6,7 @@
 
 import type { QueryFieldShape, QueryFieldTable } from '../object-codec.js';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, VALIDATION_KEYWORD } from '../schema-keywords.js';
-import { compareText } from './generator-api.js';
+import { compareText } from './generator-core.js';
 import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 

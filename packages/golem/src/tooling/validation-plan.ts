@@ -1,6 +1,6 @@
 import { lowerDiscriminatorMappings } from '../discriminator-mapping.js';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_INSTANCE_KEYWORD } from '../schema-keywords.js';
-import { compareText, type GolemDiagnostic } from './generator-api.js';
+import { compareText, type GolemDiagnostic } from './generator-core.js';
 import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { compile, type CompileInput, type CompileOptions, type CompileResult, type SchemaPlace } from './validator-compiler/index.js';

@@ -4,7 +4,7 @@
  * and the helpers of a file come from the parts and no step reads emitted text back to decide something.
  * Internal to the tooling: no package export names this module.
  */
-import { compareText } from './generator-api.js';
+import { compareText } from './generator-core.js';
 import { hasLocalForm } from './names.js';
 import { RUNTIME_MODULE_RANK, RUNTIME_SPECIFIER, runtimeTypeSpecifier, type RuntimeModule } from './rt.js';
 

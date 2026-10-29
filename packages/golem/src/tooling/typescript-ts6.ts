@@ -10,7 +10,7 @@ import { channel } from 'node:diagnostics_channel';
 import { createRequire } from 'node:module';
 import { basename, dirname } from 'node:path';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
-import { displayPath } from './generator-api.js';
+import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, emitWanted, flagPathOptions, flagsAsConfigOptions, programConfig, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder } from './typescript-config.js';

@@ -25,8 +25,6 @@ export const RESERVED_MODEL_MEMBERS: readonly string[] = Object.freeze([
   '$validator',
 ]);
 
-const IDENTIFIER = /^[A-Za-z_$][\w$]*$/;
-
 /** The form of the locals of generated functions (`$v0`, `$k`): a `$`, one lowercase letter and digits. No name of a file may have it. */
 const LOCAL_FORM = /^\$[a-z]\d*$/;
 
@@ -57,11 +55,6 @@ export function identifier(value: unknown, fallback = 'Value'): string {
 export function camelIdentifier(value: unknown, fallback = 'Value'): string {
   const pascal = identifier(value, fallback);
   return pascal[0].toLowerCase() + pascal.slice(1);
-}
-
-/** Object member key: bare when it is an identifier name, otherwise a string literal. */
-export function propertyName(value: string): string {
-  return IDENTIFIER.test(value) ? value : JSON.stringify(value);
 }
 
 /**

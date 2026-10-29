@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalPath, displayPath, isInsideDirectory } from '../generator-api.js';
+import { canonicalPath, displayPath, isInsideDirectory } from '../generator-core.js';
 
 type PackageSpecifierResult =
   | { readonly kind: 'same-package' }

@@ -1,6 +1,6 @@
 import type { ModelConversionDescriptor } from '../model-source-emitter.js';
 import type { SerdeBinding, ValidationBinding } from './tags.js';
-import { compareText } from '../generator-api.js';
+import { compareText } from '../generator-core.js';
 import { canonicalConstraintKey, mapConstraintSchemaValues } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
 

@@ -1,4 +1,4 @@
-import { compareText } from '../generator-api.js';
+import { compareText } from '../generator-core.js';
 import * as ts from '../typescript-ns.js';
 import { resolveSymbol } from './symbols.js';
 import { isDiscriminatorTag, untaggedMembers } from './tags.js';

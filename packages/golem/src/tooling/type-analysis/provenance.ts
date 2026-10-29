@@ -10,7 +10,7 @@ import type {
   ModelManifest,
   ModelManifestEntry,
 } from '../model-manifest-core.js';
-import { canonicalPath, displayPath, type GolemProfile, type InputObserver } from '../generator-api.js';
+import { canonicalPath, displayPath, type GolemProfile, type InputObserver } from '../generator-core.js';
 import { MISSING, fileSignature } from '../input-watcher.js';
 import type { CodecSchemaClosureEntry } from '../validation-plan.js';
 import { canonicalFilename, effectiveConfigPath, isUnderOutputs } from './project.js';

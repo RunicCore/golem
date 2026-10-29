@@ -1,4 +1,15 @@
-import { displayPath, errorMessage } from './generator-api.js';
+import { displayPath, errorMessage } from './generator-core.js';
+
+// Source text, not a regex literal: emit would print a U+2028 escape in a literal as the raw character.
+const LINE_BREAK_SOURCE = '\\r\\n|[\\r\\n\\u2028\\u2029]';
+export const LINE_BREAK = new RegExp(LINE_BREAK_SOURCE, 'g');
+
+export function lineStarts(text: string): number[] {
+  const starts = [0];
+  LINE_BREAK.lastIndex = 0;
+  for (let match = LINE_BREAK.exec(text); match; match = LINE_BREAK.exec(text)) starts.push(match.index + match[0].length);
+  return starts;
+}
 
 export interface SourceMapV3 {
   readonly version: 3;

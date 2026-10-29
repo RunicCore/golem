@@ -1,4 +1,4 @@
-import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-api.js';
+import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-core.js';
 import { emit, exportNames, type PassExports } from './emit.js';
 import { lower } from './lower.js';
 

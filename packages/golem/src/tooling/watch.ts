@@ -1,6 +1,6 @@
 import path from 'node:path';
 import type { GolemConfig } from './config.js';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, failureText, isInsideDirectory, suffixPattern } from './generator-api.js';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, errorMessage, failureText, isInsideDirectory, suffixPattern } from './generator-core.js';
 import { changedPaths, InputScan, InputWatcher, outsideFolder, OwnedOutputIndex, realInputFiles, RunBaseline } from './input-watcher.js';
 import type { InputFiles } from './input-watcher.js';
 import { realOutputFiles } from './outputs.js';
