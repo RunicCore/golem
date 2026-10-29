@@ -1,4 +1,4 @@
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '../model.js';
 export {
   emitCodecRuntimeCode,
   emitStringifyFunction,

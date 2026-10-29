@@ -105,6 +105,11 @@
       "import": "./dist/runtime-nest.js",
       "default": "./dist/runtime-nest.js"
     },
+    "./internal/generator-support": {
+      "types": "./dist/tooling/generator-support.d.ts",
+      "import": "./dist/tooling/generator-support.js",
+      "default": "./dist/tooling/generator-support.js"
+    },
     "./generator-api": {
       "types": "./dist/tooling/generator-api.d.ts",
       "import": "./dist/tooling/generator-api.js",

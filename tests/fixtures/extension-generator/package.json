@@ -1,0 +1,6 @@
+{
+  "name": "@fixture/extension",
+  "version": "0.0.1",
+  "type": "module",
+  "exports": { "./generator": "./dist/generator.js" }
+}
