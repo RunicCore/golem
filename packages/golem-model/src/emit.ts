@@ -1000,9 +1000,16 @@ interface EmitContext {
   readonly serdeNames: ReadonlyMap<string, { readonly serialize: string; readonly deserialize: string }>;
 }
 
+/** The item whose source name has the same codec short name as `name`: a node carries the short name (`$d` is `_d`), a source its raw one. */
+function findByCodecName<T extends { readonly name: string }>(items: Iterable<T>, name: string): T | undefined {
+  const short = codecShortName(name);
+  for (const item of items) if (codecShortName(item.name) === short) return item;
+  return undefined;
+}
+
 /** The codec id of an object-only model of another source. */
 function siblingObjectCodecId(schemaGraph: SchemaGraph, name: string): string {
-  const node = [...schemaGraph.nodes.values()].find((item) => item.siblingCodec && item.name === name);
+  const node = findByCodecName([...schemaGraph.nodes.values()].filter((item) => item.siblingCodec), name);
   if (!node) throw new Error(`Generated sibling codec is missing: ${name}`);
   return node.codecId;
 }
@@ -1318,7 +1325,7 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
   });
   const siblingClass = (id: string): Code | undefined => {
     if (!cyclicSiblings?.has(id)) return undefined;
-    const node = [...context.schemaGraph.nodes.values()].find((item) => item.siblingCodec && item.name === id);
+    const node = findByCodecName([...context.schemaGraph.nodes.values()].filter((item) => item.siblingCodec), id);
     return node ? code`${rt.serde.requireIModelClass}(${literal(node.codecId)})` : undefined;
   };
   const resolveImportedModel = (id: string): FromJsonModelResolver => {
@@ -1770,7 +1777,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
   const siblingWires = new Map<string, Code>();
   const siblingWireSources: ImportSource[] = [];
   for (const node of schemaGraph.nodes.values()) {
-    const sibling = node.siblingCodec ? graph.siblings.find((item) => codecShortName(item.name) === node.name) : undefined;
+    const sibling = node.siblingCodec ? findByCodecName(graph.siblings, node.name) : undefined;
     if (!sibling) continue;
     const wireSource = new ImportSource(sourceImportPath(companionOfSpecification(sibling), output));
     siblingWires.set(node.codecId, wireSource.name(wireStringifyExportName(node.codecId)));

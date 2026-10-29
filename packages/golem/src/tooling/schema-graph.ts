@@ -499,8 +499,8 @@ export function createSchemaGraph(
     },
   });
 
-  // The job keys its ids by the name the source writes (`$d`); a node is keyed by the short name (`_d`).
-  const fixedCodecId = (raw: string, named: string): string | undefined => options.codecIds?.get(raw) ?? options.codecIds?.get(named);
+  // The job keys its ids by the name the source writes (`$d`), not the short name (`_d`), which another source name can share.
+  const fixedCodecId = (raw: string): string | undefined => options.codecIds?.get(raw);
 
   const rememberShortName = (named: string, id: string): void => {
     const existing = byName.get(named);
@@ -586,7 +586,7 @@ export function createSchemaGraph(
       // A reference to an ambiguous short name must not take the id of a node interned under it.
       const taken = nodes.get(identifierFromName(named));
       const id = taken && taken.kind !== 'reference' ? identifierFromName(`${raw}__reference`) : identifierFromName(named);
-      const siblingId = descriptor.kind === 'reference' ? fixedCodecId(raw, named) : undefined;
+      const siblingId = descriptor.kind === 'reference' ? fixedCodecId(raw) : undefined;
       const placeholder: SchemaNode = {
         id,
         name: named,
@@ -663,7 +663,7 @@ export function createSchemaGraph(
     // An unnamed object type is identified by its shape, so its id is stable across unrelated edits
     // and two files' anonymous types never share an id unless they are the same codec.
     const computedId = codecPublicId(named ?? 'Anonymous', descriptor, internLookup(), { source: codecSource, constructs: emitClass });
-    const publicId = raw && named ? fixedCodecId(raw, named) ?? computedId : computedId;
+    const publicId = raw && named ? fixedCodecId(raw) ?? computedId : computedId;
     if (!shortOnStack) internStack.delete(stackKey);
     if (raw) internRawStack.delete(raw);
     // A placeholder made for this exact raw name stands in for the node; another raw name's is a different schema.
