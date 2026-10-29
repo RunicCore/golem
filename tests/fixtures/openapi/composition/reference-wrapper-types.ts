@@ -1,7 +1,7 @@
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { PersonModel, VisitModel } from './index.js';
 
-const visit = decodeGeneratedModel(VisitModel, { owner: { name: 'n' } });
+const visit = fromWireFormat<VisitModel>({ owner: { name: 'n' } });
 const owner: PersonModel = visit.owner;
 
 void owner;
