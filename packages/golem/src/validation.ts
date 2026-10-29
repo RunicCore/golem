@@ -411,7 +411,9 @@ async function collectCodecIssues(
       { failFast, ...(options.validationContext === undefined ? {} : { validationContext: options.validationContext }), ...(options.validate === undefined ? {} : { validate: options.validate }) },
     );
   }
-  const overlay = mode === 'first' && generated.length ? [] : await evaluateInstanceRules(model, mode, generated);
+  // Sanity is the shape only: the instance rules are validation functions of the application, which it skips.
+  const sanity = (options.validate ?? definition.profile?.validation) === 'sanity';
+  const overlay = sanity || (mode === 'first' && generated.length) ? [] : await evaluateInstanceRules(model, mode, generated);
   const issues = formatIssues(model, [...generated, ...overlay]);
   return mode === 'first' ? issues.slice(0, 1) : issues;
 }

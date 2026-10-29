@@ -369,6 +369,8 @@ export function serdeValidates(options: SerdeOptions | undefined, defaultLevel: 
   const requested = options?.validate;
   if (requested === undefined) return defaultLevel;
   if (requested === false) return false;
+  // A JavaScript caller can pass anything; `null`, `0` or `''` must not read as "off".
+  if (requested !== true && requested !== 'sanity') throw new TypeError(`The validate option takes true, 'sanity' or false; got ${String(requested)}.`);
   if (requested === true ? cap !== true : cap === false) {
     validationUnavailable(cap === false ? undefined : 'Full validation is not generated: this project validates at the sanity level.');
   }

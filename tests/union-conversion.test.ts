@@ -63,7 +63,7 @@ function ownerRuntime(
   graph.seal();
   const classes = options.classes ?? options.constructed ?? {};
   const source = emitCodecRuntimeText(graph, {
-    validationEnabled: false,
+    validationLevel: false,
     ...(options.classes ? { nestedGenerated: (id: string) => identifier(`${id}Model`) } : {}),
     ...(options.constructed
       ? { nestedConstruct: (codecId: string) => identifier(`${prefix}${codecId.startsWith(`${prefix}Cat`) ? 'Cat' : 'Dog'}Model`) }

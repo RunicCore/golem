@@ -931,7 +931,7 @@ export function generateModels(
   const validatorsSource = helpers.validatorsSource;
   const aliasesByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
   const codecRuntimeOptions: Omit<CodecRuntimeOptions, 'modelBases'> = {
-    validationEnabled: profile.validation,
+    validationLevel: profile.validation,
     serde: TEMPORAL_SERDE,
     ...(helpers.validatorExports ? {
       validatorName: (id: string) => {

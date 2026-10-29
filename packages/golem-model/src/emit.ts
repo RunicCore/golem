@@ -1774,7 +1774,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
   const codecRuntime = emitCodecRuntimeCode(
     schemaGraph,
     {
-      validationEnabled: profile.validation,
+      validationLevel: profile.validation,
       ...(validators ? {
         validatorName: (id: string) => {
           const name = validators.exports.get(id);

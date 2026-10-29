@@ -53,7 +53,7 @@ export interface NestedImportedSerde {
 
 export interface CodecRuntimeOptions {
   /** The validation level of the project (`golem.yaml` `validation`): the highest level any call of this module may ask for. */
-  readonly validationEnabled?: ValidationLevel;
+  readonly validationLevel?: ValidationLevel;
   /**
    * The name the module imports the validator of a root under; the root is a codec id and plane (`Id`, `Id#wire`,
    * `Id#model-only`, `Id#wire-only`). The name is Code that holds an imported part, so the file imports the validators its code uses.
@@ -189,7 +189,7 @@ interface HoistedConverters {
 }
 
 const TRUSTED = code`{ validate: false }`;
-const STRINGIFY_OPTIONS = code`_options?: { readonly validate?: boolean; readonly failFast?: boolean }`;
+const STRINGIFY_OPTIONS = code`_options?: { readonly validate?: boolean | 'sanity'; readonly failFast?: boolean }`;
 /** Declared once per emitted module that passes trusted options to a function in another module. */
 const TRUSTED_HELPER: Helper = helper('__golemTrusted', () => code`const __golemTrusted = Object.freeze({ validate: false });`);
 /**
@@ -766,7 +766,7 @@ export function emitStringifyFunction(
   if (root) return emitObjectStringify(fn, root, ctx, guard, valueSlot);
   if (delegates) {
     return stringifyFunction(
-      (parameter) => code`function ${identifier(fn)}(${parameter}: unknown, options?: { readonly validate?: boolean; readonly failFast?: boolean }): string {`,
+      (parameter) => code`function ${identifier(fn)}(${parameter}: unknown, options?: { readonly validate?: boolean | 'sanity'; readonly failFast?: boolean }): string {`,
       [code`  return ${rt.serde.requireObjectCodec}(${literal(node.codecId)}).stringify(${inputOf(valueSlot)} as never, options);`],
       false,
       valueSlot,
@@ -1892,8 +1892,13 @@ function guardLevelArguments(levels: NodeLevels): Code {
   return levels.defaultLevel === true && levels.cap === true ? code`` : levelArguments(levels);
 }
 
+/** Whether a node's calls validate by default: its project and the node are not off. */
+function validatesByDefault(levels: NodeLevels): boolean {
+  return levels.defaultLevel !== false;
+}
+
 function emitSerdeValidates(levels: NodeLevels): Code {
-  return levels.defaultLevel === false
+  return !validatesByDefault(levels)
     ? code`  ${rt.serde.serdeValidates}(options, false);`
     : code`  const validates = ${rt.serde.serdeValidates}(options${levelArguments(levels)});`;
 }
@@ -1973,7 +1978,6 @@ interface NodeFields {
 interface NodeRuntime {
   readonly node: SchemaNode;
   readonly ctx: EmitCtx;
-  readonly validationEnabled: boolean;
   /** The level of the node's calls and the highest level a call may ask for. */
   readonly levels: NodeLevels;
   readonly names: { readonly fromWire: Code; readonly toWire: Code; readonly parse: Code };
@@ -2053,7 +2057,6 @@ function nodeRuntime(node: SchemaNode, moduleCtx: EmitCtx, levels: NodeLevels): 
   return {
     node,
     ctx,
-    validationEnabled: levels.defaultLevel !== false,
     levels,
     names: {
       fromWire: identifier(fromWireFunctionName(node.id)),
@@ -2077,7 +2080,8 @@ function nodeRuntime(node: SchemaNode, moduleCtx: EmitCtx, levels: NodeLevels): 
 
 /** The stringify function of a node, with the lenient and wire copies it needs, and the checked wrapper that calls them. */
 function emitStringifySection(runtime: NodeRuntime): Code {
-  const { node, ctx, validationEnabled, stringifyId, assertId, wireOnlyAssertId, exported, objectDescriptor } = runtime;
+  const { node, ctx, levels, stringifyId, wireOnlyAssertId, exported, objectDescriptor } = runtime;
+  const validationEnabled = validatesByDefault(levels);
   // The validated call of a codec whose wire and model schemas agree runs this function after its check, so it keeps the
   // all-required fast path and a call with validation off runs a lenient copy. Any other call is lenient.
   const checkedCore = validationEnabled && node.sameSchema;
@@ -2115,7 +2119,7 @@ function emitStringifySection(runtime: NodeRuntime): Code {
     ...(validationEnabled ? [
       code`  if (validates) {`,
       ...(runtime.reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
-      code`    ${assertId}(value, options as ${VALIDATE_OPTIONS});`,
+      code`    ${emitModelGuard(node, VALUE_REF, 'model', ctx, levels)}`,
       ...(encodedExpr ? [
         code`    const wire = ${encodedExpr};`,
         // The full model check already ran; check only the JSON encoding produced.
@@ -2135,9 +2139,10 @@ function emitStringifySection(runtime: NodeRuntime): Code {
 /** The decode section: the fill function of an object model, the conversion from the wire, and the exported fromWireFormat. */
 function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonly convert: Code; readonly fromWire: Code } {
   const {
-    node, ctx, validationEnabled, levels, names, wireAssertId, modelOnlyAssertId, convertId, exported,
+    node, ctx, levels, names, wireAssertId, modelOnlyAssertId, convertId, exported,
     objectDescriptor, reachesCycle,
   } = runtime;
+  const validationEnabled = validatesByDefault(levels);
   const fillId = identifier(fillFunctionName(node.id));
   const fill = objectDescriptor ? emitFillFunction(node, ctx, objectDescriptor) : undefined;
   const wireRoot = inputSlot('wire', 'name', true);
@@ -2220,7 +2225,8 @@ function emitDecodeSection(runtime: NodeRuntime): { readonly fill: Code; readonl
 
 /** The toWireFormat core, which nested trusted calls and the validating wrapper both run, and the exported wrapper. */
 function emitToWireSection(runtime: NodeRuntime): Code {
-  const { node, ctx, validationEnabled, names, assertId, wireOnlyAssertId, exported, objectDescriptor, reachesCycle } = runtime;
+  const { node, ctx, levels, names, wireOnlyAssertId, exported, objectDescriptor, reachesCycle } = runtime;
+  const validationEnabled = validatesByDefault(levels);
   const fieldsOrUnknown = runtime.fields().orUnknown;
   const toWireCoreId = identifier(`${toWireFunctionName(node.id)}Core`);
   const recursiveNode = reachesNode(node.descriptor, node.id, ctx) && !passesValueOn(node.descriptor, objectDescriptor !== undefined);
@@ -2257,7 +2263,7 @@ function emitToWireSection(runtime: NodeRuntime): Code {
     ...(validationEnabled ? [
       code`  if (validates) {`,
       ...(reachesCycle ? [code`    ${rt.conversion.assertAcyclicEncodeInput}(value);`] : []),
-      code`    ${assertId}(value, options as ${VALIDATE_OPTIONS});`,
+      code`    ${emitModelGuard(node, VALUE_REF, 'model', ctx, levels)}`,
       code`  }`,
     ] : []),
     ...(validationEnabled && node.wireOnlyJsonSchema !== undefined ? [
@@ -2285,7 +2291,8 @@ function emitParseSection(runtime: NodeRuntime): Code {
 
 /** The exported validate and assert functions, which are the runtime stub that fails with `validationUnavailable` when validation is off. */
 function emitValidateSection(runtime: NodeRuntime): Code {
-  const { node, ctx, validationEnabled, levels, validateId, assertId, exported } = runtime;
+  const { node, ctx, levels, validateId, assertId, exported } = runtime;
+  const validationEnabled = validatesByDefault(levels);
   const { modelType } = runtime.fields();
   return rowsToText(validationEnabled
     ? [
@@ -2308,7 +2315,8 @@ function emitValidateSection(runtime: NodeRuntime): Code {
 
 /** The private assert functions of the wire plane and of the residual model-only and wire-only planes. */
 function emitPlaneAssertSection(runtime: NodeRuntime): Code {
-  const { node, ctx, validationEnabled, levels, wireAssertId, modelOnlyAssertId, wireOnlyAssertId } = runtime;
+  const { node, ctx, levels, wireAssertId, modelOnlyAssertId, wireOnlyAssertId } = runtime;
+  const validationEnabled = validatesByDefault(levels);
   const planeAssert = (name: Code, plane: ValidationPlane): Code[] => [
     code`function ${name}(value: unknown, options?: ${SERDE_OPTIONS}): Record<string, unknown> {`,
     code`  ${emitModelGuard(node, VALUE_REF, plane, ctx, levels)}`,
@@ -2374,8 +2382,8 @@ export function emitCodecRuntimeCode(
   graph: SchemaGraph,
   options: CodecRuntimeOptions,
 ): Code {
-  const project = options.validationEnabled ?? true;
-  const validates = (node: SchemaNode): boolean => nodeLevels(node, project).defaultLevel !== false;
+  const project = options.validationLevel ?? true;
+  const validates = (node: SchemaNode): boolean => validatesByDefault(nodeLevels(node, project));
   const nodes = [...graph.topo()];
   const patternConstants = new Map<string, Code>();
   const ctx: EmitCtx = {

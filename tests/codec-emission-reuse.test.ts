@@ -133,7 +133,7 @@ test('a nested trusted call to a model of another module shares one frozen optio
   graph.intern({ kind: 'generated-model', id: 'Pet' }, 'Pet');
   graph.intern(owner, 'Owner');
   graph.seal();
-  const source = emitCodecRuntimeText(graph, { validationEnabled: false, nestedGenerated: (id) => identifier(`${id}Model`) });
+  const source = emitCodecRuntimeText(graph, { validationLevel: false, nestedGenerated: (id) => identifier(`${id}Model`) });
   const received: unknown[] = [];
   const pet = { stringify: (_value: unknown, options: unknown) => { received.push(options); return '"pet"'; }, toWireFormat: (_value: unknown, options: unknown) => { received.push(options); return 'pet'; } };
   const runtime = instantiateRuntime(source, { requireObjectCodec: () => pet });
@@ -163,7 +163,7 @@ test('a codec registers the query fields that a query string decodes, and no JSO
   graph.seal();
   const registered: Record<string, unknown>[] = [];
   const createObjectCodec = (_id: string, codec: Record<string, unknown>): void => { registered.push(codec); };
-  instantiateRuntime(emitCodecRuntimeText(graph, { validationEnabled: false }), { createObjectCodec });
+  instantiateRuntime(emitCodecRuntimeText(graph, { validationLevel: false }), { createObjectCodec });
   assert.equal(registered.length, 1);
   assert.deepEqual(registered[0]?.queryFields, {
     active: { types: ['boolean'] },
