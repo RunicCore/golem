@@ -130,6 +130,21 @@ function validatorOf(group: SuiteGroup): Promise<Validator> {
   return created;
 }
 
+const compiledSanity = new Map<SuiteGroup, Promise<Validator>>();
+
+/** The same schema compiled at the sanity level. */
+function sanityValidatorOf(group: SuiteGroup): Promise<Validator> {
+  const known = compiledSanity.get(group);
+  if (known) return known;
+  const created = compileValidators({
+    roots: { root: group.schema },
+    ...(usesDialectMetaSchema(group) ? { resources: JSON_SCHEMA_2020_12_META_SCHEMAS } : {}),
+    level: 'sanity',
+  }).then(validators => validators.root);
+  compiledSanity.set(group, created);
+  return created;
+}
+
 const compiledFast = new Map<SuiteGroup, Promise<FastCheck | undefined>>();
 
 /** The root's fast check with `fastPath` on; undefined when the root has none (a validation function, an evaluation record, or no check with a fast form). */
@@ -154,6 +169,11 @@ for (const { file, groups } of suite) {
         const issues = validate(testCase.data, true);
         assert.equal(issues.length === 0, testCase.valid, `all errors: ${JSON.stringify(issues)}`);
         assert.equal(validate(testCase.data, false).length === 0, testCase.valid, 'first error only');
+        // protects: R-71 sanity accepts all that full accepts: the flag on the full module and the sanity module alike
+        if (testCase.valid) {
+          assert.deepEqual(validate(testCase.data, true, true), [], 'full module, sanity flag');
+          assert.deepEqual((await sanityValidatorOf(group))(testCase.data, true), [], 'sanity module');
+        }
         // The fast check gives the same answer in both directions; a root without one takes the full route.
         const isValid = await fastCheckOf(group);
         assert.equal(isValid === undefined ? testCase.valid : isValid(testCase.data), testCase.valid, 'fast check');

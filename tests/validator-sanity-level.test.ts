@@ -110,6 +110,13 @@ describe('sanity accepts all that full accepts', () => {
     assert.deepEqual(await levels(schema, { a: 'x' }), { full: false, flag: true, sanityModule: true });
   });
 
+  test('then over a limit still applies its shape when if is exact', async () => {
+    const schema = { if: { required: ['a'] }, then: { required: ['b'], properties: { b: { type: 'string', maxLength: 1 } } } };
+    assert.deepEqual(await levels(schema, { a: 1 }), { full: false, flag: false, sanityModule: false });
+    assert.deepEqual(await levels(schema, { a: 1, b: 'xyz' }), { full: false, flag: true, sanityModule: true });
+    assert.deepEqual(await levels(schema, { b: 'xyz' }), { full: true, flag: true, sanityModule: true });
+  });
+
   test('contains over a limit needs no match, and a plain contains still needs one', async () => {
     const limited = { type: 'array', contains: { type: 'string', maxLength: 1 } };
     assert.deepEqual(await levels(limited, ['abc']), { full: false, flag: true, sanityModule: true });

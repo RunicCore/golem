@@ -149,8 +149,9 @@ interface IrConditional {
   readonly then?: number;
   readonly else?: number;
   /**
-   * Set by the sanity level (see `sanitize`): `if`, `then` and `else` reach a check that level skips, so none of them
-   * decides. They only mark what they evaluate, and only when the function keeps an evaluation record.
+   * Set by the sanity level (see `sanitize`): the schema of `if` reaches a check that level skips, so it would pass more
+   * and apply a `then` that full does not. `if`, `then` and `else` only mark what they evaluate, and only when the
+   * function keeps an evaluation record.
    */
   readonly relaxed?: true;
 }

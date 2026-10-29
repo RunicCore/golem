@@ -285,7 +285,7 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
 /**
  * The module as the sanity level checks it: the shape only, with no `s` flag. A skipped check is left out
  * (`skipsCheck`). A check that would reject more once its callee is relaxed is relaxed too, so sanity accepts all that
- * full accepts: `not` is left out, an untagged `oneOf` becomes an `anyOf`, `if` stops deciding (`IrConditional.relaxed`),
+ * full accepts: `not` is left out, an untagged `oneOf` becomes an `anyOf`, `if` stops deciding when its own schema reaches one (`IrConditional.relaxed`),
  * and `contains` needs one match at most. Each such check is judged on the full module's reach, before anything is left out.
  */
 export function sanitize(module: IrModule): IrModule {
@@ -303,7 +303,7 @@ export function sanitize(module: IrModule): IrModule {
       case 'validation': return check.fn === undefined ? [] : [{ kind: 'call', fn: check.fn }];
       case 'not': return relaxes([check.fn]) ? [] : [check];
       case 'union': return check.exactlyOne && relaxes(check.branches) ? [{ ...check, exactlyOne: false }] : [check];
-      case 'conditional': return relaxes([check.if, check.then, check.else]) ? [{ ...check, relaxed: true }] : [check];
+      case 'conditional': return relaxes([check.if]) ? [{ ...check, relaxed: true }] : [check];
       case 'allOf': return [{ ...check, branches: check.branches.map(nested) }];
       case 'unevaluatedProperties': case 'unevaluatedItems': return [{ ...check, schema: nested(check.schema) }];
       case 'array': {

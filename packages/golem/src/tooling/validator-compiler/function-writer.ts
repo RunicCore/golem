@@ -719,12 +719,12 @@ export class FunctionWriter {
 
   /**
    * `if` runs with a scratch list and, when this function keeps a record, a scratch record that counts only when `if` passes.
-   * The sanity level does not let `if` decide when it reaches a skipped check: `if` passing more would apply a `then`
-   * that full does not.
+   * The sanity level does not let `if` decide when its schema reaches a skipped check: `if` passing more would apply a
+   * `then` that full does not. A `then` or `else` that reaches one is relaxed by its own flag and still applies.
    */
   private conditionalCheck(check: Extract<IrCheck, { kind: 'conditional' }>, value: Code): void {
     if (check.relaxed === true) return this.relaxedConditional(check, value);
-    if (!this.relaxes([check.if, ...(check.then === undefined ? [] : [check.then]), ...(check.else === undefined ? [] : [check.else])])) return this.exactConditional(check, value);
+    if (!this.relaxes([check.if])) return this.exactConditional(check, value);
     if (this.record === undefined) return this.unlessSanity(() => this.exactConditional(check, value));
     this.open(code`if (${SANITY})`);
     this.relaxedConditional(check, value);
