@@ -180,6 +180,7 @@ export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { 
 });
 
 for (const validation of [true, false]) test(`an IModel over an SDK model keeps a field spelled like a brand key, drops the real brand keys, and encodes and validates with the codec of the SDK model (validation ${validation})`, async t => {
+  // protects: T-650 the forwarders of such a companion call the codec of the SDK model
   // protects: F-213 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
   // protects: T-650 encodeGeneratedModel and validateInstance find the SDK model's codec for a class that declares an SDK model
   const { root, sourceRoot } = fixture(t);
