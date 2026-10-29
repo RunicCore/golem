@@ -318,10 +318,10 @@ export function codecPublicId(
   return `${codecShortName(name)}_${hash8(key)}`;
 }
 
-/** `<file>#<name>` for every exact name that resolves to the codec: the model and each class linked to it. */
+/** `<file>#<name>` for every name the source declares that resolves to the codec: the model, by the name it is written with (`$d`, not `_d`), and each class linked to it. */
 function codecDeclarationKeys(source: string, name: string, classNames: readonly string[] = []): string[] {
   const file = source.replace(/\\/g, '/');
-  return [...new Set([codecShortName(name), ...classNames])].map((declared) => `${file}#${declared}`);
+  return [...new Set([name, ...classNames])].map((declared) => `${file}#${declared}`);
 }
 
 /** The `.golem/codec-keys.json` text of a models job: every `<source>#<name>` declaration and the codec id it stands for. */

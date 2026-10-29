@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 import { LibError } from '@exprtlabs/golem/errors';
 
-import { buildModelProject, generatedModelFiles, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
 test('a model alias named with a leading $ generates when another model file imports it', async (t) => {
   // protects: bug T-647 Unresolved schema reference for a $-named alias imported from another file
@@ -56,8 +56,8 @@ export class A extends TABaseModel {}
   assert.throws(() => generated.parseTA('{"o":{"id":5}}'), LibError);
 });
 
-test('two model files that import each other build when the model names start with $', async (t) => {
-  // protects: bug T-647 a $-named model in an import cycle finds its codec
+test('two model files that import each other decode through parse when the model names start with $', async (t) => {
+  // protects: bug T-647 a $-named model in an import cycle has a codec key, so parse finds its codec and gives the app class
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-dollar-cycle-', name: 'dollar-cycle', linkWorkspaceNodeModules: true });
   writeModelSources(sourceRoot, {
     'customer.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -74,14 +74,18 @@ export type $Order = IModel<{ id: string; customer: Customer }>;
     'order.ts': `import { $OrderBaseModel } from './order.model.generated.js';
 export class Order extends $OrderBaseModel {}
 `,
+    'use.ts': `import { parse } from '@exprtlabs/golem/serde';
+import type { $Order } from './order.model.js';
+export { Customer } from './customer.js';
+export { Order } from './order.js';
+export const order = parse<$Order>('{"id":"o1","customer":{"name":"Ada","orders":[{"id":"o2","customer":{"name":"Bo","orders":[]}}]}}');
+`,
   });
   writeModelGolemYaml(root, { validation: true });
   const result = await buildModelProject(root);
   assert.equal(result.code, 0, result.stderr);
-  // A model of the other file in the cycle is reached by its codec id, as the file cannot import its class.
-  const files = generatedModelFiles(root);
-  const customer = files.find(file => file.path.endsWith('customer.model.generated.ts'))?.content ?? '';
-  const order = files.find(file => file.path.endsWith('order.model.generated.ts'))?.content ?? '';
-  assert.match(customer, /instanceof requireIModelClass\("_Order_[0-9a-f]{8}"\)/);
-  assert.match(order, /instanceof requireIModelClass\("_Customer_[0-9a-f]{8}"\)/);
+  const { order, Order, Customer } = await import(pathToFileURL(path.join(root, 'build', 'use.js')).href);
+  assert.ok(order.customer instanceof Customer);
+  assert.ok(order.customer.orders[0] instanceof Order);
+  assert.equal(order.customer.orders[0].customer.name, 'Bo');
 });
