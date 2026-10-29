@@ -141,7 +141,7 @@ The tag works at every position: a field, an optional field, an array item, a re
 - TypeScript reduces `null & Discriminator<'kind'>` to `never`. `(TEmail | TPhone | null) & Discriminator<'kind'>` therefore loses `null`.
 - `others` above is an array of the tagged union: the parentheses wrap the union and its tag, and the brackets follow.
 
-Scalars, literals, one array or tuple, and `null` can sit beside the tagged objects, as in `(string | TEmail | TPhone) & Discriminator<'kind'>`. Golem picks a variant in this order:
+Scalars, literals, one `Date`, one array or tuple, and `null` can sit beside the tagged objects, as in `(string | TEmail | TPhone) & Discriminator<'kind'>`. So can a [`TSerde`](/guide/tags) class value whose JSON form is a scalar, such as a `URL` written as a string. Golem picks a variant in this order:
 
 1. The JSON type of the value picks a scalar, an array or `null`.
 2. For an object, the value of `kind` picks the variant.
