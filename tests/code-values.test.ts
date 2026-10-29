@@ -60,20 +60,20 @@ test('the helper set holds each named helper once with the helpers it names and 
 
 test('a type name is imported with import type, and a file picks the specifier of each runtime module', () => {
   // protects: T-318 a type name never lands in a value import, and the runtime may be imported from a resolved URL
-  const body = code`export function check(): readonly ${rtType['validation-runtime'].SchemaIssue}[] { return ${rt['validation-runtime'].jsonEqual}(a, b) ? [] : []; }`;
+  const body = code`export function check(): readonly ${rtType.validation.SchemaIssue}[] { return ${rt['validation-runtime'].jsonEqual}(a, b) ? [] : []; }`;
   // @ts-expect-error a type name that the module does not export is a type error
-  void rtType['validation-runtime'].NoSuchType;
+  void rtType.validation.NoSuchType;
   assert.deepEqual(importGroups(body).map((group) => [group.specifier, group.names, group.types]), [
+    ['@exprtlabs/golem/validation', [], [{ name: 'SchemaIssue', typeOnly: true }]],
     ['@exprtlabs/golem/internal/validation-runtime', [{ name: 'jsonEqual' }], []],
-    ['@exprtlabs/golem/validation-runtime', [], [{ name: 'SchemaIssue', typeOnly: true }]],
   ]);
   assert.equal(
     render(join(runtimeImports(body, { specifiers: { 'validation-runtime': 'file:///runtime/validation-runtime.js' }, quote: '"' }), code`\n`)),
-    'import type { SchemaIssue } from "file:///runtime/validation-runtime.js";\nimport { jsonEqual } from "file:///runtime/validation-runtime.js";',
+    'import type { SchemaIssue } from "@exprtlabs/golem/validation";\nimport { jsonEqual } from "file:///runtime/validation-runtime.js";',
   );
   assert.equal(
     render(join(runtimeImports(body), code`\n`)),
-    "import { jsonEqual } from '@exprtlabs/golem/internal/validation-runtime';\nimport type { SchemaIssue } from '@exprtlabs/golem/validation-runtime';",
+    "import type { SchemaIssue } from '@exprtlabs/golem/validation';\nimport { jsonEqual } from '@exprtlabs/golem/internal/validation-runtime';",
   );
 });
 

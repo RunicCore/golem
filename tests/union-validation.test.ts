@@ -9,8 +9,8 @@ import { loadPets } from './support/pets-project.js';
 
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { registerIModelClass } from '@exprtlabs/golem/serde';
-import type { ModelTypeDescriptor, ModelTypeMetadata } from '@exprtlabs/golem/model';
+import { registerIModelClass } from '@exprtlabs/golem/internal/model-runtime';
+import type { ModelTypeDescriptor, ModelTypeMetadata } from '@exprtlabs/golem/internal/schema';
 import { installCodecModel } from './register-codec-model.js';
 import { compileSchema } from './support/compiled-validators.js';
 import { modelCodec } from './support/model-codec.js';

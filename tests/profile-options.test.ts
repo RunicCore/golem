@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type Issue } from '@exprtlabs/golem/errors';
 import { getValidator } from '@exprtlabs/golem/validation';
 import type { GolemProfile } from '#golem/generator-api';

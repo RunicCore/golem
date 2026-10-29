@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { GeneratedModel, ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { GeneratedModel } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { installCodecModel } from './register-codec-model.js';

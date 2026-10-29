@@ -5,13 +5,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec, decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 import { generatedCodecId, generatedCodecIdFromRoot } from './support/consumer.js';
 import { compositionProject as fixture } from './support/model-composition-project.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { projectionPolicyModelSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
-import { decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 import { modelCodec } from './support/model-codec.js';
 
 /** The nested-projection contract, run in the shared project (validation on) and in its own project (validation off). */

@@ -1,16 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  registerGeneratedModel,
-  findGeneratedModelDefinition,
-  findGeneratedModelDefinitionForConstructor,
-  type GeneratedModel,
-  type GeneratedModelValidatorEnhancer,
-  type generatedModelFieldsBrand,
-  type generatedModelWireBrand,
-  type ModelTypeDescriptor,
-} from '@exprtlabs/golem/model';
+import { type GeneratedModel, type generatedModelFieldsBrand, type generatedModelWireBrand } from '@exprtlabs/golem/model';
+import { type GeneratedModelValidatorEnhancer, registerGeneratedModel, findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
+import { type ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { installCodecModel } from './register-codec-model.js';
 import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';
 import { asGenObservable } from '@exprtlabs/golem/mobx';

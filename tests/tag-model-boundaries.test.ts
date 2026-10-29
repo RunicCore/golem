@@ -4,10 +4,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { canonicalSchemaKey, schemaForDescriptor, validationTagSchemaDescriptor } from '@exprtlabs/golem/internal/schema';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { generatedCodecId } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { modelCodec } from './support/model-codec.js';

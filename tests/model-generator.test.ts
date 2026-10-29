@@ -8,7 +8,7 @@ import { spyOnBuild } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { marker } from '#golem/outputs';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 
 import { copyFixture, copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';

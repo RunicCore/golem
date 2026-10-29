@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
 import { LibError } from '@exprtlabs/golem/errors';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { command } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';

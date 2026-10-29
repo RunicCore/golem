@@ -4,7 +4,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { requireObjectCodec, type ObjectCodec } from '@exprtlabs/golem/serde';
+import { type ObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec, decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 import { LibError, LibErrorKind, IssueRepresentation, IssueSource } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { getValidator } from '@exprtlabs/golem/validation';
@@ -17,7 +18,6 @@ import {
   importGeneratedModule,
   requireRecord,
 } from './helpers.js';
-import { decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 import { modelCodec } from '../support/model-codec.js';
 
 type ChildInitLike = { id?: string; when?: Date };

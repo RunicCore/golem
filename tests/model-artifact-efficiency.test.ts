@@ -15,11 +15,10 @@ import { buildModelProject, createModelProject, generatedModelFiles, writeModelG
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { findCodecIdForConstructor, requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec, decodeGeneratedModelTrusted, findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { spyOnBuild } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
-import { decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 import { modelCodec } from './support/model-codec.js';
 
 function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } = {}) {
@@ -160,8 +159,8 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
     { Parent: new (values?: never) => object; Child: new (values?: never) => object },
     { TParentBaseModel: abstract new (...args: never[]) => object },
   ];
-  const oneCodecId = findCodecIdForConstructor(OneParentBaseModel);
-  const twoCodecId = findCodecIdForConstructor(TwoParentBaseModel);
+  const oneCodecId = findGeneratedModelDefinitionForConstructor(OneParentBaseModel)?.codecId;
+  const twoCodecId = findGeneratedModelDefinitionForConstructor(TwoParentBaseModel)?.codecId;
   assert.ok(oneCodecId, 'the "one" Parent model has a registered codec id');
   assert.ok(twoCodecId, 'the "two" Parent model has a registered codec id');
   const oneCodec = requireObjectCodec(oneCodecId);

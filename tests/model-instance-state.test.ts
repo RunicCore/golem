@@ -5,8 +5,7 @@ import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import { LibError } from '@exprtlabs/golem/errors';
-import { registerGeneratedModel } from '@exprtlabs/golem/model';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { registerGeneratedModel, requireObjectCodec, decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 
 import { fileFixtureScope, onceShared, readFixture, type FixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
@@ -16,7 +15,6 @@ import { render } from '#golem/code';
 import { instanceFieldsCode } from '#golem/union-conversion';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { runModule } from './support/run-module.js';
-import { decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 import { modelCodec } from './support/model-codec.js';
 // An own key of a golem model instance that its own model does not declare is program state, never an unknown key
 // (T-148). A key that the instance's own model declares is judged as before, and so is a value without a model.

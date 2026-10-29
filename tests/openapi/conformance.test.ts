@@ -7,7 +7,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { validateModelManifest } from '@exprtlabs/golem/manifest';
 import { reaction, runInAction } from 'mobx';
 import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';

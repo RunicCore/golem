@@ -11,7 +11,7 @@ import type * as ValidationModule from '@exprtlabs/golem/validation';
 import type * as MobxModule from '@exprtlabs/golem/mobx';
 import type * as MobxValidationModule from '@exprtlabs/golem/mobx-validation';
 import { installCodecModel } from './register-codec-model.js';
-import type { GeneratedModelValidatorEnhancer } from '@exprtlabs/golem/model';
+import type { GeneratedModelValidatorEnhancer } from '@exprtlabs/golem/internal/model-runtime';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 
 const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));

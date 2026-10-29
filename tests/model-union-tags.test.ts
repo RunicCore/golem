@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { generate } from '#model/generator';
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';

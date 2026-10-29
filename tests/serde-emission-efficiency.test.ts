@@ -279,7 +279,7 @@ export class Team extends TTeamBaseModel {}
     const { Team } = await import(pathToFileURL(path.join(value.root, 'build/team.model.js')).href);
     // Nested values are the generated classes; a model file's own subclasses aren't visible to its companion.
     const { TMemberBaseModel: Member, TStampBaseModel: Stamp } = await import(pathToFileURL(path.join(value.root, 'build/team.model.generated.js')).href);
-    const { requireObjectCodec } = await import('@exprtlabs/golem/serde');
+    const { requireObjectCodec } = await import('@exprtlabs/golem/internal/model-runtime');
     const input = { lead: { name: 'Ada', joined: { time: 1 } }, members: [{ name: 'Lin', joined: { time: 2 } }] };
     const codec = requireObjectCodec<InstanceType<typeof Team>>(generatedCodecIdFromRoot(value.root, 'TTeam'));
     const entries = [
