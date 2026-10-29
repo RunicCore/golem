@@ -87,13 +87,17 @@ for (const [label, schema] of [['an empty enum', { enum: [] }], ['not: true', { 
   });
 }
 
-test('an enum that lists an object or an array stops generation and names the schema', async t => {
-  // protects: T-644 a value an enum lists but a model field cannot check is refused, not left unchecked
-  for (const listed of [{ a: 1 }, [1, 2]]) {
-    const output = path.join(createFixtureProject(t, 'golem-openapi-enum-object-'), 'sdk');
-    await assert.rejects(
-      generateMaterializedSdk(shelfDocument({ pick: { enum: ['x', listed] } }), { output, name: 'Shelves', profile: { mobx: false, validation: true } }),
-      /schema "Shelf" at #\/components\/schemas\/Shelf[^:]*: OPENAPI_ENUM_VALUE_UNSUPPORTED: an enum lists the (object|array) /,
-    );
+test('a model field limited by an enum of objects and arrays accepts a listed value and rejects any other', async t => {
+  // protects: T-644 an enum of objects or arrays is valid JSON Schema and limits the field by deep equality
+  const output = path.join(createFixtureProject(t, 'golem-openapi-enum-object-'), 'sdk');
+  await generateMaterializedSdk(shelfDocument({ pick: { enum: ['x', { a: 1, b: [2] }, [1, 2], Object.fromEntries([['__proto__', 'p']])] }, name: { type: 'string' } }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  const models = await importGeneratedModule(output, 'object enum models');
+  const ShelfModel = models.ShelfModel as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  for (const pick of ['x', { b: [2], a: 1 }, [1, 2], Object.fromEntries([['__proto__', 'p']])]) {
+    assert.equal(await getValidator(new ShelfModel({ pick, name: 'a' })).validate(), true, JSON.stringify(pick));
+  }
+  for (const pick of ['y', { a: 1 }, { a: 1, b: [2], c: 3 }, { a: 1, b: [3] }, [2, 1], null, {}]) {
+    assert.equal(await getValidator(new ShelfModel({ pick, name: 'a' })).validate(), false, JSON.stringify(pick));
   }
 });

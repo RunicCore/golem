@@ -73,6 +73,8 @@ export type ModelConstraint =
     readonly value: number;
   }
   | { readonly kind: 'pattern' | 'format'; readonly value: string }
+  /** The JSON values a value may equal, compared deeply. The values are data, not descriptors. */
+  | { readonly kind: 'enum'; readonly values: readonly unknown[] }
   | {
     readonly kind:
       | 'contains' | 'propertyNames' | 'additionalProperties' | 'unevaluatedProperties'

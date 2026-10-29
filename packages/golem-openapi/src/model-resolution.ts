@@ -437,6 +437,7 @@ function openApiKeywordConstraints(schema: Readonly<Record<string, unknown>>): M
   if (typeof schema.pattern === 'string') constraints.push({ kind: 'pattern', value: schema.pattern });
   if (typeof schema.format === 'string') constraints.push({ kind: 'format', value: schema.format });
   if (schema.uniqueItems === true) constraints.push({ kind: 'uniqueItems' });
+  if (Array.isArray(schema.enum)) constraints.push({ kind: 'enum', values: schema.enum });
   return constraints.length ? constraints : undefined;
 }
 
@@ -467,12 +468,9 @@ function acceptsNoValue(schema: unknown): boolean {
   return schema === false || (isJsonObject(schema) && (schema.not === true || (Array.isArray(schema.enum) && schema.enum.length === 0)));
 }
 
-/** The code of an `enum` that lists an object or an array, which a model field cannot check. */
-export const ENUM_VALUE_UNSUPPORTED = 'OPENAPI_ENUM_VALUE_UNSUPPORTED';
-
 /**
  * `enum` limits a value to its listed values, with or without `type` (JSON Schema 2020-12 section 6.1.2). An empty list admits no value.
- * A list with an object or an array stops generation: a model field checks scalars only, so the list would silently pass every value.
+ * A list of scalars is a literal union. A list with an object or an array has no literal form: the keyword constraints carry it as an `enum` constraint.
  */
 function openApiEnumDescriptor(schema: { readonly enum?: unknown }): ModelTypeDescriptor | undefined {
   const values = schema.enum;
@@ -482,7 +480,7 @@ function openApiEnumDescriptor(schema: { readonly enum?: unknown }): ModelTypeDe
   for (const value of values) {
     if (value === null) variants.push({ kind: 'null' });
     else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') variants.push({ kind: 'literal', value });
-    else throw new CompositionError(ENUM_VALUE_UNSUPPORTED, `an enum lists the ${Array.isArray(value) ? 'array' : 'object'} ${JSON.stringify(value)}, and a model field checks only strings, numbers, booleans and null. Replace the enum with a schema for that value, or remove the enum.`);
+    else return undefined;
   }
   return variants.length === 1 ? variants[0]! : { kind: 'union', variants };
 }

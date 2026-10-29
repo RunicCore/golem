@@ -719,6 +719,7 @@ function constraintEntries(
     case 'maxContains': return [['maxContains', constraint.value]];
     case 'pattern': return [['pattern', constraint.value]];
     case 'format': return [['format', constraint.value]];
+    case 'enum': return [['enum', constraint.values]];
     case 'contains': return [['contains', descriptorSchema(constraint.schema, state, options)]];
     case 'propertyNames': return [['propertyNames', descriptorSchema(constraint.schema, state, options)]];
     case 'additionalProperties': return [['additionalProperties', descriptorSchema(constraint.schema, state, options)]];

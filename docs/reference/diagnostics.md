@@ -904,15 +904,6 @@ An `integer` member and a `number` member share the integers. A member that decl
 - Give the variant a mapping value of its own, for example `feline: '#/components/schemas/Cat'`.
 - Or remove the variant from the union.
 
-### OPENAPI_ENUM_VALUE_UNSUPPORTED
-
-**Enum that lists an object or an array.** A schema has an `enum` that lists an object or an array. A model field checks strings, numbers, booleans and `null` only, so such a list would let every value pass unchecked. Generation stops. The message names the schema and the listed value.
-
-**Fix:**
-
-- Replace the `enum` with a schema that describes the value, such as an `object` with `properties`.
-- Or remove the `enum`.
-
 ### OPENAPI_OPERATION_RENAMED
 
 **Operation renamed.** The generated operation name is a JavaScript reserved word or an existing client member name (such as `constructor`), so the generator appends its allocator's suffix to make it distinct. This is a warning: generation continues, but the operation's exported name no longer matches its `operationId` or inferred name.
