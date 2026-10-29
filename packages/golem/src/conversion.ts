@@ -3,7 +3,7 @@ import { activeConversionPath, conversionError } from './conversion-error.js';
 import { type GeneratedModelConstructor, type GeneratedModelResult } from './model.js';
 import { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor, isGeneratedModel } from './model-registry.js';
 import { instanceFields } from './presence.js';
-import { checkFormat } from './validation-runtime.js';
+import { isDateTime } from './rfc3339.js';
 
 /** The tag as JSON text. A tag comes from a request, so any value can arrive: `String` throws for an object whose `toString` is not a function. */
 function shownTag(value: unknown): string {
@@ -546,7 +546,7 @@ export function decodeGeneratedModelTrusted(
  * at every level of validation, off included, because `new Date('5')` reads text that is no time (F-39).
  */
 export function deserializeDate(value: unknown, path: IssuePath = activeConversionPath): Date {
-  const date = value instanceof Date ? value : typeof value === 'string' && checkFormat('date-time', value) ? new Date(value) : undefined;
+  const date = value instanceof Date ? value : typeof value === 'string' && isDateTime(value) ? new Date(value) : undefined;
   if (!date || !Number.isFinite(date.getTime())) {
     throw conversionError(LibErrorKind.Deserialization, 'Expected a date-time string.', path, undefined, true);
   }
