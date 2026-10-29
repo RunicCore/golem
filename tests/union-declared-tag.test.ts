@@ -570,6 +570,45 @@ export type TContact = IObject<{
   });
 }
 
+test('a model instance and an object with no prototype keep their tag beside a URL class value', async (t) => {
+  // protects: T-637 beside a class value, the write path tells a variant object (a model instance, a plain or prototype-less object) from the class instance
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-url-model-', name: 'declared-url-model', linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, {
+    'codecs.ts': `export function encodeUrl(value: URL): string { return value.href; }
+export function decodeUrl(value: string): URL { return new URL(value); }
+`,
+    'contact.model.ts': `import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import { TEmailBaseModel } from './contact.model.generated.js';
+import { encodeUrl, decodeUrl } from './codecs.js';
+type Link = URL & TSerde<typeof encodeUrl, typeof decodeUrl>;
+export type TEmail = IModel<{ kind: 'email'; address: string }>;
+export type TPhone = IObject<{ kind: 'phone'; number: string }>;
+export type TContact = IObject<{ value: (Link | TEmail | TPhone) & ${TAG} }>;
+export class Email extends TEmailBaseModel {}
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const companion = await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href) as Record<string, (value: unknown, options?: object) => unknown>;
+  const { Email } = await import(pathToFileURL(path.join(root, 'build/contact.model.js')).href) as { Email: new (values: object) => object };
+  const bare = Object.assign(Object.create(null) as object, { kind: 'phone', number: '5' });
+  const href = 'https://example.com/a?b=1';
+  const cases = [
+    { value: new Email({ kind: 'email', address: 'a@b.c' }), wire: { kind: 'email', address: 'a@b.c' } },
+    { value: bare, wire: { kind: 'phone', number: '5' } },
+    { value: new URL(href), wire: href },
+  ];
+  for (const { value, wire } of cases) {
+    assert.deepEqual(companion.toWireFormatTContact({ value }, { validate: true }), { value: wire });
+    assert.deepEqual(JSON.parse(companion.stringifyTContact({ value }, { validate: true }) as string), { value: wire });
+    const decoded = requireRecord(companion.fromWireFormatTContact({ value: wire }, { validate: true }), 'contact');
+    assert.deepEqual(companion.toWireFormatTContact(decoded, { validate: true }), { value: wire });
+  }
+  assert.deepEqual({ ...requireRecord(requireRecord(companion.fromWireFormatTContact({ value: cases[0].wire }, { validate: true }), 'contact').value, 'email') }, cases[0].wire);
+  assert.ok(requireRecord(companion.fromWireFormatTContact({ value: href }, { validate: true }), 'contact').value instanceof URL);
+});
+
 test('a TSerde class value written as an object beside tagged objects stops with RUNM1082', async (t) => {
   // protects: T-637 only a class value with a scalar JSON form sits beside tagged objects; an object wire is ambiguous with them
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-url-object-', name: 'declared-url-object', linkWorkspaceNodeModules: true });
