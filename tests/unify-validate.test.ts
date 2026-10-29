@@ -138,6 +138,23 @@ test('a project at true whose models are all off writes no validators module', a
   assert.equal(validatorsText(sourceRoot), '');
 });
 
+test('an off model with a validation function in its own file, held by a validating model, generates', async (t: TestContext) => {
+  // protects: T-678 bug: an off model's tag schema named a validation function that was not imported (VALIDATE_UNKNOWN_VALIDATION)
+  const { root, sourceRoot } = fixture(t);
+  const files: Record<string, string> = {
+    'rules.ts': 'export function notBlank(value: string): boolean | string { return value.trim().length > 0 || "blank"; }\n',
+    'child.model.ts': "import type { IObject } from '@exprtlabs/golem/model';\nimport type { TValidation } from '@exprtlabs/golem/tags';\nimport { notBlank } from './rules.js';\nexport type TChild = IObject<{ secret: string & TValidation<typeof notBlank> }, { validation: false }>;\n",
+    'parent.model.ts': "import type { IModel } from '@exprtlabs/golem/model';\nimport type { TChild } from './child.model.js';\nexport type TParent = IModel<{ child: TChild; note: string }>;\n",
+  };
+  writeGeneratedArtifacts(Object.entries(files).map(([name, content]) => ({ path: path.join(sourceRoot, name), content })));
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await compile(root);
+  await import(pathToFileURL(path.join(root, 'build/parent.model.generated.js')).href);
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
+  assert.equal(codec.validate({ child: { secret: '  ' }, note: 'ok' }), true, 'the off child is not checked');
+  assert.equal(codec.validate({ child: { secret: 'x' }, note: 5 }), false);
+});
+
 test('nested interned child with validation false is opaque; parent field tags still run', async (t: TestContext) => {
   const { root, sourceRoot } = fixture(t);
   writeGeneratedArtifacts([

@@ -788,9 +788,11 @@ export function analyzeSourceGraph(
     wireDefinitions,
   );
   executableMemos.set(wireLookup, job.executableMemo);
-  const schemas = [
-    ...tagSchemas(Object.values(owned), profile.validation !== false, lookup, 'model'),
-    ...tagSchemas(Object.keys(owned).map((name) => wireDefinitions[name]), profile.validation !== false, wireLookup, 'wire'),
+  // The tag schemas serve the validators of this source's models; a source whose models are all off has none, and its
+  // validation functions are not imported (`validatorImports`), so a schema that names one could not compile.
+  const schemas = !anyDeclValidation ? [] : [
+    ...tagSchemas(Object.values(owned), true, lookup, 'model'),
+    ...tagSchemas(Object.keys(owned).map((name) => wireDefinitions[name]), true, wireLookup, 'wire'),
   ];
   return {
     source,
