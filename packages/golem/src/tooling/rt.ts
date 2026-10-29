@@ -14,6 +14,7 @@ import type * as clientEntry from '../runtime-client.js';
 import type * as clientValidationEntry from '../runtime-client-validation.js';
 import type * as mobxEntry from '../runtime-mobx.js';
 import type * as modelEntry from '../runtime-model.js';
+import type * as temporalEntry from '../runtime-temporal.js';
 import type * as validationEntry from '../runtime-validation.js';
 import { runtimeCode, type Code } from './code.js';
 
@@ -25,7 +26,7 @@ interface RuntimeExports {
   readonly 'mobx-validation': typeof mobxEntry;
   readonly model: typeof modelEntry;
   readonly serde: typeof modelEntry;
-  readonly temporal: typeof modelEntry;
+  readonly temporal: typeof temporalEntry;
   readonly validation: typeof clientValidationEntry;
   readonly 'validation-runtime': typeof validationEntry;
 }
@@ -66,7 +67,7 @@ export const RUNTIME_SPECIFIER = {
   'mobx-validation': '@exprtlabs/golem/internal/mobx-runtime',
   model: '@exprtlabs/golem/internal/model-runtime',
   serde: '@exprtlabs/golem/internal/model-runtime',
-  temporal: '@exprtlabs/golem/internal/model-runtime',
+  temporal: '@exprtlabs/golem/internal/temporal-runtime',
   validation: '@exprtlabs/golem/internal/client-validation-runtime',
   'validation-runtime': '@exprtlabs/golem/internal/validation-runtime',
 } as const satisfies Record<keyof RuntimeExports, string>;

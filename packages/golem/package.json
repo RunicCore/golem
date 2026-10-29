@@ -105,6 +105,11 @@
       "import": "./dist/runtime-mobx.js",
       "default": "./dist/runtime-mobx.js"
     },
+    "./internal/temporal-runtime": {
+      "types": "./dist/runtime-temporal.d.ts",
+      "import": "./dist/runtime-temporal.js",
+      "default": "./dist/runtime-temporal.js"
+    },
     "./internal/nest-runtime": {
       "types": "./dist/runtime-nest.d.ts",
       "import": "./dist/runtime-nest.js",

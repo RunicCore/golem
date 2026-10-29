@@ -14,5 +14,3 @@ export {
   requireObjectCodec, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString,
   validationUnavailableStub, withoutInstanceState,
 } from './serde.js';
-// One serialize and one deserialize function for each Temporal type; the OpenAPI model emitter picks them by name.
-export * from './temporal.js';
