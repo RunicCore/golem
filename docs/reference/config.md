@@ -19,7 +19,7 @@ The CLI runs [generator jobs](#generator-jobs) first, then controller jobs, then
 | `version` | literal `1` | Yes | — | Configuration format version |
 | `tsconfig` | path | No | `tsconfig.json` | The project's tsconfig, relative to `golem.yaml` |
 | `mobx` | boolean | No | `false` | MobX observability hooks |
-| `validation` | boolean | No | `true` | Runtime validation metadata and checks |
+| `validation` | `true`, `false` or `sanity` | No | `true` | Level of the generated runtime checks ([levels](#validation-profiles)). Any other value is an error. |
 | `allowAny` | boolean | No | `false` | Fields typed `any` or `unknown` in models |
 | `exact` | boolean | No | `true` | Rejection of extra properties in models |
 | `unknownFormats` | `warn` or `error` | No | `error` | Action for a schema `format` that golem does not check |
@@ -31,7 +31,7 @@ The CLI runs [generator jobs](#generator-jobs) first, then controller jobs, then
 
 - `tsconfig` must name an existing file when you set the key. Name a build-specific file such as `tsconfig.build.json` or `tsconfig.app.json` to give every job its `paths` and options. A tsconfig nearer to a job root is not read.
 - One `golem.yaml` serves one tsconfig ([what the tsconfig needs](/reference/cli#what-the-tsconfig-needs)). A tsconfig that has only `references` stops every job: name one referenced project.
-- A named `IObject` or `IModel` with `{ validation: true or false }` overrides `validation` for its declaration.
+- A named `IObject` or `IModel` with `{ validation: true | false | 'sanity' }` sets the default level of its declaration. The level is at or below the project level ([Validation profiles](#validation-profiles)).
 - `allowAny: true` permits those fields. A declaration can override it ([`any` and `unknown`](/guide/field-types#any-and-unknown)).
 - `exact: false` admits keys that a model does not list. A declaration can override it ([Objects and exact](/guide/field-types#objects-and-exact)).
 - `unknownFormats: error` stops generation with [`VALIDATE_UNKNOWN_FORMAT`](/reference/diagnostics#validate-unknown-format). `warn` reports the format and skips its check.
@@ -74,14 +74,43 @@ These rules apply to every `output`:
 
 ## Validation profiles
 
+`validation` sets how much golem checks at run time. It is also the highest level that any model or call can use.
+
 | Profile | Runtime behavior | Application setup |
 | --- | --- | --- |
-| `validation: true` (default) | Generated checks in TypeScript validator modules beside the models and the SDK | None |
-| `validation: false` | Conversion without generated checks | No `{ validate: true }` calls on a stub |
+| `validation: true` (default) | Generated checks in TypeScript validator modules beside the models and the SDK. They check every rule. | None |
+| `validation: sanity` | Generated checks of the JSON shape only. | None |
+| `validation: false` | Conversion without generated checks | No `validate: true` or `validate: 'sanity'` calls. They throw `LibErrorKind.ValidationUnavailable`. |
 
 With `validation: true`, the checks cover nested models and custom bindings. Compile the generated files with the rest of the project.
 
-With `validation: false`, a named `IObject` or `IModel` with `{ validation: true }` still gets the checks. Calling serde with `{ validate: true }` on a stub throws `LibErrorKind.ValidationUnavailable`.
+### What sanity checks
+
+Sanity finds a value that has the wrong shape. It never rejects a value that the full level accepts.
+
+| Sanity checks | Sanity skips |
+| --- | --- |
+| JSON types | Value limits: string length, `pattern`, formats other than `date-time`, number ranges, `multipleOf`, array and property counts, `uniqueItems` |
+| Required keys | [`TValidation`](/guide/tags#add-a-custom-field-rule) functions |
+| Extra keys, when the model is `exact` | The instance rules of your application ([`extend()`](/guide/validation#instance-rules)) |
+| Union tags, enums and `const` values | |
+| Tuple length | |
+| `date-time` format | |
+
+### Level of one model
+
+A named `IObject` or `IModel` sets its own default level with `{ validation: true | false | 'sanity' }`. A call without a `validate` option uses that level.
+
+- The model level is at or below the project level. A model above it stops generation with [`RUNM1089`](/reference/diagnostics#runm1089).
+- A model with `{ validation: false }` gets no validators. A call cannot check it: `validate: true` and `validate: 'sanity'` throw `LibErrorKind.ValidationUnavailable`.
+- A nested model is checked at the level of the call that reaches it, not at its own default.
+- A call can choose a level for itself ([Choose a level for one call](/guide/validation#choose-a-level-for-one-call)).
+
+### Level of an SDK
+
+A generated client validates at the level of its SDK. It has no option for one call.
+
+A model job refuses an SDK that was generated at another level than the app. The message names both levels, for example `validation: manifest sanity, project true`.
 
 Custom predicates and serde bindings must be exported functions that the generator can import. An unresolved binding or imported schema stops generation with a diagnostic.
 

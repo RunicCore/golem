@@ -32,6 +32,20 @@ Both declare fields. `IObject` stops there: values stay plain objects, and you c
 
 Put declarations in `src/**/*.model.ts` or `src/**/*.models.ts`. Set [`models.suffixes`](/reference/config#typescript-models) to use other endings, such as `.entity.ts`, and `models.sources` to name files directly. A field can have any of the [supported shapes](/guide/field-types) and carry [validation tags](/guide/tags).
 
+## Set the validation level of a model
+
+The second type argument of `IObject` and `IModel` takes `{ validation: true | false | 'sanity' }`. It sets the level of the checks that a call uses when it names none.
+
+| Option | Default level of the model's calls |
+| --- | --- |
+| `true` | Every rule |
+| `'sanity'` | The shape only ([what sanity checks](/reference/config#validation-profiles)) |
+| `false` | No checks. Golem writes no validators for the model, so a call cannot check it. |
+
+- Without the option, the model uses the project level.
+- The model level is at or below the project level. A higher level stops generation with [`RUNM1089`](/reference/diagnostics#runm1089).
+- A call can choose another level up to the project level ([Choose a level for one call](/guide/validation#choose-a-level-for-one-call)).
+
 ## Generated names
 
 Generation writes the generated file `task.model.generated.ts` beside each declaration file. It exports these names:
