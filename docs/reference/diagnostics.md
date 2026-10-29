@@ -691,7 +691,9 @@ What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `g
 - A model reference that is no object.
 - A `TSerde` value beside tagged objects whose JSON form is an object or an array, such as a `URL` written as `{ href: string }`.
 
-A `TSerde` value whose JSON form is a scalar, such as a `URL` written as a string, sits beside tagged objects. Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no declared tag has its own code, [RUNM1080](#runm1080).
+Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no declared tag has its own code, [RUNM1080](#runm1080).
+
+One case is allowed: a `TSerde` value whose JSON form is a scalar, such as a `URL` written as a string, can sit beside tagged objects.
 
 **Fix:**
 
