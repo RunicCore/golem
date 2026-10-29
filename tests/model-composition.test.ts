@@ -222,8 +222,8 @@ export const brandKeysDropped: [SymbolKeys<Item>] extends [SymbolKeys<Plain>] ? 
   });
   await buildModelProject(root);
   const authored = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`);
-  const item = new authored.Item({ amount: 1, '__@generatedModelWireBrand@1': 'plain' });
-  assert.deepEqual(encodeGeneratedModel(item), { amount: 1, '__@generatedModelWireBrand@1': 'plain' });
+  const plain = new authored.Plain({ amount: 1, '__@generatedModelWireBrand@1': 'plain' });
+  assert.deepEqual(encodeGeneratedModel(plain), { amount: 1, '__@generatedModelWireBrand@1': 'plain' });
 });
 
 for (const [place, fields] of [['a field of the model', 'name: string; [sym]: string'], ['a field of a nested object', 'inner: { name: string; [sym]: string }']] as const) {

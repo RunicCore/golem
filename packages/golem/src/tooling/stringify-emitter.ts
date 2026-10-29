@@ -404,7 +404,7 @@ function emitValue(
     if (named) {
       return nestedStringifyCall(named.id, value, ctx);
     }
-    return code`${rt.serde.stringifyJsonScalar}(${rt.conversion.encodeGeneratedModel}(${value}) as never)`;
+    throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {
@@ -1750,7 +1750,7 @@ function emitEncodeValue(descriptor: ModelTypeDescriptor, expression: Code, ctx:
     if (named) {
       return nestedToWireCall(named.id, value, ctx);
     }
-    return code`${rt.conversion.encodeGeneratedModel}(${value})`;
+    throw new Error(`Internal error: the schema graph has no node for the generated model ${JSON.stringify(descriptor.id)}.`);
   }
   const tags = serdeTags(descriptor);
   if (tags.serde) {

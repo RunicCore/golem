@@ -9,7 +9,7 @@ import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 const profile = JSON.parse(fs.readFileSync('./profile.json', 'utf8'));
 const cart = decodeGeneratedModel(Cart, { money: { amount: -1, currency: 'usd' }, note: 'draft' });
 assert.ok(cart.money instanceof MoneyModel);
-assert.deepEqual(encodeGeneratedModel(cart), { money: { amount: -1, currency: 'usd' }, note: 'draft' });
+assert.deepEqual(encodeGeneratedModel(cart, { validate: false }), { money: { amount: -1, currency: 'usd' }, note: 'draft' });
 assert.equal('$makeObservable' in cart, false);
 assert.equal('$validator' in cart, false);
 

@@ -18,6 +18,9 @@ import type { ModelValidationContext, WireFormat } from './model.js';
 import type { Validator } from './validation-runtime.js';
 
 import { MODEL_CODEC_IDS_KEY } from './schema-keywords.js';
+import { linkConstructorToCodec, registerObjectCodec } from './codec-registry.js';
+
+export { findCodecIdForConstructor, getObjectCodec, registerObjectCodec, requireObjectCodec } from './codec-registry.js';
 
 /** The error a generic serde call throws when no build has rewritten its type argument. */
 export function untransformedCallError(name: string): LibError {
@@ -97,9 +100,7 @@ export interface ObjectCodecImpl<T = unknown> {
   readonly issueSource?: IssueSource;
 }
 
-const codecs = new Map<string, ObjectCodec>();
 const iModelClasses = new Map<string, abstract new (values?: never) => object>();
-const codecIdByConstructor = new WeakMap<Function, string>();
 /** A codec schema plane; the validation reference names it (`Id`, `Id#wire`, `Id#model-only`, `Id#wire-only`). */
 export type ValidationPlane = 'model' | 'wire' | 'model-only' | 'wire-only';
 interface ContextValidatorCache {
@@ -158,11 +159,7 @@ export function registerIModelClass(name: string, ctor: abstract new (values?: n
   const variant = name.indexOf('#');
   const id = variant > 0 ? name.slice(0, variant) : name;
   markModelCodecId(ctor, id);
-  codecIdByConstructor.set(ctor, id);
-}
-
-export function findCodecIdForConstructor(constructor: Function): string | undefined {
-  return codecIdByConstructor.get(constructor);
+  linkConstructorToCodec(ctor, id);
 }
 
 export function getIModelClass(id: string): (abstract new (values?: never) => object) | undefined {
@@ -178,26 +175,6 @@ export function requireIModelClass(id: string): abstract new (values?: never) =>
     );
   }
   return ctor;
-}
-
-export function registerObjectCodec<T>(codec: ObjectCodec<T>): void {
-  codecs.set(codec.id, codec);
-}
-
-export function getObjectCodec<T = unknown>(id: string): ObjectCodec<T> | undefined {
-  return codecs.get(id) as ObjectCodec<T> | undefined;
-}
-
-export function requireObjectCodec<T = unknown>(id: string): ObjectCodec<T> {
-  const codec = getObjectCodec<T>(id);
-  if (!codec) {
-    throw new LibError(
-      LibErrorKind.ValidationUnavailable,
-      `golem fault: the IObject codec ${JSON.stringify(id)} is not registered. `
-      + `The rewrite loads the generated module that registers a codec wherever it names one, and that module did not load. Run golem generate and rewrite the file again.`,
-    );
-  }
-  return codec;
 }
 
 export function parseJson(text: string): unknown {
