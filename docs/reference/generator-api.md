@@ -334,7 +334,7 @@ The module also exports the metadata types that the generators and the runtime u
 
 ### From `conversion`
 
-`decodeGeneratedModel`, `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelRecord`, `convertModelTupleItems`, `copyModelRecord`, `defineModelProperty`, `omitUndefinedKeys`, `rejectModelObject`, `requireModelObject`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
+`decodeGeneratedModel`, `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelRecord`, `convertModelTupleItems`, `copyModelRecord`, `defineModelProperty`, `rejectModelObject`, `requireModelObject`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
 
 The module exports more helpers for the runtime itself. Application code does not call them: `encodeGeneratedModel`, which writes a model with the `toWireFormat` of the codec of its class and validates as that call does.
 

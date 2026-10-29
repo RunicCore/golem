@@ -261,3 +261,31 @@ export function fromFlag(wire: boolean): 'yes' | 'no' { return wire ? 'yes' : 'n
     assert.deepEqual(encodeGeneratedModel(decoded), { amount: 250, answer: false });
   });
 }
+
+for (const validation of [true, false]) {
+  test(`toWireFormat runs a TSerde encoder once for a field two intersected objects share and only on the selected union branch (validation ${validation})`, async t => {
+    // protects: T-650 the encoder of a shared serde field and of a tagged union runs only where the value needs it
+    const { root, sourceRoot } = fixture(t);
+    fs.writeFileSync(path.join(sourceRoot, 'codecs.ts'), `export let encodeCalls = 0;
+export function encode(value: number): string { encodeCalls += 1; return 'token:' + String(value); }
+export function decode(value: string): number { return Number(value.slice('token:'.length)); }
+`);
+    fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import { encode, decode } from './codecs.js';
+type Token = number & TSerde<typeof encode, typeof decode>;
+export type TBoth = IModel<{ token: Token; label: string } & { token: Token; at: Date }>;
+export type TEither = IModel<{ value: ({ kind: 'one'; token: Token } | { kind: 'two'; other: Token }) & Discriminator<'kind'> }>;
+`);
+    await buildModelProjectWith(root, { mobx: false, validation });
+    await import(path.toNamespacedPath(path.join(root, 'build/a.model.generated.js')));
+    const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
+    const both = requireObjectCodec(generatedCodecIdFromRoot(root, 'TBoth'));
+    const at = new Date('2025-01-02T03:04:05.000Z');
+    assert.deepEqual(both.toWireFormat({ token: 7, label: 'x', at }), { token: 'token:7', label: 'x', at: '2025-01-02T03:04:05.000Z' });
+    assert.equal(codecs.encodeCalls, 1, 'the shared serde field is encoded once');
+    const either = requireObjectCodec(generatedCodecIdFromRoot(root, 'TEither'));
+    assert.deepEqual(either.toWireFormat({ value: { kind: 'one', token: 11 } }), { value: { kind: 'one', token: 'token:11' } });
+    assert.equal(codecs.encodeCalls, 2, 'the selected branch encodes its field once and the other branch encodes nothing');
+  });
+}
