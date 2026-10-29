@@ -204,7 +204,7 @@ test('a project at full: the level of each call, the default and each request; a
   await t.test('every operation at each call', () => checkLevels('full', loaded));
   await t.test('a sanity call checks the shape only', () => checkSanityShape('sanity', loaded));
   // protects: R-72 a caller bug is a TypeError, not a Validation error that could not finish
-  for (const validate of ['full', 1, null]) {
+  for (const validate of ['full', 1, null, false]) {
     await t.test(`validateInstance and ModelValidator.validate throw a TypeError for validate ${String(validate)}`, async () => {
       await assert.rejects(validateInstance(new loaded.classes.Inherit(OK), { validate: validate as never }), TypeError);
       await assert.rejects(getValidator(new loaded.classes.Inherit(OK)).validate({ validate: validate as never }), TypeError);
@@ -295,30 +295,73 @@ export type ${name} = IModel<{ at: TemporalInstant; zoned: TemporalZonedDateTime
 })();
 const temporalProjects: Partial<Record<'sanity' | 'off', Promise<ObjectCodec>>> = {};
 
-// Each text is one that a parser reads and the wire form rejects.
-const LENIENT_TEXT: readonly (readonly [field: string, text: string])[] = [
-  ['at', '20250102T030405Z'], ['at', '2025-01-02T03:04:05Z[UTC]'],
-  ['zoned', '2025-01-02T03:04:05[Europe/Paris]'],
-  ['day', '5'], ['day', '20250102'], ['day', '2025-01-02T10:00:00'],
-  ['local', '20250102T030405'], ['local', '2025-01-02'],
-  ['time', '03:04:05+01:00'],
-  ['span', 'p1d'],
-  ['when', '5'], ['when', '2025-01-02'],
+// Each text is one that a parser reads and the wire form rejects, and the kind of error it gives at the sanity level: a
+// format that sanity keeps (`date-time`) answers a Validation issue, and every other rule is the converter's.
+const LENIENT_TEXT: readonly (readonly [field: string, text: string, sanityKind: LibErrorKind])[] = [
+  ['at', '20250102T030405Z', LibErrorKind.Validation], ['at', '2025-01-02T03:04:05Z[UTC]', LibErrorKind.Validation],
+  ['zoned', '2025-01-02T03:04:05[Europe/Paris]', LibErrorKind.Deserialization],
+  ['day', '5', LibErrorKind.Deserialization], ['day', '20250102', LibErrorKind.Deserialization], ['day', '2025-01-02T10:00:00', LibErrorKind.Deserialization],
+  ['local', '20250102T030405', LibErrorKind.Deserialization], ['local', '2025-01-02', LibErrorKind.Deserialization],
+  ['time', '03:04:05+01:00', LibErrorKind.Deserialization],
+  ['span', 'p1d', LibErrorKind.Deserialization],
+  ['when', '5', LibErrorKind.Validation], ['when', '2025-01-02', LibErrorKind.Validation],
 ];
+const LENIENT_ROWS = LENIENT_TEXT.flatMap(([field, text, sanityKind]) => [
+  { level: 'sanity' as const, field, text, kind: sanityKind },
+  { level: 'off' as const, field, text, kind: LibErrorKind.Deserialization },
+]);
+for (const { level, field, text, kind } of LENIENT_ROWS) {
+  test(`a parse at ${level} rejects ${text} for ${field} as bad input of kind ${kind}, and does not coerce it`, async () => {
+    // protects: F-39 golem rejects bad input and never coerces it, at every level of validation
+    const codec = await loadTemporal(level);
+    assert.throws(() => codec.parse(JSON.stringify({ ...TEMPORAL_WIRE, [field]: text })), { kind, causedByInput: true });
+  });
+}
 for (const level of ['sanity', 'off'] as const) {
-  for (const [field, text] of LENIENT_TEXT) {
-    test(`a parse at ${level} rejects ${text} for ${field} as bad input, and does not coerce it`, async () => {
-      // protects: F-39 golem rejects bad input and never coerces it, at every level of validation
-      const codec = await loadTemporal(level);
-      assert.throws(() => codec.parse(JSON.stringify({ ...TEMPORAL_WIRE, [field]: text })), (error: unknown) => (
-        error instanceof LibError && error.causedByInput && (error.kind === LibErrorKind.Deserialization || error.kind === LibErrorKind.Validation)
-      ));
-    });
-  }
   test(`a parse at ${level} reads the canonical text of every converted type`, async () => {
     // protects: F-39 the strict form still reads what the wire form allows
     const codec = await loadTemporal(level);
     const model = codec.parse(JSON.stringify(TEMPORAL_WIRE)) as Record<string, unknown>;
-    assert.ok(model.day instanceof Temporal.PlainDate && model.when instanceof Date && model.span instanceof Temporal.Duration);
+    assert.deepEqual(Object.fromEntries(Object.entries(model).map(([field, value]) => [field, value instanceof Date ? value.toISOString() : String(value)])), {
+      ...TEMPORAL_WIRE, when: '2025-01-02T03:04:05.000Z',
+    });
   });
+}
+
+// Golem writes only what it reads: a value whose text falls outside the wire form is a Serialization error, not output that its own parse refuses.
+/** The model of the canonical values, with one field replaced. */
+const modelWith = (field: string, value: unknown): object => ({
+  at: Temporal.Instant.from(TEMPORAL_WIRE.at), zoned: Temporal.ZonedDateTime.from(TEMPORAL_WIRE.zoned), day: Temporal.PlainDate.from(TEMPORAL_WIRE.day),
+  local: Temporal.PlainDateTime.from(TEMPORAL_WIRE.local), time: Temporal.PlainTime.from(TEMPORAL_WIRE.time), span: Temporal.Duration.from(TEMPORAL_WIRE.span),
+  when: new Date(TEMPORAL_WIRE.when), [field]: value,
+});
+const OUTSIDE_THE_FORM: readonly (readonly [field: string, value: () => unknown])[] = [
+  ['at', () => Temporal.Instant.fromEpochMilliseconds(8.64e15)],
+  ['day', () => Temporal.PlainDate.from('2025-01-02').withCalendar('gregory')],
+  ['zoned', () => Temporal.ZonedDateTime.from('2025-01-02T03:04:05+01:00[Europe/Paris]').withCalendar('gregory')],
+  ['local', () => Temporal.PlainDateTime.from('2025-01-02T03:04:05').withCalendar('gregory')],
+];
+const INSIDE_THE_FORM: readonly (readonly [field: string, text: string, value: () => unknown])[] = [
+  ['at', '2025-01-02T03:04:05.123456789Z', () => Temporal.Instant.from('2025-01-02T03:04:05.123456789Z')],
+  ['zoned', '2025-01-02T03:04:05+01:00[Europe/Paris]', () => Temporal.ZonedDateTime.from('2025-01-02T03:04:05+01:00[Europe/Paris]')],
+  ['time', '03:04:05.5', () => Temporal.PlainTime.from('03:04:05.5')],
+  ['span', 'PT0.5S', () => Temporal.Duration.from('PT0.5S')],
+];
+for (const level of ['sanity', 'off'] as const) {
+  for (const [field, value] of OUTSIDE_THE_FORM) {
+    test(`a stringify at ${level} of ${field} outside the wire form throws a Serialization error`, async () => {
+      // protects: F-39 golem writes only the wire form that it reads
+      const codec = await loadTemporal(level);
+      assert.throws(() => codec.stringify(modelWith(field, value()) as never), { kind: LibErrorKind.Serialization, causedByInput: false });
+    });
+  }
+  for (const [field, text, value] of INSIDE_THE_FORM) {
+    test(`a stringify at ${level} of ${field} ${text} is read back by parse`, async () => {
+      // protects: F-39 golem writes only the wire form that it reads
+      const codec = await loadTemporal(level);
+      const written = JSON.parse(codec.stringify(modelWith(field, value()) as never)) as Record<string, unknown>;
+      assert.equal(written[field], text);
+      assert.equal(String((codec.parse(JSON.stringify(written)) as Record<string, unknown>)[field]), text);
+    });
+  }
 }

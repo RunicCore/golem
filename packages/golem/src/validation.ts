@@ -393,6 +393,8 @@ function codecIssues(codec: ObjectCodec, value: unknown, options: ValidateOption
  * sees the TypeError of its own mistake and not the Validation error of a check that could not finish.
  */
 function assertValidateOption(options: Pick<ValidateOptions, 'validate'> | undefined): void {
+  // Turning off a check has no meaning here; the option names a check only (see `ValidateOptions`). A JavaScript caller can pass `false`; the type does not allow it.
+  if ((options?.validate as unknown) === false) throw new TypeError("The validate option takes true or 'sanity'; got false.");
   serdeValidates(options, true);
 }
 

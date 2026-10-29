@@ -1927,11 +1927,11 @@ function validatorFor(ctx: EmitCtx, reference: string, value: Code): Code {
 /**
  * True when the fast check `fast` answers for `value`: no validation context decides instead. The test is
  * written in each model's function, not in a shared runtime helper, so each call of a fast check sees one check only
- * and V8 can inline it. A public entry of a sanity project answers from the fast check only when the call has no options at
- * all: a call that asks for full must throw whatever the value, and the guard behind the fast check refuses it.
+ * and V8 can inline it. A public entry of a sanity project answers from the fast check unless the call asks for full: that
+ * call must throw whatever the value, and the guard behind the fast check refuses it.
  */
 function fastPasses(fast: Code, value: Code, levels: NodeLevels, publicEntry: boolean): Code {
-  const noDecision = publicEntry && levels.cap === 'sanity' ? code`options === undefined` : code`options?.validationContext === undefined`;
+  const noDecision = publicEntry && levels.cap === 'sanity' ? code`options?.validate !== true && options?.validationContext === undefined` : code`options?.validationContext === undefined`;
   return code`${noDecision} && ${fast}(${value})`;
 }
 

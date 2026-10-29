@@ -608,6 +608,10 @@ function assertRootHasFields(specification: ModelSpecification, definition: Mode
     : definition.kind === 'object' || definition.kind === 'generated-model' ? undefined
       : describeRootKind(definition.kind);
   if (found) throw nonObjectRootDiagnostic(specification.sourceFile, specification.declaration, specification.emitClass ? 'IModel' : 'IObject', found);
+}
+
+/** RUNM1090: a model over an SDK model has no codec of its own, so a `validation` option on it would never apply. */
+function assertSdkModelSetsNoLevel(specification: ModelSpecification, definition: ModelConversionDescriptor): void {
   if (definition.kind === 'generated-model' && specification.validation !== undefined) throw sdkModelLevelDiagnostic(specification.sourceFile, specification.declaration);
 }
 
@@ -1483,6 +1487,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
   return context.local.map((specification) => {
     const definition = definitions[specification.name];
     assertRootHasFields(specification, definition);
+    assertSdkModelSetsNoLevel(specification, definition);
     const baseName = identifier(`${specification.name}BaseModel`);
     // Phantom tag members are part of the type-level intersection and must
     // remain in the root descriptor, but they are not model fields.  Emitting
