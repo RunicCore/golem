@@ -63,7 +63,8 @@ test('model companion assert functions share one runtime helper and named option
   const companion = result.artifacts.find(artifact => artifact.path.endsWith('task.model.generated.ts'))?.content ?? '';
   assert.doesNotMatch(companion, /import\('@exprtlabs\/golem\/model'\)/);
   assert.doesNotMatch(companion, /validationContext === undefined\) \{\n\s+if \(!\(/);
-  assert.match(companion, /^export function assertTTask\(value: unknown, options\?: __GolemValidateOptions\): TTaskFields \{\n  assertModelValue\(value, options, /m);
+  assert.match(companion, /^export function assertTTask\(value: unknown, options\?: __GolemValidateOptions\): TTaskFields \{\n  return __golemAssertModel_TTask\(value, options\);/m);
+  assert.match(companion, /^function __golemAssertModel_TTask\(value: unknown, options\?: __GolemSerdeOptions\): TTaskFields \{\n  assertModelValue\(value, options, /m);
   assert.match(companion, /import type \{ SerdeOptions as __GolemSerdeOptions, ValidateOptions as __GolemValidateOptions \} from '@exprtlabs\/golem\/serde';/);
 });
 
