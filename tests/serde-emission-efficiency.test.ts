@@ -79,7 +79,7 @@ test('model generation preserves imported model identity and detached JSON outpu
     assert.deepEqual(callsOverCeiling(spy.calls, { decodeGeneratedModelTrusted: 1 }), {}, 'budget: decoding an already-known external model takes at most one trusted decode and no checked decode');
     spy.calls.length = 0;
     const wire = await modelCodec(wallet).toWireFormat(wallet as never) as { readonly money: object };
-    // Retired budget: it counted calls of a shared encode helper that no longer exists; the codec's toWireFormat is the only encode path.
+    assert.deepEqual(callsOverCeiling(spy.calls, { requireObjectCodec: 0 }), {}, 'budget: encoding a wallet with a known Money codec resolves no codec through requireObjectCodec');
     spy.calls.length = 0;
     const text = JSON.stringify(wire);
     assert.notStrictEqual(wire.money, wallet.money, 'wire output is detached from the external model');

@@ -71,6 +71,32 @@ test('decode hands the input to the decoder uncopied', () => {
   assert.strictEqual(received, input);
 });
 
+test('decode cycle tracking retains multiple contracts and recovers after failure', () => {
+  // protects: cycle detection of one input decoded through several model contracts, and the restore after a failed decode
+  let recurse = true;
+  class First {}
+  class Second {}
+  class Third {}
+  registerGeneratedModel(First, { fields: [], profile: { validation: false }, conversion: {
+    decode(input) { decodeGeneratedModelTrusted(Second, input); return new First(); },
+  } });
+  registerGeneratedModel(Second, { fields: [], profile: { validation: false }, conversion: {
+    decode(input) { decodeGeneratedModelTrusted(Third, input); return new Second(); },
+  } });
+  registerGeneratedModel(Third, { fields: [], profile: { validation: false }, conversion: {
+    decode(input) { if (recurse) decodeGeneratedModelTrusted(First, input); return new Third(); },
+  } });
+  const input = {};
+  assert.throws(() => decodeGeneratedModelTrusted(First, input), error => {
+    assert.ok(error instanceof LibError);
+    assert.equal(error.kind, LibErrorKind.Deserialization);
+    return true;
+  });
+  recurse = false;
+  assert.ok(decodeGeneratedModelTrusted(First, input) instanceof First);
+  assert.ok(decodeGeneratedModelTrusted(Second, input) instanceof Second);
+});
+
 test('generated decode reads each declared property once', async () => {
   const { fromWireFormatTPayment } = await loadCodecs('payment');
   let reads = 0;

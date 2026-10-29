@@ -93,7 +93,7 @@ import { openApiValidationSchemaClosure } from './model-manifest.js';
 import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView } from './model-schema-graph.js';
 
 /**
- * Calls the Temporal codec of `@exprtlabs/golem/internal/model-runtime` that a `temporal:` serde id names; other ids never reach OpenAPI models.
+ * Calls the Temporal codec of `@exprtlabs/golem/internal/temporal-runtime` that a `temporal:` serde id names; other ids never reach OpenAPI models.
  * Conversion code holds values as `unknown`; wire validation has already checked them, so the call casts.
  * The codec is a runtime part, so the file imports exactly the codecs it calls. The module exports one pair for each
  * Temporal type; a name it lacks is a TypeScript error in the generated file.

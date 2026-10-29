@@ -2,7 +2,7 @@
  * The runtime names that generated model code and rewritten sources import (`@exprtlabs/golem/internal/model-runtime`).
  * The path is internal: golem build requires each built-in generator at the runtime's exact version, so the names may change in any release.
  */
-export type { GeneratedModelConversion, GeneratedModelDefinition, GeneratedModelValidatorEnhancer, RegisteredGeneratedModelDefinition } from './model-registry.js';
+export type { GeneratedModelConversion, GeneratedModelValidatorEnhancer } from './model-registry.js';
 export type { ObjectCodecImpl } from './object-codec.js';
 export { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor, registerGeneratedModel } from './model-registry.js';
 export {
