@@ -59,8 +59,7 @@ test('model generation preserves imported model identity and detached JSON outpu
   await buildModelProject(value.root);
 
   const spy = await spyOnBuild(value.root, {
-    '@exprtlabs/golem/conversion': ['decodeGeneratedModel', 'decodeGeneratedModelTrusted', 'encodeGeneratedModel'],
-    '@exprtlabs/golem/serde': ['requireObjectCodec'],
+    '@exprtlabs/golem/internal/model-runtime': ['decodeGeneratedModel', 'decodeGeneratedModelTrusted', 'encodeGeneratedModel', 'requireObjectCodec'],
   });
   try {
     const sdkModule = await import(pathToFileURL(path.join(value.root, 'build/sdk/index.js')).href) as {
@@ -99,7 +98,7 @@ test('model decoder leaves unchanged fields in the initializer copy', async (t) 
   );
   writeModelGolemYaml(value.root, { mobx: false, validation: false });
   await buildModelProject(value.root);
-  const spy = await spyOnBuild(value.root, { '@exprtlabs/golem/conversion': ['defineModelProperty'] });
+  const spy = await spyOnBuild(value.root, { '@exprtlabs/golem/internal/model-runtime': ['defineModelProperty'] });
   try {
     const { Item } = await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);
     const wire = { title: 'T', code: 'ABC' };
@@ -274,7 +273,7 @@ export class Team extends TTeamBaseModel {}
 `);
   writeModelGolemYaml(value.root, { mobx: false, validation: false });
   await buildModelProject(value.root);
-  const spy = await spyOnBuild(value.root, { '@exprtlabs/golem/conversion': ['decodeCheckedInput', 'decodeDetachedInput'] });
+  const spy = await spyOnBuild(value.root, { '@exprtlabs/golem/internal/model-runtime': ['decodeCheckedInput', 'decodeDetachedInput'] });
   try {
     const { Team } = await import(pathToFileURL(path.join(value.root, 'build/team.model.js')).href);
     // Nested values are the generated classes; a model file's own subclasses aren't visible to its companion.

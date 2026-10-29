@@ -33,7 +33,7 @@ function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } 
 async function buildAndSpy(project: ModelProject, spied: readonly string[]): ReturnType<typeof spyOnBuild> {
   writeModelGolemYaml(project.root, { mobx: false, validation: false });
   await buildModelProject(project.root);
-  return spyOnBuild(project.root, { '@exprtlabs/golem/conversion': spied });
+  return spyOnBuild(project.root, { '@exprtlabs/golem/internal/model-runtime': spied });
 }
 
 test('equivalent tag schemas share compilation while callback identities and reference definitions stay distinct', () => {

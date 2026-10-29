@@ -37,9 +37,9 @@ test('the import set holds each runtime part once, grouped by module in the fixe
   ]);
   assert.equal(
     render(join(runtimeImports(body), code`\n`), new NameTable()),
-    "import { decodeCheckedInput } from '@exprtlabs/golem/conversion';\n"
-      + "import { registerGeneratedModel } from '@exprtlabs/golem/model';\n"
-      + "import { parseJson, stringifyJsonString } from '@exprtlabs/golem/serde';",
+    "import { decodeCheckedInput } from '@exprtlabs/golem/internal/model-runtime';\n"
+      + "import { registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';\n"
+      + "import { parseJson, stringifyJsonString } from '@exprtlabs/golem/internal/model-runtime';",
   );
 });
 
@@ -71,7 +71,7 @@ test('a type name is imported with import type, and a file picks the specifier o
   );
   assert.equal(
     render(join(runtimeImports(body), code`\n`)),
-    "import type { SchemaIssue } from '@exprtlabs/golem/validation-runtime';\nimport { jsonEqual } from '@exprtlabs/golem/validation-runtime';",
+    "import type { SchemaIssue } from '@exprtlabs/golem/internal/validation-runtime';\nimport { jsonEqual } from '@exprtlabs/golem/internal/validation-runtime';",
   );
 });
 
@@ -81,8 +81,8 @@ test('a file writes value and type names on one line, a type under a local name,
   const body = code`${rt.serde.assertModelValue}(${rt.serde.IssueSource}, ${rt.serde.parseJson}) as ${aliased(rtType.serde.SerdeOptions, '__GolemSerdeOptions')} & ${rtType.model.generatedModelFieldsBrand} & ${rtType.model.generatedModelWireBrand} & ${rtType.model.GeneratedModel}`;
   assert.equal(
     render(join(runtimeImports(body, options), code`\n`)),
-    "import { type GeneratedModel, type generatedModelWireBrand, type generatedModelFieldsBrand } from '@exprtlabs/golem/model';\n"
-      + "import { parseJson, IssueSource, assertModelValue, type SerdeOptions as __GolemSerdeOptions } from '@exprtlabs/golem/serde';",
+    "import { type GeneratedModel, type generatedModelWireBrand, type generatedModelFieldsBrand } from '@exprtlabs/golem/internal/model-runtime';\n"
+      + "import { parseJson, IssueSource, assertModelValue, type SerdeOptions as __GolemSerdeOptions } from '@exprtlabs/golem/internal/model-runtime';",
   );
   assert.equal(render(body), 'assertModelValue(IssueSource, parseJson) as __GolemSerdeOptions & generatedModelFieldsBrand & generatedModelWireBrand & GeneratedModel');
   assert.throws(() => aliased(code`a ${rt.serde.parseJson}`, 'x'), /one runtime part/);
@@ -107,7 +107,7 @@ test('a file imports the names it uses from its own sources, in the order it dec
   assert.equal(render(orderJson), 'OrderJSON');
   assert.equal(
     render(join(runtimeImports(body, { modules: ['serde', 'model'] }), code`\n`)),
-    "import { parseJson } from '@exprtlabs/golem/serde';\nimport { registerGeneratedModel } from '@exprtlabs/golem/model';",
+    "import { parseJson } from '@exprtlabs/golem/internal/model-runtime';\nimport { registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';",
   );
   assert.throws(() => runtimeImports(body, { modules: ['serde'] }), /does not list in its module order/);
 });

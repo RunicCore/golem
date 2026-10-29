@@ -1,6 +1,7 @@
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-api.js';
 import { emit, exportNames, type PassExports } from './emit.js';
 import { lower } from './lower.js';
+import { RUNTIME_SPECIFIER } from '../rt.js';
 
 export interface CompileInput {
   /** Schemas to validate against, keyed by root name; the name is any string, including `#`. */
@@ -65,7 +66,7 @@ export interface CompileResult {
   readonly diagnostics: readonly GolemDiagnostic[];
 }
 
-const DEFAULT_RUNTIME_MODULE = '@exprtlabs/golem/validation-runtime';
+const DEFAULT_RUNTIME_MODULE = RUNTIME_SPECIFIER['validation-runtime'];
 
 /** Compiles JSON Schema 2020-12 roots to a module that exports one validator function per root. */
 export function compile(input: CompileInput, options: CompileOptions): CompileResult {

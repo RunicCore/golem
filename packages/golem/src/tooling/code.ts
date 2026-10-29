@@ -6,7 +6,7 @@
  */
 import { compareText } from './generator-api.js';
 import { hasLocalForm } from './names.js';
-import { RUNTIME_MODULE_RANK, type RuntimeModule } from './rt.js';
+import { RUNTIME_MODULE_RANK, RUNTIME_SPECIFIER, type RuntimeModule } from './rt.js';
 
 /** A name the file decides. The slot is its identity: two slots with one label are two names. */
 export interface NameSlot { readonly label: string }
@@ -801,7 +801,7 @@ export function importSet(root: Code, options: Pick<ImportOptions, 'order' | 'mo
 
 /** How a file writes the imports of its runtime parts. */
 export interface ImportOptions {
-  /** The specifier of a runtime module; a module not listed is imported from `@exprtlabs/golem/<module>`. */
+  /** The specifier of a runtime module; a module not listed is imported from its internal runtime entry (`RUNTIME_SPECIFIER`). */
   readonly specifiers?: Partial<Readonly<Record<RuntimeModule, string>>>;
   /** The quote of a specifier; a single quote by default. */
   readonly quote?: "'" | '"';
@@ -827,7 +827,7 @@ export function runtimeImports(root: Code, options: ImportOptions = {}): readonl
 
 /** The statements of one module of the import set (see `runtimeImports`), for a file that puts other statements between modules. */
 export function importLines({ module, names, types }: RuntimeImport, options: ImportOptions = {}): readonly Code[] {
-  const specifier = options.specifiers?.[module] ?? `@exprtlabs/golem/${module}`;
+  const specifier = options.specifiers?.[module] ?? RUNTIME_SPECIFIER[module];
   const quoted = options.quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`;
   if (options.typeNames === 'inline') {
     const listed = [...names.map(spelledName), ...types.map((type) => `type ${spelledName(type)}`)];

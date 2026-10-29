@@ -80,6 +80,31 @@
       "import": "./dist/tooling/model-source-emitter.js",
       "default": "./dist/tooling/model-source-emitter.js"
     },
+    "./internal/model-runtime": {
+      "types": "./dist/runtime-model.d.ts",
+      "import": "./dist/runtime-model.js",
+      "default": "./dist/runtime-model.js"
+    },
+    "./internal/validation-runtime": {
+      "types": "./dist/runtime-validation.d.ts",
+      "import": "./dist/runtime-validation.js",
+      "default": "./dist/runtime-validation.js"
+    },
+    "./internal/client-runtime": {
+      "types": "./dist/runtime-client.d.ts",
+      "import": "./dist/runtime-client.js",
+      "default": "./dist/runtime-client.js"
+    },
+    "./internal/mobx-runtime": {
+      "types": "./dist/runtime-mobx.d.ts",
+      "import": "./dist/runtime-mobx.js",
+      "default": "./dist/runtime-mobx.js"
+    },
+    "./internal/nest-runtime": {
+      "types": "./dist/runtime-nest.d.ts",
+      "import": "./dist/runtime-nest.js",
+      "default": "./dist/runtime-nest.js"
+    },
     "./generator-api": {
       "types": "./dist/tooling/generator-api.d.ts",
       "import": "./dist/tooling/generator-api.js",

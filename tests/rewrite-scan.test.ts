@@ -63,7 +63,7 @@ function position(source: string, needle: string): { line: number; column: numbe
   return { line: before.length, column: before[before.length - 1]!.length + 1 };
 }
 
-const SERDE = "import { requireObjectCodec as __golem_requireObjectCodec } from '@exprtlabs/golem/serde';";
+const SERDE = "import { requireObjectCodec as __golem_requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';";
 /** The load of the module that registers the payment codecs, added for any call on a payment model. */
 const PAYMENT_MODULE = "import './payment.model.generated.js';";
 
@@ -83,7 +83,7 @@ test('each serde call with a type argument becomes a call on its codec', (t) => 
   ]);
   assert.deepEqual(result.files.get('src/calls.ts')?.imports, [
     { from: './payment.model.generated.js', names: [] },
-    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+    { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
   ]);
 });
 
@@ -117,7 +117,7 @@ test('parse and fromWireFormat of a class construct it, and options that name co
   ]);
   assert.deepEqual(result.files.get('src/construct.ts')?.imports, [
     { from: './payment.model.generated.js', names: [] },
-    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+    { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
   ]);
 });
 
@@ -150,7 +150,7 @@ test('a class named through a type-only namespace import is constructed through 
     { from: './ledger.model.js', names: ['Ledger'] },
     { from: './payment.model.generated.js', names: [] },
     { from: './payment.model.js', names: ['Payment'] },
-    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+    { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
   ]);
   const code = rewritten(root, result, 'type-only-namespace.ts');
   assert.deepEqual(runRewritten(code, ['text']).codecIds, ['TPayment_22222222', 'TPayment_22222222', 'TLedger_33333333'], 'the module runs with every name it uses imported or declared');
@@ -178,7 +178,7 @@ test('a call next to a source phase import and import attributes is rewritten an
   const code = rewritten(root, result, 'import-phases.ts');
   assert.equal(code, `import './payment.model.generated.js';
 import { Payment as __golem_Payment } from './payment.model.js';
-import { requireObjectCodec as __golem_requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec as __golem_requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { parse } from '@exprtlabs/golem/serde';
 import source wasmSource from './mod.wasm';
 import config from './config.json' with { type: 'json' };
@@ -198,7 +198,7 @@ test('a call on a model named only as a type imports the generated module that r
   assert.deepEqual(result.diagnostics, []);
   assert.deepEqual(result.files.get('src/load-codec.ts')?.imports, [
     { from: './payment.model.generated.js', names: [] },
-    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+    { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
   ]);
   const code = rewritten(root, result, 'load-codec.ts');
   assert.equal(code.split('\n').filter((line) => line === "import './payment.model.generated.js';").length, 1);
@@ -217,7 +217,7 @@ test('a project reached through a folder link loads the generated module that re
   assert.deepEqual(result.diagnostics, []);
   assert.deepEqual(result.files.get('src/load-codec.ts')?.imports, [
     { from: './payment.model.generated.js', names: [] },
-    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+    { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
   ]);
 });
 
@@ -230,7 +230,7 @@ test('a class imported only as a type is constructed through an aliased value im
     { from: './ledger.model.js', names: ['Ledger'] },
     { from: './payment.model.generated.js', names: [] },
     { from: './payment.model.js', names: ['Payment'] },
-    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+    { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
   ]);
   const code = rewritten(root, result, 'type-only.ts');
   assert.deepEqual(runRewritten(code, ['text']).codecIds, ['TPayment_22222222', 'TLedger_33333333', 'TPayment_22222222'], 'the module runs with every name it uses imported or declared');
@@ -251,7 +251,7 @@ test('a model class registers once, several classes of one model register under 
   // A subclass of a registered class and the default class do not register.
   assert.deepEqual(runRewritten(rewritten(root, result, 'ledger.model.ts')).registered, [['TLedger_33333333#Ledger', 'Ledger'], ['TLedger_33333333#AdminLedger', 'AdminLedger']]);
   assert.deepEqual(runRewritten(rewritten(root, result, 'payment.model.ts')).registered, [['TPayment_22222222', 'Payment']]);
-  assert.deepEqual(result.files.get('src/ledger.model.ts')?.imports, [{ from: '@exprtlabs/golem/serde', names: ['registerIModelClass'] }]);
+  assert.deepEqual(result.files.get('src/ledger.model.ts')?.imports, [{ from: '@exprtlabs/golem/internal/model-runtime', names: ['registerIModelClass'] }]);
   assert.equal(result.files.get('src/registered.model.ts'), undefined, 'the plain statement exists');
   assert.equal(result.files.get('src/rewritten.model.ts'), undefined, 'the aliased statement exists');
 });
@@ -367,7 +367,7 @@ test('a call on a type of an installed SDK loads the module of the SDK that regi
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
   assert.deepEqual(scanned(result, 'write-sdk.ts').imports, [
-    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+    { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
     { from: 'sdk/models/Money.js', names: [] },
   ]);
   assert.ok(rewritten(root, result, 'write-sdk.ts').split('\n').includes("import 'sdk/models/Money.js';"));
@@ -388,7 +388,7 @@ test('a call on an SDK type that the file imports through a project re-export lo
   const result = scan(root);
   assert.deepEqual(result.diagnostics, []);
   assert.deepEqual(scanned(result, 'write-sdk.ts').imports, [
-    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+    { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
     { from: 'sdk/models/Money.js', names: [] },
   ]);
 });

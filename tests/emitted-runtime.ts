@@ -1,5 +1,4 @@
-import * as conversion from '@exprtlabs/golem/conversion';
-import * as serde from '@exprtlabs/golem/serde';
+import * as runtime from '@exprtlabs/golem/internal/model-runtime';
 import { code, emitCodecRuntimeCode, join, MODULE_CONSTANT_HELPERS, placeHelpers, render, type Code, type ModelBases } from '@exprtlabs/golem/internal/emitter';
 
 import { runModule } from './support/run-module.js';
@@ -17,25 +16,25 @@ export function emitCodecRuntimeText(graph: Parameters<typeof emitCodecRuntimeCo
   return renderWithHelpers(emitCodecRuntimeCode(graph, { ...options, modelBases: NO_MODEL_BASES }));
 }
 
-/** Evaluate emitted `stringify*` functions with the public serde exports in scope. */
+/** Evaluate emitted `stringify*` functions with the model runtime exports in scope. */
 export function instantiate(source: string): Record<string, (value: never) => string> {
   const names = [...source.matchAll(/function (stringify\w+)/g)].map((match) => match[1]);
   return runModule(source, {
-    stringifyJsonString: serde.stringifyJsonString,
-    stringifyJsonNumber: serde.stringifyJsonNumber,
-    stringifyJsonBoolean: serde.stringifyJsonBoolean,
-    stringifyJsonArray: serde.stringifyJsonArray,
-    stringifyJsonScalar: serde.stringifyJsonScalar,
+    stringifyJsonString: runtime.stringifyJsonString,
+    stringifyJsonNumber: runtime.stringifyJsonNumber,
+    stringifyJsonBoolean: runtime.stringifyJsonBoolean,
+    stringifyJsonArray: runtime.stringifyJsonArray,
+    stringifyJsonScalar: runtime.stringifyJsonScalar,
   }, { exports: names }) as Record<string, (value: never) => string>;
 }
 
 export type RuntimeFunction = (...values: unknown[]) => unknown;
 
-/** Evaluate an emitted codec runtime with the public runtime exports in scope. */
+/** Evaluate an emitted codec runtime with the model runtime exports in scope. */
 export function instantiateRuntime(
   source: string,
   scope: Readonly<Record<string, unknown>> = {},
 ): Record<string, RuntimeFunction> {
   const exported = [...source.matchAll(/^export (?:function|const) (\w+)/gm)].map((match) => match[1]);
-  return runModule(source.replace(/^export /gm, ''), { ...serde, ...conversion, ...scope }, { exports: exported }) as Record<string, RuntimeFunction>;
+  return runModule(source.replace(/^export /gm, ''), { ...runtime, ...scope }, { exports: exported }) as Record<string, RuntimeFunction>;
 }

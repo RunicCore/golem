@@ -17,7 +17,7 @@ const CHECKS = `${PLUGIN}/rewrite-checks-parameters-against-operation-codecs`;
 const CONTROLLER = 'src/payments.controller.ts';
 /** The load of the module that registers the payment codecs, added for any codec the controller names. */
 const PAYMENT_MODULE = "import './payment.model.generated.js';";
-const NEST_IMPORT = "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem/nest';";
+const NEST_IMPORT = "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem/internal/nest-runtime';";
 
 /** A project of the named source files (under `src/`) with the models job's generated files written. */
 function project(t: TestContext, files: Readonly<Record<string, string>>): string {
@@ -91,7 +91,7 @@ test('with nest on, a model @Body() or @Query() parameter and a model return gai
   assert.deepEqual(code.split('\n').slice(0, 2), [PAYMENT_MODULE, NEST_IMPORT]);
   assert.deepEqual(result.files.get(CONTROLLER)?.imports, [
     { from: './payment.model.generated.js', names: [] },
-    { from: '@exprtlabs/golem/nest', names: ['nestModelCodec', 'nestModelReturn'] },
+    { from: '@exprtlabs/golem/internal/nest-runtime', names: ['nestModelCodec', 'nestModelReturn'] },
   ]);
 
   const model = /@__golem_nestModelReturn\("TPayment_[0-9a-f]{8}"\) @Post\(\)/;
@@ -297,8 +297,8 @@ test('a method that calls parse and carries nest decorators gets both rewrites a
   const code = rewritten(root, result, 'src/mixed.controller.ts');
   assert.deepEqual(result.files.get('src/mixed.controller.ts')?.imports, [
     { from: './payment.model.generated.js', names: [] },
-    { from: '@exprtlabs/golem/nest', names: ['nestModelCodec', 'nestModelReturn'] },
-    { from: '@exprtlabs/golem/serde', names: ['requireObjectCodec'] },
+    { from: '@exprtlabs/golem/internal/model-runtime', names: ['requireObjectCodec'] },
+    { from: '@exprtlabs/golem/internal/nest-runtime', names: ['nestModelCodec', 'nestModelReturn'] },
   ]);
   assert.deepEqual(
     result.files.get('src/mixed.controller.ts')?.edits.map(edit => /^@?(__golem_\w+)/.exec(edit.text)?.[1]),
@@ -307,8 +307,8 @@ test('a method that calls parse and carries nest decorators gets both rewrites a
   );
   assert.deepEqual(code.split('\n').slice(0, 3), [
     PAYMENT_MODULE,
-    "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem/nest';",
-    "import { requireObjectCodec as __golem_requireObjectCodec } from '@exprtlabs/golem/serde';",
+    "import { requireObjectCodec as __golem_requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';",
+    "import { nestModelCodec as __golem_nestModelCodec, nestModelReturn as __golem_nestModelReturn } from '@exprtlabs/golem/internal/nest-runtime';",
   ]);
   assertLines(code, [
     `  @__golem_nestModelReturn("${payment}") @Post()`,

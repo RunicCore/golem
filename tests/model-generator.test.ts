@@ -622,7 +622,7 @@ test('a companion imports only the validators of its own models and the companio
   // The strict unused compile of the build fails on a name the companion imports and does not use, and on a module it cannot find.
   writeModelGolemYaml(root, { mobx: true, validation: true });
   await buildModelProject(root);
-  const spy = await spyOnBuild(root, { '@exprtlabs/golem/conversion': ['assertAcyclicEncodeInput', 'beginEncode', 'endEncode'] });
+  const spy = await spyOnBuild(root, { '@exprtlabs/golem/internal/model-runtime': ['assertAcyclicEncodeInput', 'beginEncode', 'endEncode'] });
   try {
     // The payment companion alone brings in the money companion it needs.
     const { TPaymentBaseModel, stringifyTPayment, toWireFormatTPayment } = await import(pathToFileURL(path.join(root, 'build/payment.model.generated.js')).href);

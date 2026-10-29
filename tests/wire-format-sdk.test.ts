@@ -112,7 +112,7 @@ export class Visit extends TVisitBaseModel {}
   const { Visit } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as {
     readonly Visit: new (values: object) => object;
   };
-  const { encodeGeneratedModel } = await import('@exprtlabs/golem/conversion');
+  const { encodeGeneratedModel } = await import('@exprtlabs/golem/internal/model-runtime');
   const at = new Date('2026-01-02T03:04:05.000Z');
   const encoders = [
     ['toWireFormat', generated.toWireFormatTVisit],
