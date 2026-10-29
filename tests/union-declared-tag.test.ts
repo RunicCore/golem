@@ -570,6 +570,32 @@ export type TContact = IObject<{
   });
 }
 
+for (const validation of [false, true]) {
+  test(`a Date sits beside a tagged union and round-trips, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: T-637 docs/guide/field-types.md says a Date may sit beside tagged objects
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-date-', name: 'declared-date', linkWorkspaceNodeModules: true });
+    writeModelSources(sourceRoot, {
+      'contact.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+export type TEmail = IObject<{ kind: 'email'; address: string }>;
+export type TPhone = IObject<{ kind: 'phone'; number: string }>;
+export type TContact = IObject<{ value: (Date | TEmail | TPhone) & ${TAG} }>;
+`,
+    });
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const codecs = requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as Record<string, (value: unknown, options?: object) => unknown>;
+    const options = { validate: validation };
+    const at = '2020-01-02T03:04:05.000Z';
+    for (const wire of [{ value: at }, { value: { kind: 'email', address: 'a@b.c' } }, { value: { kind: 'phone', number: '5' } }]) {
+      const model = requireRecord(codecs.fromWireFormatTContact(wire, options), 'contact');
+      assert.equal(model.value instanceof Date, typeof wire.value === 'string');
+      assert.deepEqual(codecs.toWireFormatTContact(model, options), wire);
+      assert.deepEqual(JSON.parse(codecs.stringifyTContact(model, options) as string), wire);
+    }
+  });
+}
+
 test('a model instance and an object with no prototype keep their tag beside a URL class value', async (t) => {
   // protects: T-637 beside a class value, the write path tells a variant object (a model instance, a plain or prototype-less object) from the class instance
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-url-model-', name: 'declared-url-model', linkWorkspaceNodeModules: true });
