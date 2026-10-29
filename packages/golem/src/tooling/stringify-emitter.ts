@@ -1931,7 +1931,7 @@ function validatorFor(ctx: EmitCtx, reference: string, value: Code): Code {
  * call must throw whatever the value, and the guard behind the fast check refuses it.
  */
 function fastPasses(fast: Code, value: Code, levels: NodeLevels, publicEntry: boolean): Code {
-  const noDecision = publicEntry && levels.cap === 'sanity' ? code`options?.validate !== true && options?.validationContext === undefined` : code`options?.validationContext === undefined`;
+  const noDecision = publicEntry && levels.cap === 'sanity' ? code`${rt.serde.fastable}(options)` : code`options?.validationContext === undefined`;
   return code`${noDecision} && ${fast}(${value})`;
 }
 

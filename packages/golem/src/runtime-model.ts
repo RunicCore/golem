@@ -12,7 +12,7 @@ export {
   requireModelObject, serializeDate, unknownDiscriminatorValue, withDiscriminatorValue,
 } from './conversion.js';
 export {
-  assertModelValue, createObjectCodec, isValidModelValue, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, serdeValidates,
+  assertModelValue, createObjectCodec, fastable, isValidModelValue, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, serdeValidates,
   stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationUnavailableStub,
 } from './object-codec.js';
 export { IssueRepresentation, IssueSource } from './errors.js';

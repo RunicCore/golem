@@ -378,6 +378,14 @@ export function serdeValidates(options: SerdeOptions | undefined, defaultLevel: 
 }
 
 /**
+ * Whether a public entry of a sanity project may answer from its fast check: no validation context decides, and the call
+ * does not ask for full. That call must throw whatever the value, and the validator behind the fast check refuses it.
+ */
+export function fastable(options: SerdeOptions | undefined): boolean {
+  return options?.validate !== true && options?.validationContext === undefined;
+}
+
+/**
  * The `validate<Id>` and `assert<Id>` of a model generated with validation off. Each model's file types the one stub as
  * its own function, so the file holds no body for it.
  */
