@@ -896,7 +896,6 @@ export function generateModels(
         code`}`,
       ]),
       BLANK,
-      BLANK,
       code`${rt.model.registerGeneratedModel}(${identifier(className)}, {`,
       code`  fields: [${fieldNames}] as const,`,
       code`  conversion: { decode: ${identifier(`decode${typeName}`)} },`,
