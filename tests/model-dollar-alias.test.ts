@@ -7,6 +7,13 @@ import { LibError } from '@exprtlabs/golem/errors';
 
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
+async function buildAndImport(root: string, builtFile: string) {
+  writeModelGolemYaml(root, { validation: true });
+  const result = await buildModelProject(root);
+  assert.equal(result.code, 0, result.stderr);
+  return import(pathToFileURL(path.join(root, 'build', builtFile)).href);
+}
+
 test('a model alias named with a leading $ generates when another model file imports it', async (t) => {
   // protects: bug T-647 Unresolved schema reference for a $-named alias imported from another file
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-dollar-alias-', name: 'dollar-alias', linkWorkspaceNodeModules: true });
@@ -23,10 +30,7 @@ export type TA = IModel<{ d: $d; big: $D; one: $d1 }>;
 export class A extends TABaseModel {}
 `,
   });
-  writeModelGolemYaml(root, { validation: true });
-  const result = await buildModelProject(root);
-  assert.equal(result.code, 0, result.stderr);
-  const generated = await import(pathToFileURL(path.join(root, 'build', 'a.model.generated.js')).href);
+  const generated = await buildAndImport(root, 'a.model.generated.js');
   const parsed = generated.parseTA('{"d":{"id":"x"},"big":{"at":"2020-01-01T00:00:00.000Z"},"one":{"n":1}}');
   assert.equal(parsed.d.id, 'x');
   assert.equal(parsed.big.at.toISOString(), '2020-01-01T00:00:00.000Z');
@@ -48,10 +52,7 @@ export type TA = IModel<{ o: $o }>;
 export class A extends TABaseModel {}
 `,
   });
-  writeModelGolemYaml(root, { validation: true });
-  const result = await buildModelProject(root);
-  assert.equal(result.code, 0, result.stderr);
-  const generated = await import(pathToFileURL(path.join(root, 'build', 'a.model.generated.js')).href);
+  const generated = await buildAndImport(root, 'a.model.generated.js');
   assert.equal(generated.parseTA('{"o":{"id":"x"}}').o.id, 'x');
   assert.throws(() => generated.parseTA('{"o":{"id":5}}'), LibError);
 });
@@ -81,10 +82,7 @@ export { Order } from './order.js';
 export const order = parse<$Order>('{"id":"o1","customer":{"name":"Ada","orders":[{"id":"o2","customer":{"name":"Bo","orders":[]}}]}}');
 `,
   });
-  writeModelGolemYaml(root, { validation: true });
-  const result = await buildModelProject(root);
-  assert.equal(result.code, 0, result.stderr);
-  const { order, Order, Customer } = await import(pathToFileURL(path.join(root, 'build', 'use.js')).href);
+  const { order, Order, Customer } = await buildAndImport(root, 'use.js');
   assert.ok(order.customer instanceof Customer);
   assert.ok(order.customer.orders[0] instanceof Order);
   assert.equal(order.customer.orders[0].customer.name, 'Bo');
