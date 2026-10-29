@@ -29,7 +29,6 @@ test('model guards recognize registered constructors and subclasses without trea
     fields: ['value'],
     conversion: {
       decode: () => { conversions++; return new Base(); },
-      encode: value => { conversions++; return { value: value.value }; },
     },
   });
   for (const constructor of [Base, Child]) assert.equal(model.isGeneratedModelConstructor(constructor), true);

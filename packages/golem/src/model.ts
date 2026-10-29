@@ -274,8 +274,6 @@ export interface ModelValidationContext {
 export interface GeneratedModelConversion<Model extends object = object, Wire = unknown> {
   /** Decode a wire value, constructing the requested subclass when supplied. */
   readonly decode: (value: unknown, constructor?: GeneratedModelConstructor) => Model;
-  /** Ignored: `encodeGeneratedModel` calls the `toWireFormat` of the codec of the model. */
-  readonly encode?: (model: Model) => Wire;
 }
 
 export interface GeneratedModelProfile {

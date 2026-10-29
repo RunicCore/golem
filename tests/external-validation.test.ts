@@ -249,7 +249,6 @@ test('derived registration shadows inherited metadata and failed replacement lea
     fields: ['value', 'label'],
     profile: { validation: false },
     conversion: {
-      encode: model => ({ value: model.value, label: model.label }),
       decode: () => new Derived(),
     },
   });

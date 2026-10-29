@@ -138,7 +138,7 @@ export type TAccount = IModel<{ id: string }>;`,
 
 /** The fixture's SDK module with the runtime registration of a generated SDK model, and a count of the calls it receives. */
 const COUNTING_SDK_MODELS = tsSource`import { registerGeneratedModel } from '@exprtlabs/golem/model';
-export const calls = { decode: 0, encode: 0, stringify: 0, toWire: 0 };
+export const calls = { decode: 0, stringify: 0, toWire: 0 };
 export class MoneyModel {
   public currency = '';
   public constructor(values: { currency?: string } = {}) { if (values.currency !== undefined) this.currency = values.currency; }
@@ -147,7 +147,6 @@ registerGeneratedModel(MoneyModel, {
   fields: ['currency'],
   conversion: {
     decode: (value, constructor) => { calls.decode += 1; return Reflect.construct(constructor ?? MoneyModel, [value]) as MoneyModel; },
-    encode: (model) => { calls.encode += 1; return { currency: model.currency }; },
   },
 });
 export function stringifyfixture_money(value: MoneyModel, _trusted?: unknown): string { calls.stringify += 1; return JSON.stringify({ currency: value.currency }); }
@@ -175,7 +174,7 @@ test('consumes current manifests and keeps imported model identity for conversio
   await buildModelProject(root);
   const sdk = await import(pathToFileURL(path.join(root, 'build/sdk/models.js')).href) as {
     readonly MoneyModel: new () => object;
-    readonly calls: { decode: number; encode: number; stringify: number; toWire: number };
+    readonly calls: { decode: number; stringify: number; toWire: number };
   };
   const { TAggregateBaseModel, stringifyTAggregate } = await import(pathToFileURL(path.join(root, 'build/aggregate.model.generated.js')).href);
   const wire = { money: { currency: 'USD' }, nested: { money: { currency: 'EUR' } } };
