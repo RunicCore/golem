@@ -1,4 +1,4 @@
-import type { IrCheck, IrFunction, IrSchema } from './ir.js';
+import type { IrCheck, IrFunction, IrModule, IrSchema } from './ir.js';
 
 /**
  * The function that stands for `id`: a function whose body only passes the value to another one (a `$ref`, or a
@@ -89,17 +89,58 @@ function addCaller(callers: Map<number, number[]>, callee: number, caller: numbe
   else known.push(caller);
 }
 
-/** The functions whose IR call graph reaches a validation function. These have no fast check, so each predicate runs once per conversion. */
-export function reachingValidation(functions: readonly IrFunction[]): ReadonlySet<number> {
+/** The functions whose IR call graph reaches a check for which `direct` holds, and those functions' callers. */
+function reaching(functions: readonly IrFunction[], direct: (check: IrCheck) => boolean): ReadonlySet<number> {
   const callers = new Map<number, number[]>();
-  const reaching = new Set<number>();
+  const found = new Set<number>();
   for (const fn of functions) {
     visitChecks(fn.body, check => {
-      if (check.kind === 'validation') reaching.add(fn.id);
+      if (direct(check)) found.add(fn.id);
       for (const callee of calledFunctions(check)) addCaller(callers, callee, fn.id);
     });
   }
-  return withCallers(reaching, callers);
+  return withCallers(found, callers);
+}
+
+/** The functions whose IR call graph reaches a validation function. These have no fast check, so each predicate runs once per conversion. */
+export function reachingValidation(functions: readonly IrFunction[]): ReadonlySet<number> {
+  return reaching(functions, check => check.kind === 'validation');
+}
+
+/** An array that states its length or a limit on it is not a tuple: only a tuple's arity is shape. */
+const isTuple = (check: Extract<IrCheck, { kind: 'array' }>): boolean => check.prefixItems.length > 0 || check.closed;
+
+/**
+ * True when the sanity level skips something of this check: a value limit (a string length, a pattern, a number range or
+ * `multipleOf`, a format other than `date-time`, a count of items outside a tuple, `uniqueItems`, a count of `contains`
+ * matches, a count of properties), or a validation function. Sanity keeps the shape: the type, the keys, the union
+ * tags, the enums and constants, a tuple's arity. A `date-time` format stays: the schema has no mark for a field that
+ * converts to a `Date`, and `new Date('5')` would accept a text that is no time (F-39).
+ */
+function skipsCheck(check: IrCheck): boolean {
+  switch (check.kind) {
+    case 'string': case 'number': return true;
+    case 'format': return check.format !== 'date-time';
+    case 'validation': return check.calls.length > 0;
+    case 'array': return check.uniqueItems || (!isTuple(check) && (check.minItems !== undefined || check.maxItems !== undefined)) || (check.contains !== undefined && (check.contains.min > 1 || check.contains.max !== undefined));
+    case 'object': return check.minProperties !== undefined || check.maxProperties !== undefined;
+    default: return false;
+  }
+}
+
+/**
+ * The functions that reach a check the sanity level skips (see `skipsCheck`): they take the flag `s`. A function that
+ * reaches one through `not`, `if`, `oneOf` or `contains` too, so the monotone rule (sanity accepts all that full accepts)
+ * can relax those.
+ */
+export function reachingSkipped(functions: readonly IrFunction[]): ReadonlySet<number> {
+  return reaching(functions, skipsCheck);
+}
+
+/** The functions, each marked `sanity` when it reaches a check the sanity level skips. */
+export function markSanity(functions: readonly IrFunction[]): readonly IrFunction[] {
+  const reached = reachingSkipped(functions);
+  return functions.map(fn => (reached.has(fn.id) ? { ...fn, sanity: true } : fn));
 }
 
 /** The edge of a check that judges the value of its function together with the function's other checks: a reference, or the structure under a validation. */
@@ -239,6 +280,62 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
     ];
   });
   return { functions: [...functions, ...added], structure, predicates };
+}
+
+/**
+ * The module as the sanity level checks it: the shape only, with no `s` flag. A skipped check is left out
+ * (`skipsCheck`). A check that would reject more once its callee is relaxed is relaxed too, so sanity accepts all that
+ * full accepts: `not` is left out, an untagged `oneOf` becomes an `anyOf`, `if` stops deciding (`IrConditional.relaxed`),
+ * and `contains` needs one match at most. Each such check is judged on the full module's reach, before anything is left out.
+ */
+export function sanitize(module: IrModule): IrModule {
+  const reached = reachingSkipped(module.functions);
+  const relaxes = (ids: readonly (number | undefined)[]): boolean => ids.some(id => id !== undefined && reached.has(id));
+  const nested = (schema: IrSchema): IrSchema => {
+    if (schema.kind !== 'checks') return schema;
+    const checks = schema.checks.flatMap(sanityCheck);
+    return checks.length === 0 ? ALWAYS : { kind: 'checks', checks };
+  };
+  const sanityCheck = (check: IrCheck): IrCheck[] => {
+    switch (check.kind) {
+      case 'string': case 'number': return [];
+      case 'format': return check.format === 'date-time' ? [check] : [];
+      case 'validation': return check.fn === undefined ? [] : [{ kind: 'call', fn: check.fn }];
+      case 'not': return relaxes([check.fn]) ? [] : [check];
+      case 'union': return check.exactlyOne && relaxes(check.branches) ? [{ ...check, exactlyOne: false }] : [check];
+      case 'conditional': return relaxes([check.if, check.then, check.else]) ? [{ ...check, relaxed: true }] : [check];
+      case 'allOf': return [{ ...check, branches: check.branches.map(nested) }];
+      case 'unevaluatedProperties': case 'unevaluatedItems': return [{ ...check, schema: nested(check.schema) }];
+      case 'array': {
+        const { minItems, maxItems, contains, ...rest } = check;
+        return [{
+          ...rest,
+          prefixItems: check.prefixItems.map(nested),
+          ...(check.items === undefined ? {} : { items: nested(check.items) }),
+          ...(isTuple(check) ? { ...(minItems === undefined ? {} : { minItems }), ...(maxItems === undefined ? {} : { maxItems }) } : {}),
+          ...(contains === undefined ? {} : { contains: relaxes([contains.fn]) ? { fn: contains.fn, min: 0 } : { fn: contains.fn, min: Math.min(contains.min, 1) } }),
+          uniqueItems: false,
+        }];
+      }
+      case 'object': {
+        const { minProperties, maxProperties, ...rest } = check;
+        const kept = {
+          ...rest,
+          properties: check.properties.map(property => ({ ...property, schema: nested(property.schema) })),
+          patternProperties: check.patternProperties.map(entry => ({ ...entry, schema: nested(entry.schema) })),
+          ...(check.additional?.kind === 'schema' ? { additional: { kind: 'schema' as const, schema: nested(check.additional.schema) } } : {}),
+        };
+        // A count was the only reason for this check to exist.
+        const empty = (minProperties !== undefined || maxProperties !== undefined) && kept.required.length === 0 && kept.dependentRequired.length === 0
+          && kept.properties.length === 0 && kept.patternProperties.length === 0 && kept.additional === undefined && kept.propertyNames === undefined;
+        return empty ? [] : [kept];
+      }
+      case 'type': case 'literal': case 'date': case 'instance': case 'call': case 'dependentSchemas':
+        return [check];
+      default: return unprojected(check);
+    }
+  };
+  return { ...module, functions: module.functions.map(fn => ({ ...fn, body: nested(fn.body) })) };
 }
 
 /** The ids reachable from `start` through `next`. */

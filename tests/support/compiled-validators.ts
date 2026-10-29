@@ -32,6 +32,8 @@ export interface CompiledValidatorInput {
   readonly fastPath?: boolean;
   /** Compiles with `typed`, then strips the annotations, so the module runs as the untyped one does. */
   readonly typed?: boolean;
+  /** The validation level of the compile; `full` by default. */
+  readonly level?: CompileOptions['level'];
 }
 
 /** A generated fast check: true exactly when the root's validator reports no issue. */
@@ -63,7 +65,7 @@ export async function compileValidatorModule(input: CompiledValidatorInput): Pro
       resources: new Map(Object.entries(input.resources ?? {})),
       validations: new Map(Object.entries(input.validations ?? {})),
     },
-    { unknownFormats: input.unknownFormats ?? 'warn', runtimeModule, ...(input.fastPath ? { fastPath: true } : {}), ...(input.typed ? { typed: true } : {}) },
+    { unknownFormats: input.unknownFormats ?? 'warn', runtimeModule, ...(input.fastPath ? { fastPath: true } : {}), ...(input.typed ? { typed: true } : {}), ...(input.level === undefined ? {} : { level: input.level }) },
   );
   const errors = diagnostics.filter(entry => entry.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw new Error(`Compile failed: ${errors.map(entry => `${entry.code} ${entry.message}`).join('; ')}`);

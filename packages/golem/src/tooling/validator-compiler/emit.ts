@@ -2,11 +2,11 @@ import { code, helperDefinitions, identifier as identifierCode, join, nameOf, Na
 import type { IrFunction, IrModule } from './ir.js';
 import { compareText } from '../generator-core.js';
 import { rtType } from '../rt.js';
-import { VALUE, NEWLINE, functionParameters, FunctionSlots, callFunction, type CalleeSlot } from './function-names.js';
+import { VALUE, NEWLINE, SANITY, functionParameters, FunctionSlots, callFunction, type CalleeSlot } from './function-names.js';
 import { FULL_VALIDATOR, fastCheckMode, type WriterMode } from './modes.js';
 import { ModuleState } from './module-state.js';
 import { FunctionWriter } from './function-writer.js';
-import { forwardingTarget, projectPasses, reachable } from './call-graph.js';
+import { forwardingTarget, markSanity, projectPasses, reachable, sanitize } from './call-graph.js';
 import { FastPlan } from './fast-plan.js';
 import { groupFunctions, type WrittenFastCheck, type WrittenFunction } from './grouping.js';
 
@@ -17,6 +17,8 @@ interface EmitOptions {
   readonly typed?: boolean;
   /** Also writes the boolean fast check `is_X` beside `validate_X`, for each root, or each root named, that has one (see `FastPlan`). */
   readonly fastPath?: boolean | ReadonlySet<string>;
+  /** `sanity` writes the module that checks the shape only (see `sanitize`); `full`, the default, one module whose validators skip the value limits when the caller passes the flag `s`. */
+  readonly level?: 'full' | 'sanity';
 }
 
 /** The names a root's two passes are exported under; see `PassRoot`. */
@@ -119,14 +121,17 @@ interface Reached {
   readonly fastKept: ReadonlySet<number>;
 }
 
-function startEmission(source: IrModule, fastPath: EmitOptions['fastPath']): Emission {
+function startEmission(whole: IrModule, fastPath: EmitOptions['fastPath'], level: EmitOptions['level']): Emission {
+  const source = level === 'sanity' ? sanitize(whole) : whole;
   // A set of root names is any `ReadonlySet`, not only a `Set`.
   const wantsFastCheck = (name: string): boolean => fastPath === true || (typeof fastPath === 'object' && fastPath.has(name));
   const wanted = fastPath === true || (typeof fastPath === 'object' && fastPath.size > 0);
   const sourceTarget = forwardingTarget(source.functions);
   // The passes are IR functions of their own, so the plan and the writers treat them as any other function.
   const passes = wanted ? projectPasses(source.functions, source.exports.filter(({ name }) => wantsFastCheck(name)).map(({ fn }) => sourceTarget(fn))) : undefined;
-  const module = passes === undefined ? source : { ...source, functions: passes.functions };
+  // A sanity module holds no check to skip, so no function takes the flag.
+  const withPasses = passes === undefined ? source.functions : passes.functions;
+  const module = { ...source, functions: level === 'sanity' ? withPasses : markSanity(withPasses) };
   const target = forwardingTarget(module.functions);
   const plan = wanted ? new FastPlan(module.functions) : undefined;
   return {
@@ -220,12 +225,18 @@ function writeExports({ module, target, fastRootExports, passRoots }: Emission, 
     if (known === undefined) throw new Error(`The validator compiler has no export name for the root ${JSON.stringify(name)}.`);
     return known;
   };
-  const signature = options.typed ? code`(value: unknown, all: boolean): readonly ${rtType.validation.SchemaIssue}[] {` : code`(value, all) {`;
-  const issuesOf = (name: string, id: number): Code => code`export function ${identifierCode(name)}${signature}
+  // The wrapper takes the sanity flag as its third argument when its function does; see `Validator`.
+  const issuesOf = (name: string, id: number): Code => {
+    const sanity = module.functions[target(id)].sanity === true;
+    const signature = options.typed
+      ? code`(value: unknown, all: boolean${sanity ? code`, ${SANITY}?: boolean` : code``}): readonly ${rtType.validation.SchemaIssue}[] {`
+      : code`(value, all${sanity ? code`, ${SANITY}` : code``}) {`;
+    return code`export function ${identifierCode(name)}${signature}
   const issues = [];
   ${callFunction(module.functions[target(id)], nameOf(stayingSlot(target(id), false)), { value: identifierCode('value'), path: code`[]`, issues: identifierCode('issues'), all: identifierCode('all') })};
   return issues;
 }`;
+  };
   const wrappers = module.exports.map(({ name, fn }) => issuesOf(exportName(name), fn));
   const fastExports = new Map(fastRootExports.map(({ name }) => [name, siblingExportName('is', exportName(name))] as const));
   // The fast check itself is the export: a valid value takes no extra call.
@@ -247,7 +258,7 @@ function writeExports({ module, target, fastRootExports, passRoots }: Emission, 
  * and whose structure has a fast check also exports `structure_X` and `predicates_X`.
  */
 export function emit(module: IrModule, options: EmitOptions): EmitResult {
-  const emission = startEmission(module, options.fastPath);
+  const emission = startEmission(module, options.fastPath, options.level);
   const reached = reachedFunctions(emission, surveyFunctions(emission));
   const stayingSlot = stayingSlotOf(emission, reached);
   const names = declareFunctionNames(emission, reached);

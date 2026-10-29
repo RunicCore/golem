@@ -2,8 +2,11 @@ import type { SchemaIssue } from './issue-messages.js';
 import { presentValue } from './presence.js';
 export type { SchemaIssue, SchemaIssueDetail } from './issue-messages.js';
 
-/** A generated validator; with `all` false it returns at the first issue. */
-export type Validator = (value: unknown, all: boolean) => readonly SchemaIssue[];
+/**
+ * A generated validator; with `all` false it returns at the first issue. With `sanity` true it checks the shape only: it
+ * skips the value limits and the validation functions. A validator of a sanity-only module takes no flag.
+ */
+export type Validator = (value: unknown, all: boolean, sanity?: boolean) => readonly SchemaIssue[];
 
 /** Length of `text` in Unicode code points; a lone surrogate counts as one. */
 export function codePointLength(text: string): number {

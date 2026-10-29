@@ -118,6 +118,11 @@ export interface WriterMode {
   /** The mode writes functions that keep or receive an evaluation record. */
   readonly records: boolean;
   /**
+   * The mode writes a function that takes the sanity flag `s` and writes a skipped check under it. A fast check takes
+   * none and is exact: its callers use it at the full level only, and a full validator it calls runs with the flag absent.
+   */
+  readonly takesSanity: boolean;
+  /**
    * True for a function whose checks a tagged union may write in place of calling it (see `mergedBranches`); absent
    * when the mode always calls each branch.
    */
@@ -173,6 +178,7 @@ export const FULL_VALIDATOR: WriterMode = {
     writer.line(code`${PATH}.pop();`);
   },
   records: true,
+  takesSanity: true,
 };
 
 /**
@@ -271,6 +277,7 @@ export function fastCheckMode(plan: FastPlan): WriterMode {
     },
     child: (_writer, _token, body) => body(),
     records: false,
+    takesSanity: false,
     // A branch with a fast check is exact on its own, so its checks are exact in place too.
     mergesBranch: id => plan.has(id),
   };
