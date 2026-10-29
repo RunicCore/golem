@@ -8,10 +8,10 @@ const parent = requireObjectCodec(process.argv[2]);
 // The child's model schema holds a Date where its wire schema holds a string, and the parent validates the model form.
 assert.equal(parent.validate({ name: 'ab', child: { count: 2, at: new Date(0) } }), false);
 assert.equal(parent.validate({ name: 'abc', child: { count: 2, at: new Date(0) } }), true);
-// The nested default model stays open: its odd count breaks the TValidation function, which nothing runs.
+// The nested model with validation off stays open: its count of 3 breaks Minimum<10>, which nothing checks.
 assert.equal(parent.validate({ name: 'abc', child: { count: 3, at: new Date(0) } }), true);
 
-// The nested default model parses without checks, refuses validate (as an option too).
+// The nested model with validation off parses without checks, refuses validate (as an option too).
 const child = requireObjectCodec(process.argv[3]);
 const unavailable = (error) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable;
 const wire = '{"count":3,"at":"1970-01-01T00:00:00.000Z"}';

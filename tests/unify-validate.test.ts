@@ -68,19 +68,19 @@ test('global validation true binds IObject and IModel codecs to generated valida
   assert.deepEqual(issues.map((issue) => issue.path), getValidator(invalid).issues.map((issue) => issue.path));
 });
 
-test('I* validation option overrides the global flag in both directions and mixed files', async (t: TestContext) => {
+test('I* validation option lowers the project level per type, in mixed files', async (t: TestContext) => {
   const { root, sourceRoot } = fixture(t);
   writeGeneratedArtifacts([{
     path: path.join(sourceRoot, 'mixed.model.ts'),
     content: readFixture('models/unify-validate/i-validation-option-overrides-the-global-flag-in-both-directions-and-mixed-f/mixed.model.ts'),
   }]);
-  writeModelGolemYaml(root, { mobx: false, validation: false });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
   await compile(root);
   const { Checked } = await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
   const checkedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TChecked'));
   const trustedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTrusted'));
   assert.equal(checkedCodec.validate(new Checked({ title: 'ok' })), true);
-  assert.equal(checkedCodec.validate({ title: 5 }), false, 'the per-type override still runs a real schema check');
+  assert.equal(checkedCodec.validate({ title: 5 }), false, 'the sanity override still runs a real schema check');
   assert.throws(() => trustedCodec.validate({ id: '1' }));
   assert.throws(() => trustedCodec.stringify({ id: '1' }, { validate: true }));
 });

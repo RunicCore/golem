@@ -113,30 +113,35 @@ test('a rule on an SDK model runs once per parse and IObject enforces it', async
   assert.throws(() => plain.parse(JSON.stringify({ ...wire, money: { amount: 12, currency: 'XXX' } })), validationError);
 });
 
-const TOGGLES = `import type { IModel, IObject } from '@exprtlabs/golem/model';
+/** The toggle models. A model never raises the level of its project, so only a project that validates declares the models that turn validation on or hold a validated child. */
+function toggles(projectValidates: boolean): string {
+  const on = projectValidates ? `export type TOn = IModel<Fields, { validation: true }>;
+export class On extends TOnBaseModel {}
+` : '';
+  const validatedChild = projectValidates ? `export type TVChild = IModel<{ note: string & TValidation<typeof notBlank>; when: Date }, { validation: true }>;
+export class VChild extends TVChildBaseModel {}
+export type TUParent = IModel<{ child: VChild; when: Date }, { validation: false }>;
+export class UParent extends TUParentBaseModel {}
+` : '';
+  return `import type { IModel, IObject } from '@exprtlabs/golem/model';
 import type { TValidation } from '@exprtlabs/golem/tags';
 import { notBlank } from './counter.js';
-import { TInheritBaseModel, TOnBaseModel, TOffBaseModel, TParentBaseModel, TVChildBaseModel, TUParentBaseModel } from './toggles.model.generated.js';
+import { TInheritBaseModel, TOffBaseModel, TParentBaseModel${projectValidates ? ', TOnBaseModel, TVChildBaseModel, TUParentBaseModel' : ''} } from './toggles.model.generated.js';
 type Fields = { note: string & TValidation<typeof notBlank>; when: Date };
 export type TInherit = IModel<Fields>;
 export class Inherit extends TInheritBaseModel {}
-export type TOn = IModel<Fields, { validation: true }>;
-export class On extends TOnBaseModel {}
-export type TOff = IModel<Fields, { validation: false }>;
+${on}export type TOff = IModel<Fields, { validation: false }>;
 export class Off extends TOffBaseModel {}
 export type TChild = IObject<{ secret: string }, { validation: false }>;
 export type TParent = IModel<{ child: TChild; note: string & TValidation<typeof notBlank>; when: Date }>;
 export class Parent extends TParentBaseModel {}
-export type TVChild = IModel<{ note: string & TValidation<typeof notBlank>; when: Date }, { validation: true }>;
-export class VChild extends TVChildBaseModel {}
-export type TUParent = IModel<{ child: VChild; when: Date }, { validation: false }>;
-export class UParent extends TUParentBaseModel {}
-`;
+${validatedChild}`;
+}
 
 for (const profileValidation of [true, false]) {
   test(`validation toggles behave as the spec states (profile validation ${profileValidation})`, async t => {
     const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-toggles-', name: 'single-pass-toggles' });
-    writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'toggles.model.ts': TOGGLES });
+    writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'toggles.model.ts': toggles(profileValidation) });
     writeModelGolemYaml(root, { mobx: false, validation: profileValidation });
     await buildModelProject(root);
     const counter = await import(pathToFileURL(path.join(root, 'build/counter.js')).href) as { calls: number; reset(): void };
@@ -144,7 +149,7 @@ for (const profileValidation of [true, false]) {
     const value = { note: 'hi', when: '2026-01-02T03:04:05.000Z' };
     const unavailable = (e: unknown): boolean => e instanceof LibError && e.kind === LibErrorKind.ValidationUnavailable;
     let cells = 0;
-    for (const [name, declaration] of [['TInherit', 'inherit'], ['TOn', 'on'], ['TOff', 'off']] as const) {
+    for (const [name, declaration] of (profileValidation ? [['TInherit', 'inherit'], ['TOn', 'on'], ['TOff', 'off']] : [['TInherit', 'inherit'], ['TOff', 'off']]) as readonly (readonly [string, 'inherit' | 'on' | 'off'])[]) {
       const codec = requireObjectCodec(generatedCodecIdFromRoot(root, name));
       const construct = models[name.slice(1)];
       const effective = declaration === 'on' || (declaration === 'inherit' && profileValidation);
@@ -166,7 +171,7 @@ for (const profileValidation of [true, false]) {
         }
       }
     }
-    assert.equal(cells, 18);
+    assert.equal(cells, profileValidation ? 18 : 12);
 
     if (profileValidation) {
       // An opaque child inside a validated parent: parent rules run once, child contents unchecked.
@@ -177,7 +182,6 @@ for (const profileValidation of [true, false]) {
       const blank = new models.Parent({ child: { secret: 'x' }, note: '  ', when: new Date(value.when) });
       assert.equal(parentCodec.validate(blank), false, 'a blank parent note is rejected');
       assert.ok((await validateInstance(blank)).some(issue => issue.path[0] === 'note'));
-    } else {
       // A validated child inside an unvalidated parent: the codec you call decides.
       counter.reset();
       requireObjectCodec(generatedCodecIdFromRoot(root, 'TUParent')).parse(JSON.stringify({ child: value, when: value.when }), { construct: models.UParent });
