@@ -302,15 +302,15 @@ test('converted model fields call their converter without a per-field closure', 
   try {
     const { Wallet } = await import(pathToFileURL(path.join(project.root, 'build/wallet.model.js')).href);
     const wire = { balance: { amount: '1', currency: 'USD' }, rebate: { amount: '2', currency: 'EUR' } };
-    // One decode and one encode: the converter each field passes, by direction and field.
+    // One decode: the converter each field passes, by direction and field.
     const round = () => {
       spy.calls.length = 0;
-      encodeGeneratedModel(decodeGeneratedModel(Wallet, wire));
+      decodeGeneratedModel(Wallet, wire);
       return new Map(spy.calls.map((call) => [`${String(call.args[0])} ${String(call.args[1])}`, call.args[2]]));
     };
     const first = round();
     const second = round();
-    assert.deepEqual([...first.keys()].sort(), ['deserialize balance', 'deserialize rebate', 'serialize balance', 'serialize rebate']);
+    assert.deepEqual([...first.keys()].sort(), ['deserialize balance', 'deserialize rebate']);
     for (const [key, convert] of first) {
       assert.equal(typeof convert, 'function', key);
       assert.strictEqual(second.get(key), convert, `${key} passes one function on every call, not a closure made per call`);
@@ -341,8 +341,8 @@ test('converted model items inside an array call their converter without a per-i
     };
     const first = round();
     const second = round();
-    // One call per direction converts every item, so no item gets a converter of its own.
-    assert.deepEqual(first.map((entry) => entry.call).filter((call) => call.startsWith('convertModelItems')).sort(), ['convertModelItems deserialize', 'convertModelItems serialize']);
+    // One call converts every item, so no item gets a converter of its own.
+    assert.deepEqual(first.map((entry) => entry.call).filter((call) => call.startsWith('convertModelItems')).sort(), ['convertModelItems deserialize']);
     assert.equal(first.length, second.length);
     first.forEach((entry, index) => {
       assert.equal(typeof entry.convert, 'function', entry.call);

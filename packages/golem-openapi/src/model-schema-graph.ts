@@ -14,6 +14,8 @@ import {
   type OpenApiModelAnalysis,
   modelEnv,
   aliasDescriptor,
+  CompositionError,
+  locatedCompositionError,
   modelConversionDescriptor,
   type SchemaGraphGrouping,
 } from './model-resolution.js';
@@ -46,6 +48,15 @@ function modelClassDescriptor(
   };
 }
 
+/** A schema that stops generation names the component it sits in. */
+function locatingComposition<Result>(owner: string, resolve: () => Result): Result {
+  try {
+    return resolve();
+  } catch (thrown) {
+    throw thrown instanceof CompositionError ? locatedCompositionError(owner, thrown) : thrown;
+  }
+}
+
 function internOpenApiSchemaGraph(
   document: unknown,
   ordered: readonly ModelDefinition[],
@@ -62,7 +73,7 @@ function internOpenApiSchemaGraph(
   const aliasEnv = modelEnv(document, undefined, undefined, resources, selections, dates);
   const aliasEntries = [...definitions.aliases.values()].map((alias) => ({
     name: alias.name,
-    descriptor: aliasDescriptor(alias, definitions, aliasEnv),
+    descriptor: locatingComposition(alias.schemaName, () => aliasDescriptor(alias, definitions, aliasEnv)),
     emitClass: false,
     validationEnabled,
   }));
@@ -76,9 +87,9 @@ function internOpenApiSchemaGraph(
     const env = modelEnv(document, undefined, anchors, resources, selections, dates);
     return {
       name: definition.name,
-      descriptor: definition.isUnion
+      descriptor: locatingComposition(definition.schemaName, () => definition.isUnion
         ? modelConversionDescriptor(definition.rawSchema, definitions, env, 'to')
-        : modelClassDescriptor(modelConversionDescriptor(definition.rawSchema, definitions, env, 'to', new Set(), true, 'definition'), definitions, env),
+        : modelClassDescriptor(modelConversionDescriptor(definition.rawSchema, definitions, env, 'to', new Set(), true, 'definition'), definitions, env)),
       emitClass: true,
       validationEnabled,
     };

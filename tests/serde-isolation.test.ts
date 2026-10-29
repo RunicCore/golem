@@ -31,7 +31,6 @@ registerGeneratedModel(RecordModel, {
   fields: ['payload'], profile: { validation: false },
   conversion: {
     decode(value) { return new RecordModel(Reflect.get(value as object, 'payload')); },
-    encode(model) { return { payload: model.payload }; },
   },
 });
 
@@ -75,7 +74,7 @@ test('decode rejects a cycle in a declared object or an unknown field without co
 test('decode rejects a cycle through a retained model instance', () => {
   class Holder { child: unknown; }
   registerGeneratedModel(Holder, { fields: ['child'], profile: { validation: false }, conversion: {
-    decode: () => new Holder(), encode: model => ({ child: model.child }),
+    decode: () => new Holder(),
   } });
   const child = new Holder();
   child.child = { back: child };
@@ -88,7 +87,7 @@ test('decode hands the input to the decoder uncopied', () => {
   let received: unknown;
   class Probe {}
   registerGeneratedModel(Probe, { fields: [], profile: { validation: false }, conversion: {
-    decode(input) { received = input; return new Probe(); }, encode: () => ({}),
+    decode(input) { received = input; return new Probe(); },
   } });
   const input = { nested: { value: 1 } };
   decodeGeneratedModel(Probe, input);
@@ -464,13 +463,13 @@ test('decode cycle tracking retains multiple contracts and recovers after failur
   class Second {}
   class Third {}
   registerGeneratedModel(First, { fields: [], profile: { validation: false }, conversion: {
-    decode(input) { decodeGeneratedModel(Second, input); return new First(); }, encode: () => ({}),
+    decode(input) { decodeGeneratedModel(Second, input); return new First(); },
   } });
   registerGeneratedModel(Second, { fields: [], profile: { validation: false }, conversion: {
-    decode(input) { decodeGeneratedModel(Third, input); return new Second(); }, encode: () => ({}),
+    decode(input) { decodeGeneratedModel(Third, input); return new Second(); },
   } });
   registerGeneratedModel(Third, { fields: [], profile: { validation: false }, conversion: {
-    decode(input) { if (recurse) decodeGeneratedModel(First, input); return new Third(); }, encode: () => ({}),
+    decode(input) { if (recurse) decodeGeneratedModel(First, input); return new Third(); },
   } });
   const input = {};
   assert.throws(() => decodeGeneratedModel(First, input), error => {

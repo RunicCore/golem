@@ -48,7 +48,8 @@ export async function installCodecModel<Model extends object>(options: {
   readonly name: string;
   readonly fields: readonly string[];
   readonly definitions: Readonly<Record<string, ModelTypeDescriptor>>;
-  readonly conversion?: GeneratedModelConversion<Model, unknown>;
+  /** `encode` stands in for the generated `toWireFormat` of the codec; `decode` is the conversion hook of the model. */
+  readonly conversion?: GeneratedModelConversion<Model, unknown> & { readonly encode?: (model: Model) => unknown };
   readonly bindings?: Readonly<Record<string, (value: unknown) => boolean | string>>;
   readonly nestedCodecIds?: readonly string[];
   readonly profileValidation?: boolean;
@@ -87,7 +88,17 @@ export async function installCodecModel<Model extends object>(options: {
         assertModelValue(value, optionsArg, validator, codecId, IssueRepresentation.Model, IssueSource.TypeScript);
         return value as never;
       },
-      toWireFormat: (value) => value,
+      toWireFormat: (value) => (options.conversion?.encode ?? ((model: Model) => ({ ...model })))(value as Model),
+      fromWireFormat: (wire) => wire as never,
+    });
+  } else {
+    const unused = (): never => { throw new Error('not used'); };
+    createObjectCodec(codecId, {
+      stringify: unused,
+      parse: unused,
+      validate: unused,
+      assert: unused,
+      toWireFormat: (value) => (options.conversion?.encode ?? ((model: Model) => ({ ...model })))(value as Model),
       fromWireFormat: (wire) => wire as never,
     });
   }
@@ -96,7 +107,6 @@ export async function installCodecModel<Model extends object>(options: {
     // Validation requires conversion metadata; plain field copies stand in for a companion.
     conversion: options.conversion ?? {
       decode: (value) => Object.assign(Object.create(options.constructor.prototype) as Model, value),
-      encode: (model) => ({ ...model }),
     },
     codecId,
     profile: { validation: enabled },

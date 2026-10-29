@@ -4,6 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
@@ -14,6 +15,14 @@ import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelS
 import { requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 
 const TAG = "Discriminator<'kind'>";
+
+type ContactCodecs = Record<string, (value: unknown, options?: object) => unknown>;
+
+async function buildContactCodecs(root: string, validation: boolean): Promise<ContactCodecs> {
+  writeModelGolemYaml(root, { mobx: false, validation });
+  await buildModelProject(root);
+  return requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as ContactCodecs;
+}
 
 // Every position a declared union can stand in: written on the union, through an alias, nullable, optional, array and record value.
 const CONTACT_MODEL = `
@@ -96,6 +105,30 @@ for (const validation of [false, true]) {
   });
 }
 
+test('toWireFormat with validation off rejects an unknown tag and a tag of another variant, as stringify does', async (t) => {
+  // protects: T-650 the encode tests of an unknown and a mutated tag went with the class-level encode; toWireFormat keeps the rule
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-write-tag-', name: 'declared-write-tag', linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, { 'contact.model.ts': CONTACT_MODEL });
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await buildModelProject(root);
+  const loaded = await loadContact(root);
+  const [Email, Phone] = [loaded.Email, loaded.Phone] as unknown as (new (values: object) => object)[];
+  const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TContact'));
+  const added = new Date(DAY);
+  const rest = { aliased: new Phone({ ...phone, added }), nullable: null, list: [], byName: {} };
+  const options = { validate: false };
+  const cases = [
+    ['an unknown tag', { ...email, added, kind: 'fax' }, /"fax"/],
+    ['an Email instance with the tag of Phone', Object.assign(new Email({ ...email, added }), { kind: 'phone' }), /"phone"/],
+  ] as const;
+  for (const [label, written, message] of cases) {
+    const value = { ...rest, written };
+    for (const write of [() => codec.toWireFormat(value, options), () => codec.stringify(value, options)]) {
+      assert.throws(write, (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Serialization && message.test(error.message), label);
+    }
+  }
+});
+
 test('a declared key picks the variant even when another shared literal field would tell the variants apart', async (t) => {
   // protects: T-593 the declared key, not an inferred one, selects the variant (kind comes first, the declared key is mode)
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-key-', name: 'declared-key', linkWorkspaceNodeModules: true });
@@ -129,11 +162,11 @@ for (const validation of [false, true]) {
     assert.equal(generated.content.match(/^function __golemVariant_\w+\(/gm)?.length, 4);
     assert.equal(generated.content.match(/TPhoneBaseModel\.prototype instanceof TEmailBaseModel/g)?.length, 2);
     // protects: T-639 (F-129) one codec function per union and writer, which every position calls
-    const writers = { stringify: /stringify\w+Core\(/, toWireFormat: /toWireFormat\w+Core\(/, encode: /encodeGeneratedModel\(/, decode: /decodeGeneratedModelTrusted\(/, init: /new \(requireIModelClass\(/ };
+    const writers = { stringify: /stringify\w+Core\(/, toWireFormat: /toWireFormat\w+Core\(/, decode: /decodeGeneratedModelTrusted\(/, init: /new \(requireIModelClass\(/ };
     const definitions = generated.content.match(/^function __golemUnion_\w+\(.*$/gm) ?? [];
     const perWriter = Object.fromEntries(Object.entries(writers).map(([writer, marker]) => [writer, definitions.filter(definition => marker.test(definition)).length]));
     // The kind union and the mode union each get one function for every writer.
-    assert.deepEqual(perWriter, { stringify: 2, toWireFormat: 2, encode: 2, decode: 2, init: 2 });
+    assert.deepEqual(perWriter, { stringify: 2, toWireFormat: 2, decode: 2, init: 2 });
   });
 }
 
@@ -511,9 +544,7 @@ export type TEmail = IObject<{ kind: 'email'; address: string }>;
 export type TContact = IObject<{ value: (TEmail | TPhone) & Discriminator<'kind'> }>;
 `,
     });
-    writeModelGolemYaml(root, { mobx: false, validation });
-    await buildModelProject(root);
-    const codecs = requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as Record<string, (value: unknown, options?: object) => unknown>;
+    const codecs = await buildContactCodecs(root, validation);
     const options = { validate: validation };
     for (const value of [{ kind: 'email', address: 'a@b.c' }, { kind: 'phone', number: '5' }]) {
       assert.equal(codecs.stringifyTContact({ value }, options), JSON.stringify({ value }));
@@ -521,3 +552,157 @@ export type TContact = IObject<{ value: (TEmail | TPhone) & Discriminator<'kind'
     }
   });
 }
+
+for (const validation of [false, true]) {
+  test(`a TSerde class value such as URL sits beside a tagged union, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: T-637 a TSerde class value is a scalar variant beside tagged objects, as a Date is (it stopped generation with RUNM1082)
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-url-', name: 'declared-url', linkWorkspaceNodeModules: true });
+    writeModelSources(sourceRoot, {
+      'codecs.ts': `export function encodeUrl(value: URL): string { return value.href; }
+export function decodeUrl(value: string): URL { return new URL(value); }
+`,
+      'contact.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import { encodeUrl, decodeUrl } from './codecs.js';
+type Link = URL & TSerde<typeof encodeUrl, typeof decodeUrl>;
+export type TEmail = IObject<{ kind: 'email'; address: string }>;
+export type TPhone = IObject<{ kind: 'phone'; number: string }>;
+export type TContact = IObject<{
+  value: (Link | TEmail | TPhone) & ${TAG};
+  beside: Link | ((TEmail | TPhone) & ${TAG});
+  maybe: ((Link | TEmail | TPhone) & ${TAG}) | null;
+}>;
+`,
+    });
+    const codecs = await buildContactCodecs(root, validation);
+    const options = { validate: validation };
+    const href = 'https://example.com/a?b=1';
+    const email = { kind: 'email', address: 'a@b.c' };
+    const wires = [
+      { value: href, beside: href, maybe: null },
+      { value: email, beside: email, maybe: href },
+      { value: { kind: 'phone', number: '5' }, beside: href, maybe: email },
+    ];
+    for (const wire of wires) {
+      const model = requireRecord(codecs.fromWireFormatTContact(wire, options), 'contact');
+      assert.equal(model.value instanceof URL, typeof wire.value === 'string', `validation=${validation}: value of ${JSON.stringify(wire)}`);
+      assert.equal(model.beside instanceof URL, typeof wire.beside === 'string');
+      assert.equal(model.maybe instanceof URL, typeof wire.maybe === 'string');
+      assert.deepEqual(codecs.toWireFormatTContact(model, options), wire);
+      assert.deepEqual(JSON.parse(codecs.stringifyTContact(model, options) as string), wire);
+      assert.deepEqual(codecs.toWireFormatTContact(codecs.parseTContact(JSON.stringify(wire), options), options), wire);
+    }
+    if (validation) assert.throws(() => codecs.fromWireFormatTContact({ ...wires[0], value: 5 }, options));
+    const unknownTag = { ...wires[0], value: { kind: 'fax' } };
+    assert.throws(() => codecs.fromWireFormatTContact(unknownTag, options), (error: { issues?: { code: string; path: string[] }[] }) =>
+      (validation ? error.issues?.[0].code === 'union' && error.issues[0].path.join('.') === 'value' : error.issues?.[0].path.join('.') === 'value.kind'));
+  });
+}
+
+for (const validation of [false, true]) {
+  test(`a Date sits beside a tagged union and round-trips, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: T-637 docs/guide/field-types.md says a Date may sit beside tagged objects
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-date-', name: 'declared-date', linkWorkspaceNodeModules: true });
+    writeModelSources(sourceRoot, {
+      'contact.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+import type { Discriminator } from '@exprtlabs/golem/tags';
+export type TEmail = IObject<{ kind: 'email'; address: string }>;
+export type TPhone = IObject<{ kind: 'phone'; number: string }>;
+export type TContact = IObject<{ value: (Date | TEmail | TPhone) & ${TAG} }>;
+`,
+    });
+    const codecs = await buildContactCodecs(root, validation);
+    const options = { validate: validation };
+    const at = '2020-01-02T03:04:05.000Z';
+    for (const wire of [{ value: at }, { value: { kind: 'email', address: 'a@b.c' } }, { value: { kind: 'phone', number: '5' } }]) {
+      const model = requireRecord(codecs.fromWireFormatTContact(wire, options), 'contact');
+      assert.equal(model.value instanceof Date, typeof wire.value === 'string');
+      assert.deepEqual(codecs.toWireFormatTContact(model, options), wire);
+      assert.deepEqual(JSON.parse(codecs.stringifyTContact(model, options) as string), wire);
+    }
+  });
+}
+
+test('a model instance and an object with no prototype keep their tag beside a URL class value', async (t) => {
+  // protects: T-637 beside a class value, the write path tells a variant object (a model instance, a plain or prototype-less object) from the class instance
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-url-model-', name: 'declared-url-model', linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, {
+    'codecs.ts': `export function encodeUrl(value: URL): string { return value.href; }
+export function decodeUrl(value: string): URL { return new URL(value); }
+`,
+    'contact.model.ts': `import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import { TEmailBaseModel } from './contact.model.generated.js';
+import { encodeUrl, decodeUrl } from './codecs.js';
+type Link = URL & TSerde<typeof encodeUrl, typeof decodeUrl>;
+export type TEmail = IModel<{ kind: 'email'; address: string }>;
+export type TPhone = IObject<{ kind: 'phone'; number: string }>;
+export type TContact = IObject<{ value: (Link | TEmail | TPhone) & ${TAG} }>;
+export class Email extends TEmailBaseModel {}
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await buildModelProject(root);
+  const companion = await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href) as Record<string, (value: unknown, options?: object) => unknown>;
+  const { Email } = await import(pathToFileURL(path.join(root, 'build/contact.model.js')).href) as { Email: new (values: object) => object };
+  const bare = Object.assign(Object.create(null) as object, { kind: 'phone', number: '5' });
+  const href = 'https://example.com/a?b=1';
+  const cases = [
+    { value: new Email({ kind: 'email', address: 'a@b.c' }), wire: { kind: 'email', address: 'a@b.c' } },
+    { value: bare, wire: { kind: 'phone', number: '5' } },
+    { value: new URL(href), wire: href },
+  ];
+  for (const { value, wire } of cases) {
+    assert.deepEqual(companion.toWireFormatTContact({ value }, { validate: true }), { value: wire });
+    assert.deepEqual(JSON.parse(companion.stringifyTContact({ value }, { validate: true }) as string), { value: wire });
+    const decoded = requireRecord(companion.fromWireFormatTContact({ value: wire }, { validate: true }), 'contact');
+    assert.deepEqual(companion.toWireFormatTContact(decoded, { validate: true }), { value: wire });
+  }
+  assert.deepEqual({ ...requireRecord(requireRecord(companion.fromWireFormatTContact({ value: cases[0].wire }, { validate: true }), 'contact').value, 'email') }, cases[0].wire);
+  assert.ok(requireRecord(companion.fromWireFormatTContact({ value: href }, { validate: true }), 'contact').value instanceof URL);
+});
+
+for (const validation of [true, false]) {
+  test(`a deserializer of a class value beside tagged objects that throws on its wire value gives a LibError, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: T-637 the deserializer of a TSerde class value in a tagged union is wrapped like one on a plain field (a LibError of the field, not a raw TypeError)
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-url-reject-', name: 'declared-url-reject', linkWorkspaceNodeModules: true });
+    writeModelSources(sourceRoot, {
+      'codecs.ts': `export function encodeUrl(value: URL): string { return value.href; }
+export function decodeUrl(value: string): URL { return new URL(value); }
+`,
+      'contact.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import { encodeUrl, decodeUrl } from './codecs.js';
+type Link = URL & TSerde<typeof encodeUrl, typeof decodeUrl>;
+export type TEmail = IObject<{ kind: 'email'; address: string }>;
+export type TPhone = IObject<{ kind: 'phone'; number: string }>;
+export type TContact = IObject<{ beside: Link | ((TEmail | TPhone) & ${TAG}) }>;
+`,
+    });
+    const codecs = await buildContactCodecs(root, validation);
+    assert.throws(
+      () => codecs.fromWireFormatTContact({ beside: 'not a url' }, { validate: validation }),
+      (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization && !error.causedByInput && error.issues[0]?.path.join('.') === 'beside',
+    );
+  });
+}
+
+test('a TSerde class value written as an object beside tagged objects stops with RUNM1082', async (t) => {
+  // protects: T-637 only a class value with a scalar JSON form sits beside tagged objects; an object wire is ambiguous with them
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-url-object-', name: 'declared-url-object', linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, {
+    'codecs.ts': `export function encodeUrl(value: URL): { href: string } { return { href: value.href }; }
+export function decodeUrl(value: { href: string }): URL { return new URL(value.href); }
+`,
+    'contact.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import { encodeUrl, decodeUrl } from './codecs.js';
+type Link = URL & TSerde<typeof encodeUrl, typeof decodeUrl>;
+export type TEmail = IObject<{ kind: 'email'; address: string }>;
+export type TPhone = IObject<{ kind: 'phone'; number: string }>;
+export type TContact = IObject<{ value: (Link | TEmail | TPhone) & ${TAG} }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await assert.rejects(buildModelProject(root), /RUNM1082/);
+});

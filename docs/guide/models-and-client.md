@@ -47,7 +47,7 @@ Before you send, `getValidator(editor).validate({ failFast: false })` checks eve
 
 <<< ../../examples/payments/web/src/payment-store.ts#validate-and-save
 
-`encodeGeneratedModel(editor)` returns the plain object. Its `money` field is the plain `TMoney` object that the client sends.
+`toWireFormat<TPaymentEditor>(editor, { validate: false })` returns the plain object. The editor passed the check above, so `validate: false` skips a second one. Its `money` field is the plain `TMoney` object that the client sends.
 
 <<< ../../examples/payments/web/src/payment-store.ts#send-payment
 

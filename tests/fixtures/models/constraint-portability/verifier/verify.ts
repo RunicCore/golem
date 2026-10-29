@@ -20,7 +20,7 @@ for (const value of accepted) {
   assert.equal(await getValidator(model).validate(), true, JSON.stringify({ value, issues: getValidator(model).issues }));
   const modelCalls = rules.calls;
   rules.reset();
-  const wire = encodeGeneratedModel(model);
+  const wire = encodeGeneratedModel(model, { validate: false });
   assert.deepEqual(wire, value);
   assert.equal(rules.calls, 0, 'toJSON must not execute model predicates');
   rules.reset();
@@ -38,7 +38,7 @@ for (const value of rejected) {
   assert.equal(await getValidator(model).validate(), false);
   assert.throws(() => aCodec.assert(value));
   if (value.builtin === 2) {
-    assert.throws(() => aCodec.assert(encodeGeneratedModel(model)), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
+    assert.throws(() => aCodec.assert(encodeGeneratedModel(model, { validate: false })), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
     assert.throws(() => aCodec.assert(value), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
   } else {
     assert.doesNotThrow(() => aCodec.toWireFormat(model, { validate: false }));

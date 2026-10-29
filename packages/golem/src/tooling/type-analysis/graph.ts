@@ -4,7 +4,8 @@ import { compareText } from '../generator-api.js';
 import { canonicalConstraintKey, mapConstraintSchemaValues } from '../schema.js';
 import type { ConstraintSchemaValue, ModelConstraint } from '../schema.js';
 
-type Rich = {
+/** A descriptor with the compiler metadata that the shared model runtime reads: its constraints, validations and serde binding. */
+export type RichDescriptor = {
   readonly constraints?: ModelConversionDescriptor["constraints"];
   readonly validations?: readonly (ValidationBinding | string)[];
   readonly serde?: SerdeBinding & { readonly wireDescriptor?: ModelConversionDescriptor };
@@ -31,7 +32,7 @@ function canonicalIdentity(
   stack: readonly string[],
 ): unknown {
   const canonical = (descriptor: ModelConversionDescriptor, stack: readonly string[]): unknown => {
-    const rich = descriptor as unknown as Rich;
+    const rich = descriptor as unknown as RichDescriptor;
     if (descriptor.kind === 'reference' && descriptor.projection) {
       const cycle = stack.indexOf(descriptor.name);
       if (cycle >= 0) return { cycle };
@@ -93,7 +94,7 @@ export function deduplicateProjections(
     redirect.set(name, representative);
   }
   const rewrite = (descriptor: ModelConversionDescriptor): ModelConversionDescriptor => {
-    const rich = descriptor as unknown as Rich;
+    const rich = descriptor as unknown as RichDescriptor;
     let result = descriptor;
     if (descriptor.kind === 'reference' && descriptor.projection) result = { ...descriptor, name: redirect.get(descriptor.name) ?? descriptor.name };
     else if (descriptor.kind === 'object') result = { ...descriptor, properties: Object.fromEntries(Object.entries(descriptor.properties).map(([key, value]) => [key, rewrite(value)])), additionalProperties: typeof descriptor.additionalProperties === 'object' ? rewrite(descriptor.additionalProperties) : descriptor.additionalProperties };

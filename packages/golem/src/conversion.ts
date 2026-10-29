@@ -3,12 +3,15 @@ import { activeConversionPath, conversionError } from './conversion-error.js';
 import {
   findGeneratedModelDefinition,
   findGeneratedModelDefinitionForConstructor,
+  isGeneratedModel,
   type GeneratedModel,
   type GeneratedModelConstructor,
   type GeneratedModelResult,
   type GeneratedModelWire,
 } from './model.js';
 import { instanceFields } from './presence.js';
+import { findCodecIdForConstructor, requireObjectCodec } from './codec-registry.js';
+import type { AllowGetterOptions, SerdeOptions } from './object-codec.js';
 
 /** The tag as JSON text. A tag comes from a request, so any value can arrive: `String` throws for an object whose `toString` is not a function. */
 function shownTag(value: unknown): string {
@@ -37,6 +40,16 @@ export function unknownDiscriminatorValue(
     undefined,
     direction === 'deserialize',
   );
+}
+
+/**
+ * A value a tagged union reads as one of its objects when a class value such as a URL sits beside them: a plain object (also
+ * one with no prototype) or a model instance. Any other object is the class value, which this test leaves out.
+ */
+export function isVariantObject(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null || isGeneratedModel(value);
 }
 
 /** Generated union encoders write the selected variant's tag when the encoded object lacks it. */
@@ -81,21 +94,6 @@ export function defineModelProperty(target: object, name: string, value: unknown
     configurable: true,
     writable: true,
   });
-}
-
-/**
- * The wire form of a plain object: `value` as it is, or a copy without the declared `names` whose own value is
- * `undefined`, as stringify leaves them out. Only an object that holds such a key is copied.
- */
-export function omitUndefinedKeys<Value extends object>(value: Value, names: readonly string[]): Value {
-  const record = value as Record<string, unknown>;
-  let copy: Record<string, unknown> | undefined;
-  for (const name of names) {
-    if (record[name] !== undefined || !Object.hasOwn(record, name)) continue;
-    copy ??= { ...record };
-    delete copy[name];
-  }
-  return (copy ?? value) as Value;
 }
 
 /**
@@ -329,7 +327,6 @@ export function copyModelRecord(
 }
 
 let activeDecodeValues: WeakMap<object, Function | Set<Function>> | undefined;
-let activeEncodeModels: Set<object> | undefined;
 /** Wire objects a generated recursive `fill` is decoding; a wire already in it is a cycle. */
 const activeDecodeWires = new Set<object>();
 /** Greater than zero while a generated decoder runs over `JSON.parse` output, which cannot be cyclic. */
@@ -572,32 +569,28 @@ export function decodeGeneratedModelTrusted(
 }
 
 /**
- * Encode a generated model through its registered internal conversion hook.
- * Hooks return a detached plain wire representation.
+ * Encode a generated model into a detached plain wire value with the `toWireFormat` of its own codec, found as
+ * `validate(instance)` finds it. The call validates when the profile does; `{ validate: false }` skips. When validation
+ * runs, a declared field of the root that a getter supplies counts, unless `allowGetter` says otherwise.
  */
-export function encodeGeneratedModel<Model extends GeneratedModel>(model: Model): GeneratedModelWire<Model>;
+export function encodeGeneratedModel<Model extends GeneratedModel>(model: Model, options?: SerdeOptions & AllowGetterOptions): GeneratedModelWire<Model>;
 /** Internal generated expressions may only know a value as `unknown` until
  * their runtime `instanceof` guard succeeds. Keep that fallback narrow at
  * runtime while leaving the public serde API branded. */
-export function encodeGeneratedModel(model: unknown): unknown;
-export function encodeGeneratedModel(model: unknown): unknown {
+export function encodeGeneratedModel(model: unknown, options?: SerdeOptions & AllowGetterOptions): unknown;
+export function encodeGeneratedModel(model: unknown, options?: SerdeOptions & AllowGetterOptions): unknown {
   if (model === null || typeof model !== 'object') {
     throw conversionError(LibErrorKind.Serialization, 'Expected a generated model instance.');
   }
   const definition = findGeneratedModelDefinition(model);
-  const conversion = definition?.conversion;
-  if (!conversion) {
-    throw conversionError(LibErrorKind.Serialization, 'Generated model conversion metadata is missing. Regenerate the model.');
+  if (!definition) {
+    throw conversionError(LibErrorKind.Serialization, 'Generated model metadata is missing. Regenerate the model.');
   }
-  const active = activeEncodeModels ??= new Set<object>();
-  if (active.has(model)) throw conversionError(LibErrorKind.Serialization, 'Cyclic generated model input cannot be encoded.');
-  active.add(model);
-  try {
-    return conversion.encode(model);
-  } finally {
-    active.delete(model);
-    if (active.size === 0) activeEncodeModels = undefined;
+  const codecId = definition.codecId ?? findCodecIdForConstructor(definition.constructor);
+  if (!codecId) {
+    throw conversionError(LibErrorKind.Serialization, 'Generated model codec is not registered. Regenerate the model.');
   }
+  return requireObjectCodec(codecId).toWireFormat(model, { ...options, allowGetter: options?.allowGetter ?? options?.validate !== false });
 }
 
 /**

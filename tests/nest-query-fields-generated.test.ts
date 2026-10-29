@@ -67,8 +67,8 @@ test('a model that golem-openapi generates lists the query fields of its aliases
   const ids = (JSON.parse(fs.readFileSync(path.join(root, 'sdk/model-manifest.json'), 'utf8')) as { models: { codecId: string }[] }).models.map((model) => model.codecId);
   const tables = await queryFieldsOf(root, ['./build/sdk/index.js'], ids);
   const page = {
-    flags: { types: [], item: { types: ['boolean'] } },
-    level: { types: ['number', 'integer'] },
+    flags: { types: [], item: { types: [], literals: [true, false] } },
+    level: { types: [], literals: [1, 2, 3] },
     limit: { types: ['number', 'integer'] },
     tags: { types: [], item: { types: ['number', 'integer'] } },
   };

@@ -10,7 +10,8 @@ const wallet = decodeGeneratedModel(Wallet, {
   values: ['x', true, 1, 2],
 });
 assert.ok(wallet.money instanceof MoneyModel);
-assert.deepEqual(encodeGeneratedModel(wallet), {
+// toWireFormat copies a nested SDK model and keeps its class, so the comparison is on the JSON text.
+assert.deepEqual(JSON.parse(JSON.stringify(encodeGeneratedModel(wallet))), {
   money: { currency: 'VND', amount: 3 },
   mixed: 'cash',
   values: ['x', true, 1, 2],

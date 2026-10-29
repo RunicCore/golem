@@ -302,6 +302,14 @@ test('IObject references and OpenAPI generated-model refs share a codec shape', 
   assert.match(codecPublicId('Payment', viaRef), /^Payment_[0-9a-f]{8}$/);
 });
 
+test('a local model named $d does not take the fixed codec id of a sibling named _d', () => {
+  // protects: bug T-647 the fixed ids are keyed by the name the source writes, so two names with one short name keep their own ids
+  const graph = createSchemaGraph({ $d: money }, { codecIds: new Map([['_d', '_d_00000001']]) });
+  const local = [...graph.nodes.values()].find((node) => node.name === '_d');
+  assert.match(local?.codecId ?? '', /^_d_[0-9a-f]{8}$/);
+  assert.notEqual(local?.codecId, '_d_00000001');
+});
+
 test('a model that reaches a codec with a wire schema has a wire schema of its own', () => {
   // protects: bug T-161 a reference to a codec of another module reads the same in both planes
   const holder = (field: ModelTypeDescriptor): ModelTypeDescriptor => ({

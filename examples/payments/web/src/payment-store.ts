@@ -1,8 +1,8 @@
 import { action, computed, makeObservable, observable, runInAction } from 'mobx';
-import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { toWireFormat } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
 import type { PaymentsClientPort } from '../sdk/index.js';
-import { PaymentEditor } from './payment-editor.model.js';
+import { PaymentEditor, type TPaymentEditor } from './payment-editor.model.js';
 import { SplitEditor } from './split-editor.model.js';
 
 export type SaveState = 'idle' | 'saving' | 'success' | 'error';
@@ -81,7 +81,7 @@ export class PaymentStore {
       }
       // #endregion validate-and-save
       // #region send-payment
-      const wire = encodeGeneratedModel(this.editor);
+      const wire = toWireFormat<TPaymentEditor>(this.editor, { validate: false });
       const response = await this.createPayment.execute(
         { body: { merchant, billing, money: wire.money, note: wire.note } },
         { signal: controller.signal },

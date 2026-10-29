@@ -6,6 +6,7 @@ import { identifier, type GolemDiagnostic } from '@exprtlabs/golem/generator-api
 import { componentOrigin, LocatedError } from './origin.js';
 import {
   COMPOSITION_PROPERTY_NEVER,
+  COMPOSITION_UNSATISFIABLE,
   composedRequired,
   isConstraintOnlyPart,
   isSequenceSchema,
@@ -448,6 +449,15 @@ function withOpenApiConstraints(
   return { ...descriptor, constraints: [...(descriptor.constraints ?? []), ...extra] };
 }
 
+/** An `enum` that lists an object or an array limits the whole value, `null` included, so it sits on the descriptor of the field. */
+function withOpenApiEnum(
+  descriptor: ModelTypeDescriptor,
+  schema: Readonly<Record<string, unknown>>,
+): ModelTypeDescriptor {
+  if (!Array.isArray(schema.enum)) return descriptor;
+  return { ...descriptor, constraints: [...(descriptor.constraints ?? []), { kind: 'enum', values: schema.enum }] };
+}
+
 /**
  * An allOf member that decides the field: not constraint-only, and not an array or tuple that converts nothing
  * (`{ items: { maxLength: 30 } }` restates a shape and cannot undo another schema's conversion).
@@ -459,6 +469,28 @@ function isDecidingPart(part: ModelTypeDescriptor): boolean {
 function isSequenceDescriptor(descriptor: ModelTypeDescriptor): boolean {
   if (descriptor.kind === 'union') return descriptor.variants.some(isSequenceDescriptor);
   return descriptor.kind === 'array' || descriptor.kind === 'tuple';
+}
+
+/** A schema that no value satisfies: `false`, `not: true`, or an empty `enum`. */
+function acceptsNoValue(schema: unknown): boolean {
+  return schema === false || (isJsonObject(schema) && (schema.not === true || (Array.isArray(schema.enum) && schema.enum.length === 0)));
+}
+
+/**
+ * `enum` limits a value to its listed values, with or without `type` (JSON Schema 2020-12 section 6.1.2). An empty list admits no value.
+ * A list of scalars is a literal union without the values that the declared `type` excludes. A list with an object or an array has no literal form: the keyword constraints carry it as an `enum` constraint.
+ */
+function openApiEnumDescriptor(schema: { readonly enum?: unknown; readonly type?: unknown }): ModelTypeDescriptor | undefined {
+  const values = schema.enum;
+  if (!Array.isArray(values)) return undefined;
+  if (values.some((value) => value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) return undefined;
+  const types = effectiveSchemaTypes(schema);
+  const admitted = (value: unknown): boolean => types.length === 0
+    || types.includes(value === null ? 'null' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value)
+    || (typeof value === 'number' && types.includes('number'));
+  const variants = values.filter(admitted).map((value): ModelTypeDescriptor => value === null ? { kind: 'null' } : { kind: 'literal', value });
+  if (variants.length === 0) return { kind: 'never' };
+  return variants.length === 1 ? variants[0]! : { kind: 'union', variants };
 }
 
 function openApiPrimitiveDescriptor(schema: { readonly type?: unknown }): ModelTypeDescriptor | undefined {
@@ -667,6 +699,10 @@ export function modelConversionDescriptor(
     const required = Array.isArray(schema.required)
       ? schema.required.filter((item): item is string => typeof item === 'string')
       : [];
+    const empty = objectEntries(schema.properties).filter(([name, child]) => required.includes(name) && acceptsNoValue(child)).map(([name]) => name);
+    if (empty.length > 0) {
+      throw new CompositionError(COMPOSITION_UNSATISFIABLE, `No object satisfies this schema: the required ${empty.length > 1 ? 'properties' : 'property'} ${empty.map((name) => JSON.stringify(name)).join(', ')} accept${empty.length > 1 ? '' : 's'} no value, because the schema is an empty enum, \`not: true\` or \`false\`. Remove ${empty.length > 1 ? 'them' : 'it'} from required, or give ${empty.length > 1 ? 'them' : 'it'} a schema that accepts a value.`);
+    }
     const object: ModelTypeDescriptor = {
       kind: 'object',
       properties: Object.fromEntries(objectEntries(schema.properties).map(([name, child]) => [name, modelConversionDescriptor(child, definitions, nested, direction, seen)])),
@@ -685,17 +721,28 @@ export function modelConversionDescriptor(
     return { kind: 'literal', value: schema.const };
   }
   if (isJsonObject(schema)) {
+    const listed = openApiEnumDescriptor(schema);
+    if (listed) return withOpenApiConstraints(listed, schema);
+  }
+  if (isJsonObject(schema)) {
     const primitive = openApiPrimitiveDescriptor(schema);
     if (primitive) {
       const constrained = withOpenApiConstraints(primitive, schema);
-      return admitsNull(schema)
+      return withOpenApiEnum(admitsNull(schema)
         ? { kind: 'union', variants: [constrained, { kind: 'null' }] }
-        : constrained;
+        : constrained, schema);
     }
     const constraints = openApiKeywordConstraints(schema);
-    if (constraints) return { kind: 'unknown', constraints };
+    if (constraints || Array.isArray(schema.enum)) return withOpenApiEnum({ kind: 'unknown', ...(constraints ? { constraints } : {}) }, schema);
   }
   return { kind: 'unknown' };
+}
+
+/** A composition error that names the component, or the inline schema, whose conversion stopped. */
+export function locatedCompositionError(owner: string | CompositionSite, error: CompositionError): LocatedError {
+  const site = typeof owner === 'string' ? componentSite(owner) : owner;
+  const where = site.where('');
+  return new LocatedError(`${where}: ${error.message}`, site.origins(where), { cause: error });
 }
 
 /** An allOf that no object satisfies, or whose members convert one value in two ways: generation stops with its code. */

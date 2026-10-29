@@ -4,7 +4,7 @@ import { rt } from '../rt.js';
 import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
 import { JSON_TYPES, dispatchTest } from './json-types.js';
-import { localName, lazyStateTest } from './local-helpers.js';
+import { localName, lazyStateTest, scaledDivisor } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
 import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyTest, type WriterMode } from './modes.js';
 
@@ -364,7 +364,14 @@ export class FunctionWriter {
       if (limit === undefined) continue;
       this.leaf({ fails: code`${value} ${operator} ${literalCode(limit)}`, issue: limitFields(kind, 'value', limit, inclusive) });
     }
-    if (check.multipleOf !== undefined) this.leaf({ fails: code`!${localName('isMultipleOf')}(${value}, ${literalCode(check.multipleOf)})`, issue: code`code: 'multipleOf', divisor: ${literalCode(check.multipleOf)}` });
+    if (check.multipleOf !== undefined) {
+      const divisor = literalCode(check.multipleOf);
+      const scaled = scaledDivisor(check.multipleOf);
+      const test = scaled === undefined
+        ? code`${localName('isMultipleOf')}(${value}, ${divisor})`
+        : code`${localName('isMultipleOfScaled')}(${value}, ${divisor}, ${literalCode(scaled.units)}, ${literalCode(scaled.scale)})`;
+      this.leaf({ fails: code`!${test}`, issue: code`code: 'multipleOf', divisor: ${divisor}` });
+    }
   }
 
   private arrayCheck(check: IrArray, value: Code, types: readonly IrTypeName[] | undefined): void {
@@ -736,9 +743,10 @@ export class FunctionWriter {
   /**
    * The tag selects the branch; only that branch's issues are reported, and an unknown tag is a `literal` issue on the
    * tag property. The tag is read once; the first branch whose list holds it is selected, as a tag lies in one list.
+   * With an optional tag, a value that selects no branch is checked as a plain `oneOf`: it may match without the tag.
    */
   private discriminatedUnion(check: IrUnion, discriminator: IrDiscriminator, value: Code): void {
-    const merged = this.mergedBranches(check);
+    const merged = discriminator.optional ? undefined : this.mergedBranches(check);
     if (merged !== undefined) {
       const targets = check.branches.map(id => this.target(id));
       for (const target of targets) this.merging.add(target);
@@ -765,6 +773,12 @@ export class FunctionWriter {
       this.callInPlace(fn, value);
       this.close();
     });
+    if (discriminator.optional) {
+      this.open(code`if (${selected} < 0)`);
+      this.unionCheck(check, value);
+      this.close();
+      return;
+    }
     this.leaf({
       fails: code`${selected} < 0`,
       issue: () => code`code: 'literal', expected: ${this.state.constant('lit', code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags.flat()))}))`, JSON.stringify(discriminator.tags.flat()))}`,

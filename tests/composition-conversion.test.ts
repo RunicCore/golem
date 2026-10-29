@@ -1,18 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { convertModelField, convertModelItems, convertModelTupleItems, defineModelProperty, deserializeDate, serializeDate, withDiscriminatorValue } from '@exprtlabs/golem/conversion';
+import { convertModelField, convertModelItems, convertModelTupleItems, defineModelProperty, deserializeDate, withDiscriminatorValue } from '@exprtlabs/golem/conversion';
 import {
   code,
   emitModelFromInit,
   emitModelFromJSON,
-  emitModelToJSON,
   identifier,
   render,
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
   type SerdeResolver,
-  type ToJsonModelResolver,
 } from '@exprtlabs/golem/internal/emitter';
 
 import { runModule } from './support/run-module.js';
@@ -72,10 +70,6 @@ class ChildModel {
     if (value instanceof ChildModel) return value;
     return ChildModel.fromJSON(value);
   }
-
-  public toJSON(): { readonly name: string } {
-    return { name: this.name };
-  }
 }
 
 const fromChild: FromJsonModelResolver = {
@@ -84,13 +78,7 @@ const fromChild: FromJsonModelResolver = {
   fromInit: (value) => code`ChildModel.fromInit(${value})`,
 };
 
-const toChild: ToJsonModelResolver = {
-  className: identifier('ChildModel'),
-  encode: (value) => code`encodeGeneratedModel(${value})`,
-};
-
 let decodeCalls = 0;
-let encodeCalls = 0;
 
 function decodeToken(value: unknown): number {
   decodeCalls += 1;
@@ -99,14 +87,9 @@ function decodeToken(value: unknown): number {
   return Number(text.slice('token:'.length));
 }
 
-function encodeToken(value: unknown): string {
-  encodeCalls += 1;
-  return `token:${String(value)}`;
-}
-
 const serde: SerdeResolver = {
   deserialize: (_id, value) => code`decodeToken(${value})`,
-  serialize: (_id, value) => code`encodeToken(${value})`,
+  serialize: (_id, value) => value,
 };
 
 const bindings: Readonly<Record<string, unknown>> = {
@@ -117,12 +100,8 @@ const bindings: Readonly<Record<string, unknown>> = {
   ChildModel,
   decodeGeneratedModel: (_constructor: unknown, value: unknown) =>
     value instanceof ChildModel ? value : ChildModel.fromJSON(value),
-  encodeGeneratedModel: (value: unknown) =>
-    value instanceof ChildModel ? value.toJSON() : value,
   decodeToken,
-  encodeToken,
   deserializeDate,
-  serializeDate,
   withDiscriminatorValue,
 };
 
@@ -130,21 +109,14 @@ function resetCounters(): void {
   ChildModel.fromJsonCalls = 0;
   ChildModel.fromInitCalls = 0;
   decodeCalls = 0;
-  encodeCalls = 0;
 }
 
-/** The wire-to-model and model-to-wire conversions that the emitter writes for `descriptor`, compiled against the shared bindings. */
-function compileDirections(descriptor: ModelConversionDescriptor): { readonly fromJSON: CompiledConversion; readonly toJSON: CompiledConversion } {
-  return {
-    fromJSON: compileConversion(
-      render(emitModelFromJSON(descriptor, identifier('value'), () => fromChild, serde)),
-      bindings,
-    ),
-    toJSON: compileConversion(
-      render(emitModelToJSON(descriptor, identifier('value'), () => toChild, serde)),
-      bindings,
-    ),
-  };
+/** The wire-to-model conversion that the emitter writes for `descriptor`, compiled against the shared bindings. */
+function compileFromJSON(descriptor: ModelConversionDescriptor): CompiledConversion {
+  return compileConversion(
+    render(emitModelFromJSON(descriptor, identifier('value'), () => fromChild, serde)),
+    bindings,
+  );
 }
 
 test('intersection conversion merges object fields and runs overlapping conversions once', () => {
@@ -163,7 +135,7 @@ test('intersection conversion merges object fields and runs overlapping conversi
     ],
   };
 
-  const { fromJSON, toJSON } = compileDirections(descriptor);
+  const fromJSON = compileFromJSON(descriptor);
 
   const decoded = fromJSON({
     when: '2025-01-02T03:04:05.000Z',
@@ -177,20 +149,6 @@ test('intersection conversion merges object fields and runs overlapping conversi
   assert.equal(decoded.label, 'intersection');
   assert.equal(decodeCalls, 1, 'an overlapping serde field is decoded once');
   assert.equal(ChildModel.fromJsonCalls, 1);
-
-  const encoded = toJSON({
-    when: decoded.when,
-    child: decoded.child,
-    token: decoded.token,
-    label: decoded.label,
-  }) as Record<string, unknown>;
-  assert.deepEqual(encoded, {
-    when: '2025-01-02T03:04:05.000Z',
-    child: { name: 'nested' },
-    token: 'token:7',
-    label: 'intersection',
-  });
-  assert.equal(encodeCalls, 1, 'an overlapping serde field is encoded once');
 });
 
 test('intersection and nullable fromInit preserve domain Date values while constructing nested models', () => {
@@ -244,7 +202,7 @@ test('discriminated plain object unions convert only the selected branch', () =>
     ],
     discriminator: { propertyName: 'kind', variants: [{ values: ['token'] }, { values: ['child'] }] },
   };
-  const { fromJSON, toJSON } = compileDirections(descriptor);
+  const fromJSON = compileFromJSON(descriptor);
 
   const tokenBranch = fromJSON({
     kind: 'token',
@@ -267,18 +225,6 @@ test('discriminated plain object unions convert only the selected branch', () =>
   assert.ok(childBranch.child instanceof ChildModel);
   assert.equal(decodeCalls, 1, 'the token codec is not probed for the child branch');
   assert.equal(ChildModel.fromJsonCalls, 1);
-
-  assert.deepEqual(toJSON(tokenBranch), {
-    kind: 'token',
-    when: '2025-03-04T05:06:07.000Z',
-    token: 'token:11',
-  });
-  assert.deepEqual(toJSON(childBranch), {
-    kind: 'child',
-    when: '2025-03-04T05:06:07.000Z',
-    child: { name: 'branch' },
-  });
-  assert.equal(encodeCalls, 1, 'only the selected token branch is encoded');
 });
 
 test('ambiguous union conversions fail generation instead of probing codecs', () => {
@@ -348,7 +294,6 @@ test('scalar-or-array unions convert the scalar and the array items without doub
     ],
   };
   assert.equal(render(emitModelFromJSON(status, identifier('value'), () => fromChild)), 'value', 'identity unions emit no Array.isArray map');
-  assert.equal(render(emitModelToJSON(status, identifier('value'), () => toChild)), 'value');
   assert.doesNotMatch(render(emitModelFromJSON(status, identifier('value'), () => fromChild)), /Array\.isArray/);
   resetCounters();
   const token: ModelConversionDescriptor = {

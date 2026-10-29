@@ -313,7 +313,8 @@ test('a union variant used on its own keeps its declared tag type and any tag va
     assert.deepEqual(JSON.parse(String(stringify(parse(JSON.stringify(other))))), other);
     // A missing tag is left as is; only the base's `required` (validation) objects to it.
     const untagged = { name: 'Miso' };
-    assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(CatModel, untagged)), untagged);
+    // toWireFormat keeps the missing key as undefined, which JSON drops; with validation on the call would reject the model.
+    assert.deepEqual(JSON.parse(JSON.stringify(encodeGeneratedModel(decodeGeneratedModel(CatModel, untagged), { validate: false }))), untagged);
     if (validation) {
       // The variant's own validation schema is not narrowed to the union's tag.
       assert.equal(await getValidator(decodeGeneratedModel(CatModel, other)).validate(), true);

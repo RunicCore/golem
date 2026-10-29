@@ -41,7 +41,6 @@ import {
   type ImportOptions,
   type NameSlot,
   emitModelFromInit,
-  emitModelToJSON,
   fillFunctionName,
   presentKeysCode,
   propertyKey,
@@ -87,7 +86,7 @@ import {
   modelStableId,
   modelConversionDescriptor,
   CompositionError,
-  componentSite,
+  locatedCompositionError,
   type CompositionSite,
 } from './model-resolution.js';
 import { openApiValidationSchemaClosure } from './model-manifest.js';
@@ -178,8 +177,6 @@ interface ConversionContext {
 interface ForeignNames extends Omit<ModelNames, 'types'> {
   /** The initializer of a recursive alias that another module holds; undefined when this module holds it. */
   readonly aliasInit: (alias: RecursiveAlias) => Code | undefined;
-  /** The encoder of a model. */
-  readonly encode: (reference: string) => Code;
   /** The wire stringify that the companion of a sibling codec exports. */
   readonly wireStringify: (codecId: string) => Code;
 }
@@ -265,9 +262,7 @@ function withConflictCode<Result>(owner: string | CompositionSite, emit: () => R
   } catch (thrown) {
     const coded = codedConflict(thrown);
     if (!(coded instanceof CompositionError)) throw thrown;
-    const site = typeof owner === 'string' ? componentSite(owner) : owner;
-    const where = site.where('');
-    throw new LocatedError(`${where}: ${coded.message}`, site.origins(where), { cause: coded });
+    throw locatedCompositionError(owner, coded);
   }
 }
 
@@ -282,9 +277,8 @@ const COPY_ADDITIONAL_PROPERTIES = helper('copyAdditionalProperties', () => join
   code``,
 ], code`\n`));
 
-/** The input the model conversions read in the constructor and in encode; the constructor names it `values` or `_values`, encode `model` or `_model`, by whether the code reads it. */
+/** The input the model conversions read in the constructor; the constructor names it `values` or `_values`, by whether the code reads it. */
 const VALUES = inputSlot('values', 'name');
-const MODEL = inputSlot('model', 'name');
 const VALUE = identifier('value');
 
 function modelFromJSONCode(
@@ -315,32 +309,6 @@ function modelInitCode(
   return withConflictCode(owner, () => emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions, env, context)));
 }
 
-function modelToJSONCode(
-  schema: unknown,
-  expression: Code,
-  definitions: ModelDefinitions,
-  env: ModelResolveEnv,
-  owner: string | CompositionSite,
-  context: ConversionContext,
-): Code {
-  return withConflictCode(owner, () => emitModelToJSON(
-    modelConversionDescriptor(schema, definitions, env, 'to'),
-    expression,
-    (reference) => {
-      const alias = definitions.aliases.get(reference);
-      if (alias) {
-        return {
-          className: identifier(alias.name),
-          encode: value => code`${context.nodeFunction(aliasNodeId(alias), 'toWire')}(${value})`,
-          ...aliasIdentity(alias, definitions, env),
-        };
-      }
-      return { className: context.models.model(reference), encode: value => code`${rt.conversion.encodeGeneratedModel}(${value})`, ...referenceBases(reference, definitions) };
-    },
-    TEMPORAL_SERDE,
-  ));
-}
-
 /** Builds the conversion of a schema and writes nothing: it throws when the schema does not convert. */
 export function checkModelFromJSON(
   schema: unknown,
@@ -350,16 +318,6 @@ export function checkModelFromJSON(
   owner: string | CompositionSite,
 ): void {
   modelFromJSONCode(schema, identifier(expression), definitions, env, owner, checkContext());
-}
-
-export function checkModelToJSON(
-  schema: unknown,
-  expression: string,
-  definitions: ModelDefinitions,
-  env: ModelResolveEnv,
-  owner: string | CompositionSite,
-): void {
-  modelToJSONCode(schema, identifier(expression), definitions, env, owner, checkContext());
 }
 
 function modelFieldDeclaration(
@@ -393,14 +351,6 @@ function modelPresentRead(indent: number, target: Code, captures: readonly (read
   const locals = captures.map(([name, type], index) => ({ name, type, local: modelPresentLocal(index) }));
   const typeOf = (local: Code): Code => locals.find((entry) => entry.local === local)?.type ?? code`unknown`;
   return [code`${indentation(indent)}${presentKeysCode(target, locals.map(({ name, local }) => [name, local] as const), { declare: (local) => code`${local}: ${typeOf(local)} | undefined` })}`];
-}
-
-/**
- * The statement that reads the declared fields of `model` for encode: one plain property access each, so a getter or an
- * inherited value supplies a field as it does in stringify, and a getter runs once. Empty when no field is captured.
- */
-function modelDeclaredRead(indent: number, model: Code, captures: readonly (readonly [name: string, type: Code])[]): Code[] {
-  return captures.map(([name, type], index) => code`${indentation(indent)}const ${modelPresentLocal(index)}: ${type} | undefined = ${model}${modelPropertyAccess(name)};`);
 }
 
 function modelPropertyAssignment(target: string, name: string, value: Code): Code {
@@ -519,7 +469,7 @@ export function generateOpenApiModelArtifacts(
       [`toWireFormat${node.id}`, `toWireFormat${name}`],
       [`validate${node.id}`, `validate${name}`],
       [`assert${node.id}`, `assert${name}`],
-      [`encode${name}`, `encode${name}`],
+      [`toWireFormat${node.id}`, `encode${name}`],
     ];
   };
   // Every group's validation plan comes first: the companions of a group import their validators by the names the
@@ -568,10 +518,6 @@ export function generateOpenApiModelArtifacts(
       init: (reference) => foreignGroup(reference) ? moduleSource(`./${reference}.js`).name(`${reference}Init`, { typeOnly: true }) : LOCAL_NAMES.init(reference),
       aliasType: (alias) => aliasModule(alias)?.name(aliasModelTypeName(alias), { typeOnly: true }) ?? LOCAL_NAMES.aliasType(alias),
       aliasInit: (alias) => aliasModule(alias)?.name(aliasInitName(alias)),
-      encode: (reference) => {
-        const groupId = foreignGroup(reference);
-        return groupId === undefined ? identifier(`encode${reference}`) : moduleSource(`./_${groupId}.js`).name(`encode${reference}`);
-      },
       wireStringify: (codecId) => {
         const node = analysis.nodesByCodecId.get(codecId);
         const groupId = node ? owner.get(node.id) : undefined;
@@ -819,10 +765,8 @@ export function generateModels(
       moduleScope.claim(`${typeName}${suffix}`, `generated ${suffix} type for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
     }
     moduleScope.claim(`decode${typeName}`, `internal decoder for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
-    moduleScope.claim(`encode${typeName}`, `internal encoder for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
     const classScope = new NameScope(`${className} members`);
     const baseClass: Code | null = definition.baseName ? models.model(definition.baseName) : null;
-    const encodeBase: Code | null = definition.baseName ? foreign?.encode(definition.baseName) ?? identifier(`encode${definition.baseName}`) : null;
     const fields = [...definition.properties.entries()];
     for (const [name] of fields) {
       classScope.rejectReserved(name, `field ${JSON.stringify(name)} on ${className}`, reservedMembers, 'generated model API member');
@@ -844,28 +788,17 @@ export function generateModels(
         code`    if (${modelPresentLocal(index)} !== undefined) ${modelPropertyAssignment('this', name, code`(${modelInitCode(schema, modelPresentLocal(index), definitions, fieldEnv, definition.schemaName, context)}) as ${modelFieldType(schema, definitions, fieldEnv)}`)}`),
     ];
     const fieldHelpers: Code[] = [];
-    const fieldHelperName = (direction: 'encode' | 'decode') => (index: number): string => {
-      const helperId = `convert${typeName}Field${index}${direction === 'encode' ? 'Encode' : 'Decode'}`;
+    const fieldHelperName = (index: number): string => {
+      const helperId = `convert${typeName}Field${index}Decode`;
       moduleScope.claim(helperId, `internal field converter for ${JSON.stringify(definition.schemaName)}`, definition.schemaName);
       return helperId;
     };
-    const jsonProperties = fields.map(([name, schema], index) => {
-      const input = modelPresentLocal(index);
-      const converted = wrapRootConversion(
-        fieldHelpers, fieldHelperName('encode'), 'serialize', literal(name), input,
-        (value) => modelToJSONCode(schema, value, definitions, fieldEnv, definition.schemaName, context),
-        // The guard on the property excludes an undefined value before the conversion runs.
-        code`Exclude<${identifier(className)}${modelPropertyAccess(name)}, undefined>`,
-      );
-      return code`  if (${input} !== undefined) ${modelPropertyAssignment('result', name, converted)}`;
-    });
-    const jsonRead = modelDeclaredRead(2, inputOf(MODEL), fields.map(([name]) => [name, code`${identifier(className)}${modelPropertyAccess(name)}`] as const));
     const allProperties = modelSchemaProperties(fieldEnv, definition.rawSchema);
     const allFieldNames = [...allProperties.keys()];
     const fieldNames = join(allFieldNames.map((name) => literal(name)), code`, `);
-    const additionalConverter = (direction: 'from' | 'init' | 'to'): Code | undefined => {
+    const additionalConverter = (direction: 'from' | 'init'): Code | undefined => {
       if (!isJsonObject(definition.additionalProperties)) return undefined;
-      const emit = direction === 'from' ? modelFromJSONCode : direction === 'init' ? modelInitCode : modelToJSONCode;
+      const emit = direction === 'from' ? modelFromJSONCode : modelInitCode;
       const expression = emit(definition.additionalProperties, VALUE, definitions, fieldEnv, definition.schemaName, context);
       return sameCode(expression, VALUE) ? undefined : code`, (${VALUE}) => ${expression}`;
     };
@@ -874,7 +807,7 @@ export function generateModels(
     for (const [name, schema] of allProperties) {
       const expression = modelPresentLocal(decodeCaptures.length);
       const rootConverted = wrapRootConversion(
-        fieldHelpers, fieldHelperName('decode'), 'deserialize', literal(name), expression,
+        fieldHelpers, fieldHelperName, 'deserialize', literal(name), expression,
         (input) => modelFromJSONCode(schema, input, definitions, fieldEnv, definition.schemaName, context),
         code`unknown`,
       );
@@ -891,8 +824,8 @@ export function generateModels(
     const additionalFrom = additionalConverter('from');
     const identityDeserialize = decodeLines.length === 0 && additionalFrom === undefined;
     const initializer = unionInitializers.get(typeName);
-    const optionalCopy = (direction: 'from' | 'init' | 'to'): Code => additionalConverter(direction) ?? BLANK;
-    // The constructor reads `values`, and encode reads `model`, through a base class, a declared field or the copy of additional
+    const optionalCopy = (direction: 'from' | 'init'): Code => additionalConverter(direction) ?? BLANK;
+    // The constructor reads `values` through a base class, a declared field or the copy of additional
     // properties. A class whose code does not read the input declares the parameter under an underscore name.
     const named = (lines: readonly Code[], slot: InputSlot, used: string): { readonly lines: readonly Code[]; readonly parameter: Code } => {
       const parameter = identifier(lines.some((line) => inputCount(line, slot) > 0) ? used : `_${used}`);
@@ -911,22 +844,6 @@ export function generateModels(
     const constructorLines = [
       code`  constructor(${constructorBody.parameter}: ${identifier(`${typeName}Init`)} = {}) {`,
       ...constructorBody.lines,
-    ];
-    const encodeBody = named([
-      encodeBase
-        ? code`  const result: Record<string, unknown> = { ...${encodeBase}(${inputOf(MODEL)}) };`
-        : code`  const result: Record<string, unknown> = {};`,
-      ...jsonRead,
-      ...jsonProperties,
-      ...(additionalPropertyType
-        ? [code`  if (${rt.model.findGeneratedModelDefinition}(${inputOf(MODEL)}) === ${rt.model.findGeneratedModelDefinitionForConstructor}(${identifier(className)})) ${helperName(COPY_ADDITIONAL_PROPERTIES)}(result, ${inputOf(MODEL)}, [${fieldNames}]${optionalCopy('to')});`]
-        : []),
-    ], MODEL, 'model');
-    const encodeLines = [
-      code`${helpers.moduleFile ? code`export ` : code``}function ${identifier(`encode${typeName}`)}(${encodeBody.parameter}: ${identifier(className)}): ${typesNamespace}.${identifier(typeName)} {`,
-      ...encodeBody.lines,
-      code`  return result as ${typesNamespace}.${identifier(typeName)};`,
-      code`}`,
     ];
     body.push(
       code`export type ${identifier(`${typeName}Fields`)} = ${definition.baseName ? code`${models.fields(definition.baseName)} & ` : code``}{`,
@@ -979,12 +896,9 @@ export function generateModels(
         code`}`,
       ]),
       BLANK,
-      ...encodeLines,
-      BLANK,
-      BLANK,
       code`${rt.model.registerGeneratedModel}(${identifier(className)}, {`,
       code`  fields: [${fieldNames}] as const,`,
-      code`  conversion: { decode: ${identifier(`decode${typeName}`)}, encode: ${identifier(`encode${typeName}`)} },`,
+      code`  conversion: { decode: ${identifier(`decode${typeName}`)} },`,
       code`  codecId: ${literal(codecIdFor(definition.name))},`,
       code`  profile: { validation: ${literal(profile.validation)} },`,
       ...(profile.validation && profile.mobx ? [code`  enhanceValidator: ${rt['mobx-validation'].enhanceValidatorWithMobX},`] : []),

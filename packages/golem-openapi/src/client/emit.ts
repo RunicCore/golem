@@ -254,10 +254,9 @@ function operationSource(
     if (parameter.content) {
       return code`    if (input.cookie?.[${literal(parameter.name)}] !== undefined) cookies.push(${literal(parameter.name)} + '=' + encodeURIComponent(${serializedContentParameter(operation, use, 'cookie', parameter.name, parameter.content, code`input.cookie[${literal(parameter.name)}]`)}));`;
     }
-    if (parameter.style === 'cookie') {
-      return code`    ${use('addCookieStyleParameter')}(runtime, cookies, ${literal(parameter.name)}, input.cookie?.[${literal(parameter.name)}], ${literal(parameter.explode === true)});`;
-    }
-    return code`    ${use('addCookieParameter')}(runtime, cookies, ${literal(parameter.name)}, input.cookie?.[${literal(parameter.name)}], ${literal(parameter.explode === undefined ? true : parameter.explode)});`;
+    // OpenAPI 3.2 sets explode true for style form and style cookie when the parameter does not say (see the styles-for-cookie rule in openapi-schemas/oas-3-2.ts).
+    const explode = literal(parameter.explode === undefined ? true : parameter.explode);
+    return code`    ${use(parameter.style === 'cookie' ? 'addCookieStyleParameter' : 'addCookieParameter')}(runtime, cookies, ${literal(parameter.name)}, input.cookie?.[${literal(parameter.name)}], ${explode});`;
   });
   const queryStringLine = queryStringParameter
     ? code`    ${use('setQueryString')}(runtime, query, input.querystring, { operation: ${literal(operation.name)}, name: ${literal(queryStringParameter.name)}, in: 'querystring', contentType: ${literal(Object.keys(queryStringParameter.content || {})[0] || 'application/x-www-form-urlencoded')} });`

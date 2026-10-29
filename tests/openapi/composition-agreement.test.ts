@@ -1006,6 +1006,7 @@ for (const row of rows) {
   }
 }
 
+const untaggedDateUnion = { allOf: [object({ id: text }), { oneOf: [object({ at: dateTime }), object({ on: dateTime })] }] };
 const dateTimeAndModel = { allOf: [dateTime, ref('Thing')] };
 const inlineObject = (m: Record<string, unknown>): Record<string, unknown> => object({ m }, { required: ['m'] });
 const inlineBody = (m: Record<string, unknown>): Record<string, unknown> => ({
@@ -1189,6 +1190,17 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     error: /schema of request body application\/json of operation "postVisit" at #\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*string.*object/,
     document: operationDocument({ requestBody: inlineBody(dateTimeAndModel) }),
   },
+  // protects: T-650 a union of untagged object variants in a request body or a query parameter stops with the discriminator code, as in a response
+  {
+    shape: 'an inline request body that is an allOf of an object and a union of untagged object variants holding Dates',
+    error: /schema of request body application\/json of operation "postVisit" at #(?=[ :]).*OPENAPI_UNION_DISCRIMINATOR_MISSING/,
+    document: operationDocument({ requestBody: inlineBody(untaggedDateUnion) }),
+  },
+  {
+    shape: 'a query parameter that is an allOf of an object and a union of untagged object variants holding Dates',
+    error: /schema of query parameter "q" of operation "postVisit" at #(?=[ :]).*OPENAPI_UNION_DISCRIMINATOR_MISSING/,
+    document: operationDocument({ parameters: [{ name: 'q', in: 'query', schema: untaggedDateUnion }] }),
+  },
   {
     shape: 'an inline response body whose members give the value a Date and a model',
     error: /schema of 200 response application\/json of operation "postVisit" at #\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*string.*object/,
@@ -1235,18 +1247,38 @@ test('an inline response narrows an inherited oneOf property to one of its varia
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
 });
 
+/** Generates the SDK with validation on, asserts that generation gave no diagnostic, and compiles the result. */
+async function generateCompiledSdk(document: Record<string, unknown>, output: string): Promise<void> {
+  const result = await generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
+  assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+}
+
 // protects: T-456 a component that narrows an inherited union property to one of its variants generates and decodes to that variant
 test('a component narrows an inherited union property to one of its variants', async t => {
   const output = path.join(createFixtureProject(t, 'golem-composition-narrowed-'), 'sdk');
-  const result = await generateMaterializedSdk(petDocument(ref('Cat')), { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
-  assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
-  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+  await generateCompiledSdk(petDocument(ref('Cat')), output);
   const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated narrowed models');
   const Derived = models.DerivedModel as ModelConstructor;
   const Cat = models.CatModel as ModelConstructor;
   const decoded = decodeGeneratedModel(Derived, { pet: { kind: 'cat', lives: 9 } });
   assert.ok(decoded.pet instanceof Cat, 'pet decodes to Cat');
   assert.deepEqual(withoutUndefined(encodeGeneratedModel(asGenerated(decoded))), { pet: { kind: 'cat', lives: 9 } });
+});
+
+// protects: T-650 the composition check reads a request body with the decode conversion, so a oneOf of one $ref with no null and a readOnly property still generate as before
+test('a request body of allOf with a oneOf of one reference and a readOnly property generates', async t => {
+  const document = componentDocument('Pet', { Pet: object({ name: text }, { required: ['name'] }) });
+  requireRecord(document.paths, 'paths')['/pets'] = { post: {
+    operationId: 'addPet',
+    requestBody: { required: true, content: { 'application/json': { schema: { allOf: [
+      object({ pet: { oneOf: [ref('Pet')] }, id: { type: 'string', readOnly: true } }, { required: ['pet', 'id'] }),
+      object({ note: text }),
+    ] } } } },
+    responses: { 200: { description: 'ok' } },
+  } };
+  const output = path.join(createFixtureProject(t, 'golem-composition-request-'), 'sdk');
+  await generateCompiledSdk(document, output);
 });
 
 const bothKeywords = {

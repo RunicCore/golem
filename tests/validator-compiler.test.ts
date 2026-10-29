@@ -238,17 +238,22 @@ test('unevaluated keys see through $ref and in-place allOf, but not into cousins
   await assertIssues(nested, { a: { b: 1, c: 2 } }, [{ path: ['a', 'c'], code: 'unknownKey', key: 'c' }]);
 });
 
-test('a discriminator on a oneOf runs only the selected variant and reports an unknown tag as a literal', async () => {
-  const schema = {
-    oneOf: [
-      { properties: { kind: { const: 'a' }, x: { type: 'integer' } }, required: ['kind'] },
-      { properties: { kind: { enum: ['b', 'c'] }, y: { type: 'string' } }, required: ['kind'] },
-    ],
-    discriminator: { propertyName: 'kind' },
-  };
+// The two discriminator tests that follow share these branches: A may leave its tag out, B and C state it.
+const tagA = { properties: { kind: { const: 'a' }, x: { type: 'integer' } } };
+const tagBC = { properties: { kind: { enum: ['b', 'c'] }, y: { type: 'string' } }, required: ['kind'] };
+
+async function assertPresentTagPicksBranch(schema: unknown): Promise<void> {
   await assertIssues(schema, { kind: 'a', x: 'no' }, [{ path: ['x'], code: 'type', expected: ['integer'] }]);
   await assertIssues(schema, { kind: 'c', y: 1 }, [{ path: ['y'], code: 'type', expected: ['string'] }]);
   await assertIssues(schema, { kind: 'a', x: 1 }, []);
+}
+
+test('a discriminator on a oneOf runs only the selected variant and reports an unknown tag as a literal', async () => {
+  const schema = {
+    oneOf: [{ ...tagA, required: ['kind'] }, tagBC],
+    discriminator: { propertyName: 'kind' },
+  };
+  await assertPresentTagPicksBranch(schema);
   await assertIssues(schema, { kind: 'z' }, [{ path: ['kind'], code: 'literal', expected: ['a', 'b', 'c'] }]);
   await assertIssues(schema, {}, [{ path: ['kind'], code: 'literal', expected: ['a', 'b', 'c'] }]);
   await assertIssues(schema, 'text', [{ path: ['kind'], code: 'literal', expected: ['a', 'b', 'c'] }]);
@@ -301,19 +306,21 @@ test('a discriminator is an annotation unless every branch states its own tag va
   await assertIssues(shared, { kind: 'a' }, [{ path: [], code: 'union', matched: 2 }]);
 });
 
-test('a discriminator is an annotation when a branch leaves its tag optional, so {} matches the one branch that allows it', async () => {
+test('a discriminator with an optional tag reports the issue of the branch a present tag picks, and plain oneOf results otherwise', async () => {
+  // protects: T-636 a present tag gave a generic union issue when a branch left the tag optional
   // protects: QA a discriminated oneOf with an optional tag rejected {} although exactly branch A matches
   const schema = {
-    oneOf: [
-      { properties: { kind: { const: 'a' } } },
-      { properties: { kind: { const: 'b' } }, required: ['kind'] },
-    ],
+    oneOf: [tagA, tagBC],
     discriminator: { propertyName: 'kind' },
   };
-  await assertIssues(schema, {}, []);
+  await assertPresentTagPicksBranch(schema);
+  await assertIssues(schema, { kind: 'b', y: 'ok' }, []);
   await assertIssues(schema, { kind: 'a' }, []);
   await assertIssues(schema, { kind: 'b' }, []);
+  await assertIssues(schema, {}, []);
+  await assertIssues(schema, { x: 'no' }, [{ path: [], code: 'union', matched: 0 }]);
   await assertIssues(schema, { kind: 'z' }, [{ path: [], code: 'union', matched: 0 }]);
+  await assertIssues(schema, 'text', [{ path: [], code: 'union', matched: 2 }]);
 });
 
 test('minLength and maxLength count code points', async () => {

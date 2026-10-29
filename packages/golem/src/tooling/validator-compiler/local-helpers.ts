@@ -3,7 +3,7 @@ import { MODEL_CODEC_IDS_KEY } from '../../schema-keywords.js';
 import { instanceFieldsCode, ownEnumerableCode } from '../union-conversion.js';
 import { NEWLINE } from './function-names.js';
 
-type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOf' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
+type LocalHelper = 'isPresent' | 'definedKeys' | 'readAll' | 'isObject' | 'instanceFields' | 'isInstanceState' | 'isMultipleOf' | 'isMultipleOfScaled' | 'selectedModel' | 'newEvaluation' | 'mergeEvaluation' | 'leafPasses';
 
 /** A helper function of a generated module: the file holds its definition once, where the code that names it asks for it. */
 function localHelper(id: LocalHelper, rank: number, define: (self: Code) => Code): Helper {
@@ -47,6 +47,19 @@ const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
     code`  return (valueDigits * scale(valueExponent)) % (divisorDigits * scale(divisorExponent)) === BigInt(0);`,
     code`}`,
   ], NEWLINE)),
+  // The fast form of `isMultipleOf` for a decimal divisor the compiler wrote as `units / scale` (see `scaledDivisor`). A value
+  // is a multiple when it is `whole / scale` for a whole number below 2 ** 52 (4503599627370496) that `units` divides.
+  // `whole / scale` is the double nearest to the decimal `whole * 10 ** -d`, and at that size no other decimal with d digits
+  // after the point rounds to the same double, so `whole / scale === value` shows that the shortest text of the value is
+  // that decimal and `isMultipleOf` would judge it the same way. Any value that fails the test (NaN, infinite, too large,
+  // too many decimals) goes to `isMultipleOf`, so every result stays the one of the exact function. It allocates nothing.
+  isMultipleOfScaled: localHelper('isMultipleOfScaled', 7, self => join([
+    code`function ${self}(value, divisor, units, scale) {`,
+    code`  const whole = Math.round(value * scale);`,
+    code`  if (Math.abs(whole) < 4503599627370496 && whole / scale === value) return whole % units === 0;`,
+    code`  return ${localName('isMultipleOf')}(value, divisor);`,
+    code`}`,
+  ], NEWLINE)),
   // The registered model class a value is an instance of, as `golemModelInstance` reads it. The symbol key is
   // `MODEL_CODEC_IDS_KEY`, which object-codec.ts registers under: the generated module imports nothing that registers classes. The most derived
   // registered prototype on the chain wins. A codec id matches exactly: the validation plan has resolved each name to the
@@ -88,6 +101,22 @@ const HELPERS: Readonly<Record<LocalHelper, Helper>> = {
     code`}`,
   ], NEWLINE)),
 };
+
+/**
+ * The whole numbers `units` and `scale` with `divisor` equal to `units / scale` as decimal digits, `scale` a power of ten
+ * that a double holds exactly, for a divisor that is not whole and whose digits `isMultipleOfScaled` can use. They come
+ * from the shortest text of the divisor, as `isMultipleOf` reads it. Any other divisor has none.
+ */
+export function scaledDivisor(divisor: number): { readonly units: number; readonly scale: number } | undefined {
+  if (!Number.isFinite(divisor) || divisor <= 0 || Number.isInteger(divisor)) return undefined;
+  const match = /^([0-9]+)(?:[.]([0-9]+))?(?:e([+-][0-9]+))?$/.exec(String(divisor));
+  if (match === null) return undefined;
+  const fraction = match[2] ?? '';
+  const units = Number(match[1] + fraction);
+  const decimals = fraction.length - Number(match[3] ?? 0);
+  if (!Number.isSafeInteger(units) || decimals < 1 || decimals > 22) return undefined;
+  return { units, scale: Number(`1e${decimals}`) };
+}
 
 /** True when `key` is program state of the instance whose `instanceFields` is the local `fields`. */
 export function stateTest(fields: Code, key: Code): Code {

@@ -91,7 +91,6 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
         [`function stringifyT${name}${index}Core(`]: true,
         [`class T${name}${index}BaseModel`]: kind === 'IModel',
         [`function decodeT${name}${index}(`]: kind === 'IObject',
-        [`function encodeT${name}${index}(`]: kind === 'IObject',
       };
       for (const [owned, expected] of Object.entries(expectations)) {
         assert.equal(lastCompanion.includes(owned), false, `${name.toLowerCase()}-${last} does not emit ${owned}`);

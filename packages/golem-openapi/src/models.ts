@@ -2,7 +2,7 @@ import { objectEntries } from './json.js';
 import { GolemDiagnosticSeverity, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
 import { parameterSchema, resolveLocal, type NormalizedOperation } from './normalize.js';
 import { type OpenApiModelAnalysis, modelEnv, type CompositionSite, checkComposition } from './model-resolution.js';
-import { checkModelFromJSON, checkModelToJSON } from './model-emission.js';
+import { checkModelFromJSON } from './model-emission.js';
 
 /** Whether the schema or a schema inside it has an allOf; a `$ref` target is a component and is read as one. */
 function containsAllOf(value: unknown, seen = new Set<unknown>()): boolean {
@@ -26,30 +26,28 @@ export function checkOperationCompositions(
     diagnostics.push({ code, severity: GolemDiagnosticSeverity.Warning, message });
   };
   const env = modelEnv(document, undefined, undefined, analysis.resources, analysis.selections, analysis.dates);
-  const check = (schema: unknown, place: string, direction: 'from' | 'to'): void => {
+  const check = (schema: unknown, place: string): void => {
     const site: CompositionSite = { where: (pointer) => `${place} at #${pointer}`, origins: () => [] };
     checkComposition(site, schema, undefined, analysis.definitions, document, analysis.resources, warn, env);
-    // Members that are not objects convert in the model path; no component reads an inline schema there, so convert it once.
-    if (!containsAllOf(schema)) return;
-    const convert = direction === 'from' ? checkModelFromJSON : checkModelToJSON;
-    convert(schema, 'value', analysis.definitions, env, site);
+    // Members that are not objects convert in the model path; no component reads an inline schema there, so convert it once. The model conversion stops a union of untagged objects and a conflict of members, whichever way the client sends or reads the value.
+    if (containsAllOf(schema)) checkModelFromJSON(schema, 'value', analysis.definitions, env, site);
   };
   for (const operation of operations) {
     const owner = `of operation ${JSON.stringify(operation.name)}`;
     for (const parameter of operation.parameters) {
-      check(parameterSchema(parameter), `schema of ${parameter.in} parameter ${JSON.stringify(parameter.name)} ${owner}`, 'to');
+      check(parameterSchema(parameter), `schema of ${parameter.in} parameter ${JSON.stringify(parameter.name)} ${owner}`);
     }
     for (const media of operation.requestContent) {
-      check(media.schema, `schema of request body ${media.contentType} ${owner}`, 'to');
-      check(media.itemSchema, `item schema of request body ${media.contentType} ${owner}`, 'to');
+      check(media.schema, `schema of request body ${media.contentType} ${owner}`);
+      check(media.itemSchema, `item schema of request body ${media.contentType} ${owner}`);
     }
     for (const response of operation.responses) {
       for (const media of response.content) {
-        check(media.schema, `schema of ${response.status} response ${media.contentType} ${owner}`, 'from');
-        check(media.itemSchema, `item schema of ${response.status} response ${media.contentType} ${owner}`, 'from');
+        check(media.schema, `schema of ${response.status} response ${media.contentType} ${owner}`);
+        check(media.itemSchema, `item schema of ${response.status} response ${media.contentType} ${owner}`);
       }
       for (const [name, header] of objectEntries(response.headers)) {
-        check(parameterSchema(resolveLocal(document, header)), `schema of ${response.status} response header ${JSON.stringify(name)} ${owner}`, 'from');
+        check(parameterSchema(resolveLocal(document, header)), `schema of ${response.status} response header ${JSON.stringify(name)} ${owner}`);
       }
     }
   }

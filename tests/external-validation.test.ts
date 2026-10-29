@@ -133,8 +133,7 @@ test('a failed validator enhancer is not cached and can be retried', async () =>
   assert.equal(enhancerCalls, 2);
 });
 
-test('getValidator and validate reject disabled validation before conversion', async () => {
-  let encodeCalls = 0;
+test('getValidator and validate reject disabled validation', async () => {
   class DisabledModel {
     public value = 1;
   }
@@ -143,10 +142,6 @@ test('getValidator and validate reject disabled validation before conversion', a
     profile: { validation: false },
     conversion: {
       decode: value => Object.assign(new DisabledModel(), value as object),
-      encode: model => {
-        encodeCalls += 1;
-        return { value: model.value };
-      },
     },
   });
   const model = generated(new DisabledModel());
@@ -158,7 +153,6 @@ test('getValidator and validate reject disabled validation before conversion', a
     () => validateInstance(model),
     (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.ValidationUnavailable,
   );
-  assert.equal(encodeCalls, 0);
 });
 
 test('model metadata is resolved through the prototype, not an instance constructor field', async () => {
@@ -255,7 +249,6 @@ test('derived registration shadows inherited metadata and failed replacement lea
     fields: ['value', 'label'],
     profile: { validation: false },
     conversion: {
-      encode: model => ({ value: model.value, label: model.label }),
       decode: () => new Derived(),
     },
   });
@@ -267,7 +260,6 @@ test('derived registration shadows inherited metadata and failed replacement lea
   assert.notStrictEqual(replacement, parent);
   assert.strictEqual(findGeneratedModelDefinition(new Derived()), replacement);
   assert.strictEqual(findGeneratedModelDefinitionForConstructor(Base), parent);
-  assert.deepEqual(encodeGeneratedModel(generated(new Derived())), { value: 1, label: 'child' });
   Object.freeze(Derived.prototype);
   assert.throws(registerDerived, TypeError);
   assert.strictEqual(findGeneratedModelDefinitionForConstructor(Derived), replacement);

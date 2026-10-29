@@ -7,6 +7,7 @@ import test from 'node:test';
 
 import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { validateInstance } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { compositionProject as fixture } from './support/model-composition-project.js';
 import { buildModelProject, buildModelProjectWith, writeModelGolemYaml, writeModelSources } from './model-project.js';
@@ -178,8 +179,10 @@ export type TItem = IModel<{ value: (Money | { kind: 'a' | 'b'; x: number } | { 
   assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
 });
 
-test('an IModel over an SDK model keeps a field spelled like a brand key and drops the real brand keys', async t => {
+for (const validation of [true, false]) test(`an IModel over an SDK model keeps a field spelled like a brand key, drops the real brand keys, and encodes and validates with the codec of the SDK model (validation ${validation})`, async t => {
+  // protects: T-650 the forwarders of such a companion call the codec of the SDK model
   // protects: F-213 a generated-model brand key is found by its symbol, so a string key spelled like one stays a field
+  // protects: T-650 encodeGeneratedModel and validateInstance find the SDK model's codec for a class that declares an SDK model
   const { root, sourceRoot } = fixture(t);
   fs.writeFileSync(path.join(sourceRoot, 'odd.yaml'), `openapi: 3.1.0
 info: { title: Odd, version: "1" }
@@ -198,7 +201,7 @@ components:
     input: path.join(sourceRoot, 'odd.yaml'),
     output: path.join(sourceRoot, 'sdk'),
     name: 'Odd',
-    profile: { mobx: false, validation: true },
+    profile: { mobx: false, validation },
   })).artifacts);
   writeModelSources(sourceRoot, {
     'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
@@ -220,7 +223,7 @@ type SymbolKeys<T> = Extract<keyof T, symbol>;
 export const brandKeysDropped: [SymbolKeys<Item>] extends [SymbolKeys<Plain>] ? ([SymbolKeys<Plain>] extends [SymbolKeys<Item>] ? true : false) : false = true;
 `,
   });
-  await buildModelProject(root);
+  await buildModelProjectWith(root, { mobx: false, validation });
   const authored = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`);
   const item = new authored.Item({ amount: 1, '__@generatedModelWireBrand@1': 'plain' });
   assert.deepEqual(encodeGeneratedModel(item), { amount: 1, '__@generatedModelWireBrand@1': 'plain' });

@@ -12,7 +12,7 @@ function encodeMoney(model: MoneyModel) { return { currency: model.currency, amo
 registerGeneratedModel(MoneyModel, {
   fields: ["currency", "amount"],
   profile: { validation: true },
-  conversion: { decode: decodeMoney, encode: encodeMoney },
+  conversion: { decode: decodeMoney },
   codecId: "Money",
 });
 registerIModelClass("Money", MoneyModel);

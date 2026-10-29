@@ -11,7 +11,7 @@ Find every `@exprtlabs/golem` subpath that your application, NestJS app or build
 | [`mobx-validation`](#mobx-validation) | Observable validator state | `mobx` |
 | [`errors`](#errors) | `LibError`, `LibErrorKind` and the `Issue` type | none |
 | [`client`](#client) | `ApiOperation` and `createApiOperation` | none |
-| [`conversion`](#conversion) | Encode and decode a generated model | none |
+| [`conversion`](#conversion) | Cycle check and root field read | none |
 | [`tags`](#tags) | Type-only validation constraints, `TValidation`, `TSerde` | none |
 | [`temporal`](#temporal) | Temporal field types and their codecs | a `Temporal` global, such as `temporal-polyfill` |
 | [`serde`](#serde) | `parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` | none |
@@ -355,28 +355,15 @@ Each SDK declares these types again with the client name, such as `<Client>Auth`
 ## `@exprtlabs/golem/conversion` {#conversion}
 
 ```ts
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { assertAcyclicValue, readRootFields } from '@exprtlabs/golem/conversion';
 ```
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
-| `encodeGeneratedModel` | `(model): GeneratedModelWire<Model>` | A detached JSON-shaped copy of a generated model. Does not validate. |
-| `decodeGeneratedModel` | `(constructor, value: unknown): GeneratedModelResult<Constructor>` | Builds an instance from `value` without copying it first. Fields without conversion are the input's own values. Returns an existing instance unchanged. Does not validate. |
 | `assertAcyclicValue` | `(value, kind?)` | Throws `LibError` when `value` holds a cycle. Shared references are allowed. `kind` is `LibErrorKind.Serialization` or `LibErrorKind.Deserialization` (the default). |
 | `readRootFields` | `(value: unknown, fields: readonly string[]): unknown` | Copies the root of `value`, reading each listed field once through its getter. |
 
-Use `encodeGeneratedModel` and `decodeGeneratedModel` when the type is known only at runtime:
-
-```ts
-import { isGeneratedModel } from '@exprtlabs/golem/model';
-import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-
-export function responseBody(value: unknown): unknown {
-  return isGeneratedModel(value) ? encodeGeneratedModel(value) : value;
-}
-```
-
-Both throw `LibError` for missing generated metadata or cyclic input. With a known type, use [`toWireFormat<T>`](#serde) and `fromWireFormat<T>`, which also validate.
+To convert a model, use [`toWireFormat<T>`](#serde) and `fromWireFormat<T>`, which also validate.
 
 ## `@exprtlabs/golem/tags` {#tags}
 

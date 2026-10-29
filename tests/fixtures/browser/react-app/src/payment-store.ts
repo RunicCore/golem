@@ -69,7 +69,7 @@ export class PaymentStore {
         return false;
       }
 
-      const wire = encodeGeneratedModel(this.editor);
+      const wire = encodeGeneratedModel(this.editor, { validate: false });
       const response = await this.client.createPayment().execute(
         { body: wire.money },
         { signal: controller.signal },

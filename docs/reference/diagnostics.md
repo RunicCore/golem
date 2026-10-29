@@ -689,8 +689,11 @@ What golem does depends on [`nonModelInputs`](/reference/config#root-keys) in `g
 
 - Two scalar variants where one converts.
 - A model reference that is no object.
+- A `TSerde` value beside tagged objects whose JSON form is an object or an array, such as a `URL` written as `{ href: string }`.
 
 Golem does not try the variants in turn, so generation stops. The message names the model file and lists the variants. An object union with no declared tag has its own code, [RUNM1080](#runm1080).
+
+One case is allowed: a `TSerde` value whose JSON form is a scalar, such as a `URL` written as a string, can sit beside tagged objects.
 
 **Fix:**
 
@@ -863,6 +866,8 @@ The message names the schema, and the property when the conflict is in one prope
 ### OPENAPI_COMPOSITION_UNSATISFIABLE
 
 **allOf that no object satisfies.** A required property of an `allOf` cannot hold a value, for the reasons that [OPENAPI_COMPOSITION_PROPERTY_NEVER](#openapi-composition-property-never) gives, so the schema accepts no object. Generation stops. The message names each such property, its cause and the fix. **Fix:** Apply the fix of OPENAPI_COMPOSITION_PROPERTY_NEVER to each property that the message names.
+
+**Required property that holds no value.** An object schema lists a property as required, and the schema of that property is an empty `enum`, `not: true` or `false`. No value satisfies it, so the schema accepts no object. Generation stops. The message names the property. **Fix:** Remove the property from `required`, or give it a schema that accepts a value.
 
 **allOf members with no common type.** The members of an `allOf` declare JSON types that share no value. No value satisfies the schema, so generation stops. Examples:
 

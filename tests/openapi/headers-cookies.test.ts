@@ -23,6 +23,18 @@ async function loadClient(t: TestContext, document: unknown, name: string) {
   return loadGeneratedClient(output, name);
 }
 
+function cookieSendingClient(Client: Awaited<ReturnType<typeof loadClient>>) {
+  const sent: { cookie: string | null } = { cookie: null };
+  const client = new Client({
+    baseUrl: 'https://api.example',
+    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
+      sent.cookie = captureRequest(url, init).init.headers.get('cookie');
+      return new Response(null, { status: 204 });
+    },
+  });
+  return { client, sent };
+}
+
 test('API execution resolves Basic and cookie credentials and merges constructor headers', async (t) => {
   const responses = { 204: { description: 'Accepted' } };
   const Client = await loadClient(t, {
@@ -145,14 +157,7 @@ test('header simple values stay literal and never percent-decode, and OAS 3.2 st
   assert.equal(result.headers?.['X-Greeting'], 'hello world');
   assert.equal(result.headers?.['X-Percent'], 'a%20b');
 
-  let cookie: string | null = null;
-  const cookieClient = new Client({
-    baseUrl: 'https://api.example',
-    fetchImpl: async (url: string | URL | Request, init?: RequestInit) => {
-      cookie = captureRequest(url, init).init.headers.get('cookie');
-      return new Response(null, { status: 204 });
-    },
-  });
+  const { client: cookieClient, sent } = cookieSendingClient(Client);
   await cookieClient.readJar().execute({
     cookie: {
       plain: 'hello world',
@@ -161,7 +166,7 @@ test('header simple values stay literal and never percent-decode, and OAS 3.2 st
     },
   });
   assert.equal(
-    cookie,
+    sent.cookie,
     'plain=hello world; tags=a b,c%20d; legacy=hello%20world',
   );
 });
@@ -266,4 +271,48 @@ test('a numeric response header that is not a number of its declared kind is rej
   }
   const accepted = await clientReturning(Client, { 'X-Float': '1e3', 'X-Plain': '-5' }).count().execute({});
   assert.deepEqual(accepted.headers, { 'X-Plain': -5, 'X-Float': 1000 });
+});
+
+test('a style cookie array or object with no explode is written exploded, as a form cookie is', async (t) => {
+  // protects: suspected bug T-634 style cookie with no explode was written non-exploded; OAS 3.2 defaults explode to true for cookie
+  const parameter = (name: string, style: string, schema: unknown) => ({ name, in: 'cookie', style, schema });
+  const Client = await loadClient(t, {
+    openapi: '3.2.0',
+    info: { title: 'CookieExplode', version: '1' },
+    paths: { '/jar': { get: {
+      operationId: 'readJar',
+      parameters: [
+        parameter('tags', 'cookie', { type: 'array', items: { type: 'string' } }),
+        parameter('point', 'cookie', { type: 'object', properties: { x: { type: 'string' }, y: { type: 'string' } } }),
+        parameter('formTags', 'form', { type: 'array', items: { type: 'string' } }),
+      ],
+      responses: { 204: { description: 'ok' } },
+    } } },
+  }, 'CookieExplode');
+  const { client, sent } = cookieSendingClient(Client);
+  await client.readJar().execute({ cookie: { tags: ['a', 'b'], point: { x: '1', y: '2' }, formTags: ['c', 'd'] } });
+  assert.equal(sent.cookie, 'tags=a; tags=b; x=1; y=2; formTags=c; formTags=d');
+});
+
+test('an empty object response header decodes to an empty object, exploded or not', async (t) => {
+  // protects: suspected bug T-635 an empty object header threw a TypeError; RFC 6570 section 2.3 makes an empty map undefined and simple expansion writes it as nothing
+  const point = { type: 'object', properties: { x: { type: 'integer' } } };
+  const Client = await loadClient(t, {
+    openapi: '3.1.0',
+    info: { title: 'EmptyObjectHeaders', version: '1' },
+    paths: { '/point': { get: {
+      operationId: 'point',
+      responses: { 200: {
+        description: 'ok',
+        headers: {
+          'X-Plain': { schema: point },
+          'X-Exploded': { explode: true, schema: point },
+        },
+      } },
+    } } },
+  }, 'EmptyObjectHeaders');
+  const empty = await clientReturning(Client, { 'X-Plain': '', 'X-Exploded': '' }).point().execute({});
+  assert.deepEqual(empty.headers, { 'X-Plain': {}, 'X-Exploded': {} });
+  const filled = await clientReturning(Client, { 'X-Plain': 'x,1', 'X-Exploded': 'x=2' }).point().execute({});
+  assert.deepEqual(filled.headers, { 'X-Plain': { x: 1 }, 'X-Exploded': { x: 2 } });
 });

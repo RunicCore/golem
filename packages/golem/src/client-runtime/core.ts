@@ -463,6 +463,8 @@ export class ClientRuntime {
       return value.split(',').map((item) => this.decodeHeaderScalar(trimOws(item), metadata.itemKind));
     }
     if (metadata.kind === 'object') {
+      // An empty map is undefined in RFC 6570 (section 2.3) and simple expansion writes nothing for it, so an empty value is {}.
+      if (trimOws(value) === '') return {};
       const parts = value.split(',');
       const entries: Array<[string, unknown]> = [];
       if (metadata.explode) {

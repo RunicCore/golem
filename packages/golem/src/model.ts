@@ -73,6 +73,8 @@ export type ModelConstraint =
     readonly value: number;
   }
   | { readonly kind: 'pattern' | 'format'; readonly value: string }
+  /** The JSON values a value may equal, compared deeply. The values are data, not descriptors. */
+  | { readonly kind: 'enum'; readonly values: readonly unknown[] }
   | {
     readonly kind:
       | 'contains' | 'propertyNames' | 'additionalProperties' | 'unevaluatedProperties'
@@ -274,8 +276,6 @@ export interface ModelValidationContext {
 export interface GeneratedModelConversion<Model extends object = object, Wire = unknown> {
   /** Decode a wire value, constructing the requested subclass when supplied. */
   readonly decode: (value: unknown, constructor?: GeneratedModelConstructor) => Model;
-  /** Encode a model into a detached plain wire value. */
-  readonly encode: (model: Model) => Wire;
 }
 
 export interface GeneratedModelProfile {
@@ -330,7 +330,6 @@ export function registerGeneratedModel<Model extends object, Wire = unknown>(
     conversion: conversion
       ? {
         decode: (value, requestedConstructor) => conversion.decode(value, requestedConstructor),
-        encode: (model) => conversion.encode(model as Model),
       }
       : undefined,
     profile: definition.profile,
