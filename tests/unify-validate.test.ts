@@ -38,6 +38,20 @@ function generatedText(root: string): string {
   return files.map((filename) => fs.readFileSync(filename, 'utf8')).join('\n');
 }
 
+/** The text of every `models.validators.generated.ts` under `root`; empty when the job wrote none. */
+function validatorsText(sourceRoot: string): string {
+  const found: string[] = [];
+  const visit = (directory: string): void => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const filename = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(filename);
+      else if (entry.name === 'models.validators.generated.ts') found.push(fs.readFileSync(filename, 'utf8'));
+    }
+  };
+  visit(sourceRoot);
+  return found.join('\n');
+}
+
 function assertGeneratedValidatorsBound(source: string): void {
   assert.ok((source.match(/\bvalidate_\w+_[0-9a-f]{8}\b/g) ?? []).length >= 1, 'a codec binds to the generated validators');
 }
@@ -68,21 +82,60 @@ test('global validation true binds IObject and IModel codecs to generated valida
   assert.deepEqual(issues.map((issue) => issue.path), getValidator(invalid).issues.map((issue) => issue.path));
 });
 
-test('I* validation option lowers the project level per type, in mixed files', async (t: TestContext) => {
+const MIXED_FIXTURE = 'models/unify-validate/i-validation-option-lowers-the-project-level-per-type-in-mixed-files';
+
+function writeMixedModels(sourceRoot: string): void {
+  writeGeneratedArtifacts(['mixed.model.ts', 'rules.ts'].map((name) => ({
+    path: path.join(sourceRoot, name),
+    content: readFixture(`${MIXED_FIXTURE}/${name}`),
+  })));
+}
+
+test('a sanity model in a full project checks the shape only, alone and inside a full model', async (t: TestContext) => {
+  // protects: T-678 a sanity model in a full project validates at shape only, and the full model around it keeps every limit
   const { root, sourceRoot } = fixture(t);
-  writeGeneratedArtifacts([{
-    path: path.join(sourceRoot, 'mixed.model.ts'),
-    content: readFixture('models/unify-validate/i-validation-option-overrides-the-global-flag-in-both-directions-and-mixed-f/mixed.model.ts'),
-  }]);
+  writeMixedModels(sourceRoot);
   writeModelGolemYaml(root, { mobx: false, validation: true });
   await compile(root);
   const { Checked } = await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
   const checkedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TChecked'));
+  const outerCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TOuter'));
   const trustedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTrusted'));
-  assert.equal(checkedCodec.validate(new Checked({ title: 'ok' })), true);
-  assert.equal(checkedCodec.validate({ title: 5 }), false, 'the sanity override still runs a real schema check');
+  const overLimit = { title: 'ok', note: ' ' };
+  assert.equal(checkedCodec.validate(new Checked(overLimit)), true, 'a title under its limit and a blank note pass at sanity');
+  assert.equal(checkedCodec.validate({ title: 5 }), false, 'the sanity model still rejects a wrong type');
+  assert.equal(outerCodec.validate({ inner: overLimit, code: 'abc' }), true, 'the sanity model inside a full model checks the shape only');
+  assert.equal(outerCodec.validate({ inner: { title: 5 }, code: 'abc' }), false, 'a wrong type inside it is still rejected');
+  assert.equal(outerCodec.validate({ inner: overLimit, code: 'ab' }), false, 'the full model keeps its own limit');
   assert.throws(() => trustedCodec.validate({ id: '1' }));
   assert.throws(() => trustedCodec.stringify({ id: '1' }, { validate: true }));
+});
+
+test('a sanity project emits no value limit and no validation function, and its models check the shape only', async (t: TestContext) => {
+  // protects: T-678 a sanity project emits no value-limit or TValidation code
+  const { root, sourceRoot } = fixture(t);
+  writeMixedModels(sourceRoot);
+  writeModelGolemYaml(root, { mobx: false, validation: 'sanity' });
+  await compile(root);
+  const validators = validatorsText(sourceRoot);
+  assert.notEqual(validators, '', 'the sanity project writes its validators module');
+  assert.equal(/notBlank|rules\.js|\.length\s*<|codePointLength/.test(validators), false, 'the validators module holds no limit and imports no validation function');
+  await import(pathToFileURL(path.join(root, 'build/mixed.model.js')).href);
+  const outerCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TOuter'));
+  assert.equal(outerCodec.validate({ inner: { title: 'ok', note: ' ' }, code: 'ab' }), true);
+  assert.equal(outerCodec.validate({ inner: { title: 'ok' }, code: 5 }), false);
+});
+
+test('a project at true whose models are all off writes no validators module', async (t: TestContext) => {
+  // protects: T-678 project true with only off models writes no models.validators.generated.ts, as project false does
+  const { root, sourceRoot } = fixture(t);
+  writeGeneratedArtifacts([{
+    path: path.join(sourceRoot, 'off.model.ts'),
+    content: "import type { IObject } from '@exprtlabs/golem/model';\nimport type { MinLength } from '@exprtlabs/golem/tags';\nexport type TOff = IObject<{ id: string & MinLength<3> }, { validation: false }>;\n",
+  }]);
+  writeModelGolemYaml(root, { mobx: false, validation: true });
+  await compile(root);
+  assert.equal(validatorsText(sourceRoot), '');
 });
 
 test('nested interned child with validation false is opaque; parent field tags still run', async (t: TestContext) => {
