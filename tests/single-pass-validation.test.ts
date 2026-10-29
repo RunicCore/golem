@@ -140,10 +140,15 @@ const TOGGLES_OFF = toggleSource('TInheritBaseModel, TOffBaseModel, TParentBaseM
 
 type ToggleCall = 'omitted' | 'true' | 'false';
 /** What one parse or stringify call of a model runs, by whether the model validates and by the `validate` option of the call. */
-const RULE_RUNS: Record<'validates' | 'off', Record<ToggleCall, number | 'unavailable'>> = {
-  validates: { omitted: 1, true: 1, false: 0 },
-  off: { omitted: 0, true: 'unavailable', false: 0 },
+/** `runs`: the call returns and the rule ran `count` times; `unavailable`: the call throws validation unavailable. */
+interface CallOutcome { readonly kind: 'runs' | 'unavailable'; readonly count: number }
+const runs = (count: number): CallOutcome => ({ kind: 'runs', count });
+const RULE_RUNS: Record<'validates' | 'off', Record<ToggleCall, CallOutcome>> = {
+  validates: { omitted: runs(1), true: runs(1), false: runs(0) },
+  off: { omitted: runs(0), true: { kind: 'unavailable', count: 0 }, false: runs(0) },
 };
+/** The `validate` option each way of making the call passes. */
+const CALL_OPTIONS: Record<ToggleCall, { readonly validate?: boolean }> = { omitted: {}, true: { validate: true }, false: { validate: false } };
 /** The toggle models a project declares: the effective level of each, and what its `codec.validate` does. */
 const VALIDATING_ROWS = [['TInherit', 'validates', 'none'], ['TOn', 'validates', 'rejects'], ['TOff', 'off', 'unavailable']] as const;
 const OFF_PROJECT_ROWS = [['TInherit', 'off', 'none'], ['TOff', 'off', 'unavailable']] as const;
@@ -177,16 +182,19 @@ for (const [projectValidates, source, rows] of [[true, TOGGLES_VALIDATING, VALID
       };
       validateChecks[validateCheck]();
       for (const call of CALLS) {
-        const options = call === 'omitted' ? { construct } : { validate: call === 'true', construct };
+        const options = { ...CALL_OPTIONS[call], construct };
         const expected = RULE_RUNS[effective][call];
         for (const [operation, run] of [
           ['parse', () => codec.parse(JSON.stringify(TOGGLE_VALUE), options)],
-          ['stringify', () => codec.stringify(model as never, call === 'omitted' ? undefined : { validate: call === 'true' })],
+          ['stringify', () => codec.stringify(model as never, CALL_OPTIONS[call])],
         ] as const) {
           counter.reset();
           const label = `${name} ${operation} validate=${call}`;
-          if (expected === 'unavailable') assert.throws(run, unavailable, label);
-          else { run(); assert.equal(counter.calls, expected, label); }
+          const outcomes = {
+            unavailable: () => assert.throws(run, unavailable, label),
+            runs: () => { run(); assert.equal(counter.calls, expected.count, label); },
+          };
+          outcomes[expected.kind]();
           cells++;
         }
       }
