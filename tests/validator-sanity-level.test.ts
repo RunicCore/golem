@@ -31,6 +31,8 @@ const SHAPE_REJECTED: readonly Row[] = [
   { name: 'tuple too short', schema: TUPLE, value: ['a'], limit: false },
   { name: 'tuple too long', schema: TUPLE, value: ['a', 1, 2], limit: false },
   { name: 'date-time format', schema: { type: 'string', format: 'date-time' }, value: '5', limit: false },
+  { name: 'date format, which Temporal.PlainDate reads', schema: { type: 'string', format: 'date' }, value: '20250102', limit: false },
+  { name: 'duration format, which Temporal.Duration reads', schema: { type: 'string', format: 'duration' }, value: 'p1d', limit: false },
   { name: 'discriminated union tag', schema: { oneOf: [{ properties: { k: { const: 'a' } }, required: ['k'] }, { properties: { k: { const: 'b' } }, required: ['k'] }], discriminator: { propertyName: 'k' } }, value: { k: 'c' }, limit: false },
   { name: 'limit under a failing type', schema: { type: 'string', minLength: 3 }, value: 5, limit: false },
 ];

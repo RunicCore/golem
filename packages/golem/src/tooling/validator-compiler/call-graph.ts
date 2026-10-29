@@ -111,14 +111,20 @@ export function reachingValidation(functions: readonly IrFunction[]): ReadonlySe
 export const isTuple = (check: IrArray): boolean => check.prefixItems.length > 0 || check.closed;
 
 /**
- * True when the sanity level keeps the format. Only `date-time` stays: the schema has no mark for a field that converts
- * to a `Date`, and `new Date('5')` would accept a text that is no time (F-39).
+ * The string formats that a golem converter decodes: `Date` reads `date-time`; `dates: temporal` also reads `date` (a
+ * `Temporal.PlainDate`) and `duration` (a `Temporal.Duration`), and `Temporal.Instant` reads `date-time`. The schema
+ * has no mark for a field that converts, and a parser is more lenient than the format: `new Date('5')` accepts a text
+ * that is no time, `Temporal.PlainDate.from('20250102')` and `Temporal.Duration.from('p1d')` accept non-canonical
+ * text. Golem rejects bad input and never coerces it (F-39).
  */
-export const keepsFormat = (format: string): boolean => format === 'date-time';
+const CONVERTED_FORMATS: ReadonlySet<string> = new Set(['date-time', 'date', 'duration']);
+
+/** True when the sanity level keeps the format: every format a golem converter decodes (see `CONVERTED_FORMATS`). */
+export const keepsFormat = (format: string): boolean => CONVERTED_FORMATS.has(format);
 
 /**
  * The one list of what the sanity level skips: the check without its value limits (a string length or pattern, a number
- * range or `multipleOf`, a format other than `date-time`, a count of items outside a tuple, `uniqueItems`, a count of
+ * range or `multipleOf`, a format that no converter decodes, a count of items outside a tuple, `uniqueItems`, a count of
  * `contains` matches above one, a count of properties) and without its validation functions. It is the same check when
  * it holds none, and undefined when nothing is left. Sanity keeps the shape: the type, the keys, the union tags, the
  * enums and constants, a tuple's arity.
@@ -160,7 +166,7 @@ const skipsCheck = (check: IrCheck): boolean => withoutLimits(check) !== check;
  * reaches one through `not`, `if`, `oneOf` or `contains` too, so the monotone rule (sanity accepts all that full accepts)
  * can relax those.
  */
-export function reachingSkipped(functions: readonly IrFunction[]): ReadonlySet<number> {
+function reachingSkipped(functions: readonly IrFunction[]): ReadonlySet<number> {
   return reaching(functions, skipsCheck);
 }
 

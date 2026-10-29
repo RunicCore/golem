@@ -742,7 +742,7 @@ export function descriptorBuilder(
   checker: ts.TypeChecker,
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
-  validationEnabled: GolemProfile['validation'],
+  validationLevel: GolemProfile['validation'],
   allowAny = false,
   identityRoot: string | undefined,
   allowUnresolved = true,
@@ -1024,7 +1024,7 @@ export function descriptorBuilder(
 
   /** Whether the model being described validates: its own `{ validation }` setting, else the job's. A check golem cannot state stops generation only then. */
   const modelValidates = (context: TypeAnalysisContext): boolean =>
-    (specifications.find(specification => specification.declaration === context.declaration)?.validation ?? validationEnabled) !== false;
+    (specifications.find(specification => specification.declaration === context.declaration)?.validation ?? validationLevel) !== false;
 
   const describeType = (
     originalType: ts.Type,
@@ -1392,7 +1392,7 @@ export function descriptorBuilder(
             `${where} is a ${collection}, which golem cannot represent. Use a Record or an array.`);
         }
         if (type.getCallSignatures().length > 0 || type.getConstructSignatures().length > 0) {
-          if (!validationEnabled) return withMetadata({ kind: 'unknown' }, metadata);
+          if (!validationLevel) return withMetadata({ kind: 'unknown' }, metadata);
           throw diagnostic(context.sourceFile, context.declaration, '1004', `Callable or constructible types cannot be represented by ${context.name}.`);
         }
         // An object breaks any sequence cycle through it: its own revisit is a projection reference or the 1056 diagnostic.
@@ -1446,7 +1446,7 @@ export function descriptorBuilder(
             );
           }
           if (valueType.getCallSignatures().length > 0) {
-            if (!validationEnabled) {
+            if (!validationLevel) {
               properties[name] = { kind: 'unknown' };
               if (!optional) required.push(name);
               continue;
@@ -1530,7 +1530,7 @@ export function descriptorBuilder(
         }, keyConstraint.length ? { ...metadata, constraints: [...metadata.constraints, ...keyConstraint] } : metadata);
         return descriptor;
       }
-      if (!validationEnabled) return withMetadata({ kind: 'unknown' }, metadata);
+      if (!validationLevel) return withMetadata({ kind: 'unknown' }, metadata);
       throw diagnostic(
         context.sourceFile,
         context.declaration,

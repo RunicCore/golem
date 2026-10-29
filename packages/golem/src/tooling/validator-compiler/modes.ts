@@ -119,7 +119,8 @@ export interface WriterMode {
   readonly records: boolean;
   /**
    * The mode writes a function that takes the sanity flag `s` and writes a skipped check under it. A fast check takes
-   * none and is exact: its callers use it at the full level only, and a full validator it calls runs with the flag absent.
+   * none and is exact. The generated guards run it first at every level, which is sound because a value that is valid at
+   * the full level is valid at the sanity level; a full validator it calls runs with the flag absent.
    */
   readonly takesSanity: boolean;
   /**
