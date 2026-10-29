@@ -1770,7 +1770,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
   const siblingWires = new Map<string, Code>();
   const siblingWireSources: ImportSource[] = [];
   for (const node of schemaGraph.nodes.values()) {
-    const sibling = node.siblingCodec ? graph.siblings.find((item) => item.name === node.name) : undefined;
+    const sibling = node.siblingCodec ? graph.siblings.find((item) => codecShortName(item.name) === node.name) : undefined;
     if (!sibling) continue;
     const wireSource = new ImportSource(sourceImportPath(companionOfSpecification(sibling), output));
     siblingWires.set(node.codecId, wireSource.name(wireStringifyExportName(node.codecId)));
