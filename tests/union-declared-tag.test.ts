@@ -521,3 +521,71 @@ export type TContact = IObject<{ value: (TEmail | TPhone) & Discriminator<'kind'
     }
   });
 }
+
+for (const validation of [false, true]) {
+  test(`a TSerde class value such as URL sits beside a tagged union, with validation ${validation ? 'on' : 'off'}`, async (t) => {
+    // protects: T-637 a TSerde class value is a scalar variant beside tagged objects, as a Date is (it stopped generation with RUNM1082)
+    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-url-', name: 'declared-url', linkWorkspaceNodeModules: true });
+    writeModelSources(sourceRoot, {
+      'codecs.ts': `export function encodeUrl(value: URL): string { return value.href; }
+export function decodeUrl(value: string): URL { return new URL(value); }
+`,
+      'contact.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import { encodeUrl, decodeUrl } from './codecs.js';
+type Link = URL & TSerde<typeof encodeUrl, typeof decodeUrl>;
+export type TEmail = IObject<{ kind: 'email'; address: string }>;
+export type TPhone = IObject<{ kind: 'phone'; number: string }>;
+export type TContact = IObject<{
+  value: (Link | TEmail | TPhone) & ${TAG};
+  beside: Link | ((TEmail | TPhone) & ${TAG});
+  maybe: ((Link | TEmail | TPhone) & ${TAG}) | null;
+}>;
+`,
+    });
+    writeModelGolemYaml(root, { mobx: false, validation });
+    await buildModelProject(root);
+    const codecs = requireRecord(await import(pathToFileURL(path.join(root, 'build/contact.model.generated.js')).href), 'contact companion') as Record<string, (value: unknown, options?: object) => unknown>;
+    const options = { validate: validation };
+    const href = 'https://example.com/a?b=1';
+    const email = { kind: 'email', address: 'a@b.c' };
+    const wires = [
+      { value: href, beside: href, maybe: null },
+      { value: email, beside: email, maybe: href },
+      { value: { kind: 'phone', number: '5' }, beside: href, maybe: email },
+    ];
+    for (const wire of wires) {
+      const model = requireRecord(codecs.fromWireFormatTContact(wire, options), 'contact');
+      assert.equal(model.value instanceof URL, typeof wire.value === 'string', `validation=${validation}: value of ${JSON.stringify(wire)}`);
+      assert.equal(model.beside instanceof URL, typeof wire.beside === 'string');
+      assert.equal(model.maybe instanceof URL, typeof wire.maybe === 'string');
+      assert.deepEqual(codecs.toWireFormatTContact(model, options), wire);
+      assert.deepEqual(JSON.parse(codecs.stringifyTContact(model, options) as string), wire);
+      assert.deepEqual(codecs.toWireFormatTContact(codecs.parseTContact(JSON.stringify(wire), options), options), wire);
+    }
+    if (validation) assert.throws(() => codecs.fromWireFormatTContact({ ...wires[0], value: 5 }, options));
+    const unknownTag = { ...wires[0], value: { kind: 'fax' } };
+    assert.throws(() => codecs.fromWireFormatTContact(unknownTag, options), (error: { issues?: { code: string; path: string[] }[] }) =>
+      (validation ? error.issues?.[0].code === 'union' && error.issues[0].path.join('.') === 'value' : error.issues?.[0].path.join('.') === 'value.kind'));
+  });
+}
+
+test('a TSerde class value written as an object beside tagged objects stops with RUNM1082', async (t) => {
+  // protects: T-637 only a class value with a scalar JSON form sits beside tagged objects; an object wire is ambiguous with them
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-declared-url-object-', name: 'declared-url-object', linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, {
+    'codecs.ts': `export function encodeUrl(value: URL): { href: string } { return { href: value.href }; }
+export function decodeUrl(value: { href: string }): URL { return new URL(value.href); }
+`,
+    'contact.model.ts': `import type { IObject } from '@exprtlabs/golem/model';
+import type { Discriminator, TSerde } from '@exprtlabs/golem/tags';
+import { encodeUrl, decodeUrl } from './codecs.js';
+type Link = URL & TSerde<typeof encodeUrl, typeof decodeUrl>;
+export type TEmail = IObject<{ kind: 'email'; address: string }>;
+export type TPhone = IObject<{ kind: 'phone'; number: string }>;
+export type TContact = IObject<{ value: (Link | TEmail | TPhone) & ${TAG} }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: false });
+  await assert.rejects(buildModelProject(root), /RUNM1082/);
+});

@@ -109,9 +109,17 @@ export function instanceFieldsCode(): Code {
   ], code`\n`);
 }
 
-/** A non-null, non-array object. `excludingDate`: a Date beside the objects is a scalar variant, so it is no object here. */
-export function objectValueExpression(expression: Code, excludingDate = false): Code {
+/**
+ * A non-null, non-array object. `excludingDate`: a Date beside the objects is a scalar variant, so it is no object here.
+ * `'instance'`: so is the instance of a TSerde class, such as a URL. Its class is a type that generated code cannot name,
+ * so the value is told from a variant object: a model instance and a plain object stay objects.
+ */
+export function objectValueExpression(expression: Code, excludingDate: boolean | 'instance' = false): Code {
   const object = code`typeof ${expression} === 'object' && ${expression} !== null && !Array.isArray(${expression})`;
+  if (excludingDate === 'instance') {
+    const prototype = code`Object.getPrototypeOf(${expression})`;
+    return code`${object} && (${rt.model.isGeneratedModel}(${expression}) || ${prototype} === Object.prototype || ${prototype} === null)`;
+  }
   return excludingDate ? code`${object} && !(${expression} instanceof Date)` : object;
 }
 
@@ -215,8 +223,8 @@ export interface DispatchOptions {
   readonly tagLocal?: Code;
   /** The conversion of a value that is no object (a scalar, null or the like), when the union has variants outside the tag table. */
   readonly rest?: Code;
-  /** `rest` holds a Date variant: a Date instance is that variant, not an object for the tag test. */
-  readonly restIsDate?: boolean;
+  /** `rest` holds a Date variant (`true`) or the variant of a TSerde class (`'instance'`): an instance of it is that variant, not an object for the tag test. */
+  readonly restIsDate?: boolean | 'instance';
   /** The conversion of an object whose tag selects no branch: the declared default. With none, such an object is rejected. */
   readonly fallback?: Code;
   /** The class of the instances `fallback` converts. An instance of it is no instance of a branch class it extends. */
@@ -431,8 +439,19 @@ interface ScalarOrArray {
   readonly scalars: readonly ModelTypeDescriptor[];
 }
 
+/** A class value (a TSerde class or bigint) whose JSON form is a scalar, so the wire value tells it from an object or an array. */
+function isClassValueOfScalar(descriptor: ModelTypeDescriptor): boolean {
+  const wire = (descriptor as { readonly serde?: { readonly wireDescriptor?: ModelTypeDescriptor } }).serde?.wireDescriptor;
+  return descriptor.kind === 'class-value' && wire !== undefined && isScalarishDescriptor(wire);
+}
+
+/** How the model value of the scalar variants is told from a variant object: `'instance'` for a TSerde class instance, `true` for a Date, else `false`. */
+function restInstance(scalars: readonly ModelTypeDescriptor[]): boolean | 'instance' {
+  return scalars.some((variant) => variant.kind === 'class-value' && variant.typeName !== 'bigint') ? 'instance' : scalars.some((variant) => variant.kind === 'date');
+}
+
 /**
- * The variants a value's JSON type tells apart without a tag: scalar variants (a JSON scalar or a literal union, or one Date)
+ * The variants a value's JSON type tells apart without a tag: scalar variants (a JSON scalar or a literal union, or one Date or one class value with a scalar JSON form)
  * and at most one array or tuple. Generated models and untagged objects are not scalarish.
  */
 function jsonTypeVariants(
@@ -444,7 +463,7 @@ function jsonTypeVariants(
   );
   if (sequences.length > 1) return undefined;
   const scalars = variants.filter((variant) => variant !== sequences[0]);
-  if (!scalars.every(isScalarishDescriptor) && !(scalars.length === 1 && scalars[0].kind === 'date')) return undefined;
+  if (!scalars.every(isScalarishDescriptor) && !(scalars.length === 1 && (scalars[0].kind === 'date' || isClassValueOfScalar(scalars[0])))) return undefined;
   return { sequence: sequences[0], scalars };
 }
 
@@ -528,8 +547,8 @@ interface GeneratedWithObjects {
 export interface TaggedUnion {
   readonly indices: readonly number[];
   readonly rest?: Code;
-  /** `rest` converts a Date variant (see `DispatchOptions`). */
-  readonly restIsDate?: boolean;
+  /** `rest` converts a Date variant or a TSerde class variant (see `DispatchOptions`). */
+  readonly restIsDate?: boolean | 'instance';
   readonly fallback?: Code;
   /** The declared default variant that `fallback` converts: its class is not a tagged variant's, though it may extend one. */
   readonly fallbackVariant?: ModelTypeDescriptor;
@@ -623,7 +642,7 @@ export function emitUnionConversion(
     const scalar = rest.length > 0 ? scalarBranch(types.scalars) : undefined;
     const objects = conversion.tagged({
       indices: taggedIndices,
-      ...(scalar === undefined ? {} : { rest: scalar, restIsDate: types.scalars.some((variant) => variant.kind === 'date') }),
+      ...(scalar === undefined ? {} : { rest: scalar, restIsDate: restInstance(types.scalars) }),
       ...(fallback === undefined ? {} : { fallback, fallbackVariant: declared }),
     });
     if (objects === undefined || !types.sequence) return objects;
