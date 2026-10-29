@@ -181,7 +181,7 @@ export async function providersFor(config: GolemConfig, only?: ReadonlySet<strin
       if (hasErrorCode(error, 'MODULE_NOT_FOUND')) throw new Error(`${job.kind} is configured but ${job.package} is not installed in ${displayPath(config.directory)}. Install it with npm install -D ${job.package}@${distTagForVersion(golemVersion())}.`);
       throw new Error(`Cannot resolve ${job.package}/generator: ${errorMessage(error)}`);
     }
-    // golem publishes its own packages in lockstep; a third-party generator versions on its own.
+    // golem publishes its own packages in lockstep and a built-in generator needs the runtime of its own version; a third-party generator versions on its own.
     if (job.kind !== 'generator') assertRuntimeCompatible({ name: '@exprtlabs/golem', version: golemVersion() }, { name: job.package, version: packageVersion(job.package, filename) });
     const imported: unknown = await import(pathToFileURL(filename).href);
     if (!isRecord(imported) || imported.apiVersion !== 1 || typeof imported.generate !== 'function') {
