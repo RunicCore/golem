@@ -34,6 +34,8 @@ export interface CompiledValidatorInput {
   readonly typed?: boolean;
   /** The validation level of the compile; `full` by default. */
   readonly level?: CompileOptions['level'];
+  /** Roots that check the shape only inside a full module (`CompileOptions.sanityRoots`). */
+  readonly sanityRoots?: readonly string[];
 }
 
 /** A generated fast check: true exactly when the root's validator reports no issue. */
@@ -65,7 +67,7 @@ export async function compileValidatorModule(input: CompiledValidatorInput): Pro
       resources: new Map(Object.entries(input.resources ?? {})),
       validations: new Map(Object.entries(input.validations ?? {})),
     },
-    { unknownFormats: input.unknownFormats ?? 'warn', runtimeModule, ...(input.fastPath ? { fastPath: true } : {}), ...(input.typed ? { typed: true } : {}), ...(input.level === undefined ? {} : { level: input.level }) },
+    { unknownFormats: input.unknownFormats ?? 'warn', runtimeModule, ...(input.fastPath ? { fastPath: true } : {}), ...(input.typed ? { typed: true } : {}), ...(input.level === undefined ? {} : { level: input.level }), ...(input.sanityRoots === undefined ? {} : { sanityRoots: new Set(input.sanityRoots) }) },
   );
   const errors = diagnostics.filter(entry => entry.severity === GolemDiagnosticSeverity.Error);
   if (errors.length > 0) throw new Error(`Compile failed: ${errors.map(entry => `${entry.code} ${entry.message}`).join('; ')}`);
