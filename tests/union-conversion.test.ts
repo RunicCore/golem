@@ -75,7 +75,6 @@ function ownerRuntime(
     // Test classes are not registered generated models; convert them directly.
     decodeGeneratedModelTrusted: (constructor: new () => object, value: object) =>
       value instanceof constructor ? value : Object.assign(new constructor(), value),
-    encodeGeneratedModel: (value: object) => ({ ...value }),
   });
   return {
     stringify: (value: unknown) => runtime[`stringify${prefix}Owner`](value),

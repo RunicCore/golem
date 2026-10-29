@@ -413,8 +413,8 @@ export class Stamp extends TStampBaseModel { constructor(values: Partial<TStampF
   assert.deepEqual(encodeGeneratedModel(date as never, options), { id: 'a' }, 'encodeGeneratedModel of a Date | undefined field');
 });
 
-test('a nested object leaves out an own key whose value is undefined and is copied only when it holds one', async (t) => {
-  // protects: T-587 toWireFormat and the class-level encode kept an own undefined key of a nested object that stringify drops
+test('toWireFormat and encodeGeneratedModel leave out an own key of a nested object whose value is undefined', async (t) => {
+  // protects: T-587 toWireFormat and encodeGeneratedModel kept an own undefined key of a nested object that stringify drops
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-nested-undefined-', name: 'model-nested-undefined', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'nested-undefined.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 import { TOptionalBaseModel, TRequiredBaseModel, TDatedBaseModel, type TOptionalFields, type TRequiredFields, type TDatedFields } from './nested-undefined.model.generated.js';

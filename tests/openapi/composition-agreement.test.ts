@@ -1261,6 +1261,23 @@ test('a component narrows an inherited union property to one of its variants', a
   assert.deepEqual(withoutUndefined(encodeGeneratedModel(asGenerated(decoded))), { pet: { kind: 'cat', lives: 9 } });
 });
 
+// protects: T-650 the composition check reads a request body with the decode conversion, so a oneOf of one $ref with no null and a readOnly property still generate as before
+test('a request body of allOf with a oneOf of one reference and a readOnly property generates', async t => {
+  const document = componentDocument('Pet', { Pet: object({ name: text }, { required: ['name'] }) });
+  requireRecord(document.paths, 'paths')['/pets'] = { post: {
+    operationId: 'addPet',
+    requestBody: { required: true, content: { 'application/json': { schema: { allOf: [
+      object({ pet: { oneOf: [ref('Pet')] }, id: { type: 'string', readOnly: true } }, { required: ['pet', 'id'] }),
+      object({ note: text }),
+    ] } } } },
+    responses: { 200: { description: 'ok' } },
+  } };
+  const output = path.join(createFixtureProject(t, 'golem-composition-request-'), 'sdk');
+  const result = await generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
+  assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+});
+
 const bothKeywords = {
   oneOf: [object({ kind: { const: 'a' }, code: { type: 'string', format: 'no-such-format' } }, { required: ['kind', 'code'] }), object({ kind: { const: 'b' } }, { required: ['kind'] })],
   anyOf: [object({ at: dateTime }, { required: ['at'] })],
