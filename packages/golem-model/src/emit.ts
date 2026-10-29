@@ -1639,7 +1639,7 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     code`  conversion: {`,
     code`    decode: (value, constructor) => ${decodeModel}(constructor ?? ${baseName}, value),`,
     code`  },`,
-    code`  codecId: ${codecId},`,
+    code`  codecId: ${definition.kind === 'generated-model' ? literal(externalModel(context, definition.id).model.codecId) : codecId},`,
     code`  profile: { validation: ${(specification.validation ?? profile.validation) ? code`true` : code`false`} },`,
     ...(observesValidator(context, specification) ? [code`  enhanceValidator: ${rt['mobx-validation'].enhanceValidatorWithMobX},`] : []),
     // A model with a dynamic map, or an explicit additionalProperties true, has no program state: the keys outside its
@@ -1650,6 +1650,20 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     code`${rt.serde.registerIModelClass}(${codecId}, ${baseName});`,
     BLANK,
   ];
+}
+
+/**
+ * A class that declares an SDK model registers the manifest codec id of that model, and its encode and validation call that codec.
+ * The SDK module registers the codec, and this file names the module in types only, which the compiler drops: load it.
+ */
+function sdkCodecImports(context: EmitContext): Code[] {
+  const modules = new Set<string>();
+  for (const specification of context.local) {
+    const definition = descriptorOf(context.graph.definitions, specification.name);
+    if (!specification.emitClass || definition.kind !== 'generated-model') continue;
+    modules.add(sourceImportPath(externalModel(context, definition.id).generatedFile, context.output));
+  }
+  return [...modules].sort().map((path) => code`import ${literal(path)};`);
 }
 
 /** The class models of this file; a model that is not a class writes no code here. */
@@ -1812,6 +1826,7 @@ export function emitSource(
     ...fileImports(calls, context.imports.classSources, { quote: '"', elsewhere: otherSources }),
     ...runtimeLines('serde', 'mobx-validation'),
     ...context.imports.siblingCompanions,
+    ...sdkCodecImports(context),
     ...fileImports(calls, context.imports.sources, { quote: '"', elsewhere: otherSources }),
     BLANK,
     ...placeHelpers(calls, pieces, MODULE_CONSTANT_HELPERS),
