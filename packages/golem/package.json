@@ -100,6 +100,11 @@
       "import": "./dist/runtime-mobx.js",
       "default": "./dist/runtime-mobx.js"
     },
+    "./internal/mobx-validation-runtime": {
+      "types": "./dist/runtime-mobx-validation.d.ts",
+      "import": "./dist/runtime-mobx-validation.js",
+      "default": "./dist/runtime-mobx-validation.js"
+    },
     "./internal/temporal-runtime": {
       "types": "./dist/runtime-temporal.d.ts",
       "import": "./dist/runtime-temporal.js",

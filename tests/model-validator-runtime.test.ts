@@ -6,7 +6,7 @@ import test from 'node:test';
 import { autorun } from 'mobx';
 
 import type * as ModelRuntimeModule from '@exprtlabs/golem/internal/model-runtime';
-import type * as MobxRuntimeModule from '@exprtlabs/golem/internal/mobx-runtime';
+import type * as MobxValidationRuntimeModule from '@exprtlabs/golem/internal/mobx-validation-runtime';
 import type * as ValidationModule from '@exprtlabs/golem/validation';
 import type * as MobxModule from '@exprtlabs/golem/mobx';
 import type * as MobxValidationModule from '@exprtlabs/golem/mobx-validation';
@@ -17,7 +17,7 @@ import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
 
 async function runtime(name: 'runtime-model'): Promise<typeof ModelRuntimeModule>;
-async function runtime(name: 'runtime-mobx'): Promise<typeof MobxRuntimeModule>;
+async function runtime(name: 'runtime-mobx-validation'): Promise<typeof MobxValidationRuntimeModule>;
 async function runtime(name: 'validation'): Promise<typeof ValidationModule>;
 async function runtime(name: 'mobx'): Promise<typeof MobxModule>;
 async function runtime(name: 'mobx-validation'): Promise<typeof MobxValidationModule>;
@@ -435,7 +435,7 @@ test('enhanceValidatorWithMobX and repeated getValidator calls are idempotent', 
   const [{ registerGeneratedModel }, mobxValidation, { enhanceValidatorWithMobX }] = await Promise.all([
     runtime('runtime-model'),
     runtime('mobx-validation'),
-    runtime('runtime-mobx'),
+    runtime('runtime-mobx-validation'),
   ]);
 
   class IdempotentModel {
