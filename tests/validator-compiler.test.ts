@@ -301,23 +301,9 @@ test('a discriminator is an annotation unless every branch states its own tag va
   await assertIssues(shared, { kind: 'a' }, [{ path: [], code: 'union', matched: 2 }]);
 });
 
-test('a discriminator is an annotation when a branch leaves its tag optional, so {} matches the one branch that allows it', async () => {
-  // protects: QA a discriminated oneOf with an optional tag rejected {} although exactly branch A matches
-  const schema = {
-    oneOf: [
-      { properties: { kind: { const: 'a' } } },
-      { properties: { kind: { const: 'b' } }, required: ['kind'] },
-    ],
-    discriminator: { propertyName: 'kind' },
-  };
-  await assertIssues(schema, {}, []);
-  await assertIssues(schema, { kind: 'a' }, []);
-  await assertIssues(schema, { kind: 'b' }, []);
-  await assertIssues(schema, { kind: 'z' }, [{ path: [], code: 'union', matched: 0 }]);
-});
-
 test('a discriminator with an optional tag reports the issue of the branch a present tag picks, and plain oneOf results otherwise', async () => {
   // protects: T-636 a present tag gave a generic union issue when a branch left the tag optional
+  // protects: QA a discriminated oneOf with an optional tag rejected {} although exactly branch A matches
   const schema = {
     oneOf: [
       { properties: { kind: { const: 'a' }, x: { type: 'integer' } } },
@@ -329,6 +315,8 @@ test('a discriminator with an optional tag reports the issue of the branch a pre
   await assertIssues(schema, { kind: 'c', y: 1 }, [{ path: ['y'], code: 'type', expected: ['string'] }]);
   await assertIssues(schema, { kind: 'a', x: 1 }, []);
   await assertIssues(schema, { kind: 'b', y: 'ok' }, []);
+  await assertIssues(schema, { kind: 'a' }, []);
+  await assertIssues(schema, { kind: 'b' }, []);
   await assertIssues(schema, {}, []);
   await assertIssues(schema, { x: 'no' }, [{ path: [], code: 'union', matched: 0 }]);
   await assertIssues(schema, { kind: 'z' }, [{ path: [], code: 'union', matched: 0 }]);
