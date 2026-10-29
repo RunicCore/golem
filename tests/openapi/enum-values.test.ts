@@ -101,3 +101,14 @@ test('a model field limited by an enum of objects and arrays accepts a listed va
     assert.equal(await getValidator(new ShelfModel({ pick, name: 'a' })).validate(), false, JSON.stringify(pick));
   }
 });
+
+test('a nullable model field limited by an enum that lists an object rejects null that the enum does not list', async t => {
+  // protects: T-644 an enum limits null too (JSON Schema 2020-12 section 6.1.2), also when type lists null beside the type of the field
+  const output = path.join(createFixtureProject(t, 'golem-openapi-enum-nullable-'), 'sdk');
+  await generateMaterializedSdk(shelfDocument({ pick: { type: ['string', 'null'], enum: ['x', { a: 1 }] }, name: { type: 'string' } }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  const models = await importGeneratedModule(output, 'nullable object enum models');
+  const ShelfModel = models.ShelfModel as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  assert.equal(await getValidator(new ShelfModel({ pick: 'x', name: 'a' })).validate(), true);
+  for (const pick of [null, 'y', { a: 1 }]) assert.equal(await getValidator(new ShelfModel({ pick, name: 'a' })).validate(), false, JSON.stringify(pick));
+});

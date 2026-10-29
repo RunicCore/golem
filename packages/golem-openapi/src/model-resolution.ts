@@ -437,7 +437,6 @@ function openApiKeywordConstraints(schema: Readonly<Record<string, unknown>>): M
   if (typeof schema.pattern === 'string') constraints.push({ kind: 'pattern', value: schema.pattern });
   if (typeof schema.format === 'string') constraints.push({ kind: 'format', value: schema.format });
   if (schema.uniqueItems === true) constraints.push({ kind: 'uniqueItems' });
-  if (Array.isArray(schema.enum)) constraints.push({ kind: 'enum', values: schema.enum });
   return constraints.length ? constraints : undefined;
 }
 
@@ -448,6 +447,15 @@ function withOpenApiConstraints(
   const extra = openApiKeywordConstraints(schema);
   if (!extra) return descriptor;
   return { ...descriptor, constraints: [...(descriptor.constraints ?? []), ...extra] };
+}
+
+/** An `enum` that lists an object or an array limits the whole value, `null` included, so it sits on the descriptor of the field. */
+function withOpenApiEnum(
+  descriptor: ModelTypeDescriptor,
+  schema: Readonly<Record<string, unknown>>,
+): ModelTypeDescriptor {
+  if (!Array.isArray(schema.enum)) return descriptor;
+  return { ...descriptor, constraints: [...(descriptor.constraints ?? []), { kind: 'enum', values: schema.enum }] };
 }
 
 /**
@@ -720,12 +728,12 @@ export function modelConversionDescriptor(
     const primitive = openApiPrimitiveDescriptor(schema);
     if (primitive) {
       const constrained = withOpenApiConstraints(primitive, schema);
-      return admitsNull(schema)
+      return withOpenApiEnum(admitsNull(schema)
         ? { kind: 'union', variants: [constrained, { kind: 'null' }] }
-        : constrained;
+        : constrained, schema);
     }
     const constraints = openApiKeywordConstraints(schema);
-    if (constraints) return { kind: 'unknown', constraints };
+    if (constraints || Array.isArray(schema.enum)) return withOpenApiEnum({ kind: 'unknown', ...(constraints ? { constraints } : {}) }, schema);
   }
   return { kind: 'unknown' };
 }
