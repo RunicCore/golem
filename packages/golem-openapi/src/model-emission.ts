@@ -41,7 +41,6 @@ import {
   type ImportOptions,
   type NameSlot,
   emitModelFromInit,
-  emitModelToJSON,
   fillFunctionName,
   presentKeysCode,
   propertyKey,
@@ -310,32 +309,6 @@ function modelInitCode(
   return withConflictCode(owner, () => emitModelFromInit(descriptor, expression, reference => modelResolver(reference, definitions, env, context)));
 }
 
-function modelToJSONCode(
-  schema: unknown,
-  expression: Code,
-  definitions: ModelDefinitions,
-  env: ModelResolveEnv,
-  owner: string | CompositionSite,
-  context: ConversionContext,
-): Code {
-  return withConflictCode(owner, () => emitModelToJSON(
-    modelConversionDescriptor(schema, definitions, env, 'to'),
-    expression,
-    (reference) => {
-      const alias = definitions.aliases.get(reference);
-      if (alias) {
-        return {
-          className: identifier(alias.name),
-          encode: value => code`${context.nodeFunction(aliasNodeId(alias), 'toWire')}(${value})`,
-          ...aliasIdentity(alias, definitions, env),
-        };
-      }
-      return { className: context.models.model(reference), encode: value => code`${rt.conversion.encodeGeneratedModel}(${value})`, ...referenceBases(reference, definitions) };
-    },
-    TEMPORAL_SERDE,
-  ));
-}
-
 /** Builds the conversion of a schema and writes nothing: it throws when the schema does not convert. */
 export function checkModelFromJSON(
   schema: unknown,
@@ -345,16 +318,6 @@ export function checkModelFromJSON(
   owner: string | CompositionSite,
 ): void {
   modelFromJSONCode(schema, identifier(expression), definitions, env, owner, checkContext());
-}
-
-export function checkModelToJSON(
-  schema: unknown,
-  expression: string,
-  definitions: ModelDefinitions,
-  env: ModelResolveEnv,
-  owner: string | CompositionSite,
-): void {
-  modelToJSONCode(schema, identifier(expression), definitions, env, owner, checkContext());
 }
 
 function modelFieldDeclaration(

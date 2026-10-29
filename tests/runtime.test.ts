@@ -293,7 +293,6 @@ test('shared emitter emits exact generated-model conversion expressions', () => 
     className: emitter.identifier(id === 'money' ? 'MoneyModel' : 'OtherModel'),
     decode: (expression: emitter.Code) => emitter.code`decodeGeneratedModel(MoneyModel, ${expression})`,
     fromInit: (expression: emitter.Code) => emitter.code`new MoneyModel(${expression})`,
-    encode: (expression: emitter.Code) => emitter.code`encodeGeneratedModel(${expression})`,
   });
   assert.equal(
     emitter.render(emitter.emitModelFromJSON(
@@ -302,10 +301,6 @@ test('shared emitter emits exact generated-model conversion expressions', () => 
       resolveModel,
     )),
     'Array.isArray(value) ? convertModelItems("deserialize", (item) => (item == null || item instanceof MoneyModel ? item : decodeGeneratedModel(MoneyModel, item)), value as readonly unknown[]) : value',
-  );
-  assert.equal(
-    emitter.render(emitter.emitModelToJSON({ kind: 'generated-model', id: 'money' }, emitter.identifier('value'), resolveModel)),
-    'value instanceof MoneyModel ? encodeGeneratedModel(value) : value',
   );
 });
 

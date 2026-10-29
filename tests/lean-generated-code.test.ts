@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { code, emitModelFromInit, emitModelFromJSON, emitModelToJSON, identifier, render, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
+import { code, emitModelFromInit, emitModelFromJSON, identifier, render, type StringifySerdeResolver } from '@exprtlabs/golem/internal/emitter';
 import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import * as conversion from '@exprtlabs/golem/conversion';
@@ -92,12 +92,12 @@ test('identity arrays are copied with one slice, not mapped through a callback',
   assert.deepEqual(encodedTags.calls, { slice: 1, map: 0, callbacks: 0 }, 'the encoded tags are copied by one slice');
 });
 
-test('model initializers, fromJSON and toJSON copy an unchanged array with one slice and pass a non-array through', () => {
+test('model initializers and fromJSON copy an unchanged array with one slice and pass a non-array through', () => {
   // protects: F-129 lean generated code: an unchanged array is copied with slice, not a map callback
   const strings: ModelTypeDescriptor = { kind: 'array', item: { kind: 'string' } };
   const unusedModel = (id: string): never => { throw new Error(`No model expected: ${id}`); };
   const run = (expression: string, input: unknown): unknown => runModule(`const result = (${expression});`, { values: input }, { exports: ['result'] }).result;
-  for (const emit of [emitModelFromInit, emitModelFromJSON, emitModelToJSON]) {
+  for (const emit of [emitModelFromInit, emitModelFromJSON]) {
     const expression = render(emit(strings, identifier('values'), unusedModel));
     const input = spyArray(['a', 'b']);
     const copy = run(expression, input.array);

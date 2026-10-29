@@ -1006,6 +1006,7 @@ for (const row of rows) {
   }
 }
 
+const untaggedDateUnion = { allOf: [object({ id: text }), { oneOf: [object({ at: dateTime }), object({ on: dateTime })] }] };
 const dateTimeAndModel = { allOf: [dateTime, ref('Thing')] };
 const inlineObject = (m: Record<string, unknown>): Record<string, unknown> => object({ m }, { required: ['m'] });
 const inlineBody = (m: Record<string, unknown>): Record<string, unknown> => ({
@@ -1188,6 +1189,17 @@ const stopped: readonly { readonly shape: string; readonly error: RegExp; readon
     shape: 'an inline request body whose members give the value a Date and a model',
     error: /schema of request body application\/json of operation "postVisit" at #\/properties\/m(?=[ :]).*OPENAPI_COMPOSITION_UNSATISFIABLE: .*string.*object/,
     document: operationDocument({ requestBody: inlineBody(dateTimeAndModel) }),
+  },
+  // protects: T-650 a union of untagged object variants in a request body or a query parameter stops with the discriminator code, as in a response
+  {
+    shape: 'an inline request body that is an allOf of an object and a union of untagged object variants holding Dates',
+    error: /schema of request body application\/json of operation "postVisit" at #(?=[ :]).*OPENAPI_UNION_DISCRIMINATOR_MISSING/,
+    document: operationDocument({ requestBody: inlineBody(untaggedDateUnion) }),
+  },
+  {
+    shape: 'a query parameter that is an allOf of an object and a union of untagged object variants holding Dates',
+    error: /schema of query parameter "q" of operation "postVisit" at #(?=[ :]).*OPENAPI_UNION_DISCRIMINATOR_MISSING/,
+    document: operationDocument({ parameters: [{ name: 'q', in: 'query', schema: untaggedDateUnion }] }),
   },
   {
     shape: 'an inline response body whose members give the value a Date and a model',

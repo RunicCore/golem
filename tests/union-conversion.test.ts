@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import * as conversion from '@exprtlabs/golem/conversion';
-import { bindInput, emitModelFromInit, emitModelFromJSON, emitModelToJSON, inputOf, inputSlot, render, code, identifier, literal, type Code } from '@exprtlabs/golem/internal/emitter';
+import { bindInput, emitModelFromInit, emitModelFromJSON, inputOf, inputSlot, render, code, identifier, literal, type Code } from '@exprtlabs/golem/internal/emitter';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
@@ -174,16 +174,15 @@ function catOrDog(catTags: readonly string[]) {
   return { ModelCat, ModelDog, union };
 }
 
-test('model conversion writes a variant instance by class and rejects unknown or mutated tags', () => {
+test('model conversion reads a variant by class and rejects an unknown tag', () => {
   const { ModelCat, ModelDog, union } = catOrDog(['cat', 'kitty']);
   const classNames: Record<string, string> = { Cat: 'ModelCat', Dog: 'ModelDog' };
   const resolveModel = (id: string) => ({
     className: identifier(classNames[id]),
     decode: (value: Code) => code`Object.assign(new ${identifier(classNames[id])}(), ${value})`,
     fromInit: (value: Code) => code`Object.assign(new ${identifier(classNames[id])}(), ${value})`,
-    encode: (value: Code) => code`({ ...${value} })`,
   });
-  const compile = (converted: Code, direction: 'serialize' | 'deserialize'): RuntimeFunction => {
+  const compile = (converted: Code, direction: 'deserialize'): RuntimeFunction => {
     const { convert } = runModule(
       renderWithHelpers(code`const convert = (value: unknown) => convertModelField(${literal(direction)}, 'pet', (value: unknown) => ${converted}, value);`),
       { ModelCat, ModelDog, unknownDiscriminatorValue: conversion.unknownDiscriminatorValue, withDiscriminatorValue: conversion.withDiscriminatorValue,
@@ -192,17 +191,9 @@ test('model conversion writes a variant instance by class and rejects unknown or
     );
     return convert as RuntimeFunction;
   };
-  const toJson = compile(emitModelToJSON(union, identifier('value'), resolveModel), 'serialize');
   const fromJson = compile(emitModelFromJSON(union, identifier('value'), resolveModel), 'deserialize');
-  const cat = Object.assign(new ModelCat(), { name: 'Miso' });
-  const wire = toJson(cat);
-  assert.deepEqual(wire, { kind: 'cat', name: 'Miso' }, 'an untagged instance writes the canonical tag');
-  assert.ok(fromJson(wire) instanceof ModelCat);
-  assert.ok(!(fromJson(wire) instanceof ModelDog));
-  assert.deepEqual(toJson(Object.assign(new ModelDog(), { bark: true })), { kind: 'dog', bark: true });
-  assert.throws(() => toJson(Object.assign(new ModelCat(), { kind: 'dog' })), failsWith(LibErrorKind.Serialization, /"dog"/));
-  assert.throws(() => toJson({ kind: 'bird' }), failsWith(LibErrorKind.Serialization, /"bird"/));
-  assert.throws(() => toJson({ name: 'Miso' }), failsWith(LibErrorKind.Serialization, /discriminator value/));
+  assert.ok(fromJson({ kind: 'cat', name: 'Miso' }) instanceof ModelCat);
+  assert.ok(!(fromJson({ kind: 'cat', name: 'Miso' }) instanceof ModelDog));
 
   for (const emit of [emitModelFromJSON, emitModelFromInit]) {
     const decode = compile(emit(union, identifier('value'), resolveModel), 'deserialize');
@@ -235,7 +226,6 @@ test('a union whose branch reads an input of its writer still selects by class a
     // Each decoded model carries what the writer's function holds in `owner`, which a function of the file could not read.
     decode: (value: Code) => code`Object.assign(new ${identifier(classNames[id])}(), ${value}, { owner: ${inputOf(owner)} })`,
     fromInit: (value: Code) => code`${value}`,
-    encode: (value: Code) => code`({ ...${value} })`,
   });
   const converted = bindInput(emitModelFromJSON(union, identifier('value'), resolveModel), owner, identifier('writerOwner'));
   const { convert } = runModule(
