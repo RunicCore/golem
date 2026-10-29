@@ -1,8 +1,6 @@
-import type {
-  GeneratedModelConversion,
-  GeneratedModelValidatorEnhancer,
-} from '@exprtlabs/golem/model';
 import {
+  type GeneratedModelConversion,
+  type GeneratedModelValidatorEnhancer,
   registerGeneratedModel,
   assertModelValue,
   createObjectCodec,

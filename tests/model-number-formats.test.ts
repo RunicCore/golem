@@ -4,7 +4,7 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { buildModelProjectWith } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';

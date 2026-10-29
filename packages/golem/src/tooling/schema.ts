@@ -24,7 +24,7 @@ export { assertSupportedModelFieldName } from '../model-field-names.js';
 export { decodeUriFragment, escapePointerToken, unescapePointerToken } from '../json-pointer.js';
 export { canonicalSchemaKey };
 /** The schema descriptor types that generators read (`@exprtlabs/golem/internal/schema`). */
-export type { ConstraintSchemaValue, ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '../model.js';
+export type { ConstraintSchemaValue, DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model.js';
 export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CODEC_IDS_KEY, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
 export { validationTagSchemaDescriptor } from './validation-tags.js';
 

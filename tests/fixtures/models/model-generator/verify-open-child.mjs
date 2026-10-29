@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import './build/parent.model.generated.js';
 
 const parent = requireObjectCodec(process.argv[2]);

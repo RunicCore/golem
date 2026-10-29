@@ -60,7 +60,7 @@ const profiles: readonly [string, OpenApiGenerationProfile, readonly string[], r
     ['@exprtlabs/golem/client', '@exprtlabs/golem/model', '@exprtlabs/golem/serde']],
   ['mobx and validation', { mobx: true, validation: true }, [
     '@exprtlabs/golem/internal/client-runtime', '@exprtlabs/golem/internal/client-validation-runtime', '@exprtlabs/golem/internal/mobx-runtime', '@exprtlabs/golem/internal/model-runtime', '@exprtlabs/golem/internal/validation-runtime',
-  ], ['@exprtlabs/golem/client', '@exprtlabs/golem/mobx', '@exprtlabs/golem/model', '@exprtlabs/golem/serde', '@exprtlabs/golem/validation', '@exprtlabs/golem/validation-runtime']],
+  ], ['@exprtlabs/golem/client', '@exprtlabs/golem/mobx', '@exprtlabs/golem/model', '@exprtlabs/golem/serde', '@exprtlabs/golem/validation']],
 ];
 
 for (const [label, profile, valueModules, typeModules] of profiles) {

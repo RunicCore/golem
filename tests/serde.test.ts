@@ -8,16 +8,14 @@ import { buildModelProject, createModelProject, writeModelGolemYaml } from './mo
 
 import {
   assertValue as publicAssertValue,
-  findCodecIdForConstructor,
   fromWireFormat as publicFromWireFormat,
-  getIModelClass,
-  getObjectCodec,
   parse as publicParse,
-  registerObjectCodec,
   stringify as publicStringify,
   toWireFormat as publicToWireFormat,
   type ObjectCodec,
 } from '@exprtlabs/golem/serde';
+// The registry test runs against its own copy of the source, so it needs no name that a package path exports.
+import * as registry from '../packages/golem/src/object-codec.js';
 import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { validate as publicValidate } from '@exprtlabs/golem/validation';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
@@ -352,17 +350,17 @@ test('the registry matches codec ids exactly, so a model named like Order_0badc0
   class Suffixed {}
   class Plain {}
   class Short {}
-  registerIModelClass('TNamedOrder_0badc0de_09e04ca7', Suffixed);
-  registerIModelClass('TNamedOrder_68b0adb3', Plain);
-  registerIModelClass('TNamedOrder_0badc0de', Short);
-  registerIModelClass('TNamedOrder', Short);
-  assert.equal(getIModelClass('TNamedOrder_0badc0de_09e04ca7'), Suffixed);
-  assert.equal(getIModelClass('TNamedOrder_68b0adb3'), Plain, 'a short name links no other key');
-  assert.equal(getIModelClass('TNamedOrder_0badc0de'), Short);
-  assert.equal(findCodecIdForConstructor(Suffixed), 'TNamedOrder_0badc0de_09e04ca7');
-  const codec = { id: 'TNamedOrder_0badc0de_09e04ca7' } as ObjectCodec;
-  registerObjectCodec(codec);
-  assert.equal(getObjectCodec('TNamedOrder_0badc0de_09e04ca7'), codec);
-  assert.equal(getObjectCodec('TNamedOrder'), undefined, 'a short name finds no codec');
-  assert.equal(getObjectCodec('TNamedOrder_0badc0de'), undefined);
+  registry.registerIModelClass('TNamedOrder_0badc0de_09e04ca7', Suffixed);
+  registry.registerIModelClass('TNamedOrder_68b0adb3', Plain);
+  registry.registerIModelClass('TNamedOrder_0badc0de', Short);
+  registry.registerIModelClass('TNamedOrder', Short);
+  assert.equal(registry.getIModelClass('TNamedOrder_0badc0de_09e04ca7'), Suffixed);
+  assert.equal(registry.getIModelClass('TNamedOrder_68b0adb3'), Plain, 'a short name links no other key');
+  assert.equal(registry.getIModelClass('TNamedOrder_0badc0de'), Short);
+  assert.equal(registry.findCodecIdForConstructor(Suffixed), 'TNamedOrder_0badc0de_09e04ca7');
+  const codec = { id: 'TNamedOrder_0badc0de_09e04ca7' } as Parameters<typeof registry.registerObjectCodec>[0];
+  registry.registerObjectCodec(codec);
+  assert.equal(registry.getObjectCodec('TNamedOrder_0badc0de_09e04ca7'), codec);
+  assert.equal(registry.getObjectCodec('TNamedOrder'), undefined, 'a short name finds no codec');
+  assert.equal(registry.getObjectCodec('TNamedOrder_0badc0de'), undefined);
 });

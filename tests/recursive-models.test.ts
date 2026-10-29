@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GolemProfile } from '@exprtlabs/golem/generator-api';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { writeSdk } from '#openapi/generator';
 import { createFixtureProject } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';

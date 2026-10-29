@@ -16,29 +16,15 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
-import {
-  nestModelCodec,
-  nestModelReturn,
-  nestModelUnion,
-  NestModelInterceptor,
-  nestModelStringifyInterceptor,
-  nestUnionFromMetatype,
-  objectCodecFromMetatype,
-} from '@exprtlabs/golem/nest';
+import { NestModelInterceptor, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem/nest';
+import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem/internal/nest-runtime';
 import { LibError } from '@exprtlabs/golem/errors';
-import { deserializeDate, unknownDiscriminatorValue } from '@exprtlabs/golem/conversion';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import { deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { nodeQueryFields } from '#golem/query-fields';
-import {
-  assertModelValue,
-  getObjectCodec,
-  isValidModelValue,
-  IssueRepresentation,
-  IssueSource,
-  type QueryFieldTable,
-} from '@exprtlabs/golem/serde';
+import { getObjectCodec, IssueRepresentation, IssueSource, type QueryFieldTable } from '@exprtlabs/golem/serde';
 
 import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';

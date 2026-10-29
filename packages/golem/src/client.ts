@@ -15,7 +15,9 @@ export function createApiOperation<Input, Result, Options = unknown>(
 ): ApiOperation<Input, Result, Options> {
   return createTrackedApiOperation(name, run);
 }
-export * from './client-runtime/core.js';
-export * from './client-runtime/parameters.js';
-export * from './client-runtime/body-codecs.js';
-export * from './client-runtime/security.js';
+export type {
+  BodyEncoder, BodyEncoderContext, ClientOptions, EncodedBody, EncodingMetadata, MutualTlsTransport, OperationValidationSources,
+  ParameterSerializer, ParameterSerializerContext, RequestOptions, ResponseDecoder, ResponseHeaderDecoder, ResponseHeaderDecoderContext,
+  RuntimeResponseContract, RuntimeSecuritySchemes, ServerObject, StreamDecoder, StreamDecoderContext, UndeclaredResponseError,
+} from './client-runtime/core.js';
+export type { AuthContext, BasicAuthValue, BasicCredentials, TokenAuthValue } from './client-runtime/security.js';

@@ -1,5 +1,4 @@
-import { registerGeneratedModel } from "@exprtlabs/golem/model";
-import { createObjectCodec, registerIModelClass } from "@exprtlabs/golem/serde";
+import { registerGeneratedModel, createObjectCodec, registerIModelClass } from "@exprtlabs/golem/internal/model-runtime";
 export class MoneyModel {
   public currency = "USD";
   public amount = 0;

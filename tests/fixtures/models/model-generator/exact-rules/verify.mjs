@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { LibErrorKind } from '@exprtlabs/golem/errors';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { TPaymentBaseModel } from './build/models.model.generated.js';
 
 const paymentId = process.argv[2];

@@ -220,7 +220,7 @@ function writeExports({ module, target, fastRootExports, passRoots }: Emission, 
     if (known === undefined) throw new Error(`The validator compiler has no export name for the root ${JSON.stringify(name)}.`);
     return known;
   };
-  const signature = options.typed ? code`(value: unknown, all: boolean): readonly ${rtType['validation-runtime'].SchemaIssue}[] {` : code`(value, all) {`;
+  const signature = options.typed ? code`(value: unknown, all: boolean): readonly ${rtType.validation.SchemaIssue}[] {` : code`(value, all) {`;
   const issuesOf = (name: string, id: number): Code => code`export function ${identifierCode(name)}${signature}
   const issues = [];
   ${callFunction(module.functions[target(id)], nameOf(stayingSlot(target(id), false)), { value: identifierCode('value'), path: code`[]`, issues: identifierCode('issues'), all: identifierCode('all') })};

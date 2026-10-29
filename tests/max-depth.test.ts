@@ -6,7 +6,7 @@ import test, { type TestContext } from 'node:test';
 
 import { Body, Controller, Post, type INestApplication } from '@nestjs/common';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { valueNestsDeeperThan } from '@exprtlabs/golem/conversion';
+import { valueNestsDeeperThan } from '../packages/golem/src/conversion.js';
 import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 import { nestModelCodec } from '@exprtlabs/golem/internal/nest-runtime';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';

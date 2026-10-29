@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import type { TAFields } from './a.model.generated.js';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { A } from './a.model.js';

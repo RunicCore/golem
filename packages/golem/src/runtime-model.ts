@@ -2,6 +2,8 @@
  * The runtime names that generated model code and rewritten sources import (`@exprtlabs/golem/internal/model-runtime`).
  * The path is internal: golem build requires each built-in generator at the runtime's exact version, so the names may change in any release.
  */
+export type { GeneratedModelConversion, GeneratedModelDefinition, GeneratedModelValidatorEnhancer, RegisteredGeneratedModelDefinition } from './model.js';
+export type { ObjectCodecImpl } from './object-codec.js';
 export { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor, registerGeneratedModel } from './model.js';
 export {
   assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, convertModelField, convertModelItems,
@@ -10,7 +12,8 @@ export {
   requireModelObject, serializeDate, unknownDiscriminatorValue, withDiscriminatorValue,
 } from './conversion.js';
 export {
-  assertModelValue, createObjectCodec, isValidModelValue, IssueRepresentation, IssueSource, parseJson, registerIModelClass, requireIModelClass,
-  requireObjectCodec, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString,
-  validationUnavailableStub, withoutInstanceState,
-} from './serde.js';
+  assertModelValue, createObjectCodec, isValidModelValue, parseJson, registerIModelClass, requireIModelClass, requireObjectCodec, serdeValidates,
+  stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString, validationUnavailableStub,
+} from './object-codec.js';
+export { IssueRepresentation, IssueSource } from './errors.js';
+export { withoutInstanceState } from './presence.js';

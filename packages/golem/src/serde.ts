@@ -11,34 +11,8 @@
 import type { WireFormat } from './model.js';
 import { untransformedCallError, type AllowGetterOptions, type SerdeOptions, type ValidateOptions } from './object-codec.js';
 
-export {
-  assertModelValue,
-  isValidModelValue,
-  modelValueIssues,
-  createObjectCodec,
-  findCodecIdForConstructor,
-  getIModelClass,
-  getObjectCodec,
-  objectCodecValidationReference,
-  parseJson,
-  registerIModelClass,
-  registerObjectCodec,
-  requireIModelClass,
-  requireObjectCodec,
-  resolveModelValidationContextValidator,
-  serdeFailFast,
-  serdeValidates,
-  stringifyJsonArray,
-  stringifyJsonBoolean,
-  stringifyJsonNumber,
-  stringifyJsonScalar,
-  stringifyJsonString,
-  validationFailure,
-  validationUnavailable,
-  validationUnavailableStub,
-} from './object-codec.js';
-export { withoutInstanceState } from './presence.js';
-export type { AllowGetterOptions, ObjectCodec, ObjectCodecImpl, QueryFieldShape, QueryFieldTable, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
+export { getIModelClass, getObjectCodec, objectCodecValidationReference } from './object-codec.js';
+export type { AllowGetterOptions, ObjectCodec, QueryFieldShape, QueryFieldTable, SerdeOptions, ValidateOptions, ValidationPlane } from './object-codec.js';
 export type { WireFormat } from './model.js';
 export { IssueRepresentation, IssueSource } from './errors.js';
 

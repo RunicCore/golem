@@ -14,6 +14,8 @@ import { command, workspace } from './support/process.js';
 import { MAIN, MODELS_YAML, NODE_FLAGS, SERDE, frameLine, lineOf, project, run, workspacePackage, write } from './support/loader-project.js';
 import { ORDER_WIRE, runSite, sharedFolderProject } from './support/shared-folder-project.js';
 
+const MODEL_RUNTIME = '@exprtlabs/golem/internal/model-runtime';
+
 /** Runs `file` through the loader and returns the JSON on the first line it printed; a run that fails fails the test with its stderr. */
 async function runJson(root: string, file: string, options?: Parameters<typeof run>[2]): Promise<unknown> {
   const result = await run(root, file, options);
@@ -38,9 +40,9 @@ test('a validating model project runs when its sources and its companions are im
     '',
   ].join('\n'));
   write(root, 'src/main.ts', [
-    `import { findCodecIdForConstructor, requireObjectCodec } from '${SERDE}';`,
+    `import { findGeneratedModelDefinitionForConstructor, requireObjectCodec } from '${MODEL_RUNTIME}';`,
     "import { Money } from './money.model.js';",
-    "const codec = requireObjectCodec(findCodecIdForConstructor(Money) as string);",
+    "const codec = requireObjectCodec(findGeneratedModelDefinitionForConstructor(Money)?.codecId as string);",
     "console.log(JSON.stringify({ good: codec.validate(new Money({ currency: 'USD' })), bad: codec.validate(new Money({ currency: 'x' })) }));",
     '',
   ].join('\n'));

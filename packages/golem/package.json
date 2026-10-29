@@ -55,11 +55,6 @@
       "import": "./dist/validation.js",
       "default": "./dist/validation.js"
     },
-    "./validation-runtime": {
-      "types": "./dist/validation-runtime.d.ts",
-      "import": "./dist/validation-runtime.js",
-      "default": "./dist/validation-runtime.js"
-    },
     "./mobx": {
       "types": "./dist/mobx.d.ts",
       "import": "./dist/mobx.js",
@@ -169,11 +164,6 @@
       "types": "./dist/client.d.ts",
       "import": "./dist/client.js",
       "default": "./dist/client.js"
-    },
-    "./conversion": {
-      "types": "./dist/conversion.d.ts",
-      "import": "./dist/conversion.js",
-      "default": "./dist/conversion.js"
     },
     "./tags": {
       "types": "./dist/tags.d.ts",

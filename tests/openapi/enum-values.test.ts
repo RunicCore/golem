@@ -2,7 +2,7 @@ import { createFixtureProject } from '../fixture-project.js';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from '../support/consumer.js';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';

@@ -9,7 +9,6 @@ import type * as mobx from '../mobx.js';
 import type * as model from '../model.js';
 import type * as serde from '../serde.js';
 import type * as validation from '../validation.js';
-import type * as validationRuntime from '../validation-runtime.js';
 import type * as clientEntry from '../runtime-client.js';
 import type * as clientValidationEntry from '../runtime-client-validation.js';
 import type * as mobxEntry from '../runtime-mobx.js';
@@ -53,10 +52,9 @@ interface RuntimeTypeExports {
     readonly RuntimeResponseContract: client.RuntimeResponseContract;
     readonly RuntimeSecuritySchemes: client.RuntimeSecuritySchemes;
   };
-  readonly validation: { readonly OperationRuntimeValidators: validation.OperationRuntimeValidators };
+  readonly validation: { readonly OperationRuntimeValidators: validation.OperationRuntimeValidators; readonly SchemaIssue: validation.SchemaIssue };
   readonly mobx: { readonly ObservableApiOperation: mobx.ObservableApiOperation<never, never, never> };
   readonly serde: { readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
-  readonly 'validation-runtime': { readonly SchemaIssue: validationRuntime.SchemaIssue };
 }
 
 /** The specifier that a runtime key is imported from in a generated file. */
@@ -116,7 +114,7 @@ export const rt = Object.fromEntries(
   (Object.keys(RUNTIME_MODULE_RANK) as RuntimeModule[]).map((module) => [module, moduleTable(module, false)]),
 ) as unknown as RuntimeTable;
 
-/** The type names, as Code with a type-only runtime part: `rtType['validation-runtime'].SchemaIssue`. */
+/** The type names, as Code with a type-only runtime part: `rtType.validation.SchemaIssue`. */
 export const rtType = Object.fromEntries(
   (Object.keys(RUNTIME_MODULE_RANK) as RuntimeModule[]).map((module) => [module, moduleTable(module, true)]),
 ) as unknown as RuntimeTypeTable;

@@ -1,5 +1,5 @@
-import type { ObjectCodec, ObjectCodecImpl } from '@exprtlabs/golem/serde';
-import { createObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
+import type { ObjectCodec } from '@exprtlabs/golem/serde';
+import { createObjectCodec, type ObjectCodecImpl } from '@exprtlabs/golem/internal/model-runtime';
 
 /** Registers the codec of `id` with parts that check nothing and hand each value on. A test passes the parts its case decides. */
 export function registerPassThroughCodec(id: string, parts: Partial<ObjectCodecImpl> = {}): ObjectCodec {

@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import assert from 'node:assert/strict';
 import { Controller, Get, Module, Query, type INestApplication, type NestInterceptor } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { nestModelCodec, NestModelInterceptor } from '@exprtlabs/golem/nest';
+import { NestModelInterceptor } from '@exprtlabs/golem/nest';
+import { nestModelCodec } from '@exprtlabs/golem/internal/nest-runtime';
 
 export interface NestAppOptions {
   /** The one global interceptor. Default: NestModelInterceptor. */

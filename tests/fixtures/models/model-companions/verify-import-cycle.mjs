@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import './build/node.model.generated.js';
 import './build/link.model.generated.js';
 

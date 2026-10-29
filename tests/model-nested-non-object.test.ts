@@ -5,7 +5,7 @@ import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { fileFixtureScope, onceShared } from './fixture-project.js';

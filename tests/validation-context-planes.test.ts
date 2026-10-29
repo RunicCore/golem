@@ -9,7 +9,8 @@ import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
-import { objectCodecValidationReference, resolveModelValidationContextValidator } from '@exprtlabs/golem/serde';
+import { objectCodecValidationReference } from '@exprtlabs/golem/serde';
+import { resolveModelValidationContextValidator } from '../packages/golem/src/object-codec.js';
 
 const impl = {
   stringify: () => '{}', parse: () => ({}), validate: () => true, assert: (v: unknown) => v,

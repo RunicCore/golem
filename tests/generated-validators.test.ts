@@ -258,8 +258,8 @@ test('generated object codecs close nested schemas and keep first/all and contex
     TMiddleBaseModel: abstract new (...args: never[]) => object;
     TRootBaseModel: abstract new (...args: never[]) => object;
   }, Readonly<Record<string, Validator>>];
-  const { findCodecIdForConstructor } = await import('@exprtlabs/golem/serde');
-  const { requireObjectCodec } = await import('@exprtlabs/golem/internal/model-runtime');
+  const { findGeneratedModelDefinitionForConstructor, requireObjectCodec } = await import('@exprtlabs/golem/internal/model-runtime');
+  const findCodecIdForConstructor = (constructor: Function): string | undefined => findGeneratedModelDefinitionForConstructor(constructor)?.codecId;
   const { getValidator, validateInstance } = await import('@exprtlabs/golem/validation');
   const codecId = findCodecIdForConstructor(TRootBaseModel);
   assert.ok(codecId, 'generated root model has a registered codec id');
