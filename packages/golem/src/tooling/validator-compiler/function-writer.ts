@@ -4,7 +4,7 @@ import { rt } from '../rt.js';
 import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
 import { JSON_TYPES, dispatchTest } from './json-types.js';
-import { localName, lazyStateTest } from './local-helpers.js';
+import { localName, lazyStateTest, scaledDivisor } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
 import { resolve, readSet, objectPresence, type Capture, type Lazy, type KeyTest, type WriterMode } from './modes.js';
 
@@ -364,7 +364,14 @@ export class FunctionWriter {
       if (limit === undefined) continue;
       this.leaf({ fails: code`${value} ${operator} ${literalCode(limit)}`, issue: limitFields(kind, 'value', limit, inclusive) });
     }
-    if (check.multipleOf !== undefined) this.leaf({ fails: code`!${localName('isMultipleOf')}(${value}, ${literalCode(check.multipleOf)})`, issue: code`code: 'multipleOf', divisor: ${literalCode(check.multipleOf)}` });
+    if (check.multipleOf !== undefined) {
+      const divisor = literalCode(check.multipleOf);
+      const scaled = scaledDivisor(check.multipleOf);
+      const test = scaled === undefined
+        ? code`${localName('isMultipleOf')}(${value}, ${divisor})`
+        : code`${localName('isMultipleOfScaled')}(${value}, ${divisor}, ${literalCode(scaled.units)}, ${literalCode(scaled.scale)})`;
+      this.leaf({ fails: code`!${test}`, issue: code`code: 'multipleOf', divisor: ${divisor}` });
+    }
   }
 
   private arrayCheck(check: IrArray, value: Code, types: readonly IrTypeName[] | undefined): void {
