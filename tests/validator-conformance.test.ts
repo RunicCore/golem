@@ -4,7 +4,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import type { Validator } from '@exprtlabs/golem/validation';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 
 import { JSON_SCHEMA_2020_12_ID, JSON_SCHEMA_2020_12_META_SCHEMAS } from '#openapi/openapi-schemas/json-schema-2020-12';

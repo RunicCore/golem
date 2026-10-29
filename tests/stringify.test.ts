@@ -7,11 +7,11 @@ import {
   stringifyJsonNumber,
   stringifyJsonScalar,
   stringifyJsonString,
-} from '@exprtlabs/golem/serde';
+} from '@exprtlabs/golem/internal/model-runtime';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { render } from '@exprtlabs/golem/internal/emitter';
 import { emitGraphStringify } from './support/stringify-graph.js';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { instantiate, instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
 

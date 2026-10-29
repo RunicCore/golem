@@ -4,10 +4,9 @@ import test from 'node:test';
 import { createSchemaGraph, emitCodecDeclarationTable, codecPublicId } from '@exprtlabs/golem/internal/schema-graph';
 import { identifier, render } from '@exprtlabs/golem/internal/emitter';
 import { emitGraphStringify } from './support/stringify-graph.js';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import { createObjectCodec, defineModelProperty, registerIModelClass } from '@exprtlabs/golem/internal/model-runtime';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
-import * as serde from '@exprtlabs/golem/serde';
-import { defineModelProperty } from '@exprtlabs/golem/conversion';
 import { LibError } from '@exprtlabs/golem/errors';
 import { instantiate, instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
@@ -125,7 +124,7 @@ test('intern preserves type-only nested refs as known-key copies and class refs 
       Object.assign(this, values);
     }
   }
-  serde.registerIModelClass(itemNode.codecId, ItemStub);
+  registerIModelClass(itemNode.codecId, ItemStub);
   const { fromWireFormatCollection } = instantiateRuntime(source);
   const wireFlags = { colorFlag: 'blue', sizeFlag: 'large' };
   const wire = {
@@ -452,7 +451,7 @@ test('nested IModel refs keep construct on the hashed codec id', () => {
       Object.assign(this, values);
     }
   }
-  serde.registerIModelClass(childNode.codecId, ChildStub);
+  registerIModelClass(childNode.codecId, ChildStub);
   const { fromWireFormatParent } = instantiateRuntime(source);
   const result = fromWireFormatParent({ child: { id: 'x' } }, { validate: false }) as { child: unknown };
   assert.ok(result.child instanceof ChildStub, 'the nested reference constructs via the class registered under the hashed codec id');
@@ -556,7 +555,7 @@ test('fill assigns known fields, keeps __proto__ defineProperty, and nested mode
       Object.assign(this, values);
     }
   }
-  serde.createObjectCodec('Money', {
+  createObjectCodec('Money', {
     stringify: (value) => JSON.stringify(value),
     parse: (text) => JSON.parse(text) as never,
     validate: (value: unknown): value is never => true,

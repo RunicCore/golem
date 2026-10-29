@@ -8,11 +8,11 @@ import vm from 'node:vm';
 import { build } from 'esbuild';
 
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import type { Validator } from '@exprtlabs/golem/validation';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
 
 import { compileSchema, compileValidationPlan, compileValidatorModule, compileValidators, MODEL_CODEC_IDS, modelClass } from './support/compiled-validators.js';
 import { createFixtureProject, linkProjectPackages } from './fixture-project.js';
@@ -447,7 +447,7 @@ async function loadBundle(t: TestContext, source: string, names: readonly string
   writeFileSync(path.join(directory, 'validators.js'), source);
   writeFileSync(path.join(directory, 'entry.js'), `import { ${names.join(', ')} } from './validators.js';\nglobalThis.used = [${names.join(', ')}];\n`);
   const result = await build({ entryPoints: [path.join(directory, 'entry.js')], bundle: true, format: 'cjs', write: false, treeShaking: true, external: ['golem-validation-runtime'] });
-  const runtime = await import('@exprtlabs/golem/validation-runtime');
+  const runtime = await import('@exprtlabs/golem/internal/validation-runtime');
   const fresh = vm.createContext({ ...context, require: () => runtime });
   vm.runInContext(setup, fresh);
   vm.runInContext(result.outputFiles[0].text, fresh);
@@ -1151,7 +1151,7 @@ test('compile with typed emits the same validator with its issue type', async (t
   const { source } = compile({ roots: new Map([['root', { type: 'string' }]]) }, { unknownFormats: 'warn', typed: true });
   writeFileSync(path.join(project, 'validators.ts'), source);
   writeFileSync(path.join(project, 'probe.ts'), [
-    "import type { SchemaIssue } from '@exprtlabs/golem/validation-runtime';",
+    "import type { SchemaIssue } from '@exprtlabs/golem/validation';",
     "import { validate_root } from './validators.js';",
     "export const issues: readonly SchemaIssue[] = validate_root('a', true);",
     '// @ts-expect-error an item is a SchemaIssue; an unannotated validator would give any',

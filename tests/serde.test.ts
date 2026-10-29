@@ -13,13 +13,12 @@ import {
   getIModelClass,
   getObjectCodec,
   parse as publicParse,
-  registerIModelClass,
   registerObjectCodec,
-  requireObjectCodec,
   stringify as publicStringify,
   toWireFormat as publicToWireFormat,
   type ObjectCodec,
 } from '@exprtlabs/golem/serde';
+import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { validate as publicValidate } from '@exprtlabs/golem/validation';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { generatedCodecId } from './support/consumer.js';
@@ -259,7 +258,7 @@ test('nested class-typed IModel fields construct; type-only parse fills like IOb
   await compile(root);
   const generated = fs.readFileSync(path.join(root, 'src/money.model.generated.ts'), 'utf8');
   const pointId = generatedCodecId(generated, 'TPoint3D');
-  const { registerIModelClass } = await import('@exprtlabs/golem/serde');
+  const { registerIModelClass } = await import('@exprtlabs/golem/internal/model-runtime');
   const { Point3D } = await import(pathToFileURL(path.join(root, 'build/money.model.js')).href) as {
     Point3D: new (values?: object) => object;
   };

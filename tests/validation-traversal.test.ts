@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { ModelField, ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelField } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import {
   getValidator,
 } from '@exprtlabs/golem/validation';
