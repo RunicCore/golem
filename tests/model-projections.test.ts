@@ -51,14 +51,12 @@ test('nested projections strip omitted fields and retain intact child models wit
   await assertNestedProjections(root, 'build/address.model.js', false);
 });
 
-test('projection decoders and encoders copy fields with assignments and keep the prototype untouched', async t => {
+test('projection decoders copy fields with assignments and keep the prototype untouched', async t => {
   const root = await buildPlaceProject(t);
   const companion = generatedModelFiles(root).find(artifact => artifact.path.endsWith('place.model.generated.ts'))!.content;
-  for (const direction of ['decode', 'encode']) {
-    const helper = companion.split('\n').find(line => line.startsWith(`function ${direction}TPlaceOmitId(`));
-    assert.ok(helper);
-    assert.doesNotMatch(helper, /Object\.fromEntries/);
-  }
+  const helper = companion.split('\n').find(line => line.startsWith('function decodeTPlaceOmitId('));
+  assert.ok(helper);
+  assert.doesNotMatch(helper, /Object\.fromEntries/);
   const { Office } = await import(path.join(root, 'build/place.model.js'));
   const place = JSON.parse('{"city":"Hue","country":"VN","__proto__":{"x":1}}');
   const office = decodeGeneratedModel(Office, { place }) as { place: Record<string, unknown> };
@@ -94,7 +92,6 @@ test('equivalent projections share helpers and execute only retained field codec
   const companion = generatedModelFiles(root).find(artifact => artifact.path.endsWith('item.model.generated.ts'))!.content;
   assert.equal([...companion.matchAll(/function decodeTItemOmitId\(/g)].length, 1);
   assert.equal([...companion.matchAll(/function initTItemOmitId\(/g)].length, 1);
-  assert.equal([...companion.matchAll(/function encodeTItemOmitId\(/g)].length, 1);
   const { Container } = await import(path.join(root, 'build/item.model.js'));
   const codecs = await import(path.join(root, 'build/codecs.js'));
   const model = decodeGeneratedModel(Container, { first: { id: 'ignored', value: 'HELLO' } });

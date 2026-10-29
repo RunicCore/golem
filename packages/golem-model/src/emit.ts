@@ -35,7 +35,6 @@ import {
   type ImportOptions,
   type JsonValue,
   emitModelFromInit,
-  emitModelToJSON,
   stringifyFunctionName,
   wireStringifyExportName,
   fromWireFunctionName,
@@ -44,7 +43,6 @@ import {
   type FromJsonModelResolver,
   type ModelConversionDescriptor,
   type SerdeResolver,
-  type ToJsonModelResolver,
   presentKeysCode,
 } from '@exprtlabs/golem/internal/emitter';
 import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
@@ -927,7 +925,7 @@ interface SiblingCodecOptions {
 }
 
 /** Export name of an object-only model's conversion helper, keyed by codec id. */
-function objectHelperExportName(kind: 'decode' | 'init' | 'encode', codecId: string): string {
+function objectHelperExportName(kind: 'decode' | 'init', codecId: string): string {
   return `__golem${kind[0].toUpperCase()}${kind.slice(1)}_${codecId.replace(/[^A-Za-z0-9_$]/g, '_')}`;
 }
 
@@ -956,7 +954,7 @@ interface FileImports {
   /** By `classImportKey`. */
   readonly classValues: ReadonlyMap<string, Code>;
   readonly localModels: ReadonlyMap<string, Readonly<Record<'BaseModel' | 'JSON' | 'Init', Code>>>;
-  readonly siblingTypes: ReadonlyMap<string, Readonly<Record<'Fields' | 'JSON' | 'Init' | 'decode' | 'init' | 'encode', Code>>>;
+  readonly siblingTypes: ReadonlyMap<string, Readonly<Record<'Fields' | 'JSON' | 'Init' | 'decode' | 'init', Code>>>;
   /** The handwritten class of a model of another file, by model name. */
   readonly concrete: ReadonlyMap<string, Code>;
   readonly external: ReadonlyMap<string, ExternalModel>;
@@ -1047,7 +1045,7 @@ function buildFileImports(
     });
     sources.push(source);
   }
-  const siblingTypes = new Map<string, Readonly<Record<'Fields' | 'JSON' | 'Init' | 'decode' | 'init' | 'encode', Code>>>();
+  const siblingTypes = new Map<string, Readonly<Record<'Fields' | 'JSON' | 'Init' | 'decode' | 'init', Code>>>();
   for (const item of siblingObjects) {
     const codecId = siblingObjectCodecId(schemaGraph, item.name);
     const source = new ImportSource(sourceImportPath(companionOfSpecification(item), output));
@@ -1057,7 +1055,6 @@ function buildFileImports(
       Init: source.name(`${item.name}Init`, { typeOnly: true }),
       decode: source.name(objectHelperExportName('decode', codecId)),
       init: source.name(objectHelperExportName('init', codecId)),
-      encode: source.name(objectHelperExportName('encode', codecId)),
     });
     sources.push(source);
   }
@@ -1248,13 +1245,11 @@ interface ProjectionHelper {
   readonly representative: string;
   readonly decode: Helper;
   readonly init: Helper;
-  readonly encode: Helper;
 }
 
-/** How a model, by name, converts to and from JSON in the expressions of this file. */
+/** How a model, by name, converts from JSON in the expressions of this file. */
 interface ModelResolvers {
   readonly fromAny: (id: string) => FromJsonModelResolver;
-  readonly toJsonAny: (id: string) => ToJsonModelResolver;
 }
 
 /** The record that a projection function reads its fields from: the walker takes it as an input and the function binds it to `data`. */
@@ -1285,10 +1280,6 @@ function resolveFromJsonModel(context: EmitContext, id: string): FromJsonModelRe
   };
 }
 
-function resolveToJsonModel(context: EmitContext, id: string): ToJsonModelResolver {
-  return { className: externalModel(context, id).cls, encode: (value) => code`${rt.conversion.encodeGeneratedModel}(${value})` };
-}
-
 function resolveLocalModel(context: EmitContext, name: string, codecId?: string): FromJsonModelResolver {
   if (context.localNames.has(name)) {
     const className = modelType(context, name, 'BaseModel');
@@ -1316,12 +1307,11 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     if (!found) throw new Error(`Generated projection functions are missing: ${name}`);
     return found;
   };
-  const resolveProjection = (name: string): FromJsonModelResolver & ToJsonModelResolver => ({
+  const resolveProjection = (name: string): FromJsonModelResolver => ({
     className: identifier('Object'),
     ...(context.identityProjections.has(name) ? { identity: true as const } : {}),
     decode: value => code`${helperName(projectionHelper(name).decode)}(${value})`,
     fromInit: value => code`${helperName(projectionHelper(name).init)}(${value})`,
-    encode: value => code`${helperName(projectionHelper(name).encode)}(${value})`,
   });
   const siblingClass = (id: string): Code | undefined => {
     if (!cyclicSiblings?.has(id)) return undefined;
@@ -1343,14 +1333,13 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
       fromInit: (value) => code`new (${cls} as unknown as new (values?: unknown) => ${instance})(${value})`,
     };
   };
-  const resolveSiblingObject = (name: string): FromJsonModelResolver & ToJsonModelResolver => {
+  const resolveSiblingObject = (name: string): FromJsonModelResolver => {
     const functions = context.imports.siblingTypes.get(name);
     if (!functions) throw new Error(`Generated sibling codec is missing: ${name}`);
     return {
       className: identifier('Object'),
       decode: (value) => code`${functions.decode}(${value})`,
       fromInit: (value) => code`${functions.init}(${value})`,
-      encode: (value) => code`${functions.encode}(${value})`,
     };
   };
   const fromAny = (id: string): FromJsonModelResolver => {
@@ -1363,19 +1352,13 @@ function modelResolvers(context: EmitContext, helpers: ReadonlyMap<string, Proje
     if (context.localImports.some((item) => item.name === id) && context.classModelNames.has(id)) return resolveImportedModel(id);
     return resolveFromJsonModel(context, id);
   };
-  const toJsonAny = (id: string): ToJsonModelResolver => context.projectionNames.has(id) ? resolveProjection(id)
-    : context.siblingObjectNames.has(id) ? resolveSiblingObject(id)
-    : context.localNames.has(id)
-      ? { className: modelType(context, id, 'BaseModel'), encode: (value: Code) => code`${rt.conversion.encodeGeneratedModel}(${value})` }
-      : resolveToJsonModel(context, id);
-  return { fromAny, toJsonAny };
+  return { fromAny };
 }
 
 /** The conversion expressions of one projection. */
 interface ProjectionExpressions {
   readonly decode: Code;
   readonly init: Code;
-  readonly encode: Code;
 }
 
 function projectionExpressionsOf(context: EmitContext, resolvers: ModelResolvers, name: string): ProjectionExpressions {
@@ -1385,7 +1368,6 @@ function projectionExpressionsOf(context: EmitContext, resolvers: ModelResolvers
   return {
     decode: data(emitModelFromJSON(descriptor, inputOf(DATA), resolvers.fromAny, serde)),
     init: data(emitModelFromInit(descriptor, inputOf(DATA), resolvers.fromAny)),
-    encode: data(emitModelToJSON(descriptor, inputOf(DATA), resolvers.toJsonAny, serde)),
   };
 }
 
@@ -1419,11 +1401,7 @@ function buildProjections(context: EmitContext): Projections {
     const init: Helper = helper(`init${name}`, () => sameCode(expressions().init, expressions().decode)
       ? code`const ${identifier(`init${name}`)} = ${helperName(decode)};`
       : code`function ${identifier(`init${name}`)}(value: unknown): ${fields} { ${input()} return (${expressions().init}) as ${fields}; }`);
-    const encode: Helper = helper(`encode${name}`, () => {
-      const json = identifier(`${name}JSON`);
-      return code`function ${identifier(`encode${name}`)}(value: unknown): ${json} { const data = value as Record<string, unknown>; return (${expressions().encode}) as ${json}; }`;
-    });
-    const made = { representative: name, decode, init, encode };
+    const made = { representative: name, decode, init };
     functions.set(name, made);
     return made;
   };
@@ -1438,7 +1416,7 @@ function buildProjections(context: EmitContext): Projections {
     const expressions = projectionExpressionsOf(context, ownResolvers, name);
     const types = [typeOf(context, definitions[name], 'model'), typeOf(context, definitions[name], 'wire'), typeOf(context, definitions[name], 'init')];
     const same = shapes.find((shape) => types.every((type, index) => sameCode(type, shape.types[index]))
-      && sameCode(expressions.decode, shape.expressions.decode) && sameCode(expressions.init, shape.expressions.init) && sameCode(expressions.encode, shape.expressions.encode));
+      && sameCode(expressions.decode, shape.expressions.decode) && sameCode(expressions.init, shape.expressions.init));
     if (!same) shapes.push({ name, types, expressions });
     representatives.set(name, same?.name ?? name);
   }
@@ -1456,19 +1434,17 @@ interface ModelFieldEmission {
   readonly fields: readonly ts.Symbol[];
   /** Module-level functions and constants that the conversions call. */
   readonly helpers: readonly Code[];
-  readonly encode: readonly Code[];
   readonly decode: readonly Code[];
   readonly init: readonly Code[];
 }
 
 /** The name of the module-level function that converts one root field of a model. */
-const rootHelperName = (model: string, direction: 'serialize' | 'deserialize') => (index: number): string =>
-  `__convert_${model}_${index}_${direction === 'serialize' ? 'encode' : 'decode'}`;
+const rootHelperName = (model: string) => (index: number): string => `__convert_${model}_${index}_decode`;
 
 function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): ModelFieldEmission[] {
   const { checker } = context;
   const { definitions } = context.graph;
-  const { fromAny: resolveFromAny, toJsonAny: resolveToJsonAny } = resolvers;
+  const { fromAny: resolveFromAny } = resolvers;
   const serdeExpressionOf = (id: string, direction: 'serialize' | 'deserialize', value: Code): Code => serdeExpression(context, id, direction, value);
   return context.local.map((specification) => {
     const definition = definitions[specification.name];
@@ -1487,28 +1463,6 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       ? new Map(Object.entries(definition.properties))
       : fieldDescriptors(checker, specification, context.graph.describe, fields);
     const helpers: Code[] = [];
-    const encode = fields.map((field) => {
-      const name = literal(field.getName());
-      const input = code`model[${name}]`;
-      const descriptor = descriptors.get(field.getName());
-      if (!descriptor) throw new Error(`Missing descriptor for field ${field.getName()}.`);
-      const emitEncode = (value: Code): Code => emitModelToJSON(
-        descriptor,
-        value,
-        resolveToJsonAny,
-        {
-          deserialize: (_id, value) => value,
-          serialize: (id, value) => serdeExpressionOf(id, 'serialize', value),
-        },
-      );
-      const optional = (field.flags & ts.SymbolFlags.Optional) !== 0;
-      // The guard below excludes an undefined value of an optional field before the conversion runs.
-      const inputType = optional ? code`Exclude<${baseName}[${name}], undefined>` : code`${baseName}[${name}]`;
-      const converted = wrapRootConversion(helpers, rootHelperName(specification.name, 'serialize'), 'serialize', name, input, emitEncode, inputType);
-      // Wire output omits a field whose value is undefined, as stringify and JSON.stringify do; a required field whose type admits undefined too.
-      const present = code`Object.hasOwn(model, ${name}) && ${input} !== undefined`;
-      return code`  if (${present}) ${rt.conversion.defineModelProperty}(result, ${name}, (${converted}));`;
-    });
     const decode: Code[] = [];
     const init: Code[] = [];
     const decodeCaptures: [key: string, local: Code][] = [];
@@ -1530,7 +1484,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
         },
       );
       const fromInit = emitModelFromInit(descriptor, input, resolveFromAny);
-      const converted = wrapRootConversion(helpers, rootHelperName(specification.name, 'deserialize'), 'deserialize', name, input, emitDecode, code`unknown`);
+      const converted = wrapRootConversion(helpers, rootHelperName(specification.name), 'deserialize', name, input, emitDecode, code`unknown`);
       if (!sameCode(converted, input)) {
         decodeCaptures.push([field.getName(), input]);
         decode.push(code`  if (${input} !== undefined) ${rt.conversion.defineModelProperty}(result, ${name}, ${converted});`);
@@ -1544,7 +1498,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       init.unshift(code`    ${presentKeysCode(identifier('values'), initCaptures, { declare: initType })}`);
     }
     // A model with a dynamic map (an index signature) keeps the keys outside its fields as data: the constructor and
-    // encode copy them, and decode converts them, each by the conversion of the map value. An additionalProperties tag
+    // decode convert them, each by the conversion of the map value. An additionalProperties tag
     // does the same with the value type V of the tag, or keeps the values as they are when V is unknown or any, and the
     // generated types have no index signature for it. A default-open model has no map and writes its declared fields only.
     const mapDefinition = definitions[specification.name];
@@ -1559,16 +1513,14 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
       const known = identifier(`__knownKeys_${specification.name}`);
       helpers.push(code`const ${known}: ReadonlySet<string> = new Set<string>([${join(fields.map((field) => literal(field.getName())), code`, `)}]);`);
       const serde = serdeResolver(context);
-      const decodeMapValue = wrapRootConversion(helpers, rootHelperName(specification.name, 'deserialize'), 'deserialize', identifier('key'), identifier('value'), (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), code`unknown`);
-      const encodeMapValue = wrapRootConversion(helpers, rootHelperName(specification.name, 'serialize'), 'serialize', identifier('key'), identifier('value'), (value) => emitModelToJSON(mapValue, value, resolveToJsonAny, { ...serde, deserialize: (_id, value) => value }), fieldsValue);
+      const decodeMapValue = wrapRootConversion(helpers, rootHelperName(specification.name), 'deserialize', identifier('key'), identifier('value'), (value) => emitModelFromJSON(mapValue, value, resolveFromAny, { ...serde, serialize: (_id, value) => value }), code`unknown`);
       const initMapValue = emitModelFromInit(mapValue, identifier('value'), resolveFromAny);
       if (!sameCode(decodeMapValue, identifier('value'))) {
         decode.push(code`  for (const key of Object.keys(result)) if (!${known}.has(key)) { const value = result[key]; if (value !== undefined) ${rt.conversion.defineModelProperty}(result, key, ${decodeMapValue}); }`);
       }
       init.push(code`    for (const key of Object.keys(values)) if (!${known}.has(key)) { const value = (values as Record<string, ${initValue}>)[key]; if (value !== undefined) ${rt.conversion.defineModelProperty}(this, key, ${initMapValue}); }`);
-      encode.push(code`  for (const key of Object.keys(model)) if (!${known}.has(key)) { const value = (model as unknown as Record<string, ${fieldsValue}>)[key]; if (value !== undefined) ${rt.conversion.defineModelProperty}(result, key, ${encodeMapValue}); }`);
     }
-    return { specification, fields, helpers, encode, decode, init };
+    return { specification, fields, helpers, decode, init };
   });
 }
 
@@ -1611,7 +1563,7 @@ function emitProjectionTypes(context: EmitContext, projections: Projections): Pi
       code`${exported}type ${typeName('Fields')} = ${typeFor('model', 'Fields')};`,
       code`${exported}type ${typeName('JSON')} = ${typeFor('wire', 'JSON')};`,
       code`${exported}type ${typeName('Init')} = ${typeFor('init', 'Init')};`,
-      ...(own && !context.identityProjections.has(name) ? [functions.decode, functions.init, functions.encode] : []),
+      ...(own && !context.identityProjections.has(name) ? [functions.decode, functions.init] : []),
       BLANK,
     );
   }
@@ -1627,7 +1579,7 @@ function emitObjectHelperExports(context: EmitContext, helpers: ReadonlyMap<stri
     const functions = helpers.get(name);
     if (!codecId || !functions) continue;
     lines.push(
-      code`export { ${helperName(functions.decode)} as ${identifier(objectHelperExportName('decode', codecId))}, ${helperName(functions.init)} as ${identifier(objectHelperExportName('init', codecId))}, ${helperName(functions.encode)} as ${identifier(objectHelperExportName('encode', codecId))} };`,
+      code`export { ${helperName(functions.decode)} as ${identifier(objectHelperExportName('decode', codecId))}, ${helperName(functions.init)} as ${identifier(objectHelperExportName('init', codecId))} };`,
       BLANK,
     );
   }
@@ -1636,7 +1588,7 @@ function emitObjectHelperExports(context: EmitContext, helpers: ReadonlyMap<stri
 
 /** One class model: its types, base class, conversion functions and registrations. */
 function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Piece[] {
-  const { specification, fields, helpers, encode: encodeFields, decode: decodeFields, init: initFields } = emission;
+  const { specification, fields, helpers, decode: decodeFields, init: initFields } = emission;
   const { schemaGraph, profile } = context;
   const fieldNames = fields.map((field) => field.getName());
   const baseName = identifier(`${specification.name}BaseModel`);
@@ -1648,7 +1600,6 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
   if (!node) throw new Error(`Internal error: no schema node for model "${specification.name}".`);
   const codecId = literal(node.codecId);
   const decodeModel = identifier(`decode${specification.name}Model`);
-  const encodeModel = identifier(`encode${specification.name}Model`);
   return [
     code`export type ${fieldsName} = ${typeOf(context, definition, 'model')};`,
     code`export type ${jsonName} = ${typeOf(context, definition, 'wire')};`,
@@ -1683,20 +1634,10 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
       ]),
     code`}`,
     BLANK,
-    code`function ${encodeModel}(${identifier(encodeFields.length > 0 ? 'model' : '_model')}: ${baseName}): ${jsonName} {`,
-    code`  const result: Record<string, unknown> = {};`,
-    // An absent field stays absent, distinct from a present undefined value.
-    // defineModelProperty defines an own data property even when
-    // Object.prototype gains an accessor of that name after generation.
-    ...encodeFields,
-    code`  return result as ${jsonName};`,
-    code`}`,
-    BLANK,
     code`${rt.model.registerGeneratedModel}(${baseName}, {`,
     code`  fields: [${join(fieldNames.map((name) => literal(name)), code`, `)}],`,
     code`  conversion: {`,
     code`    decode: (value, constructor) => ${decodeModel}(constructor ?? ${baseName}, value),`,
-    code`    encode: ${encodeModel},`,
     code`  },`,
     code`  codecId: ${codecId},`,
     code`  profile: { validation: ${(specification.validation ?? profile.validation) ? code`true` : code`false`} },`,

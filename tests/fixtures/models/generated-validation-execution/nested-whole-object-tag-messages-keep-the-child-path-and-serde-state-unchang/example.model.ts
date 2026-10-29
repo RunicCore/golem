@@ -17,7 +17,7 @@ export async function exercise() {
   const beforeIssues = registered.issues;
   const beforePending = registered.pending;
   const issues = await validateInstance(root);
-  const wire = encodeGeneratedModel(root);
+  const wire = encodeGeneratedModel(root, { validate: false });
   return {
     issue: issues[0],
     matchingMessages: issues.filter(item => item.message === "Child needs two fields.").length,
