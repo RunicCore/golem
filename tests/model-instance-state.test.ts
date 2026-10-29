@@ -5,7 +5,6 @@ import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import { LibError } from '@exprtlabs/golem/errors';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { registerGeneratedModel } from '@exprtlabs/golem/model';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 
@@ -17,6 +16,8 @@ import { render } from '#golem/code';
 import { instanceFieldsCode } from '#golem/union-conversion';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { runModule } from './support/run-module.js';
+import { decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
+import { modelCodec } from './support/model-codec.js';
 // An own key of a golem model instance that its own model does not declare is program state, never an unknown key
 // (T-148). A key that the instance's own model declares is judged as before, and so is a value without a model.
 
@@ -231,12 +232,12 @@ for (const validation of [true, false]) {
   });
 }
 
-test('encodeGeneratedModel of a model writes no program state of an instance inside its unknown field', async () => {
+test('the model codec toWireFormat of a model writes no program state of an instance inside its unknown field', async () => {
   // protects: bug T-164 a model nested as a field of another model is encoded by the class-level encode, which kept the state of an instance in its unknown field
   const { Task: TaskModel, Note } = await buildState(false);
   const task = Object.assign(new TaskModel({ title: 't' }), { cache: new Map<string, string>(), hits: 3 });
-  assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: { list: [task] } })), { title: 'n', data: { list: [{ title: 't' }] } });
-  assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: task })), { title: 'n', data: { title: 't' } });
+  assert.deepEqual(modelCodec(Note).toWireFormat(new Note({ title: 'n', data: { list: [task] } })), { title: 'n', data: { list: [{ title: 't' }] } });
+  assert.deepEqual(modelCodec(Note).toWireFormat(new Note({ title: 'n', data: task })), { title: 'n', data: { title: 't' } });
 });
 
 test('parse with construct keeps the extra keys of a dynamic map, converts them, and stringify writes them back', async () => {
@@ -246,7 +247,7 @@ test('parse with construct keeps the extra keys of a dynamic map, converts them,
   assert.ok(parsed instanceof Bag);
   assert.deepEqual({ ...parsed }, { id: 'a', extra: 1 });
   assert.equal(bag.stringify(parsed), '{"id":"a","extra":1}');
-  assert.deepEqual(encodeGeneratedModel(parsed), { id: 'a', extra: 1 });
+  assert.deepEqual(modelCodec(parsed).toWireFormat(parsed), { id: 'a', extra: 1 });
   assert.deepEqual({ ...(bag.parse('{"id":"a","extra":1}') as object) }, { id: 'a', extra: 1 }, 'without construct');
 
   const text = '{"first":"2020-01-01T00:00:00.000Z","later":"2021-02-03T04:05:06.000Z"}';
@@ -255,7 +256,7 @@ test('parse with construct keeps the extra keys of a dynamic map, converts them,
   assert.ok(dated.later instanceof Date, 'an extra value takes the conversion of the map value');
   assert.equal(dated.later.toISOString(), '2021-02-03T04:05:06.000Z');
   assert.equal(stamps.stringify(dated), text);
-  assert.deepEqual(encodeGeneratedModel(dated), JSON.parse(text));
+  assert.deepEqual(modelCodec(dated).toWireFormat(dated), JSON.parse(text));
   assert.equal(stamps.stringify(new Stamps({ first: new Date(0), later: new Date(1000) })), '{"first":"1970-01-01T00:00:00.000Z","later":"1970-01-01T00:00:01.000Z"}', 'the constructor keeps and converts extra keys');
 });
 
@@ -303,7 +304,7 @@ test('a loose model instance inside an unknown field writes no program state', a
   assert.equal(note.stringify(value), JSON.stringify(written));
   assert.deepEqual(note.toWireFormat(value, { validate: false }), written, 'validation off');
   assert.equal(note.stringify(value, { validate: false }), JSON.stringify(written), 'validation off');
-  assert.deepEqual(encodeGeneratedModel(value), written, 'encodeGeneratedModel');
+  assert.deepEqual(modelCodec(value).toWireFormat(value), written, 'model codec toWireFormat');
 });
 
 test('an explicit additionalProperties tag on a TS model writes its extra keys, and a loose model writes its declared fields only', async () => {
@@ -312,14 +313,14 @@ test('an explicit additionalProperties tag on a TS model writes its extra keys, 
   const opened = Object.assign(new Open({ id: 'a' }), { extra: 1 });
   assert.equal(open.stringify(opened), '{"id":"a","extra":1}');
   assert.deepEqual(open.toWireFormat(opened), { id: 'a', extra: 1 });
-  assert.deepEqual(encodeGeneratedModel(opened), { id: 'a', extra: 1 }, 'encodeGeneratedModel');
+  assert.deepEqual(modelCodec(opened).toWireFormat(opened), { id: 'a', extra: 1 }, 'model codec toWireFormat');
   const parsed = open.parse('{"id":"a","extra":1}', { construct: Open });
   assert.ok(parsed instanceof Open);
   assert.deepEqual({ ...parsed }, { id: 'a', extra: 1 }, 'parse with construct keeps the extra key');
   const closed = Object.assign(new Loose({ id: 'a' }), { extra: 1 });
   assert.equal(loose.stringify(closed), '{"id":"a"}');
   assert.deepEqual(loose.toWireFormat(closed), { id: 'a' });
-  assert.deepEqual(encodeGeneratedModel(closed), { id: 'a' }, 'encodeGeneratedModel');
+  assert.deepEqual(modelCodec(closed).toWireFormat(closed), { id: 'a' }, 'model codec toWireFormat');
   const shaped = new Shape({ tagged: { known: 'k', extra: 1 }, plain: { known: 'k', extra: 1 } } as object);
   assert.equal(shape.stringify(shaped), '{"tagged":{"known":"k","extra":1},"plain":{"known":"k"}}', 'a field with the tag and a field without it');
   assert.deepEqual(shape.toWireFormat(shaped), { tagged: { known: 'k', extra: 1 }, plain: { known: 'k' } });
@@ -335,7 +336,7 @@ test('an AdditionalProperties tag with a value type converts the extra values li
   assert.equal(parsed.at.toISOString(), '2021-02-03T04:05:06.000Z');
   assert.equal(stamped.stringify(parsed), text);
   assert.deepEqual(stamped.toWireFormat(parsed), JSON.parse(text));
-  assert.deepEqual(encodeGeneratedModel(parsed), JSON.parse(text), 'encodeGeneratedModel');
+  assert.deepEqual(modelCodec(parsed).toWireFormat(parsed), JSON.parse(text), 'model codec toWireFormat');
   assert.equal(stamped.stringify(Object.assign(new Stamped({ id: 'a' }), { at: new Date(0) })), '{"id":"a","at":"1970-01-01T00:00:00.000Z"}');
 });
 
@@ -358,14 +359,14 @@ export class View extends TViewBaseModel {
   const written = { view: { id: 'a', extra: 1 } };
   const instance = new View(written);
   assert.deepEqual({ ...(instance as { view: object }).view }, written.view, 'the constructor keeps the extra key');
-  assert.deepEqual(encodeGeneratedModel(instance), written, 'encodeGeneratedModel');
+  assert.deepEqual(modelCodec(instance).toWireFormat(instance), written, 'model codec toWireFormat');
   assert.equal(codec.stringify(instance), JSON.stringify(written));
   assert.deepEqual(codec.toWireFormat(instance), written);
   assert.deepEqual({ ...(codec.parse(JSON.stringify(written), { construct: View }) as { view: object }).view }, written.view, 'parse with construct');
 });
 
 test('the class-level decode reads the declared fields of a nested object by the JSON view', async (t) => {
-  // protects: bug T-124 decodeGeneratedModel read a nested object by plain property reads, so an inherited, non-enumerable or undefined field was decoded as present
+  // protects: bug T-124 the model codec fromWireFormat read a nested object by plain property reads, so an inherited, non-enumerable or undefined field was decoded as present
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-nested-view-', name: 'model-nested-view', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'nest.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 import { TNestBaseModel, type TNestFields } from './nest.model.generated.js';
@@ -378,7 +379,7 @@ export class Nest extends TNestBaseModel { constructor(values: Partial<TNestFiel
   const text = '2020-01-02T03:04:05.000Z';
   const hidden = Object.defineProperty({ id: 'a' }, 'when', { value: text, enumerable: false });
   const inherited = Object.assign(Object.create({ when: text }), { id: 'a' });
-  const decode = (inner: object) => ({ ...(decodeGeneratedModel(Nest, { inner }) as { inner: object }).inner });
+  const decode = (inner: object) => ({ ...(decodeGeneratedModelTrusted(Nest, { inner }) as { inner: object }).inner });
   assert.deepEqual(decode(hidden), { id: 'a' }, 'a non-enumerable field');
   assert.deepEqual(decode(inherited), { id: 'a' }, 'an inherited field');
   assert.deepEqual(decode({ id: 'a', when: undefined }), { id: 'a' }, 'an undefined field');
@@ -410,11 +411,11 @@ export class Stamp extends TStampBaseModel { constructor(values: Partial<TStampF
   assert.equal(profile.stringify(plain, options), '{"id":"a","inner":{}}', 'stringify of a plain object');
   assert.deepEqual(stamp.toWireFormat(date, options), { id: 'a' }, 'toWireFormat of a Date | undefined field');
   assert.equal(stamp.stringify(date, options), '{"id":"a"}', 'stringify of a Date | undefined field');
-  assert.deepEqual(encodeGeneratedModel(date as never, options), { id: 'a' }, 'encodeGeneratedModel of a Date | undefined field');
+  assert.deepEqual(modelCodec(date).toWireFormat(date as never, options), { id: 'a' }, 'the model codec toWireFormat of a Date | undefined field');
 });
 
-test('toWireFormat and encodeGeneratedModel leave out an own key of a nested object whose value is undefined', async (t) => {
-  // protects: T-587 toWireFormat and encodeGeneratedModel kept an own undefined key of a nested object that stringify drops
+test('toWireFormat and the model codec leave out an own key of a nested object whose value is undefined', async (t) => {
+  // protects: T-587 toWireFormat and the model codec kept an own undefined key of a nested object that stringify drops
   const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-nested-undefined-', name: 'model-nested-undefined', linkWorkspaceNodeModules: true });
   fs.writeFileSync(path.join(sourceRoot, 'nested-undefined.model.ts'), `import type { IModel } from '@exprtlabs/golem/model';
 import { TOptionalBaseModel, TRequiredBaseModel, TDatedBaseModel, type TOptionalFields, type TRequiredFields, type TDatedFields } from './nested-undefined.model.generated.js';
@@ -441,8 +442,8 @@ export class Dated extends TDatedBaseModel { constructor(values: Partial<TDatedF
     assert.deepEqual(dated.toWireFormat({ id: 'a', inner: { at, note: undefined } }, options), { id: 'a', inner: { at: at.toISOString() } }, `a Date beside an optional key, ${label}`);
   }
   assert.deepEqual(required.toWireFormat({ id: 'a', inner: { tag: undefined } }, { validate: false }), { id: 'a', inner: {} }, 'a required key that admits undefined');
-  const classLevel = (Model: new (values?: object) => object, inner: object): unknown => (encodeGeneratedModel(Object.assign(new Model({ id: 'a' }), { inner }) as never, { validate: false }) as { inner: unknown }).inner;
-  assert.deepEqual(classLevel(models.Optional, { tag: undefined, n: undefined }), {}, 'encodeGeneratedModel of an optional key');
-  assert.deepEqual(classLevel(models.Required, { tag: undefined }), {}, 'encodeGeneratedModel of a required key that admits undefined');
-  assert.deepEqual(classLevel(models.Dated, { at, note: undefined }), { at: at.toISOString() }, 'encodeGeneratedModel of a Date beside an optional key');
+  const classLevel = (Model: new (values?: object) => object, inner: object): unknown => (modelCodec(Model).toWireFormat(Object.assign(new Model({ id: 'a' }), { inner }), { validate: false }) as { inner: unknown }).inner;
+  assert.deepEqual(classLevel(models.Optional, { tag: undefined, n: undefined }), {}, 'the model codec toWireFormat of an optional key');
+  assert.deepEqual(classLevel(models.Required, { tag: undefined }), {}, 'the model codec toWireFormat of a required key that admits undefined');
+  assert.deepEqual(classLevel(models.Dated, { at, note: undefined }), { at: at.toISOString() }, 'the model codec toWireFormat of a Date beside an optional key');
 });

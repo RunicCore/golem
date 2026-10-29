@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { createFixtureProject } from '../fixture-project.js';
@@ -15,6 +14,7 @@ import {
   type GeneratedModelClass,
   type OpenApiGenerationProfile,
 } from './helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 interface PetShape {
   /** Union keyword carrying the discriminator. */
@@ -232,48 +232,48 @@ test('OAS discriminator mappings select allOf variants in model decode, encode, 
         const toy = example.shape?.nestedToy ? { toy: { shape: 'round', bounce: true } } : {};
         if (PetModel) {
           for (const tag of catTags) {
-            const pet: object = decodeGeneratedModel(PetModel, { kind: tag, name: 'Miso', ...toy });
+            const pet: object = modelCodec(PetModel).fromWireFormat({ kind: tag, name: 'Miso', ...toy }, { validate: false });
             assert.ok(pet instanceof CatModel, `tag ${tag} selects cat`);
-            assert.deepEqual(encodeGeneratedModel(pet), { kind: tag, name: 'Miso', ...toy });
+            assert.deepEqual(modelCodec(pet).toWireFormat(pet), { kind: tag, name: 'Miso', ...toy });
             if (example.shape?.nestedToy) {
               const toyValue = requireRecord(pet, 'cat').toy;
               assert.ok(toyValue instanceof modelClass(models, `Ball${suffix}Model`), 'nested union selects its variant');
             }
           }
-          const dog = decodeGeneratedModel(PetModel, { kind: dogTag, bark: true });
+          const dog = modelCodec(PetModel).fromWireFormat({ kind: dogTag, bark: true }, { validate: false });
           assert.ok(dog instanceof DogModel, `tag ${dogTag} selects dog`);
-          assert.deepEqual(encodeGeneratedModel(dog), { kind: dogTag, bark: true });
+          assert.deepEqual(modelCodec(dog).toWireFormat(dog), { kind: dogTag, bark: true });
         }
 
         const ownerJson = {
           pet: { kind: dogTag, bark: false },
           pets: [...catTags.map(kind => ({ kind, name: 'Miso', ...toy })), { kind: dogTag, bark: true }],
         };
-        const owner = requireRecord(decodeGeneratedModel(OwnerModel, ownerJson), 'owner');
+        const owner = requireRecord(modelCodec(OwnerModel).fromWireFormat(ownerJson, { validate: false }), 'owner');
         assert.ok(owner.pet instanceof DogModel);
         assert.ok(Array.isArray(owner.pets));
         assert.deepEqual(owner.pets.map(pet => pet instanceof CatModel), [...catTags.map(() => true), false]);
         assert.ok(owner.pets.at(-1) instanceof DogModel);
-        assert.deepEqual(encodeGeneratedModel(owner), ownerJson);
+        assert.deepEqual(modelCodec(owner).toWireFormat(owner), ownerJson);
 
         if (PetModel) {
           assert.throws(
-            () => decodeGeneratedModel(PetModel, { kind: example.unknown, name: 'Miso' }),
+            () => modelCodec(PetModel).fromWireFormat({ kind: example.unknown, name: 'Miso' }, { validate: false }),
             (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Deserialization,
           );
         }
-        const decodeUnknownTag = () => decodeGeneratedModel(OwnerModel, { pet: { kind: example.unknown, name: 'Miso' } });
+        const decodeUnknownTag = () => modelCodec(OwnerModel).fromWireFormat({ pet: { kind: example.unknown, name: 'Miso' } }, { validate: false });
         if (example.shape?.nullBranch) assert.throws(decodeUnknownTag, (error: unknown) => error instanceof LibError);
         else assert.throws(decodeUnknownTag);
 
         if (example.shape?.nullBranch) {
           const nullableJson = { pet: null, pets: [{ kind: catTags[0], name: 'Miso' }, { kind: dogTag, bark: true }, null] };
-          const nullable = requireRecord(decodeGeneratedModel(OwnerModel, nullableJson), 'nullable owner');
+          const nullable = requireRecord(modelCodec(OwnerModel).fromWireFormat(nullableJson, { validate: false }), 'nullable owner');
           assert.equal(nullable.pet, null);
           assert.ok(Array.isArray(nullable.pets));
           assert.ok(nullable.pets[0] instanceof CatModel && nullable.pets[1] instanceof DogModel);
           assert.equal(nullable.pets[2], null);
-          assert.deepEqual(encodeGeneratedModel(nullable), nullableJson);
+          assert.deepEqual(modelCodec(nullable).toWireFormat(nullable), nullableJson);
         }
 
         // The shared codec path (parse/stringify) dispatches on the same tags.
@@ -309,16 +309,16 @@ test('a union variant used on its own keeps its declared tag type and any tag va
     const stringify = codec(models, `stringifyCat${suffix}`);
     // A tag the union never maps is still a valid standalone Cat.
     const other = { kind: 'other', name: 'Miso' };
-    assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(CatModel, other)), other);
+    assert.deepEqual(modelCodec(CatModel).toWireFormat(modelCodec(CatModel).fromWireFormat(other, { validate: false })), other);
     assert.deepEqual(JSON.parse(String(stringify(parse(JSON.stringify(other))))), other);
     // A missing tag is left as is; only the base's `required` (validation) objects to it.
     const untagged = { name: 'Miso' };
     // toWireFormat keeps the missing key as undefined, which JSON drops; with validation on the call would reject the model.
-    assert.deepEqual(JSON.parse(JSON.stringify(encodeGeneratedModel(decodeGeneratedModel(CatModel, untagged), { validate: false }))), untagged);
+    assert.deepEqual(JSON.parse(JSON.stringify(modelCodec(CatModel).toWireFormat(modelCodec(CatModel).fromWireFormat(untagged, { validate: false }), { validate: false }))), untagged);
     if (validation) {
       // The variant's own validation schema is not narrowed to the union's tag.
-      assert.equal(await getValidator(decodeGeneratedModel(CatModel, other)).validate(), true);
-      assert.equal(await getValidator(decodeGeneratedModel(CatModel, untagged)).validate(), false, 'the base requires kind');
+      assert.equal(await getValidator(modelCodec(CatModel).fromWireFormat(other, { validate: false })).validate(), true);
+      assert.equal(await getValidator(modelCodec(CatModel).fromWireFormat(untagged, { validate: false })).validate(), false, 'the base requires kind');
       assert.throws(
         () => parse(JSON.stringify(untagged)),
         (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation,
@@ -366,17 +366,17 @@ test('a variant shared by two discriminated unions gets both union classes, in e
     const PetModel = modelClass(models, `Pet${suffix}Model`);
     const FelineModel = modelClass(models, `Feline${suffix}Model`);
     // Each union class decodes its own tags to the variant models, the shared variant included.
-    const cat = decodeGeneratedModel(PetModel, { kind: 'feline', name: 'Miso' });
+    const cat = modelCodec(PetModel).fromWireFormat({ kind: 'feline', name: 'Miso' }, { validate: false });
     assert.ok(cat instanceof CatModel);
-    assert.deepEqual(encodeGeneratedModel(cat), { kind: 'feline', name: 'Miso' });
-    assert.ok(decodeGeneratedModel(PetModel, { kind: 'canine', bark: true }) instanceof DogModel);
-    const tabby = decodeGeneratedModel(FelineModel, { kind: 'tabby', name: 'Miso' });
+    assert.deepEqual(modelCodec(cat).toWireFormat(cat), { kind: 'feline', name: 'Miso' });
+    assert.ok(modelCodec(PetModel).fromWireFormat({ kind: 'canine', bark: true }, { validate: false }) instanceof DogModel);
+    const tabby = modelCodec(FelineModel).fromWireFormat({ kind: 'tabby', name: 'Miso' }, { validate: false });
     assert.ok(tabby instanceof CatModel);
-    assert.deepEqual(encodeGeneratedModel(tabby), { kind: 'tabby', name: 'Miso' });
+    assert.deepEqual(modelCodec(tabby).toWireFormat(tabby), { kind: 'tabby', name: 'Miso' });
     // A variant that only this union selects still extends it; the shared one keeps its own base.
     assert.equal(Object.getPrototypeOf(DogModel), PetModel);
     // A union class answers instanceof for the variants it selects, and only those.
-    const dog = decodeGeneratedModel(PetModel, { kind: 'canine', bark: true });
+    const dog = modelCodec(PetModel).fromWireFormat({ kind: 'canine', bark: true }, { validate: false });
     assert.deepEqual([cat, dog, tabby].map(value => value instanceof PetModel), [true, true, true]);
     assert.deepEqual([cat, dog, tabby].map(value => value instanceof FelineModel), [true, false, true]);
     // A value is an instance only through a variant class: the tag alone, or a look-alike class, is not enough.
@@ -386,13 +386,13 @@ test('a variant shared by two discriminated unions gets both union classes, in e
     class Handwritten extends (PetModel as unknown as new () => object) {}
     assert.deepEqual([cat instanceof Handwritten, new Handwritten() instanceof Handwritten], [false, true]);
     // A tag that another union maps is not one of this union's.
-    assert.throws(() => decodeGeneratedModel(FelineModel, { kind: 'feline', name: 'Miso' }));
-    assert.throws(() => decodeGeneratedModel(PetModel, { kind: 'tabby', name: 'Miso' }));
+    assert.throws(() => modelCodec(FelineModel).fromWireFormat({ kind: 'feline', name: 'Miso' }, { validate: false }));
+    assert.throws(() => modelCodec(PetModel).fromWireFormat({ kind: 'tabby', name: 'Miso' }, { validate: false }));
     const json = { pet: { kind: 'feline', name: 'Miso' }, pets: [{ kind: 'canine', bark: true }] };
-    const owner = requireRecord(decodeGeneratedModel(modelClass(models, `Owner${suffix}Model`), json), 'owner');
+    const owner = requireRecord(modelCodec(modelClass(models, `Owner${suffix}Model`)).fromWireFormat(json, { validate: false }), 'owner');
     assert.ok(owner.pet instanceof CatModel);
     assert.ok(Array.isArray(owner.pets) && owner.pets[0] instanceof DogModel);
-    assert.deepEqual(encodeGeneratedModel(owner), json);
+    assert.deepEqual(modelCodec(owner).toWireFormat(owner), json);
   }
 });
 
@@ -403,14 +403,14 @@ test('a union with no shared variant is extended by its variants and keeps the p
   await generateMaterializedSdk(petDocument(suffix, explicitMapping(suffix)), { output, name: 'Pets', profile: profiles[1] });
   const models = await compileStrictAndLoadModels(output);
   const PetModel = modelClass(models, `Pet${suffix}Model`);
-  const cat = decodeGeneratedModel(PetModel, { kind: 'feline', name: 'Miso' });
+  const cat = modelCodec(PetModel).fromWireFormat({ kind: 'feline', name: 'Miso' }, { validate: false });
   assert.deepEqual(
     [Object.getPrototypeOf(modelClass(models, `Cat${suffix}Model`)) === PetModel, Object.getPrototypeOf(modelClass(models, `Dog${suffix}Model`)) === PetModel],
     [true, true],
   );
   assert.equal(Object.getOwnPropertyDescriptor(PetModel, Symbol.hasInstance), undefined);
   assert.ok(cat instanceof PetModel);
-  assert.deepEqual(encodeGeneratedModel(cat), { kind: 'feline', name: 'Miso' });
+  assert.deepEqual(modelCodec(cat).toWireFormat(cat), { kind: 'feline', name: 'Miso' });
 });
 
 test('a discriminator over a non-model variant is reported and left to the union shape', async t => {
@@ -546,14 +546,14 @@ for (const [form, defaultMapping] of [['a component name', 'Other'], ['a $ref', 
     compileGeneratedSdk(output, [], { strict: true });
     const models = await importGeneratedModule(output, 'payment models');
     const OwnerModel = modelClass(models, `Owner${suffix}Model`);
-    const owner = (payment: object) => decodeGeneratedModel(OwnerModel, { payment }) as { payment: object };
+    const owner = (payment: object) => modelCodec(OwnerModel).fromWireFormat({ payment }, { validate: false }) as { payment: object };
     assert.ok(owner({ kind: 'card', number: '1' }).payment instanceof modelClass(models, `Card${suffix}Model`));
     assert.ok(owner({ kind: 'cash', amount: 2 }).payment instanceof modelClass(models, `Cash${suffix}Model`));
     const other = modelClass(models, `Other${suffix}Model`);
     assert.ok(owner({ note: 'n' }).payment instanceof other);
     assert.ok(owner({ kind: 'wire', note: 'n' }).payment instanceof other);
     for (const payment of [{ kind: 'card', number: '1' }, { kind: 'cash', amount: 2 }, { note: 'n' }]) {
-      assert.deepEqual(encodeGeneratedModel(owner(payment)), { payment });
+      assert.deepEqual(modelCodec(owner(payment)).toWireFormat(owner(payment)), { payment });
     }
   });
 }
@@ -626,7 +626,7 @@ test('a variant given a mapping value of its own is selected by it while the key
   compileGeneratedSdk(output, [], { strict: true });
   const models = await importGeneratedModule(output, 'pet models');
   const OwnerModel = modelClass(models, 'OwnerOwnModel');
-  const decodePet = (pet: object) => (decodeGeneratedModel(OwnerModel, { pet }) as { pet: object }).pet;
+  const decodePet = (pet: object) => (modelCodec(OwnerModel).fromWireFormat({ pet }, { validate: false }) as { pet: object }).pet;
   assert.ok(decodePet({ kind: 'feline', name: 'Miso' }) instanceof modelClass(models, 'CatOwnModel'));
   assert.ok(decodePet({ kind: 'CatOwn', bark: true }) instanceof modelClass(models, 'DogOwnModel'));
 });
@@ -655,9 +655,9 @@ test('a default variant that extends a tagged variant is written as the default'
   const models = await importGeneratedModule(output, 'pet models');
   const OwnerModel = modelClass(models, 'OwnerBaseModel');
   const wire = { pet: { kind: 'zzz', name: 'Rex', bark: true } };
-  const owner = decodeGeneratedModel(OwnerModel, wire) as { pet: object };
+  const owner = modelCodec(OwnerModel).fromWireFormat(wire, { validate: false }) as { pet: object };
   assert.ok(owner.pet instanceof modelClass(models, 'DogBaseModel'));
-  assert.deepEqual(encodeGeneratedModel(owner), wire);
+  assert.deepEqual(modelCodec(owner).toWireFormat(owner), wire);
 });
 
 for (const validation of [false, true]) {
@@ -687,7 +687,7 @@ for (const validation of [false, true]) {
     const models = await importGeneratedModule(output, 'untagged default models');
     const OwnerModel = modelClass(models, 'OwnerUntaggedModel');
     const MoneyModel = modelClass(models, 'MoneyUntaggedModel');
-    const owner = (payout: object) => decodeGeneratedModel(OwnerModel, { payout }) as { payout: { issued: unknown } };
+    const owner = (payout: object) => modelCodec(OwnerModel).fromWireFormat({ payout }, { validate: false }) as { payout: { issued: unknown } };
     const issued = '2026-01-02T03:04:05.000Z';
     const money = owner({ amount: 3, issued }).payout;
     assert.ok(money instanceof MoneyModel);
@@ -696,7 +696,7 @@ for (const validation of [false, true]) {
     assert.ok(!(other instanceof MoneyModel));
     assert.ok(other.issued instanceof Date);
     for (const payout of [{ amount: 3, issued }, { kind: 'other', issued }]) {
-      assert.deepEqual(encodeGeneratedModel(owner(payout)), { payout });
+      assert.deepEqual(modelCodec(owner(payout)).toWireFormat(owner(payout)), { payout });
     }
   });
 }

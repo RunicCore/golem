@@ -4,7 +4,6 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import type { GeneratedModelConstructor } from '@exprtlabs/golem/model';
 import {
   autorun,
@@ -19,6 +18,7 @@ import {
   repoRoot,
   requireRecord,
 } from './helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 function lifecycleDocument(): Record<string, unknown> {
   return {
@@ -178,7 +178,7 @@ test('generated MobX models initialize at construction and keep subclass hooks',
 
   type UserInstance = { id: string; score: number };
   const constructed = new (asCtor<UserInstance>(UserModel))({ id: 'u1', score: 1 });
-  const parsed = asInstance<UserInstance>(decodeGeneratedModel(UserModel, { id: 'u2', score: 2 }));
+  const parsed = asInstance<UserInstance>(modelCodec(UserModel).fromWireFormat({ id: 'u2', score: 2 }));
   assert.equal(isObservableObject(constructed), true);
   assert.equal(isObservableProp(constructed, 'score'), true);
   assert.equal(isObservableObject(parsed), true);
@@ -188,7 +188,7 @@ test('generated MobX models initialize at construction and keep subclass hooks',
     user: UserInstance;
     users: UserInstance[];
   };
-  const nested = asInstance<EnvelopeInstance>(decodeGeneratedModel(EnvelopeModel, {
+  const nested = asInstance<EnvelopeInstance>(modelCodec(EnvelopeModel).fromWireFormat({
     user: { id: 'nested', score: 3 },
     users: [{ id: 'listed', score: 4 }],
   }));
@@ -205,7 +205,7 @@ test('generated MobX models initialize at construction and keep subclass hooks',
   assert.equal(isObservableObject(inherited), true);
   assert.equal(isObservableProp(inherited, 'amount'), true);
   assert.equal(isObservableProp(inherited, 'last4'), true);
-  const fromUnion = decodeGeneratedModel(PaymentModel as unknown as GeneratedModelConstructor, {
+  const fromUnion = modelCodec(PaymentModel as unknown as GeneratedModelConstructor).fromWireFormat({
     amount: 11,
     kind: 'card',
     last4: '1111',

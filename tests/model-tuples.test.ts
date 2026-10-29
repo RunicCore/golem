@@ -4,7 +4,6 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError } from '@exprtlabs/golem/errors';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
@@ -12,6 +11,7 @@ import { command } from './support/process.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { copyFixture, fileFixtureScope, onceShared, readFixture, type FixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { modelCodec } from './support/model-codec.js';
 
 function tupleModelProject(scope: FixtureScope, name: string) {
   return createModelProject(scope, {
@@ -148,24 +148,24 @@ test('a model keeps a short rest tuple at its own length and a hole in it a hole
   const { Tuple } = await trustedTuple();
   const init = { required: ['required', 9], maybe: ['x'], rest: ['only'] };
   assert.deepEqual(field(new Tuple(init), 'rest'), ['only']);
-  assert.deepEqual(field(decodeGeneratedModel(Tuple, init), 'rest'), ['only']);
-  assert.deepEqual(field(encodeGeneratedModel(new Tuple(init)), 'rest'), ['only']);
+  assert.deepEqual(field(modelCodec(Tuple).fromWireFormat(init), 'rest'), ['only']);
+  assert.deepEqual(field(modelCodec(Tuple).toWireFormat(new Tuple(init)), 'rest'), ['only']);
 
   // The Date item after the rest has no input, so converting it would throw on `undefined`.
   const short = { ...init, dated: ['only'] };
   assert.deepEqual(field(new Tuple(short), 'dated'), ['only']);
-  assert.deepEqual(field(decodeGeneratedModel(Tuple, short), 'dated'), ['only']);
-  assert.deepEqual(field(encodeGeneratedModel(new Tuple(short)), 'dated'), ['only']);
+  assert.deepEqual(field(modelCodec(Tuple).fromWireFormat(short), 'dated'), ['only']);
+  assert.deepEqual(field(modelCodec(Tuple).toWireFormat(new Tuple(short)), 'dated'), ['only']);
 
   const holey: unknown[] = ['first'];
   holey[2] = '2024-05-06T07:08:09.000Z';
   const sparse = { ...init, dated: holey };
-  for (const dated of [field(new Tuple(sparse), 'dated'), field(decodeGeneratedModel(Tuple, sparse), 'dated')]) {
+  for (const dated of [field(new Tuple(sparse), 'dated'), field(modelCodec(Tuple).fromWireFormat(sparse), 'dated')]) {
     assert.ok(Array.isArray(dated));
     assert.equal(dated.length, 3);
     assert.equal(1 in dated, false);
   }
-  const decoded = field(decodeGeneratedModel(Tuple, sparse), 'dated');
+  const decoded = field(modelCodec(Tuple).fromWireFormat(sparse), 'dated');
   assert.ok(Array.isArray(decoded));
   assert.deepEqual(decoded[2], new Date('2024-05-06T07:08:09.000Z'));
 });
@@ -200,11 +200,11 @@ test('a scalar value of a scalar-or-array union stays as it is, and the array it
   assert.deepEqual(field(JSON.parse(codec.stringify(new Tuple({ ...base, when: [new Date(day)] }), options)), 'when'), [day]);
 
   // model fromJSON and toJSON
-  assert.equal(field(decodeGeneratedModel(Tuple, { ...base, when: 'hello' }), 'when'), 'hello');
-  assert.equal(field(decodeGeneratedModel(Tuple, { ...base, when: '12' }), 'when'), '12');
-  assert.deepEqual(field(decodeGeneratedModel(Tuple, { ...base, when: [day] }), 'when'), [new Date(day)]);
-  assert.equal(field(encodeGeneratedModel(new Tuple({ ...base, when: 'hello' })), 'when'), 'hello');
-  assert.deepEqual(field(encodeGeneratedModel(new Tuple({ ...base, when: [new Date(day)] })), 'when'), [day]);
+  assert.equal(field(modelCodec(Tuple).fromWireFormat({ ...base, when: 'hello' }), 'when'), 'hello');
+  assert.equal(field(modelCodec(Tuple).fromWireFormat({ ...base, when: '12' }), 'when'), '12');
+  assert.deepEqual(field(modelCodec(Tuple).fromWireFormat({ ...base, when: [day] }), 'when'), [new Date(day)]);
+  assert.equal(field(modelCodec(Tuple).toWireFormat(new Tuple({ ...base, when: 'hello' })), 'when'), 'hello');
+  assert.deepEqual(field(modelCodec(Tuple).toWireFormat(new Tuple({ ...base, when: [new Date(day)] })), 'when'), [day]);
 });
 
 test('a scalar-or-tuple union keeps its scalar and converts the items of its tuple', async () => {
@@ -227,8 +227,8 @@ test('a scalar-or-tuple union keeps its scalar and converts the items of its tup
   assert.deepEqual(field(JSON.parse(codec.stringify(new Tuple({ ...base, pair: [new Date(day)] }), options)), 'pair'), [day]);
 
   // model fromJSON and toJSON
-  assert.equal(field(decodeGeneratedModel(Tuple, { ...base, pair: 'plain' }), 'pair'), 'plain');
-  assert.deepEqual(field(decodeGeneratedModel(Tuple, { ...base, pair: [day] }), 'pair'), [new Date(day)]);
-  assert.equal(field(encodeGeneratedModel(new Tuple({ ...base, pair: 'plain' })), 'pair'), 'plain');
-  assert.deepEqual(field(encodeGeneratedModel(new Tuple({ ...base, pair: [new Date(day)] })), 'pair'), [day]);
+  assert.equal(field(modelCodec(Tuple).fromWireFormat({ ...base, pair: 'plain' }), 'pair'), 'plain');
+  assert.deepEqual(field(modelCodec(Tuple).fromWireFormat({ ...base, pair: [day] }), 'pair'), [new Date(day)]);
+  assert.equal(field(modelCodec(Tuple).toWireFormat(new Tuple({ ...base, pair: 'plain' })), 'pair'), 'plain');
+  assert.deepEqual(field(modelCodec(Tuple).toWireFormat(new Tuple({ ...base, pair: [new Date(day)] })), 'pair'), [day]);
 });

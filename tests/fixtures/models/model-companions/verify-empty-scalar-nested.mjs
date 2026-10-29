@@ -15,5 +15,5 @@ for (const [model, values] of [
 ]) {
   const codec = modelCodec(model);
   assert.deepEqual(codec.toWireFormat(codec.fromWireFormat(values, { construct: model })), values);
-  assert.throws(() => codec.fromWireFormat(null, { construct: model, validate: false }), (error) => error?.kind === 'deserialization' && error.causedByInput === true);
+  assert.throws(() => codec.fromWireFormat(null, { construct: model }), (error) => error?.kind === 'validation' && error.causedByInput === true);
 }

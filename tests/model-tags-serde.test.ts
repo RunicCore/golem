@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
@@ -13,6 +12,7 @@ import { buildModelProjectWith, generatedModelFiles } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
+import { modelCodec } from './support/model-codec.js';
 
 test('validation false retains Date and serde conversions without a validator registry', async t => {
   const { root, sourceRoot } = fixture(t);
@@ -27,14 +27,14 @@ test('validation false retains Date and serde conversions without a validator re
   assert.match(generated, /__golemSerialize0Source/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
-  const model = decodeGeneratedModel(A, { token: '4' });
+  const model = modelCodec(A).fromWireFormat({ token: '4' }, { validate: false });
   assert.equal(model.when, undefined);
-  assert.deepEqual(encodeGeneratedModel(model), { token: '4' });
+  assert.deepEqual(modelCodec(model).toWireFormat(model), { token: '4' });
   assert.equal(codecs.deserialized, 1);
   assert.equal(codecs.serialized, 1);
-  const dated = decodeGeneratedModel(A, { when: '2025-01-02T03:04:05.000Z', token: '5' });
+  const dated = modelCodec(A).fromWireFormat({ when: '2025-01-02T03:04:05.000Z', token: '5' }, { validate: false });
   assert.ok(dated.when instanceof Date);
-  assert.deepEqual(encodeGeneratedModel(dated), { when: '2025-01-02T03:04:05.000Z', token: '5' });
+  assert.deepEqual(modelCodec(dated).toWireFormat(dated), { when: '2025-01-02T03:04:05.000Z', token: '5' });
 });
 
 test('a TSerde deserializer whose parameter is unknown is rejected by default and allowed by allowAny', (t) => {
@@ -64,7 +64,7 @@ test('serde wire descriptors validate nested constraints before decode and after
   const codecs = await import(path.toNamespacedPath(path.join(root, 'build/codecs.js')));
   assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse( JSON.stringify({ value: { code: 'x' } })));
   assert.equal(codecs.decodeCalls, 0, 'invalid wire input is rejected before decode');
-  assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).assert( encodeGeneratedModel(new A({ value: 7 }))));
+  assert.throws(() => requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).assert( modelCodec(A).toWireFormat(new A({ value: 7 }))));
   assert.equal(codecs.encodeCalls, 1, 'invalid encoded wire output is checked after one encode');
 });
 
@@ -198,17 +198,17 @@ test('generic utility aliases retain nested constraints, predicates, and serde b
   assert.match(shared, /__golemSerialize0Source/);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const bindings = await import(path.toNamespacedPath(path.join(root, 'build/bindings.js')));
-  const invalid = decodeGeneratedModel(A, { payload: { value: 'x', when: '2025-01-02T03:04:05.000Z' } });
+  const invalid = modelCodec(A).fromWireFormat({ payload: { value: 'x', when: '2025-01-02T03:04:05.000Z' } }, { validate: false });
   assert.equal(await getValidator(invalid).validate(), false);
   assert.equal(bindings.predicateCalls, 0, 'builtin minLength failure suppresses the predicate');
   assert.equal(bindings.deserialized, 1, 'nested serde deserializes once');
-  const valid = decodeGeneratedModel(A, { payload: { value: 'good', when: '2025-01-02T03:04:05.000Z' } });
+  const valid = modelCodec(A).fromWireFormat({ payload: { value: 'good', when: '2025-01-02T03:04:05.000Z' } }, { validate: false });
   assert.equal(await getValidator(valid).validate(), true);
   assert.equal(bindings.predicateCalls, 1, 'the aliased predicate runs once after builtins pass');
   assert.equal(bindings.serialized, 0, 'model-plane validate does not encode TSerde values');
-  assert.deepEqual(encodeGeneratedModel(valid), { payload: { value: 'good', when: '2025-01-02T03:04:05.000Z' } });
+  assert.deepEqual(modelCodec(valid).toWireFormat(valid), { payload: { value: 'good', when: '2025-01-02T03:04:05.000Z' } });
   assert.equal(bindings.serialized, 1, 'an explicit serialize call serializes once for that call');
-  const boundary = (value: string) => decodeGeneratedModel(A, { payload: { value, when: '2025-01-02T03:04:05.000Z' } });
+  const boundary = (value: string) => modelCodec(A).fromWireFormat({ payload: { value, when: '2025-01-02T03:04:05.000Z' } }, { validate: false });
   assert.equal(await getValidator(boundary('abc')).validate(), true, 'a value of the minimum length passes');
   assert.equal(await getValidator(boundary('ab')).validate(), false, 'a value under the minimum length fails');
 });
@@ -256,9 +256,9 @@ export function fromFlag(wire: boolean): 'yes' | 'no' { return wire ? 'yes' : 'n
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
     const parsed = requireObjectCodec(generatedCodecIdFromRoot(root, 'TA')).parse('{"amount":500,"answer":true}') as { amount: number; answer: string };
     assert.deepEqual({ amount: parsed.amount, answer: parsed.answer }, { amount: 5, answer: 'yes' });
-    const decoded = decodeGeneratedModel(A, { amount: 250, answer: false });
+    const decoded = modelCodec(A).fromWireFormat({ amount: 250, answer: false }, { validate: false });
     assert.deepEqual({ amount: decoded.amount, answer: decoded.answer }, { amount: 2.5, answer: 'no' });
-    assert.deepEqual(encodeGeneratedModel(decoded), { amount: 250, answer: false });
+    assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { amount: 250, answer: false });
   });
 }
 

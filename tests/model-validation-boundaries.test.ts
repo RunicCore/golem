@@ -3,9 +3,9 @@ import test from 'node:test';
 import type { GeneratedModel, ModelTypeDescriptor } from '@exprtlabs/golem/model';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
-import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { installCodecModel } from './register-codec-model.js';
 import { compileSchema } from './support/compiled-validators.js';
+import { modelCodec } from './support/model-codec.js';
 
 function generated<Model extends object>(model: Model): Model & GeneratedModel<unknown> {
   return model as Model & GeneratedModel<unknown>;
@@ -73,7 +73,7 @@ test('exact frontend models ignore prototype extras while nested records stay ex
   const editor = new Editor();
   const validator = getValidator<Editor>(editor);
   assert.equal(await validator.validate(), true);
-  const json = encodeGeneratedModel(generated(editor));
+  const json = modelCodec(generated(editor)).toWireFormat(generated(editor));
   assert.deepEqual(json, { child: { value: 2 }, when: '2026-01-01T00:00:00.000Z', settings: { title: 'Draft' } });
   const wire = {
     ...model,
