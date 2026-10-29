@@ -117,7 +117,7 @@ function validateContext(context: GolemModelContext): NormalizedContext {
     throw new Error(`context.root must be an existing directory: ${displayPath(root)}`);
   }
   if (!context.profile || typeof context.profile !== 'object' || Array.isArray(context.profile)) {
-    throw new TypeError('context.profile is required and must contain mobx and validation booleans.');
+    throw new TypeError('context.profile is required and must be an object with mobx and validation.');
   }
   const profile = resolveProfile(context.profile);
   const output = assertAbsolute(
