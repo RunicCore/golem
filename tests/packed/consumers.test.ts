@@ -112,7 +112,8 @@ for (const profile of [
     const text = generated.filter(filename => filename.endsWith('.ts')).map(filename => fs.readFileSync(filename, 'utf8')).join('\n');
     const generatedImports = [...text.matchAll(/\bfrom\s+['"]([^'"]+)['"]|^\s*import\s+['"]([^'"]+)['"]/gm)].map(match => match[1] ?? match[2]);
     assert.ok(generatedImports.length > 0);
-    assert.ok(generatedImports.every(source => source.startsWith('./') || source.startsWith('../') || (source.startsWith('@exprtlabs/golem/') && !source.startsWith('@exprtlabs/golem/internal/'))), generatedImports.join('\n'));
+    const generatedRuntimeEntry = /^@exprtlabs\/golem\/internal\/(?:model|client|client-validation|validation|mobx|nest|temporal)-runtime$/;
+    assert.ok(generatedImports.every(source => source.startsWith('./') || source.startsWith('../') || (source.startsWith('@exprtlabs/golem/') && (!source.startsWith('@exprtlabs/golem/internal/') || generatedRuntimeEntry.test(source)))), generatedImports.join('\n'));
     for (const absent of ['inbound.ts', 'links.ts']) assert.equal(fs.existsSync(path.join(root, 'sdk', absent)), false);
     if (!profile.mobx) assert.doesNotMatch(text, /asGenObservable|ModelAnnotations|@exprtlabs\/golem\/mobx/);
     if (!profile.validation) assert.doesNotMatch(text, /\$validator|runtimeSchemaRegistry|@exprtlabs\/golem\/(?:validation|mobx-validation)/);
