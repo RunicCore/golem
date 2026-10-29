@@ -1005,3 +1005,12 @@ test('NestModelInterceptor refuses a level above the project and validates at sa
   ]);
   assert.deepEqual(statuses, [201, 201, 400, 500], 'a level above the project is a server fault, not a bad request');
 });
+
+test('NestModelInterceptor refuses a validate option that is no level, so a JavaScript false never turns request validation off', () => {
+  // protects: F-176 default settings stay safe for input validation
+  for (const validate of [false, null, 0, '', 'full', 1]) {
+    assert.throws(() => new NestModelInterceptor({ validate: validate as never }), TypeError, `validate ${String(validate)}`);
+  }
+  assert.doesNotThrow(() => new NestModelInterceptor({ validate: true }));
+  assert.doesNotThrow(() => new NestModelInterceptor({ validate: 'sanity' }));
+});

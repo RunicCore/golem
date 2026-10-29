@@ -19,6 +19,7 @@ export type { Issue, IssuePath } from './errors.js';
 import {
   findCodecIdForConstructor,
   requireObjectCodec,
+  serdeValidates,
   validationUnfinished,
   untransformedCallError,
   type AllowGetterOptions,
@@ -387,13 +388,29 @@ function codecIssues(codec: ObjectCodec, value: unknown, options: ValidateOption
   }
 }
 
+/**
+ * Throws the TypeError of a `validate` option that is no level. It runs before the `try` of a public call, so the caller
+ * sees the TypeError of its own mistake and not the Validation error of a check that could not finish.
+ */
+function assertValidateOption(options: Pick<ValidateOptions, 'validate'> | undefined): void {
+  serdeValidates(options, true);
+}
+
+/**
+ * The issues of the generated validator at the level of this call, then those of the instance rules. The level is the
+ * `validate` option, else the default of the model (its profile): the generated validator of an SDK model checks at that
+ * level too, and sanity skips the instance rules.
+ */
 async function collectCodecIssues(
   model: object,
   mode: ValidationMode,
   options: Pick<ValidateOptions, 'validate' | 'validationContext'> = {},
 ): Promise<readonly Issue[]> {
+  const requested = options.validate;
   assertAcyclicValue(model, LibErrorKind.Serialization);
   const definition = modelDefinition(model);
+  const profileLevel = definition.profile?.validation;
+  const level = requested ?? (profileLevel === false ? undefined : profileLevel);
   const failFast = mode === 'first';
   let generated: readonly Issue[] = [];
   const codecId = codecIdForDefinition(definition);
@@ -408,11 +425,11 @@ async function collectCodecIssues(
     generated = codecIssues(
       requireObjectCodec(codecId),
       codecValidationValue(model, definition),
-      { failFast, ...(options.validationContext === undefined ? {} : { validationContext: options.validationContext }), ...(options.validate === undefined ? {} : { validate: options.validate }) },
+      { failFast, ...(options.validationContext === undefined ? {} : { validationContext: options.validationContext }), ...(level === undefined ? {} : { validate: level }) },
     );
   }
   // Sanity is the shape only: the instance rules are validation functions of the application, which it skips.
-  const sanity = (options.validate ?? definition.profile?.validation) === 'sanity';
+  const sanity = level === 'sanity';
   const overlay = sanity || (mode === 'first' && generated.length) ? [] : await evaluateInstanceRules(model, mode, generated);
   const issues = formatIssues(model, [...generated, ...overlay]);
   return mode === 'first' ? issues.slice(0, 1) : issues;
@@ -469,6 +486,7 @@ export async function validateInstance<Model extends object>(
   model: Model,
   options?: ValidateOptions,
 ): Promise<readonly Issue[]> {
+  assertValidateOption(options);
   publicValidationDefinition(model);
   try {
     const mode = options?.failFast === false ? 'all' : 'first';
@@ -557,6 +575,7 @@ export class ModelValidator<Fields extends object, Owner extends object = Fields
   }
 
   public async validate(options?: ValidateOptions): Promise<boolean> {
+    assertValidateOption(options);
     const id = ++this.validationId;
     this.setPending(true);
     try {

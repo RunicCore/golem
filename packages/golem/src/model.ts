@@ -15,9 +15,9 @@ export interface IModelOptions {
   /**
    * Override the generation profile `validation` level (`true`, `'sanity'` or
    * `false`) for this named interned declaration. `undefined` inherits the
-   * profile. A model may lower the level of its project, never raise it. Nested
-   * interned IObject/IModel nodes use their own option; inline objects are not
-   * declarations.
+   * profile. A model may lower the level of its project, never raise it. A nested
+   * model is checked at the level of the call that reaches it; only `false` (no
+   * validators) belongs to the nested model. Inline objects are not declarations.
    */
   readonly validation?: boolean | 'sanity';
 }

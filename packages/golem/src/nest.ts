@@ -299,6 +299,10 @@ export class NestModelInterceptor implements NestInterceptor {
 
   constructor(options: NestModelInterceptorOptions = {}) {
     this.maxDepth = resolveMaxDepth(options.maxDepth);
+    // A JavaScript caller can pass `false`, `null` or a string; none may turn request validation off by accident (F-176).
+    if (options.validate !== undefined && options.validate !== true && options.validate !== 'sanity') {
+      throw new TypeError(`The validate option of NestModelInterceptor takes true or 'sanity'; got ${String(options.validate)}.`);
+    }
     this.validate = options.validate;
   }
 
