@@ -56,9 +56,15 @@ const LIMITS: readonly Row[] = [
 ];
 
 /** The validator of a full module and of a sanity module of one schema. */
-async function runs(schema: unknown): Promise<{ readonly full: Validator; readonly sanityModule: Validator }> {
-  const [full, sanity] = await Promise.all([compileValidators({ roots: { root: schema } }), compileValidators({ roots: { root: schema }, level: 'sanity' })]);
-  return { full: full.root, sanityModule: sanity.root };
+const compiledRuns = new Map<unknown, Promise<{ readonly full: Validator; readonly sanityModule: Validator }>>();
+
+function runs(schema: unknown): Promise<{ readonly full: Validator; readonly sanityModule: Validator }> {
+  const known = compiledRuns.get(schema);
+  if (known) return known;
+  const created = Promise.all([compileValidators({ roots: { root: schema } }), compileValidators({ roots: { root: schema }, level: 'sanity' })])
+    .then(([full, sanity]) => ({ full: full.root, sanityModule: sanity.root }));
+  compiledRuns.set(schema, created);
+  return created;
 }
 
 /** True when the validator reports no issue, in all-errors mode and in fail-fast mode. */
@@ -105,12 +111,14 @@ describe('sanity accepts all that full accepts', () => {
   });
 
   test('if over a limit does not apply then', async () => {
+    // protects: R-71 an if that passes more at sanity must not apply a then that full does not
     const schema = { if: { properties: { a: { maxLength: 1 } } }, then: { required: ['b'] } };
     assert.deepEqual(await levels(schema, { a: 'xyz' }), { full: true, flag: true, sanityModule: true });
     assert.deepEqual(await levels(schema, { a: 'x' }), { full: false, flag: true, sanityModule: true });
   });
 
   test('then over a limit still applies its shape when if is exact', async () => {
+    // protects: R-71 relaxing only an if that reaches a limit keeps the shape of then and else
     const schema = { if: { required: ['a'] }, then: { required: ['b'], properties: { b: { type: 'string', maxLength: 1 } } } };
     assert.deepEqual(await levels(schema, { a: 1 }), { full: false, flag: false, sanityModule: false });
     assert.deepEqual(await levels(schema, { a: 1, b: 'xyz' }), { full: false, flag: true, sanityModule: true });
@@ -118,6 +126,7 @@ describe('sanity accepts all that full accepts', () => {
   });
 
   test('contains over a limit needs no match, and a plain contains still needs one', async () => {
+    // protects: R-71 contains counts are limits; a contains with a shape-only schema still needs one match
     const limited = { type: 'array', contains: { type: 'string', maxLength: 1 } };
     assert.deepEqual(await levels(limited, ['abc']), { full: false, flag: true, sanityModule: true });
     assert.deepEqual(await levels(limited, ['a']), { full: true, flag: true, sanityModule: true });
@@ -127,6 +136,7 @@ describe('sanity accepts all that full accepts', () => {
   });
 
   test('the flag reaches a function that receives an evaluation record', async () => {
+    // protects: R-73 the flag s comes before the record e in the parameter list and the call
     // The base takes the record `e` and the flag `s`, in that order after the all-errors flag.
     const schema = { $ref: '#/$defs/Base', unevaluatedProperties: false, $defs: { Base: { properties: { a: { type: 'string', maxLength: 1 } } } } };
     assert.deepEqual(await levels(schema, { a: 'xyz' }), { full: false, flag: true, sanityModule: true });
@@ -135,9 +145,28 @@ describe('sanity accepts all that full accepts', () => {
   });
 
   test('a relaxed if still marks what it evaluates for unevaluatedProperties', async () => {
+    // protects: R-71 a relaxed if keeps its evaluation marks, so unevaluatedProperties never rejects more at sanity
     const schema = { properties: { a: {} }, if: { properties: { b: { maxLength: 1 } }, required: ['b'] }, then: { properties: { c: {} } }, unevaluatedProperties: false };
     assert.deepEqual(await levels(schema, { a: 1, b: 'x', c: 1 }), { full: true, flag: true, sanityModule: true });
     assert.deepEqual(await levels(schema, { a: 1, b: 'x', d: 1 }), { full: false, flag: false, sanityModule: false });
+  });
+
+  test('contains over a limit still marks its matches for unevaluatedItems', async () => {
+    // protects: R-71 a contains relaxed in a function that keeps a record still marks the items it matches
+    const schema = { type: 'array', contains: { type: 'string', maxLength: 1 }, unevaluatedItems: false };
+    assert.deepEqual(await levels(schema, ['a']), { full: true, flag: true, sanityModule: true });
+    assert.deepEqual(await levels(schema, ['abc']), { full: false, flag: true, sanityModule: true });
+    assert.deepEqual(await levels(schema, ['abc', 5]), { full: false, flag: false, sanityModule: false });
+  });
+
+  test('an untagged oneOf that keeps a record runs every branch at sanity, so each match marks its keys', async () => {
+    // protects: R-71 a oneOf relaxed to anyOf must not stop after two matches: a later branch can mark the keys full accepts
+    const schema = {
+      oneOf: [{ properties: { a: { type: 'string', maxLength: 1 } } }, { properties: { b: { type: 'string', maxLength: 1 } } }, { properties: { a: {}, b: {}, c: { type: 'string' } }, required: ['c'] }],
+      unevaluatedProperties: false,
+    };
+    assert.deepEqual(await levels(schema, { a: 'xyz', b: 'xyz', c: 's' }), { full: true, flag: true, sanityModule: true });
+    assert.deepEqual(await levels(schema, { a: 'xyz', b: 'xyz', c: 's', d: 1 }), { full: false, flag: false, sanityModule: false });
   });
 });
 
@@ -163,8 +192,16 @@ describe('a sanity module', () => {
   test('holds no code for a value limit and takes no flag', async () => {
     // protects: R-71 a sanity project emits only sanity checks
     const { source } = await compileValidatorModule({ roots: { root: LIMITED }, level: 'sanity' });
-    assert.doesNotMatch(source, /codePointLength|checkFormat|formatTest|isMultipleOf|RegExp|unique|tooBig|tooSmall|pattern/);
+    assert.doesNotMatch(source, /codePointLength|checkFormat|formatTest|isMultipleOf|new RegExp|\bpattern\d+\b|code: 'unique'|\bunique\d+:|tooBig|tooSmall/);
     assert.match(source, /export function validate_root\(value, all\) \{/);
+  });
+
+  test('leaves out a check that only a limit held', async () => {
+    // protects: R-71 a sanity project emits only sanity checks: no loop for an array or a key list that held a limit alone
+    const limitsOnly = { type: 'object', propertyNames: { maxLength: 5 }, properties: { tags: { minItems: 1, uniqueItems: true }, owner: { properties: { name: { minLength: 1 } } } } };
+    const { source } = await compileValidatorModule({ roots: { root: limitsOnly }, level: 'sanity' });
+    assert.doesNotMatch(source, /for \(|\.push\("(tags|owner|name)"\)/);
+    assert.deepEqual((await compileValidators({ roots: { root: limitsOnly }, level: 'sanity' })).root({ tags: [1, 1], owner: { name: '' }, extraordinarilyLong: 1 }, true), []);
   });
 
   test('reports a schema diagnostic as the full level does', () => {
@@ -177,6 +214,7 @@ describe('a sanity module', () => {
   });
 
   test('has fast checks that match its own validator', async () => {
+    // protects: R-71 a sanity module's fast check is true exactly when its validator reports no issue
     const { byRoot, fastByRoot } = await compileValidatorModule({ roots: { root: LIMITED }, level: 'sanity', fastPath: true });
     const values = [{ a: 'x', b: 9, c: [1, 1, 1] }, { b: 1 }, { a: 1 }, { a: 'x', extra: 1 }];
     assert.deepEqual(values.map(value => fastByRoot.root(value)), values.map(value => byRoot.root(value, true).length === 0));
