@@ -1,7 +1,7 @@
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { PetModel, VisitModel } from './index.js';
 
-const visit = decodeGeneratedModel(VisitModel, { pet: null });
+const visit = fromWireFormat<VisitModel>({ pet: null });
 const pet: PetModel | null = visit.pet;
 visit.pet = null;
 

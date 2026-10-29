@@ -1,7 +1,7 @@
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { PetModel, VisitModel } from './index.js';
 
-const visit = decodeGeneratedModel(VisitModel, { either: { name: 'Miso' } });
+const visit = fromWireFormat<VisitModel>({ either: { name: 'Miso' } });
 const either: PetModel | string | null = visit.either;
 
 visit.either = null;

@@ -1,7 +1,7 @@
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { VisitModel } from './index.js';
 
-const visit = decodeGeneratedModel(VisitModel, { based: { name: 'Miso' } });
+const visit = fromWireFormat<VisitModel>({ based: { name: 'Miso' } });
 const at: Date | undefined = visit.based.at;
 
 void at;

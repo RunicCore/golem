@@ -1,7 +1,7 @@
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { VisitModel } from './index.js';
 
-const visit = decodeGeneratedModel(VisitModel, {
+const visit = fromWireFormat<VisitModel>({
   maybeVisits: ['2024-05-06T07:08:09.000Z'],
   untypedVisits: ['2024-05-07T08:09:10.000Z'],
   maybeLeg: ['gate', '2024-05-08T09:10:11.000Z'],

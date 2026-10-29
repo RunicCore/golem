@@ -1,6 +1,5 @@
 // Runs inside a generated SDK: an allOf variant inherits a date-time field from
 // its base, and the discriminated union selects the variant.
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import * as models from './dist/index.js';
 
 const { fromWireFormatPayment, fromWireFormatCardPayment, fromWireFormatPaymentBase, parsePayment, parseCardPayment,
@@ -18,8 +17,8 @@ const report = {
   validateVariant: validateCardPayment(fromWireFormatCardPayment(card)),
   validateUnion: validatePayment(fromWireFormatPayment(card)),
   nonObjectIsInput: (() => {
-    try { decodeGeneratedModel(CardPaymentModel, 'text'); return false; }
-    catch (error) { return error?.kind === 'deserialization' && error.causedByInput === true; }
+    try { fromWireFormatCardPayment('text'); return false; }
+    catch (error) { return error?.kind === 'validation' && error.causedByInput === true; }
   })(),
   rejectsBadDate: (() => { try { fromWireFormatPayment({ ...card, createdAt: 'nope' }); return false; } catch { return true; } })(),
 };
