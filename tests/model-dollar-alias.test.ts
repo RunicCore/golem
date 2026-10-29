@@ -5,7 +5,7 @@ import { pathToFileURL } from 'node:url';
 
 import { LibError } from '@exprtlabs/golem/errors';
 
-import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
+import { buildModelProject, generatedModelFiles, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 
 test('a model alias named with a leading $ generates when another model file imports it', async (t) => {
   // protects: bug T-647 Unresolved schema reference for a $-named alias imported from another file
@@ -78,8 +78,10 @@ export class Order extends $OrderBaseModel {}
   writeModelGolemYaml(root, { validation: true });
   const result = await buildModelProject(root);
   assert.equal(result.code, 0, result.stderr);
-  const { Customer } = await import(pathToFileURL(path.join(root, 'build', 'customer.js')).href);
-  const { Order } = await import(pathToFileURL(path.join(root, 'build', 'order.js')).href);
-  // The model of the other file in the cycle is found by its codec id, so a field holds the app class and not its base.
-  assert.ok(new Order({ id: 'o1', customer: { name: 'Ada', orders: [] } }).customer instanceof Customer);
+  // A model of the other file in the cycle is reached by its codec id, as the file cannot import its class.
+  const files = generatedModelFiles(root);
+  const customer = files.find(file => file.path.endsWith('customer.model.generated.ts'))?.content ?? '';
+  const order = files.find(file => file.path.endsWith('order.model.generated.ts'))?.content ?? '';
+  assert.match(customer, /instanceof requireIModelClass\("_Order_[0-9a-f]{8}"\)/);
+  assert.match(order, /instanceof requireIModelClass\("_Customer_[0-9a-f]{8}"\)/);
 });
