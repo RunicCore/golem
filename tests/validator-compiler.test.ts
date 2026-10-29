@@ -316,6 +316,25 @@ test('a discriminator is an annotation when a branch leaves its tag optional, so
   await assertIssues(schema, { kind: 'z' }, [{ path: [], code: 'union', matched: 0 }]);
 });
 
+test('a discriminator with an optional tag reports the issue of the branch a present tag picks, and plain oneOf results otherwise', async () => {
+  // protects: T-636 a present tag gave a generic union issue when a branch left the tag optional
+  const schema = {
+    oneOf: [
+      { properties: { kind: { const: 'a' }, x: { type: 'integer' } } },
+      { properties: { kind: { enum: ['b', 'c'] }, y: { type: 'string' } }, required: ['kind'] },
+    ],
+    discriminator: { propertyName: 'kind' },
+  };
+  await assertIssues(schema, { kind: 'a', x: 'no' }, [{ path: ['x'], code: 'type', expected: ['integer'] }]);
+  await assertIssues(schema, { kind: 'c', y: 1 }, [{ path: ['y'], code: 'type', expected: ['string'] }]);
+  await assertIssues(schema, { kind: 'a', x: 1 }, []);
+  await assertIssues(schema, { kind: 'b', y: 'ok' }, []);
+  await assertIssues(schema, {}, []);
+  await assertIssues(schema, { x: 'no' }, [{ path: [], code: 'union', matched: 0 }]);
+  await assertIssues(schema, { kind: 'z' }, [{ path: [], code: 'union', matched: 0 }]);
+  await assertIssues(schema, 'text', [{ path: [], code: 'union', matched: 2 }]);
+});
+
 test('minLength and maxLength count code points', async () => {
   await assertIssues({ minLength: 2 }, '\u{1F600}', [{ path: [], code: 'tooSmall', measure: 'length', limit: 2, inclusive: true }]);
   await assertIssues({ maxLength: 2 }, '\u{1F600}'.repeat(3), [{ path: [], code: 'tooBig', measure: 'length', limit: 2, inclusive: true }]);

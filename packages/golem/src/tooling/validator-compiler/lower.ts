@@ -320,19 +320,20 @@ class Lowering {
   }
 
   /**
-   * The discriminator of a `oneOf` list, when every branch requires its tag, states its tag values and no value repeats;
-   * otherwise it is an annotation. A branch that leaves the tag optional can match a value without it, which a tag lookup
-   * would reject (the rule of OpenAPI 3.1, where the discriminating property is required).
+   * The discriminator of a `oneOf` list, when every branch states its tag values and no value repeats; otherwise it is an
+   * annotation. A branch that leaves the tag optional can match a value without it, which a tag lookup would reject (the
+   * rule of OpenAPI 3.1, where the discriminating property is required): the discriminator is then `optional`, and only a
+   * value that carries a tag is looked up.
    */
   private discriminatorOf(node: Readonly<Record<string, unknown>>, branches: readonly SchemaLocation[]): IrDiscriminator | undefined {
     const { discriminator } = node;
     if (!isRecord(discriminator) || typeof discriminator.propertyName !== 'string') return undefined;
     const property = discriminator.propertyName;
-    if (!branches.every(branch => this.requiresProperty(branch, property))) return undefined;
     const tags = branches.map(branch => this.tagValues(branch, property));
     if (!tags.every((list): list is readonly unknown[] => list !== undefined)) return undefined;
     const seen = new Set(tags.flat().map(tag => JSON.stringify(tag)));
-    return seen.size === tags.flat().length ? { property, tags } : undefined;
+    if (seen.size !== tags.flat().length) return undefined;
+    return branches.every(branch => this.requiresProperty(branch, property)) ? { property, tags } : { property, tags, optional: true };
   }
 
   /**

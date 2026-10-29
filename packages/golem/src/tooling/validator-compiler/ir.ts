@@ -123,6 +123,11 @@ export interface IrDiscriminator {
   readonly property: string;
   /** The tag values of each branch, in branch order; no value belongs to two branches. */
   readonly tags: readonly (readonly unknown[])[];
+  /**
+   * True when a branch leaves the tag optional: a value that carries one of the tags runs its branch only, and any other
+   * value is checked as a plain `oneOf`, so a value without the tag can still match.
+   */
+  readonly optional?: true;
 }
 
 /**

@@ -736,9 +736,10 @@ export class FunctionWriter {
   /**
    * The tag selects the branch; only that branch's issues are reported, and an unknown tag is a `literal` issue on the
    * tag property. The tag is read once; the first branch whose list holds it is selected, as a tag lies in one list.
+   * With an optional tag, a value that selects no branch is checked as a plain `oneOf`: it may match without the tag.
    */
   private discriminatedUnion(check: IrUnion, discriminator: IrDiscriminator, value: Code): void {
-    const merged = this.mergedBranches(check);
+    const merged = discriminator.optional ? undefined : this.mergedBranches(check);
     if (merged !== undefined) {
       const targets = check.branches.map(id => this.target(id));
       for (const target of targets) this.merging.add(target);
@@ -765,6 +766,12 @@ export class FunctionWriter {
       this.callInPlace(fn, value);
       this.close();
     });
+    if (discriminator.optional) {
+      this.open(code`if (${selected} < 0)`);
+      this.unionCheck(check, value);
+      this.close();
+      return;
+    }
     this.leaf({
       fails: code`${selected} < 0`,
       issue: () => code`code: 'literal', expected: ${this.state.constant('lit', code`Object.freeze(/*#__PURE__*/ JSON.parse(${literalCode(JSON.stringify(discriminator.tags.flat()))}))`, JSON.stringify(discriminator.tags.flat()))}`,
