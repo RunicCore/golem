@@ -21,7 +21,7 @@ import {
 } from './models.js';
 import { withOrigins, type OriginLocator } from './origin.js';
 import { buildSchemaData } from './schemas.js';
-import { compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
+import { compileLevel, compileSdkValidators, uniqueDiagnostics, type CodecValidationPlan, type PlanValidators, type SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
 import { descriptionComment, generateDirectionalSchemas, generateTypes } from './types.js';
 
 interface WriteSdkResult extends GolemResult {}
@@ -178,7 +178,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const clientName = identifier(options.name || readString(asRecord(asRecord(document).info).title), 'Api');
   const output = path.resolve(options.output);
   const plan = buildEmissionPlan(document, ir, profile, options.dates ?? 'date');
-  const modelAnalysis = analyzeOpenApiModels(document, profile.validation !== false, options.dates ?? 'date');
+  const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date');
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
   const schemaData = profile.validation && plan.hasOutboundOperations
     ? buildSchemaData(document, ir)
@@ -204,6 +204,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const validatorOptions = {
     owner: '@exprtlabs/golem-openapi',
     unknownFormats: profile.unknownFormats,
+    level: compileLevel(profile.validation),
     documentName: 'the OpenAPI document',
     ...(operationValidation ? { locate: operationValidation.locate } : {}),
   } as const;

@@ -359,7 +359,7 @@ function modelPropertyAssignment(target: string, name: string, value: Code): Cod
 
 /** Whether a model's group module exports its wire stringify: another group writes a recursive model under it in place and meets it again. */
 function exportsWireStringify(graph: SchemaGraph, node: SchemaNode, profile: OpenApiGenerationProfile): boolean {
-  return profile.validation && node.kind !== 'reference' && !node.sameSchema && node.validationEnabled !== false
+  return profile.validation && node.kind !== 'reference' && !node.sameSchema && node.validation !== false
     && reachesItself(graph, node);
 }
 
@@ -485,13 +485,15 @@ export function generateOpenApiModelArtifacts(
       groupPlans.set(group.id, buildCodecValidationPlan(
         schemaGraphView(schemaGraph, group.nodes, dependenciesByGroup.get(group.id) ?? new Set<string>()),
         externalCodecs,
+        {},
+        profile.validation,
       ));
     }
   }
   if (profile.validation && !helpers.compileValidators) throw new Error('A validating SDK compiles its model validators with the operation validators; the caller names how.');
   const compiledValidators = profile.validation && helpers.compileValidators
     ? helpers.compileValidators({
-      plan: buildCodecValidationPlan(schemaGraph),
+      plan: buildCodecValidationPlan(schemaGraph, [], {}, profile.validation),
       groupPlans,
       locateModel: (name) => componentPlace(helpers.locate, schemaNameByModelName.get(name) ?? name, ''),
     })
@@ -682,7 +684,7 @@ export function generateModels(
   } = {},
 ): string {
   requireProfile(profile);
-  const analysis = helpers.analysis ?? analyzeOpenApiModels(document, profile.validation !== false);
+  const analysis = helpers.analysis ?? analyzeOpenApiModels(document, profile.validation);
   const definitions = analysis.definitions;
   const ordered = helpers.onlyNames
     ? analysis.ordered.filter((definition) => helpers.onlyNames?.has(definition.name))

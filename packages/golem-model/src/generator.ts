@@ -8,7 +8,7 @@ import type {
   GeneratorSession,
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
-import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
+import { buildCodecValidationPlan, compileLevel, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
 import {
   canonicalPath,
@@ -236,7 +236,7 @@ function canonicalSourceKey(filename: string): string {
  */
 function internJobSchemaGraphs(
   graphs: readonly SourceModelGraph[],
-  defaultValidation: boolean,
+  defaultValidation: GolemProfile['validation'],
   closure: readonly CodecSchemaClosureEntry[] = [],
 ): SourceSchemaGraph[] {
   const codecIds = new Map<ModelSpecification, string>();
@@ -530,29 +530,29 @@ export function generate(context: GolemModelContext): GolemModelResult {
       job,
     ))
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
-  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation !== false, manifestIndex.validationSchemaClosure);
+  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
   const schemaGraphs = graphSchemaPairs.map(({ schemaGraph }) => schemaGraph);
-  // A model can ask for validation when the profile does not.
-  const anyValidation = normalized.profile.validation
-    || schemaGraphs.some((graph) => [...graph.nodes.values()].some((node) => node.kind !== 'reference' && node.validationEnabled === true));
   const schemaEntries = deduplicateTagSchemas(
     graphs.flatMap((graph) => graph.schemas)
       .sort((left, right) => compareText(left.key, right.key)
         || compareText(JSON.stringify(left.schema), JSON.stringify(right.schema))),
   );
-  const validationPlan = anyValidation
+  // A model never validates above its project, so a project that does not validate has no validators.
+  const validationPlan = normalized.profile.validation !== false
     ? buildCodecValidationPlan(
       schemaGraphs,
       manifestIndex.validationSchemaClosure,
       Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
-      normalized.profile.validation !== false,
+      normalized.profile.validation,
     )
     : undefined;
   const validatorsOutput = join(normalized.output, 'models.validators.generated.ts');
-  const validators = validationPlan && validationPlan.references.length > 0
+  // A project whose models all stay off has no codec that calls a validator, so it writes no file.
+  const validators = validationPlan && validationPlan.ownSchemas.length > 0
     ? compilePlanValidators(validationPlan, {
       owner: '@exprtlabs/golem-model',
       unknownFormats: normalized.profile.unknownFormats,
+      level: compileLevel(normalized.profile.validation),
       validations: validatorImports(graphs, normalized.profile, validatorsOutput),
       documentName: 'the model schemas',
       locate: (resource) => resource.startsWith('golem:model-tag:') ? { where: FIELD_TYPE_PLACE } : undefined,

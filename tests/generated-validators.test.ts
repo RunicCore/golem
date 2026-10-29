@@ -202,7 +202,7 @@ test('a plan root that is no model of the plan gets a validator and no fast chec
   assert.deepEqual([...fastExports.keys()].sort(), [...plan.ownSchemas].sort(), 'only the models of the plan have a fast check');
 });
 
-test('a validating model brings the shared object it references into the plan when the default is off', async () => {
+test('a validating model brings the shared object it references, which sets no level, into the plan', async () => {
   const sharedDescriptor: ModelTypeDescriptor = {
     kind: 'object',
     properties: { code: { kind: 'string', constraints: [{ kind: 'minLength', value: 3 }] } },
@@ -215,13 +215,13 @@ test('a validating model brings the shared object it references into the plan wh
     required: ['shared'],
     additionalProperties: false,
   };
-  // The shared object did not choose validation; the owner asked for it. The default is off.
+  // The shared object sets no level; the owner sets one. The project validates, as a model never validates above it.
   const sharedGraph = createSchemaGraph();
   sharedGraph.intern(sharedDescriptor, 'Shared');
   sharedGraph.seal();
   const shared = [...sharedGraph.nodes.values()].find(node => node.name === 'Shared');
   assert.ok(shared);
-  assert.equal(shared.validationEnabled, undefined);
+  assert.equal(shared.validation, undefined);
   const ownerGraph = createSchemaGraph({}, { codecIds: new Map([['Shared', shared.codecId]]) });
   ownerGraph.intern({ kind: 'reference', name: 'Shared' }, 'Shared');
   ownerGraph.intern(ownerDescriptor, 'Owner', false, true);
@@ -229,7 +229,7 @@ test('a validating model brings the shared object it references into the plan wh
   const owner = [...ownerGraph.nodes.values()].find(node => node.name === 'Owner');
   assert.ok(owner);
 
-  const plan = buildCodecValidationPlan([sharedGraph, ownerGraph], [], {}, false);
+  const plan = buildCodecValidationPlan([sharedGraph, ownerGraph], [], {}, true);
   assert.ok(plan.ownSchemas.includes(owner.codecId), 'the owner is validated');
   assert.ok(plan.ownSchemas.includes(shared.codecId), 'the object the owner references is validated with it');
   const { [owner.codecId]: validateOwner } = await compileValidationPlan(plan);

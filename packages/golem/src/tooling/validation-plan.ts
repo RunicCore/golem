@@ -1,6 +1,6 @@
 import { lowerDiscriminatorMappings } from '../discriminator-mapping.js';
 import { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_INSTANCE_KEYWORD } from '../schema-keywords.js';
-import { compareText, type GolemDiagnostic } from './generator-core.js';
+import { compareText, type GolemDiagnostic, type GolemProfile } from './generator-core.js';
 import { codecShortName, type SchemaGraph, type SchemaNode } from './schema-graph.js';
 import type { JsonSchema } from './schema.js';
 import { compile, type CompileInput, type CompileOptions, type CompileResult, type SchemaPlace } from './validator-compiler/index.js';
@@ -28,6 +28,13 @@ export interface CodecValidationPlan {
   readonly ownSchemas: readonly string[];
   /** The model name behind each own schema id, with its `#wire`, `#model-only` and `#wire-only` forms. */
   readonly modelNames: Readonly<Record<string, string>>;
+  /** The own schema ids of the models that check the shape only inside a project that checks everything; none in any other project. */
+  readonly sanityRoots: readonly string[];
+}
+
+/** The level a validators module compiles at: a sanity project checks the shape only, any other writes one module that can check everything. */
+export function compileLevel(validation: GolemProfile['validation']): 'full' | 'sanity' {
+  return validation === 'sanity' ? 'sanity' : 'full';
 }
 
 interface GraphDefinitionTarget {
@@ -115,18 +122,19 @@ function schemaNodeAliases(node: SchemaNode): readonly string[] {
 /**
  * The codecs the plan compiles: those that validate, and the reachable codecs that did not choose, which a validating
  * model's schema references by id (as the runtime path did). A codec that sets `validation: false` stays out: the schemas
- * that reference it leave its structure open.
+ * that reference it leave its structure open. A model never validates above its project, so a project that does not
+ * validate compiles none.
  */
 function compiledCodecIds(
   nodes: readonly { readonly node: SchemaNode; readonly graph: SchemaGraph }[],
-  defaultValidation: boolean,
+  defaultValidation: GolemProfile['validation'],
 ): ReadonlySet<string> {
   const own = new Map<string, { readonly node: SchemaNode; readonly graph: SchemaGraph }>();
   for (const entry of nodes) {
     if (entry.node.kind !== 'reference') own.set(entry.node.codecId, entry);
   }
   const compiled = new Set<string>();
-  const pending = [...own.values()].filter(({ node }) => node.validationEnabled ?? defaultValidation);
+  const pending = defaultValidation === false ? [] : [...own.values()].filter(({ node }) => node.validation !== false);
   for (let entry = pending.pop(); entry !== undefined; entry = pending.pop()) {
     if (compiled.has(entry.node.codecId)) continue;
     compiled.add(entry.node.codecId);
@@ -135,7 +143,7 @@ function compiledCodecIds(
       if (reached === undefined) continue;
       // A reference node stands for the codec another graph of the job owns.
       const target = reached.kind === 'reference' ? own.get(reached.codecId) : { node: reached, graph: entry.graph };
-      if (target !== undefined && target.node.validationEnabled !== false) pending.push(target);
+      if (target !== undefined && target.node.validation !== false) pending.push(target);
     }
   }
   return compiled;
@@ -150,8 +158,8 @@ export function buildCodecValidationPlan(
   graphOrGraphs: SchemaGraph | readonly SchemaGraph[],
   externalCodecs: readonly CodecSchemaClosureEntry[] = [],
   additionalSchemas: Readonly<Record<string, JsonSchema>> = {},
-  /** Whether a node that does not choose validates: the profile's `validation`. */
-  defaultValidation = true,
+  /** The level of a node that does not choose: the profile's `validation`. */
+  defaultValidation: GolemProfile['validation'] = true,
 ): CodecValidationPlan {
   const graphs = Array.isArray(graphOrGraphs) ? graphOrGraphs : [graphOrGraphs];
   const nodes = graphs.flatMap(graph => [...graph.nodes.values()]
@@ -239,11 +247,15 @@ export function buildCodecValidationPlan(
   };
   const ownSchemas = new Set<string>();
   const modelNames: Record<string, string> = Object.create(null) as Record<string, string>;
+  const sanityRoots = new Set<string>();
   for (const { graph, node } of nodes) {
     if (node.kind === 'reference' || !compiled.has(node.codecId)) continue;
+    // In a sanity project every root checks the shape only, so the module is compiled at that level and no root needs a cap.
+    const capped = defaultValidation === true && node.validation === 'sanity';
     const own = (id: string): void => {
       ownSchemas.add(id);
       modelNames[id] = node.name;
+      if (capped) sanityRoots.add(id);
     };
     own(node.codecId);
     if (!node.sameSchema) own(`${node.codecId}#wire`);
@@ -390,7 +402,7 @@ export function buildCodecValidationPlan(
       id.endsWith('#wire') || id.endsWith('#wire-only'),
     ) as object | boolean;
   }
-  return { schemas, references: Object.keys(schemas).sort(), ownSchemas: [...ownSchemas].sort(), modelNames };
+  return { schemas, references: Object.keys(schemas).sort(), ownSchemas: [...ownSchemas].sort(), modelNames, sanityRoots: [...sanityRoots].sort() };
 }
 
 function withoutOwnId(schema: unknown, id: string): unknown {
@@ -404,6 +416,8 @@ export interface PlanValidatorsOptions {
   /** The package that writes the file: its name opens the file's ownership header. */
   readonly owner: string;
   readonly unknownFormats: 'warn' | 'error';
+  /** What the module checks (see `compileLevel`); every check by default. */
+  readonly level?: 'full' | 'sanity';
   /** The user validation functions the schemas name, with import paths relative to the validators file. */
   readonly validations?: CompileInput['validations'];
   /** Named in each diagnostic message that `locate` does not place. */
@@ -432,6 +446,7 @@ function compileValidatorRoots(
   resources: ReadonlyMap<string, unknown>,
   options: PlanValidatorsOptions,
   fastRoots: ReadonlySet<string>,
+  sanityRoots: ReadonlySet<string>,
 ): PlanValidators {
   const { source, exports, fastExports, passExports, diagnostics } = compile(
     {
@@ -444,6 +459,8 @@ function compileValidatorRoots(
       documentName: options.documentName,
       typed: true,
       fastPath: fastRoots,
+      ...(options.level === undefined ? {} : { level: options.level }),
+      ...(sanityRoots.size === 0 ? {} : { sanityRoots }),
       ...(options.locate === undefined ? {} : { locate: options.locate }),
     },
   );
@@ -477,7 +494,7 @@ export function compilePlanValidators(plan: CodecValidationPlan, options: PlanVa
       const name = plan.modelNames[resource];
       return name === undefined ? options.locate?.(resource, pointer) : locateModel(name);
     },
-  }, new Set(plan.ownSchemas));
+  }, new Set(plan.ownSchemas), new Set(plan.sanityRoots));
 }
 
 /** The diagnostics without repeats: one schema that several compilations reach reports once. */
@@ -550,5 +567,5 @@ export function compileSdkValidators(input: SdkValidatorsInput, options: PlanVal
       const name = input.plan?.modelNames[resource];
       return name === undefined ? options.locate?.(resource, pointer) : locateModel(name);
     },
-  }, new Set(input.plan?.ownSchemas ?? []));
+  }, new Set(input.plan?.ownSchemas ?? []), new Set(input.plan?.sanityRoots ?? []));
 }

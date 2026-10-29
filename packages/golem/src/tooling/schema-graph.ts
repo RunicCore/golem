@@ -15,7 +15,7 @@ import {
   type ModelConstraint,
 } from './schema.js';
 import { canonicalSchemaKey } from './canonical-schema-key.js';
-import { compareText } from './generator-core.js';
+import { compareText, type GolemProfile } from './generator-core.js';
 
 export type SchemaNodeKind = 'object' | 'array' | 'tuple' | 'union' | 'intersection' | 'scalar' | 'reference';
 
@@ -39,11 +39,11 @@ export interface SchemaNode {
   readonly edges: readonly string[];
   readonly emitClass: boolean;
   /**
-   * Resolved per-declaration validation flag. `undefined` inherits the emit
+   * Resolved per-declaration validation level, never above the project's. `undefined` inherits the emit
    * profile. `false` stubs `validate${id}` and parent schemas do not `$ref`
-   * this node as if it had a validator.
+   * this node as if it had a validator. `'sanity'` checks the shape only (the schemas keep every limit).
    */
-  readonly validationEnabled?: boolean;
+  readonly validation?: GolemProfile['validation'];
   readonly kind: SchemaNodeKind;
   /**
    * A model another generated module of the same job emits, by its known
@@ -69,7 +69,7 @@ export interface SchemaGraph {
     descriptor: ModelTypeDescriptor,
     name?: string,
     emitClass?: boolean,
-    validationEnabled?: boolean,
+    validation?: GolemProfile['validation'],
   ): SchemaNode;
   /**
    * `constructs` selects the class or plain-object codec when one graph holds both
@@ -271,7 +271,7 @@ export function internDescriptors(
     readonly name: string;
     readonly descriptor: ModelTypeDescriptor;
     readonly emitClass?: boolean;
-    readonly validationEnabled?: boolean;
+    readonly validation?: GolemProfile['validation'];
   }>,
 ): ReadonlyMap<string, string> {
   const interned = new Set<(typeof entries)[number]>();
@@ -287,7 +287,7 @@ export function internDescriptors(
       }
     }
     interned.add(entry);
-    nodeIds.set(entry.name, graph.intern(entry.descriptor, entry.name, entry.emitClass === true, entry.validationEnabled).id);
+    nodeIds.set(entry.name, graph.intern(entry.descriptor, entry.name, entry.emitClass === true, entry.validation).id);
     stack.delete(entry.name);
   };
   for (const entry of entries) visit(entry);
@@ -560,17 +560,18 @@ export function createSchemaGraph(
     descriptor: ModelTypeDescriptor,
     name?: string,
     emitClass = false,
-    validationEnabled?: boolean,
+    validation?: GolemProfile['validation'],
   ): SchemaNode => {
     if (sealed) throw new TypeError('Schema graph is sealed.');
     const applyFlags = (existing: SchemaNode): SchemaNode => {
       const nextEmit = emitClass || existing.emitClass;
-      const nextValidation = validationEnabled !== undefined ? validationEnabled : existing.validationEnabled;
-      if (nextEmit === existing.emitClass && nextValidation === existing.validationEnabled) return existing;
+      // The first level a node is given stays: a node is interned from one model, whose level the project caps.
+      const nextValidation = existing.validation ?? validation;
+      if (nextEmit === existing.emitClass && nextValidation === existing.validation) return existing;
       const next: SchemaNode = {
         ...existing,
         emitClass: nextEmit,
-        ...(nextValidation === undefined ? {} : { validationEnabled: nextValidation }),
+        ...(nextValidation === undefined ? {} : { validation: nextValidation }),
       };
       nodes.set(existing.id, next);
       return next;
@@ -598,7 +599,7 @@ export function createSchemaGraph(
         edges: [],
         emitClass: false,
         kind: 'reference',
-        ...(validationEnabled === undefined ? {} : { validationEnabled }),
+        ...(validation === undefined ? {} : { validation }),
         ...(siblingId === undefined ? {} : { siblingCodec: true as const }),
       };
       if (siblingId !== undefined) byPublicId.set(siblingId, id);
@@ -646,7 +647,7 @@ export function createSchemaGraph(
       if (namedIdentity(child) || structural(child)) {
         const childNode = namedIdentity(child)
           ? intern(child)
-          : intern(child, undefined, false, validationEnabled);
+          : intern(child, undefined, false, validation);
         if (!childNode.id.startsWith('__scalar_')) nestedEdges.push(childNode.id);
       } else {
         for (const nested of childDescriptors(child)) internNested(nested);
@@ -705,7 +706,7 @@ export function createSchemaGraph(
       edges: [...new Set(nestedEdges)].filter((edge) => edge !== id),
       emitClass,
       kind: nodeKind(descriptor),
-      ...(validationEnabled === undefined ? {} : { validationEnabled }),
+      ...(validation === undefined ? {} : { validation }),
       ...(named ? {} : { anonymous: true as const }),
     };
     if (shortExisting?.kind === 'reference' && shortExisting.id !== id) {
@@ -737,14 +738,14 @@ export function createSchemaGraph(
     );
     const opaqueReferenceIds = new Set(
       [...nodes.values()]
-        .filter((node) => node.validationEnabled === false)
+        .filter((node) => node.validation === false)
         .flatMap((node) => [node.codecId, node.name, node.id]),
     );
     for (const [id, node] of nodes) {
       const rewritten = rewrittenNodes.get(id) ?? node.descriptor;
       const options = {
         definitions: definitionsMap,
-        executableBindings: node.validationEnabled !== false,
+        executableBindings: node.validation !== false,
         opaqueReferenceIds,
       } as const;
       const jsonSchema = schemaForDescriptor(rewritten, { ...options, representation: 'wire' });
@@ -765,7 +766,7 @@ export function createSchemaGraph(
         node.codecId, node.name, node.id, ...(node.descriptor.kind === 'generated-model' ? [node.descriptor.id] : []),
       ].some((alias) => externalWireIds.has(alias));
       const reachesWire = (node: SchemaNode, seen: Set<string>): boolean => {
-        if (node.validationEnabled === false || seen.has(node.id)) return false;
+        if (node.validation === false || seen.has(node.id)) return false;
         seen.add(node.id);
         if (node.kind === 'reference' && publishesWire(node)) return true;
         return node.edges.some((edge) => {
@@ -787,7 +788,7 @@ export function createSchemaGraph(
     };
     // External codecs (another module or an SDK) publish their own residual schemas.
     const residualCandidates = [...nodes.entries()].filter(([, node]) =>
-      !node.sameSchema && node.validationEnabled !== false && !node.siblingCodec
+      !node.sameSchema && node.validation !== false && !node.siblingCodec
       && node.kind !== 'reference' && node.descriptor.kind !== 'generated-model' && node.descriptor.kind !== 'reference');
     const derive = (id: string, node: SchemaNode, plane: 'model-only' | 'wire-only'): JsonSchema =>
       schemaForDescriptor(rewrittenNodes.get(id) ?? node.descriptor, {

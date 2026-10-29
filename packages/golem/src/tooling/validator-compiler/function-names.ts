@@ -60,11 +60,13 @@ export interface CallArguments {
   readonly all: Code;
   /** The record to hand to the callee; dropped when the callee takes none. */
   readonly record?: Code;
+  /** The callee checks the shape only whatever the caller's flag is (`IrCall.capped`): it gets `true` as the flag. */
+  readonly capped?: true;
 }
 
 export function callFunction(callee: IrFunction, name: Code, args: CallArguments): Code {
   const record = callee.receives && args.record !== undefined ? [args.record] : [];
-  // The caller of a callee with the flag has it too: it reaches what the callee reaches. The flag comes before the record.
-  const sanity = callee.sanity ? [SANITY] : [];
+  // The caller of a callee with the flag has it too, unless the call is capped: it reaches what the callee reaches. The flag comes before the record.
+  const sanity = callee.sanity ? [args.capped ? code`true` : SANITY] : [];
   return code`${name}(${join([args.value, args.path ?? PATH, args.issues, args.all, ...sanity, ...record], COMMA)})`;
 }

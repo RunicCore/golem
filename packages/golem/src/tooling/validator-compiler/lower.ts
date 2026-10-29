@@ -184,7 +184,7 @@ interface LoweringResult {
  * cannot write, is an error: the callers that read a document check it against the 2020-12 meta-schema, which
  * leaves non-finite numbers to this step, and `writeSdk` takes a document unchecked.
  */
-export function lower(input: CompileInput, options: Pick<CompileOptions, 'unknownFormats' | 'documentName' | 'locate'>): LoweringResult {
+export function lower(input: CompileInput, options: Pick<CompileOptions, 'unknownFormats' | 'documentName' | 'locate' | 'sanityRoots'>): LoweringResult {
   return new Lowering(input, options).run();
 }
 
@@ -205,7 +205,7 @@ class Lowering {
 
   public constructor(
     private readonly input: CompileInput,
-    private readonly options: Pick<CompileOptions, 'unknownFormats' | 'documentName' | 'locate'>,
+    private readonly options: Pick<CompileOptions, 'unknownFormats' | 'documentName' | 'locate' | 'sanityRoots'>,
   ) {
     this.resolver = new SchemaResolver(input.roots, input.resources ?? new Map());
     this.tracksEvaluation = [...input.roots.values(), ...(input.resources?.values() ?? [])].some(schema => hasKey(schema, EVALUATION_KEYWORDS));
@@ -526,7 +526,9 @@ class Lowering {
     } else if (target) {
       const to = this.functionFor(target, referenceName(target));
       sameValue.push({ to, location: here, keyword: '$ref' });
-      checks.push({ kind: 'call', fn: to });
+      // A reference to a whole root that checks the shape only keeps that level under a caller of a higher one.
+      const capped = target.pointer === '' && this.options.sanityRoots?.has(target.resource) === true;
+      checks.push({ kind: 'call', fn: to, ...(capped ? { capped: true as const } : {}) });
     }
     else this.report(VALIDATE_UNRESOLVED_REF, GolemDiagnosticSeverity.Error, here, '$ref', `the reference ${JSON.stringify(node.$ref)} does not resolve to a schema`);
   }

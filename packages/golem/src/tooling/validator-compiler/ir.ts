@@ -105,10 +105,15 @@ export interface IrObject {
   readonly maxProperties?: number;
 }
 
-/** A reference: the value must pass the shared function `fn`; its issues are reported as they are. */
-interface IrCall {
+/**
+ * A reference: the value must pass the shared function `fn`; its issues are reported as they are. `capped`: the reference
+ * names a root that checks the shape only inside a full module (`CompileOptions.sanityRoots`), so the call hands the
+ * callee `true` as the sanity flag whatever the caller's flag is.
+ */
+export interface IrCall {
   readonly kind: 'call';
   readonly fn: number;
+  readonly capped?: true;
 }
 
 /** `allOf`: every branch applies to the value; the issues of all failing branches are reported. */

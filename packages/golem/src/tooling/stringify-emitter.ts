@@ -374,7 +374,7 @@ function inlineLocalLines(ctx: EmitCtx): Code[] {
 function emitRecursiveWireCall(named: SchemaNode, expression: Code, ctx: EmitCtx): Code {
   if (ctx.siblingWireCodecIds?.has(named.codecId)) return code`${siblingWireCall(named.codecId, ctx)}(${expression} as never)`;
   if (named.sameSchema && !reachesEncodedValue(named.descriptor, ctx)) return nestedStringifyCall(named.id, expression, ctx);
-  throw new Error(named.validationEnabled === false
+  throw new Error(named.validation === false
     ? `Recursive model ${named.name} has validation turned off, so its wire form has no function to write it; turn validation on for it.`
     : `Internal error: recursive model ${named.name} reached its wire write with no function to call.`);
 }
@@ -2331,10 +2331,9 @@ function emitNodeRuntime(
   return blocksToText([rowsToText(runtime.ctx.hoisted?.sources ?? []), decode.fill, stringify, decode.convert, decode.fromWire, toWire, parse, validate, planeAsserts, codec]);
 }
 
+/** A node validates unless it is off; a node never validates above the default (its project), so a project that is off has no node on. */
 function nodeValidates(node: SchemaNode, defaultEnabled: boolean): boolean {
-  if (node.validationEnabled === true) return true;
-  if (node.validationEnabled === false) return false;
-  return defaultEnabled;
+  return node.validation !== false && defaultEnabled;
 }
 
 function isExternalCodecNode(node: SchemaNode): boolean {

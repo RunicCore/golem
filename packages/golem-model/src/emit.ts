@@ -768,7 +768,8 @@ export function analyzeSourceGraph(
   const registry: BindingRegistry = { validations: new Map(), serde: new Map() };
   Object.values(owned).forEach((descriptor) => visitDescriptor(descriptor, registry));
   const ownedSpecifications = [...emitted].filter((specification) => !siblings.has(specification));
-  const anyDeclValidation = ownedSpecifications.some((specification) => specification.validation ?? profile.validation);
+  // A model never validates above its project, so a project that does not validate has no model that does.
+  const anyDeclValidation = profile.validation !== false && ownedSpecifications.some((specification) => specification.validation !== false);
   if (!anyDeclValidation) registry.validations.clear();
   // Sibling models keep their own references; lookups fall back to the job's descriptors.
   const lookup: Record<string, ModelConversionDescriptor> = Object.assign(
@@ -837,7 +838,7 @@ export function internSourceDefinitions(
     name: string;
     descriptor: ModelConversionDescriptor;
     emitClass?: boolean;
-    validationEnabled?: boolean;
+    validation?: GolemProfile['validation'];
   }> = [];
   for (const specification of emitted) {
     interned.add(specification.name);
@@ -848,13 +849,13 @@ export function internSourceDefinitions(
       // A sibling is a codec reference: its schema and code come from its companion.
       descriptor: siblings.has(specification) ? { kind: 'reference', name: specification.name } : descriptor,
       emitClass: siblings.has(specification) ? false : specification.emitClass,
-      // A model that sets `validation` keeps it; any other follows the profile of the app.
-      ...(specification.validation ?? options.defaultValidation) === undefined ? {} : { validationEnabled: (specification.validation ?? options.defaultValidation) !== false },
+      // A model that sets `validation` keeps it (the project's level caps it); any other follows the profile of the app.
+      ...(specification.validation ?? options.defaultValidation) === undefined ? {} : { validation: specification.validation ?? options.defaultValidation },
     });
   }
   for (const [name, descriptor] of Object.entries(definitions)) {
     if (interned.has(name)) continue;
-    entries.push({ name, descriptor, emitClass: false, ...(options.defaultValidation === undefined ? {} : { validationEnabled: options.defaultValidation !== false }) });
+    entries.push({ name, descriptor, emitClass: false, ...(options.defaultValidation === undefined ? {} : { validation: options.defaultValidation }) });
   }
   internDescriptors(schemaGraph, entries);
   schemaGraph.seal();
@@ -894,7 +895,7 @@ export function validatorImports(
 ): ReadonlyMap<string, { readonly importPath: string; readonly exportName: string }> {
   const bindings = new Map<string, ValidationBinding>();
   for (const graph of graphs) {
-    if (!graph.emitted.some((specification) => specification.validation ?? profile.validation)) continue;
+    if (profile.validation === false || !graph.emitted.some((specification) => specification.validation !== false)) continue;
     for (const binding of graph.registry.validations.values()) registerValidation(bindings, binding);
   }
   return new Map([...bindings]
