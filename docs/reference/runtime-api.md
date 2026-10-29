@@ -4,14 +4,12 @@ Find every `@exprtlabs/golem` subpath that your application, NestJS app or build
 
 | Subpath | Use | Extra dependency |
 | --- | --- | --- |
-| [`model`](#model) | `IModel`, `IObject`, generated-model types and guards | none |
+| [`model`](#model) | `IModel`, `IObject` and generated-model types | none |
 | [`validation`](#validation) | `validate<T>`, `validateInstance`, `getValidator`, `ModelValidator` | none |
-| [`validation-runtime`](#validation-runtime) | Helpers that generated validators import | none |
 | [`mobx`](#mobx) | `asGenObservable` and observable API operations | `mobx` |
 | [`mobx-validation`](#mobx-validation) | Observable validator state | `mobx` |
 | [`errors`](#errors) | `LibError`, `LibErrorKind` and the `Issue` type | none |
 | [`client`](#client) | `ApiOperation` and `createApiOperation` | none |
-| [`conversion`](#conversion) | Cycle check and root field read | none |
 | [`tags`](#tags) | Type-only validation constraints, `TValidation`, `TSerde` | none |
 | [`temporal`](#temporal) | Temporal field types and their codecs | a `Temporal` global, such as `temporal-polyfill` |
 | [`serde`](#serde) | `parse<T>`, `stringify<T>`, `assertValue<T>`, `toWireFormat<T>`, `fromWireFormat<T>` | none |
@@ -25,9 +23,9 @@ Find every `@exprtlabs/golem` subpath that your application, NestJS app or build
 | [`esbuild`](#esbuild) | esbuild plugin that rewrites TypeScript before esbuild strips its types | `esbuild` |
 | [`eslint`](#eslint) | ESLint config with a rule that reports code no build tool can rewrite | `eslint` |
 
-A path that starts with `internal/` is for the generators and may change in any release. These subpaths are internal: `internal/emitter`, `internal/generated-paths`, `internal/schema`, `internal/schema-graph`, `internal/static-value`, `internal/ts`, `internal/type-analysis`, `internal/validation-plan` and `internal/validator-compiler`. Do not import them ([Compatibility](/compatibility#public-api)).
+A path that starts with `internal/` is for the generators and may change in any release. These subpaths are internal: `internal/emitter`, `internal/generated-paths`, `internal/generator-support`, `internal/schema`, `internal/schema-graph`, `internal/static-value`, `internal/ts`, `internal/type-analysis`, `internal/validation-plan`, `internal/validator-compiler` and the eight runtime entries `internal/model-runtime`, `internal/validation-runtime`, `internal/client-runtime`, `internal/client-validation-runtime`, `internal/mobx-runtime`, `internal/mobx-validation-runtime`, `internal/temporal-runtime` and `internal/nest-runtime`. Do not import them ([Compatibility](/compatibility#public-api)).
 
-With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). Generated files also import the names in [Exports for generated code](/reference/generator-api#generated-code).
+With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). Generated files also import runtime helpers from the internal entries ([Generated code](/reference/generator-api#generated-code)).
 
 ## `@exprtlabs/golem/model` {#model}
 
@@ -46,8 +44,6 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 | `WireFormat` | `WireFormat<Value>` | The JSON shape `toWireFormat<Value>` returns, such as `TTaskJSON` for `Task`. |
 | `ModelField` | `ModelField<Model>` | String field names, without methods and `$`-prefixed keys. |
 | `ModelValidationContext` | `{ resolve }` | Validator source for one call ([validation context](#validation-context)). |
-| `isGeneratedModel` | `(value: unknown): value is GeneratedModel<unknown>` | Recognizes a generated instance, including instances of your class. |
-| `isGeneratedModelConstructor` | `(value: unknown): value is GeneratedModelConstructor` | Recognizes a generated class or your class that extends it. |
 
 | `IModelOptions` key | Default | Effect |
 | --- | --- | --- |
@@ -109,19 +105,15 @@ Types for these members: `ModelValidationRules`, `ValidationRule`, `ValidationRu
 ### Runtime validators {#runtime-validators}
 
 ```ts
-function validateWith(validator: Validator, value: unknown, all = true): Promise<ValidationResult>;
+function runValidation(validator: Validator, value: unknown, all = true): Promise<{ valid: boolean; issues: readonly SchemaIssue[] }>;
 ```
 
 | Member | Behavior |
 | --- | --- |
-| `validateWith`, `runValidation` | Run one `Validator` and return `{ valid, issues }`. `all` defaults to `true`, which reports every issue. `false` stops at the first. A validator that does not return an array throws `TypeError`. |
+| `runValidation` | Runs one `Validator` and returns `{ valid, issues }`. `all` defaults to `true`, which reports every issue. `false` stops at the first. A validator that does not return an array throws `TypeError`. |
 | `Validator` | `(value, all) => readonly SchemaIssue[]`, empty when the value is valid. |
 | `OperationRuntimeValidators` | The value type of a client's `operationValidators` option: the input validator and the response validators keyed `status:contentType`. |
-| `ValidationResult`, `SchemaIssue`, `SchemaIssueDetail` | Result and issue types of a `Validator`. |
-
-## `@exprtlabs/golem/validation-runtime` {#validation-runtime}
-
-Generated validators import this subpath. Your code does not. Semver covers the names that generated validators import.
+| `SchemaIssue`, `SchemaIssueDetail` | Issue types of a `Validator`. |
 
 ## `@exprtlabs/golem/mobx` {#mobx}
 
@@ -239,7 +231,7 @@ interface ApiOperation<Input, Result, Options = unknown> {
 - Overlapping `execute` calls all run. Each one after the first logs `Concurrent execute() invocation for <name>`.
 - An operation caches no results or errors.
 
-[Create a client](/guide/client-usage#create-a-client) shows the generated client options. Generated SDKs call the request runtime in [Exports for generated code](/reference/generator-api#generated-code).
+[Create a client](/guide/client-usage#create-a-client) shows the generated client options.
 
 ### Generated client {#generated-client}
 
@@ -299,7 +291,7 @@ client.<operation>().execute(input, options?: <Client>RequestOptions): Promise<H
 | No security requirement has all its credentials | A plain `Error` whose message starts with `No configured credentials satisfy`. It rejects before `fetch` runs ([Client authentication](#client-authentication)). |
 | The network fails | The rejection of `fetchImpl`, unchanged. |
 
-- Test an undeclared response with the generated guard `is<Client>UndeclaredResponseError(error)`. It calls `isUndeclaredResponseError(error, client)`. Without `client`, that function accepts the error of any client.
+- Test an undeclared response with the generated guard `is<Client>UndeclaredResponseError(error)`.
 - With validation off, the client checks no request or response. With it on, a response that declares no content has no body to check.
 
 [Create a client](/guide/client-usage#create-a-client) shows the options in use. [Read responses and handle failures](/guide/client-usage#read-responses-and-handle-failures) and [Handle errors](/guide/client-usage#handle-errors) show how to read the result and the errors.
@@ -351,19 +343,6 @@ Each SDK declares these types again with the client name, such as `<Client>Auth`
 | An `http` scheme is not `basic` or `bearer` | A plain `Error` with the message `Unsupported HTTP authentication scheme: <scheme>`. |
 
 [Authentication](/guide/auth) shows how to pass credentials, read a token for each request and use mutual TLS.
-
-## `@exprtlabs/golem/conversion` {#conversion}
-
-```ts
-import { assertAcyclicValue, readRootFields } from '@exprtlabs/golem/conversion';
-```
-
-| Member | Signature | Behavior |
-| --- | --- | --- |
-| `assertAcyclicValue` | `(value, kind?)` | Throws `LibError` when `value` holds a cycle. Shared references are allowed. `kind` is `LibErrorKind.Serialization` or `LibErrorKind.Deserialization` (the default). |
-| `readRootFields` | `(value: unknown, fields: readonly string[]): unknown` | Copies the root of `value`, reading each listed field once through its getter. |
-
-To convert a model, use [`toWireFormat<T>`](#serde) and `fromWireFormat<T>`, which also validate.
 
 ## `@exprtlabs/golem/tags` {#tags}
 
@@ -610,7 +589,7 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 | --- | --- | --- |
 | `NestModelInterceptor` | `class NestModelInterceptor implements NestInterceptor` | Converts model-typed `@Body()` and `@Query()` parameters before the handler and writes model returns ([request contract](/guide/nestjs-requests#what-happens-to-a-request)). |
 | `nestModelStringifyInterceptor` | `(codec: ObjectCodec): NestInterceptor` | Writes every non-null result with that codec's `stringify`, an array item by item. |
-| `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that `nestModelCodec` placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
+| `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that the rewrite placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
 | `nestUnionFromMetatype` | `(metatype: unknown): NestUnionInput \| undefined` | The converter of a parameter token for a union of models, such as the `design:paramtypes` entry of a `@Body()` or `@Query()` parameter typed `TCircle \| TRect`. `fromWireFormat(wire, options?)` returns the model of the variant that the tag picks and throws a `LibError` for a missing or unknown tag or invalid input. `decodeQuery(query)` turns query strings into the types that variant declares. `undefined` for any other token. |
 | `nestModelConstruct` | `(metatype: unknown)` | The class that token constructs, or `undefined`. |
 

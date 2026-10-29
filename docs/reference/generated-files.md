@@ -146,5 +146,5 @@ Two different shapes that get the same name fail generation with [RUNM1059](/ref
 
 ## Runtime version
 
-- **Rule:** Install `@exprtlabs/golem` at or above the version of each built-in generator package that the configuration uses, with the same major version. A third-party generator has its own version and is not compared.
-- **Check:** `generate`, `check`, `exec`, `watch` and `build` compare the installed `@exprtlabs/golem` with `@exprtlabs/golem-model`, `@exprtlabs/golem-openapi` and `@exprtlabs/golem-ts-openapi`. They fail before they write when the runtime is older or has a different major version. The message names both packages and versions.
+- **Rule:** Install `@exprtlabs/golem` at the exact version of each built-in generator package that the configuration uses. Generated files import runtime entries that change with the version. An extension package under `generators` keeps its own version and is not compared.
+- **Check:** `generate`, `check`, `exec`, `watch` and `build` compare the installed `@exprtlabs/golem` with `@exprtlabs/golem-model`, `@exprtlabs/golem-openapi` and `@exprtlabs/golem-ts-openapi`. They fail before they write when a version differs. The message names both packages and versions and gives the `npm install -D` command that aligns the generator.
