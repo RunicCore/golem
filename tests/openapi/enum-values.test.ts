@@ -54,3 +54,35 @@ test('a model field limited by enum, with or without type, rejects a value outsi
     );
   }
 });
+
+const shelfDocument = (properties: Record<string, unknown>, required: readonly string[] = Object.keys(properties)) => documentBase('3.1.0', {
+  components: { schemas: { Shelf: { type: 'object', required, properties } } },
+  paths: { '/shelves': { post: {
+    operationId: 'echo',
+    requestBody: { required: true, content: { 'application/json': { schema: { $ref: '#/components/schemas/Shelf' } } } },
+    responses: { 200: { description: 'ok', content: { 'application/json': { schema: { $ref: '#/components/schemas/Shelf' } } } } },
+  } } },
+});
+
+test('a model field with an empty enum accepts no value', async t => {
+  // protects: T-644 an empty enum admits no value (JSON Schema 2020-12 section 6.1.2), as its type says
+  const output = path.join(createFixtureProject(t, 'golem-openapi-enum-empty-'), 'sdk');
+  await generateMaterializedSdk(shelfDocument({ none: { enum: [] }, name: { type: 'string' } }, ['name']), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  const models = await importGeneratedModule(output, 'empty enum models');
+  const ShelfModel = models.ShelfModel as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  assert.equal(await getValidator(new ShelfModel({ none: 'x', name: 'a' })).validate(), false);
+  assert.equal(await getValidator(new ShelfModel({ none: null, name: 'a' })).validate(), false);
+  assert.equal(await getValidator(new ShelfModel({ name: 'a' })).validate(), true);
+});
+
+test('an enum that lists an object or an array stops generation and names the schema', async t => {
+  // protects: T-644 a value an enum lists but a model field cannot check is refused, not left unchecked
+  for (const listed of [{ a: 1 }, [1, 2]]) {
+    const output = path.join(createFixtureProject(t, 'golem-openapi-enum-object-'), 'sdk');
+    await assert.rejects(
+      generateMaterializedSdk(shelfDocument({ pick: { enum: ['x', listed] } }), { output, name: 'Shelves', profile: { mobx: false, validation: true } }),
+      /schema "Shelf" at #\/components\/schemas\/Shelf[^:]*: OPENAPI_ENUM_VALUE_UNSUPPORTED: an enum lists the (object|array) /,
+    );
+  }
+});

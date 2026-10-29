@@ -87,7 +87,7 @@ import {
   modelStableId,
   modelConversionDescriptor,
   CompositionError,
-  componentSite,
+  locatedCompositionError,
   type CompositionSite,
 } from './model-resolution.js';
 import { openApiValidationSchemaClosure } from './model-manifest.js';
@@ -265,9 +265,7 @@ function withConflictCode<Result>(owner: string | CompositionSite, emit: () => R
   } catch (thrown) {
     const coded = codedConflict(thrown);
     if (!(coded instanceof CompositionError)) throw thrown;
-    const site = typeof owner === 'string' ? componentSite(owner) : owner;
-    const where = site.where('');
-    throw new LocatedError(`${where}: ${coded.message}`, site.origins(where), { cause: coded });
+    throw locatedCompositionError(owner, coded);
   }
 }
 

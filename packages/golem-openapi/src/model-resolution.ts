@@ -461,15 +461,22 @@ function isSequenceDescriptor(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind === 'array' || descriptor.kind === 'tuple';
 }
 
-/** `enum` limits a value to its listed scalars, with or without `type` (JSON Schema 2020-12 section 6.1.2); a list with an object or array is left to the caller. */
+/** The code of an `enum` that lists an object or an array, which a model field cannot check. */
+export const ENUM_VALUE_UNSUPPORTED = 'OPENAPI_ENUM_VALUE_UNSUPPORTED';
+
+/**
+ * `enum` limits a value to its listed values, with or without `type` (JSON Schema 2020-12 section 6.1.2). An empty list admits no value.
+ * A list with an object or an array stops generation: a model field checks scalars only, so the list would silently pass every value.
+ */
 function openApiEnumDescriptor(schema: { readonly enum?: unknown }): ModelTypeDescriptor | undefined {
   const values = schema.enum;
-  if (!Array.isArray(values) || values.length === 0) return undefined;
+  if (!Array.isArray(values)) return undefined;
+  if (values.length === 0) return { kind: 'never' };
   const variants: ModelTypeDescriptor[] = [];
   for (const value of values) {
     if (value === null) variants.push({ kind: 'null' });
     else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') variants.push({ kind: 'literal', value });
-    else return undefined;
+    else throw new CompositionError(ENUM_VALUE_UNSUPPORTED, `an enum lists the ${Array.isArray(value) ? 'array' : 'object'} ${JSON.stringify(value)}, and a model field checks only strings, numbers, booleans and null. Replace the enum with a schema for that value, or remove the enum.`);
   }
   return variants.length === 1 ? variants[0]! : { kind: 'union', variants };
 }
@@ -713,6 +720,13 @@ export function modelConversionDescriptor(
     if (constraints) return { kind: 'unknown', constraints };
   }
   return { kind: 'unknown' };
+}
+
+/** A composition error that names the component, or the inline schema, whose conversion stopped. */
+export function locatedCompositionError(owner: string | CompositionSite, error: CompositionError): LocatedError {
+  const site = typeof owner === 'string' ? componentSite(owner) : owner;
+  const where = site.where('');
+  return new LocatedError(`${where}: ${error.message}`, site.origins(where), { cause: error });
 }
 
 /** An allOf that no object satisfies, or whose members convert one value in two ways: generation stops with its code. */
