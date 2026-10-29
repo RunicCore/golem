@@ -4,7 +4,7 @@ import { basename, dirname, isAbsolute, join, parse, relative, resolve, sep } fr
 import * as ts from '../typescript-ns.js';
 import { assertNotSolutionTsconfig } from '../typescript-config.js';
 import { readManifest } from './package-specifier.js';
-import { DEFAULT_MODEL_SUFFIXES, displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-api.js';
+import { DEFAULT_MODEL_SUFFIXES, displayPath, GolemDiagnosticSeverity, canonicalPath, compareText, discoverSources, hasErrorCode, isInsideDirectory, parseYamlFile, suffixPattern, YamlFileError, type GeneratorSession, type GolemDiagnostic, type InputObserver } from '../generator-core.js';
 import { canonicalFilename, inNodeModules } from './path-identity.js';
 
 export { canonicalFilename };

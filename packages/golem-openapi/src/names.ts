@@ -1,5 +1,5 @@
 import { unescapePointerToken } from '@exprtlabs/golem/internal/schema';
-import { bindingName, camelIdentifier, identifier, RESERVED_BINDING_NAMES } from '@exprtlabs/golem/generator-api';
+import { bindingName, camelIdentifier, identifier, RESERVED_BINDING_NAMES } from '@exprtlabs/golem/internal/generator-support';
 import { code, identifier as identifierPart, join, literal, type Code } from '@exprtlabs/golem/internal/emitter';
 
 /**

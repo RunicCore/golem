@@ -1,8 +1,9 @@
 import { descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
 import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
-import type { ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/model';
+import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
-import { identifier, type GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import type { GolemDiagnostic } from '@exprtlabs/golem/generator-api';
+import type { ModelConstraint, ModelTypeDescriptor, UnionDiscriminator } from '@exprtlabs/golem/internal/schema';
 import { componentOrigin, LocatedError } from './origin.js';
 import {
   COMPOSITION_PROPERTY_NEVER,

@@ -3,14 +3,14 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { generate } from '#model/generator';
 import { copyFixtureFile, readFixture } from './fixture-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { requireRecord, type GeneratedModelClass } from './openapi/helpers.js';
 import { loadPets } from './support/pets-project.js';
+import { modelCodec } from './support/model-codec.js';
 
 test('an IModel union variant tagged by several literal values is selected by each of them', async (t) => {
   for (const validation of [false, true]) {
@@ -23,13 +23,13 @@ test('an IModel union variant tagged by several literal values is selected by ea
       pet: { kind: 'kitty', name: 'Miso' },
       pets: [{ kind: 'cat', name: 'Tama' }, { kind: 'kitty', name: 'Miso' }, { kind: 'dog', bark: false }],
     };
-    const owner = requireRecord(decodeGeneratedModel(Owner, json), 'owner');
+    const owner = requireRecord(modelCodec(Owner).fromWireFormat(json), 'owner');
     assert.ok(owner.pet instanceof Cat, `validation=${validation}: kitty selects Cat`);
     assert.ok(Array.isArray(owner.pets));
     assert.deepEqual(owner.pets.map(pet => pet instanceof Cat), [true, true, false]);
     assert.ok(owner.pets[2] instanceof Dog);
-    assert.deepEqual(encodeGeneratedModel(owner), json);
-    assert.throws(() => decodeGeneratedModel(Owner, { pet: { kind: 'bird', name: 'Miso' }, pets: [] }));
+    assert.deepEqual(modelCodec(owner).toWireFormat(owner), json);
+    assert.throws(() => modelCodec(Owner).fromWireFormat({ pet: { kind: 'bird', name: 'Miso' }, pets: [] }));
   }
 });
 
@@ -175,12 +175,12 @@ test('a Date beside an array converts by the wire form: a string is the Date, an
     const codec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TWhen'));
     const options = { validate: validation };
     for (const [wire, value] of cases) {
-      for (const decoded of [codec.fromWireFormat(wire, options), codec.parse(JSON.stringify(wire), options), decodeGeneratedModel(When, wire)]) {
+      for (const decoded of [codec.fromWireFormat(wire, options), codec.parse(JSON.stringify(wire), options), modelCodec(When).fromWireFormat(wire)]) {
         assert.deepEqual({ ...requireRecord(decoded, 'decoded') }, value, `validation=${validation}`);
       }
       const model = new When(value as never);
       assert.deepEqual(codec.toWireFormat(model, options), wire, `validation=${validation}`);
-      assert.deepEqual(encodeGeneratedModel(model), wire, `validation=${validation}`);
+      assert.deepEqual(modelCodec(model).toWireFormat(model), wire, `validation=${validation}`);
       assert.equal(codec.stringify(model, options), JSON.stringify(wire), `validation=${validation}`);
     }
   }
@@ -203,7 +203,7 @@ export class Amount extends TAmountBaseModel {}
     for (const wire of cases) {
       const model = new Amount(wire as never);
       assert.equal(codec.stringify(model, { validate: validation }), JSON.stringify(wire), `validation=${validation}`);
-      assert.deepEqual(encodeGeneratedModel(model), wire, `validation=${validation}`);
+      assert.deepEqual(modelCodec(model).toWireFormat(model), wire, `validation=${validation}`);
     }
   }
 });

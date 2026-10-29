@@ -1,18 +1,14 @@
 import {
-  registerGeneratedModel,
   type GeneratedModelConversion,
   type GeneratedModelValidatorEnhancer,
-  type ModelTypeDescriptor,
-} from '@exprtlabs/golem/model';
-import { GENERATED_MODEL_SCHEMA_REF_PREFIX, schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
-import {
+  registerGeneratedModel,
   assertModelValue,
   createObjectCodec,
   isValidModelValue,
   registerIModelClass,
-  IssueRepresentation,
-  IssueSource,
-} from '@exprtlabs/golem/serde';
+} from '@exprtlabs/golem/internal/model-runtime';
+import { IssueRepresentation, IssueSource } from '@exprtlabs/golem/errors';
+import { GENERATED_MODEL_SCHEMA_REF_PREFIX, schemaForDescriptor, type ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { compileValidators } from './support/compiled-validators.js';
 
 /** Where a compiled module finds the test's own validation functions: files cannot carry closures. */

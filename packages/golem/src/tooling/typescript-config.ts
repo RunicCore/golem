@@ -1,5 +1,5 @@
 import { basename, dirname, isAbsolute, join, normalize, relative, resolve as resolvePath } from 'node:path';
-import { displayPath } from './generator-api.js';
+import { displayPath } from './generator-core.js';
 import type { OpenProgramOptions } from './typescript-types.js';
 
 /** The diagnostic code of a configuration that matches no file. */

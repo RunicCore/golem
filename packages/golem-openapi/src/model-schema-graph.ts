@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { createSchemaGraph, internDescriptors, type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { componentOrigin, LocatedError } from './origin.js';
 import { schemaContext } from './types.js';

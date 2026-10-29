@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { copyFixtureFile } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
@@ -10,10 +9,11 @@ import { loadPets } from './support/pets-project.js';
 
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { registerIModelClass } from '@exprtlabs/golem/serde';
-import type { ModelTypeDescriptor, ModelTypeMetadata } from '@exprtlabs/golem/model';
+import { registerIModelClass } from '@exprtlabs/golem/internal/model-runtime';
+import type { ModelTypeDescriptor, ModelTypeMetadata } from '@exprtlabs/golem/internal/schema';
 import { installCodecModel } from './register-codec-model.js';
 import { compileSchema } from './support/compiled-validators.js';
+import { modelCodec } from './support/model-codec.js';
 
 async function discriminatedFixture() {
   const calls = { a: 0, b: 0 };
@@ -297,14 +297,14 @@ test('IModel object unions with validation load, validate and reject an unknown 
   // Without the build-time rewrite, nested values construct the generated bases.
   const { Owner, Cat, Dog } = await loadPets(root);
   const json = { pet: { kind: 'dog', bark: true }, pets: [{ kind: 'cat', name: 'Miso' }, { kind: 'dog', bark: false }] };
-  const owner = decodeGeneratedModel(Owner, json);
+  const owner = modelCodec(Owner).fromWireFormat(json, { validate: false });
   const fields = requireRecord(owner, 'owner');
   assert.ok(fields.pet instanceof Dog);
   assert.ok(Array.isArray(fields.pets) && fields.pets[0] instanceof Cat);
-  assert.deepEqual(encodeGeneratedModel(owner), json);
+  assert.deepEqual(modelCodec(owner).toWireFormat(owner), json);
   assert.equal(await getValidator(owner).validate(), true);
   assert.throws(
-    () => decodeGeneratedModel(Owner, { pet: { kind: 'bird', name: 'Miso' }, pets: [] }),
+    () => modelCodec(Owner).fromWireFormat({ pet: { kind: 'bird', name: 'Miso' }, pets: [] }, { validate: false }),
     (error: unknown) => error instanceof LibError
       && error.kind === LibErrorKind.Deserialization
       && /Unknown kind discriminator value: "bird"/.test(error.message),

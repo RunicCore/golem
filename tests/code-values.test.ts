@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
-  ImportSource, NameTable, aliased, bindRead, fileImports, code, helper, helperDefinitions, helperName, helperSet, selfPlacedHelper, identifier, importSet, inputOf, isEmpty, inputSlot, join, literal,
+  ImportSource, NameTable, aliased, bindRead, fileImports, code, helper, helperDefinitions, helperName, helperSet, selfPlacedHelper, identifier, importGroups, inputOf, isEmpty, inputSlot, join, literal,
   localCode, nameOf, nameSlot, propertyKey, render, runtimeImports, sameCode, nest, lineBreak, placeHelpers, runtimeCode,
 } from '#golem/code';
 import { rt, rtType } from '#golem/rt';
@@ -21,7 +21,7 @@ test('render writes the parts once, in order, and fills each name from the table
   assert.throws(() => `${call}`, /put it in the code tag/);
 });
 
-test('the import set holds each runtime part once, grouped by module in the fixed order', () => {
+test('the import groups hold each runtime part once, grouped by specifier in the fixed module order', () => {
   // protects: an import is kept or dropped by the code that uses it, never by a name in a string, a comment or a field name
   const body = code`
     // assertModelValue appears in a comment only
@@ -30,16 +30,15 @@ test('the import set holds each runtime part once, grouped by module in the fixe
     ${rt.serde.parseJson}(${rt.conversion.decodeCheckedInput}(input));
     ${rt.model.registerGeneratedModel}(Order);
   `;
-  assert.deepEqual(importSet(body), [
-    { module: 'conversion', names: [{ name: 'decodeCheckedInput' }], types: [] },
-    { module: 'model', names: [{ name: 'registerGeneratedModel' }], types: [] },
-    { module: 'serde', names: [{ name: 'parseJson' }, { name: 'stringifyJsonString' }], types: [] },
-  ]);
+  assert.deepEqual(importGroups(body), [{
+    specifier: '@exprtlabs/golem/internal/model-runtime',
+    modules: ['conversion', 'model', 'serde'],
+    names: [{ name: 'decodeCheckedInput' }, { name: 'registerGeneratedModel' }, { name: 'parseJson' }, { name: 'stringifyJsonString' }],
+    types: [],
+  }]);
   assert.equal(
     render(join(runtimeImports(body), code`\n`), new NameTable()),
-    "import { decodeCheckedInput } from '@exprtlabs/golem/conversion';\n"
-      + "import { registerGeneratedModel } from '@exprtlabs/golem/model';\n"
-      + "import { parseJson, stringifyJsonString } from '@exprtlabs/golem/serde';",
+    "import { decodeCheckedInput, registerGeneratedModel, parseJson, stringifyJsonString } from '@exprtlabs/golem/internal/model-runtime';",
   );
 });
 
@@ -56,33 +55,37 @@ test('the helper set holds each named helper once with the helpers it names and 
     render(join(helperDefinitions(body), code`\n\n`), new NameTable()),
     'function decodeNode(v) { return decodeLeaf(v); }\n\nfunction decodeLeaf(v) { return decodeCheckedInput(v, decodeNode); }',
   );
-  assert.deepEqual(importSet(body), [{ module: 'conversion', names: [{ name: 'decodeCheckedInput' }], types: [] }]);
+  assert.deepEqual(importGroups(body).map((group) => group.names), [[{ name: 'decodeCheckedInput' }]]);
 });
 
 test('a type name is imported with import type, and a file picks the specifier of each runtime module', () => {
   // protects: T-318 a type name never lands in a value import, and the runtime may be imported from a resolved URL
-  const body = code`export function check(): readonly ${rtType['validation-runtime'].SchemaIssue}[] { return ${rt['validation-runtime'].jsonEqual}(a, b) ? [] : []; }`;
+  const body = code`export function check(): readonly ${rtType.validation.SchemaIssue}[] { return ${rt['validation-runtime'].jsonEqual}(a, b) ? [] : []; }`;
   // @ts-expect-error a type name that the module does not export is a type error
-  void rtType['validation-runtime'].NoSuchType;
-  assert.deepEqual(importSet(body), [{ module: 'validation-runtime', names: [{ name: 'jsonEqual' }], types: [{ name: 'SchemaIssue', typeOnly: true }] }]);
+  void rtType.validation.NoSuchType;
+  assert.deepEqual(importGroups(body).map((group) => [group.specifier, group.names, group.types]), [
+    ['@exprtlabs/golem/validation', [], [{ name: 'SchemaIssue', typeOnly: true }]],
+    ['@exprtlabs/golem/internal/validation-runtime', [{ name: 'jsonEqual' }], []],
+  ]);
   assert.equal(
     render(join(runtimeImports(body, { specifiers: { 'validation-runtime': 'file:///runtime/validation-runtime.js' }, quote: '"' }), code`\n`)),
-    'import type { SchemaIssue } from "file:///runtime/validation-runtime.js";\nimport { jsonEqual } from "file:///runtime/validation-runtime.js";',
+    'import type { SchemaIssue } from "@exprtlabs/golem/validation";\nimport { jsonEqual } from "file:///runtime/validation-runtime.js";',
   );
   assert.equal(
     render(join(runtimeImports(body), code`\n`)),
-    "import type { SchemaIssue } from '@exprtlabs/golem/validation-runtime';\nimport { jsonEqual } from '@exprtlabs/golem/validation-runtime';",
+    "import type { SchemaIssue } from '@exprtlabs/golem/validation';\nimport { jsonEqual } from '@exprtlabs/golem/internal/validation-runtime';",
   );
 });
 
-test('a file writes value and type names on one line, a type under a local name, and in the order it lists', () => {
-  // protects: T-288 mixed value and type import lines of a model file stay byte-identical (SC-2)
+test('a file writes one statement for each specifier, a type under a local name, and in the order it lists', () => {
+  // protects: T-288 the import lines of a model file hold each specifier once, values from the internal entry and types from the public subpath (SC-2)
   const options = { typeNames: 'inline', order: { serde: ['parseJson', 'IssueSource', 'assertModelValue'], model: ['GeneratedModel', 'generatedModelWireBrand'] } } as const;
   const body = code`${rt.serde.assertModelValue}(${rt.serde.IssueSource}, ${rt.serde.parseJson}) as ${aliased(rtType.serde.SerdeOptions, '__GolemSerdeOptions')} & ${rtType.model.generatedModelFieldsBrand} & ${rtType.model.generatedModelWireBrand} & ${rtType.model.GeneratedModel}`;
   assert.equal(
     render(join(runtimeImports(body, options), code`\n`)),
-    "import { type GeneratedModel, type generatedModelWireBrand, type generatedModelFieldsBrand } from '@exprtlabs/golem/model';\n"
-      + "import { parseJson, IssueSource, assertModelValue, type SerdeOptions as __GolemSerdeOptions } from '@exprtlabs/golem/serde';",
+    "import type { GeneratedModel, generatedModelWireBrand, generatedModelFieldsBrand } from '@exprtlabs/golem/model';\n"
+      + "import { parseJson, IssueSource, assertModelValue } from '@exprtlabs/golem/internal/model-runtime';\n"
+      + "import type { SerdeOptions as __GolemSerdeOptions } from '@exprtlabs/golem/serde';",
   );
   assert.equal(render(body), 'assertModelValue(IssueSource, parseJson) as __GolemSerdeOptions & generatedModelFieldsBrand & generatedModelWireBrand & GeneratedModel');
   assert.throws(() => aliased(code`a ${rt.serde.parseJson}`, 'x'), /one runtime part/);
@@ -107,7 +110,7 @@ test('a file imports the names it uses from its own sources, in the order it dec
   assert.equal(render(orderJson), 'OrderJSON');
   assert.equal(
     render(join(runtimeImports(body, { modules: ['serde', 'model'] }), code`\n`)),
-    "import { parseJson } from '@exprtlabs/golem/serde';\nimport { registerGeneratedModel } from '@exprtlabs/golem/model';",
+    "import { parseJson, registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';",
   );
   assert.throws(() => runtimeImports(body, { modules: ['serde'] }), /does not list in its module order/);
 });
@@ -163,8 +166,16 @@ test('a name that the code uses as a value and as a type is imported once, as th
   const source = new ImportSource('./shapes.js');
   const body = code`${source.name('Shape')} ${source.name('Shape', { typeOnly: true })} ${source.name('Size', { typeOnly: true })}`;
   assert.deepEqual(fileImports(body, [source]).map((line) => render(line)), ["import { Shape, type Size } from './shapes.js';"]);
-  const names = importSet(code`${rt.serde.parseJson} ${rtType.serde.SerdeOptions} ${runtimeCode('serde', 'parseJson', true)}`);
-  assert.deepEqual(names, [{ module: 'serde', names: [{ name: 'parseJson' }], types: [{ name: 'SerdeOptions', typeOnly: true }] }]);
+  const groups = importGroups(code`${rt.serde.parseJson} ${rtType.serde.SerdeOptions} ${runtimeCode('serde', 'parseJson', true)}`);
+  assert.deepEqual(groups.map((group) => [group.names, group.types]), [[[{ name: 'parseJson' }], []], [[], [{ name: 'SerdeOptions', typeOnly: true }]]]);
+});
+
+test('a name that two runtime modules of one specifier both use is imported once', () => {
+  // protects: T-653 the serde and conversion keys share one entry, and a name both use is not imported twice
+  const groups = importGroups(code`${runtimeCode('serde', 'IssueSource')} ${runtimeCode('conversion', 'IssueSource')} ${rt.serde.parseJson}`);
+  assert.deepEqual(groups.map((group) => [group.specifier, group.modules, group.names]), [
+    ['@exprtlabs/golem/internal/model-runtime', ['conversion', 'serde'], [{ name: 'IssueSource' }, { name: 'parseJson' }]],
+  ]);
 });
 
 test('a helper that the code names and the file neither places nor writes into its code is an error', () => {

@@ -1,6 +1,6 @@
 # Generator and tool API
 
-Call a generator from your own tool, apply the files it returns, and use the tool subpaths of `@exprtlabs/golem`.
+Call a generator from your own tool, apply the files it returns, and write an extension generator with the tool subpaths of `@exprtlabs/golem`.
 
 Application projects use the [CLI](/reference/cli), which writes files, tracks
 the files each job wrote and runs watch mode.
@@ -9,6 +9,7 @@ the files each job wrote and runs watch mode.
 - Every context takes absolute paths and a `profile`.
 - `watchInputs` lists the paths a build tool watches after generation.
 - A provider reports `apiVersion` `1`. The CLI rejects another version.
+- An extension generator package that you list under [`generators`](/reference/config#generator-jobs) implements `GolemProvider` with `generator-api` alone. It writes source models, and the models job makes their codecs.
 
 Usage: [Run the generators from code](/guide/generator-api).
 
@@ -102,7 +103,7 @@ Usage: [Run the generators from code](/guide/generator-api#check-the-result).
 import type { GolemProvider, ModelContext } from '@exprtlabs/golem/generator-api';
 ```
 
-The subpath exports the contracts above and the types `ModelContext`, `OpenApiContext`, `ControllerContext`, `ControllerModels`, `ControllerTag`, `ControllerUriVersioning`, `ControllerUriVersioningType`, `GolemDiagnosticCode`, `ResolvedGolemProfile` and `SourceDiscoveryOptions`.
+The subpath is the extension API. It exports the contracts above and the types `ModelContext`, `OpenApiContext`, `ControllerContext`, `ControllerModels`, `ControllerTag`, `ControllerUriVersioning`, `ControllerUriVersioningType`, `GolemDiagnosticCode`, `ResolvedGolemProfile` and `SourceDiscoveryOptions`. It follows semver, and an extension package keeps its own version.
 
 | Export | Signature | Behavior |
 | --- | --- | --- |
@@ -113,8 +114,6 @@ The subpath exports the contracts above and the types `ModelContext`, `OpenApiCo
 | `discoverSources` | `(root, options: SourceDiscoveryOptions): string[]` | Sorted, unique sources below `root`. Skips dot entries and `node_modules`. A missing root yields none. |
 | `parseYamlFile` | `(text, filename, options?): unknown` | Parses YAML text that came from `filename`. Throws a `YamlFileError` for invalid YAML. |
 | `YamlFileError` | `class extends Error` | Its message starts with `<file>:<line>:<column>`, the file relative to the working directory. Its `cause` is the parser's error. |
-
-Names the generators import: `isRecord`, `errorMessage`, `hasErrorCode`, `identifier`, `camelIdentifier`, `bindingName`, `propertyName`, `NameScope`, `assertPortableFilenames`, `assertUniquePublicExports`, `RESERVED_BINDING_NAMES`, `RESERVED_MODEL_MEMBERS`, `DEFAULT_MODEL_SUFFIXES`, `DEFAULT_CONTROLLER_SUFFIXES`, `suffixPattern`, `stripSourceSuffix`, `canonicalPath`, `outsideModelsRootMessage`.
 
 ## `@exprtlabs/golem/manifest` {#manifest}
 
@@ -129,10 +128,8 @@ An OpenAPI job writes `model-manifest.json` beside its SDK. A model job reads it
 | `discoverModelManifests` | `(root = process.cwd(), onInput?): string[]` | Sorted absolute paths of `model-manifest.json` files below `<root>/src`, skipping `dist` and `build`. |
 | `readModelManifest` | `(filename: string, onInput?): ModelManifest` | Reads and checks one manifest. Throws with the file name when it is unreadable or invalid. |
 | `validateModelManifest` | `(manifest: unknown, filename?): ModelManifest` | Checks a parsed manifest. |
-| `ModelManifest` | `{ profile, models, validationSchemaClosure? }` | The generation profile, one `ModelManifestEntry` per model, and the schemas a project needs to validate those models. |
+| `ModelManifest` | `{ profile, models, validationSchemaClosure? }` | The generation profile, one entry in `models` for each model, and the schemas a project needs to validate those models. |
 | `MODEL_MANIFEST_FILENAME` | `'model-manifest.json'` | The file name. |
-
-Names the generators import: `ModelManifestEntry`, `ModelManifestProvenance`, `MODEL_MANIFEST_MARKER`, `modelManifestProfile`, `validateModelProfile`, `stableJson`, `stableIdentity`, `sourceDigest`.
 
 ## `@exprtlabs/golem/rewrite` {#rewrite}
 
@@ -151,7 +148,7 @@ Every [build tool](/guide/build) scans each TypeScript file it compiles or loads
 | `toWireFormat<T>(value)` | the generated `toWireFormat` for `T` |
 | `fromWireFormat<T>(wire)` | the generated `fromWireFormat` for `T`, constructing your class when `T` is a class |
 
-With a `controllers` job in `golem.yaml`, the rewrite also inserts `nestModelCodec` (`nestModelUnion` for a union of models) on `@Body()` and `@Query()` parameters and `nestModelReturn` on handlers that return a model ([Exports for generated code](#generated-code)). `golem build`, [`loader`](/reference/runtime-api#loader), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild) use this subpath to apply their edits.
+With a `controllers` job in `golem.yaml`, the rewrite also marks `@Body()` and `@Query()` parameters that take a model, and handlers that return a model, so that `NestModelInterceptor` can convert them. `golem build`, [`loader`](/reference/runtime-api#loader), [`vite`](/reference/runtime-api#vite) and [`esbuild`](/reference/runtime-api#esbuild) use this subpath to apply their edits.
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
@@ -318,56 +315,6 @@ A result is an in-memory plan. A build tool that applies it:
 
 The `golem` CLI applies results in the [job order](/reference/config) of the configuration. Usage: [Apply the results](/guide/generator-api#apply-the-results).
 
-## Exports for generated code {#generated-code}
+## Generated code {#generated-code}
 
-Generated files import these names. Application code does not call them. They follow semver ([Compatibility](/compatibility#public-api)).
-
-### From `model`
-
-`registerGeneratedModel`, `findGeneratedModelDefinition`, `findGeneratedModelDefinitionForConstructor`, `GeneratedModel`, `GeneratedModelWire`, `GeneratedModelConstructor`, `ModelInit` and the `generatedModel*Brand` symbols.
-
-The module also exports the metadata types that the generators and the runtime use. Generated files do not import them, and application code does not use them: `GeneratedModelDefinition`, `RegisteredGeneratedModelDefinition`, `GeneratedModelConversion`, `GeneratedModelProfile`, `GeneratedModelValidatorEnhancer`, `ModelTypeMetadata`, `ModelTypeDescriptor`, `ModelConstraint`, `ConstraintSchemaValue`, `UnionDiscriminator` and `DiscriminatorValue`.
-
-### From `validation`
-
-`operationValidators` resolves the input and response validators of an operation once per client. `validateOperationInput` checks a request input. `responseCheck` is the response check that `ClientRuntime.readResponse` runs on each decoded body or stream item.
-
-### From `conversion`
-
-`decodeGeneratedModel`, `decodeGeneratedModelTrusted`, `deserializeDate`, `serializeDate`, `convertModelField`, `convertModelItems`, `convertModelRecord`, `convertModelTupleItems`, `copyModelRecord`, `defineModelProperty`, `rejectModelObject`, `requireModelObject`, `assertAcyclicEncodeInput`, `assertPropertyAcyclic`, `assertWireAcyclic`, `beginDecode`, `endDecode`, `beginEncode`, `endEncode`, `decodeDetachedInput`, `decodeCheckedInput`, `unknownDiscriminatorValue`, `withDiscriminatorValue`, `jsonWithDiscriminator`.
-
-The module exports more helpers for the runtime itself. Application code does not call them: `encodeGeneratedModel`, which writes a model with the `toWireFormat` of the codec of its class and validates as that call does.
-
-### From `serde`
-
-`createObjectCodec`, `requireObjectCodec`, `registerIModelClass`, `requireIModelClass`, `assertModelValue`, `isValidModelValue`, `modelValueIssues`, `parseJson`, `serdeValidates`, `validationUnavailable`, `validationUnavailableStub`, `withoutInstanceState` and the `stringifyJson*` writers.
-
-The module exports more helpers for the runtime itself. Application code does not call them: `registerObjectCodec`, `findCodecIdForConstructor`, `resolveModelValidationContextValidator`, `validationFailure`, `serdeFailFast` and the type `ObjectCodecImpl`.
-
-### From `nest`
-
-| Member | Signature | Behavior |
-| --- | --- | --- |
-| `nestModelCodec` | `(id: string, array?: boolean): ParameterDecorator` | The rewrite inserts it on `@Body()` and `@Query()` parameters typed with a model or an array of one. It replaces the parameter type with a token that carries the codec and class of the model. |
-| `nestModelUnion` | `(property: string, variants: readonly [values: readonly (string \| number \| boolean)[], id: string][]): ParameterDecorator` | The rewrite inserts it on a whole `@Body()` or `@Query()` typed as a union of models. `property` is the tag that every model requires, and each variant lists its tag values and the model it stands for. `NestModelInterceptor` converts the input with the model that the tag picks. |
-| `nestModelReturn` | `(id: string, array?: boolean): MethodDecorator` | The rewrite inserts it on a handler that returns a model. `NestModelInterceptor` reads it. |
-
-### From `client`
-
-| Member | Behavior |
-| --- | --- |
-| `ClientRuntime` | Holds a client's options and sends its requests. `new ClientRuntime(client, options, servers?)`, where `servers` is the `servers` list of the document. `readResponse` selects the declared response, decodes it and runs the operation's response check. |
-| `isUndeclaredResponseError` | `(error, client?)`: true for a status or media type the operation does not declare |
-| `serializePath` | Writes a path parameter |
-| `addQueryParameter` | Adds a query parameter |
-| `setQueryString` | Sets a whole querystring parameter |
-| `appendQuery` | Appends one encoded query pair |
-| `serializeHeaderSimple` | Writes a header value |
-| `serializeContentParameter` | Writes a parameter with a media type |
-| `addCookieParameter` | Adds a cookie parameter |
-| `addCookieStyleParameter` | Adds a cookie-style parameter |
-| `encodeBody` | Encodes a request body for its media type |
-| `applySecurity` | Adds credentials for the operation's security requirements |
-| `encode` | Percent-encodes a value |
-
-The module also exports the types these functions use: `ClientOptions`, `RequestOptions`, `ParameterSerializer`, `EncodedBody`, `BodyEncoder`, `MutualTlsTransport`, `ResponseHeaderDecoder`, `StreamDecoder`, `ResponseDecoder`, `UndeclaredResponseError`, `AuthContext`, `TokenAuthValue`, `BasicCredentials`, `BasicAuthValue` and `RuntimeSecuritySchemes`. Each SDK aliases the option types with its client name, such as `PaymentsClientOptions`.
+Generated files and rewritten sources import runtime helpers from internal entries of `@exprtlabs/golem`. These entries change with the golem version and are not application API. The CLI requires each built-in generator package to have the exact version of `@exprtlabs/golem` ([Runtime version](/reference/generated-files#runtime-version)).

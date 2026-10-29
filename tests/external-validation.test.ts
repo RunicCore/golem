@@ -1,16 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {
-  registerGeneratedModel,
-  findGeneratedModelDefinition,
-  findGeneratedModelDefinitionForConstructor,
-  type GeneratedModel,
-  type GeneratedModelValidatorEnhancer,
-  type generatedModelFieldsBrand,
-  type generatedModelWireBrand,
-  type ModelTypeDescriptor,
-} from '@exprtlabs/golem/model';
+import { type GeneratedModel, type generatedModelFieldsBrand, type generatedModelWireBrand } from '@exprtlabs/golem/model';
+import { type GeneratedModelValidatorEnhancer, registerGeneratedModel, findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
+import { type ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { installCodecModel } from './register-codec-model.js';
 import { enhanceValidatorWithMobX } from '@exprtlabs/golem/mobx-validation';
 import { asGenObservable } from '@exprtlabs/golem/mobx';
@@ -20,7 +13,7 @@ import {
   type ModelValidator,
 } from '@exprtlabs/golem/validation';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { modelCodec } from './support/model-codec.js';
 
 type NumberModel = GeneratedModel<{ value: number }, { value: number }>;
 
@@ -166,7 +159,7 @@ test('model metadata is resolved through the prototype, not an instance construc
   Object.defineProperty(child, 'constructor', { configurable: true, enumerable: false, value: class Foreign {} });
   assert.deepEqual(await validateInstance(child), []);
   assert.equal(getValidator(child) instanceof Object, true);
-  assert.deepEqual(encodeGeneratedModel(child), { value: 1 });
+  assert.deepEqual(modelCodec(child).toWireFormat(child), { value: 1 });
 });
 
 test('missing conversion and validation metadata fail before rules can run', async () => {
@@ -189,7 +182,7 @@ test('frozen models support stateless operations and previously initialized vali
   const frozen = generated(Object.freeze(new FrozenModel()));
   const symbols = Object.getOwnPropertySymbols(frozen);
   assert.deepEqual(await validateInstance(frozen), []);
-  assert.deepEqual(encodeGeneratedModel(frozen), { value: 1 });
+  assert.deepEqual(modelCodec(frozen).toWireFormat(frozen), { value: 1 });
   assert.deepEqual(Object.getOwnPropertySymbols(frozen), symbols);
   assert.throws(() => getValidator(frozen), (error: unknown) =>
     error instanceof LibError && error.kind === LibErrorKind.Validation && error.cause instanceof TypeError);

@@ -1,4 +1,4 @@
-import { registerIModelClass } from '@exprtlabs/golem/serde';
+import { registerIModelClass } from '@exprtlabs/golem/internal/model-runtime';
 import { TRegisteredBaseModel } from './registered.model.generated.js';
 
 export type TRegistered = { id: string };

@@ -300,7 +300,7 @@ export function isValidModelValue(
 }
 
 /** The public issues of `value`: from the first failure, or from every failure with `failFast: false`. */
-export function modelValueIssues(
+function modelValueIssues(
   value: unknown,
   options: ValidateOptions | undefined,
   validator: Validator,
@@ -326,11 +326,11 @@ export function assertModelValue(
   if (issues.length > 0) validationFailure(issues);
 }
 
-export function validationFailure(issues: readonly Issue[]): never {
+function validationFailure(issues: readonly Issue[]): never {
   throw new LibError(LibErrorKind.Validation, 'Model validation failed.', issues);
 }
 
-export function validationUnavailable(message?: string): never {
+function validationUnavailable(message?: string): never {
   throw new LibError(
     LibErrorKind.ValidationUnavailable,
     message ?? 'Validation is not generated for this profile.',
@@ -354,10 +354,6 @@ export function validationUnavailableStub(value: unknown, options?: ValidateOpti
 export function validationUnavailableStub(value: unknown, options?: ValidateOptions): never;
 export function validationUnavailableStub(): never {
   return validationUnavailable();
-}
-
-export function serdeFailFast(options: SerdeOptions | ValidateOptions | undefined): boolean {
-  return options?.failFast !== false;
 }
 
 /** Registers the codec of `id`. */

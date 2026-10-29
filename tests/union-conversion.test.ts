@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import * as conversion from '@exprtlabs/golem/conversion';
+import * as modelRuntime from '@exprtlabs/golem/internal/model-runtime';
 import { bindInput, emitModelFromInit, emitModelFromJSON, inputOf, inputSlot, render, code, identifier, literal, type Code } from '@exprtlabs/golem/internal/emitter';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { DiscriminatorValue, ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import * as serde from '@exprtlabs/golem/serde';
 import { instantiateRuntime, type RuntimeFunction, emitCodecRuntimeText, renderWithHelpers } from './emitted-runtime.js';
 import { runModule } from './support/run-module.js';
 
@@ -40,7 +39,7 @@ function ownerRuntime(
     for (const name of ['Cat', 'Dog']) {
       const constructor = options.classes[`${prefix}${name}Model`] as new () => object;
       // The variant codec writes only the model's own fields, like a generated one.
-      serde.createObjectCodec(`${prefix}${name}`, {
+      modelRuntime.createObjectCodec(`${prefix}${name}`, {
         stringify: (value) => JSON.stringify({ ...(value as object) }),
         parse: (text) => Object.assign(new constructor(), JSON.parse(text)) as never,
         validate: () => true,
@@ -184,8 +183,8 @@ test('model conversion reads a variant by class and rejects an unknown tag', () 
   const compile = (converted: Code, direction: 'deserialize'): RuntimeFunction => {
     const { convert } = runModule(
       renderWithHelpers(code`const convert = (value: unknown) => convertModelField(${literal(direction)}, 'pet', (value: unknown) => ${converted}, value);`),
-      { ModelCat, ModelDog, unknownDiscriminatorValue: conversion.unknownDiscriminatorValue, withDiscriminatorValue: conversion.withDiscriminatorValue,
-        convertModelField: conversion.convertModelField },
+      { ModelCat, ModelDog, unknownDiscriminatorValue: modelRuntime.unknownDiscriminatorValue, withDiscriminatorValue: modelRuntime.withDiscriminatorValue,
+        convertModelField: modelRuntime.convertModelField },
       { exports: ['convert'] },
     );
     return convert as RuntimeFunction;
@@ -229,7 +228,7 @@ test('a union whose branch reads an input of its writer still selects by class a
   const converted = bindInput(emitModelFromJSON(union, identifier('value'), resolveModel), owner, identifier('writerOwner'));
   const { convert } = runModule(
     renderWithHelpers(code`const writerOwner = 'writer'; const convert = (value: unknown) => convertModelField('deserialize', 'pet', (value: unknown) => ${converted}, value);`),
-    { ModelCat, ModelDog, unknownDiscriminatorValue: conversion.unknownDiscriminatorValue, convertModelField: conversion.convertModelField },
+    { ModelCat, ModelDog, unknownDiscriminatorValue: modelRuntime.unknownDiscriminatorValue, convertModelField: modelRuntime.convertModelField },
     { exports: ['convert'] },
   ) as { convert: RuntimeFunction };
   const dog = convert({ kind: 'dog' });

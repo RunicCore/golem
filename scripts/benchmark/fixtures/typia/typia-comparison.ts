@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { isObservableObject } from 'mobx';
 import typia from 'typia';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { codecIdOf } from './codec-id.js';
 import './typia-comparison.model.generated.js';
 import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFactories, TwinKind } from './compare-case.js';

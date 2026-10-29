@@ -3,10 +3,10 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { prototypeFieldsModelSource } from './fixture-templates/models/prototype-fields.js';
+import { modelCodec } from './support/model-codec.js';
 
 // One run keeps mobx and the other keeps validation; the other two profile
 // combinations add no generated init path for dictionary keys.
@@ -46,12 +46,12 @@ for (const { mobx, validation } of profiles) {
       assert.equal(isObservableProp(model, 'label'), true);
     }
 
-    const decoded = decodeGeneratedModel(Item, values);
+    const decoded = modelCodec(Item).fromWireFormat(values);
     assert.equal(Object.hasOwn(decoded, 'label'), true);
     assert.equal(decoded.label, 'own');
     assert.equal(Object.hasOwn(decoded.dictionary, '__proto__'), true);
     assert.equal(Object.hasOwn(decoded.nested, 'value'), true);
-    const encoded = encodeGeneratedModel(model) as Record<string, unknown>;
+    const encoded = modelCodec(model).toWireFormat(model) as Record<string, unknown>;
     assert.equal(Object.hasOwn(encoded, 'label'), true);
     assert.equal(encoded.label, 'own');
     assert.equal(Object.hasOwn(encoded.dictionary as object, '__proto__'), true);

@@ -3,14 +3,10 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { reaction } from 'mobx';
-import {
-  createApiOperation,
-  type ApiOperation,
-} from '@exprtlabs/golem/client';
-import {
-  createObservableApiOperation,
-  type ObservableApiOperation,
-} from '@exprtlabs/golem/mobx';
+import type { ApiOperation } from '@exprtlabs/golem/client';
+import { createApiOperation } from '@exprtlabs/golem/internal/client-runtime';
+import { createObservableApiOperation } from '@exprtlabs/golem/internal/mobx-runtime';
+import type { ObservableApiOperation } from '@exprtlabs/golem/mobx';
 import { captureWarnings, delay, deferred, enforceActions, rejectOnAbort } from './support/client-test-utils.js';
 
 type Warn = typeof console.warn;

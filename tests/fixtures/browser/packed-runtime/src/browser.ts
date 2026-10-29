@@ -1,14 +1,14 @@
 import { autorun, configure, isObservableProp, runInAction } from 'mobx';
 import { ProfileClient, MoneyModel } from '../sdk/index.js';
 import { Cart } from './cart.model.js';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { getValidator } from '@exprtlabs/golem/validation';
 
 configure({ enforceActions: 'always' });
 
 async function run() {
-  const cart = decodeGeneratedModel(Cart, { money: { amount: 1, currency: 'USD' }, note: 'draft', count: 2, code: 'ff' });
+  const cart = fromWireFormat<Cart>({ money: { amount: 1, currency: 'USD' }, note: 'draft', count: 2, code: 'ff' });
   const amounts: number[] = [];
   const stopMoney = autorun(() => amounts.push(cart.money.amount));
   runInAction(() => { cart.money.amount = 2; });
@@ -64,7 +64,7 @@ async function run() {
       next: next.body.amount,
       rejected,
       warnings,
-      json: encodeGeneratedModel(cart),
+      json: toWireFormat<Cart>(cart),
       cancelled,
       abortIdle: !abortApi.loading,
       explicitFetch: explicitFetch.body.amount,

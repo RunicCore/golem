@@ -9,7 +9,7 @@
 
 export type JsonSchema = boolean | Readonly<Record<string, unknown>>;
 
-import type { ConstraintSchemaValue, ModelConstraint } from '../model.js';
+import type { ConstraintSchemaValue, ModelConstraint } from '../model-registry.js';
 import {
   GENERATED_MODEL_SCHEMA_REF_PREFIX,
   MODEL_DATE_KEYWORD,
@@ -18,12 +18,13 @@ import {
   VALIDATION_KEYWORD,
 } from '../schema-keywords.js';
 import { canonicalSchemaKey } from './canonical-schema-key.js';
-import { compareText, isRecord } from './generator-api.js';
+import { compareText, isRecord } from './generator-core.js';
 
 export { assertSupportedModelFieldName } from '../model-field-names.js';
 export { decodeUriFragment, escapePointerToken, unescapePointerToken } from '../json-pointer.js';
 export { canonicalSchemaKey };
-export type { ConstraintSchemaValue, ModelConstraint } from '../model.js';
+/** The schema descriptor types that generators read (`@exprtlabs/golem/internal/schema`). */
+export type { ConstraintSchemaValue, DiscriminatorValue, ModelConstraint, ModelTypeDescriptor, ModelTypeMetadata, UnionDiscriminator } from '../model-registry.js';
 export { GENERATED_MODEL_SCHEMA_REF_PREFIX, MODEL_CODEC_IDS_KEY, MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD };
 export { validationTagSchemaDescriptor } from './validation-tags.js';
 

@@ -4,8 +4,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { requireObjectCodec, type ObjectCodec } from '@exprtlabs/golem/serde';
+import { type ObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec, decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 import { LibError, LibErrorKind, IssueRepresentation, IssueSource } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { getValidator } from '@exprtlabs/golem/validation';
@@ -18,6 +18,7 @@ import {
   importGeneratedModule,
   requireRecord,
 } from './helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 type ChildInitLike = { id?: string; when?: Date };
 interface ChildInstance {
@@ -408,20 +409,20 @@ async function assertNestedDateInheritedAndDictionaryConversions(
   assert.deepEqual(validator.issues.map(issue => issue.path), [['child', 'when']]);
   assert.equal(validator.errorsFor(['child', 'when']).length, 1, 'errorsFor matches a multi-segment nested path');
 
-  const inherited = decodeGeneratedModel(DerivedEventModel as unknown as EventConstructor, {
+  const inherited = modelCodec(DerivedEventModel as unknown as EventConstructor).fromWireFormat({
     baseWhen: '2025-02-03T04:05:06Z',
     baseLabel: 'base',
     derivedWhen: '2025-03-04T05:06:07Z',
   }) as EventInstance & { readonly baseWhen: Date; readonly derivedWhen: Date };
   assert.ok(inherited.baseWhen instanceof Date, 'inherited Date field is decoded by derived deserialize');
   assert.ok(inherited.derivedWhen instanceof Date, 'derived Date field is decoded by derived deserialize');
-  assert.deepEqual(encodeGeneratedModel(generated(inherited)), {
+  assert.deepEqual(modelCodec(generated(inherited)).toWireFormat(generated(inherited)), {
     baseWhen: '2025-02-03T04:05:06.000Z',
     baseLabel: 'base',
     derivedWhen: '2025-03-04T05:06:07.000Z',
   });
 
-  const dictionary = decodeGeneratedModel(DictionaryModel as unknown as DictionaryModelConstructor, {
+  const dictionary = modelCodec(DictionaryModel as unknown as DictionaryModelConstructor).fromWireFormat({
     first: {
       when: '2025-04-05T06:07:08Z',
       child: { id: 'dictionary-child' },
@@ -430,11 +431,11 @@ async function assertNestedDateInheritedAndDictionaryConversions(
   const dictionaryEntry = (dictionary.first as Record<string, unknown>);
   assert.ok(dictionaryEntry.when instanceof Date, 'dictionary Date value is decoded');
   assert.ok(dictionaryEntry.child instanceof ChildModel, 'dictionary nested model is decoded');
-  assert.deepEqual(encodeGeneratedModel(generated(dictionary)), {
+  assert.deepEqual(modelCodec(generated(dictionary)).toWireFormat(generated(dictionary)), {
     first: { when: '2025-04-05T06:07:08.000Z', child: { id: 'dictionary-child' } },
   });
 
-  const derivedDictionary = decodeGeneratedModel(DerivedDictionaryModel as unknown as DictionaryModelConstructor, {
+  const derivedDictionary = modelCodec(DerivedDictionaryModel as unknown as DictionaryModelConstructor).fromWireFormat({
     baseWhen: '2025-06-07T08:09:10Z',
     derivedWhen: '2025-07-08T09:10:11Z',
     entry: {
@@ -447,7 +448,7 @@ async function assertNestedDateInheritedAndDictionaryConversions(
   const derivedEntry = derivedDictionary.entry as Record<string, unknown>;
   assert.ok(derivedEntry.when instanceof Date, 'derived dictionary Date value is decoded');
   assert.ok(derivedEntry.child instanceof ChildModel, 'derived dictionary nested model is decoded');
-  assert.deepEqual(encodeGeneratedModel(generated(derivedDictionary)), {
+  assert.deepEqual(modelCodec(generated(derivedDictionary)).toWireFormat(generated(derivedDictionary)), {
     baseWhen: '2025-06-07T08:09:10.000Z',
     derivedWhen: '2025-07-08T09:10:11.000Z',
     entry: { when: '2025-08-09T10:11:12.000Z', child: { id: 'derived-dictionary-child' } },
@@ -494,7 +495,7 @@ test('generated nested Date, inherited, and dictionary conversions work in a sta
     children: [countedChild],
     labels: ['one', 'two'],
   });
-  const wire = encodeGeneratedModel(generated(model)) as Record<string, unknown>;
+  const wire = modelCodec(generated(model)).toWireFormat(generated(model)) as Record<string, unknown>;
   assert.equal(
     JSON.stringify(wire),
     '{"when":"0001-01-01T00:00:00.123Z","maybeWhen":null,"child":{"id":"counted"},"children":[{"id":"counted"}],"labels":["one","two"]}',
@@ -505,7 +506,8 @@ test('generated nested Date, inherited, and dictionary conversions work in a sta
   assert.deepEqual(wire.child, { id: 'counted' });
   assert.deepEqual(wire.children, [{ id: 'counted' }]);
 
-  const parsed = decodeGeneratedModel(EventModel, {
+  // The decode hook of the model keeps a nested model that is already converted; the codec's fromWireFormat copies its input.
+  const parsed = decodeGeneratedModelTrusted(EventModel, {
     when: '0099-12-31T23:59:59.9-05:00',
     maybeWhen: null,
     child,
@@ -515,23 +517,23 @@ test('generated nested Date, inherited, and dictionary conversions work in a sta
   assert.equal(parsed.maybeWhen, null);
   assert.equal(parsed.child, child, 'deserialize preserves an already-converted nested model');
   assert.equal(parsed.children?.[0], child, 'array conversion preserves an already-converted nested model');
-  assert.deepEqual(encodeGeneratedModel(generated(parsed)), {
+  assert.deepEqual(modelCodec(generated(parsed)).toWireFormat(generated(parsed)), {
     when: '0100-01-01T04:59:59.900Z',
     maybeWhen: null,
     child: { id: 'child' },
     children: [{ id: 'child' }],
   });
 
-  const parsedPlain = decodeGeneratedModel(EventModel, {
+  const parsedPlain = modelCodec(EventModel).fromWireFormat({
     when: '2025-01-02T03:04:05Z',
     child: { id: 'plain', when: '2025-01-02T03:04:05Z' },
   }) as EventInstance;
   assert.ok(parsedPlain.child instanceof ChildModel);
   assert.ok(parsedPlain.child.when instanceof Date);
 
-  const serialized = encodeGeneratedModel(generated(model));
+  const serialized = modelCodec(generated(model)).toWireFormat(generated(model));
   assert.deepEqual(serialized, wire);
-  const deserialized = decodeGeneratedModel(EventModel, serialized) as EventInstance;
+  const deserialized = modelCodec(EventModel).fromWireFormat(serialized) as EventInstance;
   assert.ok(deserialized.when instanceof Date);
   assert.equal(deserialized.when.toISOString(), '0001-01-01T00:00:00.123Z');
   assert.equal(deserialized.child instanceof ChildModel, true);
@@ -606,13 +608,13 @@ test('generated discriminated unions infer abstract, concrete, and handwritten s
   const HandwrittenCat = class extends CatModel {
     readonly marker = true;
   };
-  const cat = decodeGeneratedModel(CatModel, { kind: 'cat', name: 'Miso' });
-  const handwritten = decodeGeneratedModel(HandwrittenCat, { kind: 'cat', name: 'Miso' });
+  const cat = modelCodec(CatModel).fromWireFormat({ kind: 'cat', name: 'Miso' });
+  const handwritten = modelCodec(HandwrittenCat).fromWireFormat({ kind: 'cat', name: 'Miso' });
   assert.ok(handwritten instanceof HandwrittenCat, 'a handwritten concrete subclass is constructed directly');
   assert.ok(handwritten instanceof CatModel);
   assert.equal((handwritten as { readonly marker: boolean }).marker, true);
-  assert.deepEqual(encodeGeneratedModel(generated(handwritten)), { kind: 'cat', name: 'Miso' });
-  assert.deepEqual(encodeGeneratedModel(generated(cat)), { kind: 'cat', name: 'Miso' });
+  assert.deepEqual(modelCodec(generated(handwritten)).toWireFormat(generated(handwritten)), { kind: 'cat', name: 'Miso' });
+  assert.deepEqual(modelCodec(generated(cat)).toWireFormat(generated(cat)), { kind: 'cat', name: 'Miso' });
 });
 
 test('a tuple field converts each item by its own schema: the prefix stays a string and the rest items are Dates', async t => {
@@ -630,7 +632,7 @@ test('a tuple field converts each item by its own schema: the prefix stays a str
   );
   const ItineraryModel = models.ItineraryModel as unknown as new (values?: Record<string, unknown>) => Record<string, unknown>;
 
-  const itinerary = decodeGeneratedModel(ItineraryModel, {
+  const itinerary = modelCodec(ItineraryModel).fromWireFormat({
     stops: ['label', '2024-05-06T07:08:09.000Z'],
     leg: ['gate', '2024-05-07T08:09:10.000Z'],
     held: ['2024-05-08T09:10:11.000Z'],
@@ -638,14 +640,14 @@ test('a tuple field converts each item by its own schema: the prefix stays a str
   assert.deepEqual(itinerary.stops, ['label', new Date('2024-05-06T07:08:09.000Z')]);
   assert.deepEqual(itinerary.leg, ['gate', new Date('2024-05-07T08:09:10.000Z')]);
   assert.deepEqual(itinerary.held, [new Date('2024-05-08T09:10:11.000Z')]);
-  assert.deepEqual(encodeGeneratedModel(generated(itinerary)), {
+  assert.deepEqual(modelCodec(generated(itinerary)).toWireFormat(generated(itinerary)), {
     stops: ['label', '2024-05-06T07:08:09.000Z'],
     leg: ['gate', '2024-05-07T08:09:10.000Z'],
     held: ['2024-05-08T09:10:11.000Z'],
   });
 
   assert.throws(
-    () => decodeGeneratedModel(ItineraryModel, { stops: ['label', '2024-05-06T07:08:09.000Z', 'not a date'], leg: [], held: [] }),
+    () => modelCodec(ItineraryModel).fromWireFormat({ stops: ['label', '2024-05-06T07:08:09.000Z', 'not a date'], leg: [], held: [] }),
     (error: unknown): true => {
       assert.ok(error instanceof LibError);
       assert.deepEqual(error.issues[0]?.path, ['stops', 2]);
@@ -666,9 +668,9 @@ test('an array field with an allOf sibling converts its items to Dates and is ty
 
   const { VisitModel } = await loadVisitModels(output, 'generated array models');
 
-  const visit = decodeGeneratedModel(VisitModel, { visits: ['2024-05-06T07:08:09.000Z'] });
+  const visit = modelCodec(VisitModel).fromWireFormat({ visits: ['2024-05-06T07:08:09.000Z'] });
   assert.deepEqual(visit.visits, [new Date('2024-05-06T07:08:09.000Z')]);
-  assert.deepEqual(encodeGeneratedModel(generated(visit)), { visits: ['2024-05-06T07:08:09.000Z'] });
+  assert.deepEqual(modelCodec(generated(visit)).toWireFormat(generated(visit)), { visits: ['2024-05-06T07:08:09.000Z'] });
 });
 
 test('an SDK model with a property that has no type generates under the default allowAny and accepts any value', async t => {
@@ -731,7 +733,7 @@ test('an array or tuple field with no type or a nullable type converts like type
 
   const { VisitModel } = await loadVisitModels(output, 'generated sequence models');
 
-  const visit = decodeGeneratedModel(VisitModel, {
+  const visit = modelCodec(VisitModel).fromWireFormat({
     maybeVisits: ['2024-05-06T07:08:09.000Z'],
     untypedVisits: ['2024-05-07T08:09:10.000Z'],
     maybeLeg: ['gate', '2024-05-08T09:10:11.000Z'],
@@ -741,14 +743,14 @@ test('an array or tuple field with no type or a nullable type converts like type
   assert.deepEqual(visit.untypedVisits, [new Date('2024-05-07T08:09:10.000Z')]);
   assert.deepEqual(visit.maybeLeg, ['gate', new Date('2024-05-08T09:10:11.000Z')]);
   assert.deepEqual(visit.untypedLeg, ['door', new Date('2024-05-09T10:11:12.000Z')]);
-  assert.deepEqual(encodeGeneratedModel(generated(visit)), {
+  assert.deepEqual(modelCodec(generated(visit)).toWireFormat(generated(visit)), {
     maybeVisits: ['2024-05-06T07:08:09.000Z'],
     untypedVisits: ['2024-05-07T08:09:10.000Z'],
     maybeLeg: ['gate', '2024-05-08T09:10:11.000Z'],
     untypedLeg: ['door', '2024-05-09T10:11:12.000Z'],
   });
 
-  const absent = decodeGeneratedModel(VisitModel, {
+  const absent = modelCodec(VisitModel).fromWireFormat({
     maybeVisits: null,
     untypedVisits: [],
     maybeLeg: null,
@@ -791,7 +793,7 @@ test('allOf members decide an array field: constraint-only and restating members
 
   const { VisitModel } = await loadVisitModels(output, 'generated allOf array models');
 
-  const visit = decodeGeneratedModel(VisitModel, {
+  const visit = modelCodec(VisitModel).fromWireFormat({
     restatingMember: ['2024-05-06T07:08:09.000Z'],
     restatedByMember: ['2024-05-07T08:09:10.000Z'],
     membersCarry: ['2024-05-08T09:10:11.000Z'],
@@ -823,16 +825,16 @@ test('a oneOf of a scalar and a nullable array or tuple converts the sequence, k
 
   const { VisitModel } = await loadVisitModels(output, 'generated scalar-or-sequence models');
 
-  const scalars = decodeGeneratedModel(VisitModel, { plainOrDates: 'plain', plainOrLeg: 'plain' });
+  const scalars = modelCodec(VisitModel).fromWireFormat({ plainOrDates: 'plain', plainOrLeg: 'plain' });
   assert.equal(scalars.plainOrDates, 'plain');
   assert.equal(scalars.plainOrLeg, 'plain');
-  const sequences = decodeGeneratedModel(VisitModel, {
+  const sequences = modelCodec(VisitModel).fromWireFormat({
     plainOrDates: ['2024-05-06T07:08:09.000Z'],
     plainOrLeg: ['2024-05-07T08:09:10.000Z'],
   });
   assert.deepEqual(sequences.plainOrDates, [new Date('2024-05-06T07:08:09.000Z')]);
   assert.deepEqual(sequences.plainOrLeg, [new Date('2024-05-07T08:09:10.000Z')]);
-  const nulls = decodeGeneratedModel(VisitModel, { plainOrDates: null, plainOrLeg: null });
+  const nulls = modelCodec(VisitModel).fromWireFormat({ plainOrDates: null, plainOrLeg: null });
   assert.equal(nulls.plainOrDates, null);
   assert.equal(nulls.plainOrLeg, null);
 });
@@ -849,9 +851,9 @@ test('a nullable array field with an allOf minItems keeps null, rejects an empty
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable array models');
 
-  assert.equal(decodeGeneratedModel(VisitModel, { visits: null }).visits, null);
+  assert.equal(modelCodec(VisitModel).fromWireFormat({ visits: null }).visits, null);
   assert.deepEqual(
-    decodeGeneratedModel(VisitModel, { visits: ['2024-05-06T07:08:09.000Z'] }).visits,
+    modelCodec(VisitModel).fromWireFormat({ visits: ['2024-05-06T07:08:09.000Z'] }).visits,
     [new Date('2024-05-06T07:08:09.000Z')],
   );
   assert.throws(
@@ -875,7 +877,7 @@ test('an object field whose allOf members only add constraints converts by its o
 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated constraint-only allOf object models');
 
-  const visit = decodeGeneratedModel(VisitModel, { window: { at: '2024-05-06T07:08:09.000Z' } });
+  const visit = modelCodec(VisitModel).fromWireFormat({ window: { at: '2024-05-06T07:08:09.000Z' } });
   assert.deepEqual(visit.window, { at: new Date('2024-05-06T07:08:09.000Z') });
   assert.throws(
     () => visitCodec(output).fromWireFormat(
@@ -898,10 +900,10 @@ test('a oneOf field whose allOf members only add constraints converts by its own
   const { VisitModel } = await loadVisitModels(output, 'generated constraint-only allOf oneOf models');
 
   assert.deepEqual(
-    decodeGeneratedModel(VisitModel, { either: '2024-05-07T08:09:10.000Z' }).either,
+    modelCodec(VisitModel).fromWireFormat({ either: '2024-05-07T08:09:10.000Z' }).either,
     new Date('2024-05-07T08:09:10.000Z'),
   );
-  assert.equal(decodeGeneratedModel(VisitModel, { either: null }).either, null);
+  assert.equal(modelCodec(VisitModel).fromWireFormat({ either: null }).either, null);
 });
 
 test('a nullable object field admits null and converts its properties', async t => {
@@ -916,9 +918,9 @@ test('a nullable object field admits null and converts its properties', async t 
   const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable object models');
   const codec = visitCodec(output);
 
-  assert.equal(decodeGeneratedModel(VisitModel, { window: null }).window, null);
+  assert.equal(modelCodec(VisitModel).fromWireFormat({ window: null }).window, null);
   assert.deepEqual(
-    decodeGeneratedModel(VisitModel, { window: { at: '2024-05-06T07:08:09.000Z' } }).window,
+    modelCodec(VisitModel).fromWireFormat({ window: { at: '2024-05-06T07:08:09.000Z' } }).window,
     { at: new Date('2024-05-06T07:08:09.000Z') },
   );
   assert.doesNotThrow(() => codec.fromWireFormat({ window: null }, { construct }));
@@ -937,7 +939,7 @@ test('a nullable object field with a constraint-only allOf admits null and still
   const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable object allOf models');
   const codec = visitCodec(output);
 
-  assert.equal(decodeGeneratedModel(VisitModel, { window: null }).window, null);
+  assert.equal(modelCodec(VisitModel).fromWireFormat({ window: null }).window, null);
   assert.doesNotThrow(() => codec.fromWireFormat({ window: null }, { construct }));
   assert.throws(
     () => codec.fromWireFormat({ window: {} }, { construct }),
@@ -958,9 +960,9 @@ test('a field that references a nullable component object is typed with | null a
   const { VisitModel, construct } = await loadVisitModels(output, 'generated nullable reference models');
   const codec = visitCodec(output);
 
-  assert.equal(decodeGeneratedModel(VisitModel, { pet: null }).pet, null);
+  assert.equal(modelCodec(VisitModel).fromWireFormat({ pet: null }).pet, null);
   assert.doesNotThrow(() => codec.fromWireFormat({ pet: null }, { construct }));
-  assert.equal(JSON.stringify(decodeGeneratedModel(VisitModel, { pet: { name: 'Miso' } }).pet), '{"name":"Miso"}');
+  assert.equal(JSON.stringify(modelCodec(VisitModel).fromWireFormat({ pet: { name: 'Miso' } }).pet), '{"name":"Miso"}');
 });
 
 test('a field that references a nullable component with a date-time property decodes, validates and encodes it', async t => {
@@ -1000,7 +1002,7 @@ for (const validation of [true, false]) test(`an object field with its own prope
   const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf member properties models');
 
   assert.deepEqual(
-    decodeGeneratedModel(VisitModel, { merged: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }).merged,
+    modelCodec(VisitModel).fromWireFormat({ merged: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }).merged,
     { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
   );
 
@@ -1030,7 +1032,7 @@ test('a name in the required list of an allOf member is required in the field ty
   const codec = visitCodec(output);
 
   assert.deepEqual(
-    decodeGeneratedModel(VisitModel, { window: { at: '2024-05-06T07:08:09.000Z' } }).window,
+    modelCodec(VisitModel).fromWireFormat({ window: { at: '2024-05-06T07:08:09.000Z' } }).window,
     { at: new Date('2024-05-06T07:08:09.000Z') },
   );
   assert.throws(
@@ -1053,7 +1055,7 @@ for (const validation of [true, false]) test(`an allOf of object members is type
   const { VisitModel, construct } = await loadVisitModels(output, 'generated allOf object member models');
 
   assert.deepEqual(
-    decodeGeneratedModel(VisitModel, { members: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }).members,
+    modelCodec(VisitModel).fromWireFormat({ members: { at: '2024-05-06T07:08:09.000Z', b: '2024-05-07T08:09:10.000Z' } }).members,
     { at: new Date('2024-05-06T07:08:09.000Z'), b: new Date('2024-05-07T08:09:10.000Z') },
   );
 
@@ -1129,7 +1131,7 @@ test('a discriminated oneOf with a nullable component variant still generates an
   const { VisitModel, construct } = await loadVisitModels(output, 'generated discriminated nullable variant models');
   const codec = visitCodec(output);
 
-  assert.equal(JSON.stringify(decodeGeneratedModel(VisitModel, { pet: { kind: 'cat', name: 'Miso' } }).pet), '{"kind":"cat","name":"Miso"}');
+  assert.equal(JSON.stringify(modelCodec(VisitModel).fromWireFormat({ pet: { kind: 'cat', name: 'Miso' } }).pet), '{"kind":"cat","name":"Miso"}');
   assert.doesNotThrow(() => codec.fromWireFormat({ pet: { kind: 'dog', name: 'Rex' } }, { construct }));
 });
 
@@ -1145,7 +1147,7 @@ test('a oneOf variant that references a nullable component admits null and is ty
   const codec = visitCodec(output);
 
   assert.doesNotThrow(() => codec.fromWireFormat({ either: { name: 'Miso' } }, { construct }));
-  assert.equal(decodeGeneratedModel(VisitModel, { either: null }).either, null);
+  assert.equal(modelCodec(VisitModel).fromWireFormat({ either: null }).either, null);
   assert.equal((codec.fromWireFormat({ either: null }, { construct }) as { either: unknown }).either, null);
 });
 

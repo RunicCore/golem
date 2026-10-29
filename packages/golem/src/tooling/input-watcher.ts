@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { errorMessage, hasErrorCode, isInsideDirectory } from './generator-api.js';
+import { errorMessage, hasErrorCode, isInsideDirectory } from './generator-core.js';
 import { inNodeModules } from './type-analysis/path-identity.js';
 
 /**

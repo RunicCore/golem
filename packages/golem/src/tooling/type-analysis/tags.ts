@@ -1,5 +1,5 @@
 import path from 'node:path';
-import { displayPath } from '../generator-api.js';
+import { displayPath } from '../generator-core.js';
 import { hasLocalForm, localFormMessage } from '../names.js';
 import * as ts from '../typescript-ns.js';
 import { canonicalFilename, portableRelativeFilename } from './project.js';

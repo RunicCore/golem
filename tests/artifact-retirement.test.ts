@@ -7,7 +7,8 @@ import { test, type TestContext } from 'node:test';
 import type { GolemConfig, GolemJob } from '#golem/config';
 import { applyJob, loadInventory } from '#golem/outputs';
 import { generate } from '#openapi/generator';
-import type { OpenApiGenerationProfile, OpenApiGenerationResult } from '#openapi/generator';
+import type { OpenApiGenerationResult } from '#openapi/generator';
+import type { OpenApiGenerationProfile } from '#openapi/profile';
 import { repoRoot, tscBin } from './openapi/helpers.js';
 import { snapshotFilesystem } from './fixture-project.js';
 

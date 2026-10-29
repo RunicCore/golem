@@ -26,7 +26,7 @@ import {
 } from 'node:path';
 import * as ast from 'typescript/ast';
 import { GOLEM_CHANNELS } from './diagnostics-channels.js';
-import { displayPath } from './generator-api.js';
+import { displayPath } from './generator-core.js';
 import { fileSignature, MISSING } from './input-watcher.js';
 import { assertConfigParsed, assertNoSourceFiles, canonical, collectTscDiagnostics, configReferences, declarationOutputOf, emitWanted, flagPathOptions, flagsAsConfigOptions, hasDeclarationOutput, programConfig, referenceClosure, referencedConfigFile } from './typescript-config.js';
 import type { ConfigReference, ProgramConfig, ResolveAtCurrentFolder } from './typescript-config.js';

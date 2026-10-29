@@ -5,16 +5,19 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { autorun } from 'mobx';
 
-import type * as ModelModule from '@exprtlabs/golem/model';
+import type * as ModelRuntimeModule from '@exprtlabs/golem/internal/model-runtime';
+import type * as MobxValidationRuntimeModule from '@exprtlabs/golem/internal/mobx-validation-runtime';
 import type * as ValidationModule from '@exprtlabs/golem/validation';
 import type * as MobxModule from '@exprtlabs/golem/mobx';
 import type * as MobxValidationModule from '@exprtlabs/golem/mobx-validation';
 import { installCodecModel } from './register-codec-model.js';
-import type { GeneratedModelValidatorEnhancer, ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { GeneratedModelValidatorEnhancer } from '@exprtlabs/golem/internal/model-runtime';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 
 const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
 
-async function runtime(name: 'model'): Promise<typeof ModelModule>;
+async function runtime(name: 'runtime-model'): Promise<typeof ModelRuntimeModule>;
+async function runtime(name: 'runtime-mobx-validation'): Promise<typeof MobxValidationRuntimeModule>;
 async function runtime(name: 'validation'): Promise<typeof ValidationModule>;
 async function runtime(name: 'mobx'): Promise<typeof MobxModule>;
 async function runtime(name: 'mobx-validation'): Promise<typeof MobxValidationModule>;
@@ -148,7 +151,7 @@ test('tuple validation supports rest elements with prefix only, prefix and suffi
 
 test('JSON Pointer escapes ~ and / in property paths; errorsFor finds actual field', async () => {
   const [{ registerGeneratedModel }, validation] = await Promise.all([
-    runtime('model'),
+    runtime('runtime-model'),
     runtime('validation'),
   ]);
 
@@ -241,7 +244,7 @@ test('JSON Pointer escapes ~ and / in property paths; errorsFor finds actual fie
 
 test('plain getter called FIRST, MobX getter called SECOND shares identity and enhances in place', async () => {
   const [{ registerGeneratedModel }, validation, mobxValidation] = await Promise.all([
-    runtime('model'),
+    runtime('runtime-model'),
     runtime('validation'),
     runtime('mobx-validation'),
   ]);
@@ -331,7 +334,7 @@ test('plain getter called FIRST, MobX getter called SECOND shares identity and e
 
 test('MobX getter called FIRST, plain getter called SECOND shares identity and observation', async () => {
   const [{ registerGeneratedModel }, validation, mobxValidation] = await Promise.all([
-    runtime('model'),
+    runtime('runtime-model'),
     runtime('validation'),
     runtime('mobx-validation'),
   ]);
@@ -383,7 +386,7 @@ test('MobX getter called FIRST, plain getter called SECOND shares identity and o
 
 test('direct MobX ModelValidator constructor enhances in place and runs setters in actions', async () => {
   const [{ registerGeneratedModel }, validation, mobxValidation] = await Promise.all([
-    runtime('model'),
+    runtime('runtime-model'),
     runtime('validation'),
     runtime('mobx-validation'),
   ]);
@@ -429,9 +432,10 @@ test('direct MobX ModelValidator constructor enhances in place and runs setters 
 });
 
 test('enhanceValidatorWithMobX and repeated getValidator calls are idempotent', async () => {
-  const [{ registerGeneratedModel }, mobxValidation] = await Promise.all([
-    runtime('model'),
+  const [{ registerGeneratedModel }, mobxValidation, { enhanceValidatorWithMobX }] = await Promise.all([
+    runtime('runtime-model'),
     runtime('mobx-validation'),
+    runtime('runtime-mobx-validation'),
   ]);
 
   class IdempotentModel {
@@ -446,7 +450,7 @@ test('enhanceValidatorWithMobX and repeated getValidator calls are idempotent', 
 
   const v1 = mobxValidation.getValidator(model);
   const v2 = mobxValidation.getValidator(model);
-  const v3 = mobxValidation.enhanceValidatorWithMobX(v1);
+  const v3 = enhanceValidatorWithMobX(v1);
 
   assert.strictEqual(v1, v2);
   assert.strictEqual(v1, v3);
@@ -454,7 +458,7 @@ test('enhanceValidatorWithMobX and repeated getValidator calls are idempotent', 
 
 test('async validation observes pending state transition [false -> true -> false]', async () => {
   const [{ registerGeneratedModel }, mobxValidation] = await Promise.all([
-    runtime('model'),
+    runtime('runtime-model'),
     runtime('mobx-validation'),
   ]);
 
@@ -511,7 +515,7 @@ test('async validation observes pending state transition [false -> true -> false
 
 test('ModelValidator keeps the latest overlapping result and clears stale pending state', async () => {
   const [, , mobxValidation] = await Promise.all([
-    runtime('model'),
+    runtime('runtime-model'),
     runtime('validation'),
     runtime('mobx-validation'),
   ]);

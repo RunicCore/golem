@@ -1,4 +1,4 @@
-import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-api.js';
+import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-core.js';
 import { emit, exportNames, type PassExports } from './emit.js';
 import { lower } from './lower.js';
 
@@ -24,7 +24,7 @@ export interface SchemaPlace {
 export interface CompileOptions {
   /** What a format that golem does not implement does: warn and skip the check, or fail the compile. */
   readonly unknownFormats: 'warn' | 'error';
-  /** Where the generated module imports its helpers from; the package's validation runtime by default. */
+  /** Where the generated module imports its helpers from; the internal validation runtime of the package by default. */
   readonly runtimeModule?: string;
   /** Named in each diagnostic message that `locate` does not place. */
   readonly documentName?: string;
@@ -65,15 +65,13 @@ export interface CompileResult {
   readonly diagnostics: readonly GolemDiagnostic[];
 }
 
-const DEFAULT_RUNTIME_MODULE = '@exprtlabs/golem/validation-runtime';
-
 /** Compiles JSON Schema 2020-12 roots to a module that exports one validator function per root. */
 export function compile(input: CompileInput, options: CompileOptions): CompileResult {
   const { module, diagnostics } = lower(input, options);
   const exports = exportNames(input.roots.keys());
   if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', exports, fastExports: new Map(), passExports: new Map(), diagnostics };
   const { source, fastExports, passExports } = emit(module, {
-    runtimeModule: options.runtimeModule ?? DEFAULT_RUNTIME_MODULE,
+    ...(options.runtimeModule === undefined ? {} : { runtimeModule: options.runtimeModule }),
     ...(options.typed ? { typed: true } : {}),
     ...(options.fastPath === undefined || options.fastPath === false ? {} : { fastPath: options.fastPath }),
   });

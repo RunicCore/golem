@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path';
-import { encodeMappings, type MappingSegment, type SourceMapV3 } from './source-map.js';
-import { displayPath } from './generator-api.js';
+import { encodeMappings, LINE_BREAK, lineStarts, type MappingSegment, type SourceMapV3 } from './source-map.js';
+import { displayPath } from './generator-core.js';
 
 export interface RewriteEdit {
   /** UTF-16 offset into the original file text. */
@@ -33,10 +33,6 @@ export interface FileRewrite {
 }
 
 export const REWRITE_IMPORT_PREFIX = '__golem_';
-
-// Source text, not a regex literal: emit would print a U+2028 escape in a literal as the raw character.
-const LINE_BREAK_SOURCE = '\\r\\n|[\\r\\n\\u2028\\u2029]';
-const LINE_BREAK = new RegExp(LINE_BREAK_SOURCE, 'g');
 
 const BYTE_ORDER_MARK = '\uFEFF';
 
@@ -75,13 +71,6 @@ function importEdits(text: string, imports: readonly RewriteImport[], at: number
     expect: '',
     text: `${position === 0 && !lineBreakBefore ? '\n' : ''}import ${names.length === 0 ? '' : `{ ${names.map((name) => `${name} as ${REWRITE_IMPORT_PREFIX}${name}`).join(', ')} } from `}${quote(from)};\n`,
   }));
-}
-
-export function lineStarts(text: string): number[] {
-  const starts = [0];
-  LINE_BREAK.lastIndex = 0;
-  for (let match = LINE_BREAK.exec(text); match; match = LINE_BREAK.exec(text)) starts.push(match.index + match[0].length);
-  return starts;
 }
 
 /**

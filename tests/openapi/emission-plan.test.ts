@@ -5,7 +5,7 @@ import { writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { isUndeclaredResponseError } from '@exprtlabs/golem/client';
+import { isUndeclaredResponseError } from '@exprtlabs/golem/internal/client-runtime';
 import {
   ALL_GENERATION_PROFILES,
   compileStrictUnusedSdk,

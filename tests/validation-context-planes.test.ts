@@ -1,13 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ModelTypeDescriptor, ModelValidationContext } from '@exprtlabs/golem/model';
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import type { ModelValidationContext } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
+import type { Validator } from '@exprtlabs/golem/validation';
+import { createObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { identifier } from '@exprtlabs/golem/internal/emitter';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import { emitCodecRuntimeText, instantiateRuntime } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';
-import { createObjectCodec, objectCodecValidationReference, resolveModelValidationContextValidator } from '@exprtlabs/golem/serde';
+import { objectCodecValidationReference } from '@exprtlabs/golem/serde';
+import { resolveModelValidationContextValidator } from '../packages/golem/src/object-codec.js';
 
 const impl = {
   stringify: () => '{}', parse: () => ({}), validate: () => true, assert: (v: unknown) => v,

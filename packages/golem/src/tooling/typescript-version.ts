@@ -1,7 +1,7 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { displayPath } from './generator-api.js';
+import { displayPath } from './generator-core.js';
 
 export class UnsupportedTypeScriptError extends Error {}
 /** No TypeScript resolves at all, as opposed to one golem does not support: only commands that need a compiler treat it as an error. */

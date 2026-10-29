@@ -6,13 +6,13 @@ import { projectionIdentity } from './graph.js';
 import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, headQualifiers, projectionBaseName, keysReadAlike, safeNameHint, unionVariantNaming } from './projection-names.js';
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
-import { compareText, displayPath } from '../generator-api.js';
+import { compareText, displayPath } from '../generator-core.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
 import type {
   ModelConversionDescriptor,
   TupleConversionDescriptor,
 } from '../model-source-emitter.js';
-import type { DiscriminatorValue, UnionDiscriminator } from '../../model.js';
+import type { DiscriminatorValue, UnionDiscriminator } from '../../model-registry.js';
 import type { ManifestIndex } from './provenance.js';
 import type { ModelSpecification, TypeAnalysisContext } from './models.js';
 import {

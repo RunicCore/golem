@@ -3,7 +3,7 @@
  * validation compile once per node and compose by call / $ref.
  */
 
-import type { ModelTypeDescriptor } from '../model.js';
+import type { ModelTypeDescriptor } from '../model-registry.js';
 import {
   canonicalDescriptorKey,
   constraintSchemaValues,
@@ -15,7 +15,7 @@ import {
   type ModelConstraint,
 } from './schema.js';
 import { canonicalSchemaKey } from './canonical-schema-key.js';
-import { compareText } from './generator-api.js';
+import { compareText } from './generator-core.js';
 
 export type SchemaNodeKind = 'object' | 'array' | 'tuple' | 'union' | 'intersection' | 'scalar' | 'reference';
 

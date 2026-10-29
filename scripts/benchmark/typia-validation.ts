@@ -6,7 +6,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { prepare, root } from './project.js';
 import { summarize, type BatchSample } from './results.js';
 import { sampleSync, schedule } from './sampling.js';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { BASE_TOGGLES, EXACT_PRESENCE_FORMS, GENERATED_TOGGLES, PRESENCE_FORMS, presenceFill, presenceWalk, scratchValidator, type Toggles } from './validator-toggles.js';
 import type { Agreement, CompareCase, CompareTask, MobxTwins, Subject, TwinFactories, TwinKind } from './fixtures/typia/compare-case.js';
 
@@ -290,7 +290,7 @@ async function jsonValueMode(directory: string): Promise<void> {
   const fixture = await import(pathToFileURL(path.join(out, 'json-value.model.js')).href) as { jsonPayload(): unknown; JsonDoc: new (init: object) => object };
   const codecs = await import(pathToFileURL(path.join(out, 'json-value.model.generated.js')).href) as Record<string, (value: unknown) => unknown>;
   const validators = await import(pathToFileURL(path.join(out, 'generated/models/models.validators.generated.js')).href) as ValidatorExports;
-  const { assertAcyclicEncodeInput } = await import('@exprtlabs/golem/conversion');
+  const { assertAcyclicEncodeInput } = await import('@exprtlabs/golem/internal/model-runtime');
   const payload = fixture.jsonPayload();
   const doc = new fixture.JsonDoc({ id: 1, payload });
   const isJson = generatedFunction(validators, 'is', 'JsonValue') as (value: unknown) => boolean;

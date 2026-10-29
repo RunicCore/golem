@@ -71,7 +71,8 @@ test('global profile changes remove obsolete validation and keep manifest identi
   await runPipeline(config, { check: true });
 });
 
-test('a generator package newer than the installed runtime is rejected before any file is written', async (t: TestContext) => {
+test('a built-in generator package of another version than the installed runtime is rejected before any file is written', async (t: TestContext) => {
+  // protects: T-653 a built-in generator of another version than the runtime stops golem build before it writes
   const { root, config } = fixture(t);
   const provider = path.join(root, 'node_modules/@exprtlabs/golem-openapi');
   fs.rmSync(provider, { recursive: true });
@@ -80,7 +81,7 @@ test('a generator package newer than the installed runtime is rejected before an
   const manifest = JSON.parse(fs.readFileSync(path.join(source, 'package.json'), 'utf8')) as { version: string };
   fs.writeFileSync(path.join(provider, 'package.json'), JSON.stringify({ ...manifest, version: '1.99.0' }));
   fs.copyFileSync(path.join(source, 'dist/generator.js'), path.join(provider, 'dist/generator.js'));
-  await assert.rejects(runPipeline(config), /@exprtlabs\/golem \S+ is older than @exprtlabs\/golem-openapi 1\.99\.0/);
+  await assert.rejects(runPipeline(config), /@exprtlabs\/golem \S+ and @exprtlabs\/golem-openapi 1\.99\.0 must have the same version/);
   assert.equal(fs.existsSync(path.join(root, 'sdk')), false);
   assert.equal(fs.existsSync(path.join(root, '.golem')), false);
 });

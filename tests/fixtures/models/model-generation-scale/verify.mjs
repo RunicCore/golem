@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { validateInstance } from '@exprtlabs/golem/validation';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
-import { findGeneratedModelDefinition } from '@exprtlabs/golem/model';
+import { requireObjectCodec, findGeneratedModelDefinition } from '@exprtlabs/golem/internal/model-runtime';
 
 const count = Number(process.argv[2]);
 assert.ok(Number.isSafeInteger(count) && count > 0, 'model count must be a positive integer');

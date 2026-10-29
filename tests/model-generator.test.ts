@@ -7,9 +7,8 @@ import { command, workspace } from './support/process.js';
 import { spyOnBuild } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { marker } from '#golem/outputs';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 
 import { copyFixture, copyFixtureFile, createFixtureProject, linkProjectPackages, writeGeneratedArtifacts } from './fixture-project.js';
@@ -24,6 +23,7 @@ import {
   discoverModelSources,
   generate,
 } from '#model/generator';
+import { modelCodec } from './support/model-codec.js';
 
 function project(t: TestContext) {
   return createModelProject(t, { prefix: 'golem-model-generator-', name: 'model-generator' });
@@ -94,9 +94,9 @@ export const wrong: Payment[typeof generatedModelFieldsBrand] = { id: 1, amount:
     await buildModelProject(built.root);
     const { Payment } = await import(`${pathToFileURL(path.join(built.root, 'build/payment.model.js')).href}`);
     const wire = { id: 'p1', amount: 5, total: { currency: 'USD' } };
-    const payment = decodeGeneratedModel(Payment, wire);
+    const payment = modelCodec(Payment).fromWireFormat(wire);
     assert.ok(payment instanceof Payment, 'the companion registers the model for conversion');
-    assert.deepEqual(encodeGeneratedModel(payment), wire);
+    assert.deepEqual(modelCodec(payment).toWireFormat(payment), wire);
     const codec = requireObjectCodec(generatedCodecIdFromRoot(built.root, 'TPayment'));
     // A validating app rejects the short nested currency when it parses; an app without validation reads the same text.
     const shortCurrency = JSON.stringify({ ...wire, total: { currency: 'US' } });
@@ -137,7 +137,7 @@ export type TAccount = IModel<{ id: string }>;`,
 });
 
 /** The fixture's SDK module with the runtime registration of a generated SDK model, and a count of the calls it receives. */
-const COUNTING_SDK_MODELS = tsSource`import { registerGeneratedModel } from '@exprtlabs/golem/model';
+const COUNTING_SDK_MODELS = tsSource`import { registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';
 export const calls = { decode: 0, stringify: 0, toWire: 0 };
 export class MoneyModel {
   public currency = '';
@@ -178,11 +178,11 @@ test('consumes current manifests and keeps imported model identity for conversio
   };
   const { TAggregateBaseModel, stringifyTAggregate } = await import(pathToFileURL(path.join(root, 'build/aggregate.model.generated.js')).href);
   const wire = { money: { currency: 'USD' }, nested: { money: { currency: 'EUR' } } };
-  const aggregate = decodeGeneratedModel(TAggregateBaseModel, wire);
+  const aggregate = modelCodec(TAggregateBaseModel).fromWireFormat(wire);
   assert.ok(aggregate.money instanceof sdk.MoneyModel, 'the companion builds the SDK class of the manifest, not a copy of it');
   assert.ok(aggregate.nested.money instanceof sdk.MoneyModel);
   assert.equal(sdk.calls.decode, 2, 'each Money goes through the registered conversion of the SDK model');
-  assert.deepEqual(encodeGeneratedModel(aggregate), wire);
+  assert.deepEqual(modelCodec(aggregate).toWireFormat(aggregate), wire);
   assert.equal(stringifyTAggregate(aggregate), JSON.stringify(wire));
   assert.equal(sdk.calls.stringify, 2, 'each Money is written by the stringify helper of the SDK');
 });
@@ -515,9 +515,9 @@ export type TOrder = IModel<{ lines: TLine[] }>;`,
   await buildModelProject(root);
   const { TOrderBaseModel } = await import(pathToFileURL(path.join(root, 'build/order.entity.generated.mjs')).href);
   const { TLineBaseModel } = await import(pathToFileURL(path.join(root, 'build/line.entity.generated.mjs')).href);
-  const decoded = decodeGeneratedModel(TOrderBaseModel, { lines: [{ sku: 'a' }] });
+  const decoded = modelCodec(TOrderBaseModel).fromWireFormat({ lines: [{ sku: 'a' }] });
   assert.ok(decoded.lines[0] instanceof TLineBaseModel);
-  assert.deepEqual(encodeGeneratedModel(decoded), { lines: [{ sku: 'a' }] });
+  assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), { lines: [{ sku: 'a' }] });
 });
 
 test('the codec keys go under .golem/ of the golem.yaml directory when the job has one, named from the tsconfig directory', (t: TestContext) => {
@@ -622,13 +622,13 @@ test('a companion imports only the validators of its own models and the companio
   // The strict unused compile of the build fails on a name the companion imports and does not use, and on a module it cannot find.
   writeModelGolemYaml(root, { mobx: true, validation: true });
   await buildModelProject(root);
-  const spy = await spyOnBuild(root, { '@exprtlabs/golem/conversion': ['assertAcyclicEncodeInput', 'beginEncode', 'endEncode'] });
+  const spy = await spyOnBuild(root, { '@exprtlabs/golem/internal/model-runtime': ['assertAcyclicEncodeInput', 'beginEncode', 'endEncode'] });
   try {
     // The payment companion alone brings in the money companion it needs.
     const { TPaymentBaseModel, stringifyTPayment, toWireFormatTPayment } = await import(pathToFileURL(path.join(root, 'build/payment.model.generated.js')).href);
-    const payment = decodeGeneratedModel(TPaymentBaseModel, NESTED_PAYMENT_WIRE);
+    const payment = modelCodec(TPaymentBaseModel).fromWireFormat(NESTED_PAYMENT_WIRE);
     assert.ok(payment.total.at instanceof Date, 'the nested money converts with the decoder of its own companion');
-    assert.deepEqual(encodeGeneratedModel(payment), NESTED_PAYMENT_WIRE);
+    assert.deepEqual(modelCodec(payment).toWireFormat(payment), NESTED_PAYMENT_WIRE);
     assert.equal(stringifyTPayment(payment), JSON.stringify(NESTED_PAYMENT_WIRE));
     assert.deepEqual(toWireFormatTPayment(payment), NESTED_PAYMENT_WIRE);
     // A cross-file child that is not recursive adds no cycle walk to its parent.

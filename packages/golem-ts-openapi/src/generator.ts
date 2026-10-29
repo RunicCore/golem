@@ -29,7 +29,8 @@ import type {
   InputObserver,
   ResolvedGolemProfile,
 } from '@exprtlabs/golem/generator-api';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, displayPath, resolveProfile } from '@exprtlabs/golem/generator-api';
+import { resolveProfile } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, displayPath } from '@exprtlabs/golem/internal/generator-support';
 import {
   GolemDiagnosticSeverity,
   diagnostic,
@@ -54,9 +55,6 @@ export type TsToOpenApiContext = ControllerContext;
 export interface TsToOpenApiResult extends GolemResult {
   readonly apiVersion: 1;
 }
-
-export type { GolemArtifact, GolemDiagnostic, InputObserver, ControllerContext };
-export { GolemDiagnosticSeverity, TsToOpenApiDiagnosticCode } from './diagnostics.js';
 
 function validateContext(context: TsToOpenApiContext): {
   readonly root: string;

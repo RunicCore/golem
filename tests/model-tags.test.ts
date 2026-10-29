@@ -4,13 +4,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { tagsProject as fixture } from './support/model-tags-project.js';
 import { buildModelProjectWith, generatedModelFiles } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { joinSource, tsSource, type SourceFragment } from './source-template.js';
 import { generate } from '#model/generator';
+import { modelCodec } from './support/model-codec.js';
 
 test('tag bindings are AST-provenanced, alias-deduplicated, and relocation-stable', async t => {
   const build = (sourceRoot: string): void => {
@@ -210,16 +210,16 @@ import { first, second } from './predicates.js';`,
   await t.test('generic aliases preserve concrete local model identity for nested conversion', async () => {
     const { Parent } = await load('generic-aliases', 'parent.model.js');
     const { Child } = await load('generic-aliases', 'child.model.js');
-    const parent = decodeGeneratedModel(Parent, { child: { value: { name: 'nested' } } });
+    const parent = modelCodec(Parent).fromWireFormat({ child: { value: { name: 'nested' } } });
     assert.ok(parent.child.value instanceof Child, 'generic nested model is constructed as the concrete local class');
-    assert.deepEqual(encodeGeneratedModel(parent), { child: { value: { name: 'nested' } } });
+    assert.deepEqual(modelCodec(parent).toWireFormat(parent), { child: { value: { name: 'nested' } } });
   });
 
   await t.test('recursive local IModel aliases remain concrete nested references', async () => {
     const { Node } = await load('recursive-alias', 'node.model.js');
-    const node = decodeGeneratedModel(Node, { name: 'root', children: [{ name: 'leaf' }] });
+    const node = modelCodec(Node).fromWireFormat({ name: 'root', children: [{ name: 'leaf' }] });
     assert.ok(node.children?.[0] instanceof Node);
-    assert.deepEqual(encodeGeneratedModel(node), { name: 'root', children: [{ name: 'leaf' }] });
+    assert.deepEqual(modelCodec(node).toWireFormat(node), { name: 'root', children: [{ name: 'leaf' }] });
   });
 });
 
@@ -412,9 +412,9 @@ test('a MobX model generated with validation false has no validator', async t =>
   }).text);
   await buildModelProjectWith(root, { mobx: true, validation: false });
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const model = decodeGeneratedModel(A, { title: 'Write', done: false });
+  const model = modelCodec(A).fromWireFormat({ title: 'Write', done: false });
   assert.equal('$validator' in model, false);
-  assert.deepEqual(encodeGeneratedModel(model), { title: 'Write', done: false });
+  assert.deepEqual(modelCodec(model).toWireFormat(model), { title: 'Write', done: false });
 });
 
 test('model validators are a generated TypeScript artifact that the built output runs', async t => {
@@ -474,8 +474,8 @@ for (const item of [
     fs.writeFileSync(path.join(sourceRoot, 'a.model.ts'), taggedModelSource({ name: 'A', imports: item.declaration, fields: tsSource`when: Date` }).text);
     await buildModelProjectWith(root, { mobx: false, validation: true });
     const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-    const model = decodeGeneratedModel(A, item.wire);
+    const model = modelCodec(A).fromWireFormat(item.wire);
     assert.equal(model.when instanceof Date, item.isDate);
-    assert.deepEqual(encodeGeneratedModel(model), item.wire);
+    assert.deepEqual(modelCodec(model).toWireFormat(model), item.wire);
   });
 }

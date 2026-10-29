@@ -55,11 +55,6 @@
       "import": "./dist/validation.js",
       "default": "./dist/validation.js"
     },
-    "./validation-runtime": {
-      "types": "./dist/validation-runtime.d.ts",
-      "import": "./dist/validation-runtime.js",
-      "default": "./dist/validation-runtime.js"
-    },
     "./mobx": {
       "types": "./dist/mobx.d.ts",
       "import": "./dist/mobx.js",
@@ -79,6 +74,51 @@
       "types": "./dist/tooling/model-source-emitter.d.ts",
       "import": "./dist/tooling/model-source-emitter.js",
       "default": "./dist/tooling/model-source-emitter.js"
+    },
+    "./internal/model-runtime": {
+      "types": "./dist/runtime-model.d.ts",
+      "import": "./dist/runtime-model.js",
+      "default": "./dist/runtime-model.js"
+    },
+    "./internal/validation-runtime": {
+      "types": "./dist/runtime-validation.d.ts",
+      "import": "./dist/runtime-validation.js",
+      "default": "./dist/runtime-validation.js"
+    },
+    "./internal/client-runtime": {
+      "types": "./dist/runtime-client.d.ts",
+      "import": "./dist/runtime-client.js",
+      "default": "./dist/runtime-client.js"
+    },
+    "./internal/client-validation-runtime": {
+      "types": "./dist/runtime-client-validation.d.ts",
+      "import": "./dist/runtime-client-validation.js",
+      "default": "./dist/runtime-client-validation.js"
+    },
+    "./internal/mobx-runtime": {
+      "types": "./dist/runtime-mobx.d.ts",
+      "import": "./dist/runtime-mobx.js",
+      "default": "./dist/runtime-mobx.js"
+    },
+    "./internal/mobx-validation-runtime": {
+      "types": "./dist/runtime-mobx-validation.d.ts",
+      "import": "./dist/runtime-mobx-validation.js",
+      "default": "./dist/runtime-mobx-validation.js"
+    },
+    "./internal/temporal-runtime": {
+      "types": "./dist/runtime-temporal.d.ts",
+      "import": "./dist/runtime-temporal.js",
+      "default": "./dist/runtime-temporal.js"
+    },
+    "./internal/nest-runtime": {
+      "types": "./dist/runtime-nest.d.ts",
+      "import": "./dist/runtime-nest.js",
+      "default": "./dist/runtime-nest.js"
+    },
+    "./internal/generator-support": {
+      "types": "./dist/tooling/generator-support.d.ts",
+      "import": "./dist/tooling/generator-support.js",
+      "default": "./dist/tooling/generator-support.js"
     },
     "./generator-api": {
       "types": "./dist/tooling/generator-api.d.ts",
@@ -129,11 +169,6 @@
       "types": "./dist/client.d.ts",
       "import": "./dist/client.js",
       "default": "./dist/client.js"
-    },
-    "./conversion": {
-      "types": "./dist/conversion.d.ts",
-      "import": "./dist/conversion.js",
-      "default": "./dist/conversion.js"
     },
     "./tags": {
       "types": "./dist/tags.d.ts",

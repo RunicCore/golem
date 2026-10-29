@@ -4,9 +4,9 @@
  * and the helpers of a file come from the parts and no step reads emitted text back to decide something.
  * Internal to the tooling: no package export names this module.
  */
-import { compareText } from './generator-api.js';
+import { compareText } from './generator-core.js';
 import { hasLocalForm } from './names.js';
-import { RUNTIME_MODULE_RANK, type RuntimeModule } from './rt.js';
+import { RUNTIME_MODULE_RANK, RUNTIME_SPECIFIER, runtimeTypeSpecifier, type RuntimeModule } from './rt.js';
 
 /** A name the file decides. The slot is its identity: two slots with one label are two names. */
 export interface NameSlot { readonly label: string }
@@ -763,7 +763,7 @@ function collectFrom(root: Code): Collected {
   return { runtime, imported, helpers };
 }
 
-export interface RuntimeImport {
+interface RuntimeImport {
   readonly module: RuntimeModule;
   /** Each value name once, in the order of the file (see `ImportOptions.order`). */
   readonly names: readonly ImportedName[];
@@ -783,7 +783,7 @@ function spelledName({ name, alias }: ImportedName): string {
 }
 
 /** The runtime parts of a Code and of the helpers it needs, grouped by module in the fixed module order. */
-export function importSet(root: Code, options: Pick<ImportOptions, 'order' | 'modules'> = {}): readonly RuntimeImport[] {
+function importSet(root: Code, options: Pick<ImportOptions, 'order' | 'modules'> = {}): readonly RuntimeImport[] {
   const { order = {}, modules } = options;
   const position = (module: RuntimeModule): number => modules ? modules.indexOf(module) : RUNTIME_MODULE_RANK[module];
   const found = [...collect(root).runtime];
@@ -801,14 +801,15 @@ export function importSet(root: Code, options: Pick<ImportOptions, 'order' | 'mo
 
 /** How a file writes the imports of its runtime parts. */
 export interface ImportOptions {
-  /** The specifier of a runtime module; a module not listed is imported from `@exprtlabs/golem/<module>`. */
+  /** The specifier of a runtime module, for its values and its types; a module not listed is imported from `RUNTIME_SPECIFIER` for values and `runtimeTypeSpecifier` for types. */
   readonly specifiers?: Partial<Readonly<Record<RuntimeModule, string>>>;
   /** The quote of a specifier; a single quote by default. */
   readonly quote?: "'" | '"';
   /**
-   * How a module writes its type names: `separate` (the default) puts them in an `import type` statement before the value
+   * How a specifier writes its type names: `separate` (the default) puts them in an `import type` statement before the value
    * statement; `inline` puts them after the values in one statement, each as `type Name`; `ordered` puts values and
-   * types in one statement in the order of `order`, then the unlisted values, then the unlisted types.
+   * types in one statement in the order of `order`, then the unlisted values, then the unlisted types. A specifier that
+   * has type names only is always one `import type` statement.
    */
   readonly typeNames?: 'separate' | 'inline' | 'ordered';
   /** The runtime modules this call writes, in this order; a module that the code uses and the list lacks is an error. Without it, every module in the fixed order. */
@@ -817,33 +818,69 @@ export interface ImportOptions {
   readonly order?: Partial<Readonly<Record<RuntimeModule, readonly string[]>>>;
 }
 
+/** The names that a file takes from one specifier, and the runtime modules (rt keys) they come from. */
+export interface ImportGroup {
+  readonly specifier: string;
+  readonly modules: readonly RuntimeModule[];
+  /** Each value name once, in the order of the file (see `ImportOptions.order`). */
+  readonly names: readonly ImportedName[];
+  /** Each type name once, with `typeOnly`. A name the code also uses as a value is not here. */
+  readonly types: readonly ImportedName[];
+}
+
+/**
+ * The runtime parts of a Code grouped by the specifier a file imports them from, in module order: a value comes from the
+ * internal entry of its module and a type from the public subpath, so a specifier is one statement however many modules
+ * (rt keys) it serves.
+ */
+export function importGroups(root: Code, options: Pick<ImportOptions, 'order' | 'modules' | 'specifiers'> = {}): readonly ImportGroup[] {
+  const groups = new Map<string, { modules: RuntimeModule[]; names: ImportedName[]; types: ImportedName[] }>();
+  const into = (specifier: string, module: RuntimeModule): { modules: RuntimeModule[]; names: ImportedName[]; types: ImportedName[] } => {
+    let group = groups.get(specifier);
+    if (!group) groups.set(specifier, group = { modules: [], names: [], types: [] });
+    if (!group.modules.includes(module)) group.modules.push(module);
+    return group;
+  };
+  // Two modules (rt keys) can share a specifier, and a name that both use is imported once.
+  const addOnce = (into: ImportedName[], added: readonly ImportedName[]): void => {
+    for (const next of added) if (!into.some((have) => have.name === next.name && have.alias === next.alias)) into.push(next);
+  };
+  for (const { module, names, types } of importSet(root, options)) {
+    const override = options.specifiers?.[module];
+    if (names.length > 0) addOnce(into(override ?? RUNTIME_SPECIFIER[module], module).names, names);
+    if (types.length > 0) addOnce(into(override ?? runtimeTypeSpecifier(module), module).types, types);
+  }
+  return [...groups].map(([specifier, group]) => ({ specifier, ...group }));
+}
+
 /**
  * The import statements of the runtime parts, in module order. A type name is never in a value import: it goes in an
  * `import type` statement before the value statement, or after the values as `type Name` when the file asks for `inline`.
  */
 export function runtimeImports(root: Code, options: ImportOptions = {}): readonly Code[] {
-  return importSet(root, options).flatMap((entry) => importLines(entry, options));
+  return importGroups(root, options).flatMap((group) => importLines(group, options));
 }
 
-/** The statements of one module of the import set (see `runtimeImports`), for a file that puts other statements between modules. */
-export function importLines({ module, names, types }: RuntimeImport, options: ImportOptions = {}): readonly Code[] {
-  const specifier = options.specifiers?.[module] ?? `@exprtlabs/golem/${module}`;
+/** The statements of one specifier of the import groups (see `runtimeImports`), for a file that puts other statements between specifiers. */
+export function importLines({ specifier, modules, names, types }: ImportGroup, options: ImportOptions = {}): readonly Code[] {
   const quoted = options.quote === '"' ? jsonText(specifier) : `'${checkedSingleQuoted(specifier)}'`;
+  const typeStatement = (listed: readonly ImportedName[]): Code => plainText(`import type { ${listed.map(spelledName).join(', ')} } from ${quoted};`);
+  if (names.length === 0) return types.length > 0 ? [typeStatement(types)] : [];
   if (options.typeNames === 'inline') {
     const listed = [...names.map(spelledName), ...types.map((type) => `type ${spelledName(type)}`)];
-    return listed.length > 0 ? [plainText(`import { ${listed.join(', ')} } from ${quoted};`)] : [];
+    return [plainText(`import { ${listed.join(', ')} } from ${quoted};`)];
   }
   if (options.typeNames === 'ordered') {
-    const listed = options.order?.[module] ?? [];
+    const listed = modules.flatMap((module) => options.order?.[module] ?? []);
     const place = ({ name }: ImportedName): number => { const at = listed.indexOf(name); return at < 0 ? Infinity : at; };
     const ordered = [...names, ...types]
       .sort((left, right) => place(left) === place(right) ? 0 : place(left) < place(right) ? -1 : 1)
       .map((member) => member.typeOnly ? `type ${spelledName(member)}` : spelledName(member));
-    return ordered.length > 0 ? [plainText(`import { ${ordered.join(', ')} } from ${quoted};`)] : [];
+    return [plainText(`import { ${ordered.join(', ')} } from ${quoted};`)];
   }
   return [
-    ...(types.length > 0 ? [plainText(`import type { ${types.map(spelledName).join(', ')} } from ${quoted};`)] : []),
-    ...(names.length > 0 ? [plainText(`import { ${names.map(spelledName).join(', ')} } from ${quoted};`)] : []),
+    ...(types.length > 0 ? [typeStatement(types)] : []),
+    plainText(`import { ${names.map(spelledName).join(', ')} } from ${quoted};`),
   ];
 }
 

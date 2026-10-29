@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { codecIdOf } from './codec-id.js';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import type { TJsonCheckout, TJsonCheckoutPlain, TJsonSerdeMany, TJsonSerdeNone } from './features.iobject.model.js';

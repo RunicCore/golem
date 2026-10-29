@@ -1,14 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import {
-  checkFormat,
-  codePointLength,
-  isKnownFormat,
-  jsonEqual,
-  schemaIssueMessage,
-  type SchemaIssueDetail,
-} from '@exprtlabs/golem/validation-runtime';
+import { isKnownFormat } from '../packages/golem/src/validation-runtime.js';
+import { checkFormat, codePointLength, jsonEqual } from '@exprtlabs/golem/internal/validation-runtime';
+import { schemaIssueMessage } from '@exprtlabs/golem/internal/generator-support';
+import type { SchemaIssueDetail } from '@exprtlabs/golem/validation';
 
 const formatRows: readonly (readonly [format: string, value: unknown, valid: boolean])[] = [
   ['date-time', '2026-10-06T10:00:00Z', true],

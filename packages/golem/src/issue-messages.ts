@@ -1,7 +1,7 @@
 import type { IssuePath, JsonValue } from './errors.js';
 
 /** Type names a schema issue reports; `Date` is golem's own check for date fields. */
-export type JsonTypeName = 'string' | 'number' | 'integer' | 'boolean' | 'null' | 'object' | 'array' | 'Date';
+type JsonTypeName = 'string' | 'number' | 'integer' | 'boolean' | 'null' | 'object' | 'array' | 'Date';
 
 export type SchemaIssueDetail =
   | { readonly code: 'type'; readonly expected: readonly JsonTypeName[] }

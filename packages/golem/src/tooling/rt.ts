@@ -1,32 +1,34 @@
 /**
- * The runtime exports that generated code may name, typed from the runtime packages' own subpath modules. `rt.model.parseJson`
- * is a Code that holds a runtime part. A name that a module does not export is a type error, so a misspelled or removed
- * export fails golem's build. The table copies no list of names: the types are the list.
+ * The runtime exports that generated code may name. A value comes from an internal runtime entry that generated files import
+ * from, and a type from the public subpath of its module, because applications see the types in their declaration files.
+ * `rt.serde.parseJson` is a Code that holds a runtime part. A name that an entry or a module does not export is a type
+ * error, so a misspelled or removed export fails golem's build. The value table copies no list of names: the types are the list.
  */
 import type * as client from '../client.js';
-import type * as conversion from '../conversion.js';
-import type * as errors from '../errors.js';
 import type * as mobx from '../mobx.js';
-import type * as mobxValidation from '../mobx-validation.js';
 import type * as model from '../model.js';
 import type * as serde from '../serde.js';
-import type * as temporal from '../temporal.js';
 import type * as validation from '../validation.js';
-import type * as validationRuntime from '../validation-runtime.js';
+import type * as clientEntry from '../runtime-client.js';
+import type * as clientValidationEntry from '../runtime-client-validation.js';
+import type * as mobxEntry from '../runtime-mobx.js';
+import type * as mobxValidationEntry from '../runtime-mobx-validation.js';
+import type * as modelEntry from '../runtime-model.js';
+import type * as temporalEntry from '../runtime-temporal.js';
+import type * as validationEntry from '../runtime-validation.js';
 import { runtimeCode, type Code } from './code.js';
 
-/** The runtime subpaths (`@exprtlabs/golem/<key>`) and the values each one exports. */
+/** The runtime keys of the emitters and the internal entry each one is imported from. Several keys share one entry. */
 interface RuntimeExports {
-  readonly client: typeof client;
-  readonly conversion: typeof conversion;
-  readonly errors: typeof errors;
-  readonly mobx: typeof mobx;
-  readonly 'mobx-validation': typeof mobxValidation;
-  readonly model: typeof model;
-  readonly serde: typeof serde;
-  readonly temporal: typeof temporal;
-  readonly validation: typeof validation;
-  readonly 'validation-runtime': typeof validationRuntime;
+  readonly client: typeof clientEntry;
+  readonly conversion: typeof modelEntry;
+  readonly mobx: typeof mobxEntry;
+  readonly 'mobx-validation': typeof mobxValidationEntry;
+  readonly model: typeof modelEntry;
+  readonly serde: typeof modelEntry;
+  readonly temporal: typeof temporalEntry;
+  readonly validation: typeof clientValidationEntry;
+  readonly 'validation-runtime': typeof validationEntry;
 }
 
 export type RuntimeModule = keyof RuntimeExports;
@@ -51,10 +53,27 @@ interface RuntimeTypeExports {
     readonly RuntimeResponseContract: client.RuntimeResponseContract;
     readonly RuntimeSecuritySchemes: client.RuntimeSecuritySchemes;
   };
-  readonly validation: { readonly OperationRuntimeValidators: validation.OperationRuntimeValidators };
+  readonly validation: { readonly OperationRuntimeValidators: validation.OperationRuntimeValidators; readonly SchemaIssue: validation.SchemaIssue };
   readonly mobx: { readonly ObservableApiOperation: mobx.ObservableApiOperation<never, never, never> };
   readonly serde: { readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
-  readonly 'validation-runtime': { readonly SchemaIssue: validationRuntime.SchemaIssue };
+}
+
+/** The specifier that a runtime key is imported from in a generated file. */
+export const RUNTIME_SPECIFIER = {
+  client: '@exprtlabs/golem/internal/client-runtime',
+  conversion: '@exprtlabs/golem/internal/model-runtime',
+  mobx: '@exprtlabs/golem/internal/mobx-runtime',
+  'mobx-validation': '@exprtlabs/golem/internal/mobx-validation-runtime',
+  model: '@exprtlabs/golem/internal/model-runtime',
+  serde: '@exprtlabs/golem/internal/model-runtime',
+  temporal: '@exprtlabs/golem/internal/temporal-runtime',
+  validation: '@exprtlabs/golem/internal/client-validation-runtime',
+  'validation-runtime': '@exprtlabs/golem/internal/validation-runtime',
+} as const satisfies Record<keyof RuntimeExports, string>;
+
+/** The public subpath that a type name of a runtime key is imported from. */
+export function runtimeTypeSpecifier(module: RuntimeModule): string {
+  return `@exprtlabs/golem/${module}`;
 }
 
 export type RuntimeTypeTable = {
@@ -69,14 +88,13 @@ export type RuntimeTable = {
 export const RUNTIME_MODULE_RANK = {
   client: 0,
   conversion: 1,
-  errors: 2,
-  mobx: 3,
-  'mobx-validation': 4,
-  model: 5,
-  serde: 6,
-  temporal: 7,
-  validation: 8,
-  'validation-runtime': 9,
+  mobx: 2,
+  'mobx-validation': 3,
+  model: 4,
+  serde: 5,
+  temporal: 6,
+  validation: 7,
+  'validation-runtime': 8,
 } as const satisfies Record<RuntimeModule, number>;
 
 function moduleTable(module: RuntimeModule, typeOnly: boolean): object {
@@ -97,7 +115,7 @@ export const rt = Object.fromEntries(
   (Object.keys(RUNTIME_MODULE_RANK) as RuntimeModule[]).map((module) => [module, moduleTable(module, false)]),
 ) as unknown as RuntimeTable;
 
-/** The type names, as Code with a type-only runtime part: `rtType['validation-runtime'].SchemaIssue`. */
+/** The type names, as Code with a type-only runtime part: `rtType.validation.SchemaIssue`. */
 export const rtType = Object.fromEntries(
   (Object.keys(RUNTIME_MODULE_RANK) as RuntimeModule[]).map((module) => [module, moduleTable(module, true)]),
 ) as unknown as RuntimeTypeTable;

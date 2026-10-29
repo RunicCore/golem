@@ -2,7 +2,7 @@ import { reachesRecursiveNode, render } from '@exprtlabs/golem/internal/emitter'
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
 import type { JsonSchema } from '@exprtlabs/golem/internal/schema';
-import { sourceDigest } from '@exprtlabs/golem/manifest';
+import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, isJsonObject } from './json.js';
 import { compareText } from '@exprtlabs/golem/generator-api';
 import { GENERATOR_NAME, PACKAGE_VERSION } from './package-info.js';

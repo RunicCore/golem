@@ -3,12 +3,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { test, type TestContext } from 'node:test';
-import { decodeGeneratedModel, decodeGeneratedModelTrusted } from '@exprtlabs/golem/conversion';
-import { registerGeneratedModel } from '@exprtlabs/golem/model';
+import { decodeGeneratedModelTrusted, registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';
 import { LibError, LibErrorKind, IssueSource, IssueRepresentation } from '@exprtlabs/golem/errors';
 import { generate } from '#model/generator';
 import { fileFixtureScope, onceShared, readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { modelCodec } from './support/model-codec.js';
 
 type FromWire = (wire: unknown, options?: { validate?: boolean }) => unknown;
 
@@ -23,16 +23,6 @@ function cycleAt(path: readonly (string | number)[]): (error: unknown) => boolea
     return true;
   };
 }
-
-class RecordModel {
-  constructor(public payload: unknown) {}
-}
-registerGeneratedModel(RecordModel, {
-  fields: ['payload'], profile: { validation: false },
-  conversion: {
-    decode(value) { return new RecordModel(Reflect.get(value as object, 'payload')); },
-  },
-});
 
 // The tests of one fixture model share one build of it. Each loadCodecs call imports the codecs module afresh, as its own build did.
 const fileScope = fileFixtureScope();
@@ -65,24 +55,8 @@ async function loadCodecs(name: string, validation = false): Promise<Record<stri
   return await import(`${pathToFileURL(path.join(root, `build/${name}.model.generated.js`)).href}?load=${++loads}`) as Record<string, FromWire>;
 }
 
-test('decode rejects a cycle in a declared object or an unknown field without copying first', () => {
-  const cycle: Record<string, unknown> = {};
-  cycle.again = cycle;
-  assert.throws(() => decodeGeneratedModel(RecordModel, { payload: [{ valid: 1 }, { last: cycle }] }), cycleAt(['payload', 1, 'last', 'again']));
-});
-
-test('decode rejects a cycle through a retained model instance', () => {
-  class Holder { child: unknown; }
-  registerGeneratedModel(Holder, { fields: ['child'], profile: { validation: false }, conversion: {
-    decode: () => new Holder(),
-  } });
-  const child = new Holder();
-  child.child = { back: child };
-  assert.throws(() => decodeGeneratedModel(Holder, { child }), cycleAt(['child', 'child', 'back']));
-  child.child = { leaf: 1 };
-  assert.ok(decodeGeneratedModel(Holder, { child }) instanceof Holder);
-});
-
+// Retired: the cycle checks of decoding a hand-registered model through the public decode function. That function is deleted, and
+// the generated codecs' cycle checks keep their own tests below (recursive and nested models, parse with a decoder that runs user code).
 test('decode hands the input to the decoder uncopied', () => {
   let received: unknown;
   class Probe {}
@@ -90,11 +64,37 @@ test('decode hands the input to the decoder uncopied', () => {
     decode(input) { received = input; return new Probe(); },
   } });
   const input = { nested: { value: 1 } };
-  decodeGeneratedModel(Probe, input);
+  decodeGeneratedModelTrusted(Probe, input);
   assert.strictEqual(received, input);
   received = undefined;
   decodeGeneratedModelTrusted(Probe, input);
   assert.strictEqual(received, input);
+});
+
+test('decode cycle tracking retains multiple contracts and recovers after failure', () => {
+  // protects: cycle detection of one input decoded through several model contracts, and the restore after a failed decode
+  let recurse = true;
+  class First {}
+  class Second {}
+  class Third {}
+  registerGeneratedModel(First, { fields: [], profile: { validation: false }, conversion: {
+    decode(input) { decodeGeneratedModelTrusted(Second, input); return new First(); },
+  } });
+  registerGeneratedModel(Second, { fields: [], profile: { validation: false }, conversion: {
+    decode(input) { decodeGeneratedModelTrusted(Third, input); return new Second(); },
+  } });
+  registerGeneratedModel(Third, { fields: [], profile: { validation: false }, conversion: {
+    decode(input) { if (recurse) decodeGeneratedModelTrusted(First, input); return new Third(); },
+  } });
+  const input = {};
+  assert.throws(() => decodeGeneratedModelTrusted(First, input), error => {
+    assert.ok(error instanceof LibError);
+    assert.equal(error.kind, LibErrorKind.Deserialization);
+    return true;
+  });
+  recurse = false;
+  assert.ok(decodeGeneratedModelTrusted(First, input) instanceof First);
+  assert.ok(decodeGeneratedModelTrusted(Second, input) instanceof Second);
 });
 
 test('generated decode reads each declared property once', async () => {
@@ -150,8 +150,8 @@ test('the generated constructor and decode leave out a field that is undefined o
   const { Payment } = await import(pathToFileURL(path.join(root, 'build/payment.model.js')).href);
   assert.equal(hasOwnCharge(new Payment(wireWithCharge('undefined'))), false);
   assert.equal(hasOwnCharge(new Payment(wireWithCharge('hidden'))), false);
-  assert.equal(hasOwnCharge(decodeGeneratedModel(Payment, wireWithCharge('undefined'))), false);
-  assert.equal(hasOwnCharge(decodeGeneratedModel(Payment, wireWithCharge('hidden'))), false);
+  assert.equal(hasOwnCharge(modelCodec(Payment).fromWireFormat(wireWithCharge('undefined'), { validate: false })), false);
+  assert.equal(hasOwnCharge(modelCodec(Payment).fromWireFormat(wireWithCharge('hidden'), { validate: false })), false);
 });
 
 /** Imports the generated codecs of the shared build of fixture `name` and gives the URL of its model module. */
@@ -189,7 +189,7 @@ test('decode leaves out an undeclared key whose value is undefined', async () =>
   const { fromWireFormatTBag } = await loadCodecs('bag');
   const wire = stampsWire({ stamps: { x: undefined, y: '2026-01-02T00:00:00.000Z' } });
   assert.deepEqual(ownKeys(codecs.fromWireFormatTStamps(wire, { validate: false }), 'stamps'), ['y']);
-  assert.deepEqual(ownKeys(decodeGeneratedModel(Stamps, wire), 'stamps'), ['y']);
+  assert.deepEqual(ownKeys(modelCodec(Stamps).fromWireFormat(wire, { validate: false }), 'stamps'), ['y']);
   assert.deepEqual(ownKeys(fromWireFormatTBag({ k: undefined, j: 'v' }, { validate: false })), ['j']);
 });
 
@@ -365,7 +365,6 @@ test('a decoder that user code runs during a parse still checks its own input fo
   assert.ok(inner instanceof LibError);
   assert.equal(inner.kind, LibErrorKind.Deserialization);
   assert.match(inner.message, /Cyclic values cannot be converted/);
-  assert.throws(() => decodeGeneratedModel(RecordModel, { payload: cyclic }), cycleAt(['payload', 'next']));
 });
 
 test('parsed JSON text is decoded without cycle checks', async (t) => {
@@ -457,27 +456,3 @@ test('generated decode copies declared objects and carries unknown values by ref
   assert.throws(() => fromWireFormatTShelf({ owner: { id: 'o' }, extras: { loop } }, { validate: false }), cycleAt(['extras', 'loop', 'again']));
 });
 
-test('decode cycle tracking retains multiple contracts and recovers after failure', () => {
-  let recurse = true;
-  class First {}
-  class Second {}
-  class Third {}
-  registerGeneratedModel(First, { fields: [], profile: { validation: false }, conversion: {
-    decode(input) { decodeGeneratedModel(Second, input); return new First(); },
-  } });
-  registerGeneratedModel(Second, { fields: [], profile: { validation: false }, conversion: {
-    decode(input) { decodeGeneratedModel(Third, input); return new Second(); },
-  } });
-  registerGeneratedModel(Third, { fields: [], profile: { validation: false }, conversion: {
-    decode(input) { if (recurse) decodeGeneratedModel(First, input); return new Third(); },
-  } });
-  const input = {};
-  assert.throws(() => decodeGeneratedModel(First, input), error => {
-    assert.ok(error instanceof LibError);
-    assert.equal(error.kind, LibErrorKind.Deserialization);
-    return true;
-  });
-  recurse = false;
-  assert.ok(decodeGeneratedModel(First, input) instanceof First);
-  assert.ok(decodeGeneratedModel(Second, input) instanceof Second);
-});

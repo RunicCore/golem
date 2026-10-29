@@ -1,7 +1,7 @@
 import { MODEL_DATE_KEYWORD, MODEL_INSTANCE_KEYWORD, VALIDATION_KEYWORD } from '../../schema-keywords.js';
 import { unescapePointerToken } from '../../json-pointer.js';
 import { isKnownFormat, jsonEqual } from '../../validation-runtime.js';
-import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-api.js';
+import { GolemDiagnosticSeverity, isRecord, type GolemDiagnostic } from '../generator-core.js';
 import type { CompileInput, CompileOptions } from './index.js';
 import type { IrAdditional, IrCheck, IrContains, IrDiscriminator, IrFunction, IrInstance, IrModule, IrSchema, IrTypeName, IrValidationImport } from './ir.js';
 import { JSON_TYPES } from './json-types.js';

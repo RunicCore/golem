@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { requireObjectCodec, type ObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
+import type { ObjectCodec } from '@exprtlabs/golem/serde';
 import { codecIdOf } from './codec-id.js';
 import type { Adapter, ComparisonFixture } from './fixture-contract.js';
 import './golem.object.model.generated.js';

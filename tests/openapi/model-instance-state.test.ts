@@ -3,13 +3,13 @@ import path from 'node:path';
 import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError } from '@exprtlabs/golem/errors';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 
 import { createFixtureProject, fileFixtureScope, onceShared } from '../fixture-project.js';
 import { generatedCodecIdFromRoot } from '../support/consumer.js';
 import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 // An own key of a golem-openapi model instance that its own model does not declare is program state, never an unknown
 // key (T-148). A key that the model declares is judged as before; a dynamic-map model has no program state.
@@ -124,14 +124,14 @@ async function generateOpen() {
 }
 
 test('stringify writes the extra keys of a model with additionalProperties true as data', async () => {
-  // protects: bug T-154 the codec wrote the declared fields only, where encodeGeneratedModel keeps the extra keys
+  // protects: bug T-154 the codec wrote the declared fields only, where the model codec toWireFormat keeps the extra keys
   const { codec, instance } = await generateOpen();
   assert.equal(codec.stringify(instance), '{"id":"a","extra":"x"}');
   assert.equal(codec.stringify({ id: 'a', extra: 'x' }), '{"id":"a","extra":"x"}', 'a plain value');
 });
 
 test('toWireFormat keeps the extra keys of a model with additionalProperties true as data', async () => {
-  // protects: bug T-154 the codec wire encoding dropped the extra keys, where encodeGeneratedModel keeps them
+  // protects: bug T-154 the codec wire encoding dropped the extra keys, where the model codec toWireFormat keeps them
   const { codec, instance } = await generateOpen();
   assert.deepEqual(codec.toWireFormat(instance), { id: 'a', extra: 'x' });
   assert.deepEqual(codec.toWireFormat({ id: 'a', extra: 'x' }), { id: 'a', extra: 'x' }, 'a plain value');
@@ -273,8 +273,8 @@ test('the class-level encode of an SDK model writes no program state of an insta
   const { models } = await validatedSdk();
   const [Base, Note] = [models.BaseModel, models.NoteModel] as Model[];
   const task = Object.assign(new Base({ name: 't' }), programState());
-  assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: { list: [task] } })), { title: 'n', data: { list: [{ name: 't' }] } });
-  assert.deepEqual(encodeGeneratedModel(new Note({ title: 'n', data: task })), { title: 'n', data: { name: 't' } });
+  assert.deepEqual(modelCodec(Note).toWireFormat(new Note({ title: 'n', data: { list: [task] } })), { title: 'n', data: { list: [{ name: 't' }] } });
+  assert.deepEqual(modelCodec(Note).toWireFormat(new Note({ title: 'n', data: task })), { title: 'n', data: { name: 't' } });
 });
 
 test('an SDK model constructor and decode count only own enumerable keys; encode writes each declared field by property access', async () => {
@@ -296,18 +296,18 @@ test('an SDK model constructor and decode count only own enumerable keys; encode
   assert.equal(instance(ctorGetter.own).name, 'x');
   assert.equal(ctorGetter.reads.count, 1, 'the constructor reads an own getter once');
 
-  assert.deepEqual({ ...decodeGeneratedModel(Stamped, inherited()) }, {}, 'decode leaves an inherited value out');
-  assert.deepEqual({ ...decodeGeneratedModel(Stamped, { at: '2024-01-02T03:04:05.000Z' }) }, { at: new Date('2024-01-02T03:04:05.000Z') }, 'decode converts an own value');
+  assert.deepEqual({ ...modelCodec(Stamped).fromWireFormat(inherited()) }, {}, 'decode leaves an inherited value out');
+  assert.deepEqual({ ...modelCodec(Stamped).fromWireFormat({ at: '2024-01-02T03:04:05.000Z' }) }, { at: new Date('2024-01-02T03:04:05.000Z') }, 'decode converts an own value');
 
   const prototype = Object.assign(new Stamped(), { name: 'x', at: new Date('2024-01-02T03:04:05.000Z') });
-  assert.deepEqual(encodeGeneratedModel(Object.create(prototype)), { name: 'x', at: '2024-01-02T03:04:05.000Z' }, 'encode writes an inherited declared field');
-  assert.deepEqual(encodeGeneratedModel(instance({ at: new Date('2024-01-02T03:04:05.000Z') })), { at: '2024-01-02T03:04:05.000Z' }, 'encode writes an own value');
+  assert.deepEqual(modelCodec(Stamped).toWireFormat(Object.create(prototype), { allowGetter: true }), { name: 'x', at: '2024-01-02T03:04:05.000Z' }, 'encode writes an inherited declared field');
+  assert.deepEqual(modelCodec(Stamped).toWireFormat(instance({ at: new Date('2024-01-02T03:04:05.000Z') }), { allowGetter: true }), { at: '2024-01-02T03:04:05.000Z' }, 'encode writes an own value');
   let encodeReads = 0;
   const encodeGetter = Object.defineProperty(new Stamped(), 'at', { enumerable: true, get() { encodeReads += 1; return new Date('2024-01-02T03:04:05.000Z'); } });
-  assert.deepEqual(encodeGeneratedModel(encodeGetter), { at: '2024-01-02T03:04:05.000Z' });
+  assert.deepEqual(modelCodec(encodeGetter).toWireFormat(encodeGetter), { at: '2024-01-02T03:04:05.000Z' });
   assert.equal(encodeReads, 1, 'encode reads an own getter once');
   let hiddenReads = 0;
   const hidden = Object.defineProperty(new Stamped(), 'name', { enumerable: false, get() { hiddenReads += 1; return 'x'; } });
-  assert.deepEqual(encodeGeneratedModel(hidden), { name: 'x' }, 'encode writes a declared field that a non-enumerable getter supplies');
+  assert.deepEqual(modelCodec(hidden).toWireFormat(hidden), { name: 'x' }, 'encode writes a declared field that a non-enumerable getter supplies');
   assert.equal(hiddenReads, 1, 'encode reads that getter once');
 });

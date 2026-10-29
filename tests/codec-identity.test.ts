@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
 import { codecPublicId } from '@exprtlabs/golem/internal/schema-graph';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { runPipeline } from '#golem/cli';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { command, golem, workspace } from './support/process.js';

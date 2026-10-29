@@ -6,7 +6,8 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { generate, findRemoteRefs, loadValidatedDocument } from '#openapi/generator';
+import { findRemoteRefs } from '#openapi/document';
+import { generate, loadValidatedDocument } from '#openapi/generator';
 import { collectCanonicalResources, projectSchema, resolveSchemaTarget } from '#openapi/schema-projection';
 import { buildSchemaData } from '#openapi/schemas';
 import {

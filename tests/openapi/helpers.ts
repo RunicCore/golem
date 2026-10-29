@@ -4,9 +4,10 @@ import { dirname, join, resolve, basename, relative } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { linkProjectPackages, writeGeneratedArtifacts } from '../fixture-project.js';
-import { isRecord } from '@exprtlabs/golem/generator-api';
-import { findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/model';
-import { generate, type OpenApiGenerationContext, type OpenApiGenerationProfile, writeSdk as WriteSdk } from '#openapi/generator';
+import { isRecord } from '@exprtlabs/golem/internal/generator-support';
+import { findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
+import { generate, type OpenApiGenerationContext, writeSdk as WriteSdk } from '#openapi/generator';
+import type { OpenApiGenerationProfile } from '#openapi/profile';
 
 export type { OpenApiGenerationProfile };
 

@@ -3,14 +3,14 @@ import { mediaFraming } from '../emission-plan.js';
 import type { SchemaPlace, SdkValidatorsInput } from '@exprtlabs/golem/internal/validation-plan';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries } from '../json.js';
 import { componentPlace, type OriginLocator } from '../origin.js';
-import { identifier, NameScope } from '@exprtlabs/golem/generator-api';
+import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
 import {
   aliased,
   code,
   fileImports,
   identifier as identifierPart,
   importLines,
-  importSet,
+  importGroups,
   ImportSource,
   isEmpty,
   join,
@@ -26,6 +26,7 @@ import {
   rtType,
   type Code,
   runtimeLinesOf,
+  type ImportGroup,
   type ImportOptions,
 } from '@exprtlabs/golem/internal/emitter';
 import {
@@ -633,26 +634,23 @@ ${metadata}
   const imports = join(fileImports(tail, localSources, { quote: '"', elsewhere: [runtimeTypes, typesModule] }), code`\n`);
   const rest = code`${imports}${tail}`;
   const imports_: ImportOptions = { modules: ['client', 'mobx', 'validation'] };
-  const runtime = new Map(importSet(rest, imports_).map((entry) => [entry.module, entry] as const));
+  const groups = importGroups(rest, imports_);
   const written = new Set<string>();
-  const lines = (module: 'client' | 'mobx' | 'validation', parts: { readonly values?: true; readonly types?: true }): readonly Code[] => {
-    if (parts.values) written.add(`${module} values`);
-    if (parts.types) written.add(`${module} types`);
-    const entry = runtime.get(module);
-    return entry ? importLines({ module, names: parts.values ? entry.names : [], types: parts.types ? entry.types : [] }, imports_) : [];
-  };
+  // The statements of the runtime groups that `wanted` picks: the values come from the internal entry, the types from the public subpaths.
+  const lines = (wanted: (group: ImportGroup) => boolean): readonly Code[] => groups.filter((group) => !written.has(group.specifier) && wanted(group)).flatMap((group) => {
+    written.add(group.specifier);
+    return importLines(group, imports_);
+  });
   const importLinesOfFile = [
-    ...lines('client', { values: true }),
+    ...lines((group) => group.names.length > 0),
     ...fileImports(rest, [runtimeTypes], { elsewhere: [typesModule, ...localSources] }),
-    ...lines('validation', { types: true }),
+    ...lines((group) => group.modules.includes('validation')),
     ...fileImports(rest, [typesModule], { elsewhere: [runtimeTypes, ...localSources] }),
-    ...lines('mobx', { types: true }),
-    ...(profile.mobx ? [] : lines('client', { types: true })),
+    ...lines((group) => group.modules.includes('mobx')),
+    ...lines((group) => group.modules.includes('client')),
   ];
-  for (const [module, entry] of runtime) {
-    if (entry.names.length > 0 && !written.has(`${module} values`)) throw new Error(`Internal error: the client file uses the ${module} runtime values ${entry.names.map(({ name }) => name).join(', ')}, which its import list does not write.`);
-    if (entry.types.length > 0 && !written.has(`${module} types`)) throw new Error(`Internal error: the client file uses the ${module} runtime types ${entry.types.map(({ name }) => name).join(', ')}, which its import list does not write.`);
-  }
+  const unwritten = groups.find((group) => !written.has(group.specifier));
+  if (unwritten) throw new Error(`Internal error: the client file uses the runtime names ${[...unwritten.names, ...unwritten.types].map(({ name }) => name).join(', ')} of ${unwritten.specifier}, which its import list does not write.`);
   return renderModule(code`${join([generatedBannerComment(), ...importLinesOfFile], code`\n`)}
 ${rest}`);
 }

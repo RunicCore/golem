@@ -2,7 +2,7 @@ import type { BodyEncoder, ClientRuntime, EncodedBody, EncodingMetadata } from '
 import { addQueryParameter } from './parameters.js';
 
 /** Encoding metadata the generated operation declares for one request media type. */
-export interface RequestMediaMetadata {
+interface RequestMediaMetadata {
   readonly encoding: Readonly<Record<string, EncodingMetadata>>;
   readonly prefixEncoding: readonly unknown[];
   readonly itemEncoding: unknown;

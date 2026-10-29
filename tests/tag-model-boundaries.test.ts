@@ -4,13 +4,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { canonicalSchemaKey, schemaForDescriptor, validationTagSchemaDescriptor } from '@exprtlabs/golem/internal/schema';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { generatedCodecId } from './support/consumer.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
+import { modelCodec } from './support/model-codec.js';
 
 function fixture(t: TestContext) {
   return createModelProject(t, {
@@ -118,7 +118,7 @@ const checks: readonly Check[] = [
         return { validate: () => candidate.validate(), issues: candidate.issues };
       };
       assert.equal(await validator(valid).validate(), true, 'accepts a valid model with handwritten state');
-      const wire = encodeGeneratedModel(valid);
+      const wire = modelCodec(valid).toWireFormat(valid);
       assert.deepEqual(wire, { code: '7' }, 'preserves the declared serde wire shape');
       assert.equal(await validator(empty).validate(), false, 'enforces minProperties');
       assert.equal(await validator(two).validate(), false, 'enforces maxProperties');
@@ -190,7 +190,7 @@ const checks: readonly Check[] = [
         dates: ['2025-01-02T03:04:05.000Z'],
         metadata: { dates: ['2025-01-02T03:04:05.000Z'], mode: 'dated' },
       };
-      const decoded = decodeGeneratedModel(Calendar, wireInput) as { dates: unknown[]; metadata: { dates: unknown[] } };
+      const decoded = modelCodec(Calendar).fromWireFormat(wireInput) as { dates: unknown[]; metadata: { dates: unknown[] } };
       assert.ok(decoded.dates[0] instanceof Date, 'accepts wire date-time strings');
       const assigned = Reflect.construct(Calendar, [{
         dates: [new Date('2025-01-02T03:04:05.000Z')],

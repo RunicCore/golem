@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { runValidation, validateWith, type SchemaIssue, type Validator } from '@exprtlabs/golem/validation';
+import { runValidation, type SchemaIssue, type Validator } from '@exprtlabs/golem/validation';
 
 const issue: SchemaIssue = { code: 'custom', path: ['name'] };
 
@@ -23,7 +23,7 @@ test('runValidation reports every issue unless the caller asks for the first onl
     return [issue];
   };
   assert.deepEqual(await runValidation(validator, 'a'), { valid: false, issues: [issue] });
-  assert.deepEqual(await validateWith(validator, 'b', false), { valid: false, issues: [issue] });
+  assert.deepEqual(await runValidation(validator, 'b', false), { valid: false, issues: [issue] });
   assert.deepEqual(seen, [['a', true], ['b', false]]);
 });
 

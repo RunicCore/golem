@@ -1,7 +1,6 @@
 import type { SchemaIssue } from './issue-messages.js';
 import { presentValue } from './presence.js';
-export type { JsonTypeName, SchemaIssue, SchemaIssueDetail } from './issue-messages.js';
-export { schemaIssueMessage } from './issue-messages.js';
+export type { SchemaIssue, SchemaIssueDetail } from './issue-messages.js';
 
 /** A generated validator; with `all` false it returns at the first issue. */
 export type Validator = (value: unknown, all: boolean) => readonly SchemaIssue[];

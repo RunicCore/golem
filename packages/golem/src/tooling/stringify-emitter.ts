@@ -4,7 +4,7 @@
  * Date convert in the same pass as concat / JSON.parse.
  */
 
-import type { ModelTypeDescriptor } from '../model.js';
+import type { ModelTypeDescriptor } from '../model-registry.js';
 import type { ValidationPlane } from '../object-codec.js';
 import type { SchemaGraph, SchemaNode } from './schema-graph.js';
 import { codecShortName, serdeWireDescriptor } from './schema-graph.js';

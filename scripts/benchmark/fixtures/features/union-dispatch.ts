@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/serde';
+import { registerIModelClass, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { codecIdOf } from './codec-id.js';
 import type { ComparisonFixture } from './fixture-contract.js';
 import { ClassCircle, ClassEvents, ClassLine, ClassRect, ClassText, TaggedEvents } from './union-dispatch.model.js';

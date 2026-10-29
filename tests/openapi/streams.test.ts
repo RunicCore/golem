@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test, { after } from 'node:test';
-import { normalizeDocument } from '#openapi/generator';
+import { normalizeDocument } from '#openapi/normalize';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,

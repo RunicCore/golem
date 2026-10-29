@@ -112,10 +112,11 @@ for (const profile of [
     const text = generated.filter(filename => filename.endsWith('.ts')).map(filename => fs.readFileSync(filename, 'utf8')).join('\n');
     const generatedImports = [...text.matchAll(/\bfrom\s+['"]([^'"]+)['"]|^\s*import\s+['"]([^'"]+)['"]/gm)].map(match => match[1] ?? match[2]);
     assert.ok(generatedImports.length > 0);
-    assert.ok(generatedImports.every(source => source.startsWith('./') || source.startsWith('../') || (source.startsWith('@exprtlabs/golem/') && !source.startsWith('@exprtlabs/golem/internal/'))), generatedImports.join('\n'));
+    const generatedRuntimeEntry = /^@exprtlabs\/golem\/internal\/(?:model|client|client-validation|validation|mobx|mobx-validation|nest|temporal)-runtime$/;
+    assert.ok(generatedImports.every(source => source.startsWith('./') || source.startsWith('../') || (source.startsWith('@exprtlabs/golem/') && (!source.startsWith('@exprtlabs/golem/internal/') || generatedRuntimeEntry.test(source)))), generatedImports.join('\n'));
     for (const absent of ['inbound.ts', 'links.ts']) assert.equal(fs.existsSync(path.join(root, 'sdk', absent)), false);
-    if (!profile.mobx) assert.doesNotMatch(text, /asGenObservable|ModelAnnotations|@exprtlabs\/golem\/mobx/);
-    if (!profile.validation) assert.doesNotMatch(text, /\$validator|runtimeSchemaRegistry|@exprtlabs\/golem\/(?:validation|mobx-validation)/);
+    if (!profile.mobx) assert.doesNotMatch(text, /asGenObservable|ModelAnnotations|@exprtlabs\/golem\/(?:internal\/)?mobx(?:-runtime)?\b/);
+    if (!profile.validation) assert.doesNotMatch(text, /\$validator|runtimeSchemaRegistry|@exprtlabs\/golem\/(?:internal\/)?(?:validation|client-validation|mobx-validation)(?:-runtime)?\b/);
     await cli(root, ['build']);
     await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
     for (const name of ['typescript', '@redocly/openapi-core', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi']) assert.equal(fs.existsSync(path.join(root, 'node_modules', name)), false, `${name} leaked into production`);
@@ -200,7 +201,7 @@ test('packed model and SDK validators work without code generation from strings'
   assert.deepEqual(manifest.profile, { mobx: false, validation: true, allowAny: false, unknownFormats: 'error' });
   const generatedText = [...filesUnder(path.join(root, 'sdk')), path.join(root, 'src/cart.model.generated.ts')]
     .filter(filename => filename.endsWith('.ts')).map(filename => fs.readFileSync(filename, 'utf8')).join('\n');
-  assert.doesNotMatch(generatedText, /asGenObservable|ModelAnnotations|@exprtlabs\/golem\/mobx/);
+  assert.doesNotMatch(generatedText, /asGenObservable|ModelAnnotations|@exprtlabs\/golem\/(?:internal\/)?mobx(?:-runtime)?\b/);
   await cli(root, ['build']);
   await npm(root, ['prune', '--omit=dev'], { includeOptional: false });
   for (const name of ['mobx', 'typescript', '@exprtlabs/golem-model', '@exprtlabs/golem-openapi']) {

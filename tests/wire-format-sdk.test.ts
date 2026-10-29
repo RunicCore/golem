@@ -9,6 +9,7 @@ import { command } from './support/process.js';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { assertWireClaimBuilds, wireClaimProject, type WireClaim } from './support/wire-claim-project.js';
+import { modelCodec } from './support/model-codec.js';
 
 interface SdkWireClaim extends WireClaim {
   /** An OpenAPI document in the fixture; its SDK is generated with this mobx setting, and the models job uses the same one. */
@@ -112,11 +113,10 @@ export class Visit extends TVisitBaseModel {}
   const { Visit } = await import(pathToFileURL(path.join(root, 'build/visit.model.js')).href) as {
     readonly Visit: new (values: object) => object;
   };
-  const { encodeGeneratedModel } = await import('@exprtlabs/golem/conversion');
   const at = new Date('2026-01-02T03:04:05.000Z');
   const encoders = [
     ['toWireFormat', generated.toWireFormatTVisit],
-    ['encodeGeneratedModel', (value: unknown) => encodeGeneratedModel(value as never) as Record<string, unknown>],
+    ['model codec toWireFormat', (value: unknown) => modelCodec(Visit).toWireFormat(value as never) as Record<string, unknown>],
   ] as const;
   const visits = [
     ['absent', new Visit({ at, detail: { at }, window: {} })],

@@ -1,4 +1,5 @@
-import { isRecord, stableJson } from '@exprtlabs/golem/generator-api';
+import { stableJson } from '@exprtlabs/golem/generator-api';
+import { isRecord } from '@exprtlabs/golem/internal/generator-support';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,

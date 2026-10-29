@@ -46,7 +46,8 @@ import {
   presentKeysCode,
 } from '@exprtlabs/golem/internal/emitter';
 import { createSchemaGraph, codecPublicId, codecShortName, internDescriptors, type SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import { compareText, displayPath, RESERVED_MODEL_MEMBERS, type GolemProfile } from '@exprtlabs/golem/generator-api';
+import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
+import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
 import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';

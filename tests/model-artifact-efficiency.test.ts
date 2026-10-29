@@ -14,12 +14,12 @@ import { readFixture, writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources, type ModelProject } from './model-project.js';
 import { duplicateLocalNameReferenceModelSource } from './fixture-templates/models/model-artifact-efficiency.js';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { findCodecIdForConstructor, requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec, decodeGeneratedModelTrusted, findGeneratedModelDefinitionForConstructor } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 import { spyOnBuild } from './support/build-spy.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
+import { modelCodec } from './support/model-codec.js';
 
 function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } = {}) {
   return createModelProject(t, {
@@ -33,7 +33,7 @@ function fixture(t: TestContext, options: { readonly noUnusedLocals?: boolean } 
 async function buildAndSpy(project: ModelProject, spied: readonly string[]): ReturnType<typeof spyOnBuild> {
   writeModelGolemYaml(project.root, { mobx: false, validation: false });
   await buildModelProject(project.root);
-  return spyOnBuild(project.root, { '@exprtlabs/golem/conversion': spied });
+  return spyOnBuild(project.root, { '@exprtlabs/golem/internal/model-runtime': spied });
 }
 
 test('equivalent tag schemas share compilation while callback identities and reference definitions stay distinct', () => {
@@ -159,8 +159,8 @@ test('generated tag schemas retain distinct reference closures for duplicate loc
     { Parent: new (values?: never) => object; Child: new (values?: never) => object },
     { TParentBaseModel: abstract new (...args: never[]) => object },
   ];
-  const oneCodecId = findCodecIdForConstructor(OneParentBaseModel);
-  const twoCodecId = findCodecIdForConstructor(TwoParentBaseModel);
+  const oneCodecId = findGeneratedModelDefinitionForConstructor(OneParentBaseModel)?.codecId;
+  const twoCodecId = findGeneratedModelDefinitionForConstructor(TwoParentBaseModel)?.codecId;
   assert.ok(oneCodecId, 'the "one" Parent model has a registered codec id');
   assert.ok(twoCodecId, 'the "two" Parent model has a registered codec id');
   const oneCodec = requireObjectCodec(oneCodecId);
@@ -190,8 +190,8 @@ test('shared projection helpers retain distinct validators', async t => {
   assert.equal((companion.match(/function decodeTShortPickValue\(/g) ?? []).length, 1);
   const { Container } = await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);
   const wire = { first: { value: 'a' }, second: { value: 'abc' } };
-  const model = decodeGeneratedModel(Container, wire);
-  assert.deepEqual(encodeGeneratedModel(model), wire);
+  const model = modelCodec(Container).fromWireFormat(wire);
+  assert.deepEqual(modelCodec(model).toWireFormat(model), wire);
   assert.equal(Object.getPrototypeOf(model.first), Object.prototype);
   assert.equal(await getValidator(new Container(wire)).validate(), true);
   const invalid = new Container({ first: { value: 'a' }, second: { value: 'ab' } });
@@ -210,8 +210,8 @@ test('validation-disabled serde artifacts omit executable predicate bindings', a
   writeFileSync(path.join(value.root, 'build/codecs.js'), 'export const encode = (value) => String(value);\nexport const decode = (value) => Number(value);\n');
   const { Item } = await import(pathToFileURL(path.join(value.root, 'build/item.model.js')).href);
   const item = new Item({ value: -5 });
-  assert.deepEqual(encodeGeneratedModel(item), { value: '-5' });
-  assert.equal(decodeGeneratedModel(Item, { value: '7' }).value, 7);
+  assert.deepEqual(modelCodec(item).toWireFormat(item), { value: '-5' });
+  assert.equal(modelCodec(Item).fromWireFormat({ value: '7' }).value, 7);
   const codec = requireObjectCodec<{ value: number }>(generatedCodecIdFromRoot(value.root, 'TItem'));
   assert.equal(codec.stringify(item), '{"value":"-5"}');
   assert.equal(codec.parse('{"value":"7"}').value, 7);
@@ -302,10 +302,11 @@ test('converted model fields call their converter without a per-field closure', 
   try {
     const { Wallet } = await import(pathToFileURL(path.join(project.root, 'build/wallet.model.js')).href);
     const wire = { balance: { amount: '1', currency: 'USD' }, rebate: { amount: '2', currency: 'EUR' } };
+    // The model's own decode hook is not on the codec's fromWireFormat path; the nested-model decode of generated code (decodeGeneratedModelTrusted) is its only caller.
     // One decode: the converter each field passes, by direction and field.
     const round = () => {
       spy.calls.length = 0;
-      decodeGeneratedModel(Wallet, wire);
+      decodeGeneratedModelTrusted(Wallet, wire);
       return new Map(spy.calls.map((call) => [`${String(call.args[0])} ${String(call.args[1])}`, call.args[2]]));
     };
     const first = round();
@@ -335,8 +336,8 @@ test('converted model items inside an array call their converter without a per-i
     const wire = { history: [{ amount: '1', currency: 'USD' }, { amount: '2', currency: 'EUR' }, { amount: '3', currency: 'GBP' }] };
     const round = () => {
       spy.calls.length = 0;
-      const wallet = decodeGeneratedModel(Wallet, wire);
-      assert.deepEqual(encodeGeneratedModel(wallet), wire);
+      const wallet = decodeGeneratedModelTrusted(Wallet, wire);
+      assert.deepEqual(modelCodec(wallet).toWireFormat(wallet), wire);
       return spy.calls.map((call) => ({ call: `${call.name} ${String(call.args[0])}`, convert: call.args.find((arg) => typeof arg === 'function') }));
     };
     const first = round();

@@ -7,21 +7,16 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import test, { after } from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { validateModelManifest } from '@exprtlabs/golem/manifest';
 import { reaction, runInAction } from 'mobx';
 import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { generatedCodecId } from '../support/consumer.js';
-import {
-  findRemoteRefs,
-  loadValidatedDocument,
-  normalizeDocument,
-  schemaType,
-  validate,
-  writeSdk as writeSdkFiles,
-} from '#openapi/generator';
+import { findRemoteRefs, validate } from '#openapi/document';
+import { loadValidatedDocument, writeSdk as writeSdkFiles } from '#openapi/generator';
+import { normalizeDocument } from '#openapi/normalize';
+import { schemaType } from '#openapi/types';
 import {
   captureRequest,
   isAsyncIterable,
@@ -35,6 +30,7 @@ import {
   type CapturedRequest,
   type GeneratedClientClass,
 } from './helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 const example = openApiFixture('example.openapi.yaml');
 
@@ -308,8 +304,8 @@ export const mixedModelChildren: StringTreeModel[] | undefined = numberModel.chi
   if (!isGeneratedModelClass(StringTreeModel) || !isGeneratedModelClass(NumberTreeModel)) {
     throw new TypeError('expected generated model classes');
   }
-  const stringTree = requireRecord(decodeGeneratedModel(StringTreeModel, { value: 'a', children: [{ value: 'b' }] }), 'string tree');
-  const numberTree = requireRecord(decodeGeneratedModel(NumberTreeModel, { value: 1, children: [{ value: 2 }] }), 'number tree');
+  const stringTree = requireRecord(modelCodec(StringTreeModel).fromWireFormat({ value: 'a', children: [{ value: 'b' }] }), 'string tree');
+  const numberTree = requireRecord(modelCodec(NumberTreeModel).fromWireFormat({ value: 1, children: [{ value: 2 }] }), 'number tree');
   assert.ok(Array.isArray(stringTree.children) && stringTree.children[0] instanceof StringTreeModel);
   assert.ok(Array.isArray(numberTree.children) && numberTree.children[0] instanceof NumberTreeModel);
 });
@@ -378,11 +374,12 @@ export const missingField: keyof PaymentModel[typeof generatedModelFieldsBrand] 
   if (!isGeneratedModelClass(BasePaymentModel) || !isGeneratedModelClass(MetadataModel) || !isGeneratedModelClass(PaymentModel)) {
     throw new TypeError('expected generated model classes');
   }
-  const payment = decodeGeneratedModel(PaymentModel, { amount: 125, id: 'pay_7', note: 'memo' });
+  const payment = modelCodec(PaymentModel).fromWireFormat({ amount: 125, id: 'pay_7', note: 'memo' });
   assert.ok(payment instanceof BasePaymentModel);
-  assert.deepEqual(encodeGeneratedModel(generated(payment)), { amount: 125, id: 'pay_7', note: 'memo' });
+  assert.deepEqual(modelCodec(generated(payment)).toWireFormat(generated(payment)), { amount: 125, id: 'pay_7', note: 'memo' });
   assert.throws(() => requireObjectCodec(generatedCodecId(models, 'Payment')).assert( ['not', 'an', 'object']), /validation|deserial/i);
-  assert.deepEqual(encodeGeneratedModel(generated(decodeGeneratedModel(MetadataModel, { traceId: 'trace_7' }))), { traceId: 'trace_7' });
+  const metadata = generated(modelCodec(MetadataModel).fromWireFormat({ traceId: 'trace_7' }));
+    assert.deepEqual(modelCodec(metadata).toWireFormat(metadata), { traceId: 'trace_7' });
   // The mobx profile makes a decoded model observable: a reaction sees a field change.
   const seen: unknown[] = [];
   const stop = reaction(() => Reflect.get(payment, 'amount'), (amount) => seen.push(amount));

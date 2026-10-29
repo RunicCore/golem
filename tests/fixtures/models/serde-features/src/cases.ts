@@ -2,7 +2,7 @@
 // codecs in the process-wide registry. A failed claim throws; a run that passes prints the names of its cases as a JSON array.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator } from '@exprtlabs/golem/validation';
 import {
   Address,

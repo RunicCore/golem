@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { TSnapshotBaseModel } from './build/snapshot.model.generated.js';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 
 const codecId = process.argv[2];
 assert.ok(codecId, 'generated Snapshot codec ID is required');

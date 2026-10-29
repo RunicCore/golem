@@ -1,6 +1,6 @@
 import { isBinaryMediaType, isBuiltinTextMediaType } from './client/codecs.js';
 import { asRecord, isJsonObject, objectEntries, type JsonObject } from './json.js';
-import { identifier, NameScope } from '@exprtlabs/golem/generator-api';
+import { identifier, NameScope } from '@exprtlabs/golem/internal/generator-support';
 import { code, codeKey, manifestMarkerComment, docComment, exportedName, fileImports, identifier as identifierPart, ImportSource, isEmpty, join, lineBreak, literal, nest, propertyKey, render, renderModule, sameCode, type RenderedModule, type Code, type JsonValue } from '@exprtlabs/golem/internal/emitter';
 import { unionVariants } from './composition.js';
 import { refName } from './names.js';

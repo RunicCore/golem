@@ -5,7 +5,6 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind, IssueSource } from '@exprtlabs/golem/errors';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { generate } from '#openapi/generator';
 import {
   compileGeneratedSdk,
@@ -17,6 +16,7 @@ import {
   requireRecord,
   writeOpenApiDocument,
 } from './helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 /** Three operations whose request body is `false` directly, as `additionalProperties`, and by `$ref`; every response is `true`. */
 function booleanSchemaDocument(openapi: string): Record<string, unknown> {
@@ -280,9 +280,9 @@ test('an allOf alias of one model is its own model with its own codec', async t 
     const stringifyPrice = models[`stringifyPrice${suffix}`];
     if (!isGeneratedModelClass(PriceModel) || !isGeneratedModelClass(MoneyModel)) throw new TypeError('alias model classes');
     if (typeof parsePrice !== 'function' || typeof stringifyPrice !== 'function') throw new TypeError('alias codec functions');
-    const price = decodeGeneratedModel(PriceModel, { amount: 3 });
+    const price = modelCodec(PriceModel).fromWireFormat({ amount: 3 });
     assert.ok(price instanceof PriceModel && price instanceof MoneyModel);
-    assert.deepEqual(encodeGeneratedModel(price), { amount: 3 });
+    assert.deepEqual(modelCodec(price).toWireFormat(price), { amount: 3 });
     // The alias owns a registered codec, like its base: parse yields wire data.
     assert.deepEqual({ ...requireRecord(Reflect.apply(parsePrice, undefined, ['{"amount":4}']), 'parsed price') }, { amount: 4 });
     assert.equal(Reflect.apply(stringifyPrice, undefined, [price]), '{"amount":3}');
@@ -294,8 +294,8 @@ test('an allOf alias of one model is its own model with its own codec', async t 
       try { return { value: run() }; } catch (error) { return { error: error instanceof Error ? error.constructor.name : 'thrown' }; }
     };
     assert.deepEqual(
-      outcome(() => encodeGeneratedModel(decodeGeneratedModel(PriceModel, extra))),
-      outcome(() => encodeGeneratedModel(decodeGeneratedModel(MoneyModel, extra))),
+      outcome(() => modelCodec(PriceModel).toWireFormat(modelCodec(PriceModel).fromWireFormat(extra))),
+      outcome(() => modelCodec(MoneyModel).toWireFormat(modelCodec(MoneyModel).fromWireFormat(extra))),
     );
     assert.deepEqual(
       outcome(() => Reflect.apply(stringifyPrice, undefined, [extra])),

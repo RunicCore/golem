@@ -1,7 +1,7 @@
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 import { CatModel, DogModel, VisitModel } from './index.js';
 
-const visit = decodeGeneratedModel(VisitModel, { pet: { kind: 'dog', name: 'Rex' } });
+const visit = fromWireFormat<VisitModel>({ pet: { kind: 'dog', name: 'Rex' } });
 const pet: DogModel | CatModel = visit.pet;
 
 void pet;

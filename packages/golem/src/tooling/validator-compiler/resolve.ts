@@ -1,5 +1,5 @@
 import { unescapePointerToken } from '../../json-pointer.js';
-import { isRecord } from '../generator-api.js';
+import { isRecord } from '../generator-core.js';
 
 /** A schema node with the context its keywords and references are read in. */
 export interface SchemaLocation {

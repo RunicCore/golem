@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test from 'node:test';
-import { generate, loadValidatedDocument, validate, writeSdk } from '#openapi/generator';
+import { validate } from '#openapi/document';
+import { generate, loadValidatedDocument, writeSdk } from '#openapi/generator';
 import { createFixtureProject } from '../fixture-project.js';
 import { writeOpenApiDocument } from './helpers.js';
 

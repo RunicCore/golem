@@ -5,13 +5,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec, decodeGeneratedModelTrusted } from '@exprtlabs/golem/internal/model-runtime';
 import { generatedCodecId, generatedCodecIdFromRoot } from './support/consumer.js';
 import { compositionProject as fixture } from './support/model-composition-project.js';
 import { buildModelProject, createModelProject, generatedModelFiles, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { projectionPolicyModelSource } from './fixture-templates/models/model-composition.js';
 import { generate } from '#model/generator';
+import { modelCodec } from './support/model-codec.js';
 
 /** The nested-projection contract, run in the shared project (validation on) and in its own project (validation off). */
 async function assertNestedProjections(root: string, buildFile: string, validation: boolean): Promise<void> {
@@ -24,10 +24,10 @@ async function assertNestedProjections(root: string, buildFile: string, validati
   assert.ok(customer.intact instanceof Address);
   assert.equal(Object.getPrototypeOf(customer.readonlyAddress), Object.prototype);
   assert.notEqual(customer.readonlyAddress, original);
-  const wire = encodeGeneratedModel(customer) as { address: unknown };
+  const wire = modelCodec(customer).toWireFormat(customer) as { address: unknown };
   assert.deepEqual(wire.address, { city: 'Paris' });
   const input = { address: { id: 'strip', city: 'Paris' }, delivery: {}, intact: { id: 'keep', city: 'Paris' }, readonlyAddress: { id: 'ok', city: 'Paris' } };
-  const decoded = decodeGeneratedModel(Customer, input);
+  const decoded = modelCodec(Customer).fromWireFormat(input, { validate: false });
   assert.deepEqual(decoded.address, { city: 'Paris' });
   assert.ok(decoded.intact instanceof Address);
   assert.equal(input.address.id, 'strip');
@@ -59,17 +59,18 @@ test('projection decoders copy fields with assignments and keep the prototype un
   assert.doesNotMatch(helper, /Object\.fromEntries/);
   const { Office } = await import(path.join(root, 'build/place.model.js'));
   const place = JSON.parse('{"city":"Hue","country":"VN","__proto__":{"x":1}}');
-  const office = decodeGeneratedModel(Office, { place }) as { place: Record<string, unknown> };
+  const office = modelCodec(Office).fromWireFormat({ place }, { validate: false }) as { place: Record<string, unknown> };
   assert.equal(Object.getPrototypeOf(office.place), Object.prototype);
   assert.deepEqual(office.place, { city: 'Hue', country: 'VN' });
-  assert.deepEqual(encodeGeneratedModel(office), { place: { city: 'Hue', country: 'VN' } });
+  assert.deepEqual(modelCodec(office).toWireFormat(office), { place: { city: 'Hue', country: 'VN' } });
 });
 
 test('a projection decoder leaves out a field that is undefined or not enumerable in the input', async t => {
+  // The projection decoder is the model's own decode hook, which the codec's fromWireFormat does not run; decodeGeneratedModelTrusted is its caller in generated code.
   const { Office } = await import(path.join(await buildPlaceProject(t), 'build/place.model.js'));
   const hidden = Object.defineProperty({ city: 'Hue' }, 'country', { value: 'VN', enumerable: false });
-  assert.deepEqual(Object.keys(decodeGeneratedModel(Office, { place: { city: 'Hue', country: undefined } }).place), ['city']);
-  assert.deepEqual(Object.keys(decodeGeneratedModel(Office, { place: hidden }).place), ['city']);
+  assert.deepEqual(Object.keys(decodeGeneratedModelTrusted(Office, { place: { city: 'Hue', country: undefined } }).place), ['city']);
+  assert.deepEqual(Object.keys(decodeGeneratedModelTrusted(Office, { place: hidden }).place), ['city']);
 });
 
 test('a projection decoder leaves out an undeclared key whose value is undefined', async t => {
@@ -78,7 +79,7 @@ test('a projection decoder leaves out an undeclared key whose value is undefined
   writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root);
   const { Board } = await import(path.join(root, 'build/board.model.js'));
-  const board = decodeGeneratedModel(Board, { slots: { x: undefined, y: { at: '2026-01-02T00:00:00.000Z' } } });
+  const board = modelCodec(Board).fromWireFormat({ slots: { x: undefined, y: { at: '2026-01-02T00:00:00.000Z' } } }, { validate: false });
   assert.deepEqual(Object.keys(board.slots), ['y']);
   assert.ok(board.slots.y.at instanceof Date);
 });
@@ -94,11 +95,11 @@ test('equivalent projections share helpers and execute only retained field codec
   assert.equal([...companion.matchAll(/function initTItemOmitId\(/g)].length, 1);
   const { Container } = await import(path.join(root, 'build/item.model.js'));
   const codecs = await import(path.join(root, 'build/codecs.js'));
-  const model = decodeGeneratedModel(Container, { first: { id: 'ignored', value: 'HELLO' } });
+  const model = modelCodec(Container).fromWireFormat({ first: { id: 'ignored', value: 'HELLO' } }, { validate: false });
   assert.deepEqual(model.first, { value: 'hello' });
   assert.equal(codecs.retained, 1);
   assert.equal(codecs.removed, 0);
-  assert.deepEqual(encodeGeneratedModel(model), { first: { value: 'HELLO' } });
+  assert.deepEqual(modelCodec(model).toWireFormat(model), { first: { value: 'HELLO' } });
   assert.equal(codecs.retained, 2);
   assert.equal(codecs.removed, 0);
 });
@@ -136,11 +137,11 @@ test('validation-on projection cases share one generated project', async t => {
 
   await t.test('nested unions and selection utilities retain declaration identities', async () => {
     const { ContactBook, Email, Phone } = await load('nested-unions', 'contacts.model.js');
-    const book = decodeGeneratedModel(ContactBook, { contact: { kind: 'phone', number: '123' }, selected: { kind: 'email', address: 'one' }, excluded: { kind: 'email', address: 'two' } });
+    const book = modelCodec(ContactBook).fromWireFormat({ contact: { kind: 'phone', number: '123' }, selected: { kind: 'email', address: 'one' }, excluded: { kind: 'email', address: 'two' } }, { validate: false });
     assert.ok(book.contact instanceof Phone);
     assert.ok(book.selected instanceof Email);
     assert.ok(book.excluded instanceof Email);
-    assert.deepEqual(encodeGeneratedModel(book), { contact: { kind: 'phone', number: '123' }, selected: { kind: 'email', address: 'one' }, excluded: { kind: 'email', address: 'two' } });
+    assert.deepEqual(modelCodec(book).toWireFormat(book), { contact: { kind: 'phone', number: '123' }, selected: { kind: 'email', address: 'one' }, excluded: { kind: 'email', address: 'two' } });
   });
 
   for (const exact of [false, true]) {
@@ -149,51 +150,51 @@ test('validation-on projection cases share one generated project', async t => {
       const { Container } = await load(directory, 'item.model.js');
       const input = { item: { id: 'extra', value: 'kept' } };
       if (exact) assert.throws(() => requireObjectCodec(codecIdIn(directory, 'Container')).assert( input));
-      else assert.deepEqual((decodeGeneratedModel(Container, input)).item, { value: 'kept' });
-      const unchecked = decodeGeneratedModel(Container, input);
+      else assert.deepEqual((modelCodec(Container).fromWireFormat(input, { validate: false })).item, { value: 'kept' });
+      const unchecked = modelCodec(Container).fromWireFormat(input, { validate: false });
       assert.deepEqual(unchecked.item, { value: 'kept' });
     });
   }
 
   await t.test('recursive projections convert every selected level without restoring omitted fields', async () => {
     const { Tree } = await load('recursive', 'tree.model.js');
-    const tree = decodeGeneratedModel(Tree, { branch: { id: 'strip', label: 'one', children: [{ id: 'strip', label: 'two' }] } });
+    const tree = modelCodec(Tree).fromWireFormat({ branch: { id: 'strip', label: 'one', children: [{ id: 'strip', label: 'two' }] } }, { validate: false });
     assert.equal(Object.getPrototypeOf(tree.branch), Object.prototype);
     assert.equal(Object.getPrototypeOf(tree.branch.children[0]), Object.prototype);
-    assert.deepEqual(encodeGeneratedModel(tree), { branch: { label: 'one', children: [{ label: 'two' }] } });
+    assert.deepEqual(modelCodec(tree).toWireFormat(tree), { branch: { label: 'one', children: [{ label: 'two' }] } });
   });
 
   await t.test('mapped key renaming preserves nested model provenance and readonly types', async () => {
     const { Item, Residence } = await load('mapped-keys', 'item.model.js');
-    const item = decodeGeneratedModel(Item, { contact: { copy_home: { city: 'Paris' } } });
+    const item = modelCodec(Item).fromWireFormat({ contact: { copy_home: { city: 'Paris' } } }, { validate: false });
     assert.ok(item.contact.copy_home instanceof Residence);
     assert.equal(Object.getPrototypeOf(item.contact), Object.prototype);
   });
 
   await t.test('dictionaries and tuple rest fields construct their declared nested models', async () => {
     const { Item, Venue } = await load('dictionaries', 'item.model.js');
-    const item = decodeGeneratedModel(Item, { dictionary: { a: { town: 'Paris' } }, tuple: [{ town: 'Rome' }, { town: 'Lyon' }] });
+    const item = modelCodec(Item).fromWireFormat({ dictionary: { a: { town: 'Paris' } }, tuple: [{ town: 'Rome' }, { town: 'Lyon' }] }, { validate: false });
     assert.ok(item.dictionary.a instanceof Venue);
     assert.ok(item.tuple[0] instanceof Venue);
     assert.ok(item.tuple[1] instanceof Venue);
-    assert.deepEqual(encodeGeneratedModel(item), { dictionary: { a: { town: 'Paris' } }, tuple: [{ town: 'Rome' }, { town: 'Lyon' }] });
+    assert.deepEqual(modelCodec(item).toWireFormat(item), { dictionary: { a: { town: 'Paris' } }, tuple: [{ town: 'Rome' }, { town: 'Lyon' }] });
   });
 
   await t.test('root intersections remain representable object contracts', async () => {
     const { Item } = await load('root-intersections', 'item.model.js');
-    const item = decodeGeneratedModel(Item, { id: 'one', count: 2, nested: { enabled: true } });
+    const item = modelCodec(Item).fromWireFormat({ id: 'one', count: 2, nested: { enabled: true } }, { validate: false });
     assert.deepEqual({ ...item }, { id: 'one', count: 2, nested: { enabled: true } });
   });
 
   await t.test('no-op mapped models become fresh plain objects while named models retain identity', async () => {
     const { Place, Container } = await load('no-op-mapped', 'item.model.js');
     const address = new Place({ borough: 'Paris' });
-    const container = decodeGeneratedModel(Container, { mapped: address, intact: address, plain: { borough: 'Rome' } });
+    const container = modelCodec(Container).fromWireFormat({ mapped: address, intact: address, plain: { borough: 'Rome' } }, { validate: false });
     assert.equal(Object.getPrototypeOf(container.mapped), Object.prototype);
     assert.equal(Object.getPrototypeOf(container.plain), Object.prototype);
     assert.ok(container.intact instanceof Place);
     assert.notEqual(container.mapped, address);
-    assert.deepEqual(encodeGeneratedModel(container), {
+    assert.deepEqual(modelCodec(container).toWireFormat(container), {
       mapped: { borough: 'Paris' },
       intact: { borough: 'Paris' },
       plain: { borough: 'Rome' },
@@ -202,11 +203,11 @@ test('validation-on projection cases share one generated project', async t => {
 
   await t.test('structurally identical named models keep distinct provenance from plain objects', async () => {
     const { Alpha, Beta, Container } = await load('identical-named', 'item.model.js');
-    const container = decodeGeneratedModel(Container, {
+    const container = modelCodec(Container).fromWireFormat({
       alpha: { value: 'a' },
       beta: { value: 'b' },
       plain: { value: 'p' },
-    });
+    }, { validate: false });
     assert.ok(container.alpha instanceof Alpha);
     assert.ok(container.beta instanceof Beta);
     assert.equal(Object.getPrototypeOf(container.plain), Object.prototype);
@@ -216,7 +217,7 @@ test('validation-on projection cases share one generated project', async t => {
 
   await t.test('an intact child model keeps its own allowAny policy inside a strict parent', async () => {
     const { Child, Container } = await load('intact-child', 'item.model.js');
-    const child = decodeGeneratedModel(Container, { child: { raw: () => 'allowed by child policy' } });
+    const child = modelCodec(Container).fromWireFormat({ child: { raw: () => 'allowed by child policy' } }, { validate: false });
     assert.ok(child.child instanceof Child);
     assert.equal(typeof child.child.raw, 'function');
   });
@@ -230,7 +231,7 @@ test('validation-on projection cases share one generated project', async t => {
       /RUNM1011.*contains any\. Replace it with a concrete type, or allow it with .*IModel<Fields, \{ allowAny: true \}>.*allowAny: true in golem\.yaml/,
     );
     const { Container } = await load('projected-child', 'item.model.js');
-    const container = decodeGeneratedModel(Container, { child: { raw: () => 'allowed by containing policy' } });
+    const container = modelCodec(Container).fromWireFormat({ child: { raw: () => 'allowed by containing policy' } }, { validate: false });
     assert.equal(Object.getPrototypeOf(container.child), Object.prototype);
     assert.equal(typeof container.child.raw, 'function');
   });
@@ -321,7 +322,7 @@ export class View extends TViewBaseModel {}
   });
   await buildModelProject(root);
   const { View } = await import(path.join(root, 'build/view.model.js'));
-  const wire = encodeGeneratedModel(decodeGeneratedModel(View, { look: { name: 'a', '__@generatedModelWireBrand@1': 'b', extra: 'c' } }));
+  const wire = modelCodec(View).toWireFormat(modelCodec(View).fromWireFormat({ look: { name: 'a', '__@generatedModelWireBrand@1': 'b', extra: 'c' } }, { validate: false }));
   assert.deepEqual(wire, { look: { name: 'a', '__@generatedModelWireBrand@1': 'b' } });
 });
 
@@ -343,10 +344,10 @@ export class Invoice extends TInvoiceBaseModel {}
   await buildModelProject(root);
   const { Invoice, Address } = await import(path.join(root, 'build/invoice.model.js'));
   const wire = { billing: { street: 's', city: 'c' }, picked: { street: 's', city: 'c' }, inline: { street: 's', city: 'c' } };
-  const invoice = decodeGeneratedModel(Invoice, wire);
+  const invoice = modelCodec(Invoice).fromWireFormat(wire, { validate: false });
   assert.equal(invoice.inline instanceof Address, false, 'the inline spelling');
   assert.equal(invoice.billing instanceof Address, false, 'the indexed access');
   assert.equal(invoice.picked instanceof Address, false, 'the indexed access of a projection');
   assert.equal(Object.getPrototypeOf(invoice.billing), Object.prototype);
-  assert.deepEqual(encodeGeneratedModel(invoice), wire);
+  assert.deepEqual(modelCodec(invoice).toWireFormat(invoice), wire);
 });

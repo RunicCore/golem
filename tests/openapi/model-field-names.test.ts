@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { generate, writeSdk } from '#openapi/generator';
 import {
   assertGenerationRejected,
@@ -17,6 +16,7 @@ import {
   writeGeneratedSdk,
   writeOpenApiDocument,
 } from './helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 test('reserves generated model API members and quotes wire keys', async (t) => {
   // RESERVED_MODEL_MEMBERS has no profile input, so one profile covers the rejection.
@@ -150,8 +150,8 @@ for (const validation of [false, true]) {
     const EchoModel = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'runtime names SDK').EchoModel;
     assert.ok(isGeneratedModelClass(EchoModel));
     const wire = { parseJson: 'a', beginDecode: 'b', registerIModelClass: 'c' };
-    const decoded = decodeGeneratedModel(EchoModel, wire);
-    assert.deepEqual(encodeGeneratedModel(decoded), wire);
+    const decoded = modelCodec(EchoModel).fromWireFormat(wire);
+    assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), wire);
   });
 }
 
@@ -169,9 +169,9 @@ for (const validation of [false, true]) {
     const HolderModel = sdk.HolderModel;
     assert.ok(isGeneratedModelClass(HolderModel));
     const wire = { item: { $k: 'a', $v0: 'b', when: '2024-05-06T07:08:09.000Z' }, items: [{ $k: 'c', $v0: 'd', when: '2024-05-06T07:08:09.000Z' }] };
-    const decoded = requireRecord(decodeGeneratedModel(HolderModel, wire), 'holder');
+    const decoded = requireRecord(modelCodec(HolderModel).fromWireFormat(wire), 'holder');
     assert.ok(requireRecord(decoded.item, 'item').when instanceof Date);
-    assert.deepEqual(encodeGeneratedModel(decoded), wire);
+    assert.deepEqual(modelCodec(decoded).toWireFormat(decoded), wire);
     const written = fs.readdirSync(output, { recursive: true, encoding: 'utf8' }).filter(file => file.endsWith('.ts') && !file.endsWith('.d.ts') && !file.startsWith('dist') && !file.startsWith('node_modules'));
     assert.match(written.map(file => fs.readFileSync(path.join(output, file), 'utf8')).join('\n'), /\$v_/);
   });

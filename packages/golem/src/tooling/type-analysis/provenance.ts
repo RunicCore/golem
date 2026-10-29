@@ -5,12 +5,12 @@ import {
   MODEL_MANIFEST_MARKER,
   discoverModelManifests,
   readModelManifest,
-} from '../model-manifest.js';
+} from '../model-manifest-core.js';
 import type {
   ModelManifest,
   ModelManifestEntry,
-} from '../model-manifest.js';
-import { canonicalPath, displayPath, type GolemProfile, type InputObserver } from '../generator-api.js';
+} from '../model-manifest-core.js';
+import { canonicalPath, displayPath, type GolemProfile, type InputObserver } from '../generator-core.js';
 import { MISSING, fileSignature } from '../input-watcher.js';
 import type { CodecSchemaClosureEntry } from '../validation-plan.js';
 import { canonicalFilename, effectiveConfigPath, isUnderOutputs } from './project.js';

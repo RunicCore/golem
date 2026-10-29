@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { identifier } from '@exprtlabs/golem/internal/emitter';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
 import { instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
 import { compileValidationPlanBinding } from './support/compiled-validators.js';

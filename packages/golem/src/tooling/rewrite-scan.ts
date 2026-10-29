@@ -1,14 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import * as ts from './typescript-ns.js';
-import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isRecord } from './generator-api.js';
-import type { GeneratorSession, GolemDiagnostic } from './generator-api.js';
+import { GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, errorMessage, hasErrorCode, isRecord } from './generator-core.js';
+import type { GeneratorSession, GolemDiagnostic } from './generator-core.js';
 import { OPERATION_METHOD_KEYS_EXPORT, operationCodecRegistryPath, operationCodecSlot, operationSlotCodecs, type OperationMethodCodecs } from './generated-paths.js';
-import type { DiscriminatorValue } from '../model.js';
+import type { DiscriminatorValue } from '../model-registry.js';
 import { REWRITE_IMPORT_PREFIX } from './rewrite.js';
 import { evaluateStaticValue } from './static-value.js';
 import type { FileRewrite, RewriteEdit, RewriteImport } from './rewrite.js';
-import { readModelManifest } from './model-manifest.js';
+import { readModelManifest } from './model-manifest-core.js';
 import { inNodeModules, isInstalledFile } from './type-analysis/path-identity.js';
 import { createProjectProgram, canonicalFilename, companionFilename, isGeneratedCompanion, modelBoundary, retainedProgramSession, type ModelBoundary } from './type-analysis/project.js';
 import { packageSpecifier } from './type-analysis/package-specifier.js';
@@ -56,8 +56,8 @@ interface NestCodecSite {
   readonly slot: string;
 }
 
-const SERDE_MODULE = '@exprtlabs/golem/serde';
-const NEST_MODULE = '@exprtlabs/golem/nest';
+const MODEL_RUNTIME_MODULE = '@exprtlabs/golem/internal/model-runtime';
+const NEST_MODULE = '@exprtlabs/golem/internal/nest-runtime';
 const NEST_PARAMETER_DECORATORS: readonly string[] = ['Body', 'Query'];
 const NEST_CODEC_DECORATOR = 'nestModelCodec';
 const NEST_UNION_DECORATOR = 'nestModelUnion';
@@ -923,7 +923,7 @@ function scanFile(
       expect: text.slice(start, open + 1),
       text: `${REWRITE_IMPORT_PREFIX}requireObjectCodec(${JSON.stringify(id)}).${method}(`,
     });
-    importOf(scan, root, file, call, 'requireObjectCodec', SERDE_MODULE);
+    importOf(scan, root, file, call, 'requireObjectCodec', MODEL_RUNTIME_MODULE);
     loadCodecModule(scan, { root, checker, keys, file }, id, typeName);
     if (method === 'parse' || method === 'fromWireFormat') {
       const target = constructTarget(scan, { root, checker, file }, typeName);
@@ -1013,7 +1013,7 @@ function scanFile(
     // This also matches the aliased statement an earlier rewrite wrote.
     if (text.includes(statement)) continue;
     scan.edits.push(insertion(end, `\n${REWRITE_IMPORT_PREFIX}${statement}`));
-    importOf(scan, root, file, file, 'registerIModelClass', SERDE_MODULE);
+    importOf(scan, root, file, file, 'registerIModelClass', MODEL_RUNTIME_MODULE);
   }
 
   // A user binding of the reserved prefix would capture the call the rewrite inserts, so a file that is rewritten may not use one.

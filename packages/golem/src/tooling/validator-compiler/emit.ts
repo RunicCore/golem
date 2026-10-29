@@ -1,6 +1,6 @@
 import { code, helperDefinitions, identifier as identifierCode, join, nameOf, NameTable, render, runtimeImports, type Code } from '../code.js';
 import type { IrFunction, IrModule } from './ir.js';
-import { compareText } from '../generator-api.js';
+import { compareText } from '../generator-core.js';
 import { rtType } from '../rt.js';
 import { VALUE, NEWLINE, functionParameters, FunctionSlots, callFunction, type CalleeSlot } from './function-names.js';
 import { FULL_VALIDATOR, fastCheckMode, type WriterMode } from './modes.js';
@@ -11,8 +11,8 @@ import { FastPlan } from './fast-plan.js';
 import { groupFunctions, type WrittenFastCheck, type WrittenFunction } from './grouping.js';
 
 interface EmitOptions {
-  /** The module specifier the generated file imports its runtime helpers from. */
-  readonly runtimeModule: string;
+  /** The module specifier the generated file imports its runtime helpers and their types from; the internal validation runtime and the public subpath by default. */
+  readonly runtimeModule?: string;
   /** Types each exported validator as a `Validator`, for a TypeScript file. */
   readonly typed?: boolean;
   /** Also writes the boolean fast check `is_X` beside `validate_X`, for each root, or each root named, that has one (see `FastPlan`). */
@@ -220,7 +220,7 @@ function writeExports({ module, target, fastRootExports, passRoots }: Emission, 
     if (known === undefined) throw new Error(`The validator compiler has no export name for the root ${JSON.stringify(name)}.`);
     return known;
   };
-  const signature = options.typed ? code`(value: unknown, all: boolean): readonly ${rtType['validation-runtime'].SchemaIssue}[] {` : code`(value, all) {`;
+  const signature = options.typed ? code`(value: unknown, all: boolean): readonly ${rtType.validation.SchemaIssue}[] {` : code`(value, all) {`;
   const issuesOf = (name: string, id: number): Code => code`export function ${identifierCode(name)}${signature}
   const issues = [];
   ${callFunction(module.functions[target(id)], nameOf(stayingSlot(target(id), false)), { value: identifierCode('value'), path: code`[]`, issues: identifierCode('issues'), all: identifierCode('all') })};
@@ -258,7 +258,7 @@ export function emit(module: IrModule, options: EmitOptions): EmitResult {
   const everything = join(contents, NEWLINE);
   return {
     source: render(join([
-      ...runtimeImports(everything, { specifiers: { 'validation-runtime': options.runtimeModule }, quote: '"' }),
+      ...runtimeImports(everything, { ...(options.runtimeModule === undefined ? {} : { specifiers: { 'validation-runtime': options.runtimeModule } }), quote: '"' }),
       ...state.validationImports(),
       ...helperDefinitions(everything),
       ...contents,

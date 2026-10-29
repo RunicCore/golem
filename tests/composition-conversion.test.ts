@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { convertModelField, convertModelItems, convertModelTupleItems, defineModelProperty, deserializeDate, withDiscriminatorValue } from '@exprtlabs/golem/conversion';
+import {
+  convertModelField,
+  convertModelItems,
+  convertModelTupleItems,
+  defineModelProperty,
+  deserializeDate,
+  withDiscriminatorValue,
+} from '@exprtlabs/golem/internal/model-runtime';
 import {
   code,
   emitModelFromInit,
@@ -74,7 +81,7 @@ class ChildModel {
 
 const fromChild: FromJsonModelResolver = {
   className: identifier('ChildModel'),
-  decode: (value) => code`decodeGeneratedModel(ChildModel, ${value})`,
+  decode: (value) => code`decodeChildModel(ChildModel, ${value})`,
   fromInit: (value) => code`ChildModel.fromInit(${value})`,
 };
 
@@ -98,7 +105,7 @@ const bindings: Readonly<Record<string, unknown>> = {
   convertModelTupleItems,
   defineModelProperty,
   ChildModel,
-  decodeGeneratedModel: (_constructor: unknown, value: unknown) =>
+  decodeChildModel: (_constructor: unknown, value: unknown) =>
     value instanceof ChildModel ? value : ChildModel.fromJSON(value),
   decodeToken,
   deserializeDate,

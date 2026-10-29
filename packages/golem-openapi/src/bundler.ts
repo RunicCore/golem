@@ -1,4 +1,5 @@
-import { compareText, identifier } from '@exprtlabs/golem/generator-api';
+import { compareText } from '@exprtlabs/golem/generator-api';
+import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { escapePointerToken } from '@exprtlabs/golem/internal/schema';
 import { escapeJsonPointerToken, isJsonObject, resolveJsonPointer, unescapeJsonPointerToken } from './json.js';
 import { displayLocation, displayUri } from './origin.js';

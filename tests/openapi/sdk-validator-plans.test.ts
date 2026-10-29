@@ -5,7 +5,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import type { Validator } from '@exprtlabs/golem/validation-runtime';
+import type { Validator } from '@exprtlabs/golem/validation';
 import { compilePlanValidators, type CodecValidationPlan, type PlanValidators } from '@exprtlabs/golem/internal/validation-plan';
 import { analyzeOpenApiModels, generateOpenApiModelArtifacts } from '#openapi/models';
 
@@ -63,8 +63,8 @@ const PROBES: readonly unknown[] = [
 
 /** Loads the validators a plan compiles to, by export name; the module is TypeScript and imports the runtime by package name. */
 async function loadValidators(compiled: PlanValidators, directory: string, name: string): Promise<Readonly<Record<string, Validator>>> {
-  const runtime = pathToFileURL(path.join(workspace, 'packages/golem/dist/validation-runtime.js')).href;
-  const source = compiled.source.replaceAll('"@exprtlabs/golem/validation-runtime"', JSON.stringify(runtime));
+  const runtime = pathToFileURL(path.join(workspace, 'packages/golem/dist/runtime-validation.js')).href;
+  const source = compiled.source.replaceAll('"@exprtlabs/golem/internal/validation-runtime"', JSON.stringify(runtime));
   const file = path.join(directory, `${name}.mjs`);
   writeFileSync(file, stripTypes(source));
   return await import(pathToFileURL(file).href) as Readonly<Record<string, Validator>>;

@@ -1,4 +1,4 @@
-import { stableValue } from './generator-api.js';
+import { stableValue } from './generator-core.js';
 
 /** Stable key used when deduplicating equivalent generated tag schemas: the JSON text of the value with its object keys sorted at every depth. */
 export function canonicalSchemaKey(value: unknown): string {

@@ -4,7 +4,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { schemaType } from '#openapi/generator';
+import { schemaType } from '#openapi/types';
 import {
   compileGeneratedSdk,
   generateMaterializedSdk,

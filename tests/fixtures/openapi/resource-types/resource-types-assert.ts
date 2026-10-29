@@ -8,7 +8,7 @@ import type {
   GetEmbeddedOperationSuccessBody,
 } from './types.js';
 import { EnvelopeModel, ScopeUserModel, UserModel } from './index.js';
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { fromWireFormat } from '@exprtlabs/golem/serde';
 
 const requestUser: InputSchemas.User = { id: 'u1', secret: 's' };
 const replyUser: OutputSchemas.User = { id: 'u1', serverValue: 'ok' };
@@ -26,7 +26,7 @@ const envelope: Envelope = {
   scoped: { inner: { id: 'scoped' } },
 };
 async function assertConverted(): Promise<void> {
-  const converted = decodeGeneratedModel(EnvelopeModel, envelope);
+  const converted = fromWireFormat<EnvelopeModel>(envelope);
   const nestedUser: UserModel = converted.user;
   const nestedRelative: UserModel = converted.relative;
   const nestedInner: ScopeUserModel | undefined = converted.scoped?.inner;

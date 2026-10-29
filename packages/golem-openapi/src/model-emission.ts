@@ -52,11 +52,11 @@ import {
 } from '@exprtlabs/golem/internal/emitter';
 import { type SchemaGraph, type SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import type { CodecValidationPlan, PlanValidators, SchemaPlace } from '@exprtlabs/golem/internal/validation-plan';
-import { sourceDigest } from '@exprtlabs/golem/manifest';
+import { NameScope, RESERVED_MODEL_MEMBERS, sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 import { buildCodecValidationPlan } from '@exprtlabs/golem/internal/validation-plan';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { isJsonObject } from './json.js';
-import { compareText, NameScope, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/generator-api';
+import { compareText } from '@exprtlabs/golem/generator-api';
 import { componentOrigin, componentPlace, ComponentNameScope, LocatedError, type OriginLocator } from './origin.js';
 import { COMPOSITION_CONVERSION_CONFLICT, conflictMessage } from './composition.js';
 import { generatedBannerComment } from './package-info.js';
@@ -93,7 +93,7 @@ import { openApiValidationSchemaClosure } from './model-manifest.js';
 import { analyzeOpenApiModels, reachableSchemaNodes, schemaGraphView } from './model-schema-graph.js';
 
 /**
- * Calls the `@exprtlabs/golem/temporal` codec a `temporal:` serde id names; other ids never reach OpenAPI models.
+ * Calls the Temporal codec of `@exprtlabs/golem/internal/temporal-runtime` that a `temporal:` serde id names; other ids never reach OpenAPI models.
  * Conversion code holds values as `unknown`; wire validation has already checked them, so the call casts.
  * The codec is a runtime part, so the file imports exactly the codecs it calls. The module exports one pair for each
  * Temporal type; a name it lacks is a TypeScript error in the generated file.

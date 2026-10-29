@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { instantiateRuntime, emitCodecRuntimeText } from './emitted-runtime.js';
 
 /** A map whose keys are matched by two patterns that need the `u` flag, each with a date-time value. */

@@ -3,7 +3,7 @@
  * Ambiguous unions fail generation; conversion must not probe alternatives.
  */
 
-import type { DiscriminatorValue, ModelTypeDescriptor } from '../model.js';
+import type { DiscriminatorValue, ModelTypeDescriptor } from '../model-registry.js';
 import { MODEL_FIELDS_KEY } from '../schema-keywords.js';
 import { createHash } from 'node:crypto';
 import { bindInput, code, helperName, identifier, inputOf, inputSlot, join, literal, localCode, readShape, render, sameCode, selfPlacedHelper, type Code, type Helper, type InputSlot } from './code.js';

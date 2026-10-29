@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { createFixtureProject } from '../fixture-project.js';
 import {
   captureRequest,
@@ -13,6 +12,7 @@ import {
   requireRecord,
   type CapturedRequest,
 } from './helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 const PROFILE = { mobx: false, validation: true, allowAny: false } as const;
 
@@ -45,13 +45,13 @@ test('dates: temporal maps date-time, date and duration to Temporal and keeps ti
   const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated models');
   const EventModel = models.EventModel as unknown as EventConstructor;
   const wire = { at: '2025-01-02T03:04:05Z', day: '2025-01-02', span: 'P1D', clock: '03:04:05Z', maybe: null };
-  const model = decodeGeneratedModel(EventModel, wire) as Record<string, unknown>;
+  const model = modelCodec(EventModel).fromWireFormat(wire) as Record<string, unknown>;
   assert.ok(model.at instanceof Temporal.Instant);
   assert.ok(model.day instanceof Temporal.PlainDate);
   assert.ok(model.span instanceof Temporal.Duration);
   assert.equal(model.clock, '03:04:05Z');
   assert.equal(model.maybe, null);
-  assert.deepEqual(encodeGeneratedModel(model as never), wire);
+  assert.deepEqual(modelCodec(model).toWireFormat(model as never), wire);
 });
 
 test('dates: temporal models encode to the ISO strings the generated client sends and validates', async t => {
@@ -83,9 +83,9 @@ test('dates: temporal models encode to the ISO strings the generated client send
       return Response.json(wire, { status: 201 });
     },
   });
-  const model = decodeGeneratedModel(EventModel, wire);
+  const model = modelCodec(EventModel).fromWireFormat(wire);
   assert.ok((model as Record<string, unknown>).at instanceof Temporal.Instant);
-  const response = await client.createEvent().execute({ body: encodeGeneratedModel(model as never) });
+  const response = await client.createEvent().execute({ body: modelCodec(model).toWireFormat(model as never) });
   assert.equal(response.status, 201);
   assert.deepEqual(JSON.parse(String(requests[0]?.init.body)), wire);
 });
@@ -180,13 +180,13 @@ test('dates: temporal converts array items, nullable items and nested arrays', a
     },
   }));
   const wire = { instants: ['2025-01-02T03:04:05Z'], days: ['2025-01-02', null], spans: ['P1D', 'PT1H'], grid: [['2025-01-02T03:04:05Z'], []] };
-  const model = decodeGeneratedModel(models.EventModel as unknown as EventConstructor, wire) as Record<string, unknown[]>;
+  const model = modelCodec(models.EventModel as unknown as EventConstructor).fromWireFormat(wire) as Record<string, unknown[]>;
   assert.ok(model.instants![0] instanceof Temporal.Instant);
   assert.ok(model.days![0] instanceof Temporal.PlainDate);
   assert.equal(model.days![1], null);
   assert.ok(model.spans!.every(item => item instanceof Temporal.Duration));
   assert.ok((model.grid![0] as unknown[])[0] instanceof Temporal.Instant);
-  assert.deepEqual(encodeGeneratedModel(model as never), wire);
+  assert.deepEqual(modelCodec(model).toWireFormat(model as never), wire);
 });
 
 test('dates: temporal converts fields of models that reference each other across groups', async t => {
@@ -210,10 +210,10 @@ test('dates: temporal converts fields of models that reference each other across
     } },
   });
   const wire = { events: [{ at: '2025-01-02T03:04:05Z', venue: { opens: '2025-01-02', closes: ['2025-01-02T10:00:00Z'] } }], span: 'P1D' };
-  const model = decodeGeneratedModel(models.BookingModel as unknown as EventConstructor, wire) as { events: { at: unknown; venue: { opens: unknown; closes: unknown[] } }[]; span: unknown };
+  const model = modelCodec(models.BookingModel as unknown as EventConstructor).fromWireFormat(wire) as { events: { at: unknown; venue: { opens: unknown; closes: unknown[] } }[]; span: unknown };
   assert.ok(model.events[0]!.at instanceof Temporal.Instant);
   assert.ok(model.events[0]!.venue.opens instanceof Temporal.PlainDate);
   assert.ok(model.events[0]!.venue.closes[0] instanceof Temporal.Instant);
   assert.ok(model.span instanceof Temporal.Duration);
-  assert.deepEqual(encodeGeneratedModel(model as never), wire);
+  assert.deepEqual(modelCodec(model).toWireFormat(model as never), wire);
 });

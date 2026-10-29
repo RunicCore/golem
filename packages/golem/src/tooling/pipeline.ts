@@ -9,10 +9,10 @@ import { loadInventory, applyJob, removeRetiredJobs } from './outputs.js';
 import type { FileChanges, Inventory, OutputFiles } from './outputs.js';
 import { absoluteRecordPath, codeDigest, golemCode, insideAny, inventoryPaths, JobInputs, jobIsCurrent, loadJobRecords, recordPath, sameSetup, saveJobRecords } from './job-cache.js';
 import type { JobRecord } from './job-cache.js';
-import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, displayPath, errorMessage, hasErrorCode, isInsideDirectory, isRecord, suffixPattern } from './generator-api.js';
+import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, displayPath, errorMessage, hasErrorCode, isInsideDirectory, isRecord, suffixPattern } from './generator-core.js';
 import { distTagForVersion } from './dist-tag.js';
-import { validateModelManifest } from './model-manifest.js';
-import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
+import { validateModelManifest } from './model-manifest-core.js';
+import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-core.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
 import { selectedTypeScript } from './typescript-selection.js';
 import { TypeScriptNotInstalledError } from './typescript-version.js';
@@ -181,7 +181,7 @@ export async function providersFor(config: GolemConfig, only?: ReadonlySet<strin
       if (hasErrorCode(error, 'MODULE_NOT_FOUND')) throw new Error(`${job.kind} is configured but ${job.package} is not installed in ${displayPath(config.directory)}. Install it with npm install -D ${job.package}@${distTagForVersion(golemVersion())}.`);
       throw new Error(`Cannot resolve ${job.package}/generator: ${errorMessage(error)}`);
     }
-    // golem publishes its own packages in lockstep; a third-party generator versions on its own.
+    // golem publishes its own packages in lockstep and a built-in generator needs the runtime of its own version; a third-party generator versions on its own.
     if (job.kind !== 'generator') assertRuntimeCompatible({ name: '@exprtlabs/golem', version: golemVersion() }, { name: job.package, version: packageVersion(job.package, filename) });
     const imported: unknown = await import(pathToFileURL(filename).href);
     if (!isRecord(imported) || imported.apiVersion !== 1 || typeof imported.generate !== 'function') {

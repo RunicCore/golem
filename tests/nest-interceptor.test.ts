@@ -16,29 +16,15 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
-import {
-  nestModelCodec,
-  nestModelReturn,
-  nestModelUnion,
-  NestModelInterceptor,
-  nestModelStringifyInterceptor,
-  nestUnionFromMetatype,
-  objectCodecFromMetatype,
-} from '@exprtlabs/golem/nest';
+import { NestModelInterceptor, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem/nest';
+import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem/internal/nest-runtime';
 import { LibError } from '@exprtlabs/golem/errors';
-import { decodeGeneratedModel, deserializeDate, unknownDiscriminatorValue } from '@exprtlabs/golem/conversion';
-import type { ModelTypeDescriptor } from '@exprtlabs/golem/model';
+import { deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
+import type { ModelTypeDescriptor } from '@exprtlabs/golem/internal/schema';
 import { schemaForDescriptor } from '@exprtlabs/golem/internal/schema';
 import { createSchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import { nodeQueryFields } from '#golem/query-fields';
-import {
-  assertModelValue,
-  getObjectCodec,
-  isValidModelValue,
-  IssueRepresentation,
-  IssueSource,
-  type QueryFieldTable,
-} from '@exprtlabs/golem/serde';
+import { getObjectCodec, IssueRepresentation, IssueSource, type QueryFieldTable } from '@exprtlabs/golem/serde';
 
 import { readFixture } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
@@ -46,6 +32,7 @@ import { compileSchema } from './support/compiled-validators.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 import { decorateQueryModel, startNestApp } from './support/nest-app.js';
 import { registerPassThroughCodec } from './support/pass-through-codec.js';
+import { modelCodec } from './support/model-codec.js';
 
 function markerCodec(id: string) {
   return registerPassThroughCodec(id, { fromWireFormat: () => ({ converted: true }) });
@@ -728,7 +715,7 @@ test('NestModelInterceptor answers 400 for request input the decoder rejects and
     unknownTag: (wire) => unknownDiscriminatorValue('kind', wire.kind, 'deserialize'),
     invalidDate: (wire) => ({ at: deserializeDate(wire.at) }),
     // Missing conversion metadata is a program fault, not bad input.
-    serverFault: (wire) => decodeGeneratedModel(UnregisteredModel, wire),
+    serverFault: (wire) => modelCodec(UnregisteredModel).fromWireFormat(wire),
     // A validator that cannot report a result is a program fault too.
     brokenValidator: (wire) => isValidModelValue(wire, undefined, (() => ({
       get then(): never { throw new Error('validator failure'); },

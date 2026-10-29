@@ -5,18 +5,18 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test from 'node:test';
 
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { requireObjectCodec } from '@exprtlabs/golem/serde';
+import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import type { GeneratedModel } from '@exprtlabs/golem/model';
 import { getValidator } from '@exprtlabs/golem/validation';
-import { generate, generateModels } from '#openapi/generator';
+import { generate } from '#openapi/generator';
 import { generatedCodecIdFromRoot } from '../support/consumer.js';
 import { compileGeneratedSdk, generateMaterializedSdk, requireRecord } from './helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 /**
  * One row is one allOf shape. For each row the generated SDK is checked on every path that reads the shape: the generated type
- * (a compile-time fixture), the model path (decodeGeneratedModel and encodeGeneratedModel), the codec (fromWireFormat and
+ * (a compile-time fixture), the model path (the model codec fromWireFormat and toWireFormat), the codec (fromWireFormat and
  * toWireFormat) and the validator, with validation on and off.
  *
  * `additionalProperties` inside an allOf member follows strict JSON Schema: a member judges every name that it does not list in
@@ -902,9 +902,9 @@ async function assertPathsAgree(built: Built, accepted: readonly Accepted[]): Pr
   for (const { wire, model: expected } of accepted) {
     const model = withoutUndefined(typeof expected === 'function' ? expected(built.models) : expected);
     await forInput(wire, () => {
-      const decoded = decodeGeneratedModel(built.Model, wire);
+      const decoded = modelCodec(built.Model).fromWireFormat(wire, { validate: false });
       assert.deepEqual(fieldsOf(decoded), model, 'model path decodes');
-      assert.deepEqual(withoutUndefined(encodeGeneratedModel(asGenerated(decoded))), wire, 'model path encodes');
+      assert.deepEqual(withoutUndefined(modelCodec(asGenerated(decoded)).toWireFormat(asGenerated(decoded))), wire, 'model path encodes');
       const viaCodec = built.codec.fromWireFormat(wire, { construct: built.construct });
       assert.deepEqual(fieldsOf(viaCodec), model, 'codec decodes');
       assert.deepEqual(withoutUndefined(built.codec.toWireFormat(viaCodec)), wire, 'codec encodes');
@@ -916,7 +916,7 @@ async function assertPathsAgree(built: Built, accepted: readonly Accepted[]): Pr
 async function assertValidatorJudges(built: Built, row: Row): Promise<void> {
   for (const { wire } of row.accepted) {
     await forInput(wire, async () => {
-      assert.equal(await getValidator(decodeGeneratedModel(built.Model, wire)).validate(), true, 'validator accepts the model');
+      assert.equal(await getValidator(modelCodec(built.Model).fromWireFormat(wire, { validate: false })).validate(), true, 'validator accepts the model');
     });
   }
   for (const wire of row.rejected) {
@@ -964,13 +964,13 @@ function assertCodecRejects(built: Built, wire: Wire): void {
   );
 }
 
-/** The model path rejects an input when it cannot convert it, or when the validator rejects the decoded model. */
+/** The model path rejects an input when the codec rejects its wire shape or cannot convert it, or when the validator rejects the decoded model. */
 async function modelPathAccepts(built: Built, wire: Wire): Promise<boolean> {
   let model: object;
   try {
-    model = decodeGeneratedModel(built.Model, wire);
+    model = modelCodec(built.Model).fromWireFormat(wire);
   } catch (error) {
-    if (error instanceof LibError && error.kind === LibErrorKind.Deserialization) return false;
+    if (error instanceof LibError && (error.kind === LibErrorKind.Validation || error.kind === LibErrorKind.Deserialization)) return false;
     throw error;
   }
   return getValidator(model).validate();
@@ -1261,9 +1261,9 @@ test('a component narrows an inherited union property to one of its variants', a
   const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated narrowed models');
   const Derived = models.DerivedModel as ModelConstructor;
   const Cat = models.CatModel as ModelConstructor;
-  const decoded = decodeGeneratedModel(Derived, { pet: { kind: 'cat', lives: 9 } });
+  const decoded = modelCodec(Derived).fromWireFormat({ pet: { kind: 'cat', lives: 9 } }, { validate: false });
   assert.ok(decoded.pet instanceof Cat, 'pet decodes to Cat');
-  assert.deepEqual(withoutUndefined(encodeGeneratedModel(asGenerated(decoded))), { pet: { kind: 'cat', lives: 9 } });
+  assert.deepEqual(withoutUndefined(modelCodec(asGenerated(decoded)).toWireFormat(asGenerated(decoded))), { pet: { kind: 'cat', lives: 9 } });
 });
 
 // protects: T-650 the composition check reads a request body with the decode conversion, so a oneOf of one $ref with no null and a readOnly property still generate as before
@@ -1285,12 +1285,6 @@ const bothKeywords = {
   oneOf: [object({ kind: { const: 'a' }, code: { type: 'string', format: 'no-such-format' } }, { required: ['kind', 'code'] }), object({ kind: { const: 'b' } }, { required: ['kind'] })],
   anyOf: [object({ at: dateTime }, { required: ['at'] })],
 };
-
-// protects: T-554 the public generateModels reads both keywords of a schema, not only the oneOf
-test('generateModels keeps the anyOf of a schema that holds both oneOf and anyOf', () => {
-  const source = generateModels(visitDocument({ m: { ...bothKeywords, oneOf: [object({ kind: { const: 'a' } }, { required: ['kind'] }), object({ kind: { const: 'b' } }, { required: ['kind'] })] } }), { mobx: false, validation: false, allowAny: false });
-  assert.match(source, /\bat\b[^\n]*Date/);
-});
 
 // protects: T-554 a diagnostic inside a branch of a schema with both keywords names the place in the user's document
 test('a diagnostic inside a oneOf branch of a schema with both keywords names the user path', async t => {

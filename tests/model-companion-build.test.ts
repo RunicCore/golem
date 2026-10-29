@@ -62,11 +62,12 @@ export class Clash extends TClashBaseModel {
   writeModelGolemYaml(root, { mobx: false, validation: false });
   await buildModelProject(root, ['--noUnusedLocals', '--noUnusedParameters']);
   fs.writeFileSync(path.join(root, 'verify.mjs'), `import assert from 'node:assert/strict';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { findGeneratedModelDefinition, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { Clash } from './build/clash.model.js';
 
 const wire = { parseJson: 'text', unknownDiscriminatorValue: 3 };
-assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(Clash, wire)), wire);
+const codec = requireObjectCodec(findGeneratedModelDefinition(Clash).codecId);
+assert.deepEqual(codec.toWireFormat(codec.fromWireFormat(wire, { construct: Clash })), wire);
 `);
   await command(root, process.execPath, [path.join(root, 'verify.mjs')]);
 });

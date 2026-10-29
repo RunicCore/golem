@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
-import { collectLocalReferenceInputs, generate, readLimitedBody } from '#openapi/generator';
+import { generate } from '#openapi/generator';
+import { collectLocalReferenceInputs, readLimitedBody } from '#openapi/resolver';
 import { writeOpenApiDocument } from './helpers.js';
 
 const remoteSchema = '{"type":"object","required":["currency"],"properties":{"currency":{"type":"string","description":"€"}}}';

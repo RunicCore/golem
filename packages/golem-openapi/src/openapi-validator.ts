@@ -1,5 +1,6 @@
 import { escapePointerToken } from '@exprtlabs/golem/internal/schema';
-import { schemaIssueMessage, type SchemaIssue, type Validator } from '@exprtlabs/golem/validation-runtime';
+import { schemaIssueMessage } from '@exprtlabs/golem/internal/generator-support';
+import type { SchemaIssue, Validator } from '@exprtlabs/golem/validation';
 import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 import { compile } from '@exprtlabs/golem/internal/validator-compiler';
 import { openApiLine, type OpenApiLine } from './json.js';
@@ -39,7 +40,7 @@ async function compileOpenApiValidators(): Promise<OpenApiValidators> {
   const resources = new Map(Object.entries(JSON_SCHEMA_2020_12_META_SCHEMAS).filter(([id]) => id !== JSON_SCHEMA_2020_12_ID));
   const { source, exports, diagnostics } = compile(
     { roots, resources },
-    { unknownFormats: 'error', runtimeModule: import.meta.resolve('@exprtlabs/golem/validation-runtime'), documentName: 'the OpenAPI meta-schemas' },
+    { unknownFormats: 'error', runtimeModule: import.meta.resolve('@exprtlabs/golem/internal/validation-runtime'), documentName: 'the OpenAPI meta-schemas' },
   );
   const errors = diagnostics.filter((entry) => entry.severity === GolemDiagnosticSeverity.Error);
   if (errors.length) throw new Error(`the OpenAPI meta-schemas do not compile: ${errors.map((entry) => entry.message).join('; ')}`);

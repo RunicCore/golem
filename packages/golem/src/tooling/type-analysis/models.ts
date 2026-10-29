@@ -1,4 +1,4 @@
-import { displayPath } from '../generator-api.js';
+import { displayPath } from '../generator-core.js';
 import { diagnostic, modelDeclarationKind } from './symbols.js';
 import * as ts from '../typescript-ns.js';
 import { isDateType } from './tags.js';

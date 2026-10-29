@@ -9,7 +9,14 @@ import type {
   InputObserver,
 } from '@exprtlabs/golem/generator-api';
 import { buildCodecValidationPlan, compilePlanValidators, type CodecSchemaClosureEntry } from '@exprtlabs/golem/internal/validation-plan';
-import { DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, canonicalPath, compareText, displayPath, isInsideDirectory, outsideModelsRootMessage, resolveProfile, suffixPattern, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity, compareText, isInsideDirectory, resolveProfile, type GolemDiagnostic, type ResolvedGolemProfile } from '@exprtlabs/golem/generator-api';
+import {
+  canonicalPath,
+  DEFAULT_MODEL_SUFFIXES,
+  displayPath,
+  outsideModelsRootMessage,
+  suffixPattern,
+} from '@exprtlabs/golem/internal/generator-support';
 import { codecKeysPath, defaultModelOutput } from '@exprtlabs/golem/internal/generated-paths';
 import { AmbiguousUnionConversionError, ObjectUnionDiscriminatorError, reachesRecursiveNode } from '@exprtlabs/golem/internal/emitter';
 import { emitCodecDeclarationTable } from '@exprtlabs/golem/internal/schema-graph';
@@ -57,8 +64,6 @@ import {
   type ProgramInfo,
 } from '@exprtlabs/golem/internal/type-analysis';
 
-export interface GolemModelProfile extends GolemProfile {}
-
 export interface GolemModelContext {
   /** Absolute project root used for TypeScript configuration and discovery. */
   readonly root: string;
@@ -73,7 +78,7 @@ export interface GolemModelContext {
   /** The tsconfig the program opens from, absolute. Omit it to use the nearest `tsconfig.json` from `root` upward. */
   readonly tsconfig?: string;
   /** Runtime features selected for generated model companions. */
-  readonly profile: GolemModelProfile;
+  readonly profile: GolemProfile;
   /** The `golem.yaml` default for the `exact` option of a model that sets none; omitted means `true`. */
   readonly exact?: boolean;
   /** Absolute model-manifest paths to add to marker and source discovery. */
@@ -83,8 +88,6 @@ export interface GolemModelContext {
   /** Keeps the TypeScript compiler warm across runs of one CLI pipeline or watch session. */
   readonly session?: GeneratorSession;
 }
-
-export interface GolemModelArtifact extends GolemArtifact {}
 
 export interface GolemModelResult extends GolemResult {}
 
@@ -564,7 +567,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       diagnostics: [...ignoredWarnings, ...validatorDiagnostics],
     };
   }
-  const artifacts: GolemModelArtifact[] = [];
+  const artifacts: GolemArtifact[] = [];
   if (validators) {
     artifacts.push({ path: validatorsOutput, content: validators.source });
   }
