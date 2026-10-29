@@ -14,7 +14,7 @@ The examples use a task form. Its title must not be blank. `MinLength<1>` reject
 
 <<< ../../examples/models/src/task-input-checks.ts#validate-a-model
 
-`validation` defaults to `true`. It also takes `false` and `'sanity'`, which checks the shape only ([Validation profiles](/reference/config#validation-profiles) lists what each level checks and skips). `IObject` and `IModel` accept `{ validation: true | false | 'sanity' }` to set the default level of that declaration. The level is at or below the project level.
+`validation` defaults to `true`. It also takes `false` and `'sanity'`, which checks the [shape only](/reference/config#validation-profiles). `IObject` and `IModel` accept `{ validation: true | false | 'sanity' }` to set the default level of that declaration. The level is at or below the project level.
 
 ## The calls
 

@@ -164,11 +164,12 @@ npm install --save-dev typescript@~7.1.0-beta
 
 ## Runtime dependencies
 
-Validation is on and MobX is off by default.
+Validation is on and MobX is off by default. `validation` also takes `sanity`, which checks the shape only.
 
 | Setting in `golem.yaml` | Extra application dependencies |
 | --- | --- |
 | Validation on (`validation: true`) | none |
+| Shape checks only (`validation: sanity`) | none |
 | MobX on (`mobx: true`) | `npm install mobx` |
 | Validation off (`validation: false`) | none |
 

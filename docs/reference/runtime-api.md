@@ -25,7 +25,7 @@ Find every `@exprtlabs/golem` subpath that your application, NestJS app or build
 
 A path that starts with `internal/` is for the generators and may change in any release. These subpaths are internal: `internal/emitter`, `internal/generated-paths`, `internal/generator-support`, `internal/schema`, `internal/schema-graph`, `internal/static-value`, `internal/ts`, `internal/type-analysis`, `internal/validation-plan`, `internal/validator-compiler` and the eight runtime entries `internal/model-runtime`, `internal/validation-runtime`, `internal/client-runtime`, `internal/client-validation-runtime`, `internal/mobx-runtime`, `internal/mobx-validation-runtime`, `internal/temporal-runtime` and `internal/nest-runtime`. Do not import them ([Compatibility](/compatibility#public-api)).
 
-With `validation: true`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). Generated files also import runtime helpers from the internal entries ([Generated code](/reference/generator-api#generated-code)).
+With `validation: true` or `validation: sanity`, generated files import their own validator modules and need no extra package ([validation profiles](/reference/config#validation-profiles)). Generated files also import runtime helpers from the internal entries ([Generated code](/reference/generator-api#generated-code)).
 
 ## `@exprtlabs/golem/model` {#model}
 
@@ -49,7 +49,7 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 | --- | --- | --- |
 | `exact` | root `exact`, `true` | Controls extra keys ([Objects and exact](/guide/field-types#objects-and-exact)). |
 | `allowAny` | root `allowAny`, `false` | Controls `any` and `unknown` fields ([`any` and `unknown`](/guide/field-types#any-and-unknown)). |
-| `validation` | root `validation`, `true` | Generates checks for this named `IObject` or `IModel`. A nested declaration uses its own setting. |
+| `validation` | root `validation`, `true` | Default level of the checks for this named `IObject` or `IModel`: `true`, `'sanity'` or `false`. It is at or below the root level; a higher level stops generation with [`RUNM1089`](/reference/diagnostics#runm1089). `false` generates no validators for the model. A nested declaration uses its own setting ([validation profiles](/reference/config#validation-profiles)). |
 
 Generation also writes [derived type names](/reference/generated-files#derived-type-names), such as `TTaskFields`, `TTaskJSON` and `TTaskInit`.
 
@@ -78,14 +78,14 @@ function getValidator<Fields extends object, Owner extends object>(
 | `validate` | `<T>(value: unknown, options?: ValidateOptions & AllowGetterOptions): value is T` | Checks a value against a named `IObject` or `IModel` and narrows it. Needs a [build that rewrites it](/guide/build). |
 | `ModelValidator` | `class ModelValidator<Fields, Owner = Fields>` | The stateful validator. Members are below. |
 
-`validateInstance`, `validate` and `ModelValidator.validate` stop at the first issue unless you pass `{ failFast: false }`. An invalid value is an ordinary result. They throw `LibError` when validation cannot run, for example when the model was generated with `validation: false` (`ValidationUnavailable`).
+`validateInstance`, `validate` and `ModelValidator.validate` stop at the first issue unless you pass `{ failFast: false }`. An invalid value is an ordinary result. They throw `LibError` when validation cannot run, for example when the model was generated with `validation: false`, or when `validate` names a level above the project level (`ValidationUnavailable`).
 
 ### `ModelValidator` members {#model-validator}
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
 | `constructor` | `(model, cache = true)` | Attaches a validator to a model instance. `cache: false` does not store it for `getValidator`. |
-| `validate` | `(options?: ValidateOptions): Promise<boolean>` | Runs generated checks, then instance rules, and stores the issues. A newer call wins over an older one. |
+| `validate` | `(options?: ValidateOptions): Promise<boolean>` | Runs generated checks, then instance rules, and stores the issues. With `validate: 'sanity'` it runs the shape checks only and skips the instance rules. A newer call wins over an older one. |
 | `issues` | `readonly Issue[]` | Stored issues, frozen. |
 | `errors` | `Readonly<Record<string, readonly string[]>>` | Messages keyed by escaped JSON Pointer, such as `/items/0/sku`. |
 | `valid` | `boolean` | `true` when no issues are stored. It does not track later edits. |
@@ -514,13 +514,13 @@ The error is a `LibError` of kind `ValidationUnavailable`. Its message starts wi
 
 | Option | In | Default | Effect |
 | --- | --- | --- | --- |
-| `validate` | `SerdeOptions` | `true` when generated | `false` skips the checks. `true` throws `ValidationUnavailable` if checks were not generated. |
+| `validate` | both | the level of the model | `SerdeOptions`: `true`, `false` or `'sanity'`. `ValidateOptions`: `true` or `'sanity'`. `'sanity'` checks the shape only and `false` skips the checks. A level above the project level throws `ValidationUnavailable`. Any other value throws `TypeError` ([levels](/guide/validation#choose-a-level-for-one-call)). |
 | `failFast` | both | `true` | `false` reports every issue. It does not skip checks. |
 | `validationContext` | both | none | Resolves validators from your own function ([validation context](#validation-context)). |
 | `maxDepth` | both | `512` | Bounds how many levels of objects and arrays the input of a recursive model may nest ([below](#max-depth)). |
 | `allowGetter` | `AllowGetterOptions` | `false` | `true` reads declared root fields through getters and inherited values ([below](#allow-getter)). |
 
-`ValidateOptions` has `failFast`, `validationContext` and `maxDepth`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. Each call runs the checks in the table of [Checks during conversion](/guide/serialization#checks-during-conversion).
+`ValidateOptions` has `validate`, `failFast`, `validationContext` and `maxDepth`. The rewrite also passes `construct` in `SerdeOptions` for a class `T`. Each call runs the checks in the table of [Checks during conversion](/guide/serialization#checks-during-conversion).
 
 ### `maxDepth` {#max-depth}
 
@@ -587,7 +587,7 @@ import { NestModelInterceptor } from '@exprtlabs/golem/nest';
 
 | Member | Signature | Behavior |
 | --- | --- | --- |
-| `NestModelInterceptor` | `class NestModelInterceptor implements NestInterceptor` | Converts model-typed `@Body()` and `@Query()` parameters before the handler and writes model returns ([request contract](/guide/nestjs-requests#what-happens-to-a-request)). |
+| `NestModelInterceptor` | `class NestModelInterceptor implements NestInterceptor` | Converts model-typed `@Body()` and `@Query()` parameters before the handler and writes model returns ([request contract](/guide/nestjs-requests#what-happens-to-a-request)). Its options object has `maxDepth` and `validate`, the level of the request check ([level](/reference/nestjs#request-validation-level)). |
 | `nestModelStringifyInterceptor` | `(codec: ObjectCodec): NestInterceptor` | Writes every non-null result with that codec's `stringify`, an array item by item. |
 | `objectCodecFromMetatype` | `<T>(metatype: unknown): ObjectCodec<T> \| undefined` | The codec of a parameter token that the rewrite placed, such as the `design:paramtypes` entry of a `@Body()` parameter. `undefined` for a raw class. |
 | `nestUnionFromMetatype` | `(metatype: unknown): NestUnionInput \| undefined` | The converter of a parameter token for a union of models, such as the `design:paramtypes` entry of a `@Body()` or `@Query()` parameter typed `TCircle \| TRect`. `fromWireFormat(wire, options?)` returns the model of the variant that the tag picks and throws a `LibError` for a missing or unknown tag or invalid input. `decodeQuery(query)` turns query strings into the types that variant declares. `undefined` for any other token. |

@@ -762,7 +762,7 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 ### RUNM1089
 
-**Model validation option is invalid or above the project.** The `validation` option of a model is none of `true`, `false` and `'sanity'`, or it is above the validation level of the project. The order is `false` < `'sanity'` < `true`. A model may lower the level of its project, never raise it. The message names the model and both levels.
+**Model validation option is invalid or above the project.** The `validation` option of a model is none of `true`, `false` and `'sanity'`, or it is above the validation level of the project. The order is `false` < `'sanity'` < `true`. A model may lower the level of its project, never raise it. For a model above its project, the message names the model, its level and the project level. For another value, it names the model and the allowed values.
 
 **Fix:** Set the option to `true`, `false` or `'sanity'`, at or below the project level, or raise `validation` in `golem.yaml`.
 

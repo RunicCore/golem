@@ -160,11 +160,10 @@ With validation on, the default, each call checks the value. The JSON value and 
 
 <<< ../../examples/models/src/load-task.ts#validation-during-conversion
 
-- `parse`, `stringify`, `fromWireFormat` and `toWireFormat` take `validate: true | 'sanity' | false`. `{ validate: 'sanity' }` checks the shape only: JSON types, required and extra keys, union tags, enums, tuple length and `date-time` values.
-- Without the option, the call uses the default level of its model.
+- `parse`, `stringify`, `fromWireFormat` and `toWireFormat` take `validate: true | 'sanity' | false`. `{ validate: 'sanity' }` checks the [shape only](/reference/config#validation-profiles): JSON types, required and extra keys, union tags, enums, tuple length and `date-time` values.
+- Without the option, the call uses the default level of its model ([rules for a level](/guide/validation#choose-a-level-for-one-call)).
 - A level above the project level throws a `LibError` of kind `ValidationUnavailable`. Any other value throws a `TypeError`.
 - A nested model is checked at the level of the call.
-- [Choose a level for one call](/guide/validation#choose-a-level-for-one-call) has the rules. [Validation profiles](/reference/config#validation-profiles) lists what sanity checks and skips.
 - After a successful `parse` or `fromWireFormat` with validation on, call `validateInstance(model)` again only after you edit the instance. Call `getValidator(model).validate()` to store all field errors for display.
 - `failFast: false` throws with every issue instead of the first one. It does not turn the check off.
 - `validate<T>(value)` from `@exprtlabs/golem/validation` narrows `value` to the model and returns whether it matches, without throwing. `validateInstance(model)` returns the issues and does not throw for an ordinary invalid value.
