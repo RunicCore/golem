@@ -47,12 +47,6 @@ export interface CompileOptions {
    * is no part of this module: it runs its own checks at every level, so a model with one stays stricter than the shape.
    */
   readonly level?: 'full' | 'sanity';
-  /**
-   * With `full`: the roots whose model checks the shape only. A reference to one (and its own export) hands its validator
-   * `true` as the third argument, so it and everything below it check the shape only whatever the caller asks, and its
-   * export takes no flag and has no structure check or predicates-only pass. A module of `sanity` ignores it.
-   */
-  readonly sanityRoots?: ReadonlySet<string>;
 }
 
 export interface CompileResult {
@@ -82,9 +76,7 @@ export interface CompileResult {
 
 /** Compiles JSON Schema 2020-12 roots to a module that exports one validator function per root. */
 export function compile(input: CompileInput, options: CompileOptions): CompileResult {
-  // A module of `sanity` checks the shape everywhere, so no root needs a cap.
-  const sanityRoots = options.level === 'sanity' ? undefined : options.sanityRoots;
-  const { module, diagnostics } = lower(input, { ...options, ...(sanityRoots === undefined ? {} : { sanityRoots }) });
+  const { module, diagnostics } = lower(input, options);
   const exports = exportNames(input.roots.keys());
   if (diagnostics.some(entry => entry.severity === GolemDiagnosticSeverity.Error)) return { source: '', exports, fastExports: new Map(), passExports: new Map(), diagnostics };
   const { source, fastExports, passExports } = emit(module, {
@@ -92,7 +84,6 @@ export function compile(input: CompileInput, options: CompileOptions): CompileRe
     ...(options.typed ? { typed: true } : {}),
     ...(options.fastPath === undefined || options.fastPath === false ? {} : { fastPath: options.fastPath }),
     ...(options.level === undefined ? {} : { level: options.level }),
-    ...(sanityRoots === undefined ? {} : { sanityRoots }),
   });
   return { source, exports, fastExports, passExports, diagnostics };
 }

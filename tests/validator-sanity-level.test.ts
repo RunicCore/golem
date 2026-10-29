@@ -221,28 +221,3 @@ describe('a sanity module', () => {
     assert.deepEqual(values.map(value => fastByRoot.root(value)), [true, false, false, true]);
   });
 });
-
-describe('a sanity root inside a full module', () => {
-  const LIMITED = { type: 'object', required: ['name'], properties: { name: { type: 'string', minLength: 3 } } };
-  const roots = { Inner: LIMITED, Outer: { type: 'object', properties: { inner: { $ref: 'Inner' }, code: { type: 'string', minLength: 3 } } } };
-
-  test('checks its own subtree at the shape, while the full roots around and beside it keep every limit', async () => {
-    // protects: T-678 a sanity model in a full project validates at shape only, wherever it is reached from
-    const { Inner, Outer } = await compileValidators({ roots, sanityRoots: ['Inner'] });
-    assert.deepEqual(Inner({ name: 'ab' }, true), [], 'the root alone');
-    assert.deepEqual(Inner({ name: 'ab' }, true, false), [], 'whatever flag a caller passes');
-    assert.deepEqual(Inner({ name: 1 }, true), [{ path: ['name'], code: 'type', expected: ['string'] }]);
-    assert.deepEqual(Outer({ inner: { name: 'ab' }, code: 'abc' }, true), [], 'reached from a full root');
-    assert.deepEqual(Outer({ inner: { name: 'ab' }, code: 'ab' }, true).map(issue => issue.path), [['code']], 'the full root keeps its own limit');
-    assert.deepEqual(Outer({ inner: { name: 1 }, code: 'abc' }, true).map(issue => issue.code), ['type']);
-  });
-
-  test('exports its validator with no flag, and a sanity module ignores the roots', async () => {
-    // protects: T-678 a capped root takes no flag; a sanity module needs no cap
-    const full = await compileValidatorModule({ roots, sanityRoots: ['Inner'] });
-    assert.match(full.source, /export function validate_Inner\(value, all\) \{/);
-    assert.match(full.source, /export function validate_Outer\(value, all, s\) \{/);
-    const sanity = await compileValidatorModule({ roots, level: 'sanity', sanityRoots: ['Inner'] });
-    assert.match(sanity.source, /export function validate_Outer\(value, all\) \{/);
-  });
-});

@@ -9,8 +9,7 @@ export function forwardingTarget(functions: readonly IrFunction[]): (id: number)
   const forwardsTo = (fn: IrFunction): number | undefined => {
     if (fn.collects || fn.body.kind !== 'checks' || fn.body.checks.length !== 1) return undefined;
     const [only] = fn.body.checks;
-    // A capped call sets the sanity flag of its callee, so the function that holds it stays.
-    return only.kind === 'call' && !only.capped && functions[only.fn].receives === fn.receives ? only.fn : undefined;
+    return only.kind === 'call' && functions[only.fn].receives === fn.receives ? only.fn : undefined;
   };
   return id => {
     // A forwarding cycle is a `$ref` cycle, which the lowering reports; the guard only stops the walk.
@@ -90,14 +89,13 @@ function addCaller(callers: Map<number, number[]>, callee: number, caller: numbe
   else known.push(caller);
 }
 
-/** The functions whose IR call graph reaches a check for which `direct` holds, and those functions' callers; `followed` tells which checks' calls count as edges. */
-function reaching(functions: readonly IrFunction[], direct: (check: IrCheck) => boolean, followed: (check: IrCheck) => boolean = () => true): ReadonlySet<number> {
+/** The functions whose IR call graph reaches a check for which `direct` holds, and those functions' callers. */
+function reaching(functions: readonly IrFunction[], direct: (check: IrCheck) => boolean): ReadonlySet<number> {
   const callers = new Map<number, number[]>();
   const found = new Set<number>();
   for (const fn of functions) {
     visitChecks(fn.body, check => {
       if (direct(check)) found.add(fn.id);
-      if (!followed(check)) return;
       for (const callee of calledFunctions(check)) addCaller(callers, callee, fn.id);
     });
   }
@@ -160,10 +158,10 @@ const skipsCheck = (check: IrCheck): boolean => withoutLimits(check) !== check;
 /**
  * The functions that reach a check the sanity level skips (see `skipsCheck`): they take the flag `s`. A function that
  * reaches one through `not`, `if`, `oneOf` or `contains` too, so the monotone rule (sanity accepts all that full accepts)
- * can relax those. A capped call is no edge: its callee checks the shape only whatever the caller's flag is.
+ * can relax those.
  */
 export function reachingSkipped(functions: readonly IrFunction[]): ReadonlySet<number> {
-  return reaching(functions, skipsCheck, check => !(check.kind === 'call' && check.capped));
+  return reaching(functions, skipsCheck);
 }
 
 /** The functions, each marked `sanity` when it reaches a check the sanity level skips. */
@@ -271,7 +269,7 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
       }
       case 'call': {
         const fn = predicates.get(check.fn);
-        return fn === undefined ? [] : [{ kind: 'call', fn, ...(check.capped ? { capped: true as const } : {}) }];
+        return fn === undefined ? [] : [{ kind: 'call', fn }];
       }
       case 'allOf': {
         const branches = check.branches.flatMap(branch => predicateSchema(branch) ?? []);

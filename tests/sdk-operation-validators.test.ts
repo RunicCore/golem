@@ -317,7 +317,7 @@ test('a validation-off SDK writes no validators module and no import of one', ()
 
 test('an operation root that has the name of a model root fails the SDK compile, and roots that only sanitize alike are numbered', () => {
   const options = { owner: 'test', unknownFormats: 'warn', documentName: 'the document' } as const;
-  const plan = { schemas: { 'get-x:input': { type: 'string' } }, references: ['get-x:input'], ownSchemas: ['get-x:input'], modelNames: {}, sanityRoots: [] };
+  const plan = { schemas: { 'get-x:input': { type: 'string' } }, references: ['get-x:input'], ownSchemas: ['get-x:input'], modelNames: {} };
   assert.throws(
     () => compileSdkValidators({ plan, operations: [{ roots: { 'get-x:input': { type: 'integer' } }, resources: {} }] }, options),
     /operation root "get-x:input" has the name of another root/,

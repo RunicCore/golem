@@ -28,8 +28,6 @@ export interface CodecValidationPlan {
   readonly ownSchemas: readonly string[];
   /** The model name behind each own schema id, with its `#wire`, `#model-only` and `#wire-only` forms. */
   readonly modelNames: Readonly<Record<string, string>>;
-  /** The own schema ids of the models that check the shape only inside a project that checks everything; none in any other project. */
-  readonly sanityRoots: readonly string[];
 }
 
 /** The level a validators module compiles at: a sanity project checks the shape only, any other writes one module that can check everything. */
@@ -247,15 +245,11 @@ export function buildCodecValidationPlan(
   };
   const ownSchemas = new Set<string>();
   const modelNames: Record<string, string> = Object.create(null) as Record<string, string>;
-  const sanityRoots = new Set<string>();
   for (const { graph, node } of nodes) {
     if (node.kind === 'reference' || !compiled.has(node.codecId)) continue;
-    // In a sanity project every root checks the shape only, so the module is compiled at that level and no root needs a cap.
-    const capped = defaultValidation === true && node.validation === 'sanity';
     const own = (id: string): void => {
       ownSchemas.add(id);
       modelNames[id] = node.name;
-      if (capped) sanityRoots.add(id);
     };
     own(node.codecId);
     if (!node.sameSchema) own(`${node.codecId}#wire`);
@@ -402,7 +396,7 @@ export function buildCodecValidationPlan(
       id.endsWith('#wire') || id.endsWith('#wire-only'),
     ) as object | boolean;
   }
-  return { schemas, references: Object.keys(schemas).sort(), ownSchemas: [...ownSchemas].sort(), modelNames, sanityRoots: [...sanityRoots].sort() };
+  return { schemas, references: Object.keys(schemas).sort(), ownSchemas: [...ownSchemas].sort(), modelNames };
 }
 
 function withoutOwnId(schema: unknown, id: string): unknown {
@@ -446,7 +440,6 @@ function compileValidatorRoots(
   resources: ReadonlyMap<string, unknown>,
   options: PlanValidatorsOptions,
   fastRoots: ReadonlySet<string>,
-  sanityRoots: ReadonlySet<string>,
 ): PlanValidators {
   const { source, exports, fastExports, passExports, diagnostics } = compile(
     {
@@ -460,7 +453,6 @@ function compileValidatorRoots(
       typed: true,
       fastPath: fastRoots,
       ...(options.level === undefined ? {} : { level: options.level }),
-      ...(sanityRoots.size === 0 ? {} : { sanityRoots }),
       ...(options.locate === undefined ? {} : { locate: options.locate }),
     },
   );
@@ -494,7 +486,7 @@ export function compilePlanValidators(plan: CodecValidationPlan, options: PlanVa
       const name = plan.modelNames[resource];
       return name === undefined ? options.locate?.(resource, pointer) : locateModel(name);
     },
-  }, new Set(plan.ownSchemas), new Set(plan.sanityRoots));
+  }, new Set(plan.ownSchemas));
 }
 
 /** The diagnostics without repeats: one schema that several compilations reach reports once. */
@@ -567,5 +559,5 @@ export function compileSdkValidators(input: SdkValidatorsInput, options: PlanVal
       const name = input.plan?.modelNames[resource];
       return name === undefined ? options.locate?.(resource, pointer) : locateModel(name);
     },
-  }, new Set(input.plan?.ownSchemas ?? []), new Set(input.plan?.sanityRoots ?? []));
+  }, new Set(input.plan?.ownSchemas ?? []));
 }

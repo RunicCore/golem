@@ -219,8 +219,8 @@ export class FunctionWriter {
   }
 
   /** The function `id` applies to the same value in place: it fails this function when it fails, and fills this function's record. */
-  private callInPlace(id: number, value: Code, capped?: true): void {
-    this.failWhen(code`!${this.call(id, { value, issues: ISSUES, all: ALL, ...(this.record === undefined ? {} : { record: this.record }), ...(capped ? { capped } : {}) })}`);
+  private callInPlace(id: number, value: Code): void {
+    this.failWhen(code`!${this.call(id, { value, issues: ISSUES, all: ALL, ...(this.record === undefined ? {} : { record: this.record }) })}`);
   }
 
   public schema(schema: IrSchema, value: Code): void {
@@ -285,7 +285,7 @@ export class FunctionWriter {
       case 'number': return this.numberCheck(check, value, types);
       case 'array': return this.arrayCheck(check, value, types);
       case 'object': return this.objectCheck(check, value, types);
-      case 'call': return this.callInPlace(check.fn, value, check.capped);
+      case 'call': return this.callInPlace(check.fn, value);
       case 'allOf':
         for (const branch of check.branches) this.schema(branch, value);
         return;
