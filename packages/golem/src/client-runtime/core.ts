@@ -109,7 +109,7 @@ export interface RequestOptions {
 
 type ResponseFraming = 'ndjson' | 'json-seq' | 'sse' | 'custom-stream' | 'binary' | 'body';
 
-export interface RuntimeResponseHeaderContract {
+interface RuntimeResponseHeaderContract {
   name: string;
   style: string;
   explode: boolean;
