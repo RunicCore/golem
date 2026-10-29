@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import test from 'node:test';
+import test, { type TestContext } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import {
   Body,
@@ -16,7 +16,7 @@ import {
   type NestInterceptor,
 } from '@nestjs/common';
 import { defaultIfEmpty, firstValueFrom, map, of, type Observable } from 'rxjs';
-import { NestModelInterceptor, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem/nest';
+import { NestModelInterceptor, type NestModelInterceptorOptions, nestModelStringifyInterceptor, nestUnionFromMetatype, objectCodecFromMetatype } from '@exprtlabs/golem/nest';
 import { nestModelCodec, nestModelReturn, nestModelUnion } from '@exprtlabs/golem/internal/nest-runtime';
 import { LibError } from '@exprtlabs/golem/errors';
 import { deserializeDate, unknownDiscriminatorValue, assertModelValue, isValidModelValue } from '@exprtlabs/golem/internal/model-runtime';
@@ -958,4 +958,50 @@ test('a custom interceptor converts a union @Body() and @Query() with nestUnionF
   } finally {
     await application.close();
   }
+});
+
+const LEVEL_MODEL = "import type { IModel } from '@exprtlabs/golem/model';\nimport type { MaxLength } from '@exprtlabs/golem/tags';\nexport type TInput = IModel<{ name: string & MaxLength<3>; qty: number }>;\n";
+
+/** The status of a POST of `body` to an app whose interceptor has `options`, for a model built in a project at `validation`. */
+async function postStatuses(t: TestContext, validation: true | 'sanity', cases: readonly (readonly [NestModelInterceptorOptions, unknown])[]): Promise<number[]> {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-nest-level-', name: 'nest-level', linkWorkspaceNodeModules: true });
+  fs.writeFileSync(path.join(sourceRoot, 'input.model.ts'), LEVEL_MODEL);
+  writeModelGolemYaml(root, { mobx: false, validation });
+  await buildModelProject(root);
+  await import(pathToFileURL(path.join(root, 'build/input.model.generated.js')).href);
+  const id = generatedCodecIdFromRoot(root, 'TInput');
+  const statuses: number[] = [];
+  for (const [options, body] of cases) {
+    class LevelController { create(input: unknown) { return input; } }
+    decorateCreate(LevelController, id);
+    const application = await startNestApp([LevelController], { interceptor: new NestModelInterceptor(options), errors: [] });
+    try {
+      const response = await fetch(`${await application.getUrl()}/`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      statuses.push(response.status);
+    } finally {
+      await application.close();
+    }
+  }
+  return statuses;
+}
+
+test('NestModelInterceptor validates at the level of its option in a full project and answers 400 for a shape error at every level', async (t) => {
+  // protects: F-39 request input the model rejects answers 400; R-76 a call may choose any level up to the project's
+  const overLimit = { name: 'abcd', qty: 1 };
+  const wrongType = { name: 5, qty: 1 };
+  const statuses = await postStatuses(t, true, [
+    [{}, overLimit], [{}, wrongType],
+    [{ validate: 'sanity' }, overLimit], [{ validate: 'sanity' }, wrongType],
+    [{ validate: true }, overLimit], [{ validate: true }, { name: 'abc', qty: 1 }],
+  ]);
+  assert.deepEqual(statuses, [400, 400, 201, 400, 400, 201]);
+});
+
+test('NestModelInterceptor refuses a level above the project and validates at sanity by default in a sanity project', async (t) => {
+  // protects: R-72 a call may lower the level, never raise it above the project's
+  const overLimit = { name: 'abcd', qty: 1 };
+  const statuses = await postStatuses(t, 'sanity', [
+    [{}, overLimit], [{ validate: 'sanity' }, overLimit], [{ validate: 'sanity' }, { name: 5, qty: 1 }], [{ validate: true }, overLimit],
+  ]);
+  assert.deepEqual(statuses, [201, 201, 400, 500], 'a level above the project is a server fault, not a bad request');
 });
