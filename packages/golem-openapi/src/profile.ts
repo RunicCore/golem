@@ -10,8 +10,5 @@ export function requireProfile(profile: GolemProfile | undefined): ResolvedGolem
   if (typeof profile !== 'object' || Array.isArray(profile)) {
     throw new TypeError('profile must be an object');
   }
-  if (typeof profile.mobx !== 'boolean' || typeof profile.validation !== 'boolean') {
-    throw new TypeError('profile.mobx and profile.validation must be booleans');
-  }
   return resolveProfile(profile);
 }

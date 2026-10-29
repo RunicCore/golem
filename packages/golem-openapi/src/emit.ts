@@ -178,7 +178,7 @@ function buildGeneratedFiles(document: unknown, options: WriteSdkOptions, moved:
   const clientName = identifier(options.name || readString(asRecord(asRecord(document).info).title), 'Api');
   const output = path.resolve(options.output);
   const plan = buildEmissionPlan(document, ir, profile, options.dates ?? 'date');
-  const modelAnalysis = analyzeOpenApiModels(document, profile.validation, options.dates ?? 'date');
+  const modelAnalysis = analyzeOpenApiModels(document, profile.validation !== false, options.dates ?? 'date');
   const inlineDiagnostics = checkOperationCompositions([...operations, ...inboundOperations], modelAnalysis, document);
   const schemaData = profile.validation && plan.hasOutboundOperations
     ? buildSchemaData(document, ir)

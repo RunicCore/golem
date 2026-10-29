@@ -777,10 +777,10 @@ export function analyzeSourceGraph(
   );
   executableMemos.set(lookup, job.executableMemo);
   const modelDefinitions = Object.fromEntries(
-    Object.entries(definitions).map(([name, descriptor]) => [name, projectDescriptor(descriptor, profile.validation, false, true, lookup)]),
+    Object.entries(definitions).map(([name, descriptor]) => [name, projectDescriptor(descriptor, profile.validation !== false, false, true, lookup)]),
   );
   const wireDefinitions = Object.fromEntries(
-    Object.entries(definitions).map(([name, descriptor]) => [name, projectDescriptor(descriptor, profile.validation, true, false, lookup)]),
+    Object.entries(definitions).map(([name, descriptor]) => [name, projectDescriptor(descriptor, profile.validation !== false, true, false, lookup)]),
   );
   const wireLookup: Record<string, ModelConversionDescriptor> = Object.assign(
     Object.create(job.lookup ?? null) as Record<string, ModelConversionDescriptor>,
@@ -788,8 +788,8 @@ export function analyzeSourceGraph(
   );
   executableMemos.set(wireLookup, job.executableMemo);
   const schemas = [
-    ...tagSchemas(Object.values(owned), profile.validation, lookup, 'model'),
-    ...tagSchemas(Object.keys(owned).map((name) => wireDefinitions[name]), profile.validation, wireLookup, 'wire'),
+    ...tagSchemas(Object.values(owned), profile.validation !== false, lookup, 'model'),
+    ...tagSchemas(Object.keys(owned).map((name) => wireDefinitions[name]), profile.validation !== false, wireLookup, 'wire'),
   ];
   return {
     source,
@@ -814,7 +814,7 @@ interface SourceSchemaGraphOptions {
   /** Models emitted by another companion of the job. */
   readonly siblings?: readonly ModelSpecification[];
   /** What a model that sets no `validation` does: the validation of the app's profile. */
-  readonly defaultValidation?: boolean;
+  readonly defaultValidation?: GolemProfile['validation'];
   /** Codec ids and aliases of models emitted elsewhere that publish residual schemas. */
   readonly externalResidualIds?: { readonly modelOnly: ReadonlySet<string>; readonly wireOnly: ReadonlySet<string> };
   /** Codec ids and aliases of models emitted elsewhere that publish a `#wire` schema. */
@@ -849,12 +849,12 @@ export function internSourceDefinitions(
       descriptor: siblings.has(specification) ? { kind: 'reference', name: specification.name } : descriptor,
       emitClass: siblings.has(specification) ? false : specification.emitClass,
       // A model that sets `validation` keeps it; any other follows the profile of the app.
-      ...(specification.validation ?? options.defaultValidation) === undefined ? {} : { validationEnabled: specification.validation ?? options.defaultValidation },
+      ...(specification.validation ?? options.defaultValidation) === undefined ? {} : { validationEnabled: (specification.validation ?? options.defaultValidation) !== false },
     });
   }
   for (const [name, descriptor] of Object.entries(definitions)) {
     if (interned.has(name)) continue;
-    entries.push({ name, descriptor, emitClass: false, ...(options.defaultValidation === undefined ? {} : { validationEnabled: options.defaultValidation }) });
+    entries.push({ name, descriptor, emitClass: false, ...(options.defaultValidation === undefined ? {} : { validationEnabled: options.defaultValidation !== false }) });
   }
   internDescriptors(schemaGraph, entries);
   schemaGraph.seal();
@@ -1527,7 +1527,7 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
 
 /** A class model registers the MobX validator hook when the app validates it and uses MobX. */
 function observesValidator(context: EmitContext, specification: ModelSpecification): boolean {
-  return context.profile.mobx && (specification.validation ?? context.profile.validation);
+  return context.profile.mobx && (specification.validation ?? context.profile.validation) !== false;
 }
 
 const BLANK = code``;
@@ -1742,7 +1742,7 @@ function emitCodecSection(context: EmitContext): CodecSection {
   const codecRuntime = emitCodecRuntimeCode(
     schemaGraph,
     {
-      validationEnabled: profile.validation,
+      validationEnabled: profile.validation !== false,
       ...(validators ? {
         validatorName: (id: string) => {
           const name = validators.exports.get(id);

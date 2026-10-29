@@ -1,4 +1,5 @@
-import { displayPath } from '../generator-core.js';
+import { displayPath, invalidValidationLevelMessage, validationRank } from '../generator-core.js';
+import type { GolemProfile } from '../generator-core.js';
 import { diagnostic, modelDeclarationKind } from './symbols.js';
 import * as ts from '../typescript-ns.js';
 import { isDateType } from './tags.js';
@@ -15,8 +16,8 @@ export interface ModelSpecification {
   readonly allowAny: boolean | undefined;
   /** IModel emits a class; IObject emits codecs only. */
   readonly emitClass: boolean;
-  /** Override of the generation-profile validation flag; undefined inherits. */
-  readonly validation?: boolean;
+  /** Override of the generation-profile validation level, never above it; undefined inherits. */
+  readonly validation?: GolemProfile['validation'];
   /** The generated companion of the model's file, when it is not beside the file: a shared file's, in `models.output`. */
   readonly companionFile?: string;
 }
@@ -93,6 +94,37 @@ function readOptionalBooleanOption(
   return checker.typeToString(type) === 'true';
 }
 
+/** The `validation` option of a model: `true`, `false` or `'sanity'`; undefined when the model does not set it. Any other value stops with RUNM1089. */
+function readValidationOption(
+  checker: ts.TypeChecker,
+  sourceFile: ts.SourceFile,
+  declaration: ts.TypeAliasDeclaration,
+  optionsNode: ts.TypeNode | undefined,
+): GolemProfile['validation'] | undefined {
+  if (!optionsNode) return undefined;
+  const property = checker.getTypeFromTypeNode(optionsNode).getProperty('validation');
+  if (!property) return undefined;
+  const type = checker.getTypeOfSymbolAtLocation(property, optionsNode);
+  if ((type.flags & ts.TypeFlags.Undefined) !== 0) return undefined;
+  if ((type.flags & ts.TypeFlags.BooleanLiteral) !== 0) return checker.typeToString(type) === 'true';
+  if ((type.flags & ts.TypeFlags.StringLiteral) !== 0 && (type as ts.StringLiteralType).value === 'sanity') return 'sanity';
+  throw diagnostic(sourceFile, declaration, '1089', `${invalidValidationLevelMessage(`The validation option of ${declaration.name.text}`)} It is ${checker.typeToString(type)}.`);
+}
+
+const levelText = (level: GolemProfile['validation']): string => level === 'sanity' ? `'sanity'` : String(level);
+
+/**
+ * RUNM1089: a model may lower the validation level of its project, never raise it. The order is `false` < `'sanity'` < `true`, so a
+ * model at `'sanity'` in a project at `false`, and a model at `true` in a project at `'sanity'` or `false`, stop generation.
+ */
+export function assertModelLevelsWithinProject(specifications: readonly ModelSpecification[], project: GolemProfile['validation']): void {
+  for (const { validation, sourceFile, declaration, name } of specifications) {
+    if (validation === undefined || validationRank(validation) <= validationRank(project)) continue;
+    throw diagnostic(sourceFile, declaration, '1089',
+      `${name} sets validation ${levelText(validation)}, which is above the project level ${levelText(project)}. A model may lower the level of its project, never raise it. Set the model to ${levelText(project)} or lower, or raise validation in golem.yaml.`);
+  }
+}
+
 /** `exact` is the `golem.yaml` default for a model whose own `exact` option is absent. */
 export function collectSpecifications(
   program: ts.Program,
@@ -135,7 +167,7 @@ export function collectSpecifications(
         exact: readOptionalBooleanOption(checker, optionsNode, 'exact') ?? exact,
         allowAny: readOptionalBooleanOption(checker, optionsNode, 'allowAny'),
         emitClass: declarationKind === 'IModel',
-        validation: readOptionalBooleanOption(checker, optionsNode, 'validation'),
+        validation: readValidationOption(checker, sourceFile, statement, optionsNode),
         ...(companionOf ? { companionFile: companionOf(filename) } : {}),
       });
     }

@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { canonicalPath, displayPath, isInsideDirectory, isRecord, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-core.js';
+import { canonicalPath, displayPath, invalidValidationLevelMessage, isInsideDirectory, isRecord, isValidationLevel, outsideModelsRootMessage, parseYamlFile, resolveProfile } from './generator-core.js';
 import { defaultModelOutput } from './generated-paths.js';
 import type {
   GolemProfile,
@@ -48,6 +48,12 @@ function keys(value: unknown, allowed: readonly string[], label: string): assert
 function boolean(value: unknown, fallback: boolean, label: string): boolean {
   if (value === undefined) return fallback;
   if (typeof value !== 'boolean') throw new TypeError(`${label} must be a boolean.`);
+  return value;
+}
+
+function validationLevel(value: unknown): GolemProfile['validation'] {
+  if (value === undefined) return true;
+  if (!isValidationLevel(value)) throw new TypeError(invalidValidationLevelMessage('validation'));
   return value;
 }
 
@@ -184,7 +190,7 @@ export function resolveConfig(filename = 'golem.yaml', onInput?: InputObserver):
   if (value.unknownFormats !== undefined && value.unknownFormats !== 'warn' && value.unknownFormats !== 'error') throw new Error('unknownFormats must be "warn" or "error".');
   if (value.nonModelInputs !== undefined && value.nonModelInputs !== 'warn' && value.nonModelInputs !== 'error') throw new Error('nonModelInputs must be "warn" or "error".');
   const profile = resolveProfile({
-    mobx: boolean(value.mobx, false, 'mobx'), validation: boolean(value.validation, true, 'validation'),
+    mobx: boolean(value.mobx, false, 'mobx'), validation: validationLevel(value.validation),
     allowAny: boolean(value.allowAny, false, 'allowAny'),
     ...(value.unknownFormats === undefined ? {} : { unknownFormats: value.unknownFormats }),
   });

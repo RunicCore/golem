@@ -29,7 +29,11 @@ export function stableJson(value: unknown): string {
 
 export interface GolemProfile {
   readonly mobx: boolean;
-  readonly validation: boolean;
+  /**
+   * How much a generated codec checks: `true` (default) the whole schema, `'sanity'` the shape only (types, required and extra keys,
+   * enums, union tags), `false` nothing. The order is `false` < `'sanity'` < `true`.
+   */
+  readonly validation: boolean | 'sanity';
   readonly allowAny?: boolean;
   /** What a schema format that golem does not implement does: `error` (default) fails generation, `warn` skips its check. */
   readonly unknownFormats?: 'warn' | 'error';
@@ -61,6 +65,23 @@ export function canonicalPath(filename: string): string {
   return path.join(fs.realpathSync.native(ancestor), ...missing);
 }
 
+/** The validation levels from the lowest to the highest; a model or call may lower the level of its project, never raise it. */
+const VALIDATION_LEVELS: readonly GolemProfile['validation'][] = [false, 'sanity', true];
+
+export function isValidationLevel(value: unknown): value is GolemProfile['validation'] {
+  return VALIDATION_LEVELS.includes(value as GolemProfile['validation']);
+}
+
+/** The error for a validation level that is none of `true`, `false` and `'sanity'`; `label` names the key that held it. */
+export function invalidValidationLevelMessage(label: string): string {
+  return `${label} must be true, false or "sanity".`;
+}
+
+/** 0 for `false`, 1 for `'sanity'`, 2 for `true`: a level above another has the greater rank. */
+export function validationRank(level: GolemProfile['validation']): number {
+  return VALIDATION_LEVELS.indexOf(level);
+}
+
 /** Programmatic callers receive the same defaults and checks as YAML users. */
 export function resolveProfile(profile: GolemProfile): ResolvedGolemProfile {
   if (!isRecord(profile)) throw new TypeError('Generation profile must be an object.');
@@ -69,9 +90,8 @@ export function resolveProfile(profile: GolemProfile): ResolvedGolemProfile {
       throw new TypeError(`Unknown generation profile option: ${key}.`);
     }
   }
-  if (typeof profile.mobx !== 'boolean' || typeof profile.validation !== 'boolean') {
-    throw new TypeError('Generation profile mobx and validation must be booleans.');
-  }
+  if (typeof profile.mobx !== 'boolean') throw new TypeError('Generation profile mobx must be a boolean.');
+  if (!isValidationLevel(profile.validation)) throw new TypeError(invalidValidationLevelMessage('Generation profile validation'));
   if (profile.allowAny !== undefined && typeof profile.allowAny !== 'boolean') {
     throw new TypeError('Generation profile allowAny must be a boolean.');
   }

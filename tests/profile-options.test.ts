@@ -6,7 +6,7 @@ import { test, type TestContext } from 'node:test';
 import { requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type Issue } from '@exprtlabs/golem/errors';
 import { getValidator } from '@exprtlabs/golem/validation';
-import type { GolemProfile } from '#golem/generator-api';
+import { resolveProfile, type GolemProfile } from '#golem/generator-api';
 import { generate } from '#model/generator';
 import { buildModelProject, createModelProject, writeModelGolemYaml } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
@@ -280,5 +280,81 @@ for (const item of [
         return true;
       },
     );
+  });
+}
+
+type Level = boolean | 'sanity';
+/** The diagnostic message from the model file name on, so the literal does not depend on the temporary folder. */
+function fromModelFile(error: unknown): { readonly code: unknown; readonly text: string } {
+  const { code, message } = error as { code?: unknown; message: string };
+  return { code, text: message.slice(message.indexOf('payload.model.ts')) };
+}
+const show = (level: Level): string => (level === 'sanity' ? "'sanity'" : String(level));
+
+test('resolveProfile takes validation true, false and sanity and refuses every other value', () => {
+  // protects: T-663 an extension author's GolemProfile carries validation: 'sanity'; other values are a TypeError
+  for (const validation of [true, false, 'sanity'] as const) {
+    assert.deepEqual(resolveProfile({ mobx: false, validation }), { mobx: false, validation, allowAny: false, unknownFormats: 'error' });
+  }
+  for (const validation of ['full', 'true', 1, null, undefined]) {
+    assert.throws(
+      () => resolveProfile({ mobx: false, validation } as unknown as GolemProfile),
+      { name: 'TypeError', message: 'Generation profile validation must be true, false or "sanity".' },
+      String(validation),
+    );
+  }
+});
+
+const LEVEL_ROWS: readonly (readonly [project: Level, model: Level, allowed: boolean])[] = [
+  [true, true, true], [true, 'sanity', true], [true, false, true],
+  ['sanity', 'sanity', true], ['sanity', false, true], [false, false, true],
+  ['sanity', true, false], [false, 'sanity', false], [false, true, false],
+];
+
+for (const [project, model, allowed] of LEVEL_ROWS) {
+  test(`a model at validation ${show(model)} in a project at ${show(project)} ${allowed ? 'generates' : 'stops with RUNM1089'}`, (t: TestContext) => {
+    // protects: T-663 a model lowers the validation level of its project and never raises it (false < 'sanity' < true)
+    const { root, source } = modelProject(t);
+    fs.writeFileSync(source, `import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }, { validation: ${show(model)} }>;\n`);
+    const run = (): unknown => generate({ root, sources: [source], profile: profile({ validation: project }) });
+    if (allowed) {
+      assert.ok(run());
+      return;
+    }
+    assert.throws(run, (error: unknown) => {
+      assert.deepEqual(fromModelFile(error), {
+        code: 'RUNM1089',
+        text: `payload.model.ts:2:1 RUNM1089: TCard sets validation ${show(model)}, which is above the project level ${show(project)}. A model may lower the level of its project, never raise it. Set the model to ${show(project)} or lower, or raise validation in golem.yaml.`,
+      });
+      return true;
+    });
+  });
+}
+
+test('a model validation option that is none of true, false and sanity stops with RUNM1089 naming the key and the allowed values', (t: TestContext) => {
+  // protects: T-663 any other per-model validation value is an error, not a silent inherit
+  const { root, source } = modelProject(t);
+  fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }, { validation: 'full' }>;\n");
+  assert.throws(() => generate({ root, sources: [source], profile: profile() }), (error: unknown) => {
+    assert.deepEqual(fromModelFile(error), { code: 'RUNM1089', text: 'payload.model.ts:2:1 RUNM1089: The validation option of TCard must be true, false or "sanity". It is "full".' });
+    return true;
+  });
+});
+
+for (const [manifest, project, matches] of [
+  ['sanity', 'sanity', true], ['sanity', true, false], [true, 'sanity', false], [false, 'sanity', false], ['sanity', false, false],
+] as const) {
+  test(`an SDK manifest at validation ${show(manifest)} ${matches ? 'matches' : 'is refused by'} a project at ${show(project)}`, (t: TestContext) => {
+    // protects: T-663 mixed app and SDK levels are refused for any difference, and the message prints both levels
+    const { root, source } = modelProject(t);
+    fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }>;\n");
+    const manifestFile = path.join(root, 'external-model-manifest.json');
+    fs.writeFileSync(manifestFile, JSON.stringify({ profile: { mobx: false, validation: manifest, allowAny: false, unknownFormats: 'error' }, models: [] }));
+    const run = (): unknown => generate({ root, sources: [source], profile: profile({ validation: project }), manifestInputs: [manifestFile] });
+    if (matches) {
+      assert.ok(run());
+      return;
+    }
+    assert.throws(run, new RegExp(`profile mismatch in .*: validation: manifest ${manifest}, project ${project}\\. The project expects \\{ mobx: false, validation: ${project},`));
   });
 }

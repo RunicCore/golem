@@ -760,6 +760,12 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 **Fix:** Rename the export, or export it under another name as well.
 
+### RUNM1089
+
+**Model validation option is invalid or above the project.** The `validation` option of a model is none of `true`, `false` and `'sanity'`, or it is above the validation level of the project. The order is `false` < `'sanity'` < `true`. A model may lower the level of its project, never raise it. The message names the model and both levels.
+
+**Fix:** Set the option to `true`, `false` or `'sanity'`, at or below the project level, or raise `validation` in `golem.yaml`.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.

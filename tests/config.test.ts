@@ -202,6 +202,22 @@ test('configuration errors reject unknown overrides, duplicate keys and overlapp
   }
 });
 
+test('golem.yaml validation accepts true, false and sanity, defaults to true, and refuses any other value', (t: TestContext) => {
+  // protects: T-663 validation: sanity reaches the profile of every job; other values stop with the key and the allowed values
+  const accepted: [string, boolean | 'sanity'][] = [['', true], ['validation: true\n', true], ['validation: false\n', false], ['validation: sanity\n', 'sanity']];
+  for (const [line, level] of accepted) {
+    const config = loadConfig(fixture(t, `version: 1\n${line}models:\n  root: .\n`).filename);
+    assert.equal(config.profile.validation, level, line || 'validation absent');
+    const job = config.jobs.find((item) => item.kind === 'models');
+    assert.ok(job && job.kind === 'models');
+    assert.equal(job.options.profile.validation, level, `the models job profile for ${line || 'validation absent'}`);
+  }
+  for (const value of ['full', '"true"', '1', 'null', '[sanity]']) {
+    const { filename } = fixture(t, `version: 1\nvalidation: ${value}\nmodels:\n  root: .\n`);
+    assert.throws(() => loadConfig(filename), { name: 'TypeError', message: 'validation must be true, false or "sanity".' }, value);
+  }
+});
+
 test('a golem.yaml that is not YAML fails with its path relative to the working directory, the line, the column and the parse error as its cause', (t: TestContext) => {
   // protects: T-311 a YAML parse error names the file
   const { filename } = fixture(t, 'version: 1\nversion: 1\nmodels: {}\n');

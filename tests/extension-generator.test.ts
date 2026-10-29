@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -8,6 +9,7 @@ import { TSC } from './support/build-project.js';
 
 const CONFIG = [
   'version: 1',
+  'validation: sanity',
   'generators:',
   "  - package: '@fixture/extension'",
   '    output: src/ext',
@@ -29,8 +31,9 @@ function installPublicGolem(compileRoot: string): void {
   fs.symlinkSync(path.join(workspace, 'node_modules/@types'), path.join(compileRoot, 'node_modules/@types'), 'dir');
 }
 
-test('an extension generator that imports only public golem subpaths builds, and the models job generates its output', async (t: TestContext) => {
+test('an extension generator that imports only public golem subpaths builds, and the models job generates its output; the project validation level reaches it', async (t: TestContext) => {
   // protects: T-654 an extension package builds with the public API alone and its output goes through the models job
+  // protects: T-663 the validation level of golem.yaml reaches a third-party job through GolemProfile
   const compileRoot = createFixtureProject(t, 'golem-extension-build-');
   for (const file of ['package.json', 'tsconfig.json', 'generator.ts']) copyFixtureFile(compileRoot, `extension-generator/${file}`, file);
   installPublicGolem(compileRoot);
@@ -48,6 +51,9 @@ test('an extension generator that imports only public golem subpaths builds, and
   fs.writeFileSync(path.join(root, 'golem.yaml'), CONFIG);
 
   await runPipeline(path.join(root, 'golem.yaml'));
+
+  const card = fs.readFileSync(path.join(root, 'src/ext/card.model.ts'), 'utf8');
+  assert.match(card, /^\/\* profile: \{"mobx":false,"validation":"sanity"\} \*\/$/m);
 
   await command(root, process.execPath, [TSC, '-p', 'tsconfig.json', '--noEmit']);
 });

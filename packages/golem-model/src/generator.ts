@@ -33,7 +33,7 @@ import {
 } from './emit.js';
 import type { SchemaGraph } from '@exprtlabs/golem/internal/schema-graph';
 import type { ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
-import { collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';
+import { assertModelLevelsWithinProject, collectSpecifications } from '@exprtlabs/golem/internal/type-analysis';
 import { discoverModelManifests } from '@exprtlabs/golem/manifest';
 import { loadModelManifests, sdkModelFiles } from '@exprtlabs/golem/internal/type-analysis';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
@@ -476,6 +476,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
   const sharedCandidates = sharedModelFiles.filter((source) => !sdkFiles.has(canonicalPath(source)));
   assertNoSyntaxErrors(program, [...ownCandidates, ...sharedCandidates]);
   const { checker, specifications } = collectSpecifications(program, [...ownCandidates, ...sharedCandidates], normalized.exact, (file) => companionFilename(boundary, file));
+  assertModelLevelsWithinProject(specifications, normalized.profile.validation);
   // A discovered file with no IModel or IObject alias is not a model file: it is skipped, and so is its companion.
   // A file that `models.sources` names must have one.
   const withModels = new Set(specifications.map((specification) => canonicalFilename(specification.sourceFile.fileName)));
@@ -529,7 +530,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       job,
     ))
     .filter((graph): graph is NonNullable<typeof graph> => graph !== undefined);
-  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation, manifestIndex.validationSchemaClosure);
+  const graphSchemaPairs = internJobSchemaGraphs(graphs, normalized.profile.validation !== false, manifestIndex.validationSchemaClosure);
   const schemaGraphs = graphSchemaPairs.map(({ schemaGraph }) => schemaGraph);
   // A model can ask for validation when the profile does not.
   const anyValidation = normalized.profile.validation
@@ -544,7 +545,7 @@ export function generate(context: GolemModelContext): GolemModelResult {
       schemaGraphs,
       manifestIndex.validationSchemaClosure,
       Object.fromEntries(schemaEntries.map((compilation) => [compilation.id, compilation.schema])),
-      normalized.profile.validation,
+      normalized.profile.validation !== false,
     )
     : undefined;
   const validatorsOutput = join(normalized.output, 'models.validators.generated.ts');

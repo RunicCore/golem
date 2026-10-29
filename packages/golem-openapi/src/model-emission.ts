@@ -682,7 +682,7 @@ export function generateModels(
   } = {},
 ): string {
   requireProfile(profile);
-  const analysis = helpers.analysis ?? analyzeOpenApiModels(document, profile.validation);
+  const analysis = helpers.analysis ?? analyzeOpenApiModels(document, profile.validation !== false);
   const definitions = analysis.definitions;
   const ordered = helpers.onlyNames
     ? analysis.ordered.filter((definition) => helpers.onlyNames?.has(definition.name))
@@ -900,7 +900,7 @@ export function generateModels(
       code`  fields: [${fieldNames}] as const,`,
       code`  conversion: { decode: ${identifier(`decode${typeName}`)} },`,
       code`  codecId: ${literal(codecIdFor(definition.name))},`,
-      code`  profile: { validation: ${literal(profile.validation)} },`,
+      code`  profile: { validation: ${literal(profile.validation !== false)} },`,
       ...(profile.validation && profile.mobx ? [code`  enhanceValidator: ${rt['mobx-validation'].enhanceValidatorWithMobX},`] : []),
       ...(additionalPropertyType ? [code`  additionalProperties: true,`] : []),
       code`});`,
@@ -929,7 +929,7 @@ export function generateModels(
   const validatorsSource = helpers.validatorsSource;
   const aliasesByNodeId = new Map([...definitions.aliases.values()].flatMap((alias) => alias.nodeId === undefined ? [] : [[alias.nodeId, alias] as const]));
   const codecRuntimeOptions: Omit<CodecRuntimeOptions, 'modelBases'> = {
-    validationEnabled: profile.validation,
+    validationEnabled: profile.validation !== false,
     serde: TEMPORAL_SERDE,
     ...(helpers.validatorExports ? {
       validatorName: (id: string) => {

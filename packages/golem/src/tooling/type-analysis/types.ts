@@ -7,6 +7,7 @@ import { aliasProjectionName, isProjectionName, pascalIdentifier, policySuffix, 
 import { commonDirectory, canonicalFilename, companionFilename, type ModelBoundary } from './project.js';
 import { packageSpecifier } from './package-specifier.js';
 import { compareText, displayPath } from '../generator-core.js';
+import type { GolemProfile } from '../generator-core.js';
 import { assertSupportedModelFieldName, canonicalDescriptorKey, isBrandPropertyName } from '../schema.js';
 import type {
   ModelConversionDescriptor,
@@ -741,7 +742,7 @@ export function descriptorBuilder(
   checker: ts.TypeChecker,
   specifications: readonly ModelSpecification[],
   manifestIndex: ManifestIndex,
-  validationEnabled: boolean,
+  validationEnabled: GolemProfile['validation'],
   allowAny = false,
   identityRoot: string | undefined,
   allowUnresolved = true,
@@ -1023,7 +1024,7 @@ export function descriptorBuilder(
 
   /** Whether the model being described validates: its own `{ validation }` setting, else the job's. A check golem cannot state stops generation only then. */
   const modelValidates = (context: TypeAnalysisContext): boolean =>
-    specifications.find(specification => specification.declaration === context.declaration)?.validation ?? validationEnabled;
+    (specifications.find(specification => specification.declaration === context.declaration)?.validation ?? validationEnabled) !== false;
 
   const describeType = (
     originalType: ts.Type,
