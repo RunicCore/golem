@@ -3,6 +3,7 @@ import { activeConversionPath, conversionError } from './conversion-error.js';
 import {
   findGeneratedModelDefinition,
   findGeneratedModelDefinitionForConstructor,
+  isGeneratedModel,
   type GeneratedModel,
   type GeneratedModelConstructor,
   type GeneratedModelResult,
@@ -37,6 +38,16 @@ export function unknownDiscriminatorValue(
     undefined,
     direction === 'deserialize',
   );
+}
+
+/**
+ * A value a tagged union reads as one of its objects when a class value such as a URL sits beside them: a plain object (also
+ * one with no prototype) or a model instance. Any other object is the class value, which this test leaves out.
+ */
+export function isVariantObject(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null || isGeneratedModel(value);
 }
 
 /** Generated union encoders write the selected variant's tag when the encoded object lacks it. */

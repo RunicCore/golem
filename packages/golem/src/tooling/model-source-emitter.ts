@@ -261,7 +261,7 @@ function emitNestedUnion(
   return emitUnionConversion(descriptor, expression, 'nested', {
     convert,
     items: sequenceItems(direction, resolveModel, resolveSerde, memo),
-    tagged: ({ indices, rest, restIsDate, fallback, fallbackVariant }) => {
+    tagged: ({ indices, rest, restIsInstance, fallback, fallbackVariant }) => {
       const variants = indices.map((index) => descriptor.variants[index]);
       const dispatch = unionDispatch(descriptor, indices);
       if (!dispatch) return undefined;
@@ -277,14 +277,14 @@ function emitNestedUnion(
       // Objects that convert to themselves, with nothing outside the tag to convert, need no dispatch.
       const converts = fallback !== undefined || variants.some((variant) => variant.kind === 'reference' || variant.kind === 'generated-model')
         || branches.some((branch) => !sameCode(branch.convert, value));
-      if (!converts) return rest === undefined ? undefined : sameCode(rest, value) ? value : code`(${objectValueExpression(expression, restIsDate)} ? ${value} : ${rest})`;
+      if (!converts) return rest === undefined ? undefined : sameCode(rest, value) ? value : code`(${objectValueExpression(expression, restIsInstance)} ? ${value} : ${rest})`;
       return emitDispatch({
         expression,
         property: dispatch.property,
         direction: dispatchDirection,
         branches,
         standalone: true,
-        ...(rest === undefined ? {} : { rest, restIsDate }),
+        ...(rest === undefined ? {} : { rest, restIsInstance }),
         ...(fallback === undefined ? {} : { fallback }),
         ...(fallbackClass ? { fallbackClass } : {}),
       });
@@ -596,7 +596,7 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
   conversion: [
     'assertAcyclicEncodeInput', 'assertPropertyAcyclic', 'assertWireAcyclic', 'beginDecode', 'beginEncode', 'convertModelField', 'convertModelItems',
     'convertModelRecord', 'convertModelTupleItems', 'copyModelRecord', 'decodeCheckedInput', 'decodeDetachedInput', 'decodeGeneratedModelTrusted', 'defineModelProperty', 'deserializeDate',
-    'encodeGeneratedModel', 'endDecode', 'endEncode', 'jsonWithDiscriminator', 'omitUndefinedKeys', 'rejectModelObject', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
+    'encodeGeneratedModel', 'endDecode', 'endEncode', 'isVariantObject', 'jsonWithDiscriminator', 'omitUndefinedKeys', 'rejectModelObject', 'requireModelObject', 'serializeDate', 'unknownDiscriminatorValue',
     'withDiscriminatorValue',
   ],
   serde: SERDE_IMPORT_ORDER,
