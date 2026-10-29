@@ -1247,12 +1247,17 @@ test('an inline response narrows an inherited oneOf property to one of its varia
   compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
 });
 
+/** Generates the SDK with validation on, asserts that generation gave no diagnostic, and compiles the result. */
+async function generateCompiledSdk(document: Record<string, unknown>, output: string): Promise<void> {
+  const result = await generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
+  assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
+  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+}
+
 // protects: T-456 a component that narrows an inherited union property to one of its variants generates and decodes to that variant
 test('a component narrows an inherited union property to one of its variants', async t => {
   const output = path.join(createFixtureProject(t, 'golem-composition-narrowed-'), 'sdk');
-  const result = await generateMaterializedSdk(petDocument(ref('Cat')), { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
-  assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
-  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+  await generateCompiledSdk(petDocument(ref('Cat')), output);
   const models = requireRecord(await import(pathToFileURL(path.join(output, 'dist/index.js')).href), 'generated narrowed models');
   const Derived = models.DerivedModel as ModelConstructor;
   const Cat = models.CatModel as ModelConstructor;
@@ -1273,9 +1278,7 @@ test('a request body of allOf with a oneOf of one reference and a readOnly prope
     responses: { 200: { description: 'ok' } },
   } };
   const output = path.join(createFixtureProject(t, 'golem-composition-request-'), 'sdk');
-  const result = await generateMaterializedSdk(document, { output, name: 'Composition', profile: { mobx: false, validation: true, allowAny: false } });
-  assert.deepEqual((result.diagnostics ?? []).map(diagnostic => diagnostic.code), []);
-  compileGeneratedSdk(output, [], { strict: true, skipLibCheck: true });
+  await generateCompiledSdk(document, output);
 });
 
 const bothKeywords = {
