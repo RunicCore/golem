@@ -170,6 +170,14 @@ test('a name that the code uses as a value and as a type is imported once, as th
   assert.deepEqual(groups.map((group) => [group.names, group.types]), [[[{ name: 'parseJson' }], []], [[], [{ name: 'SerdeOptions', typeOnly: true }]]]);
 });
 
+test('a name that two runtime modules of one specifier both use is imported once', () => {
+  // protects: T-653 the serde and conversion keys share one entry, and a name both use is not imported twice
+  const groups = importGroups(code`${runtimeCode('serde', 'IssueSource')} ${runtimeCode('conversion', 'IssueSource')} ${rt.serde.parseJson}`);
+  assert.deepEqual(groups.map((group) => [group.specifier, group.modules, group.names]), [
+    ['@exprtlabs/golem/internal/model-runtime', ['conversion', 'serde'], [{ name: 'IssueSource' }, { name: 'parseJson' }]],
+  ]);
+});
+
 test('a helper that the code names and the file neither places nor writes into its code is an error', () => {
   // protects: a helper that the code calls but the file never places is an error, not a call of a missing function
   const lost = helper('lostHelper', () => code`function lostHelper() {}`);

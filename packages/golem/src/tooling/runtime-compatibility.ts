@@ -7,5 +7,5 @@ export function assertRuntimeCompatible(
   generator: { readonly name: string; readonly version: string },
 ): void {
   if (runtime.version === generator.version) return;
-  throw new Error(`${runtime.name} ${runtime.version} and ${generator.name} ${generator.version} must have the same version. Install ${runtime.name} and ${generator.name} at the same version.`);
+  throw new Error(`${runtime.name} ${runtime.version} and ${generator.name} ${generator.version} must have the same version. Run: npm install -D ${generator.name}@${runtime.version}`);
 }

@@ -801,7 +801,7 @@ function importSet(root: Code, options: Pick<ImportOptions, 'order' | 'modules'>
 
 /** How a file writes the imports of its runtime parts. */
 export interface ImportOptions {
-  /** The specifier of a runtime module, for its values and its types; a module not listed is imported from `RUNTIME_SPECIFIER` and `RUNTIME_TYPE_SPECIFIER`. */
+  /** The specifier of a runtime module, for its values and its types; a module not listed is imported from `RUNTIME_SPECIFIER` for values and `runtimeTypeSpecifier` for types. */
   readonly specifiers?: Partial<Readonly<Record<RuntimeModule, string>>>;
   /** The quote of a specifier; a single quote by default. */
   readonly quote?: "'" | '"';
@@ -841,10 +841,14 @@ export function importGroups(root: Code, options: Pick<ImportOptions, 'order' | 
     if (!group.modules.includes(module)) group.modules.push(module);
     return group;
   };
+  // Two modules (rt keys) can share a specifier, and a name that both use is imported once.
+  const addOnce = (into: ImportedName[], added: readonly ImportedName[]): void => {
+    for (const next of added) if (!into.some((have) => have.name === next.name && have.alias === next.alias)) into.push(next);
+  };
   for (const { module, names, types } of importSet(root, options)) {
     const override = options.specifiers?.[module];
-    if (names.length > 0) into(override ?? RUNTIME_SPECIFIER[module], module).names.push(...names);
-    if (types.length > 0) into(override ?? runtimeTypeSpecifier(module), module).types.push(...types);
+    if (names.length > 0) addOnce(into(override ?? RUNTIME_SPECIFIER[module], module).names, names);
+    if (types.length > 0) addOnce(into(override ?? runtimeTypeSpecifier(module), module).types, types);
   }
   return [...groups].map(([specifier, group]) => ({ specifier, ...group }));
 }

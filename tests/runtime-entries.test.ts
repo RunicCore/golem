@@ -2,7 +2,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test from 'node:test';
+import { generate } from '#model/generator';
 import { createFixtureProject } from './fixture-project.js';
+import { createModelProject, writeModelSources } from './model-project.js';
 import { captureRequest, compileGeneratedSdk, documentBase, generateMaterializedSdk, loadGeneratedClient, type OpenApiGenerationProfile } from './openapi/helpers.js';
 
 const item = { $ref: '#/components/schemas/Item' };
@@ -57,7 +59,7 @@ const profiles: readonly [string, OpenApiGenerationProfile, readonly string[], r
   ['plain', { mobx: false, validation: false }, ['@exprtlabs/golem/internal/client-runtime', '@exprtlabs/golem/internal/model-runtime'],
     ['@exprtlabs/golem/client', '@exprtlabs/golem/model', '@exprtlabs/golem/serde']],
   ['mobx and validation', { mobx: true, validation: true }, [
-    '@exprtlabs/golem/internal/client-runtime', '@exprtlabs/golem/internal/mobx-runtime', '@exprtlabs/golem/internal/model-runtime', '@exprtlabs/golem/internal/validation-runtime',
+    '@exprtlabs/golem/internal/client-runtime', '@exprtlabs/golem/internal/client-validation-runtime', '@exprtlabs/golem/internal/mobx-runtime', '@exprtlabs/golem/internal/model-runtime', '@exprtlabs/golem/internal/validation-runtime',
   ], ['@exprtlabs/golem/client', '@exprtlabs/golem/mobx', '@exprtlabs/golem/model', '@exprtlabs/golem/serde', '@exprtlabs/golem/validation', '@exprtlabs/golem/validation-runtime']],
 ];
 
@@ -86,3 +88,18 @@ for (const [label, profile, valueModules, typeModules] of profiles) {
     assert.equal(sent[1]!.init.headers.get('authorization'), 'Bearer token');
   });
 }
+
+test('a golem-model companion with validation off imports its runtime from the model entry alone, and loads no client entry', t => {
+  // protects: T-653 a model-only app does not load the OpenAPI client runtime or its validation
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-model-entries-', name: null, linkWorkspaceNodeModules: true });
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import { TItemBaseModel } from './item.model.generated.js';
+export type TItem = IModel<{ id: string; name: string }>;
+export class Item extends TItemBaseModel {}
+`,
+  });
+  const imported = new Set(generate({ root, profile: { mobx: false, validation: false } }).artifacts
+    .flatMap(({ content }) => [...content.matchAll(/^import [^;]*? from '(@exprtlabs\/golem\/[^']+)'/gm)].map(match => match[1]!)));
+  assert.deepEqual([...imported].sort(), ['@exprtlabs/golem/internal/model-runtime', '@exprtlabs/golem/model', '@exprtlabs/golem/serde']);
+});

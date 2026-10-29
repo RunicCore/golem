@@ -6,7 +6,7 @@ export { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructo
 export {
   assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, convertModelField, convertModelItems,
   convertModelRecord, convertModelTupleItems, copyModelRecord, decodeCheckedInput, decodeDetachedInput, decodeGeneratedModelTrusted,
-  defineModelProperty, deserializeDate, encodeGeneratedModel, endDecode, endEncode, isVariantObject, jsonWithDiscriminator, rejectModelObject,
+  defineModelProperty, deserializeDate, endDecode, endEncode, isVariantObject, jsonWithDiscriminator, rejectModelObject,
   requireModelObject, serializeDate, unknownDiscriminatorValue, withDiscriminatorValue,
 } from './conversion.js';
 export {

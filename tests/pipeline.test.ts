@@ -72,6 +72,7 @@ test('global profile changes remove obsolete validation and keep manifest identi
 });
 
 test('a built-in generator package of another version than the installed runtime is rejected before any file is written', async (t: TestContext) => {
+  // protects: T-653 a built-in generator of another version than the runtime stops golem build before it writes
   const { root, config } = fixture(t);
   const provider = path.join(root, 'node_modules/@exprtlabs/golem-openapi');
   fs.rmSync(provider, { recursive: true });

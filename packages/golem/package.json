@@ -95,6 +95,11 @@
       "import": "./dist/runtime-client.js",
       "default": "./dist/runtime-client.js"
     },
+    "./internal/client-validation-runtime": {
+      "types": "./dist/runtime-client-validation.d.ts",
+      "import": "./dist/runtime-client-validation.js",
+      "default": "./dist/runtime-client-validation.js"
+    },
     "./internal/mobx-runtime": {
       "types": "./dist/runtime-mobx.d.ts",
       "import": "./dist/runtime-mobx.js",

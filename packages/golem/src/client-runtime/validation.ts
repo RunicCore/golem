@@ -4,7 +4,7 @@ import { runValidation } from '../validation-runner.js';
 import type { Validator } from '../validation-runtime.js';
 import type { ClientRuntime, OperationValidationSources, ResponseCheck } from './core.js';
 
-// Exported from `@exprtlabs/golem/validation`, which only SDKs generated with validation import; `@exprtlabs/golem/client` never reaches this module.
+// Exported from `@exprtlabs/golem/validation` and `@exprtlabs/golem/internal/client-validation-runtime`, which only SDKs generated with validation import; `@exprtlabs/golem/client` and `@exprtlabs/golem/internal/client-runtime` never reach this module.
 
 async function assertValid(validator: Validator | undefined, value: unknown): Promise<void> {
   if (!validator) return;

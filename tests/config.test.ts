@@ -314,23 +314,3 @@ test('a models.sources entry that links to a file outside the root stops with RU
   assert.throws(() => loadConfig(filename), (error: unknown) => error instanceof Error
     && error.message === `RUNM1075: models.sources entry ${path.relative(process.cwd(), path.join(root, 'shared/money.model.ts'))} is outside the models root ${path.relative(process.cwd(), path.join(root, 'app'))}. A models job generates only files inside its root.`);
 });
-
-test('a built-in generator of another version than the runtime stops providersFor, and a third-party generator of any version loads', async (t: TestContext) => {
-  // protects: T-653 built-in generators need the runtime's exact version; third-party generators version on their own
-  const { root, filename } = fixture(t, 'version: 1\nmodels: {}\ngenerators:\n  - package: \'@fixture/gen\'\n    output: gen\n');
-  const install = (name: string, version: string): void => {
-    const directory = path.join(root, 'node_modules', name);
-    fs.mkdirSync(directory, { recursive: true });
-    fs.writeFileSync(path.join(directory, 'package.json'), JSON.stringify({ name, version, type: 'module', exports: { './generator': './index.js' } }));
-    fs.writeFileSync(path.join(directory, 'index.js'), 'export const apiVersion = 1;\nexport function generate() {}\n');
-  };
-  const { version } = JSON.parse(fs.readFileSync(new URL('../../packages/golem/package.json', import.meta.url), 'utf8')) as { version: string };
-  install('@fixture/gen', '0.0.1');
-  install('@exprtlabs/golem-model', `${version}.other`);
-  await assert.rejects(
-    providersFor(loadConfig(filename)),
-    new RegExp(`@exprtlabs/golem ${version.replaceAll('.', '\\.')} and @exprtlabs/golem-model ${version.replaceAll('.', '\\.')}\\.other must have the same version`),
-  );
-  install('@exprtlabs/golem-model', version);
-  assert.deepEqual([...(await providersFor(loadConfig(filename))).keys()].sort(), ['@exprtlabs/golem-model', '@fixture/gen']);
-});

@@ -4,11 +4,11 @@
  * The extension API stays on `@exprtlabs/golem/generator-api`.
  */
 export {
-  DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, canonicalPath, displayPath, errorMessage, failureText, hasErrorCode, isRecord,
-  outsideModelsRootMessage, stripSourceSuffix, suffixPattern,
+  DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, canonicalPath, displayPath, isRecord, outsideModelsRootMessage, stripSourceSuffix,
+  suffixPattern,
 } from './generator-api.js';
 export {
-  NameScope, RESERVED_BINDING_NAMES, RESERVED_MODEL_MEMBERS, assertPortableFilenames, assertUniquePublicExports, bindingName, camelIdentifier,
-  identifier, propertyName,
+  NameScope, RESERVED_BINDING_NAMES, RESERVED_MODEL_MEMBERS, assertPortableFilenames, bindingName, camelIdentifier, identifier,
 } from './names.js';
 export { sourceDigest } from './model-manifest.js';
+export { schemaIssueMessage } from '../issue-messages.js';

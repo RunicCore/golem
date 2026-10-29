@@ -11,6 +11,7 @@ import type * as serde from '../serde.js';
 import type * as validation from '../validation.js';
 import type * as validationRuntime from '../validation-runtime.js';
 import type * as clientEntry from '../runtime-client.js';
+import type * as clientValidationEntry from '../runtime-client-validation.js';
 import type * as mobxEntry from '../runtime-mobx.js';
 import type * as modelEntry from '../runtime-model.js';
 import type * as validationEntry from '../runtime-validation.js';
@@ -25,7 +26,7 @@ interface RuntimeExports {
   readonly model: typeof modelEntry;
   readonly serde: typeof modelEntry;
   readonly temporal: typeof modelEntry;
-  readonly validation: typeof clientEntry;
+  readonly validation: typeof clientValidationEntry;
   readonly 'validation-runtime': typeof validationEntry;
 }
 
@@ -66,7 +67,7 @@ export const RUNTIME_SPECIFIER = {
   model: '@exprtlabs/golem/internal/model-runtime',
   serde: '@exprtlabs/golem/internal/model-runtime',
   temporal: '@exprtlabs/golem/internal/model-runtime',
-  validation: '@exprtlabs/golem/internal/client-runtime',
+  validation: '@exprtlabs/golem/internal/client-validation-runtime',
   'validation-runtime': '@exprtlabs/golem/internal/validation-runtime',
 } as const satisfies Record<keyof RuntimeExports, string>;
 
