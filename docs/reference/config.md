@@ -90,12 +90,12 @@ Sanity finds a value that has the wrong shape. It never rejects a value that the
 
 | Sanity checks | Sanity skips |
 | --- | --- |
-| JSON types | Value limits: string length, `pattern`, formats that no converter reads, number ranges, `multipleOf`, array and property counts, `uniqueItems` |
+| JSON types | Value limits: string length, `pattern`, formats other than `date-time`, number ranges, `multipleOf`, array and property counts, `uniqueItems` |
 | Required keys | [`TValidation`](/guide/tags#add-a-custom-field-rule) functions |
 | Extra keys, when the model is `exact` | The instance rules of your application ([`extend()`](/guide/validation#instance-rules)) |
 | Union tags, enums and `const` values | |
 | Tuple length | |
-| The formats that a converter reads: `date-time`, and under `dates: temporal` also `date` and `duration` | |
+| `date-time` format | |
 
 ### Level of one model
 

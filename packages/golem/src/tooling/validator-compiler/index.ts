@@ -2,8 +2,6 @@ import { GolemDiagnosticSeverity, type GolemDiagnostic } from '../generator-core
 import { emit, exportNames, type PassExports } from './emit.js';
 import { lower } from './lower.js';
 
-export { TEMPORAL_FORMAT_CLASSES } from './converted-formats.js';
-
 export interface CompileInput {
   /** Schemas to validate against, keyed by root name; the name is any string, including `#`. */
   readonly roots: ReadonlyMap<string, unknown>;
@@ -42,7 +40,7 @@ export interface CompileOptions {
   readonly fastPath?: boolean | ReadonlySet<string>;
   /**
    * `full` (the default) writes one module whose validators check everything, and skip the value limits (lengths, patterns,
-   * ranges, formats that no converter reads, `multipleOf`, counts, `uniqueItems`) and the validation functions when the
+   * ranges, formats other than `date-time`, `multipleOf`, counts, `uniqueItems`) and the validation functions when the
    * caller passes `true` as the third argument. `sanity` writes a module that checks the shape only (types, required and
    * extra keys, union tags, enums, a tuple's arity) and holds no code for a skipped check; it takes no flag. A diagnostic
    * (an unknown format, an invalid pattern) is reported at both levels. A validation context (`ModelValidationContext`)

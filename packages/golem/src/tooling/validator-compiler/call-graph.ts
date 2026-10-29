@@ -1,4 +1,3 @@
-import { CONVERTED_FORMATS } from './converted-formats.js';
 import type { IrArray, IrCheck, IrFunction, IrModule, IrObject, IrSchema } from './ir.js';
 
 /**
@@ -111,12 +110,16 @@ export function reachingValidation(functions: readonly IrFunction[]): ReadonlySe
 /** An array with a prefix or a closed end is a tuple: only its arity is shape. Any other count of items is a limit. */
 export const isTuple = (check: IrArray): boolean => check.prefixItems.length > 0 || check.closed;
 
-/** True when the sanity level keeps the format: every format a golem converter decodes (see `CONVERTED_FORMATS`). */
-export const keepsFormat = (format: string): boolean => CONVERTED_FORMATS.has(format);
+/**
+ * True when the sanity level keeps the format. Only `date-time` stays: the schema has no mark for a field that converts to
+ * a `Date`, and its converter reads the text with the same rule, so a bad text answers a validation issue that names the
+ * field. The converters of `Date` and Temporal check their own wire form at every level (F-39).
+ */
+export const keepsFormat = (format: string): boolean => format === 'date-time';
 
 /**
  * The one list of what the sanity level skips: the check without its value limits (a string length or pattern, a number
- * range or `multipleOf`, a format that no converter decodes, a count of items outside a tuple, `uniqueItems`, a count of
+ * range or `multipleOf`, a format other than `date-time`, a count of items outside a tuple, `uniqueItems`, a count of
  * `contains` matches above one, a count of properties) and without its validation functions. It is the same check when
  * it holds none, and undefined when nothing is left. Sanity keeps the shape: the type, the keys, the union tags, the
  * enums and constants, a tuple's arity.

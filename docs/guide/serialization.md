@@ -160,7 +160,7 @@ With validation on, the default, each call checks the value. The JSON value and 
 
 <<< ../../examples/models/src/load-task.ts#validation-during-conversion
 
-- `parse`, `stringify`, `fromWireFormat` and `toWireFormat` take `validate: true | 'sanity' | false`. `{ validate: 'sanity' }` checks the [shape only](/reference/config#validation-profiles): JSON types, required and extra keys, union tags, enums, tuple length and the formats that a converter reads (`date-time`; under `dates: temporal` also `date` and `duration`).
+- `parse`, `stringify`, `fromWireFormat` and `toWireFormat` take `validate: true | 'sanity' | false`. `{ validate: 'sanity' }` checks the [shape only](/reference/config#validation-profiles): JSON types, required and extra keys, union tags, enums, tuple length and `date-time` values.
 - Without the option, the call uses the default level of its model ([rules for a level](/guide/validation#choose-a-level-for-one-call)).
 - A level above the project level throws a `LibError` of kind `ValidationUnavailable`. For these four calls, any other value throws a `TypeError`.
 - A nested model is checked at the level of the call.
