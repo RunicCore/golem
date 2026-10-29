@@ -112,3 +112,25 @@ test('a nullable model field limited by an enum that lists an object rejects nul
   assert.equal(await getValidator(new ShelfModel({ pick: 'x', name: 'a' })).validate(), true);
   for (const pick of [null, 'y', { a: 1 }]) assert.equal(await getValidator(new ShelfModel({ pick, name: 'a' })).validate(), false, JSON.stringify(pick));
 });
+
+test('a scalar enum keeps the keywords beside it and drops a listed value that its type excludes', async t => {
+  // protects: T-644 a scalar enum is still limited by minimum, maxLength, pattern and type (an enum of scalars became a bare literal union)
+  const output = path.join(createFixtureProject(t, 'golem-openapi-enum-scalar-keywords-'), 'sdk');
+  await generateMaterializedSdk(shelfDocument({
+    count: { type: 'integer', minimum: 2, enum: [1, 2, 3] },
+    word: { type: 'string', enum: ['a', 1] },
+    short: { type: 'string', maxLength: 1, enum: ['a', 'bb'] },
+    code: { type: 'string', pattern: '^a', enum: ['ab', 'b'] },
+    whole: { type: 'integer', enum: [1, 1.5] },
+    free: { minimum: 2, enum: [1, 2, 'x'] },
+  }), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
+  compileGeneratedSdk(output, [], { strict: true });
+  const models = await importGeneratedModule(output, 'scalar enum keyword models');
+  const ShelfModel = models.ShelfModel as new (values?: Record<string, unknown>) => Record<string, unknown>;
+  const body = { count: 2, word: 'a', short: 'a', code: 'ab', whole: 1, free: 2 };
+  assert.equal(await getValidator(new ShelfModel(body)).validate(), true);
+  assert.equal(await getValidator(new ShelfModel({ ...body, free: 'x' })).validate(), true);
+  for (const [field, value] of [['count', 1], ['word', 1], ['short', 'bb'], ['code', 'b'], ['whole', 1.5], ['free', 1]] as const) {
+    assert.equal(await getValidator(new ShelfModel({ ...body, [field]: value })).validate(), false, `${field} = ${String(value)}`);
+  }
+});

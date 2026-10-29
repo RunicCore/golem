@@ -478,18 +478,18 @@ function acceptsNoValue(schema: unknown): boolean {
 
 /**
  * `enum` limits a value to its listed values, with or without `type` (JSON Schema 2020-12 section 6.1.2). An empty list admits no value.
- * A list of scalars is a literal union. A list with an object or an array has no literal form: the keyword constraints carry it as an `enum` constraint.
+ * A list of scalars is a literal union without the values that the declared `type` excludes. A list with an object or an array has no literal form: the keyword constraints carry it as an `enum` constraint.
  */
-function openApiEnumDescriptor(schema: { readonly enum?: unknown }): ModelTypeDescriptor | undefined {
+function openApiEnumDescriptor(schema: { readonly enum?: unknown; readonly type?: unknown }): ModelTypeDescriptor | undefined {
   const values = schema.enum;
   if (!Array.isArray(values)) return undefined;
-  if (values.length === 0) return { kind: 'never' };
-  const variants: ModelTypeDescriptor[] = [];
-  for (const value of values) {
-    if (value === null) variants.push({ kind: 'null' });
-    else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') variants.push({ kind: 'literal', value });
-    else return undefined;
-  }
+  if (values.some((value) => value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean')) return undefined;
+  const types = effectiveSchemaTypes(schema);
+  const admitted = (value: unknown): boolean => types.length === 0
+    || types.includes(value === null ? 'null' : typeof value === 'number' && Number.isInteger(value) ? 'integer' : typeof value)
+    || (typeof value === 'number' && types.includes('number'));
+  const variants = values.filter(admitted).map((value): ModelTypeDescriptor => value === null ? { kind: 'null' } : { kind: 'literal', value });
+  if (variants.length === 0) return { kind: 'never' };
   return variants.length === 1 ? variants[0]! : { kind: 'union', variants };
 }
 
@@ -722,7 +722,7 @@ export function modelConversionDescriptor(
   }
   if (isJsonObject(schema)) {
     const listed = openApiEnumDescriptor(schema);
-    if (listed) return listed;
+    if (listed) return withOpenApiConstraints(listed, schema);
   }
   if (isJsonObject(schema)) {
     const primitive = openApiPrimitiveDescriptor(schema);
