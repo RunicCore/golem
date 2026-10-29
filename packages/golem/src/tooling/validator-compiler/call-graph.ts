@@ -1,4 +1,4 @@
-import type { IrCheck, IrFunction, IrModule, IrSchema } from './ir.js';
+import type { IrArray, IrCheck, IrFunction, IrModule, IrObject, IrSchema } from './ir.js';
 
 /**
  * The function that stands for `id`: a function whose body only passes the value to another one (a `$ref`, or a
@@ -107,26 +107,53 @@ export function reachingValidation(functions: readonly IrFunction[]): ReadonlySe
   return reaching(functions, check => check.kind === 'validation');
 }
 
-/** An array that states its length or a limit on it is not a tuple: only a tuple's arity is shape. */
-const isTuple = (check: Extract<IrCheck, { kind: 'array' }>): boolean => check.prefixItems.length > 0 || check.closed;
+/** An array with a prefix or a closed end is a tuple: only its arity is shape. Any other count of items is a limit. */
+export const isTuple = (check: IrArray): boolean => check.prefixItems.length > 0 || check.closed;
 
 /**
- * True when the sanity level skips something of this check: a value limit (a string length, a pattern, a number range or
- * `multipleOf`, a format other than `date-time`, a count of items outside a tuple, `uniqueItems`, a count of `contains`
- * matches, a count of properties), or a validation function. Sanity keeps the shape: the type, the keys, the union
- * tags, the enums and constants, a tuple's arity. A `date-time` format stays: the schema has no mark for a field that
- * converts to a `Date`, and `new Date('5')` would accept a text that is no time (F-39).
+ * True when the sanity level keeps the format. Only `date-time` stays: the schema has no mark for a field that converts
+ * to a `Date`, and `new Date('5')` would accept a text that is no time (F-39).
  */
-function skipsCheck(check: IrCheck): boolean {
+export const keepsFormat = (format: string): boolean => format === 'date-time';
+
+/**
+ * The one list of what the sanity level skips: the check without its value limits (a string length or pattern, a number
+ * range or `multipleOf`, a format other than `date-time`, a count of items outside a tuple, `uniqueItems`, a count of
+ * `contains` matches above one, a count of properties) and without its validation functions. It is the same check when
+ * it holds none, and undefined when nothing is left. Sanity keeps the shape: the type, the keys, the union tags, the
+ * enums and constants, a tuple's arity.
+ */
+function withoutLimits(check: IrCheck): IrCheck | undefined {
   switch (check.kind) {
-    case 'string': case 'number': return true;
-    case 'format': return check.format !== 'date-time';
-    case 'validation': return check.calls.length > 0;
-    case 'array': return check.uniqueItems || (!isTuple(check) && (check.minItems !== undefined || check.maxItems !== undefined)) || (check.contains !== undefined && (check.contains.min > 1 || check.contains.max !== undefined));
-    case 'object': return check.minProperties !== undefined || check.maxProperties !== undefined;
-    default: return false;
+    case 'string': case 'number': return undefined;
+    case 'format': return keepsFormat(check.format) ? check : undefined;
+    case 'validation': return check.calls.length === 0 ? check : check.fn === undefined ? undefined : { kind: 'call', fn: check.fn };
+    case 'array': {
+      const { minItems, maxItems, contains, ...rest } = check;
+      const arity = isTuple(check);
+      const counts = contains !== undefined && (contains.min > 1 || contains.max !== undefined);
+      if (!check.uniqueItems && !counts && (arity || (minItems === undefined && maxItems === undefined))) return check;
+      return {
+        ...rest,
+        uniqueItems: false,
+        ...(arity && minItems !== undefined ? { minItems } : {}),
+        ...(arity && maxItems !== undefined ? { maxItems } : {}),
+        ...(contains === undefined ? {} : { contains: { fn: contains.fn, min: Math.min(contains.min, 1) } }),
+      };
+    }
+    case 'object': {
+      const { minProperties, maxProperties, ...rest } = check;
+      return minProperties === undefined && maxProperties === undefined ? check : rest;
+    }
+    case 'type': case 'literal': case 'date': case 'instance': case 'call': case 'allOf': case 'union': case 'not':
+    case 'conditional': case 'dependentSchemas': case 'unevaluatedProperties': case 'unevaluatedItems':
+      return check;
+    default: return unprojected(check);
   }
 }
+
+/** True when the sanity level skips something of this check (see `withoutLimits`). */
+const skipsCheck = (check: IrCheck): boolean => withoutLimits(check) !== check;
 
 /**
  * The functions that reach a check the sanity level skips (see `skipsCheck`): they take the flag `s`. A function that
@@ -283,59 +310,72 @@ export function projectPasses(functions: readonly IrFunction[], roots: Iterable<
 }
 
 /**
- * The module as the sanity level checks it: the shape only, with no `s` flag. A skipped check is left out
- * (`skipsCheck`). A check that would reject more once its callee is relaxed is relaxed too, so sanity accepts all that
- * full accepts: `not` is left out, an untagged `oneOf` becomes an `anyOf`, `if` stops deciding when its own schema reaches one (`IrConditional.relaxed`),
- * and `contains` needs one match at most. Each such check is judged on the full module's reach, before anything is left out.
+ * The module as the sanity level checks it: the shape only, with no `s` flag. What `withoutLimits` names is left out. A
+ * check that would reject more once its callee is relaxed is relaxed too, so sanity accepts all that full accepts:
+ * `not` is left out, an untagged `oneOf` becomes an `anyOf`, `if` stops deciding when its own schema reaches a skipped
+ * check (`IrConditional.relaxed`), and `contains` needs one match at most, or none. Each such check is judged on the
+ * full module's reach, before anything is left out. A check that has nothing left to fail is left out too, unless
+ * `unevaluatedProperties` or `unevaluatedItems` reads what it marks.
  */
 export function sanitize(module: IrModule): IrModule {
   const reached = reachingSkipped(module.functions);
   const relaxes = (ids: readonly (number | undefined)[]): boolean => ids.some(id => id !== undefined && reached.has(id));
-  const nested = (schema: IrSchema): IrSchema => {
+  // The functions whose schema is left with nothing to check: `propertyNames` need not call them.
+  let voided: ReadonlySet<number> = new Set();
+  /** `record`: the value's function keeps or receives an evaluation record, so its checks mark what they evaluate. */
+  const schemaOf = (schema: IrSchema, record: boolean): IrSchema => {
     if (schema.kind !== 'checks') return schema;
-    const checks = schema.checks.flatMap(sanityCheck);
+    const checks = schema.checks.flatMap(check => sanityCheck(check, record, schema.checks));
     return checks.length === 0 ? ALWAYS : { kind: 'checks', checks };
   };
-  const sanityCheck = (check: IrCheck): IrCheck[] => {
+  const sanityCheck = (original: IrCheck, record: boolean, siblings: readonly IrCheck[]): IrCheck[] => {
+    const check = withoutLimits(original);
+    if (check === undefined) return [];
     switch (check.kind) {
-      case 'string': case 'number': return [];
-      case 'format': return check.format === 'date-time' ? [check] : [];
-      case 'validation': return check.fn === undefined ? [] : [{ kind: 'call', fn: check.fn }];
       case 'not': return relaxes([check.fn]) ? [] : [check];
       case 'union': return check.exactlyOne && relaxes(check.branches) ? [{ ...check, exactlyOne: false }] : [check];
       case 'conditional': return relaxes([check.if]) ? [{ ...check, relaxed: true }] : [check];
-      case 'allOf': return [{ ...check, branches: check.branches.map(nested) }];
-      case 'unevaluatedProperties': case 'unevaluatedItems': return [{ ...check, schema: nested(check.schema) }];
+      case 'allOf': return [{ ...check, branches: check.branches.map(branch => schemaOf(branch, record)) }];
+      case 'unevaluatedProperties': case 'unevaluatedItems': return [{ ...check, schema: schemaOf(check.schema, false) }];
       case 'array': {
-        const { minItems, maxItems, contains, ...rest } = check;
-        return [{
+        const { contains, ...rest } = check;
+        // A relaxed `contains` only marks its matches, and only a function that keeps a record reads them.
+        const kept = contains === undefined || (relaxes([contains.fn]) && !record) ? undefined : relaxes([contains.fn]) ? { fn: contains.fn, min: 0 } : contains;
+        const array: IrArray = {
           ...rest,
-          prefixItems: check.prefixItems.map(nested),
-          ...(check.items === undefined ? {} : { items: nested(check.items) }),
-          ...(isTuple(check) ? { ...(minItems === undefined ? {} : { minItems }), ...(maxItems === undefined ? {} : { maxItems }) } : {}),
-          ...(contains === undefined ? {} : { contains: relaxes([contains.fn]) ? { fn: contains.fn, min: 0 } : { fn: contains.fn, min: Math.min(contains.min, 1) } }),
-          uniqueItems: false,
-        }];
+          prefixItems: check.prefixItems.map(item => schemaOf(item, false)),
+          ...(check.items === undefined ? {} : { items: schemaOf(check.items, false) }),
+          ...(kept === undefined ? {} : { contains: kept }),
+        };
+        // What is left is the loop that finds a hole, which a schema of type `array` wants and a limit alone did not.
+        const marks = record && (array.prefixItems.length > 0 || array.items !== undefined);
+        const bare = !array.closed && kept === undefined && array.minItems === undefined && array.maxItems === undefined && !marks
+          && array.prefixItems.every(item => item.kind === 'always') && (array.items === undefined || array.items.kind === 'always')
+          && !siblings.some(sibling => sibling.kind === 'type' && sibling.names.includes('array'));
+        return bare ? [] : [array];
       }
       case 'object': {
-        const { minProperties, maxProperties, ...rest } = check;
-        const kept = {
-          ...rest,
-          properties: check.properties.map(property => ({ ...property, schema: nested(property.schema) })),
-          patternProperties: check.patternProperties.map(entry => ({ ...entry, schema: nested(entry.schema) })),
-          ...(check.additional?.kind === 'schema' ? { additional: { kind: 'schema' as const, schema: nested(check.additional.schema) } } : {}),
+        const object: IrObject = {
+          ...check,
+          properties: check.properties.map(property => ({ ...property, schema: schemaOf(property.schema, false) })),
+          patternProperties: check.patternProperties.map(entry => ({ ...entry, schema: schemaOf(entry.schema, false) })),
+          ...(check.additional?.kind === 'schema' ? { additional: { kind: 'schema' as const, schema: schemaOf(check.additional.schema, false) } } : {}),
+          ...(check.propertyNames !== undefined && voided.has(check.propertyNames) ? { propertyNames: undefined } : {}),
         };
-        // A count was the only reason for this check to exist.
-        const empty = (minProperties !== undefined || maxProperties !== undefined) && kept.required.length === 0 && kept.dependentRequired.length === 0
-          && kept.properties.length === 0 && kept.patternProperties.length === 0 && kept.additional === undefined && kept.propertyNames === undefined;
-        return empty ? [] : [kept];
+        const quiet = (schema: IrSchema): boolean => schema.kind === 'always';
+        const bare = object.required.length === 0 && object.dependentRequired.every(entry => entry.keys.length === 0)
+          && object.properties.every(property => quiet(property.schema)) && object.patternProperties.every(entry => quiet(entry.schema))
+          && (object.additional === undefined || (object.additional.kind === 'schema' && quiet(object.additional.schema)))
+          && object.propertyNames === undefined && !(record && (object.properties.length > 0 || object.patternProperties.length > 0 || object.additional !== undefined));
+        return bare ? [] : [object];
       }
-      case 'type': case 'literal': case 'date': case 'instance': case 'call': case 'dependentSchemas':
-        return [check];
-      default: return unprojected(check);
+      default: return [check];
     }
   };
-  return { ...module, functions: module.functions.map(fn => ({ ...fn, body: nested(fn.body) })) };
+  const convert = (functions: readonly IrFunction[]): IrFunction[] => functions.map(fn => ({ ...fn, body: schemaOf(fn.body, fn.collects || fn.receives) }));
+  const first = convert(module.functions);
+  voided = new Set(first.filter(fn => fn.body.kind === 'always').map(fn => fn.id));
+  return { ...module, functions: voided.size === 0 ? first : convert(first) };
 }
 
 /** The ids reachable from `start` through `next`. */

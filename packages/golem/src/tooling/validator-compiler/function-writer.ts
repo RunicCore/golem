@@ -3,6 +3,7 @@ import type { IrArray, IrCheck, IrDiscriminator, IrFunction, IrInstance, IrNumbe
 import { rt } from '../rt.js';
 import { presentValueCode } from '../union-conversion.js';
 import { VALUE, PATH, NEWLINE, COMMA, ISSUES, ALL, SANITY, INHERITED, EVALUATION, type CalleeSlot, type CallArguments } from './function-names.js';
+import { isTuple, keepsFormat } from './call-graph.js';
 import { JSON_TYPES, dispatchTest } from './json-types.js';
 import { localName, lazyStateTest, scaledDivisor } from './local-helpers.js';
 import { patternExpression, type ModuleState } from './module-state.js';
@@ -274,7 +275,7 @@ export class FunctionWriter {
           // The format's test, looked up once when the module loads.
           fast: () => code`!${this.state.constant('format', code`${runtime.formatTest}(${literalCode(check.format)})`, check.format)}(${value})`,
           issue: code`code: 'format', format: ${literalCode(check.format)}`,
-          ...(check.format === 'date-time' ? {} : { skip: 'costly' as const }),
+          ...(keepsFormat(check.format) ? {} : { skip: 'costly' as const }),
         });
       case 'date':
         return this.leaf({ fails: code`!(${value} instanceof Date) || !Number.isFinite(${value}.getTime())`, issue: code`code: 'type', expected: ['Date']` });
@@ -406,7 +407,7 @@ export class FunctionWriter {
   private arrayCheck(check: IrArray, value: Code, types: readonly IrTypeName[] | undefined): void {
     this.guarded(code`if (Array.isArray(${value}))`, ['array'], types, () => {
       // A tuple's arity is shape; any other count of items is a limit.
-      this.limitLeaves('items', code`${value}.length`, check.minItems, check.maxItems, undefined, check.prefixItems.length > 0 || check.closed ? undefined : 'cheap');
+      this.limitLeaves('items', code`${value}.length`, check.minItems, check.maxItems, undefined, isTuple(check) ? undefined : 'cheap');
       if (check.closed) this.leaf({ fails: code`${value}.length > ${literalCode(check.prefixItems.length)}`, issue: limitFields('tooBig', 'items', check.prefixItems.length, true) });
       if (check.prefixItems.length > 0) this.mark(record => code`${record}.prefix = Math.max(${record}.prefix, Math.min(${value}.length, ${literalCode(check.prefixItems.length)}));`);
       // The JSON view of an item: an `undefined` item is `null`, and a hole is no JSON value (one `type` issue; its schema is skipped).
@@ -806,9 +807,11 @@ export class FunctionWriter {
     const record = this.requireRecord();
     const matched = this.fresh('matched');
     this.line(code`let ${matched} = 0;`);
+    // Two matches decide an exact `oneOf`, but the sanity level fails none: every branch that passes marks what it evaluated.
+    const stops = this.relaxes(check.branches) ? code`${SANITY} || ${matched} < 2` : code`${matched} < 2`;
     check.branches.forEach((fn, position) => {
       const scratch = this.fresh('scratch');
-      this.open(position === 0 || !check.exactlyOne ? undefined : code`if (${matched} < 2)`);
+      this.open(position === 0 || !check.exactlyOne ? undefined : code`if (${stops})`);
       this.line(code`const ${scratch} = ${localName('newEvaluation')}();`);
       this.open(code`if (${this.call(fn, { value, issues: code`[]`, all: code`false`, record: scratch })})`);
       this.line(code`${matched}++;`);
