@@ -128,7 +128,7 @@ An OpenAPI job writes `model-manifest.json` beside its SDK. A model job reads it
 | `discoverModelManifests` | `(root = process.cwd(), onInput?): string[]` | Sorted absolute paths of `model-manifest.json` files below `<root>/src`, skipping `dist` and `build`. |
 | `readModelManifest` | `(filename: string, onInput?): ModelManifest` | Reads and checks one manifest. Throws with the file name when it is unreadable or invalid. |
 | `validateModelManifest` | `(manifest: unknown, filename?): ModelManifest` | Checks a parsed manifest. |
-| `ModelManifest` | `{ profile, models, validationSchemaClosure? }` | The generation profile, one `ModelManifestEntry` per model, and the schemas a project needs to validate those models. |
+| `ModelManifest` | `{ profile, models, validationSchemaClosure? }` | The generation profile, one entry in `models` for each model, and the schemas a project needs to validate those models. |
 | `MODEL_MANIFEST_FILENAME` | `'model-manifest.json'` | The file name. |
 
 ## `@exprtlabs/golem/rewrite` {#rewrite}
