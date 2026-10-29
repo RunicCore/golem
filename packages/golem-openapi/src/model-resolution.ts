@@ -1,4 +1,5 @@
 import { descriptorNeedsConversion } from '@exprtlabs/golem/internal/emitter';
+import { TEMPORAL_FORMAT_CLASSES } from '@exprtlabs/golem/internal/validator-compiler';
 import type { SchemaGraph, SchemaNode } from '@exprtlabs/golem/internal/schema-graph';
 import { identifier } from '@exprtlabs/golem/internal/generator-support';
 import { asRecord, escapeJsonPointerToken, isJsonObject, objectEntries, type JsonObject } from './json.js';
@@ -172,11 +173,9 @@ export function withSchemaBase(env: ModelResolveEnv, schema: unknown): ModelReso
 }
 
 /** `dates: temporal` string formats and the `@exprtlabs/golem/temporal` tag each converts with. */
-const TEMPORAL_FORMATS = {
-  'date-time': { typeName: 'Temporal.Instant', type: code`Temporal.Instant`, codec: 'TemporalInstant' },
-  date: { typeName: 'Temporal.PlainDate', type: code`Temporal.PlainDate`, codec: 'TemporalPlainDate' },
-  duration: { typeName: 'Temporal.Duration', type: code`Temporal.Duration`, codec: 'TemporalDuration' },
-} as const;
+const TEMPORAL_FORMATS: Readonly<Record<keyof typeof TEMPORAL_FORMAT_CLASSES, { readonly typeName: string; readonly type: Code; readonly codec: string }>> = Object.fromEntries(
+  Object.entries(TEMPORAL_FORMAT_CLASSES).map(([format, className]) => [format, { typeName: `Temporal.${className}`, type: code`Temporal.${identifierPart(className)}`, codec: `Temporal${className}` }]),
+) as Record<keyof typeof TEMPORAL_FORMAT_CLASSES, { readonly typeName: string; readonly type: Code; readonly codec: string }>;
 
 export const TEMPORAL_SERDE_PREFIX = 'temporal:';
 

@@ -1,3 +1,4 @@
+import { CONVERTED_FORMATS } from './converted-formats.js';
 import type { IrArray, IrCheck, IrFunction, IrModule, IrObject, IrSchema } from './ir.js';
 
 /**
@@ -109,15 +110,6 @@ export function reachingValidation(functions: readonly IrFunction[]): ReadonlySe
 
 /** An array with a prefix or a closed end is a tuple: only its arity is shape. Any other count of items is a limit. */
 export const isTuple = (check: IrArray): boolean => check.prefixItems.length > 0 || check.closed;
-
-/**
- * The string formats that a golem converter decodes: `Date` reads `date-time`; `dates: temporal` also reads `date` (a
- * `Temporal.PlainDate`) and `duration` (a `Temporal.Duration`), and `Temporal.Instant` reads `date-time`. The schema
- * has no mark for a field that converts, and a parser is more lenient than the format: `new Date('5')` accepts a text
- * that is no time, `Temporal.PlainDate.from('20250102')` and `Temporal.Duration.from('p1d')` accept non-canonical
- * text. Golem rejects bad input and never coerces it (F-39).
- */
-const CONVERTED_FORMATS: ReadonlySet<string> = new Set(['date-time', 'date', 'duration']);
 
 /** True when the sanity level keeps the format: every format a golem converter decodes (see `CONVERTED_FORMATS`). */
 export const keepsFormat = (format: string): boolean => CONVERTED_FORMATS.has(format);
