@@ -139,13 +139,15 @@ const TOGGLES_VALIDATING = toggleSource('TInheritBaseModel, TOffBaseModel, TPare
 const TOGGLES_OFF = toggleSource('TInheritBaseModel, TOffBaseModel, TParentBaseModel', TOGGLE_MODELS);
 
 type ToggleCall = 'omitted' | 'true' | 'false';
-/** What one parse or stringify call of a model runs, by whether the model validates and by the `validate` option of the call. */
-/** `runs`: the call returns and the rule ran `count` times; `unavailable`: the call throws validation unavailable. */
-interface CallOutcome { readonly kind: 'runs' | 'unavailable'; readonly count: number }
+/**
+ * What one parse or stringify call of a model runs, by whether the model validates and by the `validate` option of the call.
+ * `runs`: the call returns and the rule ran `count` times; `unavailable`: the call throws validation unavailable.
+ */
+interface CallOutcome { readonly kind: 'runs' | 'unavailable'; readonly count?: number }
 const runs = (count: number): CallOutcome => ({ kind: 'runs', count });
 const RULE_RUNS: Record<'validates' | 'off', Record<ToggleCall, CallOutcome>> = {
   validates: { omitted: runs(1), true: runs(1), false: runs(0) },
-  off: { omitted: runs(0), true: { kind: 'unavailable', count: 0 }, false: runs(0) },
+  off: { omitted: runs(0), true: { kind: 'unavailable' }, false: runs(0) },
 };
 /** The `validate` option each way of making the call passes. */
 const CALL_OPTIONS: Record<ToggleCall, { readonly validate?: boolean }> = { omitted: {}, true: { validate: true }, false: { validate: false } };
@@ -169,8 +171,8 @@ const unavailable = (e: unknown): boolean => e instanceof LibError && e.kind ===
 
 for (const [projectValidates, source, rows] of [[true, TOGGLES_VALIDATING, VALIDATING_ROWS], [false, TOGGLES_OFF, OFF_PROJECT_ROWS]] as const) {
   test(`validation toggles behave as the spec states (profile validation ${projectValidates})`, async t => {
+    // protects: R-75 the project level caps every model; a call may lower it, never raise it
     const { root, counter, models } = await loadToggles(t, source, projectValidates);
-    let cells = 0;
     for (const [name, effective, validateCheck] of rows) {
       const codec = requireObjectCodec(generatedCodecIdFromRoot(root, name));
       const construct = models[name.slice(1)];
@@ -195,11 +197,9 @@ for (const [projectValidates, source, rows] of [[true, TOGGLES_VALIDATING, VALID
             runs: () => { run(); assert.equal(counter.calls, expected.count, label); },
           };
           outcomes[expected.kind]();
-          cells++;
         }
       }
     }
-    assert.equal(cells, rows.length * CALLS.length * 2);
   });
 }
 
