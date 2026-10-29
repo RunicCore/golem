@@ -7,6 +7,7 @@ This file is the complete list of changes. The documentation site's
 
 ### Models
 
+- A `Date` or a Temporal field accepts only its wire form, at every validation level, off included. Before, with validation off, `new Date('5')` and `Temporal.PlainDate.from('20250102')` read text that the wire form rejects. A text that does not fit throws `Deserialization` with `causedByInput: true`.
 - **Breaking:** `encodeGeneratedModel` and `decodeGeneratedModel` are deleted. Use `toWireFormat<T>` and `fromWireFormat<T>`. `toWireFormat` validates the model when its profile does and takes `{ validate: false }`. A generated model file has no class-level encoder, and the `encode<Name>` function of a `golem-openapi` model is `toWireFormat<Name>` under a second name.
 - A field typed `Date & Model`, `bigint & Model`, or `{ x: Date } & { x: Model }` stops generation with [`RUNM1085`](docs/reference/diagnostics.md#runm1085), with validation on and off. Before, a `Date` field generated a field of `Date`'s method names with validation off and `RUNM1004` blamed `toString` with validation on, and a `bigint` field stopped with an uncoded `TypeError`. A `Date` with a phantom brand, such as `Date & { readonly __brand: 'Timestamp' }`, is a `Date` field, as a branded string or number already was.
 - A field typed `Date | Date[]` or `Date | string[]` generates and converts by its wire value: a string is the Date, an array is the array. Before, it stopped with [`RUNM1082`](docs/reference/diagnostics.md#runm1082). A nullable form such as `Date | Date[] | null` keeps `null`.

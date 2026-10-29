@@ -486,6 +486,8 @@ Temporal field types for models. Each converts to an ISO 8601 string in JSON. [U
 
 The JSON string has a four-digit year and no calendar annotation.
 
+Each `deserializeTemporalX` accepts only that form, at every validation level, off included. Text that `Temporal.X.from` would read but the form rejects, such as `20250102` for a date, throws `Deserialization` with `causedByInput: true`.
+
 Each tag `TemporalX` has the functions `serializeTemporalX` and `deserializeTemporalX` and the type `TemporalXWire`. Its `TSerde` uses the two functions.
 
 ## `@exprtlabs/golem/serde` {#serde}

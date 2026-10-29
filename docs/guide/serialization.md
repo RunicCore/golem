@@ -43,7 +43,7 @@ The model value is what your code holds. The JSON form is what `toWireFormat` re
 
 A `Date` converts in these ways:
 
-- It decodes with ECMAScript `Date` parsing. A value that is not a string, or that does not parse, throws `Deserialization` with `causedByInput: true`.
+- It decodes a `date-time` string at every validation level, off included. A value that is not a string, or that is not a `date-time` string, throws `Deserialization` with `causedByInput: true`.
 - It encodes as UTC ISO text with milliseconds. A year outside 0000-9999 throws `Serialization`.
 - Put your own rule on a `Date` with [`TValidation`](/guide/tags#add-a-custom-field-rule).
 

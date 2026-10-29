@@ -10,7 +10,7 @@ import { requireObjectCodec, serdeValidates } from '@exprtlabs/golem/internal/mo
 import type { ObjectCodec, SerdeOptions } from '@exprtlabs/golem/serde';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
-import { writeGeneratedArtifacts } from './fixture-project.js';
+import { fileFixtureScope, writeGeneratedArtifacts } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 
@@ -275,30 +275,55 @@ test('a project at off: every request above off is unavailable and off is allowe
   checkLevels('off', await load(t, false, SOURCES.off));
 });
 
-test('a sanity parse rejects a text that a Temporal parser would coerce, as bad input', async (t: TestContext) => {
-  // protects: F-39 golem rejects bad input and never coerces it; sanity keeps the formats a converter reads
-  const { root, sourceRoot } = createModelProject(t, {
-    prefix: 'golem-sanity-temporal-', name: 'sanity-temporal', linkWorkspaceNodeModules: true,
+const temporalScope = fileFixtureScope();
+const TEMPORAL_WIRE = { at: '2025-01-02T03:04:05Z', zoned: '2025-01-02T03:04:05+01:00[Europe/Paris]', day: '2025-01-02', local: '2025-01-02T03:04:05', time: '03:04:05', span: 'P1D', when: '2025-01-02T03:04:05Z' };
+/** A project with one model of every converted type, at a level; the model name differs by level, so each project registers its own codec. */
+const loadTemporal = (level: 'sanity' | 'off') => temporalProjects[level] ??= (async () => {
+  const name = level === 'sanity' ? 'TSanityEvent' : 'TOffEvent';
+  const { root, sourceRoot } = createModelProject(temporalScope, {
+    prefix: 'golem-converted-', name: 'converted', linkWorkspaceNodeModules: true,
     compilerOptions: { lib: ['ES2023', 'DOM', 'esnext.temporal'] },
   });
   writeModelSources(sourceRoot, {
-    'day.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import type { TemporalPlainDate } from '@exprtlabs/golem/temporal';
-export type TDay = IModel<{ day: TemporalPlainDate }>;
+    'event.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { TemporalDuration, TemporalInstant, TemporalPlainDate, TemporalPlainDateTime, TemporalPlainTime, TemporalZonedDateTime } from '@exprtlabs/golem/temporal';
+export type ${name} = IModel<{ at: TemporalInstant; zoned: TemporalZonedDateTime; day: TemporalPlainDate; local: TemporalPlainDateTime; time: TemporalPlainTime; span: TemporalDuration; when: Date }>;
 `,
   });
-  writeModelGolemYaml(root, { mobx: false, validation: 'sanity' });
+  writeModelGolemYaml(root, { mobx: false, validation: level === 'sanity' ? 'sanity' : false });
   await buildModelProject(root);
-  await import(pathToFileURL(path.join(root, 'build/day.model.generated.js')).href);
-  const day = requireObjectCodec(generatedCodecIdFromRoot(root, 'TDay'));
-  assert.ok((day.parse('{"day":"2025-01-02"}') as { day: unknown }).day instanceof Temporal.PlainDate);
-  // Temporal.PlainDate.from reads each of these; the date format does not.
-  for (const bad of ['5', '20250102', '2025-01-02T10:00:00']) {
-    assert.throws(() => day.parse(JSON.stringify({ day: bad }), { validate: 'sanity' }), (error: unknown) => (
-      error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput
-    ), `day ${bad}`);
+  await import(pathToFileURL(path.join(root, 'build/event.model.generated.js')).href);
+  return requireObjectCodec(generatedCodecIdFromRoot(root, name));
+})();
+const temporalProjects: Partial<Record<'sanity' | 'off', Promise<ObjectCodec>>> = {};
+
+// Each text is one that a parser reads and the wire form rejects.
+const LENIENT_TEXT: readonly (readonly [field: string, text: string])[] = [
+  ['at', '20250102T030405Z'], ['at', '2025-01-02T03:04:05Z[UTC]'],
+  ['zoned', '2025-01-02T03:04:05[Europe/Paris]'],
+  ['day', '5'], ['day', '20250102'], ['day', '2025-01-02T10:00:00'],
+  ['local', '20250102T030405'], ['local', '2025-01-02'],
+  ['time', '03:04:05+01:00'],
+  ['span', 'p1d'],
+  ['when', '5'], ['when', '2025-01-02'],
+];
+for (const level of ['sanity', 'off'] as const) {
+  for (const [field, text] of LENIENT_TEXT) {
+    test(`a parse at ${level} rejects ${text} for ${field} as bad input, and does not coerce it`, async () => {
+      // protects: F-39 golem rejects bad input and never coerces it, at every level of validation
+      const codec = await loadTemporal(level);
+      assert.throws(() => codec.parse(JSON.stringify({ ...TEMPORAL_WIRE, [field]: text })), (error: unknown) => (
+        error instanceof LibError && error.causedByInput && (error.kind === LibErrorKind.Deserialization || error.kind === LibErrorKind.Validation)
+      ));
+    });
   }
-});
+  test(`a parse at ${level} reads the canonical text of every converted type`, async () => {
+    // protects: F-39 the strict form still reads what the wire form allows
+    const codec = await loadTemporal(level);
+    const model = codec.parse(JSON.stringify(TEMPORAL_WIRE)) as Record<string, unknown>;
+    assert.ok(model.day instanceof Temporal.PlainDate && model.when instanceof Date && model.span instanceof Temporal.Duration);
+  });
+}
 
 test('a model over an SDK model that chooses sanity checks the SDK codec at sanity by default and at full when a call asks', async (t: TestContext) => {
   // protects: R-76 the level of the model is the default of its calls, also for the codec of an SDK model
