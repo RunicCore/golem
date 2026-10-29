@@ -16,7 +16,7 @@
  * 5. The names that no part lists take every part's value schema; one closed part closes them.
  */
 
-import type { ModelConstraint, ModelTypeDescriptor } from '../model.js';
+import type { ModelConstraint, ModelTypeDescriptor } from '../model-registry.js';
 import { descriptorNeedsConversion, type ObjectTypeDescriptor } from './union-conversion.js';
 
 /** A composition that no value can satisfy, or whose parts convert one name differently. */

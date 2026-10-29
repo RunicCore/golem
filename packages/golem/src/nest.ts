@@ -22,7 +22,7 @@ import {
 } from '@nestjs/common';
 import { mergeMap, type Observable } from 'rxjs';
 import { IssueRepresentation, IssueSource, LibError, LibErrorKind, type IssuePath } from './errors.js';
-import type { DiscriminatorValue } from './model.js';
+import type { DiscriminatorValue } from './model-registry.js';
 import { requireModelObject, resolveMaxDepth, unknownDiscriminatorValue } from './conversion.js';
 import { getIModelClass, getObjectCodec, type ObjectCodec, type QueryFieldShape, type SerdeOptions } from './object-codec.js';
 import { presentValue } from './presence.js';

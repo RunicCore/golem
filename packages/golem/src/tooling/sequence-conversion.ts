@@ -4,7 +4,7 @@
  * error path of an item. The guard sits only in `emitArrayConversion` and `emitTupleConversion`; `emitArrayItems` and
  * `emitTupleItems` have none. It imports no walker.
  */
-import type { ModelTypeDescriptor } from '../model.js';
+import type { ModelTypeDescriptor } from '../model-registry.js';
 import { code, codeKey, identifier, literal, readShape, sameCode, type Code } from './code.js';
 import { rt } from './rt.js';
 

@@ -17,7 +17,7 @@ import type {
   ApiOperation,
   ApiOperationRun,
 } from './client.js';
-import { findGeneratedModelDefinition } from './model.js';
+import { findGeneratedModelDefinition } from './model-registry.js';
 
 export type ModelAnnotations<Model extends object> = AnnotationsMap<Model, never>;
 

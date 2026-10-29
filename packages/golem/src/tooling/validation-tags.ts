@@ -1,5 +1,5 @@
 /** Structural shell of generated tag validators. */
-import type { ModelConstraint, ModelTypeDescriptor } from '../model.js';
+import type { ModelConstraint, ModelTypeDescriptor } from '../model-registry.js';
 
 interface ValidationTagSchemaOptions {
   readonly definitions?: Readonly<Record<string, ModelTypeDescriptor>>;

@@ -12,7 +12,7 @@ import {
   runInAction,
 } from 'mobx';
 
-import * as model from '@exprtlabs/golem/model';
+import * as model from '@exprtlabs/golem/internal/model-runtime';
 import * as mobxRuntime from '@exprtlabs/golem/mobx';
 
 interface ChildFields {

@@ -12,7 +12,7 @@ import type {
   ModelConversionDescriptor,
   TupleConversionDescriptor,
 } from '../model-source-emitter.js';
-import type { DiscriminatorValue, UnionDiscriminator } from '../../model.js';
+import type { DiscriminatorValue, UnionDiscriminator } from '../../model-registry.js';
 import type { ManifestIndex } from './provenance.js';
 import type { ModelSpecification, TypeAnalysisContext } from './models.js';
 import {

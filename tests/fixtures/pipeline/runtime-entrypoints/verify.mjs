@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-const model = await import('@exprtlabs/golem/model');
+const model = await import('@exprtlabs/golem/internal/model-runtime');
 const validation = await import('@exprtlabs/golem/validation');
 class Item {}
 model.registerGeneratedModel(Item, { fields: [] });

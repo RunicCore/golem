@@ -3,7 +3,7 @@
  * validation compile once per node and compose by call / $ref.
  */
 
-import type { ModelTypeDescriptor } from '../model.js';
+import type { ModelTypeDescriptor } from '../model-registry.js';
 import {
   canonicalDescriptorKey,
   constraintSchemaValues,

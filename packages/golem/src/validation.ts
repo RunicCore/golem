@@ -1,16 +1,7 @@
-import {
-  findGeneratedModelDefinition,
-  findGeneratedModelDefinitionForConstructor,
-} from './model.js';
+import { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor } from './model-registry.js';
 import { presentValue } from './presence.js';
-import type {
-  generatedModelFieldsBrand,
-  GeneratedModelConstructor,
-  ModelField,
-  ModelValidationContext,
-  ModelTypeDescriptor,
-  RegisteredGeneratedModelDefinition,
-} from './model.js';
+import type { generatedModelFieldsBrand, GeneratedModelConstructor, ModelField, ModelValidationContext } from './model.js';
+import type { ModelTypeDescriptor, RegisteredGeneratedModelDefinition } from './model-registry.js';
 export type { SchemaIssue, SchemaIssueDetail, Validator } from './validation-runtime.js';
 export { runValidation } from './validation-runner.js';
 export * from './schema-registry-validation.js';

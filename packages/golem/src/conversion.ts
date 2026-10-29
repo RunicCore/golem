@@ -1,17 +1,8 @@
 import { LibError, LibErrorKind, type IssuePath } from './errors.js';
 import { activeConversionPath, conversionError } from './conversion-error.js';
-import {
-  findGeneratedModelDefinition,
-  findGeneratedModelDefinitionForConstructor,
-  isGeneratedModel,
-  type GeneratedModel,
-  type GeneratedModelConstructor,
-  type GeneratedModelResult,
-  type GeneratedModelWire,
-} from './model.js';
+import { type GeneratedModelConstructor, type GeneratedModelResult } from './model.js';
+import { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor, isGeneratedModel } from './model-registry.js';
 import { instanceFields } from './presence.js';
-import { findCodecIdForConstructor, requireObjectCodec } from './codec-registry.js';
-import type { AllowGetterOptions, SerdeOptions } from './object-codec.js';
 
 /** The tag as JSON text. A tag comes from a request, so any value can arrive: `String` throws for an object whose `toString` is not a function. */
 function shownTag(value: unknown): string {
@@ -122,7 +113,7 @@ export function readRootFields(value: unknown, fields: readonly string[]): unkno
 }
 
 /** The default `maxDepth`: how many levels of objects and arrays a recursive model's input may nest. */
-export const DEFAULT_MAX_DEPTH = 512;
+const DEFAULT_MAX_DEPTH = 512;
 
 /** The `maxDepth` of a call or of an interceptor: `undefined` is the default, `Infinity` turns the bound off. */
 export function resolveMaxDepth(maxDepth: unknown): number {
@@ -490,7 +481,6 @@ function walkConversionInput(
 function decodeGeneratedModelValue(
   constructor: GeneratedModelConstructor,
   value: unknown,
-  checkCycles: boolean,
 ): object {
   if (value !== null && typeof value === 'object' && value instanceof constructor) return value;
   const definition = findGeneratedModelDefinitionForConstructor(constructor);
@@ -511,7 +501,6 @@ function decodeGeneratedModelValue(
     else active.set(objectValue, previousOwner ? new Set([previousOwner, constructor]) : constructor);
   }
   try {
-    if (checkCycles && objectValue) assertAcyclicValue(value, LibErrorKind.Deserialization);
     const decoded = conversion.decode(value, constructor);
     if (decoded === null || typeof decoded !== 'object' || !(decoded instanceof constructor)) {
       throw conversionError(LibErrorKind.Deserialization, 'Generated model conversion did not return an instance of the requested model.');
@@ -537,25 +526,8 @@ function decodeGeneratedModelValue(
 }
 
 /**
- * Decode a generated model through its registered internal conversion hook.
- * Generated classes intentionally do not expose a public `fromJSON` method;
- * this registry is the runtime seam used by nested conversion.
- */
-export function decodeGeneratedModel<Constructor extends GeneratedModelConstructor>(
-  constructor: Constructor,
-  value: unknown,
-): GeneratedModelResult<Constructor>;
-export function decodeGeneratedModel(
-  constructor: GeneratedModelConstructor,
-  value: unknown,
-): object {
-  return decodeCheckedInput((input, target) => decodeGeneratedModelValue(target, input, true), value, constructor);
-}
-
-/**
  * Nested generated-model decode after the caller checked the input for cycles
- * or produced a detached tree (`JSON.parse`). Application code should keep
- * using `decodeGeneratedModel`.
+ * or produced a detached tree (`JSON.parse`).
  */
 export function decodeGeneratedModelTrusted<Constructor extends GeneratedModelConstructor>(
   constructor: Constructor,
@@ -565,32 +537,7 @@ export function decodeGeneratedModelTrusted(
   constructor: GeneratedModelConstructor,
   value: unknown,
 ): object {
-  return decodeGeneratedModelValue(constructor, value, false);
-}
-
-/**
- * Encode a generated model into a detached plain wire value with the `toWireFormat` of its own codec, found as
- * `validate(instance)` finds it. The call validates when the profile does; `{ validate: false }` skips. When validation
- * runs, a declared field of the root that a getter supplies counts, unless `allowGetter` says otherwise.
- */
-export function encodeGeneratedModel<Model extends GeneratedModel>(model: Model, options?: SerdeOptions & AllowGetterOptions): GeneratedModelWire<Model>;
-/** Internal generated expressions may only know a value as `unknown` until
- * their runtime `instanceof` guard succeeds. Keep that fallback narrow at
- * runtime while leaving the public serde API branded. */
-export function encodeGeneratedModel(model: unknown, options?: SerdeOptions & AllowGetterOptions): unknown;
-export function encodeGeneratedModel(model: unknown, options?: SerdeOptions & AllowGetterOptions): unknown {
-  if (model === null || typeof model !== 'object') {
-    throw conversionError(LibErrorKind.Serialization, 'Expected a generated model instance.');
-  }
-  const definition = findGeneratedModelDefinition(model);
-  if (!definition) {
-    throw conversionError(LibErrorKind.Serialization, 'Generated model metadata is missing. Regenerate the model.');
-  }
-  const codecId = definition.codecId ?? findCodecIdForConstructor(definition.constructor);
-  if (!codecId) {
-    throw conversionError(LibErrorKind.Serialization, 'Generated model codec is not registered. Regenerate the model.');
-  }
-  return requireObjectCodec(codecId).toWireFormat(model, { ...options, allowGetter: options?.allowGetter ?? options?.validate !== false });
+  return decodeGeneratedModelValue(constructor, value);
 }
 
 /**

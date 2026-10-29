@@ -11,7 +11,7 @@ import { absoluteRecordPath, codeDigest, golemCode, insideAny, inventoryPaths, J
 import type { JobRecord } from './job-cache.js';
 import { DEFAULT_CONTROLLER_SUFFIXES, DEFAULT_MODEL_SUFFIXES, GolemDiagnosticSeverity, displayPath, errorMessage, hasErrorCode, isInsideDirectory, isRecord, suffixPattern } from './generator-api.js';
 import { distTagForVersion } from './dist-tag.js';
-import { validateModelManifest } from './model-manifest.js';
+import { validateModelManifest } from './model-manifest-core.js';
 import type { GolemArtifact, GolemDiagnostic, GolemResult, GeneratorSession } from './generator-api.js';
 import { assertRuntimeCompatible } from './runtime-compatibility.js';
 import { selectedTypeScript } from './typescript-selection.js';

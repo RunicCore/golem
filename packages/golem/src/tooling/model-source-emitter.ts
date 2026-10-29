@@ -1,4 +1,4 @@
-import type { ModelTypeDescriptor } from '../model.js';
+import type { ModelTypeDescriptor } from '../model-registry.js';
 export {
   emitCodecRuntimeCode,
   emitStringifyFunction,
@@ -40,7 +40,7 @@ export {
 } from './composition.js';
 import { blockComment, bindInput, code, codeKey, identifier, importGroups, importLines, inputOf, inputSlot, isEmpty, join, literal, localCode, sameCode, type Code, type Helper, type ImportOptions } from './code.js';
 import { rt, type RuntimeModule } from './rt.js';
-import { MODEL_MANIFEST_FILENAME, MODEL_MANIFEST_MARKER } from './model-manifest.js';
+import { MODEL_MANIFEST_FILENAME, MODEL_MANIFEST_MARKER } from './model-manifest-core.js';
 export { assertUniqueExportNames, type PublicModule } from './names.js';
 import { CompositionConflictError, requireComposedObject, type ModelBases } from './composition.js';
 import { FIELD_CONVERSION_INPUT, calleeOf, emitArrayConversion, emitTupleConversion, type SequenceItems } from './sequence-conversion.js';

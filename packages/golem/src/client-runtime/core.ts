@@ -107,7 +107,7 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
-export type ResponseFraming = 'ndjson' | 'json-seq' | 'sse' | 'custom-stream' | 'binary' | 'body';
+type ResponseFraming = 'ndjson' | 'json-seq' | 'sse' | 'custom-stream' | 'binary' | 'body';
 
 export interface RuntimeResponseHeaderContract {
   name: string;
@@ -130,7 +130,7 @@ export interface RuntimeResponseContract {
   headers: readonly RuntimeResponseHeaderContract[];
 }
 
-export interface RuntimeSecurityScheme {
+interface RuntimeSecurityScheme {
   type?: string;
   scheme?: string;
   in?: string;
@@ -147,7 +147,7 @@ export interface OperationValidationSources {
 }
 
 /** The matched response a check runs against. */
-export interface CheckedResponse {
+interface CheckedResponse {
   readonly status: string;
   readonly contentType: string | null;
 }

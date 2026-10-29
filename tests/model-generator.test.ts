@@ -137,7 +137,7 @@ export type TAccount = IModel<{ id: string }>;`,
 });
 
 /** The fixture's SDK module with the runtime registration of a generated SDK model, and a count of the calls it receives. */
-const COUNTING_SDK_MODELS = tsSource`import { registerGeneratedModel } from '@exprtlabs/golem/model';
+const COUNTING_SDK_MODELS = tsSource`import { registerGeneratedModel } from '@exprtlabs/golem/internal/model-runtime';
 export const calls = { decode: 0, stringify: 0, toWire: 0 };
 export class MoneyModel {
   public currency = '';

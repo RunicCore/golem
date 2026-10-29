@@ -7,7 +7,7 @@ import test, { type TestContext } from 'node:test';
 import { autorun, observable, runInAction } from 'mobx';
 
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import * as model from '@exprtlabs/golem/model';
+import * as model from '@exprtlabs/golem/internal/model-runtime';
 import * as validation from '@exprtlabs/golem/validation';
 import * as mobxRuntime from '@exprtlabs/golem/mobx';
 import * as mobxValidation from '@exprtlabs/golem/mobx-validation';
@@ -16,14 +16,14 @@ import { installCodecModel } from './register-codec-model.js';
 import { copyFixtureFile, createFixtureProject, linkProjectPackages } from './fixture-project.js';
 import { workspace } from './support/process.js';
 import * as manifest from '@exprtlabs/golem/manifest';
+import { sourceDigest } from '@exprtlabs/golem/internal/generator-support';
 
 const distRoot = dirname(fileURLToPath(import.meta.resolve('@exprtlabs/golem/model')));
 const packageRoot = dirname(distRoot);
 
-test('model guards recognize registered constructors and subclasses without treating plain payloads as models', () => {
+test('registering a model leaves its metadata off instances, prototypes and JSON', () => {
   class Base { value = 'initial'; }
   class Child extends Base {}
-  class Ordinary { value = 'initial'; }
   let conversions = 0;
   model.registerGeneratedModel(Base, {
     fields: ['value'],
@@ -31,21 +31,11 @@ test('model guards recognize registered constructors and subclasses without trea
       decode: () => { conversions++; return new Base(); },
     },
   });
-  for (const constructor of [Base, Child]) assert.equal(model.isGeneratedModelConstructor(constructor), true);
-  for (const instance of [new Base(), new Child()]) assert.equal(model.isGeneratedModel(instance), true);
-  for (const value of [null, undefined, 'text', 1, [], {}, new Ordinary(), { constructor: Base }, Object.create(null)]) {
-    assert.equal(model.isGeneratedModel(value), false);
-    assert.equal(model.isGeneratedModelConstructor(value), false);
-  }
-  assert.equal(model.isGeneratedModelConstructor(Ordinary), false);
-  assert.equal(model.isGeneratedModel(Base), false);
   assert.deepEqual(Object.keys(Base.prototype), []);
   assert.deepEqual(Object.keys(new Child()), ['value']);
   assert.equal(JSON.stringify(new Child()), '{"value":"initial"}');
   class MetadataOnly extends Base {}
   model.registerGeneratedModel(MetadataOnly, { fields: ['value'] });
-  assert.equal(model.isGeneratedModelConstructor(MetadataOnly), false);
-  assert.equal(model.isGeneratedModel(new MetadataOnly()), false);
   assert.equal(conversions, 0);
 });
 
@@ -291,7 +281,7 @@ test('MobX runtime preserves observation and shares validator identity', async (
 test('shared emitter emits exact generated-model conversion expressions', () => {
   const resolveModel = (id: string) => ({
     className: emitter.identifier(id === 'money' ? 'MoneyModel' : 'OtherModel'),
-    decode: (expression: emitter.Code) => emitter.code`decodeGeneratedModel(MoneyModel, ${expression})`,
+    decode: (expression: emitter.Code) => emitter.code`decodeMoneyModel(MoneyModel, ${expression})`,
     fromInit: (expression: emitter.Code) => emitter.code`new MoneyModel(${expression})`,
   });
   assert.equal(
@@ -300,7 +290,7 @@ test('shared emitter emits exact generated-model conversion expressions', () => 
       emitter.identifier('value'),
       resolveModel,
     )),
-    'Array.isArray(value) ? convertModelItems("deserialize", (item) => (item == null || item instanceof MoneyModel ? item : decodeGeneratedModel(MoneyModel, item)), value as readonly unknown[]) : value',
+    'Array.isArray(value) ? convertModelItems("deserialize", (item) => (item == null || item instanceof MoneyModel ? item : decodeMoneyModel(MoneyModel, item)), value as readonly unknown[]) : value',
   );
 });
 
@@ -320,18 +310,12 @@ test('model manifests validate profile and keep identity independent of profile'
     profile: { mobx: true, validation: false, allowAny: true },
   };
   assert.strictEqual(manifest.validateModelManifest(base), base);
-  assert.equal(manifest.sourceDigest(base), manifest.sourceDigest(profileVariant));
-  assert.deepEqual(manifest.modelManifestProfile(base), {
-    mobx: false,
-    validation: true,
-    allowAny: false,
-    unknownFormats: 'error',
-  });
+  assert.equal(sourceDigest(base), sourceDigest(profileVariant));
   assert.throws(
     () => manifest.validateModelManifest({ ...base, profile: { mobx: true } }),
     /profile must include mobx, validation and allowAny booleans/,
   );
-  assert.equal(manifest.modelManifestProfile({ ...base, profile: { ...base.profile, unknownFormats: 'warn' } }).unknownFormats, 'warn');
+  assert.equal(manifest.validateModelManifest({ ...base, profile: { ...base.profile, unknownFormats: 'warn' } }).profile.unknownFormats, 'warn');
   assert.throws(
     () => manifest.validateModelManifest({ ...base, profile: { ...base.profile, unknownFormats: 'strict' } }),
     /unknownFormats must be "warn" or "error"/,

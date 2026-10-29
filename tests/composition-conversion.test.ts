@@ -81,7 +81,7 @@ class ChildModel {
 
 const fromChild: FromJsonModelResolver = {
   className: identifier('ChildModel'),
-  decode: (value) => code`decodeGeneratedModel(ChildModel, ${value})`,
+  decode: (value) => code`decodeChildModel(ChildModel, ${value})`,
   fromInit: (value) => code`ChildModel.fromInit(${value})`,
 };
 
@@ -105,7 +105,7 @@ const bindings: Readonly<Record<string, unknown>> = {
   convertModelTupleItems,
   defineModelProperty,
   ChildModel,
-  decodeGeneratedModel: (_constructor: unknown, value: unknown) =>
+  decodeChildModel: (_constructor: unknown, value: unknown) =>
     value instanceof ChildModel ? value : ChildModel.fromJSON(value),
   decodeToken,
   deserializeDate,
