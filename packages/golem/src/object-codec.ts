@@ -38,9 +38,21 @@ interface MaxDepthOptions {
   readonly maxDepth?: number;
 }
 
+/**
+ * The level a call validates at: `true` is the full check, `'sanity'` the shape only (JSON types, required and extra keys,
+ * union tags, enums, tuple arity and date-times, without value limits or validation functions), `false` is off.
+ */
+export type ValidationLevel = boolean | 'sanity';
+
 export interface ValidateOptions extends MaxDepthOptions {
   readonly failFast?: boolean;
   readonly validationContext?: ModelValidationContext;
+  /**
+   * The level of this call. The default is the level of the model, which the project level caps; a call may lower it,
+   * never raise it above the project's, which throws `LibErrorKind.ValidationUnavailable`. Turning a `validate` or `assert`
+   * call off has no meaning, so the option names a check only.
+   */
+  readonly validate?: true | 'sanity';
 }
 
 /** The option of one `stringify`, `toWireFormat`, `validate` or `assert` call. Decode does not take it. */
@@ -53,7 +65,8 @@ export interface AllowGetterOptions {
 }
 
 export interface SerdeOptions extends MaxDepthOptions {
-  readonly validate?: boolean;
+  /** The level of this call: `false` turns validation off, `'sanity'` checks the shape only. See `ValidateOptions.validate`. */
+  readonly validate?: ValidationLevel;
   readonly failFast?: boolean;
   readonly validationContext?: ModelValidationContext;
   /** Set by golem's rewrite for `parse<Class>` / `fromWireFormat<Class>`. */
@@ -266,17 +279,21 @@ export function validationUnfinished(error: unknown): never {
 /** What a validator reports for `value`: the context's validator when the options name one, else the generated one. */
 function runModelValidator(
   value: unknown,
-  options: ValidateOptions | undefined,
+  options: SerdeOptions | undefined,
   validator: Validator,
   reference: string,
+  defaultLevel: ValidationLevel,
+  cap: ValidationLevel,
 ): readonly SchemaIssue[] {
   const all = options?.failFast === false;
   const run = options?.validationContext === undefined
     ? validator
     : resolveModelValidationContextValidator(options.validationContext, reference, all ? 'all' : 'first');
+  // A call that turns validation off never reaches a validator, so only `'sanity'` changes what runs here.
+  const sanity = serdeValidates(options, defaultLevel, cap) === 'sanity';
   let issues: unknown;
   try {
-    issues = run(value, all);
+    issues = run(value, all, sanity);
   } catch (error) {
     validationUnfinished(error);
   }
@@ -292,37 +309,43 @@ function runModelValidator(
 /** Whether `value` passes the validator, or the context's validator for `reference`. */
 export function isValidModelValue(
   value: unknown,
-  options: ValidateOptions | undefined,
+  options: SerdeOptions | undefined,
   validator: Validator,
   reference: string,
+  defaultLevel: ValidationLevel = true,
+  cap: ValidationLevel = defaultLevel,
 ): boolean {
-  return runModelValidator(value, options, validator, reference).length === 0;
+  return runModelValidator(value, options, validator, reference, defaultLevel, cap).length === 0;
 }
 
 /** The public issues of `value`: from the first failure, or from every failure with `failFast: false`. */
 function modelValueIssues(
   value: unknown,
-  options: ValidateOptions | undefined,
+  options: SerdeOptions | undefined,
   validator: Validator,
   reference: string,
   representation: IssueRepresentation,
   source: IssueSource,
+  defaultLevel: ValidationLevel,
+  cap: ValidationLevel,
 ): readonly Issue[] {
   // A rule of a TValidation function is the application's, whatever generated the validator.
-  return runModelValidator(value, options, validator, reference)
+  return runModelValidator(value, options, validator, reference, defaultLevel, cap)
     .map((issue) => toIssue(issue, issue.code === 'custom' ? IssueSource.Custom : source, representation));
 }
 
 /** The body of a generated assert function: throws the validation error when the value fails. */
 export function assertModelValue(
   value: unknown,
-  options: ValidateOptions | undefined,
+  options: SerdeOptions | undefined,
   validator: Validator,
   reference: string,
   representation: IssueRepresentation,
   source: IssueSource,
+  defaultLevel: ValidationLevel = true,
+  cap: ValidationLevel = defaultLevel,
 ): void {
-  const issues = modelValueIssues(value, options, validator, reference, representation, source);
+  const issues = modelValueIssues(value, options, validator, reference, representation, source, defaultLevel, cap);
   if (issues.length > 0) validationFailure(issues);
 }
 
@@ -337,13 +360,19 @@ function validationUnavailable(message?: string): never {
   );
 }
 
-/** Validation on when the golem profile enabled it; `{ validate: false }` skips. */
-export function serdeValidates(options: SerdeOptions | undefined, validationEnabled: boolean): boolean {
-  if (!validationEnabled) {
-    if (options?.validate === true) validationUnavailable();
-    return false;
+/**
+ * The level one call runs at, from the call's `validate` option, the default level of the model and the cap, the level the
+ * project generated. No option gives the default, `false` turns validation off, and a level up to the cap is the level. A
+ * level above the cap throws `LibErrorKind.ValidationUnavailable`: the validators of that level do not exist.
+ */
+export function serdeValidates(options: SerdeOptions | undefined, defaultLevel: ValidationLevel, cap: ValidationLevel = defaultLevel): ValidationLevel {
+  const requested = options?.validate;
+  if (requested === undefined) return defaultLevel;
+  if (requested === false) return false;
+  if (requested === true ? cap !== true : cap === false) {
+    validationUnavailable(cap === false ? undefined : 'Full validation is not generated: this project validates at the sanity level.');
   }
-  return options?.validate !== false;
+  return requested;
 }
 
 /**

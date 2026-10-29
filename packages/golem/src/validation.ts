@@ -390,7 +390,7 @@ function codecIssues(codec: ObjectCodec, value: unknown, options: ValidateOption
 async function collectCodecIssues(
   model: object,
   mode: ValidationMode,
-  validationContext?: ModelValidationContext,
+  options: Pick<ValidateOptions, 'validate' | 'validationContext'> = {},
 ): Promise<readonly Issue[]> {
   assertAcyclicValue(model, LibErrorKind.Serialization);
   const definition = modelDefinition(model);
@@ -408,7 +408,7 @@ async function collectCodecIssues(
     generated = codecIssues(
       requireObjectCodec(codecId),
       codecValidationValue(model, definition),
-      { failFast, ...(validationContext === undefined ? {} : { validationContext }) },
+      { failFast, ...(options.validationContext === undefined ? {} : { validationContext: options.validationContext }), ...(options.validate === undefined ? {} : { validate: options.validate }) },
     );
   }
   const overlay = mode === 'first' && generated.length ? [] : await evaluateInstanceRules(model, mode, generated);
@@ -470,7 +470,7 @@ export async function validateInstance<Model extends object>(
   publicValidationDefinition(model);
   try {
     const mode = options?.failFast === false ? 'all' : 'first';
-    const issues = await collectCodecIssues(model, mode, options?.validationContext);
+    const issues = await collectCodecIssues(model, mode, options);
     return snapshotIssues(issues);
   } catch (error) {
     return validationUnfinished(error);
@@ -559,7 +559,7 @@ export class ModelValidator<Fields extends object, Owner extends object = Fields
     this.setPending(true);
     try {
       const mode = options?.failFast === false ? 'all' : 'first';
-      const issues = await collectCodecIssues(this.model, mode, options?.validationContext);
+      const issues = await collectCodecIssues(this.model, mode, options);
       if (id === this.validationId) this.setIssues(issues);
       return issues.length === 0;
     } catch (error) { return validationUnfinished(error); }

@@ -248,8 +248,9 @@ function convertInput(
   decode: (wire: unknown) => unknown,
   field: string | undefined,
   maxDepth: number | undefined,
+  validate: true | 'sanity' | undefined,
 ): unknown {
-  const options = { failFast: true, construct, maxDepth };
+  const options = { failFast: true, construct, maxDepth, validate };
   if (!array) {
     try {
       return codec.fromWireFormat(decode(wire), options);
@@ -283,14 +284,22 @@ export interface NestModelInterceptorOptions {
    * The default is 512. `Infinity` turns the bound off. A model that reaches no recursive model has no bound.
    */
   readonly maxDepth?: number;
+  /**
+   * The level the interceptor validates request input at. The default is the level of each model. `'sanity'` checks the
+   * shape only; `true` checks everything. A level above the one the project generated fails the request with
+   * `LibErrorKind.ValidationUnavailable`. Input that fails the check answers HTTP 400 at any level.
+   */
+  readonly validate?: true | 'sanity';
 }
 
 // #region nest-model-interceptor
 export class NestModelInterceptor implements NestInterceptor {
   private readonly maxDepth: number;
+  private readonly validate: true | 'sanity' | undefined;
 
   constructor(options: NestModelInterceptorOptions = {}) {
     this.maxDepth = resolveMaxDepth(options.maxDepth);
+    this.validate = options.validate;
   }
 
   // Nest return decorators are installed before controllers run, so an absent
@@ -392,13 +401,13 @@ export class NestModelInterceptor implements NestInterceptor {
           const decode = paramtype === NEST_BODY ? NO_DECODE : queryWireDecoder(codec);
           // @Body() and @Query() read these values when next.handle() runs.
           if (field === undefined) {
-            const value = convertInput(codec, construct, array, paramtype === NEST_BODY ? req.body : req.query, decode, undefined, this.maxDepth);
+            const value = convertInput(codec, construct, array, paramtype === NEST_BODY ? req.body : req.query, decode, undefined, this.maxDepth, this.validate);
             if (paramtype === NEST_BODY) req.body = value;
             else replaceQuery(req, value);
             wholeSources |= source;
           } else {
             const record = schemaRecord(paramtype === NEST_BODY ? req.body : req.query);
-            const value = convertInput(codec, construct, array, record && Object.hasOwn(record, field) ? record[field] : undefined, decode, field, this.maxDepth);
+            const value = convertInput(codec, construct, array, record && Object.hasOwn(record, field) ? record[field] : undefined, decode, field, this.maxDepth, this.validate);
             // Copy so the incoming object is not mutated; define so a field named __proto__ stays data.
             const copy = { ...record };
             Object.defineProperty(copy, field, { value, writable: true, enumerable: true, configurable: true });
