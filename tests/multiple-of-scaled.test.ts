@@ -44,6 +44,7 @@ test('a validator with a decimal divisor answers for exponent forms, many decima
     return values.map(value => validate(value, false).length === 0);
   };
   assert.deepEqual(await verdicts(0.1, [0.3, -0.3, -0, 0.30000000000000004, 1e21, Number.MAX_SAFE_INTEGER, Number.NaN, Number.POSITIVE_INFINITY, 1e-7]), [true, true, true, false, true, true, false, false, false]);
+  assert.deepEqual(await verdicts(0.001, [0.003, 0.0015, 1.234, 1.2345, 0.001, 0]), [true, false, true, false, true, true]);
   assert.deepEqual(await verdicts(0.5, [9007199254740991, 4503599627370495.5, 2251799813685247.25]), [true, true, false]);
   assert.deepEqual(await verdicts(1e-7, [3e-7, 1.5e-7, 1e-8, 0]), [true, false, false, true]);
   assert.deepEqual(await verdicts(0.123456789, [8595756.71190207, 8820007.45060213, 0.246913578]), [true, false, true]);
