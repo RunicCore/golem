@@ -295,3 +295,26 @@ test('a style cookie array or object with no explode is written exploded, as a f
   await client.readJar().execute({ cookie: { tags: ['a', 'b'], point: { x: '1', y: '2' }, formTags: ['c', 'd'] } });
   assert.equal(cookie, 'tags=a; tags=b; x=1; y=2; formTags=c; formTags=d');
 });
+
+test('an empty object response header decodes to an empty object, exploded or not', async (t) => {
+  // protects: suspected bug T-635 an empty object header threw a TypeError; RFC 6570 section 2.3 makes an empty map undefined and simple expansion writes it as nothing
+  const point = { type: 'object', properties: { x: { type: 'integer' } } };
+  const Client = await loadClient(t, {
+    openapi: '3.1.0',
+    info: { title: 'EmptyObjectHeaders', version: '1' },
+    paths: { '/point': { get: {
+      operationId: 'point',
+      responses: { 200: {
+        description: 'ok',
+        headers: {
+          'X-Plain': { schema: point },
+          'X-Exploded': { explode: true, schema: point },
+        },
+      } },
+    } } },
+  }, 'EmptyObjectHeaders');
+  const empty = await clientReturning(Client, { 'X-Plain': '', 'X-Exploded': '' }).point().execute({});
+  assert.deepEqual(empty.headers, { 'X-Plain': {}, 'X-Exploded': {} });
+  const filled = await clientReturning(Client, { 'X-Plain': 'x,1', 'X-Exploded': 'x=2' }).point().execute({});
+  assert.deepEqual(filled.headers, { 'X-Plain': { x: 1 }, 'X-Exploded': { x: 2 } });
+});
