@@ -50,7 +50,7 @@ import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
-import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType } from '@exprtlabs/golem/internal/type-analysis';
+import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType, sdkModelLevelDiagnostic } from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalFilename,
   commonDirectory,
@@ -608,6 +608,7 @@ function assertRootHasFields(specification: ModelSpecification, definition: Mode
     : definition.kind === 'object' || definition.kind === 'generated-model' ? undefined
       : describeRootKind(definition.kind);
   if (found) throw nonObjectRootDiagnostic(specification.sourceFile, specification.declaration, specification.emitClass ? 'IModel' : 'IObject', found);
+  if (definition.kind === 'generated-model' && specification.validation !== undefined) throw sdkModelLevelDiagnostic(specification.sourceFile, specification.declaration);
 }
 
 /** Describe every model of the job once and index the results for lookups. */

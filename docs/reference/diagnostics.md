@@ -766,6 +766,12 @@ Golem reads relative imports (`./sdk/index.js`) for this rule, and reads them th
 
 **Fix:** Set the option to `true`, `false` or `'sanity'`, at or below the project level, or raise `validation` in `golem.yaml`.
 
+### RUNM1090
+
+**Validation option on a model over an SDK model.** An `IModel` or `IObject` whose fields type is an SDK model sets the `validation` option. The model has no codec of its own: the codec of the SDK serves its calls, at the validation level of the SDK. The option would never apply. The message names the model.
+
+**Fix:** Remove the option. A call can still choose a level up to the project level with `{ validate }`.
+
 ## Validators (VALIDATE)
 
 The validator compiler writes the checks that generated models and SDKs run. Its messages name the document, the schema and the JSON pointer of the keyword it rejects, such as `orders.yaml: schema "Order" at /properties/total/pattern: ...`. An error stops generation before any validator is written; a warning lets generation continue, as its entry notes.

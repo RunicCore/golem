@@ -1,6 +1,5 @@
 import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import test, { type TestContext } from 'node:test';
@@ -9,8 +8,7 @@ import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { requireObjectCodec, serdeValidates } from '@exprtlabs/golem/internal/model-runtime';
 import type { ObjectCodec, SerdeOptions } from '@exprtlabs/golem/serde';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
-import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
-import { fileFixtureScope, writeGeneratedArtifacts } from './fixture-project.js';
+import { fileFixtureScope } from './fixture-project.js';
 import { buildModelProject, createModelProject, writeModelGolemYaml, writeModelSources } from './model-project.js';
 import { generatedCodecIdFromRoot } from './support/consumer.js';
 
@@ -324,35 +322,3 @@ for (const level of ['sanity', 'off'] as const) {
     assert.ok(model.day instanceof Temporal.PlainDate && model.when instanceof Date && model.span instanceof Temporal.Duration);
   });
 }
-
-test('a model over an SDK model that chooses sanity checks the SDK codec at sanity by default and at full when a call asks', async (t: TestContext) => {
-  // protects: R-76 the level of the model is the default of its calls, also for the codec of an SDK model
-  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-sanity-sdk-', name: 'sanity-sdk', linkWorkspaceNodeModules: true });
-  fs.writeFileSync(path.join(sourceRoot, 'odd.yaml'), `openapi: 3.1.0
-info: { title: Odd, version: "1" }
-paths: {}
-components:
-  schemas:
-    Odd:
-      type: object
-      required: [name]
-      additionalProperties: false
-      properties:
-        name: { type: string, minLength: 3 }
-`);
-  writeGeneratedArtifacts((await generateOpenApi({ input: path.join(sourceRoot, 'odd.yaml'), output: path.join(sourceRoot, 'sdk'), name: 'Odd', profile: { mobx: false, validation: true } })).artifacts);
-  writeModelSources(sourceRoot, {
-    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
-import type { Odd } from './sdk/index.js';
-import { TItemBaseModel } from './item.model.generated.js';
-export type TItem = IModel<Odd, { validation: 'sanity' }>;
-export class Item extends TItemBaseModel {}
-`,
-  });
-  writeModelGolemYaml(root, { mobx: false, validation: true });
-  await buildModelProject(root);
-  const { Item } = await import(`${path.join(root, 'build/item.model.js')}?${Date.now()}`) as { Item: new (values: object) => object };
-  const item = new Item({ name: 'a' });
-  assert.deepEqual(await validateInstance(item), [], 'the default is sanity');
-  assert.equal((await validateInstance(item, { validate: true })).length, 1, 'a call may ask for full');
-});

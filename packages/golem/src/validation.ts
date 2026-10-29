@@ -398,8 +398,7 @@ function assertValidateOption(options: Pick<ValidateOptions, 'validate'> | undef
 
 /**
  * The issues of the generated validator at the level of this call, then those of the instance rules. The level is the
- * `validate` option, else the default of the model (its profile): the generated validator of an SDK model checks at that
- * level too, and sanity skips the instance rules.
+ * `validate` option, else the default of the model (its profile); sanity skips the instance rules.
  */
 async function collectCodecIssues(
   model: object,
@@ -409,8 +408,6 @@ async function collectCodecIssues(
   const requested = options.validate;
   assertAcyclicValue(model, LibErrorKind.Serialization);
   const definition = modelDefinition(model);
-  const profileLevel = definition.profile?.validation;
-  const level = requested ?? (profileLevel === false ? undefined : profileLevel);
   const failFast = mode === 'first';
   let generated: readonly Issue[] = [];
   const codecId = codecIdForDefinition(definition);
@@ -425,11 +422,11 @@ async function collectCodecIssues(
     generated = codecIssues(
       requireObjectCodec(codecId),
       codecValidationValue(model, definition),
-      { failFast, ...(options.validationContext === undefined ? {} : { validationContext: options.validationContext }), ...(level === undefined ? {} : { validate: level }) },
+      { failFast, ...(options.validationContext === undefined ? {} : { validationContext: options.validationContext }), ...(requested === undefined ? {} : { validate: requested }) },
     );
   }
   // Sanity is the shape only: the instance rules are validation functions of the application, which it skips.
-  const sanity = level === 'sanity';
+  const sanity = (requested ?? definition.profile?.validation) === 'sanity';
   const overlay = sanity || (mode === 'first' && generated.length) ? [] : await evaluateInstanceRules(model, mode, generated);
   const issues = formatIssues(model, [...generated, ...overlay]);
   return mode === 'first' ? issues.slice(0, 1) : issues;
