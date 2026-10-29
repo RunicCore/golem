@@ -6,6 +6,7 @@ import { identifier, type GolemDiagnostic } from '@exprtlabs/golem/generator-api
 import { componentOrigin, LocatedError } from './origin.js';
 import {
   COMPOSITION_PROPERTY_NEVER,
+  COMPOSITION_UNSATISFIABLE,
   composedRequired,
   isConstraintOnlyPart,
   isSequenceSchema,
@@ -461,6 +462,11 @@ function isSequenceDescriptor(descriptor: ModelTypeDescriptor): boolean {
   return descriptor.kind === 'array' || descriptor.kind === 'tuple';
 }
 
+/** A schema that no value satisfies: `false`, `not: true`, or an empty `enum`. */
+function acceptsNoValue(schema: unknown): boolean {
+  return schema === false || (isJsonObject(schema) && (schema.not === true || (Array.isArray(schema.enum) && schema.enum.length === 0)));
+}
+
 /** The code of an `enum` that lists an object or an array, which a model field cannot check. */
 export const ENUM_VALUE_UNSUPPORTED = 'OPENAPI_ENUM_VALUE_UNSUPPORTED';
 
@@ -687,6 +693,10 @@ export function modelConversionDescriptor(
     const required = Array.isArray(schema.required)
       ? schema.required.filter((item): item is string => typeof item === 'string')
       : [];
+    const empty = objectEntries(schema.properties).filter(([name, child]) => required.includes(name) && acceptsNoValue(child)).map(([name]) => name);
+    if (empty.length > 0) {
+      throw new CompositionError(COMPOSITION_UNSATISFIABLE, `No object satisfies this schema: the required ${empty.length > 1 ? 'properties' : 'property'} ${empty.map((name) => JSON.stringify(name)).join(', ')} accept${empty.length > 1 ? '' : 's'} no value, because the schema is an empty enum, \`not: true\` or \`false\`. Remove ${empty.length > 1 ? 'them' : 'it'} from required, or give ${empty.length > 1 ? 'them' : 'it'} a schema that accepts a value.`);
+    }
     const object: ModelTypeDescriptor = {
       kind: 'object',
       properties: Object.fromEntries(objectEntries(schema.properties).map(([name, child]) => [name, modelConversionDescriptor(child, definitions, nested, direction, seen)])),

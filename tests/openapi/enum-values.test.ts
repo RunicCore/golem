@@ -64,7 +64,7 @@ const shelfDocument = (properties: Record<string, unknown>, required: readonly s
   } } },
 });
 
-test('a model field with an empty enum accepts no value', async t => {
+test('an optional model field with an empty enum accepts no value', async t => {
   // protects: T-644 an empty enum admits no value (JSON Schema 2020-12 section 6.1.2), as its type says
   const output = path.join(createFixtureProject(t, 'golem-openapi-enum-empty-'), 'sdk');
   await generateMaterializedSdk(shelfDocument({ none: { enum: [] }, name: { type: 'string' } }, ['name']), { output, name: 'Shelves', profile: { mobx: false, validation: true } });
@@ -75,6 +75,17 @@ test('a model field with an empty enum accepts no value', async t => {
   assert.equal(await getValidator(new ShelfModel({ none: null, name: 'a' })).validate(), false);
   assert.equal(await getValidator(new ShelfModel({ name: 'a' })).validate(), true);
 });
+
+for (const [label, schema] of [['an empty enum', { enum: [] }], ['not: true', { not: true }], ['false', false]] as const) {
+  test(`a required property whose schema is ${label} stops generation as unsatisfiable and names the schema`, async t => {
+    // protects: T-644 a required property that no value can hold stops with OPENAPI_COMPOSITION_UNSATISFIABLE (F-170), as in an allOf; it generated a model that failed tsc
+    const output = path.join(createFixtureProject(t, 'golem-openapi-enum-required-'), 'sdk');
+    await assert.rejects(
+      generateMaterializedSdk(shelfDocument({ none: schema, name: { type: 'string' } }), { output, name: 'Shelves', profile: { mobx: false, validation: true } }),
+      /schema "Shelf" at #\/components\/schemas\/Shelf[^:]*: OPENAPI_COMPOSITION_UNSATISFIABLE: No object satisfies this schema: the required property "none" accepts no value/,
+    );
+  });
+}
 
 test('an enum that lists an object or an array stops generation and names the schema', async t => {
   // protects: T-644 a value an enum lists but a model field cannot check is refused, not left unchecked
