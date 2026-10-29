@@ -260,6 +260,7 @@ function internJobSchemaGraphs(
   const validatedShapes = new Set(graphs.flatMap((graph) => [...validatedShapeKeys(graph.definitions, graph.emitted, { siblings: graph.siblings, defaultValidation })]));
   const byGraph = new Map<SourceModelGraph, SourceSchemaGraph>();
   const idsFor = (graph: SourceModelGraph, own: ReadonlyMap<string, string>): Map<string, string> => new Map([
+    ...graph.sdkCodecIds,
     ...own,
     ...graph.siblings.flatMap((sibling) => {
       const id = codecIds.get(sibling);
@@ -321,10 +322,13 @@ function internJobSchemaGraphs(
       for (const [name, descriptor] of Object.entries(graph.definitions)) definitions[name] ??= descriptor;
     }
     const shared = internSourceDefinitions(definitions, emitted, {
-      codecIds: new Map(outside.flatMap((sibling) => {
-        const id = codecIds.get(sibling);
-        return id === undefined ? [] : [[sibling.name, id] as const];
-      })),
+      codecIds: new Map([
+        ...component.flatMap((graph) => [...graph.sdkCodecIds]),
+        ...outside.flatMap((sibling) => {
+          const id = codecIds.get(sibling);
+          return id === undefined ? [] : [[sibling.name, id] as const];
+        }),
+      ]),
       siblings: outside,
       defaultValidation,
       validatedShapes,

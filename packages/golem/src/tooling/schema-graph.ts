@@ -627,10 +627,12 @@ export function createSchemaGraph(
       const taken = nodes.get(identifierFromName(named));
       const id = taken && taken.kind !== 'reference' ? identifierFromName(`${raw}__reference`) : identifierFromName(named);
       const siblingId = descriptor.kind === 'reference' ? fixedCodecId(raw) : undefined;
+      // A model that is an SDK model (`IModel<Money>`) has the codec of that model, which the job fixes by the model's name.
+      const sdkId = descriptor.kind === 'generated-model' ? fixedCodecId(raw) : undefined;
       const placeholder: SchemaNode = {
         id,
         name: named,
-        codecId: siblingId ?? named,
+        codecId: siblingId ?? sdkId ?? named,
         descriptor,
         jsonSchema: { type: 'object' },
         modelJsonSchema: { type: 'object' },

@@ -143,6 +143,57 @@ export const wrong: string = item.amount;
   await buildModelProject(root);
 });
 
+test('an IModel over an SDK model is the SDK model: parse, stringify, wire conversion and validateInstance run its codec and build the app class', async t => {
+  // protects: T-666 parse<TItem> over an SDK model threw "the IObject codec "TItem" is not registered" (R-79: such a model is the SDK model)
+  const { root, sourceRoot } = fixture(t);
+  await writeMoneySdk(sourceRoot);
+  writeModelSources(sourceRoot, {
+    'item.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { Money } from './sdk/index.js';
+import { TItemBaseModel } from './item.model.generated.js';
+export type TItem = IModel<Money>;
+export class Item extends TItemBaseModel {
+  label(): string { return \`\${this.amount} \${this.currency}\`; }
+}
+`,
+    'order.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { TItem } from './item.model.js';
+export type TOrder = IModel<{ item: TItem }>;
+`,
+    'use.ts': `import { fromWireFormat, parse, stringify, toWireFormat, type SerdeOptions } from '@exprtlabs/golem/serde';
+import { MoneyModel } from './sdk/index.js';
+import { Item, type TItem } from './item.model.js';
+import type { TOrder } from './order.model.js';
+export { Item, MoneyModel };
+export const parseOrder = (text: string, options?: SerdeOptions): TOrder => parse<TOrder>(text, options);
+export const parseItem = (text: string, options?: SerdeOptions): Item => parse<Item>(text, options);
+export const parseAlias = (text: string): TItem => parse<TItem>(text);
+export const stringifyItem = (item: Item): string => stringify<Item>(item);
+export const fromWireItem = (wire: unknown): Item => fromWireFormat<Item>(wire);
+export const toWireItem = (item: Item): unknown => toWireFormat<Item>(item);
+`,
+  });
+  await buildModelProjectWith(root, { mobx: false, validation: true });
+  const use = await import(`${path.join(root, 'build/use.js')}?${Date.now()}`);
+  const parsed = use.parseItem('{"amount":5,"currency":"EUR"}');
+  assert.ok(parsed instanceof use.Item);
+  assert.ok(parsed instanceof use.MoneyModel);
+  assert.equal(parsed.label(), '5 EUR');
+  assert.deepEqual({ ...use.parseAlias('{"amount":6,"currency":"USD"}') }, { amount: 6, currency: 'USD' });
+  assert.equal(use.stringifyItem(parsed), '{"amount":5,"currency":"EUR"}');
+  assert.ok(use.fromWireItem({ amount: 7, currency: 'GBP' }) instanceof use.Item);
+  assert.deepEqual(use.toWireItem(parsed), { amount: 5, currency: 'EUR' });
+  assert.deepEqual(await validateInstance(parsed), []);
+  const negative = '{"amount":-1,"currency":"EUR"}';
+  assert.throws(() => use.parseItem(negative), { kind: 'validation' });
+  assert.equal(use.parseItem(negative, { validate: 'sanity' }).amount, -1);
+  assert.equal(use.parseOrder('{"item":{"amount":5,"currency":"EUR"}}').item.amount, 5);
+  assert.throws(() => use.parseOrder('{"item":{"amount":-1,"currency":"EUR"}}'), { kind: 'validation' });
+  assert.equal(use.parseOrder('{"item":{"amount":-1,"currency":"EUR"}}', { validate: 'sanity' }).item.amount, -1);
+  assert.equal((await validateInstance(new use.Item({ amount: -1, currency: 'EUR' }))).length, 1);
+  assert.deepEqual(await validateInstance(new use.Item({ amount: -1, currency: 'EUR' }), { validate: 'sanity' }), []);
+});
+
 test('an SDK model beside objects tagged by a literal union generates and decodes each branch', async t => {
   // protects: bug-sweep RUNM1030 once rejected an SDK model beside objects whose tag is a union of literals (`kind: 'a' | 'b'`), which union conversion accepts
   const { root, sourceRoot } = fixture(t);
@@ -192,7 +243,7 @@ export type TItem = IModel<Money, { validation: ${option} }>;
     });
     assert.throws(
       () => generate({ root, profile: { mobx: false, validation: true } }),
-      /item\.model\.ts:\d+:\d+ RUNM1090: TItem is a model over an SDK model and sets the validation option\. The level of the SDK applies to it\. Remove the option; a call can still choose a level up to the project level with \{ validate \}\./,
+      /item\.model\.ts:\d+:\d+ RUNM1090: TItem is the SDK model Money, so it takes the SDK's validation level\. Remove the option; a call can still choose a level with \{ validate \}\./,
     );
     assert.equal(fs.existsSync(path.join(sourceRoot, 'item.model.generated.ts')), false);
   });

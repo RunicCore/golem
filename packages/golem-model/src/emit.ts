@@ -50,7 +50,7 @@ import { compareText, type GolemProfile } from '@exprtlabs/golem/generator-api';
 import { displayPath, RESERVED_MODEL_MEMBERS } from '@exprtlabs/golem/internal/generator-support';
 import type { ManifestIndex } from '@exprtlabs/golem/internal/type-analysis';
 import type { ModelBoundary, ModelSpecification } from '@exprtlabs/golem/internal/type-analysis';
-import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, propertyType, sdkModelLevelDiagnostic } from '@exprtlabs/golem/internal/type-analysis';
+import { descriptorBuilder, describeRootKind, nonObjectRootDiagnostic, sdkModelLevelDiagnostic } from '@exprtlabs/golem/internal/type-analysis';
 import {
   canonicalFilename,
   commonDirectory,
@@ -477,30 +477,6 @@ function descriptorType(
   return code`unknown`;
 }
 
-function fieldDescriptors(
-  checker: ts.TypeChecker,
-  specification: ModelSpecification,
-  describe: (type: ts.Type, context: ModelSpecification, seen?: ReadonlySet<ts.Type>, node?: ts.TypeNode) => ModelConversionDescriptor,
-  fields: readonly ts.Symbol[],
-): Map<string, ModelConversionDescriptor> {
-  return new Map(
-    fields.map((field) => [
-      field.getName(),
-      describe(
-        propertyType(checker, field, specification.declaration),
-        specification,
-        undefined,
-        (() => {
-          const declaration = field.valueDeclaration ?? field.declarations?.[0];
-          return declaration && (ts.isPropertySignature(declaration) || ts.isPropertyDeclaration(declaration))
-            ? declaration.type
-            : undefined;
-        })(),
-      ),
-    ]),
-  );
-}
-
 function descriptorReferences(
   descriptor: ModelConversionDescriptor,
   found = new Set<string>(),
@@ -551,6 +527,8 @@ export interface SourceModelGraph {
   readonly wireDefinitions: Readonly<Record<string, ModelConversionDescriptor>>;
   readonly externalIds: readonly string[];
   readonly externalNames: ReadonlyMap<string, string>;
+  /** The codec id of the SDK model that each model of this source is (`IModel<Money>`), by model name. */
+  readonly sdkCodecIds: ReadonlyMap<string, string>;
   readonly registry: BindingRegistry;
   readonly schemas: readonly TagSchema[];
   /** Every model this companion names: its own, inlined ones, and sibling models. */
@@ -603,16 +581,21 @@ function describeRoot(job: JobAnalysis, specification: ModelSpecification): Mode
  * A model emits the fields of an object, or of an SDK model. A root that a TSerde converts as a whole, or any other root
  * that is no object, has no fields to emit: it stops with RUNM1052 once its other uses have been described.
  */
-function assertRootHasFields(specification: ModelSpecification, definition: ModelConversionDescriptor): void {
+function assertRootHasFields(
+  specification: ModelSpecification,
+  definition: ModelConversionDescriptor,
+): asserts definition is Extract<ModelConversionDescriptor, { readonly kind: 'object' | 'generated-model' }> {
   const found = 'serde' in definition ? 'a type that a TSerde converts as a whole'
     : definition.kind === 'object' || definition.kind === 'generated-model' ? undefined
       : describeRootKind(definition.kind);
   if (found) throw nonObjectRootDiagnostic(specification.sourceFile, specification.declaration, specification.emitClass ? 'IModel' : 'IObject', found);
 }
 
-/** RUNM1090: a model over an SDK model has no codec of its own, so a `validation` option on it would never apply. */
+/** RUNM1090: a model over an SDK model is that model, so a `validation` option on it would never apply. */
 function assertSdkModelSetsNoLevel(specification: ModelSpecification, definition: ModelConversionDescriptor): void {
-  if (definition.kind === 'generated-model' && specification.validation !== undefined) throw sdkModelLevelDiagnostic(specification.sourceFile, specification.declaration);
+  if (definition.kind === 'generated-model' && specification.validation !== undefined) {
+    throw sdkModelLevelDiagnostic(specification.sourceFile, specification.declaration, specification.fieldsNode.getText(specification.sourceFile));
+  }
 }
 
 /** Describe every model of the job once and index the results for lookups. */
@@ -808,6 +791,11 @@ export function analyzeSourceGraph(
     wireDefinitions,
     externalIds,
     externalNames,
+    sdkCodecIds: new Map([...emitted].flatMap((specification) => {
+      const definition = definitions[specification.name];
+      const model = definition?.kind === 'generated-model' ? manifestIndex.byId.get(definition.id) : undefined;
+      return model ? [[specification.name, model.codecId] as const] : [];
+    })),
     registry,
     schemas,
     emitted: [...emitted],
@@ -910,7 +898,7 @@ export function codecEntriesForGraph(
   readonly codecId: string;
   readonly classNames: readonly string[];
 }> {
-  const internedSchemaGraph = schemaGraph ?? internSourceDefinitions(graph.definitions, graph.emitted);
+  const internedSchemaGraph = schemaGraph ?? internSourceDefinitions(graph.definitions, graph.emitted, { codecIds: graph.sdkCodecIds });
   return graph.emitted.map((specification) => {
     const descriptor = descriptorOf(graph.definitions, specification.name);
     const node = internedSchemaGraph.nodeFor(descriptor, specification.name, specification.emitClass);
@@ -1214,7 +1202,7 @@ function buildEmitContext(
   const localImports = emitted
     .filter((specification) => !local.some((item) => item === specification) && !siblingObjectNames.has(specification.name))
     .sort((left, right) => compareText(left.name, right.name) || compareText(left.sourceFile.fileName, right.sourceFile.fileName));
-  const schemaGraph = preparedSchemaGraph ?? internSourceDefinitions(definitions, emitted, { siblings: graph.siblings, defaultValidation: profile.validation });
+  const schemaGraph = preparedSchemaGraph ?? internSourceDefinitions(definitions, emitted, { codecIds: graph.sdkCodecIds, siblings: graph.siblings, defaultValidation: profile.validation });
   const classModelNames = new Set(emitted.filter((specification) => specification.emitClass).map((specification) => specification.name));
   const projectionNames = new Set([
     ...Object.keys(definitions).filter((name) => !localNames.has(name) && !classModelNames.has(name)),
@@ -1498,9 +1486,9 @@ function buildFieldEmissions(context: EmitContext, resolvers: ModelResolvers): M
         ? Object.prototype.hasOwnProperty.call(definition.properties, field.getName())
         : !isGeneratedBrandKey(checker, field) && !isGolemTagKey(checker, field),
     );
-    const descriptors = definition.kind === 'object'
-      ? new Map(Object.entries(definition.properties))
-      : fieldDescriptors(checker, specification, context.graph.describe, fields);
+    // The SDK class of a model that is an SDK model converts its fields.
+    if (definition.kind === 'generated-model') return { specification, fields, helpers: [], decode: [], init: [] };
+    const descriptors = new Map(Object.entries(definition.properties));
     const helpers: Code[] = [];
     const decode: Code[] = [];
     const init: Code[] = [];
@@ -1639,11 +1627,24 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
   if (!node) throw new Error(`Internal error: no schema node for model "${specification.name}".`);
   const codecId = literal(node.codecId);
   const decodeModel = identifier(`decode${specification.name}Model`);
-  return [
+  const types = [
     code`export type ${fieldsName} = ${typeOf(context, definition, 'model')};`,
     code`export type ${jsonName} = ${typeOf(context, definition, 'wire')};`,
     code`export type ${initName} = Partial<${typeOf(context, definition, 'init')}>;`,
     BLANK,
+  ];
+  // A model that is an SDK model extends the class of the SDK, which converts, decodes and registers its fields; the codec of the SDK builds instances of this class through `construct`.
+  if (definition.kind === 'generated-model') {
+    return [
+      ...types,
+      code`export abstract class ${baseName} extends ${externalModel(context, definition.id).cls} {}`,
+      BLANK,
+      code`${rt.serde.registerIModelClass}(${codecId}, ${baseName});`,
+      BLANK,
+    ];
+  }
+  return [
+    ...types,
     code`export abstract class ${baseName} implements ${rtType.model.GeneratedModel}<${jsonName}, ${fieldsName}> {`,
     code`  declare readonly [${rtType.model.generatedModelWireBrand}]: ${jsonName};`,
     code`  declare readonly [${rtType.model.generatedModelFieldsBrand}]: ${fieldsName};`,
@@ -1678,7 +1679,7 @@ function emitClassModel(context: EmitContext, emission: ModelFieldEmission): Pie
     code`  conversion: {`,
     code`    decode: (value, constructor) => ${decodeModel}(constructor ?? ${baseName}, value),`,
     code`  },`,
-    code`  codecId: ${definition.kind === 'generated-model' ? literal(externalModel(context, definition.id).model.codecId) : codecId},`,
+    code`  codecId: ${codecId},`,
     code`  profile: { validation: ${literal(specification.validation ?? profile.validation)} },`,
     ...(observesValidator(context, specification) ? [code`  enhanceValidator: ${rt['mobx-validation'].enhanceValidatorWithMobX},`] : []),
     // A model with a dynamic map, or an explicit additionalProperties true, has no program state: the keys outside its
