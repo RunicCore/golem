@@ -4,6 +4,8 @@ Add Golem to a NestJS 11 API for a checked body, HTTP 400 for bad input and an O
 
 ## What golem does for an endpoint
 
+Golem marks a rejected value with `LibError.causedByInput`. The HTTP 400 in this guide is the behavior of the default `NestModelInterceptor`; an application can write its own interceptor or exception filter with the public API ([NestJS requests](/guide/nestjs-requests#what-happens-to-a-request)).
+
 You declare the body once, as a TypeScript type with tags. Golem uses that one type in three places:
 
 | Place | What golem does |

@@ -158,6 +158,8 @@ Merge rules for response decorators follow `@nestjs/swagger`:
 
 ## Request validation level
 
+Golem does not set HTTP status codes. It marks a value that it rejects with a `LibError` whose `causedByInput` is true. `NestModelInterceptor` is a default example: it answers HTTP 400 for such an error and lets every other error through. An application usually writes its own interceptor or exception filter with the public API ([your own interceptor](/guide/nestjs-requests#union-of-models)).
+
 `NestModelInterceptor` takes an options object. `validate` sets the level that it checks `@Body()` and `@Query()` input at.
 
 | `validate` | Level of the check |

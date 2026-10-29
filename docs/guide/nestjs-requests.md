@@ -41,6 +41,8 @@ Add a method to your controller:
 
 ## What happens to a request
 
+Golem marks a rejected value with a `LibError` whose `causedByInput` is true. The status codes below are the behavior of the default `NestModelInterceptor`, an example. An application usually writes its own interceptor or exception filter with the public API ([Union of models](#union-of-models) shows the imports).
+
 The interceptor converts HTTP handlers. A handler of another context, such as RPC, passes through unchanged.
 
 1. `fromWireFormat` runs on each `@Body()` and `@Query()` parameter with fail-fast validation.
