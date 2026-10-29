@@ -113,54 +113,74 @@ test('a rule on an SDK model runs once per parse and IObject enforces it', async
   assert.throws(() => plain.parse(JSON.stringify({ ...wire, money: { amount: 12, currency: 'XXX' } })), validationError);
 });
 
-/** The toggle models. A model never raises the level of its project, so only a project that validates declares the models that turn validation on or hold a validated child. */
-function toggles(projectValidates: boolean): string {
-  const on = projectValidates ? `export type TOn = IModel<Fields, { validation: true }>;
-export class On extends TOnBaseModel {}
-` : '';
-  const validatedChild = projectValidates ? `export type TVChild = IModel<{ note: string & TValidation<typeof notBlank>; when: Date }, { validation: true }>;
-export class VChild extends TVChildBaseModel {}
-export type TUParent = IModel<{ child: VChild; when: Date }, { validation: false }>;
-export class UParent extends TUParentBaseModel {}
-` : '';
-  return `import type { IModel, IObject } from '@exprtlabs/golem/model';
-import type { TValidation } from '@exprtlabs/golem/tags';
-import { notBlank } from './counter.js';
-import { TInheritBaseModel, TOffBaseModel, TParentBaseModel${projectValidates ? ', TOnBaseModel, TVChildBaseModel, TUParentBaseModel' : ''} } from './toggles.model.generated.js';
-type Fields = { note: string & TValidation<typeof notBlank>; when: Date };
+/** The toggle models every project declares. A model never raises the level of its project, so only a project that validates declares the models in `VALIDATING_ONLY_MODELS`. */
+const TOGGLE_MODELS = `type Fields = { note: string & TValidation<typeof notBlank>; when: Date };
 export type TInherit = IModel<Fields>;
 export class Inherit extends TInheritBaseModel {}
-${on}export type TOff = IModel<Fields, { validation: false }>;
+export type TOff = IModel<Fields, { validation: false }>;
 export class Off extends TOffBaseModel {}
 export type TChild = IObject<{ secret: string }, { validation: false }>;
 export type TParent = IModel<{ child: TChild; note: string & TValidation<typeof notBlank>; when: Date }>;
 export class Parent extends TParentBaseModel {}
-${validatedChild}`;
+`;
+const VALIDATING_ONLY_MODELS = `export type TOn = IModel<Fields, { validation: true }>;
+export class On extends TOnBaseModel {}
+export type TVChild = IModel<{ note: string & TValidation<typeof notBlank>; when: Date }, { validation: true }>;
+export class VChild extends TVChildBaseModel {}
+export type TUParent = IModel<{ child: VChild; when: Date }, { validation: false }>;
+export class UParent extends TUParentBaseModel {}
+`;
+const toggleSource = (generatedNames: string, models: string): string => `import type { IModel, IObject } from '@exprtlabs/golem/model';
+import type { TValidation } from '@exprtlabs/golem/tags';
+import { notBlank } from './counter.js';
+import { ${generatedNames} } from './toggles.model.generated.js';
+${models}`;
+const TOGGLES_VALIDATING = toggleSource('TInheritBaseModel, TOffBaseModel, TParentBaseModel, TOnBaseModel, TVChildBaseModel, TUParentBaseModel', TOGGLE_MODELS + VALIDATING_ONLY_MODELS);
+const TOGGLES_OFF = toggleSource('TInheritBaseModel, TOffBaseModel, TParentBaseModel', TOGGLE_MODELS);
+
+type ToggleCall = 'omitted' | 'true' | 'false';
+/** What one parse or stringify call of a model runs, by whether the model validates and by the `validate` option of the call. */
+const RULE_RUNS: Record<'validates' | 'off', Record<ToggleCall, number | 'unavailable'>> = {
+  validates: { omitted: 1, true: 1, false: 0 },
+  off: { omitted: 0, true: 'unavailable', false: 0 },
+};
+/** The toggle models a project declares: the effective level of each, and what its `codec.validate` does. */
+const VALIDATING_ROWS = [['TInherit', 'validates', 'none'], ['TOn', 'validates', 'rejects'], ['TOff', 'off', 'unavailable']] as const;
+const OFF_PROJECT_ROWS = [['TInherit', 'off', 'none'], ['TOff', 'off', 'unavailable']] as const;
+const CALLS: readonly ToggleCall[] = ['omitted', 'true', 'false'];
+
+async function loadToggles(t: TestContext, source: string, validation: boolean) {
+  const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-toggles-', name: 'single-pass-toggles' });
+  writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'toggles.model.ts': source });
+  writeModelGolemYaml(root, { mobx: false, validation });
+  await buildModelProject(root);
+  const counter = await import(pathToFileURL(path.join(root, 'build/counter.js')).href) as { calls: number; reset(): void };
+  const models = await import(pathToFileURL(path.join(root, 'build/toggles.model.js')).href) as Record<string, new (v?: object) => object>;
+  return { root, counter, models };
 }
 
-for (const profileValidation of [true, false]) {
-  test(`validation toggles behave as the spec states (profile validation ${profileValidation})`, async t => {
-    const { root, sourceRoot } = createModelProject(t, { prefix: 'golem-single-pass-toggles-', name: 'single-pass-toggles' });
-    writeModelSources(sourceRoot, { 'counter.ts': COUNTER, 'toggles.model.ts': toggles(profileValidation) });
-    writeModelGolemYaml(root, { mobx: false, validation: profileValidation });
-    await buildModelProject(root);
-    const counter = await import(pathToFileURL(path.join(root, 'build/counter.js')).href) as { calls: number; reset(): void };
-    const models = await import(pathToFileURL(path.join(root, 'build/toggles.model.js')).href) as Record<string, new (v?: object) => object>;
-    const value = { note: 'hi', when: '2026-01-02T03:04:05.000Z' };
-    const unavailable = (e: unknown): boolean => e instanceof LibError && e.kind === LibErrorKind.ValidationUnavailable;
+const TOGGLE_VALUE = { note: 'hi', when: '2026-01-02T03:04:05.000Z' };
+const unavailable = (e: unknown): boolean => e instanceof LibError && e.kind === LibErrorKind.ValidationUnavailable;
+
+for (const [projectValidates, source, rows] of [[true, TOGGLES_VALIDATING, VALIDATING_ROWS], [false, TOGGLES_OFF, OFF_PROJECT_ROWS]] as const) {
+  test(`validation toggles behave as the spec states (profile validation ${projectValidates})`, async t => {
+    const { root, counter, models } = await loadToggles(t, source, projectValidates);
     let cells = 0;
-    for (const [name, declaration] of (profileValidation ? [['TInherit', 'inherit'], ['TOn', 'on'], ['TOff', 'off']] : [['TInherit', 'inherit'], ['TOff', 'off']]) as readonly (readonly [string, 'inherit' | 'on' | 'off'])[]) {
+    for (const [name, effective, validateCheck] of rows) {
       const codec = requireObjectCodec(generatedCodecIdFromRoot(root, name));
       const construct = models[name.slice(1)];
-      const effective = declaration === 'on' || (declaration === 'inherit' && profileValidation);
-      const model = codec.parse(JSON.stringify(value), { validate: false, construct });
-      if (declaration === 'off') assert.throws(() => codec.validate(model), unavailable, `${name} codec.validate`);
-      if (declaration === 'on') assert.equal(codec.validate({ note: 'hi', when: 'not a date' } as never), false, `${name} codec.validate rejects a bad value`);
-      for (const call of ['omitted', 'true', 'false'] as const) {
+      const model = codec.parse(JSON.stringify(TOGGLE_VALUE), { validate: false, construct });
+      const validateChecks = {
+        none: () => undefined,
+        unavailable: () => assert.throws(() => codec.validate(model), unavailable, `${name} codec.validate`),
+        rejects: () => assert.equal(codec.validate({ note: 'hi', when: 'not a date' } as never), false, `${name} codec.validate rejects a bad value`),
+      };
+      validateChecks[validateCheck]();
+      for (const call of CALLS) {
         const options = call === 'omitted' ? { construct } : { validate: call === 'true', construct };
-        const expected = call === 'false' ? 0 : !effective ? (call === 'true' ? 'unavailable' : 0) : 1;
+        const expected = RULE_RUNS[effective][call];
         for (const [operation, run] of [
-          ['parse', () => codec.parse(JSON.stringify(value), options)],
+          ['parse', () => codec.parse(JSON.stringify(TOGGLE_VALUE), options)],
           ['stringify', () => codec.stringify(model as never, call === 'omitted' ? undefined : { validate: call === 'true' })],
         ] as const) {
           counter.reset();
@@ -171,26 +191,28 @@ for (const profileValidation of [true, false]) {
         }
       }
     }
-    assert.equal(cells, profileValidation ? 18 : 12);
-
-    if (profileValidation) {
-      // An opaque child inside a validated parent: parent rules run once, child contents unchecked.
-      counter.reset();
-      requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent')).parse(JSON.stringify({ child: { secret: 7 }, ...value }), { construct: models.Parent });
-      assert.equal(counter.calls, 1);
-      const parentCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
-      const blank = new models.Parent({ child: { secret: 'x' }, note: '  ', when: new Date(value.when) });
-      assert.equal(parentCodec.validate(blank), false, 'a blank parent note is rejected');
-      assert.ok((await validateInstance(blank)).some(issue => issue.path[0] === 'note'));
-      // A validated child inside an unvalidated parent: the codec you call decides.
-      counter.reset();
-      requireObjectCodec(generatedCodecIdFromRoot(root, 'TUParent')).parse(JSON.stringify({ child: value, when: value.when }), { construct: models.UParent });
-      assert.equal(counter.calls, 0, 'converting the unvalidated parent runs no checks');
-      requireObjectCodec(generatedCodecIdFromRoot(root, 'TVChild')).parse(JSON.stringify(value), { construct: models.VChild });
-      assert.equal(counter.calls, 1, 'converting the validated child directly validates it');
-    }
+    assert.equal(cells, rows.length * CALLS.length * 2);
   });
 }
+
+test('toggled models in a validating project: an opaque child, an unvalidated parent and a validated child', async t => {
+  const { root, counter, models } = await loadToggles(t, TOGGLES_VALIDATING, true);
+  const value = TOGGLE_VALUE;
+  // An opaque child inside a validated parent: parent rules run once, child contents unchecked.
+  counter.reset();
+  requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent')).parse(JSON.stringify({ child: { secret: 7 }, ...value }), { construct: models.Parent });
+  assert.equal(counter.calls, 1);
+  const parentCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TParent'));
+  const blank = new models.Parent({ child: { secret: 'x' }, note: '  ', when: new Date(value.when) });
+  assert.equal(parentCodec.validate(blank), false, 'a blank parent note is rejected');
+  assert.ok((await validateInstance(blank)).some(issue => issue.path[0] === 'note'));
+  // A validated child inside an unvalidated parent: the codec you call decides.
+  counter.reset();
+  requireObjectCodec(generatedCodecIdFromRoot(root, 'TUParent')).parse(JSON.stringify({ child: value, when: value.when }), { construct: models.UParent });
+  assert.equal(counter.calls, 0, 'converting the unvalidated parent runs no checks');
+  requireObjectCodec(generatedCodecIdFromRoot(root, 'TVChild')).parse(JSON.stringify(value), { construct: models.VChild });
+  assert.equal(counter.calls, 1, 'converting the validated child directly validates it');
+});
 
 test('rules inside constraints the wire drops (Contains, Not) still run once on parse', async t => {
   const profile = { mobx: false, validation: true } as const;

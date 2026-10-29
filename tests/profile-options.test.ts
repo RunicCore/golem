@@ -305,23 +305,29 @@ test('resolveProfile takes validation true, false and sanity and refuses every o
   }
 });
 
-const LEVEL_ROWS: readonly (readonly [project: Level, model: Level, allowed: boolean])[] = [
-  [true, true, true], [true, 'sanity', true], [true, false, true],
-  ['sanity', 'sanity', true], ['sanity', false, true], [false, false, true],
-  ['sanity', true, false], [false, 'sanity', false], [false, true, false],
-];
+const MODEL_SOURCE = (model: Level): string =>
+  `import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }, { validation: ${show(model)} }>;\n`;
 
-for (const [project, model, allowed] of LEVEL_ROWS) {
-  test(`a model at validation ${show(model)} in a project at ${show(project)} ${allowed ? 'generates' : 'stops with RUNM1089'}`, (t: TestContext) => {
-    // protects: T-663 a model lowers the validation level of its project and never raises it (false < 'sanity' < true)
+const ALLOWED_ROWS: readonly (readonly [project: Level, model: Level])[] = [
+  [true, true], [true, 'sanity'], [true, false], ['sanity', 'sanity'], ['sanity', false], [false, false],
+];
+const REFUSED_ROWS: readonly (readonly [project: Level, model: Level])[] = [['sanity', true], [false, 'sanity'], [false, true]];
+
+for (const [project, model] of ALLOWED_ROWS) {
+  test(`a model at validation ${show(model)} in a project at ${show(project)} generates`, (t: TestContext) => {
+    // protects: T-663 a model lowers the validation level of its project (false < 'sanity' < true)
     const { root, source } = modelProject(t);
-    fs.writeFileSync(source, `import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }, { validation: ${show(model)} }>;\n`);
-    const run = (): unknown => generate({ root, sources: [source], profile: profile({ validation: project }) });
-    if (allowed) {
-      assert.ok(run());
-      return;
-    }
-    assert.throws(run, (error: unknown) => {
+    fs.writeFileSync(source, MODEL_SOURCE(model));
+    assert.ok(generate({ root, sources: [source], profile: profile({ validation: project }) }));
+  });
+}
+
+for (const [project, model] of REFUSED_ROWS) {
+  test(`a model at validation ${show(model)} in a project at ${show(project)} stops with RUNM1089`, (t: TestContext) => {
+    // protects: T-663 a model never raises the validation level of its project
+    const { root, source } = modelProject(t);
+    fs.writeFileSync(source, MODEL_SOURCE(model));
+    assert.throws(() => generate({ root, sources: [source], profile: profile({ validation: project }) }), (error: unknown) => {
       assert.deepEqual(fromModelFile(error), {
         code: 'RUNM1089',
         text: `payload.model.ts:2:1 RUNM1089: TCard sets validation ${show(model)}, which is above the project level ${show(project)}. A model may lower the level of its project, never raise it. Set the model to ${show(project)} or lower, or raise validation in golem.yaml.`,
@@ -341,20 +347,27 @@ test('a model validation option that is none of true, false and sanity stops wit
   });
 });
 
-for (const [manifest, project, matches] of [
-  ['sanity', 'sanity', true], ['sanity', true, false], [true, 'sanity', false], [false, 'sanity', false], ['sanity', false, false],
-] as const) {
-  test(`an SDK manifest at validation ${show(manifest)} ${matches ? 'matches' : 'is refused by'} a project at ${show(project)}`, (t: TestContext) => {
+function writeManifestProject(t: TestContext, manifest: Level): { readonly root: string; readonly source: string; readonly manifestFile: string } {
+  const { root, source } = modelProject(t);
+  fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }>;\n");
+  const manifestFile = path.join(root, 'external-model-manifest.json');
+  fs.writeFileSync(manifestFile, JSON.stringify({ profile: { mobx: false, validation: manifest, allowAny: false, unknownFormats: 'error' }, models: [] }));
+  return { root, source, manifestFile };
+}
+
+test('an SDK manifest at validation sanity matches a project at sanity', (t: TestContext) => {
+  // protects: T-663 an SDK and its app at the same level are accepted
+  const { root, source, manifestFile } = writeManifestProject(t, 'sanity');
+  assert.ok(generate({ root, sources: [source], profile: profile({ validation: 'sanity' }), manifestInputs: [manifestFile] }));
+});
+
+for (const [manifest, project] of [['sanity', true], [true, 'sanity'], [false, 'sanity'], ['sanity', false]] as const) {
+  test(`an SDK manifest at validation ${show(manifest)} is refused by a project at ${show(project)}`, (t: TestContext) => {
     // protects: T-663 mixed app and SDK levels are refused for any difference, and the message prints both levels
-    const { root, source } = modelProject(t);
-    fs.writeFileSync(source, "import type { IModel } from '@exprtlabs/golem/model';\nexport type TCard = IModel<{ id: string }>;\n");
-    const manifestFile = path.join(root, 'external-model-manifest.json');
-    fs.writeFileSync(manifestFile, JSON.stringify({ profile: { mobx: false, validation: manifest, allowAny: false, unknownFormats: 'error' }, models: [] }));
-    const run = (): unknown => generate({ root, sources: [source], profile: profile({ validation: project }), manifestInputs: [manifestFile] });
-    if (matches) {
-      assert.ok(run());
-      return;
-    }
-    assert.throws(run, new RegExp(`profile mismatch in .*: validation: manifest ${manifest}, project ${project}\\. The project expects \\{ mobx: false, validation: ${project},`));
+    const { root, source, manifestFile } = writeManifestProject(t, manifest);
+    assert.throws(
+      () => generate({ root, sources: [source], profile: profile({ validation: project }), manifestInputs: [manifestFile] }),
+      new RegExp(`profile mismatch in .*: validation: manifest ${manifest}, project ${project}\\. The project expects \\{ mobx: false, validation: ${project},`),
+    );
   });
 }
