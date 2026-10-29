@@ -49,7 +49,7 @@ import type { IModel, IObject } from '@exprtlabs/golem/model';
 | --- | --- | --- |
 | `exact` | root `exact`, `true` | Controls extra keys ([Objects and exact](/guide/field-types#objects-and-exact)). |
 | `allowAny` | root `allowAny`, `false` | Controls `any` and `unknown` fields ([`any` and `unknown`](/guide/field-types#any-and-unknown)). |
-| `validation` | root `validation`, `true` | Default level of the checks for this named `IObject` or `IModel`: `true`, `'sanity'` or `false`. It is at or below the root level; a higher level stops generation with [`RUNM1089`](/reference/diagnostics#runm1089). `false` generates no validators for the model. A nested declaration uses its own setting ([validation profiles](/reference/config#validation-profiles)). |
+| `validation` | root `validation`, `true` | Default level of the checks for this named `IObject` or `IModel`: `true`, `'sanity'` or `false`. It is at or below the root level; a higher level stops generation with [`RUNM1089`](/reference/diagnostics#runm1089). `false` generates no validators for the model. A nested model is checked at the level of the call that reaches it; only `false` (no validators) belongs to the nested model ([validation profiles](/reference/config#validation-profiles)). |
 
 Generation also writes [derived type names](/reference/generated-files#derived-type-names), such as `TTaskFields`, `TTaskJSON` and `TTaskInit`.
 
@@ -514,7 +514,7 @@ The error is a `LibError` of kind `ValidationUnavailable`. Its message starts wi
 
 | Option | In | Default | Effect |
 | --- | --- | --- | --- |
-| `validate` | both | the level of the model | `SerdeOptions`: `true`, `false` or `'sanity'`. `ValidateOptions`: `true` or `'sanity'`. `'sanity'` checks the shape only and `false` skips the checks. A level above the project level throws `ValidationUnavailable`. Any other value throws `TypeError` ([levels](/guide/validation#choose-a-level-for-one-call)). |
+| `validate` | both | the level of the model | `SerdeOptions`: `true`, `false` or `'sanity'`. `ValidateOptions`: `true` or `'sanity'`. `'sanity'` checks the shape only and `false` skips the checks. A level above the project level throws `ValidationUnavailable`. For `parse`, `stringify`, `fromWireFormat` and `toWireFormat`, any other value throws `TypeError` ([levels](/guide/validation#choose-a-level-for-one-call)). |
 | `failFast` | both | `true` | `false` reports every issue. It does not skip checks. |
 | `validationContext` | both | none | Resolves validators from your own function ([validation context](#validation-context)). |
 | `maxDepth` | both | `512` | Bounds how many levels of objects and arrays the input of a recursive model may nest ([below](#max-depth)). |

@@ -51,7 +51,7 @@ A call checks at the default level of its model. Pass `validate` to choose anoth
 - Without `validate`, the call uses the default level of its model. The model level is only a default.
 - A call can choose any level up to the project level. Off is always allowed.
 - A level above the project level throws a `LibError` of kind `ValidationUnavailable`, because golem wrote no validators for it.
-- Any other value throws a `TypeError`.
+- For `parse`, `stringify`, `fromWireFormat` and `toWireFormat`, any other value throws a `TypeError`. `validateInstance` and `getValidator(model).validate` throw it too.
 - A nested model is checked at the level of the call that reaches it.
 
 The table shows the level of a call that names `validate`. Only the conversion calls take `false`.
