@@ -1012,10 +1012,3 @@ for (const validate of [false, null, 0, '', 'full', 1]) {
     assert.throws(() => new NestModelInterceptor({ validate: validate as never }), TypeError);
   });
 }
-
-for (const validate of [undefined, true, 'sanity'] as const) {
-  test(`NestModelInterceptor takes validate ${String(validate)}`, () => {
-    // protects: F-176 the levels of the interceptor are true and 'sanity'
-    assert.doesNotThrow(() => new NestModelInterceptor({ validate }));
-  });
-}

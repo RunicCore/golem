@@ -321,10 +321,11 @@ for (const level of ['sanity', 'off'] as const) {
   test(`a parse at ${level} reads the canonical text of every converted type`, async () => {
     // protects: F-39 the strict form still reads what the wire form allows
     const codec = await loadTemporal(level);
-    const model = codec.parse(JSON.stringify(TEMPORAL_WIRE)) as Record<string, unknown>;
-    assert.deepEqual(Object.fromEntries(Object.entries(model).map(([field, value]) => [field, value instanceof Date ? value.toISOString() : String(value)])), {
-      ...TEMPORAL_WIRE, when: '2025-01-02T03:04:05.000Z',
+    const { when, ...converted } = codec.parse(JSON.stringify(TEMPORAL_WIRE)) as Record<string, unknown>;
+    assert.deepEqual(Object.fromEntries(Object.entries(converted).map(([field, value]) => [field, String(value)])), {
+      at: '2025-01-02T03:04:05Z', zoned: '2025-01-02T03:04:05+01:00[Europe/Paris]', day: '2025-01-02', local: '2025-01-02T03:04:05', time: '03:04:05', span: 'P1D',
     });
+    assert.equal((when as Date).toISOString(), '2025-01-02T03:04:05.000Z');
   });
 }
 
