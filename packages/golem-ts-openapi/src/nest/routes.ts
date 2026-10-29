@@ -1,5 +1,6 @@
 import * as path from 'node:path';
-import { DEFAULT_CONTROLLER_SUFFIXES, compareText, discoverSources, displayPath, stripSourceSuffix, suffixPattern } from '@exprtlabs/golem/generator-api';
+import { compareText, discoverSources } from '@exprtlabs/golem/generator-api';
+import { DEFAULT_CONTROLLER_SUFFIXES, displayPath, stripSourceSuffix, suffixPattern } from '@exprtlabs/golem/internal/generator-support';
 import * as ts from '@exprtlabs/golem/internal/ts';
 import {
   GolemDiagnosticSeverity,

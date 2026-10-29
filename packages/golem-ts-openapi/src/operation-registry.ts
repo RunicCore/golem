@@ -1,6 +1,7 @@
 import { TsToOpenApiDiagnosticCode, TsToOpenApiError, diagnostic } from './diagnostics.js';
 import type { ControllerRoute } from './nest/types.js';
-import { displayPath, type GolemArtifact } from '@exprtlabs/golem/generator-api';
+import type { GolemArtifact } from '@exprtlabs/golem/generator-api';
+import { displayPath } from '@exprtlabs/golem/internal/generator-support';
 import { OPERATION_METHOD_KEYS_EXPORT, operationCodecSlot, type OperationMethodCodecs } from '@exprtlabs/golem/internal/generated-paths';
 
 interface OperationCodecMap {

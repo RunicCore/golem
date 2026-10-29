@@ -1,5 +1,6 @@
 import type * as ts from '@exprtlabs/golem/internal/ts';
-import { GolemDiagnosticSeverity, displayPath } from '@exprtlabs/golem/generator-api';
+import { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
+import { displayPath } from '@exprtlabs/golem/internal/generator-support';
 
 export { GolemDiagnosticSeverity } from '@exprtlabs/golem/generator-api';
 
