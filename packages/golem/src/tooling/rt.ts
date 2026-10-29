@@ -1,25 +1,32 @@
 /**
- * The runtime exports that generated code may name, typed from the internal runtime entries that generated files import
- * from. `rt.serde.parseJson` is a Code that holds a runtime part. A name that an entry does not export is a type error, so
- * a misspelled or removed export fails golem's build. The table copies no list of names: the types are the list.
+ * The runtime exports that generated code may name. A value comes from an internal runtime entry that generated files import
+ * from, and a type from the public subpath of its module, because applications see the types in their declaration files.
+ * `rt.serde.parseJson` is a Code that holds a runtime part. A name that an entry or a module does not export is a type
+ * error, so a misspelled or removed export fails golem's build. The value table copies no list of names: the types are the list.
  */
-import type * as clientRuntime from '../runtime-client.js';
-import type * as mobxRuntime from '../runtime-mobx.js';
-import type * as modelRuntime from '../runtime-model.js';
-import type * as validationRuntime from '../runtime-validation.js';
+import type * as client from '../client.js';
+import type * as mobx from '../mobx.js';
+import type * as model from '../model.js';
+import type * as serde from '../serde.js';
+import type * as validation from '../validation.js';
+import type * as validationRuntime from '../validation-runtime.js';
+import type * as clientEntry from '../runtime-client.js';
+import type * as mobxEntry from '../runtime-mobx.js';
+import type * as modelEntry from '../runtime-model.js';
+import type * as validationEntry from '../runtime-validation.js';
 import { runtimeCode, type Code } from './code.js';
 
 /** The runtime keys of the emitters and the internal entry each one is imported from. Several keys share one entry. */
 interface RuntimeExports {
-  readonly client: typeof clientRuntime;
-  readonly conversion: typeof modelRuntime;
-  readonly mobx: typeof mobxRuntime;
-  readonly 'mobx-validation': typeof mobxRuntime;
-  readonly model: typeof modelRuntime;
-  readonly serde: typeof modelRuntime;
-  readonly temporal: typeof modelRuntime;
-  readonly validation: typeof clientRuntime;
-  readonly 'validation-runtime': typeof validationRuntime;
+  readonly client: typeof clientEntry;
+  readonly conversion: typeof modelEntry;
+  readonly mobx: typeof mobxEntry;
+  readonly 'mobx-validation': typeof mobxEntry;
+  readonly model: typeof modelEntry;
+  readonly serde: typeof modelEntry;
+  readonly temporal: typeof modelEntry;
+  readonly validation: typeof clientEntry;
+  readonly 'validation-runtime': typeof validationEntry;
 }
 
 export type RuntimeModule = keyof RuntimeExports;
@@ -30,23 +37,23 @@ export type RuntimeModule = keyof RuntimeExports;
  */
 interface RuntimeTypeExports {
   readonly model: {
-    readonly GeneratedModel: modelRuntime.GeneratedModel;
-    readonly GeneratedModelConstructor: modelRuntime.GeneratedModelConstructor;
-    readonly GeneratedModelWire: modelRuntime.GeneratedModelWire<unknown>;
-    readonly generatedModelFieldsBrand: typeof modelRuntime.generatedModelFieldsBrand;
-    readonly generatedModelResultBrand: typeof modelRuntime.generatedModelResultBrand;
-    readonly ModelInit: modelRuntime.ModelInit<unknown>;
-    readonly generatedModelWireBrand: typeof modelRuntime.generatedModelWireBrand;
+    readonly GeneratedModel: model.GeneratedModel;
+    readonly GeneratedModelConstructor: model.GeneratedModelConstructor;
+    readonly GeneratedModelWire: model.GeneratedModelWire<unknown>;
+    readonly generatedModelFieldsBrand: typeof model.generatedModelFieldsBrand;
+    readonly generatedModelResultBrand: typeof model.generatedModelResultBrand;
+    readonly ModelInit: model.ModelInit<unknown>;
+    readonly generatedModelWireBrand: typeof model.generatedModelWireBrand;
   };
   readonly client: {
-    readonly ApiOperation: clientRuntime.ApiOperation<never, never, never>;
-    readonly OperationValidationSources: clientRuntime.OperationValidationSources;
-    readonly RuntimeResponseContract: clientRuntime.RuntimeResponseContract;
-    readonly RuntimeSecuritySchemes: clientRuntime.RuntimeSecuritySchemes;
+    readonly ApiOperation: client.ApiOperation<never, never, never>;
+    readonly OperationValidationSources: client.OperationValidationSources;
+    readonly RuntimeResponseContract: client.RuntimeResponseContract;
+    readonly RuntimeSecuritySchemes: client.RuntimeSecuritySchemes;
   };
-  readonly validation: { readonly OperationRuntimeValidators: clientRuntime.OperationRuntimeValidators };
-  readonly mobx: { readonly ObservableApiOperation: mobxRuntime.ObservableApiOperation<never, never, never> };
-  readonly serde: { readonly SerdeOptions: modelRuntime.SerdeOptions; readonly ValidateOptions: modelRuntime.ValidateOptions };
+  readonly validation: { readonly OperationRuntimeValidators: validation.OperationRuntimeValidators };
+  readonly mobx: { readonly ObservableApiOperation: mobx.ObservableApiOperation<never, never, never> };
+  readonly serde: { readonly SerdeOptions: serde.SerdeOptions; readonly ValidateOptions: serde.ValidateOptions };
   readonly 'validation-runtime': { readonly SchemaIssue: validationRuntime.SchemaIssue };
 }
 
@@ -62,6 +69,11 @@ export const RUNTIME_SPECIFIER = {
   validation: '@exprtlabs/golem/internal/client-runtime',
   'validation-runtime': '@exprtlabs/golem/internal/validation-runtime',
 } as const satisfies Record<keyof RuntimeExports, string>;
+
+/** The public subpath that a type name of a runtime key is imported from. */
+export function runtimeTypeSpecifier(module: RuntimeModule): string {
+  return `@exprtlabs/golem/${module}`;
+}
 
 export type RuntimeTypeTable = {
   readonly [M in keyof RuntimeTypeExports]: { readonly [N in keyof RuntimeTypeExports[M]]: Code };

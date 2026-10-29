@@ -20,8 +20,8 @@ export { type TupleConversionDescriptor } from './sequence-conversion.js';
 export { presentKeysCode } from './union-conversion.js';
 /** The Code values and the functions that build, join and render them: generators write their files from these. */
 export {
-  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importLines, importSet, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
-  type Code, type Helper, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
+  aliased, bindInput, blockComment, code, codeKey, docComment, documentLiteral, exportedName, exportedNames, exportFrom, fileImports, helper, helperName, helperSet, identifier, importedNames, indentation, inputCount, importGroups, importLines, ImportSource, inputOf, inputSlot, isEmpty, join, lineBreak, literal, localCode, nameOf, NameTable, nameSlot, nest, placeHelpers, propertyKey, render, renderModule, sameCode, sideEffectImport,
+  type Code, type Helper, type ImportGroup, type ImportOptions, type InputSlot, type JsonValue, type NameSlot, type RenderedModule,
 } from './code.js';
 export { rt, rtType, type RuntimeModule } from './rt.js';
 /** The allOf object merge, for generators that read schemas (golem-openapi). */
@@ -38,7 +38,7 @@ export {
   type Rejected,
   type SlotRule,
 } from './composition.js';
-import { blockComment, bindInput, code, codeKey, identifier, importLines, importSet, inputOf, inputSlot, isEmpty, join, literal, localCode, sameCode, type Code, type Helper, type ImportOptions } from './code.js';
+import { blockComment, bindInput, code, codeKey, identifier, importGroups, importLines, inputOf, inputSlot, isEmpty, join, literal, localCode, sameCode, type Code, type Helper, type ImportOptions } from './code.js';
 import { rt, type RuntimeModule } from './rt.js';
 import { MODEL_MANIFEST_FILENAME, MODEL_MANIFEST_MARKER } from './model-manifest.js';
 export { assertUniqueExportNames, type PublicModule } from './names.js';
@@ -487,8 +487,16 @@ export const MODEL_IMPORT_ORDER: NonNullable<ImportOptions['order']> = {
   serde: SERDE_IMPORT_ORDER,
 };
 
-/** The runtime import lines of what `root` calls: each call lists the modules to write, and a module that the code does not use writes none. */
+/**
+ * The runtime import lines of what `root` calls: each call lists the runtime modules to write, and a specifier that serves
+ * several of them is written once, by the first call that lists one of them. A module that the code does not use writes none.
+ */
 export function runtimeLinesOf(root: Code, options: ImportOptions): (...modules: readonly RuntimeModule[]) => readonly Code[] {
-  const runtime = new Map(importSet(root, options).map((entry) => [entry.module, entry] as const));
-  return (...modules) => modules.flatMap((module) => { const entry = runtime.get(module); return entry ? importLines(entry, options) : []; });
+  const groups = importGroups(root, options);
+  const written = new Set<string>();
+  return (...modules) => modules.flatMap((module) => groups.flatMap((group) => {
+    if (written.has(group.specifier) || !group.modules.includes(module)) return [];
+    written.add(group.specifier);
+    return importLines(group, options);
+  }));
 }

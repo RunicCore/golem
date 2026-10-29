@@ -3,10 +3,6 @@
  * The path is internal: golem build requires each built-in generator at the runtime's exact version, so the names may change in any release.
  */
 export { findGeneratedModelDefinition, findGeneratedModelDefinitionForConstructor, registerGeneratedModel } from './model.js';
-// The brands exist only as types; a generated file names them in `typeof`.
-export type {
-  GeneratedModel, GeneratedModelConstructor, generatedModelFieldsBrand, generatedModelResultBrand, GeneratedModelWire, generatedModelWireBrand, ModelInit,
-} from './model.js';
 export {
   assertAcyclicEncodeInput, assertPropertyAcyclic, assertWireAcyclic, beginDecode, beginEncode, convertModelField, convertModelItems,
   convertModelRecord, convertModelTupleItems, copyModelRecord, decodeCheckedInput, decodeDetachedInput, decodeGeneratedModelTrusted,
@@ -17,7 +13,6 @@ export {
   assertModelValue, createObjectCodec, isValidModelValue, IssueRepresentation, IssueSource, parseJson, registerIModelClass, requireIModelClass,
   requireObjectCodec, serdeValidates, stringifyJsonArray, stringifyJsonBoolean, stringifyJsonNumber, stringifyJsonScalar, stringifyJsonString,
   validationUnavailableStub, withoutInstanceState,
-  type SerdeOptions, type ValidateOptions,
 } from './serde.js';
 // One serialize and one deserialize function for each Temporal type; the OpenAPI model emitter picks them by name.
 export * from './temporal.js';
