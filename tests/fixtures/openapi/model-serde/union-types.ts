@@ -1,6 +1,5 @@
 
-import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
-import { fromWireFormat } from '@exprtlabs/golem/serde';
+import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
 import { CatModel, DogModel, PetModel } from './index.js';
 import type { Cat, Dog, Pet } from './types.js';
 import type { GeneratedModelResult } from '@exprtlabs/golem/model';
@@ -19,10 +18,10 @@ const handwritten = fromWireFormat<HandwrittenCat>({ kind: 'cat', name: 'Miso' }
 const handwrittenExact: HandwrittenCat = handwritten;
 
 async function checkWireInference(): Promise<void> {
-  const petWire: Pet = encodeGeneratedModel(pet);
-  const catWire: Cat = encodeGeneratedModel(catExact);
-  const dogWire: Dog = encodeGeneratedModel(dogExact);
-  const handwrittenWire: Cat = encodeGeneratedModel(handwrittenExact);
+  const petWire: Pet = toWireFormat<GeneratedModelResult<typeof PetModel>>(pet);
+  const catWire: Cat = toWireFormat<CatModel>(catExact);
+  const dogWire: Dog = toWireFormat<DogModel>(dogExact);
+  const handwrittenWire: Cat = toWireFormat<HandwrittenCat>(handwrittenExact);
   void petWire; void catWire; void dogWire; void handwrittenWire;
 }
 

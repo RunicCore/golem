@@ -1,5 +1,5 @@
 import { computed, makeObservable, observable, runInAction } from 'mobx';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { fromWireFormat, toWireFormat } from '@exprtlabs/golem/serde';
 import { getValidator } from '@exprtlabs/golem/validation';
 import {
   MoneyModel,
@@ -69,7 +69,7 @@ export class PaymentStore {
         return false;
       }
 
-      const wire = encodeGeneratedModel(this.editor, { validate: false });
+      const wire = toWireFormat<PaymentEditor>(this.editor, { validate: false });
       const response = await this.client.createPayment().execute(
         { body: wire.money },
         { signal: controller.signal },
@@ -78,7 +78,7 @@ export class PaymentStore {
         return false;
       }
 
-      const saved = decodeGeneratedModel(MoneyModel, response.body);
+      const saved = fromWireFormat<MoneyModel>(response.body);
       if (this.disposed || controller.signal.aborted || this.activeController !== controller) {
         return false;
       }

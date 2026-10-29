@@ -7,7 +7,7 @@ import { ExpressAdapter } from '@nestjs/platform-express';
 import { FastifyAdapter } from '@nestjs/platform-fastify';
 import { nestModelConstruct, objectCodecFromMetatype } from '@exprtlabs/golem/nest';
 import { getObjectCodec } from '@exprtlabs/golem/serde';
-import { decodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { findGeneratedModelDefinition, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { PaymentsClient } from './.build/sdk/index.js';
 import { createApplication } from './.build/src/application.js';
 import { Payment } from './.build/src/payment.model.js';
@@ -58,7 +58,7 @@ await withApplication(async baseUrl => {
   assert.deepEqual(response.body, { id: '1', ...input });
   assert.equal(Object.getPrototypeOf(response.body), Object.prototype);
 
-  const payment = decodeGeneratedModel(Payment, response.body);
+  const payment = requireObjectCodec(findGeneratedModelDefinition(Payment).codecId).fromWireFormat(response.body, { construct: Payment });
   assert.equal(payment.id, '1');
   assert.equal(payment.money.amount, '12.50');
 

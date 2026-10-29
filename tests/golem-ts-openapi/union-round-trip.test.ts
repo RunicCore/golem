@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { LibError } from '@exprtlabs/golem/errors';
 import { generate } from '#controllers/generator';
 import { createControllerFixture } from '../fixture-templates/controllers/project.js';
 import { createFixtureProject } from '../fixture-project.js';
 import { compileGeneratedSdk, generateMaterializedSdk, importGeneratedModule, isGeneratedModelClass, type GeneratedModelClass } from '../openapi/helpers.js';
+import { modelCodec } from '../support/model-codec.js';
 
 const controllerOf = (models: string, model: string): string => `import { Body, Controller, Post } from '@nestjs/common';
 import type { IModel } from '@exprtlabs/golem/model';
@@ -53,13 +53,13 @@ for (const openapiVersion of ['3.2.0', '3.1.2'] as const) {
     const models = await sdkModels(t, { ...document, openapi: openapiVersion });
     const email = { value: { kind: 'email', address: 'a@b.c' } };
     const phone = { value: { kind: 'phone', number: '555' } };
-    const decodedEmail = decodeGeneratedModel(models.TContactModel!, email) as { value: object };
-    const decodedPhone = decodeGeneratedModel(models.TContactModel!, phone) as { value: object };
+    const decodedEmail = modelCodec(models.TContactModel!).fromWireFormat(email) as { value: object };
+    const decodedPhone = modelCodec(models.TContactModel!).fromWireFormat(phone) as { value: object };
     assert.ok(decodedEmail.value instanceof models.TEmailModel!);
     assert.ok(decodedPhone.value instanceof models.TPhoneModel!);
-    assert.deepEqual(encodeGeneratedModel(decodedEmail), email);
-    assert.deepEqual(encodeGeneratedModel(decodedPhone), phone);
-    assert.throws(() => decodeGeneratedModel(models.TContactModel!, { value: { kind: 'fax', number: '555' } }), LibError);
+    assert.deepEqual(modelCodec(decodedEmail).toWireFormat(decodedEmail), email);
+    assert.deepEqual(modelCodec(decodedPhone).toWireFormat(decodedPhone), phone);
+    assert.throws(() => modelCodec(models.TContactModel!).fromWireFormat({ value: { kind: 'fax', number: '555' } }), LibError);
   });
 }
 
@@ -87,16 +87,16 @@ test('the SDK generated from the 3.2 document decodes a value with an unmapped t
   const card = { method: { kind: 'card', number: '1234' } };
   const cash = { method: { kind: 'cash', amount: 5 } };
   const note = { method: { note: 'wire' } };
-  const decodedCard = decodeGeneratedModel(models.TPaymentModel!, card) as { method: object };
-  const decodedCash = decodeGeneratedModel(models.TPaymentModel!, cash) as { method: object };
-  const decodedNote = decodeGeneratedModel(models.TPaymentModel!, note) as { method: object };
+  const decodedCard = modelCodec(models.TPaymentModel!).fromWireFormat(card) as { method: object };
+  const decodedCash = modelCodec(models.TPaymentModel!).fromWireFormat(cash) as { method: object };
+  const decodedNote = modelCodec(models.TPaymentModel!).fromWireFormat(note) as { method: object };
   assert.ok(decodedCard.method instanceof models.TCardModel!);
   assert.ok(decodedCash.method instanceof models.TCashModel!);
   assert.ok(decodedNote.method instanceof models.TOtherModel!);
-  assert.deepEqual(encodeGeneratedModel(decodedCard), card);
-  assert.deepEqual(encodeGeneratedModel(decodedCash), cash);
-  assert.deepEqual(encodeGeneratedModel(decodedNote), note);
-  const unmapped = decodeGeneratedModel(models.TPaymentModel!, { method: { kind: 'wire', note: 'x' } }) as { method: object };
+  assert.deepEqual(modelCodec(decodedCard).toWireFormat(decodedCard), card);
+  assert.deepEqual(modelCodec(decodedCash).toWireFormat(decodedCash), cash);
+  assert.deepEqual(modelCodec(decodedNote).toWireFormat(decodedNote), note);
+  const unmapped = modelCodec(models.TPaymentModel!).fromWireFormat({ method: { kind: 'wire', note: 'x' } }, { validate: false }) as { method: object };
   assert.ok(unmapped.method instanceof models.TOtherModel!);
 });
 

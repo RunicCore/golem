@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import type { TAFields } from './a.model.generated.js';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { requireObjectCodec } from '@exprtlabs/golem/serde';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
 import { getValidator } from '@exprtlabs/golem/validation';
@@ -20,11 +19,11 @@ for (const value of accepted) {
   assert.equal(await getValidator(model).validate(), true, JSON.stringify({ value, issues: getValidator(model).issues }));
   const modelCalls = rules.calls;
   rules.reset();
-  const wire = encodeGeneratedModel(model, { validate: false });
+  const wire = aCodec.toWireFormat(model, { validate: false });
   assert.deepEqual(wire, value);
   assert.equal(rules.calls, 0, 'toJSON must not execute model predicates');
   rules.reset();
-  const decoded = decodeGeneratedModel(A, wire);
+  const decoded = aCodec.fromWireFormat(wire, { construct: A, validate: false });
   assert.ok(decoded instanceof A);
   assert.equal(rules.calls, 0, 'fromJSON copies a class after parse and does not re-run validation');
   const usesModelPredicate = value.choice !== undefined
@@ -38,7 +37,7 @@ for (const value of rejected) {
   assert.equal(await getValidator(model).validate(), false);
   assert.throws(() => aCodec.assert(value));
   if (value.builtin === 2) {
-    assert.throws(() => aCodec.assert(encodeGeneratedModel(model, { validate: false })), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
+    assert.throws(() => aCodec.assert(aCodec.toWireFormat(model, { validate: false })), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
     assert.throws(() => aCodec.assert(value), (error: unknown) => error instanceof LibError && error.kind === LibErrorKind.Validation);
   } else {
     assert.doesNotThrow(() => aCodec.toWireFormat(model, { validate: false }));

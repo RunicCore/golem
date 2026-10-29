@@ -3,13 +3,16 @@ import fs from 'node:fs';
 import { Cart } from './build/src/cart.model.js';
 import { MoneyModel } from './build/sdk/index.js';
 import { ProfileClient } from './build/sdk/client.js';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { findGeneratedModelDefinition, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 
+// The script runs without the build rewrite, so it calls the codec the rewrite would bind.
+const modelCodec = (model) => requireObjectCodec(findGeneratedModelDefinition(model).codecId);
+
 const profile = JSON.parse(fs.readFileSync('./profile.json', 'utf8'));
-const cart = decodeGeneratedModel(Cart, { money: { amount: -1, currency: 'usd' }, note: 'draft' });
+const cart = modelCodec(Cart).fromWireFormat({ money: { amount: -1, currency: 'usd' }, note: 'draft' }, { construct: Cart, validate: false });
 assert.ok(cart.money instanceof MoneyModel);
-assert.deepEqual(encodeGeneratedModel(cart, { validate: false }), { money: { amount: -1, currency: 'usd' }, note: 'draft' });
+assert.deepEqual(modelCodec(cart).toWireFormat(cart, { validate: false }), { money: { amount: -1, currency: 'usd' }, note: 'draft' });
 assert.equal('$makeObservable' in cart, false);
 assert.equal('$validator' in cart, false);
 
@@ -32,7 +35,7 @@ if (profile.mobx) {
   const amounts = [];
   const dispose = autorun(() => amounts.push(cart.money.amount));
   runInAction(() => { cart.money.amount = 2; });
-  const replacement = decodeGeneratedModel(MoneyModel, { amount: 3, currency: 'USD' });
+  const replacement = modelCodec(MoneyModel).fromWireFormat({ amount: 3, currency: 'USD' }, { construct: MoneyModel });
   assert.equal(isObservableProp(replacement, 'amount'), true);
   runInAction(() => { cart.money = replacement; });
   runInAction(() => { replacement.amount = 4; });

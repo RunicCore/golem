@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
-import { decodeGeneratedModel, encodeGeneratedModel } from '@exprtlabs/golem/conversion';
 import { createModelProject, buildModelProject, writeModelGolemYaml } from './model-project.js';
 import { taggedModelSource } from './fixture-templates/models/model-tags.js';
 import { writeCodecPackage } from './fixture-templates/models/codec-package.js';
@@ -11,6 +10,7 @@ import { generate } from '#model/generator';
 import { writeGeneratedArtifacts } from './fixture-project.js';
 import { command } from './support/process.js';
 import { TSC } from './support/build-project.js';
+import { modelCodec } from './support/model-codec.js';
 
 function fixture(t: TestContext) {
   return createModelProject(t, { prefix: 'golem-class-value-', name: 'class-value', linkWorkspaceNodeModules: true });
@@ -94,21 +94,21 @@ type Big = bigint & TSerde<typeof encodeBig, typeof decodeBig>;`, fields }).text
 test('class-valued TSerde fields round-trip', async t => {
   const { A } = await build(t, tsSource`bytes: Bytes; price: Price; when: When; list: Bytes[]; maybe: Bytes | null`);
   const wire = { bytes: 'AQID', price: '12.34', when: '2025-01-02T03:04:05.000Z', list: ['AQ=='], maybe: null };
-  const model = decodeGeneratedModel(A, wire);
+  const model = modelCodec(A).fromWireFormat(wire);
   assert.ok(model.bytes instanceof Uint8Array);
   assert.equal(model.price.cents, 1234n);
   assert.equal(model.when.epochMilliseconds, Date.parse(wire.when));
-  assert.deepEqual(encodeGeneratedModel(model), wire);
+  assert.deepEqual(modelCodec(model).toWireFormat(model), wire);
 });
 
 test('bigint TSerde fields round-trip: plain, array, nullable and optional', async t => {
   const { A } = await build(t, tsSource`big: Big; bigs: Big[]; maybeBig: Big | null; optBig?: Big`);
   const wire = { big: '9007199254740993', bigs: ['1', '-2'], maybeBig: null };
-  const model = decodeGeneratedModel(A, wire);
+  const model = modelCodec(A).fromWireFormat(wire);
   assert.equal(model.big, 9007199254740993n);
   assert.deepEqual(model.bigs, [1n, -2n]);
-  assert.deepEqual(encodeGeneratedModel(model), wire);
-  assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, { ...wire, maybeBig: '3', optBig: '4' })), { ...wire, maybeBig: '3', optBig: '4' });
+  assert.deepEqual(modelCodec(model).toWireFormat(model), wire);
+  assert.deepEqual(modelCodec(A).toWireFormat(modelCodec(A).fromWireFormat({ ...wire, maybeBig: '3', optBig: '4' })), { ...wire, maybeBig: '3', optBig: '4' });
 });
 
 // A model over a mapped, conditional or Pick type: the bigint TSerde of `amount` comes through `Final['order']`.
@@ -149,8 +149,8 @@ export type TA = IObject<${item.model}>;
 
 test('optional class-value field', async t => {
   const { A } = await build(t, tsSource`bytes?: Bytes`);
-  assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, {})), {});
-  assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, { bytes: 'AQID' })), { bytes: 'AQID' });
+  assert.deepEqual(modelCodec(A).toWireFormat(modelCodec(A).fromWireFormat({})), {});
+  assert.deepEqual(modelCodec(A).toWireFormat(modelCodec(A).fromWireFormat({ bytes: 'AQID' })), { bytes: 'AQID' });
 });
 
 test('invalid wire value is rejected before decoding', async t => {
@@ -175,9 +175,9 @@ type Bytes = Uint8Array & TSerde<typeof encodeBytes, typeof decodeBytes>;`, fiel
   writeModelGolemYaml(root, { mobx: true, validation: true });
   await buildModelProject(root);
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
-  const model = decodeGeneratedModel(A, { bytes: 'AQID' });
+  const model = modelCodec(A).fromWireFormat({ bytes: 'AQID' });
   assert.ok(model.bytes instanceof Uint8Array, 'MobX must hold the instance by reference, not wrap it');
-  assert.deepEqual(encodeGeneratedModel(model), { bytes: 'AQID' });
+  assert.deepEqual(modelCodec(model).toWireFormat(model), { bytes: 'AQID' });
 });
 
 test('class from an installed package is imported by package specifier', async t => {
@@ -302,5 +302,5 @@ type Third = ThirdMoney & TSerde<typeof encodeThird, typeof decodeThird>;`, fiel
   ], { first: 'Cash', second: 'SecondMoney', third: 'ThirdMoney' });
   const { A } = await import(path.toNamespacedPath(path.join(root, 'build/a.model.js')));
   const wire = { first: 'a', second: 'b', third: 'c' };
-  assert.deepEqual(encodeGeneratedModel(decodeGeneratedModel(A, wire)), wire);
+  assert.deepEqual(modelCodec(A).toWireFormat(modelCodec(A).fromWireFormat(wire)), wire);
 });

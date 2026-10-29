@@ -20,7 +20,7 @@ import {
   type ModelValidator,
 } from '@exprtlabs/golem/validation';
 import { LibError, LibErrorKind } from '@exprtlabs/golem/errors';
-import { encodeGeneratedModel } from '@exprtlabs/golem/conversion';
+import { modelCodec } from './support/model-codec.js';
 
 type NumberModel = GeneratedModel<{ value: number }, { value: number }>;
 
@@ -166,7 +166,7 @@ test('model metadata is resolved through the prototype, not an instance construc
   Object.defineProperty(child, 'constructor', { configurable: true, enumerable: false, value: class Foreign {} });
   assert.deepEqual(await validateInstance(child), []);
   assert.equal(getValidator(child) instanceof Object, true);
-  assert.deepEqual(encodeGeneratedModel(child), { value: 1 });
+  assert.deepEqual(modelCodec(child).toWireFormat(child), { value: 1 });
 });
 
 test('missing conversion and validation metadata fail before rules can run', async () => {
@@ -189,7 +189,7 @@ test('frozen models support stateless operations and previously initialized vali
   const frozen = generated(Object.freeze(new FrozenModel()));
   const symbols = Object.getOwnPropertySymbols(frozen);
   assert.deepEqual(await validateInstance(frozen), []);
-  assert.deepEqual(encodeGeneratedModel(frozen), { value: 1 });
+  assert.deepEqual(modelCodec(frozen).toWireFormat(frozen), { value: 1 });
   assert.deepEqual(Object.getOwnPropertySymbols(frozen), symbols);
   assert.throws(() => getValidator(frozen), (error: unknown) =>
     error instanceof LibError && error.kind === LibErrorKind.Validation && error.cause instanceof TypeError);
