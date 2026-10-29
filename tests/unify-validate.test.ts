@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 
+import { LibErrorKind } from '@exprtlabs/golem/errors';
 import { findGeneratedModelDefinition, requireObjectCodec } from '@exprtlabs/golem/internal/model-runtime';
 import { getValidator, validateInstance } from '@exprtlabs/golem/validation';
 import { generate as generateOpenApi } from '@exprtlabs/golem-openapi/generator';
@@ -25,32 +26,24 @@ async function compile(root: string): Promise<void> {
   await buildModelProject(root);
 }
 
-function generatedText(root: string): string {
-  const files: string[] = [];
+/** The text of every file under `root` whose name `matches`, joined; empty when there is none. */
+function textOfFiles(root: string, matches: (name: string) => boolean): string {
+  const texts: string[] = [];
   const visit = (directory: string): void => {
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
       const filename = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(filename);
-      else if (entry.name.endsWith('.generated.ts')) files.push(filename);
+      else if (matches(entry.name)) texts.push(fs.readFileSync(filename, 'utf8'));
     }
   };
   visit(root);
-  return files.map((filename) => fs.readFileSync(filename, 'utf8')).join('\n');
+  return texts.join('\n');
 }
 
+const generatedText = (root: string): string => textOfFiles(root, name => name.endsWith('.generated.ts'));
+
 /** The text of every `models.validators.generated.ts` under `root`; empty when the job wrote none. */
-function validatorsText(sourceRoot: string): string {
-  const found: string[] = [];
-  const visit = (directory: string): void => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      const filename = path.join(directory, entry.name);
-      if (entry.isDirectory()) visit(filename);
-      else if (entry.name === 'models.validators.generated.ts') found.push(fs.readFileSync(filename, 'utf8'));
-    }
-  };
-  visit(sourceRoot);
-  return found.join('\n');
-}
+const validatorsText = (sourceRoot: string): string => textOfFiles(sourceRoot, name => name === 'models.validators.generated.ts');
 
 function assertGeneratedValidatorsBound(source: string): void {
   assert.ok((source.match(/\bvalidate_\w+_[0-9a-f]{8}\b/g) ?? []).length >= 1, 'a codec binds to the generated validators');
@@ -103,8 +96,8 @@ test('a model registers its own validation level as the default of its calls', a
   const trustedCodec = requireObjectCodec(generatedCodecIdFromRoot(root, 'TTrusted'));
   assert.equal(checkedCodec.validate({ title: 'abc' }), true);
   assert.equal(checkedCodec.validate({ title: 5 }), false, 'a wrong type is rejected at every level');
-  assert.throws(() => trustedCodec.validate({ id: '1' }));
-  assert.throws(() => trustedCodec.stringify({ id: '1' }, { validate: true }));
+  assert.throws(() => trustedCodec.validate({ id: '1' }), { kind: LibErrorKind.ValidationUnavailable });
+  assert.throws(() => trustedCodec.stringify({ id: '1' }, { validate: true }), { kind: LibErrorKind.ValidationUnavailable });
 });
 
 test('a sanity project emits no value limit and no validation function, and its models check the shape only', async (t: TestContext) => {

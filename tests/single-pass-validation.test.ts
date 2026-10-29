@@ -204,6 +204,7 @@ for (const [projectValidates, source, rows] of [[true, TOGGLES_VALIDATING, VALID
 }
 
 test('toggled models in a validating project: an opaque child, an unvalidated parent and a validated child', async t => {
+  // protects: R-77 a model at false is opaque inside a validating parent; R-76 a validating child is checked
   const { root, counter, models } = await loadToggles(t, TOGGLES_VALIDATING, true);
   const value = TOGGLE_VALUE;
   // An opaque child inside a validated parent: parent rules run once, child contents unchecked.

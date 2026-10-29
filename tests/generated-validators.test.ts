@@ -203,6 +203,7 @@ test('a plan root that is no model of the plan gets a validator and no fast chec
 });
 
 test('a validating model brings the shared object it references, which sets no level, into the plan', async () => {
+  // protects: R-76 a shared object that sets no level follows its validating holder
   const sharedDescriptor: ModelTypeDescriptor = {
     kind: 'object',
     properties: { code: { kind: 'string', constraints: [{ kind: 'minLength', value: 3 }] } },

@@ -112,6 +112,7 @@ for (const [label, profile] of profiles) for (const chain of [modelChain, object
 }
 
 test('with validation on only the model that does not turn it off imports validators', (t: TestContext) => {
+  // protects: R-77 a model at false gets no validators
   const { root, sourceRoot } = project(t, 'golem-model-imports-');
   writeModelSources(sourceRoot, {
     'plain.model.ts': `import type { IModel } from '@exprtlabs/golem/model';

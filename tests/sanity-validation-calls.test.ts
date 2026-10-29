@@ -1,3 +1,4 @@
+import 'temporal-polyfill/global';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -61,17 +62,18 @@ const CALL_RULE: readonly (readonly [defaultLevel: Level, cap: Level, Record<Cal
 /** A JavaScript caller can pass any value; none of these may read as "off". */
 const NOT_A_LEVEL: readonly unknown[] = [null, 0, '', 'full', 1];
 
-test('the call rule: no option gives the default, off is always allowed, a level above the cap is unavailable, any other value is a TypeError', () => {
-  // protects: R-72 a call may lower the level, never raise it above the project's
-  for (const [defaultLevel, cap, expected] of CALL_RULE) {
-    for (const call of CALLS) {
-      assert.equal(levelOf(CALL_OPTIONS[call], defaultLevel, cap), expected[call], `default ${String(defaultLevel)} cap ${String(cap)} validate ${call}`);
-    }
-    for (const value of NOT_A_LEVEL) {
-      assert.equal(levelOf({ validate: value as never }, defaultLevel, cap), 'TypeError', `default ${String(defaultLevel)} validate ${String(value)}`);
-    }
-  }
-});
+interface CallRuleRow { readonly defaultLevel: Level; readonly cap: Level; readonly validate: unknown; readonly expected: Level | 'unavailable' | 'TypeError' }
+const CALL_RULE_ROWS: readonly CallRuleRow[] = CALL_RULE.flatMap(([defaultLevel, cap, expected]) => [
+  ...CALLS.map(call => ({ defaultLevel, cap, validate: CALL_OPTIONS[call].validate, expected: expected[call] })),
+  ...NOT_A_LEVEL.map(validate => ({ defaultLevel, cap, validate, expected: 'TypeError' as const })),
+]);
+
+for (const { defaultLevel, cap, validate, expected } of CALL_RULE_ROWS) {
+  test(`the call rule: default ${String(defaultLevel)}, cap ${String(cap)}, validate ${typeof validate === 'string' ? `'${validate}'` : String(validate)} gives ${String(expected)}`, () => {
+    // protects: R-72 a call may lower the level, never raise it above the project's
+    assert.equal(levelOf(validate === undefined ? {} : { validate: validate as never }, defaultLevel, cap), expected);
+  });
+}
 
 const RULES = `export let calls = 0;
 export function notBlank(value: string): boolean | string { calls++; return value.trim().length > 0 || 'blank'; }
@@ -90,11 +92,15 @@ const LOOSE = `export type TLoose = IModel<Fields, { validation: 'sanity' }>;
 export class Loose extends TLooseBaseModel {}
 `;
 /** A holder at the full level of a sanity model, and a holder at the sanity level of a model that follows its project. */
+/** A model at false: it has no validators, and no call can check it. */
+const OFF_MODEL = `export type TOff = IModel<Fields, { validation: false }>;
+export class Off extends TOffBaseModel {}
+`;
 const HOLDERS = `export type TOuter = IModel<{ child: TLoose }>;
 export type TLooseOuter = IModel<{ child: TInherit }, { validation: 'sanity' }>;
 `;
 const SOURCES: Record<'full' | 'sanity' | 'off', string> = {
-  full: header(['Inherit', 'Loose']) + LOOSE + HOLDERS,
+  full: header(['Inherit', 'Loose', 'Off']) + LOOSE + OFF_MODEL + HOLDERS,
   sanity: header(['Inherit', 'Loose']) + LOOSE,
   off: header(['Inherit']),
 };
@@ -197,43 +203,53 @@ test('a project at full: the level of each call, the default and each request; a
   await t.test('every operation at each call', () => checkLevels('full', loaded));
   await t.test('a sanity call checks the shape only', () => checkSanityShape('sanity', loaded));
   await t.test('validateInstance and ModelValidator.validate, with the instance rules', () => checkRegistry('full', loaded));
-  await t.test('a model that chooses sanity runs at sanity by default, at full when a call asks, and off when a call turns it off', () => {
-    // protects: R-76 a model's own level is only the default of its calls (moved from T-678)
-    const { codec, rules } = loaded;
-    const loose = codec('TLoose');
-    const rows: Record<CallName, { readonly overLimit: Outcome; readonly wrongType: Outcome; readonly ruleRuns: number }> = {
-      omitted: { overLimit: 'accepts', wrongType: 'rejects', ruleRuns: 0 },
-      true: { overLimit: 'rejects', wrongType: 'rejects', ruleRuns: 1 },
-      sanity: { overLimit: 'accepts', wrongType: 'rejects', ruleRuns: 0 },
-      false: { overLimit: 'accepts', wrongType: 'accepts', ruleRuns: 0 },
-    };
-    for (const call of CALLS) {
-      const options = CALL_OPTIONS[call];
-      for (const [operation, run] of Object.entries(OPERATIONS)) {
-        assert.equal(outcomeOf(() => run(loose, OVER_LIMIT, options)), rows[call].overLimit, `${operation} over limit, validate ${call}`);
-      }
-      assert.equal(outcomeOf(() => loose.parse(JSON.stringify(WRONG_TYPE), options)), rows[call].wrongType, `wrong type, validate ${call}`);
-      rules.reset();
-      loose.parse(JSON.stringify({ ...OK, note: 'x' }), options);
-      assert.equal(rules.calls, rows[call].ruleRuns, `rule runs, validate ${call}`);
+  const LOOSE_ROWS: Record<CallName, { readonly overLimit: Outcome; readonly wrongType: Outcome; readonly ruleRuns: number }> = {
+    omitted: { overLimit: 'accepts', wrongType: 'rejects', ruleRuns: 0 },
+    true: { overLimit: 'rejects', wrongType: 'rejects', ruleRuns: 1 },
+    sanity: { overLimit: 'accepts', wrongType: 'rejects', ruleRuns: 0 },
+    false: { overLimit: 'accepts', wrongType: 'accepts', ruleRuns: 0 },
+  };
+  // protects: R-76 a model's own level is only the default of its calls (moved from T-678)
+  for (const call of CALLS) {
+    for (const operation of Object.keys(OPERATIONS)) {
+      await t.test(`a model that chooses sanity: ${operation} over a limit, validate ${call}`, () => {
+        assert.equal(outcomeOf(() => OPERATIONS[operation](loaded.codec('TLoose'), OVER_LIMIT, CALL_OPTIONS[call])), LOOSE_ROWS[call].overLimit);
+      });
     }
-    assert.equal(outcomeOf(() => loose.validate(OVER_LIMIT)), 'accepts');
-    assert.equal(outcomeOf(() => loose.validate(OVER_LIMIT, { validate: true })), 'rejects');
+    await t.test(`a model that chooses sanity: a wrong type, validate ${call}`, () => {
+      assert.equal(outcomeOf(() => loaded.codec('TLoose').parse(JSON.stringify(WRONG_TYPE), CALL_OPTIONS[call])), LOOSE_ROWS[call].wrongType);
+    });
+    await t.test(`a model that chooses sanity: the validation function runs ${LOOSE_ROWS[call].ruleRuns} times, validate ${call}`, () => {
+      loaded.rules.reset();
+      loaded.codec('TLoose').parse(JSON.stringify({ ...OK, note: 'x' }), CALL_OPTIONS[call]);
+      assert.equal(loaded.rules.calls, LOOSE_ROWS[call].ruleRuns);
+    });
+  }
+  await t.test('validate of a model that chooses sanity accepts a value over a limit by default and rejects it at full', () => {
+    assert.equal(outcomeOf(() => loaded.codec('TLoose').validate(OVER_LIMIT)), 'accepts');
+    assert.equal(outcomeOf(() => loaded.codec('TLoose').validate(OVER_LIMIT, { validate: true })), 'rejects');
   });
-  await t.test('a nested model is checked at the level of the call that reaches it', () => {
-    // protects: R-76 a nested model follows the level of the call, not its own default
-    const rows: readonly (readonly [holder: string, Record<'omitted' | 'true' | 'sanity', Outcome>])[] = [
-      ['TOuter', { omitted: 'rejects', true: 'rejects', sanity: 'accepts' }],
-      ['TLooseOuter', { omitted: 'accepts', true: 'rejects', sanity: 'accepts' }],
-    ];
-    for (const [holder, expected] of rows) {
-      for (const call of ['omitted', 'true', 'sanity'] as const) {
-        for (const [operation, run] of Object.entries(OPERATIONS)) {
-          assert.equal(outcomeOf(() => run(loaded.codec(holder), { child: OVER_LIMIT }, CALL_OPTIONS[call])), expected[call], `${holder} ${operation} validate ${call}`);
-        }
-      }
+  // protects: R-76 a nested model follows the level of the call, not its own default
+  const NESTED: readonly (readonly [holder: string, call: 'omitted' | 'true' | 'sanity', Outcome])[] = [
+    ['TOuter', 'omitted', 'rejects'], ['TOuter', 'true', 'rejects'], ['TOuter', 'sanity', 'accepts'],
+    ['TLooseOuter', 'omitted', 'accepts'], ['TLooseOuter', 'true', 'rejects'], ['TLooseOuter', 'sanity', 'accepts'],
+  ];
+  for (const [holder, call, expected] of NESTED) {
+    for (const operation of Object.keys(OPERATIONS)) {
+      await t.test(`a nested model: ${holder} ${operation}, validate ${call}`, () => {
+        assert.equal(outcomeOf(() => OPERATIONS[operation](loaded.codec(holder), { child: OVER_LIMIT }, CALL_OPTIONS[call])), expected);
+      });
     }
-  });
+  }
+  // protects: R-77 a model at false gets no validators, and a call that checks it throws ValidationUnavailable
+  const OFF_ROWS: Record<CallName, Outcome> = { omitted: 'accepts', true: 'unavailable', sanity: 'unavailable', false: 'accepts' };
+  for (const call of CALLS) {
+    for (const operation of Object.keys(OPERATIONS)) {
+      await t.test(`a model at false: ${operation}, validate ${call}`, () => {
+        assert.equal(outcomeOf(() => OPERATIONS[operation](loaded.codec('TOff'), OVER_LIMIT, CALL_OPTIONS[call])), OFF_ROWS[call]);
+      });
+    }
+  }
 });
 
 test('a project at sanity: the level of each call, the default and each request; the default checks the shape only; the registry path', async (t: TestContext) => {
@@ -247,4 +263,29 @@ test('a project at sanity: the level of each call, the default and each request;
 test('a project at off: every request above off is unavailable and off is allowed', async (t: TestContext) => {
   // protects: R-72 a call may lower the level, never raise it above the project's (T-664)
   checkLevels('off', await load(t, false, SOURCES.off));
+});
+
+test('a sanity parse rejects a text that a Temporal parser would coerce, as bad input', async (t: TestContext) => {
+  // protects: F-39 golem rejects bad input and never coerces it; sanity keeps the formats a converter reads
+  const { root, sourceRoot } = createModelProject(t, {
+    prefix: 'golem-sanity-temporal-', name: 'sanity-temporal', linkWorkspaceNodeModules: true,
+    compilerOptions: { lib: ['ES2023', 'DOM', 'esnext.temporal'] },
+  });
+  writeModelSources(sourceRoot, {
+    'day.model.ts': `import type { IModel } from '@exprtlabs/golem/model';
+import type { TemporalPlainDate } from '@exprtlabs/golem/temporal';
+export type TDay = IModel<{ day: TemporalPlainDate }>;
+`,
+  });
+  writeModelGolemYaml(root, { mobx: false, validation: 'sanity' });
+  await buildModelProject(root);
+  await import(pathToFileURL(path.join(root, 'build/day.model.generated.js')).href);
+  const day = requireObjectCodec(generatedCodecIdFromRoot(root, 'TDay'));
+  assert.ok((day.parse('{"day":"2025-01-02"}') as { day: unknown }).day instanceof Temporal.PlainDate);
+  // Temporal.PlainDate.from reads each of these; the date format does not.
+  for (const bad of ['5', '20250102', '2025-01-02T10:00:00']) {
+    assert.throws(() => day.parse(JSON.stringify({ day: bad }), { validate: 'sanity' }), (error: unknown) => (
+      error instanceof LibError && error.kind === LibErrorKind.Validation && error.causedByInput
+    ), `day ${bad}`);
+  }
 });
